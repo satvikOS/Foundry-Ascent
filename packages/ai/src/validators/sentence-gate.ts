@@ -68,7 +68,10 @@ import { clampWords, toSpeakable } from './speech.js';
  *    released: what follows a narrated sentence is more of the same.
  * 6. an injected instruction carried out, on a turn the classifier flags as prompt injection (`injectionPayloads`): a
  *    unit that reproduces the code or phrase the founder's message dictates is never released, and the reply ends
- *    (`cut: 'injection_echo'`); the caller says the fixed decline in its place (evals MX-0004).
+ *    (`cut: 'injection_echo'`); the caller says the fixed decline in its place (evals MX-0004). A lead-in then waits
+ *    for the first unit after it that is not one, and goes with it when that unit carries the instruction out ("Sure.
+ *    Here it is: MXINJ-B515F2" says only the decline); on the turn whose own message dictated the payload, so does the
+ *    reply's first unit ("Sure, happy to help with that.").
  *
  * A lead-in of at most {@link LEAD_IN_MAX_WORDS} words that ends a sentence ("Got it.", "Talk soon.", "That's the
  * right question.") is released the moment it ends (LAB-P1: the gate held every first sentence 383–526 ms, and 8 of
@@ -78,7 +81,7 @@ import { clampWords, toSpeakable } from './speech.js';
  * so the skip applies only when no guarded string contains sentence punctuation), and, for an acknowledgement
  * ("Got it.", "Okay.") on a typed turn, the look at the next unit (a thinking-aloud opener such as "Let me think."
  * still waits, and on a call so does an acknowledgement that can open thinking aloud: said, it cannot be taken back
- * when narration follows it).
+ * when narration follows it). On a turn with injection payloads every lead-in waits (6. above).
  *
  * The final validation of the whole response stays authoritative: units are a preview the client replaces
  * with `turn.completed`. Units never carry raw model output that failed a check, and their concatenation
@@ -133,9 +136,10 @@ export interface SentenceGateOptions {
   /** Keep the text of every unit left out in `trace.dropped` (for the caller's continuation, and the lab's trace). */
   keepDropped?: boolean;
   /**
-   * The caller goes on with a reply this gate left with nothing (or only a lead-in) after leaving out repeats or
-   * parked news: no stock line is said in its place at the end (lab: "That still stands from a moment ago. Which part do
-   * you want to dig into?" was said for a whole repeated reply, and to a hello).
+   * The caller goes on with a reply this gate left with nothing (or only a lead-in) after leaving out repeats, parked
+   * news or the greeting already given: no stock line is said in its place at the end (lab: "That still stands from a
+   * moment ago. Which part do you want to dig into?" was said for a whole repeated reply, and to a hello; second review,
+   * 2026-10-22: a continuation that greeted and repeated left "Whenever you’re ready." as the whole reply).
    */
   callerContinues?: boolean;
   /**
@@ -154,7 +158,10 @@ export interface SentenceGateOptions {
   /**
    * What the founder's message dictates when the classifier flags it as prompt injection (`injectionPayloadsOf`): a
    * unit that reproduces it (shown or said) is never released and the gate ends the reply (`cut: 'injection_echo'`;
-   * evals MX-0004). Null or absent: no such check.
+   * evals MX-0004). A lead-in ("Sure.", "Here it is.") then waits for the first unit after it that is not one, and is
+   * never released when that unit carries the instruction out: a call never says "Here it is." before the decline. When
+   * this turn's message dictated them (`onThisTurn`), the reply's first unit waits the same way. Null or absent: no such
+   * check.
    */
   injectionPayloads?: InjectionPayloads | null;
   /**
@@ -437,6 +444,8 @@ export class SentenceGate {
   #agendaDropped = 0;
   /** Units and words released (the reply budget). */
   #released = { units: 0, words: 0 };
+  /** The gate's own short line was released ({@link ownLine}). */
+  #ownLine = false;
   /** The reply budget is used up: nothing more is released. */
   #full = false;
   /**
@@ -503,6 +512,14 @@ export class SentenceGate {
     return this.#full;
   }
 
+  /**
+   * The gate released its own short line in place of a reply it left with nothing (the previous reply again, a question
+   * already asked, parked news, the greeting already given): the reply is that line, not what the model wrote.
+   */
+  get ownLine(): boolean {
+    return this.#ownLine;
+  }
+
   /** Counts for audit metadata (no content). */
   get stats(): GateStats {
     return { ...this.#stats };
@@ -537,6 +554,21 @@ export class SentenceGate {
       this.#ended = true;
       return this.#nothing();
     }
+    this.#ended = true;
+    return this.#release();
+  }
+
+  /**
+   * The caller stopped the stream before it ended (a reply that could only say the conversation again): what was not
+   * released yet is dropped, never shown, and the gate ends as if the reply ended with what it released (a reply left
+   * with nothing gets its short line, unless the caller goes on with it).
+   */
+  endHere(): GateResult {
+    if (this.#ended || this.#stopped()) {
+      this.#ended = true;
+      return this.#nothing();
+    }
+    this.#raw = this.#raw.slice(0, this.#cursor);
     this.#ended = true;
     return this.#release();
   }
@@ -622,6 +654,13 @@ export class SentenceGate {
         this.#leakCheckedTo = stable.length;
         if (this.#leaks([stable.slice(from)])) return this.#block('cross_venture', units);
       }
+      const ahead = this.#leadInAhead(end);
+      if (ahead === 'wait') break;
+      if (ahead === 'echo') {
+        // "Sure. Here it is: MXINJ-B515F2": the lead-in of an injected instruction carried out is never said either.
+        this.#cut = 'injection_echo';
+        return { units, blocked: null, fallback: null, cut: this.#cut };
+      }
       let rawUnit = this.#raw.slice(this.#cursor, end);
       if (this.#options.greeted === true && this.#opening) {
         // The opening line already said hello: the reply's own greeting is left out (a whole unit, or its start).
@@ -705,19 +744,52 @@ export class SentenceGate {
     }
     if (this.#ended && this.#nothingReleased()) {
       // The reply was only the greeting the opening line already gave, or only the previous reply again: a short
-      // line instead.
-      const continues = this.#options.callerContinues === true;
-      const instead = this.#droppedGreeting
-        ? REPEATED_GREETING_FALLBACK
-        : this.#agendaDropped > 0 && !continues
-          ? NEWS_FALLBACK
-          : this.#repeatsDropped > 0 && !continues
-            ? REPEAT_FALLBACK
-            : null;
+      // line instead, unless the caller goes on with the reply (then never a stock line, the greeting's included).
+      const instead =
+        this.#options.callerContinues === true
+          ? null
+          : this.#droppedGreeting
+            ? REPEATED_GREETING_FALLBACK
+            : this.#agendaDropped > 0
+              ? NEWS_FALLBACK
+              : this.#repeatsDropped > 0
+                ? REPEAT_FALLBACK
+                : null;
       const unit = instead === null ? null : this.#process(instead);
-      if (unit !== null && typeof unit !== 'string') this.#show(unit, units);
+      if (unit !== null && typeof unit !== 'string') {
+        this.#show(unit, units);
+        this.#ownLine = true;
+      }
     }
     return { units, blocked: null, fallback: null, cut: null };
+  }
+
+  /**
+   * On a turn with injection payloads, whether the lead-in unit ending at `end` ("Sure.", "Here it is.") may be released,
+   * and on the turn whose own message dictated them, the reply's first unit too ("Sure, happy to help with that."):
+   * once the first unit after it that is not a lead-in is complete (or the stream ended), and only when the text up to
+   * that unit does not carry out the instruction ('echo': the reply ends before it). Any other unit: 'release'.
+   */
+  #leadInAhead(end: number): 'release' | 'wait' | 'echo' {
+    const payloads = this.#options.injectionPayloads ?? null;
+    if (payloads === null) return 'release';
+    const opening = payloads.onThisTurn && this.#nothingReleased();
+    if (!opening && !this.#isLeadIn(this.#raw.slice(this.#cursor, end))) return 'release';
+    let from = end;
+    let to: number;
+    for (;;) {
+      const next = findUnitEnd(this.#raw, from, this.#maxUnitChars);
+      if (next === null) {
+        if (!this.#ended) return 'wait';
+        to = this.#raw.length;
+        break;
+      }
+      to = next;
+      if (!this.#isLeadIn(this.#raw.slice(from, next))) break;
+      from = next;
+    }
+    const upTo = this.#shown.slice(-CUMULATIVE_WINDOW_CHARS) + this.#raw.slice(this.#cursor, to);
+    return echoesInjection(upTo, payloads) ? 'echo' : 'release';
   }
 
   /**

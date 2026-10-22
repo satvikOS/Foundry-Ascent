@@ -326,13 +326,51 @@ export function spokenHandBackFor(
   earlier: readonly (string | null | undefined)[] = [],
 ): string | null {
   if (socialTurnOf(founderText) !== null) return null;
-  const pool: readonly string[] = founderMoves(founderText).includes('stress')
-    ? STRESSED_HAND_BACKS
-    : SPOKEN_HAND_BACKS;
+  return pickHandBack(handBackPool(founderText), seed, earlier);
+}
+
+/** The hand-backs that fit `founderText`: about them when they sound stressed, else about the plan. */
+function handBackPool(founderText: string): readonly string[] {
+  return founderMoves(founderText).includes('stress') ? STRESSED_HAND_BACKS : SPOKEN_HAND_BACKS;
+}
+
+function seedHash(seed: string): number {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return hash;
+}
+
+/** One of `pool` the conversation has not heard (`earlier`), chosen by `seed`; null once every one was said. */
+function pickHandBack(
+  pool: readonly string[],
+  seed: string,
+  earlier: readonly (string | null | undefined)[],
+): string | null {
   const heard = earlier.map((text) => plainLine(text ?? '')).join('\n');
   const fresh = pool.filter((line) => !heard.includes(plainLine(line)));
   if (fresh.length === 0) return null;
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  return fresh[hash % fresh.length] ?? null;
+  return fresh[seedHash(seed) % fresh.length] ?? null;
+}
+
+/**
+ * A hand-back to be the whole reply when the model, asked twice, said only what the conversation already said (the
+ * turn engine: never the stock line, and no third model call). {@link spokenHandBackFor}'s line; once the conversation
+ * heard every one of its pool, an unheard one of the other pool; once it heard them all, one of its pool again (a
+ * hand-back said twice is still an answer, the stock line is none). Null only for a social turn, which is never written
+ * anew.
+ */
+export function wholeReplyHandBackFor(
+  founderText: string,
+  seed: string,
+  earlier: readonly (string | null | undefined)[] = [],
+): string | null {
+  if (socialTurnOf(founderText) !== null) return null;
+  const pool = handBackPool(founderText);
+  const other = pool === STRESSED_HAND_BACKS ? SPOKEN_HAND_BACKS : STRESSED_HAND_BACKS;
+  return (
+    pickHandBack(pool, seed, earlier) ??
+    pickHandBack(other, seed, earlier) ??
+    pool[seedHash(seed) % pool.length] ??
+    null
+  );
 }

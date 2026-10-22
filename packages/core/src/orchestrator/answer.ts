@@ -9,6 +9,7 @@ import {
   deriveSpoken,
   echoesInjection,
   founderMoves,
+  identityQuestionOf,
   injectionPayloadsOf,
   isModelGatewayError,
   openerSaidHello,
@@ -17,6 +18,7 @@ import {
   socialTurnOf,
   spokenHandBackFor,
   validateCoachResponse,
+  wholeReplyHandBackFor,
   withoutReasks,
   type CoachResponseValidation,
   type GateBlockReason,
@@ -195,20 +197,23 @@ export function flaggedTurn(founderText: string): boolean {
 /**
  * The validated response of a turn whose reply carried out an injected instruction (evals MX-0004): the reply is the
  * fixed decline, said as written on a call, and nothing the model wrote is kept (no claims, actions, memory or
- * follow-ups; an escalation reason that reproduces the instruction is cleared). Blocked stays blocked.
+ * follow-ups; an escalation reason that reproduces the instruction is cleared). Blocked stays blocked. `said`: what a
+ * streamed reply showed and said before the decline and with it (generate.ts), stored as it was, so the transcript is
+ * what the founder read and heard (second review, 2026-10-22: the stored decline left out a sentence already said).
  */
 export function declineInjectionEcho(
   checked: CoachResponseValidation,
   channel: TurnChannel,
   payloads: InjectionPayloads | null,
+  said: { readonly answer: string; readonly spoken: string | null } | null = null,
 ): CoachResponseValidation {
   const escalation = checked.response.escalation;
   return {
     ...checked,
     response: {
       ...checked.response,
-      answer: INJECTION_DECLINE,
-      spoken: channel === 'voice' ? INJECTION_DECLINE : null,
+      answer: said?.answer ?? INJECTION_DECLINE,
+      spoken: channel === 'voice' ? (said?.spoken ?? INJECTION_DECLINE) : null,
       claims: [],
       uncertainty: [],
       challenge: null,
@@ -390,13 +395,13 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
   const read = socialTurnOf(spec.founderText);
   const social = read === 'greeting' && previousReply === null ? null : read;
   // Never a hand-back the conversation already heard (the replies in view, and the opener). A call says it after a
-  // reply that ends on a statement; on either channel it is the whole reply when the model, asked twice, said nothing
-  // new (generate.ts: never the stock line, and no third model call).
-  const turnBack = spokenHandBackFor(spec.founderText, spec.ids.turnId, [
-    ...spec.history.map((t) => t.answer),
-    spec.opener ?? null,
-  ]);
-  const handBack = spec.channel === 'voice' ? turnBack : null;
+  // reply that ends on a statement. On either channel a hand-back is the whole reply when the model, asked twice, said
+  // nothing new (generate.ts: never the stock line, and no third model call), one of the other pool once every one of
+  // this turn's was heard (second review, 2026-10-22: a stressed founder who had heard all five got the stock line).
+  const heard = [...spec.history.map((t) => t.answer), spec.opener ?? null];
+  const handBack =
+    spec.channel === 'voice' ? spokenHandBackFor(spec.founderText, spec.ids.turnId, heard) : null;
+  const turnBack = wholeReplyHandBackFor(spec.founderText, spec.ids.turnId, heard);
 
   const introduced = alreadyIntroduced(spec);
   // Every message of the vEIR's in this conversation: a question any of them asked is never asked again (voice suite:
@@ -404,22 +409,23 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
   const earlier = [spec.opener, ...spec.history.map((t) => t.answer)].filter(
     (t): t is string => t !== null && t.trim() !== '',
   );
-  const askedEarlier = checksForRepeats(spec.founderText, {
+  const identity = {
     personaName: spec.personaName,
     eirNames: guards.eirNames,
     personaEirName: spec.personaEirName,
     addressees: guards.addressees,
-  })
-    ? questionsAskedIn(earlier)
-    : [];
+  };
+  const askedEarlier = checksForRepeats(spec.founderText, identity) ? questionsAskedIn(earlier) : [];
   // A flagged message is never answered by a continuation; an injected instruction is never carried out (MX-0004),
-  // on its turn, nor what it dictated outright later (the lab: declined on its turn, then carried out when the next
-  // message was "…"). The venture's own name is never a payload.
+  // on its turn, nor what it dictated specifically later (the lab: declined on its turn, then carried out when the next
+  // message was "…"). The venture's own name is never a payload, and a sincere "am I talking to a bot?" gets its honest
+  // answer whatever was dictated: a yes or no, "I am an AI" (the presence policy; second review, 2026-10-22).
   const flagged = flaggedTurn(spec.founderText);
   const payloads = injectionPayloadsOf({
     turn: risk.injection ? spec.founderText : null,
     earlier: spec.history.map((t) => t.founderText).filter((text) => classifyRisk(text).injection),
     ordinary: spec.venture === null ? [] : [spec.venture.name],
+    identityAsked: identityQuestionOf(spec.founderText, identity) !== null,
   });
 
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
@@ -521,7 +527,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
       echoesInjection(text, payloads),
     );
   const checked = echoed
-    ? declineInjectionEcho(enforced, spec.channel, payloads)
+    ? declineInjectionEcho(enforced, spec.channel, payloads, generation.declined ?? null)
     : withoutInjectionEchoes(enforced, payloads);
   return { kind: 'answered', context, shown, generation, checked };
 }

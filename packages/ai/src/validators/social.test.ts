@@ -15,6 +15,7 @@ import {
   questionsOf,
   reasksQuestion,
   spokenHandBackFor,
+  wholeReplyHandBackFor,
   withoutAgendaPush,
   withinSocialBudget,
   withoutReasks,
@@ -159,6 +160,25 @@ describe('a spoken reply hands the turn back (spoken_no_handback)', () => {
     for (const line of SPOKEN_HAND_BACKS) expect(line.split(/\s+/).length).toBeLessThanOrEqual(4);
     // Once every line was said, none rather than a repeat.
     expect(spokenHandBackFor('How do we get users?', 't', [SPOKEN_HAND_BACKS.join(' ')])).toBeNull();
+  });
+
+  it('a hand-back to be a whole reply is never null on a turn that can be written anew (second review)', () => {
+    const stressed = "I'm so stressed and overwhelmed, nothing is working with the students.";
+    // One is left in the turn's own pool: the same line a call would say.
+    expect(wholeReplyHandBackFor(stressed, 't1')).toBe(spokenHandBackFor(stressed, 't1'));
+    // Every stressed one heard: an unheard one of the other pool.
+    const heardStressed = [STRESSED_HAND_BACKS.join(' ')];
+    expect(spokenHandBackFor(stressed, 't1', heardStressed)).toBeNull();
+    expect(SPOKEN_HAND_BACKS as readonly string[]).toContain(
+      wholeReplyHandBackFor(stressed, 't1', heardStressed),
+    );
+    // Every one of both heard: one of the turn's own pool again, never null.
+    const heardAll = [STRESSED_HAND_BACKS.join(' '), SPOKEN_HAND_BACKS.join(' ')];
+    expect(STRESSED_HAND_BACKS as readonly string[]).toContain(
+      wholeReplyHandBackFor(stressed, 't1', heardAll),
+    );
+    // A social turn is never written anew.
+    expect(wholeReplyHandBackFor("Okay, thanks, that's helpful. Talk soon.", 't1')).toBeNull();
   });
 });
 

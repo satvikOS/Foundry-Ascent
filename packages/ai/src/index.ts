@@ -190,6 +190,7 @@ export {
 export {
   DISCLAIMER_FALLBACK,
   IDENTITY_MARGIN_CHARS,
+  identityQuestionOf,
   identityReplacement,
   isStyleFinding,
   rewriteIdentity,
@@ -234,6 +235,7 @@ export {
   questionsAskedIn,
   repeatsPrevious,
   spokenHandBackFor,
+  wholeReplyHandBackFor,
   withinSocialBudget,
   withoutReasks,
   withoutRepeats,
