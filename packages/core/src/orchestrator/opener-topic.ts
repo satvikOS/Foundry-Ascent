@@ -257,6 +257,75 @@ const DESCRIBING = new Set(
   ).split(' '),
 );
 
+/**
+ * Adverbs and discourse words of a founder's line that say how, when or how sure, never what (the voice suite on
+ * 9a2a41f: "Hi Maya, want to carry on with a short pilot instead?", the subject cut from "Maybe we should do a short
+ * pilot instead"). A subject never ends with one, nor opens with one ({@link withoutDiscourseWords}, {@link
+ * readsAsSubject}).
+ */
+const DISCOURSE_WORDS = new Set(
+  (
+    'instead too also anyway anyways though then again either yet already now later first really maybe probably ' +
+    'perhaps just actually basically honestly still even definitely obviously literally seriously totally ' +
+    'eventually finally certainly hopefully personally'
+  ).split(' '),
+);
+/**
+ * Discourse words that also modify the word after them ("first customers", "the later stages", "too many pilots",
+ * "either option", "yet another pilot", "even numbers", "still photos"): discourse only before a determiner or a comma.
+ */
+const MODIFYING = new Set(['first', 'later', 'too', 'either', 'yet', 'even', 'still']);
+/** Conjunctions among them: never dropped from the start of a phrase, so no clause is left behind ("though it is"). */
+const JOINING = new Set(['though', 'yet']);
+/** Words before a last discourse word that make it one side of an alternative ("now or later", "sooner than later"). */
+const ALTERNATIVE = new Set(['or', 'nor', 'than']);
+/** Vague tails of a founder's line ("annual pricing as well", "a short pilot or something", "the deck so far"). */
+const LOOSE_TAIL =
+  /,?\s+(?:as well|for now|right now|so far|at all|after all|for sure|of course|or something(?: like that)?|or so|or whatever|and stuff|and everything|and all that|and so on|etc\.?)$/i;
+/** Whether `word`, followed by `next`, opens a phrase as a discourse word rather than modifying `next`. */
+function opensAsDiscourse(word: string, next: string | undefined): boolean {
+  const w = bare(word);
+  if (!DISCOURSE_WORDS.has(w)) return false;
+  if (!MODIFYING.has(w) || /[,;:]$/.test(word)) return true;
+  // A determiner after it: "first the pricing" (DETERMINERS is defined with the phrase rules below).
+  return next !== undefined && DETERMINERS.has(bare(next));
+}
+
+/** Whether `words` end on a discourse word or a vague tail that is not one side of an alternative ("now or later"). */
+function endsAsDiscourse(words: readonly string[]): boolean {
+  if (LOOSE_TAIL.test(words.join(' '))) return true;
+  const last = bare(words.at(-1) ?? '');
+  return DISCOURSE_WORDS.has(last) && !ALTERNATIVE.has(bare(words.at(-2) ?? ''));
+}
+
+/**
+ * `text` (what an opener says a conversation was about) without the adverbs and discourse words at its ends ("a short
+ * pilot instead" → "a short pilot", "actually the pilot pricing" → "the pilot pricing", "annual pricing as well" →
+ * "annual pricing"), keeping one that belongs to it ("whether to hire now or later", "first customers"); '' when
+ * nothing else is left.
+ */
+export function withoutDiscourseWords(text: string): string {
+  let words = text.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  for (;;) {
+    const joined = words.join(' ');
+    const tail = LOOSE_TAIL.exec(joined);
+    if (tail !== null) {
+      words = joined.slice(0, tail.index).split(' ').filter(Boolean);
+    } else if (words.length > 0 && endsAsDiscourse(words)) {
+      words = words.slice(0, -1);
+    } else if (
+      words.length > 0 &&
+      !JOINING.has(bare(words[0] ?? '')) &&
+      opensAsDiscourse(words[0] ?? '', words[1])
+    ) {
+      words = words.slice(1);
+    } else {
+      break;
+    }
+  }
+  return words.join(' ').replace(/[,;:]+$/, '');
+}
+
 /** A word that only describes (an adjective or an adverb), never something to talk about on its own; never a name. */
 function describesOnly(word: string): boolean {
   if (/^\p{Lu}/u.test(word) && !isEverydayWord(word.replace(/['’]s$/, ''))) return false;
@@ -295,7 +364,9 @@ function namesNothing(word: string): boolean {
  * facilities"). Never a lone date, month or time ("January": lab run 39780304879, "Hi Idris, want to carry on with
  * January?"), a single word that only describes ("full-time", "ready"), a plan without a verb ("your plan to a few
  * minutes before your next class": the voice suite on acc50c6), a phrase that opens with a preposition, a
- * conjunction, an auxiliary or a pronoun, or one left dangling ("the study room for", "the advisor last").
+ * conjunction, an auxiliary or a pronoun, or one left dangling ("the study room for", "the advisor last"), nor one
+ * that ends or opens on an adverb or a discourse word of the founder's line ("a short pilot instead": the voice
+ * suite on 9a2a41f; "actually the pilot pricing"), unless it is one side of an alternative ("now or later").
  */
 export function readsAsSubject(text: string): boolean {
   const flat = text
@@ -308,6 +379,7 @@ export function readsAsSubject(text: string): boolean {
   const first = bare(words[0] ?? '');
   const last = bare(words.at(-1) ?? '');
   if (DANGLING.has(last)) return false;
+  if (endsAsDiscourse(words) || opensAsDiscourse(words[0] ?? '', words[1])) return false;
   const plan = PLAN_SUBJECT.exec(flat);
   if (plan !== null) {
     // A plan says what will be done: "your plan to call facilities", never "your plan to a few minutes".
@@ -355,7 +427,7 @@ const BREAKERS = new Set(
     'knew see saw go went going come came give gave try tried call called talk talked plan planned decided offer ' +
     'offered pay paid charge charged sign signed run ran use used start started finish finished book booked meet met ' +
     'send sent find found keep kept let help helps helped work worked look looks looking seem seems feel felt like ' +
-    'love hate sure ok okay well right great good bad hi hey hello thanks please quick question still even already ' +
+    'love hate sure ok okay well right great good bad hi hey hello thanks please quick question still even already left ' +
     'now today tomorrow yesterday week since because while until though although thing things stuff something ' +
     'anything everything nothing one lot lots pays month months year years day days hour hours minute minutes ' +
     "time times long ago different same other single whole they'll they've they'd he'll he's he'd she'll she's " +
@@ -373,6 +445,15 @@ const BEFORE_A_VERB = new Set(
     "i we you they he she it i'll we'll you'll they'll he'll she'll it'll i'd we'd you'd they'd he'd she'd " +
     "will would can could should shall may might must to don't doesn't didn't won't can't let's"
   ).split(' '),
+);
+/**
+ * Auxiliaries after which a participle is the verb of a clause ("The competition is getting fiercer"), never the start
+ * of a phrase ("shall we pick up getting fiercer?").
+ */
+const AUXILIARY = new Set(
+  "is are was were am be been being isn't aren't wasn't weren't i'm we're you're they're it's he's she's".split(
+    ' ',
+  ),
 );
 const DETERMINERS = new Set([
   'the',
@@ -401,13 +482,21 @@ function yourWords(text: string): string {
   });
 }
 
-/** The clause after a verb, as a topic: up to the first clause break, at most 10 words, no end punctuation. */
+/**
+ * Where a clause ends: its punctuation (never a comma or a colon inside a number: "$1,200", "10:30"; the voice suite
+ * on 9a2a41f heard "raising the price to $1") or a word that joins another clause.
+ */
+const CLAUSE_BREAK = /(?<!\d)[,:]|[,:](?!\d)|[;—–]|\s(?:but|because|so|and then|since|though)\s/i;
+
+/**
+ * The clause after a verb, as a topic: up to the first clause break, without the adverbs and discourse words at its
+ * ends ("maybe run a pilot first" → "run a pilot": {@link withoutDiscourseWords}), at most 10 words, no end
+ * punctuation.
+ */
 function clause(text: string): string | null {
-  const cut = text.split(/[,;:—–]|\s(?:but|because|so|and then|since|though)\s/i)[0] ?? '';
-  const words = cut
-    .replace(/[.!?…"“”]+$/g, '')
-    .trim()
-    .split(/\s+/)
+  const cut = text.split(CLAUSE_BREAK)[0] ?? '';
+  const words = withoutDiscourseWords(cut.replace(/[.!?…"“”]+$/g, ''))
+    .split(' ')
     .filter(Boolean);
   if (words.length === 0 || words.length > 10) return null;
   return yourWords(words.join(' '));
@@ -417,6 +506,10 @@ interface Phrase {
   readonly text: string;
   readonly score: number;
 }
+
+/** A number that counts what follows it ("five interviews", "12 libraries"). */
+const COUNT =
+  /^(?:\d+|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|hundred|several|dozens)$/i;
 
 /** The most telling noun phrase of a sentence ("the Hartwell pilot", "a two-week test", "Noor"), or null. */
 function nounPhrase(sentence: string): Phrase | null {
@@ -435,9 +528,14 @@ function nounPhrase(sentence: string): Phrase | null {
       j += 1;
     }
     // A lower-case word right after a subject or a modal is its verb ("they'll promote …", "we add …"): no phrase
-    // starts there ("What would Corin say?" still names Corin).
+    // starts there ("What would Corin say?" still names Corin). Nor does one on an adverb ("Probably Hartwell").
     const before = (raw[i - 1] ?? '').replace(/^[^\p{L}']+|[^\p{L}']+$/gu, '').toLowerCase();
-    if (determiner === null && BEFORE_A_VERB.has(before) && /^\p{Ll}/u.test(first)) {
+    if (
+      determiner === null &&
+      ((BEFORE_A_VERB.has(before) && /^\p{Ll}/u.test(first)) ||
+        (AUXILIARY.has(before) && /^\p{Ll}+(?:ing|ed)$/u.test(first)) ||
+        opensAsDiscourse(raw[i] ?? '', raw[i + 1]))
+    ) {
       i += 1;
       continue;
     }
@@ -448,8 +546,9 @@ function nounPhrase(sentence: string): Phrase | null {
       const word = token.replace(/^[^\p{L}\p{N}$]+|[^\p{L}\p{N}%']+$/gu, '');
       const lower = word.toLowerCase();
       if (word === '' || BREAKERS.has(lower) || S_VERBS.has(lower) || DETERMINERS.has(lower)) break;
-      // "the advisor last week": "last" starts a time, not part of the phrase.
-      if (content > 0 && UNFINISHED.has(lower)) break;
+      // "the advisor last week": "last" starts a time, not part of the phrase; "a short pilot instead": an adverb of
+      // the line ends it (the voice suite on 9a2a41f).
+      if (content > 0 && (UNFINISHED.has(lower) || DISCOURSE_WORDS.has(lower))) break;
       if (/^(?:her|his|him|she|he)$/.test(lower)) {
         rejected = true;
         break;
@@ -467,11 +566,15 @@ function nounPhrase(sentence: string): Phrase | null {
         break;
       }
     }
+    // "My cofounder and I disagree…": the people who did something, not what it was about.
+    if (bare(raw[j] ?? '') === 'and' && /^(?:i|we|me)$/.test(bare(raw[j + 1] ?? ''))) rejected = true;
     if (!rejected && content > 0) {
       if (determiner !== null && DEFINITE.has(determiner)) score += 1;
       const proper = words.some((w) => /^\p{Lu}/u.test(w) && !isEverydayWord(w));
       // Two words that name something ("the Hartwell pilot", "a two-week test"), or a name ("Noor").
       const enough = proper || topicWords(words.join(' ')).length >= 2;
+      // A count is the one the founder told of: "five customer interviews" → "the five customer interviews".
+      if (determiner === null && content >= 2 && COUNT.test(words[0] ?? '')) words.unshift('the');
       const text = yourWords(words.join(' '));
       // A month or a lone word is no subject ("January": lab run 39780304879): the next phrase is tried.
       if (enough && readsAsSubject(text) && (best === null || score > best.score)) best = { text, score };
@@ -494,7 +597,14 @@ function invertedQuestion(sentence: string): string | null {
   if (match?.[1] === undefined || match[2] === undefined || match[3] === undefined) return null;
   const words = match[3].split(/\s+/);
   let n = 0;
-  while (n < words.length && n < 3 && !BREAKERS.has((words[n] ?? '').toLowerCase().replace(/[^a-z'-]/g, '')))
+  // The subject ends at a function word or a verb, or at a word that describes it ("Is the Hartwell pilot ready
+  // yet?" → "whether the Hartwell pilot is ready").
+  while (
+    n < words.length &&
+    n < 3 &&
+    !BREAKERS.has((words[n] ?? '').toLowerCase().replace(/[^a-z'-]/g, '')) &&
+    !(n > 0 && describesOnly(words[n] ?? ''))
+  )
     n += 1;
   if (n === 0 || n >= words.length) return null;
   const rest = clause(words.slice(n).join(' '));
@@ -511,20 +621,64 @@ function gerund(pastTense: string): string | null {
 }
 
 /**
+ * Adverbs a founder puts between "we" or "I" and the verb ("I still need to…", "we've finally decided to…", "we're
+ * really weighing…"), as a pattern of whole words, each followed by a space.
+ */
+const ADVERBS =
+  '(?:(?:still|really|just|probably|actually|also|definitely|finally|already|maybe|honestly|basically|now|seriously|totally|certainly|eventually|kind of|sort of)\\s+)*';
+/** "We're (still) pricing the pilot…": the verb and what follows it. */
+const PROGRESSIVE = new RegExp(
+  `^(?:we|i)(?:'re| are|'m| am|'ve been| have been)\\s+${ADVERBS}([a-z]+ing)\\s+(.+)$`,
+  'i',
+);
+/** "We (just) booked the auditorium…": the verb and what follows it. */
+const PAST = new RegExp(`^(?:we|i)\\s+${ADVERBS}([a-z]+ed)\\s+(.+)$`, 'i');
+/** "We('ve finally) decided to …": what was decided. */
+const DECIDED = new RegExp(
+  `^(?:we|i)(?:'ve| have)?\\s+${ADVERBS}(?:decided|chose|agreed)\\s+to\\s+(.+)$`,
+  'i',
+);
+/** "We're (really) planning to …", "I'm going to …": what is planned. */
+const PLANNING = new RegExp(
+  `^(?:we|i)(?:'re| are|'m| am)?\\s+${ADVERBS}(?:planning|going|hoping|trying|aiming|about)\\s+to\\s+(.+)$`,
+  'i',
+);
+/** "I (still) need to call", "I will call"; never "I have a few minutes" (a possession is no plan). */
+const PLANS_TO = new RegExp(
+  `^(?:we|i)\\s+${ADVERBS}(?:(?:plan|want|need|have|hope|intend)\\s+to|will|'ll)\\s+(.+)$`,
+  'i',
+);
+
+/**
+ * A deliberation: what is weighed is the subject, never the weighing ("We are weighing per-library pricing for the
+ * pilot" → "per-library pricing for the pilot": "shall we pick up weighing per-library pricing…?" is no sentence).
+ */
+const DELIBERATING =
+  /^(?:thinking (?:about|of|through)|weighing(?: up)?|considering|debating|discussing|exploring|looking (?:at|into)|wondering about|mulling(?: over)?|figuring out|working out|deciding on)\s+(.+)$/i;
+
+/**
  * What the founder did or is doing, as an activity: "We booked the auditorium for demo day" → "booking the
  * auditorium for demo day", "We're pricing the Hartwell pilot at $900" → "pricing the Hartwell pilot at $900",
- * "Our goal is ten paying libraries by June" → "your goal of ten paying libraries by June". Null for other shapes.
+ * "Our goal is ten paying libraries by June" → "your goal of ten paying libraries by June"; what they are weighing,
+ * as itself ("We're thinking about annual pricing too" → "annual pricing", "We're considering whether to raise now or
+ * later" → "whether to raise now or later"). Null for other shapes.
  */
 function doing(sentence: string): LineTopic | null {
-  const progressive = /^(?:we|i)(?:'re| are|'m| am|'ve been| have been)\s+([a-z]+ing)\s+(.+)$/i.exec(
-    sentence,
-  );
-  const past = /^(?:we|i)(?: just| finally| already)?\s+([a-z]+ed)\s+(.+)$/i.exec(sentence);
+  const progressive = PROGRESSIVE.exec(sentence);
+  const past = PAST.exec(sentence);
   const goal =
     /^(?:our|my)\s+(goal|plan|aim|target|idea|worry|concern|priority|problem)\s+is\s+(to\s+)?(.+)$/i.exec(
       sentence,
     );
   let text: string | null = null;
+  const weighed =
+    progressive?.[1] === undefined ? null : DELIBERATING.exec(`${progressive[1]} ${progressive[2] ?? ''}`);
+  if (weighed?.[1] !== undefined) {
+    const what = clause(weighed[1]);
+    // Something to name ("annual pricing", "Hartwell"), never "it" or "stuff".
+    if (what === null || !topicWords(what).some((w) => !BREAKERS.has(w))) return null;
+    return { text: what, question: WH_SUBJECT.test(what), score: 3 + topicWords(what).length };
+  }
   if (progressive?.[1] !== undefined && progressive[2] !== undefined) {
     const rest = clause(progressive[2]);
     if (rest !== null && !BREAKERS.has(progressive[1].toLowerCase()))
@@ -540,6 +694,32 @@ function doing(sentence: string): LineTopic | null {
   return text === null || topicWords(text).length < 2
     ? null
     : { text, question: false, score: 3 + topicWords(text).length };
+}
+
+/** Gerunds that are no activity: a sentence opening with one names no activity ("Nothing is working"). */
+const NOT_AN_ACTIVITY = new Set(
+  'something nothing anything everything morning evening spring during according including regarding'.split(
+    ' ',
+  ),
+);
+/** A sentence about an activity: its gerund and what follows it, up to its verb ("Hiring a designer feels risky"). */
+const ACTIVITY_SUBJECT =
+  /^(\p{Lu}\p{Ll}{2,}ing)((?:\s+[^\s,;:]+){0,5}?)\s+(?:is|are|was|were|feels|felt|seems|seemed|looks|looked|sounds|sounded|has|had|keeps|kept|takes|took|will|would|could|might|may|can|isn't|wasn't|doesn't|didn't|won't)(?![\p{L}'])/u;
+
+/**
+ * The activity a sentence is about, in its everyday case ("Fundraising is taking too much of my time" → "fundraising",
+ * never "Fundraising" mid-sentence; "Hiring a full-time engineer feels risky right now" → "hiring a full-time
+ * engineer"). Null for other shapes.
+ */
+function activity(sentence: string): LineTopic | null {
+  const match = ACTIVITY_SUBJECT.exec(sentence);
+  const gerundWord = match?.[1]?.toLowerCase();
+  if (match === null || gerundWord === undefined || NOT_AN_ACTIVITY.has(gerundWord)) return null;
+  const rest = (match[2] ?? '').trim();
+  const object = rest === '' ? '' : clause(rest);
+  if (object === null) return null;
+  const text = object === '' ? gerundWord : `${gerundWord} ${object}`;
+  return topicWords(text).length === 0 ? null : { text, question: false, score: 3 + topicWords(text).length };
 }
 
 /** What a founder line was about, summarised as the vEIR can say it; `question` when it asked something. */
@@ -581,8 +761,16 @@ function theirPlan(sentence: string): LineTopic | null {
   return readsAsSubject(text) ? { text, question: false, score: 3 + topicWords(rest).length } : null;
 }
 
+/** What a plan or a decision is to do ({@link clause}), when it names something ("talk about it soon" names nothing). */
+function toDo(text: string): string | null {
+  const rest = clause(text);
+  return rest !== null && topicWords(rest).some((w) => !namesNothing(w) && !DISCOURSE_WORDS.has(w))
+    ? rest
+    : null;
+}
+
 const LEAD_IN =
-  /^(?:(?:so|and|but|ok|okay|hey|hi|hello|well|also|actually|quick one|quick question|one more thing)\b[\s,.!:;-]*)+/i;
+  /^(?:(?:so|and|but|ok|okay|hey|hi|hello|well|also|actually|honestly|basically|anyway|anyways|maybe|probably|perhaps|really|yeah|um|uh|i mean|quick one|quick question|one more thing)\b[\s,.!:;-]*)+/i;
 
 /**
  * The topic of a founder line, summarised, never quoted (see the module comment): a yes/no question becomes
@@ -605,13 +793,9 @@ export function topicOf(line: string): LineTopic | null {
       /^(how|what|which|when|where|who)\s+(?:should|do|can|could|would|shall)\s+(?:we|i)\s+(.+?)\??$/i.exec(
         sentence,
       );
-    const decided = /^(?:we|i)(?:'ve| have)?\s+(?:decided|chose|agreed)\s+to\s+(.+)$/i.exec(sentence);
-    const planned =
-      /^(?:we|i)(?:'re| are|'m| am)?\s+(?:planning|going|hoping|trying|aiming|about)\s+to\s+(.+)$/i.exec(
-        sentence,
-      ) ??
-      // "I have to call", "I will call"; never "I have a few minutes" (a possession is no plan).
-      /^(?:we|i)\s+(?:(?:plan|want|need|have|hope|intend)\s+to|will|'ll)\s+(.+)$/i.exec(sentence);
+    // An adverb can sit before the verb ("I still need to…", "We've finally decided to…").
+    const decided = DECIDED.exec(sentence);
+    const planned = PLANNING.exec(sentence) ?? PLANS_TO.exec(sentence);
     const inverted = invertedQuestion(sentence);
     if (inverted !== null) {
       found = { text: inverted, question: true, score: 4 + topicWords(inverted).length };
@@ -636,15 +820,15 @@ export function topicOf(line: string): LineTopic | null {
           score: 4 + topicWords(rest).length,
         };
     } else if (decided?.[1] !== undefined) {
-      const rest = clause(decided[1]);
+      const rest = toDo(decided[1]);
       if (rest !== null)
         found = { text: `your decision to ${rest}`, question: false, score: 4 + topicWords(rest).length };
     } else if (planned?.[1] !== undefined) {
-      const rest = clause(planned[1]);
+      const rest = toDo(planned[1]);
       if (rest !== null)
         found = { text: `your plan to ${rest}`, question: false, score: 3 + topicWords(rest).length };
     } else {
-      found = theirPlan(sentence) ?? doing(sentence);
+      found = theirPlan(sentence) ?? doing(sentence) ?? activity(sentence);
     }
     // What does not read as a subject is not one ("your plan to a few minutes…"): the sentence's phrases are tried.
     if (found !== null && !readsAsSubject(found.text)) found = null;
@@ -655,5 +839,8 @@ export function topicOf(line: string): LineTopic | null {
     if (found !== null && found.text.length <= 70 && (best === null || found.score > best.score))
       best = found;
   }
-  return best === null ? null : { ...best, text: tidyFounderWords(best.text) };
+  if (best === null) return null;
+  // Tidied ("idk" is said "maybe"), then without the discourse words that leaves at its ends.
+  const text = withoutDiscourseWords(tidyFounderWords(best.text));
+  return text === '' ? null : { ...best, text };
 }

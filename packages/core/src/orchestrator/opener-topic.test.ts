@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { addressFounder, isTopicLine, properNounsIn, readsAsSubject, topicOf } from './opener-topic.js';
+import {
+  addressFounder,
+  isTopicLine,
+  properNounsIn,
+  readsAsSubject,
+  topicOf,
+  withoutDiscourseWords,
+} from './opener-topic.js';
 
 const PEOPLE = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad'] };
 
@@ -191,6 +198,137 @@ describe('topicOf: never a fragment (lab run 39780304879, voice suite on acc50c6
 
   it('never ends a phrase on the start of a time ("the advisor last")', () => {
     expect(topicOf('I met the advisor last week, actually.')?.text ?? '').not.toMatch(/\blast$/);
+  });
+});
+
+/** The adverbs and discourse words of a founder's line that say how, when or how sure, never what. */
+const DISCOURSE = [
+  'instead',
+  'too',
+  'also',
+  'anyway',
+  'though',
+  'then',
+  'again',
+  'either',
+  'yet',
+  'already',
+  'now',
+  'later',
+  'first',
+  'really',
+  'maybe',
+  'probably',
+  'just',
+  'actually',
+  'basically',
+  'honestly',
+] as const;
+
+describe('a subject never ends or opens on an adverb or a discourse word (the voice suite on 9a2a41f)', () => {
+  it('rejects one that ends on one ("Hi Maya, want to carry on with a short pilot instead?")', () => {
+    for (const word of DISCOURSE) {
+      for (const subject of [
+        `a short pilot ${word}`,
+        `per-library pricing ${word}`,
+        `your plan to call facilities ${word}`,
+        `whether to charge per seat ${word}`,
+        `the Hartwell pilot, ${word}`,
+        word,
+      ]) {
+        expect(readsAsSubject(subject), subject).toBe(false);
+      }
+    }
+    for (const subject of [
+      'annual pricing as well',
+      'a short pilot or something',
+      'the pilot pricing for now',
+      'the pitch deck so far',
+    ]) {
+      expect(readsAsSubject(subject), subject).toBe(false);
+    }
+  });
+
+  it('rejects one that opens on one ("actually the pilot pricing")', () => {
+    for (const word of DISCOURSE) {
+      expect(readsAsSubject(`${word} the pilot pricing`), word).toBe(false);
+      expect(readsAsSubject(`${word}, per-library pricing`), word).toBe(false);
+    }
+    for (const subject of ['honestly per-seat pricing', 'maybe Hartwell', 'probably fundraising']) {
+      expect(readsAsSubject(subject), subject).toBe(false);
+    }
+  });
+
+  it('keeps an adverb that belongs to the subject: an alternative, a word that modifies the next', () => {
+    for (const subject of [
+      'whether to hire a salesperson now or later',
+      'whether to raise sooner rather than later',
+      'the first library',
+      'first customers',
+      'the later stages of the pilot',
+      'your plan to call facilities on Monday',
+    ]) {
+      expect(readsAsSubject(subject), subject).toBe(true);
+    }
+  });
+
+  it.each([
+    ['a short pilot instead', 'a short pilot'],
+    ['annual pricing too', 'annual pricing'],
+    ['the investor pitch again, honestly', 'the investor pitch'],
+    ['actually the pilot pricing', 'the pilot pricing'],
+    ['maybe a short pilot instead', 'a short pilot'],
+    ['honestly, per-seat pricing', 'per-seat pricing'],
+    ['annual pricing as well', 'annual pricing'],
+    ['a short pilot or something', 'a short pilot'],
+    ['your plan to call facilities now', 'your plan to call facilities'],
+    ['whether to hire a salesperson now or later', 'whether to hire a salesperson now or later'],
+    ['the first library', 'the first library'],
+    ['first customers', 'first customers'],
+    ['the Hartwell pilot', 'the Hartwell pilot'],
+    ['instead', ''],
+  ])('withoutDiscourseWords(%j) is %j', (text, shorter) => {
+    expect(withoutDiscourseWords(text)).toBe(shorter);
+  });
+});
+
+describe('topicOf: never a splice of the founder’s line (the voice suite on 9a2a41f)', () => {
+  it.each([
+    // The lab's call: "Hi Maya, want to carry on with a short pilot instead?"
+    ['Maybe we should do a short pilot instead.', 'a short pilot', false],
+    ['What if we ran a short pilot instead?', 'a short pilot', false],
+    ["Let's do a two-week pilot instead.", 'a two-week pilot', false],
+    ['We might bring on a part-time designer instead.', 'a part-time designer', false],
+    ['We could run a free pilot first.', 'a free pilot', false],
+    ['We probably need a pilot contract first.', 'a pilot contract', false],
+    ['We should practise the investor pitch again.', 'the investor pitch', false],
+    ['Should we charge per seat instead?', 'whether to charge per seat', true],
+    ['Should we maybe run the pilot with Hartwell first?', 'whether to run the pilot with Hartwell', true],
+    ['Is the Hartwell pilot ready yet?', 'whether the Hartwell pilot is ready', true],
+    // An adverb between "I" and the verb of a plan or a decision.
+    ['I still need to finish the investor update.', 'your plan to finish the investor update', false],
+    ["We've finally decided to hire a designer.", 'your decision to hire a designer', false],
+    // A deliberation names what is weighed, never "weighing …" (e2e calls.spec.ts:518 still hears "pric…").
+    ['We are weighing per-library pricing for the pilot.', 'per-library pricing for the pilot', false],
+    ["We're thinking about annual pricing too.", 'annual pricing', false],
+    ["We're thinking of raising a pre-seed round later.", 'raising a pre-seed round', false],
+    ["We're considering whether to raise now or later.", 'whether to raise now or later', true],
+    // A number keeps its thousands: never "raising the price to $1".
+    ['We raised the price to $1,200 per semester.', 'raising the price to $1,200 per semester', false],
+    // A sentence's first word in its everyday case: never "shall we pick up Fundraising?".
+    ['Fundraising is taking too much of my time though.', 'fundraising', false],
+    // A count is said as the one the founder told of: "the five customer interviews".
+    ['I did five customer interviews yesterday.', 'the five customer interviews', false],
+  ])('%s', (line, text, question) => {
+    expect(topicOf(line)).toMatchObject({ text, question });
+  });
+
+  it('never makes a plan of a line that names nothing to do ("your plan to talk")', () => {
+    expect(topicOf('We really need to talk about it soon.')?.text ?? null).toBeNull();
+    // A plan that names something still is one.
+    expect(topicOf('We really need to talk to the dean about the pilot.')?.text).toBe(
+      'your plan to talk to the dean about the pilot',
+    );
   });
 });
 

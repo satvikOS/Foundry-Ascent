@@ -14,6 +14,7 @@ import {
   readsAsSubject,
   topicOf,
   topicWords,
+  withoutDiscourseWords,
   type LineTopic,
   type OpenerPeople,
 } from './opener-topic.js';
@@ -389,6 +390,11 @@ export interface OpenerSubject {
 
 /** Question words: a phrase opening with one is a clause ("where we left off yesterday"), unless it is the question. */
 const WH_START = /^(?:where|what|when|who|whom|why|how|which|whether)(?![\p{L}'])/iu;
+/**
+ * A question the founder asked, as `topicOf` summarises it ("whether you can do the pilot for $500", "how to price
+ * the pilot"): a pronoun and its verb belong in it, so it is no clause fragment.
+ */
+const ASKED = /^(?:whether\s|(?:how|what|which|when|where|who)\s+to\s)/i;
 
 /** Longest phrase read from a stored opener (a greeting shortens it to fit; see calls.ts `repeatGreeting`). */
 const OPENER_PHRASE_CHARS = 120;
@@ -397,7 +403,9 @@ const OPENER_PHRASE_CHARS = 120;
  * What a stored opening sentence is about, read from the shapes openers take, or why it cannot be said: a subject;
  * `fragment` when it has one of those shapes around a clause cut from the founder's line, or around words that do not
  * read as a subject (`readsAsSubject`: "we talked about January"), never said again; null for any other sentence.
- * "Said you'd X", "were going to X" and "planned to X" are a plan: `your plan to X`.
+ * "Said you'd X", "were going to X" and "planned to X" are a plan: `your plan to X`. The phrase is read without the
+ * adverbs at its ends ("we talked about a short pilot instead" is about "a short pilot": the voice suite on 9a2a41f)
+ * and with its numbers whole ("$1.5M", "$1,200").
  */
 export function readOpener(text: string): OpenerSubject | 'fragment' | null {
   const read = readOpenerShape(text);
@@ -412,9 +420,11 @@ function readOpenerShape(text: string): OpenerSubject | 'fragment' | null {
     raw: string | undefined,
     question = false,
   ): { readonly cut: string } | 'fragment' | null => {
-    const cut = (raw ?? '').split(/[.!?;:]|,\s|\s—\s|\s-\s/)[0]?.trim() ?? '';
+    const cut = withoutDiscourseWords(
+      (raw ?? '').split(/(?<!\d)[.:]|[.:](?!\d)|[!?;]|,\s|\s—\s|\s-\s/)[0]?.trim() ?? '',
+    );
     if (cut === '' || cut.length > OPENER_PHRASE_CHARS || topicWords(cut).length === 0) return null;
-    if (isClauseFragment(cut)) return 'fragment';
+    if (isClauseFragment(cut) && !(question && ASKED.test(cut))) return 'fragment';
     // A question word opens a clause ("pick up where we left off yesterday"): a subject only as the question asked.
     return !question && WH_START.test(cut) ? null : { cut };
   };
@@ -521,7 +531,7 @@ export function subjectOf(
   if (news !== null) return news;
   if (options.foundersOwn !== true) {
     const topics = (c.digest?.topics ?? [])
-      .map((t) => addressFounder(midSentence(t).replace(/[.!?]+$/, ''), people))
+      .map((t) => addressFounder(withoutDiscourseWords(midSentence(t).replace(/[.!?]+$/, '')), people))
       .filter((t): t is string => t !== null && t !== '' && t.length <= 60 && options.avoid?.(t) !== true);
     const joined = topics.slice(0, 2).join(' and ');
     if (topics.length > 0 && readsAsSubject(joined)) return { kind: 'topics', text: joined };
@@ -632,8 +642,9 @@ export function continuityOpener(
  * the founder, or null when it cannot be said (still in the third person, nothing to name, too long).
  */
 export function threadSubject(topic: string, people: OpenerPeople = { founder: null }): string | null {
-  // Distilled about the founder ("the facility budget numbers maya will get"): said to them, or not at all (LAB-U2).
-  const thread = addressFounder(midSentence(topic).replace(/[.!?]+$/, ''), people);
+  // Distilled about the founder ("the facility budget numbers maya will get"): said to them, or not at all (LAB-U2);
+  // without an adverb at its ends ("the short pilot instead").
+  const thread = addressFounder(withoutDiscourseWords(midSentence(topic).replace(/[.!?]+$/, '')), people);
   return thread === null || !readsAsSubject(thread) || thread.length > 120 ? null : thread;
 }
 

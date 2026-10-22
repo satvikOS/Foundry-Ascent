@@ -41,7 +41,7 @@ import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
 import { readOpener, type OpenerSubject } from '../orchestrator/continuity-prompt.js';
-import { readsAsSubject, topicWords } from '../orchestrator/opener-topic.js';
+import { readsAsSubject, topicWords, withoutDiscourseWords } from '../orchestrator/opener-topic.js';
 import { chooseOpener } from '../orchestrator/continuity.js';
 import { type DistillService } from './distill.js';
 import { mentionsEir, personaNameClaimsEir, veirEirName } from '../internal/eir-names.js';
@@ -223,12 +223,13 @@ const CUT_BEFORE =
   /\s(?:for|with|at|on|about|before|after|during|by|in|from|via|over|between|across|around)\s/gi;
 
 /**
- * Shorter forms of what an opener is about that still name it, longest first: itself, without a time at its end
- * ("… on Monday"), then cut before each later preposition ("book the Harbour Hall study room for the pilot kickoff" →
- * "book the Harbour Hall study room"), while what is left names something. A greeting too long with the whole
- * phrase says a shorter form instead of dropping it (MX-0022, MX-0024). Only forms that read as a subject
- * (`readsAsSubject`): a lone date, month or single word, or a plan without its verb, is none ("Hi Idris, want to carry
- * on with January?", lab run 39780304879); empty when no form does.
+ * Shorter forms of what an opener is about that still name it, longest first: itself, without a time or an adverb at
+ * its ends ("… on Monday", "a short pilot instead" → "a short pilot": the voice suite on 9a2a41f), then cut before each
+ * later preposition ("book the Harbour Hall study room for the pilot kickoff" → "book the Harbour Hall study room"),
+ * while what is left names something. A greeting too long with the whole phrase says a shorter form instead of
+ * dropping it (MX-0022, MX-0024). Only forms that read as a subject (`readsAsSubject`): a lone date, month or single
+ * word, a plan without its verb, or one that ends on the founder's adverb, is none ("Hi Idris, want to carry on with
+ * January?", lab run 39780304879); empty when no form does.
  */
 export function shorterSubjects(text: string): string[] {
   return candidateSubjects(text).filter(readsAsSubject);
@@ -238,18 +239,15 @@ export function shorterSubjects(text: string): string[] {
 function candidateSubjects(text: string): string[] {
   const out = [text.trim()];
   let current = text.trim();
-  for (let i = 0; i < 3; i += 1) {
-    const timeless = current.replace(TIME_TAIL, '').trim();
+  for (let i = 0; i < 4; i += 1) {
+    const timeless = withoutDiscourseWords(current.replace(TIME_TAIL, '').trim());
     if (timeless === current || timeless === '') break;
     current = timeless;
     out.push(current);
   }
   const cuts = [...current.matchAll(CUT_BEFORE)].map((m) => m.index).reverse();
   for (const at of cuts) {
-    const head = current
-      .slice(0, at)
-      .trim()
-      .replace(/[,;:]+$/, '');
+    const head = withoutDiscourseWords(current.slice(0, at));
     if (head.split(/\s+/).length < 2 || topicWords(head).length === 0) continue;
     // "your plan to call" names no plan.
     if (/^your (?:plan|decision) to \S+$/i.test(head)) continue;

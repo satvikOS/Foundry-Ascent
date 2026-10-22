@@ -3,7 +3,7 @@
  * call may use, the intro and the names it may say, the summary's actions, what unsigned speech requests may
  * say, the crisis message, and the history as the founder heard it.
  */
-import { CRISIS_SPOKEN_MESSAGE, rewriteIdentity, threadWords } from '@foundry/ai';
+import { CRISIS_SPOKEN_MESSAGE, isEverydayWord, rewriteIdentity, threadWords } from '@foundry/ai';
 import { describe, expect, it } from 'vitest';
 
 import { refusalError, timeLimitRefusal, voiceTurnRefusal, type VoiceTurnFacts } from './call-admission.js';
@@ -46,7 +46,14 @@ import {
   splitSentences,
 } from './spoken-text.js';
 import { DEFAULT_SPEECH_VOICE } from './voices.js';
-import { subjectOfOpener, type OpenerSubject } from '../orchestrator/continuity-prompt.js';
+import {
+  continuityOpener,
+  subjectOf,
+  subjectOfOpener,
+  type LeftOffConversationData,
+  type OpenerSubject,
+} from '../orchestrator/continuity-prompt.js';
+import { readsAsSubject, topicOf } from '../orchestrator/opener-topic.js';
 
 const CAPS = { maxCallMinutes: 30, dailyCallMinutesPerPrincipal: 60 };
 
@@ -417,6 +424,61 @@ describe('the call intro', () => {
     }
   });
 
+  it('never ends what it picks up on an adverb of the founder’s line (the voice suite on 9a2a41f)', () => {
+    // The call opened "Hi Maya, want to carry on with a short pilot instead?": the subject was cut from "Maybe we
+    // should do a short pilot instead." and kept its adverb.
+    for (const subject of [
+      { kind: 'topics', text: 'a short pilot instead' },
+      { kind: 'topics', text: 'actually a short pilot' },
+      { kind: 'topics', text: 'a short pilot as well' },
+    ] as const) {
+      for (const seed of ['a', 'b', 'c', 'd', 'e', 'f']) {
+        const greeting = repeatGreetingOf({
+          firstName: 'Maya',
+          opener: 'x',
+          subject,
+          conversationStarted: false,
+          seed,
+        });
+        expect(greeting.text, greeting.text).toMatch(/^Hi Maya, [^,]* a short pilot\?$/);
+        expect(greeting.carriesOpener).toBe(true);
+      }
+    }
+    expect(shorterSubjects('a short pilot instead')).toEqual(['a short pilot']);
+    expect(shorterSubjects('your plan to call facilities again on Monday')).toEqual([
+      'your plan to call facilities again on Monday',
+      'your plan to call facilities',
+    ]);
+    expect(shorterSubjects('a two-week pilot first')).toEqual(['a two-week pilot']);
+    // A stored opener built around it is read without it.
+    const stored =
+      'Good to talk again. Last time (yesterday), we talked about a short pilot instead. How has it gone since?';
+    expect(subjectOfOpener(stored)).toEqual({ kind: 'topics', text: 'a short pilot' });
+    for (const seed of ['a', 'b', 'c', 'd']) {
+      const text = repeatGreeting({ firstName: 'Maya', opener: stored, conversationStarted: false, seed });
+      expect(text).not.toMatch(/instead/);
+      expect(text).toMatch(/a short pilot\?$/);
+    }
+  });
+
+  it('reads a question the founder asked back from a stored opener, "whether you can …" included', () => {
+    // Before: "you can" read as a clause cut from the founder's line, so a call in a conversation that already
+    // opened on it only invited ("Hi Maya, what would you like to work on?").
+    const stored =
+      'Good to talk again. Last time (yesterday), we talked about whether you can do the pilot for $500. Where did you land on it?';
+    expect(subjectOfOpener(stored)).toEqual({
+      kind: 'question',
+      text: 'whether you can do the pilot for $500',
+    });
+    expect(repeatGreeting({ firstName: 'Maya', opener: stored, conversationStarted: false, seed: 'a' })).toBe(
+      'Hi Maya, where did you land on whether you can do the pilot for $500?',
+    );
+    // A clause that is no question asked stays a fragment.
+    expect(
+      subjectOfOpener('Last time, we talked about they will promote us at the fair. How has it gone since?'),
+    ).toBeNull();
+  });
+
   it('frames a greeting with words that raise no thread of their own (kept in step with @foundry/ai threads.ts)', () => {
     for (const subject of [
       { kind: 'thread', text: 'the advisor session and your three questions' },
@@ -625,6 +687,245 @@ describe('the names a call may say', () => {
     expect(mentionsEir('Last time you planned five library-staff interviews. How did they go?', EIRS)).toBe(
       false,
     );
+  });
+});
+
+describe('the next call’s greeting after a founder line (the voice suite on 9a2a41f: no splice of their words)', () => {
+  const NOW = new Date('2026-10-22T15:00:00Z');
+  const PEOPLE = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad'] };
+  const SEEDS = ['a', 'b', 'c', 'd', 'e', 'f'];
+  /** What the call says when the last call named nothing to pick up: the generic opener, in one sentence. */
+  const INVITATION = 'Hi Maya, want to pick up where we left off yesterday, or start on something new?';
+  /** The adverbs and discourse words of a founder's line: never the last word of what a greeting picks up. */
+  const DISCOURSE_END =
+    /\b(?:instead|too|also|anyway|though|then|again|either|yet|already|now|later|first|really|maybe|probably|just|actually|basically|honestly|well|something)\?$/i;
+  const DAYS_AND_MONTHS =
+    /^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December)$/;
+
+  /**
+   * The greeting of a call the day after a call in which the founder said `line` and nothing was distilled yet, the
+   * way a call starts (continuity.ts `chooseOpener`, then `callIntro`): the opener around the conversation's subject
+   * (`subjectOf`: `topicOf`, said to the founder, `readsAsSubject`), else the generic one; the greeting phrased around
+   * that subject (`repeatGreetingOf`, its forms from `shorterSubjects`). `stored`: the same greeting read back from the
+   * stored opener sentence (a call in a conversation that already opened).
+   */
+  function nextGreeting(line: string, seed: string): { readonly chosen: string; readonly stored: string } {
+    const latest: Pick<
+      LeftOffConversationData,
+      'digest' | 'title' | 'exchanges' | 'said' | 'channel' | 'lastActivityAt' | 'withThisVeir'
+    > = {
+      digest: null,
+      title: null,
+      exchanges: [{ founder: line, answer: 'Good. What would make that a clear yes for them?' }],
+      said: [line],
+      channel: 'call',
+      lastActivityAt: '2026-10-21T15:00:00Z',
+      withThisVeir: true,
+    };
+    const lines = continuityOpener(latest, { now: NOW, seed: `opener-${seed}`, people: PEOPLE });
+    const subject = lines.withTopic === null ? null : subjectOf(latest, PEOPLE);
+    const opener = lines.withTopic ?? lines.generic;
+    const greet = (about?: OpenerSubject | null) =>
+      repeatGreetingOf({
+        firstName: 'Maya',
+        opener,
+        ...(about === undefined ? {} : { subject: about }),
+        conversationStarted: false,
+        seed,
+      }).text;
+    return { chosen: greet(subject), stored: greet() };
+  }
+
+  /** A greeting that reads as one natural sentence (the e2e's rules, calls.spec.ts:518, and the lab's). */
+  function expectNatural(text: string): void {
+    expect(text).toMatch(/^Hi Maya, \p{Ll}/u);
+    expect(text).toMatch(/\?$/);
+    expect(text.split(/(?<=[.!?])\s+/)).toHaveLength(1);
+    expect(text.length).toBeLessThanOrEqual(REPEAT_GREETING_MAX_CHARS);
+    // Never the founder's adverb at its end ("…a short pilot instead?"), unless it is an alternative ("now or later?").
+    if (!/\b(?:or|than) \S+\?$/.test(text)) expect(text).not.toMatch(DISCOURSE_END);
+    // Never a word that needs what follows ("…the study room for?"), nor a cut number ("…the price to $1?").
+    expect(text).not.toMatch(/\b(?:a|an|the|to|of|for|with|and|or|your|my|our|their|at|on|in)\?$/i);
+    expect(text).not.toMatch(/[$€£]\d{1,2}\?$/);
+    // Never a clause spliced in as the topic (calls.spec.ts:518); the generic opener's "where we left off" and a
+    // question's "how to …" are no splice.
+    if (text !== INVITATION) {
+      expect(text).not.toMatch(
+        /\b(?:how did|with|pick up|carry on with|land on) (?:where|what|when|how(?! to)|who|they|we|it|email|call|weighing|thinking)\b/i,
+      );
+    }
+    // Said to the founder: never their "I", "my" or "our".
+    expect(text.slice('Hi Maya, '.length)).not.toMatch(/\b(?:I|I'm|me|my|our)\b/);
+    // Never an everyday word capitalised mid-sentence ("…pick up Fundraising?"): names and dates only.
+    for (const m of text.slice('Hi Maya, '.length).matchAll(/(?<![\p{Lu}][\p{L}]* )\b\p{Lu}\p{Ll}+\b/gu)) {
+      const word = m[0];
+      if (DAYS_AND_MONTHS.test(word)) continue;
+      expect(isEverydayWord(word) || word.endsWith('ing'), `${word} in "${text}"`).toBe(false);
+    }
+  }
+
+  it.each([
+    // Pricing.
+    [
+      'We are weighing per-library pricing for the pilot.',
+      'Hi Maya, shall we pick up per-library pricing for the pilot?',
+    ],
+    ['Maybe we should do a short pilot instead.', 'Hi Maya, shall we pick up a short pilot?'],
+    ['Should we charge per seat instead?', 'Hi Maya, where did you land on whether to charge per seat?'],
+    ['I think per-seat pricing is too complicated anyway.', 'Hi Maya, shall we pick up per-seat pricing?'],
+    ["We're thinking about annual pricing too.", 'Hi Maya, shall we pick up annual pricing?'],
+    ['Honestly the pricing page needs work.', 'Hi Maya, shall we pick up the pricing page?'],
+    [
+      'Should we price per library or per seat?',
+      'Hi Maya, where did you land on whether to price per library or per seat?',
+    ],
+    [
+      'We raised the price to $1,200 per semester.',
+      'Hi Maya, shall we pick up raising the price to $1,200 per semester?',
+    ],
+    ['Actually the pilot pricing is basically done.', 'Hi Maya, shall we pick up the pilot pricing?'],
+    ['What do you think about per-seat pricing instead?', 'Hi Maya, shall we pick up per-seat pricing?'],
+    ['Pricing per seat seems simpler, honestly.', 'Hi Maya, shall we pick up pricing per seat?'],
+    [
+      "I'm still figuring out the pricing for the pilot.",
+      'Hi Maya, shall we pick up the pricing for the pilot?',
+    ],
+    [
+      'We signed Hartwell for $12,000 a year!',
+      'Hi Maya, shall we pick up signing Hartwell for $12,000 a year?',
+    ],
+    [
+      'Could we do the pilot for $500 instead?',
+      'Hi Maya, where did you land on whether you can do the pilot for $500?',
+    ],
+    // Pilots.
+    ['The Hartwell pilot starts next month.', 'Hi Maya, shall we pick up the Hartwell pilot?'],
+    ['We could run a free pilot first.', 'Hi Maya, shall we pick up a free pilot?'],
+    ["Let's do a two-week pilot instead.", 'Hi Maya, shall we pick up a two-week pilot?'],
+    [
+      'I want to propose a smaller pilot to the dean though.',
+      'Hi Maya, shall we pick up your plan to propose a smaller pilot to the dean?',
+    ],
+    ['The dean wants a cheaper pilot, though.', 'Hi Maya, shall we pick up a cheaper pilot?'],
+    ['We probably need a pilot contract first.', 'Hi Maya, shall we pick up a pilot contract?'],
+    [
+      'Is the Hartwell pilot ready yet?',
+      'Hi Maya, where did you land on whether the Hartwell pilot is ready?',
+    ],
+    // Hiring.
+    ['We need to hire a designer soon.', 'Hi Maya, shall we pick up your plan to hire a designer soon?'],
+    [
+      'Should we hire a salesperson now or later?',
+      'Hi Maya, where did you land on whether to hire a salesperson now or later?',
+    ],
+    [
+      'Hiring a full-time engineer feels risky right now.',
+      'Hi Maya, shall we pick up hiring a full-time engineer?',
+    ],
+    [
+      "We've finally decided to hire a designer.",
+      'Hi Maya, shall we pick up your decision to hire a designer?',
+    ],
+    // Interviews.
+    ['I did five customer interviews yesterday.', 'Hi Maya, shall we pick up the five customer interviews?'],
+    [
+      "I'm planning to run more interviews at the bus station.",
+      'Hi Maya, shall we pick up your plan to run more interviews at the bus station?',
+    ],
+    ['The interviews with librarians were really useful.', INVITATION],
+    ['Interviews are going slower than I hoped.', INVITATION],
+    // A cofounder.
+    [
+      'My cofounder wants to quit his job and go full-time in January.',
+      "Hi Maya, shall we pick up your cofounder's plan to go full-time in January?",
+    ],
+    [
+      "I'm worried about the cofounder equity split, honestly.",
+      'Hi Maya, shall we pick up the cofounder equity split?',
+    ],
+    [
+      "We still haven't signed a cofounder agreement either.",
+      'Hi Maya, shall we pick up a cofounder agreement?',
+    ],
+    ['My cofounder and I disagree on equity again.', INVITATION],
+    // Fundraising.
+    [
+      "We're thinking of raising a pre-seed round later.",
+      'Hi Maya, shall we pick up raising a pre-seed round?',
+    ],
+    [
+      'Should we raise money now or wait?',
+      'Hi Maya, where did you land on whether to raise money now or wait?',
+    ],
+    ['Fundraising is taking too much of my time though.', 'Hi Maya, shall we pick up fundraising?'],
+    ["We're raising a small round now.", 'Hi Maya, shall we pick up raising a small round?'],
+    ['We have about $50k left in the bank.', INVITATION],
+    [
+      'Honestly, we should probably just raise a small round now.',
+      'Hi Maya, shall we pick up a small round?',
+    ],
+    [
+      'I still need to finish the investor update.',
+      'Hi Maya, shall we pick up your plan to finish the investor update?',
+    ],
+    // Competition.
+    [
+      'How should we position against StudySpot?',
+      'Hi Maya, where did you land on how to position against StudySpot?',
+    ],
+    ['QuietQuad is raising their prices too.', 'Hi Maya, shall we pick up QuietQuad?'],
+    ['A competitor just launched the same feature.', INVITATION],
+    ['The competition is getting fiercer though.', INVITATION],
+    [
+      "We're looking into a partnership with Hartwell as well.",
+      'Hi Maya, shall we pick up a partnership with Hartwell?',
+    ],
+    // The pitch.
+    ["I'm pitching at demo day on Friday.", 'Hi Maya, shall we pick up pitching at demo day on Friday?'],
+    ['Can you help me tighten the pitch deck?', 'Hi Maya, shall we pick up the pitch deck?'],
+    [
+      'I need to rewrite the pitch deck before the accelerator interview.',
+      'Hi Maya, shall we pick up your plan to rewrite the pitch deck?',
+    ],
+    ['We should practise the investor pitch again.', 'Hi Maya, shall we pick up the investor pitch?'],
+    ['Our pitch is probably too long.', 'Hi Maya, shall we pick up your pitch?'],
+    ['The pitch went badly, really.', INVITATION],
+  ])('%s', (line, expected) => {
+    expect(nextGreeting(line, 'a').chosen).toBe(expected);
+    // What it picks up: the founder line's topic (`topicOf`), or a shorter form of it that fits.
+    const said = /^Hi Maya, (?:shall we pick up|where did you land on) (.+)\?$/.exec(expected)?.[1] ?? null;
+    if (said !== null) {
+      const topic = topicOf(line)?.text ?? '';
+      expect(readsAsSubject(topic), topic).toBe(true);
+      expect(shorterSubjects(topic)[0]).toBe(topic);
+      expect(topic.startsWith(said), `${said} of ${topic}`).toBe(true);
+    }
+    // Whatever the phrasing (the seed), one natural sentence that picks up the same thing, and the same when read
+    // back from the stored opener.
+    for (const seed of SEEDS) {
+      const { chosen, stored } = nextGreeting(line, seed);
+      expectNatural(chosen);
+      expect(stored).toBe(chosen);
+      expect(said === null ? chosen === INVITATION : chosen.endsWith(` ${said}?`), chosen).toBe(true);
+    }
+  });
+
+  it('greets around "pric…" after "We are weighing per-library pricing for the pilot." (e2e calls.spec.ts:518)', () => {
+    // The e2e's first call says the line with a run token after it; the second call minutes later, undistilled.
+    for (const seed of SEEDS) {
+      const { chosen } = nextGreeting(
+        'We are weighing per-library pricing for the pilot. e2e-mh2k3l9x-q4zt',
+        seed,
+      );
+      expect(chosen).toMatch(/^Hi Maya, /);
+      expect(chosen.length).toBeLessThanOrEqual(90);
+      expect(chosen).not.toContain('what would you like to work on?');
+      expect(chosen).toMatch(/pric/i);
+      expect(chosen).not.toMatch(
+        /\b(?:how did|with|pick up|carry on with|land on) (?:where|what|when|how|who|they|we|it|email|call)\b/i,
+      );
+      expect(chosen).toMatch(/per-library pricing for the pilot\?$/);
+    }
   });
 });
 
