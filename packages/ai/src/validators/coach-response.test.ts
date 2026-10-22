@@ -512,6 +512,31 @@ describe('identity', () => {
     expect(later.blocked).toBe(false);
   });
 
+  it('takes a made-up life out of the answer to banter about it, typed and on a call (evals MX-0032, G14)', () => {
+    const veir = opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
+    const founderText = 'lowkey, how was your weekend?';
+    const answer = 'Thanks for asking! Mine was good. How was yours?';
+    const typed = validateCoachResponse(base({ answer }), { ...veir, founderText });
+    expect(typed.response.answer).toBe('Thanks for asking! How was yours?');
+    expect(typed.results.notes).toContain('identity_rewritten:1:claims_human');
+    expect(typed.blocked).toBe(false);
+    const call = validateCoachResponse(base({ answer, spoken: answer }), {
+      ...veir,
+      channel: 'voice',
+      founderText,
+    });
+    expect(call.response.spoken).toBe('Thanks for asking! How was yours?');
+    // A reply that was nothing but the life turns the question back, never the empty-answer line.
+    const only = validateCoachResponse(base({ answer: 'Weekend was good.' }), { ...veir, founderText });
+    expect(only.response.answer).toBe('Thanks for asking! How was yours?');
+    // Without the founder asking, "mine" is ordinary coaching.
+    const coaching = 'Mine was a guess at first, too. Test the price with three libraries.';
+    expect(
+      validateCoachResponse(base({ answer: coaching }), { ...veir, founderText: 'Is £4 too much?' }).response
+        .answer,
+    ).toBe(coaching);
+  });
+
   it('drops a field that was only a disclaimer instead of writing a line meant for the founder into it', () => {
     const out = validateCoachResponse(
       base({
