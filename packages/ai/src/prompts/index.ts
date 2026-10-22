@@ -6,6 +6,7 @@ export { buildMessages } from './messages.js';
 export type { BuildMessagesOptions, HistoryTurn } from './messages.js';
 export {
   MAX_PROMPT_DIGESTS,
+  PAST_DUE_NOTE,
   SHORT_REPLY_WORDS,
   buildContinuityBlock,
   buildRetrievalQuery,

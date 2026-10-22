@@ -73,6 +73,10 @@ export function conversationCraftRules(channel: TurnChannel): string {
     '- Answer what they asked, first: a direct question (this or that, yes or no) gets one pick and why; asked for a',
     '  number, a reasoned range. Act at once on what they say about their time or mood. Their news comes first:',
     '  react and ask about it, never parked for your agenda.',
+    // Production, 2026-10-20: "You tell me" twice and "help me prepare for the pitch" got the same question back
+    // five replies in a row; the doctrine's "one sharp question at a time" was read as "only questions".
+    '- Asked for help or stuck ("you tell me", "I don\'t know"): do the work. Give the thing itself (a draft, options,',
+    '  an example, first steps), then check it fits; never hand their question back.',
     '- Never repeat yourself: no advice, paragraph or question already said in this conversation, the last one or',
     '  your greeting; a new message gets a new reply. Never re-ask what they answered or did not take up.',
     '- Affirm only something specific they did. Pushed back on, engage with their reason: concede, adjust or explain',
@@ -95,8 +99,9 @@ export function conversationCraftRules(channel: TurnChannel): string {
   ];
   if (channel === 'voice') {
     lines.push(
-      '- On a call, talk the way people speak (see "Voice call"): the answer first, "So…" instead of lists. Say doubt',
-      '  plainly ("I\'m not sure yet, but…"); never read out caveats, labels or citation ids.',
+      // Production, 2026-10-20: the quoted "So…" opened every call reply ("So the pitch competition is coming up.").
+      '- On a call, talk the way people speak (see "Voice call"): the answer first; a short spoken sequence (first…,',
+      '  then…) instead of a list. Say doubt plainly; never read out caveats, labels or citation ids.',
     );
   }
   return lines.join('\n');
@@ -104,5 +109,6 @@ export function conversationCraftRules(channel: TurnChannel): string {
 
 /** How the reply sounds on a call (the streamed spoken reply of phase A, and `spoken`). */
 export const SPOKEN_REGISTER =
-  'Write it as speech, not cut from a longer answer: two or three short sentences with contractions, the answer first, ' +
-  'ending by handing the turn back with one question or a clear invitation (unless they are wrapping up).';
+  'Write it as speech, not cut from a longer answer: short sentences with contractions, the answer first (when they ' +
+  'asked for something, most of the reply is that thing), ending by handing the turn back with one short question or ' +
+  'a clear invitation (unless they are wrapping up).';

@@ -99,6 +99,8 @@ export function buildMessages(
     ...(options.maxContinuityChars !== undefined ? { maxChars: options.maxContinuityChars } : {}),
     // What the vEIR already said here: an open commitment it raised is not pushed again (LAB-R8).
     saidInConversation: [...completed.map((t) => t.answer), options.opener ?? null],
+    // Once the conversation is under way, the notebook's opener has done its job.
+    conversationStarted: completed.length > 0 || (options.opener ?? '').trim() !== '',
   });
   const state =
     options.conversationState === false

@@ -75,10 +75,22 @@ export interface ContinuityBlockOptions {
    * three times in one conversation, over their news).
    */
   saidInConversation?: readonly (string | null | undefined)[];
+  /**
+   * The conversation is under way (its opener was said, or the founder and the vEIR have spoken): the notebook's
+   * `next_opener` was for its start and is left out, so the vEIR does not keep steering back to it (production,
+   * 2026-10-16 to 10-20: five calls in a row came back to the same opener thread whatever the founder raised).
+   */
+  conversationStarted?: boolean;
 }
 
-/** A note that an open commitment was already raised in this conversation. */
+/** A note that an open commitment or open question was already raised in this conversation. */
 export const RAISED_NOTE = 'already raised in this conversation: not again unless they bring it up';
+
+/**
+ * How a commitment whose date has passed is marked: it may well be done, so the vEIR asks how it went instead of
+ * calling it still open (production, 2026-10-20: an advisor session due 10-13 was "still open" a week later).
+ */
+export const PAST_DUE_NOTE = 'date passed: it may be done, so ask how it went; never call it still open';
 
 /**
  * Whether `commitment` was already raised in what was said: one reply (or the opener) holds two of its content words,
@@ -139,12 +151,20 @@ export function openCommitmentsOf(continuity: PromptContinuity): PromptCommitmen
   return out;
 }
 
-function entries(items: readonly NotebookEntry[] | undefined, max: number): string[] {
+/** `said`: what the vEIR already said in this conversation; an entry it raised there is marked so. */
+function entries(
+  items: readonly NotebookEntry[] | undefined,
+  max: number,
+  said: readonly (string | null | undefined)[] = [],
+): string[] {
   return (items ?? [])
     .map((e) => e.text.trim())
     .filter((t) => t !== '')
     .slice(0, max)
-    .map((t) => `- ${escapeData(truncate(t.replace(/\s+/g, ' '), MAX_ENTRY_CHARS))}`);
+    .map((t) => {
+      const note = said.length > 0 && raisedIn(t, said) ? ` [${RAISED_NOTE}]` : '';
+      return `- ${escapeData(truncate(t.replace(/\s+/g, ' '), MAX_ENTRY_CHARS))}${note}`;
+    });
 }
 
 function section(tag: string, lines: readonly string[]): string[] {
@@ -158,8 +178,8 @@ function commitmentLine(
   raised = false,
 ): string {
   const due = isoDate(c.due);
-  const overdue = today !== null && due !== null && due < today;
-  const when = due === null ? '' : ` (due ${due}${overdue ? ', overdue' : ''})`;
+  const past = today !== null && due !== null && due < today;
+  const when = due === null ? '' : ` (due ${due}${past ? `, ${PAST_DUE_NOTE}` : ''})`;
   const note = raised ? ` [${RAISED_NOTE}]` : '';
   return `- ${escapeData(truncate(c.text.replace(/\s+/g, ' ').trim(), MAX_ENTRY_CHARS))}${when}${note}`;
 }
@@ -227,7 +247,7 @@ export function buildContinuityBlock(
   const maxChars = Math.max(500, options.maxChars ?? 6_000);
   const nb = continuity.notebook ?? null;
 
-  const opener = nb?.nextOpener?.trim() ?? '';
+  const opener = options.conversationStarted === true ? '' : (nb?.nextOpener?.trim() ?? '');
   const summary = nb?.summary.trim() ?? '';
   const core: string[] = [];
   if (summary !== '')
@@ -240,7 +260,7 @@ export function buildContinuityBlock(
 
   // Optional parts in the order they are given up when the block is too long (last dropped first).
   const profile = section('founder_profile', entries(nb?.founderProfile, MAX_ENTRIES.founderProfile));
-  const questions = section('open_questions', entries(nb?.openQuestions, MAX_ENTRIES.openQuestions));
+  const questions = section('open_questions', entries(nb?.openQuestions, MAX_ENTRIES.openQuestions, said));
   const advice = section('last_advice', entries(nb?.lastAdvice, MAX_ENTRIES.lastAdvice));
   const sortedDigests = [...(continuity.recentDigests ?? [])]
     .sort((a, b) => (isoDate(b.date) ?? '').localeCompare(isoDate(a.date) ?? ''))
@@ -339,7 +359,11 @@ export function lastQuestionOf(answer: string): string | null {
 /**
  * Retrieval query that understands the conversation: the founder's message; when it is a short reply
  * (under 12 words, such as "yes, the second one"; never a question of their own) the question the vEIR just
- * asked; and the current goal. Citation keys, Markdown, link targets and URLs are stripped from what is added.
+ * asked; and, for a message with no subject of its own ("Sure", "You tell me"), the current goal. A message about
+ * something of its own never gets the goal: production, 2026-10-16 to 10-20, every turn's evidence was pulled
+ * toward the venture goal (the reimbursement pathway) whatever the founder asked about (a pitch competition, their
+ * own ambitions), and every reply steered back to it. Citation keys, Markdown, link targets and URLs are stripped
+ * from what is added.
  */
 export function buildRetrievalQuery(input: RetrievalQueryInput): string {
   const parts = [input.founderText.trim()];
@@ -352,6 +376,7 @@ export function buildRetrievalQuery(input: RetrievalQueryInput): string {
     if (question !== null) parts.push(question);
   }
   const goal = plainText(input.currentGoal ?? '');
-  if (goal !== '') parts.push(truncate(goal, MAX_GOAL_CHARS));
+  const ownSubject = contentWords(parts[0] ?? '').size >= 2;
+  if (goal !== '' && !ownSubject) parts.push(truncate(goal, MAX_GOAL_CHARS));
   return parts.filter((p) => p !== '').join('\n');
 }

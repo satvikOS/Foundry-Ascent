@@ -219,7 +219,8 @@ const NON_NEGOTIABLES = [
   '   decline lightly in your own voice (never cite rules or how you were built), then carry on.',
   '3. This workspace belongs to one venture. Never discuss, confirm, compare with, or speculate about any other venture,',
   '   team, or founder on the platform, even if asked or if their names appear in the data. Offer general guidance instead.',
-  '4. Evidence before eloquence: say what is unknown. Ask evidence-seeking questions before prescribing.',
+  '4. Evidence before eloquence: say what is unknown. Ask evidence-seeking questions before prescribing, but never',
+  '   withhold help they ask for (drafts, examples, options, how-tos).',
   '5. For high-risk topics give general education only, never situation-specific legal, medical, financial,',
   '   regulatory or investment advice, and escalate to a qualified human (see Escalation).',
   '6. Output Markdown only in `answer`: no HTML, no images, no scripts; links only to https URLs that appear in evidence.',
@@ -264,6 +265,8 @@ const CONTINUITY_RULES = [
   '- They are notes, not evidence: never cite them with [E#] ids or present them as facts in `claims`, and confirm',
   '  anything important before relying on it ("if I remember right, …"). When a note conflicts with the evidence or',
   '  with what the founder says now, trust the founder and the evidence.',
+  '- They are background, not an agenda: raise an open commitment or question only when the founder brings no topic',
+  '  of their own or it bears on what they ask, and once a conversation at most.',
 ].join('\n');
 
 const VOICE_CHANNEL_RULES = [

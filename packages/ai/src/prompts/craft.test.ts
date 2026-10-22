@@ -186,8 +186,12 @@ describe('conversation craft in the system prompt', () => {
     // evidence keys appeared in 5 of 9 call transcripts.
     const voice = buildSystemPrompt({ ...INPUT, channel: 'voice' });
     const call = section(voice, 'Voice call');
-    expect(call).toContain('Write it as speech, not cut from a longer answer: two or three short sentences');
-    expect(call).toContain('ending by handing the turn back with one question or a clear invitation');
+    expect(call).toContain(
+      'Write it as speech, not cut from a longer answer: short sentences with contractions',
+    );
+    // Production, 2026-10-20: "two or three short sentences" ending in a question left no room for the help asked for.
+    expect(call).toContain('(when they asked for something, most of the reply is that thing)');
+    expect(call).toContain('ending by handing the turn back with one short question or a clear invitation');
     expect(call).toContain('and no caveats or labels read out');
     expect(call).toContain(
       '`answer` is the transcript of that reply: the same words, in plain sentences, with no [E#] ids.',
@@ -250,13 +254,14 @@ describe('conversation craft in the system prompt', () => {
     // Raised for the wave 6 lab's rules (direct answers, pushback, venting, short replies): about 70 tokens; and by 20
     // for wave 7 (LAB-R8: the founder's news first; "the cheapest test" banned with the other stock phrases). What
     // only some turns need (news, sarcasm, a number asked for) is said in <conversation_state> on those turns only.
-    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(740);
-    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(800);
-    expect(tokens(craft)).toBeLessThanOrEqual(750);
+    // And by 60 for help first (production calls, 2026-10-20: "you tell me" got the same question back five times).
+    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(800);
+    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(860);
+    expect(tokens(craft)).toBeLessThanOrEqual(810);
   });
 
   it('is part of the versioned policy', () => {
-    // 2026-10-18.3: wave 7's craft (w7-ai, 2026-10-18.2) merged with the honesty hotfix (LAB-M15/M16, 2026-10-17.2).
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-18.3');
+    // 2026-10-22.1: help first, notes as background (production calls, 2026-10-16 to 10-20).
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-22.1');
   });
 });
