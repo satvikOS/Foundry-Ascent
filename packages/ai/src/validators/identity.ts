@@ -75,6 +75,8 @@ interface IdentityPattern {
   accept?: (text: string, match: RegExpExecArray) => boolean;
   /** Like `accept`, with the call's context (who the text may address). */
   acceptIn?: (text: string, match: RegExpExecArray, ctx: PatternContext) => boolean;
+  /** What the sentence becomes instead of the kind's replacement ('' removes it). */
+  replacement?: string;
 }
 
 /** Word boundaries that know Unicode (letters, marks, digits and "_" continue a word). */
@@ -191,6 +193,23 @@ const BASE_PATTERNS: readonly IdentityPattern[] = [
     ),
     acceptIn: (text, m, ctx) =>
       assertive(text, m.index, m.index + m[0].length) && !inDraft(text, m.index, ctx.addressees),
+  },
+  // Claims a life of its own (evals MX-0032: "ngl, how was ur weekend?" got "My weekend was good, thanks. How was
+  // yours?"). The sentence is removed, not answered with what the coach is: banter gets a light line that turns to the
+  // founder, never identity talk (the owner's presence direction), and never an invented life.
+  {
+    ...p(
+      'claims_human',
+      'personal_life',
+      [
+        `my\\s+(?:(?:long|lazy|quiet|busy)\\s+)?(?:weekend|vacation|holiday|day\\s+off|evening|night|summer|commute|morning\\s+coffee|family|kids|wife|husband|partner|boyfriend|girlfriend|dog|cat|parents|mom|mum|dad)\\s+(?:was|were|has\\s+been|have\\s+been|went)`,
+        `I\\s+(?:had|spent)\\s+(?:a|an|my|the)\\s+(?:(?:great|good|lovely|nice|quiet|busy|relaxing|fun|long|lazy|wonderful)\\s+)?(?:weekend|vacation|holiday|day\\s+off|evening|night\\s+out|break|time\\s+off)`,
+        `I\\s+(?:(?:just|finally)\\s+)?(?:went|got\\s+back\\s+from)\\s+(?:on\\s+)?(?:a\\s+)?(?:hike|run|trip|vacation|holiday|camping|skiing|the\\s+beach|the\\s+gym|the\\s+movies|brunch|dinner\\s+with)`,
+      ].join('|'),
+    ),
+    acceptIn: (text, m, ctx) =>
+      assertive(text, m.index, m.index + m[0].length) && !inDraft(text, m.index, ctx.addressees),
+    replacement: '',
   },
   // Claims to be (or speak as) an EIR / mentor.
   p(
@@ -2202,8 +2221,15 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
         const accepted =
           (!pat.accept || pat.accept(current, m)) && (!pat.acceptIn || pat.acceptIn(current, m, ctx));
         re.lastIndex = lastIndex;
-        if (accepted)
-          hits.push({ start: m.index, end: m.index + m[0].length, kind: pat.kind, rule: pat.rule });
+        if (accepted) {
+          hits.push({
+            start: m.index,
+            end: m.index + m[0].length,
+            kind: pat.kind,
+            rule: pat.rule,
+            ...(pat.replacement === undefined ? {} : { replacement: pat.replacement }),
+          });
+        }
       }
     }
     if (options.checkHumanClaims !== false) {
@@ -2243,11 +2269,21 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
     let next = '';
     let cursor = 0;
     let lastReplacement: string | null = null;
+    // A sentence taken out (replacement ''): the space after it goes too.
+    let removed = false;
     for (const span of spans) {
       findings.push({ kind: span.hit.kind, rule: span.hit.rule });
-      const between = current.slice(cursor, span.start);
+      let between = current.slice(cursor, span.start);
+      if (removed) between = between.replace(/^[ \t]+/, '');
       const replacement = span.hit.replacement ?? replacementFor(span.hit.kind);
       cursor = span.end;
+      if (replacement === '') {
+        next += between;
+        removed = true;
+        lastReplacement = replacement;
+        continue;
+      }
+      removed = false;
       // The same replacement twice in a row says it once.
       if (replacement === lastReplacement && between.trim() === '') continue;
       const before = between === '' ? next : between;
@@ -2255,8 +2291,10 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
       next += `${between}${lead}${replacement}`;
       lastReplacement = replacement;
     }
-    const after = current.slice(cursor);
-    current = `${next}${after === '' || /^\s/.test(after) ? '' : ' '}${after}`;
+    let after = current.slice(cursor);
+    if (removed) after = after.replace(/^[ \t]+/, '');
+    const join = after === '' || /^\s/.test(after) || (removed && (next === '' || /\s$/.test(next)));
+    current = `${next}${join ? '' : ' '}${after}`;
     persona = personaRanges(current, options.personaName);
   }
 

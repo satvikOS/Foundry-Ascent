@@ -761,6 +761,28 @@ describe('rewriteIdentity — presence: the twin speaks as itself and never apol
     }
   });
 
+  it.each([
+    ['Thanks for asking! My weekend was good, thanks. How was yours?', 'Thanks for asking! How was yours?'],
+    ['Ha, I had a lovely weekend. What did you get up to?', 'What did you get up to?'],
+    ['I just got back from a hike. Anyway, how did the pilot go?', 'Anyway, how did the pilot go?'],
+  ])('takes out a made-up life of its own, without identity talk (evals MX-0032): %j', (text, expected) => {
+    for (const spoken of [false, true]) {
+      const out = rewriteIdentity(text, { ...CORIN, spoken });
+      expect(out.findings).toEqual([{ kind: 'claims_human', rule: 'personal_life' }]);
+      expect(out.text).toBe(expected);
+      expect(out.text).not.toContain('digital twin');
+    }
+  });
+
+  it.each([
+    'How was your weekend? Mine is all about your pilot this week.',
+    'Draft: "Hi Dana, my weekend was busy, so I missed your note."',
+    'Did you have a good weekend?',
+    'Your family was right to ask about the price.',
+  ])('leaves the founder’s life, a question and a draft alone: %j', (text) => {
+    expect(rewriteIdentity(text, { ...CORIN, addressees: ['Dana'] }).findings).toEqual([]);
+  });
+
   it('rewrites 1,200 disclaimers in linear time', () => {
     const text = (count: number): string =>
       Array.from({ length: count }, (_, i) =>

@@ -137,7 +137,11 @@ describe('program guidance for a definitional question (LAB-C1)', () => {
     const gateway = new MockModelGateway({
       streamDelayMs: 0,
       streamFixture: (context) => {
-        seen.push(context.messages.at(-1)?.content ?? '');
+        const last = context.messages.at(-1)?.content ?? '';
+        // The same line twice is left out and written anew: that request is not a turn's prompt.
+        if (last.includes('<continue_request>'))
+          return 'Start with the one result that would change your plan.';
+        seen.push(last);
         return 'What would you test first, and what result would change your plan?';
       },
     });

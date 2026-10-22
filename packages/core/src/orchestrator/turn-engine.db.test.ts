@@ -13,6 +13,7 @@ import {
   CROSS_VENTURE_BLOCK_ANSWER,
   MockModelGateway,
   NARROWING_NOTE_PREFIX,
+  REPEAT_FALLBACK,
   SPOKEN_HAND_BACKS,
   STRESSED_HAND_BACKS,
   mockCoachResponse,
@@ -1345,6 +1346,41 @@ describe('conversation craft the lab still heard (wave 7)', () => {
       // Asked once, told what it said and what was left out as already said.
       expect(continued).toHaveLength(1);
       expect(continued[0]).toContain('Left out as already said: Ask three students');
+    }
+  });
+
+  it('a reply that is only the previous one again is written anew, never a stock line (lab run 39782458522)', async () => {
+    const repeat =
+      "Ask three students what they'd give up to skip the group chat and the walking. That's the price signal you need before the pilot starts.";
+    for (const channel of ['text', 'voice'] as const) {
+      const anew: string[] = [];
+      const gateway = new MockModelGateway({
+        streamDelayMs: 0,
+        streamFixture: (context) => {
+          const last = context.messages.at(-1)?.content ?? '';
+          if (last.includes('<continue_request>')) {
+            anew.push(context.messages.at(-2)?.content ?? '');
+            return 'Those two asks still stand. Then book both chats for Thursday. Does that work?';
+          }
+          return repeat;
+        },
+      });
+      const { core, orchestrator } = coreWith(gateway);
+      const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+      await run(orchestrator, session.id, { text: 'How do we find the price signal?', mode: 'coach' });
+      const { events } = await run(orchestrator, session.id, {
+        text: 'You tell me what I should ask.',
+        mode: 'coach',
+        ...(channel === 'voice' ? { channel, callId: CALL_ID } : {}),
+      });
+      const shown = deltas(events)
+        .map((d) => d.text)
+        .join('')
+        .trim();
+      expect(shown).toBe('Those two asks still stand. Then book both chats for Thursday. Does that work?');
+      expect(shown).not.toContain(REPEAT_FALLBACK);
+      // Written anew from its own draft, which stood in the reply's place.
+      expect(anew).toEqual([repeat]);
     }
   });
 

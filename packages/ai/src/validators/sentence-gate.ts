@@ -121,8 +121,14 @@ export interface SentenceGateOptions {
    * reply is what was shown). The first unit is always released.
    */
   replyBudget?: { readonly sentences: number; readonly words: number } | null;
-  /** Keep the text of every unit left out in `trace.dropped` (the conversation lab's stream trace only). */
+  /** Keep the text of every unit left out in `trace.dropped` (for the caller's continuation, and the lab's trace). */
   keepDropped?: boolean;
+  /**
+   * The caller goes on with a reply this gate left with nothing (or only a lead-in) after leaving out repeats or
+   * parked news: no stock line is said in its place at the end (lab: "That still stands from a moment ago. Which part do
+   * you want to dig into?" was said for a whole repeated reply, and to a hello).
+   */
+  callerContinues?: boolean;
   /**
    * The vEIR's previous reply in this conversation: a unit that mostly says it again is never released (unless the
    * founder asked to hear it again, or sincerely asks who or what the coach is: the honest answer is never dropped).
@@ -675,11 +681,12 @@ export class SentenceGate {
     if (this.#ended && this.#nothingReleased()) {
       // The reply was only the greeting the opening line already gave, or only the previous reply again: a short
       // line instead.
+      const continues = this.#options.callerContinues === true;
       const instead = this.#droppedGreeting
         ? REPEATED_GREETING_FALLBACK
-        : this.#agendaDropped > 0
+        : this.#agendaDropped > 0 && !continues
           ? NEWS_FALLBACK
-          : this.#repeatsDropped > 0
+          : this.#repeatsDropped > 0 && !continues
             ? REPEAT_FALLBACK
             : null;
       const unit = instead === null ? null : this.#process(instead);

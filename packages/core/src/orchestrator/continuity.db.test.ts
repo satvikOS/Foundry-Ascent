@@ -41,8 +41,10 @@ const seen: MockGenerateContext[] = [];
  * first founder line of the latest conversation), or that this is the first conversation.
  */
 function recallingModel(context: MockGenerateContext): string {
-  seen.push(context);
   const last = context.messages.at(-1)?.content ?? '';
+  // Its fixed lines repeat from turn to turn: the reply written anew after the gate leaves one out is not a turn.
+  if (last.includes('<continue_request>')) return 'Tell me where you want to start.';
+  seen.push(context);
   const start = last.indexOf(`${LEFT_OFF_HEADING}\n<where_you_left_off>`);
   if (start < 0) return 'This looks like our first conversation. What would you like to work on?';
   const section = last.slice(start, last.indexOf('</where_you_left_off>', start));

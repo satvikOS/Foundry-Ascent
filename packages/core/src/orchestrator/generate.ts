@@ -371,6 +371,8 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     ...a.gate,
     ...(voice ? { maxUnitChars: SPOKEN_UNIT_CHARS, spokenWordBudget: spokenBudget, spoken: true } : {}),
     keepDropped: true,
+    // A reply left with nothing but repeats goes on (or is written anew) below, never as a stock line.
+    callerContinues: true,
   });
   const speech =
     voice && a.speechKey
@@ -488,7 +490,10 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   const goOn = async (soFar: string, leftOut: readonly string[]): Promise<string> => {
     const more = new SentenceGate({
       ...a.gate,
-      greeted: true,
+      // Nothing said yet: the reply written anew may greet as the first one could; after a lead-in, never again.
+      greeted: soFar === '' ? a.gate.greeted : true,
+      // What this reply already said counts as said, as the previous reply does.
+      previousReply: [a.gate.previousReply ?? '', soFar].filter((t) => t.trim() !== '').join('\n') || null,
       ...(voice
         ? {
             maxUnitChars: SPOKEN_UNIT_CHARS,
@@ -502,11 +507,27 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     const halt = new AbortController();
     const until = a.signal ? AbortSignal.any([a.signal, halt.signal]) : halt.signal;
     let added = '';
+    // A sentence this reply already said, word for word, is never said again (short ones are below the repeat check).
+    const key = (text: string): string =>
+      text
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim();
+    const saidSentences = new Set(
+      soFar
+        .split(/(?<=[.!?…])\s+/)
+        .map(key)
+        .filter((k) => k !== ''),
+    );
     const show = async (result: GateResult): Promise<void> => {
       for (const unit of result.units) {
+        if (saidSentences.has(key(unit.text === '' ? unit.spoken : unit.text))) continue;
         if (unit.text !== '') {
           // The first added unit is a new sentence of the same reply.
-          const text = added === '' && !/\s$/.test(said.shown) ? ` ${unit.text.trimStart()}` : unit.text;
+          const text =
+            added === '' && said.shown !== '' && !/\s$/.test(said.shown)
+              ? ` ${unit.text.trimStart()}`
+              : unit.text;
           await a.emit({ event: 'turn.delta', turnId: a.turnId, seq: timing.deltas, text });
           timing.deltas += 1;
           said.shown += text;
@@ -673,7 +694,11 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   // Structured output without a reply in it: the reply is written whole after all.
   if (reply.missing) return wholeInstead('structured_output', phaseAMs, null);
   // Nothing presentable (an empty or whitespace reply, or one the Markdown subset removes entirely).
-  if (gate.stats.units + gate.stats.withheld === 0) return wholeInstead('empty', phaseAMs, null);
+  // Nothing presentable, unless what was left out was the conversation again: that reply is written anew below.
+  const repeatedAway = gate.trace.repeatsDropped + gate.trace.agendaDropped > 0;
+  if (gate.stats.units + gate.stats.withheld === 0 && !repeatedAway) {
+    return wholeInstead('empty', phaseAMs, null);
+  }
   // Cut before narration with no reply shown before it (nothing, units withheld from the preview, or a lead-in of a few
   // words such as "Okay, here goes."): the reply is written whole, as the final validation would hold it back.
   if (gate.cut !== null && (said.shown.match(/\p{L}[\p{L}'’-]*/gu) ?? []).length < MIN_KEPT_WORDS) {
@@ -714,18 +739,19 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       ? { replyText: reply.text, shownText: said.shown, dropped: JSON.stringify(trace.dropped) }
       : {}),
   });
-  // The gate left out what repeated the conversation and only the lead-in is left ("Okay, Idris."): the reply goes on
-  // once, from what was said, with something new. Never for a short reply that is meant to be short (a thanks), a
-  // reply whose preview was withheld, or once the founder spoke over it.
+  // The gate left out what repeated the conversation, and what is left is nothing, only the lead-in ("Okay, Idris."),
+  // or a sliver of what was written (a sentence of a reply four times as long): the reply goes on once, from what was
+  // said, with something new, or is written anew when nothing was said. Never for a short reply that is meant to be
+  // short (a thanks), a reply whose preview was withheld, or once the founder spoke over it.
+  const shownWords = wordCount(said.shown);
   if (
     a.signal?.aborted !== true &&
     !said.full &&
     !gate.full &&
     (a.gate.replyBudget ?? null) === null &&
     gate.stats.withheld === 0 &&
-    trace.repeatsDropped + trace.agendaDropped > 0 &&
-    said.shown.trim() !== '' &&
-    isOnlyLeadIn(said.shown)
+    repeatedAway &&
+    (isOnlyLeadIn(said.shown) || (shownWords < 20 && shownWords * 4 < wordCount(reply.text)))
   ) {
     const added = await goOn(
       said.shown.trim(),
@@ -736,6 +762,8 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       notes.push('stream_continued');
     }
   }
+  // Still nothing said: the reply is written whole after all.
+  if (said.shown.trim() === '' && gate.stats.withheld === 0) return wholeInstead('empty', phaseAMs, null);
   // A call's reply that ended on a statement hands the turn back now, not after the annotations.
   const handBack = voice ? (a.handBack ?? null) : null;
   if (

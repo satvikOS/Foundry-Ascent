@@ -110,9 +110,10 @@ export const CONTINUE_REQUEST_TAG = 'continue_request';
 
 /**
  * The turn's messages, the reply said so far (its lead-in: "Okay, Idris."), then a request to go on with something new.
- * The gate had left out everything after the lead-in as already said (lab run 39780304879: 4 of 10 call replies were
- * said as their lead-in alone, the three questions of the reply before them left out as repeats). `leftOut`: what it
- * left out (model-written, escaped as data).
+ * The gate had left out the rest as already said (lab run 39780304879: 4 of 10 call replies were said as their lead-in
+ * alone, the three questions of the reply before them left out as repeats). With nothing said at all (run 39782458522:
+ * the whole reply was the previous one again), the draft stands in the reply's place and the request is to write it
+ * anew. `leftOut`: what the gate left out (model-written, escaped as data).
  */
 export function continuationMessages(
   messages: readonly ChatMessage[],
@@ -120,13 +121,15 @@ export function continuationMessages(
   leftOut: readonly string[],
 ): ChatMessage[] {
   const omitted = leftOut.map((t) => t.replace(/\s+/g, ' ').trim()).filter((t) => t !== '');
-  return [
-    ...messages,
-    { role: 'assistant', content: said },
-    {
-      role: 'user',
-      content: [
-        `<${CONTINUE_REQUEST_TAG}>`,
+  const anew = said.trim() === '';
+  const request = anew
+    ? [
+        'Your draft above says again what you already said in this conversation, so none of it was said. Write the reply',
+        'again: answer their message with something new that moves them forward (a next concrete step, a draft, an',
+        'example or your view), then hand the turn back. If they asked for the same thing again, point to it in a few',
+        'words and add what comes next. Nothing you already said.',
+      ]
+    : [
         'Your reply above stopped after its first words: what came next repeated what you already said in this',
         'conversation, so it was left out. Go on now, as the next words of the same reply: something new that moves them',
         'forward (a next concrete step, a draft, an example or your view), then hand the turn back. No greeting and',
@@ -134,8 +137,14 @@ export function continuationMessages(
         ...(omitted.length > 0
           ? [`Left out as already said: ${escapeData(truncate(omitted.join(' '), 600))}`]
           : []),
-        `</${CONTINUE_REQUEST_TAG}>`,
-      ].join('\n'),
+      ];
+  return [
+    ...messages,
+    // The model's own draft, as it wrote it: it is the vEIR's turn, never data from the founder.
+    { role: 'assistant', content: anew ? truncate(omitted.join(' '), 2_000) : said },
+    {
+      role: 'user',
+      content: [`<${CONTINUE_REQUEST_TAG}>`, ...request, `</${CONTINUE_REQUEST_TAG}>`].join('\n'),
     },
   ];
 }
