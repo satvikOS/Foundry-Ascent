@@ -125,6 +125,15 @@ def setup_matrix(args: argparse.Namespace, *, turn_cap: int) -> MatrixSetup | in
         print(f"dataset error: {exc}", file=sys.stderr)
         return EXIT_USAGE
     scenarios = generate(taxonomy, templates, seed=args.matrix_seed, budget=args.matrix_budget)
+    wanted = list(getattr(args, "case", None) or [])
+    if wanted:
+        # --case: only these scenarios of the plan (the ids of this budget and seed), e.g. to re-check failures.
+        known = {s.id for s in scenarios}
+        unknown = [c for c in wanted if c not in known]
+        if unknown:
+            print(f"unknown matrix case ids for this budget and seed: {', '.join(unknown)}", file=sys.stderr)
+            return EXIT_USAGE
+        scenarios = [s for s in scenarios if s.id in set(wanted)]
     template_sim = TemplateSimulator(taxonomy, templates)
     simulator: UserSimulator = template_sim
     est_sim = 0.0

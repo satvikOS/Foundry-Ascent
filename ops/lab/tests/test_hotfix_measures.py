@@ -388,3 +388,17 @@ def test_the_summary_lists_what_evals_skipped() -> None:
     }
     text = render({"suite": "matrix", "result": result, "spend": {}, "models": {}})
     assert "Skipped: 2 (budget: MX-0040, MX-0039)." in text
+
+
+def test_chosen_evals_cases_are_passed_on(tmp_path: Path) -> None:
+    cmd = cli.evals_matrix_command(
+        base_url="x",
+        scenarios=40,
+        max_cost_usd=1,
+        simulator_model=None,
+        judge_model=None,
+        private=tmp_path,
+        case_ids=("MX-0004", "MX-P01"),
+    )
+    assert " ".join(cmd).count("--case") == 2
+    assert "--case MX-0004 --case MX-P01" in " ".join(cmd)

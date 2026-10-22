@@ -497,6 +497,7 @@ def evals_matrix_command(
     judge_model: str | None,
     private: Path,
     memory_venture: str | None = None,
+    case_ids: Sequence[str] = (),
 ) -> list[str]:
     """`python -m foundry_evals run --suite matrix` against the lab's app: Bedrock simulator and judge when the
     probes found them, transcripts and judge rationales to the private folder, reports (ids, codes, numbers) beside
@@ -530,6 +531,8 @@ def evals_matrix_command(
         # Under the spend cap the least important scenarios are the ones skipped (identity and presence first).
         "--matrix-priority",
     ]
+    for case in case_ids:
+        cmd += ["--case", case]
     if simulator_model:
         cmd += ["--simulator", "llm", "--simulator-model", simulator_model]
     if judge_model:
@@ -576,6 +579,7 @@ def suite_matrix_evals(
         judge_model=judge_model,
         private=ctx.private,
         memory_venture=ctx.memory_venture,
+        case_ids=ctx.scenario_ids,
     )
     log_dir = ctx.private / "evals-matrix"
     log_dir.mkdir(parents=True, exist_ok=True)

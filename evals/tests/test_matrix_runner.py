@@ -804,3 +804,18 @@ def test_the_priority_flag_orders_the_plan(capsys: pytest.CaptureFixture[str]) -
 
     classes = [priority_class(s) for s in setup.plan.planned]
     assert classes == sorted(classes)
+
+
+def test_case_ids_run_only_those_scenarios(capsys: pytest.CaptureFixture[str]) -> None:
+    """--case with the matrix suite: re-run chosen scenarios of the same budget and seed (failures and controls)."""
+    args = cli.build_parser().parse_args(
+        ["run", "--suite", "matrix", "--matrix-budget", "smoke", "--case", "MX-0004", "--case", "MX-P01"]
+    )
+    setup = matrix_cli.setup_matrix(args, turn_cap=10_000)
+    assert not isinstance(setup, int)
+    assert sorted(s.id for s in setup.plan.planned) == ["MX-0004", "MX-P01"]
+    bad = cli.build_parser().parse_args(
+        ["run", "--suite", "matrix", "--matrix-budget", "smoke", "--case", "MX-9999"]
+    )
+    assert matrix_cli.setup_matrix(bad, turn_cap=10_000) == cli.EXIT_USAGE
+    assert "MX-9999" in capsys.readouterr().err
