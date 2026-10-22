@@ -131,6 +131,85 @@ export function reasksQuestion(sentence: string, asked: readonly ReadonlySet<str
   });
 }
 
+/**
+ * Words a question can lose or gain and still ask the same thing: articles, pointers ("that budget", "the budget") and
+ * fillers that open a clause ("So who signs off…"). Everything else counts, prepositions, ordinals, numbers and
+ * auxiliaries included: "before finals" and "during finals", "the first week" and "the second week", "what did they
+ * say" and "what will they say" ask different things.
+ */
+const QUESTION_FILLERS = new Set([
+  'a',
+  'an',
+  'the',
+  'that',
+  'this',
+  'these',
+  'those',
+  'so',
+  'and',
+  'but',
+  'then',
+  'now',
+  'okay',
+  'ok',
+  'also',
+  'well',
+  'just',
+  'actually',
+  'really',
+  'right',
+  'oh',
+]);
+
+/** The words of a question that say what it asks (lower case, apostrophes out, {@link QUESTION_FILLERS} out). */
+function questionKeyWords(sentence: string): ReadonlySet<string> {
+  const words =
+    sentence
+      .toLowerCase()
+      .replace(/[‘’ʼ']/g, '')
+      .match(/[\p{L}\p{N}]+/gu) ?? [];
+  return new Set(words.filter((w) => !QUESTION_FILLERS.has(w)));
+}
+
+/** A question the vEIR asked earlier in the conversation ({@link questionsAskedIn}): the words that say what it asks. */
+export type AskedQuestion = ReadonlySet<string>;
+
+/** Fewest words (beyond {@link QUESTION_FILLERS}) a question needs before it counts as asked again. */
+export const ASKED_AGAIN_MIN_WORDS = 3;
+
+/**
+ * The questions the vEIR asked in `earlier` (its replies and its opener in this conversation): the sentences that end
+ * in a question mark, as the words that say what they ask. Never asked again ({@link asksAgain}), however long ago
+ * (voice suite, 2026-10-22: "Who signs the cheque for each library branch, and who can block it?" was asked in five
+ * replies of one call, the sentence gate knowing only the previous reply's questions).
+ */
+export function questionsAskedIn(earlier: readonly (string | null | undefined)[]): AskedQuestion[] {
+  return earlier.flatMap((text) =>
+    text === null || text === undefined
+      ? []
+      : sentenceSpans(text)
+          .map((s) => text.slice(s.start, s.end))
+          .filter((sentence) => /\?["'”’)\]*_]*$/.test(sentence))
+          .map(questionKeyWords)
+          .filter((words) => words.size >= ASKED_AGAIN_MIN_WORDS),
+  );
+}
+
+/**
+ * Whether `sentence` asks one of `asked` ({@link questionsAskedIn}) again: a question with exactly the same words,
+ * {@link QUESTION_FILLERS} aside ("So who signs off on the budget at each branch?" after "Who signs off on that budget
+ * at each branch?"). Strict on purpose, unlike {@link reasksQuestion} for the previous reply: a question that differs by
+ * one word asks something else ("…the west library…" after "…the east library…", "per year" after "per term", "during
+ * finals" after "before finals"; differential audit, 2026-10-22: 104 new questions were left out as asked again when
+ * three quarters of their words matched).
+ */
+export function asksAgain(sentence: string, asked: readonly AskedQuestion[]): boolean {
+  if (asked.length === 0 || !/\?["'”’)\]*_]*\s*$/.test(sentence)) return false;
+  const words = questionKeyWords(sentence);
+  if (words.size < ASKED_AGAIN_MIN_WORDS) return false;
+  return asked.some((question) => question.size === words.size && [...words].every((w) => question.has(w)));
+}
+
 /** What a reply says when every sentence of it was the previous reply again. */
 export const REPEAT_FALLBACK = 'That still stands from a moment ago. Which part do you want to dig into?';
 

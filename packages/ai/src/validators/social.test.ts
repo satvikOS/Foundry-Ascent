@@ -6,10 +6,12 @@ import {
   SPOKEN_HAND_BACKS,
   STRESSED_HAND_BACK,
   STRESSED_HAND_BACKS,
+  asksAgain,
   asksToRepeat,
   NEWS_FALLBACK,
   endsWithHandBack,
   parksTheirNews,
+  questionsAskedIn,
   questionsOf,
   reasksQuestion,
   spokenHandBackFor,
@@ -232,5 +234,55 @@ describe('a question is never asked again in the next reply, in other words (ite
       text: "That's a real risk: SSO can stall a library pilot for months. Ask their IT lead now what SSO they need.",
       dropped: 1,
     });
+  });
+});
+
+describe('a question an earlier message asked is never asked again (voice suite: one question in five replies)', () => {
+  const asked = questionsAskedIn([
+    'Good start. Who signs off on that budget at each branch?',
+    null,
+    'That is a real signal. Get her to name a date for a trial.',
+    'Nice. What price would the east library pay per term?',
+  ]);
+
+  it('reads the questions of every earlier message, not their statements', () => {
+    expect(asked).toHaveLength(2);
+  });
+
+  it('the same question, articles and fillers aside, is asked again', () => {
+    expect(asksAgain('Who signs off on that budget at each branch?', asked)).toBe(true);
+    expect(asksAgain('So who signs off on the budget at each branch?', asked)).toBe(true);
+    expect(asksAgain('What price would the east library pay per term?', asked)).toBe(true);
+  });
+
+  it('a question that differs by one word asks something else (differential audit, 2026-10-22)', () => {
+    for (const question of [
+      'What price would the west library pay per term?',
+      'What price would the east library pay per year?',
+      'Who signs off on that budget at the west branch?',
+      'Who signs off on that budget at each branch this term?',
+      'Who signed off on that budget at each branch?',
+      'What price would the east library pay per term for sensors?',
+    ]) {
+      expect(asksAgain(question, asked), question).toBe(false);
+    }
+    const timing = questionsAskedIn([
+      'How full is the main library before finals?',
+      'How many students used the map in the first week?',
+      'When does the Harbour Hall pilot start?',
+    ]);
+    for (const question of [
+      'How full is the main library during finals?',
+      'How many students used the map in the second week?',
+      'When does the Harbour Hall pilot end?',
+    ]) {
+      expect(asksAgain(question, timing), question).toBe(false);
+    }
+  });
+
+  it('only questions count, and short ones never do', () => {
+    expect(asksAgain('Who signs off on that budget at each branch.', asked)).toBe(false);
+    expect(questionsAskedIn(['Why?', 'And then?', 'What now?'])).toEqual([]);
+    expect(asksAgain('So who then?', questionsAskedIn(['So who then?']))).toBe(false);
   });
 });

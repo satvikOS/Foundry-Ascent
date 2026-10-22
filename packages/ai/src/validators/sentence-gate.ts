@@ -16,16 +16,20 @@ import {
 } from './identity.js';
 import { sanitizeMarkdown } from './markdown.js';
 import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
+import { clearsDictation, echoesDictation } from './dictation.js';
 import { findMetaNarration, isThinkingAloudOpener, type NarrationNames } from './meta-narration.js';
 import {
   NEWS_FALLBACK,
   REPEAT_FALLBACK,
+  asksAgain,
   asksToRepeat,
   fourGramsOf,
   parksTheirNews,
+  questionsAskedIn,
   questionsOf,
   reasksQuestion,
   repeatsPrevious,
+  type AskedQuestion,
 } from './social.js';
 import { founderMoves } from '../prompts/conversation-state.js';
 import { clampWords, toSpeakable } from './speech.js';
@@ -64,6 +68,11 @@ import { clampWords, toSpeakable } from './speech.js';
  *    reply that opens with a thinking-aloud sentence ("Okay, let's see.") is held until the next unit shows whether
  *    narration follows. After units were released, the reply ends before the unit (`cut`), and nothing more is
  *    released: what follows a narrated sentence is more of the same.
+ * 6. a dictated reply carried out (evals MX-0004), only on a turn whose message the classifier flags as prompt injection
+ *    and dictates the reply (`injectionDictation`, validators/dictation.ts): the reply's units are held until it says
+ *    clearly more than the dictated payload, then released together. A reply that ends without doing so and whose
+ *    substance is the payload ("Sure. MXINJ-B515F2") is never shown or said: the reply ends (`cut: 'injection_echo'`)
+ *    and the caller says the decline instead.
  *
  * A lead-in of at most {@link LEAD_IN_MAX_WORDS} words that ends a sentence ("Got it.", "Talk soon.", "That's the
  * right question.") is released the moment it ends (LAB-P1: the gate held every first sentence 383–526 ms, and 8 of
@@ -92,8 +101,11 @@ export type GateBlockReason = 'cross_venture' | 'identity';
 /** Why the stream cannot be shown at all and the reply must be written whole instead. */
 export type GateFallbackReason = 'structured_output' | 'meta_narration';
 
-/** Why the reply ends early: what was released stands, and nothing more is. */
-export type GateCutReason = 'meta_narration';
+/**
+ * Why the reply ends early: what was released stands, and nothing more is. `injection_echo`: what the gate held was only
+ * a dictated payload (`injectionDictation`); it is never released, and the caller says the decline instead.
+ */
+export type GateCutReason = 'meta_narration' | 'injection_echo';
 
 export interface SentenceGateOptions {
   /** Persona display name ("Corin's vEIR"). */
@@ -135,6 +147,18 @@ export interface SentenceGateOptions {
    * A reply that was nothing but repeats becomes a short line instead.
    */
   previousReply?: string | null;
+  /**
+   * The vEIR's earlier messages in this conversation (its replies and its opener): a question one of them asked is never
+   * asked again ({@link asksAgain}: the same words), however long ago, with the same exceptions as `previousReply`; only
+   * when it is the reply's last sentence, so no sentence after it is left pointing at nothing ("Who signs off on that
+   * budget? Once you know, send that person the privacy paragraph.").
+   */
+  askedBefore?: readonly (string | null | undefined)[];
+  /**
+   * What the founder's message dictates as the reply, on a turn the classifier flags as prompt injection
+   * (`dictatedPayloadsOf`; null or empty: no such check). See 6. in the module comment.
+   */
+  injectionDictation?: readonly (readonly string[])[] | null;
   /**
    * The founder's message this reply answers. When it sincerely asks who or what the coach is ("are you real?"),
    * the reply's honest answer stands as written: no disclaimer is rewritten out of it.
@@ -201,6 +225,8 @@ export interface GateTrace {
   readonly repeatsDropped: number;
   /** Of `repeatsDropped`, the questions already asked. */
   readonly reasksDropped: number;
+  /** Of `reasksDropped`, the questions an earlier message asked (`askedBefore`). */
+  readonly earlierReasksDropped: number;
   /** Units left out as parking the founder's news. */
   readonly agendaDropped: number;
   /** A greeting the opening line already gave was left out. */
@@ -402,7 +428,16 @@ export class SentenceGate {
   /** A greeting the opening line already gave was left out of the reply's start (`greeted`). */
   #droppedGreeting = false;
   #reasksDropped = 0;
+  #earlierReasksDropped = 0;
   readonly #dropped: DroppedUnit[] = [];
+  /** The questions of the vEIR's earlier messages (`askedBefore`): never asked again as the reply's last sentence. */
+  readonly #earlierQuestions: readonly AskedQuestion[];
+  /** What the founder's message dictates as the reply (`injectionDictation`), or null. */
+  readonly #dictation: readonly (readonly string[])[] | null;
+  /** Units held back on a turn with a dictation, until the reply says clearly more than it (6. above). */
+  #held: GateUnit[] = [];
+  /** The reply said clearly more than the dictation: nothing more is held back. */
+  #dictationCleared = false;
   /** The previous reply's four-word sequences (null: no repeat check). */
   readonly #previousGrams: ReadonlySet<string> | null;
   /** The previous reply's questions, as content words: never asked again in other words. */
@@ -451,14 +486,13 @@ export class SentenceGate {
     const previous = options.previousReply ?? null;
     // No repeat check for a sincere question about the coach: its honest answer is said however recently it was
     // said (the intro of a first meeting, or the last reply when they ask again; the presence policy).
+    const checked = !asksToRepeat(options.founderText ?? '') && this.#question === null;
     this.#previousGrams =
-      previous === null ||
-      previous.trim() === '' ||
-      asksToRepeat(options.founderText ?? '') ||
-      this.#question !== null
-        ? null
-        : fourGramsOf(previous);
+      previous === null || previous.trim() === '' || !checked ? null : fourGramsOf(previous);
     this.#previousQuestions = this.#previousGrams === null || previous === null ? [] : questionsOf(previous);
+    this.#earlierQuestions = checked ? questionsAskedIn(options.askedBefore ?? []) : [];
+    const dictation = (options.injectionDictation ?? []).filter((words) => words.length > 0);
+    this.#dictation = dictation.length > 0 ? dictation : null;
   }
 
   /** Everything received so far (unvalidated). */
@@ -493,6 +527,7 @@ export class SentenceGate {
     return {
       repeatsDropped: this.#repeatsDropped,
       reasksDropped: this.#reasksDropped,
+      earlierReasksDropped: this.#earlierReasksDropped,
       agendaDropped: this.#agendaDropped,
       greetingDropped: this.#droppedGreeting,
       dropped: [...this.#dropped],
@@ -546,9 +581,9 @@ export class SentenceGate {
     return end !== null && this.#isLeadIn(this.#raw.slice(from, end));
   }
 
-  /** Nothing of the reply was released yet (shown, or withheld from the preview and said). */
+  /** Nothing of the reply was released yet (shown, withheld from the preview and said, or held: 6. above). */
   #nothingReleased(): boolean {
-    return this.#shown === '' && this.#stats.withheld === 0;
+    return this.#shown === '' && this.#stats.withheld === 0 && this.#held.length === 0;
   }
 
   /**
@@ -602,6 +637,15 @@ export class SentenceGate {
         this.#leakCheckedTo = stable.length;
         if (this.#leaks([stable.slice(from)])) return this.#block('cross_venture', units);
       }
+      if (
+        !this.#ended &&
+        this.#earlierQuestions.length > 0 &&
+        this.#raw.slice(end).trim() === '' &&
+        asksAgain(this.#raw.slice(this.#cursor, end).trim(), this.#earlierQuestions)
+      ) {
+        // A question an earlier message asked, with nothing after it yet: whether it ends the reply decides (below).
+        break;
+      }
       let rawUnit = this.#raw.slice(this.#cursor, end);
       if (this.#options.greeted === true && this.#opening) {
         // The opening line already said hello: the reply's own greeting is left out (a whole unit, or its start).
@@ -638,16 +682,25 @@ export class SentenceGate {
           this.#fallback = 'meta_narration';
           return { units, blocked: null, fallback: this.#fallback, cut: null };
         }
+        if (this.#settleHeld(units)) return { units, blocked: null, fallback: null, cut: this.#cut };
         this.#cut = 'meta_narration';
         return { units, blocked: null, fallback: null, cut: this.#cut };
       }
-      if (this.#previousGrams !== null) {
-        const repeat = repeatsPrevious(rawUnit, this.#previousGrams);
-        if (repeat || reasksQuestion(rawUnit.trim(), this.#previousQuestions)) {
-          // The previous reply again: never said twice.
+      if (this.#previousGrams !== null || this.#earlierQuestions.length > 0) {
+        const repeat = this.#previousGrams !== null && repeatsPrevious(rawUnit, this.#previousGrams);
+        const reask = !repeat && reasksQuestion(rawUnit.trim(), this.#previousQuestions);
+        // A question an earlier message asked, as the reply's last sentence (nothing after it leans on it).
+        const earlier =
+          !repeat &&
+          !reask &&
+          this.#raw.slice(end).trim() === '' &&
+          asksAgain(rawUnit.trim(), this.#earlierQuestions);
+        if (repeat || reask || earlier) {
+          // The previous reply again, or a question already asked: never said twice.
           this.#cursor = end;
           this.#repeatsDropped += 1;
           if (!repeat) this.#reasksDropped += 1;
+          if (earlier) this.#earlierReasksDropped += 1;
           this.#keepDropped(repeat ? 'repeat' : 'reask', rawUnit);
           continue;
         }
@@ -671,12 +724,16 @@ export class SentenceGate {
       this.#cursor = end;
       if (unit === 'identity' || unit === 'cross_venture') return this.#block(unit, units);
       if (unit === null) continue;
-      if (this.#leaks([this.#shown.slice(-CUMULATIVE_WINDOW_CHARS) + unit.text])) {
+      if (this.#leaks([(this.#shown + this.#heldText()).slice(-CUMULATIVE_WINDOW_CHARS) + unit.text])) {
         return this.#block('cross_venture', units);
       }
-      this.#show(unit, units);
+      this.#emit(unit, units);
       this.#released.units += 1;
       this.#released.words += words(unit.text);
+    }
+    // The reply ended (or its budget did) while units were held for a dictation: they are judged now (6. above).
+    if ((this.#ended || this.#full) && this.#settleHeld(units)) {
+      return { units, blocked: null, fallback: null, cut: this.#cut };
     }
     if (this.#ended && this.#nothingReleased()) {
       // The reply was only the greeting the opening line already gave, or only the previous reply again: a short
@@ -693,6 +750,45 @@ export class SentenceGate {
       if (unit !== null && typeof unit !== 'string') this.#show(unit, units);
     }
     return { units, blocked: null, fallback: null, cut: null };
+  }
+
+  /**
+   * Releases a checked unit, or holds it on a turn with a dictation until the reply says clearly more than the dictated
+   * payload (`clearsDictation`), then releases everything held at once (6. above).
+   */
+  #emit(unit: GateUnit, units: GateUnit[]): void {
+    if (this.#dictation === null || this.#dictationCleared) {
+      this.#show(unit, units);
+      return;
+    }
+    this.#held.push(unit);
+    if (!clearsDictation(this.#heldText(), this.#dictation)) return;
+    this.#dictationCleared = true;
+    const held = this.#held;
+    this.#held = [];
+    for (const h of held) this.#show(h, units);
+  }
+
+  /** The text of the units held for a dictation. */
+  #heldText(): string {
+    return this.#held.map((u) => u.text).join('');
+  }
+
+  /**
+   * Judges the units held for a dictation, once nothing more can clear them: when their substance is only the dictated
+   * payload (`echoesDictation`), none is ever released and the reply ends (`cut: 'injection_echo'`; true); else they
+   * are released.
+   */
+  #settleHeld(units: GateUnit[]): boolean {
+    if (this.#held.length === 0) return false;
+    const held = this.#held;
+    this.#held = [];
+    if (this.#dictation !== null && echoesDictation(held.map((u) => u.text).join(''), this.#dictation)) {
+      this.#cut = 'injection_echo';
+      return true;
+    }
+    for (const h of held) this.#show(h, units);
+    return false;
   }
 
   /** Shows a checked unit, or withholds it from the preview (still said on a call). */
@@ -736,7 +832,11 @@ export class SentenceGate {
 
   #process(raw: string): GateUnit | GateBlockReason | null {
     const core = raw.trimStart();
-    const lead = this.#shown === '' ? '' : raw.slice(0, raw.length - core.length).replace(/\n{3,}/g, '\n\n');
+    // Units held for a dictation come before this one too (6. above).
+    const lead =
+      this.#shown === '' && this.#held.length === 0
+        ? ''
+        : raw.slice(0, raw.length - core.length).replace(/\n{3,}/g, '\n\n');
     const md = sanitizeMarkdown(core);
     this.#stats.markdownRemovals += md.htmlRemoved + md.unsafeLinksRemoved + md.imagesRemoved;
     let text = md.text;

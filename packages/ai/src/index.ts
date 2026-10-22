@@ -190,6 +190,7 @@ export {
 export {
   DISCLAIMER_FALLBACK,
   IDENTITY_MARGIN_CHARS,
+  identityQuestionOf,
   identityReplacement,
   isStyleFinding,
   rewriteIdentity,
@@ -226,15 +227,24 @@ export {
   SPOKEN_HAND_BACKS,
   STRESSED_HAND_BACK,
   STRESSED_HAND_BACKS,
+  asksAgain,
   asksToRepeat,
   endsWithHandBack,
   isOnlyLeadIn,
   fourGramsOf,
+  questionsAskedIn,
   repeatsPrevious,
   spokenHandBackFor,
   withinSocialBudget,
   withoutRepeats,
+  type AskedQuestion,
 } from './validators/social.js';
+export {
+  INJECTION_DECLINE,
+  clearsDictation,
+  dictatedPayloadsOf,
+  echoesDictation,
+} from './validators/dictation.js';
 export {
   SentenceGate,
   findUnitEnd,
