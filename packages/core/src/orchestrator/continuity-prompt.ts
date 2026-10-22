@@ -395,6 +395,15 @@ const WH_START = /^(?:where|what|when|who|whom|why|how|which|whether)(?![\p{L}']
  * the pilot"): a pronoun and its verb belong in it, so it is no clause fragment.
  */
 const ASKED = /^(?:whether\s|(?:how|what|which|when|where|who)\s+to\s)/i;
+/**
+ * The founder's own "I", "my" or "we" in a question read back from an opener ("whether I should quit my job", "how to
+ * tell my cofounder"): said by the vEIR, it would be its own job and its own life (the presence policy; the review of
+ * e9e49fb heard "Hi Maya, where did you land on whether I should quit my job?"). `topicOf` says a question to the
+ * founder ("whether you should…", "your cofounder"), so one in the first person quotes their line: a fragment. Case
+ * matters for "us": "the US market" is no one.
+ */
+const FIRST_PERSON =
+  /(?<![\p{L}'’])(?:[Ii](?:['’](?:m|ve|ll|d))?|[Mm](?:e|y|ine|yself)|[Ww]e(?:['’](?:re|ve|ll|d))?|us|[Oo]urs?)(?![\p{L}'’])/u;
 
 /** Longest phrase read from a stored opener (a greeting shortens it to fit; see calls.ts `repeatGreeting`). */
 const OPENER_PHRASE_CHARS = 120;
@@ -424,7 +433,8 @@ function readOpenerShape(text: string): OpenerSubject | 'fragment' | null {
       (raw ?? '').split(/(?<!\d)[.:]|[.:](?!\d)|[!?;]|,\s|\s—\s|\s-\s/)[0]?.trim() ?? '',
     );
     if (cut === '' || cut.length > OPENER_PHRASE_CHARS || topicWords(cut).length === 0) return null;
-    if (isClauseFragment(cut) && !(question && ASKED.test(cut))) return 'fragment';
+    const asked = question && ASKED.test(cut);
+    if (asked ? FIRST_PERSON.test(cut) : isClauseFragment(cut)) return 'fragment';
     // A question word opens a clause ("pick up where we left off yesterday"): a subject only as the question asked.
     return !question && WH_START.test(cut) ? null : { cut };
   };

@@ -1,4 +1,4 @@
-import { contentTokens, founderMoves, isEverydayWord, tidyFounderWords } from '@foundry/ai';
+import { classifyRisk, contentTokens, founderMoves, isEverydayWord, tidyFounderWords } from '@foundry/ai';
 
 /**
  * What an opening line says the last conversation was about, and how it speaks of the founder.
@@ -36,7 +36,11 @@ export interface OpenerPeople {
 
 /**
  * The proper nouns in `texts` (written by the vEIR, so in their real case): one to three capitalised words in a row
- * that do not open a sentence, at least one of them no everyday word ("Harbour Hall", "Hartwell", "QuietQuad").
+ * that do not open a sentence, at least one of them no everyday word ("Harbour Hall", "Hartwell", "QuietQuad"); or one
+ * everyday word written with its capital where no sentence opens, after a word in lower case or a sentence's first
+ * determiner ("integrate with Canvas", "A Canvas integration", "stock it at Target": the review of e9e49fb), which
+ * {@link addressFounder} gives back only to a subject it opens (a sentence's first word is said in lower case when it
+ * is an everyday word: {@link everydayCase}).
  */
 export function properNounsIn(texts: readonly string[]): string[] {
   const found = new Set<string>();
@@ -45,11 +49,27 @@ export function properNounsIn(texts: readonly string[]): string[] {
       /(?<=[\p{Ll}\p{N},;:'’)] )\p{Lu}[\p{L}'’-]*(?: \p{Lu}[\p{L}'’-]*){0,2}/gu,
     )) {
       const phrase = m[0].replace(/['’]s$/, '');
-      const words = phrase.split(' ');
-      if (words.some((w) => !isEverydayWord(w)) && phrase.length >= 3) found.add(phrase);
+      if (phrase.split(' ').some((w) => !isEverydayWord(w)) && phrase.length >= 3) found.add(phrase);
+    }
+    for (const m of text.matchAll(EVERYDAY_NAME)) {
+      const name = m[0];
+      if (isEverydayWord(name) && !CALENDAR_NAMES.has(name.toLowerCase())) found.add(name);
     }
   }
   return [...found].sort((a, b) => b.length - a.length);
+}
+
+/**
+ * One capitalised word where no sentence opens: after a word in lower case ("integrate with Canvas"), or after the
+ * determiner a sentence opens with ("A Canvas integration", "The Notion templates"), on one line; never after a colon
+ * or a line break ("Next steps: Book the room").
+ */
+const EVERYDAY_NAME =
+  /(?<=(?:\p{Ll}|(?:^|[.!?]["”’)]?\s+)(?:A|An|The|Your|Our|This|That|These|Those|Their|Its)) )\p{Lu}\p{Ll}{2,}(?![\p{L}\p{N}'’-])/gu;
+
+/** Whether `name` (of {@link properNounsIn}) is one everyday word, written with its capital ("Canvas", "Target"). */
+function isEverydayName(name: string): boolean {
+  return /^\p{Lu}\p{Ll}{2,}$/u.test(name) && isEverydayWord(name);
 }
 
 function escapeRegExp(text: string): string {
@@ -76,7 +96,7 @@ const S_VERBS = new Set(
     'plans wants needs gets hopes thinks expects intends knows likes prefers asks owes runs leads owns handles ' +
     'sends calls meets talks works feels seems believes keeps makes takes gives checks reviews builds writes shares ' +
     'agrees decides promises mentions follows tests sets starts finishes reaches books emails visits pitches ' +
-    'chases drafts prepares ends begins launches closes opens loves hates'
+    'chases drafts prepares ends begins launches closes opens loves hates falls'
   ).split(' '),
 );
 const THIRD_PERSON = /\b(?:she|he|her|hers|him|his|herself|himself)\b/i;
@@ -131,10 +151,13 @@ export function addressFounder(text: string, people: OpenerPeople): string | nul
       out = out.replace(new RegExp(`\\b${escapeRegExp(part)}\\b`, 'giu'), part);
     }
   }
-  // Names the conversation wrote with capitals, where the founder typed them in lower case (wave 7, item 2).
+  // Names the conversation wrote with capitals, where the founder typed them in lower case (wave 7, item 2). One
+  // everyday word ("Canvas", "Target") only where a subject opens with it, its sentence's first word: "target" is
+  // said as written anywhere else ("your target market").
   for (const name of people.names ?? []) {
     if (name.toLowerCase() === founderFirst) continue;
-    out = out.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, 'giu'), name);
+    const at = isEverydayName(name) ? '^' : '(?<![\\p{L}\\p{N}])';
+    out = out.replace(new RegExp(`${at}${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, 'giu'), name);
   }
   return tidyFounderWords(out);
 }
@@ -215,8 +238,10 @@ function isGerund(word: string): boolean {
 /**
  * A sentence's first word as said mid-sentence (the review of 1cac704: "shall we pick up Annual pricing?", "the Five
  * libraries"): an everyday word, a gerund or a hyphenated pair of them in lower case ("annual", "five", "per-seat",
- * "fundraising"); a name, a month, a day or a holiday, or a word before another capitalised one ("Viking Global",
- * "Redding Library") as written.
+ * "fundraising", "enterprise", "subscription"); a name, a month, a day or a holiday, or a word before another
+ * capitalised one ("Viking Global", "Redding Library") as written. A sentence's first capital says nothing of a name
+ * that is also a word ("Canvas integration", "Target stores"): the conversation's own case gives it back
+ * ({@link properNounsIn}, {@link addressFounder}).
  */
 function everydayCase(word: string, next: string | undefined): string {
   const core = word.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, '');
@@ -273,7 +298,7 @@ const BAD_START = new Set(
     'within per via as than since until till toward towards against among around across behind beyond near off ' +
     'out up down upon and or but nor so yet if because while although though unless is are was were be been am ' +
     'will would can could should shall may might must do does did have has had not i me we us you they them he ' +
-    'him she it'
+    'him she it vs versus'
   ).split(' '),
 );
 /**
@@ -284,7 +309,13 @@ const BAD_START = new Set(
 const UNFINISHED = new Set(
   'last next coming past few couple very really just also still even more most less much many'.split(' '),
 );
-const DANGLING = new Set([...[...FUNCTION_WORDS].filter((w) => !OBJECT_PRONOUNS.has(w)), ...UNFINISHED]);
+/** "Now vs", "per seat versus": one side of an alternative without the other (the review of e9e49fb). */
+const COMPARING = new Set(['vs', 'versus']);
+const DANGLING = new Set([
+  ...[...FUNCTION_WORDS].filter((w) => !OBJECT_PRONOUNS.has(w)),
+  ...UNFINISHED,
+  ...COMPARING,
+]);
 const WH_SUBJECT = /^(?:whether|how|what|which|when|where|who|why)(?![\p{L}'])/iu;
 /** "your plan to X", "your cofounder's plan to X", "your goal of X". */
 const PLAN_SUBJECT =
@@ -334,15 +365,34 @@ const JOINING = new Set(['though', 'yet']);
 /**
  * Discourse words that say when or in what order: what a plan or a question is about when its verb has nothing else
  * ("Should we just hire later?" is "whether to hire later", never "whether to hire": the review of 1cac704), and
- * discourse after what it does ("your plan to call facilities again" is "your plan to call facilities"). The other
- * discourse words ("instead", "though", "honestly"…) never say what was meant.
+ * discourse after what it does ("your plan to call facilities later" is "your plan to call facilities"; "again" stays:
+ * {@link WITH_ITS_VERB}). The other discourse words ("instead", "though", "honestly"…) never say what was meant.
  */
 const TIMING = new Set(['now', 'later', 'first', 'again', 'already', 'yet']);
-/** Adverbs of manner or frequency a founder's line can end on ("a designer urgently", "a cofounder ASAP"). */
+/**
+ * Adverbs of manner or frequency a founder's line can end on ("a designer urgently", "a cofounder ASAP"). Never
+ * "together", "only" or "alone": they say what was meant ("put the pitch deck together", "sell to universities only":
+ * the review of e9e49fb heard "your plan to put the pitch deck").
+ */
 const MANNER = new Set(
-  'asap fast daily weekly monthly yearly quarterly hourly nightly only together alone anymore somehow'.split(
+  'asap fast daily weekly monthly yearly quarterly hourly nightly annually biweekly fortnightly anymore somehow'.split(
     ' ',
   ),
+);
+/**
+ * How often, "again", and how or where what is done is done, as "only" and "together" say it ("exclusively",
+ * "separately", "differently", "internally", "remotely"): what a plan, a question or an activity does when they follow
+ * its verb and its object ("charge schools annually", "make libraries cool again", "sell to universities
+ * exclusively", "price the tiers differently": the review of e9e49fb), never cut there; after a noun alone they are no
+ * part of it ("the app daily" is "the app"). How fast or how well ("quickly", "urgently", "properly") is still cut.
+ */
+const WITH_ITS_VERB = new Set(
+  (
+    'daily weekly monthly yearly quarterly hourly nightly annually biweekly fortnightly again exclusively solely ' +
+    'jointly separately independently internally externally directly indirectly differently equally publicly ' +
+    'privately remotely locally regionally nationally internationally globally manually automatically digitally ' +
+    'anonymously'
+  ).split(' '),
 );
 /** Words in -ly that name or describe, never say how ("the family", "a steady supply", "the elderly"). */
 const LY_WORDS = new Set(
@@ -363,17 +413,25 @@ function isMannerAdverb(word: string): boolean {
   const w = clean.toLowerCase();
   return MANNER.has(w) || (/^[a-z]{3,}ly$/.test(w) && !LY_WORDS.has(w));
 }
-/** Words before a last discourse word that make it one side of an alternative ("now or later", "sooner than later"). */
-const ALTERNATIVE = new Set(['or', 'nor', 'than']);
-/** Vague tails of a founder's line ("annual pricing as well", "a short pilot or something", "the deck so far"). */
+/**
+ * Words before a last discourse word that make it one side of an alternative ("now or later", "sooner than later",
+ * "now vs later", "annually versus monthly": the review of e9e49fb heard "whether to hire now vs?").
+ */
+const ALTERNATIVE = new Set(['or', 'nor', 'than', 'vs', 'versus']);
+/**
+ * Vague tails of a founder's line ("annual pricing as well", "a short pilot or something", "the deck so far"), and the
+ * hedge a spoken line ends on without a comma ("go with per seat pricing i guess", "hire a designer i think": the
+ * review of e9e49fb heard "your plan to hire a designer you think"), never what a question word asks ("what we think").
+ */
 const LOOSE_TAIL =
-  /,?\s+(?:as well|for now|right now|so far|at all|after all|for sure|of course|or something(?: like that)?|or so|or whatever|and stuff|and everything|and all that|and so on|etc\.?)$/i;
+  /,?\s+(?:as well|for now|right now|so far|at all|after all|for sure|of course|or something(?: like that)?|or so|or whatever|and stuff|and everything|and all that|and so on|etc\.?|you know|(?<!\b(?:what|how|that|which|who|whom|where|when|why|whatever|than|as|if|whether|because)\s)(?:i|we|you)\s+(?:guess|think|suppose|mean|believe|reckon|figure|feel like))$/i;
 /**
  * Fixed phrases that end on a discourse word, never cut (the review of 1cac704: "We want to break even" was "your plan
- * to break"): "break even", "buy now, pay later", "put students first", "customers come first".
+ * to break"): "break even", "buy now, pay later", "put students first", "customers come first", "API first", "mobile
+ * first" (the review of e9e49fb heard "your plan to build it API").
  */
 const FIXED_TAIL =
-  /\b(?:break|breaks|breaking|broke|broken)\s+even$|\bpay(?:s|ing)?\s+later$|\b(?:put|puts|putting)\s+(?:[\p{L}\p{N}'’-]+\s+){1,4}first$|\b(?:come|comes|coming|came|go|goes|going|went)\s+first$/iu;
+  /\b(?:break|breaks|breaking|broke|broken)\s+even$|\bpay(?:s|ing)?\s+later$|\b(?:put|puts|putting)\s+(?:[\p{L}\p{N}'’-]+\s+){1,4}first$|\b(?:come|comes|coming|came|go|goes|going|went)\s+first$|\b(?:api|mobile|cloud|offline|online|remote|privacy|security|safety|design|product|customers?|students?|users?|people|patients?|teachers?|developers?|creators?|community|local|digital|web|desktop|ai|data|mission|platform|email|text|voice|video|content|impact|quality|b2b|b2c)\s+first$/iu;
 /** Particles of a phrasal verb: nothing a plan does by themselves ("step back", "give up"). */
 const PARTICLES = new Set('up down out off back away on over in around aside along through'.split(' '));
 /** Those that end a phrasal verb well, never a preposition left without its object ("add up", not "focus on"). */
@@ -431,7 +489,20 @@ function endsAsDiscourse(words: readonly string[], verbPhrase = false): boolean 
   if (!timing && !DISCOURSE_WORDS.has(last)) return false;
   if (ALTERNATIVE.has(bare(words.at(-2) ?? '')) || inAlternative(words)) return false;
   if (FIXED_TAIL.test(words.map(bare).join(' '))) return false;
+  // How often, or "again", after what a plan, a question or an activity does: "charge schools annually", "make
+  // libraries cool again" (the review of e9e49fb).
+  if (WITH_ITS_VERB.has(last) && saysWhatIsDone(words.slice(0, -1), verbPhrase)) return false;
   return !(timing && leavesBareVerb(words.slice(0, -1), verbPhrase));
+}
+
+/**
+ * Whether `words` say what is done, a verb first: `verbPhrase`, a plan's or a question's frame and its verb ("your
+ * plan to charge schools"), or an activity ("invoicing customers").
+ */
+function saysWhatIsDone(words: readonly string[], verbPhrase: boolean): boolean {
+  const first = words[0];
+  if (first === undefined) return false;
+  return verbPhrase || VERB_FRAME.test(words.join(' ')) || (/^\p{Ll}/u.test(first) && isGerund(bare(first)));
 }
 
 /**
@@ -562,9 +633,12 @@ export function readsAsSubject(text: string): boolean {
 /** Recall and memory questions the conversation-state cues do not cover ("What did I tell you in our chat…?"). */
 const RECALL =
   /\b(?:remember|recall|remind me|last time|(?:we|you and i) (?:talked|spoke|discussed|chatted|covered)|did i (?:tell|say|mention|ask)|i (?:told|asked|said to|mentioned to) you|what did (?:i|we) (?:say|tell|talk|discuss|decide|agree|ask)|(?:in|from|during) our (?:last |previous |earlier |first )?(?:chat|call|conversation|session|talk)|you (?:said|told me|mentioned)|(?:forgot|forget)\b)/i;
-/** Questions about the vEIR itself, not the venture. */
+/**
+ * Questions about the vEIR itself, not the venture ("Is this a real person?": the review of e9e49fb heard "shall we
+ * pick up a real person?").
+ */
 const ABOUT_THE_VEIR =
-  /\b(?:are you (?:a |an |the )?(?:bot|robot|human|real|ai|person|machine|man|woman|really)|is this (?:really |actually )?(?:you|a bot|a human|an ai|real|a person|[A-Z][a-z]+\b(?=\s*\?))|am i (?:talking|speaking|chatting) (?:to|with)|who (?:am i talking to|are you|is this)|what are you|your name|do you (?:even )?(?:have a life|sleep|eat|feel|dream)|you(?:'re| are) (?:a bot|an ai|not real|a robot|human))/i;
+  /\b(?:are you (?:really |actually )?(?:a |an |the )?(?:(?:real|actual|live|genuine) )?(?:bot|robot|human|real|ai|person|machine|man|woman|really)|is (?:this|it|that) (?:really |actually )?(?:a |an )?(?:(?:real|actual|live|genuine) )?(?:bot|human|ai|person|robot|machine)\b|is this (?:really |actually )?(?:you|real|[A-Z][a-z]+\b(?=\s*\?))|am i (?:talking|speaking|chatting) (?:to|with)|who (?:am i talking to|are you|is this)|what are you|your name|do you (?:even )?(?:have a life|sleep|eat|feel|dream)|you(?:'re| are) (?:a bot|an ai|not real|a robot|human))/i;
 /** Checks of the line itself. */
 const META = /\b(?:can you hear me|are you there|is this (?:working|on)|mic check|testing|test test)\b/i;
 
@@ -576,6 +650,11 @@ export function isTopicLine(text: string): boolean {
   if (moves.some((m) => m === 'recall' || m === 'resume' || m === 'closing' || m === 'short_reply'))
     return false;
   if (RECALL.test(line) || ABOUT_THE_VEIR.test(line) || META.test(line)) return false;
+  // What the risk rules read as an attempt on the vEIR's instructions, or a crisis, is never repeated back as the
+  // founder's topic ("shall we pick up ignore previous instructions?": the review of e9e49fb); the turn's label is
+  // the same rules' verdict.
+  const risk = classifyRisk(line);
+  if (risk.injection || risk.crisis) return false;
   // A discourse word is no topic word ("I really want to quit" names one thing, as "I want to quit" does: the review of
   // 1cac704), but for a timing word ("hire later") or "even" in "break even".
   const breakEven = /\b(?:break|breaks|breaking|broke|broken)\s+even\b/i.test(line);
@@ -604,7 +683,7 @@ const BREAKERS = new Set(
     "she'd it'll it'd you'll you've you'd that's that'll there's here's let's who's what's won't can't don't " +
     "doesn't didn't isn't aren't wasn't weren't shouldn't wouldn't couldn't haven't hasn't hadn't " +
     // Irregular past tenses: "Bloomberg wrote about our pilot" names "Bloomberg", never "Bloomberg wrote".
-    'wrote spoke grew chose drove began brought bought caught taught sold spent'
+    'wrote spoke grew chose drove began brought bought caught taught sold spent fell'
   ).split(' '),
 );
 /**
@@ -712,6 +791,12 @@ interface Phrase {
   readonly score: number;
 }
 
+/**
+ * Words after a noun that end its phrase, never part of it ("the deck together", "students only", "the app alone"):
+ * what they say belongs to the verb before the phrase.
+ */
+const ENDS_A_PHRASE = new Set(['together', 'alone', 'only']);
+
 /** A number that counts what follows it ("five interviews", "12 libraries"; never "several", "dozens"). */
 const COUNT =
   /^(?:\d+|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|hundred)$/i;
@@ -755,7 +840,8 @@ function nounPhrase(sentence: string): Phrase | null {
       if (word === '' || BREAKERS.has(lower) || S_VERBS.has(lower) || DETERMINERS.has(lower)) break;
       // "the advisor last week": "last" starts a time, not part of the phrase; "a short pilot instead": an adverb of
       // the line ends it (the voice suite on 9a2a41f).
-      if (content > 0 && (UNFINISHED.has(lower) || DISCOURSE_WORDS.has(lower))) break;
+      if (content > 0 && (UNFINISHED.has(lower) || DISCOURSE_WORDS.has(lower) || ENDS_A_PHRASE.has(lower)))
+        break;
       if (/^(?:her|his|him|she|he)$/.test(lower)) {
         rejected = true;
         break;
@@ -786,6 +872,27 @@ function nounPhrase(sentence: string): Phrase | null {
       words.pop();
       content -= 1;
     }
+    // "The issue is getting libraries to pay": an activity cut at its "to" leaves what is done without its end (the
+    // review of e9e49fb heard "shall we pick up getting libraries?"). It is read through the clause after it, or not
+    // at all.
+    let through = '';
+    if (
+      !rejected &&
+      determiner === null &&
+      content >= 2 &&
+      bare(raw[j] ?? '') === 'to' &&
+      !/[,.;:!?)]$/.test(raw[j - 1] ?? '') &&
+      /^\p{Ll}/u.test(words[0] ?? '') &&
+      isGerund(words[0] ?? '')
+    ) {
+      const tail = raw.slice(j + 1).join(' ');
+      const rest = clause(tail, true, 8);
+      if (rest === null || topicWords(rest).length === 0) rejected = true;
+      else {
+        through = ` to ${rest}`;
+        j += 1 + (tail.split(CLAUSE_BREAK)[0] ?? '').split(/\s+/).filter(Boolean).length;
+      }
+    }
     if (!rejected && content > 0) {
       if (determiner !== null && DEFINITE.has(determiner)) score += 1;
       const proper = words.some((w) => /^\p{Lu}/u.test(w) && !isEverydayWord(w));
@@ -793,7 +900,7 @@ function nounPhrase(sentence: string): Phrase | null {
       const enough = proper || topicWords(words.join(' ')).length >= 2;
       // A count is the one the founder told of: "five customer interviews" → "the five customer interviews".
       if (determiner === null && content >= 2 && COUNT.test(words[0] ?? '')) words.unshift('the');
-      const text = yourWords(words.join(' '));
+      const text = yourWords(`${words.join(' ')}${through}`);
       // A month or a lone word is no subject ("January": lab run 39780304879): the next phrase is tried.
       if (enough && readsAsSubject(text) && (best === null || score > best.score)) best = { text, score };
     }
@@ -1062,26 +1169,149 @@ function toDo(text: string): string | null {
     : null;
 }
 
+/** Who a founder sees about their own health: never said aloud as their plan ("your plan to see a counselor"). */
+const CARER = String.raw`(?:therapist|counsell?or|psychiatrist|psychologist|shrink|doctor|gp|physician)`;
 /**
  * Distress, as what a plan, a question or an activity does (the review of 1cac704: "I'm honestly burning out on this
- * startup" opened "Hi Maya, shall we pick up burning out on this startup?"): burning out, breaking down, falling
- * apart, ending it, needing to talk to someone. A line that says one names nothing to pick up.
+ * startup" opened "Hi Maya, shall we pick up burning out on this startup?"): burning out, falling apart, losing hope or
+ * their mind, running out of energy, needing to talk to someone or to see their therapist (the review of e9e49fb heard
+ * "your plan to talk to your therapist"), ending it, things or everything ("end it with my cofounder" too: never a
+ * plan said aloud), throwing in the towel, calling it quits; breaking down when nothing is named
+ * ({@link UNLESS_NAMED}). A line that says one names nothing to pick up.
  */
-const DISTRESS =
-  /^(?:burn(?:s|ed|t|ing)?\s+out|cry|cries|cried|crying|(?:break(?:s|ing)?|broke)\s+down|(?:fall(?:s|ing)?|fell)\s+apart|(?:los(?:e|es|ing)|lost)\s+it|freak(?:s|ed|ing)?\s+out|die|dies|died|dying|panic\w*|despair\w*|drown\w*|(?:talk|speak)(?:s|ing)?\s+to\s+(?:someone|somebody|anyone|anybody)|end(?:s|ed|ing)?\s+(?:it|things|everything|my\s+life|myself))(?![\p{L}'])/iu;
+const DISTRESS = new RegExp(
+  String.raw`^(?:burn(?:s|ed|t|ing)?\s+out|cry|cries|cried|crying|(?:fall(?:s|ing|en)?|fell)\s+apart|(?:los(?:e|es|ing)|lost)\s+(?:it|(?:all\s+)?hope|(?:my|your)\s+(?:mind|motivation|will)|sleep)|(?:run(?:s|ning)?|ran)\s+out\s+of\s+(?:energy|steam|gas)|freak(?:s|ed|ing)?\s+out|die|dies|died|dying|panic\w*|despair\w*|drown\w*|(?:talk|speak|chat)(?:s|ed|ing)?\s+(?:to|with)\s+(?:someone|somebody|anyone|anybody|(?:my|your|a|an)\s+${CARER})|(?:see|sees|seeing|saw|call|calls|calling|called|visit|visits|visiting|visited|book(?:s|ed|ing)?\s+(?:an?\s+)?(?:appointment|session)\s+with)\s+(?:my|your|a|an)\s+${CARER}|(?:get(?:s|ting)?|got|go(?:es|ing)?|went|start(?:s|ed|ing)?)\s+(?:to\s+|into\s+)?therapy|end(?:s|ed|ing)?\s+(?:it|things|everything|my\s+life|your\s+life|myself|yourself)|(?:throw(?:s|ing)?|threw)\s+in\s+the\s+towel|call(?:s|ed|ing)?\s+it\s+quits|pack(?:s|ed|ing)?\s+it\s+(?:all\s+)?in)(?![\p{L}'])`,
+  'iu',
+);
 /**
- * Withdrawing: venting when nothing named follows it ("I really want to give up on this", "I need to step back",
- * "I want to quit"), a plan of the venture when something does ("give up the office lease", "stop the free pilot",
- * "step back from day-to-day operations").
+ * Distress said anywhere in a sentence (the review of e9e49fb: "I'm losing hope" and "I'm running out of energy" were
+ * picked up as "losing hope", "running out of energy"), their own health included ("go see a psychologist"): the
+ * sentence names nothing to pick up. Only what is distress
+ * wherever it stands: "break down the costs" or "end the free pilot" are plans, so those are read as what is done
+ * ({@link DISTRESS}, {@link UNLESS_NAMED}), what falls apart is read for what it is ({@link fallsApart}), and being sick
+ * of something is distress only of the venture or of everything ({@link PHRASE_END}).
+ */
+/**
+ * Where what a founder is sick of, tired of or done with ends: what they name is all of it ("sick of this", "done with
+ * the startup"), never what a noun after it names ("tired of this pricing debate", "done with the business plan").
+ */
+const PHRASE_END = String.raw`(?=\s*(?:[.,;:!?…)]|$)|\s+(?:and|but|so|or|anymore|already|honestly|now|today|lately|tbh|at\s+this\s+point|right\s+now)(?![\p{L}'-]))`;
+const DISTRESS_IN_A_SENTENCE = new RegExp(
+  String.raw`(?<![\p{L}'])(?:(?:los(?:e|es|ing)|lost)\s+(?:all\s+)?(?:hope|motivation|(?:my|your)\s+(?:mind|motivation|will\s+to|drive)|sleep\s+over)|(?:ha(?:ve|s|d|ving)|had)\s+(?:a\s+|another\s+)?(?:(?:nervous|mental|complete|total|full)\s+)?breakdown|(?:see|sees|seeing|saw|visit(?:s|ed|ing)?|call(?:s|ed|ing)?|(?:talk|speak)(?:s|ed|ing)?\s+to|spoke\s+to|go(?:es|ing)?\s+to|went\s+to)\s+(?:my|your|a|an)\s+(?:own\s+)?${CARER}|(?:run(?:s|ning)?|ran)\s+out\s+of\s+(?:energy|steam|gas)|burn(?:s|ed|t|ing)?\s+out|cried|crying|in\s+tears|burst\s+into\s+tears|(?:nervous|mental)\s+breakdown|panic\s+attacks?|(?:can't|cannot|can\s+not)\s+(?:cope|go\s+on|take\s+(?:it|this)\s+any\s*more)|(?:my|your)\s+(?:therapist|counsell?or|psychiatrist|psychologist|shrink|therapy|meds|medication|diagnosis|anxiety|depression|mental\s+health)|(?:in|into)\s+therapy|(?:want|wanted|wanting)\s+to\s+die|(?:kill|hurt|harm)\s+(?:myself|yourself)|end\s+(?:my|your)\s+life|(?:sick\s+of|tired\s+of|fed\s+up\s+with)\s+(?:(?:the|this|my|your|our|all|whole|entire)\s+)*(?:startup|company|venture|business|everything|it\s+all|all\s+of\s+(?:it|this)|this|it)${PHRASE_END}|done\s+with\s+(?:(?:the|this|my|your|our|all|whole|entire)\s+)*(?:startup|company|venture|business|everything|it\s+all|all\s+of\s+(?:it|this))${PHRASE_END})(?![\p{L}'])`,
+  'iu',
+);
+/**
+ * Breaking down: distress when nothing is named after it ("I broke down in front of the team"), a plan when what
+ * follows is its object ("break down the costs per library"). Distress was every "break down" before (the review of
+ * e9e49fb: "We need to break down the costs per library" named nothing).
+ */
+const UNLESS_NAMED = /^(?:break(?:s|ing)?|broke|broken)\s+down(?![\p{L}'])\s*(.*)$/iu;
+/** What follows breaking down that is no object: where, when, how or why ("in tears", "again"). */
+const NO_OBJECT =
+  /^(?:in|at|on|during|after|before|over|because|when|while|from|and|so|crying|again|completely|totally|emotionally|all|now|today|tonight|already)(?![\p{L}'])/iu;
+
+/** Who or what falling apart is distress of: everything, the founder, their life, their people, the venture itself. */
+const FALLING_APART_OF =
+  /^(?:everything|everything's|things|it|it's|all|life|company|startup|business|venture|team|world|i|i'm|me|we|we're|us|myself|ourselves|relationship|partnership|marriage|friendship|family|cofounder|co-founder|cofounders|co-founders|health|head|mind)$/;
+
+/**
+ * Whether `sentence` says that everything, the founder or the venture itself is falling apart (the review of e9e49fb:
+ * "Everything is falling apart", "The company is falling apart" and "Things are falling apart with my cofounder" were
+ * picked up as "falling apart"), never a thing to pick up: "The Hartwell deal fell apart" is about the Hartwell deal.
+ */
+function fallsApart(sentence: string): boolean {
+  const m = /(?<![\p{L}'])(?:fall(?:s|ing|en)?|fell)\s+apart(?![\p{L}'])/iu.exec(sentence);
+  if (m === null) return false;
+  const before = sentence.slice(0, m.index).split(/\s+/).map(bare).filter(Boolean);
+  while (
+    before.length > 0 &&
+    /^(?:is|are|was|were|be|been|being|has|have|had|keeps?|kept|seems?|seemed|to|just|really|totally|completely|slowly|kind|sort|of|all|already|now|literally|basically|starting|started|begins?|beginning|going)$/.test(
+      before.at(-1) ?? '',
+    )
+  )
+    before.pop();
+  const subject = before.at(-1);
+  return subject === undefined || FALLING_APART_OF.test(subject);
+}
+
+/**
+ * Withdrawing, or whether to keep going: venting when nothing named follows it ("I really want to give up on this",
+ * "I need to step back", "I want to quit", "I want to drop out", "Do I keep going?"), or when what follows is the
+ * venture itself ({@link fromTheVenture}: "give up on my startup", "quit this company", "close the company", "stop
+ * being a founder"); a plan of the venture when something in it is named ("give up the office lease", "stop the free
+ * pilot", "close the Hartwell deal", "step back from day-to-day operations").
  */
 const WITHDRAWING =
-  /^(?:(?:giv(?:e|es|ing)|gave)\s+up|quit(?:s|ting)?|stop(?:s|ped|ping)?|end(?:s|ed|ing)?|leav(?:e|es|ing)|kill(?:s|ed|ing)?|step(?:s|ped|ping)?\s+(?:back|away|down|aside)|(?:run(?:s|ning)?|ran|get(?:s|ting)?|got|walk(?:s|ing|ed)?)\s+away|shut(?:s|ting)?\s+(?:it\s+|everything\s+)?down|tak(?:e|es|ing)\s+a\s+break|disappear(?:s|ed|ing)?|hid(?:e|es|ing))(?![\p{L}'])\s*(.*)$/iu;
+  /^(?:(?:giv(?:e|es|ing)|gave)\s+up|quit(?:s|ting)?|stop(?:s|ped|ping)?|end(?:s|ed|ing)?|leav(?:e|es|ing)|kill(?:s|ed|ing)?|step(?:s|ped|ping)?\s+(?:back|away|down|aside)|(?:run(?:s|ning)?|ran|get(?:s|ting)?|got|walk(?:s|ing|ed)?)\s+away|shut(?:s|ting)?\s+(?:it\s+|everything\s+)?down|wind(?:s|ing)?\s+(?:it\s+|everything\s+)?down|drop(?:s|ped|ping)?\s+out|abandon(?:s|ed|ing)?|mov(?:e|es|ed|ing)\s+on|clos(?:e|es|ed|ing)(?:\s+(?:it\s+)?(?:up|down))?|pull(?:s|ed|ing)?\s+the\s+plug|keep(?:s|ing)?\s+going|kept\s+going|tak(?:e|es|ing)\s+a\s+break|disappear(?:s|ed|ing)?|hid(?:e|es|ing))(?![\p{L}'])\s*(.*)$/iu;
 /**
  * Struggling or failing: venting when nothing named follows it ("struggling with everything"), else the thing is what
  * to pick up, never the struggle ("We're struggling to close Hartwell" is about Hartwell, "We failed the security
- * audit" about the security audit).
+ * audit" about the security audit). Only the verb: "failure rates" is no failing.
  */
-const STRUGGLING = /^(?:struggl|suffer|hurt|fail)\w*(?![\p{L}'])\s*(.*)$/iu;
+const STRUGGLING =
+  /^(?:struggl(?:e|es|ed|ing)|suffer(?:s|ed|ing)?|hurt(?:s|ing)?|fail(?:s|ed|ing)?)(?![\p{L}'])\s*(.*)$/iu;
+/** The venture itself, or the founder's whole effort: what withdrawing from is venting, never a plan. */
+const THE_VENTURE = new Set(
+  'startup startups start-up company venture business dream dreams project idea thing things everything life shop doors'.split(
+    ' ',
+  ),
+);
+/** What can stand before it ("on the whole startup", "from this company", "it all"). */
+const BEFORE_THE_VENTURE =
+  /^(?:on|from|of|with|in|at|out|the|this|that|these|those|my|your|our|a|an|whole|entire|all|own|it|its|it's|damn|stupid)$/;
+
+/**
+ * Whether what follows a withdrawal (`rest`, after "give up", "quit", "walk away"…) is the venture itself or the
+ * founder's whole effort (the review of e9e49fb heard "your plan to give up on your startup", "your plan to quit this
+ * startup", "your plan to stop being a founder"): the startup, the company, the business, the dream, the whole
+ * thing, everything they built, being anything, doing this.
+ */
+function fromTheVenture(rest: string): boolean {
+  let words = rest
+    .toLowerCase()
+    .replace(/[‘’ʼ]/g, "'")
+    .replace(/[.,;:!?…]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.join(' ').endsWith('for good')) words = words.slice(0, -2);
+  while (
+    words.length > 0 &&
+    /^(?:altogether|entirely|completely|forever|anymore|already|now|today)$/.test(words.at(-1) ?? '')
+  )
+    words = words.slice(0, -1);
+  // "stop being a founder", "quit being the CEO of this company", "stop being part of this": who they are, never a
+  // plan; "stop being the bottleneck on sales", "stop being involved in hiring" are plans.
+  if (words[0] === 'being') return beingTheVenture(words.slice(1));
+  // "stop doing this", "quit working on the startup": the effort, read as what it is on.
+  if (/^(?:doing|working|running|building|trying|pursuing|chasing)$/.test(words[0] ?? ''))
+    words = words.slice(1);
+  while (words.length > 0 && BEFORE_THE_VENTURE.test(words[0] ?? '')) words = words.slice(1);
+  const [first, second] = words;
+  if (first === undefined) return true;
+  if (!THE_VENTURE.has(first)) return false;
+  // "my dream of building this"; "the idea of building this", but never "the idea of a freemium tier": what an idea or
+  // a project is of says whether it is the venture.
+  if (second === 'of') return first.startsWith('dream') || fromTheVenture(words.slice(2).join(' '));
+  // "the startup", "everything you've built".
+  return second === undefined || /^(?:that|which|i|we|you|i've|we've|you've|i'd|we'd|you'd)$/.test(second);
+}
+
+/** Who a founder is in their venture ("a founder", "the CEO", "a startup founder"): what being is withdrawn from. */
+const FOUNDER_ROLE = /^(?:founder|co-?founder|ceo|entrepreneur|boss)s?$/;
+
+/**
+ * Whether `words` (after "being") say who the founder is in the venture ("a founder", "the CEO of this company",
+ * "part of this"), never something they do in it ("the bottleneck on sales", "involved in hiring").
+ */
+function beingTheVenture(words: readonly string[]): boolean {
+  let k = /^(?:a|an|the|its|this|my|your|our)$/.test(words[0] ?? '') ? 1 : 0;
+  if (words[k] === 'startup' || words[k] === 'solo') k += 1;
+  const after = (from: number) =>
+    words.length === from ||
+    (/^(?:of|at|for|in)$/.test(words[from] ?? '') && fromTheVenture(words.slice(from + 1).join(' ')));
+  if (FOUNDER_ROLE.test(words[k] ?? '')) return after(k + 1);
+  return words[0] === 'part' && words[1] === 'of' && fromTheVenture(words.slice(2).join(' '));
+}
 /** Words that name no one and nothing in particular. */
 const INDEFINITE = new Set(
   'someone somebody anyone anybody everyone everybody something anything everything nothing things stuff all'.split(
@@ -1117,9 +1347,17 @@ function vents(text: string): 'line' | 'topic' | null {
       text,
     )?.[1] ?? text
   ).trim();
-  if (DISTRESS.test(done)) return 'line';
+  if (DISTRESS.test(done) || DISTRESS_IN_A_SENTENCE.test(done)) return 'line';
+  const unlessNamed = UNLESS_NAMED.exec(done);
+  if (unlessNamed !== null) {
+    const rest = unlessNamed[1] ?? '';
+    return namesSomething(rest) && !NO_OBJECT.test(rest) ? null : 'line';
+  }
   const withdrawing = WITHDRAWING.exec(done);
-  if (withdrawing !== null) return namesSomething(withdrawing[1] ?? '') ? null : 'line';
+  if (withdrawing !== null) {
+    const rest = withdrawing[1] ?? '';
+    return namesSomething(rest) && !fromTheVenture(rest) ? null : 'line';
+  }
   const struggling = STRUGGLING.exec(done);
   if (struggling !== null) return namesSomething(struggling[1] ?? '') ? 'topic' : 'line';
   return null;
@@ -1143,6 +1381,9 @@ export function topicOf(line: string): LineTopic | null {
   for (const raw of sentences) {
     const sentence = raw.replace(LEAD_IN, '').trim();
     if (topicWords(sentence).length === 0 || TIME_BUDGET.test(sentence)) continue;
+    // Distress wherever it is said names nothing to pick up, in none of the line's sentences ("Things are falling
+    // apart with my cofounder", "I'm losing hope": the review of e9e49fb).
+    if (DISTRESS_IN_A_SENTENCE.test(sentence) || fallsApart(sentence)) return null;
     let found: LineTopic | null = null;
     const yesNo = /^(should|shall|can|could|do|would)\s+(?:we|i)\s+(.+?)\??$/i.exec(sentence);
     const wh =
@@ -1195,8 +1436,12 @@ export function topicOf(line: string): LineTopic | null {
     // What does not read as a subject is not one ("your plan to a few minutes…"): the sentence's phrases are tried.
     if (found !== null && !readsAsSubject(found.text)) found = null;
     if (found === null) {
+      // A phrase is read for venting as a plan is ("falling apart", "losing your mind": the review of e9e49fb).
       const phrase = nounPhrase(sentence);
-      if (phrase !== null) found = { text: phrase.text, question: false, score: phrase.score };
+      const phraseVents = phrase === null ? null : vents(phrase.text);
+      if (phraseVents === 'line') return null;
+      if (phrase !== null && phraseVents === null)
+        found = { text: phrase.text, question: false, score: phrase.score };
     }
     if (found !== null && found.text.length <= 70 && (best === null || found.score > best.score))
       best = found;

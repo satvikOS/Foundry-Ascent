@@ -223,6 +223,14 @@ function withoutAlternative(sentence: string): string {
 /** A time said at the end of a phrase ("… on Monday", "… this week", "… tomorrow"). */
 const TIME_TAIL =
   /\s+(?:(?:on|by|this|next|last|before|after|until|till|in|at|from|over|during|for)\s+(?:the\s+)?(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day(?:\s+(?:morning|afternoon|evening|night))?|weekend|week|month|term|semester|quarter|year|morning|afternoon|evening|night|end of (?:the\s+)?(?:week|month|term|semester)|exams?|\d[\w:./-]*)|today|tomorrow|tonight|yesterday|soon|later)$/i;
+/**
+ * A plan or a question that ends on a second verb with "and" or "or" and nothing after it ("whether to give up on the
+ * B2C market and focus"): cut before that verb's preposition, it is left without what it does. A name after "and" is
+ * no verb ("your plan to call Noor and Sam"), nor is a plural or an activity ("sell pens and pencils", "rethink
+ * pricing and marketing"); case matters, so no `i` flag.
+ */
+const JOINED_VERB =
+  /^(?:(?:your|the|their|our)\s+(?:[\p{L}'’-]+['’]s\s+)?(?:plan|decision|goal|idea)\s+to|whether|how\s+to|what\s+to)\s.*\s(?:and|or)\s+(?!\p{Ll}[\p{L}'’-]*(?:[^su'’]s|ing)$)\p{Ll}[\p{L}'’-]*$/u;
 /** Prepositions a long phrase can be cut before, keeping what it names ("the study room for the kickoff"). */
 const CUT_BEFORE =
   /\s(?:for|with|at|on|about|before|after|during|by|in|from|via|over|between|across|around)\s/gi;
@@ -257,8 +265,10 @@ function candidateSubjects(text: string): string[] {
   for (const at of cuts) {
     const head = withoutDiscourseWords(current.slice(0, at));
     if (head.split(/\s+/).length < 2 || topicWords(head).length === 0) continue;
-    // "your plan to call" names no plan.
-    if (/^your (?:plan|decision) to \S+$/i.test(head)) continue;
+    // "your plan to call", "your plan to give up", "whether to hire" name no plan and ask nothing (the review of
+    // e9e49fb heard "your plan to give up?" for a plan to give up on a product idea), nor does one cut after a verb
+    // it joins ("whether to give up on the B2C market and focus").
+    if (endsOnItsVerb(head) || JOINED_VERB.test(head)) continue;
     out.push(head);
   }
   return [...new Set(out)];
