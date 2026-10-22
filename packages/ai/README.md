@@ -318,8 +318,8 @@ stats }` or `null`:
   verb: "we will not collect any patient information", "no patient data", "without storing PHI" do not
   fire; "we do not have patient consent" still does.
 - Categories: `ip_licensing`, `legal`, `securities_investment`, `medical_regulatory`,
-  `safety_wellbeing` (`crisis` for first-person self-harm, suicide, imminent danger, and passive
-  ideation such as hopelessness or "I don't see the point of anything"),
+  `safety_wellbeing` (`crisis` for first-person self-harm, suicide, imminent danger, passive
+  ideation such as hopelessness or "I don't see the point of anything", and indirect ideation, below),
   `conflict_harassment`, `prompt_injection`, `cross_venture_request` (including other ventures named
   in `otherVentureNames`, ≥ 3 letters, whole-phrase).
 - Escalation is forced by the validator for the six consequential categories (precedence: safety,
@@ -342,6 +342,32 @@ favour recall on terms of art and use explicit exclusions for everyday business 
 | crisis / die   | "I want to die", "mental health crisis"                                                 | "cash crisis", "our startup is going to die", "die of embarrassment"                  |
 | threat         | "threatened to report us", "death threats"                                              | "competitive threats", "threat of new entrants"                                       |
 | discrimination | "discrimination against students"                                                       | "price discrimination"                                                                |
+
+**Indirect ideation.** People in crisis rarely say "suicide". The phrase families follow the C-SSRS
+screener (wishing to be dead, to go to sleep and not wake up), the AFSP warning signs (no reason to live,
+being a burden, feeling trapped, unbearable pain, saying goodbye) and QPR's indirect clues ("everyone
+would be better off without me", "I just want out", "I won't be around much longer"), with slang
+("kms", "unalive", "sewerslide"), misspellings, leetspeak and the crisis languages above. Some of these
+lines are also venture talk, so an ambiguous line is decided on the whole message:
+
+| The message has…                                                                       | "I'm thinking about ending it." (and "I just want out", "what's the point of any of this") | "I can't do this anymore." (and "I just want to disappear for a while")    |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| a personal-distress cue ("I feel so alone", "everything hurts", "I let everyone down") | crisis                                                                                     | crisis                                                                     |
+| otherwise venture-work vocabulary ("the pilot", "the spreadsheet", "customers")        | not flagged                                                                                | not flagged                                                                |
+| neither                                                                                | crisis                                                                                     | `safety_wellbeing` without `crisis` (forced escalation; the coach answers) |
+
+Distress beats work. An object after the phrase is its referent ("ending it with the vendor",
+"better off without me on the sales calls", "disappear from social media for a week to focus") unless
+it is a means ("ending it with pills"). Unambiguous phrasings ("I wish I could go to sleep and never wake
+up", "nobody would care if I died") are crisis in any context. The mechanism is `RiskRule.requiresContext`
+/ `unlessContext`: message-level patterns read on the normalised text (a veto is never read on the
+leetspeak-folded text, where "spreadsheets!" becomes "spreadsheetsi"), and a required cue is looked for
+outside the rule's own matches, so a line is never its own context. Context cues are English;
+multilingual phrasings are the unambiguous kind. `src/risk/indirect-ideation.test.ts` holds the table
+(60 positives, 64 hard negatives) and the decision rule. Accepted false positives: the classifier sees
+one message, so "I'm thinking about ending it, what do you think?" answering a question about a pilot
+takes the crisis path; so do a bare "So this is goodbye!" and "I'm ending things." after talk of a
+partner.
 
 Crisis rules flag hedged or negated first-person statements ("I'm not suicidal, but…") on purpose;
 product context ("suicide prevention app", "self-harm detection") tags `safety_wellbeing` without

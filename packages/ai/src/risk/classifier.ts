@@ -90,12 +90,64 @@ function clauseBefore(text: string, index: number): string {
   return but >= 0 ? clause.slice(but + 5) : clause;
 }
 
+/** Whether any of `patterns` matches anywhere in any of `texts` (`search` ignores the global flag's `lastIndex`). */
+function anyMatch(patterns: readonly RegExp[], texts: readonly string[]): boolean {
+  return texts.some((text) => patterns.some((pattern) => text.search(pattern) >= 0));
+}
+
+/** The message as the context rules read it, whichever variant the rule itself matched on. */
+interface MessageContext {
+  /** Normalised and accent-folded text. */
+  readonly plain: readonly string[];
+  /** `plain` plus the leetspeak-folded text. */
+  readonly all: readonly string[];
+}
+
+/** `text` with every match of `rule`'s own patterns blanked out (same length, so indices are unchanged). */
+function withoutOwnMatches(rule: RiskRule, text: string): string {
+  let out = text;
+  for (const pattern of rule.patterns) out = out.replace(pattern, (match) => ' '.repeat(match.length));
+  return out;
+}
+
+/**
+ * Whether the message-level context lets `rule` fire (see `RiskRule.requiresContext` / `unlessContext`). Context is
+ * a property of the message, not of the variant a pattern matched on: leetspeak folding turns "spreadsheets!" into
+ * "spreadsheetsi", so a veto is read on the plain text, while a required cue may be written in leetspeak too. A
+ * required cue is looked for outside the rule's own matches: a line is never its own context ("I can't cope with
+ * this anymore" is not distress around "I can't cope with this anymore").
+ */
+function contextAllows(rule: RiskRule, message: MessageContext): boolean {
+  if (
+    rule.requiresContext !== undefined &&
+    !anyMatch(
+      rule.requiresContext,
+      message.all.map((text) => withoutOwnMatches(rule, text)),
+    )
+  ) {
+    return false;
+  }
+  if (rule.unlessContext !== undefined && anyMatch(rule.unlessContext, message.plain)) return false;
+  return true;
+}
+
 /** Whether `rule` has at least one positive match in `text` not fully covered by an exclusion. */
 function ruleMatches(rule: RiskRule, text: string): boolean {
-  const excluded = rule.exclude?.flatMap((pattern) => spans(pattern, text)) ?? [];
+  // Exclusions sorted by start: a hit is covered when an exclusion starting at or before it ends at or after it,
+  // i.e. when the largest end among exclusions starting at or before the hit reaches the hit's end. Hits of one
+  // pattern arrive in start order, so one forward pass per pattern keeps this linear in hits plus exclusions.
+  const excluded = (rule.exclude?.flatMap((pattern) => spans(pattern, text)) ?? []).sort(
+    (a, b) => a.start - b.start,
+  );
   for (const pattern of rule.patterns) {
+    let next = 0;
+    let reach = -1;
     for (const hit of spans(pattern, text)) {
-      const covered = excluded.some((x) => x.start <= hit.start && x.end >= hit.end);
+      while (next < excluded.length && (excluded[next]?.start ?? Infinity) <= hit.start) {
+        reach = Math.max(reach, excluded[next]?.end ?? -1);
+        next += 1;
+      }
+      const covered = reach >= hit.end;
       if (covered) continue;
       if (rule.negatable === true && NEGATED_HANDLING.test(clauseBefore(text, hit.start))) continue;
       return true;
@@ -156,6 +208,8 @@ export function classifyRisk(text: string, options: ClassifyRiskOptions = {}): R
   const folded = foldDiacritics(lower);
   const leet = foldLeetspeak(lower);
   const shouting = mostlyUpperCase(cased);
+  const plain = folded === lower ? [lower] : [lower, folded];
+  const message: MessageContext = { plain, all: leet === lower ? plain : [...plain, leet] };
 
   const matched: string[] = [];
   const categories = new Set<RiskCategory>();
@@ -172,9 +226,10 @@ export function classifyRisk(text: string, options: ClassifyRiskOptions = {}): R
       continue;
     }
     if (
-      ruleMatches(rule, lower) ||
-      (folded !== lower && ruleMatches(rule, folded)) ||
-      (rule.evasionAware === true && leet !== lower && ruleMatches(rule, leet))
+      (ruleMatches(rule, lower) ||
+        (folded !== lower && ruleMatches(rule, folded)) ||
+        (rule.evasionAware === true && leet !== lower && ruleMatches(rule, leet))) &&
+      contextAllows(rule, message)
     ) {
       fire(rule);
     }
