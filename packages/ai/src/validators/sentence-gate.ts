@@ -1,4 +1,11 @@
 import { normalizeForMatching } from '../risk/normalize.js';
+import {
+  askedLifeOf,
+  isOnlyThanks,
+  lifeClosing,
+  lifeUnitAfterRemoval,
+  type AskedLife,
+} from './asked-life.js';
 import { textsContainOtherVenture } from './coach-response.js';
 import {
   identifiesHonestly,
@@ -44,7 +51,10 @@ import { clampWords, toSpeakable } from './speech.js';
  *    sign as) the EIR block the stream, as they block the turn; a volunteered AI disclaimer ("I'm just an AI")
  *    is rewritten out, never blocking, and never takes the honest answer with it: the first disclaimer sentence
  *    that says what the coach is becomes its honest line unless an earlier unit already said it, and nothing is
- *    rewritten out of the answer to a sincere question about it (`founderText`). Each unit is also read after a
+ *    rewritten out of the answer to a sincere question about it (`founderText`). When the founder asks about the
+ *    coach's own weekend, day or plans, a life the unit tells of its own is taken out before it is shown or said
+ *    (asked-life.ts: "Weekend was good, thanks for asking!" → "Thanks for asking!"), and the reply still turns to
+ *    them ("You?" → "How was yours?"). Each unit is also read after a
  *    bounded tail
  *    of the one before it (typed, and as heard on a call), so a claim split across units ("This is" then
  *    "Corin.", "Has Corin approved your plan?" then "Yes, she has.") is judged whole: a unit that completes
@@ -261,6 +271,10 @@ const CUMULATIVE_WINDOW_CHARS = 4 * MAX_HOLD_BACK;
 const MARKDOWN_WINDOW_CHARS = 2_048;
 /** How much of the previous unit a unit's identity check reads before it (cut at a word boundary). */
 const IDENTITY_TAIL_CHARS = 300;
+/** How much of the reply's start the gate keeps to tell whether it is only thanks (after a made-up life went). */
+const LIFE_RELEASED_CHARS = 200;
+/** How much of what the reply released a life is read after, for a draft it may sit in (as identity.ts reads one). */
+const DRAFT_SCAN_CHARS = 600;
 
 /** The end of a released unit that the next unit's identity check reads first. */
 function identityTail(text: string): string {
@@ -431,6 +445,19 @@ export class SentenceGate {
   #answerLead = '';
   /** A released unit said honestly what the coach is: a later disclaimer that says it again is only removed. */
   #identified = false;
+  /**
+   * What the founder's message asks about the coach's own life (`founderText`; asked-life.ts), or null: then a unit that
+   * tells a life of its own loses it ("Weekend was good, thanks for asking!" → "Thanks for asking!", evals MX-0032).
+   */
+  readonly #life: AskedLife | null;
+  /** A unit lost a made-up life: the reply must still turn to the founder (see `#release` and `#process`). */
+  #lifeRemoved = false;
+  /** What the reply released so far (its start, typed), while a made-up life may need a turn-back after it. */
+  #lifeReleased = '';
+  /** The end of what the reply released (typed): a life is read after it, for the draft it may sit in. */
+  #releasedTail = '';
+  /** The turn-back that ends a reply whose made-up life went was considered (once). */
+  #lifeClosed = false;
   #stats = { units: 0, withheld: 0, identityRewrites: 0, citationsRemoved: 0, markdownRemovals: 0 };
 
   constructor(options: SentenceGateOptions) {
@@ -448,6 +475,7 @@ export class SentenceGate {
     this.#question =
       options.founderText === undefined ? null : identityQuestionOf(options.founderText, this.#identity);
     this.#news = founderMoves(options.founderText ?? '').includes('news');
+    this.#life = options.founderText === undefined ? null : askedLifeOf(options.founderText);
     const previous = options.previousReply ?? null;
     // No repeat check for a sincere question about the coach: its honest answer is said however recently it was
     // said (the intro of a first meeting, or the last reply when they ask again; the presence policy).
@@ -678,6 +706,15 @@ export class SentenceGate {
       this.#released.units += 1;
       this.#released.words += words(unit.text);
     }
+    if (this.#ended && this.#lifeRemoved && this.#life !== null && !this.#lifeClosed) {
+      // A made-up life went and nothing but thanks (or nothing) was released: the reply turns to the founder ("Thanks for
+      // asking! How was yours?"), as the whole reply does once validated.
+      this.#lifeClosed = true;
+      const closing = lifeClosing(this.#lifeReleased, this.#life);
+      const unit = closing === null ? null : this.#process(this.#nothingReleased() ? closing : ` ${closing}`);
+      if (unit === 'identity' || unit === 'cross_venture') return this.#block(unit, units);
+      if (unit !== null) this.#show(unit, units);
+    }
     if (this.#ended && this.#nothingReleased()) {
       // The reply was only the greeting the opening line already gave, or only the previous reply again: a short
       // line instead.
@@ -756,14 +793,28 @@ export class SentenceGate {
     // as the answer too.
     this.#answerLead = answers === null ? '' : `${this.#answerLead}${text}`;
     this.#opening = answers !== null && isAnswerPreface(this.#answerLead);
-    const identity = rewriteIdentity(text, { ...this.#identity, ...this.#disclaimers, answers });
+    // What was released before this unit, with the space or blank line between ("Reply with this:\n\nHi Sam,\n\n"):
+    // a life in a draft the founder will send is theirs.
+    const before = `${this.#releasedTail}${lead === '' ? ' ' : lead}`;
+    const identity = rewriteIdentity(text, {
+      ...this.#identity,
+      ...this.#disclaimers,
+      answers,
+      ...(this.#life === null ? {} : { lifeBefore: before }),
+    });
     if (identity.findings.some((f) => this.#blockOn.has(f.kind))) return 'identity';
     this.#stats.identityRewrites += identity.findings.length;
+    if (this.#life !== null && identity.findings.some((f) => f.rule === 'personal_life'))
+      this.#lifeRemoved = true;
     text = identity.text.trim();
     if (text === '') {
       this.#afterDroppedDisclaimer = identity.findings.length > 0 && identity.findings.every(isStyleFinding);
       return null;
     }
+    // After a made-up life went, while the reply said at most thanks: "You?" is said in full ("Thanks for asking! How
+    // was yours?"), as the whole reply reads once validated.
+    if (this.#lifeRemoved && this.#life !== null)
+      text = lifeUnitAfterRemoval(this.#lifeReleased, text, this.#life);
     if (this.#afterDroppedDisclaimer) {
       this.#afterDroppedDisclaimer = false;
       text = withoutLeaningConnector(text);
@@ -771,10 +822,16 @@ export class SentenceGate {
     const split = this.#splitClaim(this.#tail, lead === '' ? ' ' : lead, text, this.#identity);
     if (split === null) return 'identity';
     text = split;
-    const spoken = this.#speak(text);
+    const spoken = this.#speak(text, before);
     if ('blocked' in spoken) return spoken.blocked;
     this.#tail = identityTail(text);
     if (!this.#identified && identifiesHonestly(text, this.#identity)) this.#identified = true;
+    if (this.#life !== null) {
+      this.#releasedTail = `${before}${text}`.slice(-DRAFT_SCAN_CHARS);
+      // Only the reply's start matters here (whether it is all thanks), so it stays short.
+      if (this.#lifeReleased.length < LIFE_RELEASED_CHARS)
+        this.#lifeReleased = `${this.#lifeReleased} ${text}`.slice(0, LIFE_RELEASED_CHARS);
+    }
     return { text: `${lead}${text}`, spoken: spoken.said };
   }
 
@@ -802,12 +859,19 @@ export class SentenceGate {
     identityAsked: boolean;
     identified: boolean;
     introduced: boolean;
+    founderText?: string;
+    lifeAfterOpening: boolean;
   } {
     return {
       disclaimers: 'unit',
       identityAsked: this.#question !== null,
       identified: this.#identified,
       introduced: this.#options.introduced === true,
+      // The founder's question about the coach's own life: a unit's made-up life goes before it is shown or said (evals
+      // MX-0032). Only the unit's own rewrite reads it (a life is read within its sentence), never `#splitClaim`'s.
+      ...(this.#life === null ? {} : { founderText: this.#options.founderText }),
+      // As the whole reply reads once its made-up lives are out: a bare answer opens it after nothing but thanks.
+      lifeAfterOpening: this.#life !== null && !isOnlyThanks(this.#lifeReleased),
     };
   }
 
@@ -831,14 +895,18 @@ export class SentenceGate {
    * the EIR, or it says another venture's name or canary (read after a bounded tail of what was said before,
    * where Markdown, links and citations no longer split a word).
    */
-  #speak(text: string): { said: string } | { blocked: GateBlockReason } {
+  #speak(text: string, before: string): { said: string } | { blocked: GateBlockReason } {
     const budget = this.#options.spokenWordBudget;
     let speakable = toSpeakable(text);
     if (this.#options.spoken === true && speakable !== '') {
       // Heard, not read: the spoken form is checked as speech before it is said, alone and after the end of
       // the unit said before it.
       const options = { ...this.#identity, spoken: true };
-      const heard = rewriteIdentity(speakable, { ...options, ...this.#disclaimers });
+      const heard = rewriteIdentity(speakable, {
+        ...options,
+        ...this.#disclaimers,
+        ...(this.#life === null ? {} : { lifeBefore: before }),
+      });
       if (heard.findings.some((f) => this.#blockOn.has(f.kind))) return { blocked: 'identity' };
       this.#stats.identityRewrites += heard.findings.length;
       speakable = heard.text.trim();
