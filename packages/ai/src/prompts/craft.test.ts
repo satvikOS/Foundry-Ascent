@@ -266,6 +266,7 @@ describe('conversation craft in the system prompt', () => {
     // 2026-10-22.2: the control block moved after the rules that stay the same on every turn (prompt caching).
     // 2026-10-22.3: a turn with the founder's own subject leaves the notes' agenda out; a handed-back question is named.
     // 2026-10-22.4: banter never makes up a life of its own; a declined instruction is never shown again.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-22.4');
+    // 2026-10-22.5: distillation closes what the founder reports done and never re-centres an untaken thread.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-22.5');
   });
 });
