@@ -99,4 +99,12 @@ describe('fileIsStored', () => {
     expect(fileIsStored({ status: 'failed', failureReason: 'object_missing' })).toBe(false);
     expect(fileIsStored({ status: 'deleted', failureReason: null })).toBe(false);
   });
+
+  it('is false for a seeded document, whose text was seeded and whose file never was', () => {
+    const key = 'seed/tenants/t/ventures/v/documents/d/brief.md';
+    expect(fileIsStored({ status: 'ready', failureReason: null, s3Key: key })).toBe(false);
+    expect(
+      fileIsStored({ status: 'ready', failureReason: null, s3Key: 'tenants/t/ventures/v/documents/d/a.pdf' }),
+    ).toBe(true);
+  });
 });
