@@ -450,6 +450,16 @@ describe('the call intro', () => {
       'your plan to call facilities',
     ]);
     expect(shorterSubjects('a two-week pilot first')).toEqual(['a two-week pilot']);
+    // A shorter form never cuts what the founder meant (the review of 1cac704: "your plan to break").
+    expect(
+      shorterSubjects('your plan to break even by the end of the year with the Hartwell pilot revenue'),
+    ).toEqual([
+      'your plan to break even by the end of the year with the Hartwell pilot revenue',
+      'your plan to break even by the end of the year',
+      'your plan to break even',
+    ]);
+    expect(shorterSubjects('whether to hire later')).toEqual(['whether to hire later']);
+    expect(shorterSubjects('a designer urgently')).toEqual(['a designer']);
     // A stored opener built around it is read without it.
     const stored =
       'Good to talk again. Last time (yesterday), we talked about a short pilot instead. How has it gone since?';
@@ -700,7 +710,12 @@ describe('the next call’s greeting after a founder line (the voice suite on 9a
   const DISCOURSE_END =
     /\b(?:instead|too|also|anyway|though|then|again|either|yet|already|now|later|first|really|maybe|probably|just|actually|basically|honestly|well|something)\?$/i;
   const DAYS_AND_MONTHS =
-    /^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December)$/;
+    /^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December|Thanksgiving)$/;
+  /** Ends of a greeting where a discourse word is what the founder meant. */
+  const KEPT_TAIL =
+    /\b(?:or|than) \S+\?$|\b(\S+) or \S+ \1\?$|\bbreak even\?$|\bpay later\?$|\bput(?:ting)? (?:\S+ ){1,3}first\?$|\bto \S+ (?:now|later|first|again|already|yet)\?$/;
+  /** Names of the table's lines that are everyday words or end in -ing ("Sterling Capital", "Viking Global"). */
+  const NAMES = new Set(['Sterling', 'Pershing', 'Redding', 'Viking', 'Kipling', 'Boeing', 'Beijing']);
 
   /**
    * The greeting of a call the day after a call in which the founder said `line` and nothing was distilled yet, the
@@ -742,8 +757,10 @@ describe('the next call’s greeting after a founder line (the voice suite on 9a
     expect(text).toMatch(/\?$/);
     expect(text.split(/(?<=[.!?])\s+/)).toHaveLength(1);
     expect(text.length).toBeLessThanOrEqual(REPEAT_GREETING_MAX_CHARS);
-    // Never the founder's adverb at its end ("…a short pilot instead?"), unless it is an alternative ("now or later?").
-    if (!/\b(?:or|than) \S+\?$/.test(text)) expect(text).not.toMatch(DISCOURSE_END);
+    // Never the founder's adverb at its end ("…a short pilot instead?"), unless it is an alternative ("now or later?",
+    // "raise first or hire first?"), a fixed phrase ("break even", "put students first", "pay later") or the timing a
+    // plan's or a question's verb has ("whether to hire later?").
+    if (!KEPT_TAIL.test(text)) expect(text).not.toMatch(DISCOURSE_END);
     // Never a word that needs what follows ("…the study room for?"), nor a cut number ("…the price to $1?").
     expect(text).not.toMatch(/\b(?:a|an|the|to|of|for|with|and|or|your|my|our|their|at|on|in)\?$/i);
     expect(text).not.toMatch(/[$€£]\d{1,2}\?$/);
@@ -759,7 +776,7 @@ describe('the next call’s greeting after a founder line (the voice suite on 9a
     // Never an everyday word capitalised mid-sentence ("…pick up Fundraising?"): names and dates only.
     for (const m of text.slice('Hi Maya, '.length).matchAll(/(?<![\p{Lu}][\p{L}]* )\b\p{Lu}\p{Ll}+\b/gu)) {
       const word = m[0];
-      if (DAYS_AND_MONTHS.test(word)) continue;
+      if (DAYS_AND_MONTHS.test(word) || NAMES.has(word)) continue;
       expect(isEverydayWord(word) || word.endsWith('ing'), `${word} in "${text}"`).toBe(false);
     }
   }
@@ -890,6 +907,71 @@ describe('the next call’s greeting after a founder line (the voice suite on 9a
     ['We should practise the investor pitch again.', 'Hi Maya, shall we pick up the investor pitch?'],
     ['Our pitch is probably too long.', 'Hi Maya, shall we pick up your pitch?'],
     ['The pitch went badly, really.', INVITATION],
+    // The adversarial review of 1cac704. A timing word that is what was meant, a fixed phrase, a parallel alternative.
+    ['We want to break even.', 'Hi Maya, shall we pick up your plan to break even?'],
+    ['Our plan is to break even.', 'Hi Maya, shall we pick up your plan to break even?'],
+    ['Our goal is break even.', 'Hi Maya, shall we pick up your goal of break even?'],
+    ['We decided to put students first.', 'Hi Maya, shall we pick up your decision to put students first?'],
+    ["We're putting students first.", 'Hi Maya, shall we pick up putting students first?'],
+    [
+      'Should we raise first or hire first?',
+      'Hi Maya, where did you land on whether to raise first or hire first?',
+    ],
+    [
+      'We want to offer buy now pay later.',
+      'Hi Maya, shall we pick up your plan to offer buy now pay later?',
+    ],
+    ['Should we just hire later?', 'Hi Maya, where did you land on whether to hire later?'],
+    // Venting and distress are never a plan or an activity to pick up.
+    ['I want to quit', INVITATION],
+    ['I really want to quit', INVITATION],
+    ['I really want to give up on this.', INVITATION],
+    ['I really need to talk to someone.', INVITATION],
+    ['I just need to get away from all this.', INVITATION],
+    ['I really need to step back.', INVITATION],
+    ['I honestly just want to quit.', INVITATION],
+    ["I'm honestly burning out on this startup.", INVITATION],
+    ["I'm really struggling with everything right now.", INVITATION],
+    ["We're really failing at sales.", INVITATION],
+    ["I'm thinking about ending it.", INVITATION],
+    // An adverb outside the discourse words never ends what is picked up.
+    ['We need a designer urgently.', INVITATION],
+    ['We should launch the beta quickly.', INVITATION],
+    ['We need a cofounder ASAP.', INVITATION],
+    ['We need funding desperately.', INVITATION],
+    ['Ten students used the app daily.', 'Hi Maya, shall we pick up the ten students?'],
+    ['We should test the pricing properly.', INVITATION],
+    ['We need more customers fast.', INVITATION],
+    // A name that ends in -ing keeps its capital.
+    ['Sterling Capital is interested in leading.', 'Hi Maya, shall we pick up Sterling Capital?'],
+    ['Sterling Capital has offered us a term sheet!', 'Hi Maya, shall we pick up Sterling Capital?'],
+    ['Beijing is our next market.', 'Hi Maya, shall we pick up Beijing?'],
+    ['Pershing Square is interested in our seed round.', 'Hi Maya, shall we pick up Pershing Square?'],
+    ['Redding Library has signed the pilot.', 'Hi Maya, shall we pick up Redding Library?'],
+    ['Viking Global is interested.', 'Hi Maya, shall we pick up Viking Global?'],
+    ['Kipling Ventures is leading our round.', 'Hi Maya, shall we pick up Kipling Ventures?'],
+    ['Boeing is interested in a pilot.', 'Hi Maya, shall we pick up Boeing?'],
+    ['Thanksgiving break is when the pilot ends.', 'Hi Maya, shall we pick up Thanksgiving break?'],
+    // A sentence's first everyday word in its everyday case.
+    ['Five libraries signed up!', 'Hi Maya, shall we pick up the five libraries?'],
+    ['Two investors passed.', 'Hi Maya, shall we pick up the two investors?'],
+    ['Ten libraries is our goal.', 'Hi Maya, shall we pick up the ten libraries?'],
+    ['Several investors want a call.', 'Hi Maya, shall we pick up several investors?'],
+    ['Annual pricing is simpler.', 'Hi Maya, shall we pick up annual pricing?'],
+    ['Customer interviews are going well.', 'Hi Maya, shall we pick up customer interviews?'],
+    ['Per-seat pricing feels wrong.', 'Hi Maya, shall we pick up per-seat pricing?'],
+    // An inverted question whose subject runs to its end.
+    ['Is our pitch convincing?', 'Hi Maya, where did you land on whether your pitch is convincing?'],
+    ['Is the deck compelling?', 'Hi Maya, where did you land on whether the deck is compelling?'],
+    ['Are the interviews useful?', 'Hi Maya, where did you land on whether the interviews are useful?'],
+    ['Is the price reasonable?', 'Hi Maya, where did you land on whether the price is reasonable?'],
+    ['Are the numbers realistic?', 'Hi Maya, where did you land on whether the numbers are realistic?'],
+    ['Is the pilot worth it?', 'Hi Maya, where did you land on whether the pilot is worth it?'],
+    ['Does the pricing make sense?', 'Hi Maya, where did you land on whether the pricing makes sense?'],
+    // A gerund after a noun subject's "is" names an activity.
+    ['The bottleneck is hiring engineers.', 'Hi Maya, shall we pick up hiring engineers?'],
+    ['The question is funding runway.', 'Hi Maya, shall we pick up funding runway?'],
+    ['What we need is marketing budget.', 'Hi Maya, shall we pick up marketing budget?'],
   ])('%s', (line, expected) => {
     expect(nextGreeting(line, 'a').chosen).toBe(expected);
     // What it picks up: the founder line's topic (`topicOf`), or a shorter form of it that fits.

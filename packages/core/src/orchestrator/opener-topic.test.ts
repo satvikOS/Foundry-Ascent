@@ -332,6 +332,200 @@ describe('topicOf: never a splice of the founder’s line (the voice suite on 9a
   });
 });
 
+describe('the adversarial review of 1cac704: stripping never changes what the founder meant', () => {
+  it('keeps a timing word that is what a plan or a question is about, a fixed phrase and a parallel alternative', () => {
+    // Before: "your plan to break", "your decision to put students", "whether to raise first or hire", "your plan to
+    // offer buy now pay", "whether to hire" (the timing the question was about dropped).
+    for (const subject of [
+      'your plan to break even',
+      'your goal of break even',
+      'your decision to put students first',
+      'putting students first',
+      'whether to raise first or hire first',
+      'your plan to offer buy now pay later',
+      'whether to hire later',
+      'whether to launch now',
+      'your plan to pitch again',
+      'your plan to talk to them again',
+    ]) {
+      expect(withoutDiscourseWords(subject), subject).toBe(subject);
+      expect(readsAsSubject(subject), subject).toBe(true);
+    }
+    // A pure discourse word is no part of what was meant, even after a plan's verb alone.
+    expect(withoutDiscourseWords('your decision to pivot instead')).toBe('your decision to pivot');
+    // A timing word after the plan's object is still dropped.
+    expect(withoutDiscourseWords('your plan to call facilities again')).toBe('your plan to call facilities');
+  });
+
+  it.each([
+    ['We want to break even.', 'your plan to break even', false],
+    ['Our plan is to break even.', 'your plan to break even', false],
+    ['Our goal is break even.', 'your goal of break even', false],
+    ['We decided to put students first.', 'your decision to put students first', false],
+    ["We're putting students first.", 'putting students first', false],
+    ['Should we raise first or hire first?', 'whether to raise first or hire first', true],
+    ['We want to offer buy now pay later.', 'your plan to offer buy now pay later', false],
+    ['Should we just hire later?', 'whether to hire later', true],
+  ])('topicOf(%j) keeps what it meant', (line, text, question) => {
+    expect(isTopicLine(line), line).toBe(true);
+    expect(topicOf(line)).toMatchObject({ text, question });
+  });
+
+  it('never makes a plan or an activity of venting or distress, and an adverb is no topic word', () => {
+    for (const line of [
+      'I want to quit',
+      'I really want to quit',
+      'I honestly just want to quit.',
+      'I really need to step back.',
+      'I really need to talk to someone.',
+    ]) {
+      expect(isTopicLine(line), line).toBe(false);
+    }
+    for (const line of [
+      'I really want to give up on this.',
+      'I really need to talk to someone.',
+      'I just need to get away from all this.',
+      'I really need to step back.',
+      'I honestly just want to quit.',
+      "I'm honestly burning out on this startup.",
+      "I'm burning out on this startup.",
+      "I'm really struggling with everything right now.",
+      "We're really failing at sales.",
+      "I'm thinking about ending it.",
+      'Should I just give up?',
+      'I want to stop.',
+    ]) {
+      expect(topicOf(line)?.text ?? null, line).toBeNull();
+    }
+    // Struggling with something named: the thing is what to pick up, never the struggle.
+    expect(topicOf("We're struggling to close Hartwell.")?.text).toBe('Hartwell');
+    expect(topicOf('We failed the security audit.')?.text).toBe('the security audit');
+    // Giving up, stopping or leaving something named is a plan of the venture.
+    expect(topicOf('Should we give up on the B2C market?')?.text).toBe(
+      'whether to give up on the B2C market',
+    );
+    expect(topicOf('I want to give up the office lease.')?.text).toBe(
+      'your plan to give up the office lease',
+    );
+    expect(topicOf('We need to stop the free pilot at Hartwell.')?.text).toBe(
+      'your plan to stop the free pilot at Hartwell',
+    );
+    expect(topicOf("We've decided to leave the accelerator.")?.text).toBe(
+      'your decision to leave the accelerator',
+    );
+  });
+
+  it('never ends a subject on an adverb outside the discourse words ("a designer urgently")', () => {
+    for (const subject of [
+      'a designer urgently',
+      'the beta quickly',
+      'a cofounder ASAP',
+      'funding desperately',
+      'the app daily',
+      'the pricing properly',
+      'customers fast',
+    ]) {
+      expect(readsAsSubject(subject), subject).toBe(false);
+      expect(withoutDiscourseWords(subject), subject).toBe(subject.split(' ').slice(0, -1).join(' '));
+    }
+    // A word in -ly that names or describes stays: "the family", "a steady supply", "monthly pricing", a name.
+    for (const subject of ['the family', 'a steady supply', 'monthly pricing', 'the elderly', 'Kelly']) {
+      expect(withoutDiscourseWords(subject), subject).toBe(subject);
+      expect(readsAsSubject(subject), subject).toBe(true);
+    }
+    for (const line of [
+      'We need a designer urgently.',
+      'We should launch the beta quickly.',
+      'We need a cofounder ASAP.',
+      'We need funding desperately.',
+      'Ten students used the app daily.',
+      'We should test the pricing properly.',
+      'We need more customers fast.',
+    ]) {
+      const text = topicOf(line)?.text ?? '';
+      expect(text, line).not.toMatch(/\b(?:urgently|quickly|ASAP|desperately|daily|properly|fast)$/);
+    }
+  });
+
+  it.each([
+    // A name that ends in -ing keeps its capital (before: "sterling Capital", "beijing", "boeing").
+    ['Sterling Capital is interested in leading.', 'Sterling Capital'],
+    ['Sterling Capital has offered us a term sheet!', 'Sterling Capital'],
+    ['Beijing is our next market.', 'Beijing'],
+    ['Pershing Square is interested in our seed round.', 'Pershing Square'],
+    ['Redding Library has signed the pilot.', 'Redding Library'],
+    ['Viking Global is interested.', 'Viking Global'],
+    ['Kipling Ventures is leading our round.', 'Kipling Ventures'],
+    ['Boeing is interested in a pilot.', 'Boeing'],
+    ['Thanksgiving break is when the pilot ends.', 'Thanksgiving break'],
+    // An activity still says its everyday case.
+    ['Fundraising is taking too much of my time though.', 'fundraising'],
+    ['Hiring a full-time engineer feels risky right now.', 'hiring a full-time engineer'],
+    ['Hiring Noor feels risky right now.', 'hiring Noor'],
+    ['Reading Room is our partner.', 'Reading Room'],
+    // A sentence's first everyday word in its everyday case, a count said as the one told of.
+    ['Five libraries signed up!', 'the five libraries'],
+    ['Two investors passed.', 'the two investors'],
+    ['Ten libraries is our goal.', 'the ten libraries'],
+    ['Several investors want a call.', 'several investors'],
+    ['Annual pricing is simpler.', 'annual pricing'],
+    ['Customer interviews are going well.', 'customer interviews'],
+    ['Per-seat pricing feels wrong.', 'per-seat pricing'],
+  ])('topicOf(%j) says names with their capitals and everyday words without', (line, text) => {
+    expect(topicOf(line)?.text).toBe(text);
+  });
+
+  it.each([
+    // An inverted question whose subject runs to its end, its last word the predicate.
+    ['Is our pitch convincing?', 'whether your pitch is convincing'],
+    ['Is the deck compelling?', 'whether the deck is compelling'],
+    ['Are the interviews useful?', 'whether the interviews are useful'],
+    ['Is the price reasonable?', 'whether the price is reasonable'],
+    ['Are the numbers realistic?', 'whether the numbers are realistic'],
+    ['Is the pilot worth it?', 'whether the pilot is worth it'],
+    ['Does the pricing make sense?', 'whether the pricing makes sense'],
+    ['Do the numbers add up?', 'whether the numbers add up'],
+    ['Is the plan solid?', 'whether the plan is solid'],
+    ['Was the demo convincing?', 'whether the demo was convincing'],
+    ['Does our pitch work?', 'whether your pitch works'],
+    ['Can the pilot scale?', 'whether the pilot can scale'],
+    ['Does the offer still stand?', 'whether the offer still stands'],
+    ['Does the pilot cover our costs?', 'whether the pilot covers your costs'],
+    ['Should the call go ahead?', 'whether the call should go ahead'],
+    ['Is the Hartwell pilot ready yet?', 'whether the Hartwell pilot is ready'],
+  ])('topicOf(%j) is %j', (line, text) => {
+    expect(topicOf(line)).toMatchObject({ text, question: true });
+  });
+
+  it.each([
+    // A verb the phrase rules did not know ended no phrase: "shall we pick up Bloomberg wrote?".
+    ['Bloomberg wrote about our pilot.', 'Bloomberg'],
+    ['Hartwell Library loves the booking flow.', 'Hartwell Library'],
+    // What an activity leaves its object at: "keeping librarians engaged", never "keeping librarians".
+    ['The challenge is keeping librarians engaged.', 'keeping librarians engaged'],
+  ])('topicOf(%j) is %j', (line, text) => {
+    expect(topicOf(line)?.text ?? null).toBe(text);
+  });
+
+  it('never splices the subject of a question with its verb when where it ends cannot be told', () => {
+    // Before: "shall we pick up the pilot cover costs?".
+    for (const line of ['Does the pilot cover costs?', 'Should the Hartwell pilot expand faculty access?']) {
+      expect(topicOf(line)?.text ?? null, line).toBeNull();
+    }
+  });
+
+  it.each([
+    // A gerund after a noun subject's "is" names the activity; after "is" before what names nothing it is a verb.
+    ['The bottleneck is hiring engineers.', 'hiring engineers'],
+    ['The question is funding runway.', 'funding runway'],
+    ['What we need is marketing budget.', 'marketing budget'],
+    ['The competition is getting fiercer though.', null],
+    ['Interviews are going slower than I hoped.', null],
+  ])('topicOf(%j) is %j', (line, text) => {
+    expect(topicOf(line)?.text ?? null).toBe(text);
+  });
+});
+
 describe('addressFounder (LAB-U2: said to the founder, names in their real case)', () => {
   it.each([
     ['the facility budget numbers maya will get', 'the facility budget numbers you will get'],

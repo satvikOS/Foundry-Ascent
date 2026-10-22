@@ -41,7 +41,12 @@ import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
 import { readOpener, type OpenerSubject } from '../orchestrator/continuity-prompt.js';
-import { readsAsSubject, topicWords, withoutDiscourseWords } from '../orchestrator/opener-topic.js';
+import {
+  endsOnItsVerb,
+  readsAsSubject,
+  topicWords,
+  withoutDiscourseWords,
+} from '../orchestrator/opener-topic.js';
 import { chooseOpener } from '../orchestrator/continuity.js';
 import { type DistillService } from './distill.js';
 import { mentionsEir, personaNameClaimsEir, veirEirName } from '../internal/eir-names.js';
@@ -229,7 +234,8 @@ const CUT_BEFORE =
  * while what is left names something. A greeting too long with the whole phrase says a shorter form instead of
  * dropping it (MX-0022, MX-0024). Only forms that read as a subject (`readsAsSubject`): a lone date, month or single
  * word, a plan without its verb, or one that ends on the founder's adverb, is none ("Hi Idris, want to carry on with
- * January?", lab run 39780304879); empty when no form does.
+ * January?", lab run 39780304879); empty when no form does. A shorter form never cuts a plan or a question to its
+ * verb, nor a fixed phrase ("your plan to break even" stays whole: the review of 1cac704).
  */
 export function shorterSubjects(text: string): string[] {
   return candidateSubjects(text).filter(readsAsSubject);
@@ -241,7 +247,9 @@ function candidateSubjects(text: string): string[] {
   let current = text.trim();
   for (let i = 0; i < 4; i += 1) {
     const timeless = withoutDiscourseWords(current.replace(TIME_TAIL, '').trim());
-    if (timeless === current || timeless === '') break;
+    // Never a plan or a question cut to its verb ("whether to hire later" is no "whether to hire": the review of
+    // 1cac704).
+    if (timeless === current || timeless === '' || endsOnItsVerb(timeless)) break;
     current = timeless;
     out.push(current);
   }
