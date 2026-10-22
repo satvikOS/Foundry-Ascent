@@ -191,6 +191,10 @@ class ConversationResult:
     checks: list[ReplyCheck] = field(default_factory=list)
     #: Per turn: the structured answer, the spoken reply and units, validator notes, phases, model (private).
     details: list[dict[str, Any]] = field(default_factory=list)
+    #: The notebook as it stood just before this conversation (nextOpener, nextTopic, commitments, open questions).
+    notebook_before: dict[str, Any] | None = None
+    #: The founder's lines took up what the opener raised (the commitment, or the opener's own topic words).
+    founder_took_up_opener: bool | None = None
     opener_reopens: bool = False
     opener_stale: bool = False
     error: str | None = None
@@ -233,6 +237,16 @@ class ConversationResult:
             "checks": [c.public() for c in self.checks],
             # Codes only: what the validators did to each reply (e.g. repeated_sentences_removed:2).
             "notes": [_notes(d) for d in self.details],
+            "founderTookUpOpener": self.founder_took_up_opener,
+            "notebookBefore": None
+            if self.notebook_before is None
+            else {
+                "version": self.notebook_before.get("version"),
+                "hasNextTopic": bool(self.notebook_before.get("nextTopic")),
+                "openCommitments": sum(
+                    1 for c in self.notebook_before.get("commitments") or [] if c.get("status") == "open"
+                ),
+            },
             "judge": None
             if self.verdict is None
             else {k: self.verdict.get(k) for k in ("scores", "expectation_met", "error")},
@@ -244,6 +258,7 @@ class ConversationResult:
             "opener": self.opener,
             "transcript": self.turns,
             "details": self.details,
+            "notebookBefore": self.notebook_before,
             "verdict": self.verdict,
         }
 
@@ -254,10 +269,21 @@ def _notes(detail: Mapping[str, Any]) -> list[str]:
     return [str(n) for n in notes or [] if isinstance(n, str) and re.fullmatch(r"[a-z0-9_:.-]{1,80}", n)]
 
 
+def took_up(opener: str, founder_lines: Sequence[str]) -> bool:
+    """The founder's lines take up the opener: they name the commitment, or share two content words with it."""
+    said = " ".join(founder_lines)
+    if AGENDA_TERMS.search(opener) and re.search(
+        r"\b(?:advis[oe]r|session|questions)\b", said, re.IGNORECASE
+    ):
+        return True
+    return len(_content(opener) & _content(said)) >= 2
+
+
 def grade_conversation(result: ConversationResult, conversation: Mapping[str, Any]) -> None:
     earlier: list[str] = [s for s in sentences(result.opener) if s.endswith("?")]
     result.opener_reopens = bool(AGENDA_TERMS.search(result.opener))
     result.opener_stale = bool(STALE.search(result.opener))
+    result.founder_took_up_opener = took_up(result.opener, [f for f, _ in result.turns])
     result.checks = []
     done = False  # the founder said the commitment happened
     for index, ((_, reply), turn) in enumerate(
@@ -335,6 +361,7 @@ def run_channel(
     for conversation in conversations:
         reserve(len(conversation["turns"]))
         result = ConversationResult(id=f"{conversation['id']}-{channel}", channel=channel)
+        result.notebook_before = _notebook(client, venture_id)
         session = client.create_session(venture_id, mode="coach", privacy="standard")
         result.opener = session.opener or ""
         call_id: str | None = None
@@ -375,9 +402,31 @@ def run_channel(
                 "error": verdict.error,
             }
         out.append(result)
-        # The next conversation meets this one distilled (its digest and notebook), as a founder calling back would.
-        sleep(pause_seconds)
+        # The next conversation meets this one distilled (its digest and notebook), as a founder calling back would:
+        # wait until the notebook's version moves (or a minute: a short conversation may not be distilled).
+        before = (result.notebook_before or {}).get("version")
+        waited = 0.0
+        sleep(min(pause_seconds, 5.0))
+        while waited < 60.0:
+            now = (_notebook(client, venture_id) or {}).get("version")
+            if before is None or (now is not None and now != before):
+                break
+            sleep(3.0)
+            waited += 3.0
     return out
+
+
+def _notebook(client: Any, venture_id: str) -> dict[str, Any] | None:
+    """The notebook's raw view (nextOpener, nextTopic, commitments, openQuestions, version); None if unreadable."""
+    try:
+        response = client.request("GET", f"/ventures/{venture_id}/notebook")
+        data = response.json()
+    except Exception:  # noqa: BLE001 - a diagnostic read never fails the run
+        return None
+    if not isinstance(data, dict):
+        return None
+    keys = ("version", "updatedAt", "nextOpener", "nextTopic", "commitments", "openQuestions", "summary")
+    return {k: data.get(k) for k in keys}
 
 
 def load(path: Path = SCENARIOS) -> dict[str, Any]:

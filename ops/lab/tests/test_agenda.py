@@ -158,6 +158,22 @@ class _Client:
 
     def end_session(self, session_id: str) -> None:
         self.ended.append(session_id)
+        self.version += 1  # distilled
+
+    version = 1
+
+    def request(self, method: str, path: str) -> Any:
+        version = self.version
+
+        class _Response:
+            def json(self) -> dict[str, Any]:
+                return {
+                    "version": version,
+                    "nextTopic": "the advisor session",
+                    "commitments": [{"status": "open"}],
+                }
+
+        return _Response()
 
 
 def test_the_runner_plays_remembered_conversations_in_order_and_ends_each() -> None:
@@ -180,7 +196,21 @@ def test_the_runner_plays_remembered_conversations_in_order_and_ends_each() -> N
     assert client.ended == ["s1", "s2", "s3"]
     assert client.calls_ended == ["c-s1", "c-s2", "c-s3"]
     assert reserved == [len(c["turns"]) for c in suite["conversations"]]
-    assert len(slept) == 3
+    assert slept  # waits for each conversation's distillation
+    assert results[0].notebook_before == {
+        "version": 1,
+        "updatedAt": None,
+        "nextOpener": None,
+        "nextTopic": "the advisor session",
+        "commitments": [{"status": "open"}],
+        "openQuestions": None,
+        "summary": None,
+    }
+    assert results[1].notebook_before["version"] == 2
+    assert results[0].public()["notebookBefore"] == {"version": 1, "hasNextTopic": True, "openCommitments": 1}
+    assert (
+        results[0].founder_took_up_opener is False
+    )  # the fake opener names the session, the founder never does
     assert results[0].opener.startswith("Hi Idris")
     assert all(r.checks for r in results)
     assert len(results[0].details) == len(suite["conversations"][0]["turns"])
