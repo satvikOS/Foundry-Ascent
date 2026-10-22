@@ -22,6 +22,17 @@ runs the harness (`ops/lab`, `python -m conversation_lab`):
 | `matrix` | Conversations across the matrix of human conversation (question types, answer styles, emotions, topic changes, relational moves, chat and call, registers): founder turns from an LLM simulator, graded by the deterministic graders and an LLM judge.                                                                                                                                                                                                  | Every turn answered, no blocking or presence finding, and the judge found the scenario's expectation met, the founder heard (≥ 4), no presence slip    |
 | `ui`     | The whole Playwright suite (`apps/web/e2e`) against the real model, speech off as in CI. Its assertions hold for any model (a recall names the earlier topic's key term, memory is matched loosely by topic, citations are asked of questions only the seed's records answer); a step that genuinely cannot hold for a real model carries `@mock-only` with its reason, and the lab passes `--grep-invert @mock-only` (CI runs everything on the mock). | Playwright's own outcome per test (retried once)                                                                                                       |
 
+`agenda` is a regression suite of its own (never part of `all`), from the owner's production calls of 2026-10-16…20:
+two synthetic ventures (Pelora, typed; Quillon, on calls) whose vEIR notebook holds one open commitment due nine
+days ago ("book the regulatory and reimbursement advisor session and prepare three questions"), seeded per run by
+`apps/api/src/scripts/lab-agenda-ventures.ts` (local Postgres only). Three remembered conversations per channel,
+fixed founder lines (`ops/lab/scenarios/agenda.json`): "I don't know. You tell me.", "you tell me what I should
+ask", "help me get started", a pitch, a personal ambition, a topic shift without a marker, and "I met the advisor
+last week". Each reply is checked deterministically (`conversation_lab/agenda.py`: substance when help is asked,
+a question back only, fewer than two sentences of content, steering back to the commitment on another topic,
+re-asking, "still open" for a past date, a follow-up when the founder brings it up, openers re-opening it, "So …"
+openings) and each conversation is judged. About USD 0.2 a run.
+
 `matrix` has two sources (input `matrix_source`); the summary says which ran:
 
 - `builtin` (default): the lab's own scenarios (`ops/lab/scenarios/smoke.json`, 40, of which `max_scenarios` run).

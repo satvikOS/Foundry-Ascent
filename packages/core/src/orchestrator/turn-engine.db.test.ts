@@ -16,11 +16,16 @@ import {
   SPOKEN_HAND_BACKS,
   STRESSED_HAND_BACKS,
   mockCoachResponse,
+  type ChatMessage,
   type EmbedOptions,
   type EmbedResult,
   type GenerateStructuredRequest,
   type GenerateStructuredResult,
   type MockGenerateContext,
+  type PromptCacheHint,
+  type StreamTextRequest,
+  type StreamTextResult,
+  type TextChunkHandler,
 } from '@foundry/ai';
 import { TurnStreamEvent, type TurnView } from '@foundry/contracts';
 import { auditRepo, p, personasRepo, resourcesRepo, settingsRepo, turnsRepo, usageRepo } from '@foundry/db';
@@ -1298,6 +1303,51 @@ describe('conversation craft the lab still heard (wave 7)', () => {
     ).toBe('Book both chats for Thursday.');
   });
 
+  it('a reply the gate left at its lead-in goes on once with something new, typed and spoken (lab run 39780304879)', async () => {
+    const repeat =
+      "Ask three students what they'd give up to skip the group chat and the walking. That's the price signal you need before the pilot starts.";
+    for (const channel of ['text', 'voice'] as const) {
+      const continued: string[] = [];
+      const gateway = new MockModelGateway({
+        streamDelayMs: 0,
+        streamFixture: (context) => {
+          const last = context.messages.at(-1)?.content ?? '';
+          if (last.includes('<continue_request>')) {
+            continued.push(last);
+            return 'Then book both chats for Thursday. Does that work?';
+          }
+          return context.founderText.startsWith('Help me') ? `Okay, Maya. ${repeat}` : repeat;
+        },
+      });
+      const { core, orchestrator } = coreWith(gateway);
+      const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+      await run(orchestrator, session.id, { text: 'How do we find the price signal?', mode: 'coach' });
+      const { events } = await run(orchestrator, session.id, {
+        text: 'Help me get started, I am writing it all down.',
+        mode: 'coach',
+        ...(channel === 'voice' ? { channel, callId: CALL_ID } : {}),
+      });
+      const expected = 'Okay, Maya. Then book both chats for Thursday. Does that work?';
+      expect(
+        deltas(events)
+          .map((d) => d.text)
+          .join('')
+          .trim(),
+      ).toBe(expected);
+      expect(completed(events).response?.answer).toBe(expected);
+      if (channel === 'voice') {
+        expect(speechUnits(events).map((u) => u.text)).toEqual([
+          'Okay, Maya.',
+          'Then book both chats for Thursday.',
+          'Does that work?',
+        ]);
+      }
+      // Asked once, told what it said and what was left out as already said.
+      expect(continued).toHaveLength(1);
+      expect(continued[0]).toContain('Left out as already said: Ask three students');
+    }
+  });
+
   it('a call’s reply that ends on a statement hands the turn back as it is said', async () => {
     for (const [text, expected] of [
       ['How do we get the first ten users?', SPOKEN_HAND_BACKS as readonly string[]],
@@ -1796,6 +1846,86 @@ describe('crisis support is never refused for a limit', () => {
     } finally {
       await core.calls.end(maya, call.id, { reason: 'user' });
     }
+  });
+});
+
+/** The mock model, recording the prompt and the prompt-cache hint of every model call. */
+class PromptRecorder extends MockModelGateway {
+  readonly prompts: {
+    readonly kind: 'stream' | 'generate';
+    readonly system: string;
+    readonly messages: readonly ChatMessage[];
+    readonly cache: PromptCacheHint | undefined;
+  }[] = [];
+
+  override streamText(request: StreamTextRequest, onText: TextChunkHandler): Promise<StreamTextResult> {
+    this.prompts.push({ kind: 'stream', ...this.#seen(request) });
+    return super.streamText(request, onText);
+  }
+
+  override generateStructured<T>(
+    request: GenerateStructuredRequest<T>,
+  ): Promise<GenerateStructuredResult<T>> {
+    this.prompts.push({ kind: 'generate', ...this.#seen(request) });
+    return super.generateStructured(request);
+  }
+
+  #seen(request: Pick<StreamTextRequest, 'system' | 'messages' | 'promptCache'>) {
+    return { system: request.system, messages: request.messages, cache: request.promptCache };
+  }
+}
+
+describe('prompt caching (Bedrock cache points after the unchanging prefix)', () => {
+  it('sends both calls of every turn of a call the same system prefix, and the conversation so far as history', async () => {
+    const gateway = new PromptRecorder({ streamDelayMs: 0 });
+    const { core, orchestrator } = coreWith(gateway);
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, {});
+    const said = [
+      'We did three of the library interviews. What should we ask next?',
+      // A flagged topic: this turn's control block and turn policy differ from the first one's.
+      'Should I sign the patent licensing agreement the university sent us?',
+    ];
+    const turns: { requests: PromptRecorder['prompts']; id: string }[] = [];
+    for (const text of said) {
+      const from = gateway.prompts.length;
+      const { events, outcome } = await run(orchestrator, session.id, {
+        text,
+        channel: 'voice',
+        callId: CALL_ID,
+      });
+      expect(outcome.status).toBe('completed');
+      turns.push({ requests: gateway.prompts.slice(from), id: completed(events).id });
+    }
+
+    const all = turns.flatMap((t) => t.requests);
+    // Phase A (the streamed reply) and phase B (its fields) of each turn.
+    expect(turns.map((t) => t.requests.map((r) => r.kind))).toEqual([
+      ['stream', 'generate'],
+      ['stream', 'generate'],
+    ]);
+    const prefix = all[0]?.system.slice(0, all[0].cache?.systemChars ?? 0) ?? '';
+    expect(prefix.length).toBeGreaterThan(8_000);
+    for (const r of all) {
+      expect(r.cache?.systemChars).toBe(prefix.length);
+      expect(r.system.startsWith(prefix)).toBe(true);
+      // What changes from turn to turn starts right after it: the control block.
+      expect(r.system.slice(prefix.length).startsWith('[control]\n')).toBe(true);
+    }
+    const [first, second] = turns.map((t) => t.requests);
+    expect(first?.[1]?.system).toContain('risk_flags: none');
+    expect(second?.[1]?.system).toContain('risk_flags: ip_licensing');
+    expect(second?.[1]?.system).toContain('HIGH-RISK TOPIC FLAGGED: ip_licensing');
+
+    // The conversation so far: every message before the founder's new one, the same in both calls.
+    for (const [phaseA, phaseB] of [first, second].map((t) => [t?.[0], t?.[1]] as const)) {
+      expect(phaseA?.cache?.historyMessages).toBe((phaseA?.messages.length ?? 0) - 1);
+      expect(phaseB?.cache?.historyMessages).toBe(phaseA?.cache?.historyMessages);
+      expect(phaseB?.messages.slice(0, phaseA?.messages.length)).toEqual(phaseA?.messages);
+    }
+    // The second turn's history holds the first exchange exactly as it was said.
+    const history = second?.[0]?.messages.slice(0, second[0].cache?.historyMessages) ?? [];
+    expect(history.map((m) => m.role).slice(-2)).toEqual(['user', 'assistant']);
+    expect(history.at(-2)?.content).toContain(said[0]);
   });
 });
 

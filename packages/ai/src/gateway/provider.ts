@@ -8,6 +8,7 @@ import type {
   ChatMessage,
   ModelProviderName,
   ModelUsage,
+  PromptCacheHint,
   RawModelAttempt,
   StreamStopReason,
   TextChunkHandler,
@@ -23,6 +24,8 @@ export interface ProviderRequest<T> {
   maxOutputTokens: number;
   deadline: Deadline;
   requestId: string;
+  /** Where the prompt's unchanging prefix ends (providers without prompt caching ignore it). */
+  promptCache?: PromptCacheHint;
 }
 
 export interface ProviderResult<T> {
@@ -39,6 +42,8 @@ export interface ProviderStreamRequest {
   maxOutputTokens: number;
   deadline: Deadline;
   requestId: string;
+  /** Where the prompt's unchanging prefix ends (providers without prompt caching ignore it). */
+  promptCache?: PromptCacheHint;
   /** Called with every text chunk, in order (awaited). */
   onText: TextChunkHandler;
 }

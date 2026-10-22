@@ -30,6 +30,12 @@ describe('TurnTimeline', () => {
     metrics.embed = { calls: 1, ms: 91.2 };
     metrics.stream = { startedAt: 400, firstTokenAt: 1_050, calls: 1 };
     metrics.structured = { calls: 1, ms: 1_400 };
+    // The streamed reply read most of its prompt from Bedrock's prompt cache; its fields call read some too.
+    metrics.recordModelUsage(
+      [{ inputTokens: 7_900, outputTokens: 40, cacheReadInputTokens: 6_000, cacheWriteInputTokens: 1_000 }],
+      true,
+    );
+    metrics.recordModelUsage([{ inputTokens: 8_200, outputTokens: 90, cacheReadInputTokens: 7_000 }]);
     const timeline = new TurnTimeline(metrics);
     const at = (ms: number) => 1_000 + ms;
 
@@ -74,6 +80,11 @@ describe('TurnTimeline', () => {
       structuredMs: 1_400,
       finishMs: 300,
       totalMs: 3_300,
+      inputTokens: 16_100,
+      cacheReadInputTokens: 13_000,
+      cacheWriteInputTokens: 1_000,
+      streamInputTokens: 7_900,
+      streamCacheReadInputTokens: 6_000,
       dbRoundTrips: 1,
       dbTransactions: 0,
       dbWaitMs: 20,
@@ -109,6 +120,10 @@ describe('TurnTimeline', () => {
       firstDeltaMs: null,
       firstSpeechMs: null,
       totalMs: 80,
+      inputTokens: 0,
+      cacheReadInputTokens: 0,
+      streamInputTokens: null,
+      streamCacheReadInputTokens: null,
       dbRoundTrips: 0,
     });
   });

@@ -28,7 +28,8 @@ export type FounderMove =
   | 'sarcasm'
   | 'news'
   | 'short_reply'
-  | 'question';
+  | 'question'
+  | 'help';
 
 /** A completed earlier exchange (the shape of `HistoryTurn`). */
 export interface StateTurn {
@@ -186,6 +187,39 @@ const NEWS = new RegExp(
   ].join('|'),
 );
 
+/**
+ * The founder hands the work to the vEIR, or says they are stuck. Production, 2026-10-20: "I don't know. You tell
+ * me." twice, "Could you help me prepare for that?" and "You tell me what I should ask" were each answered with the
+ * question they had just said they could not answer, five replies in a row. The reply must give the substance itself.
+ */
+const HELP_REQUEST = new RegExp(
+  [
+    String.raw`\byou tell me\b|\btell me (?:what|how|which|where|who|if|whether)\b|\bjust tell me\b`,
+    String.raw`\b(?:can|could|would|will) you (?:please |just |maybe )?(?:help|show|walk|give|write|draft|suggest|list|come up|tell|teach|explain|navigate|guide|prep|prepare)\b`,
+    String.raw`(?<!\b(?:would|could|will|might|may|can|it|that|this|which|they|to|also) )\bhelp (?:me|us)\b`,
+    String.raw`\b(?:i|we) (?:need|want|would like|'d like) (?:some |your )?(?:help|ideas|examples|suggestions|guidance|a hand)\b`,
+    String.raw`\bwhat (?:should|do|would|could) (?:i|we) (?:even )?(?:ask|say|do|write|focus on|start with|prepare|bring|lead with)\b`,
+    String.raw`\bwhat would you (?:ask|do|say|write|suggest|recommend|start with|focus on)\b`,
+    String.raw`\b(?:give|show) (?:me|us) (?:some |a few |a couple of |three |two |an? )?(?:ideas|examples|options|questions|list|draft|template|example|starting point|steps|pointers)\b`,
+    String.raw`\b(?:walk|talk) (?:me|us) through\b|\bshow (?:me|us) how\b|\bwhere (?:do|should) (?:i|we) (?:even )?(?:start|begin)\b|\bget (?:me |us )?started\b`,
+    String.raw`\b(?:i'm|i am|im|we're|we are) (?:so |totally |completely |a bit |kind of |kinda |just )?(?:blank|stuck|lost|clueless|drawing a blank)\b`,
+  ].join('|'),
+);
+
+/** A sentence that only says they don't know ("I don't know.", "idk", "No idea what to ask"). */
+const DONT_KNOW =
+  /^(?:(?:honestly|um+|uh+|well|that's the thing|thats the thing)[,.]? )*(?:i (?:really |honestly |just )?(?:don't|do not|dont) know|idk|dunno|no idea|not sure|i'm not sure|i have no idea|no clue)(?: (?:what|how|where|which)\b.*)?$/;
+
+/** Whether `text` hands the work to the vEIR or says the founder is stuck ({@link HELP_REQUEST}, {@link DONT_KNOW}). */
+function asksForHelp(text: string): boolean {
+  if (HELP_REQUEST.test(text)) return true;
+  // "Not sure. Does it matter who pays?" asks something of its own: that question is what to answer.
+  if (text.includes('?')) return false;
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .some((sentence) => DONT_KNOW.test(sentence.replace(/[.!?…]+$/, '').trim()));
+}
+
 /** Whether `text` brings news: a statement with a news cue (a question about the same thing is no news). */
 function bringsNews(text: string): boolean {
   return text
@@ -213,6 +247,7 @@ export function founderMoves(text: string): FounderMove[] {
   if (t === '') return [];
   const moves: FounderMove[] = MOVE_CUES.filter(([, cue]) => cue.test(t)).map(([move]) => move);
   if (bringsNews(t)) moves.push('news');
+  if (asksForHelp(t)) moves.push('help');
   const words = wordCount(t);
   if (words <= 5 && SHORT_REPLY.test(t) && !moves.includes('thanks')) moves.push('short_reply');
   if (t.endsWith('?') || (QUESTION_START.test(t) && words > 2)) moves.push('question');
@@ -474,6 +509,8 @@ function onlyGreets(text: string, moves: readonly FounderMove[]): boolean {
 function takesUp(question: string, text: string, moves: readonly FounderMove[]): boolean {
   // A hello is not an answer: "Hi!" after "How did the facilities call go?" leaves the question open.
   if (onlyGreets(text, moves)) return false;
+  // "I don't know. You tell me." says something, but hands the question back: it is still open.
+  if (moves.includes('help')) return false;
   if (moves.includes('short_reply')) return true;
   if (moves.some((m) => m === 'topic_shift' || m === 'recall' || m === 'resume' || m === 'closing'))
     return false;
@@ -651,6 +688,7 @@ const MOVE_LABELS: Readonly<Record<FounderMove, string>> = {
   news: 'brings news',
   short_reply: 'is a short reply to your last message',
   question: 'asks a question',
+  help: 'asks you to do it, or says they are stuck',
 };
 
 /** Moves worth reporting even on the first message of a conversation. */
@@ -666,6 +704,7 @@ const NOTABLE: ReadonlySet<FounderMove> = new Set([
   'humour',
   'sarcasm',
   'news',
+  'help',
 ]);
 
 function quoted(text: string): string {
@@ -712,6 +751,29 @@ export function renderConversationState(state: ConversationState): string {
     lines.push(
       '- They bring news: react to it and ask about it first, in your own words. In this reply never steer back to an',
       '  earlier question, plan or parked thread.',
+    );
+  }
+  if (state.moves.includes('help')) {
+    lines.push(
+      '- They want you to do it, or they are stuck: do the work in this reply. Give the thing itself, specific to their',
+      '  venture (a draft, concrete options or questions, an example, the first steps), then at most a short check that',
+      '  it fits. Never hand the question back or ask them for what they just said they cannot give.',
+    );
+    const handedBack = state.openQuestion ? (state.askedQuestions[0] ?? null) : null;
+    // Lab run 39780304879: "I don't know. You tell me." after "Where are things with the advisor session and your three
+    // questions?" got "What are the three questions you want to ask?" back.
+    if (handedBack !== null) {
+      lines.push(
+        `- They handed your question back (${quoted(handedBack)}): answer it yourself now, concretely.`,
+      );
+    }
+  }
+  const asks = state.moves.includes('help') || state.moves.includes('question');
+  const aboutNotes = state.moves.includes('recall') || state.moves.includes('resume');
+  if ((state.social ?? null) === null && asks && !aboutNotes) {
+    lines.push(
+      '- Make this reply about what they just said. Bring nothing up from your notes (commitments, open questions,',
+      '  earlier advice) unless it serves that.',
     );
   }
   if (state.moves.includes('sarcasm')) {

@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from conversation_lab.config import (
+    EXTRA_SUITES,
     MAX_BUDGET_USD,
     REPO,
     SUITES,
@@ -64,6 +65,8 @@ class Context:
     matrix_source: str = "builtin"
     #: Key of the synthetic venture the lab added for evals' remembered conversations (matrix_source=evals).
     memory_venture: str | None = None
+    #: The agenda suite's founders by channel (chat, call), as the seed script reported them.
+    agenda_founders: dict[str, str] = field(default_factory=dict)
 
     @property
     def private(self) -> Path:
@@ -132,11 +135,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     from conversation_lab.bedrock import LabModelClient
     from conversation_lab.budget import BudgetExceededError, Ledger, SpendGuard
     from conversation_lab.report import purpose_delta, write
-    from conversation_lab.stack import Stack, api_env, run_backfill, run_memory_venture
+    from conversation_lab.stack import Stack, api_env, run_agenda_ventures, run_backfill, run_memory_venture
 
     suite = args.suite
-    if suite not in SUITES:
-        print(f"run: suite must be one of {', '.join(SUITES)}", file=sys.stderr)
+    if suite not in (*SUITES, *EXTRA_SUITES):
+        print(f"run: suite must be one of {', '.join((*SUITES, *EXTRA_SUITES))}", file=sys.stderr)
         return 2
     budget = float(args.budget_usd)
     if not 0 < budget <= MAX_BUDGET_USD:
@@ -197,7 +200,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             result = lab_client.probe(lab.simulator)
             probes.update(result.outcomes)
             simulator_model = result.chosen
-        if suite in ("matrix", "recall") and not args.mock:
+        if suite in ("matrix", "recall", "agenda") and not args.mock:
             result = lab_client.probe(lab.judge)
             probes.update(result.outcomes)
             judge_model = result.chosen
@@ -219,13 +222,15 @@ def cmd_run(args: argparse.Namespace) -> int:
         # Before the API starts, so its directory knows the venture from the first request.
         ctx.memory_venture = run_memory_venture(env, ctx.private / "logs")
         summary["memory_venture"] = ctx.memory_venture or "unavailable"
+    if suite == "agenda":
+        ctx.agenda_founders = run_agenda_ventures(env, ctx.private / "logs")
     if args.mock:
         summary["models"]["app"] = {"primary": "mock", "fallback": "mock", "embeddings": "mock"}
     error: str | None = None
     stack_cm = Stack(
         env=env,
         log_dir=ctx.private / "logs",
-        web=suite != "matrix",
+        web=suite not in ("matrix", "agenda"),
         api_port=args.api_port,
         web_port=args.web_port,
     )
@@ -695,7 +700,51 @@ def suite_ui(ctx: Context, *, browser: dict[str, str], **_: Any) -> dict[str, An
     }
 
 
+def suite_agenda(
+    ctx: Context, *, admin: Any, guard: Any, lab_client: Any, judge_model: str | None, **_: Any
+) -> dict[str, Any]:
+    """The agenda regression (conversation_lab/agenda.py): three remembered conversations on chat and on a call,
+    each in its own synthetic venture whose notebook holds one open, past-dated commitment."""
+    from conversation_lab.agenda import load, run_channel, summarize
+    from conversation_lab.judge import Judge
+    from conversation_lab.smoke import TURN_RESERVE_USD, heard_text
+
+    suite = load()
+    judge = Judge(lab_client, judge_model) if judge_model else None
+    results = []
+    folder = ctx.private / "agenda"
+    folder.mkdir(parents=True, exist_ok=True)
+    for channel in ("chat", "call"):
+        name = ctx.agenda_founders.get(channel)
+        if name is None:
+            return {"passed": 0, "run": 0, "error": f"agenda_venture_missing:{channel}"}
+        founder = admin.founder(name)
+        try:
+            venture = next(v for v in founder.list_ventures() if v.my_role == "founder")
+            results += run_channel(
+                client=founder,
+                venture_id=venture.id,
+                channel=channel,
+                conversations=suite["conversations"],
+                heard=heard_text,
+                judge=judge,
+                founder_context=f"{name}, founder of {venture.name} (a compression-sleeve medtech venture)",
+                reserve=lambda turns: guard.check_app(reserve=TURN_RESERVE_USD * turns),
+            )
+        finally:
+            founder.close()
+    for r in results:
+        (folder / f"{r.id}.json").write_text(json.dumps(r.private(), indent=1), encoding="utf-8")
+    return {
+        "passed": sum(1 for r in results if r.passed),
+        "run": len(results),
+        "agenda": summarize(results),
+        "conversations": [r.public() for r in results],
+    }
+
+
 SUITE_RUNNERS: dict[str, Callable[..., dict[str, Any]]] = {
+    "agenda": suite_agenda,
     "recall": suite_recall,
     "voice": suite_voice,
     "matrix": suite_matrix,

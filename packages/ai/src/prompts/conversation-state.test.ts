@@ -384,6 +384,70 @@ describe('deriveConversationState', () => {
   });
 });
 
+describe('asking the vEIR to do it (production, 2026-10-20)', () => {
+  const asked =
+    'So the advisor session is still open. What three questions do you want answered in that meeting?';
+  const history = [{ founderText: 'Hi.', answer: asked }];
+
+  it.each([
+    "I don't know. You tell me.",
+    "That's the thing. I don't know. You tell me what I should ask.",
+    'I just want to understand about the pitch competition I have coming soon. Could you help me, uh, prepare for that?',
+    'idk i am blank help me get started im listening and jotting all down',
+    'could you help with that please?',
+    'can you navigate me there',
+    'What should I ask?',
+    'What would you ask?',
+    'Give me a few examples.',
+    'Walk me through it.',
+    "I'm stuck.",
+    'No idea.',
+    'Not sure.',
+  ])('hears %j as a request for help', (text) => {
+    const state = deriveConversationState(history, text);
+    expect(state.moves).toContain('help');
+    expect(state.openQuestion).toBe(true);
+    const block = renderConversationState(state);
+    expect(block).toContain('asks you to do it, or says they are stuck');
+    expect(block).toContain(
+      '- They want you to do it, or they are stuck: do the work in this reply. Give the thing itself',
+    );
+    expect(block).toContain(
+      'Never hand the question back or ask them for what they just said they cannot give.',
+    );
+    expect(block).toContain(
+      '- They did not take up your last question: answer what they said, and do not ask it again.',
+    );
+    // The question they handed back is named, so the reply answers it.
+    expect(block).toContain(
+      '- They handed your question back ("What three questions do you want answered in that meeting?"): answer it yourself now, concretely.',
+    );
+  });
+
+  it.each([
+    'It would help us if clinics paid per patient.',
+    "I don't know if clinics will pay for it.",
+    'Not sure. Does it matter who?',
+    'We talked to three nurses and they want it.',
+    'That helps, thanks.',
+  ])('does not hear %j as a request for help', (text) => {
+    expect(founderMoves(text)).not.toContain('help');
+  });
+
+  it('keeps the reply on what they asked, but not on a social turn or a question about the notes', () => {
+    const focus = '- Make this reply about what they just said. Bring nothing up from your notes';
+    expect(
+      renderConversationState(deriveConversationState(history, 'How do I prepare for the pitch?')),
+    ).toContain(focus);
+    expect(renderConversationState(deriveConversationState(history, 'Thanks, that helps!'))).not.toContain(
+      focus,
+    );
+    expect(
+      renderConversationState(deriveConversationState(history, 'Do you remember what we said last time?')),
+    ).not.toContain(focus);
+  });
+});
+
 describe('renderConversationState', () => {
   it('says nothing on a plain first message', () => {
     expect(renderConversationState(deriveConversationState([], 'How should we price per library?'))).toBe('');

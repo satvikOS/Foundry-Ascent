@@ -1,6 +1,11 @@
 import type { ChatMessage } from '../gateway/types.js';
-import { buildContinuityBlock, type PromptContinuity } from './continuity.js';
-import { deriveConversationState, renderConversationState } from './conversation-state.js';
+import { buildContinuityBlock, openCommitmentsOf, raisedIn, type PromptContinuity } from './continuity.js';
+import {
+  contentWords,
+  deriveConversationState,
+  founderMoves,
+  renderConversationState,
+} from './conversation-state.js';
 import { escapeData, truncate } from './escape.js';
 
 /** A completed earlier turn. Turns without an answer (blocked/failed) should be omitted by the caller or are skipped. */
@@ -72,6 +77,26 @@ function conversationStateBlock(
 }
 
 /**
+ * Whether the founder's message, once the conversation is under way, brings a subject of their own that no open item
+ * of the notes is about ("Help me prepare for the pitch next week"): then the notes leave their agenda out of this turn
+ * (`ownSubject`). A short reply, "you tell me" or a question about what the vEIR remembers is about the conversation so
+ * far, and keeps it.
+ */
+export function bringsOwnSubject(
+  founderText: string,
+  continuity: PromptContinuity | null | undefined,
+): boolean {
+  if (contentWords(founderText).size < 2) return false;
+  const moves = founderMoves(founderText);
+  if (moves.some((m) => m === 'recall' || m === 'resume' || m === 'short_reply')) return false;
+  const open = [
+    ...(continuity ? openCommitmentsOf(continuity).map((c) => c.text) : []),
+    ...(continuity?.notebook?.openQuestions ?? []).map((q) => q.text),
+  ];
+  return !open.some((item) => raisedIn(item, [founderText]));
+}
+
+/**
  * Builds the conversation for a turn: the last N completed turns (founder text wrapped and escaped
  * as data, previous answers as assistant messages), then the vEIR's notes, the evidence block, the
  * conversation state and the new founder message as the final user message. Notes and evidence live in the user turn — not the
@@ -94,11 +119,16 @@ export function buildMessages(
     messages.push({ role: 'user', content: wrapFounder(truncate(turn.founderText, maxChars)) });
     messages.push({ role: 'assistant', content: truncate(turn.answer ?? '', maxChars) });
   }
+  const started = completed.length > 0 || (options.opener ?? '').trim() !== '';
   const notes = buildContinuityBlock(options.continuity, {
     ...(options.today !== undefined ? { today: options.today } : {}),
     ...(options.maxContinuityChars !== undefined ? { maxChars: options.maxContinuityChars } : {}),
     // What the vEIR already said here: an open commitment it raised is not pushed again (LAB-R8).
     saidInConversation: [...completed.map((t) => t.answer), options.opener ?? null],
+    // Once the conversation is under way, the notebook's opener has done its job, and a message with a subject of the
+    // founder's own is not answered from the notes' agenda.
+    conversationStarted: started,
+    ownSubject: started && bringsOwnSubject(founderText, options.continuity),
   });
   const state =
     options.conversationState === false

@@ -1,0 +1,53 @@
+{
+  "$comment": "Suite agenda: the vEIR's notebook holds one open commitment dated in the past (packages/db lab-agenda-ventures.ts). Each conversation is played on chat (Pelora) and on a call (Quillon), in order, as remembered conversations, with fixed founder lines (no simulator). Tags: topic = what the founder's turn is about (agenda: the advisor session; other: anything else), help = the founder asked for help or for the vEIR to decide, raises = the founder brings up the commitment themselves. Grading: conversation_lab/agenda.py.",
+  "version": 1,
+  "conversations": [
+    {
+      "id": "AG-1",
+      "title": "the founder does not know and asks to be told",
+      "turns": [
+        { "say": "Hey. I've got a bit of time today.", "topic": "open" },
+        { "say": "I don't know. You tell me.", "topic": "agenda", "help": true },
+        {
+          "say": "That's the thing, I don't know. You tell me what I should ask.",
+          "topic": "agenda",
+          "help": true
+        },
+        {
+          "say": "idk I'm blank, help me get started, I'm writing it all down.",
+          "topic": "agenda",
+          "help": true
+        }
+      ],
+      "expect": "When the founder says they don't know and asks to be told, the vEIR gives substance itself: it drafts the questions for the advisor or gives concrete first steps, never asks the same question again, and each reply has at least two sentences of content."
+    },
+    {
+      "id": "AG-2",
+      "title": "other topics, with no marker",
+      "turns": [
+        {
+          "say": "Can you help me prepare for my pitch next week? It's a five-minute slot at the health innovation competition.",
+          "topic": "other",
+          "help": true
+        },
+        {
+          "say": "Honestly I want to make a lot of money from this. How do I position myself?",
+          "topic": "other",
+          "help": true
+        },
+        { "say": "My cofounder wants to quit his job and go full-time in January.", "topic": "other" }
+      ],
+      "expect": "The vEIR helps with what the founder raises (the pitch, positioning for a big outcome, the cofounder going full-time) with concrete substance, follows each new topic, and does not steer back to the advisor session."
+    },
+    {
+      "id": "AG-3",
+      "title": "the founder brings the commitment up",
+      "turns": [
+        { "say": "I met the advisor last week, actually.", "topic": "agenda", "raises": true },
+        { "say": "They said we might not need device clearance for the first version.", "topic": "agenda" },
+        { "say": "So what should I do this week?", "topic": "agenda", "help": true }
+      ],
+      "expect": "The vEIR follows up on the advisor meeting (how it went, what they said), treats the old commitment as done and in the past (never 'still open'), and gives concrete next steps when asked."
+    }
+  ]
+}

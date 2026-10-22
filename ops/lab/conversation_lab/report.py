@@ -155,8 +155,53 @@ def _log_tables(logs: Mapping[str, Any] | None) -> list[str]:
     return out
 
 
+AGENDA_ROWS = (
+    ("conversations", "Conversations"),
+    ("passed", "Passed (no deterministic failure, judge's expectation met)"),
+    ("substanceOnRequest", "Help asked → substance given (of helpTurns)"),
+    ("helpTurns", "Help asked (turns)"),
+    ("questionBackOnly", "Help asked → only a question back"),
+    ("fragmentsOnRequest", "Help asked → fewer than two sentences of content"),
+    ("steerBack", "Other topic → steered back to the commitment (of otherTopicTurns)"),
+    ("otherTopicTurns", "Turns on another topic"),
+    ("reasks", "Replies re-asking an earlier question"),
+    ("staleMentions", "Past-dated commitment called still open"),
+    ("followUpWhenRaised", "Founder brings it up → follow-up asked"),
+    ("openersReopeningCommitment", "Openers re-opening the commitment"),
+    ("soOpenings", 'Replies opening "So …"'),
+    ("distinctOpenings", "Distinct two-word openings"),
+    ("judgeExpectationMet", "Judge: expectation met"),
+    ("judgeAnswersTheRequest", "Judge: answers the actual request (1-5)"),
+    ("judgeFollowsTopic", "Judge: follows topic changes (1-5)"),
+    ("judgeFeltHeard", "Judge: felt heard (1-5)"),
+)
+
+
+def _agenda_tables(result: Mapping[str, Any]) -> list[str]:
+    agenda = result.get("agenda") or {}
+    channels = [c for c in ("chat", "call") if c in agenda]
+    out = [
+        "| Agenda check | " + " | ".join(["all", *channels]) + " |",
+        "| --- |" + " --- |" * (1 + len(channels)),
+    ]
+    for key, label in AGENDA_ROWS:
+        cells = [agenda.get(c, {}).get(key) for c in ("all", *channels)]
+        out.append(f"| {label} | " + " | ".join("-" if v is None else str(v) for v in cells) + " |")
+    out.append("")
+    for conversation in result.get("conversations") or []:
+        if conversation.get("failures") or conversation.get("error"):
+            out.append(
+                f"- {conversation['id']}: {', '.join(conversation.get('failures') or [])}"
+                + (f" (error {conversation['error']})" if conversation.get("error") else "")
+            )
+    out.append("")
+    return out
+
+
 def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
     out: list[str] = []
+    if suite == "agenda":
+        return _agenda_tables(result)
     scenarios: Sequence[Mapping[str, Any]] = result.get("scenarios") or []
     greeting = result.get("greeting") if suite == "recall" else None
     if greeting:

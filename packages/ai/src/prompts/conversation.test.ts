@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   MAX_PROMPT_DIGESTS,
+  PAST_DUE_NOTE,
   RAISED_NOTE,
   buildContinuityBlock,
   buildRetrievalQuery,
@@ -16,7 +17,7 @@ import {
 import { parseControlBlock } from './control.js';
 import { MODE_INSTRUCTIONS, autoModeInstructions, autoModes } from './modes.js';
 import { buildEvidenceBlock } from './evidence.js';
-import { buildMessages } from './messages.js';
+import { bringsOwnSubject, buildMessages } from './messages.js';
 import { buildVeirDisclosure, resolvePersonaIdentity, veirFirstName } from './persona.js';
 import { buildSystemPrompt, type SystemPromptInput } from './system.js';
 
@@ -410,11 +411,13 @@ describe('continuity', () => {
     expect(block.endsWith('</your_notes>')).toBe(true);
   });
 
-  it('lists open commitments only and marks overdue ones', () => {
+  it('lists open commitments only, and marks one whose date passed as maybe done', () => {
     const block = buildContinuityBlock(CONTINUITY, { today: '2026-10-16' });
+    // Production, 2026-10-20: an advisor session due 10-13 was "still open" a week later.
     expect(block).toContain(
-      '<open_commitments>\n- Interview five library staff (due 2026-10-10, overdue)\n- Install the door counter (due 2026-10-30)\n</open_commitments>',
+      `<open_commitments>\n- Interview five library staff (due 2026-10-10, ${PAST_DUE_NOTE})\n- Install the door counter (due 2026-10-30)\n</open_commitments>`,
     );
+    expect(block).not.toContain('overdue');
     expect(block).not.toContain('Old idea');
     const explicit = buildContinuityBlock(
       { ...CONTINUITY, openCommitments: [{ text: 'Call the operations manager', due: null }] },
@@ -426,14 +429,29 @@ describe('continuity', () => {
 
   it('marks an open commitment already raised in this conversation, so it is not pushed again (LAB-R8)', () => {
     const asked = 'Before we talk about Noor: what did you learn from the five library staff interviews?';
-    const messages = buildMessages(
-      [{ founderText: 'We got the union on board.', answer: asked }],
-      "We're hiring Noor as a designer.",
-      { continuity: CONTINUITY, today: '2026-10-16' },
-    );
+    // A short reply keeps the notes' agenda (it answers the conversation so far), with what was raised marked.
+    const messages = buildMessages([{ founderText: 'We got the union on board.', answer: asked }], 'Sure.', {
+      continuity: CONTINUITY,
+      today: '2026-10-16',
+    });
     const notes = messages.at(-1)?.content ?? '';
-    expect(notes).toContain(`- Interview five library staff (due 2026-10-10, overdue) [${RAISED_NOTE}]`);
+    expect(notes).toContain(
+      `- Interview five library staff (due 2026-10-10, ${PAST_DUE_NOTE}) [${RAISED_NOTE}]`,
+    );
     expect(notes).toContain('- Install the door counter (due 2026-10-30)\n');
+    // Their news, a subject of their own: the agenda is left out of that turn altogether.
+    const news =
+      buildMessages(
+        [{ founderText: 'We got the union on board.', answer: asked }],
+        "We're hiring Noor as a designer.",
+        {
+          continuity: CONTINUITY,
+          today: '2026-10-16',
+        },
+      ).at(-1)?.content ?? '';
+    expect(news).not.toContain('<open_commitments>');
+    expect(news).not.toContain('Interview five library staff');
+    expect(news).toContain('<summary>Maya is testing exam-week demand');
     // Raised by the opener too; never marked when nothing in the conversation raised it.
     const opened = buildMessages([], 'Hi!', {
       continuity: CONTINUITY,
@@ -443,6 +461,100 @@ describe('continuity', () => {
     expect(opened.at(-1)?.content).toContain(RAISED_NOTE);
     const fresh = buildMessages([], 'Hi!', { continuity: CONTINUITY, today: '2026-10-16' });
     expect(fresh.at(-1)?.content).not.toContain(RAISED_NOTE);
+  });
+
+  it('marks an open question already asked in this conversation, as it does a commitment (production, 2026-10-20)', () => {
+    // The vEIR asked "What three questions do you want answered in the advisor session?" five times in one call; the
+    // notebook kept its own earlier wording of that question as an open question.
+    const withQuestion: PromptContinuity = {
+      ...CONTINUITY,
+      notebook: {
+        ...NOTEBOOK,
+        openQuestions: [
+          {
+            id: 'oq-1',
+            text: 'What three questions do you want answered in the advisor session?',
+            sourceSessionId: null,
+            createdAt: '2026-10-16T00:00:00.000Z',
+          },
+        ],
+      },
+    };
+    const asked =
+      'So the advisor session is still open. What three questions do you want answered in that meeting?';
+    const notes =
+      buildMessages(
+        [{ founderText: "I don't know. You tell me.", answer: asked }],
+        'You tell me what to ask.',
+        {
+          continuity: withQuestion,
+          today: '2026-10-20',
+        },
+      ).at(-1)?.content ?? '';
+    expect(notes).toContain(
+      `<open_questions>\n- What three questions do you want answered in the advisor session? [${RAISED_NOTE}]\n</open_questions>`,
+    );
+  });
+
+  it('leaves the agenda out of a turn with a subject of the founder’s own, never one about an open item (lab run 39780304879)', () => {
+    const history = [{ founderText: 'Hi.', answer: 'Hi Maya. Where are things with the interviews?' }];
+    const notesFor = (text: string): string =>
+      buildMessages(history, text, { continuity: CONTINUITY, today: '2026-10-16' }).at(-1)?.content ?? '';
+    for (const own of [
+      'Help me prepare for my pitch next week.',
+      'I want to make a lot of money from this. How do I position myself?',
+      'My cofounder wants to quit his job and go full-time.',
+    ]) {
+      expect(bringsOwnSubject(own, CONTINUITY)).toBe(true);
+      const notes = notesFor(own);
+      expect(notes).not.toContain('<open_commitments>');
+      expect(notes).not.toContain('<last_advice>');
+      expect(notes).not.toContain('<commitments>');
+      expect(notes).toContain('<founder_profile>');
+      expect(notes).toContain('<previous_conversations>');
+    }
+    // About an open item, a short reply, "you tell me", or what the vEIR remembers: the agenda stays.
+    for (const about of [
+      'The library staff interviews went badly.',
+      'Sure.',
+      "I don't know. You tell me.",
+      'Do you remember what we said last time?',
+    ]) {
+      expect(bringsOwnSubject(about, CONTINUITY)).toBe(false);
+      expect(notesFor(about)).toContain('<open_commitments>');
+    }
+    // Before the conversation is under way, the notes are whole.
+    expect(
+      buildMessages([], 'Help me prepare for my pitch next week.', {
+        continuity: CONTINUITY,
+        today: '2026-10-16',
+      }).at(-1)?.content,
+    ).toContain('<open_commitments>');
+  });
+
+  it('leaves the notebook opener out once the conversation is under way', () => {
+    // Production, 2026-10-16 to 10-20: five calls in a row steered back to the same opener thread.
+    const opener =
+      '<next_opener>Last time you planned five library-staff interviews. How did they go?</next_opener>';
+    const first = buildMessages([], 'Hi!', { continuity: CONTINUITY, today: '2026-10-16' });
+    expect(first.at(-1)?.content).toContain(opener);
+    const afterOpener = buildMessages([], 'Hi!', {
+      continuity: CONTINUITY,
+      today: '2026-10-16',
+      opener: 'Hi Maya, how did the five library staff interviews go?',
+    });
+    expect(afterOpener.at(-1)?.content).not.toContain('<next_opener>');
+    const later = buildMessages(
+      [{ founderText: 'Hi!', answer: 'Hi Maya. What is on your mind?' }],
+      'Pricing.',
+      {
+        continuity: CONTINUITY,
+        today: '2026-10-16',
+      },
+    );
+    expect(later.at(-1)?.content).not.toContain('<next_opener>');
+    expect(later.at(-1)?.content).toContain('<summary>Maya is testing exam-week demand');
+    expect(buildContinuityBlock(CONTINUITY, { conversationStarted: true })).not.toContain('<next_opener>');
   });
 
   it('shows at most three digests, newest first, with dates and calls marked', () => {
@@ -560,13 +672,24 @@ describe('buildRetrievalQuery', () => {
     );
   });
 
-  it('leaves a self-contained message alone, and adds the current goal', () => {
+  it('leaves a self-contained message alone, and adds the current goal only to one with no subject of its own', () => {
     const founderText =
       'How should we price the two-library pilot so the operations manager can sign it quickly?';
     expect(buildRetrievalQuery({ founderText, previousAnswer })).toBe(founderText);
+    // Production, 2026-10-16 to 10-20: the goal (the reimbursement pathway) was added to every query, so a question
+    // about a pitch competition retrieved reimbursement evidence and every reply steered back to it.
     expect(
       buildRetrievalQuery({ founderText, previousAnswer, currentGoal: 'Validate **paid** demand' }),
-    ).toBe(`${founderText}\nValidate paid demand`);
+    ).toBe(founderText);
+    expect(
+      buildRetrievalQuery({
+        founderText: 'Pitch competition',
+        currentGoal: 'Clarify the reimbursement pathway',
+      }),
+    ).toBe('Pitch competition');
+    expect(buildRetrievalQuery({ founderText: 'Sure.', currentGoal: 'Validate **paid** demand' })).toBe(
+      'Sure.\nValidate paid demand',
+    );
   });
 
   it('adds nothing when the previous answer asked no question', () => {

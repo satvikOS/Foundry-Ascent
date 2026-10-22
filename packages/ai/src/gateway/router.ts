@@ -62,6 +62,12 @@ export interface BedrockGatewayConfig {
   credentials?: AwsCredentials | AwsCredentialProvider;
   embeddingConcurrency?: number;
   lunaReasoningEffort?: LunaReasoningEffort;
+  /**
+   * Bedrock prompt caching (`MODEL_PROMPT_CACHE`): Converse requests to an Amazon Nova model carry cache checkpoints
+   * where the request's `promptCache` hint says its unchanging prefix ends. Default true (Nova 2 Lite supports it on
+   * Converse and ConverseStream: docs/runbooks/latency.md).
+   */
+  promptCache?: boolean;
   /** Test seams: replace the network transports. */
   transports?: {
     mantleFetch?: FetchFn;
@@ -83,14 +89,21 @@ function priceAttempts(raw: readonly RawModelAttempt[], pricing: PricingTable): 
   return raw.map((a) => ({ ...a, costUsd: costFor(a.modelId, a.usage, pricing) }));
 }
 
-function totalUsage(attempts: readonly ModelAttempt[]): ModelUsage {
-  return attempts.reduce<ModelUsage>(
-    (acc, a) => ({
-      inputTokens: acc.inputTokens + a.usage.inputTokens,
-      outputTokens: acc.outputTokens + a.usage.outputTokens,
-    }),
-    { inputTokens: 0, outputTokens: 0 },
-  );
+/** Tokens across attempts; the prompt-cache counts only when an attempt reported them. */
+function totalUsage(attempts: readonly { readonly usage: ModelUsage }[]): ModelUsage {
+  const sum = (pick: (u: ModelUsage) => number | undefined): number | undefined =>
+    attempts.reduce<number | undefined>((acc, a) => {
+      const value = pick(a.usage);
+      return value === undefined ? acc : (acc ?? 0) + value;
+    }, undefined);
+  const read = sum((u) => u.cacheReadInputTokens);
+  const write = sum((u) => u.cacheWriteInputTokens);
+  return {
+    inputTokens: sum((u) => u.inputTokens) ?? 0,
+    outputTokens: sum((u) => u.outputTokens) ?? 0,
+    ...(read === undefined ? {} : { cacheReadInputTokens: read }),
+    ...(write === undefined ? {} : { cacheWriteInputTokens: write }),
+  };
 }
 
 /** Model ids served by Bedrock Mantle (OpenAI-compatible Chat Completions, e.g. `openai.gpt-6-luna`). */
@@ -166,6 +179,7 @@ class BedrockModelGateway implements ModelGateway {
             ...credentials,
             ...(converse ? { converse } : {}),
             ...(converseStream ? { converseStream } : {}),
+            promptCache: config.promptCache !== false,
           });
     this.#primary = config.providers?.primary ?? reasoningProvider(config.primaryModelId);
     this.#fallback = config.providers?.fallback ?? reasoningProvider(config.fallbackModelId);
@@ -204,7 +218,10 @@ class BedrockModelGateway implements ModelGateway {
         outcome: a.outcome,
         latencyMs: a.latencyMs,
         inputTokens: a.usage.inputTokens,
-        cachedInputTokens: a.cachedInputTokens,
+        // Of inputTokens: read from and written to Bedrock's prompt cache, and the checkpoints the request carried.
+        cachedInputTokens: a.usage.cacheReadInputTokens,
+        cacheWriteInputTokens: a.usage.cacheWriteInputTokens,
+        cachePoints: a.cachePoints,
         outputTokens: a.usage.outputTokens,
         costUsd: a.costUsd,
         errorName: a.errorName,
@@ -236,6 +253,7 @@ class BedrockModelGateway implements ModelGateway {
           maxOutputTokens,
           deadline,
           requestId: request.requestId,
+          ...(request.promptCache ? { promptCache: request.promptCache } : {}),
         });
         raw.push(...result.rawAttempts);
         return result;
@@ -321,6 +339,7 @@ class BedrockModelGateway implements ModelGateway {
           maxOutputTokens,
           deadline,
           requestId: request.requestId,
+          ...(request.promptCache ? { promptCache: request.promptCache } : {}),
           onText: deliver,
         });
         raw.push(...result.rawAttempts);
@@ -448,11 +467,14 @@ const EnvSchema = z.object({
     .string()
     .regex(/^[a-z]{2}(?:-gov)?-[a-z]+-\d$/)
     .default('us-east-1'),
+  /** Bedrock prompt caching for Nova (cache checkpoints after each turn's unchanging prefix). */
+  MODEL_PROMPT_CACHE: z.enum(['on', 'off']).default('on'),
 });
 
 /**
  * Reads gateway configuration from the runtime contract's environment variables
- * (`MODEL_PROVIDER`, `MODEL_PRIMARY_ID`, `MODEL_FALLBACK_ID`, `MODEL_EMBEDDINGS_ID`, `BEDROCK_REGION`).
+ * (`MODEL_PROVIDER`, `MODEL_PRIMARY_ID`, `MODEL_FALLBACK_ID`, `MODEL_EMBEDDINGS_ID`, `BEDROCK_REGION`), and the
+ * optional `MODEL_PROMPT_CACHE` (`on` by default, `off` sends no cache checkpoints; the mock ignores it).
  * `MODEL_PROVIDER` defaults to `mock` outside production and is mandatory in production.
  */
 export function modelGatewayConfigFromEnv(
@@ -474,6 +496,7 @@ export function modelGatewayConfigFromEnv(
     primaryModelId: e.MODEL_PRIMARY_ID,
     fallbackModelId: e.MODEL_FALLBACK_ID,
     embeddingsModelId: e.MODEL_EMBEDDINGS_ID,
+    promptCache: e.MODEL_PROMPT_CACHE === 'on',
     ...(extras.logger ? { logger: extras.logger } : {}),
     ...(extras.pricing ? { pricing: extras.pricing } : {}),
   };

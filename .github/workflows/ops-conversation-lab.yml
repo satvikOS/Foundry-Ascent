@@ -32,7 +32,7 @@ on:
       suite:
         description: Which suite to run (all = every suite, in parallel jobs)
         type: choice
-        options: [recall, matrix, voice, ui, all]
+        options: [recall, matrix, voice, ui, agenda, all]
         default: recall
       budget_usd:
         description: Hard cap in USD for the whole run, split across the suites (0.5 to 50)
@@ -96,7 +96,7 @@ jobs:
           REPEAT: ${{ inputs.repeat }}
         run: |
           # Values are checked, never echoed (except the suite and the numbers, which are public).
-          case "${SUITE}" in recall|matrix|voice|ui|all) ;; *) echo "::error::suite must be recall, matrix, voice, ui or all."; exit 1;; esac
+          case "${SUITE}" in recall|matrix|voice|ui|agenda|all) ;; *) echo "::error::suite must be recall, matrix, voice, ui, agenda or all."; exit 1;; esac
           if [[ ! "${BUDGET}" =~ ^[0-9]{1,2}(\.[0-9]{1,2})?$ ]] || ! awk -v b="${BUDGET}" 'BEGIN { exit !(b >= 0.5 && b <= 50) }'; then
             echo "::error::budget_usd must be a number from 0.5 to 50."
             exit 1
@@ -218,11 +218,11 @@ jobs:
         run: python -m pip install -r ops/lab/requirements.txt
 
       - name: Install Playwright Chromium
-        if: matrix.suite != 'matrix'
+        if: matrix.suite != 'matrix' && matrix.suite != 'agenda'
         run: pnpm --filter @foundry/web exec playwright install --with-deps chromium
 
       - name: Build the web app
-        if: matrix.suite != 'matrix'
+        if: matrix.suite != 'matrix' && matrix.suite != 'agenda'
         run: pnpm --filter @foundry/web build
 
       # Creates database "foundry", migrates it and seeds the synthetic tenant with a fresh owner access code

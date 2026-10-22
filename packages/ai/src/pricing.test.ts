@@ -30,8 +30,12 @@ describe('pricing', () => {
   });
 
   it('prices Nova 2 Lite and Titan embeddings', () => {
-    expect(costFor('amazon.nova-2-lite-v1:0', { inputTokens: 1_000, outputTokens: 1_000 })).toBeCloseTo(
-      0.0028,
+    // Global $0.30 / $2.50; the `us.` profile production uses (and a bare id, served in one region) is 10 % more.
+    expect(
+      costFor('global.amazon.nova-2-lite-v1:0', { inputTokens: 1_000, outputTokens: 1_000 }),
+    ).toBeCloseTo(0.0028, 9);
+    expect(costFor('us.amazon.nova-2-lite-v1:0', { inputTokens: 1_000, outputTokens: 1_000 })).toBeCloseTo(
+      0.00308,
       9,
     );
     expect(costFor('amazon.titan-embed-text-v2:0', { inputTokens: M, outputTokens: 0 })).toBeCloseTo(0.02, 9);
@@ -78,8 +82,8 @@ describe('pricing', () => {
     expect(costFor('global.anthropic.claude-sonnet-5-5', usage)).toBeCloseTo(2 + 10, 9);
     expect(costFor('global.anthropic.claude-haiku-5-5', usage)).toBeCloseTo(0.1 + 0.5, 9);
     // Models without a regional premium are unaffected by the endpoint.
-    expect(costFor('us.amazon.nova-2-lite-v1:0', usage)).toBe(
-      costFor('global.amazon.nova-2-lite-v1:0', usage),
+    expect(costFor('us.amazon.titan-embed-text-v2:0', usage)).toBe(
+      costFor('global.amazon.titan-embed-text-v2:0', usage),
     );
   });
 

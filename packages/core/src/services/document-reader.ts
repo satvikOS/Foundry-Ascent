@@ -62,7 +62,18 @@ const READABLE_SOURCE_STATUSES: ReadonlySet<string> = new Set(['active', 'stale'
 const STUDIO_ROLES = ['eir', 'program_lead', 'platform_admin'] as const;
 
 /** Whether a document's file is in storage: anything past the upload, unless the object never arrived. */
-export function fileIsStored(doc: Pick<documentsRepo.DocumentRecord, 'status' | 'failureReason'>): boolean {
+/**
+ * Where the seed puts its demo documents: their text is seeded, their file never is (production, 2026-10-17: opening
+ * one asked S3 to sign a key outside the documents prefix, a TypeError and a 500, four times with the client's retries,
+ * before the viewer fell back to the text).
+ */
+export const SEEDED_KEY_PREFIX = 'seed/';
+
+export function fileIsStored(
+  doc: Pick<documentsRepo.DocumentRecord, 'status' | 'failureReason'> &
+    Partial<Pick<documentsRepo.DocumentRecord, 's3Key'>>,
+): boolean {
+  if (doc.s3Key?.startsWith(SEEDED_KEY_PREFIX) === true) return false;
   if (doc.status === 'processing' || doc.status === 'ready') return true;
   if (doc.status !== 'failed') return false;
   return !(documentsRepo.REUPLOADABLE_FAILURES as readonly (string | null)[]).includes(doc.failureReason);

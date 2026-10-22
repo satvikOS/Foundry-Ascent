@@ -79,6 +79,9 @@ export class TurnTimeline {
       structuredMs: m.structured.calls === 0 ? null : ms(m.structured.ms),
       finishMs: span(this.#validating, this.#end),
       totalMs: ms(this.#end),
+      // Bedrock's prompt cache: the turn's input tokens and those read from and written to it, and the first
+      // streamed call's (the one modelFirstTokenMs measures).
+      ...m.tokenFields(),
       ...m.dbFields(),
       // LAB-P2: what else the process was serving, and the AWS connections the turn opened or reused.
       ...m.inflightFields(),

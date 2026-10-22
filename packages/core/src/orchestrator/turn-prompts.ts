@@ -1,6 +1,8 @@
 import {
   COACH_ANNOTATIONS_SCHEMA_NAME,
   SPOKEN_REGISTER,
+  escapeData,
+  truncate,
   type ChatMessage,
   type CoachAnnotations,
 } from '@foundry/ai';
@@ -18,6 +20,10 @@ import { type CoachMode, type TurnChannel } from '@foundry/contracts';
  *
  * Every rule above the output section (identity, non-negotiables, claims, escalation, mode, doctrine, notes)
  * governs both phases.
+ *
+ * Both phases start with the same characters: the system prompt's stable part (`buildSystemPromptParts`), which is
+ * also the same on every turn of the conversation. Phase A edits only what follows it, so Bedrock's prompt cache can
+ * serve that prefix (docs/runbooks/latency.md).
  */
 
 /**
@@ -28,6 +34,11 @@ export const OUTPUT_SECTION_MARKER = '\nOutput:';
 
 export interface AnswerPromptOptions {
   readonly channel: TurnChannel;
+  /**
+   * Characters at the start of the system prompt that are the same on every turn (`buildSystemPromptParts`'s
+   * `stable`): kept byte for byte, and the edits below apply only to what follows. Default 0 (the whole prompt).
+   */
+  readonly stableChars?: number;
   /** The fixed mode, or null in auto mode. */
   readonly mode: CoachMode | null;
   /** Modes the model may choose from in auto mode. */
@@ -36,10 +47,11 @@ export interface AnswerPromptOptions {
 
 /**
  * The call's section of the turn system prompt (`# Voice call`): the reply's output contract as two fields, `spoken`
- * (at most 70 words) and `answer` (its transcript). It sits just before the output section, so cutting at that section
- * kept it in a call's phase A, which then asked for two fields and, a few lines later, for the text itself with no
- * field names. Nova 2 Lite reconciled that by reasoning in the open, and the call said it (LAB-M1: 5 of 14 call turns,
- * 0 of about 98 typed ones). Phase A leaves the section out and says its one rule that is not about fields itself.
+ * (at most 70 words) and `answer` (its transcript). It sits before the turn policy and the output section, so cutting
+ * at the output section kept it in a call's phase A, which then asked for two fields and, a few lines later, for the
+ * text itself with no field names. Nova 2 Lite reconciled that by reasoning in the open, and the call said it (LAB-M1:
+ * 5 of 14 call turns, 0 of about 98 typed ones). Phase A leaves the section out and says its one rule that is not about
+ * fields itself.
  */
 export const VOICE_SECTION_MARKER = '\n# Voice call\n';
 
@@ -55,7 +67,8 @@ function phaseARules(system: string): string {
 
 /** Phase A system prompt: the turn's rules, then how to write the reply as plain text. */
 export function answerSystemPrompt(system: string, options: AnswerPromptOptions): string {
-  const rules = phaseARules(system);
+  const kept = Math.min(Math.max(0, options.stableChars ?? 0), system.length);
+  const rules = `${system.slice(0, kept)}${phaseARules(system.slice(kept))}`;
   const lines = [
     '',
     'Output: write your reply to the founder now, as the text itself. No JSON, no field names, no preamble.',
@@ -90,6 +103,41 @@ export function answerSystemPrompt(system: string, options: AnswerPromptOptions)
     );
   }
   return `${rules}\n${lines.join('\n')}`;
+}
+
+/** Opens the server's request to go on with a reply the gate left at its lead-in ({@link continuationMessages}). */
+export const CONTINUE_REQUEST_TAG = 'continue_request';
+
+/**
+ * The turn's messages, the reply said so far (its lead-in: "Okay, Idris."), then a request to go on with something new.
+ * The gate had left out everything after the lead-in as already said (lab run 39780304879: 4 of 10 call replies were
+ * said as their lead-in alone, the three questions of the reply before them left out as repeats). `leftOut`: what it
+ * left out (model-written, escaped as data).
+ */
+export function continuationMessages(
+  messages: readonly ChatMessage[],
+  said: string,
+  leftOut: readonly string[],
+): ChatMessage[] {
+  const omitted = leftOut.map((t) => t.replace(/\s+/g, ' ').trim()).filter((t) => t !== '');
+  return [
+    ...messages,
+    { role: 'assistant', content: said },
+    {
+      role: 'user',
+      content: [
+        `<${CONTINUE_REQUEST_TAG}>`,
+        'Your reply above stopped after its first words: what came next repeated what you already said in this',
+        'conversation, so it was left out. Go on now, as the next words of the same reply: something new that moves them',
+        'forward (a next concrete step, a draft, an example or your view), then hand the turn back. No greeting and',
+        'nothing you already said.',
+        ...(omitted.length > 0
+          ? [`Left out as already said: ${escapeData(truncate(omitted.join(' '), 600))}`]
+          : []),
+        `</${CONTINUE_REQUEST_TAG}>`,
+      ].join('\n'),
+    },
+  ];
 }
 
 /** Phase B conversation: the turn's messages, the streamed reply, then the request for its fields. */

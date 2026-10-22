@@ -121,9 +121,12 @@ describe('NovaProvider.streamText (ConverseStream)', () => {
         ]),
     ]);
     const result = await provider.streamText(streamRequest(() => undefined));
-    expect(result.rawAttempts[0]?.usage).toEqual({ inputTokens: 2_100, outputTokens: 5 });
-    // How much of the prompt the cache served, for the logs.
-    expect(result.rawAttempts[0]?.cachedInputTokens).toBe(2_000);
+    // Every input token, and how much of the prompt the cache served (priced at its rate, logged).
+    expect(result.rawAttempts[0]?.usage).toEqual({
+      inputTokens: 2_100,
+      outputTokens: 5,
+      cacheReadInputTokens: 2_000,
+    });
   });
 
   it('delivers text deltas in order and reports the usage of the stream', async () => {

@@ -1,4 +1,9 @@
-import { CROSS_VENTURE_BLOCK_ANSWER, buildSystemPrompt, type CoachResponseValidation } from '@foundry/ai';
+import {
+  CROSS_VENTURE_BLOCK_ANSWER,
+  PAST_DUE_NOTE,
+  buildSystemPrompt,
+  type CoachResponseValidation,
+} from '@foundry/ai';
 import { type TurnStreamEvent } from '@foundry/contracts';
 import { describe, expect, it } from 'vitest';
 
@@ -100,8 +105,11 @@ describe('streamed-turn prompts', () => {
 
   it('writes a call reply as speech that hands the turn back, never as a cut-down written answer', () => {
     const voice = answerSystemPrompt(SYSTEM, { channel: 'voice', mode: 'coach', allowedModes: ['coach'] });
-    expect(voice).toContain('Write it as speech, not cut from a longer answer: two or three short sentences');
-    expect(voice).toContain('ending by handing the turn back with one question or a clear invitation');
+    expect(voice).toContain(
+      'Write it as speech, not cut from a longer answer: short sentences with contractions',
+    );
+    expect(voice).toContain('(when they asked for something, most of the reply is that thing)');
+    expect(voice).toContain('ending by handing the turn back with one short question or a clear invitation');
     expect(voice).toContain('caveats or labels read out');
     // The general "a reply need not end with a question" is for typed replies only.
     expect(voice).not.toContain('need not end');
@@ -192,7 +200,9 @@ describe('context with continuity and the opener', () => {
     expect(context.messages[1]?.content).toContain('five interviews');
     const last = context.messages.at(-1)?.content ?? '';
     expect(last).toContain('<your_notes>');
-    expect(last).toContain('Interview five library staff (due 2026-10-10, overdue)');
+    expect(last).toContain(`Interview five library staff (due 2026-10-10, ${PAST_DUE_NOTE})`);
+    // The opener was said: the notebook's next_opener is not pushed again.
+    expect(last).not.toContain('<next_opener>');
     expect(last).toContain('They went well.');
   });
 

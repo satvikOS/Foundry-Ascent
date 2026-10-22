@@ -219,7 +219,8 @@ const NON_NEGOTIABLES = [
   '   decline lightly in your own voice (never cite rules or how you were built), then carry on.',
   '3. This workspace belongs to one venture. Never discuss, confirm, compare with, or speculate about any other venture,',
   '   team, or founder on the platform, even if asked or if their names appear in the data. Offer general guidance instead.',
-  '4. Evidence before eloquence: say what is unknown. Ask evidence-seeking questions before prescribing.',
+  '4. Evidence before eloquence: say what is unknown. Ask evidence-seeking questions before prescribing, but never',
+  '   withhold help they ask for (drafts, examples, options, how-tos).',
   '5. For high-risk topics give general education only, never situation-specific legal, medical, financial,',
   '   regulatory or investment advice, and escalate to a qualified human (see Escalation).',
   '6. Output Markdown only in `answer`: no HTML, no images, no scripts; links only to https URLs that appear in evidence.',
@@ -264,6 +265,8 @@ const CONTINUITY_RULES = [
   '- They are notes, not evidence: never cite them with [E#] ids or present them as facts in `claims`, and confirm',
   '  anything important before relying on it ("if I remember right, …"). When a note conflicts with the evidence or',
   '  with what the founder says now, trust the founder and the evidence.',
+  '- They are background, not an agenda: raise an open commitment or question only when the founder brings no topic',
+  '  of their own or it bears on what they ask, and once a conversation at most.',
 ].join('\n');
 
 const VOICE_CHANNEL_RULES = [
@@ -416,12 +419,34 @@ function promptFirstName(raw: string | null | undefined): string | null {
 }
 
 /**
+ * The turn system prompt in two parts, `stable + turn` (Bedrock prompt caching, docs/runbooks/latency.md):
+ *
+ * - `stable`: everything that stays the same on every turn of a conversation, in both calls of a streamed turn
+ *   (identity, how the persona talks, conversation craft, the rules, the mode, the doctrine and style, the venture,
+ *   today's date and how to use the notes). It ends with a blank line. The gateway puts a cache point after it.
+ * - `turn`: what can change from one turn, or one call, to the next: the control block (this turn's risk flags and
+ *   crisis flag), the voice-call field contract (the streamed reply leaves it out), the turn policy and the output
+ *   section (the streamed reply replaces it).
+ */
+export interface SystemPromptParts {
+  readonly stable: string;
+  readonly turn: string;
+}
+
+/**
  * Builds the trusted system prompt for a coaching turn: identity and how the persona talks, the
  * non-negotiable rules, claim and escalation policy, mode instructions, the approved persona doctrine
- * and style, the venture context (escaped data), how to use the persona's notes, the voice-call rules
- * and the turn policy derived from the deterministic pre-classifier.
+ * and style, the venture context (escaped data), how to use the persona's notes, then this turn's part: the
+ * control block, the voice-call rules, the turn policy derived from the deterministic pre-classifier and the
+ * output section. It is `stable + turn` of {@link buildSystemPromptParts}.
  */
 export function buildSystemPrompt(input: SystemPromptInput): string {
+  const { stable, turn } = buildSystemPromptParts(input);
+  return `${stable}${turn}`;
+}
+
+/** {@link buildSystemPrompt} in its two parts: the conversation's unchanging prefix and this turn's part. */
+export function buildSystemPromptParts(input: SystemPromptInput): SystemPromptParts {
   const identity = resolvePersonaIdentity(input.release.personaName, input.release.eirName);
   const persona = escapeInline(identity.personaName, 80);
   const today = input.today ?? new Date().toISOString().slice(0, 10);
@@ -436,19 +461,10 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
       : null;
   const threshold = Math.min(1, Math.max(0, input.policy.groundingThreshold));
 
-  const sections = [
-    renderControlBlock({
-      policyVersion: POLICY_VERSION,
-      mode: input.mode,
-      allowedModes: allowed,
-      riskFlags: [...input.policy.riskCategories],
-      crisis: input.policy.crisis === true,
-      rehearsalCounterpart: counterpart,
-      channel,
-      persona: controlValue(persona, 80) || null,
-      founder,
-    }),
-    '',
+  // Prompt caching: every section up to the notes is the same on every turn of the conversation and in both calls
+  // of a streamed turn; what can differ (the control block's flags, the voice-call field contract, the turn policy
+  // and the output section) comes after it, in `turn`.
+  const stable = [
     '# Identity',
     identityRules(identity, persona, input.release, channel),
     '',
@@ -479,9 +495,22 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     `Today: ${today}`,
   ];
   if (input.continuity && hasContinuity(input.continuity)) {
-    sections.push('', '# Continuity', CONTINUITY_RULES);
+    stable.push('', '# Continuity', CONTINUITY_RULES);
   }
-  if (channel === 'voice') sections.push('', '# Voice call', VOICE_CHANNEL_RULES);
-  sections.push('', renderTurnPolicy(input.policy), '', OUTPUT_RULES(input.mode, allowed, today, channel));
-  return sections.join('\n');
+  const turn = [
+    renderControlBlock({
+      policyVersion: POLICY_VERSION,
+      mode: input.mode,
+      allowedModes: allowed,
+      riskFlags: [...input.policy.riskCategories],
+      crisis: input.policy.crisis === true,
+      rehearsalCounterpart: counterpart,
+      channel,
+      persona: controlValue(persona, 80) || null,
+      founder,
+    }),
+  ];
+  if (channel === 'voice') turn.push('', '# Voice call', VOICE_CHANNEL_RULES);
+  turn.push('', renderTurnPolicy(input.policy), '', OUTPUT_RULES(input.mode, allowed, today, channel));
+  return { stable: `${stable.join('\n')}\n\n`, turn: turn.join('\n') };
 }

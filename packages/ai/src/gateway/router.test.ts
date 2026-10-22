@@ -252,13 +252,37 @@ describe('model router — primary/fallback policy', () => {
       Promise.resolve({
         value: VALID_ANSWER,
         modelId: NOVA,
-        rawAttempts: [{ ...attempt('nova', NOVA, 'ok', 3_100, 40), cachedInputTokens: 3_000 }],
+        rawAttempts: [
+          {
+            ...attempt('nova', NOVA, 'ok', 3_100, 40),
+            usage: {
+              inputTokens: 3_100,
+              outputTokens: 40,
+              cacheReadInputTokens: 3_000,
+              cacheWriteInputTokens: 0,
+            },
+            cachePoints: 3,
+          },
+        ],
       });
     const { gw, logger } = gateway(cachedNova, ok('nova', NOVA));
     const result = await gw.generateStructured(request);
-    expect(result.attempts[0]?.cachedInputTokens).toBe(3_000);
+    expect(result.attempts[0]?.usage.cacheReadInputTokens).toBe(3_000);
+    expect(result.usage).toEqual({
+      inputTokens: 3_100,
+      outputTokens: 40,
+      cacheReadInputTokens: 3_000,
+      cacheWriteInputTokens: 0,
+    });
+    // Priced at Nova 2 Lite's cache-read rate: a quarter of the input rate (a regional id: 10 % over global).
+    expect(result.costUsd).toBeCloseTo(((100 * 0.3 + 3_000 * 0.075 + 40 * 2.5) * 1.1) / 1_000_000, 6);
     const line = logger.events.find((e) => e.event === 'ai.model.attempt');
-    expect(line?.fields).toMatchObject({ inputTokens: 3_100, cachedInputTokens: 3_000 });
+    expect(line?.fields).toMatchObject({
+      inputTokens: 3_100,
+      cachedInputTokens: 3_000,
+      cacheWriteInputTokens: 0,
+      cachePoints: 3,
+    });
   });
 
   it('logs why a structured attempt failed, and the repairs a valid one needed, as codes (LAB-M6)', async () => {
@@ -535,6 +559,8 @@ describe('modelGatewayConfigFromEnv', () => {
       primaryModelId: 'openai.gpt-6-luna',
       fallbackModelId: 'us.amazon.nova-2-lite-v1:0',
       embeddingsModelId: 'amazon.titan-embed-text-v2:0',
+      // MODEL_PROMPT_CACHE is optional and on by default (prompt-cache.test.ts).
+      promptCache: true,
     });
   });
 

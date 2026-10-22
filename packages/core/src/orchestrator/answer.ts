@@ -2,7 +2,7 @@ import {
   AUTO_MODE,
   CROSS_VENTURE_BLOCK_ANSWER,
   INVALID_RESPONSE_ANSWER,
-  buildSystemPrompt,
+  buildSystemPromptParts,
   deriveSpoken,
   founderMoves,
   isModelGatewayError,
@@ -193,7 +193,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
 
   // Step 4: assemble context (≤ maxInputTokens): rules and persona, the vEIR's notes, history, evidence.
   const today = kit.now().toISOString().slice(0, 10);
-  const system = buildSystemPrompt({
+  const prompt = buildSystemPromptParts({
     release: {
       version: spec.release.version,
       doctrine: spec.release.doctrine,
@@ -221,6 +221,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     channel: spec.channel,
     continuity: spec.continuity,
   });
+  const system = `${prompt.stable}${prompt.turn}`;
   const context = assembleContext({
     system,
     evidence: spec.evidence.map((k) => k.item),
@@ -271,6 +272,9 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     turnId: spec.ids.turnId,
     system,
     messages: context.messages,
+    // Bedrock prompt caching: the rules up to the notes are the same on every turn of the conversation, and every
+    // message before the founder's new one is an earlier exchange (docs/runbooks/latency.md).
+    promptCache: { systemChars: prompt.stable.length, historyMessages: context.messages.length - 1 },
     channel: spec.channel,
     mode: spec.mode,
     allowedModes: spec.allowedModes,
