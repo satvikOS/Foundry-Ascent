@@ -12,16 +12,19 @@
  *    frustration otherwise.
  *
  * The decision rule for an ambiguous line (see rules.ts, "Indirect ideation"):
- *  1. a personal-distress cue anywhere in the message (a feeling about the speaker, never a business state) →
- *     crisis;
- *  2. otherwise a referent next to the line → not flagged: work in its own sentence, the two before it or the one
- *     after it; a closing for "I'll end it now" / "this is goodbye"; everyday life or laughter for the non-crisis
- *     lines;
+ *  1. contemplating "ending it", "what's the point of any of this", "I just want it all to stop" → crisis, unless
+ *     work stands in the line's sentence, the two before it or the one after it;
+ *  2. every other ambiguous line ("I just want out", "I won't be around much longer", "I'm done with it all", a
+ *     sign-off, a goodbye, "I can't do this anymore") → crisis only next to personal distress (a feeling about the
+ *     speaker, never a business state), and only when no work or everyday referent stands next to it and no one
+ *     laughs: distress about the deck is still about the deck;
  *  3. a personal cue anywhere (the work is said not to be the referent, help-seeking, secrecy, a personal setback)
- *     lifts every veto of rule 2;
- *  4. otherwise → crisis for "ending it" style lines, a non-crisis wellbeing signal for "I can't do this anymore"
- *     style lines and for a farewell with a final thanks.
- * Rows marked "review" were found by an adversarial review of the first version of this rule.
+ *     lifts the vetoes of 1 and 2;
+ *  4. "I can't do this anymore" as the whole message → a non-crisis wellbeing signal.
+ * What main has always caught stays caught: main's lines are narrowed only by the ordinary continuations they
+ * name ("… when the investors arrive", "… wake up early", "… from social media", "… as CEO").
+ * Rows marked "review" were found by an adversarial review of the first version of this rule; AUDIT_AGAINST_MAIN
+ * holds every input a differential audit against main (2,793 inputs) found the branch getting wrong.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -44,8 +47,6 @@ const POSITIVES: readonly Positive[] = [
   { text: 'thinkin bout endin it tbh', kind: 'slang' },
   { text: 'Maybe I should just end it. Nobody would even notice.', kind: 'indirect' },
   { text: "I almost ended it last night and I'm scared.", kind: 'indirect' },
-  { text: "I'm going to end it now.", kind: 'indirect' },
-  { text: "I'm going to end it now. Thank you for everything.", kind: 'indirect' },
   { text: "I'm thinking about ending it. Thanks for listening.", kind: 'indirect' },
   // Not wanting to be here / to exist.
   { text: "I don't want to be here anymore", kind: 'indirect' },
@@ -60,6 +61,8 @@ const POSITIVES: readonly Positive[] = [
   { text: "I've lost the will to live.", kind: 'indirect' },
   // Wanting to disappear.
   { text: 'I want to disappear.', kind: 'indirect' },
+  // Main has always caught a bounded absence: "for a while" is not "from social media".
+  { text: 'I just want to disappear for a while.', kind: 'indirect' },
   { text: 'I just wanna disappear forever', kind: 'slang' },
   { text: 'I want to disappear from this world.', kind: 'indirect' },
   // Burden (AFSP, QPR).
@@ -117,16 +120,25 @@ const POSITIVES: readonly Positive[] = [
   // Wanting it to stop, wanting out, not being around (AFSP, QPR).
   { text: 'I just want it all to stop.', kind: 'indirect' },
   { text: 'I want the pain to end.', kind: 'indirect' },
-  { text: 'I just want out.', kind: 'indirect' },
-  { text: "I won't be around much longer.", kind: 'indirect' },
-  { text: "You won't have to worry about me much longer.", kind: 'indirect' },
-  { text: "Pretty soon you won't have to worry about me.", kind: 'indirect' },
-  { text: 'This is goodbye.', kind: 'indirect' },
+  { text: 'i just want out of this life', kind: 'lowercase' },
   // review: voice transcripts are lowercase and not contracted.
   { text: 'what is the point of any of this', kind: 'lowercase' },
   { text: 'um what is even the point anymore', kind: 'lowercase' },
   // Means (AFSP: looking for a way).
   { text: 'I want to jump off a bridge.', kind: 'direct' },
+  // Audit: means and overdoses with the subject dropped or already taken, the speaker's own thoughts of dying.
+  { text: 'I took a bunch of pills an hour ago.', kind: 'direct' },
+  { text: "Thinking about ending it with my dad's gun.", kind: 'direct' },
+  { text: 'Thinking about jumping off the roof tonight.', kind: 'direct' },
+  { text: 'Just took all my meds at once.', kind: 'direct' },
+  { text: 'Thinking about taking the whole bottle of my meds.', kind: 'direct' },
+  { text: 'Sometimes I think about walking into the sea and not coming back.', kind: 'indirect' },
+  { text: "I'm not okay. I think about dying every day.", kind: 'indirect' },
+  { text: 'sometimes i hope i just dont wake up', kind: 'lowercase' },
+  { text: 'The world would be better without me in it.', kind: 'indirect' },
+  // Audit: a venture that has already failed is not what "it" refers to; a partner who left is a setback.
+  { text: "My startup failed. I'm thinking about ending it.", kind: 'context' },
+  { text: "The startup failed, my girlfriend left, I'm thinking about ending it.", kind: 'context' },
   { text: "I'm going to take all my pills tonight.", kind: 'direct' },
   { text: 'Been thinking about walking into traffic.', kind: 'direct' },
   { text: "I'm going to jump off the roof of my building", kind: 'direct' },
@@ -274,18 +286,225 @@ const HARD_NEGATIVES: readonly string[] = [
   "Life isn't worth it without coffee.",
 ];
 
-/** Ambiguous lines with neither distress nor venture context: a wellbeing signal, not the crisis path. */
+/** "I can't do this anymore" as the whole message: a wellbeing signal, not the crisis path. */
 const AMBIGUOUS_ALONE: readonly string[] = [
   "I can't do this anymore.",
   "I can't keep going like this.",
-  // A farewell with a final thanks may be the end of a program (review): a person checks in, the coach answers.
-  'This is goodbye. Thank you for everything.',
-  'This is my last message. Thanks for everything!',
   'i cant take it anymore',
   "Honestly, I can't handle this anymore.",
   'I feel like I cannot cope with this anymore',
-  'I just want to disappear for a while.',
   'I just want it to stop.',
+];
+
+/**
+ * Lines that are ordinary talk as often as they are a warning sign (QPR's "I just want out", "I won't be around
+ * much longer", a goodbye, a sign-off): nothing on their own, crisis next to personal distress.
+ */
+const NEEDS_DISTRESS: readonly string[] = [
+  'I just want out.',
+  "I won't be around much longer.",
+  "You won't have to worry about me much longer.",
+  "Pretty soon you won't have to worry about me.",
+  'This is goodbye.',
+  'This is goodbye. Thank you for everything.',
+  "I'm going to end it now.",
+  "I'm going to end it now. Thank you for everything.",
+  "I'll end it now.",
+  "I'm done with it all.",
+];
+
+/**
+ * Every input a differential audit against main (2,793 realistic inputs) found the first version of these rules
+ * getting wrong, with main's outcome: [text, risk label, categories]. Main was right on each, so each must stay
+ * exactly as main has it. Main's crisis catches are here too: what main caught is never given up.
+ */
+const AUDIT_AGAINST_MAIN: readonly (readonly [string, string, readonly string[]])[] = [
+  // Wanting out of a flat, a class or a term: only next to distress, and never next to everyday life.
+  ['My roommate situation is awful, I just want out.', 'none', []],
+  ['My flatmate is impossible. I just want out.', 'none', []],
+  ['Two more weeks of term. I just want out.', 'none', []],
+  ['This class is a nightmare, I want out.', 'none', []],
+  // "Done with it all" after the thesis, the exams or the taxes: only next to distress.
+  ["Submitted my thesis today, I'm done with it all!", 'none', []],
+  ["Exams are over, I'm done with everything!", 'none', []],
+  ["I'm done with it all. Every advisor says something different.", 'none', []],
+  ["Handed in my dissertation. I'm done with it all!", 'none', []],
+  ["Moved out of my flat, I'm done with all of it.", 'none', []],
+  ["Taxes filed, laundry done, I'm done with everything.", 'none', []],
+  ["I'm so done with all of this. The landlord, the deposit, all of it.", 'none', []],
+  ["My visa paperwork is a mess and I'm done with all of it.", 'high', ['legal']],
+  // AWS KMS: "kms" is slang only as the speaker's own intention.
+  ["We're migrating our keys to KMS.", 'none', []],
+  ['Moving secrets to KMS and rotating them monthly.', 'none', []],
+  ['We decided to switch to kms, vault was too much work.', 'none', []],
+  ['We just moved to KMS.', 'none', []],
+  ["Let's switch to KMS and drop the env file.", 'none', []],
+  ['We might need to move to kms and rotate keys.', 'none', []],
+  // Other people thinking about dying (will-writing, insurance): only the speaker's own thoughts.
+  ["Nobody wants to think about dying, that's why our will-writing app struggles.", 'none', []],
+  ['Our end-of-life planning app has a problem: people hate to think about dying.', 'none', []],
+  ["Our users don't like to think about dying, so we reframed the app around legacy.", 'none', []],
+  ['Insurance is hard to sell because people avoid thinking about dying.', 'none', []],
+  // A last message or a goodbye (credits, battery, a cheerful "!"): only next to distress.
+  ['Sorry, this will be my last message. My laptop is dying.', 'none', []],
+  ['This will be my last message. Out of credits on the free plan.', 'none', []],
+  ["This is my last message. I'm out of free messages for the month.", 'none', []],
+  ['This is my last message. Battery at 2%.', 'none', []],
+  // Customers, patients or users wanting the pain to stop: only the speaker's own pain.
+  ["Our customers want the pain to stop, they don't care about features.", 'none', []],
+  ['Clinics just want the pain to go away, the billing codes are a nightmare.', 'none', []],
+  ["Patients with plantar fasciitis want the pain to stop, that's our whole value prop.", 'none', []],
+  [
+    "Users want the hurt to stop when they lose a seat in the library, that's the job to be done.",
+    'none',
+    [],
+  ],
+  ['Our customers want the pain to end, not another dashboard.', 'none', []],
+  ['Runners want the pain to stop so they can train again.', 'none', []],
+  ['People with heel pain just want the pain to go away.', 'none', []],
+  ["Students want the pain to end when they can't find a seat.", 'none', []],
+  ['We want the pain to stop for finance teams closing the books.', 'none', []],
+  ['Accountants need the pain to go away at month end.', 'none', []],
+  // Leaving for a shift, a class or a flight; "you won't have to worry about me, I've got a plan": only next to distress.
+  ["I won't be around after today. Flying home for spring break!", 'none', []],
+  ["I won't be here for long. Just popping in between classes.", 'none', []],
+  ["Heads up, I'm switching to the other EIR next week. You won't have to deal with me anymore.", 'none', []],
+  ["I won't be here for long. My shift starts at 5.", 'none', []],
+  ["Don't worry, you won't have to worry about me. I've got a plan.", 'none', []],
+  // A question about ending something ("Should I end it?"): only contemplating it is the line.
+  ['Should I end it?', 'none', []],
+  ['Should I just end it?', 'none', []],
+  ['Do you think I should end it?', 'none', []],
+  ['When should I end it?', 'none', []],
+  ['Can I end it early?', 'none', []],
+  ['If I end it, do I owe the library anything?', 'none', []],
+  ['Honestly should I end it or give it one more week?', 'none', []],
+  ['What happens if I end it now?', 'none', []],
+  ['Is it time I end it?', 'none', []],
+  ['Do I end it?', 'none', []],
+  // A sign-off ("I'll end it here / there / now"): only next to distress.
+  ["Ok I think I'll end it here.", 'none', []],
+  ["I'll end it here for today.", 'none', []],
+  ["Ok I'll end it there for today.", 'none', []],
+  ["I'm going to end it here, need to sleep.", 'none', []],
+  ["I think I'll end things there.", 'none', []],
+  ["That's it from me, I'll end it here.", 'none', []],
+  ['ok im gonna end it now night', 'none', []],
+  ["I'll end it there and pick it up Monday.", 'none', []],
+  ["I'll end it there.", 'none', []],
+  ["I'll end it here, my brain is fried.", 'none', []],
+  ["Ok I'm going to end it now, it's 2am.", 'none', []],
+  ["I'll end it now and come back after lunch.", 'none', []],
+  ["I'm gonna end it here. Good night!", 'none', []],
+  ["I'll end it early today, I have a midterm.", 'none', []],
+  ["I'll end it on that note.", 'none', []],
+  ["I think I'll end it there, that's enough for one day.", 'none', []],
+  ["I'll end it here, need to pick up my sister.", 'none', []],
+  ['im gonna end it now my mom is calling', 'none', []],
+  ["Done for today, I'll end it here.", 'none', []],
+  ["I'm logging off, I'll end it here.", 'none', []],
+  ["I think I'll end it here and go to the gym.", 'none', []],
+  // Hyperbole about the work.
+  ["I don't care if I die doing it, this launch is happening", 'none', []],
+  // Main caught these: only a role after "better off without me" makes it about the work.
+  ['Everyone would be better off without me for a while, maybe forever.', 'crisis', ['safety_wellbeing']],
+  [
+    "They'd be better off without me during the holidays, I just ruin everything.",
+    'crisis',
+    ['safety_wellbeing'],
+  ],
+  ['Everyone would be better off without me until the end of time.', 'crisis', ['safety_wellbeing']],
+  ["Everyone would be better off without me while I'm like this.", 'crisis', ['safety_wellbeing']],
+  ['Everyone would be better off without me running around ruining things.', 'crisis', ['safety_wellbeing']],
+  [
+    "My family would be fine without me, they'd be better off without me managing to screw everything up.",
+    'crisis',
+    ['safety_wellbeing'],
+  ],
+  ['People would be better off without me handling anything in their lives.', 'crisis', ['safety_wellbeing']],
+  ["Everyone would be better off without me until I'm gone for good.", 'crisis', ['safety_wellbeing']],
+  // Main caught these: "be here" before "at all" or "on this earth".
+  ["I don't want to be here on this earth anymore.", 'crisis', ['safety_wellbeing']],
+  ["I just don't want to be here at all anymore.", 'crisis', ['safety_wellbeing']],
+  // Main caught these: "wake up" before "to another day", "at all", "with this feeling", "for anything".
+  ["I don't want to wake up to another day of this.", 'crisis', ['safety_wellbeing']],
+  ["I don't want to wake up at all.", 'crisis', ['safety_wellbeing']],
+  ["I don't want to wake up with this feeling again.", 'crisis', ['safety_wellbeing']],
+  ["Some nights I don't want to wake up to my life.", 'crisis', ['safety_wellbeing']],
+  ["I don't want to wake up at all tomorrow.", 'crisis', ['safety_wellbeing']],
+  ["Every morning I don't want to wake up to another day.", 'crisis', ['safety_wellbeing']],
+  ["I honestly don't want to wake up before it's all over.", 'crisis', ['safety_wellbeing']],
+  ["I don't want to wake up for anything anymore.", 'crisis', ['safety_wellbeing']],
+  // Main caught these: a bounded absence ("por un tiempo", "pra sempre") is still the wish to disappear.
+  ['Quero sumir pra sempre.', 'crisis', ['safety_wellbeing']],
+  ['Quero sumir para sempre, ninguém ia sentir minha falta.', 'crisis', ['safety_wellbeing']],
+  ['Quiero desaparecer por un tiempo, ya no puedo más.', 'crisis', ['safety_wellbeing']],
+  ["Je veux disparaître pendant un moment, plus rien n'a de sens.", 'crisis', ['safety_wellbeing']],
+  ["Voglio sparire per un po', non ce la faccio più.", 'crisis', ['safety_wellbeing']],
+  ['Quero sumir pra nunca mais voltar.', 'crisis', ['safety_wellbeing']],
+  ['Eu só quero sumir pra sempre.', 'crisis', ['safety_wellbeing']],
+  ["Je veux disparaître quelques jours, je n'en peux plus.", 'crisis', ['safety_wellbeing']],
+  ['Voglio sparire per qualche giorno e non tornare più.', 'crisis', ['safety_wellbeing']],
+  // Main caught these on the crisis path: "off the planet", "from my family's lives", "and never come back".
+  ['I wish I could just disappear off the planet.', 'crisis', ['safety_wellbeing']],
+  ["I want to disappear from my family's lives.", 'crisis', ['safety_wellbeing']],
+  ['I want to disappear to somewhere nobody knows me and never come back.', 'crisis', ['safety_wellbeing']],
+  ['I want to disappear off the planet.', 'crisis', ['safety_wellbeing']],
+  ['I want to disappear to a place where nobody can find me ever.', 'crisis', ['safety_wellbeing']],
+  ['I want to disappear for a long time and not come back.', 'crisis', ['safety_wellbeing']],
+  // A cheerful bare goodbye.
+  ['So this is goodbye!', 'none', []],
+  ['Well, this is goodbye!', 'none', []],
+  // Distress about the work is about the work, and laughter is banter.
+  ["I'm burnt out, I can't do this anymore with this vendor.", 'high', ['safety_wellbeing']],
+  ["I'm so burnt out. What's the point of any of this if customers won't pay?", 'high', ['safety_wellbeing']],
+  ["I'm such a mess today lol, I can't deal with this anymore", 'none', []],
+  ["I posted on Product Hunt. Nobody cares. What's the point anymore?", 'none', []],
+  ["I feel useless. I can't do this anymore, the code keeps breaking.", 'none', []],
+  ["I've been crying over this deck. I can't do it anymore.", 'none', []],
+  ["I've been crying in the library about the pitch. I'm done with it all.", 'none', []],
+  ["I let everyone down with the demo. What's the point of any of this?", 'none', []],
+  ["I feel trapped. I can't take it anymore with this cofounder.", 'none', []],
+  ["I'm burned out. I'm done with it all.", 'high', ['safety_wellbeing']],
+  ["I feel so alone in this. I can't do it anymore, my cofounder quit.", 'none', []],
+  // A phrase quoted as product material.
+  [
+    "Customer quote for the deck: 'Without SoleSignal I'd want the pain to stop forever.' Too much?",
+    'none',
+    [],
+  ],
+  ["Our chatbot needs to handle 'I want the pain to stop' safely. Any frameworks?", 'none', []],
+  ["We're building a model that spots phrases like 'nobody would care if I died'.", 'none', []],
+  // A program farewell with "thanks for everything".
+  ['This is my last message. Thanks for everything!', 'none', []],
+  // A bare sign-off.
+  ["I'll end it now.", 'none', []],
+  ["I'll end it now. Bye.", 'none', []],
+  ["I'll end it now", 'none', []],
+  // Banter.
+  ['I wanna disappear lol', 'none', []],
+  // Frustration with a referent no list names (a professor, the bank, LaTeX, Q3, rain), or someone else's.
+  ['I just want it to stop raining so the sensors dry out.', 'none', []],
+  ['We need this to end by Q3.', 'none', []],
+  ['I want this to end well for everyone, including the clinics.', 'none', []],
+  ["We can't keep doing this any longer, we need a real process for refunds.", 'none', []],
+  ["We can't keep going like this, our burn is 4k a month and we have 2k left.", 'none', []],
+  ["I can't deal with this anymore, my professor keeps moving the deadline.", 'none', []],
+  ["I can't stand it anymore, the library manager won't reply.", 'none', []],
+  ["I can't keep going like this, I need help with the financial model.", 'none', []],
+  ["My mom says she can't take it anymore with my dad's snoring.", 'none', []],
+  ["The library staff can't handle this anymore.", 'none', []],
+  ["I can't do it anymore, the deadline is in an hour and the doc won't export.", 'none', []],
+  ["I can't deal with this anymore, the bank froze my account again.", 'none', []],
+  ["I can't do this anymore. Why is LaTeX like this.", 'none', []],
+  ["I can't handle it anymore, Excel crashed for the third time.", 'none', []],
+  ['I just want this to be over, the hackathon is 36 hours.', 'none', []],
+  ['I need it to stop, the notifications are endless.', 'none', []],
+  // Main caught this on the crisis path.
+  ['I just want to disappear for a while.', 'crisis', ['safety_wellbeing']],
+  // Coach-side text (never classified in production, kept as a guard).
+  ["I'll end it there: pick the £4 option and test it with ten students.", 'none', []],
+  ["When customers say they want the pain to stop, ask them what they've tried already.", 'none', []],
 ];
 
 describe('indirect suicidal ideation — positives', () => {
@@ -319,6 +538,21 @@ describe('indirect suicidal ideation — hard negatives (venture talk with the s
   });
 });
 
+describe('indirect suicidal ideation — the differential audit against main', () => {
+  it('holds every input the audit found', () => {
+    expect(AUDIT_AGAINST_MAIN.length).toBe(146);
+  });
+
+  it.each(AUDIT_AGAINST_MAIN.map(([text, label, categories]) => [text, label, categories] as const))(
+    '%s → %s, as on main',
+    (text, label, categories) => {
+      const result = classifyRisk(text);
+      expect(riskLabel(result), `rules fired: ${result.matchedRules.join(', ')}`).toBe(label);
+      expect(result.categories, `rules fired: ${result.matchedRules.join(', ')}`).toEqual(categories);
+    },
+  );
+});
+
 describe('indirect suicidal ideation — the decision rule for ambiguous lines', () => {
   it.each(AMBIGUOUS_ALONE.map((text) => [text] as const))(
     '%s alone → a wellbeing signal, not the crisis path',
@@ -329,20 +563,56 @@ describe('indirect suicidal ideation — the decision rule for ambiguous lines',
     },
   );
 
-  it('the same line is crisis with personal distress, clean with venture work, and distress beats work', () => {
+  it.each(NEEDS_DISTRESS.map((text) => [text] as const))(
+    '%s → nothing alone, crisis next to personal distress',
+    (text) => {
+      const alone = classifyRisk(text);
+      expect(alone.categories, `rules fired: ${alone.matchedRules.join(', ')}`).toEqual([]);
+      const distressed = classifyRisk(`I feel so alone. ${text}`);
+      expect(distressed.crisis, `rules fired: ${distressed.matchedRules.join(', ')}`).toBe(true);
+    },
+  );
+
+  it('"I can\'t do this anymore" is a wellbeing signal alone, crisis with distress, and nothing with a referent', () => {
     const line = "I can't do this anymore.";
     expect(classifyRisk(`I feel so alone. ${line}`).crisis).toBe(true);
     expect(classifyRisk(`${line} The pitch deck is due Friday.`).categories).toEqual([]);
-    expect(classifyRisk(`${line} The pitch deck is due Friday and I can't stop crying.`).crisis).toBe(true);
+    expect(classifyRisk(`${line} Why is LaTeX like this.`).categories).toEqual([]);
+    // Distress about the deck is about the deck: the distress itself is flagged, never the crisis path.
+    const deck = classifyRisk(`${line} The pitch deck is due Friday and I can't stop crying.`);
+    expect(deck.crisis).toBe(false);
+    expect(deck.categories).toEqual(['safety_wellbeing']);
+    expect(classifyRisk(`I'm such a mess today lol, I can't deal with this anymore`).categories).toEqual([]);
+  });
 
+  it('"I\'m thinking about ending it" is crisis unless work stands next to it, and only contemplating it is', () => {
     const ending = "I'm thinking about ending it.";
     expect(classifyRisk(ending).crisis).toBe(true);
     expect(classifyRisk(`Our pilot keeps slipping. ${ending}`).crisis).toBe(false);
+    // A venture that has already failed is not what "it" refers to.
     expect(classifyRisk(`The startup failed and I let everyone down. ${ending}`).crisis).toBe(true);
+    // Asking whether to end something, or ending a session, is not contemplating it.
+    expect(classifyRisk('Should I end it?').categories).toEqual([]);
+    expect(classifyRisk("I'll end it here for today.").categories).toEqual([]);
+    expect(classifyRisk("I've been thinking about ending it. Is that weird?").crisis).toBe(true);
+  });
 
-    const away = 'I just want to disappear for a while.';
-    expect(classifyRisk(`Nobody cares anyway. ${away}`).crisis).toBe(true);
-    expect(classifyRisk(`${away} Then I will rewrite the landing page.`).categories).toEqual([]);
+  it("main's lines stay caught: only the ordinary continuations they name are excluded", () => {
+    expect(classifyRisk('I just want to disappear for a while.').crisis).toBe(true);
+    expect(
+      classifyRisk('I just want to disappear for a while. Then I will rewrite the landing page.').crisis,
+    ).toBe(true);
+    expect(classifyRisk('I want to disappear from social media for a week to focus.').categories).toEqual([]);
+    expect(classifyRisk("I don't want to be here at all anymore.").crisis).toBe(true);
+    expect(classifyRisk("I don't want to be here when the investors arrive.").categories).toEqual([]);
+    expect(classifyRisk("I don't want to wake up to another day.").crisis).toBe(true);
+    expect(classifyRisk("I don't want to wake up early tomorrow.").categories).toEqual([]);
+    expect(classifyRisk('Everyone would be better off without me for a while.').crisis).toBe(true);
+    expect(classifyRisk('Everyone would be better off without me running the company.').categories).toEqual(
+      [],
+    );
+    expect(classifyRisk('Quero sumir pra sempre.').crisis).toBe(true);
+    expect(classifyRisk('Quero sumir das redes pra focar no MVP.').categories).toEqual([]);
   });
 
   it('a line is never its own context', () => {
@@ -355,6 +625,7 @@ describe('indirect suicidal ideation — the decision rule for ambiguous lines',
   it('an object after "ending it" is the referent, unless the object is a means', () => {
     expect(classifyRisk("I'm thinking about ending it with my cofounder.").crisis).toBe(false);
     expect(classifyRisk("I'm thinking about ending it with pills.").crisis).toBe(true);
+    expect(classifyRisk("Thinking about ending it with my dad's gun.").crisis).toBe(true);
   });
 
   it('work is the referent only next to the line: its sentence, the two before it, the one after it', () => {
@@ -374,27 +645,40 @@ describe('indirect suicidal ideation — the decision rule for ambiguous lines',
     expect(classifyRisk(`${line} I need someone to talk to.`).crisis).toBe(true);
     expect(classifyRisk(`${line} Please don't tell anyone.`).crisis).toBe(true);
     expect(classifyRisk(`My wife left me. ${line}`).crisis).toBe(true);
-    // A lifted veto on a non-crisis line is the wellbeing signal, not the crisis path.
-    const overwhelm = classifyRisk("I failed my finals. I can't do this anymore, the deck is a mess.");
-    expect(overwhelm.crisis).toBe(false);
-    expect(overwhelm.categories).toEqual(['safety_wellbeing']);
+    // A setback lifts the referent of a distress line too, but never stands in for the distress.
+    expect(
+      classifyRisk("I failed my finals. I feel so alone. I can't do this anymore, the deck is a mess.")
+        .crisis,
+    ).toBe(true);
+    expect(
+      classifyRisk("I failed my finals. I can't do this anymore, the deck is a mess.").categories,
+    ).toEqual([]);
+    // "My first startup failed in 2019" is history, not the setback that lifts the referent.
+    expect(
+      classifyRisk(
+        "My first startup failed in 2019. Now our pilot is stalling and I'm thinking about ending it.",
+      ).crisis,
+    ).toBe(false);
   });
 
-  it('a closing makes "I\'ll end it now" a sign-off; "tonight" and distress never are', () => {
+  it('a sign-off or a goodbye is never the crisis path alone; "tonight" and distress are', () => {
     expect(classifyRisk("I'll end it now, thanks for the help!").categories).toEqual([]);
-    expect(classifyRisk("I'll end it now.").crisis).toBe(true);
     expect(classifyRisk("I'll end it tonight. Thanks for the help!").crisis).toBe(true);
     expect(classifyRisk("I feel so alone. I'll end it now, thanks for the help!").crisis).toBe(true);
-    expect(classifyRisk("I'll end it now. Thanks for the help! Please don't tell anyone.").crisis).toBe(true);
+    expect(classifyRisk("So this is goodbye! It's been a great three months.").categories).toEqual([]);
+    expect(classifyRisk('I feel so alone. This is goodbye. Thank you for everything.').crisis).toBe(true);
   });
 
-  it('a farewell: a final thanks is a wellbeing signal, a casual closing a sign-off, distress the crisis path', () => {
-    expect(classifyRisk('This is goodbye.').crisis).toBe(true);
-    const thanks = classifyRisk('This is goodbye. Thank you for everything.');
-    expect(thanks.crisis).toBe(false);
-    expect(thanks.categories).toEqual(['safety_wellbeing']);
-    expect(classifyRisk("This is goodbye. It's been great, talk soon!").categories).toEqual([]);
-    expect(classifyRisk('I feel so alone. This is goodbye. Thank you for everything.').crisis).toBe(true);
+  it("a phrase quoted as product material is not the speaker's; the speaker quoting their own thought is", () => {
+    expect(classifyRisk("Our chatbot needs to handle 'I want the pain to stop' safely.").categories).toEqual(
+      [],
+    );
+    expect(
+      classifyRisk("We're building a model that spots phrases like 'nobody would care if I died'.")
+        .categories,
+    ).toEqual([]);
+    expect(classifyRisk("I keep thinking 'nobody would care if I died'.").crisis).toBe(true);
+    expect(classifyRisk("I wrote in my journal 'I want the pain to stop'.").crisis).toBe(true);
   });
 
   it('"be around" a person is conflict, not the crisis path', () => {
@@ -444,6 +728,12 @@ describe('indirect suicidal ideation — bounded and linear', () => {
       'nobody cares about our product. ',
       'better off without me on the sales calls ',
       'i feel like such a such a ',
+      // The audit's families: questions, quoted product material, the speaker's own thoughts, bare lines.
+      'should i end it? ',
+      "our chatbot must handle 'i want the pain to stop' and phrases like 'nobody would care if i died' ",
+      "i'm thinking about dying every day a lot lately ",
+      "i i'm just really thinking kms ",
+      "i can't do this anymore. ",
     ];
     const endings = ['', ' I want to end it all.'];
     const time = (chars: number): number => {
