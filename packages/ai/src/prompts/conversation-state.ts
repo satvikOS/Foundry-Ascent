@@ -599,10 +599,11 @@ function reportIn(raw: string, text: string, asks: boolean): ReportInSentence | 
     const whole = REPORT_CLAUSE.test(clause.trim()) && !(asks && /\bthat\b/.test(clause));
     if (!whole && !DONE_THING.test(clause.trim())) continue;
     const says = reportWords(clause);
-    // "Interviews are done." says what: a report on the interviews, if a commitment is about them.
+    // "Interviews are done." says what: a report on the interviews, if a commitment is about them. "The plan is
+    // finished" says the plan is made ({@link MADE}), not that it was sent.
     const what = [...says].some((w) => !isStepKind(w));
     if (!whole && !what) continue;
-    if (!whole) says.add(DONE);
+    if (!whole) says.add(MADE);
     return {
       strength: 'clause',
       says,
@@ -666,25 +667,39 @@ const HANDED_OVER = /^(?:(?:and|so|ok|okay)[,]?\s+)?here(?:'s| is|s)\b(?! (?:it|
  * "We did it! Five new paying libraries this week" got five libraries), never how it went ({@link HOW_IT_WENT}) or what
  * they ask the vEIR to do next ("I posted it. Can you help me write the follow-up email?"). A clause that ends on the
  * state a step leaves ("the flyer's up") or hands over what it made ("here's my pitch: …") says a step was done
- * ({@link DONE}).
+ * ({@link DONE}, {@link MADE}).
+ *
+ * `happened`: for a report that already says what was done ("The interviews are done, I got the job!!"), everything
+ * else the message says was done or happened ({@link PAST_ACT}, news, a step's state), all of it: what they ask, feel or
+ * still have to do ("…, haven't sent it to the dean yet") says nothing done.
  */
-function toldWords(text: string): Set<string> {
+function toldWords(text: string, happened = false): Set<string> {
   let first: Set<string> | null = null;
+  const all = new Set<string>();
   for (const sentence of text.split(/(?<=[.!?…])\s+/)) {
     if (HELP_REQUEST.test(sentence)) continue;
+    if (happened && (sentence.trimEnd().endsWith('?') || QUESTION_START.test(sentence.trim()))) continue;
     for (const raw of sentence.split(
       /[.!?…]+\s*|\s*(?:[,;:]|—|–|\s-\s)\s*|\s+(?=(?:and|but|so(?! far\b)|though|because)\s)/,
     )) {
-      const clause = raw.trim();
+      const clause = raw.replace(/^[("'“‘]+|[)"'”’]+$/g, '').trim();
       if (HOW_IT_WENT.test(clause)) continue;
       const words = reportWords(clause);
       if (words.size === 0) continue;
+      const state = stateLeft(clause);
+      if (happened) {
+        if (state !== null || PAST_ACT.test(clause) || NEWS.test(clause)) {
+          for (const w of words) all.add(w);
+          if (state !== null) all.add(state);
+        }
+        continue;
+      }
       // A clause that says a step done is what it was ("Done! Lost a day to the printer but the flyer's up.").
-      if (DONE_STATE.test(clause) || HANDED_OVER.test(clause)) return words.add(DONE);
+      if (state !== null) return words.add(state);
       first ??= words;
     }
   }
-  return first ?? new Set();
+  return happened ? all : (first ?? new Set());
 }
 
 /**
@@ -710,9 +725,16 @@ export function reportOf(text: string): ReportCue | null {
     if (report.setbackBefore || RETRACTED.test(t.slice(at + report.end))) return null;
     if (report.says.size === 0 && SETBACK.test(t)) return null;
     const { strength, says, mustFit } = report;
+    const rest = `${t.slice(0, at + report.from)} . ${t.slice(at + report.to)}`;
     // A report that says what was done is held to it, named as such or not ("I said I'd quit sugar and I did" is no
     // commitment of the notes); how many ("Interviewed all five like I said I would") says only how many.
-    if ([...says].some((w) => !isStepKind(w) && !isNumber(w))) return { strength, says, mustFit: true };
+    if ([...says].some((w) => !isStepKind(w) && !isNumber(w))) {
+      // A commitment named as such ("I talked to the five librarians like I said. How do I make sense of the notes?"):
+      // what follows is theirs. Otherwise all the message says was done or happened is held to it too ("The
+      // interviews are done, I got the job!!", "Staff interviews are done, we hired two baristas").
+      const happened = strength === 'named' ? new Set<string>() : toldWords(rest, true);
+      return { strength, says: new Set([...says, ...happened]), mustFit: true };
+    }
     // A commitment named as such and its kind ("Interviewed all five like I said I would. How do I make sense of the
     // notes?"): what follows is theirs.
     if (strength === 'named' && says.size > 0) return { strength, says, mustFit };
@@ -720,7 +742,7 @@ export function reportOf(text: string): ReportCue | null {
     // it — I failed the module.", "Booked! Flights to the conference are sorted.", "Sent it. Regretted it immediately
     // lol"). Said of a commitment named as such ("Mission accomplished, the counter's on the door."), it only says
     // which one.
-    const told = toldWords(`${t.slice(0, at + report.from)} . ${t.slice(at + report.to)}`);
+    const told = toldWords(rest);
     if (told.size === 0) return { strength, says, mustFit };
     return strength === 'named'
       ? { strength, says: told, mustFit, hint: true }
@@ -738,7 +760,7 @@ export function reportOf(text: string): ReportCue | null {
  */
 const ADVICE_REQUEST = new RegExp(
   [
-    String.raw`\bhow(?: else)? (?:do|should|can|could|would|might|shall) (?:i|we)\b(?! know (?:if |whether |that )?(?:you|this|it's you)\b)(?! (?:even )?(?:have (?:\w+ed|known|been|done|seen|gone|got|gotten|thought)\b|not\b|be (?:this|so|that|such)\b|always\b|keep \w+ing\b|(?:start|begin) to (?:explain|describe|tell|say)\b|(?:put|say|phrase|word) (?:it|this)\s*(?:[,.…:;!—–-]|$)))`,
+    String.raw`\bhow(?: else)? (?:do|should|can|could|would|might|shall) (?:i|we)\b(?! know (?:if |whether |that )?(?:you|this|it's you)\b)(?! even\s*(?:[.!?…]|$))(?! (?:even )?(?:have (?:\w+ed|known|been|done|seen|gone|got|gotten|thought)\b|not\b|be (?:this|so|that|such)\b|always\b|keep \w+ing\b|(?:start|begin) to (?:explain|describe|tell|say)\b|(?:put|say|phrase|word) (?:it|this)\s*(?:[,.…:;!—–-]|$)))`,
     String.raw`\bhow (?:would|do|should) you (?:approach|handle|tackle|go about|start|pitch|frame|position|price|structure|deal with|answer|respond)\b`,
     String.raw`\bwhat(?:'s| is| would be) (?:the |a )?(?:best|right|smartest|simplest|fastest|easiest|good) way (?:to|of)\b`,
     String.raw`\b(?:any|got any|have any|some|need|want) (?:advice|tips|pointers|suggestions)\b|\bwhat(?:'s| is| would be) your (?:advice|recommendation|suggestion|take)\b`,
@@ -788,11 +810,18 @@ export function asksForAdvice(text: string, open = true): boolean {
 const FEELING_DEGREE = String.raw`(?:(?:so|really|very|pretty|quite|super|totally|completely|kind of|kinda|a (?:bit|little)(?: bit)?|honestly|actually|just|getting|more and more|a lot|slightly|incredibly|seriously|also|still|all)\s+)*`;
 
 /**
- * Who feels it: "I feel", "we've been feeling", "I'm feeling", or no one named at the start of a sentence ("Feeling
- * hopeless.", "Exhausted and feeling hopeless."); never someone or something else ("make students feel better", "the
- * price feels low", "students are tired and feeling lost").
+ * Before what a founder says of themselves with no subject, at the start of a sentence ("Been really down lately",
+ * "honestly feel like giving up", "Not in a great place mentally"), as chat and voice transcripts say it.
  */
-const SELF_FEEL = String.raw`(?:(?:(?:^|[.!?;,…]\s*)(?:[\w']+ (?:[\w']+ )?and )?|\b(?:i|we)(?:'ve been|'ve| have been| have| do| did| still| just| really| honestly| actually| genuinely| truly| seriously| definitely| totally| now| already| kind of| kinda| sometimes| often| always| keep| also)* )(?:feel|felt|feeling)|\b(?:i'm|i am|im|we're|we are)(?: (?:just|really|still|also|honestly))? feeling)`;
+const SUBJECTLESS_LEAD = String.raw`(?:(?:honestly|really|just|still|lowkey|ngl|tbh|kinda|kind of|so|also|lately|always|often|sometimes|been)[,]?\s+)*`;
+
+/**
+ * Who feels it: "I feel", "we've been feeling", "I'm feeling", or no one named at the start of a sentence ("Feeling
+ * hopeless.", "Exhausted and feeling hopeless.", "Been feeling low lately", "honestly feel like giving up"); never
+ * someone or something else ("make students feel better", "the price feels low", "students are tired and feeling
+ * lost").
+ */
+const SELF_FEEL = String.raw`(?:(?:(?:^|[.!?;,…]\s*)(?:${SUBJECTLESS_LEAD})(?:[\w']+ (?:[\w']+ )?and )?|\b(?:i|we)(?:'ve been|'ve| have been| have| do| did| still| just| really| honestly| actually| genuinely| truly| seriously| definitely| totally| now| already| kind of| kinda| sometimes| often| always| keep| also)* )(?:feel|felt|feeling)|\b(?:i'm|i am|im|we're|we are)(?: (?:just|really|still|also|honestly))? feeling)`;
 
 /** How long it has lasted ("for weeks", "for a while", "since the pitch"): still said of themselves. */
 const FOR_A_WHILE = String.raw`(?:for (?:(?:a few |a couple of |several |many |the (?:past|last) (?:few |couple of )?)?(?:days|weeks|months|years|ages)|a (?:while|long time|bit|few (?:days|weeks|months))|so long|some time|ages|days|weeks|months|the (?:past|last) (?:week|month|year))|since\b|recently|all (?:week|month|term|semester|year))`;
@@ -819,6 +848,16 @@ const FELT = [
   'tired|exhausted|drained|worn out|drowning|burn(?:ed|t) out|fed up|sick of|in tears|crying|close to tears|beside myself',
   'excited|hyped|thrilled|stoked|pumped|proud|relieved|grateful',
 ].join('|');
+
+/**
+ * A clause that says something was done or happened, with "I" or "we" or with no subject: "I got the job", "we hired two
+ * baristas", "got the internship offer", "I finally got the summer internship"; never a feeling ("so relieved",
+ * "excited to dig in"), what is still to come ("sending it to the dean tomorrow", "now to email the dean", "Dean next
+ * week") or what was not done ("haven't sent it to the dean yet").
+ */
+const PAST_ACT = new RegExp(
+  String.raw`^(?:(?:and|but|then|also|plus|oh|omg|lol|haha|and then)[,]?\s+)*(?:(?:i|we) )?(?:(?:${DONE_ADVERBS}|also|even) )*(?!(?:${FELT})\b)(?:[a-z]{2,}(?<!e)ed|got|sent|wrote|ran|went|met|spoke|made|took|built|put|set|found|gave|held|paid|rang|saw|told|brought|bought|sold|left|began|drew|chose|won|lost|hit|did)\b`,
+);
 
 /**
  * The founder says how they feel, beyond the `stress` move: the matrix's emotion bank (templates.yaml: nervous,
@@ -851,7 +890,12 @@ const LOW_MOOD = new RegExp(
     // Down or low, said of themselves as a state ("I'm so down", "ive been really low for weeks", "I've been down for a
     // while"), as "I feel down" is; never "I'm down to two options", "I'm down for that" or "I've been low on cash".
     String.raw`\b(?:i'm|i am|im|we're|we are|we've been|weve been|we have been)\s+(?:(?:so|really|very|pretty|quite|kind of|kinda|a (?:bit|little)|super|totally|feeling)\s+)+(?:down|low)${SAID_OF_THEMSELVES}`,
-    String.raw`\b(?:i've been|ive been|i have been|i been)\s+(?:(?:so|really|very|pretty|quite|kind of|kinda|a (?:bit|little)|super|totally|feeling)\s+)*(?:down|low)${SAID_OF_THEMSELVES}`,
+    String.raw`(?:\b(?:i've been|ive been|i have been|i been)|(?:^|[.!?;,…]\s*)${SUBJECTLESS_LEAD}been)\s+(?:(?:so|really|very|pretty|quite|kind of|kinda|a (?:bit|little)|super|totally|feeling)\s+)*(?:down|low|off)${SAID_OF_THEMSELVES}`,
+    // Where they are ("I'm in a really bad place", "Not in a great place mentally"; never "not in a good place to
+    // raise"), a dark stretch ("it's been a really dark few weeks"), no way out ("Honestly I don't see a way out").
+    String.raw`(?:\b(?:i'm|i am|im|i've been|ive been|i have been|i was|i feel|i felt)\s+|(?:^|[.!?;,…]\s*)${SUBJECTLESS_LEAD})(?:(?:just|really|honestly|still|definitely|kind of|kinda|probably)\s+)*(?:not in (?:a |the )?(?:(?:very|super|particularly|so|that) )?(?:great|good|healthy|happy|nice|fun|okay|ok) (?:place|space|headspace|way)|in (?:a |such a )?(?:(?:really|very|pretty|so|super|bit of a) )?(?:bad|dark|terrible|awful|horrible|rough|tough|low|grim|bleak|sad|lonely|scary) (?:place|space|headspace|way|state))\b(?!\s+(?:to|for)\b)`,
+    String.raw`\bdark (?:few |couple of |couple )?(?:days|weeks|months|years|time|times|period|patch|stretch|spell)\b`,
+    String.raw`\b(?:i|we) (?:(?:just|really|honestly|genuinely|seriously) )?(?:don't|do not|dont|can't|cannot|cant) see (?:a|any) (?:way out|light at the end|end to (?:it|this|all this)|future${SAID_OF_THEMSELVES})|\b(?:i|we) see no way out\b|\bno way out(?: for me)?(?=\s*(?:$|[.!?,;…]))`,
     String.raw`${SELF_FEEL}\s+${FEELING_DEGREE}(?:pointless|hopeless|meaningless|worthless|useless|down|low|empty|numb|broken|dead inside)\b`,
     String.raw`\b(?:everything|it all|all of (?:this|it)|life|my life|nothing)(?:'s|\s+(?:is|seems|feels|has been|'s been|looks))\s+${FEELING_DEGREE}(?:pointless|hopeless|meaningless|worthless|(?:dark|empty)${SAID_OF_THEMSELVES})\b|\b(?:it|this|that)(?:'s| is) all\s+${FEELING_DEGREE}(?:pointless|hopeless|meaningless)\b|\b(?:everything|it all|my life|my world)(?:'s| is| keeps)? falling apart\b`,
     String.raw`\b(?:i'm|i am|im|i've been|i have been|we're|we are|i was|we were)\s+${FEELING_DEGREE}(?:depressed|(?:hopeless|worthless|useless)(?! (?:at|with)\b)|broken${SAID_OF_THEMSELVES}|(?:in (?:a|such a) )?(?:really |very |pretty )?dark (?:place|space)|at rock bottom|at (?:the )?end of my (?:rope|tether)|(?:not (?:okay|ok|coping(?: (?:well|very well|at all))?|doing (?:well|ok|okay|great|so well|too well))|a (?:mess|wreck)|done with (?:everything|it all|all of (?:this|it)|life))${SAID_OF_THEMSELVES}|falling apart|(?:down|low) about)\b`,
@@ -861,23 +905,40 @@ const LOW_MOOD = new RegExp(
     String.raw`(?:\b(?:i|we)(?: (?:just|really|honestly|literally))? |(?:^|[.!?;,…]\s*))(?:haven't|have not|havent|hadn't|had not) (?:eaten|slept|been (?:eating|sleeping))\b|(?:^|[.!?;,…]\s*)not coping\b`,
     String.raw`\b(?:i|i've|i have|we|we've)(?: (?:just|finally|really))? (?:hit|reached) rock bottom\b|\b(?:i|i'm|i am|im|i keep|i've been|i have been|we're|we are)(?: (?:just|totally|completely|kind of|kinda))? break(?:ing)? down(?=\s*(?:$|[.!?,;…]|(?:in tears|crying|again|all the time|every)\b))`,
     String.raw`\b(?:i|i'm|i am|im|i was|i've|i have|i've been|i have been|i just|we)\s+(?:[\w']+\s+)?(?:having|had) (?:a |another )?(?:breakdown|break down|meltdown)\b(?! (?:of|in|on)\b)|\bpanic attacks?\b`,
-    String.raw`\bend of my (?:rope|tether)\b|\bi (?:just |really |kind of |kinda )?(?:want to|wanna) disappear\b|\bi(?:'m| am) going to disappear\b|\bhate my life\b|\bnothing matters(?: (?:any ?more|to me))?\s*(?:[.!?,;…]|$)|\bgive up on everything\b`,
-    String.raw`\b(?:(?:i|we) (?:just |really |honestly )?(?:want to|wanna|feel like)|(?:i'm|i am|im|we're|we are) (?:just |really )?(?:ready|about) to) giv(?:e|ing) up(?=\s*(?:$|[.!?,;…]|on (?:this|it|everything|myself|the (?:startup|venture|company|idea|business))\b))`,
+    String.raw`\bend of my (?:rope|tether)\b|\bi (?:just |really |kind of |kinda )?(?:want to|wanna) disappear\b|\bi(?:'m| am) going to disappear\b|\bhate my life\b|\bnothing matters(?: (?:any ?more|to me))?\s*(?:[.!?,;…]|$)|\bgiv(?:e|ing) up on (?:everything|life|myself)\b`,
+    String.raw`(?:\b(?:i|we) (?:just |really |honestly )?(?:want to|wanna|feel like)|\b(?:i'm|i am|im|we're|we are) (?:just |really )?(?:ready|about) to|(?:^|[.!?;,…]\s*)${SUBJECTLESS_LEAD}(?:want to|wanna|feel like|feeling like|ready to)) giv(?:e|ing) up(?=\s*(?:$|[.!?,;…]|on (?:this|it|everything|myself|the (?:startup|venture|company|idea|business))\b))`,
   ].join('|'),
 );
 
+/** Someone close, or a pet ("my mum", "my grandad", "my girlfriend", "my dog"). */
+const CLOSE_ONE = String.raw`(?:mum|mom|mother|mam|mummy|mommy|dad|father|daddy|papa|parents?|grand(?:ma|mother|pa|father|dad|parent)s?|granddad|grandad|gran|nan|nana|nanna|granny|grampa|gramps|brother|sister|siblings?|son|daughter|child|kid|baby|uncle|aunt|auntie|aunty|cousin|nephew|niece|wife|husband|partner|girlfriend|boyfriend|fianc[eé]e?|bf|gf|friend|mate|flatmate|roommate|housemate|dog|cat|pet|puppy|kitten|horse|rabbit|bunny|hamster|cofounder|co-founder|mentor|teacher|stepmum|stepmom|stepdad|godmother|godfather|family)`;
+
 /**
  * How a founder is, said in words no feeling or low-mood cue holds and that are about them whoever says the sentence:
- * their limit or breaking point, dark thoughts, hating themselves, "what's even the point", nothing they do mattering
- * or being enough, their mental health, no one caring if they quit.
+ * their limit or breaking point, dark thoughts, hating themselves or who they have become, "what's even the point",
+ * nothing they do mattering or being enough, letting everyone down, everything they touch failing, everyone being
+ * better off without them, their mental health, no one caring if they quit, someone close who died or is seriously
+ * ill, a break-up.
  */
 const UNWELL = new RegExp(
   [
     String.raw`\b(?:at|reached|hit|hitting|reaching) (?:my|our) (?:limit|breaking point)\b|\bbreaking point\b|\bdark thoughts?\b`,
-    String.raw`\bhate (?:myself|ourselves|my life|my self)\b|\bmy mental (?:health|state|wellbeing)\b|\bnothing (?:i|we) (?:[\w']+ ){0,2}matters\b`,
+    String.raw`\bhate (?:myself|ourselves|my life|my self|being me|(?:who|what|the person) i(?:'ve| have)? become|who i am)\b|\bmy mental (?:health|state|wellbeing)\b|\bnothing (?:i|we) (?:[\w']+ ){0,2}matters\b`,
+    String.raw`\b(?:(?:not|never) (?:great|good|okay|ok|well|doing (?:great|good|well|ok|okay))|struggling|a (?:mess|wreck)|(?:pretty |really )?rough|exhausted|drained|fried|broken) (?:mentally|emotionally)\b|\b(?:mentally|emotionally) (?:exhausted|drained|done|fried|broken|struggling|unwell|wrecked|spent|not (?:ok|okay|well|great|there))\b`,
+    // Of what they are to others: "everyone would be better off if I just stopped", "I keep thinking I'm letting
+    // everyone down", "Everything I touch fails".
+    String.raw`\bbetter off (?:without me|if i(?:'m| was| were)? (?:just |simply |finally |never )?(?:(?:stopped|quit|left|gave up)(?=\s*(?:$|[.!?,;…]|(?:altogether|for good|forever|completely|existing|trying|living)\b))|disappeared|wasn't (?:here|around)|weren't (?:here|around)|was gone|were gone|gone|didn't exist|existed|not here|dead))\b`,
+    String.raw`\b(?:i'm|i am|im) (?:(?:literally|honestly|just|really|actually|officially) )?(?:the worst|such a (?:bad|terrible|useless|awful)|a (?:terrible|useless|awful|horrible|hopeless)) (?:founder|ceo|cofounder|co-founder|leader|boss|person|human|friend|son|daughter|partner)\b(?! (?:at|with|in|for)\b)`,
+    String.raw`\b(?:i'm|i am|im|i keep|i always|i've been|i have been|i)\s+(?:(?:just|always|constantly|only|still|really|keep)\s+)*(?:letting|let) (?:everyone|everybody|people|them|my (?:team|family|parents|cofounders?|co-founders?|friends|mum|mom|dad|investors|kids|partner)|the team|you|all of you|you all|all of them)(?: (?:all|again))? down\b`,
+    String.raw`\beverything i(?:'ve)? (?:ever )?(?:touch|do|try|make|start|build|attempt)(?:ed)? (?:just |always |seems to |ends up )?(?:fails?|failing|goes wrong|falls apart|turns to (?:shit|crap|dust|ash)|breaks)\b|\bi (?:always )?(?:ruin|mess up|screw up|wreck|fail at) everything\b`,
+    // Someone close who died or is seriously ill, or a break-up ("My dog died yesterday", "My mum's got cancer", "My
+    // girlfriend broke up with me last night"); never "my laptop died" or "my startup is for dementia patients".
+    String.raw`\b(?:my|our) (?:[\w'-]+ )?${CLOSE_ONE}(?:'s| has| had| just| recently| suddenly| unexpectedly)* (?:died|passed away|passed(?=\s*(?:$|[.!?,;…]|(?:last|yesterday|this|earlier|recently|suddenly)\b))|is dying|was killed|got killed|been killed)\b|\blost my ${CLOSE_ONE}\b(?!'s)|\b(?:my|our) ${CLOSE_ONE}(?:'s)? (?:death|funeral|passing)\b`,
+    String.raw`\b(?:my|our) (?:[\w'-]+ )?${CLOSE_ONE}(?:'s| has| is| was| got| just| been| recently)*\s+(?:(?:got|been|just|recently|finally|now)\s+)*(?:diagnosed|cancer|(?:a |an )?(?:tumou?r|stroke|heart attack|seizure|brain injury|miscarriage|overdose)|leuka?emia|dementia|alzheimer'?s|terminal(?:ly ill)?|chemo(?:therapy)?|in (?:a coma|intensive care|icu|the icu|palliative care|a hospice|hospice)|on life support|(?:seriously|really|very|critically|terminally) ill)\b|\bi(?:'ve| have)? (?:just |recently )?(?:been |got |was )?diagnosed with\b|\bi(?:'ve| have) (?:got )?cancer\b`,
+    String.raw`\b(?:broke up with me|dumped me|cheated on me|(?:is |are )?divorcing me|left me for)\b|\b(?:we|i) (?:just |finally )?broke up\b(?! (?:the|our|it|into)\b)|\bgot dumped\b|\b(?:going through|in the middle of) (?:a |my |the )?(?:divorce|break-?up|separation)\b|\bmy (?:marriage|relationship|engagement) (?:is |has )?(?:over|ended|falling apart|fell apart)\b`,
     // What they are worth: "nothing I do is ever enough", "I'm not good enough", "I'm a failure", "No one would care if
     // I quit", "nobody would miss me"; never a skill ("I'm a failure at sales", "not good enough at pitching yet").
-    String.raw`\bnothing (?:i|we) (?:[\w']+ ){0,3}(?:is|was|will be|seems|feels) (?:ever |even |really )?(?:good )?enough\b|\b(?:i'm|i am|im|i'll never be|i will never be) (?:just |really |simply |still )?(?:not|never) (?:good |smart |strong )?enough\b(?! (?:at|with|in)\b)|\b(?:i'm|i am|im) (?:just |such |a total |a complete )?(?:a |an )?(?:burden|failure|disappointment|waste of space)\b(?! (?:at|with|in)\b)`,
+    String.raw`\bnothing (?:i|we) (?:[\w']+ ){0,3}(?:is|was|will be|seems|feels) (?:ever |even |really )?(?:good )?enough\b|\b(?:i'm|i am|im|i'll never be|i will never be) (?:just |really |simply |still )?(?:not|never) (?:good |smart |strong )?enough\b(?! (?:at|with|in)\b)|\b(?:i'm|i am|im|(?:i )?(?:just |really |honestly )?(?:feel|felt|feeling) like|i've become|i have become) (?:just |such |a total |a complete )?(?:a |an )?(?:burden|failure|disappointment|waste of space)\b(?! (?:at|with|in)\b)`,
     String.raw`\b(?:no one|noone|no-one|nobody) (?:would|will|'d|even|really|ever|would even|would ever|will even)?\s*(?:care|notice)s? (?:if i\b|about me\b|(?:if|when) i'm gone\b)|\b(?:no one|noone|no-one|nobody) (?:would|will|'d) (?:even |ever )?miss me\b`,
     String.raw`\b(?:what's|whats|what is)(?: even)? the point(?: (?:of|in) (?:any of (?:this|it)|it all|anything|trying|going on|even trying))?\s*(?:[?.!,]|$)`,
   ].join('|'),
@@ -1315,12 +1376,31 @@ function isStepKind(word: string): boolean {
   return word.startsWith('#');
 }
 
-/** A step said done by the state it left ("the flyer's up", "Interviews are done", "Flights are sorted"): any kind. */
+/** A step said done by the state it left ("the flyer's up", "Flights are sorted", "the counter's installed"): any kind. */
 const DONE = '#done';
 
-/** A clause that ends on the state a step done leaves ("the flyer's up", "The counter is finished"). */
-const DONE_STATE =
-  /(?:'s|'re|\bis|\bare|\bwas|\bwere)(?: (?:now|finally|already|all|officially))? (?:up|live|sorted|done|finished|complete|completed|installed|posted|sent|booked|submitted|scheduled|published|launched)[.!…]*$/;
+/**
+ * Something said finished ("Interviews are done", "The plan is finished", "here's my pitch: …"): made, which is the step
+ * itself only when the step makes it or is what was finished ({@link reportFit}).
+ */
+const MADE = '#made';
+
+/** Verbs of a step that makes something: "X is done" is that step done ("Write the pilot plan"). */
+const MAKING_VERBS = 'write draft build prototype';
+
+const STATE_VERB = String.raw`(?:'s|'re|\bis|\bare|\bwas|\bwere)(?: (?:now|finally|already|all|officially))?`;
+/** A clause that ends on the state a step done leaves ("the flyer's up", "Flights are sorted"). */
+const DONE_STATE = new RegExp(
+  String.raw`${STATE_VERB} (?:up|live|sorted|installed|posted|sent|booked|submitted|scheduled|published|launched)[.!…]*$`,
+);
+/** A clause that ends on something finished ("The counter is finished", "the deck's done"). */
+const MADE_STATE = new RegExp(String.raw`${STATE_VERB} (?:done|finished|complete|completed)[.!…]*$`);
+
+/** The state a clause says a step left ({@link DONE}, {@link MADE}), or null. */
+function stateLeft(clause: string): string | null {
+  if (DONE_STATE.test(clause)) return DONE;
+  return MADE_STATE.test(clause) || HANDED_OVER.test(clause) ? MADE : null;
+}
 
 function wordsOf(text: string): string[] {
   return [
@@ -1331,16 +1411,31 @@ function wordsOf(text: string): string[] {
 }
 
 /**
+ * Someone a report says it was done to by a pronoun ("I texted him", "asked her out", "spoke to him"): a person the
+ * notes would name ("the dean", "the canteen manager"), so the report has to name something else of the commitment
+ * ("Emailed her the plan like we said"); its kind of step alone is no commitment ({@link reportFit}).
+ */
+const SOMEONE = '@someone';
+
+/** Before a word, what says it is someone's ("my ex"): a short word after it still says what. */
+const POSSESSIVES = new Set(['my', 'our', 'his', 'her', 'their']);
+
+/**
  * What a report says was done: the kind of step of a verb said done ({@link DONE_KIND}: "sent" is "#0") and the content
- * words of what it was done to or with ("the dean", "all five"), without the words any report says
- * ({@link GENERIC_REPORT_WORDS}) or how the founder talks ("ngl", "tbh", "lowkey", "no cap": {@link FILLERS}).
+ * words of what it was done to or with ("the dean", "all five", "my ex", "him": {@link SOMEONE}), without the words any
+ * report says ({@link GENERIC_REPORT_WORDS}) or how the founder talks ("ngl", "tbh", "lowkey", "no cap":
+ * {@link FILLERS}).
  */
 function reportWords(text: string): Set<string> {
   const out = new Set<string>();
+  let previous = '';
   for (const word of wordsOf(text)) {
     const kind = DONE_KIND.get(word);
     if (kind !== undefined) out.add(kind);
+    else if (word === 'him' || word === 'her') out.add(SOMEONE);
+    else if (POSSESSIVES.has(previous) && /^\p{L}{2}$/u.test(word) && !STOPWORDS.has(word)) out.add(word);
     else for (const w of contentWords(word)) if (!GENERIC_REPORT_WORDS.has(w)) out.add(kin(w));
+    previous = word;
   }
   return out;
 }
@@ -1351,9 +1446,11 @@ function kin(word: string): string {
 }
 
 /**
- * What a commitment or a step asked for is: the kind of each verb in it, those verbs' own words ("interview",
+ * What a commitment or a step asked for is: the kind of each of its own verbs, those verbs' own words ("interview",
  * "install", "email", which a report may say as nouns: "the interviews"), what it is done to or with ("the dean", "the
- * pilot plan"), and how many ("five").
+ * pilot plan"), and how many ("five"). Its own verbs are what it says to do ("Send the bursar a note"), never a word in
+ * "-ing" that says of what ("…a note asking when licence budgets are set", "Book the advisor meeting"), unless it has
+ * no other ("Start emailing the libraries").
  */
 interface StepWords {
   readonly kinds: ReadonlySet<string>;
@@ -1363,12 +1460,15 @@ interface StepWords {
 }
 
 function stepWords(text: string): StepWords {
+  const words = wordsOf(text);
+  const participle = (word: string): boolean => word.length > 5 && word.endsWith('ing');
+  const own = words.some((w) => !participle(w) && ANY_KIND.has(stem(w)));
   const kinds = new Set<string>();
   const verbs = new Set<string>();
   const objects = new Set<string>();
   const numbers = new Set<string>();
-  for (const word of wordsOf(text)) {
-    const kind = ANY_KIND.get(stem(word));
+  for (const word of words) {
+    const kind = own && participle(word) ? undefined : ANY_KIND.get(stem(word));
     if (kind !== undefined) kinds.add(kind);
     for (const w of contentWords(word)) {
       if (GENERIC_REPORT_WORDS.has(w)) continue;
@@ -1380,6 +1480,11 @@ function stepWords(text: string): StepWords {
   return { kinds, verbs, objects, numbers };
 }
 
+/** The kinds of step that make something ({@link MAKING_VERBS}). */
+const MAKING_KINDS: ReadonlySet<string> = new Set(
+  MAKING_VERBS.split(' ').flatMap((w) => ANY_KIND.get(stem(w)) ?? []),
+);
+
 /**
  * Whether a commitment (or a step asked for) is what a report says was done ({@link ReportCue.says}), and how closely:
  * 0 when it is about something else. Everything the report says it was done to or with has to be in the commitment
@@ -1390,19 +1495,27 @@ function stepWords(text: string): StepWords {
  * commitment's verb has one ("I posted it on the staff noticeboard" is no "Interview five library staff"), and a
  * report that says neither the commitment's kind of step nor its verb ("We did it! Five new paying libraries",
  * "Library staff voted us best new society") has to name more of it than one word ("library") of several. A report
- * that says only its verb meets a commitment of the same kind ("Sent!" and "Email the dean").
+ * that says only its verb meets a commitment of the same kind ("Sent!" and "Email the dean"); one that says it was done
+ * to someone ("I texted him") meets none. Something said finished ({@link MADE}) is the step only when the step makes it
+ * ("Write the pilot plan") or is what was finished ("Interviews are done"): a step that does something with it comes
+ * after ("The plan is finished, haven't sent it to the dean yet" is no "Email the dean the pilot plan"; "Counter's done,
+ * installing it Monday" is no "Install the door counter").
  */
 export function reportFit(says: ReadonlySet<string>, commitment: string): number {
   const step = stepWords(commitment);
-  const kinds = [...says].filter((w) => isStepKind(w) && w !== DONE);
+  const kinds = [...says].filter((w) => isStepKind(w) && w !== DONE && w !== MADE);
   const words = [...says].filter((w) => !isStepKind(w));
   const sameKind = kinds.some((k) => step.kinds.has(k));
   if (kinds.length > 0 && !sameKind && step.kinds.size > 0) return 0;
+  const ownVerb = words.some((w) => step.verbs.has(w));
+  const made = says.has(MADE) && [...step.kinds].every((k) => MAKING_KINDS.has(k));
+  if (says.has(MADE) && !sameKind && !ownVerb && !made && !says.has(DONE)) return 0;
   // The step itself, by its kind of verb ("talked", "sent"), by the commitment's own verb ("the interviews"), or by the
-  // state it left ("the flyer's up").
-  const named = sameKind || says.has(DONE) || words.some((w) => step.verbs.has(w));
-  const objects = words.filter((w) => !isNumber(w) && !step.verbs.has(w));
+  // state it left ("the flyer's up", "the pitch is done").
+  const named = sameKind || says.has(DONE) || made || ownVerb;
+  const objects = words.filter((w) => !isNumber(w) && !step.verbs.has(w) && w !== SOMEONE);
   const met = objects.filter((w) => step.objects.has(w)).length;
+  if (words.includes(SOMEONE) && met === 0 && !ownVerb) return 0;
   const whole = step.objects.size > 0 && [...step.objects].every((w) => objects.includes(w));
   if (objects.length - met > (whole && named ? 1 : 0)) return 0;
   if (!named && (met === 0 || met < Math.min(2, step.objects.size))) return 0;

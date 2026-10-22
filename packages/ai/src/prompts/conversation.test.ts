@@ -1130,3 +1130,65 @@ describe('the notes’ agenda as main had it (differential audit of fix-c, round
     expect(last).not.toContain('reports on something they said they would do');
   });
 });
+
+describe('the notes’ agenda as main had it (differential audit of fix-c, C2 round 1)', () => {
+  const WITH_DEAN: PromptContinuity = {
+    ...CONTINUITY,
+    notebook: {
+      ...NOTEBOOK,
+      commitments: [...NOTEBOOK.commitments, commitment('Email the dean the pilot plan', '2026-10-20')],
+    },
+  };
+  const NIGHTSHIFT: PromptContinuity = {
+    ...CONTINUITY,
+    founderFirstName: 'Sam',
+    notebook: {
+      ...NOTEBOOK,
+      summary: 'Sam is testing hot meal delivery for night-shift nurses.',
+      commitments: [
+        commitment('Send the survey to 30 night-shift nurses', '2026-10-15'),
+        commitment('Call the canteen manager about a two-week trial', '2026-10-20'),
+        commitment('Post the job ad for a part-time developer', '2026-10-25'),
+      ],
+      nextOpener: null,
+    },
+  };
+  const history = [{ founderText: 'Hello!', answer: 'Hi Maya, good to have you back.' }];
+  const lastOf = (text: string, continuity: PromptContinuity): string =>
+    buildMessages(history, text, { continuity, today: '2026-10-16' }).at(-1)?.content ?? '';
+
+  // Job news and personal acts were named as a commitment kept, and the agenda came back.
+  it.each([
+    'The interviews are done, I got the job!!',
+    'Interviews are done!! (job interviews lol, I got the summer internship)',
+    'My interviews are done, got the internship offer!',
+    'Finally did it, messaged my ex',
+    'omg i did it i actually spoke to him',
+  ])('%j is a subject of their own: the agenda left out, no commitment named', (text) => {
+    expect(bringsOwnSubject(text, WITH_DEAN)).toBe(true);
+    const last = lastOf(text, WITH_DEAN);
+    expect(last).not.toContain('<open_commitments>');
+    expect(last).not.toContain('most likely');
+    expect(last).not.toContain('reports on something they said they would do');
+  });
+
+  // Main kept the agenda for these (each shares words with an open commitment); the state names none of them.
+  it.each([
+    ['Staff interviews are done, we hired two baristas', WITH_DEAN],
+    ["The plan is finished, haven't sent it to the dean yet", WITH_DEAN],
+    ["Plan's done, now to email the dean", WITH_DEAN],
+    ['The pilot plan is done, sending it to the dean tomorrow', WITH_DEAN],
+    ["Counter's done, installing it Monday", WITH_DEAN],
+    ['Pilot plan done. Dean next week.', WITH_DEAN],
+    ['I did it! I texted him 😳', WITH_DEAN],
+    ['did it!!! texted her back', WITH_DEAN],
+    ['I did it. I called him out on it.', WITH_DEAN],
+    ['I did it! I asked her out 😳', WITH_DEAN],
+    ['The survey is done, sending it to the nurses on Friday', NIGHTSHIFT],
+  ] as const)('%j keeps the agenda, as on main, and names no commitment', (text, continuity) => {
+    expect(bringsOwnSubject(text, continuity)).toBe(false);
+    const last = lastOf(text, continuity);
+    expect(last).not.toContain('most likely');
+    expect(last).not.toContain('reports on something they said they would do');
+  });
+});

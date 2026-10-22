@@ -12,6 +12,8 @@ import {
   lastQuestionOf,
   openingOf,
   renderConversationState,
+  reportFit,
+  reportOf,
   stripLinks,
   type FounderMove,
 } from './conversation-state.js';
@@ -2036,5 +2038,297 @@ describe('the differential audit of fix-c, round 2 (1,031 new inputs against 7ce
     ]) {
       expect(stateIn('mid', text), text).toContain('the first steps), in your first sentences, then');
     }
+  });
+});
+
+describe('the differential audit of fix-c, C2 round 1 (7,979 inputs against 36ac8fd): main was right on these', () => {
+  const MAYA = ['Email the dean the pilot plan', 'Install the door counter', 'Interview five library staff'];
+  // A second notebook the earlier repairs were not tuned on.
+  const NIGHTSHIFT = [
+    'Send the survey to 30 night-shift nurses',
+    'Call the canteen manager about a two-week trial',
+    'Post the job ad for a part-time developer',
+  ];
+  const step = (founderText: string, answer: string) => [{ founderText, answer }];
+  const CONTEXTS: Record<
+    string,
+    {
+      turns: { founderText: string; answer: string }[];
+      opener?: string;
+      commitments: readonly string[];
+    }
+  > = {
+    mid: {
+      turns: step(
+        'Twelve students told us they would pay £4 a month.',
+        "That's a useful signal. The quickest test is to ask the east library manager for a deposit on a two-week pilot. What would make her say yes?",
+      ),
+      commitments: MAYA,
+    },
+    opener: {
+      turns: [],
+      opener:
+        'Hi Maya, good to see you again. Last time you planned five library-staff interviews. How did they go?',
+      commitments: MAYA,
+    },
+    pitchStep: {
+      turns: step(
+        'Help me prepare for the pitch next week',
+        "Sure. Start with the problem in one line: students waste 20 minutes finding a seat. Write your one-line pitch now and paste it here when you're done.",
+      ),
+      commitments: MAYA,
+    },
+    bursarStep: {
+      turns: step(
+        'The bursar never replies to me.',
+        "Good plan. Send the bursar a one-paragraph note today asking when licence budgets are set, and tell me when it's out.",
+      ),
+      commitments: MAYA,
+    },
+    deanStep: {
+      turns: step(
+        'Okay, the pilot plan is finally ready.',
+        "Good. Send the dean the pilot plan today and tell me when it's out.",
+      ),
+      commitments: MAYA,
+    },
+    first: { turns: [], commitments: MAYA },
+    nightshiftMid: {
+      turns: step(
+        'Nurses on nights say the vending machines are all they have after 1am.',
+        'That is a sharp pain. Price it per meal first and see who reorders. Who on the ward would try it first?',
+      ),
+      commitments: NIGHTSHIFT,
+    },
+    nightshiftOpener: {
+      turns: [],
+      opener:
+        'Hi Sam, good to see you. Last time you were going to send the survey to 30 night-shift nurses. How did it go?',
+      commitments: NIGHTSHIFT,
+    },
+    nightshiftStep: {
+      turns: step(
+        'The canteen manager never answers her phone.',
+        "Then write to her. Send the canteen manager a two-line email today asking for a 15-minute call about a trial, and tell me when it's out.",
+      ),
+      commitments: NIGHTSHIFT,
+    },
+  };
+  const ALL = Object.keys(CONTEXTS);
+  const REPORTS = /- They (?:also )?report on something they said they would do/;
+  const ADVICE_FIRST = '- They ask for your advice: give it in your first sentences';
+  const HELP = '- They want you to do it, or they are stuck: do the work in this reply.';
+  /** Main's help line: the help, with no push into the first sentences. */
+  const HELP_AS_MAIN =
+    '  venture (a draft, concrete options or questions, an example, the first steps), then at most a short check that\n  it fits.';
+  const stateIn = (context: string, text: string): string => {
+    const { turns, opener, commitments } = CONTEXTS[context] ?? { turns: [], commitments: [] };
+    return renderConversationState(
+      deriveConversationState(turns, text, { commitments, ...(opener !== undefined ? { opener } : {}) }),
+    );
+  };
+
+  // A clause that says what is done ("The interviews are done") returned at once: the rest of the message was never
+  // held to it, so job news was named as the library-staff interviews kept. And something said finished ("The plan is
+  // finished", "Counter's done") was named as the commitment that sends or installs it, though the founder says that
+  // is still to come.
+  it.each([
+    'The interviews are done, I got the job!!',
+    'Interviews are done!! (job interviews lol, I got the summer internship)',
+    'Staff interviews are done, we hired two baristas',
+    'My interviews are done, got the internship offer!',
+    "The plan is finished, haven't sent it to the dean yet",
+    "Plan's done, now to email the dean",
+    'The pilot plan is done, sending it to the dean tomorrow',
+    "Counter's done, installing it Monday",
+    'Pilot plan done. Dean next week.',
+    'The survey is done, sending it to the nurses on Friday',
+    // A kind of step alone, done to someone ("him", "her", "my ex"), fit every commitment of that kind; and the
+    // bursar step's "asking" gave it a kind of its own.
+    'Finally did it, messaged my ex',
+    'I did it! I texted him 😳',
+    'did it!!! texted her back',
+    'omg i did it i actually spoke to him',
+    'I did it. I called him out on it.',
+    'I did it! I asked her out 😳',
+    'I did it, I called her',
+    'I did it, I asked him',
+    // Variants of each.
+    "The pilot plan's finished, haven't emailed the dean yet",
+    "Survey's done, will send it Friday",
+    'Library interviews are done, also got a new job lol',
+    'I did it! Called him 😳',
+    'Did it, messaged my bf',
+  ])('names no commitment and no step for %j, in any context', (text) => {
+    for (const context of ALL) {
+      const block = stateIn(context, text);
+      expect(block, context).not.toMatch(REPORTS);
+      expect(block, context).not.toContain('most likely');
+      expect(block, context).not.toContain('asked them to do');
+    }
+  });
+
+  it('keeps "never steer back" for news that names no commitment', () => {
+    for (const text of [
+      'The interviews are done, I got the job!!',
+      'Interviews are done!! (job interviews lol, I got the summer internship)',
+      'Staff interviews are done, we hired two baristas',
+    ]) {
+      for (const context of ALL) {
+        expect(stateIn(context, text), `${text} (${context})`).toContain(
+          'In this reply never steer back to an',
+        );
+      }
+    }
+  });
+
+  it('still names the commitment or the step a report is about', () => {
+    for (const [context, text, named] of [
+      [
+        'mid',
+        'Interviews are done. How do I make sense of the notes?',
+        'from your notes it is most likely: "Interview five library staff".',
+      ],
+      [
+        'mid',
+        'The interviews are done, two want the pilot',
+        'from your notes it is most likely: "Interview five library staff".',
+      ],
+      [
+        'mid',
+        'Emailed her the plan like we said',
+        'from your notes it is most likely: "Email the dean the pilot plan".',
+      ],
+      [
+        'mid',
+        'Did it! Emailed the dean the pilot plan.',
+        'from your notes it is most likely: "Email the dean the pilot plan".',
+      ],
+      [
+        'deanStep',
+        'Done, sent it to the dean',
+        'so it is most likely that: "Send the dean the pilot plan today',
+      ],
+      [
+        'nightshiftMid',
+        'Sent the survey to the nurses',
+        'from your notes it is most likely: "Send the survey to 30 night-shift nurses".',
+      ],
+      [
+        'nightshiftMid',
+        'I did it! Called the canteen manager',
+        'from your notes it is most likely: "Call the canteen manager about a two-week trial".',
+      ],
+    ] as const) {
+      expect(stateIn(context, text), text).toContain(named);
+    }
+  });
+
+  it('reads something said finished as the step only when the step makes it or is what was finished', () => {
+    const says = (text: string): ReadonlySet<string> => reportOf(text)?.says ?? new Set<string>();
+    expect(reportFit(says('The pilot plan is done.'), 'Write the pilot plan')).toBeGreaterThan(0);
+    expect(reportFit(says('The pilot plan is done.'), 'Email the dean the pilot plan')).toBe(0);
+    expect(reportFit(says("Counter's done, installing it Monday"), 'Install the door counter')).toBe(0);
+    expect(reportFit(says('Interviews are done.'), 'Interview five library staff')).toBeGreaterThan(0);
+    // "asking" says what the note is for: the step's own verb is "Send".
+    const bursar = 'Send the bursar a one-paragraph note today asking when licence budgets are set';
+    expect(reportFit(new Set(['#9']), bursar)).toBe(0);
+    expect(reportFit(new Set(['#0']), bursar)).toBeGreaterThan(0);
+  });
+
+  // Distress the feeling, low-mood and unwell cues did not hold (subjectless, as chat and transcripts say it; where
+  // they are; hopelessness; their worth to others; a bereavement, a seriously ill parent, a break-up): the advice cues
+  // put the advice in the first sentences, with no acknowledgement.
+  it.each([
+    "Honestly I don't see a way out. How do I tell my cofounder?",
+    'Been feeling low lately. Any advice on getting the pilot started?',
+    "Been really down lately, what's the move with fundraising",
+    'Not in a great place mentally. How should I plan the next month?',
+    "I'm in a really bad place. What's the next step with the dean?",
+    "it's been a really dark few weeks. how do i restart the interviews",
+    "honestly feel like giving up on everything, what's the next step",
+    "everyone would be better off if i just stopped. what's the best way to wind down the company?",
+    "I hate who I've become. How do I get through demo day?",
+    "I keep thinking I'm letting everyone down. What would you prioritise?",
+    'Everything I touch fails. Where would you start with the relaunch?',
+    'My dog died yesterday. Where would you start with the investor update?',
+    'My grandad died last week, how should I tell the team I need a week off?',
+    "My mum's got cancer. How do I balance the startup and visiting her?",
+    'My girlfriend broke up with me last night. How do I focus on the pitch today?',
+    "I'm the worst founder ever. How do I fix the onboarding?",
+    'how do i even',
+    // Variants of each.
+    "My nan passed away on Sunday. What's the next step with the dean?",
+    'My dad passed last week. How should I tell the team?',
+    'Been feeling really low. How do I get the pilot going?',
+    'Not in a good headspace. How do I plan the week?',
+    "I'm in a bad way. Where would you start with the pitch?",
+    'everyone would be better off without me. how do i wind things down',
+    'I keep letting my team down. What would you prioritise?',
+    'my boyfriend dumped me. how do i focus on the demo',
+    'We broke up last night. How do I get through the pitch today?',
+    "my brother's in intensive care. how should i tell the investors",
+    'My mum was diagnosed with cancer last week. How do I balance it all?',
+    "Mentally exhausted. What's the next step?",
+    "I hate the person I've become. How do I fix the onboarding?",
+    "It's been a dark couple of months. How do I restart?",
+    "I can't see a way out. How should I tell the team?",
+  ])('never asks for advice or help in the first sentences for %j', (text) => {
+    for (const context of ['mid', 'opener', 'first', 'nightshiftMid']) {
+      const block = stateIn(context, text);
+      expect(block, context).not.toContain(ADVICE_FIRST);
+      expect(block, context).not.toContain('in your first sentences');
+    }
+  });
+
+  it.each([
+    'I feel like a burden. Can you help me write the email to my team?',
+    "I hate who I've become. Just tell me what to do about the pilot.",
+    'My dog died. Help me write the investor update.',
+    "My mum's got cancer. Can you help me write a note to the team?",
+  ])('asks for the help as main did for %j', (text) => {
+    for (const context of ['mid', 'opener', 'first', 'nightshiftMid']) {
+      const block = stateIn(context, text);
+      expect(block, context).toContain(HELP);
+      expect(block, context).toContain(HELP_AS_MAIN);
+      expect(block, context).not.toContain('in your first sentences');
+    }
+  });
+
+  it.each([
+    'Been really down lately, can you help me plan the week?',
+    'Not in a great place mentally, can you write the dean email for me',
+    'i dunno man ive been off for weeks can you just tell me what to do with the pilot',
+  ])('hears how they feel before the help for %j, never the help in the first sentences', (text) => {
+    for (const context of ['mid', 'opener', 'first', 'nightshiftMid']) {
+      const block = stateIn(context, text);
+      expect(block, context).toContain(HELP);
+      expect(block, context).toContain('after a line that acknowledges how');
+      expect(block, context).not.toContain('in your first sentences');
+    }
+  });
+
+  // The same words in ordinary coaching: the advice still comes first, and no feeling is read.
+  it.each([
+    'My sister passed her driving test. How do I get her to try the app?',
+    'My laptop died yesterday. Where would you start with the investor update?',
+    'My startup is for dementia patients. How do I find beta users?',
+    'My mum works in cancer research. How should I pitch to hospitals?',
+    "There's no way out of the lease, how do I negotiate with the landlord?",
+    "It's a bleak time for VC funding. What's the next step with the angels?",
+    "We're in a bad place with the dean. How do I fix the relationship?",
+    "We'd be better off if I stopped doing the sales calls myself. How do I hire?",
+    "Been down to the library twice this week. What's next?",
+    'Been low on cash for months. How do I fund the pilot?',
+    'The demo died halfway through. How do I recover with the judges?',
+    'Everything we try on Instagram fails. Where would you start with TikTok?',
+    'We broke up the monolith last week. How should we test the new services?',
+    "I'm the worst at cold emails. How do I improve?",
+    "I'm in a good place with the dean now. What's next?",
+    "We're not in a great place to raise yet. What's the next step?",
+    'I let them know about the pricing change. How do I handle pushback?',
+  ])('still asks for the advice first for %j', (text) => {
+    const block = stateIn('mid', text);
+    expect(block).toContain(ADVICE_FIRST);
   });
 });

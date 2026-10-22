@@ -1194,6 +1194,10 @@ describe('asksAboutIdentity — a sincere question about what the coach is', () 
     "I'm talking to a real person at the bursar's office.",
     "How can I tell if this is really Corin's handwriting?",
     "It's really Corin who set the deadline?",
+    // The differential audit of fix-c, C2 round 1: what they said of someone else, then a question of their own.
+    'every time i call the bank im talking to a bot. how do we avoid that for our users?',
+    "In interviews I'm talking to a human or a form, basically. How do I make them warmer?",
+    "It's really Corin and Ruth's program, right? How do I apply for the next cohort?",
   ])('does not ask: %j', (text) => {
     expect(asksAboutIdentity(text, CORIN)).toBe(false);
   });
