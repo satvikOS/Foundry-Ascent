@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from conversation_lab.agenda import (
     ConversationResult,
@@ -128,6 +129,9 @@ class _Outcome:
     text: str
     kind: str = "completed"
     error_code: str | None = None
+    turn: Any = None
+    speech: list[str] = field(default_factory=list)
+    phases: list[str] = field(default_factory=list)
 
 
 class _Client:
@@ -179,6 +183,9 @@ def test_the_runner_plays_remembered_conversations_in_order_and_ends_each() -> N
     assert len(slept) == 3
     assert results[0].opener.startswith("Hi Idris")
     assert all(r.checks for r in results)
+    assert len(results[0].details) == len(suite["conversations"][0]["turns"])
+    assert results[0].public()["notes"] == [[], [], [], []]
+    assert "details" in results[0].private()
 
 
 def test_agenda_is_a_suite_of_its_own() -> None:

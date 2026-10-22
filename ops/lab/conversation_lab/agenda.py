@@ -189,6 +189,8 @@ class ConversationResult:
     opener: str = ""
     turns: list[tuple[str, str]] = field(default_factory=list)
     checks: list[ReplyCheck] = field(default_factory=list)
+    #: Per turn: the structured answer, the spoken reply and units, validator notes, phases, model (private).
+    details: list[dict[str, Any]] = field(default_factory=list)
     opener_reopens: bool = False
     opener_stale: bool = False
     error: str | None = None
@@ -229,13 +231,27 @@ class ConversationResult:
             "error": self.error,
             "openerReopensCommitment": self.opener_reopens,
             "checks": [c.public() for c in self.checks],
+            # Codes only: what the validators did to each reply (e.g. repeated_sentences_removed:2).
+            "notes": [_notes(d) for d in self.details],
             "judge": None
             if self.verdict is None
             else {k: self.verdict.get(k) for k in ("scores", "expectation_met", "error")},
         }
 
     def private(self) -> dict[str, Any]:
-        return {**self.public(), "opener": self.opener, "transcript": self.turns, "verdict": self.verdict}
+        return {
+            **self.public(),
+            "opener": self.opener,
+            "transcript": self.turns,
+            "details": self.details,
+            "verdict": self.verdict,
+        }
+
+
+def _notes(detail: Mapping[str, Any]) -> list[str]:
+    validator = detail.get("validator") or {}
+    notes = validator.get("notes") if isinstance(validator, Mapping) else None
+    return [str(n) for n in notes or [] if isinstance(n, str) and re.fullmatch(r"[a-z0-9_:.-]{1,80}", n)]
 
 
 def grade_conversation(result: ConversationResult, conversation: Mapping[str, Any]) -> None:
@@ -311,6 +327,7 @@ def run_channel(
 ) -> list[ConversationResult]:
     """Plays the conversations in order as remembered conversations (each ends, so the next one meets it)."""
     from conversation_lab.judge import transcript_text
+    from conversation_lab.smoke import turn_detail
     from foundry_evals.client import ApiError, ApiUnreachableError
 
     voice = channel == "call"
@@ -334,6 +351,7 @@ def run_channel(
                     result.error = getattr(exc, "code", "unreachable")
                     break
                 result.turns.append((turn["say"], heard(outcome, voice)))
+                result.details.append(turn_detail(outcome))
                 if outcome.kind == "error":
                     result.error = outcome.error_code or "turn_error"
                     break
