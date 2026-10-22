@@ -136,7 +136,10 @@ test.describe('founder journey', () => {
     await test.step('New chat: the vEIR greets the founder with starting points, its badge and no disclaimer line', async () => {
       ventureId = await openVenture(page);
       const nav = page.getByRole('navigation', { name: 'Main' });
-      await expect(nav.getByRole('button', { name: new RegExp(`Current: ${VENTURE_NAME}$`) })).toBeVisible();
+      // The switcher names the venture and then its stage, as it shows them.
+      await expect(
+        nav.getByRole('button', { name: new RegExp(`Current: ${VENTURE_NAME}, [^,]+$`) }),
+      ).toBeVisible();
       await expect(nav.getByRole('link', { name: 'New chat' })).toHaveAttribute('aria-current', 'page');
       await expect(nav.getByRole('link', { name: /^Call / })).toBeVisible();
       await expect(

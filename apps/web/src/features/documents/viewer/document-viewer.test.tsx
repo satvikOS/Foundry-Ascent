@@ -414,12 +414,12 @@ describe('document viewer', () => {
     await within(dialog).findByRole('heading', { name: 'Exam week interviews' });
     const group = within(dialog).getByRole('group', { name: 'Text size' });
     expect(group).toHaveTextContent('100%');
-    await user.click(within(group).getByRole('button', { name: 'Larger text' }));
+    await user.click(within(group).getByRole('button', { name: 'A+ Larger text' }));
     expect(group).toHaveTextContent('112%');
     const prose = dialog.querySelector('[data-reader="text"]')?.parentElement;
     expect(prose?.style.fontSize).toBe('19px');
     expect(window.localStorage.getItem('fa.viewer.text-size')).toBe('3');
-    const smaller = within(group).getByRole('button', { name: 'Smaller text' });
+    const smaller = within(group).getByRole('button', { name: 'A− Smaller text' });
     for (let i = 0; i < 3; i += 1) await user.click(smaller);
     expect(group).toHaveTextContent('82%');
     expect(smaller).toBeDisabled();
@@ -562,7 +562,7 @@ describe('document viewer', () => {
     await within(dialog).findByRole('heading', { name: 'Exam week interviews' });
     const toolbar = within(dialog).getByRole('toolbar', { name: 'Document controls' });
     expect(within(toolbar).getByRole('button', { name: 'Find in document' })).toBeInTheDocument();
-    expect(within(toolbar).getByRole('button', { name: 'Larger text' })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: 'A+ Larger text' })).toBeInTheDocument();
     expect(within(toolbar).getByRole('button', { name: 'Download' })).toBeInTheDocument();
     // The width toggle is for wide screens only.
     expect(within(dialog).queryByRole('button', { name: 'Wide page' })).toBeNull();

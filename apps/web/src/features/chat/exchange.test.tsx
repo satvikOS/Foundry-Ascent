@@ -346,12 +346,12 @@ describe('StoredExchange', () => {
     const { container } = await renderStored(
       makeTurn({ author: { id: IDS.ref, displayName: 'Devin Ashcombe' } }),
     );
-    expect(container.querySelector('[data-slot="user-avatar"]')).toHaveTextContent('DA');
+    expect(container.querySelector('[data-slot="user-avatar"]')).toHaveAttribute('data-initials', 'DA');
   });
 
   it('falls back to the starter when the API names no author (an older API)', async () => {
     const { container } = await renderStored(makeTurn({ author: null }));
-    expect(container.querySelector('[data-slot="user-avatar"]')).toHaveTextContent('ME');
+    expect(container.querySelector('[data-slot="user-avatar"]')).toHaveAttribute('data-initials', 'ME');
   });
 
   it('says quietly what the vEIR saved from the answer, with nothing to keep or decline', async () => {

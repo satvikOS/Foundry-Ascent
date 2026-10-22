@@ -4,6 +4,12 @@ import type { ComponentProps } from 'react';
 import { monogram } from '@/lib/veir';
 import { cn } from '@/lib/utils';
 
+/**
+ * Initials are drawn from `data-initials` (CSS generated content), not written as text: a control's visible label
+ * is the text on screen, aria-hidden or not (WCAG 2.5.3 Label in Name), and a face beside a name is no part of it.
+ */
+const INITIALS = 'before:content-[attr(data-initials)]';
+
 const userAvatarVariants = cva(
   'inline-flex shrink-0 items-center justify-center rounded-full border border-border bg-muted font-sans font-medium text-foreground select-none',
   {
@@ -35,14 +41,13 @@ export function UserAvatar({ name, size, decorative = false, className, ...props
   return (
     <span
       data-slot="user-avatar"
+      data-initials={monogram(name)}
       role={decorative ? undefined : 'img'}
       aria-label={decorative ? undefined : name}
       aria-hidden={decorative || undefined}
-      className={cn(userAvatarVariants({ size }), className)}
+      className={cn(userAvatarVariants({ size }), INITIALS, className)}
       {...props}
-    >
-      {monogram(name)}
-    </span>
+    />
   );
 }
 
@@ -72,13 +77,12 @@ export function VentureMark({ name, size, decorative = true, className, ...props
   return (
     <span
       data-slot="venture-mark"
+      data-initials={monogram(name)}
       role={decorative ? undefined : 'img'}
       aria-label={decorative ? undefined : name}
       aria-hidden={decorative || undefined}
-      className={cn(ventureMarkVariants({ size }), className)}
+      className={cn(ventureMarkVariants({ size }), INITIALS, className)}
       {...props}
-    >
-      {monogram(name)}
-    </span>
+    />
   );
 }
