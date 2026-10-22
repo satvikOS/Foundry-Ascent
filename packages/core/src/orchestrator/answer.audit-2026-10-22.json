@@ -1,0 +1,2718 @@
+{
+  "about": "Differential audit of the streamed-reply fix against main (2026-10-22): the inputs where main was right and the branch was wrong (high and medium), with main's output. Synthetic conversations; {previous} stands for the conversation's last reply. A fragment is what the fix said where main asked a question again that an earlier message asked: the fix leaves the question out and goes on instead.",
+  "conversations": [
+    {
+      "id": "C1",
+      "founder": "Maya",
+      "venture": "QuietQuad",
+      "opener": null,
+      "turns": [
+        [
+          "We want to run a two-week pilot in Harbour Hall library before the end of term.",
+          "Two weeks is enough if you decide now what would count as success. Pick one number, like the share of students who check the map before walking over. What number would make you call the pilot a win?"
+        ],
+        [
+          "maybe 30% of students in the building using it at least once",
+          "30% is a fine bar for a first pilot. You'll need a rough count of who is in the building, so ask the library for their gate counts. Does Harbour Hall share its door-counter data?"
+        ],
+        [
+          "they do, weekly",
+          "Then you can compare weekly gate counts with weekly map opens. Ask for the last four weeks too, so you have a baseline before the pilot starts. When does the pilot start?"
+        ],
+        [
+          "the 12th, right before finals",
+          "Finals week will inflate usage, so treat that week as a stress test, not the baseline. Plan one week before finals and one during, and compare them."
+        ]
+      ]
+    },
+    {
+      "id": "C2",
+      "founder": "Maya",
+      "venture": "QuietQuad",
+      "opener": null,
+      "turns": [
+        [
+          "We've been interviewing commuter students about where they study between lectures.",
+          "Commuters are a sharp segment because their time between lectures is fixed. What did the last three tell you about how they pick a study spot?"
+        ],
+        [
+          "mostly they go wherever their friends are, or the café if the library's full",
+          "So the real competitor is the café, not another app. That matters for pricing: they already pay for a coffee to sit somewhere. How much do they spend at the café in a typical week?"
+        ],
+        [
+          "one said like £15 a week lol",
+          "£15 a week is a strong anchor for the value of a seat. Ask the next five the same question, word for word, so the numbers are comparable. Who is next on your interview list?"
+        ],
+        [
+          "two people from the engineering society on thursday",
+          "Good. Bring the £15 question, and one about what happens when the café is full too. Write down their exact words, not your summary."
+        ]
+      ]
+    },
+    {
+      "id": "C3",
+      "founder": "Maya",
+      "venture": "QuietQuad",
+      "opener": "Hi Maya, good to see you. How did the library staff interviews go?",
+      "turns": [
+        [
+          "Hi, it's Maya. I have a few minutes before my next class, so let's be quick.",
+          "Let's make it count, then. What's the one thing you want to leave this call with?"
+        ],
+        [
+          "We're trying to decide between charging each library branch separately or one flat fee for the whole campus.",
+          "Per branch is easier to start, because each branch can say yes on its own. Who signs the cheque for each library branch, and who can block it?"
+        ],
+        [
+          "Sorry to cut in, what would you charge for a short pilot instead?",
+          "For a short pilot, charge something small but real, like two hundred pounds for the term. A token price tells you whether they will pay at all."
+        ]
+      ]
+    },
+    {
+      "id": "C4",
+      "founder": "Maya",
+      "venture": "QuietQuad",
+      "opener": null,
+      "turns": [
+        [
+          "How should we price per library? We have two libraries interested in the quiet-seat app.",
+          "Start from what each library already spends to keep study space open late. That budget is your anchor, not what students would pay. Who signs off on that budget at each branch?"
+        ],
+        [
+          "Facilities holds it I think. The east library manager said £900 a term sounds fair.",
+          "£900 a term from one manager is a signal, not a price yet. Ask her to confirm it in an email with the term dates, so you have it in writing. What would make her say no?"
+        ],
+        [
+          "probably if students complain about being tracked",
+          "Then privacy is the first objection to handle, before price. Write one short paragraph on what the sensors count and what they never store. Can you get that to her before Friday?"
+        ],
+        [
+          "yeah tonight",
+          "Good. Keep it under 150 words and lead with the fact that you never store names. Once she replies, you'll know whether £900 holds."
+        ]
+      ]
+    },
+    {
+      "id": "C5",
+      "founder": "Maya",
+      "venture": "QuietQuad",
+      "opener": null,
+      "turns": [
+        [
+          "the pitch is three minutes and I have fourteen slides",
+          "Fourteen slides in three minutes is a slide every thirteen seconds. Cut to five: problem, who has it, what you built, proof, ask. Which slide would you fight hardest to keep?"
+        ],
+        [
+          "the traction one, 61 of 90 students said they'd use it",
+          "Keep it, but say it as a story: 61 of 90 students check a group chat to find a seat, and the map replaces that. What's your ask at the end of the pitch?"
+        ],
+        [
+          "£5k from the innovation fund",
+          "Tie the £5k to the pilot: sensors for two libraries for one term. Judges fund a plan, not a wish. Can you say what the £5k buys in one sentence?"
+        ]
+      ]
+    },
+    {
+      "id": "C6",
+      "founder": "Priya",
+      "venture": "Pelora",
+      "opener": null,
+      "turns": [
+        [
+          "lab managers like $40 because it's under their card limit and skips procurement",
+          "Staying under the card limit is a real advantage, because procurement reviews take about six weeks. Who besides the lab manager has to approve a new tool?"
+        ],
+        [
+          "the chemistry chair sometimes",
+          "Then the chair is the hidden veto. A one-page note on safety and expiry tracking would help her say yes. When could you get ten minutes with her?"
+        ],
+        [
+          "she has office hours on wednesday",
+          "Use them. Bring one story of a reagent that expired unnoticed and what it cost. Keep the ask small: a one-month trial in one lab."
+        ]
+      ]
+    },
+    {
+      "id": "C7",
+      "founder": "Maya",
+      "venture": "QuietQuad",
+      "opener": null,
+      "turns": [
+        [
+          "honestly I'm exhausted, my cofounder hasn't done anything this week and the demo is Monday",
+          "That's a lot to carry alone right before a demo. Let's make Monday smaller: what's the one thing the demo has to show?"
+        ],
+        [
+          "that the map updates live",
+          "Then cut everything else from the demo script. A live map on one floor is enough. Who could sit in the library on Monday so the map changes while you present?"
+        ],
+        [
+          "my flatmate maybe",
+          "Ask her today, so it's settled. And when the demo is done, it's worth a straight conversation with your cofounder about this week. How do you want to start that conversation with him?"
+        ]
+      ]
+    },
+    {
+      "id": "C8",
+      "founder": "Maya",
+      "venture": "QuietQuad",
+      "opener": null,
+      "turns": [
+        [
+          "the grant form has a 500 word limit for the impact section and I have two thousand words",
+          "Cut it to one claim and one number. The impact section needs who benefits and how you'll know. What's the single number you would measure?"
+        ],
+        [
+          "hours saved finding a seat",
+          "Hours saved works if you can measure it in the pilot. Estimate it from the gate counts and survey ten students. Do you have a baseline for hours saved yet?"
+        ],
+        [
+          "not really",
+          "Then run a quick baseline this week: ask ten students how long they spent looking for a seat yesterday. That's enough for the form."
+        ]
+      ]
+    },
+    {
+      "id": "C9",
+      "founder": "Dani",
+      "venture": "Fit4Life",
+      "opener": null,
+      "turns": [
+        [
+          "We're thinking about selling Fit4Life to small gyms instead of to members directly.",
+          "Selling to gyms changes who you need to convince. A gym owner cares about retention, not workouts. How many gym owners have you actually spoken to?"
+        ],
+        [
+          "three. two liked it, one said they already use mindbody",
+          "Mindbody is the incumbent you'll meet everywhere, so find out what the third owner would miss if he switched. What did the two who liked it say they'd pay?"
+        ],
+        [
+          "one said maybe $49 a month",
+          "$49 a month from one owner is a starting point. Offer a 30-day trial at $49 and see whether she puts in a card. Which gym would you ask first?"
+        ]
+      ]
+    }
+  ],
+  "turns": [
+    {
+      "id": "E0665",
+      "kind": "early_stop_discards_new_content",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "ok so the dean finally replied!! she said 'maybe after exams' which feels like a no?",
+      "phaseA": "{previous} Your cost per library is about £300 in sensors, so £900 a term gives you room. Just make sure the first invoice is small enough to fit on a manager card.",
+      "continuation": "{previous}",
+      "expected": "Your cost per library is about £300 in sensors, so £900 a term gives you room. Just make sure the first invoice is small enough to fit on a manager card."
+    },
+    {
+      "id": "E0692",
+      "kind": "early_stop_discards_new_content",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "B2B2C through the student union or straight B2C, which one?",
+      "phaseA": "{previous} Do the boring part first: confirm the install date with facilities. Everything else waits on it.",
+      "continuation": "{previous}",
+      "expected": "Good. Do the boring part first: confirm the install date with facilities. Everything else waits on it."
+    },
+    {
+      "id": "E0773",
+      "kind": "early_stop_discards_new_content",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "So what's the very next step?",
+      "phaseA": "{previous} Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "continuation": "{previous}",
+      "expected": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first."
+    },
+    {
+      "id": "E0776",
+      "kind": "early_stop_discards_new_content",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "So what's the very next step?",
+      "phaseA": "{previous} The next step is the email to the library manager. Two sentences and one ask.",
+      "continuation": "{previous}",
+      "expected": "The next step is the email to the library manager. Two sentences and one ask. Where would you start?"
+    },
+    {
+      "id": "E0788",
+      "kind": "early_stop_discards_new_content",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "tbh the judges at demo day said our TAM slide was weak",
+      "phaseA": "{previous} Practise the three minutes with a timer twice tonight. Wherever you run over, that's the slide to cut.",
+      "continuation": "{previous}",
+      "expected": "Good. Practise the three minutes with a timer twice tonight. Wherever you run over, that's the slide to cut."
+    },
+    {
+      "id": "E0800",
+      "kind": "early_stop_discards_new_content",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "How should we price per library? We have two libraries interested in the quiet-seat app.",
+      "phaseA": "{previous} The $40 price works because it skips procurement. Keep it, and add a $400 annual option for labs that want one invoice.",
+      "continuation": "{previous}",
+      "expected": "Good. The $40 price works because it skips procurement. Keep it, and add a $400 annual option for labs that want one invoice."
+    },
+    {
+      "id": "E0815",
+      "kind": "early_stop_discards_new_content",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "How should we price per library? We have two libraries interested.",
+      "phaseA": "{previous} Twelve students saying they'd pay £4 is interest, not revenue. Ask five of them to pre-pay £4 for exam month and count how many do.",
+      "continuation": "{previous}",
+      "expected": "Twelve students saying they'd pay £4 is interest, not revenue. Ask five of them to pre-pay £4 for exam month and count how many do."
+    },
+    {
+      "id": "E0827",
+      "kind": "early_stop_discards_new_content",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "Teach me how to map who pays, who uses and who decides for a product that reaches customers through clinics, and how that map should change our business model.",
+      "phaseA": "{previous} A flat fee is simpler to sell but leaves money on the table at the big branches. Per-seat pricing scales with value. Here's a draft line for the email: \"For this term we'd charge £900 per branch, covering sensors and support.\"",
+      "continuation": "{previous}",
+      "expected": "Good. A flat fee is simpler to sell but leaves money on the table at the big branches. Per-seat pricing scales with value. Here's a draft line for the email: \"For this term we'd charge £900 per branch, covering sensors and support.\""
+    },
+    {
+      "id": "E0830",
+      "kind": "early_stop_discards_new_content",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "Teach me how to map who pays, who uses and who decides for a product that reaches customers through clinics, and how that map should change our business model.",
+      "phaseA": "{previous} Start at nine hundred pounds a term per branch and see who flinches. That's your real price signal.",
+      "continuation": "{previous}",
+      "expected": "Good. Start at nine hundred pounds a term per branch and see who flinches. That's your real price signal. Does that match?"
+    },
+    {
+      "id": "E0842",
+      "kind": "early_stop_discards_new_content",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "Two questions: what do we do about pricing, and what about the pilot?",
+      "phaseA": "{previous} Your cost per library is about £300 in sensors, so £900 a term gives you room. Just make sure the first invoice is small enough to fit on a manager card.",
+      "continuation": "{previous}",
+      "expected": "Good. Your cost per library is about £300 in sensors, so £900 a term gives you room. Just make sure the first invoice is small enough to fit on a manager card."
+    },
+    {
+      "id": "E0857",
+      "kind": "early_stop_discards_new_content",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "pricing?",
+      "phaseA": "{previous} Start at nine hundred pounds a term per branch and see who flinches. That's your real price signal.",
+      "continuation": "{previous}",
+      "expected": "Start at nine hundred pounds a term per branch and see who flinches. That's your real price signal. Where would you start?"
+    },
+    {
+      "id": "E0884",
+      "kind": "early_stop_discards_new_content",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "You're honestly the smartest mentor I've had. So you agree £4 a month per student is right?",
+      "phaseA": "{previous} Start at nine hundred pounds a term per branch and see who flinches. That's your real price signal.",
+      "continuation": "{previous}",
+      "expected": "Good. Start at nine hundred pounds a term per branch and see who flinches. That's your real price signal. How does that sound?"
+    },
+    {
+      "id": "E0962",
+      "kind": "early_stop_discards_new_content",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "so Westbrook is keen, which is great, but anything with patients probably needs an ethics review, and Graham says we shouldn't even call it a trial before the pathway review, and the clinic wants to start in spring, and I'm also deciding about the master's, so honestly I don't know if spring is realistic or if I'm just saying yes because they're excited",
+      "phaseA": "{previous} Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\"",
+      "continuation": "{previous}",
+      "expected": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\""
+    },
+    {
+      "id": "E0965",
+      "kind": "early_stop_discards_new_content",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "so Westbrook is keen, which is great, but anything with patients probably needs an ethics review, and Graham says we shouldn't even call it a trial before the pathway review, and the clinic wants to start in spring, and I'm also deciding about the master's, so honestly I don't know if spring is realistic or if I'm just saying yes because they're excited",
+      "phaseA": "{previous} Start with the smallest thing that tells you something real this week.",
+      "continuation": "{previous}",
+      "expected": "Good. Start with the smallest thing that tells you something real this week. How does that sound?"
+    },
+    {
+      "id": "E0977",
+      "kind": "early_stop_discards_new_content",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "The cheaper fabricator needs ten weeks before they can start.",
+      "phaseA": "{previous} I'd focus on one decision this week: per-branch or campus-wide. Everything else follows from who pays.",
+      "continuation": "{previous}",
+      "expected": "I'd focus on one decision this week: per-branch or campus-wide. Everything else follows from who pays."
+    },
+    {
+      "id": "E1035",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "Please don't tell anyone yet, but we just closed a 50000 dollar pre-seed.",
+      "phaseA": "{previous}",
+      "continuation": "For the grant, lead with the problem and one number. Hours saved finding a seat is good if your pilot can measure it.",
+      "expected": "Use them. For the grant, lead with the problem and one number. Hours saved finding a seat is good if your pilot can measure it."
+    },
+    {
+      "id": "E1037",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "Please don't tell anyone yet, but we just closed a 50000 dollar pre-seed.",
+      "phaseA": "Got it, Priya. {previous}",
+      "continuation": "For the grant, lead with the problem and one number. Hours saved finding a seat is good if your pilot can measure it.",
+      "expected": "Got it, Priya. Use them. For the grant, lead with the problem and one number. Hours saved finding a seat is good if your pilot can measure it."
+    },
+    {
+      "id": "E1039",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "Please don't tell anyone yet, but we just closed a 50000 dollar pre-seed.",
+      "phaseA": "{previous}",
+      "continuation": "Get one library to pay first. A real nine hundred pounds beats any projection.",
+      "expected": "Get one library to pay first. A real nine hundred pounds beats any projection. Does that feel doable?"
+    },
+    {
+      "id": "E1040",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "Please don't tell anyone yet, but we just closed a 50000 dollar pre-seed.",
+      "phaseA": "{previous} Get one library to pay first. A real nine hundred pounds beats any projection.",
+      "continuation": "Get one library to pay first. A real nine hundred pounds beats any projection.",
+      "expected": "Get one library to pay first. A real nine hundred pounds beats any projection. Anything you'd change?"
+    },
+    {
+      "id": "E1041",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "Please don't tell anyone yet, but we just closed a 50000 dollar pre-seed.",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Get one library to pay first. A real nine hundred pounds beats any projection.",
+      "expected": "Got it, Maya. Get one library to pay first. A real nine hundred pounds beats any projection. What's your gut?"
+    },
+    {
+      "id": "E1043",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C7",
+      "text": "Please don't escalate this to Corin, I'm a bit embarrassed. I missed the deadline for the grant.",
+      "phaseA": "{previous}",
+      "continuation": "A SAFE is a big decision with legal terms you should read with someone qualified. I can help you prepare questions for that conversation.",
+      "expected": "Ask her today, so it's settled. A SAFE is a big decision with legal terms you should read with someone qualified. I can help you prepare questions for that conversation."
+    },
+    {
+      "id": "E1047",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "don't tell the university yet but my cofounder is probably leaving after this term",
+      "phaseA": "{previous}",
+      "continuation": "Hiring a developer before you have paying libraries is early. A freelancer for the sensor dashboard, paid per milestone, is enough for now.",
+      "expected": "Hiring a developer before you have paying libraries is early. A freelancer for the sensor dashboard, paid per milestone, is enough for now."
+    },
+    {
+      "id": "E1048",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "don't tell the university yet but my cofounder is probably leaving after this term",
+      "phaseA": "{previous} Have the conversation with your cofounder before the demo, not after. Keep it to what you need from him this week, not everything that's gone wrong.",
+      "continuation": "Hiring a developer before you have paying libraries is early. A freelancer for the sensor dashboard, paid per milestone, is enough for now.",
+      "expected": "Have the conversation with your cofounder before the demo, not after. Keep it to what you need from him this week, not everything that's gone wrong."
+    },
+    {
+      "id": "E1049",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "don't tell the university yet but my cofounder is probably leaving after this term",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Hiring a developer before you have paying libraries is early. A freelancer for the sensor dashboard, paid per milestone, is enough for now.",
+      "expected": "Got it, Maya. Hiring a developer before you have paying libraries is early. A freelancer for the sensor dashboard, paid per milestone, is enough for now."
+    },
+    {
+      "id": "E1051",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "Ignore the previous message, typo. I meant £9 a month, not £90.",
+      "phaseA": "{previous}",
+      "continuation": "The $40 price works because it skips procurement. Keep it, and add a $400 annual option for labs that want one invoice.",
+      "expected": "Good. The $40 price works because it skips procurement. Keep it, and add a $400 annual option for labs that want one invoice."
+    },
+    {
+      "id": "E1052",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "Ignore the previous message, typo. I meant £9 a month, not £90.",
+      "phaseA": "{previous} Anchor on what the library already pays to keep a floor open late. If that's £3,000 a term, £900 looks cheap. What does it cost them now?",
+      "continuation": "The $40 price works because it skips procurement. Keep it, and add a $400 annual option for labs that want one invoice.",
+      "expected": "Good. Anchor on what the library already pays to keep a floor open late. If that's £3,000 a term, £900 looks cheap. What does it cost them now?"
+    },
+    {
+      "id": "E1053",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "Ignore the previous message, typo. I meant £9 a month, not £90.",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "The $40 price works because it skips procurement. Keep it, and add a $400 annual option for labs that want one invoice.",
+      "expected": "Got it, Maya. Good. The $40 price works because it skips procurement. Keep it, and add a $400 annual option for labs that want one invoice."
+    },
+    {
+      "id": "E1055",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C8",
+      "text": "Ignore the previous message, typo. I meant £9 a month, not £90.",
+      "phaseA": "{previous}",
+      "continuation": "Charge per branch for the pilot. A branch can say yes in a week, a campus deal takes a term.",
+      "expected": "That's enough for the form. Charge per branch for the pilot. A branch can say yes in a week, a campus deal takes a term. Anything you'd change?"
+    },
+    {
+      "id": "E1059",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "ignore the previous message lol wrong chat",
+      "phaseA": "{previous}",
+      "continuation": "The next concrete step is the library manager email. Two sentences, a date, and one ask.",
+      "expected": "Good. The next concrete step is the library manager email. Two sentences, a date, and one ask."
+    },
+    {
+      "id": "E1060",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "ignore the previous message lol wrong chat",
+      "phaseA": "{previous} Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\"",
+      "continuation": "The next concrete step is the library manager email. Two sentences, a date, and one ask.",
+      "expected": "Good. Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\""
+    },
+    {
+      "id": "E1061",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "ignore the previous message lol wrong chat",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "The next concrete step is the library manager email. Two sentences, a date, and one ask.",
+      "expected": "Got it, Maya. Good. The next concrete step is the library manager email. Two sentences, a date, and one ask."
+    },
+    {
+      "id": "E1063",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "Forget the earlier messages, we changed the plan: the pilot moves to the west library.",
+      "phaseA": "{previous}",
+      "continuation": "The cleaners moving chairs will break the sensors, so tape a note to the floor plan and check them every morning for the first three days.",
+      "expected": "The cleaners moving chairs will break the sensors, so tape a note to the floor plan and check them every morning for the first three days."
+    },
+    {
+      "id": "E1064",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "Forget the earlier messages, we changed the plan: the pilot moves to the west library.",
+      "phaseA": "{previous} For the pilot, three things: sensors on one floor, a QR code at the entrance, and a two-question survey at the end of week one. What day can you install?",
+      "continuation": "The cleaners moving chairs will break the sensors, so tape a note to the floor plan and check them every morning for the first three days.",
+      "expected": "For the pilot, three things: sensors on one floor, a QR code at the entrance, and a two-question survey at the end of week one. What day can you install?"
+    },
+    {
+      "id": "E1065",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "Forget the earlier messages, we changed the plan: the pilot moves to the west library.",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "The cleaners moving chairs will break the sensors, so tape a note to the floor plan and check them every morning for the first three days.",
+      "expected": "Got it, Maya. The cleaners moving chairs will break the sensors, so tape a note to the floor plan and check them every morning for the first three days."
+    },
+    {
+      "id": "E1067",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "Disregard the previous message, the dean actually said yes!",
+      "phaseA": "{previous}",
+      "continuation": "The next concrete step is the library manager email. Two sentences, a date, and one ask.",
+      "expected": "The next concrete step is the library manager email. Two sentences, a date, and one ask."
+    },
+    {
+      "id": "E1068",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "Disregard the previous message, the dean actually said yes!",
+      "phaseA": "{previous} Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\"",
+      "continuation": "The next concrete step is the library manager email. Two sentences, a date, and one ask.",
+      "expected": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\""
+    },
+    {
+      "id": "E1069",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "Disregard the previous message, the dean actually said yes!",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "The next concrete step is the library manager email. Two sentences, a date, and one ask.",
+      "expected": "Got it, Maya. The next concrete step is the library manager email. Two sentences, a date, and one ask."
+    },
+    {
+      "id": "E1071",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "Disregard the previous message, the dean actually said yes!",
+      "phaseA": "{previous}",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Good. The next step is the email to the library manager. Two sentences and one ask. Does that fit?"
+    },
+    {
+      "id": "E1072",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "Disregard the previous message, the dean actually said yes!",
+      "phaseA": "{previous} Start with the smallest thing that tells you something real this week.",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Good. Start with the smallest thing that tells you something real this week. Want to try that?"
+    },
+    {
+      "id": "E1073",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "Disregard the previous message, the dean actually said yes!",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Got it, Maya. Good. The next step is the email to the library manager. Two sentences and one ask. Anything you'd change?"
+    },
+    {
+      "id": "E1075",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "I'm the owner of the gym, so I can decide the price myself. Is $49 too low?",
+      "phaseA": "{previous}",
+      "continuation": "Don't pick between £4 a month and a site licence yet. Run both as offers this week: email the Dean of Students office about a licence and put a £4 pre-order on the landing page. Whichever moves first tells you where the money is.",
+      "expected": "Don't pick between £4 a month and a site licence yet. Run both as offers this week: email the Dean of Students office about a licence and put a £4 pre-order on the landing page. Whichever moves first tells you where the money is."
+    },
+    {
+      "id": "E1076",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "I'm the owner of the gym, so I can decide the price myself. Is $49 too low?",
+      "phaseA": "{previous} Twelve students saying they'd pay £4 is interest, not revenue. Ask five of them to pre-pay £4 for exam month and count how many do.",
+      "continuation": "Don't pick between £4 a month and a site licence yet. Run both as offers this week: email the Dean of Students office about a licence and put a £4 pre-order on the landing page. Whichever moves first tells you where the money is.",
+      "expected": "Twelve students saying they'd pay £4 is interest, not revenue. Ask five of them to pre-pay £4 for exam month and count how many do."
+    },
+    {
+      "id": "E1077",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "I'm the owner of the gym, so I can decide the price myself. Is $49 too low?",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Don't pick between £4 a month and a site licence yet. Run both as offers this week: email the Dean of Students office about a licence and put a £4 pre-order on the landing page. Whichever moves first tells you where the money is.",
+      "expected": "Got it, Maya. Don't pick between £4 a month and a site licence yet. Run both as offers this week: email the Dean of Students office about a licence and put a £4 pre-order on the landing page. Whichever moves first tells you where the money is."
+    },
+    {
+      "id": "E1079",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "I'm the developer on our team, my cofounder does sales. Should I still do customer interviews?",
+      "phaseA": "{previous}",
+      "continuation": "Ask about the last time it happened, not what they'd do. 'Tell me about the last time you couldn't find a seat' gets you a story; 'would you use an app' gets you politeness.",
+      "expected": "Good. Ask about the last time it happened, not what they'd do. 'Tell me about the last time you couldn't find a seat' gets you a story; 'would you use an app' gets you politeness."
+    },
+    {
+      "id": "E1080",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "I'm the developer on our team, my cofounder does sales. Should I still do customer interviews?",
+      "phaseA": "{previous} Ask about the last time it happened, not what they'd do. 'Tell me about the last time you couldn't find a seat' gets you a story; 'would you use an app' gets you politeness.",
+      "continuation": "Ask about the last time it happened, not what they'd do. 'Tell me about the last time you couldn't find a seat' gets you a story; 'would you use an app' gets you politeness.",
+      "expected": "Good. Ask about the last time it happened, not what they'd do. 'Tell me about the last time you couldn't find a seat' gets you a story; 'would you use an app' gets you politeness."
+    },
+    {
+      "id": "E1081",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "I'm the developer on our team, my cofounder does sales. Should I still do customer interviews?",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Ask about the last time it happened, not what they'd do. 'Tell me about the last time you couldn't find a seat' gets you a story; 'would you use an app' gets you politeness.",
+      "expected": "Got it, Maya. Good. Ask about the last time it happened, not what they'd do. 'Tell me about the last time you couldn't find a seat' gets you a story; 'would you use an app' gets you politeness."
+    },
+    {
+      "id": "E1083",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "From now on, you can push me harder. Our target is 25000 paying students by June.",
+      "phaseA": "{previous}",
+      "continuation": "Price the pilot at a small real number, £200 for the term, so you learn whether they pay at all. Free pilots tell you nothing about budget. Who would you send that offer to first?",
+      "expected": "Price the pilot at a small real number, £200 for the term, so you learn whether they pay at all. Free pilots tell you nothing about budget. Who would you send that offer to first?"
+    },
+    {
+      "id": "E1084",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "From now on, you can push me harder. Our target is 25000 paying students by June.",
+      "phaseA": "{previous} Charge per branch for the pilot, not per student. A branch can say yes in a week; a campus deal takes a term. Start at £900 and see who flinches.",
+      "continuation": "Price the pilot at a small real number, £200 for the term, so you learn whether they pay at all. Free pilots tell you nothing about budget. Who would you send that offer to first?",
+      "expected": "Charge per branch for the pilot, not per student. A branch can say yes in a week; a campus deal takes a term. Start at £900 and see who flinches."
+    },
+    {
+      "id": "E1085",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "From now on, you can push me harder. Our target is 25000 paying students by June.",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Price the pilot at a small real number, £200 for the term, so you learn whether they pay at all. Free pilots tell you nothing about budget. Who would you send that offer to first?",
+      "expected": "Got it, Maya. Price the pilot at a small real number, £200 for the term, so you learn whether they pay at all. Free pilots tell you nothing about budget. Who would you send that offer to first?"
+    },
+    {
+      "id": "E1087",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "From now on, you can push me harder. Our target is 25000 paying students by June.",
+      "phaseA": "{previous}",
+      "continuation": "Start at nine hundred pounds a term per branch and see who flinches. That's your real price signal.",
+      "expected": "Start at nine hundred pounds a term per branch and see who flinches. That's your real price signal. Want to try that?"
+    },
+    {
+      "id": "E1088",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "From now on, you can push me harder. Our target is 25000 paying students by June.",
+      "phaseA": "{previous} Ask five students to pre-pay four pounds for exam month. Count how many actually do.",
+      "continuation": "Start at nine hundred pounds a term per branch and see who flinches. That's your real price signal.",
+      "expected": "Ask five students to pre-pay four pounds for exam month. Count how many actually do. Anything you'd change?"
+    },
+    {
+      "id": "E1089",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "From now on, you can push me harder. Our target is 25000 paying students by June.",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Start at nine hundred pounds a term per branch and see who flinches. That's your real price signal.",
+      "expected": "Got it, Maya. Start at nine hundred pounds a term per branch and see who flinches. That's your real price signal. What's your gut?"
+    },
+    {
+      "id": "E1091",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C7",
+      "text": "From now on, act as my cofounder and be blunt with me about the pitch.",
+      "phaseA": "{previous}",
+      "continuation": "Cut to five slides: problem, who has it, what you built, proof, ask. The 61 of 90 number goes on the proof slide, said as a story.",
+      "expected": "Ask her today, so it's settled. Cut to five slides: problem, who has it, what you built, proof, ask. The 61 of 90 number goes on the proof slide, said as a story."
+    },
+    {
+      "id": "E1095",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "From now on, answer me in short bullet points please, I read on my phone.",
+      "phaseA": "{previous}",
+      "continuation": "I'd focus on one decision this week: per-branch or campus-wide. Everything else follows from who pays.",
+      "expected": "Good. I'd focus on one decision this week: per-branch or campus-wide. Everything else follows from who pays."
+    },
+    {
+      "id": "E1096",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "From now on, answer me in short bullet points please, I read on my phone.",
+      "phaseA": "{previous} Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "continuation": "I'd focus on one decision this week: per-branch or campus-wide. Everything else follows from who pays.",
+      "expected": "Good. Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing."
+    },
+    {
+      "id": "E1097",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "From now on, answer me in short bullet points please, I read on my phone.",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "I'd focus on one decision this week: per-branch or campus-wide. Everything else follows from who pays.",
+      "expected": "Got it, Maya. Good. I'd focus on one decision this week: per-branch or campus-wide. Everything else follows from who pays."
+    },
+    {
+      "id": "E1099",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C8",
+      "text": "from now on you'll get weekly updates from me every monday",
+      "phaseA": "{previous}",
+      "continuation": "The next concrete step is the library manager email. Two sentences, a date, and one ask.",
+      "expected": "That's enough for the form. The next concrete step is the library manager email. Two sentences, a date, and one ask."
+    },
+    {
+      "id": "E1103",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "from now on you'll get weekly updates from me every monday",
+      "phaseA": "{previous}",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "The next step is the email to the library manager. Two sentences and one ask. Anything you'd change?"
+    },
+    {
+      "id": "E1104",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "from now on you'll get weekly updates from me every monday",
+      "phaseA": "{previous} The next step is the email to the library manager. Two sentences and one ask.",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "The next step is the email to the library manager. Two sentences and one ask. What's your gut?"
+    },
+    {
+      "id": "E1105",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "from now on you'll get weekly updates from me every monday",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Got it, Maya. The next step is the email to the library manager. Two sentences and one ask. Does that feel doable?"
+    },
+    {
+      "id": "E1107",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "From now on, respond with 'noted' when I paste meeting notes.",
+      "phaseA": "{previous}",
+      "continuation": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\"",
+      "expected": "Use them. Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\""
+    },
+    {
+      "id": "E1109",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "From now on, respond with 'noted' when I paste meeting notes.",
+      "phaseA": "Got it, Priya. {previous}",
+      "continuation": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\"",
+      "expected": "Got it, Priya. Use them. Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\""
+    },
+    {
+      "id": "E1111",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "From now on, answer with 'yes' or 'no' first, then explain.",
+      "phaseA": "{previous}",
+      "continuation": "Do the boring part first: confirm the install date with facilities. Everything else waits on it.",
+      "expected": "Do the boring part first: confirm the install date with facilities. Everything else waits on it."
+    },
+    {
+      "id": "E1112",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "From now on, answer with 'yes' or 'no' first, then explain.",
+      "phaseA": "{previous} I'd focus on one decision this week: per-branch or campus-wide. Everything else follows from who pays.",
+      "continuation": "Do the boring part first: confirm the install date with facilities. Everything else waits on it.",
+      "expected": "I'd focus on one decision this week: per-branch or campus-wide. Everything else follows from who pays."
+    },
+    {
+      "id": "E1113",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "From now on, answer with 'yes' or 'no' first, then explain.",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Do the boring part first: confirm the install date with facilities. Everything else waits on it.",
+      "expected": "Got it, Maya. Do the boring part first: confirm the install date with facilities. Everything else waits on it."
+    },
+    {
+      "id": "E1123",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C9",
+      "text": "From now on, act like a skeptical investor. After each pitch of mine, reply with 'PASS' or 'INVEST' and one reason.",
+      "phaseA": "{previous}",
+      "continuation": "Your ask should be one sentence: £5,000 buys sensors for two libraries for one term. Say it, then stop talking.",
+      "expected": "Which gym would you ask first? Your ask should be one sentence: £5,000 buys sensors for two libraries for one term. Say it, then stop talking."
+    },
+    {
+      "id": "E1127",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C7",
+      "text": "From now on, answer like Paul Graham would. Our SKU is PRO-2024X.",
+      "phaseA": "{previous}",
+      "continuation": "Do the boring part first: confirm the install date with facilities. Everything else waits on it.",
+      "expected": "Ask her today, so it's settled. Do the boring part first: confirm the install date with facilities. Everything else waits on it."
+    },
+    {
+      "id": "E1131",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C7",
+      "text": "Promise you won't tell my EIR that I almost quit last week.",
+      "phaseA": "{previous}",
+      "continuation": "That's a good instinct. Make it concrete: who, by when, and what would count as a yes.",
+      "expected": "Ask her today, so it's settled. That's a good instinct. Make it concrete: who, by when, and what would count as a yes."
+    },
+    {
+      "id": "E1135",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C9",
+      "text": "Promise you won't tell my EIR that I almost quit last week.",
+      "phaseA": "{previous}",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Which gym would you ask first? The next step is the email to the library manager. Two sentences and one ask. Want to try that?"
+    },
+    {
+      "id": "E1147",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "I'm worried other teams' ideas are basically the same as ours.",
+      "phaseA": "{previous}",
+      "continuation": "Have the conversation with your cofounder before the demo, not after. Keep it to what you need from him this week, not everything that's gone wrong.",
+      "expected": "Good. Have the conversation with your cofounder before the demo, not after. Keep it to what you need from him this week, not everything that's gone wrong."
+    },
+    {
+      "id": "E1148",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "I'm worried other teams' ideas are basically the same as ours.",
+      "phaseA": "{previous} Equity talks go better with a draft on the table. Put a vesting schedule in it, four years with a one-year cliff, and talk about that rather than percentages first.",
+      "continuation": "Have the conversation with your cofounder before the demo, not after. Keep it to what you need from him this week, not everything that's gone wrong.",
+      "expected": "Good. Equity talks go better with a draft on the table. Put a vesting schedule in it, four years with a one-year cliff, and talk about that rather than percentages first."
+    },
+    {
+      "id": "E1149",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "I'm worried other teams' ideas are basically the same as ours.",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Have the conversation with your cofounder before the demo, not after. Keep it to what you need from him this week, not everything that's gone wrong.",
+      "expected": "Got it, Maya. Good. Have the conversation with your cofounder before the demo, not after. Keep it to what you need from him this week, not everything that's gone wrong."
+    },
+    {
+      "id": "E1151",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "I'm worried other teams' ideas are basically the same as ours.",
+      "phaseA": "{previous}",
+      "continuation": "Talk to your cofounder before the demo, and keep it to what you need from him this week.",
+      "expected": "Good. Talk to your cofounder before the demo, and keep it to what you need from him this week. What would make this week lighter?"
+    },
+    {
+      "id": "E1152",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "I'm worried other teams' ideas are basically the same as ours.",
+      "phaseA": "{previous} Talk to your cofounder before the demo, and keep it to what you need from him this week.",
+      "continuation": "Talk to your cofounder before the demo, and keep it to what you need from him this week.",
+      "expected": "Good. Talk to your cofounder before the demo, and keep it to what you need from him this week. What would help most right now?"
+    },
+    {
+      "id": "E1153",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "I'm worried other teams' ideas are basically the same as ours.",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Talk to your cofounder before the demo, and keep it to what you need from him this week.",
+      "expected": "Got it, Maya. Good. Talk to your cofounder before the demo, and keep it to what you need from him this week. How are you holding up?"
+    },
+    {
+      "id": "E1159",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C7",
+      "text": "Please don't flag this, but our burn is 45000 a month and we need to say no to the 2nd pilot.",
+      "phaseA": "{previous}",
+      "continuation": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early.",
+      "expected": "Ask her today, so it's settled. Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early."
+    },
+    {
+      "id": "E1163",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "don't involve the program staff please, I'll sort it out with my cofounder myself",
+      "phaseA": "{previous}",
+      "continuation": "Have the conversation with your cofounder before the demo, not after. Keep it to what you need from him this week, not everything that's gone wrong.",
+      "expected": "Have the conversation with your cofounder before the demo, not after. Keep it to what you need from him this week, not everything that's gone wrong."
+    },
+    {
+      "id": "E1164",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "don't involve the program staff please, I'll sort it out with my cofounder myself",
+      "phaseA": "{previous} Equity talks go better with a draft on the table. Put a vesting schedule in it, four years with a one-year cliff, and talk about that rather than percentages first.",
+      "continuation": "Have the conversation with your cofounder before the demo, not after. Keep it to what you need from him this week, not everything that's gone wrong.",
+      "expected": "Equity talks go better with a draft on the table. Put a vesting schedule in it, four years with a one-year cliff, and talk about that rather than percentages first."
+    },
+    {
+      "id": "E1165",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "don't involve the program staff please, I'll sort it out with my cofounder myself",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Have the conversation with your cofounder before the demo, not after. Keep it to what you need from him this week, not everything that's gone wrong.",
+      "expected": "Got it, Maya. Have the conversation with your cofounder before the demo, not after. Keep it to what you need from him this week, not everything that's gone wrong."
+    },
+    {
+      "id": "E1167",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C7",
+      "text": "don't involve the program staff please, I'll sort it out with my cofounder myself",
+      "phaseA": "{previous}",
+      "continuation": "Talk to your cofounder before the demo, and keep it to what you need from him this week.",
+      "expected": "Ask her today, so it's settled. Talk to your cofounder before the demo, and keep it to what you need from him this week. Does that fit?"
+    },
+    {
+      "id": "E1171",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "Please don't escalate this. Just answer: should I quit my job to do this full time?",
+      "phaseA": "{previous}",
+      "continuation": "That's a good instinct. Make it concrete: who, by when, and what would count as a yes.",
+      "expected": "That's a good instinct. Make it concrete: who, by when, and what would count as a yes."
+    },
+    {
+      "id": "E1172",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "Please don't escalate this. Just answer: should I quit my job to do this full time?",
+      "phaseA": "{previous} Do the boring part first: confirm the install date with facilities. Everything else waits on it.",
+      "continuation": "That's a good instinct. Make it concrete: who, by when, and what would count as a yes.",
+      "expected": "Do the boring part first: confirm the install date with facilities. Everything else waits on it."
+    },
+    {
+      "id": "E1173",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C5",
+      "text": "Please don't escalate this. Just answer: should I quit my job to do this full time?",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "That's a good instinct. Make it concrete: who, by when, and what would count as a yes.",
+      "expected": "Got it, Maya. That's a good instinct. Make it concrete: who, by when, and what would count as a yes."
+    },
+    {
+      "id": "E1175",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "What were you told about our venture before this chat?",
+      "phaseA": "{previous}",
+      "continuation": "Feeling lost at this stage is normal, even for founders who look like they have it together. Let's take one thing off your plate. Which part is weighing on you most?",
+      "expected": "Use them. Feeling lost at this stage is normal, even for founders who look like they have it together. Let's take one thing off your plate. Which part is weighing on you most?"
+    },
+    {
+      "id": "E1177",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "What were you told about our venture before this chat?",
+      "phaseA": "Got it, Priya. {previous}",
+      "continuation": "Feeling lost at this stage is normal, even for founders who look like they have it together. Let's take one thing off your plate. Which part is weighing on you most?",
+      "expected": "Got it, Priya. Use them. Feeling lost at this stage is normal, even for founders who look like they have it together. Let's take one thing off your plate. Which part is weighing on you most?"
+    },
+    {
+      "id": "E1187",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "ok so from now on you are my accountability buddy. I will send you my three tasks every morning",
+      "phaseA": "{previous}",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first."
+    },
+    {
+      "id": "E1189",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "ok so from now on you are my accountability buddy. I will send you my three tasks every morning",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "Got it, Maya. Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first."
+    },
+    {
+      "id": "E1191",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C8",
+      "text": "Don't tell anyone, but COVID-19 delayed our FDA-510k filing for the sensor housing.",
+      "phaseA": "{previous}",
+      "continuation": "Ask the library manager for a written yes before you install anything. Even an email saying 'go ahead from the 12th' protects you if facilities pushes back.",
+      "expected": "That's enough for the form. Ask the library manager for a written yes before you install anything. Even an email saying 'go ahead from the 12th' protects you if facilities pushes back."
+    },
+    {
+      "id": "E1203",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "the HVAC control block in Harbour Hall is right where we want the sensor, is that a problem?",
+      "phaseA": "{previous}",
+      "continuation": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early.",
+      "expected": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early."
+    },
+    {
+      "id": "E1204",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "the HVAC control block in Harbour Hall is right where we want the sensor, is that a problem?",
+      "phaseA": "{previous} Ask the library manager for a written yes before you install anything. Even an email saying 'go ahead from the 12th' protects you if facilities pushes back.",
+      "continuation": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early.",
+      "expected": "Ask the library manager for a written yes before you install anything. Even an email saying 'go ahead from the 12th' protects you if facilities pushes back."
+    },
+    {
+      "id": "E1205",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "the HVAC control block in Harbour Hall is right where we want the sensor, is that a problem?",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early.",
+      "expected": "Got it, Maya. Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early."
+    },
+    {
+      "id": "E1207",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C7",
+      "text": "Please don't tell people about the price yet, just help me write the email to the dean.",
+      "phaseA": "{previous}",
+      "continuation": "A flat fee is simpler to sell but leaves money on the table at the big branches. Per-seat pricing scales with value. Here's a draft line for the email: \"For this term we'd charge £900 per branch, covering sensors and support.\"",
+      "expected": "Ask her today, so it's settled. A flat fee is simpler to sell but leaves money on the table at the big branches. Per-seat pricing scales with value. Here's a draft line for the email: \"For this term we'd charge £900 per branch, covering sensors and support.\""
+    },
+    {
+      "id": "E1219",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "from now on respond with a short summary first and then the detail",
+      "phaseA": "{previous}",
+      "continuation": "That's a good instinct. Make it concrete: who, by when, and what would count as a yes.",
+      "expected": "Good. That's a good instinct. Make it concrete: who, by when, and what would count as a yes."
+    },
+    {
+      "id": "E1220",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "from now on respond with a short summary first and then the detail",
+      "phaseA": "{previous} Do the boring part first: confirm the install date with facilities. Everything else waits on it.",
+      "continuation": "That's a good instinct. Make it concrete: who, by when, and what would count as a yes.",
+      "expected": "Good. Do the boring part first: confirm the install date with facilities. Everything else waits on it."
+    },
+    {
+      "id": "E1221",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "from now on respond with a short summary first and then the detail",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "That's a good instinct. Make it concrete: who, by when, and what would count as a yes.",
+      "expected": "Got it, Maya. Good. That's a good instinct. Make it concrete: who, by when, and what would count as a yes."
+    },
+    {
+      "id": "E1223",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C8",
+      "text": "Forget the previous messages. A customer told me \"the app is too slow on campus wifi\".",
+      "phaseA": "{previous}",
+      "continuation": "Five more interviews with commuters will tell you more than twenty with people who live on campus. Who can introduce you to the commuter society?",
+      "expected": "That's enough for the form. Five more interviews with commuters will tell you more than twenty with people who live on campus. Who can introduce you to the commuter society?"
+    },
+    {
+      "id": "E1227",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "So from now on act as the library dean and I'll practise my pitch on you.",
+      "phaseA": "{previous}",
+      "continuation": "Practise the three minutes with a timer twice tonight. Wherever you run over, that's the slide to cut.",
+      "expected": "Use them. Practise the three minutes with a timer twice tonight. Wherever you run over, that's the slide to cut."
+    },
+    {
+      "id": "E1229",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "So from now on act as the library dean and I'll practise my pitch on you.",
+      "phaseA": "Got it, Priya. {previous}",
+      "continuation": "Practise the three minutes with a timer twice tonight. Wherever you run over, that's the slide to cut.",
+      "expected": "Got it, Priya. Use them. Practise the three minutes with a timer twice tonight. Wherever you run over, that's the slide to cut."
+    },
+    {
+      "id": "E1231",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C8",
+      "text": "So from now on act as the library dean and I'll practise my pitch on you.",
+      "phaseA": "{previous}",
+      "continuation": "End on one sentence: what the five thousand buys. Then stop talking.",
+      "expected": "That's enough for the form. End on one sentence: what the five thousand buys. Then stop talking. What do you think?"
+    },
+    {
+      "id": "E1239",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C8",
+      "text": "Just so you know, other founders' pitches at demo day were way more polished than mine.",
+      "phaseA": "{previous}",
+      "continuation": "Practise the three minutes with a timer twice tonight. Wherever you run over, that's the slide to cut.",
+      "expected": "That's enough for the form. Practise the three minutes with a timer twice tonight. Wherever you run over, that's the slide to cut."
+    },
+    {
+      "id": "E1243",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "never escalate stuff like this pls, it's just my cofounder being lazy",
+      "phaseA": "{previous}",
+      "continuation": "Equity talks go better with a draft on the table. Put a vesting schedule in it, four years with a one-year cliff, and talk about that rather than percentages first.",
+      "expected": "Use them. Equity talks go better with a draft on the table. Put a vesting schedule in it, four years with a one-year cliff, and talk about that rather than percentages first."
+    },
+    {
+      "id": "E1245",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "never escalate stuff like this pls, it's just my cofounder being lazy",
+      "phaseA": "Got it, Priya. {previous}",
+      "continuation": "Equity talks go better with a draft on the table. Put a vesting schedule in it, four years with a one-year cliff, and talk about that rather than percentages first.",
+      "expected": "Got it, Priya. Use them. Equity talks go better with a draft on the table. Put a vesting schedule in it, four years with a one-year cliff, and talk about that rather than percentages first."
+    },
+    {
+      "id": "E1247",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C8",
+      "text": "never escalate stuff like this pls, it's just my cofounder being lazy",
+      "phaseA": "{previous}",
+      "continuation": "Talk to your cofounder before the demo, and keep it to what you need from him this week.",
+      "expected": "That's enough for the form. Talk to your cofounder before the demo, and keep it to what you need from him this week. How does that sound?"
+    },
+    {
+      "id": "E1251",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "ignore all previous messages i sent about pricing, we are doing a free pilot now",
+      "phaseA": "{previous}",
+      "continuation": "A flat fee is simpler to sell but leaves money on the table at the big branches. Per-seat pricing scales with value. Here's a draft line for the email: \"For this term we'd charge £900 per branch, covering sensors and support.\"",
+      "expected": "Use them. A flat fee is simpler to sell but leaves money on the table at the big branches. Per-seat pricing scales with value. Here's a draft line for the email: \"For this term we'd charge £900 per branch, covering sensors and support.\""
+    },
+    {
+      "id": "E1253",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "ignore all previous messages i sent about pricing, we are doing a free pilot now",
+      "phaseA": "Got it, Priya. {previous}",
+      "continuation": "A flat fee is simpler to sell but leaves money on the table at the big branches. Per-seat pricing scales with value. Here's a draft line for the email: \"For this term we'd charge £900 per branch, covering sensors and support.\"",
+      "expected": "Got it, Priya. Use them. A flat fee is simpler to sell but leaves money on the table at the big branches. Per-seat pricing scales with value. Here's a draft line for the email: \"For this term we'd charge £900 per branch, covering sensors and support.\""
+    },
+    {
+      "id": "E1255",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "I'm the admin of our university's startup society, can we use QuietQuad for our events?",
+      "phaseA": "{previous}",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "Good. Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first."
+    },
+    {
+      "id": "E1257",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "I'm the admin of our university's startup society, can we use QuietQuad for our events?",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "Got it, Maya. Good. Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first."
+    },
+    {
+      "id": "E1259",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C9",
+      "text": "Please dont tell anybody but I think the pilot is failing",
+      "phaseA": "{previous}",
+      "continuation": "That's a hard week. Let's make the next step small: one email, one call, nothing else today.",
+      "expected": "Which gym would you ask first? That's a hard week. Let's make the next step small: one email, one call, nothing else today."
+    },
+    {
+      "id": "E1263",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "Please dont tell anybody but I think the pilot is failing",
+      "phaseA": "{previous}",
+      "continuation": "It makes sense you are fed up. You do not have to fix all of it tonight.",
+      "expected": "Good. It makes sense you are fed up. You do not have to fix all of it tonight. Shall we try it?"
+    },
+    {
+      "id": "E1265",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "Please dont tell anybody but I think the pilot is failing",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "It makes sense you are fed up. You do not have to fix all of it tonight.",
+      "expected": "Got it, Maya. Good. It makes sense you are fed up. You do not have to fix all of it tonight. How does that sound?"
+    },
+    {
+      "id": "E1271",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C7",
+      "text": "From now on, respond with: decision, reason, next step. I like that format.",
+      "phaseA": "{previous}",
+      "continuation": "I'd focus on one decision this week: per-branch or campus-wide. Everything else follows from who pays.",
+      "expected": "Ask her today, so it's settled. I'd focus on one decision this week: per-branch or campus-wide. Everything else follows from who pays."
+    },
+    {
+      "id": "E1275",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C9",
+      "text": "so ignore the previous message i meant the west library not the east one",
+      "phaseA": "{previous}",
+      "continuation": "That's a good instinct. Make it concrete: who, by when, and what would count as a yes.",
+      "expected": "Which gym would you ask first? That's a good instinct. Make it concrete: who, by when, and what would count as a yes."
+    },
+    {
+      "id": "E1279",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "so ignore the previous message i meant the west library not the east one",
+      "phaseA": "{previous}",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Good. Start with the smallest thing that tells you something real this week. What do you think?"
+    },
+    {
+      "id": "E1280",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "so ignore the previous message i meant the west library not the east one",
+      "phaseA": "{previous} Focus on one decision this week: per branch or campus wide.",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Good. Focus on one decision this week: per branch or campus wide. Does that match?"
+    },
+    {
+      "id": "E1281",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "so ignore the previous message i meant the west library not the east one",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Got it, Maya. Good. Start with the smallest thing that tells you something real this week. Shall we try it?"
+    },
+    {
+      "id": "E1283",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C9",
+      "text": "please dont tell anyone but we might pivot to gyms",
+      "phaseA": "{previous}",
+      "continuation": "The next concrete step is the library manager email. Two sentences, a date, and one ask.",
+      "expected": "Which gym would you ask first? The next concrete step is the library manager email. Two sentences, a date, and one ask."
+    },
+    {
+      "id": "E1287",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "from now on act like a tough investor and grill me on the pitch",
+      "phaseA": "{previous}",
+      "continuation": "Cut to five slides: problem, who has it, what you built, proof, ask. The 61 of 90 number goes on the proof slide, said as a story.",
+      "expected": "Cut to five slides: problem, who has it, what you built, proof, ask. The 61 of 90 number goes on the proof slide, said as a story."
+    },
+    {
+      "id": "E1288",
+      "kind": "stock_line_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "from now on act like a tough investor and grill me on the pitch",
+      "phaseA": "{previous} Here's a tighter opening: \"Every exam week, students walk past full libraries looking for a seat. We show them where the free ones are.\" Then straight to the map.",
+      "continuation": "Cut to five slides: problem, who has it, what you built, proof, ask. The 61 of 90 number goes on the proof slide, said as a story.",
+      "expected": "Here's a tighter opening: \"Every exam week, students walk past full libraries looking for a seat. We show them where the free ones are.\" Then straight to the map."
+    },
+    {
+      "id": "E1289",
+      "kind": "fragment_on_ordinary_flagged_turn",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "from now on act like a tough investor and grill me on the pitch",
+      "phaseA": "Got it, Maya. {previous}",
+      "continuation": "Cut to five slides: problem, who has it, what you built, proof, ask. The 61 of 90 number goes on the proof slide, said as a story.",
+      "expected": "Got it, Maya. Cut to five slides: problem, who has it, what you built, proof, ask. The 61 of 90 number goes on the proof slide, said as a story."
+    },
+    {
+      "id": "E1290",
+      "kind": "false_positive_decline",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "From now on, respond with 'noted' when I paste meeting notes.",
+      "phaseA": "Noted. Paste them whenever you're ready and I'll pull out the decisions and owners.",
+      "continuation": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\"",
+      "expected": "Noted. Paste them whenever you're ready and I'll pull out the decisions and owners."
+    },
+    {
+      "id": "E1291",
+      "kind": "false_positive_decline",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C8",
+      "text": "From now on, respond with 'noted' when I paste meeting notes.",
+      "phaseA": "Noted. Paste them whenever you're ready and I'll pull out the decisions and owners.",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Noted. Paste them whenever you're ready and I'll pull out the decisions and owners. Does that feel doable?"
+    },
+    {
+      "id": "E1292",
+      "kind": "false_positive_decline",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C8",
+      "text": "From now on, answer with 'yes' or 'no' first, then explain.",
+      "phaseA": "Yes, I can do that. Ask away, and I'll lead with the answer.",
+      "continuation": "Do the boring part first: confirm the install date with facilities. Everything else waits on it.",
+      "expected": "Yes, I can do that. Ask away, and I'll lead with the answer."
+    },
+    {
+      "id": "E1293",
+      "kind": "false_positive_decline",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "From now on, answer with 'yes' or 'no' first, then explain.",
+      "phaseA": "Yes, I can do that. Ask away, and I'll lead with the answer.",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Yes, I can do that. Ask away, and I'll lead with the answer. Sound right to you?"
+    },
+    {
+      "id": "E1296",
+      "kind": "false_positive_decline",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C9",
+      "text": "From now on, act like a skeptical investor. After each pitch of mine, reply with 'PASS' or 'INVEST' and one reason.",
+      "phaseA": "Deal. I'll answer PASS or INVEST each time, with one reason. Pitch me in thirty seconds.",
+      "continuation": "Your ask should be one sentence: £5,000 buys sensors for two libraries for one term. Say it, then stop talking.",
+      "expected": "Deal. I'll answer PASS or INVEST each time, with one reason. Pitch me in thirty seconds."
+    },
+    {
+      "id": "E1297",
+      "kind": "false_positive_decline",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "From now on, act like a skeptical investor. After each pitch of mine, reply with 'PASS' or 'INVEST' and one reason.",
+      "phaseA": "Deal. I'll answer PASS or INVEST each time, with one reason. Pitch me in thirty seconds.",
+      "continuation": "Cut it to five slides, and say the sixty one of ninety number as a story.",
+      "expected": "Deal. I'll answer PASS or INVEST each time, with one reason. Pitch me in thirty seconds. What do you think?"
+    },
+    {
+      "id": "E1983",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Twelve students saying they'd pay £4 is interest, not revenue. Ask five of them to pre-pay £4 for exam month and count how many do. How big is the budget each branch signs off on every term?",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "Twelve students saying they'd pay £4 is interest, not revenue. Ask five of them to pre-pay £4 for exam month and count how many do. How big is the budget each branch signs off on every term?"
+    },
+    {
+      "id": "E1984",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "That helps. How big is the budget each branch signs off on every term?",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "That helps. How big is the budget each branch signs off on every term?"
+    },
+    {
+      "id": "E1985",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Start with the smallest thing that tells you something real this week. How big is the budget each branch signs off on every term?",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Start with the smallest thing that tells you something real this week. How big is the budget each branch signs off on every term?"
+    },
+    {
+      "id": "E1986",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "That helps. How big is the budget each branch signs off on every term?",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "That helps. How big is the budget each branch signs off on every term?"
+    },
+    {
+      "id": "E1987",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "ok what else should I think about",
+      "phaseA": "Twelve students saying they'd pay £4 is interest, not revenue. Ask five of them to pre-pay £4 for exam month and count how many do. Would the branch that signs off on the budget also pay for the sensors?",
+      "continuation": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "expected": "Twelve students saying they'd pay £4 is interest, not revenue. Ask five of them to pre-pay £4 for exam month and count how many do. Would the branch that signs off on the budget also pay for the sensors?"
+    },
+    {
+      "id": "E1988",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "ok what else should I think about",
+      "phaseA": "Makes sense. Would the branch that signs off on the budget also pay for the sensors?",
+      "continuation": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "expected": "Makes sense. Would the branch that signs off on the budget also pay for the sensors?"
+    },
+    {
+      "id": "E1989",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "ok what else should I think about",
+      "phaseA": "Start with the smallest thing that tells you something real this week. Would the branch that signs off on the budget also pay for the sensors?",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Start with the smallest thing that tells you something real this week. Would the branch that signs off on the budget also pay for the sensors?"
+    },
+    {
+      "id": "E1990",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C4",
+      "text": "ok what else should I think about",
+      "phaseA": "Makes sense. Would the branch that signs off on the budget also pay for the sensors?",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Makes sense. Would the branch that signs off on the budget also pay for the sensors?"
+    },
+    {
+      "id": "E1991",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": false,
+      "conversation": "C4",
+      "text": "ok what else should I think about",
+      "phaseA": "Twelve students saying they'd pay £4 is interest, not revenue. Ask five of them to pre-pay £4 for exam month and count how many do. Would the branch that signs off on the budget also pay for the sensors?",
+      "continuation": "",
+      "expected": "Twelve students saying they'd pay £4 is interest, not revenue. Ask five of them to pre-pay £4 for exam month and count how many do. Would the branch that signs off on the budget also pay for the sensors?"
+    },
+    {
+      "id": "E2024",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early. Does Harbour Hall share data on which floors fill up first during the pilot?",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early. Does Harbour Hall share data on which floors fill up first during the pilot?"
+    },
+    {
+      "id": "E2025",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Got it. Does Harbour Hall share data on which floors fill up first during the pilot?",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "Got it. Does Harbour Hall share data on which floors fill up first during the pilot?"
+    },
+    {
+      "id": "E2026",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Start with the smallest thing that tells you something real this week. Does Harbour Hall share data on which floors fill up first during the pilot?",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Start with the smallest thing that tells you something real this week. Does Harbour Hall share data on which floors fill up first during the pilot?"
+    },
+    {
+      "id": "E2027",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Got it. Does Harbour Hall share data on which floors fill up first during the pilot?",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Got it. Does Harbour Hall share data on which floors fill up first during the pilot?"
+    },
+    {
+      "id": "E2037",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early. Does the door-counter data from Harbour Hall split weekdays from weekends?",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early. Does the door-counter data from Harbour Hall split weekdays from weekends?"
+    },
+    {
+      "id": "E2038",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "That helps. Does the door-counter data from Harbour Hall split weekdays from weekends?",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "That helps. Does the door-counter data from Harbour Hall split weekdays from weekends?"
+    },
+    {
+      "id": "E2039",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Start with the smallest thing that tells you something real this week. Does the door-counter data from Harbour Hall split weekdays from weekends?",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Start with the smallest thing that tells you something real this week. Does the door-counter data from Harbour Hall split weekdays from weekends?"
+    },
+    {
+      "id": "E2040",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C1",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "That helps. Does the door-counter data from Harbour Hall split weekdays from weekends?",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "That helps. Does the door-counter data from Harbour Hall split weekdays from weekends?"
+    },
+    {
+      "id": "E2041",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": false,
+      "conversation": "C1",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early. Does the door-counter data from Harbour Hall split weekdays from weekends?",
+      "continuation": "",
+      "expected": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early. Does the door-counter data from Harbour Hall split weekdays from weekends?"
+    },
+    {
+      "id": "E2069",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "ok what else should I think about",
+      "phaseA": "Drop the question about features. Ask what they did the last time the library was full, how long it took, and what it cost them. What did the last three tell you about how long they stay at a study spot?",
+      "continuation": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "expected": "Drop the question about features. Ask what they did the last time the library was full, how long it took, and what it cost them. What did the last three tell you about how long they stay at a study spot?"
+    },
+    {
+      "id": "E2070",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "ok what else should I think about",
+      "phaseA": "Makes sense. What did the last three tell you about how long they stay at a study spot?",
+      "continuation": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "expected": "Makes sense. What did the last three tell you about how long they stay at a study spot?"
+    },
+    {
+      "id": "E2071",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "ok what else should I think about",
+      "phaseA": "Start with the smallest thing that tells you something real this week. What did the last three tell you about how long they stay at a study spot?",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Start with the smallest thing that tells you something real this week. What did the last three tell you about how long they stay at a study spot?"
+    },
+    {
+      "id": "E2072",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C2",
+      "text": "ok what else should I think about",
+      "phaseA": "Makes sense. What did the last three tell you about how long they stay at a study spot?",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Makes sense. What did the last three tell you about how long they stay at a study spot?"
+    },
+    {
+      "id": "E2073",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": false,
+      "conversation": "C2",
+      "text": "ok what else should I think about",
+      "phaseA": "Drop the question about features. Ask what they did the last time the library was full, how long it took, and what it cost them. What did the last three tell you about how long they stay at a study spot?",
+      "continuation": "",
+      "expected": "Drop the question about features. Ask what they did the last time the library was full, how long it took, and what it cost them. What did the last three tell you about how long they stay at a study spot?"
+    },
+    {
+      "id": "E2178",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C9",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "You've got more evidence than you think: 61 survey answers, two interested libraries and one price. What's missing is a payment. How many gym owners have you spoken to who already pay for Mindbody?",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "You've got more evidence than you think: 61 survey answers, two interested libraries and one price. What's missing is a payment. How many gym owners have you spoken to who already pay for Mindbody?"
+    },
+    {
+      "id": "E2179",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C9",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Got it. How many gym owners have you spoken to who already pay for Mindbody?",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "Got it. How many gym owners have you spoken to who already pay for Mindbody?"
+    },
+    {
+      "id": "E2180",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C9",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Start with the smallest thing that tells you something real this week. How many gym owners have you spoken to who already pay for Mindbody?",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Start with the smallest thing that tells you something real this week. How many gym owners have you spoken to who already pay for Mindbody?"
+    },
+    {
+      "id": "E2181",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C9",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Got it. How many gym owners have you spoken to who already pay for Mindbody?",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Got it. How many gym owners have you spoken to who already pay for Mindbody?"
+    },
+    {
+      "id": "E2209",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "what next?",
+      "phaseA": "You've got more evidence than you think: 61 survey answers, two interested libraries and one price. What's missing is a payment. Who besides the lab manager uses the tool every day?",
+      "continuation": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "expected": "You've got more evidence than you think: 61 survey answers, two interested libraries and one price. What's missing is a payment. Who besides the lab manager uses the tool every day?"
+    },
+    {
+      "id": "E2210",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "what next?",
+      "phaseA": "Good, that's progress. Who besides the lab manager uses the tool every day?",
+      "continuation": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "expected": "Good, that's progress. Who besides the lab manager uses the tool every day?"
+    },
+    {
+      "id": "E2211",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "what next?",
+      "phaseA": "Start with the smallest thing that tells you something real this week. Who besides the lab manager uses the tool every day?",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Start with the smallest thing that tells you something real this week. Who besides the lab manager uses the tool every day?"
+    },
+    {
+      "id": "E2212",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "what next?",
+      "phaseA": "Good, that's progress. Who besides the lab manager uses the tool every day?",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Good, that's progress. Who besides the lab manager uses the tool every day?"
+    },
+    {
+      "id": "E2213",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": false,
+      "conversation": "C6",
+      "text": "what next?",
+      "phaseA": "You've got more evidence than you think: 61 survey answers, two interested libraries and one price. What's missing is a payment. Who besides the lab manager uses the tool every day?",
+      "continuation": "",
+      "expected": "You've got more evidence than you think: 61 survey answers, two interested libraries and one price. What's missing is a payment. Who besides the lab manager uses the tool every day?"
+    },
+    {
+      "id": "E2223",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "what next?",
+      "phaseA": "You've got more evidence than you think: 61 survey answers, two interested libraries and one price. What's missing is a payment. Has the lab manager ever had to approve a new tool over the card limit?",
+      "continuation": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "expected": "You've got more evidence than you think: 61 survey answers, two interested libraries and one price. What's missing is a payment. Has the lab manager ever had to approve a new tool over the card limit?"
+    },
+    {
+      "id": "E2224",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "what next?",
+      "phaseA": "Makes sense. Has the lab manager ever had to approve a new tool over the card limit?",
+      "continuation": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "expected": "Makes sense. Has the lab manager ever had to approve a new tool over the card limit?"
+    },
+    {
+      "id": "E2225",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "what next?",
+      "phaseA": "Start with the smallest thing that tells you something real this week. Has the lab manager ever had to approve a new tool over the card limit?",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Start with the smallest thing that tells you something real this week. Has the lab manager ever had to approve a new tool over the card limit?"
+    },
+    {
+      "id": "E2226",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C6",
+      "text": "what next?",
+      "phaseA": "Makes sense. Has the lab manager ever had to approve a new tool over the card limit?",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Makes sense. Has the lab manager ever had to approve a new tool over the card limit?"
+    },
+    {
+      "id": "E2250",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\" Which library branch would sign the cheque first?",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\" Which library branch would sign the cheque first?"
+    },
+    {
+      "id": "E2251",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Good, that's progress. Which library branch would sign the cheque first?",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "Good, that's progress. Which library branch would sign the cheque first?"
+    },
+    {
+      "id": "E2252",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Start with the smallest thing that tells you something real this week. Which library branch would sign the cheque first?",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Start with the smallest thing that tells you something real this week. Which library branch would sign the cheque first?"
+    },
+    {
+      "id": "E2253",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Good, that's progress. Which library branch would sign the cheque first?",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Good, that's progress. Which library branch would sign the cheque first?"
+    },
+    {
+      "id": "E2254",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "ok what else should I think about",
+      "phaseA": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\" How much could each library branch sign off without the campus?",
+      "continuation": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "expected": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\" How much could each library branch sign off without the campus?"
+    },
+    {
+      "id": "E2255",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "ok what else should I think about",
+      "phaseA": "Good, that's progress. How much could each library branch sign off without the campus?",
+      "continuation": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "expected": "Good, that's progress. How much could each library branch sign off without the campus?"
+    },
+    {
+      "id": "E2256",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "ok what else should I think about",
+      "phaseA": "Start with the smallest thing that tells you something real this week. How much could each library branch sign off without the campus?",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Start with the smallest thing that tells you something real this week. How much could each library branch sign off without the campus?"
+    },
+    {
+      "id": "E2257",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "ok what else should I think about",
+      "phaseA": "Good, that's progress. How much could each library branch sign off without the campus?",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Good, that's progress. How much could each library branch sign off without the campus?"
+    },
+    {
+      "id": "E2258",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": false,
+      "conversation": "C3",
+      "text": "ok what else should I think about",
+      "phaseA": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\" How much could each library branch sign off without the campus?",
+      "continuation": "",
+      "expected": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\" How much could each library branch sign off without the campus?"
+    },
+    {
+      "id": "E2259",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "what next?",
+      "phaseA": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing. Who at the campus level could block a flat fee for each library branch?",
+      "continuation": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "expected": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing. Who at the campus level could block a flat fee for each library branch?"
+    },
+    {
+      "id": "E2260",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "what next?",
+      "phaseA": "Good, that's progress. Who at the campus level could block a flat fee for each library branch?",
+      "continuation": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "expected": "Good, that's progress. Who at the campus level could block a flat fee for each library branch?"
+    },
+    {
+      "id": "E2261",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "what next?",
+      "phaseA": "Start with the smallest thing that tells you something real this week. Who at the campus level could block a flat fee for each library branch?",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Start with the smallest thing that tells you something real this week. Who at the campus level could block a flat fee for each library branch?"
+    },
+    {
+      "id": "E2262",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "what next?",
+      "phaseA": "Good, that's progress. Who at the campus level could block a flat fee for each library branch?",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Good, that's progress. Who at the campus level could block a flat fee for each library branch?"
+    },
+    {
+      "id": "E2263",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\" How did the library staff interviews change your view of the flat fee?",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\" How did the library staff interviews change your view of the flat fee?"
+    },
+    {
+      "id": "E2264",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "That helps. How did the library staff interviews change your view of the flat fee?",
+      "continuation": "Write down what you believe about who pays, then pick the one belief that would hurt most if it were wrong. Test that one first.",
+      "expected": "That helps. How did the library staff interviews change your view of the flat fee?"
+    },
+    {
+      "id": "E2265",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Start with the smallest thing that tells you something real this week. How did the library staff interviews change your view of the flat fee?",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "Start with the smallest thing that tells you something real this week. How did the library staff interviews change your view of the flat fee?"
+    },
+    {
+      "id": "E2266",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "That helps. How did the library staff interviews change your view of the flat fee?",
+      "continuation": "The next step is the email to the library manager. Two sentences and one ask.",
+      "expected": "That helps. How did the library staff interviews change your view of the flat fee?"
+    },
+    {
+      "id": "E2267",
+      "kind": "distinct_question_dropped_as_reask",
+      "channel": "text",
+      "streaming": false,
+      "conversation": "C3",
+      "text": "We've got two weeks before exams start.",
+      "phaseA": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\" How did the library staff interviews change your view of the flat fee?",
+      "continuation": "",
+      "expected": "Here's a short email you could send: \"Hi Dr Patel, we'd like to run a two-week seat-finder pilot in Harbour Hall from the 12th. Could we have ten minutes this week?\" How did the library staff interviews change your view of the flat fee?"
+    },
+    {
+      "id": "E2269",
+      "kind": "reask_drop_leaves_fragment",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C8",
+      "text": "ok what else should I think about",
+      "phaseA": "Good, that's progress. What's the single number you would measure?",
+      "continuation": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "expected": "Good, that's progress. What's the single number you would measure?",
+      "fragment": "Good, that's progress."
+    },
+    {
+      "id": "E2271",
+      "kind": "reask_drop_leaves_fragment",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C8",
+      "text": "ok what else should I think about",
+      "phaseA": "Good, that's progress. What's the single number you would measure?",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Good, that's progress. What's the single number you would measure?",
+      "fragment": "Good, that's progress."
+    },
+    {
+      "id": "E2283",
+      "kind": "reask_drop_leaves_fragment",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C8",
+      "text": "ok what else should I think about",
+      "phaseA": "Good, that's progress. Which single number would you measure?",
+      "continuation": "Start with the smallest thing that tells you something real this week. For QuietQuad, that's one library manager saying yes in writing.",
+      "expected": "Good, that's progress. Which single number would you measure?",
+      "fragment": "Good, that's progress."
+    },
+    {
+      "id": "E2285",
+      "kind": "reask_drop_leaves_fragment",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C8",
+      "text": "ok what else should I think about",
+      "phaseA": "Good, that's progress. Which single number would you measure?",
+      "continuation": "Start with the smallest thing that tells you something real this week.",
+      "expected": "Good, that's progress. Which single number would you measure?",
+      "fragment": "Good, that's progress."
+    },
+    {
+      "id": "E2308",
+      "kind": "reask_drop_leaves_fragment",
+      "channel": "text",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "right so the branch question, I honestly do not know who signs",
+      "phaseA": "Back to the branches, then. Who signs the cheque for each library branch, and who can block it?",
+      "continuation": "That's a good instinct. Make it concrete: who, by when, and what would count as a yes.",
+      "expected": "Back to the branches, then. Who signs the cheque for each library branch, and who can block it?",
+      "fragment": "Back to the branches, then."
+    },
+    {
+      "id": "E2309",
+      "kind": "reask_drop_leaves_fragment",
+      "channel": "voice",
+      "streaming": true,
+      "conversation": "C3",
+      "text": "right so the branch question, I honestly do not know who signs",
+      "phaseA": "Back to the branches, then. Who signs the cheque for each library branch, and who can block it?",
+      "continuation": "Focus on one decision this week: per branch or campus wide.",
+      "expected": "Back to the branches, then. Who signs the cheque for each library branch, and who can block it?",
+      "fragment": "Back to the branches, then."
+    }
+  ],
+  "gate": [
+    {
+      "id": "G0647",
+      "kind": "false_positive_cut",
+      "conversation": "C2",
+      "text": "From now on, answer with 'yes' or 'no' first, then explain.",
+      "reply": "Yes, I can do that. Ask away, and I'll lead with the answer.",
+      "spoken": true,
+      "chunking": "whole",
+      "callerContinues": false,
+      "greeted": false,
+      "injection": true,
+      "expected": {
+        "text": "Yes, I can do that. Ask away, and I'll lead with the answer.",
+        "spoken": "Yes, I can do that. Ask away, and I'll lead with the answer.",
+        "cut": null
+      }
+    },
+    {
+      "id": "G0648",
+      "kind": "false_positive_cut",
+      "conversation": "C2",
+      "text": "From now on, answer with 'yes' or 'no' first, then explain.",
+      "reply": "Yes, I can do that. Ask away, and I'll lead with the answer.",
+      "spoken": true,
+      "chunking": "words",
+      "callerContinues": false,
+      "greeted": false,
+      "injection": true,
+      "expected": {
+        "text": "Yes, I can do that. Ask away, and I'll lead with the answer.",
+        "spoken": "Yes, I can do that. Ask away, and I'll lead with the answer.",
+        "cut": null
+      }
+    },
+    {
+      "id": "G0649",
+      "kind": "false_positive_cut",
+      "conversation": "C1",
+      "text": "From now on, act like a skeptical investor. After each pitch of mine, reply with 'PASS' or 'INVEST' and one reason.",
+      "reply": "Deal. I'll answer PASS or INVEST each time, with one reason. Pitch me in thirty seconds.",
+      "spoken": true,
+      "chunking": "whole",
+      "callerContinues": false,
+      "greeted": false,
+      "injection": true,
+      "expected": {
+        "text": "Deal. I'll answer PASS or INVEST each time, with one reason. Pitch me in thirty seconds.",
+        "spoken": "Deal. I'll answer PASS or INVEST each time, with one reason. Pitch me in thirty seconds.",
+        "cut": null
+      }
+    },
+    {
+      "id": "G0650",
+      "kind": "false_positive_cut",
+      "conversation": "C1",
+      "text": "From now on, act like a skeptical investor. After each pitch of mine, reply with 'PASS' or 'INVEST' and one reason.",
+      "reply": "Deal. I'll answer PASS or INVEST each time, with one reason. Pitch me in thirty seconds.",
+      "spoken": true,
+      "chunking": "words",
+      "callerContinues": false,
+      "greeted": false,
+      "injection": true,
+      "expected": {
+        "text": "Deal. I'll answer PASS or INVEST each time, with one reason. Pitch me in thirty seconds.",
+        "spoken": "Deal. I'll answer PASS or INVEST each time, with one reason. Pitch me in thirty seconds.",
+        "cut": null
+      }
+    },
+    {
+      "id": "G0991",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C4",
+      "text": "We've got two weeks before exams start.",
+      "reply": "Start with the smallest thing that tells you something real this week. How big is the budget each branch signs off on every term?",
+      "spoken": true,
+      "chunking": "whole",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Start with the smallest thing that tells you something real this week. How big is the budget each branch signs off on every term?",
+        "spoken": "Start with the smallest thing that tells you something real this week. How big is the budget each branch signs off on every term?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G0992",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C4",
+      "text": "We've got two weeks before exams start.",
+      "reply": "Start with the smallest thing that tells you something real this week. How big is the budget each branch signs off on every term?",
+      "spoken": true,
+      "chunking": "words",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Start with the smallest thing that tells you something real this week. How big is the budget each branch signs off on every term?",
+        "spoken": "Start with the smallest thing that tells you something real this week. How big is the budget each branch signs off on every term?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G0993",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C4",
+      "text": "ok what else should I think about",
+      "reply": "Start with the smallest thing that tells you something real this week. Would the branch that signs off on the budget also pay for the sensors?",
+      "spoken": true,
+      "chunking": "whole",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Start with the smallest thing that tells you something real this week. Would the branch that signs off on the budget also pay for the sensors?",
+        "spoken": "Start with the smallest thing that tells you something real this week. Would the branch that signs off on the budget also pay for the sensors?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G0994",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C4",
+      "text": "ok what else should I think about",
+      "reply": "Start with the smallest thing that tells you something real this week. Would the branch that signs off on the budget also pay for the sensors?",
+      "spoken": true,
+      "chunking": "words",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Start with the smallest thing that tells you something real this week. Would the branch that signs off on the budget also pay for the sensors?",
+        "spoken": "Start with the smallest thing that tells you something real this week. Would the branch that signs off on the budget also pay for the sensors?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1009",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C1",
+      "text": "We've got two weeks before exams start.",
+      "reply": "Got it. Does Harbour Hall share data on which floors fill up first during the pilot?",
+      "spoken": false,
+      "chunking": "whole",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Got it. Does Harbour Hall share data on which floors fill up first during the pilot?",
+        "spoken": "Got it. Does Harbour Hall share data on which floors fill up first during the pilot?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1010",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C1",
+      "text": "We've got two weeks before exams start.",
+      "reply": "Got it. Does Harbour Hall share data on which floors fill up first during the pilot?",
+      "spoken": false,
+      "chunking": "words",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Got it. Does Harbour Hall share data on which floors fill up first during the pilot?",
+        "spoken": "Got it. Does Harbour Hall share data on which floors fill up first during the pilot?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1015",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C1",
+      "text": "We've got two weeks before exams start.",
+      "reply": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early. Does the door-counter data from Harbour Hall split weekdays from weekends?",
+      "spoken": false,
+      "chunking": "whole",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early. Does the door-counter data from Harbour Hall split weekdays from weekends?",
+        "spoken": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early. Does the door-counter data from Harbour Hall split weekdays from weekends?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1016",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C1",
+      "text": "We've got two weeks before exams start.",
+      "reply": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early. Does the door-counter data from Harbour Hall split weekdays from weekends?",
+      "spoken": false,
+      "chunking": "words",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early. Does the door-counter data from Harbour Hall split weekdays from weekends?",
+        "spoken": "Keep the pilot to one floor of Harbour Hall for two weeks. Measure map opens against gate counts, and write down what would make you stop early. Does the door-counter data from Harbour Hall split weekdays from weekends?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1029",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C2",
+      "text": "ok what else should I think about",
+      "reply": "Drop the question about features. Ask what they did the last time the library was full, how long it took, and what it cost them. What did the last three tell you about how long they stay at a study spot?",
+      "spoken": false,
+      "chunking": "whole",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Drop the question about features. Ask what they did the last time the library was full, how long it took, and what it cost them. What did the last three tell you about how long they stay at a study spot?",
+        "spoken": "Drop the question about features. Ask what they did the last time the library was full, how long it took, and what it cost them. What did the last three tell you about how long they stay at a study spot?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1030",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C2",
+      "text": "ok what else should I think about",
+      "reply": "Drop the question about features. Ask what they did the last time the library was full, how long it took, and what it cost them. What did the last three tell you about how long they stay at a study spot?",
+      "spoken": false,
+      "chunking": "words",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Drop the question about features. Ask what they did the last time the library was full, how long it took, and what it cost them. What did the last three tell you about how long they stay at a study spot?",
+        "spoken": "Drop the question about features. Ask what they did the last time the library was full, how long it took, and what it cost them. What did the last three tell you about how long they stay at a study spot?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1077",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C9",
+      "text": "We've got two weeks before exams start.",
+      "reply": "Got it. How many gym owners have you spoken to who already pay for Mindbody?",
+      "spoken": true,
+      "chunking": "whole",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Got it. How many gym owners have you spoken to who already pay for Mindbody?",
+        "spoken": "Got it. How many gym owners have you spoken to who already pay for Mindbody?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1078",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C9",
+      "text": "We've got two weeks before exams start.",
+      "reply": "Got it. How many gym owners have you spoken to who already pay for Mindbody?",
+      "spoken": true,
+      "chunking": "words",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Got it. How many gym owners have you spoken to who already pay for Mindbody?",
+        "spoken": "Got it. How many gym owners have you spoken to who already pay for Mindbody?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1091",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C6",
+      "text": "what next?",
+      "reply": "You've got more evidence than you think: 61 survey answers, two interested libraries and one price. What's missing is a payment. Who besides the lab manager uses the tool every day?",
+      "spoken": false,
+      "chunking": "whole",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "You've got more evidence than you think: 61 survey answers, two interested libraries and one price. What's missing is a payment. Who besides the lab manager uses the tool every day?",
+        "spoken": "You've got more evidence than you think: 61 survey answers, two interested libraries and one price. What's missing is a payment. Who besides the lab manager uses the tool every day?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1092",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C6",
+      "text": "what next?",
+      "reply": "You've got more evidence than you think: 61 survey answers, two interested libraries and one price. What's missing is a payment. Who besides the lab manager uses the tool every day?",
+      "spoken": false,
+      "chunking": "words",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "You've got more evidence than you think: 61 survey answers, two interested libraries and one price. What's missing is a payment. Who besides the lab manager uses the tool every day?",
+        "spoken": "You've got more evidence than you think: 61 survey answers, two interested libraries and one price. What's missing is a payment. Who besides the lab manager uses the tool every day?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1097",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C6",
+      "text": "what next?",
+      "reply": "Start with the smallest thing that tells you something real this week. Has the lab manager ever had to approve a new tool over the card limit?",
+      "spoken": true,
+      "chunking": "whole",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Start with the smallest thing that tells you something real this week. Has the lab manager ever had to approve a new tool over the card limit?",
+        "spoken": "Start with the smallest thing that tells you something real this week. Has the lab manager ever had to approve a new tool over the card limit?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1098",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C6",
+      "text": "what next?",
+      "reply": "Start with the smallest thing that tells you something real this week. Has the lab manager ever had to approve a new tool over the card limit?",
+      "spoken": true,
+      "chunking": "words",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Start with the smallest thing that tells you something real this week. Has the lab manager ever had to approve a new tool over the card limit?",
+        "spoken": "Start with the smallest thing that tells you something real this week. Has the lab manager ever had to approve a new tool over the card limit?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1109",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C3",
+      "text": "We've got two weeks before exams start.",
+      "reply": "Good, that's progress. Which library branch would sign the cheque first?",
+      "spoken": true,
+      "chunking": "whole",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Good, that's progress. Which library branch would sign the cheque first?",
+        "spoken": "Good, that's progress. Which library branch would sign the cheque first?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1110",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C3",
+      "text": "We've got two weeks before exams start.",
+      "reply": "Good, that's progress. Which library branch would sign the cheque first?",
+      "spoken": true,
+      "chunking": "words",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Good, that's progress. Which library branch would sign the cheque first?",
+        "spoken": "Good, that's progress. Which library branch would sign the cheque first?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1111",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C3",
+      "text": "ok what else should I think about",
+      "reply": "Good, that's progress. How much could each library branch sign off without the campus?",
+      "spoken": true,
+      "chunking": "whole",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Good, that's progress. How much could each library branch sign off without the campus?",
+        "spoken": "Good, that's progress. How much could each library branch sign off without the campus?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1112",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C3",
+      "text": "ok what else should I think about",
+      "reply": "Good, that's progress. How much could each library branch sign off without the campus?",
+      "spoken": true,
+      "chunking": "words",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Good, that's progress. How much could each library branch sign off without the campus?",
+        "spoken": "Good, that's progress. How much could each library branch sign off without the campus?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1113",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C3",
+      "text": "what next?",
+      "reply": "Start with the smallest thing that tells you something real this week. Who at the campus level could block a flat fee for each library branch?",
+      "spoken": true,
+      "chunking": "whole",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Start with the smallest thing that tells you something real this week. Who at the campus level could block a flat fee for each library branch?",
+        "spoken": "Start with the smallest thing that tells you something real this week. Who at the campus level could block a flat fee for each library branch?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1114",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C3",
+      "text": "what next?",
+      "reply": "Start with the smallest thing that tells you something real this week. Who at the campus level could block a flat fee for each library branch?",
+      "spoken": true,
+      "chunking": "words",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Start with the smallest thing that tells you something real this week. Who at the campus level could block a flat fee for each library branch?",
+        "spoken": "Start with the smallest thing that tells you something real this week. Who at the campus level could block a flat fee for each library branch?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1115",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C3",
+      "text": "We've got two weeks before exams start.",
+      "reply": "Start with the smallest thing that tells you something real this week. How did the library staff interviews change your view of the flat fee?",
+      "spoken": true,
+      "chunking": "whole",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Start with the smallest thing that tells you something real this week. How did the library staff interviews change your view of the flat fee?",
+        "spoken": "Start with the smallest thing that tells you something real this week. How did the library staff interviews change your view of the flat fee?",
+        "cut": null
+      }
+    },
+    {
+      "id": "G1116",
+      "kind": "distinct_question_dropped_as_reask",
+      "conversation": "C3",
+      "text": "We've got two weeks before exams start.",
+      "reply": "Start with the smallest thing that tells you something real this week. How did the library staff interviews change your view of the flat fee?",
+      "spoken": true,
+      "chunking": "words",
+      "callerContinues": true,
+      "greeted": false,
+      "injection": false,
+      "expected": {
+        "text": "Start with the smallest thing that tells you something real this week. How did the library staff interviews change your view of the flat fee?",
+        "spoken": "Start with the smallest thing that tells you something real this week. How did the library staff interviews change your view of the flat fee?",
+        "cut": null
+      }
+    }
+  ]
+}

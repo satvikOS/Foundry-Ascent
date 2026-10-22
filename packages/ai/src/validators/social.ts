@@ -133,12 +133,125 @@ export function reasksQuestion(sentence: string, asked: readonly ReadonlySet<str
 }
 
 /**
- * The questions the vEIR asked in `earlier` (its replies and its opener in this conversation; see {@link questionsOf}):
- * never asked again in other words, however long ago (voice suite, 2026-10-22: "Who signs the cheque for each library
- * branch, and who can block it?" was asked in five replies of one call, the gate knowing only the previous reply's).
+ * What a question asks for: a person (`who`), a thing (`what`: what, which), an amount (`amount`: how much, how many,
+ * how big…), a way (`how`), a time, a place, a reason, a yes or no (`yes_no`: "Does…", "Will…", "Has…"), or none of
+ * these (`other`).
  */
-export function questionsAskedIn(earlier: readonly (string | null | undefined)[]): ReadonlySet<string>[] {
-  return earlier.flatMap((text) => (text === null || text === undefined ? [] : questionsOf(text)));
+export type QuestionKind = 'who' | 'what' | 'amount' | 'how' | 'when' | 'where' | 'why' | 'yes_no' | 'other';
+
+/** A question the vEIR asked earlier in the conversation ({@link questionsAskedIn}): its content words and kind. */
+export interface AskedQuestion {
+  readonly words: ReadonlySet<string>;
+  readonly kind: QuestionKind;
+}
+
+/**
+ * A question asked before the previous reply is asked again when the two share this share of the content words of the
+ * longer one (and three or more), and ask for the same kind of answer ({@link questionKindOf}).
+ */
+export const EARLIER_QUESTION_SHARE = 0.75;
+
+const WH_KINDS: Readonly<Record<string, QuestionKind>> = {
+  who: 'who',
+  whom: 'who',
+  whose: 'who',
+  whos: 'who',
+  what: 'what',
+  whats: 'what',
+  which: 'what',
+  when: 'when',
+  whens: 'when',
+  where: 'where',
+  wheres: 'where',
+  why: 'why',
+};
+/** After "how": the words that make it a question about an amount ("how much", "how many", "how big"). */
+const HOW_AMOUNT = new Set(['much', 'many', 'big', 'long', 'often', 'far', 'large', 'small', 'old', 'soon']);
+/** Words that open a question that asks for a yes or a no. */
+const YES_NO_OPENERS = new Set([
+  ...'do does did is are was were will would can could should shall has have had may might must am'.split(
+    ' ',
+  ),
+  ...'isnt arent doesnt dont didnt wont wouldnt cant couldnt hasnt havent'.split(' '),
+]);
+/** Words that may open a clause before its question word ("And who…", "So how many…"). */
+const CLAUSE_FILLERS = new Set([
+  'and',
+  'so',
+  'but',
+  'then',
+  'now',
+  'okay',
+  'ok',
+  'also',
+  'or',
+  'well',
+  'just',
+]);
+
+/**
+ * The kind of answer a question asks for ({@link QuestionKind}): read from the first clause that opens with a question
+ * word or a verb that asks for a yes or a no ("At each branch, who signs off?" asks who; "Does Harbour Hall share its
+ * data?" asks yes or no; "Which branch would sign first?" asks which, not who).
+ */
+export function questionKindOf(sentence: string): QuestionKind {
+  for (const clause of sentence.split(/[,;:()–—]+/)) {
+    const words =
+      clause
+        .toLowerCase()
+        .replace(/[‘’ʼ']/g, '')
+        .match(/[\p{L}\p{N}]+/gu) ?? [];
+    let at = 0;
+    while (at < words.length && CLAUSE_FILLERS.has(words[at] ?? '')) at += 1;
+    const first = words[at];
+    const second = words[at + 1];
+    if (first === undefined) continue;
+    if (first === 'how' || first === 'hows')
+      return second !== undefined && HOW_AMOUNT.has(second) ? 'amount' : 'how';
+    const wh = WH_KINDS[first];
+    if (wh !== undefined) return wh;
+    if (YES_NO_OPENERS.has(first)) return 'yes_no';
+  }
+  return 'other';
+}
+
+/**
+ * The questions the vEIR asked in `earlier` (its replies and its opener in this conversation; see {@link questionsOf}),
+ * with their kind: never asked again ({@link asksAgain}), however long ago (voice suite, 2026-10-22: "Who signs the
+ * cheque for each library branch, and who can block it?" was asked in five replies of one call, the gate knowing only
+ * the previous reply's).
+ */
+export function questionsAskedIn(earlier: readonly (string | null | undefined)[]): AskedQuestion[] {
+  return earlier.flatMap((text) =>
+    text === null || text === undefined
+      ? []
+      : sentenceSpans(text)
+          .map((s) => text.slice(s.start, s.end))
+          .filter((sentence) => /\?["'”’)\]*_]*$/.test(sentence))
+          .map((sentence) => ({ words: contentWords(sentence), kind: questionKindOf(sentence) }))
+          .filter((q) => q.words.size >= 3),
+  );
+}
+
+/**
+ * Whether `sentence` asks one of `asked` ({@link questionsAskedIn}) again: the same kind of question, with most of the
+ * content words of both ({@link EARLIER_QUESTION_SHARE} of the longer one, and three or more). Narrower than
+ * {@link reasksQuestion}, which reads the previous reply's questions: a question about the same thing that asks for
+ * something else is a new question ("How many gym owners have you spoken to who already pay for Mindbody?" after "How
+ * many gym owners have you actually spoken to?"; "Which library branch would sign the cheque first?" after "Who signs
+ * the cheque for each library branch…?"; differential audit, 2026-10-22: 78 such questions were left out).
+ */
+export function asksAgain(sentence: string, asked: readonly AskedQuestion[]): boolean {
+  if (asked.length === 0 || !/\?["'”’)\]*_]*\s*$/.test(sentence)) return false;
+  const words = contentWords(sentence);
+  if (words.size < 3) return false;
+  const kind = questionKindOf(sentence);
+  return asked.some((question) => {
+    if (question.kind !== kind) return false;
+    let shared = 0;
+    for (const w of words) if (question.words.has(w)) shared += 1;
+    return shared >= 3 && shared / Math.max(words.size, question.words.size) >= EARLIER_QUESTION_SHARE;
+  });
 }
 
 /**
@@ -151,15 +264,15 @@ export function checksForRepeats(founderText: string, identity: IdentityCheckOpt
 }
 
 /**
- * `text` without its question sentences that ask one of `asked` again in other words ({@link reasksQuestion});
- * `dropped` counts them, and `text` is '' when nothing else was said.
+ * `text` without its question sentences that ask one of `asked` again ({@link asksAgain}); `dropped` counts them, and
+ * `text` is '' when nothing else was said.
  */
 export function withoutReasks(
   text: string,
-  asked: readonly ReadonlySet<string>[],
+  asked: readonly AskedQuestion[],
 ): { readonly text: string; readonly dropped: number } {
   if (asked.length === 0) return { text, dropped: 0 };
-  const spans = sentenceSpans(text).filter((s) => reasksQuestion(text.slice(s.start, s.end), asked));
+  const spans = sentenceSpans(text).filter((s) => asksAgain(text.slice(s.start, s.end), asked));
   if (spans.length === 0) return { text, dropped: 0 };
   let out = '';
   let from = 0;

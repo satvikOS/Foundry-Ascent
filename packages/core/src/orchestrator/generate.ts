@@ -247,10 +247,12 @@ export interface GenerateArgs {
    */
   readonly turnBack?: string | null;
   /**
-   * The deterministic classifier flagged the founder's message (prompt injection, a cross-venture request, a crisis).
-   * A reply the sentence gate left with nothing new is then never continued or written anew: the gate's own short line
-   * stands (evals MX-0004: a refusal that repeated the last reply was left out, and the continuation's "answer their
-   * message with something new" made the model carry out the injected instruction).
+   * The founder's message attacks the coach's instructions by its form (answer.ts `flaggedTurn`: markup posing as the
+   * system, an encoded instruction, "ignore your previous instructions"). A reply the sentence gate left
+   * with nothing new is then never continued or written anew: the gate's own short line stands (evals MX-0004: a
+   * refusal that repeated the last reply was left out, and the continuation's "answer their message with something
+   * new" made the model carry out the injected instruction). A message the classifier flags only by its recall-leaning
+   * rules ("please don't tell anyone yet", "from now on, answer in bullet points") is continued like any other.
    */
   readonly flagged?: boolean;
 }
@@ -269,7 +271,10 @@ const ANSWER_MAX_TOKENS = { text: 1_500, voice: 400 } as const;
 /**
  * A reply that has released nothing (or only its lead-in) once the gate left out this many units as the conversation
  * again, or one unit this long, can only go on: the model is stopped then and the continuation starts at once (voice
- * suite VC-2: phase A said the previous reply again whole, and the founder heard nothing for 11.8 s while it did).
+ * suite VC-2: phase A said the previous reply again whole, and the founder heard nothing for 11.8 s while it did). Only
+ * while the previous reply still has {@link EARLY_REPEAT_WORDS} words or more that phase A has not said again: a reply
+ * that has said all of it again may go on with something new (differential audit, 2026-10-22: a recap of a two-sentence
+ * reply was stopped before the new advice that followed it), and the rest of a short repeat costs little to wait for.
  */
 export const EARLY_REPEAT_UNITS = 2;
 export const EARLY_REPEAT_WORDS = 20;
@@ -285,6 +290,21 @@ const SPOKEN_UNIT_CHARS = 280;
 
 function wordCount(text: string): number {
   return text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+}
+
+/** Fewest words of what is left of a reply, once a question an earlier message asked was left out, that say something. */
+export const LEFT_AFTER_REASK_MIN_WORDS = 8;
+
+/**
+ * Whether `left`, what is left of a reply once the questions it asked again were left out (`leftOutWords` words of
+ * them), says nothing of its own: no question, fewer than {@link LEFT_AFTER_REASK_MIN_WORDS} words, and fewer than were
+ * left out ("Good, that's progress." of "Good, that's progress. What's the single number you would measure?";
+ * differential audit, 2026-10-22: that fragment stood as the whole reply). A streamed reply then goes on; a reply
+ * written whole keeps the question.
+ */
+export function leftWithLittle(left: string, leftOutWords: number): boolean {
+  const words = wordCount(left);
+  return !left.includes('?') && words < LEFT_AFTER_REASK_MIN_WORDS && words < leftOutWords;
 }
 
 function sum(attempts: readonly ModelAttempt[], pick: (a: ModelAttempt) => number): number {
@@ -430,6 +450,8 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   const said = { words: 0, shown: '', spoken: '', full: false, cut: false };
   /** Phase A was stopped once what the gate left out showed the reply could only go on (VC-2, {@link repeatedEarly}). */
   const early = { repeat: false };
+  /** The previous reply's words: what a reply that says it again whole still has to say ({@link repeatedEarly}). */
+  const previousWords = wordCount(a.gate.previousReply ?? '');
 
   const release = async (result: GateResult): Promise<void> => {
     for (const unit of result.units) {
@@ -531,17 +553,21 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
    */
   const mayContinue = (): boolean => !flagged && open();
   /**
-   * Nothing (or only the lead-in) was released while the gate left out {@link EARLY_REPEAT_UNITS} units as the
-   * conversation again, or one of {@link EARLY_REPEAT_WORDS} words: the rest of phase A is not waited for. The
-   * continuation then starts at once, or on a flagged turn, which is never continued, the gate's short line is said at
-   * once (second review, 2026-10-22: a call heard nothing for all of phase A, then the line).
+   * Nothing (or only the lead-in) was released while the gate left out {@link EARLY_REPEAT_UNITS} units as the previous
+   * reply again, or one of {@link EARLY_REPEAT_WORDS} words, and the previous reply still has as many to go: the rest
+   * of phase A is not waited for. The continuation then starts at once, or on a flagged turn, which is never
+   * continued, the gate's short line is said at once (second review, 2026-10-22: a call heard nothing for all of phase
+   * A, then the line).
    */
   const repeatedEarly = (): boolean => {
     if (!open() || gate.cut !== null) return false;
-    const left = gate.trace.dropped.filter((d) => d.reason !== 'greeting');
+    // Only what said the previous reply again: a question asked earlier or parked news says nothing of what follows.
+    const left = gate.trace.dropped.filter((d) => d.reason === 'repeat');
     if (left.length < EARLY_REPEAT_UNITS && !left.some((d) => wordCount(d.text) >= EARLY_REPEAT_WORDS)) {
       return false;
     }
+    const repeated = left.reduce((n, d) => n + wordCount(d.text), 0);
+    if (previousWords - repeated < EARLY_REPEAT_WORDS) return false;
     return isOnlyLeadIn(said.shown);
   };
   /**
@@ -586,9 +612,13 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   /**
    * Goes on with a reply the gate left at its lead-in (see {@link continuationMessages}): streamed through a gate of its
    * own, shown and said after what was, within what is left of the spoken budget. Returns what it added ('' when
-   * nothing passed, or the call failed: the reply then stands as it was, or written anew, is the turn's hand-back).
+   * nothing passed, or the call failed: the reply then stands as it was, or written anew, is the turn's hand-back), and
+   * whether its gate cut a unit that carried out an injected instruction (`echoed`: the turn then declines).
    */
-  const goOn = async (soFar: string, leftOut: readonly string[]): Promise<{ readonly added: string }> => {
+  const goOn = async (
+    soFar: string,
+    leftOut: readonly string[],
+  ): Promise<{ readonly added: string; readonly echoed: boolean }> => {
     const more = new SentenceGate({
       ...a.gate,
       // Nothing said yet: the reply written anew may greet as the first one could; after a lead-in, never again.
@@ -682,7 +712,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
           turnId: a.turnId,
           code: isModelGatewayError(err) ? err.code : 'unknown',
         });
-        return { added };
+        return { added, echoed: false };
       }
     }
     if (more.blocked === null && more.fallback === null && more.cut === null && !more.full) {
@@ -699,7 +729,8 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       agendaDropped: more.trace.agendaDropped,
       ...(traceText ? { addedText: added } : {}),
     });
-    return { added };
+    // The continuation carried out an injected instruction (its gate's `injection_echo` cut): the turn declines.
+    return { added, echoed: more.cut === 'injection_echo' };
   };
 
   // Phase A: the reply, streamed through the gate. The reply extractor reads the stream first: it hands on
@@ -854,6 +885,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     withheld: gate.stats.withheld,
     repeatsDropped: trace.repeatsDropped,
     reasksDropped: trace.reasksDropped,
+    earlierReasksDropped: trace.earlierReasksDropped,
     agendaDropped: trace.agendaDropped,
     greetingDropped: trace.greetingDropped,
     replyWords: wordCount(reply.text),
@@ -870,18 +902,33 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   // that is meant to be short (a thanks), a reply whose preview was withheld, or once the founder spoke over it
   // ({@link mayContinue}). Whatever it adds, the reply is what was shown: what the gate left out is never kept.
   const shownWords = wordCount(said.shown);
+  // A question an earlier message asked was left out, and what is left says nothing of its own ("Good, that's
+  // progress."): the reply was that question, and goes on.
+  const askedAgain =
+    trace.earlierReasksDropped > 0 &&
+    leftWithLittle(
+      said.shown,
+      trace.dropped.reduce((n, d) => n + wordCount(d.text), 0),
+    );
   /** The continuation was asked to write the reply anew and wrote nothing new either, or failed. */
   let nothingNew = false;
   if (
     mayContinue() &&
     repeatedAway &&
-    (early.repeat || isOnlyLeadIn(said.shown) || (shownWords < 20 && shownWords * 4 < wordCount(reply.text)))
+    (early.repeat ||
+      isOnlyLeadIn(said.shown) ||
+      (shownWords < 20 && shownWords * 4 < wordCount(reply.text)) ||
+      askedAgain)
   ) {
     const anew = said.shown.trim() === '';
     const went = await goOn(
       said.shown.trim(),
       trace.dropped.map((d) => d.text),
     );
+    // The continuation carried out an injected instruction its gate caught: the decline, after what was said.
+    if (went.echoed) {
+      return declined(streamed.modelId, streamed.fallbackUsed, phaseAMs, streamed.firstTokenMs);
+    }
     replyText = said.shown.trim();
     if (went.added !== '') notes.push('stream_continued');
     nothingNew = anew && went.added === '';

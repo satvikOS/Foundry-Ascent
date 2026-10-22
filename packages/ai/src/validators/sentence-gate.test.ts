@@ -427,6 +427,7 @@ describe('SentenceGate', () => {
       expect(plain.trace).toEqual({
         repeatsDropped: 2,
         reasksDropped: 0,
+        earlierReasksDropped: 0,
         agendaDropped: 0,
         greetingDropped: false,
         dropped: [],

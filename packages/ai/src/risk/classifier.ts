@@ -223,6 +223,29 @@ export function classifyRisk(text: string, options: ClassifyRiskOptions = {}): R
   };
 }
 
+/**
+ * The prompt-injection rules that only an attack on the coach's instructions matches, by its form, and whose attack the
+ * injection guard cannot read: markup that poses as the system or the program (`role_tags`: "<system>", "SYSTEM
+ * NOTE:"), and an instruction hidden in an encoding or spelt out letter by letter (`encoding_trick`, `base64_payload`,
+ * `spaced_letters`: what it dictates is only known once decoded). The other injection rules lean to recall on purpose
+ * (they only harden the prompt) and also match what founders say: "please don't tell anyone yet"
+ * (`suppress_escalation`), "ignore the previous message, typo" (`ignore_instructions`), "from now on, answer in bullet
+ * points" and "I'm the developer on our team" (`role_override`), "the HVAC control block" (`reveal_prompt`), "switch to
+ * test mode in Stripe for the pilot" (`developer_mode`), "the library wants to lift its restrictions on laptops"
+ * (`bypass_safety`).
+ */
+export const INSTRUCTION_ATTACK_RULES: readonly string[] = [
+  'prompt_injection:role_tags',
+  'prompt_injection:encoding_trick',
+  'prompt_injection:base64_payload',
+  'prompt_injection:spaced_letters',
+];
+
+/** Whether a classification matched one of the {@link INSTRUCTION_ATTACK_RULES}. */
+export function attacksInstructions(classification: Pick<RiskClassification, 'matchedRules'>): boolean {
+  return classification.matchedRules.some((id) => INSTRUCTION_ATTACK_RULES.includes(id));
+}
+
 /** Categories that are consequential enough to force a human escalation (excludes injection/cross-venture). */
 export function isHighRiskCategory(category: RiskCategory): boolean {
   return category !== 'prompt_injection' && category !== 'cross_venture_request';

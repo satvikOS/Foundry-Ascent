@@ -145,6 +145,8 @@ export * from './distill/index.js';
 
 // Risk ------------------------------------------------------------------------------------------------
 export {
+  INSTRUCTION_ATTACK_RULES,
+  attacksInstructions,
   classifyRisk,
   isHighRiskCategory,
   riskLabel,
@@ -227,11 +229,13 @@ export {
   SPOKEN_HAND_BACKS,
   STRESSED_HAND_BACK,
   STRESSED_HAND_BACKS,
+  asksAgain,
   asksToRepeat,
   checksForRepeats,
   endsWithHandBack,
   isOnlyLeadIn,
   fourGramsOf,
+  questionKindOf,
   questionsAskedIn,
   repeatsPrevious,
   spokenHandBackFor,
@@ -239,9 +243,12 @@ export {
   withinSocialBudget,
   withoutReasks,
   withoutRepeats,
+  type AskedQuestion,
+  type QuestionKind,
 } from './validators/social.js';
 export {
   INJECTION_DECLINE,
+  dropsInstructions,
   echoesInjection,
   injectionPayloadsOf,
   type InjectionPayloads,

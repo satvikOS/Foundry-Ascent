@@ -21,12 +21,14 @@ import { findMetaNarration, isThinkingAloudOpener, type NarrationNames } from '.
 import {
   NEWS_FALLBACK,
   REPEAT_FALLBACK,
+  asksAgain,
   asksToRepeat,
   fourGramsOf,
   parksTheirNews,
   questionsAskedIn,
   questionsOf,
   reasksQuestion,
+  type AskedQuestion,
   repeatsPrevious,
 } from './social.js';
 import { founderMoves } from '../prompts/conversation-state.js';
@@ -151,8 +153,9 @@ export interface SentenceGateOptions {
   previousReply?: string | null;
   /**
    * The vEIR's earlier messages in this conversation (its replies and its opener, the previous reply among them or
-   * not): a question any of them asked is never asked again in other words (`reask`), however long ago, with the same
-   * exceptions as `previousReply` (voice suite: one question asked in five replies of a call).
+   * not): a question any of them asked is never asked again (`reask`, {@link asksAgain}: the same kind of question with
+   * most of the words of both), however long ago, with the same exceptions as `previousReply` (voice suite: one question
+   * asked in five replies of a call). A question about the same thing that asks something else is a new question.
    */
   askedBefore?: readonly (string | null | undefined)[];
   /**
@@ -230,6 +233,8 @@ export interface GateTrace {
   readonly repeatsDropped: number;
   /** Of `repeatsDropped`, the questions already asked. */
   readonly reasksDropped: number;
+  /** Of `reasksDropped`, the questions asked before the previous reply (`askedBefore`). */
+  readonly earlierReasksDropped: number;
   /** Units left out as parking the founder's news. */
   readonly agendaDropped: number;
   /** A greeting the opening line already gave was left out. */
@@ -431,11 +436,14 @@ export class SentenceGate {
   /** A greeting the opening line already gave was left out of the reply's start (`greeted`). */
   #droppedGreeting = false;
   #reasksDropped = 0;
+  #earlierReasksDropped = 0;
   readonly #dropped: DroppedUnit[] = [];
   /** The previous reply's four-word sequences (null: no repeat check). */
   readonly #previousGrams: ReadonlySet<string> | null;
-  /** The questions of the previous reply and of the vEIR's earlier messages, as content words: never asked again. */
-  readonly #askedQuestions: readonly ReadonlySet<string>[];
+  /** The previous reply's questions, as content words: never asked again in other words. */
+  readonly #previousQuestions: readonly ReadonlySet<string>[];
+  /** The questions of the vEIR's earlier messages: never asked again ({@link asksAgain}). */
+  readonly #earlierQuestions: readonly AskedQuestion[];
   /** Units left out because they said the previous reply again. */
   #repeatsDropped = 0;
   /** The founder's message brings news: a unit that parks it for the vEIR's agenda is left out (LAB-R8). */
@@ -485,9 +493,8 @@ export class SentenceGate {
     const checked = !asksToRepeat(options.founderText ?? '') && this.#question === null;
     this.#previousGrams =
       previous === null || previous.trim() === '' || !checked ? null : fourGramsOf(previous);
-    this.#askedQuestions = checked
-      ? [...(previous === null ? [] : questionsOf(previous)), ...questionsAskedIn(options.askedBefore ?? [])]
-      : [];
+    this.#previousQuestions = checked && previous !== null ? questionsOf(previous) : [];
+    this.#earlierQuestions = checked ? questionsAskedIn(options.askedBefore ?? []) : [];
   }
 
   /** Everything received so far (unvalidated). */
@@ -530,6 +537,7 @@ export class SentenceGate {
     return {
       repeatsDropped: this.#repeatsDropped,
       reasksDropped: this.#reasksDropped,
+      earlierReasksDropped: this.#earlierReasksDropped,
       agendaDropped: this.#agendaDropped,
       greetingDropped: this.#droppedGreeting,
       dropped: [...this.#dropped],
@@ -700,13 +708,20 @@ export class SentenceGate {
         this.#cut = 'meta_narration';
         return { units, blocked: null, fallback: null, cut: this.#cut };
       }
-      if (this.#previousGrams !== null || this.#askedQuestions.length > 0) {
+      if (
+        this.#previousGrams !== null ||
+        this.#previousQuestions.length > 0 ||
+        this.#earlierQuestions.length > 0
+      ) {
         const repeat = this.#previousGrams !== null && repeatsPrevious(rawUnit, this.#previousGrams);
-        if (repeat || reasksQuestion(rawUnit.trim(), this.#askedQuestions)) {
+        const reask = !repeat && reasksQuestion(rawUnit.trim(), this.#previousQuestions);
+        const earlier = !repeat && !reask && asksAgain(rawUnit.trim(), this.#earlierQuestions);
+        if (repeat || reask || earlier) {
           // The previous reply again, or a question already asked in this conversation: never said twice.
           this.#cursor = end;
           this.#repeatsDropped += 1;
           if (!repeat) this.#reasksDropped += 1;
+          if (earlier) this.#earlierReasksDropped += 1;
           this.#keepDropped(repeat ? 'repeat' : 'reask', rawUnit);
           continue;
         }

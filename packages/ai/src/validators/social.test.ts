@@ -6,11 +6,13 @@ import {
   SPOKEN_HAND_BACKS,
   STRESSED_HAND_BACK,
   STRESSED_HAND_BACKS,
+  asksAgain,
   asksToRepeat,
   checksForRepeats,
   NEWS_FALLBACK,
   endsWithHandBack,
   parksTheirNews,
+  questionKindOf,
   questionsAskedIn,
   questionsOf,
   reasksQuestion,
@@ -270,9 +272,9 @@ describe('a question is never asked again later in the conversation either (voic
   it('reads the questions of every earlier message, the opener included', () => {
     const asked = questionsAskedIn(earlier);
     expect(asked).toHaveLength(2);
-    expect(reasksQuestion(question, asked)).toBe(true);
-    expect(reasksQuestion('Who at each branch signs the cheque, and who could block it?', asked)).toBe(true);
-    expect(reasksQuestion('Who signs off at the student union?', asked)).toBe(false);
+    expect(asksAgain(question, asked)).toBe(true);
+    expect(asksAgain('Who at each branch signs the cheque, and who could block it?', asked)).toBe(true);
+    expect(asksAgain('Who signs off at the student union?', asked)).toBe(false);
   });
 
   it('leaves the re-asked question out of a reply, and keeps a reply that is nothing else', () => {
@@ -293,5 +295,124 @@ describe('a question is never asked again later in the conversation either (voic
     expect(checksForRepeats('Sorry, can you say that again?', identity)).toBe(false);
     expect(checksForRepeats('Wait, am I talking to a bot?', identity)).toBe(false);
     expect(checksForRepeats('Is this really Corin?', identity)).toBe(false);
+  });
+});
+
+describe('a question an earlier message asked (differential audit, 2026-10-22)', () => {
+  it('reads what kind of answer a question asks for', () => {
+    for (const [question, kind] of [
+      ['Who signs off on that budget at each branch?', 'who'],
+      ['At each branch, who is the person who signs off on the budget?', 'who'],
+      ['Which library branch would sign the cheque first?', 'what'],
+      ["Let's make Monday smaller: what's the one thing the demo has to show?", 'what'],
+      ['So far, how many owners of gyms have you spoken with?', 'amount'],
+      ['How big is the budget each branch signs off on every term?', 'amount'],
+      ['How did the library staff interviews go?', 'how'],
+      ['Does Harbour Hall share data on which floors fill up first during the pilot?', 'yes_no'],
+      ['Will Harbour Hall share its door-counter data with you?', 'yes_no'],
+      ['And when does the pilot start?', 'when'],
+    ] as const) {
+      expect(questionKindOf(question), question).toBe(kind);
+    }
+  });
+
+  it('asks it again only as the same kind of question with most of the words of both', () => {
+    const pairs = [
+      // [asked earlier, asked now, the same question?]
+      [
+        'Who signs off on that budget at each branch?',
+        'How big is the budget each branch signs off on every term?',
+        false,
+      ],
+      [
+        'Who signs off on that budget at each branch?',
+        'Would the branch that signs off on the budget also pay for the sensors?',
+        false,
+      ],
+      [
+        'Does Harbour Hall share its door-counter data?',
+        'Does Harbour Hall share data on which floors fill up first during the pilot?',
+        false,
+      ],
+      [
+        'Does Harbour Hall share its door-counter data?',
+        'Does the door-counter data from Harbour Hall split weekdays from weekends?',
+        false,
+      ],
+      [
+        'What did the last three tell you about how they pick a study spot?',
+        'What did the last three tell you about how long they stay at a study spot?',
+        false,
+      ],
+      [
+        'How many gym owners have you actually spoken to?',
+        'How many gym owners have you spoken to who already pay for Mindbody?',
+        false,
+      ],
+      [
+        'Who besides the lab manager has to approve a new tool?',
+        'Who besides the lab manager uses the tool every day?',
+        false,
+      ],
+      [
+        'Who besides the lab manager has to approve a new tool?',
+        'Has the lab manager ever had to approve a new tool over the card limit?',
+        false,
+      ],
+      [
+        'Who signs the cheque for each library branch, and who can block it?',
+        'Which library branch would sign the cheque first?',
+        false,
+      ],
+      [
+        'Who signs the cheque for each library branch, and who can block it?',
+        'How much could each library branch sign off without the campus?',
+        false,
+      ],
+      [
+        'Who signs the cheque for each library branch, and who can block it?',
+        'Who at the campus level could block a flat fee for each library branch?',
+        false,
+      ],
+      [
+        'How did the library staff interviews go?',
+        'How did the library staff interviews change your view of the flat fee?',
+        false,
+      ],
+      [
+        'Who signs off on that budget at each branch?',
+        'Who at each branch actually signs off on that budget?',
+        true,
+      ],
+      [
+        'Who signs off on that budget at each branch?',
+        'At each branch, who is the person who signs off on the budget?',
+        true,
+      ],
+      ["What's the single number you would measure?", 'Which single number would you measure?', true],
+      [
+        'How much do they spend at the café in a typical week?',
+        'How much does a typical student spend at the café each week?',
+        true,
+      ],
+      [
+        'Does Harbour Hall share its door-counter data?',
+        'Will Harbour Hall share its door-counter data with you?',
+        true,
+      ],
+      [
+        'Who besides the lab manager has to approve a new tool?',
+        'Who else, besides the lab manager, needs to approve the new tool?',
+        true,
+      ],
+      [
+        'Who signs the cheque for each library branch, and who can block it?',
+        'At each branch of the library, who signs the cheque and who can block it?',
+        true,
+      ],
+    ] as const;
+    for (const [earlier, now, same] of pairs) {
+      expect(asksAgain(now, questionsAskedIn([earlier])), `${earlier} -> ${now}`).toBe(same);
+    }
   });
 });

@@ -3,10 +3,12 @@ import {
   CROSS_VENTURE_BLOCK_ANSWER,
   INJECTION_DECLINE,
   INVALID_RESPONSE_ANSWER,
+  attacksInstructions,
   buildSystemPromptParts,
   checksForRepeats,
   classifyRisk,
   deriveSpoken,
+  dropsInstructions,
   echoesInjection,
   founderMoves,
   identityQuestionOf,
@@ -20,6 +22,7 @@ import {
   validateCoachResponse,
   wholeReplyHandBackFor,
   withoutReasks,
+  type AskedQuestion,
   type CoachResponseValidation,
   type GateBlockReason,
   type HistoryTurn,
@@ -51,6 +54,7 @@ import {
   INJECTION_ECHO_NOTE,
   generateStreamed,
   generateWhole,
+  leftWithLittle,
   type Generation,
   type GenerationMeter,
 } from './generate.js';
@@ -180,18 +184,25 @@ export function enforceGateBlock(
 }
 
 /**
- * Whether the deterministic classifier flags the founder's message by what it says: prompt injection, a request for
- * other ventures' data or a crisis. Such a turn's reply is never continued or written anew (generate.ts, evals MX-0004).
+ * Whether the founder's message attacks the coach's instructions by its form: a classifier rule of
+ * `INSTRUCTION_ATTACK_RULES` (markup that poses as the system, an instruction hidden in an encoding or spelt out letter
+ * by letter), or it tells the coach to drop its instructions (`dropsInstructions`: "ignore your previous
+ * instructions"). Such a turn's reply is never continued or written anew (generate.ts, evals MX-0004), since the
+ * continuation asks the model to answer their message.
  *
- * Read without the program's venture and member names, on purpose: the turn's own classification also flags a message
- * that merely names a real venture of the program or one of its people, and a flagged turn's reply ends differently
- * (no continuation, the gate's own short line). With the names, the same model output would give one reply for a real
- * venture's name and another for an unknown one, which tells the founder who is in the program (the membership oracle
- * the prompt's policy already avoids; review, 2026-10-22).
+ * Only those: the classifier's other injection and cross-venture rules lean to recall (they only harden the prompt) and
+ * match ordinary messages ("Please don't tell anyone yet, but we just closed a pre-seed", "Ignore the previous message,
+ * typo", "From now on, answer in bullet points", "I'm worried other teams' ideas are the same"). A reply to those goes
+ * on like any other (differential audit, 2026-10-22: 104 replies were a lead-in, a stale sentence or the stock line);
+ * what such a message dictates is still never carried out (the injection guard reads it on the gate of phase A and of
+ * the continuation alike). A crisis never reaches here (run-turn's crisis path).
+ *
+ * Read without the program's venture and member names (neither check reads them): the same model output gives the same
+ * reply for a real venture's name and an unknown one (no membership oracle; review, 2026-10-22).
  */
 export function flaggedTurn(founderText: string): boolean {
   const risk = classifyRisk(founderText);
-  return risk.injection || risk.crossVentureRequest || risk.crisis;
+  return risk.injection && (attacksInstructions(risk) || dropsInstructions(founderText));
 }
 
 /**
@@ -292,11 +303,13 @@ export function withoutInjectionEchoes(
 /**
  * A generation's reply (`answer`, and `spoken` on a call) without the questions the vEIR already asked earlier in the
  * conversation (`asked`, {@link questionsAskedIn}): the sentence gate never showed or said them, and a reply written
- * whole never asks them either. A reply that would be left with nothing keeps them.
+ * whole never asks them either. A reply that would be left with nothing of its own keeps them (`leftWithLittle`:
+ * nothing, or "Good, that's progress." of "Good, that's progress. What's the single number you would measure?";
+ * differential audit, 2026-10-22). A streamed reply goes on instead (generate.ts).
  */
 function withoutEarlierQuestions(
   raw: unknown,
-  asked: readonly ReadonlySet<string>[],
+  asked: readonly AskedQuestion[],
 ): { readonly raw: unknown; readonly dropped: number } {
   if (asked.length === 0 || typeof raw !== 'object' || raw === null) return { raw, dropped: 0 };
   const out: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
@@ -305,11 +318,15 @@ function withoutEarlierQuestions(
     const value = out[field];
     if (typeof value !== 'string') continue;
     const kept = withoutReasks(value, asked);
-    if (kept.dropped === 0 || kept.text === '') continue;
+    if (kept.dropped === 0 || leftWithLittle(kept.text, wordsOf(value) - wordsOf(kept.text))) continue;
     out[field] = kept.text;
     if (field === 'answer') dropped = kept.dropped;
   }
   return { raw: out, dropped };
+}
+
+function wordsOf(text: string): number {
+  return text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 }
 
 /** What a failed generation is reported as: the model being unavailable, or the domain error it carried. */
@@ -416,10 +433,11 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     addressees: guards.addressees,
   };
   const askedEarlier = checksForRepeats(spec.founderText, identity) ? questionsAskedIn(earlier) : [];
-  // A flagged message is never answered by a continuation; an injected instruction is never carried out (MX-0004),
-  // on its turn, nor what it dictated specifically later (the lab: declined on its turn, then carried out when the next
-  // message was "…"). The venture's own name is never a payload, and a sincere "am I talking to a bot?" gets its honest
-  // answer whatever was dictated: a yes or no, "I am an AI" (the presence policy; second review, 2026-10-22).
+  // A message that attacks the coach's instructions by its form is never answered by a continuation (flaggedTurn); an
+  // injected instruction is never carried out (MX-0004), by phase A or a continuation, on its turn, nor what it
+  // dictated specifically later (the lab: declined on its turn, then carried out when the next message was "…"). The
+  // venture's own name is never a payload, and a sincere "am I talking to a bot?" gets its honest answer whatever was
+  // dictated: a yes or no, "I am an AI" (the presence policy; second review, 2026-10-22).
   const flagged = flaggedTurn(spec.founderText);
   const payloads = injectionPayloadsOf({
     turn: risk.injection ? spec.founderText : null,
