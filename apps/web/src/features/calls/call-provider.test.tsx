@@ -12,7 +12,7 @@ import {
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { useSignOutAndRedirect } from '@/components/shell/account-menu';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -250,6 +250,12 @@ function renderApp(entries: string[], snapshot: Partial<CallSnapshot> = {}) {
 }
 
 let fetchMock: ReturnType<typeof stubFetch>;
+// The call screen and the mini bar are lazy chunks: loaded once here, so no test pays their first transform inside a
+// one-second wait (CI, 2026-10-22: the first test to open the call screen timed out on a cold runner; 5 of 5 locally).
+beforeAll(async () => {
+  await Promise.all([import('./call-screen'), import('./mini-call-bar-view')]);
+});
+
 beforeEach(() => {
   signOutNow = null;
   fetchMock = stubFetch();
