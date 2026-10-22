@@ -115,9 +115,10 @@ function withoutOwnMatches(rule: RiskRule, text: string): string {
  * a property of the message, not of the variant a pattern matched on: leetspeak folding turns "spreadsheets!" into
  * "spreadsheetsi", so a veto is read on the plain text, while a required cue may be written in leetspeak too. A
  * required cue is looked for outside the rule's own matches: a line is never its own context ("I can't cope with
- * this anymore" is not distress around "I can't cope with this anymore").
+ * this anymore" is not distress around "I can't cope with this anymore"). `lifted` (see `RiskRule.liftedBy`) turns
+ * the veto off.
  */
-function contextAllows(rule: RiskRule, message: MessageContext): boolean {
+function contextAllows(rule: RiskRule, message: MessageContext, lifted: () => boolean): boolean {
   if (
     rule.requiresContext !== undefined &&
     !anyMatch(
@@ -127,12 +128,71 @@ function contextAllows(rule: RiskRule, message: MessageContext): boolean {
   ) {
     return false;
   }
-  if (rule.unlessContext !== undefined && anyMatch(rule.unlessContext, message.plain)) return false;
-  return true;
+  if (rule.unlessContext === undefined || !anyMatch(rule.unlessContext, message.plain)) return true;
+  return lifted();
 }
 
-/** Whether `rule` has at least one positive match in `text` not fully covered by an exclusion. */
-function ruleMatches(rule: RiskRule, text: string): boolean {
+/** Runs of sentence-ending punctuation or line breaks. */
+const SENTENCE_BREAK = /[.!?;\n]+/g;
+/** How many sentences before and after a match its referent window reaches (see `RiskRule.unlessNearby`). */
+const REFERENT_SENTENCES_BEFORE = 2;
+const REFERENT_SENTENCES_AFTER = 1;
+
+/**
+ * Referent vetoes of one text (`RiskRule.unlessNearby`), computed once and only when a match needs them: which
+ * sentences contain a veto, then for each match a look at its own sentence and its neighbours. Linear in the text,
+ * whatever the number of matches.
+ */
+class ReferentWindow {
+  private starts: number[] | undefined;
+  private flagged: boolean[] | undefined;
+
+  constructor(
+    private readonly text: string,
+    private readonly patterns: readonly RegExp[],
+    /** Whether the message lifts the veto (`RiskRule.liftedBy`); asked only when a veto stands next to a match. */
+    private readonly lifted: () => boolean,
+  ) {}
+
+  /** Whether a veto stands in the sentence of `hit`, the two before it or the one after it, and is not lifted. */
+  vetoes(hit: Span): boolean {
+    if (this.starts === undefined || this.flagged === undefined) {
+      const starts = [0];
+      for (const match of this.text.matchAll(SENTENCE_BREAK)) starts.push(match.index + match[0].length);
+      const flagged = starts.map(() => false);
+      for (const pattern of this.patterns) {
+        for (const match of this.text.matchAll(pattern)) flagged[sentenceAt(starts, match.index)] = true;
+      }
+      this.starts = starts;
+      this.flagged = flagged;
+    }
+    const first = Math.max(0, sentenceAt(this.starts, hit.start) - REFERENT_SENTENCES_BEFORE);
+    const last = Math.min(
+      this.flagged.length - 1,
+      sentenceAt(this.starts, Math.max(hit.start, hit.end - 1)) + REFERENT_SENTENCES_AFTER,
+    );
+    for (let i = first; i <= last; i += 1) if (this.flagged[i] === true) return !this.lifted();
+    return false;
+  }
+}
+
+/** Index of the sentence (by its start offset in ascending `starts`) that contains `offset`. */
+function sentenceAt(starts: readonly number[], offset: number): number {
+  let low = 0;
+  let high = starts.length - 1;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if ((starts[mid] ?? Infinity) <= offset) low = mid;
+    else high = mid - 1;
+  }
+  return low;
+}
+
+/**
+ * Whether `rule` has at least one positive match in `text` not fully covered by an exclusion and not vetoed by a
+ * referent next to it (`referents`, read on text with the same offsets).
+ */
+function ruleMatches(rule: RiskRule, text: string, referents?: ReferentWindow): boolean {
   // Exclusions sorted by start: a hit is covered when an exclusion starting at or before it ends at or after it,
   // i.e. when the largest end among exclusions starting at or before the hit reaches the hit's end. Hits of one
   // pattern arrive in start order, so one forward pass per pattern keeps this linear in hits plus exclusions.
@@ -150,6 +210,7 @@ function ruleMatches(rule: RiskRule, text: string): boolean {
       const covered = reach >= hit.end;
       if (covered) continue;
       if (rule.negatable === true && NEGATED_HANDLING.test(clauseBefore(text, hit.start))) continue;
+      if (referents?.vetoes(hit) === true) continue;
       return true;
     }
   }
@@ -225,11 +286,20 @@ export function classifyRisk(text: string, options: ClassifyRiskOptions = {}): R
       if (!shouting && ruleMatches(rule, cased)) fire(rule);
       continue;
     }
+    let liftedMemo: boolean | undefined;
+    const lifted = (): boolean =>
+      (liftedMemo ??= rule.liftedBy !== undefined && anyMatch(rule.liftedBy, message.all));
+    // Referents are read on plain text with the same offsets as the matched variant: the leetspeak fold keeps
+    // every offset (one character for one), and would turn "spreadsheets!" into "spreadsheetsi".
+    const nearby = (text: string): ReferentWindow | undefined =>
+      rule.unlessNearby === undefined ? undefined : new ReferentWindow(text, rule.unlessNearby, lifted);
     if (
-      (ruleMatches(rule, lower) ||
-        (folded !== lower && ruleMatches(rule, folded)) ||
-        (rule.evasionAware === true && leet !== lower && ruleMatches(rule, leet))) &&
-      contextAllows(rule, message)
+      (ruleMatches(rule, lower, nearby(lower)) ||
+        (folded !== lower && ruleMatches(rule, folded, nearby(folded))) ||
+        (rule.evasionAware === true &&
+          leet !== lower &&
+          ruleMatches(rule, leet, nearby(leet.length === lower.length ? lower : leet)))) &&
+      contextAllows(rule, message, lifted)
     ) {
       fire(rule);
     }

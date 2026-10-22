@@ -54,10 +54,22 @@ export interface RiskRule {
   readonly requiresContext?: readonly RegExp[];
   /**
    * Message-level context: the rule does not fire when one of these matches somewhere in the same message.
-   * Used for lines whose referent the message supplies ("The pilot isn't converting. I'm thinking about
-   * ending it.").
+   * Used for what makes a line ordinary wherever it stands: a closing ("I'll end it now, thanks for the help!"),
+   * laughter ("lol I can't deal with this anymore").
    */
   readonly unlessContext?: readonly RegExp[];
+  /**
+   * Referent context: a match is ignored when one of these matches in the match's own sentence, the two
+   * sentences before it or the one after it. Used for lines whose referent the text next to them supplies ("The
+   * pilot isn't converting. I'm thinking about ending it."); work mentioned further away does not make a line
+   * about the work.
+   */
+  readonly unlessNearby?: readonly RegExp[];
+  /**
+   * Message-level context that lifts `unlessNearby` and `unlessContext`: when one of these matches anywhere in the
+   * message, those vetoes do not apply ("Sorry, this isn't about the startup. I'm thinking about ending it.").
+   */
+  readonly liftedBy?: readonly RegExp[];
 }
 
 type Alternatives = string | readonly string[];
@@ -737,98 +749,196 @@ const PRODUCT_CONTEXT_SUICIDE = w([
 // clues ("my family would be better off without me", "I just want out", "I won't be around much longer").
 //
 // Several of these lines are also ordinary venture talk ("I'm thinking about ending it" about a pilot, "I can't do
-// this anymore" about a spreadsheet). The decision rule for an ambiguous line, applied to the whole message:
-//  1. a personal-distress cue anywhere in the message (PERSONAL_DISTRESS) → crisis;
-//  2. otherwise venture-work vocabulary anywhere in the message (VENTURE_CONTEXT) → not flagged: the line is
-//     about the work;
-//  3. otherwise → crisis for "ending it"-style lines (AMBIGUOUS_IDEATION), a non-crisis wellbeing signal (a
-//     forced escalation while the coach still answers, no crisis message) for "I can't do this anymore"-style
-//     lines (OVERWHELM, WITHDRAWAL).
-// A required cue is read outside the rule's own matches (a line is never its own context), and the veto is read
-// on the plain text, never the leetspeak-folded one (see classifier.ts `contextAllows`).
-// Unambiguous indirect phrasings (INDIRECT_IDEATION) are crisis whatever the context. An object after the
-// phrase is its referent ("ending it with the vendor", "better off without me on the sales calls", "disappear
-// from social media for a week"), unless the object is a means ("ending it with pills").
-// Context is read in English; multilingual lines are the unambiguous kind.
+// this anymore" about a spreadsheet, "I'll end it now" at the end of a call). The decision rule for an ambiguous
+// line:
+//  1. a personal-distress cue anywhere in the message (PERSONAL_DISTRESS) → crisis. Distress beats everything
+//     below, so a cue is a feeling about the speaker ("I feel like a failure", "Nobody cares."), never a business
+//     state ("nobody cares about our product", "our conversion hit rock bottom", "drowning in emails");
+//  2. otherwise the line is not flagged when a referent stands next to it: work (WORK_REFERENT) in the line's own
+//     sentence, the two sentences before it or the one after it ("The pilot isn't converting. I'm thinking about
+//     ending it."); for the session-ending lines a closing anywhere in the message ("I'll end it now, thanks for
+//     the help!"); for the non-crisis lines also everyday life ("my roommate's dog") or laughter ("lol");
+//  3. a personal cue anywhere in the message lifts every veto of rule 2 (VETO_LIFTERS): the speaker says the work
+//     is not the referent ("this isn't about the startup"), asks for someone to talk to, asks for secrecy ("don't
+//     tell the program"), or names a personal setback ("I failed my exams", "my wife left me");
+//  4. otherwise → crisis for "ending it"-style lines (AMBIGUOUS_IDEATION, ENDING_NOW, FAREWELL); a non-crisis
+//     wellbeing signal (a forced escalation while the coach still answers, no crisis message) for "I can't do this
+//     anymore"-style lines (OVERWHELM, WITHDRAWAL) and for a farewell with a final thanks ("This is my last
+//     message. Thanks for everything!").
+// A required cue is read outside the rule's own matches (a line is never its own context), and a veto is read on
+// the plain text, never the leetspeak-folded one (see classifier.ts). Unambiguous indirect phrasings
+// (INDIRECT_IDEATION) are crisis whatever the context. An object after the phrase is its referent ("ending it
+// with the vendor", "better off without me on the sales calls", "disappear from social media for a week"),
+// unless the object is a means ("ending it with pills"). Context is read in English; multilingual lines are the
+// unambiguous kind.
 
 /** First person singular subject, including spellings without apostrophes ("im", "ive") and "imma". */
 const I_SUBJECT = "(?:i|i'?m|i am|i'?ve|i have|i'?ll|i will|i'?d|imma|ima)";
 /** Up to `n` words that do not open a new subject, so "I told her we're ending it" is not first person. */
 const OWN_WORDS = (n: number): string =>
   `(?:(?!(?:we|we'?re|they|they'?re|he|she|he'?s|she'?s|you|you'?re|u|y'?all|everyone|everybody|someone|people)${WORD_END})[\\p{L}'-]+ ){0,${String(n)}}?`;
+/** Subject dropped at the start of a sentence: "thinkin bout endin it", "been thinking about walking into traffic". */
+const THINKING_ABOUT =
+  '(?:^|(?<=[.!?;,] ))(?:been |keep |always |just |sometimes )?(?:thinking|thinkin|thought|considering) (?:about|bout|abt|of)';
 /** The sentence ends here. */
 const SENTENCE_END = '(?=\\s*(?:$|[.!?]))';
-/** What may follow "ending it" when "it" has no object: the end of the thought, a time, or a new clause. */
-const AFTER_ENDING_IT = `(?=\\s*(?:$|[.!?;:,)"]|-|(?:all|for good|once and for all|tonight|today|tomorrow|soon|now|already|someday|one day|this (?:week|weekend|time|year)|every (?:day|night|single day)|all the time|a lot|lately|again|last (?:night|week|time|year)|yesterday|before|once|twice|for real|honestly|tbh|lol|though|seriously|and|but|because|cause|cuz|coz|so|i|im|i'm|if|or|when)${WORD_END}))`;
+/** The thought ends here: "done with life." but not "done with life admin". */
+const THOUGHT_END = `(?=\\s*(?:$|[.!?;:,)"]|-|(?:and|but|so|honestly|tbh|lol|already|completely|forever|anymore|any more|i)${WORD_END}))`;
+/**
+ * What may follow "ending it" when "it" has no object: the end of the thought, a time, or a new clause. "Now",
+ * "today" and "here" are ENDING_NOW: "I'll end it now" is also how a call ends.
+ */
+const AFTER_ENDING_IT = `(?=\\s*(?:$|[.!?;:,)"]|-|(?:all|for good|once and for all|tonight|tomorrow|soon|already|someday|one day|this (?:week|weekend|time|year)|every (?:day|night|single day)|all the time|a lot|lately|again|last (?:night|week|time|year)|yesterday|before|once|twice|for real|honestly|tbh|lol|though|seriously|and|but|because|cause|cuz|coz|so|i|im|i'm|if|or|when)${WORD_END}))`;
 /** "ending it and pivoting to B2B": ending a project to start the next thing. */
 const NOT_MOVING_ON = `(?! *,? *(?:and|then|so (?:i|we) can|to) (?:start\\p{L}*|mov(?:e|ing) on|pivot\\p{L}*|switch\\p{L}*|get(?:ting)? (?:a|another) (?:job|role)|go(?:ing)? back to|focus\\p{L}*|apply\\p{L}*|join\\p{L}*|look(?:ing)? for (?:a|another)|find(?:ing)? (?:a|another)|tak(?:e|ing) (?:a|the) (?:job|role|offer)))`;
 /** Means of self-harm that can follow "ending it with …". */
 const MEANS =
   '(?:a |the |my |some |all (?:my |the |of my )?|these |those )?(?:pills|meds|medication|medications|tablets|painkillers|sleeping pills|rope|gun|knife|blade|razor|razors|belt|overdose)';
-/** People who might be "better off" without the speaker. */
+/** Drugs an overdose is named by. */
+const DRUGS =
+  '(?:pills|meds|medication|medications|tablets|sleeping pills|painkillers|tylenol|paracetamol|xanax|ambien|antidepressants|insulin)';
+/**
+ * People who might be "better off" without the speaker. Not "my team" or "we": "my team would be fine if I was
+ * gone" is about a role.
+ */
 const OTHERS =
-  "(?:everyone|everybody|they|they'?d|people|my (?:family|friends|parents|kids|children|partner|wife|husband|mom|mum|dad|team)|the world|you|you'?d|y'?all|you all|you guys|all of (?:you|them)|we|we'?d|the family|them)";
-/** The speaker no longer being here: "if I wasn't here", "if I died", "if I disappeared". */
-const ABSENCE =
-  "(?:(?:was|were|'?d|had) (?:dead|gone|never born|been gone|never been born|no longer (?:here|around|alive))|(?:wasn'?t|weren'?t|wasnt|werent|was not|were not) (?:(?:here|around|in the picture)(?! (?:for|at|in|on|during|when|while|today|tonight|this|next|to)(?![\\p{L}\\p{N}_]))|alive|born)|(?:just )?(?:died|killed myself|ended it|was never born|were never born|didn'?t exist|did not exist|didnt exist|didn'?t wake up|never woke up)|(?:just )?(?:disappeared|vanished)(?! (?:from|for|to|into|until|off)))";
-/** "better off without me" ends the thought (not "… without me on the sales calls"). */
-const AFTER_WITHOUT_ME = `(?=\\s*(?:$|[.!?;:,)"]|-|(?:anyway|anyways|honestly|tbh|really|around|here|alive|and|but|so|because|cause|cuz|i|in (?:their|his|her|your|my|the|this) (?:lives?|world)|in this world)${WORD_END}))`;
+  "(?:everyone|everybody|they|they'?d|people|my (?:family|friends|parents|kids|children|partner|wife|husband|mom|mum|dad)|the world|you|you'?d|y'?all|you all|you guys|all of (?:you|them)|the family|them)";
+/** Family: "my kids would be better off without me" is never about a role, whatever follows. */
+const FAMILY =
+  '(?:my|our) (?:family|kids|children|son|daughter|wife|husband|parents|mom|mum|dad|mother|father|loved ones|girlfriend|boyfriend|fiancee?|friends)|the family';
 /** "disappear from social media for a week": a bounded or purposeful absence, not a wish to stop existing. */
-const NOT_TEMPORARY_ABSENCE = `(?! (?:from|off|for|to|into|until|till|while|during|over|after|before) (?!(?:good|ever|forever|this world|the world|the earth|the face of the earth|existence|everyone|everybody|my life|life)${WORD_END}))`;
+const NOT_TEMPORARY_ABSENCE = `(?! (?:from|off|for|to|into|until|till|while|during|over|after|before|on|at) (?!(?:good|ever|forever|this world|the world|the earth|the face of the earth|existence|everyone|everybody|my life|life|the void|nothing|nothingness|thin air|the abyss|the dark|the darkness)${WORD_END}))`;
+/** The speaker no longer being here: "if I wasn't here", "if I died", "if I disappeared". */
+const ABSENCE = `(?:(?:was|were|'?d|had) (?:dead|(?:been )?gone${NOT_TEMPORARY_ABSENCE}|never born|never been born|no longer (?:here|around|alive))|(?:wasn'?t|weren'?t|wasnt|werent|was not|were not) (?:(?:here|around|in the picture)(?! (?:for|at|in|on|during|when|while|today|tonight|this|next|to)(?![\\p{L}\\p{N}_]))|alive|born)|(?:just )?(?:died|killed myself|ended it|was never born|were never born|didn'?t exist|did not exist|didnt exist|didn'?t wake up|never woke up)|(?:just )?(?:disappeared|vanished)${NOT_TEMPORARY_ABSENCE})`;
+/**
+ * "better off without me on the sales calls / as CEO / micromanaging every PR": a role, not the speaker's
+ * existence. Only these continuations are excluded; anything else ("at this point", "lol", "being around", "in
+ * the picture", "as their dad") keeps the burden line.
+ */
+const NOT_A_ROLE = `(?! (?:on (?!(?:this|the) (?:earth|planet|world)${WORD_END})(?:the|this|that|these|those|our|their|his|her|my|a|an|board|calls?|sales|deals?|payroll)|in (?:the |this |that |our |their |these )?(?:meetings?|room|loop|calls?|office|lead|charge|kitchen|codebase|repo|discussions?|negotiations?|process|deal|role|seat|position|weeds|middle of (?:this|it|the deal))|as (?:the |their |your |our |his |her |my |a |an |its )?(?:ceo|cto|coo|cfo|cpo|founder|co-?founder|cofounder|lead|leader|manager|pm|head|boss|chair|president|director|vp|engineer|designer|developer|salesperson|spokesperson|face|point person|decision[- ]maker|bottleneck|middleman|gatekeeper)|at (?:the |this |that |our |their )?(?:meetings?|table|helm|wheel|desk|office|event|demo|conference|offsite|board|standup|pitch|front)|for (?!(?:good|ever|always|the rest of)${WORD_END})(?:the|this|that|these|a|an|now|today|tomorrow|next|\\d)|until|till|during|while|micromanag\\p{L}*|meddling|interfering|hovering|running|leading|managing|handling|pitching|selling|coding|reviewing|approving|steering|owning|calling the shots|weighing in|butting in|second-guessing|bottlenecking)${WORD_END})`;
 /** "wake up late", "wake up in time": ordinary sleep talk. */
 const NOT_ORDINARY_WAKING = `(?! (?:late|early|in time|on time|too (?:late|early)|before|after|at|with|tired|sick|groggy|for|until|till|til|to (?:a|an|the|my|more|another|bad|good))${WORD_END})`;
-/** The thought ends here: "done with life." but not "done with life admin". */
-const THOUGHT_END = `(?=\\s*(?:$|[.!?;:,)"]|-|(?:and|but|so|honestly|tbh|lol|already|completely|forever|anymore|any more|i)${WORD_END}))`;
+/** After a place one can jump from or a vehicle: the end of the thought or a place, not "the building committee". */
+const AFTER_PLACE = `(?=\\s*(?:$|[.!?;:,)"]|-|(?:and|but|so|or|i|tonight|today|tomorrow|soon|someday|one day|right now|now|honestly|tbh|lol|of|at|near|in|on|downtown|again)${WORD_END}))`;
+/** What may follow a feeling: the end of the thought, or more about the speaker's own life ("alone in this"). */
+const FEELING_END = `(?: (?:inside|right now|lately|these days|again|all the time|every day|most days|today|tonight|for (?:weeks|months|days|years|a while|so long|a long time)|in (?:this|my (?:life|head)|life|general)|about (?:myself|my life|everything|it all|who i am)|with (?:myself|my life|everything|it all)))*${THOUGHT_END}`;
 
 /**
- * Personal distress anywhere in the message: the context that makes an ambiguous line crisis language.
- * First-person feelings, not business states ("the deal is falling apart", "I'm useless at design").
+ * Personal distress anywhere in the message: the context that makes an ambiguous line crisis language. Each cue
+ * is a feeling about the speaker that ends the thought, never a business state: "I'm drowning." but not "I'm
+ * drowning in emails", "Nobody cares." but not "nobody cares about our product", "I've lost everything." but not
+ * "I've lost everything in the database migration".
  */
 const PERSONAL_DISTRESS = w([
-  "(?:i'?m|i am|i feel|i'?ve been|ive been|i have been|feeling|i keep feeling|i felt|i'?m feeling)(?: (?:so|really|very|completely|totally|just|honestly|utterly|pretty|kind of|kinda|feeling|been|always|constantly|all|literally|seriously|absolutely|deeply|increasingly|incredibly|like))* (?:hopeless|worthless|useless|empty|numb|miserable|alone|lonely|trapped|broken|ashamed|humiliated|a failure|a burden|a mess|a disappointment|falling apart|breaking down|drowning|depressed|dead inside|in (?:so much |constant )?pain|burn(?:ed|t)[- ]?out|at (?:my |a )?breaking point|at the end of my (?:rope|tether)|at rock bottom|in a (?:really |very )?(?:dark|bad) place|so done|done)(?![\\p{L}-]|(?: (?:about|at|on|with|in (?:a|the|this|our|my) (?:contract|lease|deal|agreement|meeting|market|space)|to (?:the|this|a))))",
+  `(?:i'?m|im|i am|i(?: (?:just|really|honestly|kind of|kinda|still|also|now|always|constantly|sometimes|often|literally))* (?:feel|felt|keep feeling)|i'?ve been|ive been|i have been|feeling|i'?m feeling)(?: (?:so|really|very|completely|totally|just|honestly|utterly|pretty|kind of|kinda|feeling|been|always|constantly|all|literally|seriously|absolutely|deeply|increasingly|incredibly|like|such|still|getting))* (?:hopeless|worthless|useless|empty|numb|miserable|alone|lonely|trapped|broken|ashamed|humiliated|unloved|unwanted|invisible|a failure|a burden|a mess|a disappointment|falling apart|breaking down|drowning|depressed|dead inside|in (?:so much |constant )?pain|burn(?:ed|t)[- ]?out|at (?:my |a )?breaking point|at the end of my (?:rope|tether)|at rock bottom|in a (?:really |very )?(?:dark|bad) place)${FEELING_END}`,
   // "can't cope" is also an overwhelm line; the classifier never reads a line as its own context.
-  "(?:can'?t|cannot|cant) (?:stop crying|get out of bed|feel anything|breathe|cope)",
+  `(?:can'?t|cannot|cant) (?:stop crying|get out of bed|feel anything|breathe|cope)(?: (?:anymore|any more|with (?:anything|life|any of (?:this|it)|it all|everything)))?${THOUGHT_END}`,
   "(?:i'?ve been|i keep|i was|i'?m|been|keep) crying",
   'crying (?:every|all) (?:day|night)',
-  '(?:no ?one|nobody|no-one)(?: else)?(?: even| really)? (?:cares|would care|would notice|would even notice|would miss me|loves me|needs me|understands|wants me|gets it|listens)',
-  "i (?:hate|can'?t stand) (?:myself|my life|being alive|living|who i am|everything about me)",
-  'everything (?:hurts|is falling apart|feels (?:hopeless|pointless|empty|dark|heavy|meaningless)|is pointless|is hopeless|is meaningless|is too much)',
-  "(?:it'?s|its|it is|this is|everything is|this is all) (?:all )?(?:just )?too much(?=\\s*(?:$|[.!?,;]|for me))",
-  '(?:the pain is (?:unbearable|too much|killing me)|unbearable pain|so much pain|(?:emotional|mental) pain|it hurts so much|hurts too much)',
-  'i (?:just )?(?:give up|gave up)(?=\\s*(?:$|[.!?,;]|on (?:everything|life|myself|living|people)))',
-  "(?:i'?ve|ive|i have|i) (?:just )?lost everything",
+  `(?:no ?one|nobody|no-one)(?: else)?(?: even| really| actually)? (?:cares|would care|would notice|would even notice|would miss me|loves me|needs me|wants me|understands(?: me)?|gets it|gets me|listens(?: to me)?|cares about me|is there for me)(?: (?:anymore|any more|at all|around here|anyway|anyways))?${THOUGHT_END}`,
+  `i (?:hate|can'?t stand) (?:myself|my life|who i am|everything about me|(?:being alive|living|existing)${THOUGHT_END})`,
+  `(?:my (?:parents|family|mom|mum|dad|mother|father|friends|wife|husband|kids|boyfriend|girlfriend)|everyone|everybody) (?:all )?(?:hates?|despises?) me${THOUGHT_END}`,
+  `everything (?:hurts|is falling apart|feels (?:hopeless|pointless|empty|dark|heavy|meaningless)|is pointless|is hopeless|is meaningless|is (?:just )?too much)${FEELING_END}`,
+  "(?:it'?s|its|it is|everything is|this is all) all (?:just )?too much|(?:it'?s|its|it is|this is) (?:all )?(?:just )?too much for me",
+  `(?:the pain is (?:unbearable|too much|killing me)|unbearable pain|(?:emotional|mental) pain|it hurts so much|hurts too much)${THOUGHT_END}`,
+  `i (?:just )?(?:give up|gave up) on (?:everything|life|myself|living|people)${THOUGHT_END}`,
+  `(?:i'?ve|ive|i have|i) (?:just )?lost everything${THOUGHT_END}`,
   "(?:i'?ve|ive|i have|i) let (?:everyone|everybody|my family|my parents|them all|you all|everyone i love) down",
-  'i (?:ruin|ruined|destroy|destroyed|screw up|screwed up|mess up|messed up) everything',
+  `i (?:always )?(?:ruin|ruined|destroy|destroyed|screw up|screwed up|mess up|messed up) everything${THOUGHT_END}`,
   "what'?s wrong with me",
   "(?:i'?m scared of|i don'?t trust) myself",
-  'dark thoughts',
-  'rock bottom',
-  'my mental health (?:is )?(?:bad|awful|terrible|horrible|in pieces|falling apart|at rock bottom|tanking|shot)',
-  'nothing (?:matters|makes sense|helps)(?: anymore| any more)?(?! (?:more|as much|but|except|to (?:customers|users|investors)))',
-  'tired of (?:everything|it all|life|living|being alive|existing|fighting|trying|pretending)',
-  "(?:i have|i'?ve got|there'?s|there is) no hope(?: left)?",
+  `dark thoughts(?: (?:again|lately|are back|keep coming(?: back)?))?${THOUGHT_END}`,
+  `(?:i'?ve|ive|i have|i'?m|im|i am|i) (?:just |finally |really )?(?:hit|reached|at|hitting) (?:a |my |an all-time |a new )?(?:new )?rock bottom${FEELING_END}`,
+  'my (?:life|mental health) (?:is )?(?:at )?rock bottom',
+  'my mental health (?:is )?(?:bad|awful|terrible|horrible|in pieces|falling apart|tanking|shot)',
+  `nothing (?:matters|makes sense|helps|feels real)(?: (?:to me|anymore|any more))*${THOUGHT_END}`,
+  `tired of (?:everything|it all|life|living|being alive|existing|fighting|trying|pretending)(?: (?:anymore|any more|so hard))?${THOUGHT_END}`,
+  `(?:i have|i'?ve got|there'?s|there is) no hope(?: left)?${THOUGHT_END}`,
 ]);
 
 /**
- * Venture-work vocabulary anywhere in the message: an ambiguous line is about the work ("The pilot isn't
- * converting. I'm thinking about ending it."). Nouns only where a word is also a verb ("deal with" is not a deal),
- * and not "partner", which is also a person.
+ * Venture work next to an ambiguous line: its referent ("The pilot isn't converting. I'm thinking about ending
+ * it."). Nouns only where a word is also a verb ("deal with" is not a deal), and not "partner", which is also a
+ * person. Study and chores ("exams", "homework", "emails") are not things a founder ends: they are referents of
+ * the non-crisis lines only (EVERYDAY_REFERENT), so "I failed my exams. I'm thinking about ending it." is crisis.
  */
-const VENTURE_CONTEXT = w([
+const WORK_REFERENT = w([
   'start-?ups?|compan(?:y|ies)|ventures?|business(?:es)?|products?|features?|pilots?|betas?|launch(?:es|ed|ing)?|releases?|deploy(?:s|ed|ing|ment|ments)?|ship(?:ping)?',
   'customers?|clients?|users?|vendors?|suppliers?|partnerships?|business partners?|contracts?|(?:the|a|this|that|our|their) deal|deals|leases?|agenc(?:y|ies)|portal',
   'investors?|vcs?|angels?|pitch(?:es|ing)?|decks?|slides?|spreadsheets?|cap table|(?:seed|funding|pre-seed|series [a-d]|investment|bridge|angel|the|our) round|fundrais\\p{L}*|funding|grants?|investor update',
   'revenue|mrr|arr|pricing|prices?|sales|marketing|campaigns?|ads|budget|runway|invoices?|payroll|numbers|metrics|kpis?|okrs?|churn|funnel|conversion|sign-?ups?|waitlist|go-to-market|gtm|inventory|orders|shipments?|manufacturing|factory|warehouse',
   'apps?|website|landing page|code|codebase|bugs?|ci|(?:the|our|a) builds?|servers?|api|database|dashboard|repo|github|prs?|sprints?|roadmap|projects?|prototypes?|mvp|pivot(?:s|ed|ing)?|b2b|b2c|saas|subscriptions?|trials?|experiments?|onboarding',
-  'engineers?|developers?|designers?|employees?|contractors?|freelancers?|interns?|interviews?|surveys?|co-?founders?|cofounders?|hire|hiring|meetings?|demos?|demo day|standups?|stand-ups?|cohort|accelerator|incubator|competition|market|competitors?|stakeholders?|loi|proposals?|office|data|slack|notion|jira|linkedin|newsletter|quarter',
-  'class|lecture|exams?|assignments?|homework|thesis|dissertation|internship|program(?:me)?s?|tax(?:es)?|paperwork|admin|emails?|forms',
+  'stripe|payments?|billing|aws|shopify|hubspot|salesforce|figma|airtable|zapier|quickbooks|xero',
+  'engineers?|developers?|designers?|employees?|contractors?|freelancers?|interns?|interviews?|surveys?|co-?founders?|cofounders?|hire|hiring|meetings?|demos?|demo day|standups?|stand-ups?|cohort|accelerator|incubator|competition|market|competitors?|stakeholders?|loi|proposals?|office|data|slack|notion|jira|linkedin|newsletter|quarter|internship|program(?:me)?s?',
+  // The conversation itself: "this call", "our session".
+  "(?:this|the|our|that|today'?s|a|great|good|nice|long|quick|voice|video|zoom) (?:call|chat|session|conversation|convo|thread)",
+  // Leaving: "I'm moving to Berlin. I won't be around much longer."
   'moving (?:to|out|back|abroad|away|house|cities)|relocat\\p{L}*|graduat\\p{L}*|semester|flights?|trip|vacation|holidays?|sabbatical|parental leave',
 ]);
 
+/** Everyday life next to a non-crisis line: "I can't take it anymore, my roommate's dog barks all night." */
+const EVERYDAY_REFERENT = w([
+  'class(?:es)?|lectures?|exams?|finals|midterms?|assignments?|homework|essays?|thesis|dissertation|tax(?:es)?|paperwork|admin|emails?|inbox|forms|chores|laundry|dishes',
+  'roommates?|flatmates?|housemates?|neighbou?rs?|landlord|dogs?|cats?|puppy|kitten|commute|traffic|noise|weather|heat|humidity|construction|wi-?fi|internet|printer|laptop|phone|keyboard|trains?|bus|subway|airline|delays?|hangover|allergies',
+]);
+
+/** Laughter: "lol I can't deal with this anymore" is banter. Vetoes only the non-crisis lines. */
+const LAUGHTER = [
+  w(['lol+', 'lmao+', 'lmfao', 'rofl', 'ha(?:ha)+h?', 'he(?:he)+', 'jk', 'just kidding']),
+  raw('😂|🤣|😅|😆|💀'),
+];
+
+/** Venture nouns a speaker can say a line is not about: "this isn't about the startup". */
+const WORK_NOUNS =
+  'work|job|start-?up|company|venture|business|product|app|pitch|deck|program(?:me)?|cohort|accelerator|pilot|customers?|investors?|co-?founders?|cofounders?|team|code|project|fundraising|launch';
+
+/**
+ * Personal cues that lift every referent and closing veto of an ambiguous line, read anywhere in the message: the
+ * work is said not to be the referent, the speaker asks for someone to talk to or for secrecy, or names a
+ * personal setback.
+ */
+const VETO_LIFTERS = w([
+  `(?:not|isn'?t|isnt|is not|wasn'?t|wasnt|was not|nothing)(?: really| even| actually| just| only| at all)? (?:about|related to|to do with|because of) (?:the |my |our |this |that |any )?(?:${WORK_NOUNS})`,
+  `(?:someone|somebody|anyone|anybody|a person|a therapist|a counsel+or|a professional|a doctor|a human) (?:i can |to )?talk to(?! about (?!(?:it|this|how i feel|my feelings|what i'?m going through|everything|me)${WORD_END}))`,
+  `(?:talk|speak) to (?:someone|somebody|a therapist|a counsel+or|a professional|a doctor)(?! about (?!(?:it|this|how i feel|my feelings|what i'?m going through|everything|me)${WORD_END}))`,
+  `i (?:really |just |desperately )?need (?:some )?help${SENTENCE_END}`,
+  `please help me${SENTENCE_END}`,
+  "(?:don'?t|do not|dont|never) tell (?:anyone|anybody|no ?one|them|him|her|people|(?:my|the|your) \\p{L}+)",
+  'keep (?:this|it) (?:between us|to yourself|a secret|secret|quiet)',
+  "promise (?:me )?(?:you )?(?:won'?t|will not|wont|not to) tell",
+  '(?:nobody|no one|no-one) (?:can|should|must) know',
+  'i (?:just |totally |completely )?(?:failed|flunked) (?:my |all my |all of my |both my |the |this |another )?(?:exams?|finals|midterms?|class(?:es)?|courses?|modules?|semester|year|degree|thesis|defen[cs]e|boards|bar)',
+  '(?:wife|husband|girlfriend|boyfriend|fiancee?|partner|spouse|gf|bf) (?:just )?(?:left me|walked out|moved out|broke up with me|dumped me|is leaving me|cheated on me|wants a divorce|asked for a divorce)',
+  'broke up with me|dumped me|getting (?:a )?divorced?',
+  'lost my (?:mom|mum|mother|dad|father|brother|sister|son|daughter|child|baby|best friend|husband|wife|grandma|grandmother|grandpa|grandfather|home|house|apartment|job|scholarship|visa)',
+  "(?:got|been|was|am|i'?m) (?:just )?(?:evicted|kicked out of (?:my|the) (?:house|apartment|home|program|school))",
+]);
+
+/**
+ * An ordinary end of a conversation, which makes "I'll end it now" and "this is goodbye" a sign-off: thanks (not
+ * the final kind, "thanks for everything", nor one for listening), "talk soon", "great chat", "it's been great".
+ */
+const CASUAL_CLOSING = w([
+  `(?:thanks|thank you|thank u|thx|ty|tysm|tyvm|cheers|much appreciated|appreciate (?:it|you|the help))(?! (?:so much |again |a lot |very much )?for (?:everything|all (?:of )?(?:it|this|that)|all you|being there|always|listening|trying|caring)${WORD_END})`,
+  'talk (?:soon|later|tomorrow|tmrw|tmr|next (?:week|time)|then|again|on (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|in (?:a|the) (?:bit|morning|week))',
+  'see (?:you|ya|u)(?: (?:soon|later|tomorrow|next (?:week|time)|then))?',
+  'bye for now|until next time|catch (?:you|ya) later|ttyl|gotta (?:go|run)|signing off',
+  'have a (?:good|great|nice|lovely) (?:one|day|night|evening|weekend|week)',
+  "(?:that'?s|thats) (?:all|it) for (?:now|today)",
+  '(?:great|good|nice|helpful|productive|lovely|fun) (?:chat|call|session|talk|conversation|convo|meeting)',
+  "(?:it'?s been|its been|it has been|this has been|that was|this was) (?:a |such a |really |so )?(?:great|fun|amazing|awesome|wonderful|lovely|pleasure|real pleasure|helpful|productive|blast|good|fantastic)",
+]);
+
+/** A final thanks: with "this is goodbye" it is a wellbeing signal, not a sign-off and not the crisis path. */
+const FINAL_THANKS = w(
+  "(?:thanks|thank you|thank u|ty)(?: so much| again| a lot| very much)? for (?:everything|all (?:of )?(?:it|this|that)|all you(?:'ve| have) done|being there|always being there)",
+);
+
 /** Indirect phrasings that are crisis language whatever the context. */
 const INDIRECT_IDEATION = [
-  // Burden (AFSP, QPR).
-  `better off without me${AFTER_WITHOUT_ME}`,
+  // Burden (AFSP, QPR). Only a role after "without me" makes it about the work.
+  `better off without me${NOT_A_ROLE}`,
+  `(?:${FAMILY})(?: would| will|'?d)?(?: all| honestly| really| just| probably| genuinely| so much| a lot)*(?: be)? better off without me`,
   `${OTHERS}(?: would| will)?(?: all| honestly| really| just| probably| genuinely| so much| a lot)*(?: be)? (?:better off|happier|better|fine|okay|ok|relieved)(?: without me)? if i ${ABSENCE}`,
   // Subject-free only for death: "the company would be better off if I was gone" is about a role.
   "better off if i (?:was|were|'?d been|had been) (?:dead|never born)",
@@ -840,6 +950,9 @@ const INDIRECT_IDEATION = [
   `(?:wish|want|hope|wanna|like)(?: i could| to| i would| i'?d)?(?: just)? (?:go to sleep|fall asleep|sleep|close my eyes|lie down) and (?:never|not|don'?t|wouldn'?t|won'?t|dont|wont)(?: ever)? wake up${NOT_ORDINARY_WAKING}`,
   `(?:hope|hoping|wish|pray|praying)(?: that)? i (?:don'?t|do not|won'?t|will not|never|dont|wont|wouldn'?t|wouldnt|didn'?t)(?: ever)? wake up${NOT_ORDINARY_WAKING}`,
   "(?:wouldn'?t|would not|wouldnt|don'?t|do not|dont)(?: really| even)? (?:mind|care)(?: if)?(?: i)? (?:dying|died|die|being dead|not waking up|never waking up|didn'?t wake up|did not wake up|didnt wake up|never woke up|don'?t wake up|got hit by a (?:car|bus|truck|train))(?! (?:trying|on (?:this|that) hill|my|the|our|it|of|from|laughing|to)\\b)",
+  `(?:think|thinks|thinking|thought) (?:about|of) (?:not waking up|never waking up|not being (?:here|around|alive)|being dead|dying|killing myself|ending my life|not existing|disappearing forever)${THOUGHT_END}`,
+  // "Dark thoughts" is how many people say suicidal thoughts.
+  `(?:(?:i'?ve been|ive been|i have been|i'?m|im|i am|i keep|been|keep) having|i(?: still| also| sometimes| often)? (?:have|get|had|keep getting)) (?:some |a lot of |lots of |these |those |the |really |more )?dark thoughts(?: (?:again|lately|recently|at night|every (?:day|night)|all the time))?${THOUGHT_END}`,
   // No reason to live (AFSP).
   '(?:nothing|nobody|no one|no-one|not much)(?: left| else)? to live for',
   `(?:i have|i'?ve got|i got|there'?s|there is) no (?:will|desire|reason|wish) to (?:live|keep living|go on|be alive)${THOUGHT_END}`,
@@ -848,11 +961,16 @@ const INDIRECT_IDEATION = [
   `${I_SUBJECT} (?:so |just |really |completely |totally |honestly |officially )*done with (?:life|living|being alive|existing|this life|my life|this world)${THOUGHT_END}`,
   // Wanting it all to stop: unbearable pain (AFSP).
   `(?:want|wanna|need|wish)(?: for)? (?:the pain|my life|this life|life|the hurt|the hurting|this pain|the suffering) to (?:stop|end|be over|go away|just stop|just end|finally (?:stop|end))(?! (?:by|before|after|so (?:i|we) can|in time|on time)${WORD_END})`,
+  // Imminence: "I'm ending it tonight" is never about a pilot.
+  `(?:${I_SUBJECT} ${OWN_WORDS(5)}|${THINKING_ABOUT} )(?:end|ending|endin) (?:it|things|everything)(?: all)? (?:tonight|tonite|2nite)${THOUGHT_END}`,
   // Means.
   `${I_SUBJECT} ${OWN_WORDS(5)}(?:end|ending|endin) (?:it|things|everything|my life)(?: all)? (?:with|using|by (?:taking|using|overdosing on)) ${MEANS}`,
-  `${I_SUBJECT} ${OWN_WORDS(4)}(?:jump|jumping|throw myself|throwing myself|step|stepping) (?:off|from) (?:a |the |that |this |my |some )?(?:bridge|building|roof|rooftop|balcony|cliff|ledge|tower|overpass|window)`,
-  '(?:walk|walking|step|stepping|jump|jumping|throw myself|throwing myself) (?:into|in front of) (?:traffic|oncoming traffic|a train|the train|a bus|a truck|a car)',
-  "(?:going to|gonna|want to|wanna|plan to|planning to|planning on|thinking (?:about|of)|about to|ready to|could|might|should|'ll|will) (?:just )?(?:take|taking|swallow|swallowing|down|downing|overdose on) (?:all|every one|every last one|a (?:whole )?bottle|the (?:whole )?bottle|a handful|handfuls|a bunch|the rest) (?:of )?(?:my |the |these |those |them )?(?:pills|meds|medication|medications|tablets|sleeping pills|painkillers|tylenol|paracetamol|xanax|ambien|antidepressants|insulin)",
+  `${I_SUBJECT} ${OWN_WORDS(4)}(?:jump|jumping|throw myself|throwing myself|step|stepping) (?:off|from) (?:a |the |that |this |my |some )?(?:bridge|building|roof|rooftop|balcony|cliff|ledge|tower|overpass|window)${AFTER_PLACE}`,
+  `(?:${I_SUBJECT} ${OWN_WORDS(4)}|${THINKING_ABOUT} )(?:walk|walking|step|stepping|jump|jumping|throw myself|throwing myself|lie down|lying down) (?:into|in front of|onto) (?:traffic|oncoming traffic|a train|the train|a bus|the bus|a truck|a car|the tracks|the highway)${AFTER_PLACE}`,
+  // An overdose, not a medication routine: "take all my meds before the flight" is adherence.
+  `${I_SUBJECT} ${OWN_WORDS(4)}(?:just )?(?:take|taking|took|swallow|swallowing|swallowed|down|downing|downed|overdose on|od on) (?:every one|every last one|a (?:whole )?bottle|the (?:whole )?bottle|a handful|handfuls|a bunch|the rest) (?:of )?(?:my |the |these |those |them )?${DRUGS}(?: (?:at once|all at once|tonight|together|in one go|right now|now))?${THOUGHT_END}`,
+  `${I_SUBJECT} ${OWN_WORDS(4)}(?:just )?(?:take|taking|took) all (?:of )?(?:my |the |these |those |them )?${DRUGS} (?:at once|all at once|tonight|together|in one go|right now)${THOUGHT_END}`,
+  `${I_SUBJECT} ${OWN_WORDS(4)}(?:just )?(?:swallow|swallowing|swallowed|down|downing|downed|overdose on|od on) (?:all|every one|a (?:whole )?bottle|a handful|the rest) (?:of )?(?:my |the |these |those )?${DRUGS}`,
   'swallowed (?:all|a (?:whole )?bottle|a handful) (?:of )?(?:my |the )?(?:pills|meds|tablets|painkillers)',
   // Slang, algospeak, misspellings ("kms", "unalive", "sewerslide", "suicidial"); leetspeak is folded first.
   `(?:to|wanna|gonna|finna|tryna|might|could|should|will|'ll|ll|about|of|bout|abt|just|literally|actually|i) kms(?=\\s*(?:$|[.!?,;:]|(?:rn|tonight|today|now|lol|fr|tbh|i|and|but|honestly)${WORD_END}))`,
@@ -885,23 +1003,31 @@ const INDIRECT_IDEATION_RAW = [
   'मेरे बिना सब (?:बेहतर|खुश)|सब खत्म कर (?:देना|दूँ|दूं)',
 ];
 
-/** "Ending it"-style lines: crisis unless the message makes them about the work (see the decision rule above). */
+/** "Ending it"-style lines: crisis unless a referent stands next to them (see the decision rule above). */
 const AMBIGUOUS_IDEATION = [
   `${I_SUBJECT} ${OWN_WORDS(5)}(?:end|ending|endin|(?:almost|nearly) ended) (?:it|things|everything)${NOT_MOVING_ON}${AFTER_ENDING_IT}`,
   // Subject dropped: "thinkin bout endin it".
-  `(?:^|(?<=[.!?;,] ))(?:been |keep |always |just )?(?:thinking|thinkin|thought|considering) (?:about|bout|abt|of) (?:end|ending|endin) (?:it|things|everything)${NOT_MOVING_ON}${AFTER_ENDING_IT}`,
-  // QPR: "I just want out", "I won't be around much longer", "you won't have to worry about me".
+  `${THINKING_ABOUT} (?:end|ending|endin) (?:it|things|everything)${NOT_MOVING_ON}${AFTER_ENDING_IT}`,
+  // QPR: "I just want out", "I won't be around much longer", "pretty soon you won't have to worry about me".
   'i (?:just |really |honestly |so )*(?:want|wanna|need) out(?=\\s*(?:$|[.!?;:,]|of (?:here|this life|life|everything|it all|this world|this|it)(?=\\s*(?:$|[.!?;:,]))))',
   `${I_SUBJECT} (?:probably |just |really )?(?:won'?t|wont|will not|(?:am|'m|m) not (?:going to|gonna)) be (?:around|here) (?:(?:for )?(?:much|very) long(?:er)?|for long|after (?:tonight|today|this week)|(?:by|for) (?:tomorrow|next week))${SENTENCE_END}`,
-  `(?:you|u|everyone|everybody|nobody|no one|they|people|y'?all|you all)(?: guys)? (?:won'?t|wont|will not|will never|won'?t ever) (?:have to|need to|ever have to|ever need to) (?:worry|deal|bother) (?:about|with) me (?:much longer|for (?:much )?long|anymore|any more|soon|again|after (?:tonight|today))${SENTENCE_END}`,
+  `(?:you|u|everyone|everybody|nobody|no one|they|people|y'?all|you all)(?: guys)? (?:won'?t|wont|will not|will never|won'?t ever) (?:have to|need to|ever have to|ever need to) (?:worry|deal|bother) (?:about|with) me(?: (?:much longer|for (?:much )?long|anymore|any more|soon|again|after (?:tonight|today)))?${SENTENCE_END}`,
   // Wanting it all to stop, where "it all" may be the work.
   `(?:want|wanna|need|wish)(?: for)? (?:it all|everything|all of (?:this|it)) to (?:stop|end|be over|go away|just stop|just end|finally (?:stop|end))(?! (?:by|before|after|so (?:i|we) can|in time|on time)${WORD_END})`,
-  // Loss of meaning (AFSP).
-  `what'?s (?:even )?the (?:even )?point (?:of (?:any of (?:this|it)|it all|everything|even trying|trying|getting up|carrying on|my life|me|waking up)(?: (?:anymore|any more))?|(?:anymore|any more))(?=\\s*(?:$|[.!?;:,]|(?:if|when|anyway|honestly|tbh|really|i|seriously)${WORD_END}))`,
+  // Loss of meaning (AFSP). Spoken transcripts are not contracted: "what is even the point".
+  `what(?:'?s| is) (?:even )?the (?:even )?point (?:of (?:any of (?:this|it)|it all|everything|even trying|trying|getting up|carrying on|my life|me|waking up)(?: (?:anymore|any more))?|(?:anymore|any more))(?=\\s*(?:$|[.!?;:,]|(?:if|when|anyway|honestly|tbh|really|i|seriously)${WORD_END}))`,
   `is there (?:even |really )?(?:a|any) point (?:anymore|any more|to (?:anything|any of (?:this|it)|living|life|going on))${THOUGHT_END}`,
   "(?:i'?ve|i have|i|ive)(?: just| completely| totally| kind of| kinda)? lost (?:the|my|all|any) will to live",
   `${I_SUBJECT} (?:so |just |really |completely |totally |honestly )*done with (?:everything|it all|all of (?:it|this)|everyone)${SENTENCE_END}`,
-  // Saying goodbye (AFSP).
+];
+
+/** "I'll end it now", "I'll end it here": how a call ends, and a crisis line without a closing or a referent. */
+const ENDING_NOW = [
+  `${I_SUBJECT} ${OWN_WORDS(5)}(?:end|ending|endin) (?:it|things) (?:here|there|(?:right )?now|today|for (?:now|today)|early|at that|on that note)(?: (?:(?:right )?now|today|for (?:now|today)))?${NOT_MOVING_ON}(?! (?:with|on|for|by|before|after|to)${WORD_END})`,
+];
+
+/** Saying goodbye (AFSP), also how a program ends: crisis unless a closing or a referent stands next to it. */
+const FAREWELL = [
   `(?:this is|it'?s|consider this|so this is) (?:my )?(?:final |last )?goodbye(?=\\s*(?:$|[.!?]|(?:everyone|everybody|all|forever|for good|for real)${WORD_END}))`,
   'goodbye forever',
   `this (?:is|will be) my (?:last|final) (?:message|post|words?)${SENTENCE_END}`,
@@ -916,8 +1042,8 @@ const OVERWHELM = [
 
 /**
  * Withdrawal without an object: "I just want to disappear for a while", "I want it to stop". A wellbeing signal
- * alone, crisis next to distress, and nothing when the absence has a purpose ("… for a week to focus") or the
- * message is about the work.
+ * alone, crisis next to distress, and nothing when the absence has a purpose ("… for a week to focus") or a
+ * referent stands next to it.
  */
 const WITHDRAWAL = [
   '(?:want|wanna|wish i could) (?:to )?(?:just )?(?:disappear|vanish)',
@@ -947,8 +1073,9 @@ const SAFETY_RULES: readonly RiskRule[] = [
         "i(?:'m| am)? (?:just |really |honestly )?(?:want to|wanted to|wanna|going to|gonna|plan to|planning to|ready to) die",
         'wish (?:i was|i were|i was never|to be) (?:dead|born)',
         "(?:don'?t|do not|dont) (?:really )?(?:want to|wanna) (?:live|be alive|exist)(?: anymore| any more| any longer)?",
-        // "be here" / "wake up" are ordinary with a time or place: "I don't want to be here when the investors arrive".
-        `(?:don'?t|do not|dont) (?:really )?(?:want to|wanna) (?:be here|be around)(?: anymore| any more| any longer)?(?! (?:when|for|at|in|on|during|while|if|with|as|until|after|before|to|today|this|next|by|alone)${WORD_END})`,
+        // "be here" / "be around" end the thought: "I don't want to be here when the investors arrive" and "I don't
+        // want to be around my cofounder anymore" are about a place or a person.
+        `(?:don'?t|do not|dont) (?:really )?(?:want to|wanna) (?:be here|be around)(?: anymore| any more| any longer)?${THOUGHT_END}`,
         `(?:don'?t|do not|dont) (?:really )?(?:want to|wanna) wake up(?: anymore| any more| ever again)?${NOT_ORDINARY_WAKING}`,
         'no (?:reason|point) (?:to|in) (?:live|living|going on)',
         'better off dead',
@@ -976,7 +1103,7 @@ const SAFETY_RULES: readonly RiskRule[] = [
         // Hopelessness and loss of meaning are core suicide-risk signals: route to a person, no model call.
         "(?:don'?t|do not|can'?t|cannot|no longer|never) (?:really |even |honestly )?see (?:the |any )?(?:point|reason|purpose|meaning) (?:of|in|to) (?:anything|everything|living|life|going on|it all|being alive|being here|existing|trying|carrying on|getting up|any of it)",
         "(?:don'?t|do not|can'?t|cannot) see (?:the |any )?(?:point|reason) (?:anymore|any more)",
-        "what'?s the (?:point|use) (?:of|in) (?:living|life|anything|going on|it all|being alive|trying anymore|being here|me)",
+        "what(?:'?s| is) the (?:point|use) (?:of|in) (?:living|life|anything|going on|it all|being alive|trying anymore|being here|me)",
         "(?:there'?s|there is) no (?:point|reason) (?:in |to )?(?:anything|living|going on|being alive|trying anymore|being here)",
         'nothing (?:matters|is worth it|means anything) (?:anymore|any more)',
         // Not a bounded or purposeful absence: "disappear from social media for a week to focus" is not ideation.
@@ -998,12 +1125,27 @@ const SAFETY_RULES: readonly RiskRule[] = [
   rule('safety_wellbeing', 'ambiguous_ideation', [w(AMBIGUOUS_IDEATION)], {
     crisis: true,
     evasionAware: true,
-    unlessContext: [VENTURE_CONTEXT],
+    unlessNearby: [WORK_REFERENT],
+    liftedBy: [VETO_LIFTERS],
+  }),
+  rule('safety_wellbeing', 'ending_now', [w(ENDING_NOW)], {
+    crisis: true,
+    evasionAware: true,
+    unlessNearby: [WORK_REFERENT],
+    unlessContext: [CASUAL_CLOSING],
+    liftedBy: [VETO_LIFTERS],
+  }),
+  rule('safety_wellbeing', 'farewell', [w(FAREWELL)], {
+    crisis: true,
+    evasionAware: true,
+    unlessNearby: [WORK_REFERENT],
+    unlessContext: [CASUAL_CLOSING, FINAL_THANKS],
+    liftedBy: [VETO_LIFTERS],
   }),
   rule(
     'safety_wellbeing',
     'despair_in_context',
-    [w([...AMBIGUOUS_IDEATION, ...OVERWHELM, ...DISTRESS_ONLY])],
+    [w([...AMBIGUOUS_IDEATION, ...ENDING_NOW, ...FAREWELL, ...OVERWHELM, ...DISTRESS_ONLY])],
     {
       crisis: true,
       evasionAware: true,
@@ -1013,7 +1155,15 @@ const SAFETY_RULES: readonly RiskRule[] = [
   // Alone, "I can't do this anymore" is a wellbeing signal (a person is asked to check in), not the crisis path.
   rule('safety_wellbeing', 'overwhelm', [w([...OVERWHELM, ...WITHDRAWAL])], {
     exclude: [PURPOSEFUL_ABSENCE],
-    unlessContext: [VENTURE_CONTEXT],
+    unlessNearby: [WORK_REFERENT, EVERYDAY_REFERENT],
+    unlessContext: LAUGHTER,
+    liftedBy: [VETO_LIFTERS],
+  }),
+  // "This is my last message. Thanks for everything!": a farewell that may be the end of a program; a person checks in.
+  rule('safety_wellbeing', 'farewell_with_thanks', [w(FAREWELL)], {
+    requiresContext: [FINAL_THANKS],
+    unlessNearby: [WORK_REFERENT],
+    unlessContext: [CASUAL_CLOSING],
   }),
   rule(
     'safety_wellbeing',

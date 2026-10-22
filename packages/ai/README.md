@@ -348,26 +348,39 @@ screener (wishing to be dead, to go to sleep and not wake up), the AFSP warning 
 being a burden, feeling trapped, unbearable pain, saying goodbye) and QPR's indirect clues ("everyone
 would be better off without me", "I just want out", "I won't be around much longer"), with slang
 ("kms", "unalive", "sewerslide"), misspellings, leetspeak and the crisis languages above. Some of these
-lines are also venture talk, so an ambiguous line is decided on the whole message:
+lines are also venture talk, so an ambiguous line is decided on the text around it:
 
-| The message has…                                                                       | "I'm thinking about ending it." (and "I just want out", "what's the point of any of this") | "I can't do this anymore." (and "I just want to disappear for a while")    |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| a personal-distress cue ("I feel so alone", "everything hurts", "I let everyone down") | crisis                                                                                     | crisis                                                                     |
-| otherwise venture-work vocabulary ("the pilot", "the spreadsheet", "customers")        | not flagged                                                                                | not flagged                                                                |
-| neither                                                                                | crisis                                                                                     | `safety_wellbeing` without `crisis` (forced escalation; the coach answers) |
+| Around the line…                                                                                                                              | "I'm thinking about ending it." (and "what is the point of any of this", "I'll end it now", "this is goodbye") | "I can't do this anymore." (and "I just want to disappear for a while")    |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| a personal-distress cue anywhere ("I feel like a failure", "Nobody cares.", "I let everyone down")                                            | crisis                                                                                                         | crisis                                                                     |
+| otherwise a referent: work in the line's sentence, the two before it or the one after it ("The pilot is stuck.")                              | not flagged                                                                                                    | not flagged                                                                |
+| … or, for "I'll end it now" and "this is goodbye", a closing anywhere ("thanks for the help", "talk soon", "it's been great")                 | not flagged                                                                                                    |                                                                            |
+| … or, for the right-hand lines, everyday life ("my roommate's dog", "the homework") or laughter ("lol", "😂")                                 |                                                                                                                | not flagged                                                                |
+| a personal cue anywhere lifts every referent ("this isn't about the startup", "someone to talk to", "don't tell anyone", "I failed my exams") | crisis                                                                                                         | `safety_wellbeing` without `crisis`                                        |
+| none of these                                                                                                                                 | crisis                                                                                                         | `safety_wellbeing` without `crisis` (forced escalation; the coach answers) |
 
-Distress beats work. An object after the phrase is its referent ("ending it with the vendor",
-"better off without me on the sales calls", "disappear from social media for a week to focus") unless
-it is a means ("ending it with pills"). Unambiguous phrasings ("I wish I could go to sleep and never wake
-up", "nobody would care if I died") are crisis in any context. The mechanism is `RiskRule.requiresContext`
-/ `unlessContext`: message-level patterns read on the normalised text (a veto is never read on the
-leetspeak-folded text, where "spreadsheets!" becomes "spreadsheetsi"), and a required cue is looked for
-outside the rule's own matches, so a line is never its own context. Context cues are English;
-multilingual phrasings are the unambiguous kind. `src/risk/indirect-ideation.test.ts` holds the table
-(60 positives, 64 hard negatives) and the decision rule. Accepted false positives: the classifier sees
-one message, so "I'm thinking about ending it, what do you think?" answering a question about a pilot
-takes the crisis path; so do a bare "So this is goodbye!" and "I'm ending things." after talk of a
-partner.
+Distress beats work, so a distress cue is a feeling about the speaker that ends the thought, never a
+business state: "Nobody cares." but not "nobody cares about our product", "I'm drowning." but not "I'm
+drowning in emails", "I hit rock bottom" but not "our conversion hit rock bottom". Work further away
+than the neighbouring sentences is not the referent. "I'm ending it tonight" is crisis whatever surrounds
+it. A farewell with a final thanks ("This is my last message. Thanks for everything!") is the end of many
+programs: `safety_wellbeing` without `crisis`, crisis next to distress. An object after the phrase is its
+referent ("ending it with the vendor", "disappear from social media for a week to focus") unless it is a
+means ("ending it with pills"); after "better off without me" only a role is ("on the sales calls", "as
+CEO", "micromanaging every PR"), and anything else keeps the burden line ("at this point", "lol", "as
+their dad"). Unambiguous phrasings ("I wish I could go to sleep and never wake up", "nobody would care if
+I died", "I've been having dark thoughts again") are crisis in any context. The mechanism is
+`RiskRule.requiresContext` (a cue anywhere, looked for outside the rule's own matches, so a line is never
+its own context), `unlessNearby` (a referent in the match's own sentence, the two before it or the one
+after it, read on text with the match's offsets), `unlessContext` (a veto anywhere) and `liftedBy` (a cue
+anywhere that turns both vetoes off). Vetoes are never read on the leetspeak-folded text, where
+"spreadsheets!" becomes "spreadsheetsi". Context cues are English; multilingual phrasings are the
+unambiguous kind. `src/risk/indirect-ideation.test.ts` holds the table (90 positives, 102 hard negatives,
+9 lines that are a wellbeing signal alone) and the decision rule. Accepted false positives: the
+classifier sees one message, so "I'm thinking about ending it, what do you think?" answering a question
+about a pilot takes the crisis path; so do a bare "So this is goodbye!", "I'm ending things." after talk
+of a partner, "I'll end it now. Bye." and a secrecy or help-seeking cue next to work ("Don't tell my
+cofounder, but I'm thinking about ending it.").
 
 Crisis rules flag hedged or negated first-person statements ("I'm not suicidal, but…") on purpose;
 product context ("suicide prevention app", "self-harm detection") tags `safety_wellbeing` without
