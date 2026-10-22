@@ -23,8 +23,13 @@ from typing import Any
 
 SCENARIOS = Path(__file__).resolve().parent.parent / "scenarios" / "agenda.json"
 
-#: The commitment's own words: a reply naming them on a turn about something else steers back to it.
-AGENDA_TERMS = re.compile(r"\b(?:advisor|adviser|three questions|regulatory|reimbursement)\b", re.IGNORECASE)
+#: The commitment itself (the advisor session, its three questions, booking it): a reply naming it on a turn about
+#: something else steers back to it. Regulation or reimbursement as content is not the commitment.
+AGENDA_TERMS = re.compile(
+    r"\b(?:advisor|adviser) (?:session|meeting|call)\b|\bthree questions\b|"
+    r"\bbook (?:the|that|your|an?) (?:advisor |adviser )?session\b",
+    re.IGNORECASE,
+)
 #: The commitment described as still pending although it was due days ago (or the founder already did it).
 STALE = re.compile(
     r"\bstill (?:open|outstanding|pending|on your (?:list|plate))\b|\bhaven'?t (?:yet )?booked\b|"
@@ -37,6 +42,10 @@ FOLLOW_UP = re.compile(
     r"\bwhat did (?:they|the advisor|she|he|you) (?:say|tell|suggest|recommend|learn)\b|\bwhat came out of\b|"
     r"\bwhat did you (?:take away|find out|learn)\b|\bhow'?d (?:it|that) go\b",
     re.IGNORECASE,
+)
+#: Sending the founder to book the session again after they said it happened.
+BOOK_AGAIN = re.compile(
+    r"\bbook (?:the|that|your|an?) (?:advisor |adviser )?(?:session|meeting|call)\b", re.IGNORECASE
 )
 _SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
 _LIST_ITEM = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+\S", re.MULTILINE)
@@ -106,8 +115,11 @@ def _content(text: str) -> set[str]:
 
 
 def _similar(a: str, b: str) -> bool:
+    """The same question in other words: most of the shorter question's content words are in the other."""
     x, y = _content(a), _content(b)
-    return bool(x and y) and len(x & y) / len(x | y) >= 0.5
+    if len(x) < 3 or len(y) < 3:
+        return False
+    return len(x & y) / min(len(x), len(y)) >= 0.6
 
 
 @dataclass
@@ -231,10 +243,14 @@ def grade_conversation(result: ConversationResult, conversation: Mapping[str, An
     result.opener_reopens = bool(AGENDA_TERMS.search(result.opener))
     result.opener_stale = bool(STALE.search(result.opener))
     result.checks = []
+    done = False  # the founder said the commitment happened
     for index, ((_, reply), turn) in enumerate(
         zip(result.turns, conversation["turns"], strict=False), start=1
     ):
         check, asked = check_reply(reply, turn, index, earlier)
+        if done and BOOK_AGAIN.search(reply or ""):
+            check.stale = True
+        done = done or bool(turn.get("raises"))
         result.checks.append(check)
         earlier += asked
 

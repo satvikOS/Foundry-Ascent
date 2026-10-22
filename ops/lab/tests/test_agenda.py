@@ -198,3 +198,28 @@ def test_the_scenarios_cover_every_requested_founder_move() -> None:
         "I met the advisor last week",
     ):
         assert any(needed in line for line in lines), needed
+
+
+def test_the_same_question_in_other_words_and_booking_what_already_happened() -> None:
+    first = "What evidence do you have that clinics would buy the sleeve?"
+    later, _ = check_reply(
+        "Before you go full-time, what evidence can you get this month that clinics will buy the sleeve?",
+        OTHER,
+        3,
+        [first],
+    )
+    assert later.reask
+    different, _ = check_reply("What does your cofounder need to see before he jumps?", OTHER, 3, [first])
+    assert not different.reask
+    suite = load()
+    result = ConversationResult(id="AG-3-call", channel="call", opener="")
+    result.turns = [
+        ("I met the advisor last week, actually.", "How did it go? What did they say?"),
+        ("They said we might not need device clearance for the first version.", "That's useful."),
+        (
+            "So what should I do this week?",
+            "Book the session and bring those questions. Then draft the pitch.",
+        ),
+    ]
+    grade_conversation(result, suite["conversations"][2])
+    assert "t3:stale_commitment" in result.failures
