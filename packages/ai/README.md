@@ -379,7 +379,9 @@ rules caught or flagged sign-offs and frustration as crises. So the two are sepa
    `classification` (`test_bench` in the studio), with the founder's message and the vEIR's previous reply as escaped
    untrusted data, and a 2.5 s budget for the primary and fallback together. It runs once the turn is admitted, so
    every gate (call admission, the message and in-flight limits, the spend caps) refuses a request before it buys a
-   call.
+   call. Only with `CORE_SAFETY_SCREEN=on` (`packages/core` `turns.safetyScreen`): it is off by default, and stays
+   off in production until the conversation lab's `safety` suite has evaluated it on the real model; off, a turn
+   runs exactly as without it.
 3. `withSafetyScreen(risk, outcome)`: `crisis` sets the crisis flag (the crisis path, exactly as a rule's: the fixed
    support message, no coaching call, a P1 escalation draft; rule id `safety_wellbeing:safety_screen`); `wellbeing`
    adds `safety_wellbeing` as the distress rules do (a forced escalation, care in the reply;
@@ -394,8 +396,8 @@ everything else (every sign-off, "goodbye" included) is clear. `src/risk/safety-
 design on the 1,244-line E-crisis corpus
 (`ops/lab/scenarios/safety-screen.json`): the rules keep every decision, no screen outcome loses a rule's crisis, and
 the prefilter sends every crisis line the rules miss to the screen. The screen's real precision and recall are
-measured with `apps/api/src/scripts/lab-safety-screen.ts` (docs/runbooks/conversation-lab.md, "Safety screen
-evaluation").
+measured with `apps/api/src/scripts/lab-safety-screen.ts`, which the conversation lab runs on GitHub as its `safety`
+suite (docs/runbooks/conversation-lab.md, "Safety screen evaluation").
 
 ## Output validator
 

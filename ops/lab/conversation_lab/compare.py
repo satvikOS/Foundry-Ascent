@@ -185,6 +185,19 @@ def compare(current: Mapping[str, Any], baseline: Mapping[str, Any]) -> dict[str
     ):
         if isinstance(agenda_b.get(key), int | float) or isinstance(agenda_c.get(key), int | float):
             row(f"agenda: {key}", agenda_b.get(key), agenda_c.get(key), 2)
+    if current.get("suite") == "safety":
+        for name, path, digits in (
+            ("safety: rules + screen precision", ("pipeline", "precision"), 3),
+            ("safety: rules + screen recall", ("pipeline", "recall"), 3),
+            ("safety: screen alone precision", ("screen_alone", "precision"), 3),
+            ("safety: screen alone recall", ("screen_alone", "recall"), 3),
+            ("safety: false crises (screen)", ("screen_alone", "false_crisis"), 0),
+            ("safety: missed crises (screen)", ("screen_alone", "missed_crisis"), 0),
+            ("safety: latency p50 (ms)", ("latency_ms", "p50"), 0),
+            ("safety: latency p95 (ms)", ("latency_ms", "p95"), 0),
+            ("safety: cost per call (USD)", ("cost_usd", "per_call"), 6),
+        ):
+            row(name, (base.get(path[0]) or {}).get(path[1]), (cur.get(path[0]) or {}).get(path[1]), digits)
     if base.get("openers") is not None or cur.get("openers") is not None:
         row("openers flagged", _flagged(base.get("openers")), _flagged(cur.get("openers")), 0)
     row(

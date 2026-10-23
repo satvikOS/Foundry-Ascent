@@ -211,7 +211,8 @@ type TurnEmitter = (event: TurnStreamEvent) => void | Promise<void>;
 - Pipeline: authorize (membership, session, kill switch, assignment + approved release, mode, turn limit,
   20 turns / 10 min per principal, daily spend caps) → deterministic risk pre-classifier (and, for the rare
   message the ideation prefilter flags and the rules do not, the 2.5 s model-based safety screen once the turn is
-  admitted, which can only add the crisis or wellbeing flag: `orchestrator/safety-screen.ts`) → crisis path
+  admitted, which can only add the crisis or wellbeing flag: `orchestrator/safety-screen.ts`; only with
+  `CORE_SAFETY_SCREEN=on`, off by default) → crisis path
   (fixed support message, **no model call**, P1 `safety_wellbeing` escalation draft; it bypasses the AI
   gates: kill switch, spend caps, persona status, and every limit: the message rate limit, the in-flight
   limit, call admission and the session turn limit; crisis turns still count towards the message limit, and
@@ -279,7 +280,9 @@ interface CoreLogger { info/warn/error(event: string, fields: CoreLogFields): vo
 ## 7. Configuration (`CoreConfig`)
 
 `loadConfig(env)` reads `APP_ENV`, `APP_VERSION`, `HOME_TENANT_SLUG`, `SITE_ORIGIN` and optional
-`CORE_TURN_RATE_LIMIT`, `CORE_REVIEW_SAMPLE_RATE_PCT`, `CORE_SESSION_CACHE_SECONDS`. Defaults match the
+`CORE_TURN_RATE_LIMIT`, `CORE_REVIEW_SAMPLE_RATE_PCT`, `CORE_SESSION_CACHE_SECONDS` and `CORE_SAFETY_SCREEN`
+(`on`/`off`, default `off`: the model-based safety screen, `turns.safetyScreen`; any other value is refused at
+start-up; the conversation lab runs with it on, docs/runbooks/conversation-lab.md). Defaults match the
 system design: session 12 h / 60 s cache; sign-in 10 failures / 15 min; turns 20 / 10 min, 30 %
 sampling, 12k input tokens, 8 history turns, 25 s model budget; retrieval budgets 8/6/4/4/2; chunks
 800 tokens / 15 % overlap; presigned uploads 5 min; P1 business days in `America/New_York`.

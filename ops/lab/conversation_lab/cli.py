@@ -1,7 +1,8 @@
 """`python -m conversation_lab`: the conversation lab's runner (docs/runbooks/conversation-lab.md).
 
   plan --suite S --budget-usd B           which suites run and each one's hard cap (JSON; standard library only)
-  run  --suite S --budget-usd B --out DIR  starts the app with the real models and runs one suite
+  run  --suite S --budget-usd B --out DIR  starts the app with the real models and runs one suite (safety: no app,
+                                           the safety screen on the app's models over the E-crisis corpus)
 
 Everything printed is public-safe (ids, codes, counts, timings, dollars). Content (transcripts, judge rationales,
 screenshots, server logs) is written under DIR/private only; the workflow seals it to the operator's key or
@@ -127,6 +128,8 @@ def browser_env(
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    if args.suite == "safety":
+        return cmd_run_safety(args)
     import boto3
     from botocore.config import Config
     from pydantic import SecretStr
@@ -299,6 +302,81 @@ def cmd_run(args: argparse.Namespace) -> int:
     if error:
         print(
             f"run: the harness failed ({error}); the server logs are in the sealed artifact", file=sys.stderr
+        )
+        return 1
+    return 0
+
+
+def cmd_run_safety(args: argparse.Namespace) -> int:
+    """Suite ``safety`` (conversation_lab/safety.py): apps/api lab-safety-screen.ts on the app's production models,
+    with the run's budget as its hard cap. No app, browser, database or lab model: the script calls the app's model
+    gateway itself. Its report and every row's verdict stay in the private folder; the summary keeps numbers only."""
+    from conversation_lab.budget import Ledger, SpendGuard
+    from conversation_lab.report import write
+    from conversation_lab.safety import public_result, run_safety_screen, safety_env
+    from conversation_lab.stack import PNPM
+
+    budget = float(args.budget_usd)
+    if not 0 < budget <= MAX_BUDGET_USD:
+        print("run: budget out of range", file=sys.stderr)
+        return 2
+    out = Path(args.out)
+    (out / "private").mkdir(parents=True, exist_ok=True)
+    (out / "public").mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
+    app_budget, lab_budget = budget_parts("safety", budget)
+    models = app_models()
+    summary: dict[str, Any] = {
+        "suite": "safety",
+        "budget_usd": budget,
+        "stopped_by": None,
+        "models": {
+            "app": (
+                {"primary": "mock", "fallback": "mock", "embeddings": "mock"}
+                if args.mock
+                else {"primary": models.primary, "fallback": models.fallback, "embeddings": models.embeddings}
+            )
+        },
+    }
+    error: str | None = None
+    try:
+        report, code = run_safety_screen(
+            out,
+            env=safety_env(
+                os.environ, models=models, mock=args.mock, region=os.environ.get("AWS_REGION", "us-east-1")
+            ),
+            budget_usd=app_budget,
+            pnpm=PNPM,
+        )
+        summary["result"] = public_result(report, exit_code=code)
+        if code != 0 or report is None:
+            error = "SafetyScreenScriptFailed"
+        elif summary["result"]["budget_reached"]:
+            summary["stopped_by"] = "budget_app"
+    except Exception as exc:  # noqa: BLE001 - reported by class name only; the job fails
+        error = type(exc).__name__
+    spent = (summary.get("result") or {}).get("cost_usd", {}).get("total") or 0.0
+    # Every call of the suite is a screen call on the app's models, metered by the script: the app's share.
+    guard = SpendGuard(app_budget=app_budget, lab_budget=lab_budget, ledger=Ledger())
+    guard.attach_app(lambda: float(spent))
+    spend = guard.snapshot()
+    spend["app_by_purpose"] = []
+    spend["lab_by_purpose"] = {}
+    summary["spend"] = spend
+    summary["duration_seconds"] = round(time.monotonic() - started, 1)
+    summary["harness_error"] = error
+    if args.baseline_run_id:
+        attach_baseline(summary, "safety", str(args.baseline_run_id), args.baseline_file)
+    text = write(summary, out / "public")
+    print(text)
+    step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if step_summary:
+        with Path(step_summary).open("a", encoding="utf-8") as fh:
+            fh.write(text)
+    if error:
+        print(
+            f"run: the safety screen evaluation failed ({error}); its output is in the sealed artifact",
+            file=sys.stderr,
         )
         return 1
     return 0

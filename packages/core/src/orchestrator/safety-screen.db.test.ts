@@ -4,7 +4,8 @@
  * read by one metered `SafetyScreen` call once the turn is admitted: a crisis takes the crisis path exactly as a rule's
  * would (the fixed support message, no coaching call, a P1 safety escalation), wellbeing adds the wellbeing flag, and
  * an error or a slow model leaves the turn as the rules decided. A request a gate refuses (call admission, the message
- * limit, the spend caps) never buys a screen call, and every other message never calls it.
+ * limit, the spend caps) never buys a screen call, and every other message never calls it. The screen runs only with
+ * `turns.safetyScreen` on (CORE_SAFETY_SCREEN=on); off (the default), even a prefilter hit runs exactly as on main.
  */
 import { randomUUID } from 'node:crypto';
 
@@ -21,6 +22,7 @@ import { CoachResponse, TestTurnResponse, TurnStreamEvent, type TurnView } from 
 import { p, personasRepo, settingsRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { coreConfig } from '../config.js';
 import { type RequestContext } from '../context.js';
 import { createCore, type Core } from '../core.js';
 import { createCoreHarness, type CoreHarness } from '../testing/harness.js';
@@ -36,8 +38,15 @@ const STRAIN = "I can't do this anymore.";
 /** A prefilter hit ("end it") the mock screen reads as a wrap-up. */
 const CLEAR_HIT = "Ok I'll end it here for today, thanks!";
 
+/** The screen is off by default: every core here turns it on, except the ones that test it off. */
+const SCREEN_ON = { safetyScreen: true } as const;
+
 beforeAll(async () => {
-  h = await createCoreHarness({ random: () => 0.99, gatewayOptions: { streamDelayMs: 0 } });
+  h = await createCoreHarness({
+    random: () => 0.99,
+    gatewayOptions: { streamDelayMs: 0 },
+    config: { turns: SCREEN_ON },
+  });
   maya = await h.ctxFor(h.people.maya);
 }, 180_000);
 
@@ -347,7 +356,7 @@ describe('the safety screen in a turn', () => {
   it('a spoken message outside a live call is refused before it buys a screen call, as on main', async () => {
     // The audit's case: a voice turn with no call (a client loop, a crafted request) bought a billed screen call
     // before call admission refused it. With no call id, and with a stale one.
-    const loose = h.withConfig({ turns: { rateLimit: 500 } });
+    const loose = h.withConfig({ turns: { rateLimit: 500, ...SCREEN_ON } });
     for (const text of [CLEAR_HIT, 'um yeah so i keep thinking about ending it like for real']) {
       for (const callId of [undefined, randomUUID()]) {
         const ctx = await fresh();
@@ -390,7 +399,7 @@ describe('the safety screen in a turn', () => {
   });
 
   it('a founder past the spend cap is refused before the screen, as on main', async () => {
-    const loose = h.withConfig({ turns: { rateLimit: 500 } });
+    const loose = h.withConfig({ turns: { rateLimit: 500, ...SCREEN_ON } });
     const session = await loose.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
     await withSettings({ dailyUsdCapPerPrincipal: 0 }, async () => {
       for (const text of [CLEAR_HIT, INDIRECT]) {
@@ -405,7 +414,7 @@ describe('the safety screen in a turn', () => {
   });
 
   it('a burst over the message limit buys a screen call only for the messages admitted', async () => {
-    const tight = h.withConfig({ turns: { rateLimit: 3 } });
+    const tight = h.withConfig({ turns: { rateLimit: 3, ...SCREEN_ON } });
     const ctxP = (): Promise<RequestContext> => h.ctxFor(h.people.devin);
     const session = await tight.sessions.create(await ctxP(), h.ventures.quietquad.id, { mode: 'coach' });
     const from = h.gateway.calls.length;
@@ -439,5 +448,159 @@ describe('the safety screen on the EIR studio test bench', () => {
     expect(response.validator.notes).toEqual(['crisis_support', 'no_model_call', 'safety_screen']);
     expect(callsSince(h.gateway, from)).toEqual([`generate:${SAFETY_SCREEN_SCHEMA_NAME}:test_bench`]);
     expect(await ledgerPurposes(corin.requestId)).toEqual(['test_bench']);
+  });
+});
+
+describe('with the safety screen switched off (the default, CORE_SAFETY_SCREEN unset or off)', () => {
+  /**
+   * A core on the default configuration (the message limit aside: this file's founder has sent many) and a mock model
+   * of its own, so every call it records is this core's.
+   */
+  function coreOff(): { core: Core; gateway: MockModelGateway } {
+    const config = coreConfig({ appEnv: 'test', turns: { rateLimit: 500 } });
+    expect(config.turns.safetyScreen).toBe(false);
+    const gateway = new MockModelGateway({ streamDelayMs: 0 });
+    const core = createCore({
+      db: h.t.db,
+      gateway,
+      config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+      logger: h.logger,
+      random: () => 0.99,
+    });
+    return { core, gateway };
+  }
+
+  /** This request's model calls, as `kind:schema:purpose`. */
+  function callsOf(gateway: MockModelGateway, requestId: string): string[] {
+    return gateway.calls
+      .filter((c) => c.requestId === requestId)
+      .map((c) => `${c.kind}:${c.schemaName ?? '-'}:${c.purpose}`);
+  }
+
+  /**
+   * Runs a turn and returns, with its events and outcome, this request's model calls made before the turn reached
+   * "classifying" (the first thing the admitted turn does) and all of them at the end.
+   */
+  async function runTracked(
+    core: Core,
+    gateway: MockModelGateway,
+    ctx: RequestContext,
+    sessionId: string,
+    text: string,
+  ): Promise<{ events: TurnStreamEvent[]; outcome: RunTurnOutcome; atClassifying: string[]; all: string[] }> {
+    const events: TurnStreamEvent[] = [];
+    let atClassifying: string[] = [];
+    const outcome = await core.orchestrator.runTurn(ctx, sessionId, { text }, (e) => {
+      const event = TurnStreamEvent.parse(e);
+      if (event.event === 'turn.status' && event.phase === 'classifying') {
+        atClassifying = callsOf(gateway, ctx.requestId);
+      }
+      events.push(event);
+    });
+    return { events, outcome, atClassifying, all: callsOf(gateway, ctx.requestId) };
+  }
+
+  it('a prefilter hit makes no screen call: the turn runs as an ordinary message does, as on main', async () => {
+    const { core, gateway } = coreOff();
+    const ordinary = await fresh();
+    const control = await core.sessions.create(ordinary, h.ventures.quietquad.id, { mode: 'coach' });
+    const plain = await runTracked(
+      core,
+      gateway,
+      ordinary,
+      control.id,
+      'How should we price the two-library pilot?',
+    );
+    expect(plain.outcome.status).toBe('completed');
+    // As on main: the retrieval embedding starts at admission and overlaps the accepted and classifying events;
+    // then the coaching reply.
+    expect(plain.atClassifying).toEqual(['embed:-:embedding']);
+    expect(plain.all.slice(0, 2)).toEqual(['embed:-:embedding', 'stream:-:turn']);
+
+    for (const text of [
+      INDIRECT,
+      STRAIN,
+      CLEAR_HIT,
+      'goodbye',
+      "ok let's end it there",
+      'um yeah so i keep thinking about ending it like for real',
+    ]) {
+      expect(classifyRisk(text).crisis, text).toBe(false);
+      const ctx = await fresh();
+      const session = await core.sessions.create(ctx, h.ventures.quietquad.id, { mode: 'coach' });
+      const { events, outcome, atClassifying, all } = await runTracked(core, gateway, ctx, session.id, text);
+      expect(outcome.status, text).toBe('completed');
+      // The same calls in the same order as an ordinary message (no screen, no wait for one before the embedding).
+      expect(atClassifying, text).toEqual(plain.atClassifying);
+      expect(all.slice(0, 2), text).toEqual(plain.all.slice(0, 2));
+      expect(
+        all.filter((c) => c.includes(SAFETY_SCREEN_SCHEMA_NAME)),
+        text,
+      ).toEqual([]);
+      expect(await ledgerPurposes(ctx.requestId), text).not.toContain('classification');
+      expect(screenLogs(ctx.requestId), text).toEqual([]);
+      const turn = completedTurn(events);
+      expect(await turnRow(turn.id), text).toMatchObject({ riskLabel: 'none', riskCategories: [] });
+      expect(turn.validator?.notes ?? [], text).not.toContain('safety_screen');
+      expect(CoachResponse.parse(turn.response).escalation.required, text).toBe(false);
+    }
+    expect(gateway.calls.filter((c) => c.schemaName === SAFETY_SCREEN_SCHEMA_NAME)).toEqual([]);
+  });
+
+  it('switched on, the same hit is screened before the embedding starts (the contrast)', async () => {
+    const config = coreConfig({ appEnv: 'test', turns: { rateLimit: 500, safetyScreen: true } });
+    const gateway = new MockModelGateway({ streamDelayMs: 0 });
+    const core = createCore({
+      db: h.t.db,
+      gateway,
+      config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+      logger: h.logger,
+      random: () => 0.99,
+    });
+    const ctx = await fresh();
+    const session = await core.sessions.create(ctx, h.ventures.quietquad.id, { mode: 'coach' });
+    const { outcome, atClassifying, all } = await runTracked(core, gateway, ctx, session.id, CLEAR_HIT);
+    expect(outcome.status).toBe('completed');
+    expect(atClassifying).toEqual([`generate:${SAFETY_SCREEN_SCHEMA_NAME}:classification`]);
+    expect(all.slice(0, 3)).toEqual([
+      `generate:${SAFETY_SCREEN_SCHEMA_NAME}:classification`,
+      'embed:-:embedding',
+      'stream:-:turn',
+    ]);
+  });
+
+  it('a crisis rule still takes the crisis path, with no screen call', async () => {
+    const { core, gateway } = coreOff();
+    const ctx = await fresh();
+    const session = await core.sessions.create(ctx, h.ventures.quietquad.id, {});
+    const { events, outcome } = await runTurn(core, ctx, session.id, {
+      text: 'I want to kill myself tonight.',
+    });
+    expect(outcome.status).toBe('blocked');
+    expect(callsOf(gateway, ctx.requestId)).toEqual([]);
+    expect(events.at(-1)).toMatchObject({ event: 'turn.blocked', reason: 'crisis_support' });
+    if (outcome.turnId === null) throw new Error('expected a turn');
+    const detail = await core.sessions.get(ctx, session.id);
+    expect(detail.turns[0]?.validator?.notes).toEqual(['crisis_support', 'no_model_call']);
+    expect(await auditMetadata(outcome.turnId, 'turn.crisis_support')).not.toHaveProperty('safetyScreen');
+  });
+
+  it('the studio test bench makes no screen call either', async () => {
+    const { core, gateway } = coreOff();
+    const corin = await h.ctxFor(h.people.eirCorin);
+    const personaId = h.ventures.quietquad.personaId;
+    const active = await h.t.db.system((sx) => personasRepo.getActiveRelease(sx, personaId));
+    if (active === null) throw new Error('Corin’s vEIR has no active release');
+    const response = TestTurnResponse.parse(
+      await core.testBench.runTestTurn(corin, personaId, { releaseId: active.id, text: INDIRECT }),
+    );
+    expect(response.status).toBe('completed');
+    expect(response.validator.notes).not.toContain('safety_screen');
+    expect(gateway.calls.filter((c) => c.schemaName === SAFETY_SCREEN_SCHEMA_NAME)).toEqual([]);
+    expect(await ledgerPurposes(corin.requestId)).not.toContain('classification');
   });
 });

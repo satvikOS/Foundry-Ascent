@@ -33,6 +33,10 @@ a question back only, fewer than two sentences of content, steering back to the 
 re-asking, "still open" for a past date, a follow-up when the founder brings it up, openers re-opening it, "So …"
 openings) and each conversation is judged. About USD 0.2 a run.
 
+`safety` runs on its own too (never part of `all`): the model-based safety screen on the app's models over the
+E-crisis corpus, before production turns it on, with no app, browser or database ("Safety screen evaluation" below).
+In every other suite the app runs with the screen on (`CORE_SAFETY_SCREEN=on`).
+
 `matrix` has two sources (input `matrix_source`); the summary says which ran:
 
 - `builtin` (default): the lab's own scenarios (`ops/lab/scenarios/smoke.json`, 40, of which `max_scenarios` run).
@@ -180,7 +184,8 @@ gh workflow run ops-conversation-lab.yml -f suite=matrix -f budget_usd=5 -f max_
 ## Spend
 
 `budget_usd` (default 5, at most 50) is a hard cap for the whole run, split by suite weight (recall 1, voice 1,
-matrix 2, ui 2). Within a suite:
+matrix 2, ui 2; `agenda` and `safety` run alone, with all of it, and every call of `safety` is a screen call on the
+app's models: "Safety screen evaluation"). Within a suite:
 
 - the **app's share** (recall and voice 85 %, matrix 55 %, ui 100 %) is metered by the app itself (the usage ledger
   behind Admin → Usage: model turns, distillation, embeddings, Polly characters, Transcribe seconds). Before anything
@@ -209,13 +214,88 @@ gh workflow run ops-conversation-lab.yml -f suite=matrix -f matrix_source=evals 
 
 ## Safety screen evaluation
 
-The safety screen (packages/ai README, "Indirect ideation") is evaluated on its own, outside the suites: a script
-runs the crisis pipeline (the deterministic rules, the ideation prefilter, then the screen exactly as a turn calls it:
-same prompt, schema, output bound and 2.5 s budget) over the E-crisis corpus (`ops/lab/scenarios/safety-screen.json`,
-1,244 synthetic lines: crisis lines, hard negatives that share their words, every line of the evals datasets, tests
-and lab scenarios that the rules flag, and 17 closings sent with the vEIR's previous reply, as a turn sends them) and
-prints precision, recall, latency and cost. It needs credentials
-allowed to invoke the app's models (the lab role grants exactly those; an operator's own credentials work as well):
+The safety screen (packages/ai README, "Indirect ideation": the ideation prefilter, then one short model call that
+can only add the crisis or wellbeing flag) is **off in production** until it has been evaluated on the real model.
+One switch controls it: `CORE_SAFETY_SCREEN=on|off` (core config `turns.safetyScreen`, default `off`). Off, a turn
+runs exactly as without it: no screen call, no wait, the retrieval embedding overlapping admission as before, even
+when the prefilter fires. The conversation lab runs the app with it **on** in every suite (`api_env` in
+`conversation_lab/stack.py`), so a prefilter hit in a lab conversation is screened as it would be in production.
+
+### The `safety` suite
+
+The evaluation runs on GitHub as the lab's `safety` suite, under the lab's role, which already may invoke the app's
+models (its permissions are unchanged); no local AWS credentials are needed:
+
+```bash
+# numbers only
+gh workflow run ops-conversation-lab.yml -f suite=safety -f budget_usd=1
+# with every line's verdict and the model's reason, sealed to your key
+gh workflow run ops-conversation-lab.yml -f suite=safety -f budget_usd=1 -f public_key="$(cat "$dir/public.b64")"
+```
+
+It runs on its own (never part of `all`) and starts no app, browser or database: `conversation_lab/safety.py` runs
+`apps/api/src/scripts/lab-safety-screen.ts` with the models of `infra/cdk/config/production.json`. The script runs the
+crisis pipeline (the deterministic rules, the ideation prefilter, then the screen exactly as a turn calls it: same
+prompt, schema, output bound and 2.5 s budget, through the app's model gateway) over the E-crisis corpus
+(`ops/lab/scenarios/safety-screen.json`, 1,244 synthetic lines: crisis lines, hard negatives that share their words,
+every line of the evals datasets, tests and lab scenarios that the rules flag, and 17 closings sent with the vEIR's
+previous reply, as a turn sends them). `max_scenarios`, `scenario_ids`, `repeat` and `matrix_source` do not apply:
+it always reads the whole corpus, four calls at a time.
+
+`budget_usd` is the suite's hard cap: a screen call is made only when its worst case (its input and the full output
+bound on the primary and the fallback model, each with a repair attempt, at the gateway's prices: about USD 0.004 on
+Nova 2 Lite, seven times a real call) still fits beside what was spent and what the calls in flight may still cost. A
+whole-corpus run screens 669 lines for about USD 0.33 on Nova 2 Lite (≈ 1,100 input and ≈ 50 output tokens a call at
+the `us.` profile's USD 0.33 and 2.75 per million: ≈ USD 0.0005 a call), so `budget_usd=1` covers it; at the cap
+the run stops cleanly (`Stopped by: budget_app`) and reports what it read.
+
+Its outputs follow the lab's rules. The summary prints numbers only: precision and recall, the counts by expected
+label, calls and failures, cost, and latency p50/p95. The script's own report (with the ids of false and missed
+crises) and every line's outcome with the model's one-sentence reason and the corpus text go to the private folder
+(`safety-screen.json`, the script's log), sealed to `public_key` or deleted. `baseline_run_id` compares two runs'
+precision, recall, false and missed crises, latency and cost per call.
+
+### Reading it
+
+- **Crisis decision**: confusion counts, precision and recall on the lines labelled `crisis` and `none`, for the
+  rules alone (production's behaviour today) and for rules + screen. The pipeline's true positives can only grow:
+  the screen never removes a rule's crisis. **Screen alone**: precision and recall on the labelled lines the screen
+  read, with the number of its false crises (ordinary lines answered with the crisis message) and missed crises.
+  The product rule: ordinary coaching must not get the crisis response, so a false crisis on a sign-off, venture
+  frustration or a joke is the number to drive down (change the prompt in `packages/ai/src/risk/safety-screen.ts`
+  with `POLICY_VERSION`), while a missed crisis is one the rules never caught either.
+- **Counts by expected label** (`crisis`, `none`, `wellbeing`, `debatable`, `unlabeled`): the lines, those the rules
+  flagged, those the screen read and its outcomes (crisis, wellbeing, clear, failed), and the turn's final crisis and
+  wellbeing flags.
+- **Closings read with the vEIR's previous reply** ("goodbye" after "Anything else before we stop?", and after "Are
+  you safe right now?"): sign-offs are the screen's most frequent production input, so a false crisis there is the
+  first thing to check. **Wellbeing flags on ordinary lines**: each forces a P1 escalation, so they are false
+  positives too.
+- **Latency** p50/p95: what a prefilter hit adds to a turn (never more than 2.5 s). **Cost**: per call, and per 1,000
+  founder turns at a given share of prefilter hits. **Failed**: errors and timeouts, after which a turn goes on as
+  the rules decided.
+
+The ids behind those counts are in the sealed `safety-screen.json` (open it as in "Running it").
+
+### Turning it on in production
+
+When a run's numbers are acceptable (no false crisis on ordinary lines and closings, precision and recall above the
+rules alone), set `CORE_SAFETY_SCREEN=on` in the API's environment; `off` (or unset) turns it off again with the next
+deploy, with no other change. Any other value stops the API at start-up (a typo never half-enables it).
+
+What it costs in production. The prefilter fires on about 0.1 % of the lab's, evals' and e2e suites' ordinary lines
+(2 of 1,627), but also on bare closings: 14 of 33 everyday sign-offs ("goodbye", "ok goodbye", "i think i'm done",
+"thank you for everything") reach the screen, so a conversation that ends with one pays for one call. At ≈ USD 0.0005
+a call that is about USD 0.0005 per 1,000 turns at a 0.1 % hit rate, USD 0.025 at 5 % and USD 0.05 at 10 % (one
+sign-off in every ten turns), against about USD 6 for the 1,000 coaching turns themselves: under 1 %. Latency: the
+screen runs once the turn is admitted (the founder already sees it accepted, at "Understanding"), typically 0.5–1.5 s
+and never more than 2.5 s, and the retrieval embedding waits for its verdict (≈ 0.1–0.2 s more) so that a screened
+crisis makes no retrieval call. Every other message pays nothing, and a request a gate refuses (call admission, the
+message limit, the spend caps) never buys a screen call.
+
+### Without the workflow
+
+An operator with credentials allowed to invoke the app's models can run the script directly:
 
 ```bash
 MODEL_PROVIDER=bedrock BEDROCK_REGION=us-east-1 \
@@ -224,43 +304,12 @@ MODEL_EMBEDDINGS_ID=amazon.titan-embed-text-v2:0 \
 pnpm --filter @foundry/api exec tsx src/scripts/lab-safety-screen.ts --budget-usd 1 --out /tmp/safety-screen
 ```
 
-(copy the model ids from `infra/cdk/config/production.json`). `--scope all` also screens the lines the prefilter
-lets pass (the screen's recall without the prefilter, when deciding to widen or narrow it); `--limit N` and
-`--concurrency N` (default 4) bound a run. Without `MODEL_PROVIDER=bedrock` it runs on the mock gateway's rule (a
-free plumbing check). The output is public-safe: counts, rates, row ids, model ids, milliseconds and dollars. With
-`--out`, every row's outcome and the model's one-sentence reason, with the corpus text, go to
-`<out>/private/safety-screen.json`, for the operator only.
-
-Read it as follows:
-
-- `rulesOnly` and `pipeline`: confusion counts, precision and recall on the lines labelled `crisis` and `none`, for
-  the rules alone (origin/main's behaviour) and for rules + screen. The pipeline's true positives can only grow:
-  the screen never removes a rule's crisis.
-- `screenAlone`: precision and recall on the lines the screen read, with the first ids of its false crises (ordinary
-  lines answered with the crisis message) and missed crises. The product rule: ordinary coaching must not get the
-  crisis response, so a false crisis on a sign-off, venture frustration or a joke is the number to drive down
-  (change the prompt in `src/risk/safety-screen.ts` with `POLICY_VERSION`), while a missed crisis is one the rules
-  never caught either.
-- `withReply`: the closings read with the reply they answer ("goodbye" after "Anything else before we stop?", and
-  after "Are you safe right now?"). Sign-offs are the screen's most frequent production input, so a false crisis
-  there is the first thing to check.
-- `wellbeingOnOrdinary`: ordinary lines given the wellbeing flag (each forces a P1 escalation): also false
-  positives.
-- `latencyMs` and `costUsd`: the latency a prefilter hit adds to a turn, and the cost per call and per 1,000 founder
-  turns at a given share of prefilter hits.
-
-A run of the whole corpus screens 669 lines: about USD 0.33 on Nova 2 Lite (≈ 1,100 input and ≈ 50 output tokens a
-call at the `us.` profile's USD 0.33 and 2.75 per million: ≈ USD 0.0005 a call), within the default budget of USD 1.
-
-What it costs in production. The prefilter fires on about 0.1 % of the lab's, evals' and e2e suites' ordinary lines
-(2 of 1,627), but also on bare closings: 14 of 33 everyday sign-offs ("goodbye", "ok goodbye", "i think i'm done",
-"thank you for everything") reach the screen, so a conversation that ends with one pays for one call. At ≈ USD 0.0005
-a call that is about USD 0.0005 per 1,000 turns at a 0.1 % hit rate, USD 0.025 at 5 % and USD 0.05 at 10 % (one
-sign-off in every ten turns), against about USD 6 for the 1,000 coaching turns themselves: under 1 %. Latency: the screen runs once the turn
-is admitted (the founder already sees it accepted, at "Understanding"), typically 0.5–1.5 s and never more than 2.5 s,
-and the retrieval embedding waits for its verdict (≈ 0.1–0.2 s more) so that a screened crisis makes no retrieval
-call. Every other message pays nothing, and a request a gate refuses (call admission, the message limit, the spend
-caps) never buys a screen call.
+(copy the model ids from `infra/cdk/config/production.json`). It prints the whole report (ids included) and writes
+every line's outcome, reason and text to `<out>/private/safety-screen.json`, for the operator only. `--scope all` also
+screens the lines the prefilter lets pass (the screen's recall without the prefilter, when deciding to widen or narrow
+it); `--limit N` and `--concurrency N` (default 4) bound a run. Without `MODEL_PROVIDER=bedrock` it runs on the mock
+gateway's rule (a free plumbing check), as does the lab's dry run:
+`python -m conversation_lab run --suite safety --budget-usd 1 --out /tmp/lab --mock` (no database needed).
 
 ## Locally
 

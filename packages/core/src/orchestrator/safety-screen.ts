@@ -39,7 +39,8 @@ export function safetyScreenDue(founderText: string): boolean {
  * found no crisis and the ideation prefilter flags the founder's words, a short structured call on the primary model
  * (with the gateway's fallback, inside one {@link SAFETY_SCREEN_TIMEOUT_MS} budget) reads the message with the vEIR's
  * previous reply. Callers run it only for an admitted request: after every gate that refuses one (the message and
- * in-flight limits, call admission, the spend caps), so a refused request never buys a screen call.
+ * in-flight limits, call admission, the spend caps), so a refused request never buys a screen call, and only with
+ * `turns.safetyScreen` on (`CORE_SAFETY_SCREEN=on`; off by default, when a turn runs exactly as without the screen).
  *
  * Returns null when it did not run (no prefilter hit, or already a crisis), which is almost every message: they pay
  * for neither a call nor any latency. `failed` (an error, a refusal, invalid output or the time running out) adds no

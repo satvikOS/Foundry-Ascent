@@ -10,11 +10,17 @@
  *   pnpm --filter @foundry/api exec tsx src/scripts/lab-safety-screen.ts [--scope screened|all] \
  *     [--limit N] [--concurrency 4] [--budget-usd 1] [--out DIR]
  *
+ * The conversation lab runs it on GitHub as its `safety` suite (ops/lab conversation_lab/safety.py, under the lab's
+ * role, with the run's budget), and prints only the summary's numbers.
+ *
  * `--scope screened` (default) calls the screen only where a turn would: the rules found no crisis and the prefilter
  * flagged the message. `--scope all` also screens what the prefilter lets pass (the screen's own recall, for
  * widening or narrowing the prefilter). Without MODEL_PROVIDER=bedrock it runs on the mock gateway's rule (a plumbing
- * check, free). Prints only counts, rates, row ids, model ids, milliseconds and dollars; with `--out`, every row's
- * verdict and reason (corpus text included) goes to `<DIR>/private/safety-screen.json` for the operator alone.
+ * check, free). `--budget-usd` is a hard cap: a call is made only when its worst case (its input and the most output
+ * it may be billed, for the primary and the fallback model, each with a repair attempt) still fits beside what was
+ * spent and what the calls in flight may still cost. Prints only counts, rates, row ids, model ids, milliseconds and
+ * dollars; with `--out`, every row's verdict and reason (corpus text included) goes to
+ * `<DIR>/private/safety-screen.json` for the operator alone.
  */
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -29,6 +35,7 @@ import {
   SafetyScreenVerdict,
   buildSafetyScreenMessages,
   classifyRisk,
+  costFor,
   createModelGateway,
   ideationPrefilter,
   isModelGatewayError,
@@ -85,8 +92,36 @@ export interface RowResult {
 export interface EvaluateOptions {
   readonly scope: 'screened' | 'all';
   readonly concurrency: number;
-  /** Stops calling the model once this much has been spent. */
+  /** A hard cap: no call is made once it is spent, or when a call's worst case would no longer fit. */
   readonly budgetUsd: number;
+  /** The most one screen call of `row` can be billed (default 0: only what was spent stops the run). */
+  readonly worstCaseUsd?: (row: CorpusRow) => number;
+}
+
+/** Upper bound of the input tokens of one screen attempt (about 3 characters a token; real text is closer to 4). */
+function inputTokenBound(row: CorpusRow): number {
+  const chars =
+    SAFETY_SCREEN_SYSTEM_PROMPT.length +
+    buildSafetyScreenMessages({ founderText: row.text, previousReply: row.previousReply ?? null }).reduce(
+      (acc, m) => acc + JSON.stringify(m).length,
+      0,
+    );
+  return Math.ceil(chars / 3) + 64;
+}
+
+/**
+ * The most a screen call can be billed on these models: the primary and the fallback, each with a repair attempt
+ * that also reads the first answer, each answering the full output bound, at the gateway's prices.
+ */
+export function screenWorstCaseUsd(
+  primaryModelId: string,
+  fallbackModelId: string,
+): (row: CorpusRow) => number {
+  return (row) => {
+    const input = inputTokenBound(row) * 2 + SAFETY_SCREEN_MAX_OUTPUT_TOKENS;
+    const usage = { inputTokens: input, outputTokens: SAFETY_SCREEN_MAX_OUTPUT_TOKENS * 2 };
+    return costFor(primaryModelId, usage) + costFor(fallbackModelId, usage);
+  };
 }
 
 /** One screen call, as the turn pipeline makes it (same prompt, schema, output bound and time budget). */
@@ -147,6 +182,8 @@ export async function evaluateSafetyScreen(
 ): Promise<{ results: RowResult[]; budgetReached: boolean }> {
   const results: RowResult[] = new Array<RowResult>(rows.length);
   let spent = 0;
+  /** What the calls in flight may still cost (their worst cases). */
+  let reserved = 0;
   let budgetReached = false;
   let next = 0;
   const worker = async (): Promise<void> => {
@@ -175,9 +212,17 @@ export async function evaluateSafetyScreen(
         reason: null,
       };
       const call = path === 'screened' || path === 'not_screened';
-      if (call && spent >= options.budgetUsd) budgetReached = true;
+      const worst = call ? (options.worstCaseUsd?.(row) ?? 0) : 0;
+      if (call && (spent >= options.budgetUsd || spent + reserved + worst > options.budgetUsd)) {
+        budgetReached = true;
+      }
       const previousReply = row.previousReply ?? null;
-      const screened = call && !budgetReached ? await screenOnce(gateway, row.text, previousReply) : empty;
+      let screened: Awaited<ReturnType<typeof screenOnce>> = empty;
+      if (call && !budgetReached) {
+        reserved += worst;
+        screened = await screenOnce(gateway, row.text, previousReply);
+        reserved -= worst;
+      }
       spent += screened.costUsd;
       results[index] = {
         id: row.id,
@@ -238,8 +283,15 @@ export function summarize(results: readonly RowResult[]) {
   const cost = calls.reduce((acc, r) => acc + r.costUsd, 0);
   const meanCost = calls.length === 0 ? 0 : cost / calls.length;
   const byExpect = (expectValue: RowResult['expect']) => {
-    const rows = results.filter((r) => r.expect === expectValue && r.screen !== null);
+    const all = results.filter((r) => r.expect === expectValue);
+    const rows = all.filter((r) => r.screen !== null);
     return {
+      /** Every row with this label, and how the pipeline decided them. */
+      rows: all.length,
+      rules: all.filter((r) => r.path === 'rules').length,
+      pipelineCrisis: all.filter((r) => r.crisis).length,
+      pipelineWellbeing: all.filter((r) => r.wellbeing).length,
+      /** The rows the screen read, and its outcomes. */
       screened: rows.length,
       crisis: rows.filter((r) => r.screen === 'crisis').length,
       wellbeing: rows.filter((r) => r.screen === 'wellbeing').length,
@@ -268,6 +320,7 @@ export function summarize(results: readonly RowResult[]) {
       none: byExpect('none'),
       wellbeing: byExpect('wellbeing'),
       debatable: byExpect('debatable'),
+      unlabeled: byExpect('unlabeled'),
     },
     /**
      * Rows read with the vEIR's previous reply (sign-offs after a coaching reply, a goodbye after distress): the
@@ -280,12 +333,14 @@ export function summarize(results: readonly RowResult[]) {
     },
     /** Wellbeing flags on ordinary lines: each forces a P1 escalation, so they count against precision too. */
     wellbeingOnOrdinary: idList(negatives.filter((r) => r.wellbeing)),
+    calls: calls.length,
     failures: calls.filter((r) => r.screen === 'failed').length,
     failureCodes: [...new Set(calls.map((r) => r.errorCode).filter((c): c is string => c !== null))].sort(),
     models: [...new Set(calls.map((r) => r.modelId).filter((m): m is string => m !== null))].sort(),
     latencyMs: {
       p50: percentile(latencies, 50),
       p90: percentile(latencies, 90),
+      p95: percentile(latencies, 95),
       p99: percentile(latencies, 99),
       max: latencies.length === 0 ? null : Math.max(...latencies),
     },
@@ -366,8 +421,9 @@ export function parseArgs(argv: readonly string[]): Args {
         throw new UsageError(`unknown argument ${flag ?? ''}`);
     }
   }
-  if (!Number.isFinite(args.budgetUsd) || args.budgetUsd <= 0 || args.budgetUsd > 20) {
-    throw new UsageError('--budget-usd is between 0 and 20');
+  // The conversation lab's own range (ops/lab conversation_lab/config.py MAX_BUDGET_USD).
+  if (!Number.isFinite(args.budgetUsd) || args.budgetUsd <= 0 || args.budgetUsd > 50) {
+    throw new UsageError('--budget-usd is between 0 and 50');
   }
   return args;
 }
@@ -386,12 +442,14 @@ async function main(argv: readonly string[]): Promise<void> {
     scope: args.scope,
     concurrency: args.concurrency,
     budgetUsd: args.budgetUsd,
+    worstCaseUsd: screenWorstCaseUsd(gateway.info.primaryModelId, gateway.info.fallbackModelId),
   });
   const report = {
     provider: gateway.info.provider,
     primaryModelId: gateway.info.primaryModelId,
     fallbackModelId: gateway.info.fallbackModelId,
     scope: args.scope,
+    budgetUsd: args.budgetUsd,
     budgetReached,
     wallMs: Math.round(performance.now() - started),
     ...summarize(results),

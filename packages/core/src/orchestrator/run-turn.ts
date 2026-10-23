@@ -642,8 +642,7 @@ export function createOrchestrator(
         status: 'blocked',
         response,
         // A screened crisis was admitted under the rules' label: the turn keeps the final one.
-        riskLabel: riskLabel(risk),
-        riskCategories: risk.categories,
+        ...(screened ? { riskLabel: riskLabel(risk), riskCategories: risk.categories } : {}),
         validatorResults: validator,
         sampledForReview: false,
         mode: pre.turnMode,
@@ -722,15 +721,18 @@ export function createOrchestrator(
     // Indirect ideation the crisis rules do not flag ("I'm thinking about ending it", "this is my last message"): a
     // prefilter hit asks the safety screen, which can only add a flag (safety-screen.ts). It runs only here, once the
     // turn is admitted: every gate (the message and in-flight limits, call admission, the spend caps) has refused a
-    // request before it buys a call, as on main. Rare, so the common path pays nothing.
-    const screen = await screenIndirectIdeation(kit, {
-      meter: { ctx, ventureId, purpose: 'classification' },
-      founderText: input.text,
-      previousReply: previousReplyOf(pre.coach),
-      crisis: a.crisis || a.risk.crisis,
-      ...(signal ? { signal } : {}),
-    });
-    const risk = withSafetyScreen(a.risk, screen ?? 'clear');
+    // request before it buys a call, as on main. Rare, so the common path pays nothing. Only with
+    // `turns.safetyScreen` (CORE_SAFETY_SCREEN=on): off, the turn runs exactly as without it.
+    const screen = cfg.turns.safetyScreen
+      ? await screenIndirectIdeation(kit, {
+          meter: { ctx, ventureId, purpose: 'classification' },
+          founderText: input.text,
+          previousReply: previousReplyOf(pre.coach),
+          crisis: a.crisis || a.risk.crisis,
+          ...(signal ? { signal } : {}),
+        })
+      : null;
+    const risk = screen === null ? a.risk : withSafetyScreen(a.risk, screen);
     const label = riskLabel(risk);
     // The detail is a participant-safe label: which names the cross-venture guard knows is never revealed.
     await emit({
@@ -912,8 +914,7 @@ export function createOrchestrator(
         status,
         response: recorded,
         // The safety screen's wellbeing flag came after admission: the turn keeps the final classification.
-        riskLabel: label,
-        riskCategories: risk.categories,
+        ...(screen !== null ? { riskLabel: label, riskCategories: risk.categories } : {}),
         validatorResults: checked.results,
         modelId: generation.modelId,
         fallbackUsed: generation.fallbackUsed,
@@ -1269,7 +1270,7 @@ export function createOrchestrator(
         // The query embedding starts once the turn is admitted (a refused request buys no model call) and
         // overlaps the accepted and classifying events. A message the safety screen will read waits for its verdict
         // (accepted() embeds it then): a screened crisis makes no retrieval call.
-        if (!crisis && !risk.crisis && !safetyScreenDue(input.text)) {
+        if (!crisis && !risk.crisis && !(cfg.turns.safetyScreen && safetyScreenDue(input.text))) {
           embedding = embedRetrievalQuery(
             kit,
             ctx,

@@ -333,22 +333,22 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
         // No venture: every venture of the tenant (its name, canary and members) is another venture here.
         const others = await directory.others(ctx.tenantId, null);
         const { eirNames } = await directory.get(ctx.tenantId);
-        // The founder pipeline's safety screen, on the same terms (run-turn.ts): a curator trying a release sees
-        // what a founder would.
-        const screen = await screenIndirectIdeation(kit, {
-          meter: { ctx, ...METER },
-          founderText: input.text,
-          previousReply: input.history.at(-1)?.answer ?? null,
-          crisis: firstRisk.crisis,
-          ...(options.signal ? { signal: options.signal } : {}),
+        // The founder pipeline's safety screen, on the same terms and behind the same switch (run-turn.ts,
+        // `turns.safetyScreen`): a curator trying a release sees what a founder would.
+        const screen = cfg.turns.safetyScreen
+          ? await screenIndirectIdeation(kit, {
+              meter: { ctx, ...METER },
+              founderText: input.text,
+              previousReply: input.history.at(-1)?.answer ?? null,
+              crisis: firstRisk.crisis,
+              ...(options.signal ? { signal: options.signal } : {}),
+            })
+          : null;
+        const rules = classifyRisk(input.text, {
+          otherVentureNames: others.names,
+          otherVentureMemberNames: others.memberNames,
         });
-        const risk = withSafetyScreen(
-          classifyRisk(input.text, {
-            otherVentureNames: others.names,
-            otherVentureMemberNames: others.memberNames,
-          }),
-          screen ?? 'clear',
-        );
+        const risk = screen === null ? rules : withSafetyScreen(rules, screen);
         if (risk.crisis) {
           outcome = 'blocked';
           policyReason = 'crisis';

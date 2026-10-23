@@ -165,7 +165,10 @@ def test_api_env_is_the_production_model_config_with_speech_only_when_asked() ->
     assert env["AWS_SESSION_TOKEN"] == "x"
     assert env["CORE_TURN_RATE_LIMIT"] == "1000"
     assert env["APP_ENV"] == "development"
+    # The lab runs the app with the model-based safety screen on (production keeps it off until evaluated).
+    assert env["CORE_SAFETY_SCREEN"] == "on"
     assert api_env({}, models=models, database_url="d", speech=False)["LOCAL_AWS_SPEECH"] == "false"
+    assert api_env({}, models=models, database_url="d", speech=False, mock=True)["CORE_SAFETY_SCREEN"] == "on"
 
 
 def test_plan_prints_suites_and_caps(capsys: pytest.CaptureFixture[str]) -> None:
