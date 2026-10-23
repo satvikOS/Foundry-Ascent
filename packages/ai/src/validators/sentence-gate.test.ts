@@ -503,6 +503,43 @@ describe('SentenceGate', () => {
         ),
       ).toBe(NEWS_FALLBACK);
     });
+
+    it('repeatFallback false drops only the stock line for repeats: parked news still gets its line (a continuation)', () => {
+      const previous =
+        'Price the pilot per library, not per student, because the library pays and the students never see a bill. Ask for £900 a term for the first building, and say plainly that the second one costs the same.';
+      for (const options of [{}, { spoken: true, spokenWordBudget: 70, maxUnitChars: 280 }]) {
+        // Nothing but the previous reply again: nothing in its place, after a lead-in or none.
+        for (const lead of ['', 'Okay. ']) {
+          const repeats = run(
+            gate({ ...options, previousReply: previous, founderText: 'and then?', repeatFallback: false }),
+            [`${lead}${previous}`],
+          ).units;
+          expect(joined(repeats).trim()).toBe(lead.trim());
+        }
+        // Their news parked (again), with or without the previous reply said too: the line about their news.
+        for (const founderText of ['my cofounder quit this morning', 'we got the grant!!']) {
+          for (const reply of [
+            "Let's finish the pricing first, then we can come back to it.",
+            'One thing at a time: the price comes first.',
+            `One thing at a time. ${previous}`,
+          ]) {
+            const units = run(
+              gate({ ...options, previousReply: previous, founderText, repeatFallback: false }),
+              [reply],
+            ).units;
+            expect(joined(units), `${founderText} / ${reply}`).toBe(NEWS_FALLBACK);
+          }
+        }
+      }
+      // The caller that goes on itself (phase A) still gets neither line.
+      for (const reply of [previous, "Let's finish the pricing first, then we can come back to it."]) {
+        expect(
+          run(gate({ previousReply: previous, founderText: 'we got the grant!!', callerContinues: true }), [
+            reply,
+          ]).units,
+        ).toEqual([]);
+      }
+    });
   });
 
   describe('the first reply after an intro that said hello (wave 7)', () => {

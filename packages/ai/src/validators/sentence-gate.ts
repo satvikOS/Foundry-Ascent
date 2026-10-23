@@ -130,6 +130,14 @@ export interface SentenceGateOptions {
    */
   callerContinues?: boolean;
   /**
+   * False: a reply this gate left with nothing (or only a lead-in) after leaving out what said the previous reply again
+   * ends there, with no stock line ({@link REPEAT_FALLBACK}) in its place: the caller's reply stands as it was shown (a
+   * continuation that added nothing). It is about repeats only: a reply that parked the founder's news still ends with
+   * the line about their news ({@link NEWS_FALLBACK}), as by default (differential audit, 2026-10-22: "my cofounder quit
+   * this morning" was answered "Oh wow." alone). Default true.
+   */
+  repeatFallback?: boolean;
+  /**
    * The vEIR's previous reply in this conversation: a unit that mostly says it again is never released (unless the
    * founder asked to hear it again, or sincerely asks who or what the coach is: the honest answer is never dropped).
    * A reply that was nothing but repeats becomes a short line instead.
@@ -686,7 +694,7 @@ export class SentenceGate {
         ? REPEATED_GREETING_FALLBACK
         : this.#agendaDropped > 0 && !continues
           ? NEWS_FALLBACK
-          : this.#repeatsDropped > 0 && !continues
+          : this.#repeatsDropped > 0 && !continues && this.#options.repeatFallback !== false
             ? REPEAT_FALLBACK
             : null;
       const unit = instead === null ? null : this.#process(instead);
