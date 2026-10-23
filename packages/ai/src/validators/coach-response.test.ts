@@ -490,6 +490,158 @@ describe('identity', () => {
     expect(honest.results.identityViolation).toBe(false);
   });
 
+  it('takes a made-up weekend out of the answer and the call when the founder asks about it (evals MX-0032)', () => {
+    const veir = opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
+    const founderText = 'lowkey, how was your weekend?';
+    const typed = validateCoachResponse(base({ answer: 'Weekend was good, thanks for asking.' }), {
+      ...veir,
+      founderText,
+    });
+    expect(typed.response.answer).toBe('Thanks for asking! How was yours?');
+    expect(typed.results.notes).toContain('identity_rewritten:1:claims_human');
+    expect(typed.blocked).toBe(false);
+    const said = 'Weekend was good, thanks for asking. Slept in and read.';
+    const call = validateCoachResponse(base({ answer: said, spoken: said }), {
+      ...veir,
+      channel: 'voice',
+      founderText,
+    });
+    expect(call.response.answer).toBe('Thanks for asking! How was yours?');
+    expect(call.response.spoken).toBe('Thanks for asking! How was yours?');
+    // The honest answer to "are you a bot?" stays; only the life told in the first person goes from its sentence.
+    const honest = validateCoachResponse(
+      base({
+        answer: "Yes, I'm an AI, Corin's digital twin, and I had a lovely weekend, thanks for asking!",
+      }),
+      { ...veir, founderText: 'are you a bot? also how was your weekend' },
+    );
+    expect(honest.response.answer).toBe("Yes, I'm an AI, Corin's digital twin, thanks for asking!");
+  });
+
+  it('keeps its own question to the founder, and a reply to their news or bio as written (audit diff2-B2)', () => {
+    const veir = opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
+    // Pure banter: the made-up weekend goes; the thanks and the reply's own question to the founder stay, typed and
+    // said.
+    const demo = 'Weekend was good, thanks — how did the demo go?';
+    const banter = validateCoachResponse(base({ answer: demo, spoken: demo }), {
+      ...veir,
+      channel: 'voice',
+      founderText: 'how was your weekend?',
+    });
+    expect(banter.response.answer).toBe('Thanks! How did the demo go?');
+    expect(banter.response.spoken).toBe('Thanks! How did the demo go?');
+    // The founder also told news of their own: the reply answers that too, and stays as written, typed and on a call.
+    const sorry = "Mine was quiet — but I'm so sorry about your mom. How is she doing?";
+    const founderText = "honestly i'm exhausted. how was your weekend? mine was awful, my mom's in hospital";
+    const typed = validateCoachResponse(base({ answer: sorry }), { ...veir, founderText });
+    expect(typed.response.answer).toBe(sorry);
+    const call = validateCoachResponse(base({ answer: sorry, spoken: sorry }), {
+      ...veir,
+      channel: 'voice',
+      founderText,
+    });
+    expect(call.response.spoken).toBe(sorry);
+    // So does a reply to a message that also asks for the founder's bio.
+    const bio =
+      'Thanks for asking! Bio: I went hiking every weekend at uni and built TrailMate for people like me.';
+    const asked = validateCoachResponse(base({ answer: bio }), {
+      ...veir,
+      founderText: 'how was your weekend? can you help with my bio',
+    });
+    expect(asked.response.answer).toBe(bio);
+    // A question the founder reports, wants words for or plays is not theirs to the coach: nothing changes.
+    for (const [asked, answer] of [
+      [
+        'my manager always asks how was your weekend on monday and i never know what to say',
+        "Pick one true detail: 'Good, thanks — went climbing on Saturday.' Then ask about theirs.",
+      ],
+      [
+        'Jo emailed me: how was your weekend? and asked for the quote. draft my reply',
+        'Sure:\n\nWeekend was lovely, thanks for asking! Quote attached.\n\nMaya',
+      ],
+      [
+        "roleplay: you're my investor. I'll start. Hi! How was your weekend?",
+        "Investor: Good, thanks — spent it at my kid's football tournament. So, tell me about your traction.",
+      ],
+      [
+        'should i make any plans for the weekend or keep working?',
+        'Make plans. Heading out for a hike on Saturday is the best thing for the business right now.',
+      ],
+    ] as const) {
+      const out = validateCoachResponse(base({ answer }), { ...veir, founderText: asked });
+      expect(out.response.answer, asked).toBe(answer);
+    }
+  });
+
+  it('keeps a life whose sentence goes on to the founder, and reads no state or name of theirs as banter (audit diff7-B3)', () => {
+    const veir = opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
+    for (const [founderText, answer] of [
+      ['how was your day? me today 😭', 'Mine was good, thanks — oh no, what happened today?'],
+      [
+        'how was your week? the week tho',
+        'My week was good, thanks — sounds like yours was a lot. Want to talk it through?',
+      ],
+      [
+        'morning, exhausted. how was your weekend?',
+        "Mine was quiet, thanks — sorry you're wiped out! What kept you up?",
+      ],
+      [
+        'hey corin! how was your weekend?',
+        "Mine was quiet, thanks — let's get you ready for Thursday's pitch.",
+      ],
+      [
+        'how was your weekend',
+        "Weekend was good, thanks — now, about the pricing page: let's drop the free tier.",
+      ],
+      [
+        'how was your week?',
+        "My week was great, and yours sounds even better — congrats on the 50 users! What's next?",
+      ],
+    ] as const) {
+      const typed = validateCoachResponse(base({ answer }), { ...veir, founderText });
+      expect(typed.response.answer, founderText).toBe(answer);
+      const call = validateCoachResponse(base({ answer, spoken: answer }), {
+        ...veir,
+        channel: 'voice',
+        founderText,
+      });
+      expect(call.response.answer, founderText).toBe(answer);
+      expect(call.response.spoken, founderText).toBe(answer);
+    }
+    // The coach's own name is banter: a life alone in its sentence still goes.
+    const named = validateCoachResponse(base({ answer: 'Mine was quiet, thanks! How was yours?' }), {
+      ...veir,
+      founderText: 'hey corin! how was your weekend?',
+    });
+    expect(named.response.answer).toBe('Thanks! How was yours?');
+  });
+
+  it('leaves the reply alone without a question about the coach’s own life, and a field even with one', () => {
+    const veir = opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
+    const draft = 'Text him: Hey Sam! Weekend was great, thanks for asking. Want to grab coffee Thursday?';
+    for (const founderText of ['what should I text Sam back?', 'how are you?', 'how did the week go?']) {
+      const out = validateCoachResponse(base({ answer: 'Weekend was good, thanks for asking.' }), {
+        ...veir,
+        founderText,
+      });
+      expect(out.response.answer, founderText).toBe('Weekend was good, thanks for asking.');
+    }
+    const sam = validateCoachResponse(base({ answer: draft }), {
+      ...veir,
+      founderText: 'what should I text Sam back?',
+    });
+    expect(sam.response.answer).toBe(draft);
+    const asked = validateCoachResponse(
+      base({
+        claims: [{ text: 'Weekend was good for the stall.', kind: 'inference', evidence_ids: [] }],
+        uncertainty: [{ item: 'Weekend was good, but it was one weekend.', level: 'medium' }],
+      }),
+      { ...veir, founderText: 'how was your weekend? and is £4 too much for the pilot?' },
+    );
+    expect(asked.response.claims[0]?.text).toBe('Weekend was good for the stall.');
+    expect(asked.response.uncertainty[0]?.item).toBe('Weekend was good, but it was one weekend.');
+  });
+
   it('drops a self-introduction from a later reply, typed and on a call, and keeps the first one (LAB-M16)', () => {
     const ruth = opts({
       personaName: "Ruth's vEIR",

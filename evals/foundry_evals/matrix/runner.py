@@ -482,7 +482,13 @@ class MatrixRunner(Runner):
             return result
         partial = result.status == "error"
         outcomes = grade_scenario(
-            self.taxonomy, scenario, observed, result.findings, partial=partial, members=venture.member_names
+            self.taxonomy,
+            scenario,
+            observed,
+            result.findings,
+            partial=partial,
+            members=venture.member_names,
+            coach=venture.eir_name,
         )
         result.findings += [o.finding() for o in outcomes if not o.passed]
         recall = [

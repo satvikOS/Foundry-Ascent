@@ -565,6 +565,11 @@ export function validateCoachResponse(
       // The reply answers the founder's question: a bare yes to "is this really Corin?" is read there.
       answers: disclaimers === 'reply' ? question : null,
       introduced: disclaimers === 'reply' && options.introduced === true,
+      // …and their question about the coach's own life: "Weekend was good" answering "how was your weekend?" is a
+      // made-up life (evals MX-0032). Only the reply reads it, never a field.
+      ...(disclaimers === 'reply' && options.founderText !== undefined
+        ? { founderText: options.founderText }
+        : {}),
     });
     identityFindings.push(...rewrite.findings);
     return rewrite.text;

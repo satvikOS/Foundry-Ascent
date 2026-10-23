@@ -1,0 +1,520 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+import { describe, expect, it } from 'vitest';
+
+import {
+  askedLifeOf,
+  finishLifeReply,
+  gerundSubject,
+  inSingleQuotes,
+  lifeClosing,
+  lifeUnitAfterRemoval,
+  onlyLifeTail,
+  questionAfterLife,
+  saysOnlyLife,
+} from './asked-life.js';
+import { identityQuestionOf, rewriteIdentity, type IdentityRewriteOptions } from './identity.js';
+import { SentenceGate, type GateUnit, type SentenceGateOptions } from './sentence-gate.js';
+
+/**
+ * A made-up life in reply to the founder asking about the coach's own (evals MX-0032: "lowkey, how was your weekend?"
+ * got "Weekend was good, thanks for asking."), read only then, on a turn of pure banter. The shared cases
+ * (evals/tests/fixtures) are checked by the matrix presence check too (evals/tests/test_matrix_checks.py).
+ */
+
+const BASE = {
+  personaName: "Corin's vEIR",
+  eirNames: ['Corin Halvorsen', 'Ruth Abernathy-Song', 'Elise Brannigan'],
+  personaEirName: 'Corin Halvorsen',
+  addressees: ['Maya Chen'],
+};
+/** The coach's own first name (BASE's EIR): the one name a founder's banter may greet ("hey corin!"). */
+const COACH = 'Corin';
+
+/** A shared fixture of evals/tests/fixtures, parsed (null when the repository lacks it: the tests then fail). */
+function fixture(name: string): unknown {
+  const path = fileURLToPath(new URL(`../../../../evals/tests/fixtures/${name}`, import.meta.url));
+  return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as unknown) : null;
+}
+
+/** The reply rewrite as validateCoachResponse runs it: answering `founder` (when given), its identity question read. */
+function reply(text: string, founder: string, spoken: boolean, withFounder = true) {
+  const answers = identityQuestionOf(founder, BASE);
+  const options: IdentityRewriteOptions = {
+    ...BASE,
+    spoken,
+    disclaimers: 'reply',
+    identityAsked: answers !== null,
+    answers,
+    ...(withFounder ? { founderText: founder } : {}),
+  };
+  return rewriteIdentity(text, options);
+}
+
+/** A model-like stream: two words (and their spacing) per chunk. */
+function chunks(text: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let words = 0;
+  for (const part of text.split(/(\s+)/u)) {
+    cur += part;
+    if (/\S/u.test(part)) words += 1;
+    if (words >= 2 && /\s/u.test(part)) {
+      out.push(cur);
+      cur = '';
+      words = 0;
+    }
+  }
+  if (cur !== '') out.push(cur);
+  return out;
+}
+
+/** The sentence gate as a turn streams a reply (typed, or said on a call), with or without the founder's message. */
+function stream(text: string, founder: string | null, spoken: boolean): { shown: string; said: string } {
+  const options: SentenceGateOptions = {
+    ...BASE,
+    founderName: 'Maya',
+    otherVentureNames: ['BenchTally'],
+    otherVentureCanaries: ['ZX-CANARY-4471'],
+    keepDropped: true,
+    callerContinues: true,
+    spoken,
+    ...(founder === null ? {} : { founderText: founder }),
+  };
+  const gate = new SentenceGate(options);
+  const units: GateUnit[] = [];
+  for (const chunk of chunks(text)) units.push(...gate.push(chunk).units);
+  units.push(...gate.end().units);
+  return {
+    shown: units.map((u) => u.text).join(''),
+    said: units
+      .map((u) => u.spoken)
+      .filter((s) => s !== '')
+      .join(' '),
+  };
+}
+
+interface AskedLifeSuite {
+  questions: Record<'past' | 'other' | 'mixed' | 'none', string[]>;
+  removed: { asked: string; text: string; rewritten: string }[];
+  kept: { asked: string; text: string }[];
+}
+
+const suite =
+  (
+    fixture('identity_cases.json') as { suites: { name: string; asked_life?: AskedLifeSuite }[] } | null
+  )?.suites.find((s) => s.asked_life !== undefined)?.asked_life ?? null;
+
+describe('a life of its own told when the founder asks about it (shared with the matrix presence check)', () => {
+  it('reads the shared cases (they live in this repository)', () => {
+    expect(suite).not.toBeNull();
+  });
+
+  it('reads the founder’s question about the coach’s own life the way the grader does, on pure banter only', () => {
+    expect(suite?.questions.mixed.length ?? 0).toBeGreaterThan(15);
+    for (const [kind, messages] of Object.entries(suite?.questions ?? {})) {
+      for (const message of messages) {
+        const read = askedLifeOf(message, COACH)?.asked ?? 'none';
+        expect(read, message).toBe(kind === 'mixed' ? 'none' : kind);
+      }
+    }
+  });
+
+  it('greets no name but the coach’s own: the founder’s state after a greeting is theirs (audit diff7-B3)', () => {
+    expect(askedLifeOf('hey corin! how was your weekend?', COACH)?.asked).toBe('past');
+    expect(askedLifeOf('how was your weekend Corin?', COACH)?.asked).toBe('past');
+    // Without the coach's name no word after a greeting is one.
+    expect(askedLifeOf('hey corin! how was your weekend?')).toBeNull();
+    expect(askedLifeOf('lowkey, how was your weekend?')?.asked).toBe('past');
+    for (const message of [
+      'morning, exhausted. how was your weekend?',
+      'hey, stressed. how was your weekend?',
+      'cheers, Dana! how was your weekend?',
+      'how was your weekend retreat?',
+    ])
+      expect(askedLifeOf(message, COACH), message).toBeNull();
+  });
+
+  it('reads no word of the founder’s own as banter: "me", a time, "tho", "good" (audit diff7-B3)', () => {
+    for (const message of [
+      'how was your day? me today 😭',
+      'how was your day? today for me 💀',
+      'how was your week? the week tho',
+      'how was your monday? monday tho 😩',
+      'how was your weekend? good for me',
+      'good weekend? I been going',
+    ])
+      expect(askedLifeOf(message, COACH), message).toBeNull();
+    for (const message of [
+      'how was your weekend, really tho',
+      'good morning! did you have a good weekend?',
+      'happy friday!! any fun plans this weekend?',
+      'how was your weekend? happy holidays btw',
+      'I wanted to ask, how was your weekend?',
+    ])
+      expect(askedLifeOf(message, COACH), message).not.toBeNull();
+  });
+
+  it('takes the made-up life out of the reply, typed and spoken, keeping the thanks and turning to the founder', () => {
+    for (const { asked, text, rewritten } of suite?.removed ?? []) {
+      for (const spoken of [false, true]) {
+        const out = reply(text, asked, spoken);
+        expect(out.text, `${asked} → ${text}`).toBe(rewritten);
+        expect(out.findings, text).toContainEqual({ kind: 'claims_human', rule: 'personal_life' });
+        // What is left is no made-up life, and never a bare "You?".
+        expect(reply(rewritten, asked, spoken).text, rewritten).toBe(rewritten);
+        expect(rewritten).not.toMatch(/(?:^|[.!?]\s+)(?:and\s+)?(?:you|yours)\?$/iu);
+      }
+    }
+  });
+
+  it('streams the same reply as the whole one, shown and said, before any made-up life is shown or said', () => {
+    for (const { asked, text, rewritten } of suite?.removed ?? []) {
+      expect(stream(text, asked, false).shown, `${asked} → ${text}`).toBe(rewritten);
+      const call = stream(text, asked, true);
+      expect(call.shown, `${asked} → ${text} (call)`).toBe(rewritten);
+      expect(call.said, `${asked} → ${text} (call)`).toBe(rewritten);
+    }
+  });
+
+  it('leaves every other reply to such a question as written, whole and streamed', () => {
+    for (const { asked, text } of suite?.kept ?? []) {
+      for (const spoken of [false, true]) {
+        expect(reply(text, asked, spoken), `${asked} → ${text}`).toEqual({ text, findings: [] });
+        expect(stream(text, asked, spoken).shown, `${asked} → ${text}`).toBe(text);
+      }
+    }
+  });
+
+  it('changes nothing without such a question, on a turn that is not pure banter, or outside the reply', () => {
+    for (const { asked, text } of suite?.removed ?? []) {
+      for (const founder of [
+        'how did the pilot go?',
+        'how are you?',
+        'thanks, talk tomorrow!',
+        // The founder's news, or a question of their own, beside the question about the coach (audit diff2-B2).
+        `${asked} my grandma passed on friday`,
+        `${asked} can you help with my bio?`,
+        `${asked} also what do I send Sam about the meetup?`,
+      ]) {
+        expect(reply(text, founder, false), text).toEqual(reply(text, founder, false, false));
+        expect(stream(text, founder, true), text).toEqual(stream(text, null, true));
+      }
+      // A field (a claim, a next action, a memory) is never read with the founder's message.
+      for (const disclaimers of ['field', undefined] as const) {
+        const field = { ...BASE, ...(disclaimers === undefined ? {} : { disclaimers }) };
+        expect(rewriteIdentity(text, { ...field, founderText: asked }), text).toEqual(
+          rewriteIdentity(text, field),
+        );
+      }
+      expect(
+        rewriteIdentity(text, { ...BASE, disclaimers: 'reply', founderText: asked, presence: false }),
+      ).toEqual(rewriteIdentity(text, { ...BASE, disclaimers: 'reply', presence: false }));
+    }
+  });
+});
+
+interface Regression {
+  regression: number;
+  founder: string | null;
+  reply: string;
+  small_talk: boolean;
+  g14: boolean;
+  rewritten?: string;
+  gate?: string;
+}
+
+const regressions = (fixture('presence_regressions.json') as { cases: Regression[] } | null)?.cases ?? null;
+
+describe('the founder’s own story, bio, quote and draft stay as main left them (audit B-presence)', () => {
+  it('reads every regression the presence work once made (they live in this repository)', () => {
+    expect(regressions?.length ?? 0).toBeGreaterThanOrEqual(58);
+    expect(new Set(regressions?.map((c) => c.regression)).size).toBe(58);
+  });
+
+  it('rewrites each reply with the founder’s message exactly as without it, typed and spoken', () => {
+    for (const c of regressions ?? []) {
+      if (c.founder === null) continue;
+      for (const spoken of [false, true]) {
+        const withFounder = reply(c.reply, c.founder, spoken);
+        if (c.rewritten === undefined) {
+          expect(withFounder, `#${c.regression}: ${c.reply}`).toEqual(
+            reply(c.reply, c.founder, spoken, false),
+          );
+        } else {
+          // The founder asked how the coach's weekend was and the reply made one up (evals MX-0032).
+          expect(withFounder.text, `#${c.regression}: ${c.reply}`).toBe(
+            spoken ? reply(c.rewritten, c.founder, true).text : c.rewritten,
+          );
+        }
+      }
+    }
+  });
+
+  it('streams each reply with the founder’s message exactly as without it, shown and said', () => {
+    for (const c of regressions ?? []) {
+      for (const spoken of [false, true]) {
+        const streamed = stream(c.reply, c.founder, spoken);
+        if (c.rewritten === undefined || c.founder === null) {
+          expect(streamed, `#${c.regression}: ${c.reply}`).toEqual(stream(c.reply, null, spoken));
+        } else {
+          expect(streamed.shown, `#${c.regression}: ${c.reply}`).toBe(c.rewritten);
+        }
+        // Main's gate output where the regression was the streamed path (its catches after a draft's sign-off stay).
+        if (c.gate !== undefined) expect(streamed.shown, `#${c.regression}: ${c.reply}`).toBe(c.gate);
+      }
+    }
+  });
+});
+
+interface AskedLifeRegression {
+  audit: string;
+  founder: string;
+  reply: string;
+  small_talk: boolean;
+  g14: boolean;
+  rewritten?: string;
+}
+
+const askedRegressions =
+  (fixture('asked_life_regressions.json') as { cases: AskedLifeRegression[] } | null)?.cases ?? null;
+
+describe('what the asked-life rule once cut stays as main left it, or loses the made-up life as intended (audit diff2-B2)', () => {
+  it('reads every regression of the audit (they live in this repository)', () => {
+    expect(askedRegressions?.length ?? 0).toBe(117);
+    expect(new Set(askedRegressions?.map((c) => c.audit)).size).toBe(117);
+  });
+
+  it('rewrites each reply with the founder’s message as main did, or takes out the made-up life, typed and spoken', () => {
+    for (const c of askedRegressions ?? []) {
+      for (const spoken of [false, true]) {
+        const withFounder = reply(c.reply, c.founder, spoken);
+        if (c.rewritten === undefined) {
+          expect(withFounder, `${c.audit}: ${c.reply}`).toEqual(reply(c.reply, c.founder, spoken, false));
+        } else {
+          expect(withFounder.text, `${c.audit}: ${c.reply}`).toBe(
+            spoken ? reply(c.rewritten, c.founder, true).text : c.rewritten,
+          );
+          expect(withFounder.findings, c.audit).toContainEqual({
+            kind: 'claims_human',
+            rule: 'personal_life',
+          });
+          // What is left tells no made-up life, and never opens or ends on a bare "You?".
+          expect(reply(c.rewritten, c.founder, spoken).text, c.audit).toBe(c.rewritten);
+          expect(c.rewritten).not.toMatch(/(?:^|[.!?]\s+)(?:and\s+)?(?:you|yours)\?(?:\s|$)/iu);
+        }
+      }
+    }
+  });
+
+  it('streams each reply as the whole one reads, shown and said', () => {
+    for (const c of askedRegressions ?? []) {
+      for (const spoken of [false, true]) {
+        const streamed = stream(c.reply, c.founder, spoken);
+        if (c.rewritten === undefined) {
+          expect(streamed, `${c.audit}: ${c.reply}`).toEqual(stream(c.reply, null, spoken));
+        } else {
+          expect(streamed.shown, `${c.audit}: ${c.reply}`).toBe(c.rewritten);
+          if (spoken) expect(streamed.said, `${c.audit}: ${c.reply}`).toBe(c.rewritten);
+        }
+      }
+    }
+  });
+});
+
+describe('where a life is not the coach’s own', () => {
+  it('keeps a question of its own that the life’s sentence goes on to ask the founder, and only that', () => {
+    expect(questionAfterLife(', thanks — how did the demo go?')).toEqual({
+      index: 11,
+      text: 'how did the demo go?',
+    });
+    expect(questionAfterLife(' — but enough about me, how did the demo go?')?.text).toBe(
+      'how did the demo go?',
+    );
+    expect(questionAfterLife(' — so, did the survey go out?')?.text).toBe('did the survey go out?');
+    // As a call transcribes it, without its question mark.
+    expect(questionAfterLife(' thanks how did the demo go')?.text).toBe('how did the demo go');
+    expect(questionAfterLife(', thanks for asking — ever been to Lisbon?')?.text).toBe(
+      'ever been to Lisbon?',
+    );
+    // Nothing of its own, more of the life before it, a question that leans on the life or may tell one.
+    expect(questionAfterLife(', thanks for asking!')).toBeNull();
+    expect(questionAfterLife(', thanks — lots of reading, any news on the deck?')).toBeNull();
+    expect(questionAfterLife(' — want to hear about it?')).toBeNull();
+    expect(questionAfterLife(' — did I mention I went hiking?')).toBeNull();
+    expect(questionAfterLife(', thanks — ready when you are.')).toBeNull();
+    expect(questionAfterLife(' thanks ready when you are')).toBeNull();
+  });
+
+  it('reads a life only in a sentence that says nothing else to the founder (audit diff7-B3)', () => {
+    const only = (sentence: string, life: string): boolean =>
+      saysOnlyLife(sentence, sentence.indexOf(life), sentence.indexOf(life) + life.length);
+    expect(only('Weekend was good, thanks for asking.', 'Weekend was good')).toBe(true);
+    expect(only('Weekend was good, thanks — how did the demo go?', 'Weekend was good')).toBe(true);
+    expect(only('My weekend was great and yours?', 'My weekend was')).toBe(true);
+    expect(only('I had a great time at the concert on Saturday, thanks!', 'I had a great time at')).toBe(
+      true,
+    );
+    expect(only('Went to a friend’s wedding, it was beautiful!', 'it was beautiful')).toBe(true);
+    expect(only('Lovely — went for a run first thing.', 'went for a run')).toBe(true);
+    expect(only('Slept in and read.', 'Slept in')).toBe(true);
+    expect(only('Not much, just relaxing!', 'just relaxing')).toBe(true);
+    expect(only('Weekend was good, thanks for sending the deck!', 'Weekend was good')).toBe(true);
+    // The coach goes on to the founder: a statement, praise, advice or an action item.
+    expect(only("Mine was quiet, thanks — let's get you ready for Thursday's pitch.", 'Mine was quiet')).toBe(
+      false,
+    );
+    expect(only('Good, thanks — and congrats again on the 50th customer last week!', 'Good')).toBe(false);
+    expect(only('My week was great, and yours sounds even better — congrats!', 'My week was')).toBe(false);
+    expect(only('Weekend was good and congrats on the launch!', 'Weekend was good')).toBe(false);
+    expect(only('Weekend was good thanks send me the numbers tonight', 'Weekend was good')).toBe(false);
+    expect(only('Weekend was good — read a book!', 'Weekend was good')).toBe(false);
+    expect(only('Weekend was great — want to hear about it?', 'Weekend was great')).toBe(false);
+  });
+
+  it('reads a verbless life only as all its sentence says', () => {
+    expect(onlyLifeTail(', mostly')).toBe(true);
+    expect(onlyLifeTail(', mostly reading and a bit of gardening')).toBe(true);
+    expect(onlyLifeTail(' if the weather holds')).toBe(true);
+    expect(onlyLifeTail(', thanks for asking! How about you')).toBe(true);
+    expect(onlyLifeTail(', reading, whatever recharges you — do that this weekend')).toBe(false);
+    expect(onlyLifeTail(', a long lunch, no laptop')).toBe(false);
+    expect(onlyLifeTail(' if you can get away')).toBe(false);
+  });
+
+  it('reads an "-ing" that is the subject of its clause as advice', () => {
+    expect(gerundSubject('Going to the farmers market', ' this weekend is a great idea ')).toBe(true);
+    expect(gerundSubject('Going hiking', ' on Sunday beats another sprint')).toBe(true);
+    expect(gerundSubject('Heading up to the lake', ' with friends')).toBe(false);
+    expect(gerundSubject('Slept in', ' and read')).toBe(false);
+  });
+
+  it('reads a line in straight single quotes as one the founder will say', () => {
+    const line = "Pick one true detail: 'Good, thanks — went climbing on Saturday.' Then ask about theirs.";
+    expect(inSingleQuotes(line, line.indexOf('went'))).toBe(true);
+    expect(inSingleQuotes(line, line.indexOf('Then'))).toBe(false);
+    const apostrophes = "It's been a quiet one, the kids' party aside — went climbing.";
+    expect(inSingleQuotes(apostrophes, apostrophes.indexOf('went'))).toBe(false);
+  });
+});
+
+describe('reading a made-up life stays linear', () => {
+  it('rewrites 1,200 sentences of banter in linear time', () => {
+    const text = (count: number): string =>
+      Array.from({ length: count }, (_, i) =>
+        i % 4 === 0
+          ? 'Weekend was good, thanks for asking!'
+          : i % 4 === 1
+            ? 'Good, thanks! Slept in and read.'
+            : i % 4 === 2
+              ? 'Mine was a lovely, long, relaxing weekend.'
+              : 'Run the pilot with ten libraries.',
+      ).join(' ');
+    const founder = 'lowkey, how was your weekend?';
+    expect(reply(text(1_200), founder, false).text).not.toMatch(/Weekend was good|Slept in/);
+    const time = (count: number): number => {
+      const input = text(count);
+      const started = performance.now();
+      for (let i = 0; i < 3; i += 1) reply(input, founder, false);
+      return performance.now() - started;
+    };
+    time(150);
+    let small = Infinity;
+    let large = Infinity;
+    for (let round = 0; round < 3; round += 1) {
+      small = Math.min(small, time(150));
+      large = Math.min(large, time(1_200));
+    }
+    expect(large).toBeLessThan(16 * small + 100);
+  }, 30_000);
+
+  it('reads a run of bare answers opening the reply in a few rounds, not one round each', () => {
+    const founder = 'how was your weekend?';
+    const time = (count: number): number => {
+      const input = 'Lovely! '.repeat(count).trim();
+      const started = performance.now();
+      for (let i = 0; i < 3; i += 1) reply(input, founder, false);
+      return performance.now() - started;
+    };
+    time(150);
+    let small = Infinity;
+    let large = Infinity;
+    for (let round = 0; round < 3; round += 1) {
+      small = Math.min(small, time(150));
+      large = Math.min(large, time(1_200));
+    }
+    expect(large).toBeLessThan(16 * small + 100);
+  }, 30_000);
+});
+
+describe('the reply still turns to the founder once its made-up life is out', () => {
+  const past = { asked: 'past' } as const;
+  const other = { asked: 'other' } as const;
+
+  it.each([
+    ['', past, 'Thanks for asking! How was yours?'],
+    ['Thanks for asking!', past, 'Thanks for asking! How was yours?'],
+    ["I'm good, thanks!", other, "I'm good, thanks! How about you?"],
+    ['Thanks! You?', past, 'Thanks! How was yours?'],
+    ['You?', other, 'Thanks for asking! How about you?'],
+    ['How was yours?', past, 'Thanks for asking! How was yours?'],
+    ['Did you get a break?', past, 'Thanks for asking! Did you get a break?'],
+    [
+      "I am — Corin's digital twin. You?",
+      past,
+      "I am — Corin's digital twin. Thanks for asking! How was yours?",
+    ],
+    ['Thanks! What did I miss?', past, 'Thanks! What did I miss?'],
+    [
+      'You? Also, did the survey go out?',
+      past,
+      'Thanks for asking! How was yours? Also, did the survey go out?',
+    ],
+    [
+      'Thanks! You? Also, did the survey go out?',
+      past,
+      'Thanks! How was yours? Also, did the survey go out?',
+    ],
+    ['Now, where are we on pricing?', past, 'Now, where are we on pricing?'],
+  ] as const)('finishes %j', (text, life, finished) => {
+    expect(finishLifeReply(text, life)).toBe(finished);
+  });
+
+  it('drops an "Anyway —" that leaned on the life that opened the reply, and only that one', () => {
+    expect(finishLifeReply('Anyway — how did the pilot calls go?', past, true)).toBe(
+      'How did the pilot calls go?',
+    );
+    expect(finishLifeReply("Anyway — enough about me. How's the deck?", past, true)).toBe("How's the deck?");
+    expect(finishLifeReply('Anyway — enough about me.', past, true)).toBe(
+      'Thanks for asking! How was yours?',
+    );
+    expect(lifeUnitAfterRemoval('', 'Anyway — enough about me.', past)).toBe('');
+    expect(finishLifeReply('Anyway — how did the pilot calls go?', past, false)).toBe(
+      'Anyway — how did the pilot calls go?',
+    );
+    expect(lifeUnitAfterRemoval('', 'Anyway — how did the pilot calls go?', past)).toBe(
+      'How did the pilot calls go?',
+    );
+    expect(lifeUnitAfterRemoval(' Thanks!', 'Anyway — how did the pilot calls go?', past)).toBe(
+      'Anyway — how did the pilot calls go?',
+    );
+  });
+
+  it('turns back in the stream as the whole reply does', () => {
+    expect(lifeUnitAfterRemoval('', 'You?', past)).toBe('Thanks for asking! How was yours?');
+    expect(lifeUnitAfterRemoval(' Thanks for asking!', 'You?', past)).toBe('How was yours?');
+    expect(lifeUnitAfterRemoval(' Thanks!', 'wbu', past)).toBe('How was yours?');
+    expect(lifeUnitAfterRemoval('', 'wbu', past)).toBe('Thanks for asking! How was yours?');
+    expect(lifeUnitAfterRemoval(' Thanks!', 'What did I miss?', past)).toBe('What did I miss?');
+    expect(lifeUnitAfterRemoval('', 'Did you get a break?', past)).toBe(
+      'Thanks for asking! Did you get a break?',
+    );
+    expect(lifeUnitAfterRemoval(" I am — Corin's digital twin.", 'You?', past)).toBe(
+      'Thanks for asking! How was yours?',
+    );
+    expect(lifeClosing('', other)).toBe('Thanks for asking! How about you?');
+    expect(lifeClosing(' Thanks!', past)).toBe('How was yours?');
+    expect(lifeClosing(' Thanks! Shall we start?', past)).toBeNull();
+  });
+});
