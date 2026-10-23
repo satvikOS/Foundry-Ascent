@@ -11,6 +11,7 @@ import {
   lastQuestionOf,
   openingOf,
   renderConversationState,
+  reportsCommitmentDone,
   stripLinks,
   type FounderMove,
 } from './conversation-state.js';
@@ -610,5 +611,115 @@ describe('news, sarcasm, a number, and the vEIR’s own phrases (wave 7: LAB-R8,
     );
     expect(state).toContain('cheapest test');
     expect(block(earlier, 'Okay, and then?')).not.toContain('Phrases you already used');
+  });
+});
+
+describe('a report of having done what they committed to (evals G12, the matrix’s commitment probe)', () => {
+  const earlier = [
+    {
+      founderText: 'Hi!',
+      answer: 'Hi Maya. Good to have you back.',
+    },
+  ];
+  const block = (text: string, history = earlier) =>
+    renderConversationState(deriveConversationState(history, text));
+  const LINE =
+    '- They say they did something they committed to: name which commitment it is, in your own words (one agreed in\n' +
+    '  this conversation, else one from your notes), and ask how it went in one short question, unless they already\n' +
+    '  said or asked you something. If neither says which it was, ask that instead.';
+
+  it.each([
+    // The matrix's probe, word for word, and the evals' own.
+    "So, I did the thing I said I'd do.",
+    "I did the thing I said I'd do",
+    'Done!',
+    // A whole message that is only a report.
+    'Done.',
+    'I did it',
+    'Did it!',
+    'Finished it',
+    'Sent it',
+    'Got it done',
+    // The commitment named as such.
+    'I tried what you suggested.',
+    'I called the dean like we agreed.',
+    'Sent it, as we agreed.',
+    "lowkey so, i did the thing i said i'd do no cap",
+    'ngl i actually did the thing i said id do lol',
+  ])('hears %j as a report on a commitment', (text) => {
+    expect(reportsCommitmentDone(text)).toBe(true);
+    const state = deriveConversationState(earlier, text);
+    expect(state.reportsDone).toBe(true);
+    // One line, and nothing else of the state changes: no move is added for it.
+    expect(state.moves).toEqual(founderMoves(text));
+    expect(block(text)).toContain(LINE);
+  });
+
+  it.each([
+    // Celebrations and news are their own.
+    'We did it!!',
+    'We did it! We got into the accelerator!!',
+    'Woohoo, we closed the round!',
+    'We launched it',
+    'We launched it last week, 20 signups so far.',
+    // Questions.
+    'Done with the deck?',
+    "Did you do the thing I said I'd do?",
+    'If I did what you suggested, would it work?',
+    "have I done the thing I said I'd do",
+    // Negations and what is still to do.
+    "I didn't do it",
+    'Not done yet',
+    "I didn't do the thing I said I'd do.",
+    "I haven't done what you suggested yet.",
+    "I did the thing I said I'd never do.",
+    "I'll do what you suggested.",
+    "Like we agreed, I'll send it tomorrow.",
+    'As we agreed, pricing is next.',
+    // An update still to come says nothing done yet.
+    "Okay, update on what I said I'd do last time.",
+    // Done for the day, or a draft that quotes it.
+    "I'm done",
+    'Done for today',
+    "Draft email: 'Hi Dr Shah, I sent the pilot plan last week as promised. Did you get a chance to look?' Is that too pushy?",
+    'Thanks, talk soon.',
+  ])('does not hear %j as a report on a commitment', (text) => {
+    expect(reportsCommitmentDone(text)).toBe(false);
+    expect(deriveConversationState(earlier, text).reportsDone).toBe(false);
+    expect(block(text)).not.toContain('They say they did something they committed to');
+  });
+
+  it('says it on the first message of a conversation too, and only the line', () => {
+    expect(block('Done!', [])).toBe(
+      `<conversation_state>\n- Their message; 1 words.\n${LINE}\n</conversation_state>`,
+    );
+    expect(block('How should we price per library?', [])).toBe('');
+  });
+
+  it('reads a pasted wall of unclosed quotes and clauses in linear time', () => {
+    // Eight times the input takes about eight times as long, not sixty-four (ratios of warm runs, interleaved, best of
+    // three: never absolute times).
+    const wall = (n: number): string =>
+      `${" 'a".repeat(n)} ${'“'.repeat(n)} ${'"'.repeat(n)} ${' i finally'.repeat(n)} like we agreed ${'so, '.repeat(n)}`;
+    const time = (n: number): number => {
+      const text = wall(n);
+      const started = performance.now();
+      for (let i = 0; i < 5; i += 1) reportsCommitmentDone(text);
+      return performance.now() - started;
+    };
+    time(250);
+    let small = Infinity;
+    let large = Infinity;
+    for (let round = 0; round < 3; round += 1) {
+      small = Math.min(small, time(250));
+      large = Math.min(large, time(2_000));
+    }
+    expect(large).toBeLessThan(16 * small + 100);
+  }, 60_000);
+
+  it('reaches the prompt next to the founder message', () => {
+    const last = buildMessages(earlier, "So, I did the thing I said I'd do.").at(-1)?.content ?? '';
+    expect(last).toContain(LINE);
+    expect(last.indexOf(LINE)).toBeLessThan(last.indexOf('<founder_message>'));
   });
 });

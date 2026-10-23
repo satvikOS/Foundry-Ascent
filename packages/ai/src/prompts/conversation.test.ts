@@ -536,6 +536,31 @@ describe('continuity', () => {
     ).toContain('<open_commitments>');
   });
 
+  it('keeps the agenda for a report of having done what they committed to, so the reply can name it (evals G12)', () => {
+    const history = [{ founderText: 'Hi.', answer: 'Hi Maya. Good to have you back.' }];
+    const notesFor = (text: string): string =>
+      buildMessages(history, text, { continuity: CONTINUITY, today: '2026-10-16' }).at(-1)?.content ?? '';
+    for (const report of [
+      // The matrix's probe with the register the template simulator gives it: two content words of its own.
+      "lowkey so, i did the thing i said i'd do no cap",
+      "So, I did the thing I said I'd do.",
+      'I tried what you suggested with the pricing page.',
+      'Done!',
+    ]) {
+      expect(bringsOwnSubject(report, CONTINUITY), report).toBe(false);
+      expect(notesFor(report)).toContain('<open_commitments>');
+    }
+    // The same words without the report are a subject of their own, as before.
+    for (const own of [
+      "lowkey so, i didn't do the thing i said i'd do no cap",
+      'I want to fix the pricing page.',
+      'We launched the pricing page last week, 20 signups so far.',
+    ]) {
+      expect(bringsOwnSubject(own, CONTINUITY), own).toBe(true);
+      expect(notesFor(own)).not.toContain('<open_commitments>');
+    }
+  });
+
   it('leaves the notebook opener out once the conversation is under way', () => {
     // Production, 2026-10-16 to 10-20: five calls in a row steered back to the same opener thread.
     const opener =

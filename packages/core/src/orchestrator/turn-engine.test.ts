@@ -116,6 +116,24 @@ describe('streamed-turn prompts', () => {
     expect(voice).toContain('a social turn gets a short, natural reply, not advice.');
   });
 
+  it('spends a call reply on the help asked for, with at most one question after it (agenda suite, 9a2a41f)', () => {
+    // "Help me prepare for my pitch next week" and "How do I position myself?" got a question in place of the help on
+    // calls, where typed replies gave the substance.
+    const line =
+      '- Asked for help or advice with their venture, spend those words on the help itself: a question the doctrine or\n' +
+      '  your notes suggest comes after it, one at most. That is for help and advice only: a social turn, or a short\n' +
+      '  reply that asks for nothing, still gets a short answer.';
+    const voice = answerSystemPrompt(SYSTEM, { channel: 'voice', mode: null, allowedModes: ['coach'] });
+    const text = answerSystemPrompt(SYSTEM, { channel: 'text', mode: null, allowedModes: ['coach'] });
+    expect(voice).toContain(line);
+    expect(voice).toContain('your first sentence or two are the help itself');
+    // Social turns keep their short reply; typed replies are as they were.
+    expect(voice).toContain('a social turn gets a short, natural reply, not advice.');
+    expect(voice).toContain('at most 70 words');
+    expect(text).not.toContain('spend those words on the help itself');
+    expect(text).not.toContain('your first sentence or two are the help itself');
+  });
+
   it('stops the streamed reply at its end: no mode name, claims or notes after it (the production leak)', () => {
     for (const channel of ['text', 'voice'] as const) {
       const prompt = answerSystemPrompt(SYSTEM, { channel, mode: null, allowedModes: ['coach'] });
