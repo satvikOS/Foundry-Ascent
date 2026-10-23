@@ -41,7 +41,13 @@ import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
 import { readOpener, type OpenerSubject } from '../orchestrator/continuity-prompt.js';
-import { readsAsSubject, topicWords } from '../orchestrator/opener-topic.js';
+import {
+  endsOnItsVerb,
+  isVenting,
+  readsAsSubject,
+  topicWords,
+  withoutDiscourseWords,
+} from '../orchestrator/opener-topic.js';
 import { chooseOpener } from '../orchestrator/continuity.js';
 import { type DistillService } from './distill.js';
 import { mentionsEir, personaNameClaimsEir, veirEirName } from '../internal/eir-names.js';
@@ -218,17 +224,27 @@ function withoutAlternative(sentence: string): string {
 /** A time said at the end of a phrase ("… on Monday", "… this week", "… tomorrow"). */
 const TIME_TAIL =
   /\s+(?:(?:on|by|this|next|last|before|after|until|till|in|at|from|over|during|for)\s+(?:the\s+)?(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day(?:\s+(?:morning|afternoon|evening|night))?|weekend|week|month|term|semester|quarter|year|morning|afternoon|evening|night|end of (?:the\s+)?(?:week|month|term|semester)|exams?|\d[\w:./-]*)|today|tomorrow|tonight|yesterday|soon|later)$/i;
+/**
+ * A plan or a question that ends on a second verb with "and" or "or" and nothing after it ("whether to give up on the
+ * B2C market and focus"): cut before that verb's preposition, it is left without what it does. A name after "and" is
+ * no verb ("your plan to call Noor and Sam"), nor is a plural or an activity ("sell pens and pencils", "rethink
+ * pricing and marketing"); case matters, so no `i` flag.
+ */
+const JOINED_VERB =
+  /^(?:(?:your|the|their|our)\s+(?:[\p{L}'’-]+['’]s\s+)?(?:plan|decision|goal|idea)\s+to|whether|how\s+to|what\s+to)\s.*\s(?:and|or)\s+(?!\p{Ll}[\p{L}'’-]*(?:[^su'’]s|ing)$)\p{Ll}[\p{L}'’-]*$/u;
 /** Prepositions a long phrase can be cut before, keeping what it names ("the study room for the kickoff"). */
 const CUT_BEFORE =
   /\s(?:for|with|at|on|about|before|after|during|by|in|from|via|over|between|across|around)\s/gi;
 
 /**
- * Shorter forms of what an opener is about that still name it, longest first: itself, without a time at its end
- * ("… on Monday"), then cut before each later preposition ("book the Harbour Hall study room for the pilot kickoff" →
- * "book the Harbour Hall study room"), while what is left names something. A greeting too long with the whole
- * phrase says a shorter form instead of dropping it (MX-0022, MX-0024). Only forms that read as a subject
- * (`readsAsSubject`): a lone date, month or single word, or a plan without its verb, is none ("Hi Idris, want to carry
- * on with January?", lab run 39780304879); empty when no form does.
+ * Shorter forms of what an opener is about that still name it, longest first: itself, without a time or an adverb at
+ * its ends ("… on Monday", "a short pilot instead" → "a short pilot": the voice suite on 9a2a41f), then cut before each
+ * later preposition ("book the Harbour Hall study room for the pilot kickoff" → "book the Harbour Hall study room"),
+ * while what is left names something. A greeting too long with the whole phrase says a shorter form instead of
+ * dropping it (MX-0022, MX-0024). Only forms that read as a subject (`readsAsSubject`): a lone date, month or single
+ * word, a plan without its verb, or one that ends on the founder's adverb, is none ("Hi Idris, want to carry on with
+ * January?", lab run 39780304879); empty when no form does. A shorter form never cuts a plan or a question to its
+ * verb, nor a fixed phrase ("your plan to break even" stays whole: the review of 1cac704).
  */
 export function shorterSubjects(text: string): string[] {
   return candidateSubjects(text).filter(readsAsSubject);
@@ -238,21 +254,22 @@ export function shorterSubjects(text: string): string[] {
 function candidateSubjects(text: string): string[] {
   const out = [text.trim()];
   let current = text.trim();
-  for (let i = 0; i < 3; i += 1) {
-    const timeless = current.replace(TIME_TAIL, '').trim();
-    if (timeless === current || timeless === '') break;
+  for (let i = 0; i < 4; i += 1) {
+    const timeless = withoutDiscourseWords(current.replace(TIME_TAIL, '').trim());
+    // Never a plan or a question cut to its verb ("whether to hire later" is no "whether to hire": the review of
+    // 1cac704).
+    if (timeless === current || timeless === '' || endsOnItsVerb(timeless)) break;
     current = timeless;
     out.push(current);
   }
   const cuts = [...current.matchAll(CUT_BEFORE)].map((m) => m.index).reverse();
   for (const at of cuts) {
-    const head = current
-      .slice(0, at)
-      .trim()
-      .replace(/[,;:]+$/, '');
+    const head = withoutDiscourseWords(current.slice(0, at));
     if (head.split(/\s+/).length < 2 || topicWords(head).length === 0) continue;
-    // "your plan to call" names no plan.
-    if (/^your (?:plan|decision) to \S+$/i.test(head)) continue;
+    // "your plan to call", "your plan to give up", "whether to hire" name no plan and ask nothing (the review of
+    // e9e49fb heard "your plan to give up?" for a plan to give up on a product idea), nor does one cut after a verb
+    // it joins ("whether to give up on the B2C market and focus").
+    if (endsOnItsVerb(head) || JOINED_VERB.test(head)) continue;
     out.push(head);
   }
   return [...new Set(out)];
@@ -289,7 +306,9 @@ export function repeatGreetingOf(args: {
     line.length <= REPEAT_GREETING_MAX_CHARS && sentencesOf(line).length === 1;
   const read = args.opener === null ? null : readOpener(args.opener);
   const subject = args.subject !== undefined ? args.subject : read === 'fragment' ? null : read;
-  const forms = subject === null ? [] : shorterSubjects(subject.text);
+  // A subject that vents or speaks of the founder's private health is never said, nor the opener built around it.
+  const forms =
+    subject === null || isVenting(subject.text, args.firstName) ? [] : shorterSubjects(subject.text);
   // An opener chosen around words that are no subject was built around a fragment: neither is said.
   const fragment = read === 'fragment' || (subject !== null && forms.length === 0);
   const candidates: string[] = [];

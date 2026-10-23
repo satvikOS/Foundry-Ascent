@@ -11,9 +11,12 @@ import {
   addressFounder,
   isClauseFragment,
   isTopicLine,
+  isVenting,
+  opensANameWithADiscourseWord,
   readsAsSubject,
   topicOf,
   topicWords,
+  withoutDiscourseWords,
   type LineTopic,
   type OpenerPeople,
 } from './opener-topic.js';
@@ -367,12 +370,14 @@ function capitalise(text: string): string {
 /**
  * A label as it is said in the middle of a sentence: "Regulatory pathway" becomes "regulatory pathway" (labels are
  * capitalised like headings), while a name or an acronym keeps its case ("Boston pilot", "FDA clearance", "iOS
- * app"). Only a first word that is an everyday English word written as a heading ("Regulatory") is lowered.
+ * app"). Only a first word that is an everyday English word written as a heading ("Regulatory") is lowered, never
+ * one that opens a name of capitalised words with a discourse word in it ("Entrepreneur First", "Founders First":
+ * lowered, the name was cut at "First").
  */
 export function midSentence(label: string): string {
   const text = oneLine(label);
   const first = /^\p{Lu}\p{Ll}+(?=$|[\s,;:–—-])/u.exec(text)?.[0];
-  if (first === undefined) return text;
+  if (first === undefined || opensANameWithADiscourseWord(text)) return text;
   return isEverydayWord(first) ? `${first.toLowerCase()}${text.slice(first.length)}` : text;
 }
 
@@ -389,6 +394,21 @@ export interface OpenerSubject {
 
 /** Question words: a phrase opening with one is a clause ("where we left off yesterday"), unless it is the question. */
 const WH_START = /^(?:where|what|when|who|whom|why|how|which|whether)(?![\p{L}'])/iu;
+/**
+ * A question the founder asked, as `topicOf` summarises it ("whether you can do the pilot for $500", "how to price
+ * the pilot"): a pronoun and its verb belong in it, so it is no clause fragment.
+ */
+const ASKED = /^(?:whether\s|(?:how|what|which|when|where|who)\s+to\s)/i;
+/**
+ * The founder's own "I", "my" or "we" in a question read back from an opener ("whether I should quit my job", "how to
+ * tell my cofounder"): said by the vEIR, it would be its own job and its own life (the presence policy; the review of
+ * e9e49fb heard "Hi Maya, where did you land on whether I should quit my job?"). `topicOf` says a question to the
+ * founder ("whether you should…", "your cofounder"), so one in the first person quotes their line: a fragment. Case
+ * matters for "us": "the US market" is no one; nor is a numeral after a name ("a Phase I trial", "a Class I device",
+ * "I-9 forms": the differential review of 6656c33).
+ */
+const FIRST_PERSON =
+  /(?<![\p{L}'’])(?:(?<!\b(?:Phase|Class|Type|Stage|Tier|Grade|Part|Level|Series|Schedule|Category|Title|Chapter|Section|Article|Volume|Act)\s)[Ii](?:['’](?:m|ve|ll|d))?(?!-)|[Mm](?:e|y|ine|yself)|[Ww]e(?:['’](?:re|ve|ll|d))?|us|[Oo]urs?)(?![\p{L}'’])/u;
 
 /** Longest phrase read from a stored opener (a greeting shortens it to fit; see calls.ts `repeatGreeting`). */
 const OPENER_PHRASE_CHARS = 120;
@@ -397,11 +417,18 @@ const OPENER_PHRASE_CHARS = 120;
  * What a stored opening sentence is about, read from the shapes openers take, or why it cannot be said: a subject;
  * `fragment` when it has one of those shapes around a clause cut from the founder's line, or around words that do not
  * read as a subject (`readsAsSubject`: "we talked about January"), never said again; null for any other sentence.
- * "Said you'd X", "were going to X" and "planned to X" are a plan: `your plan to X`.
+ * "Said you'd X", "were going to X" and "planned to X" are a plan: `your plan to X`. The phrase is read without the
+ * adverbs at its ends ("we talked about a short pilot instead" is about "a short pilot": the voice suite on 9a2a41f),
+ * a plan's with the timing or the manner that is all its verb has ("you said you'd hire later" is "your plan to hire
+ * later", never "your plan to hire": the differential review of 6656c33), and with its numbers whole ("$1.5M",
+ * "$1,200"). A subject that vents, withdraws from the venture or speaks of the founder's private health ("you said
+ * you'd see your therapist", "we talked about whether to give up": `isVenting`) is a fragment, never said again.
  */
 export function readOpener(text: string): OpenerSubject | 'fragment' | null {
   const read = readOpenerShape(text);
-  return read === null || read === 'fragment' || readsAsSubject(read.text) ? read : 'fragment';
+  return read === null || read === 'fragment' || (readsAsSubject(read.text) && !isVenting(read.text))
+    ? read
+    : 'fragment';
 }
 
 /** {@link readOpener} before its subject is checked. */
@@ -411,10 +438,15 @@ function readOpenerShape(text: string): OpenerSubject | 'fragment' | null {
   const phrase = (
     raw: string | undefined,
     question = false,
+    verbPhrase = false,
   ): { readonly cut: string } | 'fragment' | null => {
-    const cut = (raw ?? '').split(/[.!?;:]|,\s|\s—\s|\s-\s/)[0]?.trim() ?? '';
+    const cut = withoutDiscourseWords(
+      (raw ?? '').split(/(?<!\d)[.:]|[.:](?!\d)|[!?;]|,\s|\s—\s|\s-\s/)[0]?.trim() ?? '',
+      verbPhrase,
+    );
     if (cut === '' || cut.length > OPENER_PHRASE_CHARS || topicWords(cut).length === 0) return null;
-    if (isClauseFragment(cut)) return 'fragment';
+    const asked = question && ASKED.test(cut);
+    if (asked ? FIRST_PERSON.test(cut) : isClauseFragment(cut)) return 'fragment';
     // A question word opens a clause ("pick up where we left off yesterday"): a subject only as the question asked.
     return !question && WH_START.test(cut) ? null : { cut };
   };
@@ -423,10 +455,11 @@ function readOpenerShape(text: string): OpenerSubject | 'fragment' | null {
       flat,
     );
   if (planned !== null) {
-    const what = phrase(planned[3]);
-    if (what === null || what === 'fragment') return what;
     // "said you'd email the dean": a plan, never a noun phrase ("how did email the dean go?").
-    if (planned[2] !== undefined || /^said/i.test(planned[1] ?? '')) {
+    const plan = planned[2] !== undefined || /^said/i.test(planned[1] ?? '');
+    const what = phrase(planned[3], false, plan);
+    if (what === null || what === 'fragment') return what;
+    if (plan) {
       return { kind: 'thread', text: `your plan to ${what.cut}` };
     }
     if (!/^planned$/i.test(planned[1] ?? '')) return null;
@@ -477,9 +510,15 @@ export interface SubjectOptions {
   readonly foundersOwn?: boolean;
 }
 
-/** A subject an opener can say: it reads as one (`readsAsSubject`) and is not one to avoid. */
+/**
+ * A subject an opener can say: it reads as one (`readsAsSubject`), it is not the founder venting, withdrawing or
+ * speaking of their private health (`isVenting`, as on every other path: the differential review of cc29cad heard
+ * "we talked about your plan to talk to someone" for "I just need to talk to someone tbh"), and it is not one to avoid.
+ */
 function sayable(text: string | null, options: SubjectOptions): text is string {
-  return text !== null && text !== '' && readsAsSubject(text) && options.avoid?.(text) !== true;
+  return (
+    text !== null && text !== '' && readsAsSubject(text) && !isVenting(text) && options.avoid?.(text) !== true
+  );
 }
 
 /**
@@ -521,8 +560,12 @@ export function subjectOf(
   if (news !== null) return news;
   if (options.foundersOwn !== true) {
     const topics = (c.digest?.topics ?? [])
-      .map((t) => addressFounder(midSentence(t).replace(/[.!?]+$/, ''), people))
-      .filter((t): t is string => t !== null && t !== '' && t.length <= 60 && options.avoid?.(t) !== true);
+      .map((t) => addressFounder(withoutDiscourseWords(midSentence(t).replace(/[.!?]+$/, '')), people))
+      // Never the founder venting or their private health, distilled as a topic ("your burnout").
+      .filter(
+        (t): t is string =>
+          t !== null && t !== '' && t.length <= 60 && !isVenting(t) && options.avoid?.(t) !== true,
+      );
     const joined = topics.slice(0, 2).join(' and ');
     if (topics.length > 0 && readsAsSubject(joined)) return { kind: 'topics', text: joined };
   }
@@ -632,9 +675,13 @@ export function continuityOpener(
  * the founder, or null when it cannot be said (still in the third person, nothing to name, too long).
  */
 export function threadSubject(topic: string, people: OpenerPeople = { founder: null }): string | null {
-  // Distilled about the founder ("the facility budget numbers maya will get"): said to them, or not at all (LAB-U2).
-  const thread = addressFounder(midSentence(topic).replace(/[.!?]+$/, ''), people);
-  return thread === null || !readsAsSubject(thread) || thread.length > 120 ? null : thread;
+  // Distilled about the founder ("the facility budget numbers maya will get"): said to them, or not at all (LAB-U2);
+  // without an adverb at its ends ("the short pilot instead"); never the founder venting, withdrawing or their private
+  // health ("your plan to see your therapist", "quitting the startup": the differential review of 6656c33).
+  const thread = addressFounder(withoutDiscourseWords(midSentence(topic).replace(/[.!?]+$/, '')), people);
+  return thread === null || !readsAsSubject(thread) || isVenting(thread) || thread.length > 120
+    ? null
+    : thread;
 }
 
 /**

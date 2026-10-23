@@ -596,3 +596,667 @@ describe('the frame of every opener raises no thread of its own (kept in step wi
     }
   });
 });
+
+describe('the differential review of 6656c33: a stored opener, a thread or a digest topic never vents', () => {
+  const PEOPLE = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad', 'Devin Okafor'] };
+
+  it('reads a stored opener about withdrawing, distress or the founder’s private health as a fragment', () => {
+    for (const text of [
+      // Before: "where did you land on whether to give up?", "did you get to drop out?".
+      'Welcome back. Last time, we talked about whether to give up. Where did you land on it?',
+      'Welcome back. Last time, we talked about whether to drop out. Where did you land on it?',
+      'Welcome back. Last time, we talked about whether you want to give up. Where did you land on it?',
+      'Welcome back. Last time, we talked about whether to step down. Where did you land on it?',
+      'Welcome back. Last time, we talked about whether to shut it down. Where did you land on it?',
+      'Welcome back. Last time, we talked about whether you are burning out. Where did you land on it?',
+      'Good to have you back. When we last spoke (last week), we talked about whether to give up. How has it gone since?',
+      "Welcome back. Last time you said you'd give up. How did it go?",
+      'Good to talk again. Last time you were going to give up. Any news?',
+      'Welcome back. Last time you planned to give up. How did it go?',
+      "Welcome back. Last time you said you'd drop out. How did it go?",
+      'Good to talk again. Last time you were going to drop out. Any news?',
+      'Welcome back. Last time you planned to drop out. How did it go?',
+      'Welcome back. I wanted to come back to your plan to give up. How is it going?',
+      'Welcome back. I wanted to come back to your plan to drop out. How is it going?',
+      'Welcome back. Last time, we left off on your plan to back out. Where are things now?',
+      // Never said on this path before either: "did you get to see your therapist?", "did you get to quit?".
+      "Welcome back. Last time you said you'd see your therapist. How did it go?",
+      "Welcome back. Last time you said you'd quit. How did it go?",
+      "Welcome back. Last time you said you'd talk to someone. How did it go?",
+      "Welcome back. Last time you said you'd take a break. How did it go?",
+      "Welcome back. Last time you said you'd step back. How did it go?",
+      'Good to talk again. Last time (yesterday), we talked about your plan to talk to your therapist. Where did you land on it?',
+      'Good to talk again. Last time (yesterday), we talked about giving up on your startup. Where did you land on it?',
+      "Welcome back. Last time, we talked about nobody's paying. How has it gone since?",
+    ]) {
+      expect(readOpener(text), text).toBe('fragment');
+    }
+    // Something of the venture, a health venture's product included, is still said.
+    expect(
+      readOpener('Welcome back. Last time, we talked about your mental health app. How has it gone since?'),
+    ).toEqual({ kind: 'topics', text: 'your mental health app' });
+    expect(
+      readOpener(
+        'Welcome back. Last time, we talked about failing the security audit. How has it gone since?',
+      ),
+    ).toEqual({ kind: 'topics', text: 'failing the security audit' }); // A numeral after a name is no founder's "I" (a medical-device venture's "Phase I trial", "Class I device"); the
+    // founder's own "I" still is.
+    for (const question of [
+      'whether to run a Phase I trial',
+      'whether the insole is a Class I device',
+      'whether to file the I-9 forms',
+    ]) {
+      expect(
+        readOpener(`Welcome back. Last time, we talked about ${question}. Where did you land on it?`),
+        question,
+      ).toEqual({ kind: 'question', text: question });
+    }
+    expect(
+      readOpener(
+        'Welcome back. Last time, we talked about how to tell Sam I want to lead product. Where did you land on it?',
+      ),
+    ).toBe('fragment');
+  });
+
+  it('reads a stored plan with the timing or the manner that is all its verb has', () => {
+    // Before: "did you get to hire?" for a plan to hire later, "did you get to sign the contract?".
+    for (const [text, plan] of [
+      ["Good to talk again. Last time you said you'd hire later. Still the plan?", 'your plan to hire later'],
+      ['Good to talk again. Last time you were going to hire later. Any news?', 'your plan to hire later'],
+      ['Welcome back. Last time you planned to hire later. How did it go?', 'your plan to hire later'],
+      ["Welcome back. Last time you said you'd hire slowly. How did it go?", 'your plan to hire slowly'],
+      ['Good to talk again. Last time you were going to hire slowly. Any news?', 'your plan to hire slowly'],
+      [
+        "Welcome back. Last time you said you'd sign the contract early. How did it go?",
+        'your plan to sign the contract early',
+      ],
+      [
+        'Welcome back. Last time you planned to sign the contract early. How did it go?',
+        'your plan to sign the contract early',
+      ],
+      [
+        "Welcome back. Last time you said you'd ship the map first and the booking later. How did it go?",
+        'your plan to ship the map first and the booking later',
+      ],
+      ['Good to talk again. Last time you were hoping to launch now. Did you?', 'your plan to launch now'],
+      [
+        'Welcome back. Last time you planned to run the pilot remotely. How did it go?',
+        'your plan to run the pilot remotely',
+      ],
+    ] as const) {
+      expect(readOpener(text), text).toEqual({ kind: 'thread', text: plan });
+    }
+  });
+
+  it('never makes a thread or a digest topic of venting, withdrawing or private health', () => {
+    for (const topic of [
+      'your plan to give up',
+      'whether to give up',
+      'whether you want to give up',
+      'your plan to drop out',
+      'whether you are burning out',
+      'whether to shut it down',
+      'how to calm down',
+      'your plan to freak out',
+      'your plan to step down',
+      'your plan to break up',
+      'your plan to sign off',
+      'your plan to cash out',
+      'your plan to see your therapist',
+      "the founder's anxiety",
+      "Maya's burnout",
+      'quitting the startup',
+      'your plan to quit',
+      'falling apart',
+      'tired of this',
+    ]) {
+      expect(threadSubject(topic, PEOPLE), topic).toBeNull();
+      expect(threadOpener(topic, { seed: 'a', when: 'yesterday', people: PEOPLE }), topic).toBeNull();
+      const c = conversation({
+        exchanges: [],
+        title: null,
+        digest: { summary: '', topics: [topic], commitments: [], openQuestions: [] },
+      });
+      expect(subjectOf(c, PEOPLE), topic).toBeNull();
+      expect(continuityOpener(c, { now: NOW, seed: 'a', people: PEOPLE }).withTopic, topic).toBeNull();
+    }
+  });
+
+  it('keeps the timing a digest topic or a thread asks about', () => {
+    for (const [topic, said] of [
+      ['whether we should raise now', 'whether we should raise now'],
+      ['whether you should raise now', 'whether you should raise now'],
+      ['whether the team should hire now', 'whether the team should hire now'],
+      ['whether Maya should launch now', 'whether you should launch now'],
+      ['whether we should hire later', 'whether we should hire later'],
+      ['whether to end the free pilot early', 'whether to end the free pilot early'],
+      ['raising first and hiring later', 'raising first and hiring later'],
+      [
+        'your plan to ship the map first and the booking later',
+        'your plan to ship the map first and the booking later',
+      ],
+      ['whether the numbers add up', 'whether the numbers add up'],
+      ['your plan to follow up', 'your plan to follow up'],
+    ] as const) {
+      expect(threadSubject(topic, PEOPLE), topic).toBe(said);
+      const c = conversation({
+        exchanges: [],
+        title: null,
+        digest: { summary: '', topics: [topic], commitments: [], openQuestions: [] },
+      });
+      expect(continuityOpener(c, { now: NOW, seed: 'a', people: PEOPLE }).withTopic, topic).toContain(
+        `we talked about ${said}.`,
+      );
+    }
+  });
+});
+
+describe('the differential review of cc29cad: the chat opener for the founder’s own lines', () => {
+  const PEOPLE = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad', 'Devin Okafor'] };
+  const said = (line: string) =>
+    conversation({
+      title: null,
+      exchanges: [{ founder: line, answer: 'Good. What would make that a clear yes for them?' }],
+      said: [line],
+    });
+
+  it('never says needing to talk to someone, a carer or the founder’s private health back', () => {
+    // Before: "When we last spoke (…), we talked about your plan to talk to someone."
+    for (const line of [
+      'I just need to talk to someone tbh',
+      'honestly i just need to talk to someone tbh',
+      'I just want to talk to someone tbh',
+      'I need to talk to someone ngl',
+      'I need to talk to someone fr',
+      'i need to talk to someone rn',
+      'I need to talk to someone atm',
+      'I need to speak to someone tbh',
+      'I need to see a doctor tbh',
+      // The founder's own lines are read for venting as said to them, as every other path is: "Maya's burnout" is
+      // "your burnout".
+      "Maya's burnout is getting worse.",
+      "Maya's anxiety before the pitch.",
+    ]) {
+      expect(subjectOf(said(line), PEOPLE), line).toBeNull();
+      expect(
+        continuityOpener(said(line), { now: NOW, seed: 'a', people: PEOPLE }).withTopic,
+        line,
+      ).toBeNull();
+    }
+    expect(readOpener("Welcome back. Last time you said you'd talk to someone tbh. How did it go?")).toBe(
+      'fragment',
+    );
+    expect(threadSubject('your plan to talk to someone tbh', PEOPLE)).toBeNull();
+  });
+
+  it('comes back to quitting to commit to the venture on every path', () => {
+    // Before: the generic opener, and no thread, digest topic or stored opener.
+    for (const [line, subject] of [
+      ['Should I quit and go full time on the startup?', 'whether to quit and go full time on the startup'],
+      ['I want to quit and focus on the startup.', 'your plan to quit and focus on the startup'],
+      ['Should we quit and pivot to B2B?', 'whether to quit and pivot to B2B'],
+      ['I want to leave and start my own thing.', 'your plan to leave and start your own thing'],
+      ['Should we leave and join the other accelerator?', 'whether to leave and join the other accelerator'],
+    ] as const) {
+      expect(continuityOpener(said(line), { now: NOW, seed: 'a', people: PEOPLE }).withTopic, line).toContain(
+        `we talked about ${subject}.`,
+      );
+    }
+    for (const topic of [
+      'your plan to quit and go full time',
+      'your plan to quit and focus on the startup',
+    ]) {
+      expect(threadSubject(topic, PEOPLE), topic).toBe(topic);
+      const c = conversation({
+        exchanges: [],
+        title: null,
+        digest: { summary: '', topics: [topic], commitments: [], openQuestions: [] },
+      });
+      expect(continuityOpener(c, { now: NOW, seed: 'a', people: PEOPLE }).withTopic, topic).toContain(
+        `we talked about ${topic}.`,
+      );
+    }
+    expect(
+      readOpener(
+        "Welcome back. Last time you said you'd quit and go full time on the startup. How did it go?",
+      ),
+    ).toEqual({ kind: 'thread', text: 'your plan to quit and go full time on the startup' });
+    // Quitting for a job is still withdrawal.
+    expect(
+      continuityOpener(said('I want to quit and get a normal job.'), { now: NOW, seed: 'a', people: PEOPLE })
+        .withTopic,
+    ).toBeNull();
+    expect(threadSubject('your plan to quit and get a normal job', PEOPLE)).toBeNull();
+  });
+
+  it('names a compound adjective whole', () => {
+    // Before: "we talked about your custom."
+    expect(
+      continuityOpener(said('Our custom built CRM is slow.'), { now: NOW, seed: 'a', people: PEOPLE })
+        .withTopic,
+    ).toContain('we talked about your custom built CRM.');
+  });
+});
+
+describe('the differential review of 96fc715: the chat opener, threads, digest topics and stored openers', () => {
+  const PEOPLE = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad', 'Devin Okafor'] };
+  const said = (line: string) =>
+    conversation({
+      title: null,
+      exchanges: [{ founder: line, answer: 'Good. What would make that a clear yes for them?' }],
+      said: [line],
+    });
+  const digest = (topic: string) =>
+    conversation({
+      exchanges: [],
+      title: null,
+      digest: { summary: '', topics: [topic], commitments: [], openQuestions: [] },
+    });
+  const opener = (c: LeftOffConversationData) =>
+    continuityOpener(c, { now: NOW, seed: 'a', people: PEOPLE }).withTopic;
+
+  it('never says unburdening themselves, or how they are after needing to talk to someone, back as a plan', () => {
+    // Before: "we talked about your plan to vent to someone", "… to talk to someone honestly like you're not okay".
+    for (const line of [
+      'i just need to vent to someone tbh',
+      'I just need to vent to someone',
+      'I just need to offload to someone',
+      'honestly I just need to vent to someone',
+      'I just need to rant to someone tbh',
+      'I just want to vent to someone rn',
+      "uh I need to talk to someone honestly like I'm not okay",
+    ]) {
+      expect(subjectOf(said(line), PEOPLE), line).toBeNull();
+      expect(opener(said(line)), line).toBeNull();
+    }
+    expect(threadSubject('your plan to vent to someone', PEOPLE)).toBeNull();
+    expect(opener(digest('your plan to vent to someone'))).toBeNull();
+    expect(readOpener("Welcome back. Last time you said you'd vent to someone. How did it go?")).toBe(
+      'fragment',
+    );
+  });
+
+  it('says the founder’s line whole: a name in -ly, quitting to commit, "about my" venture work, a name with "First"', () => {
+    // Before: "Kelly emailed Hartwell", nothing, nothing, "First Labs".
+    for (const [line, subject] of [
+      ['Kelly emailed Hartwell about the renewal.', 'Kelly'],
+      ['Emily booked demos with five clinics.', 'Emily'],
+      ['Calendly raised prices again.', 'Calendly'],
+      ['Grammarly acquired Quillbot last year.', 'Quillbot'],
+      ['Sally introduced Noor to the dean.', 'Noor'],
+      ["Kimberly approved Hartwell's budget.", "Hartwell's budget"],
+      ['Billy designed onboarding screens for us.', 'onboarding screens'],
+      ['Emily wanted pricing by Friday.', 'Emily'],
+      ['Shelly reviewed contracts for the clinics.', 'Shelly'],
+      ['Emily shared feedback from the ambassadors.', 'Emily'],
+      ['Calendly added round robin scheduling.', 'Calendly'],
+      ['Molly mentioned Hartwell might churn.', 'Hartwell'],
+      ['Kelly finished wireframes for the booking flow.', 'Kelly'],
+      ['Italy banned ChatGPT for a month once.', 'Italy'],
+      ['Officially launched QuietQuad today!', 'QuietQuad'],
+      ['Nearly closed Hartwell before the break.', 'Hartwell'],
+      ['Our purpose attracted investors.', 'your purpose'],
+      ['Our tailor delivered samples on Friday.', 'your tailor'],
+      ['Our tailor stitched prototypes for the pop-up.', 'your tailor'],
+      ['emily booked demos with five clinics', 'the five clinics'],
+      ["I'm going to quit and go full-time in January.", 'your plan to quit and go full-time in January'],
+      ['Should we leave and join Entrepreneur First?', 'whether to leave and join Entrepreneur First'],
+      ['Should I leave and join Y Combinator?', 'whether to leave and join Y Combinator'],
+      ['Should I quit and do YC?', 'whether to quit and do YC'],
+      ['Should I quit and commit to the startup?', 'whether to quit and commit to the startup'],
+      ['I want to quit and give QuietQuad a real shot.', 'your plan to quit and give QuietQuad a real shot'],
+      ['Should I quit and go for it?', 'whether to quit and go for it'],
+      ['Should I drop out and chase this?', 'whether to drop out and chase this'],
+      ['I want to quit and do this properly.', 'your plan to quit and do this properly'],
+      ['I want to quit and grow the business.', 'your plan to quit and grow the business'],
+      ['Should I quit and scale the app?', 'whether to quit and scale the app'],
+      ['Should I quit and hire a team?', 'whether to quit and hire a team'],
+      ['I want to quit and move to London to build it.', 'your plan to quit and move to London to build it'],
+      ['I want to quit and focus 100% on the startup.', 'your plan to quit and focus 100% on the startup'],
+      [
+        'I want to quit and put everything into the startup.',
+        'your plan to quit and put everything into the startup',
+      ],
+      ['I want to quit and work on QuietQuad.', 'your plan to quit and work on QuietQuad'],
+      ['I want to quit and work on the startup.', 'your plan to quit and work on the startup'],
+      ['I want to quit and focus on my app.', 'your plan to quit and focus on your app'],
+      ['I want to quit and focus on my side project.', 'your plan to quit and focus on your side project'],
+      ['Should I quit and make QuietQuad my job?', 'whether to quit and make QuietQuad your job'],
+      ['Should I quit and make this my full-time job?', 'whether to quit and make this your full-time job'],
+      ['Should I leave and start a company with Noor?', 'whether to leave and start a company with Noor'],
+      ['I want to quit and start something with Devin.', 'your plan to quit and start something with Devin'],
+      ['I want to quit and go full-time in the summer.', 'your plan to quit and go full-time in the summer'],
+      ['Should I quit and go full time with Noor?', 'whether to quit and go full time with Noor'],
+      ['I want to quit and give it a go.', 'your plan to quit and give it a go'],
+      ['Should I quit and back myself?', 'whether to quit and back yourself'],
+      ['Should I drop out and do QuietQuad?', 'whether to drop out and do QuietQuad'],
+      ['Should I quit and do the startup?', 'whether to quit and do the startup'],
+      ['Should I quit and apply to YC?', 'whether to quit and apply to YC'],
+      ['Should I quit and get funding?', 'whether to quit and get funding'],
+      ['Should I quit and find a cofounder?', 'whether to quit and find a cofounder'],
+      ['Should I quit and take the startup seriously?', 'whether to quit and take the startup seriously'],
+      ['Should I quit and run the business?', 'whether to quit and run the business'],
+      [
+        'Should I quit and turn this into a real company?',
+        'whether to quit and turn this into a real company',
+      ],
+      ['I want to quit and commit to QuietQuad properly.', 'your plan to quit and commit to QuietQuad'],
+      [
+        'Should I drop out and give QuietQuad a real shot?',
+        'whether to drop out and give QuietQuad a real shot',
+      ],
+      ['I want to quit and apply to YC with Noor.', 'your plan to quit and apply to YC with Noor'],
+      ['Should I leave and do Entrepreneur First?', 'whether to leave and do Entrepreneur First'],
+      [
+        'Should I quit and move to London for the startup?',
+        'whether to quit and move to London for the startup',
+      ],
+      ['I want to quit and hire a small team.', 'your plan to quit and hire a small team'],
+      ['Should we quit and sell to schools instead?', 'whether to quit and sell to schools'],
+      ['Should I quit and grow the business properly?', 'whether to quit and grow the business'],
+      [
+        'I want to quit and scale QuietQuad across campuses.',
+        'your plan to quit and scale QuietQuad across campuses',
+      ],
+      [
+        'Should I quit and dedicate myself to QuietQuad?',
+        'whether to quit and dedicate yourself to QuietQuad',
+      ],
+      ['I want to quit and take the YC offer.', 'your plan to quit and take the YC offer'],
+      ['Should we leave and join Techstars?', 'whether to leave and join Techstars'],
+      ['Should we leave and join the Oxford incubator?', 'whether to leave and join the Oxford incubator'],
+      ['Should I quit then go full time in the summer?', 'whether to quit then go full time in the summer'],
+      [
+        'I need to talk to someone about our cap table lol',
+        'your plan to talk to someone about your cap table',
+      ],
+      ['I need to talk to someone about my pitch deck', 'your plan to talk to someone about your pitch deck'],
+      [
+        "I need to talk to someone about my cofounder's equity",
+        "your plan to talk to someone about your cofounder's equity",
+      ],
+      [
+        'I need to speak to someone about my visa for the accelerator',
+        'your plan to speak to someone about your visa for the accelerator',
+      ],
+      [
+        'I need to talk to someone about my startup idea tbh',
+        'your plan to talk to someone about your startup idea',
+      ],
+      [
+        'I need to talk to someone about my business plan',
+        'your plan to talk to someone about your business plan',
+      ],
+      ['I want to speak to someone about my startup', 'your plan to speak to someone about your startup'],
+      ['I should talk to someone about my idea', 'your idea'],
+      ['I need to talk to someone about my pricing', 'your plan to talk to someone about your pricing'],
+      ['I need to talk to someone about our pricing', 'your plan to talk to someone about your pricing'],
+      [
+        'We need to speak to someone about our contract with Hartwell',
+        'your plan to speak to someone about your contract with Hartwell',
+      ],
+      [
+        "I want to talk to someone about my app's security",
+        "your plan to talk to someone about your app's security",
+      ],
+      ['I need to talk to somebody about my patent', 'your plan to talk to somebody about your patent'],
+      [
+        "I need to talk to someone about my company's taxes",
+        "your plan to talk to someone about your company's taxes",
+      ],
+      [
+        'I need to talk to someone about my investor update',
+        'your plan to talk to someone about your investor update',
+      ],
+      ['Should I talk to someone about my term sheet?', 'whether to talk to someone about your term sheet'],
+      [
+        'I want to chat with someone about my go-to-market',
+        'your plan to chat with someone about your go-to-market',
+      ],
+      ['I need to talk to someone about our pricing rn', 'your plan to talk to someone about your pricing'],
+      ['I need to talk to someone about my cap table', 'your plan to talk to someone about your cap table'],
+      ['I need to speak to someone about my LLC', 'your plan to speak to someone about your LLC'],
+      [
+        'Should I talk to someone about my pricing model?',
+        'whether to talk to someone about your pricing model',
+      ],
+      [
+        'I want to talk to someone about my fundraising strategy',
+        'your plan to talk to someone about your fundraising strategy',
+      ],
+      [
+        'I need to talk to someone about my co-founder agreement',
+        'your plan to talk to someone about your co-founder agreement',
+      ],
+      [
+        'I need to talk to someone about our Hartwell contract',
+        'your plan to talk to someone about your Hartwell contract',
+      ],
+      [
+        'I need to talk to someone about our seed round',
+        'your plan to talk to someone about your seed round',
+      ],
+      [
+        'I need to see a doctor about my insole prototype',
+        'your plan to see a doctor about your insole prototype',
+      ],
+      [
+        'I want to speak to a psychologist about my survey questions',
+        'your plan to speak to a psychologist about your survey questions',
+      ],
+      [
+        'I need to talk to someone about my product roadmap tbh',
+        'your plan to talk to someone about your product roadmap',
+      ],
+      [
+        'Should we talk to someone about our SOC 2 audit?',
+        'whether to talk to someone about your SOC 2 audit',
+      ],
+      ['We got into Entrepreneur First!', 'Entrepreneur First'],
+      ['Should we apply to Entrepreneur First?', 'whether to apply to Entrepreneur First'],
+      ['Mobile First Labs wants a demo.', 'Mobile First Labs'],
+      ['We met Ladies First Ventures yesterday.', 'Ladies First Ventures'],
+      ['Our Entrepreneur First interview is on Friday.', 'your Entrepreneur First interview'],
+      ['Our Founders First application is due Friday.', 'your Founders First application'],
+      ['Should we apply to Founders First?', 'whether to apply to Founders First'],
+      ['Customer First Ventures wants a call.', 'Customer First Ventures'],
+      ['We got into Entrepreneur First', 'Entrepreneur First'],
+      ['Entrepreneur First accepted us!', 'Entrepreneur First'],
+    ] as const) {
+      expect(opener(said(line)), line).toContain(`we talked about ${subject}.`);
+    }
+  });
+
+  it('comes back to a thread or a digest topic of quitting to commit, venture work or a name with "First"', () => {
+    // Before: no thread and no digest topic.
+    for (const topic of [
+      'your plan to quit and work on QuietQuad',
+      'whether to quit and commit to the startup',
+      'your plan to quit and focus on your app',
+      'your plan to leave and join Entrepreneur First',
+      'your plan to quit and put everything into QuietQuad',
+      'whether to leave and join YC',
+      'your plan to quit and focus on your side project',
+      'your plan to quit and go full-time in January',
+      'whether to quit and go full time with Noor',
+      'your plan to quit and give it a go',
+      'whether to quit and apply to YC',
+      'whether to quit and commit to QuietQuad',
+      'your plan to quit and apply to YC',
+      'whether to leave and join Techstars',
+      'your plan to talk to someone about your pitch deck',
+      'your plan to talk to someone about your pricing',
+      'whether to talk to someone about your term sheet',
+      'your plan to talk to someone about your cap table',
+      'whether to talk to someone about your pricing model',
+      'whether to apply to Entrepreneur First',
+    ]) {
+      expect(threadSubject(topic, PEOPLE), topic).toBe(topic);
+      expect(opener(digest(topic)), topic).toContain(`we talked about ${topic}.`);
+    }
+  });
+
+  it('reads a stored opener of quitting to commit, venture work or a name with "First" for its subject', () => {
+    // Before: "fragment".
+    for (const [stored, kind, text] of [
+      [
+        "Welcome back. Last time you said you'd quit and work on QuietQuad. How did it go?",
+        'thread',
+        'your plan to quit and work on QuietQuad',
+      ],
+      [
+        'Welcome back. Last time, we talked about whether to quit and commit to the startup. Where did you land on it?',
+        'question',
+        'whether to quit and commit to the startup',
+      ],
+      [
+        "Welcome back. Last time you said you'd leave and join Entrepreneur First. How did it go?",
+        'thread',
+        'your plan to leave and join Entrepreneur First',
+      ],
+      [
+        "Welcome back. Last time you said you'd quit and focus on your app. How did it go?",
+        'thread',
+        'your plan to quit and focus on your app',
+      ],
+      [
+        "Welcome back. Last time you said you'd quit and work on the startup. How did it go?",
+        'thread',
+        'your plan to quit and work on the startup',
+      ],
+      [
+        'Welcome back. Last time you planned to quit and do YC. How did it go?',
+        'thread',
+        'your plan to quit and do YC',
+      ],
+      [
+        "Welcome back. Last time you said you'd quit and go full-time in January. How did it go?",
+        'thread',
+        'your plan to quit and go full-time in January',
+      ],
+      [
+        "Welcome back. Last time you said you'd leave and join Techstars. How did it go?",
+        'thread',
+        'your plan to leave and join Techstars',
+      ],
+      [
+        'Good to talk again. Last time, we talked about whether to quit and commit to QuietQuad. Where did you land on it?',
+        'question',
+        'whether to quit and commit to QuietQuad',
+      ],
+      [
+        "Welcome back. Last time you said you'd talk to someone about your pitch deck. How did it go?",
+        'thread',
+        'your plan to talk to someone about your pitch deck',
+      ],
+      [
+        "Welcome back. Last time you said you'd talk to someone about your cap table. How did it go?",
+        'thread',
+        'your plan to talk to someone about your cap table',
+      ],
+      [
+        'Welcome back. Last time, we talked about whether to apply to Entrepreneur First. Where did you land on it?',
+        'question',
+        'whether to apply to Entrepreneur First',
+      ],
+    ] as const) {
+      expect(readOpener(stored), stored).toEqual({ kind, text });
+    }
+  });
+});
+
+describe('the differential audit of 601700d: quitting to work for the venture, and a name with "First", on every path', () => {
+  const PEOPLE = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad', 'Devin Okafor'] };
+  const said = (line: string) =>
+    conversation({
+      title: null,
+      exchanges: [{ founder: line, answer: 'Good. What would make that a clear yes for them?' }],
+      said: [line],
+    });
+  const digest = (topic: string) =>
+    conversation({
+      exchanges: [],
+      title: null,
+      digest: { summary: '', topics: [topic], commitments: [], openQuestions: [] },
+    });
+  const opener = (c: LeftOffConversationData) =>
+    continuityOpener(c, { now: NOW, seed: 'a', people: PEOPLE }).withTopic;
+
+  it('comes back to quitting to work for the venture full time, or to take a salary from it', () => {
+    // Before: the invitation for every line, and no thread, digest topic or stored opener.
+    for (const [line, subject] of [
+      [
+        'Should I quit and work for my startup full time?',
+        'whether to quit and work for your startup full time',
+      ],
+      [
+        'I want to quit and work for QuietQuad full time',
+        'your plan to quit and work for QuietQuad full time',
+      ],
+      [
+        'Should I quit and take a salary from the startup?',
+        'whether to quit and take a salary from the startup',
+      ],
+      ['Should I quit and pay myself a salary?', 'whether to quit and pay yourself a salary'],
+      ['I want to quit and go full time at QuietQuad.', 'your plan to quit and go full time at QuietQuad'],
+    ] as const) {
+      expect(subjectOf(said(line), PEOPLE)?.text, line).toBe(subject);
+      expect(opener(said(line)), line).toContain(`we talked about ${subject}.`);
+      expect(threadSubject(subject, PEOPLE), subject).toBe(subject);
+      expect(opener(digest(subject)), subject).toContain(`we talked about ${subject}.`);
+    }
+    for (const [stored, kind, text] of [
+      [
+        "Welcome back. Last time you said you'd quit and work for QuietQuad full time. How did it go?",
+        'thread',
+        'your plan to quit and work for QuietQuad full time',
+      ],
+      [
+        'Good to talk again. Last time, we talked about whether to quit and take a salary from the startup. Where did you land on it?',
+        'question',
+        'whether to quit and take a salary from the startup',
+      ],
+    ] as const) {
+      expect(readOpener(stored), stored).toEqual({ kind, text });
+    }
+    // Work for someone else is still withdrawal, on every path.
+    expect(opener(said('Should I quit and work for a bank full time?'))).toBeNull();
+    expect(threadSubject('whether to quit and work for a bank full time', PEOPLE)).toBeNull();
+    expect(opener(digest("whether to quit and take a salary from your dad's firm"))).toBeNull();
+  });
+
+  it('says a digest topic or a thread that opens with a name with "First" in it whole', () => {
+    // Before: "entrepreneur First" lowered, then cut at "First": "we left off on entrepreneur".
+    for (const [topic, said] of [
+      ['Entrepreneur First', 'Entrepreneur First'],
+      ['Founders First', 'Founders First'],
+      ['Entrepreneur First.', 'Entrepreneur First'],
+      ['Entrepreneur First interview', 'Entrepreneur First interview'],
+      ['Founders First application', 'Founders First application'],
+      ['Mobile First Labs', 'Mobile First Labs'],
+      ['Customer First Capital', 'Customer First Capital'],
+    ] as const) {
+      expect(threadSubject(topic, PEOPLE), topic).toBe(said);
+      expect(opener(digest(topic)), topic).toContain(`we talked about ${said}.`);
+    }
+    const lines = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((seed) =>
+      threadOpener('Entrepreneur First', { seed, people: PEOPLE }),
+    );
+    expect(lines.some((line) => line?.includes('we left off on Entrepreneur First.'))).toBe(true);
+    for (const line of lines) {
+      expect(line).toContain('Entrepreneur First');
+      expect(line).not.toMatch(/entrepreneur/);
+    }
+    expect(
+      readOpener('Welcome back. Last time, we left off on Entrepreneur First. Where are things now?'),
+    ).toEqual({
+      kind: 'thread',
+      text: 'Entrepreneur First',
+    });
+    // A heading's first word is still said in lower case, and so is "first" that opens a label.
+    expect(midSentence('Entrepreneur First')).toBe('Entrepreneur First');
+    expect(midSentence('Regulatory pathway')).toBe('regulatory pathway');
+    expect(midSentence('First customers')).toBe('first customers');
+    expect(midSentence('Meeting Hartwell')).toBe('meeting Hartwell');
+  });
+});
