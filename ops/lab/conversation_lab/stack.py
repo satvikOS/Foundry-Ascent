@@ -58,6 +58,9 @@ def api_env(
             "LOCAL_DOWNLOAD_ORIGIN": f"http://localhost:{api_port}",
             # One founder sends every turn of a run; the per-person window (20 per 10 minutes) would stop it.
             "CORE_TURN_RATE_LIMIT": "1000",
+            # The model-based safety screen (off in production until its evaluation, the safety suite): every suite
+            # runs with it, so a prefilter hit in a real conversation is screened as it would be once it is on.
+            "CORE_SAFETY_SCREEN": "on",
             "LOG_LEVEL": "info",
             "HOME_TENANT_SLUG": "ain",
             "LOCAL_AWS_SPEECH": "true" if speech else "false",

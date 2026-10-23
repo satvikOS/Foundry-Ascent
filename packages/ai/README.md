@@ -356,6 +356,49 @@ discouragement, "hopeless at design", discovery questions about patients, commen
 `buildCrisisResponse(mode)` / `CRISIS_SUPPORT_MESSAGE` give the human-support response (988, emergency
 services, university support) with a P1 `safety_wellbeing` escalation to `university_support`.
 
+### Indirect ideation: the prefilter and the safety screen
+
+The crisis rules above are precise on what they name, and deliberately left as they are: indirect phrasings ("I'm
+thinking about ending it", "I won't be around much longer", "this is my last message", "what's even the point
+anymore") share their words with ordinary venture talk ("thinking about ending the pilot", "I'll end it here,
+thanks", "I can't do this deck anymore"), and every attempt to separate the two with more rules either lost lines the
+rules caught or flagged sign-offs and frustration as crises. So the two are separated by reading, not by rules:
+
+1. `ideationPrefilter(text)` (`src/risk/ideation-prefilter.ts`) is a broad, high-recall net of 13 families
+   (ending, presence, disappear, meaning, burden, endurance, farewell, sleep, self-harm, means, withdrawal, dark
+   thoughts, multilingual), written for voice transcripts, slang and leetspeak; texting shorthand and doubled-letter
+   typos ("dont wanna b here", "no reason 2 live", "i cnt do this", "endd it all") are read back to the words they
+   stand for. It decides nothing and may over-match; it returns family names only. Only a plain goodbye next to an
+   ordinary sign-off ("thanks, goodbye", "ok i gotta go, goodbye") and a first-person-plural wrap-up ("ok let's end it
+   there", "can we end it here") are left out. On the lab's, evals' and e2e suites' ordinary lines it fires on about
+   0.1 % (2 of 1,627); it does fire on many bare closings ("goodbye", "i think i'm done"), which the screen reads with the reply
+   they answer.
+2. When it fires and the rules found no crisis, the orchestrator asks the **safety screen**
+   (`src/risk/safety-screen.ts`; `packages/core` `orchestrator/safety-screen.ts`): one structured call
+   (`SafetyScreen`: `reason`, `crisis`, `wellbeing`) on the primary model through the gateway, metered as
+   `classification` (`test_bench` in the studio), with the founder's message and the vEIR's previous reply as escaped
+   untrusted data, and a 2.5 s budget for the primary and fallback together. It runs once the turn is admitted, so
+   every gate (call admission, the message and in-flight limits, the spend caps) refuses a request before it buys a
+   call. Only with `CORE_SAFETY_SCREEN=on` (`packages/core` `turns.safetyScreen`): it is off by default, and stays
+   off in production until the conversation lab's `safety` suite has evaluated it on the real model; off, a turn
+   runs exactly as without it.
+3. `withSafetyScreen(risk, outcome)`: `crisis` sets the crisis flag (the crisis path, exactly as a rule's: the fixed
+   support message, no coaching call, a P1 escalation draft; rule id `safety_wellbeing:safety_screen`); `wellbeing`
+   adds `safety_wellbeing` as the distress rules do (a forced escalation, care in the reply;
+   `safety_wellbeing:safety_screen_wellbeing`); `clear` and `failed` (an error or the time running out, logged as
+   `turn.safety_screen_failed`) change nothing. The screen never removes a flag.
+
+The mock gateway answers the screen with a narrow deterministic rule (`src/gateway/mock-safety-screen.ts`), so tests,
+the e2e suite, the dev server and the lab's dry run run offline without the crisis message on ordinary talk: only a
+short list of unmistakable first-person phrasings is a crisis ("nobody would even notice if I wasn't here", or a
+message that is nothing but "I'm thinking about ending it"), a bare "I can't do this anymore" is wellbeing, and
+everything else (every sign-off, "goodbye" included) is clear. `src/risk/safety-screen-corpus.test.ts` holds the
+design on the 1,244-line E-crisis corpus
+(`ops/lab/scenarios/safety-screen.json`): the rules keep every decision, no screen outcome loses a rule's crisis, and
+the prefilter sends every crisis line the rules miss to the screen. The screen's real precision and recall are
+measured with `apps/api/src/scripts/lab-safety-screen.ts`, which the conversation lab runs on GitHub as its `safety`
+suite (docs/runbooks/conversation-lab.md, "Safety screen evaluation").
+
 ## Output validator
 
 `validateCoachResponse(raw, options)` → `{ response, results: ValidatorResults, blocked, blockReason? }`

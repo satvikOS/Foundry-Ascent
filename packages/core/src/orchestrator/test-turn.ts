@@ -5,6 +5,7 @@ import {
   buildRetrievalQuery,
   classifyRisk,
   riskLabel,
+  withSafetyScreen,
   type HistoryTurn,
   type RiskClassification,
 } from '@foundry/ai';
@@ -26,6 +27,7 @@ import { answerTurn, generationError } from './answer.js';
 import { participantBlockReason, supportMessageFor } from './blocked.js';
 import { generationTotals, type GenerationMeter } from './generate.js';
 import { embedRetrievalQuery, retrieveEvidence } from './retrieval.js';
+import { screenIndirectIdeation } from './safety-screen.js';
 import { secondsUntilUtcMidnight } from './sampling.js';
 
 export type RunTestTurnInput = z.input<typeof TestTurnRequest>;
@@ -278,7 +280,8 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
     }
   }
 
-  function crisisResponse(admitted: Admitted, risk: RiskClassification): TestTurnResponse {
+  /** The crisis support a founder would get; `screened`: found by the safety screen, not by a crisis rule. */
+  function crisisResponse(admitted: Admitted, risk: RiskClassification, screened = false): TestTurnResponse {
     return {
       release: {
         id: admitted.release.id,
@@ -297,7 +300,10 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
         identityViolation: false,
         crossVentureViolation: false,
         riskCategories: risk.categories,
-        notes: ['crisis_support', 'no_model_call'],
+        // As the founder's turn records it (run-turn.ts crisisPath), so a curator can tell the two apart.
+        notes: screened
+          ? ['crisis_support', 'no_model_call', 'safety_screen']
+          : ['crisis_support', 'no_model_call'],
       }),
       blocked: { reason: 'crisis_support', supportMessage: CRISIS_SUPPORT_MESSAGE },
     };
@@ -327,15 +333,31 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
         // No venture: every venture of the tenant (its name, canary and members) is another venture here.
         const others = await directory.others(ctx.tenantId, null);
         const { eirNames } = await directory.get(ctx.tenantId);
-        const risk = classifyRisk(input.text, {
+        // The founder pipeline's safety screen, on the same terms and behind the same switch (run-turn.ts,
+        // `turns.safetyScreen`): a curator trying a release sees what a founder would.
+        const screen = cfg.turns.safetyScreen
+          ? await screenIndirectIdeation(kit, {
+              meter: { ctx, ...METER },
+              founderText: input.text,
+              previousReply: input.history.at(-1)?.answer ?? null,
+              crisis: firstRisk.crisis,
+              ...(options.signal ? { signal: options.signal } : {}),
+            })
+          : null;
+        const rules = classifyRisk(input.text, {
           otherVentureNames: others.names,
           otherVentureMemberNames: others.memberNames,
         });
+        const risk = screen === null ? rules : withSafetyScreen(rules, screen);
         if (risk.crisis) {
           outcome = 'blocked';
           policyReason = 'crisis';
-          metadata = { ...metadata, modelCalled: false };
-          return crisisResponse(admitted, risk);
+          metadata = {
+            ...metadata,
+            modelCalled: false,
+            ...(screen === 'crisis' ? { safetyScreen: true } : {}),
+          };
+          return crisisResponse(admitted, risk, screen === 'crisis');
         }
         const history: HistoryTurn[] = input.history
           .slice(-cfg.turns.historyTurns)

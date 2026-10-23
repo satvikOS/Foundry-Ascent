@@ -2,11 +2,13 @@ import {
   CRISIS_SPOKEN_MESSAGE,
   CRISIS_SUPPORT_MESSAGE,
   POLICY_VERSION,
+  SAFETY_SCREEN_CRISIS_RULE,
   buildCrisisResponse,
   buildRetrievalQuery,
   classifyRisk,
   deriveSpoken,
   riskLabel,
+  withSafetyScreen,
   type HistoryTurn,
   type ModelAttempt,
   type RiskClassification,
@@ -68,6 +70,7 @@ import { candidateVisibility } from './evidence.js';
 import { generationTotals, SpeechStream } from './generate.js';
 import { assertWithinSpendCaps } from './guards.js';
 import { embedRetrievalQuery, privateRetrievalOwner, retrieveEvidence } from './retrieval.js';
+import { safetyScreenDue, screenIndirectIdeation } from './safety-screen.js';
 import { secondsUntilUtcMidnight, shouldSampleForReview } from './sampling.js';
 
 export { enforceGateBlock } from './answer.js';
@@ -193,6 +196,12 @@ interface Coach {
   /** The stored opener, when the history reaches back to the start of the conversation. */
   readonly opener: string | null;
   readonly memory: LoadedContinuity;
+}
+
+/** The vEIR's last message as the founder heard it: the previous answer, or the opener on the first turn. */
+function previousReplyOf(coach: Coach | null): string | null {
+  if (coach === null) return null;
+  return coach.heardHistory.length > 0 ? (coach.heardHistory.at(-1)?.answer ?? null) : coach.opener;
 }
 
 interface Replay {
@@ -612,6 +621,8 @@ export function createOrchestrator(
     speechKey: Promise<SessionSigningKey> | null,
   ): Promise<RunTurnOutcome> {
     const response = buildCrisisResponse(pre.turnMode, pre.channel);
+    // Found by the safety screen (indirect ideation the rules do not flag), not by a crisis rule.
+    const screened = risk.matchedRules.includes(SAFETY_SCREEN_CRISIS_RULE);
     const validator: ValidatorResults = {
       unknownEvidenceIdsRemoved: 0,
       factsDowngraded: 0,
@@ -621,13 +632,17 @@ export function createOrchestrator(
       identityViolation: false,
       crossVentureViolation: false,
       riskCategories: risk.categories,
-      notes: ['crisis_support', 'no_model_call'],
+      notes: screened
+        ? ['crisis_support', 'no_model_call', 'safety_screen']
+        : ['crisis_support', 'no_model_call'],
     };
     const escalationId = await kit.inRequest(ctx, async (scope) => {
       const finished = await turnsRepo.finishTurn(scope.tx, {
         turnId: turn.id,
         status: 'blocked',
         response,
+        // A screened crisis was admitted under the rules' label: the turn keeps the final one.
+        ...(screened ? { riskLabel: riskLabel(risk), riskCategories: risk.categories } : {}),
         validatorResults: validator,
         sampledForReview: false,
         mode: pre.turnMode,
@@ -652,7 +667,12 @@ export function createOrchestrator(
         objectType: 'turn',
         objectId: turn.id,
         policyReason: 'crisis',
-        metadata: { escalationId: escalation.id, modelCalled: false, channel: pre.channel },
+        metadata: {
+          escalationId: escalation.id,
+          modelCalled: false,
+          channel: pre.channel,
+          ...(screened ? { safetyScreen: true } : {}),
+        },
       });
       return escalation.id;
     });
@@ -677,6 +697,7 @@ export function createOrchestrator(
     readonly turn: turnsRepo.TurnRecord;
     readonly pre: Proceed;
     readonly input: z.output<typeof RunTurnInput>;
+    /** The deterministic rules' classification the turn was admitted with (accepted() adds the safety screen's). */
     readonly risk: RiskClassification;
     /** Whether the admission treated the message as a crisis (no limits, no coach, no model call). */
     readonly crisis: boolean;
@@ -695,9 +716,24 @@ export function createOrchestrator(
   }
 
   async function accepted(a: Accepted): Promise<RunTurnOutcome> {
-    const { ctx, turn, pre, input, risk, others, eirNames, addressees, emit, signal } = a;
-    const label = riskLabel(risk);
+    const { ctx, turn, pre, input, others, eirNames, addressees, emit, signal } = a;
     const ventureId = pre.session.ventureId;
+    // Indirect ideation the crisis rules do not flag ("I'm thinking about ending it", "this is my last message"): a
+    // prefilter hit asks the safety screen, which can only add a flag (safety-screen.ts). It runs only here, once the
+    // turn is admitted: every gate (the message and in-flight limits, call admission, the spend caps) has refused a
+    // request before it buys a call, as on main. Rare, so the common path pays nothing. Only with
+    // `turns.safetyScreen` (CORE_SAFETY_SCREEN=on): off, the turn runs exactly as without it.
+    const screen = cfg.turns.safetyScreen
+      ? await screenIndirectIdeation(kit, {
+          meter: { ctx, ventureId, purpose: 'classification' },
+          founderText: input.text,
+          previousReply: previousReplyOf(pre.coach),
+          crisis: a.crisis || a.risk.crisis,
+          ...(signal ? { signal } : {}),
+        })
+      : null;
+    const risk = screen === null ? a.risk : withSafetyScreen(a.risk, screen);
+    const label = riskLabel(risk);
     // The detail is a participant-safe label: which names the cross-venture guard knows is never revealed.
     await emit({
       event: 'turn.status',
@@ -877,6 +913,8 @@ export function createOrchestrator(
         turnId: turn.id,
         status,
         response: recorded,
+        // The safety screen's wellbeing flag came after admission: the turn keeps the final classification.
+        ...(screen !== null ? { riskLabel: label, riskCategories: risk.categories } : {}),
         validatorResults: checked.results,
         modelId: generation.modelId,
         fallbackUsed: generation.fallbackUsed,
@@ -1165,15 +1203,9 @@ export function createOrchestrator(
         const session = pre.session;
         // A short reply answers the vEIR's last message: the previous answer as the founder heard it, or the
         // opener on the first turn.
-        const coach = pre.coach;
         query = buildRetrievalQuery({
           founderText: parsed.text,
-          previousAnswer:
-            coach === null
-              ? null
-              : coach.heardHistory.length > 0
-                ? (coach.heardHistory.at(-1)?.answer ?? null)
-                : coach.opener,
+          previousAnswer: previousReplyOf(pre.coach),
           currentGoal: session.goal ?? pre.venture.currentGoal,
         });
         // Latency: the speech key loads while the turn is admitted.
@@ -1236,8 +1268,9 @@ export function createOrchestrator(
           speechKey = null;
         }
         // The query embedding starts once the turn is admitted (a refused request buys no model call) and
-        // overlaps the accepted and classifying events.
-        if (!crisis && !risk.crisis) {
+        // overlaps the accepted and classifying events. A message the safety screen will read waits for its verdict
+        // (accepted() embeds it then): a screened crisis makes no retrieval call.
+        if (!crisis && !risk.crisis && !(cfg.turns.safetyScreen && safetyScreenDue(input.text))) {
           embedding = embedRetrievalQuery(
             kit,
             ctx,

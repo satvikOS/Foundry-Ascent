@@ -18,9 +18,11 @@ import { veirFirstName } from '../prompts/persona.js';
 import { COACH_RESPONSE_SCHEMA_NAME, DEFAULT_PERSONA_NAME } from '../prompts/version.js';
 import { RISK_ESCALATION_MAP, primaryForcedCategory } from '../risk/escalation-map.js';
 import { escapeRegExp } from '../risk/normalize.js';
+import { SAFETY_SCREEN_SCHEMA_NAME, type SafetyScreenVerdict } from '../risk/safety-screen.js';
 import { asksAboutIdentity, identityQuestionOf } from '../validators/identity.js';
 import { clampWords } from '../validators/speech.js';
 import { COACH_ANNOTATIONS_SCHEMA_NAME } from './coach-annotations.js';
+import { mockSafetyScreenVerdict } from './mock-safety-screen.js';
 import {
   ModelOutputInvalidError,
   ModelRefusalError,
@@ -1426,6 +1428,11 @@ export function sampleFromJsonSchema(node: JsonObject, root: JsonObject = node, 
   }
 }
 
+/** The mock safety screen: a narrow deterministic rule standing in for the model (mock-safety-screen.ts). */
+function mockSafetyScreen(context: MockGenerateContext): SafetyScreenVerdict {
+  return mockSafetyScreenVerdict(context.founderText);
+}
+
 interface BuiltIn {
   build: (context: MockGenerateContext) => unknown;
   /** For schemas defined outside this package: fall back to a schema sample if the shape drifted. */
@@ -1436,6 +1443,7 @@ const BUILT_IN: Readonly<Record<string, BuiltIn>> = {
   [COACH_RESPONSE_SCHEMA_NAME]: { build: mockCoachResponse, sampleOnMismatch: false },
   [DISTILL_SCHEMA_NAME]: { build: mockDistillDraft, sampleOnMismatch: false },
   [MOCK_RECAP_SCHEMA_NAME]: { build: mockRecapDraft, sampleOnMismatch: true },
+  [SAFETY_SCREEN_SCHEMA_NAME]: { build: mockSafetyScreen, sampleOnMismatch: false },
 };
 
 /**

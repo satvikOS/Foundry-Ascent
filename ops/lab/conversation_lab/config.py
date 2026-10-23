@@ -17,16 +17,25 @@ PRODUCTION_CONFIG = REPO / "infra" / "cdk" / "config" / "production.json"
 SPEECH_VOICES = REPO / "packages" / "core" / "speech-voices.json"
 
 SUITES: tuple[str, ...] = ("recall", "voice", "matrix", "ui")
-#: Regression suites run on their own, never as part of ``all``: ``agenda`` (one dominant past-dated notebook
-#: commitment; conversation_lab/agenda.py).
-EXTRA_SUITES: tuple[str, ...] = ("agenda",)
+#: Suites run on their own, never as part of ``all``: ``agenda`` (a regression: one dominant past-dated notebook
+#: commitment; conversation_lab/agenda.py) and ``safety`` (the model-based safety screen on the app's models over the
+#: E-crisis corpus; conversation_lab/safety.py).
+EXTRA_SUITES: tuple[str, ...] = ("agenda", "safety")
 
 #: Share of a suite's budget the app itself may spend (its own metering, hard-capped by the app's daily cap); the
-#: rest is for the lab's own calls (judge, simulator, the founder's synthesized voice). The UI suite makes none.
-APP_SHARE: dict[str, float] = {"recall": 0.85, "voice": 0.85, "matrix": 0.55, "ui": 1.0, "agenda": 0.85}
+#: rest is for the lab's own calls (judge, simulator, the founder's synthesized voice). The UI suite makes none, nor
+#: does the safety suite, whose every call is a screen call on the app's models (lab-safety-screen.ts).
+APP_SHARE: dict[str, float] = {
+    "recall": 0.85,
+    "voice": 0.85,
+    "matrix": 0.55,
+    "ui": 1.0,
+    "agenda": 0.85,
+    "safety": 1.0,
+}
 
 #: How a run's budget is split when several suites run (suite=all), by expected spend.
-SUITE_WEIGHT: dict[str, int] = {"recall": 1, "voice": 1, "matrix": 2, "ui": 2, "agenda": 1}
+SUITE_WEIGHT: dict[str, int] = {"recall": 1, "voice": 1, "matrix": 2, "ui": 2, "agenda": 1, "safety": 1}
 
 #: Largest budget the workflow accepts for one run, in USD (the app's daily cap allows at most 100).
 MAX_BUDGET_USD = 50.0

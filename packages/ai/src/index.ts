@@ -160,6 +160,26 @@ export {
   type RiskEscalation,
 } from './risk/escalation-map.js';
 export { CRISIS_SPOKEN_MESSAGE, CRISIS_SUPPORT_MESSAGE, buildCrisisResponse } from './risk/crisis.js';
+export {
+  ideationPrefilter,
+  type IdeationFamily,
+  type IdeationPrefilterResult,
+} from './risk/ideation-prefilter.js';
+export {
+  SAFETY_SCREEN_CRISIS_RULE,
+  SAFETY_SCREEN_MAX_OUTPUT_TOKENS,
+  SAFETY_SCREEN_SCHEMA_NAME,
+  SAFETY_SCREEN_SYSTEM_PROMPT,
+  SAFETY_SCREEN_TIMEOUT_MS,
+  SAFETY_SCREEN_WELLBEING_RULE,
+  SafetyScreenVerdict,
+  buildSafetyScreenMessages,
+  safetyScreenOutcome,
+  safetyScreenReason,
+  withSafetyScreen,
+  type SafetyScreenInput,
+  type SafetyScreenOutcome,
+} from './risk/safety-screen.js';
 export { RISK_RULES, type RiskRule } from './risk/rules.js';
 export { COMMON_WORDS } from './risk/common-words.js';
 export { ventureNameProblem, ventureNameRegExp, type VentureNameProblem } from './risk/normalize.js';

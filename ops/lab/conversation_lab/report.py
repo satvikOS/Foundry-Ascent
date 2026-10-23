@@ -198,10 +198,78 @@ def _agenda_tables(result: Mapping[str, Any]) -> list[str]:
     return out
 
 
+def _cell_text(value: Any, fmt: str = "{}") -> str:
+    return "-" if value is None else fmt.format(value)
+
+
+def _safety_tables(result: Mapping[str, Any]) -> list[str]:
+    """The safety screen on the real model: precision and recall, counts by expected label, cost and latency."""
+    if not result.get("report"):
+        return [f"No report from lab-safety-screen.ts (exit {result.get('script_exit')}).", ""]
+    out = [
+        "| Crisis decision (lines labelled crisis or none) | Precision | Recall | TP | FP | FN | TN |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for key, label in (
+        ("rules_only", "Rules only (as production today)"),
+        ("pipeline", "Rules + safety screen"),
+    ):
+        c = result.get(key) or {}
+        out.append(
+            f"| {label} | {_cell_text(c.get('precision'))} | {_cell_text(c.get('recall'))} | "
+            + " | ".join(_cell_text(c.get(k)) for k in ("tp", "fp", "fn", "tn"))
+            + " |"
+        )
+    s = result.get("screen_alone") or {}
+    out.append(
+        f"| Screen alone (the {_cell_text(s.get('read'))} labelled lines it read) | {_cell_text(s.get('precision'))} | "
+        f"{_cell_text(s.get('recall'))} | - | {_cell_text(s.get('false_crisis'))} | "
+        f"{_cell_text(s.get('missed_crisis'))} | - |"
+    )
+    out.append("")
+    out.append(
+        "| Expected label | Lines | Rules: crisis | Screened | Screen: crisis | wellbeing | clear | failed "
+        "| Turn: crisis | Turn: wellbeing |"
+    )
+    out.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    for label, cell in (result.get("by_expect") or {}).items():
+        keys = ("rows", "rules", "screened", "crisis", "wellbeing", "clear", "failed")
+        out.append(
+            f"| {label} | "
+            + " | ".join(_cell_text(cell.get(k)) for k in (*keys, "pipeline_crisis", "pipeline_wellbeing"))
+            + " |"
+        )
+    out.append("")
+    latency = result.get("latency_ms") or {}
+    cost = result.get("cost_usd") or {}
+    per_1000 = cost.get("per_1000_turns_at_hit_rate") or {}
+    reply = result.get("with_reply") or {}
+    out.append(
+        f"Screen calls: {_cell_text(result.get('calls'))} of {_cell_text(result.get('rows'))} lines "
+        f"(failed {_cell_text(result.get('failures'))}; budget reached: "
+        f"{'yes' if result.get('budget_reached') else 'no'}). Latency p50 {_cell_text(latency.get('p50'))} ms, "
+        f"p95 {_cell_text(latency.get('p95'))} ms. Cost USD {_cell_text(cost.get('total'))} "
+        f"(USD {_cell_text(cost.get('per_call'))} a call); per 1,000 founder turns when "
+        + ", ".join(
+            f"{float(rate):.1%} reach the screen: USD {_cell_text(usd)}" for rate, usd in per_1000.items()
+        )
+        + "."
+    )
+    out.append(
+        f"Closings read with the vEIR's previous reply: {_cell_text(reply.get('screened'))} (false crises "
+        f"{_cell_text(reply.get('false_crisis'))}, missed crises {_cell_text(reply.get('missed_crisis'))}). "
+        f"Wellbeing flags on ordinary lines: {_cell_text(result.get('wellbeing_on_ordinary'))}."
+    )
+    out.append("")
+    return out
+
+
 def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
     out: list[str] = []
     if suite == "agenda":
         return _agenda_tables(result)
+    if suite == "safety":
+        return _safety_tables(result)
     scenarios: Sequence[Mapping[str, Any]] = result.get("scenarios") or []
     greeting = result.get("greeting") if suite == "recall" else None
     if greeting:

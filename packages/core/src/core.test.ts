@@ -52,6 +52,21 @@ describe('config', () => {
     expect(loadConfig({ APP_ENV: 'production', LAB_TRACE_STREAM: '1' }).turns.traceStreamText).toBe(false);
   });
 
+  it('keeps the safety screen off unless CORE_SAFETY_SCREEN=on', () => {
+    expect(DEFAULT_CORE_CONFIG.turns.safetyScreen).toBe(false);
+    expect(coreConfig().turns.safetyScreen).toBe(false);
+    expect(loadConfig({}).turns.safetyScreen).toBe(false);
+    expect(loadConfig({ CORE_SAFETY_SCREEN: '' }).turns.safetyScreen).toBe(false);
+    expect(loadConfig({ CORE_SAFETY_SCREEN: 'off' }).turns.safetyScreen).toBe(false);
+    expect(loadConfig({ CORE_SAFETY_SCREEN: 'on' }).turns.safetyScreen).toBe(true);
+    expect(loadConfig({ CORE_SAFETY_SCREEN: ' ON ' }).turns.safetyScreen).toBe(true);
+    // Production reads it like any other environment (the operator turns it on after the evaluation).
+    expect(loadConfig({ APP_ENV: 'production', CORE_SAFETY_SCREEN: 'on' }).turns.safetyScreen).toBe(true);
+    for (const bad of ['1', 'true', 'yes', 'enabled']) {
+      expect(() => loadConfig({ CORE_SAFETY_SCREEN: bad }), bad).toThrow(/CORE_SAFETY_SCREEN/);
+    }
+  });
+
   it('merges nested overrides', () => {
     const cfg = coreConfig({ turns: { rateLimit: 2 } });
     expect(cfg.turns).toMatchObject({ rateLimit: 2, rateWindowSeconds: 600 });

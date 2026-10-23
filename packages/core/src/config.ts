@@ -67,6 +67,14 @@ export const CoreConfig = z.object({
      * (`LAB_TRACE_STREAM=1`, synthetic data, sealed logs); never in production, whatever the environment says.
      */
     traceStreamText: z.boolean(),
+    /**
+     * The model-based safety screen (orchestrator/safety-screen.ts): a message the ideation prefilter flags and the
+     * crisis rules do not is read by one short model call once the turn is admitted. Off by default
+     * (`CORE_SAFETY_SCREEN=on|off`): off, a turn runs exactly as without the screen (no call, no wait). The
+     * conversation lab turns it on; production waits for its evaluation on the real model (docs/runbooks/
+     * conversation-lab.md, "Safety screen evaluation").
+     */
+    safetyScreen: z.boolean(),
   }),
   retrieval: z.object({
     memory: z.number().int().min(0).max(50),
@@ -156,6 +164,7 @@ export const DEFAULT_CORE_CONFIG: CoreConfig = {
     historyTurns: 8,
     modelTimeoutMs: 25_000,
     traceStreamText: false,
+    safetyScreen: false,
   },
   retrieval: { memory: 8, chunks: 6, doctrine: 4, resources: 4, patterns: 2 },
   ingestion: { chunkTokens: 800, overlapRatio: 0.15, embedBatchSize: 16, maxChunks: 2_000 },
@@ -192,6 +201,15 @@ function nonEmpty(value: string | undefined): string | null {
   return trimmed === undefined || trimmed === '' ? null : trimmed;
 }
 
+/** An `on`/`off` switch (unset or empty: `fallback`); any other value is a configuration error. */
+function switchFrom(env: EnvLike, name: string, fallback: boolean): boolean {
+  const raw = env[name]?.trim().toLowerCase();
+  if (raw === undefined || raw === '') return fallback;
+  if (raw === 'on') return true;
+  if (raw === 'off') return false;
+  throw new Error(`environment variable ${name} must be on or off`);
+}
+
 function intFrom(env: EnvLike, name: string, fallback: number): number {
   const raw = env[name]?.trim();
   if (raw === undefined || raw === '') return fallback;
@@ -203,8 +221,8 @@ function intFrom(env: EnvLike, name: string, fallback: number): number {
 /**
  * The single place where packages/core reads environment variables (runtime contract): APP_ENV,
  * APP_VERSION, HOME_TENANT_SLUG, SITE_ORIGIN, plus optional tuning knobs
- * (CORE_TURN_RATE_LIMIT, CORE_REVIEW_SAMPLE_RATE_PCT, CORE_SESSION_CACHE_SECONDS, and for local demos
- * CORE_DISTILL_DELAY_SECONDS / CORE_DISTILL_ACTIVE_SECONDS).
+ * (CORE_TURN_RATE_LIMIT, CORE_REVIEW_SAMPLE_RATE_PCT, CORE_SESSION_CACHE_SECONDS, CORE_SAFETY_SCREEN=on|off, and
+ * for local demos CORE_DISTILL_DELAY_SECONDS / CORE_DISTILL_ACTIVE_SECONDS).
  */
 export function loadConfig(env: EnvLike): CoreConfig {
   const appEnv = env.APP_ENV ?? 'development';
@@ -226,6 +244,7 @@ export function loadConfig(env: EnvLike): CoreConfig {
       reviewSampleRate:
         intFrom(env, 'CORE_REVIEW_SAMPLE_RATE_PCT', DEFAULT_CORE_CONFIG.turns.reviewSampleRate * 100) / 100,
       traceStreamText: env.LAB_TRACE_STREAM === '1' && appEnv !== 'production',
+      safetyScreen: switchFrom(env, 'CORE_SAFETY_SCREEN', DEFAULT_CORE_CONFIG.turns.safetyScreen),
     },
     distillation: {
       turnDelaySeconds: intFrom(
