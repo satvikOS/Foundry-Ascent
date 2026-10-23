@@ -933,9 +933,11 @@ export function renderConversationState(state: ConversationState): string {
   // commitment it was. What they say of how it went, or ask, is taken up instead of the question.
   if (state.reportsDone === true) {
     lines.push(
-      '- They say they did something they committed to: name which commitment it is, in your own words (one agreed in',
-      '  this conversation, else one from your notes), and ask how it went in one short question, unless they already',
-      '  said or asked you something. If neither says which it was, ask that instead.',
+      // Said neutrally: a doubt or a denial the cues miss ("I wouldn't say I did what you suggested") is still about the
+      // commitment, so naming it and taking up what they said of it is right either way (differential audit, diff5-C3).
+      '- They speak of something they committed to: name which commitment it is, in your own words (one agreed in',
+      '  this conversation, else one from your notes), and respond to what they said of it (done, not done or partly)',
+      '  with at most one short question, unless they already asked you something. If neither says which, ask that.',
     );
   }
   if (state.moves.includes('help')) {

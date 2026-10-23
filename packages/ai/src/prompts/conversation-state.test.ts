@@ -624,9 +624,9 @@ describe('a report of having done what they committed to (evals G12, the matrixâ
   const block = (text: string, history = earlier) =>
     renderConversationState(deriveConversationState(history, text));
   const LINE =
-    '- They say they did something they committed to: name which commitment it is, in your own words (one agreed in\n' +
-    '  this conversation, else one from your notes), and ask how it went in one short question, unless they already\n' +
-    '  said or asked you something. If neither says which it was, ask that instead.';
+    '- They speak of something they committed to: name which commitment it is, in your own words (one agreed in\n' +
+    '  this conversation, else one from your notes), and respond to what they said of it (done, not done or partly)\n' +
+    '  with at most one short question, unless they already asked you something. If neither says which, ask that.';
 
   it.each([
     // The matrix's probe, word for word, and the evals' own.
@@ -692,7 +692,7 @@ describe('a report of having done what they committed to (evals G12, the matrixâ
   ])('does not hear %j as a report on a commitment', (text) => {
     expect(reportsCommitmentDone(text)).toBe(false);
     expect(deriveConversationState(earlier, text).reportsDone).toBe(false);
-    expect(block(text)).not.toContain('They say they did something they committed to');
+    expect(block(text)).not.toContain('They speak of something they committed to');
   });
 
   it.each([
@@ -730,7 +730,7 @@ describe('a report of having done what they committed to (evals G12, the matrixâ
   ])('does not hear %j as a report: "as we agreed" is not said of a step done', (text) => {
     expect(reportsCommitmentDone(text)).toBe(false);
     expect(deriveConversationState(earlier, text).reportsDone).toBe(false);
-    expect(block(text)).not.toContain('They say they did something they committed to');
+    expect(block(text)).not.toContain('They speak of something they committed to');
   });
 
   it.each([
@@ -762,7 +762,7 @@ describe('a report of having done what they committed to (evals G12, the matrixâ
   ])('does not hear %j as a report: it is said under a negation or a doubt', (text) => {
     expect(reportsCommitmentDone(text)).toBe(false);
     expect(deriveConversationState(earlier, text).reportsDone).toBe(false);
-    expect(block(text)).not.toContain('They say they did something they committed to');
+    expect(block(text)).not.toContain('They speak of something they committed to');
   });
 
   it.each([
