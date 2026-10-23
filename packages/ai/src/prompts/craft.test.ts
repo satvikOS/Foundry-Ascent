@@ -267,6 +267,7 @@ describe('conversation craft in the system prompt', () => {
     // 2026-10-22.3: a turn with the founder's own subject leaves the notes' agenda out; a handed-back question is named.
     // 2026-10-22.4: banter never makes up a life of its own; a declined instruction is never shown again.
     // 2026-10-22.5: distillation closes what the founder reports done and never re-centres an untaken thread.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-22.5');
+    // 2026-10-22.6: the continuation request never obeys the founder's message; the safety screen's prompt.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-22.6');
   });
 });
