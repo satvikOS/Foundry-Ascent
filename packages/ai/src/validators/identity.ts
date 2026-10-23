@@ -13,7 +13,6 @@ import {
   inSingleQuotes,
   isOnlyThanks,
   lifeLeftover,
-  lifeRest,
   onlyLifeTail,
   turnBackAt,
   upperFirst as capitalised,
@@ -282,10 +281,10 @@ const BASE_PATTERNS: readonly IdentityPattern[] = [
 
 /**
  * A life of its own told in reply to the founder asking about it (evals MX-0032: "lowkey, how was your weekend?" got
- * "Weekend was good, thanks for asking."): read only then (`IdentityRewriteOptions.founderText`, in a reply or a unit
- * of one; see asked-life.ts), never in a field, a draft, a quote, a question or a sentence that says honestly what the
- * coach is. The sentence goes, keeping the founder's thanks and a question turned back to them (`lifeLeftover`); when
- * the founder told or asked something besides, a clause of the sentence that answers that stays (`lifeRest`).
+ * "Weekend was good, thanks for asking."): read only then, on a turn of pure banter
+ * (`IdentityRewriteOptions.founderText`, in a reply or a unit of one; see asked-life.ts), never in a field, a draft, a
+ * quote, a question or a sentence that says honestly what the coach is. The sentence goes, keeping the founder's thanks
+ * and a question turned back to them, or one of its own it goes on to ask them (`lifeLeftover`).
  */
 const ASKED_LIFE_PATTERNS: readonly IdentityPattern[] = ASKED_LIFE_SOURCES.map(({ form, source }) => ({
   ...p('claims_human', 'personal_life', source),
@@ -309,26 +308,19 @@ const FOUNDER_NEXT =
  * climbing on Saturday.'"), not in a sentence that says honestly what the coach is, and says nothing of the founder
  * ("Hope you had a great weekend", "I spent the weekend on your deck"). Told without "I", it opens its clause after at
  * most thanks and lead words, says nothing of the founder in its sentence before it or in the clause after it, and is
- * not an "-ing" that is the subject of its clause ("Going to the farmers market this weekend is a great idea"). When
- * the founder also told or asked something of their own ("how was your weekend? mine was busy", "… should I go to the
- * farmers market?"), it counts only as "Mine…", in the first person or in a sentence that thanks them for asking, and
- * never where the rest of its sentence leans on it ("Mine's been good, thanks — sorry yours hasn't."). A bare answer
- * ("Good, thanks!"), a fragment ("A long walk, mostly.") and a verbless reaction ("Quiet weekend, thanks!") count only
- * where the reply opens and the founder only asked, the bare answer only to how a time of the coach's went, and the
- * fragment and the reaction only as all their sentence says ("Hiking, reading, whatever recharges you — do that this
- * weekend." is advice).
+ * not an "-ing" that is the subject of its clause ("Going to the farmers market this weekend is a great idea"). A
+ * bare answer ("Good, thanks!"), a fragment ("A long walk, mostly.") and a verbless reaction ("Quiet weekend, thanks!")
+ * count only where the reply opens, the bare answer only to how a time of the coach's went, and the fragment and the
+ * reaction only as all their sentence says ("Hiking, reading, whatever recharges you — do that this weekend." is
+ * advice).
  */
 function askedLifeAccepts(form: LifeForm): NonNullable<IdentityPattern['acceptIn']> {
   return (text, m, ctx) => {
     const life = ctx.life;
-    if (life === null) return false;
-    const aside = life.news || life.more;
-    if (form === 'bare' && (life.asked !== 'past' || aside)) return false;
-    if ((form === 'reaction' || form === 'fragment') && aside) return false;
+    if (life === null || (form === 'bare' && life.asked !== 'past')) return false;
     const start = m.index;
     const end = start + m[0].length;
     if (!lifeAsserted(text, start, end) || lifeQuoted(text, start, ctx)) return false;
-    if (aside && restLeansOnLife(text, start, end, life.more)) return false;
     if (form === 'i') return firstPersonLife(text, start, end, ctx, true);
     if (lifeDrafted(text, start, ctx)) return false;
     const sentence = boundsOf(text, start, end, isSentenceBreak);
@@ -344,16 +336,13 @@ function askedLifeAccepts(form: LifeForm): NonNullable<IdentityPattern['acceptIn
       return false;
     // Where the reply opens: after nothing but thanks (a few words, so a long text before it never is), read again in
     // the first rounds only, as each one takes out the opening that made the next sentence open the reply.
-    if (
+    return !(
       opening &&
       (ctx.lifeAfterOpening ||
         ctx.round >= OPENING_ROUNDS ||
         sentence.start > OPENING_THANKS_CHARS ||
         !isOnlyThanks(text.slice(0, sentence.start)))
-    )
-      return false;
-    if (form === 'mine') return true;
-    return !aside || THANKS.test(text.slice(sentence.start, sentence.end));
+    );
   };
 }
 
@@ -365,14 +354,6 @@ function lifeAsserted(text: string, start: number, end: number): boolean {
   const after = text.slice(end, clause.questionEnd + 1);
   const back = turnBackAt(after);
   return back >= 0 && wordsOf(after.slice(0, back)).length <= 4;
-}
-
-/** Whether the rest of the life's sentence leans on it ("Mine's been good, thanks — sorry yours hasn't."). */
-function restLeansOnLife(text: string, start: number, end: number, answers: boolean): boolean {
-  const sentence = sentenceSpan(text, start, end);
-  const said = text.slice(sentence.start, sentence.end);
-  const life = [{ start: start - sentence.start, end: end - sentence.start }];
-  return lifeRest(cutLifeClauses(said, life).text, answers) === 'leans';
 }
 
 /**
@@ -2202,15 +2183,16 @@ export interface IdentityRewriteOptions extends IdentityCheckOptions {
    */
   presence?: boolean;
   /**
-   * The founder's message a reply (or a unit of one: `disclaimers` `reply` or `unit`) answers. Only when it asks about
-   * the coach's own weekend, day, week, holiday, evening or plans ("lowkey, how was your weekend?", "any plans this
-   * weekend?"; not a plain "how are you?", the founder's own plans or a question they report, want words for or play:
-   * see asked-life.ts) is a life the reply tells of its own taken out with its sentence, said in the first person or
-   * without it ("Weekend was good", "Mine was relaxing", "Slept in and read": evals MX-0032), never from a sentence that
-   * says honestly what the coach is, a draft or a quote. The founder's thanks stays, and a reply turns the question back
-   * to them ("Weekend was good, thanks for asking." → "Thanks for asking! How was yours?"; never a bare "You?"). When
-   * they also told news or asked something of their own, what else the sentence says to them stays ("Mine was quiet,
-   * but I'm so sorry about your dog." → "I'm so sorry about your dog."). Without such a question it changes nothing.
+   * The founder's message a reply (or a unit of one: `disclaimers` `reply` or `unit`) answers. Only on a turn of pure
+   * banter that asks about the coach's own weekend, day, week, holiday, evening or plans ("lowkey, how was your
+   * weekend?", "hey corin! any plans this weekend?"; not a plain "how are you?", the founder's own plans, a question
+   * they report, want words for or play, nor a message that also tells or asks anything of their own: see
+   * asked-life.ts) is a life the reply tells of its own taken out with its sentence, said in the first person or
+   * without it ("Weekend was good", "Mine was relaxing", "Slept in and read": evals MX-0032), never from a sentence
+   * that says honestly what the coach is, a draft or a quote. The founder's thanks stays, and a question the sentence
+   * goes on to ask them ("Weekend was good, thanks — how did the demo go?" → "Thanks! How did the demo go?"), and a
+   * reply turns the question back to them ("Weekend was good, thanks for asking." → "Thanks for asking! How was
+   * yours?"; never a bare "You?"). On any other message it changes nothing.
    */
   founderText?: string;
   /**
@@ -2540,6 +2522,9 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
         continue;
       }
       const span = sentenceSpan(current, hit.start, hit.end);
+      // A made-up life's sentence goes with all of its closing punctuation ("…thanks for asking!!! 😊 How was yours?").
+      if (life !== null && hit.rule === 'personal_life')
+        while (span.end < current.length && '.!?…'.includes(current.charAt(span.end))) span.end += 1;
       if (last !== undefined && span.start < last.end) {
         last.end = Math.max(last.end, span.end);
         if (gravity(hit) < gravity(last.hit)) last.hit = hit;
@@ -2554,9 +2539,9 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
     let lastReplacement: string | null = null;
     // A sentence taken out (replacement ''): the space after it goes too.
     let removed = false;
-    // A made-up life told in reply to the founder asking keeps their thanks once, unless the reply thanks them elsewhere
-    // or answers news of their own (never "Thanks!" before "I'm so sorry about your dog").
-    let thanksLeft = life !== null && !life.news && !thanksOutsideLives(current, spans);
+    // A made-up life told in reply to the founder asking keeps their thanks once, unless the reply thanks them
+    // elsewhere.
+    let thanksLeft = life !== null && !thanksOutsideLives(current, spans);
     for (const span of spans) {
       findings.push({ kind: span.hit.kind, rule: span.hit.rule });
       let between = current.slice(cursor, span.start);
@@ -2564,19 +2549,13 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
       let replacement = span.hit.replacement ?? replacementFor(span.hit.kind);
       if (life !== null && span.hit.rule === 'personal_life') {
         const sentence = current.slice(span.start, span.end);
-        const lives = span.lives.map((h) => ({ start: h.start - span.start, end: h.end - span.start }));
-        // The founder told or asked something besides: a clause of the sentence that answers it stays, without the
-        // thanks that went with the life ("Mine was quiet — but I'm so sorry about your mom.").
-        const rest =
-          life.news || life.more ? lifeRest(cutLifeClauses(sentence, lives).text, life.more) : null;
         if (saysWhatItIs(sentence, options.personaName, names.eirFirstName)) {
           // The honest answer stays: only the clauses that tell the life go (see `firstPersonLife`).
+          const lives = span.lives.map((h) => ({ start: h.start - span.start, end: h.end - span.start }));
           const kept = withoutLifeClauses(sentence, lives);
           replacement =
             kept !== null && saysWhatItIs(kept, options.personaName, names.eirFirstName) ? kept : sentence;
           if (THANKS.test(replacement)) thanksLeft = false;
-        } else if (rest !== null && rest !== 'leans') {
-          replacement = rest.kept;
         } else {
           const lifeEnd = Math.max(...span.lives.map((h) => h.end), span.start);
           const left = lifeLeftover(sentence, lifeEnd - span.start, life, thanksLeft);

@@ -1743,13 +1743,14 @@ ASKED_LIFE: dict[str, Any] = next(
 )
 #: Every input the presence work of 2026-10-22 regressed (audit B-presence), with G14's verdict on origin/main.
 PRESENCE_REGRESSIONS: list[dict[str, Any]] = load_fixture("presence_regressions.json")["cases"]
-#: Every input the asked-life rule regressed in its first round (audit diff2-B2), with G14's verdict on origin/main.
+#: Every input the asked-life rule regressed in two rounds (audit diff2-B2), with G14's verdict on origin/main.
 ASKED_LIFE_REGRESSIONS: list[dict[str, Any]] = load_fixture("asked_life_regressions.json")["cases"]
 
 
 class TestAskedLife:
     """MX-0032: "lowkey, how was your weekend?" got "Weekend was good, thanks for asking.", and G14 passed it. A life
-    told in reply to the founder asking about the coach's own fails, however it is said; nothing else changes."""
+    told in reply to the founder asking about the coach's own, in pure banter, fails, however it is said; nothing else
+    changes."""
 
     @pytest.mark.parametrize(
         ("kind", "message"),
@@ -1757,9 +1758,7 @@ class TestAskedLife:
     )
     def test_reads_the_question_as_the_validator_does(self, kind: str, message: str) -> None:
         life = asked_life_of(message)
-        assert (
-            "none" if life is None else "news" if life.news else "more" if life.more else life.asked
-        ) == kind
+        assert ("none" if life is None else life.asked) == ("none" if kind == "mixed" else kind)
 
     @pytest.mark.parametrize("case", ASKED_LIFE["removed"], ids=lambda c: c["text"][:40])
     def test_a_life_told_in_reply_fails_and_its_rewrite_passes(self, case: dict[str, str]) -> None:
@@ -1773,8 +1772,16 @@ class TestAskedLife:
         assert presence_claim(case["text"], founder=case["asked"]) == presence_claim(case["text"])
 
     @pytest.mark.parametrize("case", ASKED_LIFE["removed"], ids=lambda c: c["text"][:40])
-    def test_nothing_changes_without_the_question(self, case: dict[str, str]) -> None:
-        for founder in ("how did the pilot go?", "how are you?", "what should I text Sam back?", None):
+    def test_nothing_changes_without_the_question_or_beside_more(self, case: dict[str, str]) -> None:
+        for founder in (
+            "how did the pilot go?",
+            "how are you?",
+            "what should I text Sam back?",
+            None,
+            # The founder's news, or a question of their own, beside the question about the coach (audit diff2-B2).
+            f"{case['asked']} my grandma passed on friday",
+            f"{case['asked']} can you help with my bio?",
+        ):
             assert not asked_life_claim(case["text"], founder)
             assert presence_claim(case["text"], founder=founder) == presence_claim(case["text"])
 
@@ -1785,7 +1792,7 @@ class TestAskedLife:
 
     def test_the_regressions_are_all_there(self) -> None:
         assert len({c["regression"] for c in PRESENCE_REGRESSIONS}) == 58
-        assert len({c["audit"] for c in ASKED_LIFE_REGRESSIONS}) == 38
+        assert len({c["audit"] for c in ASKED_LIFE_REGRESSIONS}) == 81
 
     @pytest.mark.parametrize("case", ASKED_LIFE_REGRESSIONS, ids=lambda c: c["audit"])
     def test_every_asked_life_regression_is_graded_as_on_main_or_its_rewrite_passes(

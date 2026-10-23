@@ -518,19 +518,37 @@ describe('identity', () => {
     expect(honest.response.answer).toBe("Yes, I'm an AI, Corin's digital twin, thanks for asking!");
   });
 
-  it('keeps the answer to the founder’s news and their scripts when they also ask about the coach’s weekend (audit diff2-B2)', () => {
+  it('keeps its own question to the founder, and a reply to their news or bio as written (audit diff2-B2)', () => {
     const veir = opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
-    // Only the made-up clause goes: the sympathy stays, typed and said on a call, with no "Thanks!" before it.
+    // Pure banter: the made-up weekend goes; the thanks and the reply's own question to the founder stay, typed and
+    // said.
+    const demo = 'Weekend was good, thanks — how did the demo go?';
+    const banter = validateCoachResponse(base({ answer: demo, spoken: demo }), {
+      ...veir,
+      channel: 'voice',
+      founderText: 'how was your weekend?',
+    });
+    expect(banter.response.answer).toBe('Thanks! How did the demo go?');
+    expect(banter.response.spoken).toBe('Thanks! How did the demo go?');
+    // The founder also told news of their own: the reply answers that too, and stays as written, typed and on a call.
     const sorry = "Mine was quiet — but I'm so sorry about your mom. How is she doing?";
     const founderText = "honestly i'm exhausted. how was your weekend? mine was awful, my mom's in hospital";
     const typed = validateCoachResponse(base({ answer: sorry }), { ...veir, founderText });
-    expect(typed.response.answer).toBe("I'm so sorry about your mom. How is she doing?");
+    expect(typed.response.answer).toBe(sorry);
     const call = validateCoachResponse(base({ answer: sorry, spoken: sorry }), {
       ...veir,
       channel: 'voice',
       founderText,
     });
-    expect(call.response.spoken).toBe("I'm so sorry about your mom. How is she doing?");
+    expect(call.response.spoken).toBe(sorry);
+    // So does a reply to a message that also asks for the founder's bio.
+    const bio =
+      'Thanks for asking! Bio: I went hiking every weekend at uni and built TrailMate for people like me.';
+    const asked = validateCoachResponse(base({ answer: bio }), {
+      ...veir,
+      founderText: 'how was your weekend? can you help with my bio',
+    });
+    expect(asked.response.answer).toBe(bio);
     // A question the founder reports, wants words for or plays is not theirs to the coach: nothing changes.
     for (const [asked, answer] of [
       [

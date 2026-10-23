@@ -813,8 +813,11 @@ export class SentenceGate {
     }
     // After a made-up life went, while the reply said at most thanks: "You?" is said in full ("Thanks for asking! How
     // was yours?"), as the whole reply reads once validated.
-    if (this.#lifeRemoved && this.#life !== null)
+    if (this.#lifeRemoved && this.#life !== null) {
       text = lifeUnitAfterRemoval(this.#lifeReleased, text, this.#life);
+      // It only leaned on the life that went ("Anyway — enough about me."): nothing to show or say.
+      if (text === '') return null;
+    }
     if (this.#afterDroppedDisclaimer) {
       this.#afterDroppedDisclaimer = false;
       text = withoutLeaningConnector(text);
