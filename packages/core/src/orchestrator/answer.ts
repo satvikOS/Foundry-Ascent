@@ -1,14 +1,10 @@
 import {
   AUTO_MODE,
   CROSS_VENTURE_BLOCK_ANSWER,
-  INJECTION_DECLINE,
   INVALID_RESPONSE_ANSWER,
   buildSystemPromptParts,
   deriveSpoken,
-  dictatedPayloadsOf,
-  echoesDictation,
   founderMoves,
-  identityQuestionOf,
   isModelGatewayError,
   openerSaidHello,
   SOCIAL_BUDGETS,
@@ -18,7 +14,6 @@ import {
   type CoachResponseValidation,
   type GateBlockReason,
   type HistoryTurn,
-  type IdentityCheckOptions,
   type ModelAttempt,
   type PromptContinuity,
   type PromptRelease,
@@ -43,7 +38,6 @@ import { assembleContext, type AssembledContext } from './context-budget.js';
 import { type KeyedEvidence } from './evidence.js';
 import {
   GenerationFailure,
-  INJECTION_ECHO_NOTE,
   generateStreamed,
   generateWhole,
   type Generation,
@@ -174,55 +168,6 @@ export function enforceGateBlock(
   };
 }
 
-/**
- * What the founder's message dictates as the reply (validators/dictation.ts), when the guard applies: only on the turn
- * whose message the classifier flags as prompt injection, never on a sincere question about who or what the coach is
- * (its honest answer stands, the presence policy), and never from earlier turns (a flagged history message is a server
- * note, never its text). [] when it does not apply.
- */
-export function dictationOf(
-  founderText: string,
-  risk: Pick<RiskClassification, 'injection' | 'matchedRules'>,
-  identity: IdentityCheckOptions,
-): string[][] {
-  if (!risk.injection || identityQuestionOf(founderText, identity) !== null) return [];
-  return dictatedPayloadsOf(founderText, risk.matchedRules);
-}
-
-/**
- * The validated response of a turn whose reply only carried out the dictated instruction (evals MX-0004): the decline,
- * or what a streamed reply showed and said with it (`said`: a lead-in and the decline), as written on a call; nothing
- * the model wrote is kept (no claims, actions, memory, follow-ups or rehearsal). A blocked response stays as it is.
- */
-export function declineDictation(
-  checked: CoachResponseValidation,
-  channel: TurnChannel,
-  said: { readonly answer: string; readonly spoken: string | null } | null,
-): CoachResponseValidation {
-  if (checked.blocked) return checked;
-  return {
-    ...checked,
-    response: {
-      ...checked.response,
-      answer: said?.answer ?? INJECTION_DECLINE,
-      spoken: channel === 'voice' ? (said?.spoken ?? INJECTION_DECLINE) : null,
-      claims: [],
-      uncertainty: [],
-      challenge: null,
-      next_actions: [],
-      memory_candidates: [],
-      follow_up_questions: [],
-      rehearsal: null,
-    },
-    results: {
-      ...checked.results,
-      notes: checked.results.notes.includes(INJECTION_ECHO_NOTE)
-        ? checked.results.notes
-        : [...checked.results.notes, INJECTION_ECHO_NOTE],
-    },
-  };
-}
-
 /** What a failed generation is reported as: the model being unavailable, or the domain error it carried. */
 export function generationError(cause: unknown): DomainError {
   if (isModelGatewayError(cause)) {
@@ -315,18 +260,6 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
       : null;
 
   const introduced = alreadyIntroduced(spec);
-  // Every message of the vEIR's in this conversation: a question one of them asked is never asked again (voice suite: one
-  // question in five replies of a call), unless the founder asks to hear it again or asks what the coach is.
-  const askedBefore = [spec.opener, ...spec.history.map((t) => t.answer)].filter(
-    (t): t is string => t !== null && t.trim() !== '',
-  );
-  // A reply that only carries out what an injected instruction of this message dictates is declined (MX-0004).
-  const dictation = dictationOf(spec.founderText, risk, {
-    personaName: spec.personaName,
-    eirNames: guards.eirNames,
-    personaEirName: spec.personaEirName,
-    addressees: guards.addressees,
-  });
 
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
   await emit({ event: 'turn.status', phase: 'reasoning', detail: null, evidenceCount: shown.length });
@@ -367,8 +300,6 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
             greeted,
             replyBudget: social === null ? null : SOCIAL_BUDGETS[social],
             previousReply,
-            askedBefore,
-            injectionDictation: dictation,
             founderText: spec.founderText,
             introduced,
             otherVentureNames: guards.others.names,
@@ -411,16 +342,9 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     channel: spec.channel,
   });
   validated.results.notes.push(...generation.notes);
-  const enforced =
+  const checked =
     generation.gateBlocked === null
       ? validated
       : enforceGateBlock(validated, generation.gateBlocked, spec.channel);
-  // Whichever path wrote it, a reply whose substance is only what the message dictated is never stored (MX-0004).
-  const echoed =
-    dictation.length > 0 &&
-    (generation.notes.includes(INJECTION_ECHO_NOTE) ||
-      echoesDictation(enforced.response.answer, dictation) ||
-      echoesDictation(enforced.response.spoken ?? '', dictation));
-  const checked = echoed ? declineDictation(enforced, spec.channel, generation.declined ?? null) : enforced;
   return { kind: 'answered', context, shown, generation, checked };
 }

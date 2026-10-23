@@ -6,13 +6,10 @@ import {
   SPOKEN_HAND_BACKS,
   STRESSED_HAND_BACK,
   STRESSED_HAND_BACKS,
-  asksAgain,
-  asksForTheQuestion,
   asksToRepeat,
   NEWS_FALLBACK,
   endsWithHandBack,
   parksTheirNews,
-  questionsAskedIn,
   questionsOf,
   reasksQuestion,
   spokenHandBackFor,
@@ -235,109 +232,5 @@ describe('a question is never asked again in the next reply, in other words (ite
       text: "That's a real risk: SSO can stall a library pilot for months. Ask their IT lead now what SSO they need.",
       dropped: 1,
     });
-  });
-});
-
-describe('a question an earlier message asked is never asked again (voice suite: one question in five replies)', () => {
-  const asked = questionsAskedIn([
-    'Good start. Who signs off on that budget at each branch?',
-    null,
-    'That is a real signal. Get her to name a date for a trial.',
-    'Nice. What price would the east library pay per term?',
-  ]);
-
-  it('reads the questions of every earlier message, not their statements', () => {
-    expect(asked).toHaveLength(2);
-  });
-
-  it('the same question, articles and fillers aside, is asked again', () => {
-    expect(asksAgain('Who signs off on that budget at each branch?', asked)).toBe(true);
-    expect(asksAgain('So who signs off on the budget at each branch?', asked)).toBe(true);
-    expect(asksAgain('What price would the east library pay per term?', asked)).toBe(true);
-  });
-
-  it('a question that differs by one word asks something else (differential audit, 2026-10-22)', () => {
-    for (const question of [
-      'What price would the west library pay per term?',
-      'What price would the east library pay per year?',
-      'Who signs off on that budget at the west branch?',
-      'Who signs off on that budget at each branch this term?',
-      'Who signed off on that budget at each branch?',
-      'What price would the east library pay per term for sensors?',
-    ]) {
-      expect(asksAgain(question, asked), question).toBe(false);
-    }
-    const timing = questionsAskedIn([
-      'How full is the main library before finals?',
-      'How many students used the map in the first week?',
-      'When does the Harbour Hall pilot start?',
-    ]);
-    for (const question of [
-      'How full is the main library during finals?',
-      'How many students used the map in the second week?',
-      'When does the Harbour Hall pilot end?',
-    ]) {
-      expect(asksAgain(question, timing), question).toBe(false);
-    }
-  });
-
-  it('the same words in another order ask something else (differential audit R5, 2026-10-22)', () => {
-    const report = questionsAskedIn(['Good. Who at the library will you report to each week?']);
-    expect(asksAgain('Who at the library will report to you each week?', report)).toBe(false);
-    expect(asksAgain('So who at the library will you report to each week?', report)).toBe(true);
-  });
-
-  it('only questions count, and short ones never do', () => {
-    expect(asksAgain('Who signs off on that budget at each branch.', asked)).toBe(false);
-    expect(questionsAskedIn(['Why?', 'And then?', 'What now?'])).toEqual([]);
-    expect(asksAgain('So who then?', questionsAskedIn(['So who then?']))).toBe(false);
-  });
-});
-
-describe('the founder asks to hear the question again, or did not catch it (differential audit R2, 2026-10-22)', () => {
-  it('in the ways a bad line makes people ask', () => {
-    for (const text of [
-      'sorry, what was the question?',
-      'you broke up, what did you ask?',
-      'huh?',
-      'what was your question again',
-      'can you repeat the question',
-      'repeat the question please',
-      'wait what did you ask me',
-      'can you ask me that again',
-      'sorry you cut out, what was the question?',
-      'what did you ask?',
-      'hang on, ask me that again',
-      'pardon? what was your question',
-      'say the question again pls',
-      'remind me of your question',
-      'sorry I was distracted, ask again?',
-      'sorry what?',
-      'i missed what you asked, say it again?',
-      'remind me what you asked earlier',
-      'Sorry, can you say that again?',
-      'sorry, I lost you for a second',
-      'the call froze, what was that?',
-      'hello?',
-    ]) {
-      expect(asksForTheQuestion(text), text).toBe(true);
-    }
-  });
-
-  it('never for an ordinary message', () => {
-    for (const text of [
-      'what next?',
-      'the west library emailed back too!',
-      "We've got two weeks before exams start.",
-      'the DPO is called Hannah',
-      'ok what else should i be thinking about',
-      'Sam said yes to the weekly update!',
-      'She said the trial can start in November.',
-      'what do you mean by unit economics?',
-      'I missed that meeting with the dean, what now?',
-      'we cut out the second tier of pricing',
-    ]) {
-      expect(asksForTheQuestion(text), text).toBe(false);
-    }
   });
 });
