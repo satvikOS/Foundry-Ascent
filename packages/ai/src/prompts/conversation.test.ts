@@ -536,6 +536,70 @@ describe('continuity', () => {
     ).toContain('<open_commitments>');
   });
 
+  it('keeps the agenda for a report of having done what they committed to, so the reply can name it (evals G12)', () => {
+    const history = [{ founderText: 'Hi.', answer: 'Hi Maya. Good to have you back.' }];
+    const notesFor = (text: string): string =>
+      buildMessages(history, text, { continuity: CONTINUITY, today: '2026-10-16' }).at(-1)?.content ?? '';
+    for (const report of [
+      // The matrix's probe with the register the template simulator gives it: two content words of its own.
+      "lowkey so, i did the thing i said i'd do no cap",
+      "So, I did the thing I said I'd do.",
+      'I tried what you suggested with the pricing page.',
+      'Done!',
+    ]) {
+      expect(bringsOwnSubject(report, CONTINUITY), report).toBe(false);
+      expect(notesFor(report)).toContain('<open_commitments>');
+    }
+    // The same words without the report are a subject of their own, as before.
+    for (const own of [
+      "lowkey so, i didn't do the thing i said i'd do no cap",
+      'I want to fix the pricing page.',
+      'We launched the pricing page last week, 20 signups so far.',
+    ]) {
+      expect(bringsOwnSubject(own, CONTINUITY), own).toBe(true);
+      expect(notesFor(own)).not.toContain('<open_commitments>');
+    }
+    // The differential audit of 21515bd: "as we agreed" said of what comes next, after an unrelated past act, kept the
+    // agenda as a report; it is the message's own subject, as on main.
+    for (const own of [
+      "We talked about pricing and, as we agreed, I'll send the deck Friday.",
+      "I met the dean yesterday; as agreed, I'll send the plan next week.",
+      "I talked to my cofounder and, as agreed, we'll launch in January.",
+      'We met the bursar; as agreed, the pilot starts after exams.',
+      "I asked the dean, and as we agreed, I'll follow up Monday.",
+      "Called the canteen manager yesterday and as agreed I'm sending her the menu tomorrow.",
+      "We spoke on Friday and, like we agreed, I'm going to wait a week before chasing.",
+      'We met last week and, as agreed, nothing happens until the board signs off.',
+      'I emailed the bursar about budgets; as we agreed, the dean gets the plan once she replies.',
+      "Talked to Sam, and like we agreed I'll hold off on hiring until December.",
+    ]) {
+      expect(bringsOwnSubject(own, CONTINUITY), own).toBe(true);
+      expect(notesFor(own)).not.toContain('<open_commitments>');
+      expect(notesFor(own)).not.toContain('They speak of something they committed to');
+    }
+    // The differential audit of e0f6e35: a report said under a negation or a doubt kept the agenda and had the model
+    // name a commitment as done; it is the message's own subject, as on main.
+    for (const own of [
+      "Honestly I don't think I did what you suggested.",
+      'I doubt we did what we agreed.',
+      "I can't say I did what you suggested.",
+      "I'd be lying if I said I did what you suggested.",
+    ]) {
+      expect(bringsOwnSubject(own, CONTINUITY), own).toBe(true);
+      expect(notesFor(own)).not.toContain('<open_commitments>');
+      expect(notesFor(own)).not.toContain('They speak of something they committed to');
+    }
+    // An update that says something happened "like we agreed" stays a report and keeps the agenda.
+    for (const report of [
+      'called the canteen manager the trial starts monday like we agreed',
+      'I forgot to tell you I did what you suggested.',
+    ]) {
+      expect(bringsOwnSubject(report, CONTINUITY), report).toBe(false);
+      expect(notesFor(report)).toContain('<open_commitments>');
+      expect(notesFor(report)).toContain('They speak of something they committed to');
+    }
+  });
+
   it('leaves the notebook opener out once the conversation is under way', () => {
     // Production, 2026-10-16 to 10-20: five calls in a row steered back to the same opener thread.
     const opener =

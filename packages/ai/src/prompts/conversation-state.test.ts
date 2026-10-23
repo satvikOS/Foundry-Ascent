@@ -11,6 +11,7 @@ import {
   lastQuestionOf,
   openingOf,
   renderConversationState,
+  reportsCommitmentDone,
   stripLinks,
   type FounderMove,
 } from './conversation-state.js';
@@ -610,5 +611,221 @@ describe('news, sarcasm, a number, and the vEIR’s own phrases (wave 7: LAB-R8,
     );
     expect(state).toContain('cheapest test');
     expect(block(earlier, 'Okay, and then?')).not.toContain('Phrases you already used');
+  });
+});
+
+describe('a report of having done what they committed to (evals G12, the matrix’s commitment probe)', () => {
+  const earlier = [
+    {
+      founderText: 'Hi!',
+      answer: 'Hi Maya. Good to have you back.',
+    },
+  ];
+  const block = (text: string, history = earlier) =>
+    renderConversationState(deriveConversationState(history, text));
+  const LINE =
+    '- They speak of something they committed to: name which commitment it is, in your own words (one agreed in\n' +
+    '  this conversation, else one from your notes), and respond to what they said of it (done, not done or partly)\n' +
+    '  with at most one short question, unless they already asked you something. If neither says which, ask that.';
+
+  it.each([
+    // The matrix's probe, word for word, and the evals' own.
+    "So, I did the thing I said I'd do.",
+    "I did the thing I said I'd do",
+    'Done!',
+    // A whole message that is only a report.
+    'Done.',
+    'I did it',
+    'Did it!',
+    'Finished it',
+    'Sent it',
+    'Got it done',
+    // The commitment named as such.
+    'I tried what you suggested.',
+    'I called the dean like we agreed.',
+    'Sent it, as we agreed.',
+    // A step and the commitment named, touching, either way round.
+    'Called the dean, like we agreed. She wants a one-pager.',
+    'As we agreed, I sent the survey to 30 nurses on Monday.',
+    'Just sent the survey, as promised.',
+    "I set up the door counter like I said I'd do.",
+    "We've run the numbers like we agreed.",
+    "lowkey so, i did the thing i said i'd do no cap",
+    'ngl i actually did the thing i said id do lol',
+  ])('hears %j as a report on a commitment', (text) => {
+    expect(reportsCommitmentDone(text)).toBe(true);
+    const state = deriveConversationState(earlier, text);
+    expect(state.reportsDone).toBe(true);
+    // One line, and nothing else of the state changes: no move is added for it.
+    expect(state.moves).toEqual(founderMoves(text));
+    expect(block(text)).toContain(LINE);
+  });
+
+  it.each([
+    // Celebrations and news are their own.
+    'We did it!!',
+    'We did it! We got into the accelerator!!',
+    'Woohoo, we closed the round!',
+    'We launched it',
+    'We launched it last week, 20 signups so far.',
+    // Questions.
+    'Done with the deck?',
+    "Did you do the thing I said I'd do?",
+    'If I did what you suggested, would it work?',
+    "have I done the thing I said I'd do",
+    // Negations and what is still to do.
+    "I didn't do it",
+    'Not done yet',
+    "I didn't do the thing I said I'd do.",
+    "I haven't done what you suggested yet.",
+    "I did the thing I said I'd never do.",
+    "I'll do what you suggested.",
+    "Like we agreed, I'll send it tomorrow.",
+    'As we agreed, pricing is next.',
+    // An update still to come says nothing done yet.
+    "Okay, update on what I said I'd do last time.",
+    // Done for the day, or a draft that quotes it.
+    "I'm done",
+    'Done for today',
+    "Draft email: 'Hi Dr Shah, I sent the pilot plan last week as promised. Did you get a chance to look?' Is that too pushy?",
+    'Thanks, talk soon.',
+  ])('does not hear %j as a report on a commitment', (text) => {
+    expect(reportsCommitmentDone(text)).toBe(false);
+    expect(deriveConversationState(earlier, text).reportsDone).toBe(false);
+    expect(block(text)).not.toContain('They speak of something they committed to');
+  });
+
+  it.each([
+    // The differential audit of 21515bd (medium): "as we agreed" is said of what comes next, after a past act it is no
+    // part of. Tested apart on the sentence, the two read as a commitment done, and the line had the model name one from
+    // the notes as done (the overdue "Email the dean the pilot plan" for the second).
+    "We talked about pricing and, as we agreed, I'll send the deck Friday.",
+    "I met the dean yesterday; as agreed, I'll send the plan next week.",
+    "I talked to my cofounder and, as agreed, we'll launch in January.",
+    'We met the bursar; as agreed, the pilot starts after exams.',
+    "I asked the dean, and as we agreed, I'll follow up Monday.",
+    "Called the canteen manager yesterday and as agreed I'm sending her the menu tomorrow.",
+    "We spoke on Friday and, like we agreed, I'm going to wait a week before chasing.",
+    'We met last week and, as agreed, nothing happens until the board signs off.',
+    'I emailed the bursar about budgets; as we agreed, the dean gets the plan once she replies.',
+    "Talked to Sam, and like we agreed I'll hold off on hiring until December.",
+    // The same rule, the same audit (low): a conclusion "as we agreed", the commitment named of someone else, a request,
+    // a spoken question without its "?", a draft that names it.
+    'I asked five students and, as we agreed, none of them would pay upfront.',
+    'I talked too much in the pitch, like you suggested I would.',
+    "I wrote this as promised, but haven't sent it.",
+    'I asked you as we agreed to keep it short, so please do.',
+    'Set up the call like we agreed.',
+    'Run the numbers like we agreed, please.',
+    'did i send it like we agreed',
+    'did we call the canteen manager like we agreed',
+    'Proofread pls: Hi Jo, like we agreed, I booked the room for Thursday.',
+    // What is agreed still to come, said after the step or of someone else.
+    "We met, and I'll send the deck Friday like we agreed.",
+    'I talked to Sam about holding off until December like we agreed.',
+    'He called the dean like we agreed.',
+    'We ran out of money, like you suggested we might.',
+    'We ran out of time like you suggested.',
+    "I didn't call the dean like we agreed.",
+  ])('does not hear %j as a report: "as we agreed" is not said of a step done', (text) => {
+    expect(reportsCommitmentDone(text)).toBe(false);
+    expect(deriveConversationState(earlier, text).reportsDone).toBe(false);
+    expect(block(text)).not.toContain('They speak of something they committed to');
+  });
+
+  it.each([
+    // The differential audit of e0f6e35 (medium): the report said under a negation or a doubt in its own clause. The
+    // line had the model name a commitment as done when they say they did not do it, or doubt it.
+    "Honestly I don't think I did what you suggested.",
+    'I doubt we did what we agreed.',
+    "I can't say I did what you suggested.",
+    "I'd be lying if I said I did what you suggested.",
+    // The same audit (low), the same class.
+    "I don't think I did what you suggested properly.",
+    "I'm not sure I did the thing I said I'd do properly.",
+    'Not sure we did what we agreed.',
+    "I don't feel like I did what I said I'd do.",
+    "Not convinced we did what we said we'd do.",
+    // Each negation the guard knows, before the report in its clause.
+    "I'd be lying if I told you I did what you suggested.",
+    "I'm not so sure I did what you suggested.",
+    "i'm unsure we did what we agreed",
+    'I really doubt that we did what we agreed.',
+    "I don't think that in the end we did what we agreed.",
+    "I didn't say I did what you suggested.",
+    "I haven't claimed we did what we agreed.",
+    'I never said I did what you suggested.',
+    'We failed to show we did what we agreed.',
+    'I forgot to check we did what we agreed.',
+    "I couldn't prove I did what you suggested.",
+    "I wasn't able to confirm that we did what we agreed.",
+  ])('does not hear %j as a report: it is said under a negation or a doubt', (text) => {
+    expect(reportsCommitmentDone(text)).toBe(false);
+    expect(deriveConversationState(earlier, text).reportsDone).toBe(false);
+    expect(block(text)).not.toContain('They speak of something they committed to');
+  });
+
+  it.each([
+    // An update that says something happened "as agreed" or "like we agreed" stays a report (the audit's run-on form,
+    // no comma: as on e0f6e35).
+    'called the canteen manager the trial starts monday like we agreed',
+    'i talked to sam yesterday the launch is in january as agreed',
+    'Called the canteen manager like we agreed. Never thought she would say yes.',
+    // A negation in a clause before the report, or after it, is not said of it.
+    "I didn't think it would work, but I did what you suggested.",
+    "I didn't think it would work but I did what you suggested.",
+    "I couldn't sleep so I did what you suggested.",
+    "I'm not sure why, but I did what you suggested.",
+    "I did what you suggested and it didn't work.",
+    "I did the thing I said I'd do, never again.",
+    "I don't think I did what you suggested, but I did what we agreed on.",
+    // A negation that takes the report as true all the same, or is no doubt.
+    'I forgot to tell you I did what you suggested.',
+    "I haven't told my cofounder I did what you suggested.",
+    "I don't think you noticed I did what you suggested.",
+    "I couldn't believe I did the thing I said I'd do.",
+    "I've never been so glad I did what you suggested.",
+    "I'd be lying if I said I wasn't proud we did what we agreed.",
+    'No doubt I did what you suggested.',
+    'I never doubted we did what we agreed.',
+  ])('still hears %j as a report on a commitment', (text) => {
+    expect(reportsCommitmentDone(text)).toBe(true);
+    expect(deriveConversationState(earlier, text).reportsDone).toBe(true);
+    expect(block(text)).toContain(LINE);
+  });
+
+  it('says it on the first message of a conversation too, and only the line', () => {
+    expect(block('Done!', [])).toBe(
+      `<conversation_state>\n- Their message; 1 words.\n${LINE}\n</conversation_state>`,
+    );
+    expect(block('How should we price per library?', [])).toBe('');
+  });
+
+  it('reads a pasted wall of unclosed quotes, clauses and doubted reports in linear time', () => {
+    // Eight times the input takes about eight times as long, not sixty-four (ratios of warm runs, interleaved, best of
+    // three: never absolute times).
+    const wall = (n: number): string =>
+      `${" 'a".repeat(n)} ${'“'.repeat(n)} ${'"'.repeat(n)} ${' i finally'.repeat(n)} like we agreed ${'so, '.repeat(n)}` +
+      `${" i don't think i did what you suggested".repeat(n)}${' not sure'.repeat(n)} we did what we agreed`;
+    const time = (n: number): number => {
+      const text = wall(n);
+      const started = performance.now();
+      for (let i = 0; i < 5; i += 1) reportsCommitmentDone(text);
+      return performance.now() - started;
+    };
+    time(250);
+    let small = Infinity;
+    let large = Infinity;
+    for (let round = 0; round < 3; round += 1) {
+      small = Math.min(small, time(250));
+      large = Math.min(large, time(2_000));
+    }
+    expect(large).toBeLessThan(16 * small + 100);
+  }, 60_000);
+
+  it('reaches the prompt next to the founder message', () => {
+    const last = buildMessages(earlier, "So, I did the thing I said I'd do.").at(-1)?.content ?? '';
+    expect(last).toContain(LINE);
+    expect(last.indexOf(LINE)).toBeLessThan(last.indexOf('<founder_message>'));
   });
 });

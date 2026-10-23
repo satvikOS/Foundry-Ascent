@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CONVERSATION_STATE_TAG,
+  SPOKEN_REGISTER,
   STOCK_OPENERS,
   WHERE_YOU_LEFT_OFF_HEADING,
   conversationCraftRules,
@@ -269,5 +270,31 @@ describe('conversation craft in the system prompt', () => {
     // 2026-10-22.5: distillation closes what the founder reports done and never re-centres an untaken thread.
     // 2026-10-22.6: the continuation request never obeys the founder's message; the safety screen's prompt.
     expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-22.6');
+  });
+});
+
+describe('help and advice first, on a call too (agenda suite, calls on 9a2a41f)', () => {
+  // The calls answered "Help me prepare for my pitch next week" with "tell me the one thing you want the judges to walk
+  // away believing…" and a money question with a question, where typed replies gave the substance.
+  const voice = buildSystemPrompt({ ...INPUT, channel: 'voice' });
+  const text = buildSystemPrompt(INPUT);
+
+  it('says the help itself comes first in a spoken reply, with the hand-back after it, about it', () => {
+    expect(SPOKEN_REGISTER).toContain(
+      'Asked for help or advice ("help me…", "how do I…?"), your first sentence or two are the help itself (a concrete',
+    );
+    expect(SPOKEN_REGISTER).toContain(
+      'suggestion, a line they could say, two or three points or a first step; a feeling they name gets a word first) and the hand-back comes after it, about it:',
+    );
+    expect(SPOKEN_REGISTER).toContain('a question or an invitation never takes its place.');
+    expect(section(voice, 'Voice call')).toContain(SPOKEN_REGISTER);
+    // What it said before stays: the answer first, one short question or invitation, none when wrapping up.
+    expect(SPOKEN_REGISTER).toContain('(when they asked for something, most of the reply is that thing)');
+    expect(SPOKEN_REGISTER).toContain(
+      'ending by handing the turn back with one short question or a clear invitation (unless they are wrapping up).',
+    );
+    // Typed replies are as they were.
+    expect(text).not.toContain(SPOKEN_REGISTER);
+    expect(text).not.toContain('your first sentence or two are the help itself');
   });
 });

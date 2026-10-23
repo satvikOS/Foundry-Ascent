@@ -57,6 +57,11 @@ export interface ConversationState {
   /** The message asks for a number ("give me a number", "how much should we charge?"): a reasoned range first. */
   readonly asksForNumber?: boolean;
   /**
+   * The message reports having done something they committed to ("I did the thing I said I'd do", "Done!"): the reply
+   * names which commitment it was and asks how it went ({@link reportsCommitmentDone}).
+   */
+  readonly reportsDone?: boolean;
+  /**
    * Overused phrases ({@link OVERUSED_PHRASES}) the vEIR already said in this conversation (in the replies in view or
    * its opener), so it never says them again.
    */
@@ -225,6 +230,173 @@ function bringsNews(text: string): boolean {
   return text
     .split(/(?<=[.!?])\s+/)
     .some((sentence) => !/\?\s*$/.test(sentence) && NEWS.test(sentence.replace(/[.!]+$/, '')));
+}
+
+// A report of having done what they committed to ------------------------------------------------------------
+
+/** Lead-ins before a report said at the start of a sentence ("So, I did…", "Okay, did the thing…"). */
+const REPORT_LEAD = String.raw`(?:(?:so|ok|okay|well|yeah|yes|yep|and|alright|right|anyway|update)[,.!:]* )*`;
+/** Words between the subject and the verb that keep it a report ("I finally did…"); a negation is none of them. */
+const REPORT_ADVERBS = String.raw`(?:(?:finally|actually|just|already|also|totally|now|officially) )*`;
+/**
+ * A subject the report is said of: "I" or "we", never in a clause that only supposes it ("if I did what you
+ * suggested", "I hope we did…") or asks it ("have I done the thing I said I'd do", a transcript without its "?"), or
+ * none at the start of a sentence ("Did the thing I said I'd do").
+ */
+const REPORT_SUBJECT = String.raw`(?:^${REPORT_LEAD}${REPORT_ADVERBS}|(?<!\b(?:if|when|whenever|once|until|unless|whether|before|after|wish|hope|suppose|imagine|have|has|had|did|do|does|should|could|would|can|will|shall|must|might|may)\s)\b(?:i|we)(?:'ve| have)? ${REPORT_ADVERBS})`;
+
+/** "I said I'd", typed or transcribed ("i said id", "I said I was gonna"). */
+const SAID_WOULD = String.raw`said (?:i|we)(?:'?d| would| (?:was|were) (?:gonna|going to))`;
+/** Not what they committed to but what they said they would never do ("the thing I said I'd never do"). */
+const NOT_NEGATED = String.raw`(?! (?:(?:i|we|you)(?:'?d| would)? )?(?:never|not|no longer|rather|sooner|wouldn't|won't|shouldn't)\b)`;
+
+/** The commitment named as such: "the thing I said I'd do", "what you suggested", "what we agreed on". */
+const NAMED_COMMITMENT = String.raw`(?:(?:the|that|this) things? (?:that )?(?:i|we) (?:${SAID_WOULD}(?: do)?|promised(?: to do)?|committed to)|(?:what|everything) (?:i|we) ${SAID_WOULD}(?: do)?|(?:the thing|what|everything) you (?:suggested|recommended)|what we agreed(?: on)?)\b${NOT_NEGATED}`;
+
+/**
+ * "I did the thing I said I'd do", "We tried what you suggested", "I've finally done what I said I would". Global: a
+ * sentence can say it twice, once under a doubt ({@link doubtedBefore}) and once plainly.
+ */
+const DID_NAMED = new RegExp(
+  String.raw`${REPORT_SUBJECT}(?:did|done|finished|completed|tried|followed|went (?:ahead )?with) (?:exactly )?${NAMED_COMMITMENT}`,
+  'g',
+);
+
+/**
+ * A negation or a doubt that the report is said under: "I don't think", "I doubt", "I can't say", "I'm not sure", "I'd
+ * be lying if (I said)", "didn't", "haven't", "never", "failed to", "forgot to", "couldn't", "wasn't able to". "No
+ * doubt", "without a doubt", "I never doubted" and "never mind" are none.
+ */
+const DOUBT_CUE = new RegExp(
+  String.raw`\b(?:(?:don'?t|do not|didn'?t|did not) (?:really |honestly |actually |even )?(?:think|believe|feel like|reckon)|(?<!\b(?:no|without|without a|beyond|beyond a|never|not|don'?t|do not|didn'?t|did not) )doubt(?:s|ed|ful)?|(?:can'?t|cannot|can not|couldn'?t|could not) (?:really |honestly |truly )?say|not (?:so |too |really |entirely |totally |quite |that |a hundred percent |100% )?(?:sure|convinced)|unsure|(?:lying|lie) if|(?:didn'?t|did not|haven'?t|have not|hasn'?t|has not|never(?! mind\b))(?! (?:once |ever |really )?doubt)|failed to|forgot to|couldn'?t|could not|(?:wasn'?t|was not|weren'?t|were not) able to)\b`,
+  'g',
+);
+
+/**
+ * After a negation, a feeling about the report that takes it as true all the same ("I've never been so glad I did…",
+ * "I'd be lying if I said I wasn't proud we did…", "I can't say I'm sorry I did…").
+ */
+const FEELS_ABOUT =
+  /\b(?:glad|happy|happier|proud|prouder|relieved|thankful|grateful|sorry|surprised|shocked|amazed|regret(?:ted|s)?)\b/;
+/**
+ * After any negation but "lying if", telling, knowing or believing the report, which takes it as true too ("I forgot to
+ * tell you I did what you suggested", "I don't think you noticed I did…", "I couldn't believe I did…"); "I'd be lying if
+ * I told you I did…" denies it.
+ */
+const KNOWS_OF =
+  /\b(?:tell|told|telling|mention|mentioned|let (?:you|them|him|her|everyone|anyone|people|the team) know|update(?:d)? (?:you|them|him|her)|know|knew|noticed|heard|reali[sz]ed?|remember(?:ed)?|believe)\b/;
+
+/**
+ * Where the clause the report is in begins: after a comma, semicolon, colon, dash or bracket, or before a word that
+ * joins another clause ("I didn't think it would work, but I did what you suggested", "…so I did what you suggested";
+ * "not so sure" keeps its "so").
+ */
+const CLAUSE_BREAK =
+  /[,;:()—–]| - |\b(?:and|but|(?<!\b(?:not|never|not really|not quite) )so|then|yet|because|cause|cos|coz|since|though|although|while|plus|anyway|however)\b/g;
+
+/** How far before the report a doubt is looked for, so a pasted wall of reports stays linear. */
+const DOUBT_LOOKBACK = 200;
+/**
+ * At most this many words between the doubt and the report ("I'd be lying if | I said that | I did…"), so a negation
+ * further back in an unpunctuated run-on is another clause.
+ */
+const DOUBT_WORDS = 6;
+
+/**
+ * Whether the report that starts at `index` of `sentence` is said under a negation or a doubt in its own clause ("I
+ * don't think I did what you suggested", "I doubt we did what we agreed", "I can't say I did…", "I'd be lying if I said
+ * I did…"): then it is no report. A negation in a clause before it ("I didn't think it would work, but I did what you
+ * suggested") or after it ("I did what you suggested and it didn't work") leaves it one, and so does a word after the
+ * negation that takes it as true ({@link FEELS_ABOUT}, {@link KNOWS_OF}).
+ */
+function doubtedBefore(sentence: string, index: number): boolean {
+  let before = sentence.slice(Math.max(0, index - DOUBT_LOOKBACK), index);
+  // A window that cuts a word drops it, so the rest of "knot" is never "not".
+  if (index > DOUBT_LOOKBACK) before = before.replace(/^\S*\s?/, '');
+  let start = 0;
+  for (const m of before.matchAll(CLAUSE_BREAK)) start = m.index + m[0].length;
+  const clause = before.slice(start);
+  let cue: RegExpExecArray | null = null;
+  for (const m of clause.matchAll(DOUBT_CUE)) cue = m;
+  if (cue === null) return false;
+  const between = clause.slice(cue.index + cue[0].length).trim();
+  if (between !== '' && between.split(' ').length > DOUBT_WORDS) return false;
+  if (FEELS_ABOUT.test(between)) return false;
+  return /^(?:lying|lie) if$/.test(cue[0]) || !KNOWS_OF.test(between);
+}
+
+/** "like we agreed", "as we agreed", "as promised", "like I said I would", "as you suggested". */
+const AS_AGREED = String.raw`(?:just )?(?:(?:like|as) (?:we(?:'d| had)? agreed|i ${SAID_WOULD}(?: do(?: it)?)?|i promised|you suggested)|as (?:agreed|promised))`;
+
+/**
+ * A step said as done, in the past ("called", "sent", "talked"). News (launched, signed, hired…) is not here: it is
+ * heard as news, and running out of something is no step. Without a subject, only a form that is past and nothing else
+ * ("Sent it", not "Set up the call" or "Run the numbers", which ask for it, nor "Did…", which asks whether it was done).
+ */
+const PAST_STEP = String.raw`(?:finished|completed|tried|sent|called|emailed|e-mailed|messaged|texted|booked|scheduled|talked|spoke|met|ran(?! out\b)|wrote|posted|interviewed|asked|contacted|reached out|submitted|followed up|drafted|got (?:it|that|them|everything) done)`;
+/** The same step after "I've" or "we have": "I've sent it", "We've run the numbers". */
+const DONE_STEP = String.raw`(?:done|finished|completed|tried|sent|called|emailed|e-mailed|messaged|texted|booked|scheduled|talked|spoken|met|run(?! out\b)|written|posted|interviewed|asked|contacted|reached out|set up|submitted|followed up|drafted|got (?:it|that|them|everything) done)`;
+
+/**
+ * A word that starts another clause, or is the subject of one ("…and, as we agreed, I'll send the deck Friday", "Did I
+ * send it like we agreed"): the words after the step stop before it, so "as we agreed" is said of the step and nothing
+ * else.
+ */
+const CLAUSE_WORD = String.raw`(?:and|but|so|then|or|nor|because|cause|cos|while|though|although|since|until|till|unless|once|when|whenever|before|after|if|whether|that|which|who|what|where|why|how|i|we|you|he|she|they|(?:i|we|you|he|she|they|it|that|there)'[a-z]+|will|would|won't|wouldn't|gonna|going|shall|should|can|could|might|may|must|not|never|no)`;
+
+/**
+ * The step itself, from its subject ("I", "we", or none at the start of the sentence) to its object, in one clause:
+ * "I called the dean", "Sent the plan to the dean", "We've run the numbers".
+ */
+const STEP_CLAUSE = String.raw`(?:(?:i|we) ${REPORT_ADVERBS}(?:${PAST_STEP}|set up)|(?:i|we)(?:'ve| have) ${REPORT_ADVERBS}${DONE_STEP}|${REPORT_ADVERBS}${PAST_STEP})(?: (?!${CLAUSE_WORD}(?![\p{L}\p{N}']))[^\s,;:]+){0,16}`;
+
+/**
+ * A step done "like we agreed", as the whole sentence: the step and then the commitment named ("I called the dean like
+ * we agreed", "Sent it, as we agreed"), or the commitment named and then the step ("As we agreed, I sent the survey to
+ * 30 nurses"). The two touch, so "We talked about pricing and, as we agreed, I'll send the deck Friday" (what is
+ * agreed comes next, after a past act it is no part of) is none: the audit of 21515bd found ten of those.
+ */
+const STEP_AS_AGREED = new RegExp(
+  String.raw`^${REPORT_LEAD}(?:${STEP_CLAUSE},? ${AS_AGREED}|${AS_AGREED},? ${STEP_CLAUSE})$`,
+  'u',
+);
+
+/** A whole message that is only a report: "Done!", "I did it", "Did it!", "Finished it", "Sent it", "Got it done". */
+const WHOLE_REPORT = /^(?:done|(?:i )?(?:did it|finished it|sent it|got it done))[\s.!]*$/;
+
+/**
+ * Quoted words (a draft: "Draft email: 'Hi Dr Shah, I sent the pilot plan as promised…'", what someone said) are not
+ * what they report. A single quote opens after no letter and closes before none, so "I'd" inside one stays in it. A
+ * quote runs at most {@link QUOTE_CHARS} characters, so a pasted wall of unclosed quotes stays linear.
+ */
+const QUOTE_CHARS = 600;
+const QUOTED = new RegExp(
+  String.raw`"[^"]{0,${QUOTE_CHARS}}"|“[^”]{0,${QUOTE_CHARS}}”|(?<![\p{L}\p{N}])'(?=[^\s'])(?:[^']|'(?=\p{L})){0,${QUOTE_CHARS}}?'(?![\p{L}\p{N}])`,
+  'gu',
+);
+
+/**
+ * Whether the message reports having done something they committed to, explicitly (evals G12, the matrix's commitment
+ * probe: "I did the thing I said I'd do" was answered without naming the commitment): the commitment named as such
+ * ("I did the thing I said I'd do", "I tried what you suggested", "I called the dean like we agreed"), or a whole
+ * message that is only a report ("Done!", "I did it", "Sent it"). Nothing broader: a celebration ("We did it!!"), news
+ * ("We launched it"), a question ("Done with the deck?") or a negation ("I didn't do it", "Not done yet") is no report,
+ * nor is a report said under a negation or a doubt ("I don't think I did what you suggested", {@link doubtedBefore}).
+ */
+export function reportsCommitmentDone(text: string): boolean {
+  const t = normalize(text);
+  if (WHOLE_REPORT.test(t)) return true;
+  return t
+    .replace(QUOTED, ' ')
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.replace(/[.!…]+$/, '').trim())
+    .some(
+      (sentence) =>
+        sentence !== '' &&
+        !sentence.endsWith('?') &&
+        (STEP_AS_AGREED.test(sentence) ||
+          [...sentence.matchAll(DID_NAMED)].some((m) => !doubtedBefore(sentence, m.index))),
+    );
 }
 
 /** A request for a number: the matrix's SM-16 ("Give me a number") and a price asked outright. */
@@ -658,6 +830,7 @@ export function deriveConversationState(
     social: socialTurnOf(founderText),
     directChoice: directChoiceOf(founderText),
     asksForNumber: asksForNumber(founderText),
+    reportsDone: reportsCommitmentDone(founderText),
     usedPhrases,
     openerGreeted: afterOpener && /^(?:hi|hello|hey|hiya)\b/i.test(opener),
     words: wordCount(founderText),
@@ -721,7 +894,10 @@ function ago(n: number): string {
  */
 export function renderConversationState(state: ConversationState): string {
   const notable =
-    state.moves.some((m) => NOTABLE.has(m)) || state.directChoice === true || state.asksForNumber === true;
+    state.moves.some((m) => NOTABLE.has(m)) ||
+    state.directChoice === true ||
+    state.asksForNumber === true ||
+    state.reportsDone === true;
   if (state.earlierTurns === 0 && !notable && !state.afterOpener) return '';
   const what = state.moves.map((m) => MOVE_LABELS[m]);
   const length =
@@ -751,6 +927,17 @@ export function renderConversationState(state: ConversationState): string {
     lines.push(
       '- They bring news: react to it and ask about it first, in your own words. In this reply never steer back to an',
       '  earlier question, plan or parked thread.',
+    );
+  }
+  // Evals G12, the matrix's commitment probe: "I did the thing I said I'd do" was answered without naming which
+  // commitment it was. What they say of how it went, or ask, is taken up instead of the question.
+  if (state.reportsDone === true) {
+    lines.push(
+      // Said neutrally: a doubt or a denial the cues miss ("I wouldn't say I did what you suggested") is still about the
+      // commitment, so naming it and taking up what they said of it is right either way (differential audit, diff5-C3).
+      '- They speak of something they committed to: name which commitment it is, in your own words (one agreed in',
+      '  this conversation, else one from your notes), and respond to what they said of it (done, not done or partly)',
+      '  with at most one short question, unless they already asked you something. If neither says which, ask that.',
     );
   }
   if (state.moves.includes('help')) {
