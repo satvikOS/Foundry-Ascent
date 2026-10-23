@@ -1485,6 +1485,714 @@ describe('the next call’s greeting after a founder line (the voice suite on 9a
     // A sentence's first capital alone is no evidence of a name ("Enterprise pricing" is none).
     expect(nextGreeting(line, 'a').chosen).toBe('Hi Maya, shall we pick up canvas integration?');
   });
+
+  it.each([
+    // Unburdening themselves, or how they are after needing to talk to someone: before, "Hi Maya, shall we pick up
+    // your plan to vent to someone?", "… to talk to someone honestly like you're not okay?".
+    ['i just need to vent to someone tbh', INVITATION, INVITATION],
+    ['I just need to vent to someone', INVITATION, INVITATION],
+    ['I just need to offload to someone', INVITATION, INVITATION],
+    ['honestly I just need to vent to someone', INVITATION, INVITATION],
+    ['I just need to rant to someone tbh', INVITATION, INVITATION],
+    ['I just want to vent to someone rn', INVITATION, INVITATION],
+    ["uh I need to talk to someone honestly like I'm not okay", INVITATION, INVITATION],
+    // A name in -ly, quitting to commit, "about my" venture work, a name with "First": said whole, never spliced
+    // with its verb, nor dropped.
+    [
+      'Kelly emailed Hartwell about the renewal.',
+      'Hi Maya, shall we pick up Kelly?',
+      'Hi Maya, shall we pick up Kelly?',
+    ],
+    [
+      'Emily booked demos with five clinics.',
+      'Hi Maya, shall we pick up Emily?',
+      'Hi Maya, shall we pick up Emily?',
+    ],
+    [
+      'Calendly raised prices again.',
+      'Hi Maya, shall we pick up Calendly?',
+      'Hi Maya, shall we pick up Calendly?',
+    ],
+    [
+      'Grammarly acquired Quillbot last year.',
+      'Hi Maya, shall we pick up Quillbot?',
+      'Hi Maya, shall we pick up Quillbot?',
+    ],
+    [
+      'Sally introduced Noor to the dean.',
+      'Hi Maya, shall we pick up Noor?',
+      'Hi Maya, shall we pick up Noor?',
+    ],
+    [
+      "Kimberly approved Hartwell's budget.",
+      "Hi Maya, shall we pick up Hartwell's budget?",
+      "Hi Maya, shall we pick up Hartwell's budget?",
+    ],
+    [
+      'Billy designed onboarding screens for us.',
+      'Hi Maya, shall we pick up onboarding screens?',
+      'Hi Maya, shall we pick up onboarding screens?',
+    ],
+    [
+      'Emily wanted pricing by Friday.',
+      'Hi Maya, shall we pick up Emily?',
+      'Hi Maya, shall we pick up Emily?',
+    ],
+    [
+      'Shelly reviewed contracts for the clinics.',
+      'Hi Maya, shall we pick up Shelly?',
+      'Hi Maya, shall we pick up Shelly?',
+    ],
+    [
+      'Emily shared feedback from the ambassadors.',
+      'Hi Maya, shall we pick up Emily?',
+      'Hi Maya, shall we pick up Emily?',
+    ],
+    [
+      'Calendly added round robin scheduling.',
+      'Hi Maya, shall we pick up Calendly?',
+      'Hi Maya, shall we pick up Calendly?',
+    ],
+    [
+      'Molly mentioned Hartwell might churn.',
+      'Hi Maya, shall we pick up Hartwell?',
+      'Hi Maya, shall we pick up Hartwell?',
+    ],
+    [
+      'Kelly finished wireframes for the booking flow.',
+      'Hi Maya, shall we pick up Kelly?',
+      'Hi Maya, shall we pick up Kelly?',
+    ],
+    [
+      'Italy banned ChatGPT for a month once.',
+      'Hi Maya, shall we pick up Italy?',
+      'Hi Maya, shall we pick up Italy?',
+    ],
+    [
+      'Officially launched QuietQuad today!',
+      'Hi Maya, shall we pick up QuietQuad?',
+      'Hi Maya, shall we pick up QuietQuad?',
+    ],
+    [
+      'Nearly closed Hartwell before the break.',
+      'Hi Maya, shall we pick up Hartwell?',
+      'Hi Maya, shall we pick up Hartwell?',
+    ],
+    [
+      'Our purpose attracted investors.',
+      'Hi Maya, shall we pick up your purpose?',
+      'Hi Maya, shall we pick up your purpose?',
+    ],
+    [
+      'Our tailor delivered samples on Friday.',
+      'Hi Maya, shall we pick up your tailor?',
+      'Hi Maya, shall we pick up your tailor?',
+    ],
+    [
+      'Our tailor stitched prototypes for the pop-up.',
+      'Hi Maya, shall we pick up your tailor?',
+      'Hi Maya, shall we pick up your tailor?',
+    ],
+    [
+      'um so kelly emailed hartwell about the renewal',
+      'Hi Maya, want to pick up where we left off yesterday, or start on something new?',
+      'Hi Maya, want to pick up where we left off yesterday, or start on something new?',
+    ],
+    [
+      'emily booked demos with five clinics',
+      'Hi Maya, shall we pick up the five clinics?',
+      'Hi Maya, shall we pick up the five clinics?',
+    ],
+    [
+      'so kelly signed hartwell yesterday',
+      'Hi Maya, want to pick up where we left off yesterday, or start on something new?',
+      'Hi Maya, want to pick up where we left off yesterday, or start on something new?',
+    ],
+    [
+      "I'm going to quit and go full-time in January.",
+      'Hi Maya, shall we pick up your plan to quit and go full-time in January?',
+      'Hi Maya, shall we pick up your plan to quit and go full-time in January?',
+    ],
+    [
+      'Should we leave and join Entrepreneur First?',
+      'Hi Maya, where did you land on whether to leave and join Entrepreneur First?',
+      'Hi Maya, where did you land on whether to leave and join Entrepreneur First?',
+    ],
+    [
+      'Should I leave and join Y Combinator?',
+      'Hi Maya, where did you land on whether to leave and join Y Combinator?',
+      'Hi Maya, where did you land on whether to leave and join Y Combinator?',
+    ],
+    [
+      'Should I quit and do YC?',
+      'Hi Maya, where did you land on whether to quit and do YC?',
+      'Hi Maya, where did you land on whether to quit and do YC?',
+    ],
+    [
+      'Should I quit and commit to the startup?',
+      'Hi Maya, where did you land on whether to quit and commit to the startup?',
+      'Hi Maya, where did you land on whether to quit and commit to the startup?',
+    ],
+    [
+      'I want to quit and give QuietQuad a real shot.',
+      'Hi Maya, shall we pick up your plan to quit and give QuietQuad a real shot?',
+      'Hi Maya, shall we pick up your plan to quit and give QuietQuad a real shot?',
+    ],
+    [
+      'Should I quit and go for it?',
+      'Hi Maya, where did you land on whether to quit and go for it?',
+      'Hi Maya, where did you land on whether to quit and go for it?',
+    ],
+    [
+      'Should I drop out and chase this?',
+      'Hi Maya, where did you land on whether to drop out and chase this?',
+      'Hi Maya, where did you land on whether to drop out and chase this?',
+    ],
+    [
+      'I want to quit and do this properly.',
+      'Hi Maya, shall we pick up your plan to quit and do this properly?',
+      'Hi Maya, shall we pick up your plan to quit and do this properly?',
+    ],
+    [
+      'I want to quit and grow the business.',
+      'Hi Maya, shall we pick up your plan to quit and grow the business?',
+      'Hi Maya, shall we pick up your plan to quit and grow the business?',
+    ],
+    [
+      'Should I quit and scale the app?',
+      'Hi Maya, where did you land on whether to quit and scale the app?',
+      'Hi Maya, where did you land on whether to quit and scale the app?',
+    ],
+    [
+      'Should I quit and hire a team?',
+      'Hi Maya, where did you land on whether to quit and hire a team?',
+      'Hi Maya, where did you land on whether to quit and hire a team?',
+    ],
+    [
+      'I want to quit and move to London to build it.',
+      'Hi Maya, shall we pick up your plan to quit and move to London to build it?',
+      'Hi Maya, shall we pick up your plan to quit and move to London to build it?',
+    ],
+    [
+      'I want to quit and focus 100% on the startup.',
+      'Hi Maya, shall we pick up your plan to quit and focus 100% on the startup?',
+      'Hi Maya, shall we pick up your plan to quit and focus 100% on the startup?',
+    ],
+    [
+      'I want to quit and put everything into the startup.',
+      'Hi Maya, shall we pick up your plan to quit and put everything into the startup?',
+      'Hi Maya, shall we pick up your plan to quit and put everything into the startup?',
+    ],
+    [
+      'I want to quit and work on QuietQuad.',
+      'Hi Maya, shall we pick up your plan to quit and work on QuietQuad?',
+      'Hi Maya, shall we pick up your plan to quit and work on QuietQuad?',
+    ],
+    [
+      'I want to quit and work on the startup.',
+      'Hi Maya, shall we pick up your plan to quit and work on the startup?',
+      'Hi Maya, shall we pick up your plan to quit and work on the startup?',
+    ],
+    [
+      'I want to quit and focus on my app.',
+      'Hi Maya, shall we pick up your plan to quit and focus on your app?',
+      'Hi Maya, shall we pick up your plan to quit and focus on your app?',
+    ],
+    [
+      'I want to quit and focus on my side project.',
+      'Hi Maya, shall we pick up your plan to quit and focus on your side project?',
+      'Hi Maya, shall we pick up your plan to quit and focus on your side project?',
+    ],
+    [
+      'Should I quit and make QuietQuad my job?',
+      'Hi Maya, where did you land on whether to quit and make QuietQuad your job?',
+      'Hi Maya, where did you land on whether to quit and make QuietQuad your job?',
+    ],
+    [
+      'Should I quit and make this my full-time job?',
+      'Hi Maya, where did you land on whether to quit and make this your full-time job?',
+      'Hi Maya, where did you land on whether to quit and make this your full-time job?',
+    ],
+    [
+      'Should I leave and start a company with Noor?',
+      'Hi Maya, where did you land on whether to leave and start a company with Noor?',
+      'Hi Maya, where did you land on whether to leave and start a company with Noor?',
+    ],
+    [
+      'I want to quit and start something with Devin.',
+      'Hi Maya, shall we pick up your plan to quit and start something with Devin?',
+      'Hi Maya, shall we pick up your plan to quit and start something with Devin?',
+    ],
+    [
+      'I want to quit and go full-time in the summer.',
+      'Hi Maya, shall we pick up your plan to quit and go full-time in the summer?',
+      'Hi Maya, shall we pick up your plan to quit and go full-time in the summer?',
+    ],
+    [
+      'Should I quit and go full time with Noor?',
+      'Hi Maya, where did you land on whether to quit and go full time with Noor?',
+      'Hi Maya, where did you land on whether to quit and go full time with Noor?',
+    ],
+    [
+      'I want to quit and give it a go.',
+      'Hi Maya, shall we pick up your plan to quit and give it a go?',
+      'Hi Maya, shall we pick up your plan to quit and give it a go?',
+    ],
+    [
+      'Should I quit and back myself?',
+      'Hi Maya, where did you land on whether to quit and back yourself?',
+      'Hi Maya, where did you land on whether to quit and back yourself?',
+    ],
+    [
+      'Should I drop out and do QuietQuad?',
+      'Hi Maya, where did you land on whether to drop out and do QuietQuad?',
+      'Hi Maya, where did you land on whether to drop out and do QuietQuad?',
+    ],
+    [
+      'Should I quit and do the startup?',
+      'Hi Maya, where did you land on whether to quit and do the startup?',
+      'Hi Maya, where did you land on whether to quit and do the startup?',
+    ],
+    [
+      'Should I quit and apply to YC?',
+      'Hi Maya, where did you land on whether to quit and apply to YC?',
+      'Hi Maya, where did you land on whether to quit and apply to YC?',
+    ],
+    [
+      'Should I quit and get funding?',
+      'Hi Maya, where did you land on whether to quit and get funding?',
+      'Hi Maya, where did you land on whether to quit and get funding?',
+    ],
+    [
+      'Should I quit and find a cofounder?',
+      'Hi Maya, where did you land on whether to quit and find a cofounder?',
+      'Hi Maya, where did you land on whether to quit and find a cofounder?',
+    ],
+    [
+      'Should I quit and take the startup seriously?',
+      'Hi Maya, where did you land on whether to quit and take the startup seriously?',
+      'Hi Maya, where did you land on whether to quit and take the startup seriously?',
+    ],
+    [
+      'Should I quit and run the business?',
+      'Hi Maya, where did you land on whether to quit and run the business?',
+      'Hi Maya, where did you land on whether to quit and run the business?',
+    ],
+    [
+      'Should I quit and turn this into a real company?',
+      'Hi Maya, where did you land on whether to quit and turn this into a real company?',
+      'Hi Maya, where did you land on whether to quit and turn this into a real company?',
+    ],
+    [
+      'I want to quit and commit to QuietQuad properly.',
+      'Hi Maya, shall we pick up your plan to quit and commit to QuietQuad?',
+      'Hi Maya, shall we pick up your plan to quit and commit to QuietQuad?',
+    ],
+    [
+      'Should I drop out and give QuietQuad a real shot?',
+      'Hi Maya, where did you land on whether to drop out and give QuietQuad a real shot?',
+      'Hi Maya, where did you land on whether to drop out and give QuietQuad a real shot?',
+    ],
+    [
+      'I want to quit and apply to YC with Noor.',
+      'Hi Maya, shall we pick up your plan to quit and apply to YC with Noor?',
+      'Hi Maya, shall we pick up your plan to quit and apply to YC with Noor?',
+    ],
+    [
+      'Should I leave and do Entrepreneur First?',
+      'Hi Maya, where did you land on whether to leave and do Entrepreneur First?',
+      'Hi Maya, where did you land on whether to leave and do Entrepreneur First?',
+    ],
+    [
+      'Should I quit and move to London for the startup?',
+      'Hi Maya, where did you land on whether to quit and move to London for the startup?',
+      'Hi Maya, where did you land on whether to quit and move to London for the startup?',
+    ],
+    [
+      'I want to quit and hire a small team.',
+      'Hi Maya, shall we pick up your plan to quit and hire a small team?',
+      'Hi Maya, shall we pick up your plan to quit and hire a small team?',
+    ],
+    [
+      'Should we quit and sell to schools instead?',
+      'Hi Maya, where did you land on whether to quit and sell to schools?',
+      'Hi Maya, where did you land on whether to quit and sell to schools?',
+    ],
+    [
+      'Should I quit and grow the business properly?',
+      'Hi Maya, where did you land on whether to quit and grow the business?',
+      'Hi Maya, where did you land on whether to quit and grow the business?',
+    ],
+    [
+      'I want to quit and scale QuietQuad across campuses.',
+      'Hi Maya, shall we pick up your plan to quit and scale QuietQuad across campuses?',
+      'Hi Maya, shall we pick up your plan to quit and scale QuietQuad across campuses?',
+    ],
+    [
+      'Should I quit and dedicate myself to QuietQuad?',
+      'Hi Maya, where did you land on whether to quit and dedicate yourself to QuietQuad?',
+      'Hi Maya, where did you land on whether to quit and dedicate yourself to QuietQuad?',
+    ],
+    [
+      'I want to quit and take the YC offer.',
+      'Hi Maya, shall we pick up your plan to quit and take the YC offer?',
+      'Hi Maya, shall we pick up your plan to quit and take the YC offer?',
+    ],
+    [
+      'Should we leave and join Techstars?',
+      'Hi Maya, where did you land on whether to leave and join Techstars?',
+      'Hi Maya, where did you land on whether to leave and join Techstars?',
+    ],
+    [
+      'Should we leave and join the Oxford incubator?',
+      'Hi Maya, where did you land on whether to leave and join the Oxford incubator?',
+      'Hi Maya, where did you land on whether to leave and join the Oxford incubator?',
+    ],
+    [
+      'Should I quit then go full time in the summer?',
+      'Hi Maya, where did you land on whether to quit then go full time in the summer?',
+      'Hi Maya, where did you land on whether to quit then go full time in the summer?',
+    ],
+    [
+      'I need to talk to someone about our cap table lol',
+      'Hi Maya, shall we pick up your plan to talk to someone about your cap table?',
+      'Hi Maya, shall we pick up your plan to talk to someone about your cap table?',
+    ],
+    [
+      'I need to talk to someone about my pitch deck',
+      'Hi Maya, shall we pick up your plan to talk to someone about your pitch deck?',
+      'Hi Maya, shall we pick up your plan to talk to someone about your pitch deck?',
+    ],
+    [
+      "I need to talk to someone about my cofounder's equity",
+      "Hi Maya, shall we pick up your plan to talk to someone about your cofounder's equity?",
+      "Hi Maya, shall we pick up your plan to talk to someone about your cofounder's equity?",
+    ],
+    [
+      'I need to speak to someone about my visa for the accelerator',
+      'Hi Maya, shall we pick up your plan to speak to someone about your visa?',
+      'Hi Maya, shall we pick up your plan to speak to someone about your visa?',
+    ],
+    [
+      'I need to talk to someone about my startup idea tbh',
+      'Hi Maya, shall we pick up your plan to talk to someone about your startup idea?',
+      'Hi Maya, shall we pick up your plan to talk to someone about your startup idea?',
+    ],
+    [
+      'I need to talk to someone about my business plan',
+      'Hi Maya, shall we pick up your plan to talk to someone about your business plan?',
+      'Hi Maya, shall we pick up your plan to talk to someone about your business plan?',
+    ],
+    [
+      'I want to speak to someone about my startup',
+      'Hi Maya, shall we pick up your plan to speak to someone about your startup?',
+      'Hi Maya, shall we pick up your plan to speak to someone about your startup?',
+    ],
+    [
+      'I should talk to someone about my idea',
+      'Hi Maya, shall we pick up your idea?',
+      'Hi Maya, shall we pick up your idea?',
+    ],
+    [
+      'I need to talk to someone about my pricing',
+      'Hi Maya, shall we pick up your plan to talk to someone about your pricing?',
+      'Hi Maya, shall we pick up your plan to talk to someone about your pricing?',
+    ],
+    [
+      'I need to talk to someone about our pricing',
+      'Hi Maya, shall we pick up your plan to talk to someone about your pricing?',
+      'Hi Maya, shall we pick up your plan to talk to someone about your pricing?',
+    ],
+    [
+      'We need to speak to someone about our contract with Hartwell',
+      'Hi Maya, shall we pick up your plan to speak to someone about your contract with Hartwell?',
+      'Hi Maya, shall we pick up your plan to speak to someone about your contract with Hartwell?',
+    ],
+    [
+      "I want to talk to someone about my app's security",
+      "Hi Maya, shall we pick up your plan to talk to someone about your app's security?",
+      "Hi Maya, shall we pick up your plan to talk to someone about your app's security?",
+    ],
+    [
+      'I need to talk to somebody about my patent',
+      'Hi Maya, shall we pick up your plan to talk to somebody about your patent?',
+      'Hi Maya, shall we pick up your plan to talk to somebody about your patent?',
+    ],
+    [
+      "I need to talk to someone about my company's taxes",
+      "Hi Maya, shall we pick up your plan to talk to someone about your company's taxes?",
+      "Hi Maya, shall we pick up your plan to talk to someone about your company's taxes?",
+    ],
+    [
+      'I need to talk to someone about my investor update',
+      'Hi Maya, shall we pick up your plan to talk to someone about your investor update?',
+      'Hi Maya, shall we pick up your plan to talk to someone about your investor update?',
+    ],
+    [
+      'Should I talk to someone about my term sheet?',
+      'Hi Maya, where did you land on whether to talk to someone about your term sheet?',
+      'Hi Maya, where did you land on whether to talk to someone about your term sheet?',
+    ],
+    [
+      'I want to chat with someone about my go-to-market',
+      'Hi Maya, shall we pick up your plan to chat with someone about your go-to-market?',
+      'Hi Maya, shall we pick up your plan to chat with someone about your go-to-market?',
+    ],
+    [
+      'I need to talk to someone about our pricing rn',
+      'Hi Maya, shall we pick up your plan to talk to someone about your pricing?',
+      'Hi Maya, shall we pick up your plan to talk to someone about your pricing?',
+    ],
+    [
+      'I need to talk to someone about my cap table',
+      'Hi Maya, shall we pick up your plan to talk to someone about your cap table?',
+      'Hi Maya, shall we pick up your plan to talk to someone about your cap table?',
+    ],
+    [
+      'I need to speak to someone about my LLC',
+      'Hi Maya, shall we pick up your plan to speak to someone about your LLC?',
+      'Hi Maya, shall we pick up your plan to speak to someone about your LLC?',
+    ],
+    [
+      'Should I talk to someone about my pricing model?',
+      'Hi Maya, where did you land on whether to talk to someone about your pricing model?',
+      'Hi Maya, where did you land on whether to talk to someone about your pricing model?',
+    ],
+    [
+      'I want to talk to someone about my fundraising strategy',
+      'Hi Maya, shall we pick up your plan to talk to someone about your fundraising strategy?',
+      'Hi Maya, shall we pick up your plan to talk to someone about your fundraising strategy?',
+    ],
+    [
+      'I need to talk to someone about my co-founder agreement',
+      'Hi Maya, shall we pick up your plan to talk to someone about your co-founder agreement?',
+      'Hi Maya, shall we pick up your plan to talk to someone about your co-founder agreement?',
+    ],
+    [
+      'I need to talk to someone about our Hartwell contract',
+      'Hi Maya, shall we pick up your plan to talk to someone about your Hartwell contract?',
+      'Hi Maya, shall we pick up your plan to talk to someone about your Hartwell contract?',
+    ],
+    [
+      'I need to talk to someone about our seed round',
+      'Hi Maya, shall we pick up your plan to talk to someone about your seed round?',
+      'Hi Maya, shall we pick up your plan to talk to someone about your seed round?',
+    ],
+    [
+      'I need to see a doctor about my insole prototype',
+      'Hi Maya, shall we pick up your plan to see a doctor about your insole prototype?',
+      'Hi Maya, shall we pick up your plan to see a doctor about your insole prototype?',
+    ],
+    [
+      'I want to speak to a psychologist about my survey questions',
+      'Hi Maya, shall we pick up your plan to speak to a psychologist?',
+      'Hi Maya, shall we pick up your plan to speak to a psychologist?',
+    ],
+    [
+      'I need to talk to someone about my product roadmap tbh',
+      'Hi Maya, shall we pick up your plan to talk to someone about your product roadmap?',
+      'Hi Maya, shall we pick up your plan to talk to someone about your product roadmap?',
+    ],
+    [
+      'Should we talk to someone about our SOC 2 audit?',
+      'Hi Maya, where did you land on whether to talk to someone about your SOC 2 audit?',
+      'Hi Maya, where did you land on whether to talk to someone about your SOC 2 audit?',
+    ],
+    [
+      'We got into Entrepreneur First!',
+      'Hi Maya, shall we pick up Entrepreneur First?',
+      'Hi Maya, shall we pick up Entrepreneur First?',
+    ],
+    [
+      'Should we apply to Entrepreneur First?',
+      'Hi Maya, where did you land on whether to apply to Entrepreneur First?',
+      'Hi Maya, where did you land on whether to apply to Entrepreneur First?',
+    ],
+    [
+      'Mobile First Labs wants a demo.',
+      'Hi Maya, shall we pick up Mobile First Labs?',
+      'Hi Maya, shall we pick up Mobile First Labs?',
+    ],
+    [
+      'We met Ladies First Ventures yesterday.',
+      'Hi Maya, shall we pick up Ladies First Ventures?',
+      'Hi Maya, shall we pick up Ladies First Ventures?',
+    ],
+    [
+      'Our Entrepreneur First interview is on Friday.',
+      'Hi Maya, shall we pick up your Entrepreneur First interview?',
+      'Hi Maya, shall we pick up your Entrepreneur First interview?',
+    ],
+    [
+      'Our Founders First application is due Friday.',
+      'Hi Maya, shall we pick up your Founders First application?',
+      'Hi Maya, shall we pick up your Founders First application?',
+    ],
+    [
+      'Should we apply to Founders First?',
+      'Hi Maya, where did you land on whether to apply to Founders First?',
+      'Hi Maya, where did you land on whether to apply to Founders First?',
+    ],
+    [
+      'Customer First Ventures wants a call.',
+      'Hi Maya, shall we pick up Customer First Ventures?',
+      'Hi Maya, shall we pick up Customer First Ventures?',
+    ],
+    [
+      'We got into Entrepreneur First',
+      'Hi Maya, shall we pick up Entrepreneur First?',
+      'Hi Maya, shall we pick up Entrepreneur First?',
+    ],
+    [
+      'Entrepreneur First accepted us!',
+      'Hi Maya, shall we pick up Entrepreneur First?',
+      'Hi Maya, shall we pick up Entrepreneur First?',
+    ],
+  ])('the differential review of 96fc715: %s', (line, chosen, stored) => {
+    expect(nextGreeting(line, 'a')).toEqual({ chosen, stored });
+  });
+
+  it('greets around a stored subject of quitting to commit, venture work or a name with "First" (the differential review of 96fc715)', () => {
+    const greet = (opener: string, subject?: OpenerSubject) =>
+      repeatGreetingOf({
+        firstName: 'Maya',
+        opener,
+        ...(subject === undefined ? {} : { subject }),
+        conversationStarted: false,
+        seed: 'a',
+      }).text;
+    // Before: "Hi Maya, what would you like to work on?" for every one of these.
+    for (const [opener, expected] of [
+      [
+        "Welcome back. Last time you said you'd quit and work on QuietQuad. How did it go?",
+        'Hi Maya, did you get to quit and work on QuietQuad?',
+      ],
+      [
+        'Welcome back. Last time, we talked about whether to quit and commit to the startup. Where did you land on it?',
+        'Hi Maya, where did you land on whether to quit and commit to the startup?',
+      ],
+      [
+        "Welcome back. Last time you said you'd leave and join Entrepreneur First. How did it go?",
+        'Hi Maya, did you get to leave and join Entrepreneur First?',
+      ],
+      [
+        "Welcome back. Last time you said you'd quit and focus on your app. How did it go?",
+        'Hi Maya, did you get to quit and focus on your app?',
+      ],
+      [
+        "Welcome back. Last time you said you'd quit and work on the startup. How did it go?",
+        'Hi Maya, did you get to quit and work on the startup?',
+      ],
+      [
+        'Welcome back. Last time you planned to quit and do YC. How did it go?',
+        'Hi Maya, did you get to quit and do YC?',
+      ],
+      [
+        "Welcome back. Last time you said you'd quit and go full-time in January. How did it go?",
+        'Hi Maya, did you get to quit and go full-time in January?',
+      ],
+      [
+        "Welcome back. Last time you said you'd leave and join Techstars. How did it go?",
+        'Hi Maya, did you get to leave and join Techstars?',
+      ],
+      [
+        'Good to talk again. Last time, we talked about whether to quit and commit to QuietQuad. Where did you land on it?',
+        'Hi Maya, where did you land on whether to quit and commit to QuietQuad?',
+      ],
+      [
+        "Welcome back. Last time you said you'd talk to someone about your pitch deck. How did it go?",
+        'Hi Maya, did you get to talk to someone about your pitch deck?',
+      ],
+      [
+        "Welcome back. Last time you said you'd talk to someone about your cap table. How did it go?",
+        'Hi Maya, did you get to talk to someone about your cap table?',
+      ],
+      [
+        'Welcome back. Last time, we talked about whether to apply to Entrepreneur First. Where did you land on it?',
+        'Hi Maya, where did you land on whether to apply to Entrepreneur First?',
+      ],
+    ] as const) {
+      expect(greet(opener), opener).toBe(expected);
+    }
+    for (const [text, expected] of [
+      [
+        'your plan to quit and work on QuietQuad',
+        'Hi Maya, shall we pick up your plan to quit and work on QuietQuad?',
+      ],
+      [
+        'whether to quit and commit to the startup',
+        'Hi Maya, where did you land on whether to quit and commit to the startup?',
+      ],
+      [
+        'your plan to quit and focus on your app',
+        'Hi Maya, shall we pick up your plan to quit and focus on your app?',
+      ],
+      [
+        'your plan to leave and join Entrepreneur First',
+        'Hi Maya, shall we pick up your plan to leave and join Entrepreneur First?',
+      ],
+      [
+        'your plan to quit and put everything into QuietQuad',
+        'Hi Maya, shall we pick up your plan to quit and put everything into QuietQuad?',
+      ],
+      ['whether to leave and join YC', 'Hi Maya, where did you land on whether to leave and join YC?'],
+      [
+        'your plan to quit and focus on your side project',
+        'Hi Maya, shall we pick up your plan to quit and focus on your side project?',
+      ],
+      [
+        'your plan to quit and go full-time in January',
+        'Hi Maya, shall we pick up your plan to quit and go full-time in January?',
+      ],
+      [
+        'whether to quit and go full time with Noor',
+        'Hi Maya, where did you land on whether to quit and go full time with Noor?',
+      ],
+      ['your plan to quit and give it a go', 'Hi Maya, shall we pick up your plan to quit and give it a go?'],
+      ['whether to quit and apply to YC', 'Hi Maya, where did you land on whether to quit and apply to YC?'],
+      [
+        'whether to quit and commit to QuietQuad',
+        'Hi Maya, where did you land on whether to quit and commit to QuietQuad?',
+      ],
+      ['your plan to quit and apply to YC', 'Hi Maya, shall we pick up your plan to quit and apply to YC?'],
+      [
+        'whether to leave and join Techstars',
+        'Hi Maya, where did you land on whether to leave and join Techstars?',
+      ],
+      [
+        'your plan to talk to someone about your pitch deck',
+        'Hi Maya, shall we pick up your plan to talk to someone about your pitch deck?',
+      ],
+      [
+        'your plan to talk to someone about your pricing',
+        'Hi Maya, shall we pick up your plan to talk to someone about your pricing?',
+      ],
+      [
+        'whether to talk to someone about your term sheet',
+        'Hi Maya, where did you land on whether to talk to someone about your term sheet?',
+      ],
+      [
+        'your plan to talk to someone about your cap table',
+        'Hi Maya, shall we pick up your plan to talk to someone about your cap table?',
+      ],
+      [
+        'whether to talk to someone about your pricing model',
+        'Hi Maya, where did you land on whether to talk to someone about your pricing model?',
+      ],
+      [
+        'whether to apply to Entrepreneur First',
+        'Hi Maya, where did you land on whether to apply to Entrepreneur First?',
+      ],
+    ] as const) {
+      const kind = text.startsWith('whether') ? 'question' : 'topics';
+      const stored = `Good to talk again. Last time (yesterday), we talked about ${text}. ${kind === 'question' ? 'Where did you land on it?' : 'How has it gone since?'}`;
+      expect(greet(stored, { kind, text }), text).toBe(expected);
+    }
+    // Unburdening themselves is never greeted around.
+    expect(greet("Welcome back. Last time you said you'd vent to someone. How did it go?")).toBe(
+      'Hi Maya, what would you like to work on?',
+    );
+  });
 });
 
 describe('call summary', () => {

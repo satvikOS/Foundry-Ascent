@@ -837,3 +837,330 @@ describe('the differential review of cc29cad: the chat opener for the founder’
     ).toContain('we talked about your custom built CRM.');
   });
 });
+
+describe('the differential review of 96fc715: the chat opener, threads, digest topics and stored openers', () => {
+  const PEOPLE = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad', 'Devin Okafor'] };
+  const said = (line: string) =>
+    conversation({
+      title: null,
+      exchanges: [{ founder: line, answer: 'Good. What would make that a clear yes for them?' }],
+      said: [line],
+    });
+  const digest = (topic: string) =>
+    conversation({
+      exchanges: [],
+      title: null,
+      digest: { summary: '', topics: [topic], commitments: [], openQuestions: [] },
+    });
+  const opener = (c: LeftOffConversationData) =>
+    continuityOpener(c, { now: NOW, seed: 'a', people: PEOPLE }).withTopic;
+
+  it('never says unburdening themselves, or how they are after needing to talk to someone, back as a plan', () => {
+    // Before: "we talked about your plan to vent to someone", "… to talk to someone honestly like you're not okay".
+    for (const line of [
+      'i just need to vent to someone tbh',
+      'I just need to vent to someone',
+      'I just need to offload to someone',
+      'honestly I just need to vent to someone',
+      'I just need to rant to someone tbh',
+      'I just want to vent to someone rn',
+      "uh I need to talk to someone honestly like I'm not okay",
+    ]) {
+      expect(subjectOf(said(line), PEOPLE), line).toBeNull();
+      expect(opener(said(line)), line).toBeNull();
+    }
+    expect(threadSubject('your plan to vent to someone', PEOPLE)).toBeNull();
+    expect(opener(digest('your plan to vent to someone'))).toBeNull();
+    expect(readOpener("Welcome back. Last time you said you'd vent to someone. How did it go?")).toBe(
+      'fragment',
+    );
+  });
+
+  it('says the founder’s line whole: a name in -ly, quitting to commit, "about my" venture work, a name with "First"', () => {
+    // Before: "Kelly emailed Hartwell", nothing, nothing, "First Labs".
+    for (const [line, subject] of [
+      ['Kelly emailed Hartwell about the renewal.', 'Kelly'],
+      ['Emily booked demos with five clinics.', 'Emily'],
+      ['Calendly raised prices again.', 'Calendly'],
+      ['Grammarly acquired Quillbot last year.', 'Quillbot'],
+      ['Sally introduced Noor to the dean.', 'Noor'],
+      ["Kimberly approved Hartwell's budget.", "Hartwell's budget"],
+      ['Billy designed onboarding screens for us.', 'onboarding screens'],
+      ['Emily wanted pricing by Friday.', 'Emily'],
+      ['Shelly reviewed contracts for the clinics.', 'Shelly'],
+      ['Emily shared feedback from the ambassadors.', 'Emily'],
+      ['Calendly added round robin scheduling.', 'Calendly'],
+      ['Molly mentioned Hartwell might churn.', 'Hartwell'],
+      ['Kelly finished wireframes for the booking flow.', 'Kelly'],
+      ['Italy banned ChatGPT for a month once.', 'Italy'],
+      ['Officially launched QuietQuad today!', 'QuietQuad'],
+      ['Nearly closed Hartwell before the break.', 'Hartwell'],
+      ['Our purpose attracted investors.', 'your purpose'],
+      ['Our tailor delivered samples on Friday.', 'your tailor'],
+      ['Our tailor stitched prototypes for the pop-up.', 'your tailor'],
+      ['emily booked demos with five clinics', 'the five clinics'],
+      ["I'm going to quit and go full-time in January.", 'your plan to quit and go full-time in January'],
+      ['Should we leave and join Entrepreneur First?', 'whether to leave and join Entrepreneur First'],
+      ['Should I leave and join Y Combinator?', 'whether to leave and join Y Combinator'],
+      ['Should I quit and do YC?', 'whether to quit and do YC'],
+      ['Should I quit and commit to the startup?', 'whether to quit and commit to the startup'],
+      ['I want to quit and give QuietQuad a real shot.', 'your plan to quit and give QuietQuad a real shot'],
+      ['Should I quit and go for it?', 'whether to quit and go for it'],
+      ['Should I drop out and chase this?', 'whether to drop out and chase this'],
+      ['I want to quit and do this properly.', 'your plan to quit and do this properly'],
+      ['I want to quit and grow the business.', 'your plan to quit and grow the business'],
+      ['Should I quit and scale the app?', 'whether to quit and scale the app'],
+      ['Should I quit and hire a team?', 'whether to quit and hire a team'],
+      ['I want to quit and move to London to build it.', 'your plan to quit and move to London to build it'],
+      ['I want to quit and focus 100% on the startup.', 'your plan to quit and focus 100% on the startup'],
+      [
+        'I want to quit and put everything into the startup.',
+        'your plan to quit and put everything into the startup',
+      ],
+      ['I want to quit and work on QuietQuad.', 'your plan to quit and work on QuietQuad'],
+      ['I want to quit and work on the startup.', 'your plan to quit and work on the startup'],
+      ['I want to quit and focus on my app.', 'your plan to quit and focus on your app'],
+      ['I want to quit and focus on my side project.', 'your plan to quit and focus on your side project'],
+      ['Should I quit and make QuietQuad my job?', 'whether to quit and make QuietQuad your job'],
+      ['Should I quit and make this my full-time job?', 'whether to quit and make this your full-time job'],
+      ['Should I leave and start a company with Noor?', 'whether to leave and start a company with Noor'],
+      ['I want to quit and start something with Devin.', 'your plan to quit and start something with Devin'],
+      ['I want to quit and go full-time in the summer.', 'your plan to quit and go full-time in the summer'],
+      ['Should I quit and go full time with Noor?', 'whether to quit and go full time with Noor'],
+      ['I want to quit and give it a go.', 'your plan to quit and give it a go'],
+      ['Should I quit and back myself?', 'whether to quit and back yourself'],
+      ['Should I drop out and do QuietQuad?', 'whether to drop out and do QuietQuad'],
+      ['Should I quit and do the startup?', 'whether to quit and do the startup'],
+      ['Should I quit and apply to YC?', 'whether to quit and apply to YC'],
+      ['Should I quit and get funding?', 'whether to quit and get funding'],
+      ['Should I quit and find a cofounder?', 'whether to quit and find a cofounder'],
+      ['Should I quit and take the startup seriously?', 'whether to quit and take the startup seriously'],
+      ['Should I quit and run the business?', 'whether to quit and run the business'],
+      [
+        'Should I quit and turn this into a real company?',
+        'whether to quit and turn this into a real company',
+      ],
+      ['I want to quit and commit to QuietQuad properly.', 'your plan to quit and commit to QuietQuad'],
+      [
+        'Should I drop out and give QuietQuad a real shot?',
+        'whether to drop out and give QuietQuad a real shot',
+      ],
+      ['I want to quit and apply to YC with Noor.', 'your plan to quit and apply to YC with Noor'],
+      ['Should I leave and do Entrepreneur First?', 'whether to leave and do Entrepreneur First'],
+      [
+        'Should I quit and move to London for the startup?',
+        'whether to quit and move to London for the startup',
+      ],
+      ['I want to quit and hire a small team.', 'your plan to quit and hire a small team'],
+      ['Should we quit and sell to schools instead?', 'whether to quit and sell to schools'],
+      ['Should I quit and grow the business properly?', 'whether to quit and grow the business'],
+      [
+        'I want to quit and scale QuietQuad across campuses.',
+        'your plan to quit and scale QuietQuad across campuses',
+      ],
+      [
+        'Should I quit and dedicate myself to QuietQuad?',
+        'whether to quit and dedicate yourself to QuietQuad',
+      ],
+      ['I want to quit and take the YC offer.', 'your plan to quit and take the YC offer'],
+      ['Should we leave and join Techstars?', 'whether to leave and join Techstars'],
+      ['Should we leave and join the Oxford incubator?', 'whether to leave and join the Oxford incubator'],
+      ['Should I quit then go full time in the summer?', 'whether to quit then go full time in the summer'],
+      [
+        'I need to talk to someone about our cap table lol',
+        'your plan to talk to someone about your cap table',
+      ],
+      ['I need to talk to someone about my pitch deck', 'your plan to talk to someone about your pitch deck'],
+      [
+        "I need to talk to someone about my cofounder's equity",
+        "your plan to talk to someone about your cofounder's equity",
+      ],
+      [
+        'I need to speak to someone about my visa for the accelerator',
+        'your plan to speak to someone about your visa for the accelerator',
+      ],
+      [
+        'I need to talk to someone about my startup idea tbh',
+        'your plan to talk to someone about your startup idea',
+      ],
+      [
+        'I need to talk to someone about my business plan',
+        'your plan to talk to someone about your business plan',
+      ],
+      ['I want to speak to someone about my startup', 'your plan to speak to someone about your startup'],
+      ['I should talk to someone about my idea', 'your idea'],
+      ['I need to talk to someone about my pricing', 'your plan to talk to someone about your pricing'],
+      ['I need to talk to someone about our pricing', 'your plan to talk to someone about your pricing'],
+      [
+        'We need to speak to someone about our contract with Hartwell',
+        'your plan to speak to someone about your contract with Hartwell',
+      ],
+      [
+        "I want to talk to someone about my app's security",
+        "your plan to talk to someone about your app's security",
+      ],
+      ['I need to talk to somebody about my patent', 'your plan to talk to somebody about your patent'],
+      [
+        "I need to talk to someone about my company's taxes",
+        "your plan to talk to someone about your company's taxes",
+      ],
+      [
+        'I need to talk to someone about my investor update',
+        'your plan to talk to someone about your investor update',
+      ],
+      ['Should I talk to someone about my term sheet?', 'whether to talk to someone about your term sheet'],
+      [
+        'I want to chat with someone about my go-to-market',
+        'your plan to chat with someone about your go-to-market',
+      ],
+      ['I need to talk to someone about our pricing rn', 'your plan to talk to someone about your pricing'],
+      ['I need to talk to someone about my cap table', 'your plan to talk to someone about your cap table'],
+      ['I need to speak to someone about my LLC', 'your plan to speak to someone about your LLC'],
+      [
+        'Should I talk to someone about my pricing model?',
+        'whether to talk to someone about your pricing model',
+      ],
+      [
+        'I want to talk to someone about my fundraising strategy',
+        'your plan to talk to someone about your fundraising strategy',
+      ],
+      [
+        'I need to talk to someone about my co-founder agreement',
+        'your plan to talk to someone about your co-founder agreement',
+      ],
+      [
+        'I need to talk to someone about our Hartwell contract',
+        'your plan to talk to someone about your Hartwell contract',
+      ],
+      [
+        'I need to talk to someone about our seed round',
+        'your plan to talk to someone about your seed round',
+      ],
+      [
+        'I need to see a doctor about my insole prototype',
+        'your plan to see a doctor about your insole prototype',
+      ],
+      [
+        'I want to speak to a psychologist about my survey questions',
+        'your plan to speak to a psychologist about your survey questions',
+      ],
+      [
+        'I need to talk to someone about my product roadmap tbh',
+        'your plan to talk to someone about your product roadmap',
+      ],
+      [
+        'Should we talk to someone about our SOC 2 audit?',
+        'whether to talk to someone about your SOC 2 audit',
+      ],
+      ['We got into Entrepreneur First!', 'Entrepreneur First'],
+      ['Should we apply to Entrepreneur First?', 'whether to apply to Entrepreneur First'],
+      ['Mobile First Labs wants a demo.', 'Mobile First Labs'],
+      ['We met Ladies First Ventures yesterday.', 'Ladies First Ventures'],
+      ['Our Entrepreneur First interview is on Friday.', 'your Entrepreneur First interview'],
+      ['Our Founders First application is due Friday.', 'your Founders First application'],
+      ['Should we apply to Founders First?', 'whether to apply to Founders First'],
+      ['Customer First Ventures wants a call.', 'Customer First Ventures'],
+      ['We got into Entrepreneur First', 'Entrepreneur First'],
+      ['Entrepreneur First accepted us!', 'Entrepreneur First'],
+    ] as const) {
+      expect(opener(said(line)), line).toContain(`we talked about ${subject}.`);
+    }
+  });
+
+  it('comes back to a thread or a digest topic of quitting to commit, venture work or a name with "First"', () => {
+    // Before: no thread and no digest topic.
+    for (const topic of [
+      'your plan to quit and work on QuietQuad',
+      'whether to quit and commit to the startup',
+      'your plan to quit and focus on your app',
+      'your plan to leave and join Entrepreneur First',
+      'your plan to quit and put everything into QuietQuad',
+      'whether to leave and join YC',
+      'your plan to quit and focus on your side project',
+      'your plan to quit and go full-time in January',
+      'whether to quit and go full time with Noor',
+      'your plan to quit and give it a go',
+      'whether to quit and apply to YC',
+      'whether to quit and commit to QuietQuad',
+      'your plan to quit and apply to YC',
+      'whether to leave and join Techstars',
+      'your plan to talk to someone about your pitch deck',
+      'your plan to talk to someone about your pricing',
+      'whether to talk to someone about your term sheet',
+      'your plan to talk to someone about your cap table',
+      'whether to talk to someone about your pricing model',
+      'whether to apply to Entrepreneur First',
+    ]) {
+      expect(threadSubject(topic, PEOPLE), topic).toBe(topic);
+      expect(opener(digest(topic)), topic).toContain(`we talked about ${topic}.`);
+    }
+  });
+
+  it('reads a stored opener of quitting to commit, venture work or a name with "First" for its subject', () => {
+    // Before: "fragment".
+    for (const [stored, kind, text] of [
+      [
+        "Welcome back. Last time you said you'd quit and work on QuietQuad. How did it go?",
+        'thread',
+        'your plan to quit and work on QuietQuad',
+      ],
+      [
+        'Welcome back. Last time, we talked about whether to quit and commit to the startup. Where did you land on it?',
+        'question',
+        'whether to quit and commit to the startup',
+      ],
+      [
+        "Welcome back. Last time you said you'd leave and join Entrepreneur First. How did it go?",
+        'thread',
+        'your plan to leave and join Entrepreneur First',
+      ],
+      [
+        "Welcome back. Last time you said you'd quit and focus on your app. How did it go?",
+        'thread',
+        'your plan to quit and focus on your app',
+      ],
+      [
+        "Welcome back. Last time you said you'd quit and work on the startup. How did it go?",
+        'thread',
+        'your plan to quit and work on the startup',
+      ],
+      [
+        'Welcome back. Last time you planned to quit and do YC. How did it go?',
+        'thread',
+        'your plan to quit and do YC',
+      ],
+      [
+        "Welcome back. Last time you said you'd quit and go full-time in January. How did it go?",
+        'thread',
+        'your plan to quit and go full-time in January',
+      ],
+      [
+        "Welcome back. Last time you said you'd leave and join Techstars. How did it go?",
+        'thread',
+        'your plan to leave and join Techstars',
+      ],
+      [
+        'Good to talk again. Last time, we talked about whether to quit and commit to QuietQuad. Where did you land on it?',
+        'question',
+        'whether to quit and commit to QuietQuad',
+      ],
+      [
+        "Welcome back. Last time you said you'd talk to someone about your pitch deck. How did it go?",
+        'thread',
+        'your plan to talk to someone about your pitch deck',
+      ],
+      [
+        "Welcome back. Last time you said you'd talk to someone about your cap table. How did it go?",
+        'thread',
+        'your plan to talk to someone about your cap table',
+      ],
+      [
+        'Welcome back. Last time, we talked about whether to apply to Entrepreneur First. Where did you land on it?',
+        'question',
+        'whether to apply to Entrepreneur First',
+      ],
+    ] as const) {
+      expect(readOpener(stored), stored).toEqual({ kind, text });
+    }
+  });
+});

@@ -1177,3 +1177,412 @@ describe('the differential review of cc29cad', () => {
     }
   });
 });
+
+describe('the differential review of 96fc715', () => {
+  it('never makes a plan of unburdening themselves, said with an adverb, a chat word or a lead-in', () => {
+    // Before: "your plan to vent to someone", "your plan to rant to someone", "your plan to offload to someone".
+    for (const line of [
+      'i just need to vent to someone tbh',
+      'I just need to vent to someone',
+      'I just need to offload to someone',
+      'honestly I just need to vent to someone',
+      'I just need to rant to someone tbh',
+      'I just want to vent to someone rn',
+      'i just need to vent',
+      'I need to vent tbh',
+      'I need to vent to someone',
+      'I need to rant to someone tbh',
+      'I need to get this off my chest tbh',
+      'I just need to get it all off my chest',
+      'i need to unload on someone ngl',
+      'I need to unload on someone',
+      'can I just vent for a sec',
+      'I just want to rant about everything',
+    ]) {
+      expect(topicOf(line)?.text ?? null, line).toBeNull();
+    }
+    for (const subject of [
+      'your plan to vent to someone',
+      'your plan to rant to someone',
+      'your plan to get this off your chest',
+      'whether you can vent for a sec',
+    ]) {
+      expect(isVenting(subject), subject).toBe(true);
+    }
+    // What they vent about is named for itself; what is offloaded or unloaded is a plan.
+    for (const [line, text] of [
+      ['I need to rant to someone about Hartwell', 'Hartwell'],
+      ['I need to vent to someone about the pitch feedback', 'the pitch feedback'],
+      ['We need to offload the servers to AWS.', 'your plan to offload the servers to AWS'],
+      ['We need to unload the van before the pop-up.', 'your plan to unload the van before the pop-up'],
+    ] as const) {
+      expect(topicOf(line)?.text ?? null, line).toBe(text);
+    }
+    expect(isVenting('your plan to offload the servers to AWS')).toBe(false);
+    // What the founder "just" needs or wants is a need of their own, never a plan, as before the adverbs were read;
+    // another adverb still says a plan.
+    for (const line of [
+      'I just need to let off steam',
+      'I just need to sleep',
+      'I just need to clear my head',
+      'I just need to talk to a friend',
+      'I just want to talk to a friend tbh',
+      'I just need to talk this through with someone',
+      'I just want to complain for a minute',
+      'I just need to talk to my mum rn',
+    ]) {
+      expect(topicOf(line)?.text ?? '', line).not.toMatch(/^your plan to/);
+    }
+    expect(topicOf('I still need to call facilities')?.text).toBe('your plan to call facilities');
+    expect(topicOf('I really need to hire a designer')?.text).toBe('your plan to hire a designer');
+  });
+
+  it('never makes a plan of needing to talk to someone, how the founder is said after it', () => {
+    // Before: "your plan to talk to someone honestly like you're not okay".
+    for (const line of [
+      "uh I need to talk to someone honestly like I'm not okay",
+      "I need to talk to someone honestly I'm struggling",
+      "I need to talk to someone like I'm really not okay",
+      "I need to talk to someone honestly I'm not doing well",
+      "I need to talk to someone tbh I'm not ok",
+      "I need to talk to someone honestly I'm not in a good place",
+      "I need to talk to someone I've been struggling",
+      "I really need to talk to someone I feel like I'm drowning",
+    ]) {
+      expect(topicOf(line)?.text ?? null, line).toBeNull();
+    }
+    expect(isVenting("your plan to talk to someone honestly like you're not okay")).toBe(true);
+    // Someone they name is still someone to talk to.
+    expect(topicOf("I need to talk to someone I'm meeting at Hartwell")?.text).toBe(
+      "your plan to talk to someone you're meeting at Hartwell",
+    );
+  });
+
+  it('never splices a name in -ly, or an adverb that opens a sentence, with its verb', () => {
+    // Before: "Kelly emailed Hartwell", "grammarly acquired Quillbot", "officially launched QuietQuad", "your tailor
+    // delivered samples".
+    for (const [line, text] of [
+      ['Kelly emailed Hartwell about the renewal.', 'Kelly'],
+      ['Emily booked demos with five clinics.', 'Emily'],
+      ['Calendly raised prices again.', 'Calendly'],
+      ['Grammarly acquired Quillbot last year.', 'Quillbot'],
+      ['Sally introduced Noor to the dean.', 'Noor'],
+      ["Kimberly approved Hartwell's budget.", "Hartwell's budget"],
+      ['Billy designed onboarding screens for us.', 'onboarding screens'],
+      ['Emily wanted pricing by Friday.', 'Emily'],
+      ['Shelly reviewed contracts for the clinics.', 'Shelly'],
+      ['Emily shared feedback from the ambassadors.', 'Emily'],
+      ['Calendly added round robin scheduling.', 'Calendly'],
+      ['Molly mentioned Hartwell might churn.', 'Hartwell'],
+      ['Kelly finished wireframes for the booking flow.', 'Kelly'],
+      ['Italy banned ChatGPT for a month once.', 'Italy'],
+      ['Officially launched QuietQuad today!', 'QuietQuad'],
+      ['Nearly closed Hartwell before the break.', 'Hartwell'],
+      ['Our purpose attracted investors.', 'your purpose'],
+      ['Our tailor delivered samples on Friday.', 'your tailor'],
+      ['Our tailor stitched prototypes for the pop-up.', 'your tailor'],
+      ['emily booked demos with five clinics', 'the five clinics'],
+    ] as const) {
+      expect(topicOf(line)?.text ?? null, line).toBe(text);
+    }
+    for (const line of [
+      'um so kelly emailed hartwell about the renewal',
+      'so kelly signed hartwell yesterday',
+    ]) {
+      expect(topicOf(line)?.text ?? null, line).toBeNull();
+    }
+    // A compound adjective is still said whole, after a determiner or where the sentence opens.
+    for (const [line, text] of [
+      ['Our newly hired designer starts Monday.', 'your newly hired designer'],
+      ['Our recently launched app is live.', 'your recently launched app'],
+      ['Custom built dashboards take too long.', 'custom built dashboards'],
+      ['Our tailor made pricing for each library confused people.', 'your tailor made pricing'],
+      ['Our hand delivered flyers got a 10% response.', 'your hand delivered flyers'],
+    ] as const) {
+      expect(topicOf(line)?.text ?? null, line).toBe(text);
+    }
+  });
+
+  it('reads quitting to do anything but take up a life elsewhere as a plan', () => {
+    // Before: every one of these was dropped as withdrawal, on every path.
+    for (const [line, text] of [
+      ["I'm going to quit and go full-time in January.", 'your plan to quit and go full-time in January'],
+      ['Should we leave and join Entrepreneur First?', 'whether to leave and join Entrepreneur First'],
+      ['Should I leave and join Y Combinator?', 'whether to leave and join Y Combinator'],
+      ['Should I quit and do YC?', 'whether to quit and do YC'],
+      ['Should I quit and commit to the startup?', 'whether to quit and commit to the startup'],
+      ['I want to quit and give QuietQuad a real shot.', 'your plan to quit and give QuietQuad a real shot'],
+      ['Should I quit and go for it?', 'whether to quit and go for it'],
+      ['Should I drop out and chase this?', 'whether to drop out and chase this'],
+      ['I want to quit and do this properly.', 'your plan to quit and do this properly'],
+      ['I want to quit and grow the business.', 'your plan to quit and grow the business'],
+      ['Should I quit and scale the app?', 'whether to quit and scale the app'],
+      ['Should I quit and hire a team?', 'whether to quit and hire a team'],
+      ['I want to quit and move to London to build it.', 'your plan to quit and move to London to build it'],
+      ['I want to quit and focus 100% on the startup.', 'your plan to quit and focus 100% on the startup'],
+      [
+        'I want to quit and put everything into the startup.',
+        'your plan to quit and put everything into the startup',
+      ],
+      ['I want to quit and work on QuietQuad.', 'your plan to quit and work on QuietQuad'],
+      ['I want to quit and work on the startup.', 'your plan to quit and work on the startup'],
+      ['I want to quit and focus on my app.', 'your plan to quit and focus on your app'],
+      ['I want to quit and focus on my side project.', 'your plan to quit and focus on your side project'],
+      ['Should I quit and make QuietQuad my job?', 'whether to quit and make QuietQuad your job'],
+      ['Should I quit and make this my full-time job?', 'whether to quit and make this your full-time job'],
+      ['Should I leave and start a company with Noor?', 'whether to leave and start a company with Noor'],
+      ['I want to quit and start something with Devin.', 'your plan to quit and start something with Devin'],
+      ['I want to quit and go full-time in the summer.', 'your plan to quit and go full-time in the summer'],
+      ['Should I quit and go full time with Noor?', 'whether to quit and go full time with Noor'],
+      ['I want to quit and give it a go.', 'your plan to quit and give it a go'],
+      ['Should I quit and back myself?', 'whether to quit and back yourself'],
+      ['Should I drop out and do QuietQuad?', 'whether to drop out and do QuietQuad'],
+      ['Should I quit and do the startup?', 'whether to quit and do the startup'],
+      ['Should I quit and apply to YC?', 'whether to quit and apply to YC'],
+      ['Should I quit and get funding?', 'whether to quit and get funding'],
+      ['Should I quit and find a cofounder?', 'whether to quit and find a cofounder'],
+      ['Should I quit and take the startup seriously?', 'whether to quit and take the startup seriously'],
+      ['Should I quit and run the business?', 'whether to quit and run the business'],
+      [
+        'Should I quit and turn this into a real company?',
+        'whether to quit and turn this into a real company',
+      ],
+      ['I want to quit and commit to QuietQuad properly.', 'your plan to quit and commit to QuietQuad'],
+      [
+        'Should I drop out and give QuietQuad a real shot?',
+        'whether to drop out and give QuietQuad a real shot',
+      ],
+      ['I want to quit and apply to YC with Noor.', 'your plan to quit and apply to YC with Noor'],
+      ['Should I leave and do Entrepreneur First?', 'whether to leave and do Entrepreneur First'],
+      [
+        'Should I quit and move to London for the startup?',
+        'whether to quit and move to London for the startup',
+      ],
+      ['I want to quit and hire a small team.', 'your plan to quit and hire a small team'],
+      ['Should we quit and sell to schools instead?', 'whether to quit and sell to schools'],
+      ['Should I quit and grow the business properly?', 'whether to quit and grow the business'],
+      [
+        'I want to quit and scale QuietQuad across campuses.',
+        'your plan to quit and scale QuietQuad across campuses',
+      ],
+      [
+        'Should I quit and dedicate myself to QuietQuad?',
+        'whether to quit and dedicate yourself to QuietQuad',
+      ],
+      ['I want to quit and take the YC offer.', 'your plan to quit and take the YC offer'],
+      ['Should we leave and join Techstars?', 'whether to leave and join Techstars'],
+      ['Should we leave and join the Oxford incubator?', 'whether to leave and join the Oxford incubator'],
+      ['Should I quit then go full time in the summer?', 'whether to quit then go full time in the summer'],
+    ] as const) {
+      expect(topicOf(line)?.text ?? null, line).toBe(text);
+      expect(isVenting(text), text).toBe(false);
+    }
+    for (const subject of [
+      'your plan to quit and work on QuietQuad',
+      'whether to quit and commit to the startup',
+      'your plan to quit and focus on your app',
+      'your plan to leave and join Entrepreneur First',
+      'your plan to quit and put everything into QuietQuad',
+      'whether to leave and join YC',
+      'your plan to quit and focus on your side project',
+      'your plan to quit and go full-time in January',
+      'whether to quit and go full time with Noor',
+      'your plan to quit and give it a go',
+      'whether to quit and apply to YC',
+      'whether to quit and commit to QuietQuad',
+      'your plan to quit and apply to YC',
+      'whether to leave and join Techstars',
+    ]) {
+      expect(isVenting(subject), subject).toBe(false);
+    }
+    // A job, a course, work for someone else, going home or away, or their own life after it is still withdrawal.
+    for (const line of [
+      'I want to quit and go home.',
+      'I want to quit and travel for a year.',
+      'I want to quit and travel for a bit.',
+      'I want to quit and sleep for a week.',
+      'Should I drop out and get a job?',
+      'I want to give up and get a full-time job.',
+      'Should I leave and get a stable job?',
+      'I want to quit and get a full-time role somewhere.',
+      'should i just quit and go full time at my internship',
+      'I want to quit and go full time at Deloitte.',
+      'Should I just quit and go full time at the bank?',
+      'I want to leave and work full time for my dad.',
+      'Should I give up and join a bigger startup?',
+      'Should I quit and go back to consulting?',
+      'Should I quit and do a masters?',
+      'I want to quit and concentrate on my degree.',
+      'Should I quit and focus on my degree?',
+      'Should I quit and focus on my family?',
+      'I want to quit and focus on my mental health.',
+      'I want to quit and focus on myself.',
+      'I want to quit and spend more time with my family.',
+    ]) {
+      expect(topicOf(line)?.text ?? null, line).toBeNull();
+    }
+    for (const subject of [
+      'whether to drop out and get a job',
+      'your plan to quit and go home',
+      'whether to give up and get a normal job',
+      'whether to quit and focus on your degree',
+      'your plan to quit and do a masters',
+      'whether to quit and go back to consulting',
+      'your plan to leave and get a stable job',
+      'whether to quit and go full time at the bank',
+    ]) {
+      expect(isVenting(subject), subject).toBe(true);
+    }
+    // What of theirs the venture makes is no life of their own.
+    expect(topicOf('Should I quit and focus on my health startup?')?.text).toBe(
+      'whether to quit and focus on your health startup',
+    );
+  });
+
+  it('reads "about my" as the founder’s own only when it names their own life, mind or body', () => {
+    // Before: the invitation, on every path.
+    for (const [line, text] of [
+      [
+        'I need to talk to someone about our cap table lol',
+        'your plan to talk to someone about your cap table',
+      ],
+      ['I need to talk to someone about my pitch deck', 'your plan to talk to someone about your pitch deck'],
+      [
+        "I need to talk to someone about my cofounder's equity",
+        "your plan to talk to someone about your cofounder's equity",
+      ],
+      [
+        'I need to speak to someone about my visa for the accelerator',
+        'your plan to speak to someone about your visa for the accelerator',
+      ],
+      [
+        'I need to talk to someone about my startup idea tbh',
+        'your plan to talk to someone about your startup idea',
+      ],
+      [
+        'I need to talk to someone about my business plan',
+        'your plan to talk to someone about your business plan',
+      ],
+      ['I want to speak to someone about my startup', 'your plan to speak to someone about your startup'],
+      ['I should talk to someone about my idea', 'your idea'],
+      ['I need to talk to someone about my pricing', 'your plan to talk to someone about your pricing'],
+      ['I need to talk to someone about our pricing', 'your plan to talk to someone about your pricing'],
+      [
+        'We need to speak to someone about our contract with Hartwell',
+        'your plan to speak to someone about your contract with Hartwell',
+      ],
+      [
+        "I want to talk to someone about my app's security",
+        "your plan to talk to someone about your app's security",
+      ],
+      ['I need to talk to somebody about my patent', 'your plan to talk to somebody about your patent'],
+      [
+        "I need to talk to someone about my company's taxes",
+        "your plan to talk to someone about your company's taxes",
+      ],
+      [
+        'I need to talk to someone about my investor update',
+        'your plan to talk to someone about your investor update',
+      ],
+      ['Should I talk to someone about my term sheet?', 'whether to talk to someone about your term sheet'],
+      [
+        'I want to chat with someone about my go-to-market',
+        'your plan to chat with someone about your go-to-market',
+      ],
+      ['I need to talk to someone about our pricing rn', 'your plan to talk to someone about your pricing'],
+      ['I need to talk to someone about my cap table', 'your plan to talk to someone about your cap table'],
+      ['I need to speak to someone about my LLC', 'your plan to speak to someone about your LLC'],
+      [
+        'Should I talk to someone about my pricing model?',
+        'whether to talk to someone about your pricing model',
+      ],
+      [
+        'I want to talk to someone about my fundraising strategy',
+        'your plan to talk to someone about your fundraising strategy',
+      ],
+      [
+        'I need to talk to someone about my co-founder agreement',
+        'your plan to talk to someone about your co-founder agreement',
+      ],
+      [
+        'I need to talk to someone about our Hartwell contract',
+        'your plan to talk to someone about your Hartwell contract',
+      ],
+      [
+        'I need to talk to someone about our seed round',
+        'your plan to talk to someone about your seed round',
+      ],
+      [
+        'I need to see a doctor about my insole prototype',
+        'your plan to see a doctor about your insole prototype',
+      ],
+      [
+        'I want to speak to a psychologist about my survey questions',
+        'your plan to speak to a psychologist about your survey questions',
+      ],
+      [
+        'I need to talk to someone about my product roadmap tbh',
+        'your plan to talk to someone about your product roadmap',
+      ],
+      [
+        'Should we talk to someone about our SOC 2 audit?',
+        'whether to talk to someone about your SOC 2 audit',
+      ],
+    ] as const) {
+      expect(topicOf(line)?.text ?? null, line).toBe(text);
+    }
+    for (const subject of [
+      'your plan to talk to someone about your pitch deck',
+      'your plan to talk to someone about your pricing',
+      'whether to talk to someone about your term sheet',
+      'your plan to talk to someone about your cap table',
+      'whether to talk to someone about your pricing model',
+      'your plan to see a doctor about your insole prototype',
+      'your plan to speak to a psychologist about your survey questions',
+    ]) {
+      expect(isVenting(subject), subject).toBe(false);
+    }
+    // Their own life, mind or body is still private.
+    for (const line of [
+      'I need to see a doctor about my back.',
+      'I need to see a doctor about my wrist',
+      "I need to talk to someone about how I'm feeling.",
+      'I need to talk to someone about my mental health',
+      'I need to talk to someone about my burnout',
+      'I need to talk to someone about my problems',
+    ]) {
+      expect(topicOf(line)?.text ?? null, line).toBeNull();
+    }
+    expect(isVenting('your plan to see a doctor about your back')).toBe(true);
+    expect(isVenting('your plan to talk to someone about your mental health')).toBe(true);
+    // Loose troubles are theirs only when nothing is named after them.
+    expect(topicOf('I need to talk to someone about my problems with Stripe')?.text).toBe(
+      'your plan to talk to someone about your problems with Stripe',
+    );
+  });
+
+  it('keeps a name with "First" in it whole', () => {
+    // Before: the invitation, "First Labs", "your Entrepreneur", "due Friday", "whether to apply to Entrepreneur".
+    for (const [line, text] of [
+      ['We got into Entrepreneur First!', 'Entrepreneur First'],
+      ['Should we apply to Entrepreneur First?', 'whether to apply to Entrepreneur First'],
+      ['Mobile First Labs wants a demo.', 'Mobile First Labs'],
+      ['We met Ladies First Ventures yesterday.', 'Ladies First Ventures'],
+      ['Our Entrepreneur First interview is on Friday.', 'your Entrepreneur First interview'],
+      ['Our Founders First application is due Friday.', 'your Founders First application'],
+      ['Should we apply to Founders First?', 'whether to apply to Founders First'],
+      ['Customer First Ventures wants a call.', 'Customer First Ventures'],
+      ['We got into Entrepreneur First', 'Entrepreneur First'],
+      ['Entrepreneur First accepted us!', 'Entrepreneur First'],
+      ['First Round Capital wants a call.', 'First Round Capital'],
+    ] as const) {
+      expect(topicOf(line)?.text ?? null, line).toBe(text);
+    }
+    expect(readsAsSubject('whether to apply to Entrepreneur First')).toBe(true);
+    expect(withoutDiscourseWords('whether to apply to Entrepreneur First')).toBe(
+      'whether to apply to Entrepreneur First',
+    );
+    // The founder's own "first" is still no part of what they meant.
+    expect(withoutDiscourseWords('a short pilot first')).toBe('a short pilot');
+  });
+});

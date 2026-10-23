@@ -427,6 +427,20 @@ function isMannerAdverb(word: string): boolean {
   return MANNER.has(w) || (/^[a-z]{4,}ly$/.test(w) && !LY_WORDS.has(w));
 }
 /**
+ * Whether `word` (a discourse word, after `before`) is part of a name: written with its capital, the rest in lower case,
+ * after a capitalised word that is no "I" ("Entrepreneur First", "Founders First", "Mobile First Labs": the differential
+ * review of 96fc715 heard "whether to apply to Entrepreneur?" and "shall we pick up First Labs?"), never where a
+ * sentence opens, nor an adverb in capitals ("call Hartwell ASAP").
+ */
+function inAName(word: string, before: string | undefined): boolean {
+  return (
+    before !== undefined &&
+    /^\p{Lu}\p{Ll}/u.test(word) &&
+    /^\p{Lu}/u.test(before) &&
+    !/^I(?:['’]\p{Ll}+)?$/u.test(before.replace(/[^\p{L}'’]+$/u, ''))
+  );
+}
+/**
  * Words before a last discourse word that make it one side of an alternative ("now or later", "sooner than later",
  * "now vs later", "annually versus monthly": the review of e9e49fb heard "whether to hire now vs?").
  */
@@ -440,11 +454,12 @@ const LOOSE_TAIL =
   /,?\s+(?:as well|for now|right now|so far|at all|after all|for sure|of course|or something(?: like that)?|or so|or whatever|and stuff|and everything|and all that|and so on|etc\.?|you know|(?<!\b(?:what|how|that|which|who|whom|where|when|why|whatever|than|as|if|whether|because)\s)(?:i|we|you)\s+(?:guess|think|suppose|mean|believe|reckon|figure|feel like))$/i;
 /**
  * Fixed phrases that end on a discourse word, never cut (the review of 1cac704: "We want to break even" was "your plan
- * to break"): "break even", "buy now, pay later", "put students first", "customers come first", "API first", "mobile
- * first" (the review of e9e49fb heard "your plan to build it API").
+ * to break"): "break even", "buy now, pay later", "put students first", "take the startup seriously" (the differential
+ * review of 96fc715 heard "whether to quit and take the startup"), "customers come first", "API first", "mobile first"
+ * (the review of e9e49fb heard "your plan to build it API").
  */
 const FIXED_TAIL =
-  /\b(?:break|breaks|breaking|broke|broken)\s+even$|\bpay(?:s|ing)?\s+later$|\b(?:put|puts|putting)\s+(?:[\p{L}\p{N}'’-]+\s+){1,4}first$|\b(?:come|comes|coming|came|go|goes|going|went)\s+first$|\b(?:api|mobile|cloud|offline|online|remote|privacy|security|safety|design|product|customers?|students?|users?|people|patients?|teachers?|developers?|creators?|community|local|digital|web|desktop|ai|data|mission|platform|email|text|voice|video|content|impact|quality|b2b|b2c)\s+first$/iu;
+  /\b(?:break|breaks|breaking|broke|broken)\s+even$|\bpay(?:s|ing)?\s+later$|\b(?:put|puts|putting)\s+(?:[\p{L}\p{N}'’-]+\s+){1,4}first$|\b(?:take|takes|taking|took|taken)\s+(?:[\p{L}\p{N}'’-]+\s+){1,4}seriously$|\b(?:come|comes|coming|came|go|goes|going|went)\s+first$|\b(?:api|mobile|cloud|offline|online|remote|privacy|security|safety|design|product|customers?|students?|users?|people|patients?|teachers?|developers?|creators?|community|local|digital|web|desktop|ai|data|mission|platform|email|text|voice|video|content|impact|quality|b2b|b2c)\s+first$/iu;
 /** Particles of a phrasal verb: nothing a plan does by themselves ("step back", "give up"). */
 const PARTICLES = new Set('up down out off back away on over in around aside along through'.split(' '));
 /** Those that end a phrasal verb well, never a preposition left without its object ("add up", not "focus on"). */
@@ -523,6 +538,7 @@ function inAlternative(words: readonly string[]): boolean {
 function endsAsDiscourse(words: readonly string[], verbPhrase = false): boolean {
   if (LOOSE_TAIL.test(words.join(' '))) return true;
   const lastWord = words.at(-1) ?? '';
+  if (inAName(lastWord, words.at(-2))) return false;
   const last = bare(lastWord);
   const timing = TIMING.has(last) || (!DISCOURSE_WORDS.has(last) && isMannerAdverb(lastWord));
   if (!timing && !DISCOURSE_WORDS.has(last)) return false;
@@ -737,20 +753,33 @@ const DEMONSTRATIVES = new Set(['this', 'that', 'these', 'those']);
  * adverb in -ly does ("newly built", "specially made"): {@link compoundParticiple}.
  */
 const BEFORE_A_PARTICIPLE = new Set('custom purpose hand home self tailor'.split(' '));
+/**
+ * Those that are a noun far more often, with the one participle they make a compound adjective with ("purpose built",
+ * "tailor made"), never another verb after them ("Our purpose attracted investors", "Our tailor delivered samples": the
+ * differential review of 96fc715).
+ */
+const ONLY_WITH: Readonly<Record<string, string>> = { purpose: 'built', tailor: 'made' };
 
 /**
- * Whether `token` (a participle at `raw[j]`, after `before`, the one word of a phrase after its determiner or at the
- * sentence's start) is the second half of a compound adjective, the noun it describes after it ("our custom built CRM",
- * "a purpose built CRM", "the newly built map": the differential review of cc29cad heard "shall we pick up your
- * custom?"); never the verb after a phrase's noun ("the team built a prototype", "Noor recently hired engineers").
+ * Whether `token` (a participle at `raw[j]`, after `before`, the one word of a phrase after its determiner, or at the
+ * sentence's start when `determined` is false) is the second half of a compound adjective, the noun it describes after
+ * it ("our custom built CRM", "a purpose built CRM", "Custom built dashboards", "the newly built map": the differential
+ * review of cc29cad heard "shall we pick up your custom?"); never the verb after a phrase's noun ("the team built a
+ * prototype", "Noor recently hired engineers"), nor after a name in -ly ("Kelly emailed Hartwell", "Calendly raised
+ * prices") or an adverb that opens a sentence ("Officially launched QuietQuad": the differential review of 96fc715
+ * heard "shall we pick up Kelly emailed Hartwell?"): an adverb in -ly is one after a determiner, in lower case.
  */
-function compoundParticiple(raw: readonly string[], j: number, before: string): boolean {
+function compoundParticiple(raw: readonly string[], j: number, before: string, determined: boolean): boolean {
   const token = raw[j] ?? '';
   const lower = bare(token);
   const prior = bare(before);
   if (!(DESCRIBING_PARTICIPLES.has(lower) || lower === 'made' || /^[a-z]{3,}ed$/.test(lower))) return false;
-  if (!(BEFORE_A_PARTICIPLE.has(prior) || (/^[a-z]{3,}ly$/.test(prior) && !LY_WORDS.has(prior))))
+  if (BEFORE_A_PARTICIPLE.has(prior)) {
+    const only = ONLY_WITH[prior];
+    if (only !== undefined && lower !== only) return false;
+  } else if (!determined || !/^\p{Ll}/u.test(before) || !/^[a-z]{3,}ly$/.test(prior) || LY_WORDS.has(prior)) {
     return false;
+  }
   // Its noun follows, in the same clause.
   const next = raw[j + 1];
   if (next === undefined || /[,.;:!?)]$/.test(token)) return false;
@@ -930,12 +959,19 @@ function nounPhrase(sentence: string): Phrase | null {
           !DEMONSTRATIVES.has(determiner) &&
           content === 0 &&
           DESCRIBING_PARTICIPLES.has(lower)) ||
-        (content === 1 && (determiner !== null || i === 0) && compoundParticiple(raw, j, words.at(-1) ?? ''));
+        (content === 1 &&
+          (determiner !== null || i === 0) &&
+          compoundParticiple(raw, j, words.at(-1) ?? '', determiner !== null));
       if (!describing && (word === '' || BREAKERS.has(lower) || S_VERBS.has(lower) || DETERMINERS.has(lower)))
         break;
       // "the advisor last week": "last" starts a time, not part of the phrase; "a short pilot instead": an adverb of
-      // the line ends it (the voice suite on 9a2a41f).
-      if (content > 0 && (UNFINISHED.has(lower) || DISCOURSE_WORDS.has(lower) || ENDS_A_PHRASE.has(lower)))
+      // the line ends it (the voice suite on 9a2a41f), unless it is written with its capital after a capitalised word,
+      // a name's ("Entrepreneur First", "Mobile First Labs": {@link inAName}).
+      if (
+        content > 0 &&
+        (UNFINISHED.has(lower) ||
+          ((DISCOURSE_WORDS.has(lower) || ENDS_A_PHRASE.has(lower)) && !inAName(word, words.at(-1))))
+      )
         break;
       if (/^(?:her|his|him|she|he)$/.test(lower)) {
         rejected = true;
@@ -1136,9 +1172,14 @@ const PLANNING = new RegExp(
   `^(?:we|i)(?:'re| are|'m| am)?\\s+${ADVERBS}(?:planning|going|hoping|trying|aiming|about)\\s+to\\s+(.+)$`,
   'i',
 );
-/** "I (still) need to call", "I will call"; never "I have a few minutes" (a possession is no plan). */
+/**
+ * "I (still) need to call", "I will call"; never "I have a few minutes" (a possession is no plan), nor what the founder
+ * "just" needs or wants ("I just need to vent to someone", "I just need to sleep", "I just want to talk to a friend":
+ * the differential review of 96fc715 heard "shall we pick up your plan to vent to someone?"), a need of their own, as it
+ * was before the adverbs were read.
+ */
 const PLANS_TO = new RegExp(
-  `^(?:we|i)\\s+${ADVERBS}(?:(?:plan|want|need|have|hope|intend)\\s+to|will|'ll)\\s+(.+)$`,
+  `^(?:we|i)\\s+${ADVERBS.replace('|just|', '|')}(?:(?:plan|want|need|have|hope|intend)\\s+to|will|'ll)\\s+(.+)$`,
   'i',
 );
 
@@ -1329,9 +1370,48 @@ const IN_THERAPY =
  */
 const TALK_TO_SOMEONE =
   /(?<![\p{L}'])(?:talk|speak|chat)(?:s|ed|ing)?\s+(?:to|with)\s+(?:someone|somebody|anyone|anybody)(?![\p{L}'’-])/giu;
-/** What after a carer or "someone" says it is the founder's own: about themselves, how they feel, all of it. */
+/**
+ * What after a carer or "someone" says it is the founder's own: about themselves, how they feel, all of it, or their
+ * own life, mind or body ({@link OWN_MATTERS}); never "about my pitch deck", "about our seed round" or "a doctor about my
+ * insole prototype" (the differential review of 96fc715: any "about my" had read as their own health).
+ */
 const ABOUT_THEMSELVES =
-  /^\s*(?:about|for|because\s+of|regarding)\s+(?:my|your|me|myself|yourself|how\s+(?:i|you)(?:['’](?:m|re|ve))?|what(?:['’]s|\s+is)\s+going\s+on|the\s+stress|stress|everything|things|it|this|that|all\s+(?:this|of\s+(?:it|this)))(?![\p{L}'’-])/iu;
+  /^\s*(?:about|for|because\s+of|regarding)\s+(?:me|myself|yourself|how\s+(?:i|you)(?:['’](?:m|re|ve))?|what(?:['’]s|\s+is)\s+going\s+on|the\s+stress|stress|everything|things|it|this|that|all\s+(?:this|of\s+(?:it|this)))(?![\p{L}'’-])/iu;
+/** "About my" and what of their own is named after it ("about my feelings", "about my back", "about my pitch deck"). */
+const ABOUT_MY =
+  /^\s*(?:about|for|because\s+of|regarding)\s+(?:my|your)\s+(?:own\s+)?([\p{L}'’-]+(?:\s+health)?)/iu;
+/**
+ * The founder's own life, mind or body, as what they would see a carer or talk to someone about, unless a noun after it
+ * makes it a product's name ("my mental health app", "my family business": {@link compoundAfter}).
+ */
+const OWN_MATTERS = new Set(
+  (
+    'feelings emotions mood mind stress anxiety depression burnout health mental-health wellbeing well-being sleep ' +
+    'life family marriage breakup divorce grief self-esteem loneliness back knee knees neck shoulder shoulders wrist ' +
+    'ankle hip chest heart stomach eyes skin headaches migraines symptoms condition injury pain diagnosis meds ' +
+    'medication prescription therapy drinking eating weight body parents mum mom dad boyfriend girlfriend wife ' +
+    'husband kids childhood trauma'
+  ).split(' '),
+);
+/**
+ * Their own troubles, said loosely: their own only when nothing named follows ("about my problems", never "about my
+ * problems with Stripe" or "about my thoughts on the pricing").
+ */
+const OWN_TROUBLES = new Set(
+  'problems issues struggles situation thoughts worries fears relationship confidence'.split(' '),
+);
+/** How a founder is when they are not okay ("struggling", "overwhelmed", "a mess", "not doing well"). */
+const A_STATE = String.raw`(?:(?:really|just|so|honestly|actually|literally|totally|completely|kind\s+of|kinda|very|pretty|feeling)\s+)*(?:not\s+(?:(?:really|so|that|too|very)\s+)?(?:okay|ok|alright|all\s+right|fine|good|great|well|coping|doing\s+(?:well|good|great|okay|ok|fine|alright)|in\s+a\s+good\s+(?:place|way|headspace|spot))|struggling|stressed|overwhelmed|exhausted|anxious|depressed|lonely|alone|lost|scared|terrified|drowning|hopeless|empty|broken|awful|terrible|horrible|miserable|numb|sad|a\s+(?:mess|wreck|failure)|falling\s+apart|burn(?:t|ed|ing)\s+out|losing\s+(?:it|my\s+mind|your\s+mind)|freaking\s+out|spiral(?:l)?ing|breaking\s+down|in\s+a\s+(?:bad|dark)\s+(?:place|way|spot)|going\s+through\s+(?:a\s+lot|it|stuff|something))`;
+/**
+ * The founder's own state, said after needing to talk to someone with no word to join it ("I need to talk to someone
+ * honestly like I'm not okay", "… honestly I'm struggling", "… I feel so lost", "… I can't cope": the differential
+ * review of 96fc715 heard "your plan to talk to someone honestly like you're not okay"); never someone they name ("talk
+ * to someone I'm meeting at Hartwell", "someone I can't reach").
+ */
+const OWN_STATE = new RegExp(
+  String.raw`^\s*(?:(?:like|honestly|tbh|ngl|literally|just|really|so|and|cause|cos|coz|cuz|um|uh|umm)[\s,]+)*(?:i|you)(?:(?:['’]m|['’]re|\s+am|\s+are|(?:['’]ve|\s+have)\s+been)\s+${A_STATE}|\s+(?:feel|felt)\s+(?:like\s+(?:(?:i|you)(?:['’]m|['’]re|\s+am|\s+are)\s+)?)?${A_STATE}|\s+(?:can['’]?t|cannot)\s+(?:cope|do\s+this\s+any\s*more|handle\s+(?:it|this)|take\s+(?:it|this)|keep\s+going|go\s+on|stop\s+crying|sleep|breathe))(?![\p{L}'’-])`,
+  'iu',
+);
 /** An appointment of their own ("I have a doctor appointment on Friday", "your therapy session"). */
 const OWN_APPOINTMENT =
   /(?<![\p{L}'])(?:(?:my|your)\s+(?:own\s+)?|(?:i|you)(?:['’]ve|\s+have|\s+had|\s+got|['’]ve\s+got|\s+have\s+got|\s+need|\s+booked|\s+made)\s+(?:a|an|another)\s+)(?:doctor|gp|dentist|hospital|medical|therapy|therapist|psychiatrist|psychologist|counsell?or)(?:['’]s)?\s+(?:appointment|visit|check-?up|session)s?(?![\p{L}'’-])/giu;
@@ -1379,6 +1459,26 @@ function compoundAfter(tail: string): boolean {
 }
 
 /**
+ * Whether what follows needing to talk to someone, unburdening themselves or a carer of no one's (`tail`) says it is
+ * the founder's own: it says how they are ({@link OWN_STATE}), the rest of its clause names nothing, or it is about
+ * themselves or their own life, mind or body ({@link ABOUT_THEMSELVES}, {@link OWN_MATTERS}, {@link OWN_TROUBLES}).
+ * Chat words name nothing ("I just need to talk to someone tbh", "… ngl", "… rn", "… atm": the differential review of
+ * cc29cad heard "we talked about your plan to talk to someone"): the clause is read as it would be written
+ * ({@link tidyFounderWords}).
+ */
+function aboutThemselves(tail: string): boolean {
+  if (OWN_STATE.test(tail)) return true;
+  const rest = tidyFounderWords(tail.split(CLAUSE_END)[0] ?? '');
+  if (ABOUT_THEMSELVES.test(rest) || !namesSomething(rest.replace(RIGHT_NOW, ''))) return true;
+  const mine = ABOUT_MY.exec(rest);
+  if (mine?.[1] === undefined) return false;
+  const what = bare(mine[1]).replace(/\s+/g, '-');
+  const following = rest.slice(mine.index + mine[0].length);
+  if (OWN_TROUBLES.has(what)) return !namesSomething(following.replace(RIGHT_NOW, ''));
+  return OWN_MATTERS.has(what) && !compoundAfter(following);
+}
+
+/**
  * Who `text` is said by, so whose "my" and "your" are the founder's: the founder's own line ("my therapist"; "your
  * anxiety" there is someone else's: "our app helps with your anxiety before exams"), or what the vEIR says to them, a
  * topic, a thread or an opener ("your therapist", "your plan to see your therapist").
@@ -1397,26 +1497,17 @@ function privateHealth(text: string, speaker: Speaker): boolean {
   const theirOwn = (opening: string): boolean =>
     speaker === 'veir' || !/^(?:your|you)(?![\p{L}])/iu.test(opening);
   const after = (m: RegExpMatchArray): string => text.slice((m.index ?? 0) + m[0].length);
-  /**
-   * The rest of the clause names nothing, or it is about themselves. Chat words name nothing ("I just need to talk to
-   * someone tbh", "… ngl", "… rn", "… atm": the differential review of cc29cad heard "we talked about your plan to talk
-   * to someone"): the clause is read as it would be written ({@link tidyFounderWords}).
-   */
-  const aboutThem = (tail: string): boolean => {
-    const rest = tidyFounderWords(tail.split(CLAUSE_END)[0] ?? '');
-    return ABOUT_THEMSELVES.test(rest) || !namesSomething(rest.replace(RIGHT_NOW, ''));
-  };
   for (const pattern of [OWN_APPOINTMENT, DIAGNOSED, FAMILY_HEALTH])
     for (const m of text.matchAll(pattern)) if (theirOwn(m[0])) return true;
   for (const m of text.matchAll(SEEING_A_CARER)) {
     const owner = (m[1] ?? '').toLowerCase();
     if (owner === 'my' || owner === 'your') {
       if (theirOwn(owner) && !compoundAfter(after(m))) return true;
-    } else if (aboutThem(after(m))) return true;
+    } else if (aboutThemselves(after(m))) return true;
   }
   for (const m of text.matchAll(OWN_HEALTH)) if (theirOwn(m[0]) && !compoundAfter(after(m))) return true;
   for (const m of text.matchAll(IN_THERAPY)) if (!compoundAfter(after(m))) return true;
-  for (const m of text.matchAll(TALK_TO_SOMEONE)) if (aboutThem(after(m))) return true;
+  for (const m of text.matchAll(TALK_TO_SOMEONE)) if (aboutThemselves(after(m))) return true;
   return false;
 }
 
@@ -1427,6 +1518,21 @@ function privateHealth(text: string, speaker: Speaker): boolean {
 function distressIn(text: string, speaker: Speaker): boolean {
   return DISTRESS_IN_A_SENTENCE.test(text) || privateHealth(text, speaker);
 }
+
+/**
+ * Unburdening themselves: venting, ranting, offloading or unloading, to someone or not, or getting it off their chest
+ * (the differential review of 96fc715 heard "shall we pick up your plan to vent to someone?" for "I just need to vent to
+ * someone"): venting when what follows is theirs or names nothing ({@link aboutThemselves}: "vent to someone tbh",
+ * "vent for a sec"); what they vent about is the topic when it names something ("rant to someone about Hartwell" is
+ * about Hartwell); what is offloaded or unloaded is a plan ("offload the servers to AWS").
+ */
+const UNBURDENING =
+  /^(?:(?:vent|rant|offload|unload|unburden)(?:s|ed|ing)?(?:\s+(?:myself|yourself))?(?:\s+(?:to|on|with|at)\s+(?:someone|somebody|anyone|anybody|people|you))?|(?:get(?:s|ting)?|got)\s+(?:(?:this|that|it|things|something|everything)(?:\s+all)?|all\s+(?:this|that|of\s+(?:this|it)))\s+off\s+(?:my|your)\s+chest)(?![\p{L}'’-])(.*)$/iu;
+/** Getting something off their chest, wherever it is said ("I just need to get it all off my chest"). */
+const OFF_THEIR_CHEST =
+  /(?<![\p{L}'])(?:get(?:s|ting)?|got)\s+(?:[\p{L}'’]+\s+){0,3}off\s+(?:my|your)\s+chest(?![\p{L}'’-])/iu;
+/** "For a sec": how long, never what. */
+const A_SEC = /(?<![\p{L}'’])(?:for\s+)?(?:a\s+)?secs?(?![\p{L}'’])/giu;
 
 /**
  * Breaking down: distress when nothing is named after it ("I broke down in front of the team"), a plan when what
@@ -1472,46 +1578,74 @@ function fallsApart(sentence: string): boolean {
 const WITHDRAWING =
   /^(?:(?:giv(?:e|es|ing)|gave)\s+up|quit(?:s|ting)?|stop(?:s|ped|ping)?|end(?:s|ed|ing)?|leav(?:e|es|ing)|kill(?:s|ed|ing)?|step(?:s|ped|ping)?\s+(?:back|away|down|aside)|(?:run(?:s|ning)?|ran|get(?:s|ting)?|got|walk(?:s|ing|ed)?)\s+away|shut(?:s|ting)?\s+(?:it\s+|everything\s+)?down|wind(?:s|ing)?\s+(?:it\s+|everything\s+)?down|drop(?:s|ped|ping)?\s+out|abandon(?:s|ed|ing)?|mov(?:e|es|ed|ing)\s+on|clos(?:e|es|ed|ing)(?:\s+(?:it\s+)?(?:up|down))?|pull(?:s|ed|ing)?\s+the\s+plug|keep(?:s|ing)?\s+going|kept\s+going|tak(?:e|es|ing)\s+a\s+break|disappear(?:s|ed|ing)?|hid(?:e|es|ing))(?![\p{L}'])\s*(.*)$/iu;
 /**
- * Quitting or leaving, joined to what comes after ("quit and get a normal job", "leave and travel"): withdrawal, unless
- * what comes after commits them to the venture ({@link intoTheVenture}).
+ * Quitting or leaving, joined to what comes after ("quit and get a normal job", "leave and travel"): withdrawal when
+ * what comes after is a life elsewhere ({@link leavesForElsewhere}); a plan otherwise ("quit and go full time", "quit
+ * and work on the startup": what they leave is then their job or their course).
  */
 const QUITS_AND =
   /^(?:quit(?:s|ting)?|(?:giv(?:e|es|ing)|gave)\s+up|leav(?:e|es|ing)|(?:walk(?:s|ing|ed)?|run(?:s|ning)?|ran)\s+away|drop(?:s|ped|ping)?\s+out)\s+(?:and|so|then)\s+(?:then\s+)?(.*)$/iu;
-/**
- * Going full time ("go full time on the startup", "work on QuietQuad full time", "do this full time"), never a
- * full-time job elsewhere ("get a full-time job", "work full time at a bank").
- */
-const FULL_TIME =
-  /(?<![\p{L}'])full[\s-]?time(?![\p{L}'-])(?!\s+(?:job|jobs|role|roles|position|work|gig|employment|contract|offer|at|for|with|in)(?![\p{L}'-]))/iu;
-/**
- * A move of the venture's or a start of the founder's own: starting their own, building or rebuilding, launching,
- * rebranding, shipping, pivoting, raising a round, going all in, doubling down, joining an accelerator ("leave and
- * start my own thing", "quit and pivot to B2B", "quit and rebuild the app", "leave and join the other accelerator").
- */
-const VENTURE_MOVE =
-  /^(?:start(?:s|ed|ing)?\s+(?:my|your|our|their)\s+own|(?:re)?build(?:s|ing)?|(?:re)?launch(?:es|ed|ing)?|rebrand(?:s|ed|ing)?|ship(?:s|ped|ping)?|pivot(?:s|ed|ing)?|fundrais(?:e|es|ed|ing)|rais(?:e|es|ed|ing)\s+(?:(?:a|an|the|our|your|my|some|more)\s+)?(?:(?:pre-?)?seed\s+)?(?:money|funding|funds|capital|round|seed|investment)|go(?:es|ing)?\s+all[\s-]in|double(?:s|d)?\s+down|join(?:s|ed|ing)?\s+(?:(?:the|an?|another|our|your)\s+)?(?:other\s+|different\s+|new\s+)?(?:accelerator|incubator|cohort|startup\s+(?:program(?:me)?|studio))s?)(?![\p{L}'-])/iu;
-/** Focusing on something: the venture, unless it is the founder's own life ("focus on my exams", "focus on myself"). */
-const FOCUS_ON =
-  /^(?:focus(?:es|ed|ing)?|concentrat(?:e|es|ed|ing))\s+(?:(?:fully|only|solely|entirely)\s+)?on\s+(.+)$/iu;
-const OWN_LIFE =
-  /^(?:my|your|myself|yourself|me|exams?|studies|studying|school|uni|university|college|family|health|kids|life|wellbeing|well-being|sleep|recovery|recovering)(?![\p{L}'-])/iu;
 /** A job, a course or a career elsewhere: what quitting to do is withdrawal ("quit and get a full-time job"). */
 const ELSEWHERE =
   /(?<![\p{L}'])(?:jobs?|employment|employer|career|salary|degree|masters|master's|phd|mba|grad\s+scheme|graduate\s+scheme|internship|corporate)(?![\p{L}'-])/iu;
+/** The venture made their job ("make QuietQuad my job", "make this my full-time job"): no job elsewhere. */
+const MADE_THEIR_JOB =
+  /(?<![\p{L}'])mak(?:e|es|ing)\s+(?:[\p{L}\p{N}'’-]+\s+){1,3}?(?:my|your|our)\s+(?:(?:full[\s-]?time|real|proper|main|actual|only)\s+)?(?:job|career)(?![\p{L}'-])/iu;
+/**
+ * Work for someone else: working, or going full time, at or for another ("work full time at a bank", "go full time at
+ * Deloitte", "work full time for my dad"; never "for myself", "for a year"), a role or a position taken ("get a
+ * full-time role somewhere"), another company joined ("join a bigger startup"; an accelerator is the venture's).
+ */
+const WORK_ELSEWHERE =
+  /(?<![\p{L}'])(?:(?:work(?:s|ed|ing)?(?:\s+full[\s-]?time)?|go(?:es|ing)?\s+full[\s-]?time)\s+(?:at|for)\s+(?!(?:(?:a|an|the|one|another)\s+)?(?:year|years|month|months|week|weeks|while|bit|summer|semester|term)(?![\p{L}'-])|(?:myself|ourselves|yourself|me|us|it|this|free|nothing)(?![\p{L}'-]))|(?:get(?:s|ting)?|got|tak(?:e|es|ing)|took|find(?:s|ing)?|found|land(?:s|ed|ing)?|accept(?:s|ed|ing)?)\s+(?:a|an|another|some)\s+(?:[\p{L}-]+\s+){0,2}?(?:role|position|placement)(?![\p{L}'-])|join(?:s|ed|ing)?\s+(?:a|an|another|some)\s+(?:[\p{L}-]+\s+){0,2}?(?:startup|company|firm|bank|consultancy|agency|corporation)s?(?![\p{L}'-]))/iu;
+/**
+ * Going home, going back to what they did before, never coming back, travelling or resting ("go home", "go back to
+ * uni", "go back to consulting", "never come back", "travel for a year", "sleep for a week"), as what quitting is for.
+ */
+const AWAY =
+  /^(?:(?:go(?:es|ing)?|mov(?:e|es|ing)|head(?:s|ing)?)\s+(?:back\s+)?home|never\s+(?:come|go|look)\s+back|(?:go(?:es|ing)?\s+)?(?:travel|backpack)(?:s|ed|ing|led|ling)?|(?:rest|relax|recover|sleep|retire)(?:s|ed|ing)?|tak(?:e|es|ing)\s+(?:a|some)\s+(?:gap\s+year|time\s+off|year\s+off|holiday|vacation|sabbatical))(?![\p{L}'-])|^go(?:es|ing)?\s+back\s+to\s+(?!the\s+drawing\s+board)\S/iu;
+/** Focusing on something, as what quitting is for ("focus on my exams", "concentrate on the startup"). */
+const FOCUS_ON =
+  /^(?:focus(?:es|ed|ing)?|concentrat(?:e|es|ed|ing))\s+(?:(?:fully|only|solely|entirely)\s+)?on\s+(.+)$/iu;
+/**
+ * The founder's own life, studies or health as what they focus on ("myself", "my exams", "uni", "my mental health"),
+ * never something of theirs the venture makes ("my app", "my side project", "my health startup", "uni partnerships":
+ * {@link compoundAfter}).
+ */
+const OWN_LIFE =
+  /^(?:(?:my|your)\s+(?:own\s+)?)?(?:exams?|studies|studying|school|uni|university|college|degree|course|coursework|family|health|mental\s+health|kids|children|life|wellbeing|well-being|sleep|recovery|recovering)(?![\p{L}'’-])|^(?:myself|yourself|me)(?![\p{L}'’-])/iu;
+/** Their own people, studies or health, anywhere in what quitting is for ("raise my kids", "be with my family"). */
+const OWN_PEOPLE =
+  /(?<![\p{L}'])(?:my|your)\s+(?:own\s+)?(?:kids|children|baby|family|parents|exams?|studies|coursework|dissertation|thesis|health|mental\s+health)(?![\p{L}'’-])/giu;
+
+/** Whether `focus` (what a founder would focus on) is their own life ({@link OWN_LIFE}). */
+function ownLife(focus: string): boolean {
+  const m = OWN_LIFE.exec(focus);
+  return m !== null && !compoundAfter(focus.slice(m[0].length));
+}
+
+/** Whether `clause` names their own people, studies or health ({@link OWN_PEOPLE}). */
+function ownPeople(clause: string): boolean {
+  for (const m of clause.matchAll(OWN_PEOPLE))
+    if (!compoundAfter(clause.slice(m.index + m[0].length))) return true;
+  return false;
+}
 
 /**
- * Whether what follows quitting or leaving and an "and" (`after`) commits the founder to the venture (the differential
- * review of cc29cad: "Should I quit and go full time on the startup?", "I want to quit and focus on the startup",
- * "Should we quit and pivot to B2B?", "I want to leave and start my own thing" were all dropped as withdrawal): going
- * full time, a move of the venture's, or focusing on it, never a job, a course or a career elsewhere. What they leave
- * is then their job, their course or an approach, as in "quit my job to go full-time".
+ * Whether what follows quitting or leaving and an "and" (`after`) is a life elsewhere: a job, a course or a career
+ * ({@link ELSEWHERE}, unless the venture is made their job: {@link MADE_THEIR_JOB}), work for someone else
+ * ({@link WORK_ELSEWHERE}), going home, back or away ({@link AWAY}), their own life ({@link OWN_LIFE},
+ * {@link OWN_PEOPLE}: "focus on my exams", "raise my kids"), or withdrawing again ("walk away", "take a break").
+ * Anything else is a plan, as it was before (the differential review of 96fc715: "quit and work on the startup", "quit
+ * and do YC", "quit and go full-time in January", "quit and focus on my app" and "quit and make QuietQuad my job" were
+ * dropped as withdrawal, because only a list of the venture's moves was kept).
  */
-function intoTheVenture(after: string): boolean {
+function leavesForElsewhere(after: string): boolean {
   const clause = after.split(CLAUSE_END)[0]?.trim() ?? '';
-  if (ELSEWHERE.test(clause)) return false;
-  if (FULL_TIME.test(clause) || VENTURE_MOVE.test(clause)) return true;
+  if (ELSEWHERE.test(clause) && !MADE_THEIR_JOB.test(clause)) return true;
+  if (WORK_ELSEWHERE.test(clause) || AWAY.test(clause)) return true;
   const focus = FOCUS_ON.exec(clause)?.[1];
-  return focus !== undefined && (fromTheVenture(focus) || !OWN_LIFE.test(focus.trim()));
+  if ((focus !== undefined && ownLife(focus.trim())) || ownPeople(clause)) return true;
+  return vents(clause) === 'line';
 }
 /** What ends on quitting or leaving, nothing after it ("sell your shares and leave", "finish the term and quit"). */
 const AND_QUITS = /\s(?:and|then)\s+(?:then\s+)?(?:quit|leave|walk\s+away|drop\s+out|give\s+up)[.!?]*$/iu;
@@ -1629,16 +1763,25 @@ function vents(text: string): 'line' | 'topic' | null {
     )?.[1] ?? text
   ).trim();
   if (DISTRESS.test(done) || distressIn(done, 'veir')) return 'line';
+  const unburdening = UNBURDENING.exec(done)?.[1]?.replace(A_SEC, '');
+  if (unburdening !== undefined) {
+    if (aboutThemselves(unburdening)) return 'line';
+    // What they vent about is named for itself ("Hartwell", "the pitch feedback"), never the venting.
+    return /^\s*(?:about|over)\s/iu.test(unburdening) ? 'topic' : null;
+  }
   const unlessNamed = UNLESS_NAMED.exec(done);
   if (unlessNamed !== null) {
     const rest = unlessNamed[1] ?? '';
     return namesSomething(rest) && !NO_OBJECT.test(rest) ? null : 'line';
   }
-  // Quitting, then something else ("quit and get a normal job", "sell your shares and leave"): nothing of the venture
-  // is what is left behind (the differential review of 6656c33), unless what follows commits them to it ("quit and go
-  // full time", "leave and start your own thing": the differential review of cc29cad).
-  const quitsAnd = QUITS_AND.exec(done);
-  if ((quitsAnd !== null && !intoTheVenture(quitsAnd[1] ?? '')) || AND_QUITS.test(done)) return 'line';
+  // Quitting for a life elsewhere ("quit and get a normal job", "sell your shares and leave"): withdrawal (the
+  // differential review of 6656c33); quitting to do anything else is a plan ("quit and go full time", "quit and work on
+  // the startup", "quit and back yourself": the differential reviews of cc29cad and 96fc715).
+  if (AND_QUITS.test(done)) return 'line';
+  const quitsAnd = QUITS_AND.exec(done)?.[1]
+    ?.replace(/[.!?…]+$/u, '')
+    .trim();
+  if (quitsAnd !== undefined && quitsAnd !== '') return leavesForElsewhere(quitsAnd) ? 'line' : null;
   const withdrawing = WITHDRAWING.exec(done);
   if (withdrawing !== null) {
     // When it ends is no part of what is left ("shut it down after the summer").
@@ -1688,8 +1831,10 @@ export function topicOf(line: string): LineTopic | null {
     const sentence = raw.replace(LEAD_IN, '').trim();
     if (topicWords(sentence).length === 0 || TIME_BUDGET.test(sentence)) continue;
     // Distress wherever it is said names nothing to pick up, in none of the line's sentences ("Things are falling
-    // apart with my cofounder", "I'm losing hope": the review of e9e49fb).
-    if (distressIn(sentence, 'founder') || fallsApart(sentence)) return null;
+    // apart with my cofounder", "I'm losing hope": the review of e9e49fb), nor does getting something off their chest
+    // ("shall we pick up your chest?": the differential review of 96fc715).
+    if (distressIn(sentence, 'founder') || fallsApart(sentence) || OFF_THEIR_CHEST.test(sentence))
+      return null;
     let found: LineTopic | null = null;
     const yesNo = /^(should|shall|can|could|do|would)\s+(?:we|i)\s+(.+?)\??$/i.exec(sentence);
     const wh =
