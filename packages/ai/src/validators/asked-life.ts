@@ -3,30 +3,31 @@
  * "Weekend was good, thanks for asking."). Read only on a turn of pure banter ({@link askedLifeOf}): the founder's
  * whole message is greetings, thanks and fillers ("hey corin!", "lol", "happy friday") around their own question about
  * the coach's own weekend, day, week, holiday, evening or plans, with at most small talk ("anything fun?", "how are
- * you?") or a question about what the coach is ("are you a bot?"). A plain "how are you?" is not such a question, nor
- * the founder's own plans ("should I make any plans for the weekend?"), a market's season ("How was Christmas for
- * retailers like us?"), or a question they report from someone else ("my manager always asks how was your weekend"),
- * want words for ("Jo emailed me: how was your weekend? … draft my reply") or play ("roleplay: you're my investor"). A
- * message that says or asks anything else besides ("how was your weekend? my grandma passed on friday", "… can you
- * help with my bio") is not banter: the reply answers that too, so nothing here applies, as without the question. Then
- * the prompt's banter rule keeps the coach from making a life up, and the identity rule `personal_life` keeps its plain
- * first-person forms out ("My weekend was good"), as it always did. The founder's own story, bio, pitch, customer quote
- * or draft is never read here (a draft or a quote, straight single quotes too, is never the coach's own voice).
+ * you?") or a question about what the coach is ("are you a bot?"). Never a word of the founder's own ("how was your
+ * day? me today 😭", "… the week tho", "… good for me") and no name but the coach's own ("morning, exhausted." is the
+ * founder's state). A plain "how are you?" is not such a question, nor the founder's own plans ("should I make any
+ * plans for the weekend?"), a market's season ("How was Christmas for retailers like us?"), or a question they report
+ * from someone else ("my manager always asks how was your weekend"), want words for ("Jo emailed me: how was your
+ * weekend? … draft my reply") or play ("roleplay: you're my investor"). A message that says or asks anything else
+ * besides ("how was your weekend? my grandma passed on friday", "… can you help with my bio") is not banter: the reply
+ * answers that too, so nothing here applies, as without the question. Then the prompt's banter rule keeps the coach
+ * from making a life up, and the identity rule `personal_life` keeps its plain first-person forms out ("My weekend was
+ * good"), as it always did. The founder's own story, bio, pitch, customer quote or draft is never read here (a draft or
+ * a quote, straight single quotes too, is never the coach's own voice).
  *
  * The identity validator (identity.ts, rule `personal_life`) takes such a sentence out of the reply (typed, spoken and
- * each streamed unit), keeps an honest answer about what the coach is, the founder's thanks and a question the sentence
- * goes on to ask them, and turns the question back to them ({@link lifeLeftover}, {@link finishLifeReply}: "Weekend was
- * good, thanks — how did the demo go?" → "Thanks! How did the demo go?"). The evals matrix presence check (G14,
- * evals/foundry_evals/matrix/asked_life.py `asked_life_claim`) fails the same sentences on the same turns; the cases
- * both must agree on are `asked_life` in evals/tests/fixtures/identity_cases.json, every input an earlier, wider rule
- * cut from the founder's own words stays as it was (evals/tests/fixtures/presence_regressions.json), and so does every
- * one this rule's earlier rounds cut, or it loses only the made-up life
- * (evals/tests/fixtures/asked_life_regressions.json).
+ * each streamed unit) when it says nothing else to the founder ({@link saysOnlyLife}: "Mine was quiet, thanks — let's
+ * get you ready for Thursday's pitch." stays as written), keeps an honest answer about what the coach is, the founder's
+ * thanks and a question the sentence goes on to ask them, and turns the question back to them ({@link lifeLeftover},
+ * {@link finishLifeReply}: "Weekend was good, thanks — how did the demo go?" → "Thanks! How did the demo go?"). The
+ * evals matrix presence check (G14, evals/foundry_evals/matrix/asked_life.py `asked_life_claim`) fails the same
+ * sentences on the same turns; the cases both must agree on are `asked_life` in
+ * evals/tests/fixtures/identity_cases.json, every input an earlier, wider rule cut from the founder's own words stays
+ * as it was (evals/tests/fixtures/presence_regressions.json), and so does every one this rule's earlier rounds cut, or
+ * it loses only the made-up life (evals/tests/fixtures/asked_life_regressions.json).
  *
  * Pure patterns and text helpers: no import from identity.ts (which imports this module).
  */
-
-import { COMMON_WORDS } from '../risk/common-words.js';
 
 const APOS = "['’]";
 /** Not inside a word. */
@@ -50,7 +51,7 @@ export const LIFE_ADJS = `(?:${LIFE_SHADE}${LIFE_ADJ}(?:\\s*,\\s*|\\s+and\\s+|\\
 const LIFE_OUTING = `(?:hike|hiking|run|running|walk|stroll|swim|swimming|road\\s+trip|trip|vacation|holiday|camping|skiing|surfing|climbing|cycling|bike\\s+ride|beach|gym|movies|cinema|theatre|theater|concert|gig|festival|wedding|party|museum|gallery|park|coast|seaside|mountains|lake|countryside|farmers${APOS}?\\s+market|brunch|dinner|lunch|drinks|picnic|date|spa|yoga|pilates|barbecue|bbq|pub(?:\\s+quiz)?|quiz\\s+night)(?![-\\p{L}])`;
 /** Something one eats or drinks. */
 const LIFE_FOOD =
-  '(?:lunch|dinner|breakfast|brunch|supper|coffee|tea|drinks?|bite|snack|meal|picnic|barbecue|bbq|takeaway|takeout|pizza|pasta|salad|soup|sandwich|curry|sushi|tacos?|burrito|burger|noodles|ramen|toast|eggs|pancakes|waffles|cereal|porridge|oatmeal|smoothie|roast|cake|cookies?|ice\\s+cream|chocolate|wine|beer|cocktails?)(?![-\\p{L}])';
+  '(?:lunch|dinner|breakfast|brunch|supper|coffee|tea|drinks?|bite|snack|meal|picnic|barbecue|bbq|takeaway|takeout|pizza|pasta|salad|soup|sandwich|curry|sushi|tacos?|burrito|burger|noodles|ramen|toast|eggs|pancakes|waffles|cereal|porridge|oatmeal|smoothie|roast|cake|pie|cookies?|ice\\s+cream|chocolate|food|wine|beer|cocktails?)(?![-\\p{L}])';
 /**
  * Where a thing done ends its clause, or goes on with when, where or with whom ("had coffee with friends", "took a walk
  * to clear my head"): never "had coffee shops in mind", "took a walk through your numbers" or "watched the game play
@@ -87,6 +88,7 @@ const LIFE_DONE = [
   // Never "had people over-promise".
   'had\\s+(?:some\\s+)?(?:friends|family|people|mates|the\\s+(?:family|kids|neighbou?rs))\\s+over(?![-\\p{L}])',
   'visited\\s+(?:my|family|friends|the\\s+(?:coast|beach|mountains|lake|museum|gallery|seaside|countryside))',
+  'saw\\s+(?:some\\s+|a\\s+few\\s+|old\\s+|my\\s+)?(?:friends|family|folks|parents)',
   'got\\s+(?:some|a\\s+bit\\s+of|plenty\\s+of)\\s+(?:sun|fresh\\s+air|sleep|rest)',
   // A meal where its clause ends or goes on with when or with whom: never "had coffee shops in mind".
   `(?:grabbed|ate|had)\\s+(?:(?:a|an|some|a\\s+(?:big|quick|late|huge|little))\\s+)?(?:${LIFE_ADJS})?${LIFE_FOOD}${LIFE_DID_END}`,
@@ -203,15 +205,15 @@ const PLANS = `(?:(?:fun|exciting|nice|big|weekend|holiday|summer|christmas|even
 
 /** Asks how a time of the coach's own went: "your" weekend, never "the" week or launch (the founder's own). */
 const ASKED_PAST_SOURCES = [
-  `how\\s*(?:${APOS}?d|\\s+was|\\s+were|\\s+did)\\s+(?:${YOUR}\\s+(?:${LIFE_ADJS})?${LIFE_TIME}${LIFE_TIME_END}|${NAMED_HOLIDAY})`,
+  `how\\s*(?:${APOS}?d|\\s+was|\\s+were|\\s+did)\\s+(?:${YOUR}\\s+(?:${LIFE_ADJS})?${LIFE_TIME}${LIFE_TIME_END}(?:\\s+go(?![\\p{L}]))?|${NAMED_HOLIDAY})`,
   `(?:did|have)\\s+${YOU}\\s+(?:have|get|enjoy|had)\\s+(?:a|an|any|some)\\s+(?:${LIFE_ADJS})?(?:${LIFE_TIME}${LIFE_TIME_END}|rest|fun|one${NL})`,
   `${YOU}\\s+(?:have|had|get)\\s+(?:a|an)\\s+${LIFE_ADJS}(?:${LIFE_TIME}${LIFE_TIME_END}|one)\\s*\\?`,
   // "good weekend?", "nice holiday?" as a question of its own.
   `${OPENS}${LIFE_ADJS}${LIFE_TIME}\\s*\\?`,
   // A wish that invites the same answer ("hope you had a nice weekend!", "hope your weekend was good").
-  `hope\\s+(?:${YOU}(?:${APOS}ve|\\s+have)?\\s+had\\s+(?:a|an|such\\s+a)\\s+(?:${LIFE_ADJS})?(?:${LIFE_TIME}${LIFE_TIME_END}|one${NL})|${YOUR}\\s+(?:${LIFE_ADJS})?${LIFE_TIME}${LIFE_TIME_END}\\s+(?:was|went|has\\s+been))`,
+  `hope\\s+(?:${YOU}(?:${APOS}ve|\\s+have)?\\s+had\\s+(?:a|an|such\\s+a)\\s+(?:${LIFE_ADJS})?(?:${LIFE_TIME}${LIFE_TIME_END}|one${NL})|${YOUR}\\s+(?:${LIFE_ADJS})?${LIFE_TIME}${LIFE_TIME_END}\\s+(?:was|went|has\\s+been)(?:\\s+(?:${LIFE_SHADE}${LIFE_ADJ}|well)(?![\\p{L}]))?)`,
   `(?:did|have)\\s+${YOU}\\s+(?:do|get\\s+up\\s+to|been\\s+up\\s+to|done)\\s+(?:anything|something)\\s+(?:fun|nice|good|exciting|interesting|cool|special)${WHEN}`,
-  `what\\s+did\\s+${YOU}\\s+(?:get\\s+up\\s+to|do\\s+(?:(?:this|last|over\\s+the|on\\s+the|on|for|at)\\s+)?(?:${LIFE_TIME}${LIFE_TIME_END}|yesterday|last\\s+night))`,
+  `what\\s+did\\s+${YOU}\\s+(?:get\\s+up\\s+to${WHEN}|do\\s+(?:(?:this|last|over\\s+the|on\\s+the|on|for|at)\\s+)?(?:${LIFE_TIME}${LIFE_TIME_END}|yesterday|last\\s+night))`,
 ];
 /**
  * Asks about the coach's own day, evening or plans, or how its life goes ("how's your day going?", "any plans this
@@ -219,7 +221,7 @@ const ASKED_PAST_SOURCES = [
  * "I'm not doing anything fun this weekend" are the founder's own.
  */
 const ASKED_OTHER_SOURCES = [
-  `how\\s*(?:${APOS}?s|\\s+is|\\s+has|\\s+are)\\s+${YOUR}\\s+(?:${LIFE_ADJS})?${LIFE_TIME}${LIFE_TIME_END}(?:\\s+(?:going|been|looking|so\\s+far))?`,
+  `how\\s*(?:${APOS}?s|\\s+is|\\s+has|\\s+are)\\s+${YOUR}\\s+(?:${LIFE_ADJS})?${LIFE_TIME}${LIFE_TIME_END}(?:\\s+(?:going|been|looking))?(?:\\s+so\\s+far)?`,
   `how${APOS}?s\\s+life(?:\\s+treating\\s+${YOU})?|how\\s+is\\s+life`,
   `(?:what\\s+are\\s+${YOUR}|(?:(?:have|do)\\s+)?${YOU}\\s+(?:got|have)\\s+any)\\s+${PLANS}`,
   `${OPENS}(?:got\\s+)?any\\s+${PLANS}${CLOSES}`,
@@ -265,39 +267,44 @@ const REPORTED =
   /(?<![\p{L}'’])(?:ask(?:s|ed|ing)?|says?|said|saying|wr(?:ote|ites?|iting)|e-?mail(?:s|ed|ing)?|text(?:s|ed|ing)?|messag(?:e|es|ed|ing)|dm(?:s|ed|['’]d)?|replied|repl(?:y|ies)|respond(?:s|ed)?|answer(?:s|ed)?|goes)(?![\p{L}'’])/giu;
 /** The founder asking it themselves ("I wanted to ask", "let me ask", "can I ask"). */
 const ASKING_MYSELF = /^(?:i|i['’]d|i['’]ll|i['’]m|to|me|just)$/iu;
-/** The founder in the first person ("I", "we", "my", "mine"). */
-const FOUNDER_SELF = /(?<![\p{L}'’])(?:i|we|my|our|mine|ours)(?![\p{L}])/iu;
-/** A time, or something done in it: with the founder in the first person, they tell their own. */
-const FOUNDER_OWN_TIME = new RegExp(
-  `(?<![\\p{L}])(?:${LIFE_TIME}|today|yesterday|went|spent|had|did|got|was|were|sold|ran|made|took|slept|hiked|launched|shipped|signed|closed)(?![\\p{L}])`,
-  'iu',
+/**
+ * Words of banter, each saying nothing on its own beside a question about the coach ("hey!", "lol", "thanks!",
+ * "wbu"). Never a word the founder tells something of their own with: "me", a time ("today", "this week", "monday
+ * tho 😩"), "good" ("good for me") or "been" ("I been going").
+ */
+const BANTER_WORD =
+  /^(?:hi+|hey+|hello|yo|hiya|heya|ok|okay|so|also|btw|anyway|lowkey|ngl|lol|haha|ha|thanks|thx|cheers|um+|uh+|oh|wait|and|then|wbu|hbu|just|really|tho|though)$/iu;
+/**
+ * Phrases of banter ("by the way", "I wanted to ask", "quick q", "thank you", "and you,", "happy friday", "happy
+ * holidays").
+ */
+const BANTER_PHRASE = new RegExp(
+  `(?<![\\p{L}'’])(?:by\\s+the\\s+way|(?:i\\s+)?(?:just\\s+)?(?:wanted|meant)\\s+to\\s+ask(?:\\s+(?:you|u))?|(?:let\\s+me|can\\s+i)\\s+ask(?:\\s+(?:you|u))?|quick\\s+(?:q|question)|(?:just\\s+)?curious|thank\\s+(?:you|u)|(?:hey|hi|hello)\\s+there|and\\s+(?:you|u)(?=\\s*,)|happy\\s+(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day|weekend|holidays?|new\\s+year|thanksgiving|christmas|easter)|merry\\s+christmas)(?![\\p{L}'’])`,
+  'giu',
 );
-/** Words that say nothing on their own beside a question about the coach ("hey!", "lol", "thanks!", "wbu"). */
-const FOUNDER_FILLER =
-  /^(?:hi|hey|hello|yo|hiya|morning|evening|afternoon|good|ok|okay|so|also|btw|anyway|lowkey|ngl|lol|haha|ha|thanks|thank|you|u|ya|yours|cheers|there|um|uh|oh|happy|wait|and|by|the|way|then|wbu|hbu|i|just|wanted|meant|to|ask|me|let|can|quick|q|question|curious|this|it|go|going|been|so|far|for|over|really|tho|though|weekend|week|day|tonight|today|holidays?|summer|christmas|evening|night|morning|afternoon|(?:mon|tues|wednes|thurs|fri|satur|sun)day)$/iu;
+/** A greeting by the time of day, where the founder's message opens ("morning!", "good evening,"). */
+const GREETING_OPENING = /^\s*(?:good\s+)?(?:morning|afternoon|evening)(?![\p{L}'’])/iu;
 /** Where a question about the coach's own life stood in the founder's message, once read (see {@link askedLifeOf}). */
 const ASKED_MARK = '\u2063';
 /**
- * A name after a greeting, a thanks or the question about the coach, ending its clause ("hey corin", "thanks Corin!",
- * "how was your weekend Corin?"): the word (`$2`) counts as one when {@link aName} says so.
+ * The coach's own first name after a greeting, a thanks or the question about the coach, ending its clause ("hey
+ * corin", "thanks Corin!", "how was your weekend Corin?"): the word is `$2`. Any other word there is the founder's
+ * ("morning, exhausted.", "hey, stressed.").
  */
 const GREETED_NAME = new RegExp(
   `((?:(?<![\\p{L}'’])(?:hi|hey|hello|hiya|yo|morning|evening|afternoon|thanks|thank\\s+you|cheers)|${ASKED_MARK})[\\s,]+)(\\p{L}[\\p{L}'’-]*)(?=[^\\p{L}\\p{N}]*(?:[,.!?…;:\\n]|$))`,
   'giu',
 );
-/** Words that say how someone is, never a name ("are you busy?", "are you free?" ask about something else). */
-const NOT_A_NAME =
-  /^(?:busy|online|offline|awake|asleep|alright|serious|kidding|joking|tired|bored|sad|mad|angry|upset|sick|listening|working|around|there|here|free|sure|ready|done|back|away|well|fine)$/iu;
-/** Whether `word` may be a name (the coach's, "corin"): not a common word, a filler or a word for how someone is. */
-function aName(word: string): boolean {
-  return !COMMON_WORDS.has(word.toLowerCase()) && !FOUNDER_FILLER.test(word) && !NOT_A_NAME.test(word);
+/** Whether `word` is the coach's own first name (`coach`, "Corin"), in any case. */
+function coachNamed(word: string, coach: string | null): boolean {
+  return coach !== null && coach !== '' && word.toLowerCase() === coach.toLowerCase();
 }
 /** A word that says what the coach is ("are you a bot?", "r u human lol", "(i know, you're an AI)"). */
 const WHAT_IT_IS =
   /^(?:bot|robot|ai|a\.i|human|person|real|machine|chatbot|program|software|twin|alive|sentient)$/iu;
-/** The words that ask it ("is this really…", "am I talking to…", "you're a bot, right?"). */
+/** The words that ask it ("is this really…", "am I talking to…", "you're a bot, right?", "i know, you're an AI"). */
 const ASKING_WHAT_IT_IS =
-  /^(?:are|r|is|am|this|that|it|a|an|or|not|really|actual|actually|truly|even|right|you['’]re|youre|ur|who|talking|speaking|chatting|with|to|know)$/iu;
+  /^(?:are|r|is|am|i|you|u|this|that|it|a|an|or|not|really|actual|actually|truly|even|right|you['’]re|youre|ur|who|talking|speaking|chatting|with|to|know)$/iu;
 /** Asking who the coach is ("who am I talking to?") or whether it is someone ("are you corin?": the name is `$1`). */
 const ASKING_WHO_IT_IS =
   /^(?:(?:wait|so|hey|hi|also|and|ok|okay|um|oh|lol)\s+)*(?:who\s+(?:am\s+i\s+(?:talking|speaking|chatting)\s+(?:to|with)|(?:are|r)\s+(?:you|u)|is\s+this)|(?:(?:are|r)\s+(?:you|u)|is\s+(?:this|it|that)|am\s+i\s+(?:talking|speaking|chatting)\s+(?:to|with))\s+(?:(?:really|actually|truly|even|the\s+real)\s+)*(\p{L}[\p{L}'’.-]*))(?:\s+(?:lol|haha|ha))*$/iu;
@@ -336,18 +343,19 @@ function askedIn(said: string): 'past' | 'other' | null {
 
 /**
  * A sentence of banter beside a question about the coach's own life: greetings, thanks and fillers ("hey!", "lol", "I
- * wanted to ask,"), never a time of the founder's own ("I had a long week"), or a question about what the coach is
- * ("are you a bot?", "r u human lol.", "is this really corin?").
+ * wanted to ask,", "happy friday"), or a question about what the coach is ("are you a bot?", "r u human lol.", "is this
+ * really corin?", with `coach` its own first name). Never a word of the founder's own ("me today 😭", "the week tho",
+ * "good for me", "I been going") and never a name that is not the coach's.
  */
-function banter(sentence: string): boolean {
+function banter(sentence: string, coach: string | null): boolean {
+  if (wordsIn(sentence.replace(BANTER_PHRASE, ' ')).every((w) => BANTER_WORD.test(w))) return true;
+  // A question about what the coach is: its own words, and at most the coach's name ("is this actually corin or a
+  // bot?").
   const words = wordsIn(sentence);
-  if (words.every((w) => FOUNDER_FILLER.test(w)))
-    return !(FOUNDER_SELF.test(sentence) && FOUNDER_OWN_TIME.test(sentence));
-  // A question about what the coach is: its own words, and at most a name ("is this actually corin or a bot?").
   const others = words.filter(
-    (w) => !WHAT_IT_IS.test(w) && !ASKING_WHAT_IT_IS.test(w) && !FOUNDER_FILLER.test(w),
+    (w) => !WHAT_IT_IS.test(w) && !ASKING_WHAT_IT_IS.test(w) && !BANTER_WORD.test(w),
   );
-  if (others.length > 1 || !others.every(aName)) return false;
+  if (others.length > 1 || !others.every((w) => coachNamed(w, coach))) return false;
   if (words.some((w) => WHAT_IT_IS.test(w))) return true;
   const asked = ASKING_WHO_IT_IS.exec(words.join(' '));
   return asked !== null && (asked[1] ?? '').toLowerCase() === (others[0] ?? '').toLowerCase();
@@ -362,24 +370,30 @@ function banter(sentence: string): boolean {
  * or reported from someone else ("my manager always asks how was your weekend") and a message asking for words to send
  * or a part to play ("Jo emailed me: how was your weekend? … draft my reply", "roleplay: …") are not. Everything else
  * the message says must be banter: greetings, thanks and fillers ("hey corin!", "happy friday", "lol"), small talk
- * ("anything fun?", "how are you?") or a question about what the coach is ("are you a bot?"). A message that also tells
- * news of the founder's own, asks something of their own or quotes anyone ("how was your weekend? my grandma passed on
- * friday", "… can you help with my bio", "… also what do I send Sam?") is null: its reply answers that too.
+ * ("anything fun?", "how are you?") or a question about what the coach is ("are you a bot?"). `coach`: the coach's own
+ * first name ("Corin"), the one name the message may greet. A message that also tells news or a state of the founder's
+ * own, asks something of their own, greets anyone else or quotes anyone ("how was your weekend? my grandma passed on
+ * friday", "how was your day? me today 😭", "morning, exhausted. how was your weekend?", "… can you help with my bio")
+ * is null: its reply answers that too.
  */
-export function askedLifeOf(founderText: string): AskedLife | null {
+export function askedLifeOf(founderText: string, coach: string | null = null): AskedLife | null {
   const said = founderText.replace(QUOTED, ' ');
   if (NOT_TO_THE_COACH.test(said)) return null;
   const asked = askedIn(said);
   if (asked === null) return null;
   // What the message says besides its questions about the coach and the small talk that goes with them (a quote too:
-  // someone else's words are something else), a name after a greeting or the question going with them.
+  // someone else's words are something else), the coach's name after a greeting or the question, and a greeting by
+  // the time of day that opens it ("morning!").
   const rest = founderText
     .replace(ASKED_ANY, ` ${ASKED_MARK}`)
     .replace(SMALL_TALK_TOO, ' ')
-    .replace(GREETED_NAME, (all: string, greeting: string, name: string) => (aName(name) ? greeting : all))
+    .replace(GREETED_NAME, (all: string, greeting: string, name: string) =>
+      coachNamed(name, coach) ? greeting : all,
+    )
+    .replace(GREETING_OPENING, ' ')
     .replaceAll(ASKED_MARK, ' ');
   const sentences = rest.split(/(?<=[.!?…])\s+|\n+/u).filter((s) => /\p{L}/u.test(s));
-  return sentences.every(banter) ? { asked } : null;
+  return sentences.every((s) => banter(s, coach)) ? { asked } : null;
 }
 
 // Thanks and the question turned back -------------------------------------------------------------------------------
@@ -393,6 +407,8 @@ const THANKS_SOURCE = `(?<![\\p{L}])(?:${THANKS_HEAD}(?:\\s+for\\s+(?:asking|che
 /** A sentence that thanks the founder for asking. */
 export const THANKS = new RegExp(THANKS_SOURCE, 'iu');
 const THANKS_GLOBAL = new RegExp(THANKS_SOURCE, 'giu');
+/** A thanks that is all a thanks for asking says ("thanks", "thank you so much for asking"). */
+const ASKING_THANKS = new RegExp(`^(?:${THANKS_SOURCE})$`, 'iu');
 const THANKS_WRITTEN_SOURCE = `(?<![\\p{L}])(?:${THANKS_HEAD}(?:\\s+for\\s+(?:asking|checking\\s+in|the\\s+question|wondering)(?![\\p{L}])|\\s+for\\s+[^.!?…\\n,;:—–()]*[^\\s.!?…\\n,;:—–()])?|cheers|thx|appreciate\\s+(?:you\\s+asking|the\\s+question))(?![\\p{L}])(?!\\s+to(?![\\p{L}]))`;
 /**
  * Any thanks to the founder, with what it is for, as written ("thanks for sending the deck"): kept when a life goes.
@@ -553,6 +569,83 @@ export function questionAfterLife(after: string): { index: number; text: string 
   return { index, text };
 }
 
+/** Any life of the coach's, of any form, or more of one ("went hiking", "a long walk"), as its sentence goes on. */
+const ANY_LIFE = new RegExp(
+  [...ASKED_LIFE_SOURCES.map(({ source }) => source), LIFE_THING, LIFE_DONE, LIFE_PLAN]
+    .map((s) => `(?<!\\p{ID_Continue})(?:${s})(?!\\p{ID_Continue})`)
+    .join('|'),
+  'giu',
+);
+/**
+ * What may go with a made-up life and says nothing to the founder: how it went ("Lovely — went for a run", "busy but
+ * in a good way"), a "read" after another life that ends its clause ("Slept in and read."; never "— read a book!"),
+ * "enough about me", "not much", "can't complain", "as always", "way too much", the words that tie a sentence's parts
+ * ("yet", "still") and "I" before a life ("I spent most of it outside").
+ */
+const LIFE_ASIDES = new RegExp(
+  `(?<![\\p{L}'’])(?:${LIFE_SHADE}${LIFE_ADJ}|enough\\s+about\\s+me|not\\s+much|nothing\\s+(?:much|special|(?:too\\s+)?exciting)|can['’]?t\\s+complain|no\\s+complaints|all\\s+good|as\\s+(?:always|usual|ever)|(?:way\\s+)?too\\s+much|in\\s+a\\s+good\\s+way|a\\s+lot\\s+of\\s+nothing|(?:and\\s+|,\\s*)read(?=(?:\\s+(?:a\\s+(?:bit|lot)|lots|loads))?\\s*(?:[,.;:!?…—–)]|$))|yet|anyhow|still|i)(?![\\p{L}'’])`,
+  'giu',
+);
+
+/** Where a clause ends (identity.ts `isClauseBreak`): its punctuation, or a spaced hyphen. */
+function clauseBreakAt(text: string, i: number): boolean {
+  const ch = text.charAt(i);
+  if (/[.!?\n,;:—–()…]/u.test(ch)) return true;
+  return ch === '-' && text.charAt(i - 1) === ' ' && text.charAt(i + 1) === ' ';
+}
+
+/** A word that joins another clause to a life's ("…was good and congrats on the launch", "…quiet so I read"). */
+const CONNECTOR =
+  /(?<![\p{L}'’])(?:and|but|so|plus|though|although|because|cause|cos|while|whereas|since|yet)(?![\p{L}'’])/iu;
+
+/**
+ * Where the clause a life ends in goes on to (`from`: the life's end), its more of the life ("…at the concert on
+ * Saturday"): the clause's end, or a thanks or a word that joins another clause in it ("it was good thanks now about
+ * the pricing page…" ends at "thanks", "Weekend was good and congrats on the launch!" at "and").
+ */
+function lifeClauseEnd(text: string, from: number): number {
+  let e = from;
+  while (e < text.length && !clauseBreakAt(text, e)) e += 1;
+  const rest = text.slice(from, e);
+  const stops = [THANKS_WRITTEN.exec(rest), CONNECTOR.exec(rest)].filter((m) => m !== null);
+  return stops.length === 0 ? e : from + Math.min(...stops.map((m) => m.index));
+}
+
+/** `text` with [start, end) blanked out, so every other index stays where it was. */
+function blanked(text: string, start: number, end: number): string {
+  return `${text.slice(0, start)}${' '.repeat(Math.max(0, end - start))}${text.slice(end)}`;
+}
+
+/**
+ * Whether the sentence that tells a made-up life (`sentence`, the life at [start, end) in it, from the founder asking
+ * about the coach's own on a turn of pure banter) says nothing else that would go with it: besides the life and the
+ * rest of its clause ("I had a great time at the concert on Saturday"), only more of the same life ("Went to a
+ * friend's wedding, it was beautiful!"), thanks, lead words ("oh", "honestly"), "enough about me", and what the
+ * leftover keeps ({@link lifeLeftover}): the first thanks as written, a question turned back or one of the reply's own
+ * after the life ("…, thanks — how did the demo go?"). Anything else is the coach talking to the founder ("Mine was
+ * quiet, thanks — let's get you ready for Thursday's pitch.", "Good, thanks — and congrats again on the 50th
+ * customer!", "My week was great, and yours sounds even better"): the sentence stays as written, as without the
+ * question.
+ */
+export function saysOnlyLife(sentence: string, start: number, end: number): boolean {
+  const after = sentence.slice(end);
+  const back = TURN_BACK.exec(after);
+  const asked = back === null ? questionAfterLife(after) : null;
+  const keptAt = end + (back?.index ?? asked?.index ?? after.length);
+  // What goes with the life: the sentence up to what the leftover keeps, but for the first thanks.
+  const said = sentence.slice(0, keptAt);
+  let lost = said;
+  const thanks = THANKS_WRITTEN.exec(said);
+  if (thanks !== null) lost = blanked(lost, thanks.index, thanks.index + thanks[0].length);
+  lost = blanked(lost, start, lifeClauseEnd(said, end));
+  ANY_LIFE.lastIndex = 0;
+  for (const m of said.matchAll(ANY_LIFE)) {
+    if (m[0] !== '') lost = blanked(lost, m.index, lifeClauseEnd(said, m.index + m[0].length));
+  }
+  const words = wordsIn(lost.replace(THANKS_GLOBAL, ' ').replace(LIFE_ASIDES, ' '));
+  return words.every((w) => LIFE_LEAD_WORDS.has(w.toLowerCase()) || LIFE_TAIL_WORDS.has(w.toLowerCase()));
+}
+
 /** A verb after an "-ing" in its clause, which makes the "-ing" its subject. */
 const GERUND_PREDICATE =
   /^[^,.;:!?…—–\n]*?(?<![\p{L}'’])(?:is|was|are|were|will|would|could|can|should|might|may|must|beats?|helps?|works?|makes?|gives?|keeps?|matters?|sounds?|seems?|feels?|tends?|pays?|wins?)(?![\p{L}'’])/iu;
@@ -662,10 +755,11 @@ function asSentence(text: string, stop: string): string {
 /**
  * What stays of a sentence that told a made-up life (`sentence`, the life ending at `lifeEnd` in it): the founder's
  * thanks, as written ("Weekend was good, thanks for asking." → "Thanks for asking!", "…, thanks for sending the deck!"
- * → "Thanks for sending the deck!"; `thanks` false when the reply thanks them for asking elsewhere), and a question
- * turned back after the life ("it was lovely thank you how about you" → "Thank you! How about you?"; a terse "and
- * yours?" in full), or else a question of its own the sentence goes on to ask them ({@link questionAfterLife}:
- * "Weekend was good, thanks — how did the demo go?" → "Thanks! How did the demo go?"). '' when none is there.
+ * → "Thanks for sending the deck!"; `thanks` false when the reply thanks them for asking elsewhere, which keeps only a
+ * thanks for something else), and a question turned back after the life ("it was lovely thank you how about you" →
+ * "Thank you! How about you?"; a terse "and yours?" in full), or else a question of its own the sentence goes on to
+ * ask them ({@link questionAfterLife}: "Weekend was good, thanks — how did the demo go?" → "Thanks! How did the demo
+ * go?"). '' when none is there. The sentence says nothing else ({@link saysOnlyLife}).
  */
 export function lifeLeftover(
   sentence: string,
@@ -679,12 +773,11 @@ export function lifeLeftover(
   const back = TURN_BACK.exec(after);
   const asked = back === null ? questionAfterLife(after) : null;
   const backAt = lifeEnd + (back?.index ?? asked?.index ?? after.length);
-  if (thanks) {
-    const m = THANKS_WRITTEN.exec(sentence.slice(0, backAt));
-    if (m !== null) {
-      parts.push(asSentence(m[0], '!'));
-      thanked = true;
-    }
+  const m = THANKS_WRITTEN.exec(sentence.slice(0, backAt));
+  // A thanks for something else stays even when the reply thanks them for asking elsewhere ("thanks for the deck").
+  if (m !== null && (thanks || !ASKING_THANKS.test(m[0]))) {
+    parts.push(asSentence(m[0], '!'));
+    thanked = true;
   }
   if (back !== null) {
     // The turn-back as said, to the end of its sentence ("how about you", "and yours?" in full).

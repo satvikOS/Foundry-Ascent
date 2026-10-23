@@ -1,13 +1,8 @@
 import { normalizeForMatching } from '../risk/normalize.js';
-import {
-  askedLifeOf,
-  isOnlyThanks,
-  lifeClosing,
-  lifeUnitAfterRemoval,
-  type AskedLife,
-} from './asked-life.js';
+import { isOnlyThanks, lifeClosing, lifeUnitAfterRemoval, type AskedLife } from './asked-life.js';
 import { textsContainOtherVenture } from './coach-response.js';
 import {
+  askedLifeFor,
   identifiesHonestly,
   identityQuestionOf,
   identityFindingsAdded,
@@ -475,7 +470,7 @@ export class SentenceGate {
     this.#question =
       options.founderText === undefined ? null : identityQuestionOf(options.founderText, this.#identity);
     this.#news = founderMoves(options.founderText ?? '').includes('news');
-    this.#life = options.founderText === undefined ? null : askedLifeOf(options.founderText);
+    this.#life = options.founderText === undefined ? null : askedLifeFor(options.founderText, this.#identity);
     const previous = options.previousReply ?? null;
     // No repeat check for a sincere question about the coach: its honest answer is said however recently it was
     // said (the intro of a first meeting, or the last reply when they ask again; the presence policy).

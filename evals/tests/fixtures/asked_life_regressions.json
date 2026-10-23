@@ -1,5 +1,5 @@
 {
-  "about": "Every input the differential audit diff2-B2 (fix-b2 against origin/main) found regressed by the asked-life rule. Round 1 (bare ids) holds all but two lows; round 2 ('round2:' ids) holds every high and medium and all but six lows, which stay as they are (a 'too', a fragment or a reaction left after the removal). A made-up life is read only on a turn of pure banter: the founder's whole message is greetings, thanks and fillers around their own question about the coach's own weekend, day, week, holiday, evening or plans, with at most small talk or a question about what the coach is. Never a question the founder reports from someone else ('my manager always asks how was your weekend'), wants words for ('draft my reply', 'how do I answer') or plays ('roleplay: …'), never the founder's own plans ('should I make any plans for the weekend?') or a market's season ('How was Christmas for retailers like us?'), and never a message that also tells news or asks something of the founder's own ('how was your weekend? my grandma passed on friday', '… can you help with my bio'). Without 'rewritten' a case must come out exactly as origin/main left it: packages/ai/src/validators/asked-life.test.ts checks the reply rewrite (typed and spoken) and the sentence gate (typed and on a call) with the founder's message against the same without it, and evals/tests/test_matrix_checks.py checks the matrix presence check (G14) against main's verdict 'g14'. 'rewritten' is what the reply becomes where the founder asked in pure banter and the reply made a life up: the made-up life goes, the founder's thanks and a question of the reply's own to them stay ('Weekend was good, thanks — how did the demo go?' → 'Thanks! How did the demo go?'), a bare 'You?' is said in full, and G14 fails the reply and passes 'rewritten'.",
+  "about": "Every input the differential audit diff2-B2 (fix-b2 against origin/main) found regressed by the asked-life rule. Round 1 (bare ids) holds all but two lows; round 2 ('round2:' ids) holds every high and medium and all but six lows, which stay as they are (a 'too', a fragment or a reaction left after the removal); round 3 ('round3:' ids, audit diff7-B3 of 1e9d1c0) holds every high and medium and the 14 lows the same causes made: the founder's own state read as banter ('how was your day? me today 😭', 'the week tho', 'good for me'), any word after a greeting read as a name ('morning, exhausted.'), and a life's sentence that goes on to the founder ('Mine was quiet, thanks — let's get you ready for Thursday's pitch.', '… and yours sounds even better — congrats on the 50 users!'). A made-up life is read only on a turn of pure banter: the founder's whole message is greetings, thanks and fillers (never a word of their own such as 'me', 'today', 'tho' or 'good', and no name but the coach's own) around their own question about the coach's own weekend, day, week, holiday, evening or plans, with at most small talk or a question about what the coach is. Never a question the founder reports from someone else ('my manager always asks how was your weekend'), wants words for ('draft my reply', 'how do I answer') or plays ('roleplay: …'), never the founder's own plans ('should I make any plans for the weekend?') or a market's season ('How was Christmas for retailers like us?'), and never a message that also tells news or asks something of the founder's own ('how was your weekend? my grandma passed on friday', '… can you help with my bio'). Without 'rewritten' a case must come out exactly as origin/main left it: packages/ai/src/validators/asked-life.test.ts checks the reply rewrite (typed and spoken) and the sentence gate (typed and on a call) with the founder's message against the same without it, and evals/tests/test_matrix_checks.py checks the matrix presence check (G14) against main's verdict 'g14'. 'rewritten' is what the reply becomes where the founder asked in pure banter and the reply made a life up in a sentence that says nothing else to them (a life's sentence that goes on with a statement to the founder stays as written): the made-up life goes, the founder's thanks and a question of the reply's own to them stay ('Weekend was good, thanks — how did the demo go?' → 'Thanks! How did the demo go?'), a bare 'You?' is said in full, and G14 fails the reply and passes 'rewritten'.",
   "cases": [
     {
       "audit": "n0119",
@@ -574,8 +574,7 @@
       "founder": "how was your weekend?",
       "reply": "Weekend was great — I'll call you Monday to go over the deck.",
       "small_talk": true,
-      "g14": true,
-      "rewritten": "Thanks for asking! How was yours?"
+      "g14": true
     },
     {
       "audit": "round2:q176",
@@ -619,14 +618,301 @@
       "founder": "how was your weekend?",
       "reply": "Weekend was great — see you at demo day!",
       "small_talk": true,
-      "g14": false,
-      "rewritten": "Thanks for asking! How was yours?"
+      "g14": false
     },
     {
       "audit": "round2:t040",
       "founder": "how did your weekend test go — the pricing one?",
       "reply": "It was good, thanks — 12 of 40 picked £6.",
       "small_talk": false,
+      "g14": false
+    },
+    {
+      "audit": "round3:w017",
+      "severity": "high",
+      "founder": "how was your day? me today 😭",
+      "reply": "Mine was good, thanks — oh no, what happened today?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w024",
+      "severity": "high",
+      "founder": "how was your day? today for me 💀",
+      "reply": "Good, thanks — oof, what happened today?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u004",
+      "severity": "medium",
+      "founder": "hey corin! how was your weekend?",
+      "reply": "Mine was quiet, thanks — let's get you ready for Thursday's pitch.",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u005",
+      "severity": "medium",
+      "founder": "hey corin! how was your weekend?",
+      "reply": "Weekend was good, thanks — now, about your pricing page: drop the free tier before the launch.",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u087",
+      "severity": "medium",
+      "founder": "how was your weekend?",
+      "reply": "Mine was quiet, so I had time to read your memo — send me the updated numbers tonight.",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u090",
+      "severity": "medium",
+      "founder": "how was your weekend?",
+      "reply": "Weekend was good, thanks — let's get you ready for Thursday's pitch.",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u091",
+      "severity": "medium",
+      "founder": "how was your weekend?",
+      "reply": "Good, thanks — and congrats again on the 50th customer last week!",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u092",
+      "severity": "medium",
+      "founder": "how was your weekend?",
+      "reply": "It was lovely, thanks — and I've been meaning to say, your investor update was excellent.",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u101",
+      "severity": "medium",
+      "founder": "how was your weekend",
+      "reply": "Weekend was good, thanks — now, about the pricing page: let's drop the free tier.",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u176",
+      "severity": "medium",
+      "founder": "how was your weekend? me this weekend 💀",
+      "reply": "Mine was quiet, thanks — sounds like yours was rough! What happened?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u177",
+      "severity": "medium",
+      "founder": "how was your week? me this week 😩",
+      "reply": "My week was good, thanks — oof, sounds like yours wasn't. What's going on?",
+      "small_talk": true,
+      "g14": true
+    },
+    {
+      "audit": "round3:u187",
+      "severity": "medium",
+      "founder": "how was your week? the week tho",
+      "reply": "My week was good, thanks — sounds like yours was a lot. Want to talk it through?",
+      "small_talk": true,
+      "g14": true
+    },
+    {
+      "audit": "round3:u229",
+      "severity": "medium",
+      "founder": "how was your week?",
+      "reply": "My week was great, and yours sounds even better — congrats on the 50 users! What's next?",
+      "small_talk": true,
+      "g14": true
+    },
+    {
+      "audit": "round3:w001",
+      "severity": "medium",
+      "founder": "morning, exhausted. how was your weekend?",
+      "reply": "Mine was quiet, thanks — sorry you're wiped out! What kept you up?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w002",
+      "severity": "medium",
+      "founder": "hey, knackered. how was your weekend?",
+      "reply": "Mine was relaxing, thanks — sounds like you need one! What happened?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w006",
+      "severity": "medium",
+      "founder": "morning, frazzled. how was your weekend?",
+      "reply": "Mine was lovely, thanks — sorry you're frazzled. One thing at a time: what's due today?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w007",
+      "severity": "medium",
+      "founder": "hey, stressed. how was your weekend?",
+      "reply": "Mine was quiet, thanks — I'm sorry you're stressed. What's weighing on you most?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w008",
+      "severity": "medium",
+      "founder": "hi, overwhelmed. how was your weekend?",
+      "reply": "Weekend was good, thanks — let's make today lighter. What's on the list?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w016",
+      "severity": "medium",
+      "founder": "how was your weekend? me this week tho",
+      "reply": "Mine was relaxing, thanks — sounds like this week's been a lot for you. What's going on?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w020",
+      "severity": "medium",
+      "founder": "how was your weekend? this weekend tho",
+      "reply": "Mine was quiet, thanks — sounds like yours was wild! What happened?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w021",
+      "severity": "medium",
+      "founder": "how was your monday? monday tho 😩",
+      "reply": "My Monday was fine, thanks — sounds like yours was rough. What happened?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w025",
+      "severity": "medium",
+      "founder": "how was your weekend lol. me this weekend: 😭",
+      "reply": "Ha, mine was quiet, thanks — sorry yours was rough! What happened?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u088",
+      "severity": "low",
+      "founder": "how was your weekend?",
+      "reply": "It was great — I finally finished reading The Mom Test, which I think you should read too.",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u178",
+      "severity": "low",
+      "founder": "how was your weekend? good for me",
+      "reply": "Mine was quiet, thanks — glad yours was good! Shall we pick up the pricing test?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u180",
+      "severity": "low",
+      "founder": "how was your weekend? so far so good for me",
+      "reply": "Mine was relaxing — glad yours is going well! Ready for the investor prep?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u181",
+      "severity": "low",
+      "founder": "how was your weekend? me: good",
+      "reply": "Mine was lovely, thanks! Glad yours was good too.",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u182",
+      "severity": "low",
+      "founder": "how was your weekend? thank you for friday",
+      "reply": "It was lovely, thanks — and you're welcome! Friday was a great session.",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u185",
+      "severity": "low",
+      "founder": "good weekend? I been going",
+      "reply": "Lovely, thanks! Good to hear you've been at it. What's first?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u186",
+      "severity": "low",
+      "founder": "how was your day? today tho",
+      "reply": "Good, thanks! Sounds like today's been a lot — what happened?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:u188",
+      "severity": "low",
+      "founder": "how was your weekend? happy holidays btw",
+      "reply": "It was lovely, thanks — happy holidays to you too!",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w004",
+      "severity": "low",
+      "founder": "morning, jetlagged. how was your weekend?",
+      "reply": "Lovely, thanks — welcome back! How was Singapore?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w005",
+      "severity": "low",
+      "founder": "hey, swamped. how was your weekend?",
+      "reply": "It was relaxing, thanks — let's get you unswamped. What's the biggest fire?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w014",
+      "severity": "low",
+      "founder": "hey, sleepy. how was your weekend?",
+      "reply": "Mine was restful, thanks — sounds like yours wasn't! Late night?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w015",
+      "severity": "low",
+      "founder": "morning, caffeinated. how was your weekend?",
+      "reply": "Ha! Mine was relaxing, thanks. Let's use that energy — what's first?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w018",
+      "severity": "low",
+      "founder": "how was your weekend? for me so far so good",
+      "reply": "Mine was lovely, thanks — glad it's going well! Ready for the investor prep?",
+      "small_talk": true,
+      "g14": false
+    },
+    {
+      "audit": "round3:w019",
+      "severity": "low",
+      "founder": "how was your weekend? good for me thanks",
+      "reply": "Mine was quiet, thanks — glad yours was good! Shall we pick up the pricing test?",
+      "small_talk": true,
       "g14": false
     }
   ]

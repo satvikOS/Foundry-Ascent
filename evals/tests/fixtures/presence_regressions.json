@@ -1,5 +1,5 @@
 {
-  "about": "Every input the presence fix of 2026-10-22 (branch fix-b-presence) regressed, from the differential audit B-presence (58 regressions, with their founder-message variants). A made-up life is read only when the founder's message asks about the coach's own weekend, day, week, holiday, evening or plans (packages/ai/src/validators/asked-life.ts); every case here must come out exactly as origin/main left it. packages/ai/src/validators/asked-life.test.ts checks the reply rewrite (typed and spoken) and the sentence gate (typed and on a call) with the founder's message against the same without it (what main does: without such a question nothing changed); 'gate' is what main's gate shows where the regression was the streamed path. evals/tests/test_matrix_checks.py checks the matrix presence check (G14, presence_claim with the founder's message and the turn's small-talk intent) against main's 'g14'. 'rewritten' marks the five where the founder asked how the coach's weekend was and the reply made one up: their regression was the grader's verdict, which stays main's; the reply now loses the made-up weekend (evals MX-0032).",
+  "about": "Every input the presence fix of 2026-10-22 (branch fix-b-presence) regressed, from the differential audit B-presence (58 regressions, with their founder-message variants). A made-up life is read only when the founder's message asks about the coach's own weekend, day, week, holiday, evening or plans (packages/ai/src/validators/asked-life.ts); every case here must come out exactly as origin/main left it. packages/ai/src/validators/asked-life.test.ts checks the reply rewrite (typed and spoken) and the sentence gate (typed and on a call) with the founder's message against the same without it (what main does: without such a question nothing changed); 'gate' is what main's gate shows where the regression was the streamed path. evals/tests/test_matrix_checks.py checks the matrix presence check (G14, presence_claim with the founder's message and the turn's small-talk intent) against main's 'g14'. 'rewritten' marks the four where the founder asked how the coach's weekend was and the reply made one up: their regression was the grader's verdict, which stays main's; the reply now loses the made-up weekend (evals MX-0032). #35 ('… — hope you had fun too.') stays as main left it: its sentence goes on to the founder.",
   "cases": [
     {
       "regression": 0,
@@ -312,8 +312,7 @@
       "founder": "how was your weekend?",
       "reply": "I had a great time at the concert on Saturday — hope you had fun too.",
       "small_talk": true,
-      "g14": true,
-      "rewritten": "Thanks for asking! How was yours?"
+      "g14": true
     },
     {
       "regression": 36,

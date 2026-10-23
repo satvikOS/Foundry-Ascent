@@ -12,6 +12,7 @@ import {
   lifeUnitAfterRemoval,
   onlyLifeTail,
   questionAfterLife,
+  saysOnlyLife,
 } from './asked-life.js';
 import { identityQuestionOf, rewriteIdentity, type IdentityRewriteOptions } from './identity.js';
 import { SentenceGate, type GateUnit, type SentenceGateOptions } from './sentence-gate.js';
@@ -28,6 +29,8 @@ const BASE = {
   personaEirName: 'Corin Halvorsen',
   addressees: ['Maya Chen'],
 };
+/** The coach's own first name (BASE's EIR): the one name a founder's banter may greet ("hey corin!"). */
+const COACH = 'Corin';
 
 /** A shared fixture of evals/tests/fixtures, parsed (null when the repository lacks it: the tests then fail). */
 function fixture(name: string): unknown {
@@ -112,10 +115,45 @@ describe('a life of its own told when the founder asks about it (shared with the
     expect(suite?.questions.mixed.length ?? 0).toBeGreaterThan(15);
     for (const [kind, messages] of Object.entries(suite?.questions ?? {})) {
       for (const message of messages) {
-        const read = askedLifeOf(message)?.asked ?? 'none';
+        const read = askedLifeOf(message, COACH)?.asked ?? 'none';
         expect(read, message).toBe(kind === 'mixed' ? 'none' : kind);
       }
     }
+  });
+
+  it('greets no name but the coach’s own: the founder’s state after a greeting is theirs (audit diff7-B3)', () => {
+    expect(askedLifeOf('hey corin! how was your weekend?', COACH)?.asked).toBe('past');
+    expect(askedLifeOf('how was your weekend Corin?', COACH)?.asked).toBe('past');
+    // Without the coach's name no word after a greeting is one.
+    expect(askedLifeOf('hey corin! how was your weekend?')).toBeNull();
+    expect(askedLifeOf('lowkey, how was your weekend?')?.asked).toBe('past');
+    for (const message of [
+      'morning, exhausted. how was your weekend?',
+      'hey, stressed. how was your weekend?',
+      'cheers, Dana! how was your weekend?',
+      'how was your weekend retreat?',
+    ])
+      expect(askedLifeOf(message, COACH), message).toBeNull();
+  });
+
+  it('reads no word of the founder’s own as banter: "me", a time, "tho", "good" (audit diff7-B3)', () => {
+    for (const message of [
+      'how was your day? me today 😭',
+      'how was your day? today for me 💀',
+      'how was your week? the week tho',
+      'how was your monday? monday tho 😩',
+      'how was your weekend? good for me',
+      'good weekend? I been going',
+    ])
+      expect(askedLifeOf(message, COACH), message).toBeNull();
+    for (const message of [
+      'how was your weekend, really tho',
+      'good morning! did you have a good weekend?',
+      'happy friday!! any fun plans this weekend?',
+      'how was your weekend? happy holidays btw',
+      'I wanted to ask, how was your weekend?',
+    ])
+      expect(askedLifeOf(message, COACH), message).not.toBeNull();
   });
 
   it('takes the made-up life out of the reply, typed and spoken, keeping the thanks and turning to the founder', () => {
@@ -244,8 +282,8 @@ const askedRegressions =
 
 describe('what the asked-life rule once cut stays as main left it, or loses the made-up life as intended (audit diff2-B2)', () => {
   it('reads every regression of the audit (they live in this repository)', () => {
-    expect(askedRegressions?.length ?? 0).toBe(81);
-    expect(new Set(askedRegressions?.map((c) => c.audit)).size).toBe(81);
+    expect(askedRegressions?.length ?? 0).toBe(117);
+    expect(new Set(askedRegressions?.map((c) => c.audit)).size).toBe(117);
   });
 
   it('rewrites each reply with the founder’s message as main did, or takes out the made-up life, typed and spoken', () => {
@@ -307,6 +345,32 @@ describe('where a life is not the coach’s own', () => {
     expect(questionAfterLife(' — did I mention I went hiking?')).toBeNull();
     expect(questionAfterLife(', thanks — ready when you are.')).toBeNull();
     expect(questionAfterLife(' thanks ready when you are')).toBeNull();
+  });
+
+  it('reads a life only in a sentence that says nothing else to the founder (audit diff7-B3)', () => {
+    const only = (sentence: string, life: string): boolean =>
+      saysOnlyLife(sentence, sentence.indexOf(life), sentence.indexOf(life) + life.length);
+    expect(only('Weekend was good, thanks for asking.', 'Weekend was good')).toBe(true);
+    expect(only('Weekend was good, thanks — how did the demo go?', 'Weekend was good')).toBe(true);
+    expect(only('My weekend was great and yours?', 'My weekend was')).toBe(true);
+    expect(only('I had a great time at the concert on Saturday, thanks!', 'I had a great time at')).toBe(
+      true,
+    );
+    expect(only('Went to a friend’s wedding, it was beautiful!', 'it was beautiful')).toBe(true);
+    expect(only('Lovely — went for a run first thing.', 'went for a run')).toBe(true);
+    expect(only('Slept in and read.', 'Slept in')).toBe(true);
+    expect(only('Not much, just relaxing!', 'just relaxing')).toBe(true);
+    expect(only('Weekend was good, thanks for sending the deck!', 'Weekend was good')).toBe(true);
+    // The coach goes on to the founder: a statement, praise, advice or an action item.
+    expect(only("Mine was quiet, thanks — let's get you ready for Thursday's pitch.", 'Mine was quiet')).toBe(
+      false,
+    );
+    expect(only('Good, thanks — and congrats again on the 50th customer last week!', 'Good')).toBe(false);
+    expect(only('My week was great, and yours sounds even better — congrats!', 'My week was')).toBe(false);
+    expect(only('Weekend was good and congrats on the launch!', 'Weekend was good')).toBe(false);
+    expect(only('Weekend was good thanks send me the numbers tonight', 'Weekend was good')).toBe(false);
+    expect(only('Weekend was good — read a book!', 'Weekend was good')).toBe(false);
+    expect(only('Weekend was great — want to hear about it?', 'Weekend was great')).toBe(false);
   });
 
   it('reads a verbless life only as all its sentence says', () => {

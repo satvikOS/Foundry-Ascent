@@ -573,6 +573,49 @@ describe('identity', () => {
     }
   });
 
+  it('keeps a life whose sentence goes on to the founder, and reads no state or name of theirs as banter (audit diff7-B3)', () => {
+    const veir = opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
+    for (const [founderText, answer] of [
+      ['how was your day? me today 😭', 'Mine was good, thanks — oh no, what happened today?'],
+      [
+        'how was your week? the week tho',
+        'My week was good, thanks — sounds like yours was a lot. Want to talk it through?',
+      ],
+      [
+        'morning, exhausted. how was your weekend?',
+        "Mine was quiet, thanks — sorry you're wiped out! What kept you up?",
+      ],
+      [
+        'hey corin! how was your weekend?',
+        "Mine was quiet, thanks — let's get you ready for Thursday's pitch.",
+      ],
+      [
+        'how was your weekend',
+        "Weekend was good, thanks — now, about the pricing page: let's drop the free tier.",
+      ],
+      [
+        'how was your week?',
+        "My week was great, and yours sounds even better — congrats on the 50 users! What's next?",
+      ],
+    ] as const) {
+      const typed = validateCoachResponse(base({ answer }), { ...veir, founderText });
+      expect(typed.response.answer, founderText).toBe(answer);
+      const call = validateCoachResponse(base({ answer, spoken: answer }), {
+        ...veir,
+        channel: 'voice',
+        founderText,
+      });
+      expect(call.response.answer, founderText).toBe(answer);
+      expect(call.response.spoken, founderText).toBe(answer);
+    }
+    // The coach's own name is banter: a life alone in its sentence still goes.
+    const named = validateCoachResponse(base({ answer: 'Mine was quiet, thanks! How was yours?' }), {
+      ...veir,
+      founderText: 'hey corin! how was your weekend?',
+    });
+    expect(named.response.answer).toBe('Thanks! How was yours?');
+  });
+
   it('leaves the reply alone without a question about the coach’s own life, and a field even with one', () => {
     const veir = opts({ personaName: "Corin's vEIR", eirNames: ['Corin Halvorsen'] });
     const draft = 'Text him: Hey Sam! Weekend was great, thanks for asking. Want to grab coffee Thursday?';

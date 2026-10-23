@@ -14,6 +14,7 @@ import {
   isOnlyThanks,
   lifeLeftover,
   onlyLifeTail,
+  saysOnlyLife,
   turnBackAt,
   upperFirst as capitalised,
   type AskedLife,
@@ -306,13 +307,14 @@ const FOUNDER_NEXT =
  * asked-life.ts for the forms). It is asserted (a question only in a turn-back after it: "My weekend was great and
  * yours?"), not in a draft or a quote (straight single quotes too: "Pick one true detail: 'Good, thanks — went
  * climbing on Saturday.'"), not in a sentence that says honestly what the coach is, and says nothing of the founder
- * ("Hope you had a great weekend", "I spent the weekend on your deck"). Told without "I", it opens its clause after at
- * most thanks and lead words, says nothing of the founder in its sentence before it or in the clause after it, and is
- * not an "-ing" that is the subject of its clause ("Going to the farmers market this weekend is a great idea"). A
- * bare answer ("Good, thanks!"), a fragment ("A long walk, mostly.") and a verbless reaction ("Quiet weekend, thanks!")
- * count only where the reply opens, the bare answer only to how a time of the coach's went, and the fragment and the
- * reaction only as all their sentence says ("Hiking, reading, whatever recharges you — do that this weekend." is
- * advice).
+ * ("Hope you had a great weekend", "I spent the weekend on your deck"), and its sentence says nothing else to them
+ * (`lifeAlone`: "Mine was quiet, thanks — let's get you ready for Thursday's pitch." stays). Told without "I", it
+ * opens its clause after at most thanks and lead words, says nothing of the founder in its sentence before it or in
+ * the clause after it, and is not an "-ing" that is the subject of its clause ("Going to the farmers market this
+ * weekend is a great idea"). A bare answer ("Good, thanks!"), a fragment ("A long walk, mostly.") and a verbless
+ * reaction ("Quiet weekend, thanks!") count only where the reply opens, the bare answer only to how a time of the
+ * coach's went, and the fragment and the reaction only as all their sentence says ("Hiking, reading, whatever
+ * recharges you — do that this weekend." is advice).
  */
 function askedLifeAccepts(form: LifeForm): NonNullable<IdentityPattern['acceptIn']> {
   return (text, m, ctx) => {
@@ -334,6 +336,7 @@ function askedLifeAccepts(form: LifeForm): NonNullable<IdentityPattern['acceptIn
     if (!wordsOf(lead).every((w) => LIFE_LEAD_WORDS.has(w.toLowerCase()))) return false;
     if ((form === 'fragment' || form === 'reaction') && !onlyLifeTail(text.slice(end, sentence.end)))
       return false;
+    if (!lifeAlone(text, start, end)) return false;
     // Where the reply opens: after nothing but thanks (a few words, so a long text before it never is), read again in
     // the first rounds only, as each one takes out the opening that made the next sentence open the reply.
     return !(
@@ -359,9 +362,10 @@ function lifeAsserted(text: string, start: number, end: number): boolean {
 /**
  * A life told in the first person ("I had a great time at the concert", "My weekend was good"), in reply to the founder
  * asking about the coach's own: not in a draft (one that began in an earlier streamed unit too), and, for the forms
- * only this question reads (`inClause`), not the founder's ("I spent the weekend on your deck"); the plain forms
- * `personal_life` always reads keep every catch they had. In a sentence that says honestly what the coach is, only when
- * that sentence still says it without the clause (`withoutLifeClauses`), which is all that goes.
+ * only this question reads (`inClause`), not the founder's ("I spent the weekend on your deck") and alone in its
+ * sentence (`lifeAlone`: "My week was great, and yours sounds even better" stays); the plain forms `personal_life`
+ * always reads keep every catch they had. In a sentence that says honestly what the coach is, only when that sentence
+ * still says it without the clause (`withoutLifeClauses`), which is all that goes.
  */
 function firstPersonLife(
   text: string,
@@ -378,9 +382,21 @@ function firstPersonLife(
   }
   const sentence = sentenceSpan(text, start, end);
   const said = text.slice(sentence.start, sentence.end);
-  if (!ctx.saysWhatItIs(said)) return true;
+  if (!ctx.saysWhatItIs(said)) return !inClause || lifeAlone(text, start, end);
   const kept = withoutLifeClauses(said, [{ start: start - sentence.start, end: end - sentence.start }]);
   return kept !== null && ctx.saysWhatItIs(kept);
+}
+
+/**
+ * Whether the sentence of the life at [start, end) says nothing else that would go with it (asked-life.ts
+ * `saysOnlyLife`): "Mine was quiet, thanks — let's get you ready for Thursday's pitch." stays as written.
+ */
+function lifeAlone(text: string, start: number, end: number): boolean {
+  // With its own punctuation, so a question turned back reads as one ("Weekend was good — and yours?").
+  const sentence = boundsOf(text, start, end, isSentenceBreak);
+  let stop = sentence.end;
+  while (stop < text.length && /[.!?…]/u.test(text.charAt(stop))) stop += 1;
+  return saysOnlyLife(text.slice(sentence.start, stop), start - sentence.start, end - sentence.start);
 }
 
 /** Whether `index` sits in a draft, read after what the reply released before this text (a streamed unit). */
@@ -1998,6 +2014,14 @@ function resolveNames(options: IdentityCheckOptions): ResolvedNames {
   return { eirFirstName: personaEir === null ? null : firstNameOf(normalizeText(personaEir)), specs };
 }
 
+/**
+ * What the founder's message asks about the coach's own life, on a turn of pure banter (asked-life.ts
+ * `askedLifeOf`): the one name it may greet is the coach's own first name ("hey corin!").
+ */
+export function askedLifeFor(founderText: string, options: IdentityCheckOptions): AskedLife | null {
+  return askedLifeOf(founderText, resolveNames(options).eirFirstName);
+}
+
 /** The sentence `rewriteIdentity` puts in place of a violation of `kind`, for these options. */
 export function identityReplacementFor(kind: IdentityViolationKind, options: IdentityCheckOptions): string {
   return identityReplacement(kind, options.personaName, resolveNames(options).eirFirstName);
@@ -2185,14 +2209,15 @@ export interface IdentityRewriteOptions extends IdentityCheckOptions {
   /**
    * The founder's message a reply (or a unit of one: `disclaimers` `reply` or `unit`) answers. Only on a turn of pure
    * banter that asks about the coach's own weekend, day, week, holiday, evening or plans ("lowkey, how was your
-   * weekend?", "hey corin! any plans this weekend?"; not a plain "how are you?", the founder's own plans, a question
-   * they report, want words for or play, nor a message that also tells or asks anything of their own: see
-   * asked-life.ts) is a life the reply tells of its own taken out with its sentence, said in the first person or
-   * without it ("Weekend was good", "Mine was relaxing", "Slept in and read": evals MX-0032), never from a sentence
-   * that says honestly what the coach is, a draft or a quote. The founder's thanks stays, and a question the sentence
-   * goes on to ask them ("Weekend was good, thanks — how did the demo go?" → "Thanks! How did the demo go?"), and a
-   * reply turns the question back to them ("Weekend was good, thanks for asking." → "Thanks for asking! How was
-   * yours?"; never a bare "You?"). On any other message it changes nothing.
+   * weekend?", "hey corin! any plans this weekend?", the coach's own first name only; not a plain "how are you?", the
+   * founder's own plans, a question they report, want words for or play, nor a message that also tells or asks
+   * anything of their own, their state too ("me today 😭", "morning, exhausted."): see asked-life.ts) is a life the
+   * reply tells of its own taken out with its sentence, said in the first person or without it ("Weekend was good",
+   * "Mine was relaxing", "Slept in and read": evals MX-0032), never from a sentence that says honestly what the coach
+   * is or goes on to the founder ("…, thanks — let's get you ready for Thursday's pitch."), a draft or a quote. The
+   * founder's thanks stays, and a question the sentence goes on to ask them ("Weekend was good, thanks — how did the
+   * demo go?" → "Thanks! How did the demo go?"), and a reply turns the question back to them ("Weekend was good, thanks
+   * for asking." → "Thanks for asking! How was yours?"; never a bare "You?"). On any other message it changes nothing.
    */
   founderText?: string;
   /**
@@ -2380,7 +2405,7 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
     options.checkHumanClaims !== false &&
     options.presence !== false &&
     (options.disclaimers === 'reply' || options.disclaimers === 'unit')
-      ? askedLifeOf(options.founderText)
+      ? askedLifeFor(options.founderText, options)
       : null;
   // Met already in this conversation: no self-introduction (read on the model's own words, before any replacement,
   // so a correction or an honest line is never taken for one), unless the founder asked what the coach is.
