@@ -543,9 +543,10 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
           }
         : {}),
       keepDropped: true,
-      // What it adds is new or nothing: never the stock line (lab, a call: "Great, Idris. That still stands from a
-      // moment ago. Which part do you want to dig into?"). Adding nothing, the reply stands as it was shown.
-      callerContinues: true,
+      // What it adds is new or nothing: never the stock line for repeats (lab, a call: "Great, Idris. That still stands
+      // from a moment ago. Which part do you want to dig into?"). Adding nothing, the reply stands as it was shown. Their
+      // news parked again still gets its line ("That's real news. How did it come about?"), as before.
+      repeatFallback: false,
     });
     const extractor = new ReplyExtractor();
     const halt = new AbortController();

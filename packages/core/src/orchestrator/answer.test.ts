@@ -769,3 +769,69 @@ describe('diff3-A3 (high): a reply about the founder’s own product copy or bot
     }
   });
 });
+
+/*
+ * Differential audit of 2f9f081 against origin/main (2026-10-22, diff4-A4, R-NEWS): the founder brings news, phase A
+ * parks it for the coach's own agenda (LAB-R8) and the continuation parks it again. Main said the line about their news;
+ * the continuation's gate, told never to say the stock line, said nothing in its place, so the typed reply was "Oh wow."
+ * alone and a call handed the turn back ("Oh wow. Does that match?"). Only the stock line for repeats is left out now.
+ */
+describe('diff4-A4 (medium): news parked again by the continuation still gets the line about the news', () => {
+  const previous =
+    'Price the pilot per library, not per student, because the library pays and the students never see a bill. Ask for £900 a term for the first building, and say plainly that the second one costs the same.';
+  const history: HistoryTurn[] = [{ founderText: 'how should I price the pilot', answer: previous }];
+  const news = 'That’s real news. How did it come about?';
+
+  it('typed and on a call, after a lead-in or none, with the previous reply said again or not', async () => {
+    for (const text of [
+      'my cofounder quit this morning',
+      'we got the grant!!',
+      'the dean said yes to the pilot',
+      'we got our first paying customer!',
+      'the east library signed the contract today',
+      'I got into the accelerator',
+    ]) {
+      for (const [phaseA, lead] of [
+        ["Before we talk about that, let's finish the pricing plan first.", ''],
+        ["Oh wow. Before we get to that, let's settle the price first.", 'Oh wow. '],
+        [`Okay. One thing at a time. ${previous}`, 'Okay. '],
+      ] as const) {
+        for (const continuation of [
+          "Let's finish the pricing first, then we can come back to it.",
+          'One thing at a time: the price comes first.',
+        ]) {
+          for (const channel of ['text', 'voice'] as const) {
+            const { gateway, continued } = scripted(
+              () => phaseA,
+              () => continuation,
+            );
+            const turn = await answer(gateway, { text, channel, history });
+            const label = `${channel}: ${text} / ${phaseA.slice(0, 30)} / ${continuation.slice(0, 20)}`;
+            expect(continued, label).toHaveLength(1);
+            expect(turn.shown, label).toBe(`${lead}${news}`);
+            expect(turn.answer, label).toBe(`${lead}${news}`);
+            expect(turn.notes, label).toContain('stream_continued');
+            if (channel === 'voice') expect(turn.said.join(' '), label).toBe(`${lead}${news}`);
+            for (const said of everything(turn)) {
+              expect(said, label).not.toMatch(/one thing at a time|let's finish|before we/i);
+              for (const handBack of SPOKEN_HAND_BACKS) expect(said, label).not.toContain(handBack);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('a continuation that only repeats still adds no stock line', async () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const { gateway, continued } = scripted(
+        () => "Oh wow. Before we get to that, let's settle the price first.",
+        () => previous,
+      );
+      const turn = await answer(gateway, { text: 'we got the grant!!', channel, history });
+      expect(continued, channel).toHaveLength(1);
+      for (const said of everything(turn)) expect(said, channel).not.toContain(REPEAT_FALLBACK);
+      expect(turn.shown.startsWith('Oh wow.'), channel).toBe(true);
+    }
+  });
+});
