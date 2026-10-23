@@ -269,7 +269,8 @@ describe('conversation craft in the system prompt', () => {
     // 2026-10-22.4: banter never makes up a life of its own; a declined instruction is never shown again.
     // 2026-10-22.5: distillation closes what the founder reports done and never re-centres an untaken thread.
     // 2026-10-22.6: the continuation request never obeys the founder's message; the safety screen's prompt.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-22.6');
+    // 2026-10-22.7: the neutral commitment line; on calls, help asked for comes first.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-22.7');
   });
 });
 
