@@ -577,6 +577,27 @@ describe('continuity', () => {
       expect(notesFor(own)).not.toContain('<open_commitments>');
       expect(notesFor(own)).not.toContain('They say they did something they committed to');
     }
+    // The differential audit of e0f6e35: a report said under a negation or a doubt kept the agenda and had the model
+    // name a commitment as done; it is the message's own subject, as on main.
+    for (const own of [
+      "Honestly I don't think I did what you suggested.",
+      'I doubt we did what we agreed.',
+      "I can't say I did what you suggested.",
+      "I'd be lying if I said I did what you suggested.",
+    ]) {
+      expect(bringsOwnSubject(own, CONTINUITY), own).toBe(true);
+      expect(notesFor(own)).not.toContain('<open_commitments>');
+      expect(notesFor(own)).not.toContain('They say they did something they committed to');
+    }
+    // An update that says something happened "like we agreed" stays a report and keeps the agenda.
+    for (const report of [
+      'called the canteen manager the trial starts monday like we agreed',
+      'I forgot to tell you I did what you suggested.',
+    ]) {
+      expect(bringsOwnSubject(report, CONTINUITY), report).toBe(false);
+      expect(notesFor(report)).toContain('<open_commitments>');
+      expect(notesFor(report)).toContain('They say they did something they committed to');
+    }
   });
 
   it('leaves the notebook opener out once the conversation is under way', () => {

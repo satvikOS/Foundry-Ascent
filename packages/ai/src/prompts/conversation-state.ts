@@ -253,10 +253,77 @@ const NOT_NEGATED = String.raw`(?! (?:(?:i|we|you)(?:'?d| would)? )?(?:never|not
 /** The commitment named as such: "the thing I said I'd do", "what you suggested", "what we agreed on". */
 const NAMED_COMMITMENT = String.raw`(?:(?:the|that|this) things? (?:that )?(?:i|we) (?:${SAID_WOULD}(?: do)?|promised(?: to do)?|committed to)|(?:what|everything) (?:i|we) ${SAID_WOULD}(?: do)?|(?:the thing|what|everything) you (?:suggested|recommended)|what we agreed(?: on)?)\b${NOT_NEGATED}`;
 
-/** "I did the thing I said I'd do", "We tried what you suggested", "I've finally done what I said I would". */
+/**
+ * "I did the thing I said I'd do", "We tried what you suggested", "I've finally done what I said I would". Global: a
+ * sentence can say it twice, once under a doubt ({@link doubtedBefore}) and once plainly.
+ */
 const DID_NAMED = new RegExp(
   String.raw`${REPORT_SUBJECT}(?:did|done|finished|completed|tried|followed|went (?:ahead )?with) (?:exactly )?${NAMED_COMMITMENT}`,
+  'g',
 );
+
+/**
+ * A negation or a doubt that the report is said under: "I don't think", "I doubt", "I can't say", "I'm not sure", "I'd
+ * be lying if (I said)", "didn't", "haven't", "never", "failed to", "forgot to", "couldn't", "wasn't able to". "No
+ * doubt", "without a doubt", "I never doubted" and "never mind" are none.
+ */
+const DOUBT_CUE = new RegExp(
+  String.raw`\b(?:(?:don'?t|do not|didn'?t|did not) (?:really |honestly |actually |even )?(?:think|believe|feel like|reckon)|(?<!\b(?:no|without|without a|beyond|beyond a|never|not|don'?t|do not|didn'?t|did not) )doubt(?:s|ed|ful)?|(?:can'?t|cannot|can not|couldn'?t|could not) (?:really |honestly |truly )?say|not (?:so |too |really |entirely |totally |quite |that |a hundred percent |100% )?(?:sure|convinced)|unsure|(?:lying|lie) if|(?:didn'?t|did not|haven'?t|have not|hasn'?t|has not|never(?! mind\b))(?! (?:once |ever |really )?doubt)|failed to|forgot to|couldn'?t|could not|(?:wasn'?t|was not|weren'?t|were not) able to)\b`,
+  'g',
+);
+
+/**
+ * After a negation, a feeling about the report that takes it as true all the same ("I've never been so glad I did…",
+ * "I'd be lying if I said I wasn't proud we did…", "I can't say I'm sorry I did…").
+ */
+const FEELS_ABOUT =
+  /\b(?:glad|happy|happier|proud|prouder|relieved|thankful|grateful|sorry|surprised|shocked|amazed|regret(?:ted|s)?)\b/;
+/**
+ * After any negation but "lying if", telling, knowing or believing the report, which takes it as true too ("I forgot to
+ * tell you I did what you suggested", "I don't think you noticed I did…", "I couldn't believe I did…"); "I'd be lying if
+ * I told you I did…" denies it.
+ */
+const KNOWS_OF =
+  /\b(?:tell|told|telling|mention|mentioned|let (?:you|them|him|her|everyone|anyone|people|the team) know|update(?:d)? (?:you|them|him|her)|know|knew|noticed|heard|reali[sz]ed?|remember(?:ed)?|believe)\b/;
+
+/**
+ * Where the clause the report is in begins: after a comma, semicolon, colon, dash or bracket, or before a word that
+ * joins another clause ("I didn't think it would work, but I did what you suggested", "…so I did what you suggested";
+ * "not so sure" keeps its "so").
+ */
+const CLAUSE_BREAK =
+  /[,;:()—–]| - |\b(?:and|but|(?<!\b(?:not|never|not really|not quite) )so|then|yet|because|cause|cos|coz|since|though|although|while|plus|anyway|however)\b/g;
+
+/** How far before the report a doubt is looked for, so a pasted wall of reports stays linear. */
+const DOUBT_LOOKBACK = 200;
+/**
+ * At most this many words between the doubt and the report ("I'd be lying if | I said that | I did…"), so a negation
+ * further back in an unpunctuated run-on is another clause.
+ */
+const DOUBT_WORDS = 6;
+
+/**
+ * Whether the report that starts at `index` of `sentence` is said under a negation or a doubt in its own clause ("I
+ * don't think I did what you suggested", "I doubt we did what we agreed", "I can't say I did…", "I'd be lying if I said
+ * I did…"): then it is no report. A negation in a clause before it ("I didn't think it would work, but I did what you
+ * suggested") or after it ("I did what you suggested and it didn't work") leaves it one, and so does a word after the
+ * negation that takes it as true ({@link FEELS_ABOUT}, {@link KNOWS_OF}).
+ */
+function doubtedBefore(sentence: string, index: number): boolean {
+  let before = sentence.slice(Math.max(0, index - DOUBT_LOOKBACK), index);
+  // A window that cuts a word drops it, so the rest of "knot" is never "not".
+  if (index > DOUBT_LOOKBACK) before = before.replace(/^\S*\s?/, '');
+  let start = 0;
+  for (const m of before.matchAll(CLAUSE_BREAK)) start = m.index + m[0].length;
+  const clause = before.slice(start);
+  let cue: RegExpExecArray | null = null;
+  for (const m of clause.matchAll(DOUBT_CUE)) cue = m;
+  if (cue === null) return false;
+  const between = clause.slice(cue.index + cue[0].length).trim();
+  if (between !== '' && between.split(' ').length > DOUBT_WORDS) return false;
+  if (FEELS_ABOUT.test(between)) return false;
+  return /^(?:lying|lie) if$/.test(cue[0]) || !KNOWS_OF.test(between);
+}
 
 /** "like we agreed", "as we agreed", "as promised", "like I said I would", "as you suggested". */
 const AS_AGREED = String.raw`(?:just )?(?:(?:like|as) (?:we(?:'d| had)? agreed|i ${SAID_WOULD}(?: do(?: it)?)?|i promised|you suggested)|as (?:agreed|promised))`;
@@ -313,7 +380,8 @@ const QUOTED = new RegExp(
  * probe: "I did the thing I said I'd do" was answered without naming the commitment): the commitment named as such
  * ("I did the thing I said I'd do", "I tried what you suggested", "I called the dean like we agreed"), or a whole
  * message that is only a report ("Done!", "I did it", "Sent it"). Nothing broader: a celebration ("We did it!!"), news
- * ("We launched it"), a question ("Done with the deck?") or a negation ("I didn't do it", "Not done yet") is no report.
+ * ("We launched it"), a question ("Done with the deck?") or a negation ("I didn't do it", "Not done yet") is no report,
+ * nor is a report said under a negation or a doubt ("I don't think I did what you suggested", {@link doubtedBefore}).
  */
 export function reportsCommitmentDone(text: string): boolean {
   const t = normalize(text);
@@ -326,7 +394,8 @@ export function reportsCommitmentDone(text: string): boolean {
       (sentence) =>
         sentence !== '' &&
         !sentence.endsWith('?') &&
-        (DID_NAMED.test(sentence) || STEP_AS_AGREED.test(sentence)),
+        (STEP_AS_AGREED.test(sentence) ||
+          [...sentence.matchAll(DID_NAMED)].some((m) => !doubtedBefore(sentence, m.index))),
     );
 }
 
