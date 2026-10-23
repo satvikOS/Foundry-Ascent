@@ -12,6 +12,7 @@ import {
   isClauseFragment,
   isTopicLine,
   isVenting,
+  opensANameWithADiscourseWord,
   readsAsSubject,
   topicOf,
   topicWords,
@@ -369,12 +370,14 @@ function capitalise(text: string): string {
 /**
  * A label as it is said in the middle of a sentence: "Regulatory pathway" becomes "regulatory pathway" (labels are
  * capitalised like headings), while a name or an acronym keeps its case ("Boston pilot", "FDA clearance", "iOS
- * app"). Only a first word that is an everyday English word written as a heading ("Regulatory") is lowered.
+ * app"). Only a first word that is an everyday English word written as a heading ("Regulatory") is lowered, never
+ * one that opens a name of capitalised words with a discourse word in it ("Entrepreneur First", "Founders First":
+ * lowered, the name was cut at "First").
  */
 export function midSentence(label: string): string {
   const text = oneLine(label);
   const first = /^\p{Lu}\p{Ll}+(?=$|[\s,;:–—-])/u.exec(text)?.[0];
-  if (first === undefined) return text;
+  if (first === undefined || opensANameWithADiscourseWord(text)) return text;
   return isEverydayWord(first) ? `${first.toLowerCase()}${text.slice(first.length)}` : text;
 }
 

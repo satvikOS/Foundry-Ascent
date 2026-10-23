@@ -2193,6 +2193,155 @@ describe('the next call’s greeting after a founder line (the voice suite on 9a
       'Hi Maya, what would you like to work on?',
     );
   });
+
+  it.each([
+    [
+      'Should I quit and work for my startup full time?',
+      'Hi Maya, where did you land on whether to quit and work for your startup full time?',
+      'Hi Maya, where did you land on whether to quit and work for your startup full time?',
+    ],
+    [
+      'I want to quit and work for QuietQuad full time',
+      'Hi Maya, shall we pick up your plan to quit and work for QuietQuad full time?',
+      'Hi Maya, shall we pick up your plan to quit and work for QuietQuad full time?',
+    ],
+    [
+      'Should I quit and take a salary from the startup?',
+      'Hi Maya, where did you land on whether to quit and take a salary from the startup?',
+      'Hi Maya, where did you land on whether to quit and take a salary from the startup?',
+    ],
+    [
+      'Should I quit and pay myself a salary from the seed round?',
+      'Hi Maya, where did you land on whether to quit and pay yourself a salary?',
+      'Hi Maya, where did you land on whether to quit and pay yourself a salary?',
+    ],
+    [
+      'Should I quit and work at my startup full time?',
+      'Hi Maya, where did you land on whether to quit and work at your startup full time?',
+      'Hi Maya, where did you land on whether to quit and work at your startup full time?',
+    ],
+    [
+      "I'm going to quit and work for my startup full-time.",
+      'Hi Maya, shall we pick up your plan to quit and work for your startup full-time?',
+      'Hi Maya, shall we pick up your plan to quit and work for your startup full-time?',
+    ],
+    [
+      'Should I quit and work full time for my startup?',
+      'Hi Maya, where did you land on whether to quit and work full time for your startup?',
+      'Hi Maya, where did you land on whether to quit and work full time for your startup?',
+    ],
+    [
+      'Should I quit and work full time at QuietQuad?',
+      'Hi Maya, where did you land on whether to quit and work full time at QuietQuad?',
+      'Hi Maya, where did you land on whether to quit and work full time at QuietQuad?',
+    ],
+    [
+      'I want to quit and go full time at QuietQuad.',
+      'Hi Maya, shall we pick up your plan to quit and go full time at QuietQuad?',
+      'Hi Maya, shall we pick up your plan to quit and go full time at QuietQuad?',
+    ],
+    [
+      'Should I quit and take a salary from QuietQuad?',
+      'Hi Maya, where did you land on whether to quit and take a salary from QuietQuad?',
+      'Hi Maya, where did you land on whether to quit and take a salary from QuietQuad?',
+    ],
+    [
+      'Should I quit and draw a salary from the company?',
+      'Hi Maya, where did you land on whether to quit and draw a salary from the company?',
+      'Hi Maya, where did you land on whether to quit and draw a salary from the company?',
+    ],
+    [
+      'Should I quit and pay myself a salary?',
+      'Hi Maya, where did you land on whether to quit and pay yourself a salary?',
+      'Hi Maya, where did you land on whether to quit and pay yourself a salary?',
+    ],
+    [
+      'Should I quit and take a founder salary?',
+      'Hi Maya, where did you land on whether to quit and take a founder salary?',
+      'Hi Maya, where did you land on whether to quit and take a founder salary?',
+    ],
+    [
+      'Should I quit and work for the venture full time?',
+      'Hi Maya, where did you land on whether to quit and work for the venture full time?',
+      'Hi Maya, where did you land on whether to quit and work for the venture full time?',
+    ],
+    [
+      'Should I quit and work for our company full time?',
+      'Hi Maya, where did you land on whether to quit and work for your company full time?',
+      'Hi Maya, where did you land on whether to quit and work for your company full time?',
+    ],
+    [
+      'Should I quit and live off a salary from the startup?',
+      'Hi Maya, where did you land on whether to quit and live off a salary from the startup?',
+      'Hi Maya, where did you land on whether to quit and live off a salary from the startup?',
+    ],
+    [
+      'Should I quit and take a full-time role at QuietQuad?',
+      'Hi Maya, where did you land on whether to quit and take a full-time role at QuietQuad?',
+      'Hi Maya, where did you land on whether to quit and take a full-time role at QuietQuad?',
+    ],
+    [
+      'Should I drop out and work for QuietQuad full time?',
+      'Hi Maya, where did you land on whether to drop out and work for QuietQuad full time?',
+      'Hi Maya, where did you land on whether to drop out and work for QuietQuad full time?',
+    ],
+    ['Should I quit and work for a bank full time?', INVITATION, INVITATION],
+    ["Should I quit and take a salary from my dad's firm?", INVITATION, INVITATION],
+  ])('the differential audit of 601700d: %s', (line, chosen, stored) => {
+    expect(nextGreeting(line, 'a')).toEqual({ chosen, stored });
+  });
+
+  it('greets around a stored plan to work for the venture, and a thread with "First" whole (the differential audit of 601700d)', () => {
+    const greet = (opener: string, subject?: OpenerSubject) =>
+      repeatGreetingOf({
+        firstName: 'Maya',
+        opener,
+        ...(subject === undefined ? {} : { subject }),
+        conversationStarted: false,
+        seed: 'a',
+      }).text;
+    // Before: "Hi Maya, what would you like to work on?", and "where are things with entrepreneur?".
+    for (const [opener, expected] of [
+      [
+        "Welcome back. Last time you said you'd quit and work for QuietQuad full time. How did it go?",
+        'Hi Maya, did you get to quit and work for QuietQuad full time?',
+      ],
+      [
+        'Good to talk again. Last time, we talked about whether to quit and work for your startup full time. Where did you land on it?',
+        'Hi Maya, where did you land on whether to quit and work for your startup full time?',
+      ],
+      [
+        'Welcome back. Last time, we left off on Entrepreneur First. Where are things now?',
+        'Hi Maya, where are things with Entrepreneur First?',
+      ],
+      [
+        'Welcome back. Last time, we left off on Founders First. Where are things now?',
+        'Hi Maya, where are things with Founders First?',
+      ],
+    ] as const) {
+      expect(greet(opener), opener).toBe(expected);
+    }
+    for (const [text, expected] of [
+      [
+        'whether to quit and take a salary from the startup',
+        'Hi Maya, where did you land on whether to quit and take a salary from the startup?',
+      ],
+      [
+        'your plan to quit and work for QuietQuad full time',
+        'Hi Maya, shall we pick up your plan to quit and work for QuietQuad full time?',
+      ],
+    ] as const) {
+      const kind = text.startsWith('whether') ? 'question' : 'topics';
+      const stored = `Good to talk again. Last time (yesterday), we talked about ${text}. ${kind === 'question' ? 'Where did you land on it?' : 'How has it gone since?'}`;
+      expect(greet(stored, { kind, text }), text).toBe(expected);
+    }
+    // Work for someone else is still never greeted around.
+    expect(
+      greet(
+        'Good to talk again. Last time, we talked about whether to quit and work for a bank full time. Where did you land on it?',
+      ),
+    ).toBe('Hi Maya, what would you like to work on?');
+  });
 });
 
 describe('call summary', () => {

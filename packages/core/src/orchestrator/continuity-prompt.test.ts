@@ -1164,3 +1164,99 @@ describe('the differential review of 96fc715: the chat opener, threads, digest t
     }
   });
 });
+
+describe('the differential audit of 601700d: quitting to work for the venture, and a name with "First", on every path', () => {
+  const PEOPLE = { founder: 'Maya Patel', team: ['Maya Patel', 'Noor Haddad', 'Devin Okafor'] };
+  const said = (line: string) =>
+    conversation({
+      title: null,
+      exchanges: [{ founder: line, answer: 'Good. What would make that a clear yes for them?' }],
+      said: [line],
+    });
+  const digest = (topic: string) =>
+    conversation({
+      exchanges: [],
+      title: null,
+      digest: { summary: '', topics: [topic], commitments: [], openQuestions: [] },
+    });
+  const opener = (c: LeftOffConversationData) =>
+    continuityOpener(c, { now: NOW, seed: 'a', people: PEOPLE }).withTopic;
+
+  it('comes back to quitting to work for the venture full time, or to take a salary from it', () => {
+    // Before: the invitation for every line, and no thread, digest topic or stored opener.
+    for (const [line, subject] of [
+      [
+        'Should I quit and work for my startup full time?',
+        'whether to quit and work for your startup full time',
+      ],
+      [
+        'I want to quit and work for QuietQuad full time',
+        'your plan to quit and work for QuietQuad full time',
+      ],
+      [
+        'Should I quit and take a salary from the startup?',
+        'whether to quit and take a salary from the startup',
+      ],
+      ['Should I quit and pay myself a salary?', 'whether to quit and pay yourself a salary'],
+      ['I want to quit and go full time at QuietQuad.', 'your plan to quit and go full time at QuietQuad'],
+    ] as const) {
+      expect(subjectOf(said(line), PEOPLE)?.text, line).toBe(subject);
+      expect(opener(said(line)), line).toContain(`we talked about ${subject}.`);
+      expect(threadSubject(subject, PEOPLE), subject).toBe(subject);
+      expect(opener(digest(subject)), subject).toContain(`we talked about ${subject}.`);
+    }
+    for (const [stored, kind, text] of [
+      [
+        "Welcome back. Last time you said you'd quit and work for QuietQuad full time. How did it go?",
+        'thread',
+        'your plan to quit and work for QuietQuad full time',
+      ],
+      [
+        'Good to talk again. Last time, we talked about whether to quit and take a salary from the startup. Where did you land on it?',
+        'question',
+        'whether to quit and take a salary from the startup',
+      ],
+    ] as const) {
+      expect(readOpener(stored), stored).toEqual({ kind, text });
+    }
+    // Work for someone else is still withdrawal, on every path.
+    expect(opener(said('Should I quit and work for a bank full time?'))).toBeNull();
+    expect(threadSubject('whether to quit and work for a bank full time', PEOPLE)).toBeNull();
+    expect(opener(digest("whether to quit and take a salary from your dad's firm"))).toBeNull();
+  });
+
+  it('says a digest topic or a thread that opens with a name with "First" in it whole', () => {
+    // Before: "entrepreneur First" lowered, then cut at "First": "we left off on entrepreneur".
+    for (const [topic, said] of [
+      ['Entrepreneur First', 'Entrepreneur First'],
+      ['Founders First', 'Founders First'],
+      ['Entrepreneur First.', 'Entrepreneur First'],
+      ['Entrepreneur First interview', 'Entrepreneur First interview'],
+      ['Founders First application', 'Founders First application'],
+      ['Mobile First Labs', 'Mobile First Labs'],
+      ['Customer First Capital', 'Customer First Capital'],
+    ] as const) {
+      expect(threadSubject(topic, PEOPLE), topic).toBe(said);
+      expect(opener(digest(topic)), topic).toContain(`we talked about ${said}.`);
+    }
+    const lines = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((seed) =>
+      threadOpener('Entrepreneur First', { seed, people: PEOPLE }),
+    );
+    expect(lines.some((line) => line?.includes('we left off on Entrepreneur First.'))).toBe(true);
+    for (const line of lines) {
+      expect(line).toContain('Entrepreneur First');
+      expect(line).not.toMatch(/entrepreneur/);
+    }
+    expect(
+      readOpener('Welcome back. Last time, we left off on Entrepreneur First. Where are things now?'),
+    ).toEqual({
+      kind: 'thread',
+      text: 'Entrepreneur First',
+    });
+    // A heading's first word is still said in lower case, and so is "first" that opens a label.
+    expect(midSentence('Entrepreneur First')).toBe('Entrepreneur First');
+    expect(midSentence('Regulatory pathway')).toBe('regulatory pathway');
+    expect(midSentence('First customers')).toBe('first customers');
+    expect(midSentence('Meeting Hartwell')).toBe('meeting Hartwell');
+  });
+});

@@ -1406,7 +1406,6 @@ describe('the differential review of 96fc715', () => {
       'Should I leave and get a stable job?',
       'I want to quit and get a full-time role somewhere.',
       'should i just quit and go full time at my internship',
-      'I want to quit and go full time at Deloitte.',
       'Should I just quit and go full time at the bank?',
       'I want to leave and work full time for my dad.',
       'Should I give up and join a bigger startup?',
@@ -1584,5 +1583,114 @@ describe('the differential review of 96fc715', () => {
     );
     // The founder's own "first" is still no part of what they meant.
     expect(withoutDiscourseWords('a short pilot first')).toBe('a short pilot');
+  });
+});
+
+describe('the differential audit of 601700d', () => {
+  it('reads quitting to work for the venture full time, or to take a salary from it, as a decision', () => {
+    // Before: every one of these was dropped as withdrawal, on every path (main said each back).
+    for (const [line, text] of [
+      [
+        'Should I quit and work for my startup full time?',
+        'whether to quit and work for your startup full time',
+      ],
+      [
+        'I want to quit and work for QuietQuad full time',
+        'your plan to quit and work for QuietQuad full time',
+      ],
+      [
+        'Should I quit and take a salary from the startup?',
+        'whether to quit and take a salary from the startup',
+      ],
+      [
+        'Should I quit and pay myself a salary from the seed round?',
+        'whether to quit and pay yourself a salary from the seed round',
+      ],
+      [
+        'Should I quit and work at my startup full time?',
+        'whether to quit and work at your startup full time',
+      ],
+      [
+        "I'm going to quit and work for my startup full-time.",
+        'your plan to quit and work for your startup full-time',
+      ],
+      [
+        'Should I quit and work full time for my startup?',
+        'whether to quit and work full time for your startup',
+      ],
+      ['Should I quit and work full time at QuietQuad?', 'whether to quit and work full time at QuietQuad'],
+      ['I want to quit and go full time at QuietQuad.', 'your plan to quit and go full time at QuietQuad'],
+      ['Should I quit and take a salary from QuietQuad?', 'whether to quit and take a salary from QuietQuad'],
+      [
+        'Should I quit and draw a salary from the company?',
+        'whether to quit and draw a salary from the company',
+      ],
+      ['Should I quit and pay myself a salary?', 'whether to quit and pay yourself a salary'],
+      ['Should I quit and take a founder salary?', 'whether to quit and take a founder salary'],
+      [
+        'Should I quit and work for the venture full time?',
+        'whether to quit and work for the venture full time',
+      ],
+      [
+        'Should I quit and work for our company full time?',
+        'whether to quit and work for your company full time',
+      ],
+      [
+        'Should I quit and work for our edtech startup full time?',
+        'whether to quit and work for your edtech startup full time',
+      ],
+      [
+        'Should I quit and live off a salary from the startup?',
+        'whether to quit and live off a salary from the startup',
+      ],
+      ['Should I quit and get a salary from the round?', 'whether to quit and get a salary from the round'],
+      [
+        'Should I quit and take a salary out of our revenue?',
+        'whether to quit and take a salary out of your revenue',
+      ],
+      [
+        'Should I quit and take a full-time role at QuietQuad?',
+        'whether to quit and take a full-time role at QuietQuad',
+      ],
+      [
+        'Should I drop out and work for QuietQuad full time?',
+        'whether to drop out and work for QuietQuad full time',
+      ],
+      [
+        'Should I leave and work for my startup full time?',
+        'whether to leave and work for your startup full time',
+      ],
+      [
+        'i want to quit and work for quietquad full time',
+        'your plan to quit and work for quietquad full time',
+      ],
+      // Whose a name is cannot be told from the line: it is said back, as main did.
+      ['I want to quit and go full time at Deloitte.', 'your plan to quit and go full time at Deloitte'],
+    ] as const) {
+      expect(topicOf(line)?.text ?? null, line).toBe(text);
+      expect(isVenting(text), text).toBe(false);
+    }
+    // Work, a salary or a role elsewhere is still withdrawal.
+    for (const line of [
+      'Should I quit and work for a bank full time?',
+      'I want to quit and work full time for a big company.',
+      "Should I quit and take a salary from my dad's firm?",
+      "Should I quit and work for my dad's company full time?",
+      'Should I quit and go full time at another startup?',
+      'Should I quit and work for the other startup full time?',
+      'Should I quit and work for my old company?',
+      'Should I quit and work for a startup full time?',
+      'Should I quit and take a salary?',
+      'I want to quit and get a full-time role somewhere.',
+    ]) {
+      expect(topicOf(line)?.text ?? null, line).toBeNull();
+    }
+    for (const subject of [
+      'whether to quit and work for a bank full time',
+      "whether to quit and take a salary from your dad's firm",
+      'your plan to quit and take a salary',
+    ]) {
+      expect(isVenting(subject), subject).toBe(true);
+    }
   });
 });

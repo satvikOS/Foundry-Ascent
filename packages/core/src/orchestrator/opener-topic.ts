@@ -441,6 +441,21 @@ function inAName(word: string, before: string | undefined): boolean {
   );
 }
 /**
+ * Whether `text` opens with a name of capitalised words that holds a discourse word ({@link inAName}: "Entrepreneur
+ * First", "Founders First application", "Mobile First Labs"): its first word keeps its capital, or the name is cut at
+ * the discourse word (the differential audit of 601700d heard "we left off on entrepreneur").
+ */
+export function opensANameWithADiscourseWord(text: string): boolean {
+  const words = text.trim().split(/\s+/);
+  if (!/^\p{Lu}\p{Ll}/u.test(words[0] ?? '')) return false;
+  for (let k = 1; k < words.length; k += 1) {
+    const word = words[k] ?? '';
+    if (!/^\p{Lu}\p{Ll}/u.test(word)) return false;
+    if (DISCOURSE_WORDS.has(bare(word)) && inAName(word, words[k - 1])) return true;
+  }
+  return false;
+}
+/**
  * Words before a last discourse word that make it one side of an alternative ("now or later", "sooner than later",
  * "now vs later", "annually versus monthly": the review of e9e49fb heard "whether to hire now vs?").
  */
@@ -1584,19 +1599,96 @@ const WITHDRAWING =
  */
 const QUITS_AND =
   /^(?:quit(?:s|ting)?|(?:giv(?:e|es|ing)|gave)\s+up|leav(?:e|es|ing)|(?:walk(?:s|ing|ed)?|run(?:s|ning)?|ran)\s+away|drop(?:s|ped|ping)?\s+out)\s+(?:and|so|then)\s+(?:then\s+)?(.*)$/iu;
-/** A job, a course or a career elsewhere: what quitting to do is withdrawal ("quit and get a full-time job"). */
+/**
+ * A job, a course or a career elsewhere: what quitting to do is withdrawal ("quit and get a full-time job"); a salary
+ * only when the venture does not pay it ({@link paidByTheVenture}).
+ */
 const ELSEWHERE =
-  /(?<![\p{L}'])(?:jobs?|employment|employer|career|salary|degree|masters|master's|phd|mba|grad\s+scheme|graduate\s+scheme|internship|corporate)(?![\p{L}'-])/iu;
+  /(?<![\p{L}'])(?:jobs?|employment|employer|career|salary|degree|masters|master's|phd|mba|grad\s+scheme|graduate\s+scheme|internship|corporate)(?![\p{L}'-])/giu;
 /** The venture made their job ("make QuietQuad my job", "make this my full-time job"): no job elsewhere. */
 const MADE_THEIR_JOB =
   /(?<![\p{L}'])mak(?:e|es|ing)\s+(?:[\p{L}\p{N}'’-]+\s+){1,3}?(?:my|your|our)\s+(?:(?:full[\s-]?time|real|proper|main|actual|only)\s+)?(?:job|career)(?![\p{L}'-])/iu;
 /**
- * Work for someone else: working, or going full time, at or for another ("work full time at a bank", "go full time at
- * Deloitte", "work full time for my dad"; never "for myself", "for a year"), a role or a position taken ("get a
- * full-time role somewhere"), another company joined ("join a bigger startup"; an accelerator is the venture's).
+ * Working, or going full time, at or for someone ("work full time at a bank", "work for my startup full time"): work
+ * elsewhere unless what follows is no one ({@link NO_ONE_ELSE}) or the venture ({@link namesTheVenture}).
  */
-const WORK_ELSEWHERE =
-  /(?<![\p{L}'])(?:(?:work(?:s|ed|ing)?(?:\s+full[\s-]?time)?|go(?:es|ing)?\s+full[\s-]?time)\s+(?:at|for)\s+(?!(?:(?:a|an|the|one|another)\s+)?(?:year|years|month|months|week|weeks|while|bit|summer|semester|term)(?![\p{L}'-])|(?:myself|ourselves|yourself|me|us|it|this|free|nothing)(?![\p{L}'-]))|(?:get(?:s|ting)?|got|tak(?:e|es|ing)|took|find(?:s|ing)?|found|land(?:s|ed|ing)?|accept(?:s|ed|ing)?)\s+(?:a|an|another|some)\s+(?:[\p{L}-]+\s+){0,2}?(?:role|position|placement)(?![\p{L}'-])|join(?:s|ed|ing)?\s+(?:a|an|another|some)\s+(?:[\p{L}-]+\s+){0,2}?(?:startup|company|firm|bank|consultancy|agency|corporation)s?(?![\p{L}'-]))/iu;
+const WORKS_AT =
+  /(?<![\p{L}'])(?:work(?:s|ed|ing)?(?:\s+full[\s-]?time)?|go(?:es|ing)?\s+full[\s-]?time)\s+(?:at|for)\s+/giu;
+/** No one to work for: how long ("for a year", "for a while"), the founder themself, the venture's "it", for free. */
+const NO_ONE_ELSE =
+  /^(?:(?:(?:a|an|the|one|another)\s+)?(?:year|years|month|months|week|weeks|while|bit|summer|semester|term)|myself|ourselves|yourself|me|us|it|this|free|nothing)(?![\p{L}'-])/iu;
+/** A role or a position taken ("get a full-time role somewhere"): elsewhere unless it is at the venture. */
+const TAKES_A_ROLE =
+  /(?<![\p{L}'])(?:get(?:s|ting)?|got|tak(?:e|es|ing)|took|find(?:s|ing)?|found|land(?:s|ed|ing)?|accept(?:s|ed|ing)?)\s+(?:a|an|another|some)\s+(?:[\p{L}-]+\s+){0,2}?(?:role|position|placement)(?![\p{L}'-])/giu;
+/** Another company joined ("join a bigger startup"; an accelerator is the venture's). */
+const JOINS_ANOTHER =
+  /(?<![\p{L}'])join(?:s|ed|ing)?\s+(?:a|an|another|some)\s+(?:[\p{L}-]+\s+){0,2}?(?:startup|company|firm|bank|consultancy|agency|corporation)s?(?![\p{L}'-])/iu;
+/**
+ * The venture by one of its own words, made theirs by what comes before it ("my startup", "the company", "our edtech
+ * startup", "your own business"), never someone else's ("my dad's company", "the other startup", "my old company").
+ */
+const THE_VENTURE_ITSELF =
+  /^(?:my|our|your|the|this|that)\s+(?:own\s+)?(?:(?!(?:other|another|different|next|old|previous|former|current|big|bigger|large|larger)(?![\p{L}'’-]))[\p{L}-]+\s+){0,2}?(?:startup|start-up|company|venture|business|project|app|product|platform|brand)s?(?![\p{L}'’-])/iu;
+/** What the venture pays from: its funding or its revenue ("the seed round", "the money we raised", "our revenue"). */
+const ITS_FUNDS =
+  /^(?:(?:my|our|your|the|this|that)\s+)?(?:[\p{L}-]+\s+){0,2}?(?:round|seed|pre-seed|raise|funding|investment|grant|money|cash|revenue|revenues|profit|profits|runway|budget)(?![\p{L}'’-])/iu;
+/** Paying themselves ("pay myself a salary", "start paying myself"): a salary the venture pays. */
+const PAYS_THEMSELVES = /(?<![\p{L}'])pa(?:y|ys|ying|id)\s+(?:myself|yourself|ourselves)(?![\p{L}'’-])/iu;
+
+/**
+ * Whether `rest` (what follows working at or for, or a salary from) opens with the venture: one of its own words
+ * ({@link THE_VENTURE_ITSELF}) or a name, written with its capital or no everyday word ("QuietQuad", "quietquad"). Whose
+ * a name is cannot be told from the line (their own "QuietQuad", or "Deloitte"), and a plan said back costs less
+ * than one lost (the differential audit of 601700d: "quit and work for QuietQuad full time" was dropped as
+ * withdrawal, where main asked about it); a name's possessive is someone else's ("Noor's startup").
+ */
+function namesTheVenture(rest: string): boolean {
+  if (THE_VENTURE_ITSELF.test(rest)) return true;
+  const first = /^[\p{L}\p{N}][\p{L}\p{N}'’-]*/u.exec(rest)?.[0];
+  if (first === undefined || /['’]s$/u.test(first)) return false;
+  if (/^\p{Lu}/u.test(first)) return first !== 'I';
+  const w = first.toLowerCase();
+  return !isEverydayWord(w) && !FUNCTION_WORDS.has(w) && !TIME_WORDS.has(w) && !NUMBER_WORDS.has(w);
+}
+
+/**
+ * Whether the salary in `clause` (from `at` to `end`) is the venture's: they pay themselves, it is a founder's salary,
+ * or it comes from the venture or its funds ("a salary from the startup", "a salary from the seed round").
+ */
+function paidByTheVenture(clause: string, at: number, end: number): boolean {
+  if (PAYS_THEMSELVES.test(clause) || /(?<![\p{L}'])founders?['’]?s?\s+$/iu.test(clause.slice(0, at)))
+    return true;
+  const from = /^\s+(?:from|out\s+of|at|with|for|off|through)\s+(.+)$/iu.exec(clause.slice(end))?.[1];
+  return from !== undefined && (namesTheVenture(from) || ITS_FUNDS.test(from));
+}
+
+/** Whether `clause` names a job, a course or a career elsewhere ({@link ELSEWHERE}). */
+function jobElsewhere(clause: string): boolean {
+  if (MADE_THEIR_JOB.test(clause)) return false;
+  for (const m of clause.matchAll(ELSEWHERE)) {
+    if (/^salary$/iu.test(m[0]) && paidByTheVenture(clause, m.index, m.index + m[0].length)) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Whether `clause` is work for someone else: working, or going full time, at or for another ("work full time at a
+ * bank", "work full time for my dad"; never "for myself", "for a year", "for my startup", "at QuietQuad"), a role or a
+ * position taken elsewhere ("get a full-time role somewhere"), another company joined ("join a bigger startup").
+ * Quitting to work for the venture is a decision, never withdrawal.
+ */
+function worksElsewhere(clause: string): boolean {
+  for (const m of clause.matchAll(WORKS_AT)) {
+    const rest = clause.slice(m.index + m[0].length);
+    if (!NO_ONE_ELSE.test(rest) && !namesTheVenture(rest)) return true;
+  }
+  for (const m of clause.matchAll(TAKES_A_ROLE)) {
+    const where = /^\s+(?:at|with|in|for|on)\s+(.+)$/iu.exec(clause.slice(m.index + m[0].length))?.[1];
+    if (where === undefined || !namesTheVenture(where)) return true;
+  }
+  return JOINS_ANOTHER.test(clause);
+}
 /**
  * Going home, going back to what they did before, never coming back, travelling or resting ("go home", "go back to
  * uni", "go back to consulting", "never come back", "travel for a year", "sleep for a week"), as what quitting is for.
@@ -1632,17 +1724,17 @@ function ownPeople(clause: string): boolean {
 
 /**
  * Whether what follows quitting or leaving and an "and" (`after`) is a life elsewhere: a job, a course or a career
- * ({@link ELSEWHERE}, unless the venture is made their job: {@link MADE_THEIR_JOB}), work for someone else
- * ({@link WORK_ELSEWHERE}), going home, back or away ({@link AWAY}), their own life ({@link OWN_LIFE},
+ * ({@link jobElsewhere}, unless the venture is made their job or pays the salary), work for someone else
+ * ({@link worksElsewhere}), going home, back or away ({@link AWAY}), their own life ({@link OWN_LIFE},
  * {@link OWN_PEOPLE}: "focus on my exams", "raise my kids"), or withdrawing again ("walk away", "take a break").
  * Anything else is a plan, as it was before (the differential review of 96fc715: "quit and work on the startup", "quit
  * and do YC", "quit and go full-time in January", "quit and focus on my app" and "quit and make QuietQuad my job" were
- * dropped as withdrawal, because only a list of the venture's moves was kept).
+ * dropped as withdrawal, because only a list of the venture's moves was kept; the differential audit of 601700d:
+ * "quit and work for my startup full time", "quit and take a salary from the startup").
  */
 function leavesForElsewhere(after: string): boolean {
   const clause = after.split(CLAUSE_END)[0]?.trim() ?? '';
-  if (ELSEWHERE.test(clause) && !MADE_THEIR_JOB.test(clause)) return true;
-  if (WORK_ELSEWHERE.test(clause) || AWAY.test(clause)) return true;
+  if (jobElsewhere(clause) || worksElsewhere(clause) || AWAY.test(clause)) return true;
   const focus = FOCUS_ON.exec(clause)?.[1];
   if ((focus !== undefined && ownLife(focus.trim())) || ownPeople(clause)) return true;
   return vents(clause) === 'line';
