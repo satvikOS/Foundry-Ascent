@@ -644,6 +644,12 @@ describe('a report of having done what they committed to (evals G12, the matrixâ
     'I tried what you suggested.',
     'I called the dean like we agreed.',
     'Sent it, as we agreed.',
+    // A step and the commitment named, touching, either way round.
+    'Called the dean, like we agreed. She wants a one-pager.',
+    'As we agreed, I sent the survey to 30 nurses on Monday.',
+    'Just sent the survey, as promised.',
+    "I set up the door counter like I said I'd do.",
+    "We've run the numbers like we agreed.",
     "lowkey so, i did the thing i said i'd do no cap",
     'ngl i actually did the thing i said id do lol',
   ])('hears %j as a report on a commitment', (text) => {
@@ -684,6 +690,44 @@ describe('a report of having done what they committed to (evals G12, the matrixâ
     "Draft email: 'Hi Dr Shah, I sent the pilot plan last week as promised. Did you get a chance to look?' Is that too pushy?",
     'Thanks, talk soon.',
   ])('does not hear %j as a report on a commitment', (text) => {
+    expect(reportsCommitmentDone(text)).toBe(false);
+    expect(deriveConversationState(earlier, text).reportsDone).toBe(false);
+    expect(block(text)).not.toContain('They say they did something they committed to');
+  });
+
+  it.each([
+    // The differential audit of 21515bd (medium): "as we agreed" is said of what comes next, after a past act it is no
+    // part of. Tested apart on the sentence, the two read as a commitment done, and the line had the model name one from
+    // the notes as done (the overdue "Email the dean the pilot plan" for the second).
+    "We talked about pricing and, as we agreed, I'll send the deck Friday.",
+    "I met the dean yesterday; as agreed, I'll send the plan next week.",
+    "I talked to my cofounder and, as agreed, we'll launch in January.",
+    'We met the bursar; as agreed, the pilot starts after exams.',
+    "I asked the dean, and as we agreed, I'll follow up Monday.",
+    "Called the canteen manager yesterday and as agreed I'm sending her the menu tomorrow.",
+    "We spoke on Friday and, like we agreed, I'm going to wait a week before chasing.",
+    'We met last week and, as agreed, nothing happens until the board signs off.',
+    'I emailed the bursar about budgets; as we agreed, the dean gets the plan once she replies.',
+    "Talked to Sam, and like we agreed I'll hold off on hiring until December.",
+    // The same rule, the same audit (low): a conclusion "as we agreed", the commitment named of someone else, a request,
+    // a spoken question without its "?", a draft that names it.
+    'I asked five students and, as we agreed, none of them would pay upfront.',
+    'I talked too much in the pitch, like you suggested I would.',
+    "I wrote this as promised, but haven't sent it.",
+    'I asked you as we agreed to keep it short, so please do.',
+    'Set up the call like we agreed.',
+    'Run the numbers like we agreed, please.',
+    'did i send it like we agreed',
+    'did we call the canteen manager like we agreed',
+    'Proofread pls: Hi Jo, like we agreed, I booked the room for Thursday.',
+    // What is agreed still to come, said after the step or of someone else.
+    "We met, and I'll send the deck Friday like we agreed.",
+    'I talked to Sam about holding off until December like we agreed.',
+    'He called the dean like we agreed.',
+    'We ran out of money, like you suggested we might.',
+    'We ran out of time like you suggested.',
+    "I didn't call the dean like we agreed.",
+  ])('does not hear %j as a report: "as we agreed" is not said of a step done', (text) => {
     expect(reportsCommitmentDone(text)).toBe(false);
     expect(deriveConversationState(earlier, text).reportsDone).toBe(false);
     expect(block(text)).not.toContain('They say they did something they committed to');

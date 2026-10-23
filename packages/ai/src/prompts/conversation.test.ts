@@ -559,6 +559,24 @@ describe('continuity', () => {
       expect(bringsOwnSubject(own, CONTINUITY), own).toBe(true);
       expect(notesFor(own)).not.toContain('<open_commitments>');
     }
+    // The differential audit of 21515bd: "as we agreed" said of what comes next, after an unrelated past act, kept the
+    // agenda as a report; it is the message's own subject, as on main.
+    for (const own of [
+      "We talked about pricing and, as we agreed, I'll send the deck Friday.",
+      "I met the dean yesterday; as agreed, I'll send the plan next week.",
+      "I talked to my cofounder and, as agreed, we'll launch in January.",
+      'We met the bursar; as agreed, the pilot starts after exams.',
+      "I asked the dean, and as we agreed, I'll follow up Monday.",
+      "Called the canteen manager yesterday and as agreed I'm sending her the menu tomorrow.",
+      "We spoke on Friday and, like we agreed, I'm going to wait a week before chasing.",
+      'We met last week and, as agreed, nothing happens until the board signs off.',
+      'I emailed the bursar about budgets; as we agreed, the dean gets the plan once she replies.',
+      "Talked to Sam, and like we agreed I'll hold off on hiring until December.",
+    ]) {
+      expect(bringsOwnSubject(own, CONTINUITY), own).toBe(true);
+      expect(notesFor(own)).not.toContain('<open_commitments>');
+      expect(notesFor(own)).not.toContain('They say they did something they committed to');
+    }
   });
 
   it('leaves the notebook opener out once the conversation is under way', () => {

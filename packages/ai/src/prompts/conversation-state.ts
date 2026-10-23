@@ -258,17 +258,40 @@ const DID_NAMED = new RegExp(
   String.raw`${REPORT_SUBJECT}(?:did|done|finished|completed|tried|followed|went (?:ahead )?with) (?:exactly )?${NAMED_COMMITMENT}`,
 );
 
-/** "…like we agreed", "…as we agreed", "…as promised": what they did, named as the commitment it was. */
-const AS_AGREED = new RegExp(
-  String.raw`\b(?:just )?(?:like|as) (?:we(?:'d| had)? agreed|i ${SAID_WOULD}|i promised|you suggested)\b${NOT_NEGATED}|\bas (?:agreed|promised)\b`,
-);
+/** "like we agreed", "as we agreed", "as promised", "like I said I would", "as you suggested". */
+const AS_AGREED = String.raw`(?:just )?(?:(?:like|as) (?:we(?:'d| had)? agreed|i ${SAID_WOULD}(?: do(?: it)?)?|i promised|you suggested)|as (?:agreed|promised))`;
 
 /**
- * What they did, said as done (a verb in the past at the start of the clause: "I called the dean", "Sent it"), for a
- * commitment named "like we agreed". News (launched, signed, hired…) is not here: it is heard as news.
+ * A step said as done, in the past ("called", "sent", "talked"). News (launched, signed, hired…) is not here: it is
+ * heard as news, and running out of something is no step. Without a subject, only a form that is past and nothing else
+ * ("Sent it", not "Set up the call" or "Run the numbers", which ask for it, nor "Did…", which asks whether it was done).
  */
-const DID_STEP = new RegExp(
-  String.raw`${REPORT_SUBJECT}(?:did|done|finished|completed|tried|sent|called|emailed|e-mailed|messaged|texted|booked|scheduled|talked|spoken|spoke|met|ran(?! out)|run(?! out)|wrote|written|posted|interviewed|asked|contacted|reached out|set up|submitted|followed up|drafted|got (?:it|that|them|everything) done)\b`,
+const PAST_STEP = String.raw`(?:finished|completed|tried|sent|called|emailed|e-mailed|messaged|texted|booked|scheduled|talked|spoke|met|ran(?! out\b)|wrote|posted|interviewed|asked|contacted|reached out|submitted|followed up|drafted|got (?:it|that|them|everything) done)`;
+/** The same step after "I've" or "we have": "I've sent it", "We've run the numbers". */
+const DONE_STEP = String.raw`(?:done|finished|completed|tried|sent|called|emailed|e-mailed|messaged|texted|booked|scheduled|talked|spoken|met|run(?! out\b)|written|posted|interviewed|asked|contacted|reached out|set up|submitted|followed up|drafted|got (?:it|that|them|everything) done)`;
+
+/**
+ * A word that starts another clause, or is the subject of one ("…and, as we agreed, I'll send the deck Friday", "Did I
+ * send it like we agreed"): the words after the step stop before it, so "as we agreed" is said of the step and nothing
+ * else.
+ */
+const CLAUSE_WORD = String.raw`(?:and|but|so|then|or|nor|because|cause|cos|while|though|although|since|until|till|unless|once|when|whenever|before|after|if|whether|that|which|who|what|where|why|how|i|we|you|he|she|they|(?:i|we|you|he|she|they|it|that|there)'[a-z]+|will|would|won't|wouldn't|gonna|going|shall|should|can|could|might|may|must|not|never|no)`;
+
+/**
+ * The step itself, from its subject ("I", "we", or none at the start of the sentence) to its object, in one clause:
+ * "I called the dean", "Sent the plan to the dean", "We've run the numbers".
+ */
+const STEP_CLAUSE = String.raw`(?:(?:i|we) ${REPORT_ADVERBS}(?:${PAST_STEP}|set up)|(?:i|we)(?:'ve| have) ${REPORT_ADVERBS}${DONE_STEP}|${REPORT_ADVERBS}${PAST_STEP})(?: (?!${CLAUSE_WORD}(?![\p{L}\p{N}']))[^\s,;:]+){0,16}`;
+
+/**
+ * A step done "like we agreed", as the whole sentence: the step and then the commitment named ("I called the dean like
+ * we agreed", "Sent it, as we agreed"), or the commitment named and then the step ("As we agreed, I sent the survey to
+ * 30 nurses"). The two touch, so "We talked about pricing and, as we agreed, I'll send the deck Friday" (what is
+ * agreed comes next, after a past act it is no part of) is none: the audit of 21515bd found ten of those.
+ */
+const STEP_AS_AGREED = new RegExp(
+  String.raw`^${REPORT_LEAD}(?:${STEP_CLAUSE},? ${AS_AGREED}|${AS_AGREED},? ${STEP_CLAUSE})$`,
+  'u',
 );
 
 /** A whole message that is only a report: "Done!", "I did it", "Did it!", "Finished it", "Sent it", "Got it done". */
@@ -303,7 +326,7 @@ export function reportsCommitmentDone(text: string): boolean {
       (sentence) =>
         sentence !== '' &&
         !sentence.endsWith('?') &&
-        (DID_NAMED.test(sentence) || (AS_AGREED.test(sentence) && DID_STEP.test(sentence))),
+        (DID_NAMED.test(sentence) || STEP_AS_AGREED.test(sentence)),
     );
 }
 
