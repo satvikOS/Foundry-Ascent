@@ -2,7 +2,8 @@
 
 The vEIR can appear on calls as a video of its EIR (HeyGen LiveAvatar, LITE mode) and speak with the EIR's own
 cloned voice (ElevenLabs). Until the EIR's own avatar exists, a HeyGen **stock avatar speaking in its own stock
-voice** (LiveAvatar FULL mode, platform admins only, labelled "AI avatar") can stand in for presentations: §9.
+voice** (LiveAvatar FULL mode, platform admins and the people they choose, labelled "AI avatar") can stand in for
+presentations: §9; giving the demo account the face: §9.8.
 Everything ships **off**. This runbook is what the owner does to turn it on, what it costs, how to stop it, and
 what the first live session must check. How it works:
 [docs/architecture/calls.md §4](../architecture/calls.md#4-the-face-and-the-voice-of-a-call-the-digital-twin).
@@ -25,7 +26,8 @@ for a fictional EIR).
 - No vendor key reaches a browser. In LITE the face's speak channel stays on our server and the browser only
   watches. In FULL the vendor takes commands only from the browser's room connection, so a modified page could make
   the face say other text **on its own screen** until the transcript check ends the face (within one 15 s
-  heartbeat): that is why FULL is for platform admins only and never for an EIR's likeness (§9).
+  heartbeat): that is why FULL is for platform admins and the people they name only (§9.8), and never for an EIR's
+  likeness (§9).
 - A face or voice that fails costs the call nothing: the presence tile takes over from a face silently, and a
   standard voice speaks the same sentence when the cloned voice fails (that clone is then skipped for a minute).
 - The crisis line is never said by the face or the cloned voice.
@@ -152,15 +154,15 @@ records it on their vEIR's **Consent** tab with the scopes it covers. The twin n
    confirms it), `voice.provider: "elevenlabs"`. Deploy ([deploy and rollback](deploy-and-rollback.md)). The deploy
    adds the two secret grants, the `MEDIA_*` variables and those two CSP origins; synth refuses a wired face
    without both origins (the room would be blocked and the face would never show). Nothing changes for founders:
-   while `sandbox` is true a face is offered only to **platform admins** (the sandbox shows the vendor's stock
-   avatar, whatever the EIR).
+   while `sandbox` is true a face is offered only to **platform admins** and the people a platform admin gave
+   **Video face** (§9.8; the sandbox shows the vendor's stock avatar, whatever the EIR).
 2. **Admin › Settings**: turn on **Video faces** and **Cloned voices** (each asks first and says the price). Set
    **Video minutes per person per month** (60) and **per call** (20 on Essential).
 3. **Studio › the vEIR › Consent › Digital twin** (program lead or the EIR): paste the **HeyGen avatar ID** (the
    sandbox uses the vendor's sandbox avatar whatever is entered) and the **ElevenLabs voice ID**, status **Ready**.
    Ready needs the matching scope in the consent in force.
-4. Run the **first live session checks** (§8) signed in as a platform admin who is a founder of a test venture
-   (founders and team members are the only people who can call).
+4. Run the **first live session checks** (§8) signed in as a founder of a test venture who is a platform admin or
+   has **Video face** (§9.8; founders and team members are the only people who can call).
 5. **Production:** keep or correct the LiveKit origins in `media.face.csp.connect` from §8.2, set
    `face.sandbox: false`, enter the EIR's real avatar ID, deploy. Pilot with named EIRs and founders first.
 
@@ -248,10 +250,11 @@ DevTools open, faces and voices on.
 8. **Reconcile.** After a week, compare the vendors' usage pages with the usage ledger ([platform insights](insights.md):
    `heygen:liveavatar-lite`, `elevenlabs:*`); more than 10 % apart means the metering needs a look.
 
-## 9. FULL mode: a stock avatar with its stock voice (platform admins only)
+## 9. FULL mode: a stock avatar with its stock voice (platform admins and chosen people only)
 
 For presentations before the EIR's own avatar exists (owner decision, until mid-December): a HeyGen **stock**
-avatar, speaking in its **stock** voice, says the vEIR's validated words. Only platform admins are offered it, and
+avatar, speaking in its **stock** voice, says the vEIR's validated words. Only platform admins and the people a
+platform admin gave **Video face** (§9.8) are offered it, and
 the call tile labels it **"AI avatar"**: it is not the EIR's digital twin, so no likeness consent is involved. The
 LITE path (§5, our Polly or cloned audio lip-synced on the EIR's own avatar) is unchanged and remains the path for
 the EIR's likeness later; FULL is never used for a likeness (synth refuses `mode: "full"` without a stock avatar).
@@ -265,7 +268,7 @@ the EIR's likeness later; FULL is never used for a likeness (synth refuses `mode
 | What the vendor receives   | the vEIR's synthesized audio, from our server          | the vEIR's validated words, as text                                                                                                                                                  |
 | Who sends it               | our server (the speak channel never reaches a browser) | the browser, over the vendor's room, after our server admits the text (`POST /calls/:id/face/say`)                                                                                   |
 | What our server guarantees | the face cannot say anything else                      | the face is only given admitted text by our client; anything else said (a modified page, on its own screen) is caught by the transcript check within one heartbeat and ends the face |
-| Who is offered it          | everyone the consent covers (sandbox: admins)          | platform admins only (synth refuses another audience)                                                                                                                                |
+| Who is offered it          | everyone the consent covers (sandbox: admins)          | platform admins and people with Video face (§9.8); synth refuses another audience                                                                                                    |
 | Price                      | $0.093 a minute (one credit)                           | $0.19 a minute (two credits)                                                                                                                                                         |
 
 Never the crisis line, in either mode: a crisis turn drops the face to the presence at once.
@@ -313,9 +316,10 @@ origins as LITE.
 2. **Admin › Settings:** turn **Video faces** on; **per call** 20 minutes (the Essential session cap); about 600
    video minutes a month; a platform spend cap of at least $120.
 3. **Studio:** nothing. A stock face needs no avatar id or consent on the persona.
-4. Run the live checks (§9.5) from a platform-admin account that is a founder of a test venture.
+4. Run the live checks (§9.5) from a founder account of a test venture that has **Video face** (§9.8).
 5. **Presentation phase.** `sandbox: false`, `stock.avatarId` and `stock.voiceId` the chosen ids, `audience`
-   still `"admins"`. Deploy, then present from a platform-admin account. Founders never see the face.
+   still `"admins"`. Deploy, then present from the founder account with **Video face** (§9.8). Other founders
+   never see the face.
 
 ### 9.5 Live checks (sandbox first, about a minute each)
 
@@ -349,6 +353,25 @@ billed, so the face opens only during a call, and a call on hold for a minute gi
 - HeyGen's privacy policy allows training on inputs with an opt-out by email, while the LiveAvatar FAQ says data is
   never used for training: send the opt-out before real founders ever see a face.
 - Essential sessions end at 20 minutes: a longer presentation needs a planned reconnect.
+
+### 9.8 Giving one person the face (the demo account)
+
+The face is offered only to platform admins, but only a venture's founders and team members can start a call, and
+the demo runs from one founder account. So a platform admin gives that one account the face:
+
+1. Sign in as a platform admin. **Admin › People & access**.
+2. Find the demo founder (search by name or email). In the **Video face** column, turn the switch on and confirm
+   **Turn on**. The switch stays on; the change is audited as `principal.face_access_updated` (ids only).
+3. **Admin › Settings:** **Video faces** must be on, with video minutes left this month and per call (§9.4 step 2).
+4. Sign in as the demo founder (or reload the page if already signed in: no new sign-in is needed, each call reads
+   the switch afresh) and start a call. The tile shows the stock avatar labelled **"AI avatar"**.
+
+Video face changes only _who_ may see the face. Faces on, the video minutes, the platform spend cap and (for an
+EIR's likeness) consent still decide whether a call has one, and turning **Video faces** off in Settings still
+stops every face within seconds. To take it away, turn the person's switch off (no confirmation): their next call
+has the presence. The same works by API: `PATCH /api/v1/admin/principals/<id>` with `{"faceAccess": true}`
+(platform admin only). A face that does not appear for that account: check the switch, then Settings, then the
+`call.avatar_session` audit (`admins_only` / `sandbox_only` means the account has no Video face).
 
 ## What still needs real keys or a decision
 

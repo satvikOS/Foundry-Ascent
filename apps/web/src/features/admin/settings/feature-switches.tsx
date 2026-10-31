@@ -82,7 +82,7 @@ export function facePrice(vendor: Pick<FaceVendorView, 'usdPerMinute' | 'sandbox
 /** What the wired face is: its mode, who sees it and its price, in a line. */
 export function faceSummary(vendor: FaceVendorView): string {
   const what = vendor.mode === 'full' ? 'Stock AI avatar' : 'EIR’s face';
-  const who = vendor.audience === 'admins' ? 'admins only' : 'everyone';
+  const who = vendor.audience === 'admins' ? 'admins + chosen people' : 'everyone';
   return `${what} · ${who} · ${facePrice(vendor)}`;
 }
 

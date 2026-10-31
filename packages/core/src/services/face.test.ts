@@ -19,12 +19,16 @@ const ON = { facesEnabled: true, faceMinutesPerPrincipalMonth: 60, faceMinutesPe
 const LIKENESS = { likeness: true };
 const STAND_IN = { likeness: false };
 const READY = { ref: 'avatar-1' };
+const NOBODY = { roles: [], faceAccess: false } as const;
+const ADMIN = { roles: ['platform_admin'], faceAccess: false } as const;
+/** A founder a platform admin gave video-face access (no platform role). */
+const GRANTED = { roles: [], faceAccess: true } as const;
 
 describe('faceAllowance: whether a call may have a face, and for how long', () => {
   const base = {
     settings: ON,
     provider: LIKENESS,
-    callerRoles: [] as const,
+    caller: NOBODY,
     twinFace: READY,
     monthSecondsUsed: 0,
     callSecondsLeft: 1800,
@@ -48,33 +52,97 @@ describe('faceAllowance: whether a call may have a face, and for how long', () =
     expect(faceAllowance({ ...base, provider: STAND_IN, twinFace: null }).ok).toBe(true);
   });
 
-  it('offers a vendor sandbox (the stock avatar under the EIR’s name) to platform admins only', () => {
+  it('offers a vendor sandbox (the stock avatar under the EIR’s name) to platform admins only by role', () => {
     const sandbox = { likeness: true, sandbox: true };
     expect(faceAllowance({ ...base, provider: sandbox })).toEqual({ ok: false, reason: 'sandbox_only' });
-    expect(faceAllowance({ ...base, provider: sandbox, callerRoles: ['program_lead', 'eir'] })).toEqual({
+    expect(
+      faceAllowance({
+        ...base,
+        provider: sandbox,
+        caller: { roles: ['program_lead', 'eir'], faceAccess: false },
+      }),
+    ).toEqual({
       ok: false,
       reason: 'sandbox_only',
     });
-    expect(faceAllowance({ ...base, provider: sandbox, callerRoles: ['platform_admin'] }).ok).toBe(true);
+    expect(faceAllowance({ ...base, provider: sandbox, caller: ADMIN }).ok).toBe(true);
   });
 
-  it('offers an admins-only face (a stock avatar for a presentation) to platform admins only', () => {
+  it('offers an admins-only face (a stock avatar for a presentation) to platform admins only by role', () => {
     const presentation = { likeness: false, adminsOnly: true };
     expect(faceAllowance({ ...base, provider: presentation, twinFace: null })).toEqual({
       ok: false,
       reason: 'admins_only',
     });
     expect(
-      faceAllowance({ ...base, provider: presentation, twinFace: null, callerRoles: ['program_lead'] }),
+      faceAllowance({
+        ...base,
+        provider: presentation,
+        twinFace: null,
+        caller: { roles: ['program_lead'], faceAccess: false },
+      }),
     ).toEqual({ ok: false, reason: 'admins_only' });
     // A stock face draws no one: no persona face is needed, for an admin.
-    expect(
-      faceAllowance({ ...base, provider: presentation, twinFace: null, callerRoles: ['platform_admin'] }),
-    ).toEqual({ ok: true, maxSeconds: 20 * 60 });
+    expect(faceAllowance({ ...base, provider: presentation, twinFace: null, caller: ADMIN })).toEqual({
+      ok: true,
+      maxSeconds: 20 * 60,
+    });
     // Admins-only is its own switch: a paid (non-sandbox) face stays admins-only.
-    expect(faceOfferedTo({ adminsOnly: true, sandbox: false }, [])).toBe(false);
-    expect(faceOfferedTo({ adminsOnly: false, sandbox: false }, [])).toBe(true);
-    expect(faceOfferedTo({ sandbox: true }, ['platform_admin'])).toBe(true);
+    expect(faceOfferedTo({ adminsOnly: true, sandbox: false }, NOBODY)).toBe(false);
+    expect(faceOfferedTo({ adminsOnly: false, sandbox: false }, NOBODY)).toBe(true);
+    expect(faceOfferedTo({ sandbox: true }, ADMIN)).toBe(true);
+  });
+
+  it('offers a sandbox or admins-only face to a person with video-face access, like a platform admin', () => {
+    const sandbox = { likeness: true, sandbox: true };
+    const presentation = { likeness: false, adminsOnly: true };
+    const both = { likeness: false, sandbox: true, adminsOnly: true };
+    const everyone = { likeness: false, sandbox: false, adminsOnly: false };
+    // Every audience × every caller: only the chosen-audience providers ask anything of the caller.
+    const matrix = [
+      [sandbox, NOBODY, 'sandbox_only'],
+      [sandbox, GRANTED, true],
+      [sandbox, ADMIN, true],
+      [presentation, NOBODY, 'admins_only'],
+      [presentation, GRANTED, true],
+      [presentation, ADMIN, true],
+      [both, NOBODY, 'sandbox_only'],
+      [both, GRANTED, true],
+      [everyone, NOBODY, true],
+      [everyone, GRANTED, true],
+    ] as const;
+    for (const [provider, caller, expected] of matrix) {
+      const allowance = faceAllowance({ ...base, provider, caller });
+      expect(allowance.ok ? true : allowance.reason, JSON.stringify({ provider, caller })).toBe(expected);
+      expect(faceOfferedTo(provider, caller)).toBe(expected === true);
+    }
+    // Face access is per person: roles alone (staff, EIRs) are not enough, and a founder with access needs none.
+    expect(faceOfferedTo(presentation, { roles: ['program_lead', 'eir'], faceAccess: false })).toBe(false);
+    expect(faceOfferedTo(presentation, { roles: ['eir'], faceAccess: true })).toBe(true);
+  });
+
+  it('keeps everything else of the allowance for a person with video-face access', () => {
+    const presentation = { likeness: false, adminsOnly: true };
+    const sandbox = { likeness: true, sandbox: true };
+    const granted = { ...base, provider: presentation, caller: GRANTED, twinFace: null };
+    expect(faceAllowance(granted)).toEqual({ ok: true, maxSeconds: 20 * 60 });
+    expect(faceAllowance({ ...granted, settings: { ...ON, facesEnabled: false } })).toEqual({
+      ok: false,
+      reason: 'faces_disabled',
+    });
+    expect(faceAllowance({ ...granted, spendCapReached: true })).toEqual({ ok: false, reason: 'spend_cap' });
+    expect(faceAllowance({ ...granted, monthSecondsUsed: 60 * 60 })).toEqual({
+      ok: false,
+      reason: 'face_minutes',
+    });
+    expect(faceAllowance({ ...granted, callSecondsLeft: 120 })).toEqual({ ok: true, maxSeconds: 120 });
+    expect(faceAllowance({ ...granted, callSecondsLeft: MIN_FACE_SECONDS - 1 })).toEqual({
+      ok: false,
+      reason: 'too_short',
+    });
+    // A likeness still needs its face ready under consent, in the sandbox too.
+    expect(faceAllowance({ ...granted, provider: sandbox })).toEqual({ ok: false, reason: 'no_face' });
+    expect(faceAllowance({ ...granted, provider: sandbox, twinFace: READY }).ok).toBe(true);
   });
 
   it('stops at the spend cap, the month’s minutes and a call about to end', () => {

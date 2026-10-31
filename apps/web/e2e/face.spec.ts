@@ -2,7 +2,16 @@ import { createHash } from 'node:crypto';
 
 import { expect, type Page, type Request } from '@playwright/test';
 
-import { FOUNDER_STATE, openVenture, setFacesEnabled, test } from './support/fixtures';
+import {
+  FOUNDER_NAME,
+  FOUNDER_STATE,
+  OWNER_STATE,
+  TENANT,
+  openVenture,
+  setFaceAccess,
+  setFacesEnabled,
+  test,
+} from './support/fixtures';
 
 /*
  * A FULL stock face (docs/architecture/calls.md §4) end to end, silently: the production build and the real API,
@@ -13,6 +22,9 @@ import { FOUNDER_STATE, openVenture, setFacesEnabled, test } from './support/fix
  * the same words), that tampered words are refused (422) and never sent, that no track is published and no
  * microphone asked for, that barge-in interrupts the vendor, that the call never fetches its own audio for a
  * unit the face said, that the tile says "AI avatar", and that a face that drops leaves the call on the presence.
+ *
+ * Like production, the FULL API shows the face to platform admins only and to the people a platform admin gave
+ * Video face (Admin › People & access): the seeded founder gets no face until the owner turns hers on there.
  */
 
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
@@ -53,12 +65,84 @@ function bodyText(request: Request): string {
   }
 }
 
+/** Sends every API call of the page to the FULL-mode API (same database, same sign-in). */
+async function routeToFaceApi(page: Page, site: URL): Promise<void> {
+  await page.route(
+    (url) => url.origin === site.origin && url.pathname.startsWith('/api/'),
+    (route) => route.continue({ url: route.request().url().replace(site.origin, FACE_API.origin) }),
+  );
+}
+
+/** Starts a call from the founder's venture; returns the call id and the call screen. */
+async function startCall(page: Page) {
+  const started = page.waitForResponse(
+    (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
+  );
+  await page
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('link', { name: /^Call / })
+    .click();
+  const screen = page.getByRole('dialog', { name: /^Call with / });
+  await screen.getByRole('button', { name: 'Start call' }).click();
+  const callId = ((await (await started).json()) as { call: { id: string } }).call.id;
+  return { callId, screen };
+}
+
 test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speaks admitted text)', () => {
   test.use({ storageState: FOUNDER_STATE });
+
+  test('a founder without Video face keeps the presence, faces on or not', async ({ page, baseURL }) => {
+    if (!baseURL) throw new Error('baseURL is required');
+    const site = new URL(baseURL);
+    test.skip(site.hostname !== 'localhost' && site.hostname !== '127.0.0.1', 'needs the local FULL API');
+
+    await routeToFaceApi(page, site);
+    const configs: Record<string, unknown>[] = [];
+    const sessionRequests: string[] = [];
+    page.on('response', (response) => {
+      if (!/\/api\/v1\/ventures\/[0-9a-f-]{36}\/call-config$/.test(new URL(response.url()).pathname)) return;
+      void response
+        .json()
+        .then((body: Record<string, unknown>) => configs.push(body))
+        .catch(() => undefined);
+    });
+    page.on('request', (request) => {
+      if (request.url().endsWith('/api/v1/calls/avatar-session')) sessionRequests.push(request.url());
+    });
+
+    await setFaceAccess(baseURL, FOUNDER_NAME, false);
+    await setFacesEnabled(baseURL, true);
+    let callId: string | null = null;
+    try {
+      const notice = await page.request.post('/api/v1/calls/notice/acknowledge', { headers: WRITE_HEADERS });
+      expect(notice.status(), 'POST /calls/notice/acknowledge').toBe(200);
+      await openVenture(page);
+      const call = await startCall(page);
+      callId = call.callId;
+      await expect(call.screen.locator('[data-slot="call-tile"][data-face="presence"]')).toBeVisible();
+      await expect.poll(() => configs.length).toBeGreaterThan(0);
+      // The API names no face for this founder, so the page never asks for one.
+      expect(configs.at(-1)).toMatchObject({ provider: 'builtin' });
+      expect(configs.at(-1)).not.toHaveProperty('faceMinutesLeft');
+      await expect(call.screen.getByRole('textbox', { name: /^Reply to / })).toBeEditable();
+      expect(sessionRequests).toEqual([]);
+      await expect(call.screen.locator('[data-slot="call-tile"][data-face="video"]')).toHaveCount(0);
+    } finally {
+      if (callId) {
+        const ended = await page.request.post(`/api/v1/calls/${callId}/end`, {
+          headers: WRITE_HEADERS,
+          data: { reason: 'user' },
+        });
+        expect(ended.status(), 'POST /calls/:id/end').toBe(200);
+      }
+      await setFacesEnabled(baseURL, false);
+    }
+  });
 
   test('says only admitted units, refuses tampered words, interrupts on barge-in and falls back quietly', async ({
     page,
     baseURL,
+    browser,
   }) => {
     if (!baseURL) throw new Error('baseURL is required');
     const site = new URL(baseURL);
@@ -130,19 +214,28 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
     let callId: string | null = null;
     let micAtStart = 0;
     try {
+      await test.step('the owner turns on the founder’s Video face (Admin › People & access)', async () => {
+        const owner = await browser.newContext({ storageState: OWNER_STATE });
+        try {
+          const admin = await owner.newPage();
+          await admin.goto(`/${TENANT}/app/admin/principals`);
+          const toggle = admin.getByRole('switch', { name: `Video face for ${FOUNDER_NAME}` });
+          await expect(toggle).not.toBeChecked();
+          await toggle.click();
+          const confirm = admin.getByRole('alertdialog', { name: 'Turn on video face?' });
+          await confirm.getByRole('button', { name: 'Turn on' }).click();
+          await expect(toggle).toBeChecked();
+        } finally {
+          await owner.close();
+        }
+      });
+
       const notice = await page.request.post('/api/v1/calls/notice/acknowledge', { headers: WRITE_HEADERS });
       expect(notice.status(), 'POST /calls/notice/acknowledge').toBe(200);
       await openVenture(page);
-      const started = page.waitForResponse(
-        (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
-      );
-      await page
-        .getByRole('navigation', { name: 'Main' })
-        .getByRole('link', { name: /^Call / })
-        .click();
-      const screen = page.getByRole('dialog', { name: /^Call with / });
-      await screen.getByRole('button', { name: 'Start call' }).click();
-      callId = ((await (await started).json()) as { call: { id: string } }).call.id;
+      const call = await startCall(page);
+      callId = call.callId;
+      const screen = call.screen;
       const tile = screen.locator('[data-slot="call-tile"][data-face="video"]');
       const line = screen.getByRole('textbox', { name: /^Reply to / });
 
@@ -226,6 +319,7 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
         expect(ended.status(), 'POST /calls/:id/end').toBe(200);
       }
       await setFacesEnabled(baseURL, false);
+      await setFaceAccess(baseURL, FOUNDER_NAME, false);
     }
   });
 });

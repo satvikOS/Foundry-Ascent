@@ -192,6 +192,7 @@ UI relies on beyond plain JSON bodies:
 | `GET /program/assignees`                                                         | `EscalationAssigneeListResponse`: the tenant's EIRs and program leads, the routing dialog's only choices       |
 | `POST /program/escalations/:id/route`                                            | 200 `EscalationQueueItem` (status `routed`); only from `awaiting_assignment` / `routed` / `acknowledged`       |
 | `POST /admin/principals`                                                         | 201 `AdminPrincipalRow` (the dialog offers "Issue access code" for `row.principal.id`)                         |
+| `PATCH /admin/principals/:id`                                                    | 200 `AdminPrincipalRow`; `{ faceAccess }` from the "Video face" switch (asks only when turning it on)          |
 | `POST /admin/principals/:id/access-codes`, `POST /ventures/:id/team/invitations` | 201 `AccessCodeIssued`; one-time secret, a replayed key gets 409 (never cached or logged)                      |
 | `DELETE /admin/access-codes/:id`                                                 | 200 `{ accessCodeId, revokedAt }`                                                                              |
 | `POST /turns/:id/feedback`                                                       | 201 `{ feedbackId }` (body not used)                                                                           |

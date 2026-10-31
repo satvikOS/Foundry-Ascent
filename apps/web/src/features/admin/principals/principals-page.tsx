@@ -29,10 +29,16 @@ import { Input } from '@/components/ui/input';
 import { PageContainer, PageHeader } from '@/components/ui/page-header';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/components/ui/toast';
 import { errorMessage } from '@/lib/api/errors';
-import { usePrincipals, useRevokeAccessCode, type AdminPrincipal } from '@/lib/api/hooks/admin';
+import {
+  usePrincipals,
+  useRevokeAccessCode,
+  useUpdatePrincipal,
+  type AdminPrincipal,
+} from '@/lib/api/hooks/admin';
 import { ROLE_LABELS } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { formatDate, formatRelative, pluralize } from '@/lib/format';
@@ -74,9 +80,9 @@ function None({ label }: { label: string }) {
 }
 
 /**
- * Admin → Principals: people, roles, memberships and their active access codes. Quiet by default: only a
- * disabled account is marked, empty cells are a dash, and each row's actions (issue a code, revoke one)
- * wait in a single menu at its end.
+ * Admin → Principals: people, roles, memberships, their active access codes and their video face. Quiet by
+ * default: only a disabled account is marked, empty cells are a dash, each row's actions (issue a code, revoke
+ * one) wait in a single menu at its end, and the video face is one switch per person (turning it on asks first).
  */
 export function PrincipalsPage() {
   const me = useRequiredMe();
@@ -87,6 +93,8 @@ export function PrincipalsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [issueFor, setIssueFor] = useState<CodeRecipient | null>(null);
   const [revoking, setRevoking] = useState<{ code: ActiveCode; owner: string } | null>(null);
+  const updatePrincipal = useUpdatePrincipal();
+  const [faceFor, setFaceFor] = useState<{ id: string; name: string } | null>(null);
   const searchId = useId();
 
   const all = useMemo(() => principals.data ?? [], [principals.data]);
@@ -118,6 +126,18 @@ export function PrincipalsPage() {
         toast.error(errorMessage(error));
       },
     });
+  };
+
+  // The switch shows the server's value; screen readers hear its own state change.
+  const setFace = (principalId: string, on: boolean) => {
+    updatePrincipal.mutate(
+      { principalId, input: { faceAccess: on } },
+      {
+        onError: (error) => {
+          toast.error(errorMessage(error));
+        },
+      },
+    );
   };
 
   return (
@@ -212,6 +232,7 @@ export function PrincipalsPage() {
               <TableHead scope="col">Roles</TableHead>
               <TableHead scope="col">Ventures</TableHead>
               <TableHead scope="col">Active access codes</TableHead>
+              <TableHead scope="col">Video face</TableHead>
               <TableHead scope="col">
                 <span className="sr-only">Actions</span>
               </TableHead>
@@ -297,6 +318,20 @@ export function PrincipalsPage() {
                       </ul>
                     )}
                   </TableCell>
+                  <TableCell className="align-top">
+                    <Switch
+                      checked={row.faceAccess}
+                      disabled={
+                        updatePrincipal.isPending &&
+                        updatePrincipal.variables.principalId === row.principal.id
+                      }
+                      aria-label={`Video face for ${row.principal.displayName}`}
+                      onCheckedChange={(on) => {
+                        if (on) setFaceFor({ id: row.principal.id, name: row.principal.displayName });
+                        else setFace(row.principal.id, false);
+                      }}
+                    />
+                  </TableCell>
                   <TableCell className="w-10 text-right align-top">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -353,6 +388,32 @@ export function PrincipalsPage() {
           setIssueFor(null);
         }}
       />
+
+      <AlertDialog
+        open={faceFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setFaceFor(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Turn on video face?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {faceFor ? `${faceFor.name} sees it on calls.` : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (faceFor) setFace(faceFor.id, true);
+              }}
+            >
+              Turn on
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={revoking !== null}

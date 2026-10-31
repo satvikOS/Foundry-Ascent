@@ -130,7 +130,7 @@ function record(callId: string): Parameters<typeof twinRepo.recordFaceTranscript
 describe('migration 0018_face_mode', () => {
   it('applies cleanly on top of the earlier migrations with a face, which stays LITE', async () => {
     const report = await migrate(t.db);
-    expect(report.applied).toEqual(['0018_face_mode']);
+    expect(report.applied).toEqual(MIGRATIONS.map((m) => m.version).filter((v) => v >= '0018'));
     expect(MODE && splitStatements(MODE.sql).length).toBeGreaterThanOrEqual(10);
     const old = must(await t.db.system((sx) => twinRepo.getCallFace(sx, oldFaceCall)));
     expect(old).toMatchObject({

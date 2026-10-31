@@ -8,6 +8,7 @@ import {
   auditRepo,
   callsRepo,
   personasRepo,
+  principalsRepo,
   settingsRepo,
   turnsRepo,
   twinRepo,
@@ -45,7 +46,8 @@ import { resolveVeir } from './veir.js';
  * avatar voices, with its stock voice, text our server admitted (HeyGen LiveAvatar FULL), labelled "AI avatar".
  *
  * - A face of a likeness is offered only to a persona whose face is ready under likeness consent (a stock avatar
- *   and the development stand-in draw no one and serve any); a sandbox or admins-only face only to platform admins;
+ *   and the development stand-in draw no one and serve any); a sandbox or admins-only face only to platform admins
+ *   and the people a platform admin gave video-face access;
  *   always within the person's video minutes this month and the per-call limit, and while the platform's daily
  *   spend cap allows. The vendor session ends by itself at that limit.
  * - LITE: the server holds the face's speak channel. The browser only watches (a room token that cannot publish)
@@ -104,31 +106,55 @@ export type FaceRefusal =
   | 'spend_cap'
   | 'too_short';
 
-/** Whether a provider shows its face to platform admins only (a vendor sandbox, or an admins-only audience). */
+/**
+ * Whether a provider shows its face to a chosen audience only (a vendor sandbox, or an admins-only audience):
+ * platform admins and the people a platform admin gave video-face access (`principals.face_access`).
+ */
 export function faceForAdminsOnly(provider: Pick<EmbodimentProvider, 'sandbox' | 'adminsOnly'>): boolean {
   return provider.sandbox === true || provider.adminsOnly === true;
 }
 
+/** Who is asking for a face: their active roles and their video-face access, both re-read from the database. */
+export interface FaceCaller {
+  readonly roles: readonly PlatformRole[];
+  readonly faceAccess: boolean;
+}
+
+/** Nobody in particular: no roles and no face access (a provider for everyone needs nothing more). */
+export const NO_FACE_CALLER: FaceCaller = { roles: [], faceAccess: false };
+
+/**
+ * The caller's roles and video-face access, read fresh inside the request transaction (never from the cookie), so a
+ * revoked role or face access takes effect at the next decision.
+ */
+export async function loadFaceCaller(
+  ex: SqlExecutor,
+  ctx: Pick<RequestContext, 'principalId' | 'tenantId'>,
+): Promise<FaceCaller> {
+  return { roles: await loadPrincipalRoles(ex, ctx), faceAccess: await principalsRepo.faceAccess(ex) };
+}
+
 /**
  * Whether a provider may show a face to this caller at all: a sandbox or admins-only face only to a platform admin
- * (pure).
+ * or a person with video-face access (pure).
  */
 export function faceOfferedTo(
   provider: Pick<EmbodimentProvider, 'sandbox' | 'adminsOnly'>,
-  roles: readonly PlatformRole[],
+  caller: FaceCaller,
 ): boolean {
-  return !faceForAdminsOnly(provider) || roles.includes('platform_admin');
+  return !faceForAdminsOnly(provider) || caller.roles.includes('platform_admin') || caller.faceAccess;
 }
 
 /**
  * Whether a call may have a face now, and for how long at most (pure). `twinFace` is the persona's face ready
  * under likeness consent (`app.persona_twin`); a provider without likeness (a stock avatar, the stand-in) needs
- * none. A sandbox or admins-only provider serves platform admins only (`callerRoles`, re-read from the database).
+ * none. A sandbox or admins-only provider serves platform admins and people with video-face access only
+ * (`caller`, re-read from the database); everything else applies to them like to anyone.
  */
 export function faceAllowance(input: {
   readonly settings: FaceSettings;
   readonly provider: Pick<EmbodimentProvider, 'likeness' | 'sandbox' | 'adminsOnly'> | undefined;
-  readonly callerRoles: readonly PlatformRole[];
+  readonly caller: FaceCaller;
   readonly twinFace: { readonly ref: string } | null;
   readonly monthSecondsUsed: number;
   readonly callSecondsLeft: number;
@@ -137,7 +163,7 @@ export function faceAllowance(input: {
   { readonly ok: true; readonly maxSeconds: number } | { readonly ok: false; readonly reason: FaceRefusal } {
   if (!input.settings.facesEnabled) return { ok: false, reason: 'faces_disabled' };
   if (input.provider === undefined) return { ok: false, reason: 'no_provider' };
-  if (!faceOfferedTo(input.provider, input.callerRoles)) {
+  if (!faceOfferedTo(input.provider, input.caller)) {
     return { ok: false, reason: input.provider.sandbox === true ? 'sandbox_only' : 'admins_only' };
   }
   if (input.provider.likeness && input.twinFace === null) return { ok: false, reason: 'no_face' };
@@ -810,7 +836,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
             personaId: identity.personaId,
             settings: faceSettings(settings),
             twinFace: await twinFaceFor(scope.tx, provider, identity.personaId),
-            callerRoles: faceForAdminsOnly(provider) ? await loadPrincipalRoles(scope.tx, ctx) : [],
+            caller: faceForAdminsOnly(provider) ? await loadFaceCaller(scope.tx, ctx) : NO_FACE_CALLER,
             callSecondsLeft: left.seconds,
             // Only the platform's cap stops a face (speech never counts against a person's AI budget).
             spendCapReached: spendCap === 'global',
@@ -846,7 +872,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
       const allowance = faceAllowance({
         settings: face.settings,
         provider,
-        callerRoles: face.callerRoles,
+        caller: face.caller,
         twinFace: face.twinFace,
         monthSecondsUsed: await faceSecondsThisMonth(kit, ctx.principalId),
         callSecondsLeft: face.callSecondsLeft,

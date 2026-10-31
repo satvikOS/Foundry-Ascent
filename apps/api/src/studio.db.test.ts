@@ -436,6 +436,67 @@ describe('admin console', () => {
     ).toBe('forbidden');
   });
 
+  it('gives one person video-face access (platform admin only, audited with ids only)', async () => {
+    const mayaId = api.h.people.maya;
+    const patch = (cookie: string, id: string, body: unknown) =>
+      api.request(`/admin/principals/${id}`, { method: 'PATCH', body, cookie });
+    const rowOf = async () =>
+      (
+        await json(await api.request('/admin/principals', { cookie: owner }), AdminPrincipalListResponse)
+      ).items.find((r) => r.principal.id === mayaId);
+    // Off for everyone until an admin turns it on.
+    expect((await rowOf())?.faceAccess).toBe(false);
+
+    const on = await json(await patch(owner, mayaId, { faceAccess: true }), AdminPrincipalRow);
+    expect(on).toMatchObject({ principal: { id: mayaId }, faceAccess: true });
+    expect(on.memberships.map((m) => m.role)).toContain('founder');
+    expect((await rowOf())?.faceAccess).toBe(true);
+    const audits = async () =>
+      api.h.t.db.system(async (sx) =>
+        (
+          await sx.query(
+            `SELECT actor_id, object_type, object_id, outcome, metadata::text AS metadata FROM audit_events
+              WHERE action = 'principal.face_access_updated' ORDER BY id`,
+          )
+        ).rows.map((r) => ({ ...r, metadata: JSON.parse(String(r.metadata)) as unknown })),
+      );
+    expect(await audits()).toEqual([
+      {
+        actor_id: api.h.people.owner,
+        object_type: 'principal',
+        object_id: mayaId,
+        outcome: 'succeeded',
+        metadata: { faceAccess: true },
+      },
+    ]);
+    // Setting the same value again changes nothing and records nothing.
+    expect((await json(await patch(owner, mayaId, { faceAccess: true }), AdminPrincipalRow)).faceAccess).toBe(
+      true,
+    );
+    expect(await audits()).toHaveLength(1);
+
+    // Non-admins are refused, whoever they ask about (themselves included); nothing changes.
+    for (const cookie of [maya, lead, corin]) {
+      expect(await problemCode(await patch(cookie, mayaId, { faceAccess: false }), 403)).toBe('forbidden');
+    }
+    expect((await rowOf())?.faceAccess).toBe(true);
+    // An unknown principal is 404, a malformed id or body 422/400 as on the other admin routes.
+    expect(
+      await problemCode(
+        await patch(owner, '00000000-0000-4000-8000-0000000000ff', { faceAccess: true }),
+        404,
+      ),
+    ).toBe('not_found');
+    expect((await patch(owner, mayaId, { faceAccess: 'yes' })).status).toBe(422);
+    expect((await patch(owner, 'not-an-id', { faceAccess: true })).status).toBeGreaterThanOrEqual(400);
+
+    const off = await json(await patch(owner, mayaId, { faceAccess: false }), AdminPrincipalRow);
+    expect(off.faceAccess).toBe(false);
+    expect((await audits()).map((a) => a.metadata)).toEqual([{ faceAccess: true }, { faceAccess: false }]);
+    // Ids and the flag only: no names or emails in the audit.
+    expect(JSON.stringify(await audits())).not.toMatch(/Maya|@/);
+  });
+
   it('reads and updates settings; the kill switch stops new sessions', async () => {
     const settings = await json(
       await api.request('/admin/settings', { cookie: owner }),

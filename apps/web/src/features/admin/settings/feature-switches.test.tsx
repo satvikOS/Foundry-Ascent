@@ -21,7 +21,7 @@ describe('FeatureSwitches: the video face’s mode and price', () => {
       stock: true,
       sandbox: false,
     };
-    expect(faceSummary(full)).toBe('Stock AI avatar · admins only · $0.19/min');
+    expect(faceSummary(full)).toBe('Stock AI avatar · admins + chosen people · $0.19/min');
     expect(
       faceSummary({ ...full, mode: 'lite', usdPerMinute: 0.093, audience: 'everyone', stock: false }),
     ).toBe('EIR’s face · everyone · $0.09/min');
@@ -38,10 +38,10 @@ describe('FeatureSwitches: the video face’s mode and price', () => {
         onChange={onChange}
       />,
     );
-    expect(screen.getByText('Off · Stock AI avatar · admins only · $0.19/min')).toBeVisible();
+    expect(screen.getByText('Off · Stock AI avatar · admins + chosen people · $0.19/min')).toBeVisible();
     await user.click(screen.getByRole('switch', { name: 'Video faces' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Turn on video faces?' });
-    expect(within(dialog).getByText('Stock AI avatar · admins only · $0.19/min')).toBeVisible();
+    expect(within(dialog).getByText('Stock AI avatar · admins + chosen people · $0.19/min')).toBeVisible();
     await user.click(within(dialog).getByRole('button', { name: 'Turn on faces' }));
     expect(onChange).toHaveBeenCalledWith({ facesEnabled: true });
   });

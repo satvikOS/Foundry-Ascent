@@ -320,7 +320,7 @@ gateway's rule (a free plumbing check), as does the lab's dry run:
 ## HeyGen sandbox face
 
 The `face` suite checks the presentation's video face (docs/runbooks/avatars.md: a HeyGen LiveAvatar **stock**
-avatar in **FULL** mode, voicing the vEIR's admitted text with its stock voice, shown to platform admins only and
+avatar in **FULL** mode, voicing the vEIR's admitted text with its stock voice, shown to platform admins (and people given Video face) only and
 labelled "AI avatar") against the vendor's **sandbox**: free, the Wayne avatar only, sessions of about a minute, no
 credits used. It is the plan's section E, checks 1 to 11 ("Live checks with the real key", sandbox first), run
 headless on GitHub instead of by hand.

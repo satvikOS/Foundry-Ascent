@@ -244,6 +244,7 @@ const studioCases = (): Case[] => [
   ['maya', 'GET', '/admin/principals'],
   ['maya', 'POST', '/admin/principals', { displayName: 'x' }],
   ['maya', 'POST', `/admin/principals/${api.h.people.devin}/access-codes`, {}],
+  ['maya', 'PATCH', `/admin/principals/${api.h.people.maya}`, { faceAccess: true }],
   ['maya', 'DELETE', `/admin/access-codes/${ids.code ?? ''}`],
   [
     'maya',
@@ -317,6 +318,7 @@ const studioCases = (): Case[] => [
   ['lead', 'GET', '/admin/insights'],
   ['maya', 'GET', '/admin/insights'],
   ['lead', 'POST', `/admin/principals/${api.h.people.owner}/access-codes`, {}],
+  ['lead', 'PATCH', `/admin/principals/${api.h.people.maya}`, { faceAccess: true }],
   // Re-issuing a code for a founder who already has one takes over their account: platform admins only.
   ['lead', 'POST', `/admin/principals/${api.h.people.maya}/access-codes`, {}],
 ];

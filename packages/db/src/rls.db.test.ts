@@ -543,6 +543,46 @@ describe('RLS coverage', () => {
     expect(r.rows.length).toBeGreaterThanOrEqual(31);
   });
 
+  it('keeps each person’s own settings on principals closed to app_rls (column privileges, 0010)', async () => {
+    const r = await t.db.system((sx) =>
+      sx.query(
+        `SELECT column_name, string_agg(privilege_type, ',' ORDER BY privilege_type) AS privileges
+           FROM information_schema.column_privileges
+          WHERE table_schema = 'public' AND table_name = 'principals' AND grantee = 'app_rls'
+          GROUP BY column_name ORDER BY column_name`,
+      ),
+    );
+    const granted = Object.fromEntries(r.rows.map((row) => [String(row.column_name), row.privileges]));
+    const directory = [
+      'created_at',
+      'display_name',
+      'email',
+      'id',
+      'status',
+      'synthetic',
+      'tenant_id',
+      'title',
+    ];
+    expect(Object.keys(granted).sort()).toEqual([...directory, 'updated_at'].sort());
+    expect(new Set(Object.values(granted))).toEqual(new Set(['INSERT,SELECT,UPDATE']));
+    // The call notice (0010), the vEIR welcome (0016) and video-face access (0019) are read through functions.
+    const columns = await t.db.system((sx) =>
+      sx.query(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'principals' ORDER BY column_name`,
+      ),
+    );
+    expect(columns.rows.map((row) => String(row.column_name)).filter((c) => !(c in granted))).toEqual([
+      'call_notice_acknowledged_at',
+      'face_access',
+      'veir_welcome_acknowledged_at',
+    ]);
+    expect(await as(t.db, f.maya, (tx) => principalsRepo.faceAccess(tx))).toBe(false);
+    expect(
+      await sqlState(as(t.db, f.lead, (tx) => tx.query('SELECT count(*) FROM principals WHERE face_access'))),
+    ).toBe('42501');
+  });
+
   it('switches to app_rls with the request GUCs in withContext, and back to the owner afterwards', async () => {
     const inside = await as(t.db, f.maya, (tx) =>
       tx.query(

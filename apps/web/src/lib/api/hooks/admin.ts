@@ -7,6 +7,8 @@ import {
   IssueAccessCodeRequest,
   AdminSettingsView,
   RevokeAccessCodeResponse,
+  UpdatePrincipalRequest,
+  UpdatePrincipalResponse,
   UpdateSettingsRequest,
   UsageSummary,
   AdminInsights,
@@ -25,7 +27,8 @@ import { encodeBody } from '../body';
 import { api, apiRequest, createIdempotencyKey, path } from '../client';
 import { queryKeys, type AuditFilters } from '../query-keys';
 
-export type AdminPrincipal = z.infer<typeof AdminPrincipalListResponse>['items'][number];
+type AdminPrincipalList = z.infer<typeof AdminPrincipalListResponse>;
+export type AdminPrincipal = AdminPrincipalList['items'][number];
 export type AuditEvent = z.infer<typeof AuditListResponse>['items'][number];
 export type Usage = z.infer<typeof UsageSummary>;
 
@@ -74,6 +77,36 @@ export function useIssueAccessCode() {
       ),
     gcTime: 0,
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.admin.principals() }),
+  });
+}
+
+export type UpdatePrincipalInput = z.input<typeof UpdatePrincipalRequest>;
+
+/**
+ * PATCH /admin/principals/:id → 200 `AdminPrincipalRow`: a person's video face (`faceAccess`). The list shows the
+ * server's row at once, then refreshes.
+ */
+export function useUpdatePrincipal() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ principalId, input }: { principalId: string; input: UpdatePrincipalInput }) =>
+      api.patch(
+        path`/admin/principals/${principalId}`,
+        UpdatePrincipalResponse,
+        encodeBody(UpdatePrincipalRequest, input),
+        { idempotencyKey: createIdempotencyKey() },
+      ),
+    onSuccess: (row) => {
+      client.setQueryData(queryKeys.admin.principals(), (data: AdminPrincipalList | undefined) =>
+        data
+          ? {
+              ...data,
+              items: data.items.map((item) => (item.principal.id === row.principal.id ? row : item)),
+            }
+          : data,
+      );
+      void client.invalidateQueries({ queryKey: queryKeys.admin.principals() });
+    },
   });
 }
 

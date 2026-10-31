@@ -8,7 +8,6 @@ import {
 import { assignmentsRepo, personasRepo, principalsRepo, settingsRepo, type SqlExecutor } from '@foundry/db';
 import { type z } from 'zod';
 
-import { loadPrincipalRoles } from '../authz/roles.js';
 import { requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { DomainError } from '../errors.js';
@@ -21,6 +20,7 @@ import {
   faceForAdminsOnly,
   faceOfferedTo,
   faceSecondsThisMonth,
+  loadFaceCaller,
   twinFaceFor,
 } from './face.js';
 
@@ -138,13 +138,12 @@ export function createVeirService(kit: Kit, face: FaceService): VeirService {
         const settings = await settingsRepo.getPlatformSettings(scope.tx);
         const used = await callSecondsToday(scope.tx, ctx.principalId);
         // A vendor face for this vEIR: faces on, a provider wired (a sandbox or admins-only one for platform admins
-        // only), and (for a real likeness) its face ready under likeness consent. The video minutes left are read
+        // and people with video-face access only), and (for a real likeness) its face ready under likeness consent. The video minutes left are read
         // below (owner role).
         const faceOn =
           provider !== undefined &&
           settings.facesEnabled &&
-          (!faceForAdminsOnly(provider) ||
-            faceOfferedTo(provider, await loadPrincipalRoles(scope.tx, ctx))) &&
+          (!faceForAdminsOnly(provider) || faceOfferedTo(provider, await loadFaceCaller(scope.tx, ctx))) &&
           (!provider.likeness || (await twinFaceFor(scope.tx, provider, identity.personaId)) !== null);
         const response: CallConfigResponse = {
           veir: identity,

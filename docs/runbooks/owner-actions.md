@@ -133,8 +133,8 @@ real EIR needs, before release: a signed consent from that EIR covering doctrine
 uses, audience, term and named processors (ADR-0005; ADR-0010 for vendors). Record it in **EIR studio →
 the persona → Consent**; the platform refuses a voice or portrait the consent does not cover, and revoking
 consent suspends the persona. Keep the signed document outside the platform (evidence reference only).
-A HeyGen stock avatar (FULL mode, platform admins only, labelled "AI avatar") needs no likeness consent: it is not
-the EIR ([avatars runbook §9](avatars.md#9-full-mode-a-stock-avatar-with-its-stock-voice-platform-admins-only)).
+A HeyGen stock avatar (FULL mode, platform admins and people given Video face only, labelled "AI avatar") needs no likeness consent: it is not
+the EIR ([avatars runbook §9](avatars.md#9-full-mode-a-stock-avatar-with-its-stock-voice-platform-admins-and-chosen-people-only)).
 The video face (HeyGen) and cloned voice (ElevenLabs) also need the vendors' own consent steps and the keys in
 Secrets Manager; each can be withdrawn on its own without suspending the vEIR: [the vEIR's face and
 voice](avatars.md).

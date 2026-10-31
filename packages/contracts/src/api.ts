@@ -742,6 +742,11 @@ export const AdminPrincipalRow = z.object({
       lastUsedAt: Timestamp.nullable(),
     }),
   ),
+  /**
+   * The person sees the video face even where the wired face vendor shows it to platform admins only (a sandbox
+   * or an admins-only audience). Faces on, video minutes, the spend cap and likeness still apply.
+   */
+  faceAccess: z.boolean(),
 });
 export const AdminPrincipalListResponse = z.object({ items: z.array(AdminPrincipalRow) });
 /** `POST /admin/principals` 201 body (the new principal as the admin list shows it; no access code). */
@@ -752,6 +757,10 @@ export const CreatePrincipalRequest = z.object({
   title: z.string().trim().max(120).nullable().default(null),
   roles: z.array(PlatformRole).default([]),
 });
+/** `PATCH /admin/principals/:id` body (platform admin; audited as `principal.face_access_updated`). */
+export const UpdatePrincipalRequest = z.object({ faceAccess: z.boolean() });
+/** `PATCH /admin/principals/:id` 200 body: the principal as the admin list shows it. */
+export const UpdatePrincipalResponse = AdminPrincipalRow;
 /** `DELETE /admin/access-codes/:id` 200 body. */
 export const RevokeAccessCodeResponse = z.object({ accessCodeId: Id, revokedAt: Timestamp });
 export const IssueAccessCodeRequest = z.object({

@@ -428,13 +428,14 @@ needs its own consent scope, and each falls back without a word. How to turn the
 
 **The face's invariant depends on its mode.** **LITE** (the EIR's own avatar; voicing `audio`): the face only
 renders audio our server made from a signed unit, and the server relays it itself, so nothing else can reach the
-face. **FULL** (a vendor stock avatar in its stock voice; voicing `text`; platform admins only, labelled "AI avatar"):
+face. **FULL** (a vendor stock avatar in its stock voice; voicing `text`; platform admins and people a platform admin gave Video face only, labelled "AI
+avatar"):
 the face is only handed text our server admitted from a signed unit (each unit once, in order), and the server
 reconciles the vendor's session transcript against the admitted text at every heartbeat, ending the face on any
 difference. In FULL the vendor takes commands only from the browser's room connection, so the server cannot prevent
 a modified page from making the face say other text on that page's own screen; it detects it within one heartbeat.
-That is why FULL is limited to platform admins and never renders an EIR's likeness (infra refuses both
-configurations, [runbook §9](../runbooks/avatars.md#9-full-mode-a-stock-avatar-with-its-stock-voice-platform-admins-only)).
+That is why FULL is limited to platform admins and the people they name (Video face) and never renders an EIR's likeness (infra refuses both
+configurations, [runbook §9](../runbooks/avatars.md#9-full-mode-a-stock-avatar-with-its-stock-voice-platform-admins-and-chosen-people-only)).
 
 ### 4.1 Seams
 

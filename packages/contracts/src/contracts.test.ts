@@ -38,6 +38,8 @@ import {
   SessionView,
   SubmitReviewResponse,
   SuspendPersonaResponse,
+  UpdatePrincipalRequest,
+  UpdatePrincipalResponse,
   UpdateResourceResponse,
   CLOSED_ESCALATION_STATUSES,
   ERROR_STATUS,
@@ -176,10 +178,20 @@ describe('response schemas', () => {
       [UpdateResourceResponse, ResourceView],
       [CreateProgramVentureResponse, ProgramVentureRow],
       [CreatePrincipalResponse, AdminPrincipalRow],
+      [UpdatePrincipalResponse, AdminPrincipalRow],
       [RouteEscalationResponse, EscalationQueueItem],
       [PersonaReleaseDetailResponse, PersonaReleaseView],
     ];
     for (const [response, view] of pairs) expect(response).toBe(view);
+  });
+
+  it('takes a principal’s video-face access as a boolean and nothing else', () => {
+    expect(UpdatePrincipalRequest.parse({ faceAccess: true })).toEqual({ faceAccess: true });
+    expect(UpdatePrincipalRequest.parse({ faceAccess: false, roles: ['platform_admin'] })).toEqual({
+      faceAccess: false,
+    });
+    expect(UpdatePrincipalRequest.safeParse({}).success).toBe(false);
+    expect(UpdatePrincipalRequest.safeParse({ faceAccess: 'yes' }).success).toBe(false);
   });
 
   it('parses the small acknowledgement bodies', () => {

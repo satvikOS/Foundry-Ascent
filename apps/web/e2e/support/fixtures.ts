@@ -410,6 +410,29 @@ export async function setFacesEnabled(baseURL: string, enabled: boolean): Promis
   }
 }
 
+/**
+ * Turns a seeded person's video face on or off as the owner (`PATCH /admin/principals/:id`, audited): where the
+ * face vendor shows the face to platform admins only, that person sees it too.
+ */
+export async function setFaceAccess(baseURL: string, displayName: string, enabled: boolean): Promise<void> {
+  const owner = await playwrightRequest.newContext({ baseURL, storageState: OWNER_STATE });
+  try {
+    const list = await owner.get('/api/v1/admin/principals');
+    expect(list.status(), 'GET /admin/principals').toBe(200);
+    const body: unknown = await list.json();
+    if (!isPrincipalList(body)) throw new Error('Unexpected /admin/principals response');
+    const row = body.items.find((item) => item.principal.displayName === displayName);
+    if (!row) throw new Error(`Seeded principal "${displayName}" not found`);
+    const response = await owner.patch(`/api/v1/admin/principals/${row.principal.id}`, {
+      headers: WRITE_HEADERS,
+      data: { faceAccess: enabled },
+    });
+    expect(response.status(), 'PATCH /admin/principals/:id').toBe(200);
+  } finally {
+    await owner.dispose();
+  }
+}
+
 /** The seeded EIR whose vEIR coaches QuietQuad (the founder's venture). */
 export const SEEDED_EIR_FIRST_NAME = 'Corin';
 

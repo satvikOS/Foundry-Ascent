@@ -2,10 +2,10 @@ import type { Me } from '@foundry/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { jsonResponse, stubFetch } from '@/features/admin/shared/test-utils';
+import { jsonResponse, sentJson, stubFetch } from '@/features/admin/shared/test-utils';
 import type { AdminPrincipal } from '@/lib/api/hooks/admin';
 import { queryKeys } from '@/lib/api/query-keys';
 
@@ -33,12 +33,13 @@ function row(overrides: Partial<AdminPrincipal> & { name: string; id: string }):
     roles: [],
     memberships: [],
     activeAccessCodes: [],
+    faceAccess: false,
     ...rest,
   };
 }
 
 const ROWS: AdminPrincipal[] = [
-  row({ id: ME_ID, name: 'Local Owner', roles: ['platform_admin'] }),
+  row({ id: ME_ID, name: 'Local Owner', roles: ['platform_admin'], faceAccess: true }),
   row({
     id: '55555555-5555-4555-8555-555555555555',
     name: 'Maya Okafor-Lindqvist',
@@ -72,9 +73,24 @@ const ROWS: AdminPrincipal[] = [
   }),
 ];
 
+function urlOf(input: RequestInfo | URL | undefined): string {
+  if (input === undefined) return '';
+  return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+}
+
 function renderPage() {
   const fetchMock = stubFetch();
-  fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({ items: ROWS })));
+  let rows = ROWS;
+  fetchMock.mockImplementation((input, init) => {
+    const url = urlOf(input);
+    const patched = /\/admin\/principals\/([0-9a-f-]{36})$/.exec(url);
+    if (init?.method === 'PATCH' && patched) {
+      const body = sentJson(init) as { faceAccess: boolean };
+      rows = rows.map((r) => (r.principal.id === patched[1] ? { ...r, faceAccess: body.faceAccess } : r));
+      return Promise.resolve(jsonResponse(rows.find((r) => r.principal.id === patched[1])));
+    }
+    return Promise.resolve(jsonResponse({ items: rows }));
+  });
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } },
   });
@@ -86,6 +102,7 @@ function renderPage() {
       </TooltipProvider>
     </QueryClientProvider>,
   );
+  return fetchMock;
 }
 
 function rowOf(name: string): HTMLElement {
@@ -164,5 +181,54 @@ describe('PrincipalsPage (Admin → People & access)', () => {
         .getAllByRole('menuitem')
         .map((item) => item.textContent),
     ).toEqual(['Issue access code…']);
+  });
+
+  it('gives one person the video face with a switch, asking only when turning it on', async () => {
+    const user = userEvent.setup();
+    const fetchMock = renderPage();
+    await screen.findByRole('table');
+    expect(screen.getByRole('columnheader', { name: 'Video face' })).toBeInTheDocument();
+    const patches = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'PATCH');
+
+    // Label in name: the visible column header starts each switch's name.
+    const maya = within(rowOf('Maya Okafor-Lindqvist')).getByRole('switch', {
+      name: 'Video face for Maya Okafor-Lindqvist',
+    });
+    expect(maya).not.toBeChecked();
+    expect(
+      within(rowOf('Local Owner')).getByRole('switch', { name: 'Video face for Local Owner' }),
+    ).toBeChecked();
+
+    // Turning it on asks first; Cancel changes nothing.
+    await user.click(maya);
+    let confirm = await screen.findByRole('alertdialog', { name: 'Turn on video face?' });
+    expect(confirm).toHaveTextContent('Maya Okafor-Lindqvist');
+    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }));
+    expect(patches()).toHaveLength(0);
+    expect(maya).not.toBeChecked();
+
+    await user.click(maya);
+    confirm = await screen.findByRole('alertdialog', { name: 'Turn on video face?' });
+    await user.click(within(confirm).getByRole('button', { name: 'Turn on' }));
+    await vi.waitFor(() => {
+      expect(patches()).toHaveLength(1);
+    });
+    const [url, init] = patches()[0] ?? [];
+    expect(urlOf(url)).toMatch(/\/admin\/principals\/55555555-5555-4555-8555-555555555555$/);
+    expect(sentJson(init)).toEqual({ faceAccess: true });
+    expect(
+      await within(rowOf('Maya Okafor-Lindqvist')).findByRole('switch', { checked: true }),
+    ).toBeInTheDocument();
+
+    // Turning it off needs no confirmation.
+    await user.click(within(rowOf('Maya Okafor-Lindqvist')).getByRole('switch'));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    await vi.waitFor(() => {
+      expect(patches()).toHaveLength(2);
+    });
+    expect(sentJson(patches()[1]?.[1])).toEqual({ faceAccess: false });
+    expect(
+      await within(rowOf('Maya Okafor-Lindqvist')).findByRole('switch', { checked: false }),
+    ).toBeInTheDocument();
   });
 });

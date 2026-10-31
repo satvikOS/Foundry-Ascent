@@ -9,8 +9,8 @@
  * - withdrawing likeness ends the face at once, withdrawing voice falls back to the platform voice mid-call;
  * - face seconds and clone characters are metered into the usage ledger at the vendors' prices, exactly once;
  * - tokens and the control channel are never recorded;
- * - a FULL stock face (the vendor's stock voice speaks admitted text) is offered to platform admins only, needs no
- *   persona face, takes each signed unit once and in order (never the crisis line, within the spend cap), gets no
+ * - a sandbox or admins-only face is offered to platform admins and the people a platform admin gave video-face
+ *   access only; a FULL stock face (the vendor's stock voice speaks admitted text) needs no persona face, takes each signed unit once and in order (never the crisis line, within the spend cap), gets no
  *   face-audio manifest, is billed at the FULL price, and ends at the first words its transcript shows it never
  *   admitted (or an admitted unit said again), checked on every way the face ends, reading only new lines, and
  *   stops when its transcript stays unread.
@@ -23,7 +23,7 @@ import {
   StartCallResponse,
   TurnStreamEvent,
 } from '@foundry/contracts';
-import { p, twinRepo } from '@foundry/db';
+import { p, principalsRepo, twinRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { PlatformKeyCache } from '../auth/keys.js';
@@ -278,6 +278,65 @@ describe('the face of a call: off by default, then the stand-in', () => {
           },
         ),
       );
+    }
+  });
+
+  it('offers a sandbox or admins-only face to a founder a platform admin gave video-face access', async () => {
+    const presentation = new FakeEmbodimentProvider('fake', false, 0);
+    presentation.adminsOnly = true;
+    const sandboxFace = new FakeEmbodimentProvider('fake', false, 0);
+    sandboxFace.sandbox = true;
+    const setAccess = (faceAccess: boolean) =>
+      h.t.db.system((sx) =>
+        principalsRepo.setFaceAccess(sx, {
+          principalId: h.people.maya,
+          tenantId: h.seed.tenantId,
+          faceAccess,
+        }),
+      );
+    try {
+      await setAccess(true);
+      for (const provider of [presentation, sandboxFace]) {
+        const core = h.withPorts({ speech: polly, embodiment: provider });
+        // Read fresh from the database: the same signed-in founder, no new session needed.
+        expect(CallConfigResponse.parse(await core.veir.callConfig(ctx.maya, quietquad())).provider).toBe(
+          'fake',
+        );
+        const started = await startCall(core);
+        try {
+          expect(await faceSession(core, started.call.id)).toMatchObject({ provider: 'fake' });
+          expect(provider.sessions).toHaveLength(1);
+          expect(await lastAudit('call.avatar_session')).toMatchObject({ outcome: 'succeeded' });
+        } finally {
+          await core.calls.end(ctx.maya, started.call.id, { reason: 'user' });
+        }
+      }
+      // A teammate of the same venture without face access still gets the presence.
+      const presented = h.withPorts({ speech: polly, embodiment: presentation });
+      expect(CallConfigResponse.parse(await presented.veir.callConfig(ctx.devin, quietquad())).provider).toBe(
+        'builtin',
+      );
+      // Turned off, the next call has no face (the roles were never involved).
+      await setAccess(false);
+      expect(CallConfigResponse.parse(await presented.veir.callConfig(ctx.maya, quietquad())).provider).toBe(
+        'builtin',
+      );
+      const again = await startCall(presented);
+      try {
+        expect(await faceSession(presented, again.call.id)).toMatchObject({
+          provider: 'builtin',
+          token: null,
+        });
+        expect(presentation.sessions).toHaveLength(1);
+        expect(await lastAudit('call.avatar_session')).toMatchObject({
+          outcome: 'denied',
+          policy_reason: 'admins_only',
+        });
+      } finally {
+        await presented.calls.end(ctx.maya, again.call.id, { reason: 'user' });
+      }
+    } finally {
+      await setAccess(false);
     }
   });
 

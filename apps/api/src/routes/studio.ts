@@ -21,6 +21,7 @@ import {
   UpdateEirProfileRequest,
   UpdateEmbodimentRequest,
   UpdatePersonaKnowledgeRequest,
+  UpdatePrincipalRequest,
   UpdateSettingsRequest,
   UpdateTwinMediaRequest,
   UpsertResourceRequest,
@@ -219,6 +220,10 @@ export function registerStudioRoutes(r: RouteBuilder, core: Core, options: Studi
   r.get('/admin/principals', async (c, ctx) => c.json({ items: await core.admin.listPrincipals(ctx) }));
   r.post('/admin/principals', async (c, ctx) =>
     c.json(await core.admin.createPrincipal(ctx, jsonBody(c, CreatePrincipalRequest)), 201),
+  );
+  // A person's video face where the face vendor shows it to platform admins only (audited, ids only).
+  r.patch('/admin/principals/:id', async (c, ctx) =>
+    c.json(await core.admin.updatePrincipal(ctx, pathParam(c, 'id'), jsonBody(c, UpdatePrincipalRequest))),
   );
   // One-time access code in the response: never stored for idempotent replay.
   r.post(

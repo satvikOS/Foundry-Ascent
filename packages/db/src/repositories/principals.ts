@@ -190,6 +190,53 @@ export async function acknowledgeVeirWelcome(
 }
 
 // ------------------------------------------------------------------------------------------------
+// Video-face access (migration 0019)
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * Whether the request's principal may see a sandbox or admins-only face (`principals.face_access`). The column is
+ * closed to app_rls; this reads the caller's own value through `app.face_access()` (false without an active
+ * request principal, e.g. under the system executor).
+ */
+export async function faceAccess(ex: SqlExecutor): Promise<boolean> {
+  return (
+    (await queryFirst(ex, 'SELECT app.face_access() AS face_access', {}, (r) =>
+      col.bool.decode(r.face_access, 'face_access'),
+    )) ?? false
+  );
+}
+
+/** The principals of `ids` whose face access is on (owner role: the column is closed to app_rls). */
+export function listFaceAccess(ex: SqlExecutor, ids: readonly string[]): Promise<string[]> {
+  return queryRows(
+    ex,
+    'SELECT id FROM principals WHERE id = ANY (:ids) AND face_access ORDER BY id',
+    { ids: p.uuidArray(ids) },
+    (r) => col.uuid.decode(r.id, 'id'),
+  );
+}
+
+/**
+ * Sets a principal's face access within `tenantId` (owner role, after the caller's platform-admin check). Returns
+ * the value before and after, or null when the tenant has no such principal.
+ */
+export function setFaceAccess(
+  ex: SqlExecutor,
+  args: { principalId: string; tenantId: string; faceAccess: boolean },
+): Promise<{ before: boolean; after: boolean } | null> {
+  return queryFirst(
+    ex,
+    `UPDATE principals pr SET face_access = :faceAccess,
+            updated_at = CASE WHEN prev.face_access = :faceAccess THEN pr.updated_at ELSE now() END
+       FROM principals prev
+      WHERE pr.id = :id AND pr.tenant_id = :tenantId AND prev.id = pr.id
+     RETURNING prev.face_access AS before, pr.face_access AS after`,
+    { id: p.uuid(args.principalId), tenantId: p.uuid(args.tenantId), faceAccess: p.bool(args.faceAccess) },
+    (r) => ({ before: col.bool.decode(r.before, 'before'), after: col.bool.decode(r.after, 'after') }),
+  );
+}
+
+// ------------------------------------------------------------------------------------------------
 // Role grants
 // ------------------------------------------------------------------------------------------------
 

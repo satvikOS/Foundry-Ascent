@@ -94,8 +94,9 @@ const webServer: PlaywrightTestConfig['webServer'] = localStack
         },
       },
       {
-        // The same API with the stand-in face in FULL mode (a stock face voicing admitted text, for everyone so
-        // the seeded founder sees it; admins-only is covered by core's tests). Only e2e/face.spec.ts uses it.
+        // The same API with the stand-in face in FULL mode (a stock face voicing admitted text), shown to platform
+        // admins and people given Video face, as in production: the seeded founder sees it only once the owner
+        // turns her Video face on. Only e2e/face.spec.ts uses it.
         name: 'api-face-full',
         command: 'pnpm --filter @foundry/api exec tsx src/dev-server.ts',
         url: `${faceApiURL.origin}/api/v1/health`,
@@ -115,7 +116,7 @@ const webServer: PlaywrightTestConfig['webServer'] = localStack
           CORE_TURN_RATE_LIMIT: process.env.CORE_TURN_RATE_LIMIT ?? '200',
           EMBODIMENT_PROVIDER: 'fake',
           MEDIA_FACE_MODE: 'full',
-          MEDIA_FACE_AUDIENCE: 'everyone',
+          MEDIA_FACE_AUDIENCE: 'admins',
         },
       },
       {

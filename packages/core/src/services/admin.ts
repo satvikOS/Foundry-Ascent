@@ -4,6 +4,7 @@ import {
   AuditQuery,
   CreatePrincipalRequest,
   IssueAccessCodeRequest,
+  UpdatePrincipalRequest,
   UpdateSettingsRequest,
   type UsageSummary,
   type AdminSettingsView,
@@ -46,6 +47,16 @@ export interface AdminService {
     input: z.input<typeof CreatePrincipalRequest>,
   ): Promise<AdminPrincipalRowValue>;
   /**
+   * Sets a principal's video-face access (platform admin): the face a sandbox or admins-only face vendor shows to
+   * platform admins only is then offered to that person too. Audited as `principal.face_access_updated` (ids
+   * only) when it changes.
+   */
+  updatePrincipal(
+    ctx: RequestContext,
+    principalId: string,
+    input: z.input<typeof UpdatePrincipalRequest>,
+  ): Promise<AdminPrincipalRowValue>;
+  /**
    * Issues a one-time access code. Platform admins: any active principal of the tenant. Program leads:
    * principals without platform_admin / program_lead roles, and no re-issue for an existing founder or EIR
    * account (platform admin only). A re-issue is audited as `access_code.reissued` and shown to the
@@ -86,11 +97,13 @@ async function buildRows(
 ): Promise<AdminPrincipalRowValue[]> {
   const ids = principals.map((p) => p.id);
   if (ids.length === 0) return [];
-  // Memberships and credential metadata: owner role, scoped to principals already listed under RLS.
-  const { memberships, codes } = await kit.system(
+  // Memberships, credential metadata and video-face access (a column closed to app_rls): owner role, scoped to
+  // principals already listed under RLS.
+  const { memberships, codes, faceAccess } = await kit.system(
     async (sx) => ({
       memberships: await principalsRepo.listMembershipsForPrincipals(sx, ids),
       codes: await authRepo.listActiveAccessCodes(sx, ids),
+      faceAccess: new Set(await principalsRepo.listFaceAccess(sx, ids)),
     }),
     { transaction: false },
   );
@@ -112,6 +125,7 @@ async function buildRows(
         expiresAt: c.expiresAt,
         lastUsedAt: c.lastUsedAt,
       })),
+    faceAccess: faceAccess.has(p.id),
   }));
 }
 
@@ -256,6 +270,42 @@ export function createAdminService(
         });
         return { principal: created, roles: grants };
       });
+      const [row] = await buildRows(kit, [principal], roles);
+      if (!row) throw fail.notFound('Principal');
+      return row;
+    },
+
+    updatePrincipal: async (ctx, rawPrincipalId, rawInput) => {
+      const principalId = requireId(rawPrincipalId, 'Principal');
+      const input = parseInput(UpdatePrincipalRequest, rawInput);
+      const principal = await kit.inRequest(ctx, async (scope) => {
+        await requireRole(scope, ['platform_admin'], { objectType: 'principal', objectId: principalId });
+        return principalsRepo.getPrincipal(scope.tx, principalId);
+      });
+      if (principal?.tenantId !== ctx.tenantId) throw fail.notFound('Principal');
+      // The column is closed to app_rls: set as the owner role, within the admin's tenant, after the role check.
+      await kit.system(async (sx) => {
+        const changed = await principalsRepo.setFaceAccess(sx, {
+          principalId,
+          tenantId: ctx.tenantId,
+          faceAccess: input.faceAccess,
+        });
+        if (changed === null) throw fail.notFound('Principal');
+        if (changed.before === changed.after) return;
+        await auditRepo.appendAudit(sx, {
+          action: 'principal.face_access_updated',
+          outcome: 'succeeded',
+          tenantId: ctx.tenantId,
+          actorId: ctx.principalId,
+          requestId: ctx.requestId,
+          objectType: 'principal',
+          objectId: principalId,
+          metadata: { faceAccess: changed.after },
+        });
+      });
+      const roles = await kit.inRequest(ctx, (scope) =>
+        principalsRepo.listRoleGrants(scope.tx, { principalIds: [principalId], tenantId: ctx.tenantId }),
+      );
       const [row] = await buildRows(kit, [principal], roles);
       if (!row) throw fail.notFound('Principal');
       return row;
