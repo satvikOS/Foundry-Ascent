@@ -26,7 +26,11 @@ name: Ops - conversation lab
 #           detection, idle and max-duration ends). The vendor key (repository secret HEYGEN_LIVEAVATAR_API) is
 #           handed to the run step only and by the harness to the local API process only (LOCAL_MEDIA_FACE_API_KEY,
 #           refused outside development); it is never printed, sealed or uploaded. The summary keeps numbers,
-#           codes and vendor end reasons; what the avatar said is sealed.
+#           codes and vendor end reasons; what the avatar said is sealed. `face_mode` picks the in-app call arm's
+#           face mode: full, lite (the avatar lip-syncs the call's Polly audio, relayed by the server over the speak
+#           socket; the lab gives the synthetic vEIR a face reference ready under likeness consent in its own database)
+#           or both (default: FULL with every check, then the API restarted in LITE for the same call arm), and the
+#           summary sets FULL, LITE and Polly alone side by side (p50/p95, n).
 # The app runs with CORE_SAFETY_SCREEN=on in every suite (ops/lab conversation_lab/stack.py).
 #
 # Runs only from main, in the `conversation-lab` GitHub environment, whose OIDC subject is the only one the
@@ -80,6 +84,11 @@ on:
         description: Compare with an earlier lab run (its run id; a committed ops/lab/baselines file or its public summary artifact); empty = no comparison
         type: string
         default: ''
+      face_mode:
+        description: face only - the in-app call arm's face mode (both = FULL with every check, then LITE, side by side with Polly alone)
+        type: choice
+        options: [both, full, lite]
+        default: both
 
 permissions:
   contents: read
@@ -111,6 +120,7 @@ jobs:
           BASELINE_RUN_ID: ${{ inputs.baseline_run_id }}
           SCENARIO_IDS: ${{ inputs.scenario_ids }}
           REPEAT: ${{ inputs.repeat }}
+          FACE_MODE: ${{ inputs.face_mode }}
         run: |
           # Values are checked, never echoed (except the suite and the numbers, which are public).
           case "${SUITE}" in recall|matrix|voice|ui|agenda|safety|face|all) ;; *) echo "::error::suite must be recall, matrix, voice, ui, agenda, safety, face or all."; exit 1;; esac
@@ -130,6 +140,7 @@ jobs:
             echo "::error::repeat must be a whole number from 1 to 10."
             exit 1
           fi
+          case "${FACE_MODE}" in both|full|lite) ;; *) echo "::error::face_mode must be both, full or lite."; exit 1;; esac
           if [[ ! "${BASELINE_RUN_ID}" =~ ^[0-9]{0,20}$ ]]; then
             echo "::error::baseline_run_id must be empty or a run id (digits)."
             exit 1
@@ -198,6 +209,7 @@ jobs:
       LAB_SCENARIO_IDS: ${{ inputs.scenario_ids }}
       LAB_REPEAT: ${{ inputs.repeat }}
       LAB_MATRIX_SOURCE: ${{ inputs.matrix_source }}
+      LAB_FACE_MODE: ${{ inputs.face_mode }}
     steps:
       - name: Validate the sealing key, set the output folder
         env:
@@ -335,7 +347,8 @@ jobs:
           python -m conversation_lab run --suite "${LAB_SUITE}" --budget-usd "${LAB_BUDGET_USD}" \
             --max-scenarios "${LAB_MAX_SCENARIOS}" --out "${LAB_OUT}" \
             --baseline-run-id "${LAB_BASELINE_RUN_ID}" --baseline-file "${RUNNER_TEMP}/baseline/summary.json" \
-            --scenarios "${LAB_SCENARIO_IDS}" --repeat "${LAB_REPEAT}" --matrix-source "${LAB_MATRIX_SOURCE}"
+            --scenarios "${LAB_SCENARIO_IDS}" --repeat "${LAB_REPEAT}" --matrix-source "${LAB_MATRIX_SOURCE}" \
+            --face-mode "${LAB_FACE_MODE}"
 
       - name: Seal the private outputs
         if: always() && env.LAB_PUBLIC_KEY != ''

@@ -528,3 +528,374 @@ def test_injection_audits_reads_ids_and_parses_the_script_line(tmp_path: Path) -
         "unknown": 0,
     }
     assert face.parse_audits_line("lab-face-audits: refused (DATABASE_URL is not set)") is None
+
+
+# ---- face_mode: FULL, LITE, or both side by side ------------------------------------------------------------
+
+
+def test_face_mode_is_full_lite_or_both_and_both_runs_full_first() -> None:
+    assert config.FACE_MODES == ("both", "full", "lite")
+    assert config.face_passes("both") == ["full", "lite"]
+    assert config.face_passes("full") == ["full"]
+    assert config.face_passes("lite") == ["lite"]
+    for bad in ("", "FULL", "lite,full", "none"):
+        with pytest.raises(ValueError, match="face mode must be one of"):
+            config.face_passes(bad)
+
+
+def test_lite_face_env_is_the_sandbox_for_admins_without_a_stock_avatar() -> None:
+    lite = face.face_env(mock=False, probe_token="t" * 43, mode="lite")
+    assert lite == {
+        "MEDIA_FACE_MODE": "lite",
+        "MEDIA_FACE_AUDIENCE": "admins",
+        "MEDIA_FACE_PROVIDER": "heygen-liveavatar",
+        "MEDIA_FACE_SANDBOX": "true",
+        "LAB_FACE_PROBE_TOKEN": "t" * 43,
+    }
+    assert face.face_env(mock=True, probe_token=None, mode="lite") == {
+        "MEDIA_FACE_MODE": "lite",
+        "MEDIA_FACE_AUDIENCE": "admins",
+        "EMBODIMENT_PROVIDER": "fake",
+    }
+    with pytest.raises(ValueError, match="mode must be full or lite"):
+        face.face_env(mock=False, probe_token=None, mode="both")
+    # Switching modes leaves nothing of the other behind (FULL's stock avatar) and keeps everything else.
+    full = {"A": "1", **face.face_env(mock=False, probe_token="t" * 43)}
+    assert face.with_face_mode(full, mock=False, probe_token="t" * 43, mode="lite") == {"A": "1", **lite}
+
+
+def test_run_starts_the_api_in_the_first_pass_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    code, _, summary = run_face(monkeypatch, tmp_path, "--face-mode", "lite")
+    assert code == 0
+    api = FakeStack.seen["env"]
+    assert api["MEDIA_FACE_MODE"] == "lite"
+    assert "MEDIA_FACE_AVATAR_ID" not in api
+    assert api["LOCAL_MEDIA_FACE_API_KEY"] == KEY
+    assert summary["face_mode"] == "lite"
+    # The default: both, FULL first.
+    code, _, summary = run_face(monkeypatch, tmp_path / "default")
+    assert code == 0
+    assert FakeStack.seen["env"]["MEDIA_FACE_MODE"] == "full"
+    assert summary["face_mode"] == "both"
+    with pytest.raises(SystemExit):
+        cli.main(
+            ["run", "--suite", "face", "--budget-usd", "1", "--out", str(tmp_path / "x"), "--face-mode", "x"]
+        )
+
+
+class RestartingStack:
+    def __init__(self) -> None:
+        self.restarts: list[dict[str, str]] = []
+
+    def restart_api(self, env: dict[str, str]) -> None:
+        self.restarts.append(dict(env))
+
+
+class FakeProbe:
+    process = 0
+
+    def __init__(self, api_url: str, token: str) -> None:
+        self.api_url = api_url
+
+    def credits(self) -> dict[str, Any]:
+        return {"status": 200, "code": 100, "creditsLeft": "10.00"}
+
+    def vendor_calls(self) -> list[dict[str, Any]]:
+        # Each API process remembers its own calls: one token call per process here.
+        FakeProbe.process += 1
+        return [{"method": "POST", "path": "/v1/sessions/token", "status": 200, "code": 1000}]
+
+
+def run_suite_face(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: str, *, mock: bool = False
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[str], RestartingStack]:
+    monkeypatch.setattr(cli, "_FACE_KEY", "" if mock else KEY)
+    monkeypatch.setattr(face, "Probe", FakeProbe)
+    FakeProbe.process = 0
+    passes: list[dict[str, Any]] = []
+    order: list[str] = []
+
+    def playwright(ctx: cli.Context, **kwargs: Any) -> int:
+        order.append(f"playwright:{kwargs['extra_env']['LAB_FACE_APP_MODE']}")
+        passes.append({**kwargs, "ctx_env": dict(ctx.env)})
+        return 0
+
+    def twin(env: dict[str, str], log_dir: Path, *, pnpm: str) -> str:
+        order.append("twin")
+        assert KEY not in json.dumps(env)
+        return "ready"
+
+    monkeypatch.setattr(cli, "run_playwright", playwright)
+    monkeypatch.setattr(face, "seed_twin", twin)
+    monkeypatch.setattr(face, "injection_audits", lambda *a, **k: None)
+    ctx = cli.Context(
+        suite="face",
+        out=tmp_path,
+        budget_usd=1.0,
+        max_scenarios=1,
+        recall_gap_seconds=None,
+        env=face.face_env(mock=mock, probe_token=None if mock else "t" * 43, mode=config.face_passes(mode)[0])
+        | {"DATABASE_URL": "postgresql://u:p@localhost/foundry"},
+        face_probe_token=None if mock else "t" * 43,
+        face_admin="granted",
+        face_mode=mode,
+        mock=mock,
+    )
+    stack = RestartingStack()
+    out = cli.suite_face(ctx, browser={"E2E_API_URL": "http://localhost:8787"}, stack=stack)
+    return out, passes, order, stack
+
+
+def test_both_runs_full_then_restarts_the_api_in_lite_for_the_call_arm_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    out, passes, order, stack = run_suite_face(monkeypatch, tmp_path, "both")
+    assert order == ["playwright:full", "twin", "playwright:lite"]
+    first, second = passes
+    assert first["specs"] == ["--project=face"]
+    assert first["report"].name == "playwright.json"
+    # The second pass runs the LITE call arm only: the FULL checks ran once, in the first pass.
+    assert second["specs"] == ["--project=face", "--grep", cli.FACE_LITE_CALL_GREP]
+    assert second["report"].name == "playwright-lite.json"
+    assert second["ctx_env"]["MEDIA_FACE_MODE"] == "lite"
+    # The vendor key reaches the restarted API process only.
+    (restarted,) = stack.restarts
+    assert restarted["MEDIA_FACE_MODE"] == "lite"
+    assert restarted["LOCAL_MEDIA_FACE_API_KEY"] == KEY
+    assert restarted["LAB_FACE_PROBE_TOKEN"] == "t" * 43
+    assert "MEDIA_FACE_AVATAR_ID" not in restarted
+    for p in passes:
+        assert KEY not in json.dumps({k: v for k, v in p.items() if k != "report"}, default=str)
+    result = out["face"]
+    assert result["face_mode"] == "both"
+    assert result["lite_face_reference"] == "ready"
+    assert result["playwright_exits"] == {"full": 0, "lite": 0}
+    # Both API processes' vendor calls are counted.
+    assert result["vendor_calls"]["/v1/sessions/token"]["code"] == {"1000": 2}
+
+
+def test_a_single_mode_runs_one_pass_without_a_restart(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    out, passes, order, stack = run_suite_face(monkeypatch, tmp_path / "full", "full")
+    assert order == ["playwright:full"]
+    assert stack.restarts == []
+    assert out["face"]["lite_face_reference"] == "not_run"
+    out, passes, order, stack = run_suite_face(monkeypatch, tmp_path / "lite", "lite", mock=True)
+    assert order == ["twin", "playwright:lite"]
+    assert stack.restarts == []
+    assert passes[0]["specs"] == ["--project=face"]
+    assert out["face"]["vendor"] == "stand-in"
+
+
+def lite_measured(private: Path) -> None:
+    write(
+        private,
+        "call-lite",
+        {
+            "vendor": "heygen",
+            "mode": "lite",
+            "face_shown": True,
+            "session": {
+                "provider": "heygen",
+                "voicing": "audio",
+                "stockFace": False,
+                "livekitHost": "heygen-feapbkvq.livekit.cloud",
+            },
+            "turns": [
+                {
+                    "firstSpeakStartedMs": None,
+                    "firstFaceAudioMs": 1900,
+                    "firstAppPlaybackMs": None,
+                    "firstAppAudioMs": 1910,
+                    "firstHandOverMs": 1300,
+                    "firstHandOverDoneMs": 1700,
+                },
+                {
+                    "firstSpeakStartedMs": None,
+                    "firstFaceAudioMs": 1700,
+                    "firstAppPlaybackMs": None,
+                    "firstAppAudioMs": 1720,
+                    "firstHandOverMs": 1200,
+                    "firstHandOverDoneMs": 1500,
+                },
+            ],
+            "units": {
+                "handOverToStartedMs": [],
+                "handOverToAudioMs": [500, 600, 550],
+                "handOverToDoneMs": [300, 320, 310],
+            },
+            "speak_requests": 3,
+            "speak_accepted": 3,
+            "speak_text_sent": 0,
+            "app_playbacks_after_live": 0,
+            "mic_requests_after_live": 0,
+            "audio_senders": 0,
+        },
+    )
+
+
+def test_the_lite_arm_sits_beside_full_and_polly_without_changing_the_checks(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    measured(private)
+    full_only = graded(private)
+    lite_measured(private)
+    result = face.public_result(
+        private,
+        playwright_exit=0,
+        credits_before={"status": 200, "code": 100, "creditsLeft": "10.00"},
+        credits_after={"status": 200, "code": 100, "creditsLeft": "10.00"},
+        vendor_calls=CALLS,
+        vendor="heygen-sandbox",
+        admin_grant="granted",
+        injection_audits=HEARTBEAT_AUDIT,
+        face_mode="both",
+        twin="ready",
+    )
+    # The checks grade the FULL arm exactly as before.
+    assert result["checks"] == full_only["checks"]
+    assert (result["passed"], result["run"]) == (full_only["passed"], full_only["run"])
+    lite = result["call_lite"]
+    assert lite["session"]["voicing"] == "audio"
+    assert lite["first_face_audio_ms"] == {"p50": 1700, "p95": 1900, "n": 2}
+    assert lite["first_speak_started_ms"] is None
+    assert lite["first_hand_over_ms"] == {"p50": 1200, "p95": 1300, "n": 2}
+    assert lite["first_hand_over_done_ms"] == {"p50": 1500, "p95": 1700, "n": 2}
+    assert lite["hand_over_to_audio_ms"] == {"p50": 550, "p95": 600, "n": 3}
+    assert lite["hand_over_to_done_ms"] == {"p50": 310, "p95": 320, "n": 3}
+    table = result["comparison"]
+    rows = {row["key"]: row for row in table["rows"]}
+    assert list(rows) == [
+        "first_face_audio_ms",
+        "first_speak_started_ms",
+        "first_hand_over_ms",
+        "first_hand_over_done_ms",
+        "unit_to_audio_ms",
+        "unit_to_started_ms",
+    ]
+    assert rows["first_face_audio_ms"]["full"] == {"p50": 1150, "p95": 2180, "n": 2}
+    assert rows["first_face_audio_ms"]["lite"] == {"p50": 1700, "p95": 1900, "n": 2}
+    assert rows["first_face_audio_ms"]["polly"] == {"p50": 1540, "p95": 1760, "n": 2}
+    assert rows["unit_to_audio_ms"]["full"] == {"p50": 680, "p95": 720, "n": 2}
+    assert rows["unit_to_audio_ms"]["lite"] == {"p50": 550, "p95": 600, "n": 3}
+    assert rows["first_hand_over_done_ms"]["full"] is None
+    assert rows["first_speak_started_ms"]["polly"] is None
+    assert table["lite_minus_full_first_audio_p50_ms"] == 550
+    assert table["faster_first_audio"] == "full"
+    assert table["full_minus_polly_first_audio_p50_ms"] == -390
+    assert table["lite_minus_polly_first_audio_p50_ms"] == 160
+    rendered = render({"suite": "face", "result": {"face": result, "passed": 1, "run": 1}, "spend": {}})
+    assert "| Moment | FULL | LITE | Polly only |" in rendered
+    assert (
+        "| Turn sent → first audio (level onset) | 1150 / 2180 (n=2) | 1700 / 1900 (n=2) | 1540 / 1760 (n=2) |"
+        in rendered
+    )
+    assert "| Turn sent → first avatar.speak_started | 1900 / 2100 (n=3) | - | - |" in rendered
+    assert "LITE minus FULL +550 ms (faster: full)" in rendered
+    assert "In-app call, LITE" in rendered
+    assert "face reference ready" in rendered
+
+
+def test_a_full_only_run_still_compares_full_with_polly(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    measured(private)
+    result = graded(private)
+    assert result["call_lite"] is None
+    assert result["lite_face_reference"] == "not_run"
+    table = result["comparison"]
+    assert table["rows"][0]["lite"] is None
+    assert table["lite_minus_full_first_audio_p50_ms"] is None
+    assert table["faster_first_audio"] is None
+    assert table["full_minus_polly_first_audio_p50_ms"] == -390
+    rendered = render({"suite": "face", "result": {"face": result, "passed": 1, "run": 1}, "spend": {}})
+    assert "| Turn sent → first audio (level onset) | 1150 / 2180 (n=2) | - | 1540 / 1760 (n=2) |" in rendered
+    assert "LITE minus FULL" not in rendered
+    # Nothing measured at all: no table.
+    empty = face.public_result(
+        tmp_path / "nothing",
+        playwright_exit=0,
+        credits_before=None,
+        credits_after=None,
+        vendor_calls=[],
+        vendor="stand-in",
+        admin_grant="already",
+    )
+    assert "| Moment |" not in render(
+        {"suite": "face", "result": {"face": empty, "passed": 0, "run": 0}, "spend": {}}
+    )
+
+
+def test_nothing_but_numbers_survives_from_the_lite_file(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    write(
+        private,
+        "call-lite",
+        {
+            "face_shown": "yes",
+            "session": {"provider": SAID, "voicing": SAID, "livekitHost": "evil.example.com/x"},
+            "turns": [{"firstHandOverMs": "soon", "firstFaceAudioMs": 900}, SAID],
+            "units": {"handOverToAudioMs": [1, SAID, False], "handOverToDoneMs": SAID},
+            "speak_requests": SAID,
+            "error": "Error: " + SAID,
+        },
+    )
+    result = face.public_result(
+        private,
+        playwright_exit=1,
+        credits_before=None,
+        credits_after=None,
+        vendor_calls=[],
+        vendor="heygen-sandbox",
+        admin_grant="granted",
+        face_mode=SAID,
+        twin=SAID,
+    )
+    assert SAID not in json.dumps(result)
+    lite = result["call_lite"]
+    assert lite["face_shown"] is None
+    assert lite["session"] == {"provider": None, "voicing": None, "stock_face": None, "livekit_host": None}
+    assert lite["first_hand_over_ms"] is None
+    assert lite["first_face_audio_ms"] == {"p50": 900, "p95": 900, "n": 1}
+    assert lite["hand_over_to_audio_ms"] == {"p50": 1, "p95": 1, "n": 1}
+    assert lite["hand_over_to_done_ms"] is None
+    assert lite["speak_requests"] is None
+    assert lite["error"] is None
+    assert result["face_mode"] is None
+    assert result["lite_face_reference"] is None
+
+
+def test_the_twin_script_line_is_parsed_strictly() -> None:
+    assert face.parse_twin_line("noise\nlab-face-twin: personas=1 face=ready\n") == "ready"
+    assert face.parse_twin_line("lab-face-twin: personas=0 face=not_found") == "not_found"
+    assert face.parse_twin_line("lab-face-twin: refused (DATABASE_URL is not set)") is None
+    assert face.parse_twin_line("lab-face-twin: personas=1 face=ready; " + SAID) is None
+
+
+def test_the_stack_restarts_its_api_alone_with_the_new_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import subprocess
+
+    import conversation_lab.stack as stack_module
+
+    started: list[tuple[str, dict[str, str]]] = []
+
+    def start(self: stack_module.Stack, name: str, args: list[str], env: dict[str, str]) -> None:
+        proc = subprocess.Popen(["sleep", "30"], start_new_session=True)  # noqa: S607 - a stand-in process
+        self._procs.append((name, proc, (tmp_path / f"{name}-{len(started)}.log").open("ab")))
+        started.append((name, dict(env)))
+
+    monkeypatch.setattr(stack_module.Stack, "_start", start)
+    monkeypatch.setattr(stack_module, "wait_for", lambda url, **_: None)
+    stack = stack_module.Stack(env={"MEDIA_FACE_MODE": "full"}, log_dir=tmp_path, web=True)
+    with stack:
+        api, web = (entry[1] for entry in stack._procs)
+        stack.restart_api({"MEDIA_FACE_MODE": "lite"})
+        assert api.wait(timeout=10) is not None  # the old API process is gone
+        assert web.poll() is None  # the web preview keeps running
+        assert [name for name, _ in started] == ["api", "web", "api"]
+        assert started[-1][1] == {"MEDIA_FACE_MODE": "lite"}
+        assert stack.env == {"MEDIA_FACE_MODE": "lite"}
+        assert [entry[0] for entry in stack._procs] == ["web", "api"]
+    assert stack._procs == []
+    assert web.wait(timeout=10) is not None

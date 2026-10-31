@@ -1,5 +1,6 @@
 """Suite ``face``: the HeyGen LiveAvatar FULL stock face against the vendor's free SANDBOX (plan section E, checks
-1 to 11), headless and silent.
+1 to 11), headless and silent, and the same in-app call arm with the face in LITE mode, for a side-by-side latency
+comparison (``--face-mode``: full, lite or both; both by default).
 
 The job starts the app as every suite does, with the face wired as it will be for the presentation, but in the
 sandbox: ``MEDIA_FACE_PROVIDER=heygen-liveavatar``, ``MEDIA_FACE_MODE=full``, ``MEDIA_FACE_SANDBOX=true``,
@@ -15,6 +16,14 @@ face (as the seeded founder, made a platform admin of the synthetic venture by a
 injected ``speak_text`` that the server's transcript check must catch, and the same turns on Polly alone. This
 module reads the vendor's credits and the success codes it answered through the probe, and keeps public numbers
 only (:func:`public_result`): codes, counts, booleans, milliseconds, vendor end reasons. Words stay private.
+
+LITE (``--face-mode lite`` or ``both``): the avatar lip-syncs the call's own Polly audio, which the browser hands back
+to the server (``POST /calls/:id/face/speak``) and the server relays over the face's speak socket: the production
+LITE path, unchanged. As in production, the call's vEIR needs a face reference marked ready under likeness consent:
+apps/api lab-face-twin.ts records one for the synthetic vEIR in the lab's own database (never the seed). The sandbox
+renders its own avatar whatever the reference names. With ``both`` the FULL pass runs first with every check; then
+the local API is restarted with ``MEDIA_FACE_MODE=lite`` and only the call arm runs again, with the same founder
+turns and the same meters (:func:`comparison`: FULL, LITE and Polly alone side by side).
 
 In the harness's dry run (``--mock``) the development stand-in face takes the vendor's place: no key, no probe, no
 vendor; only the in-app path is exercised.
@@ -61,7 +70,53 @@ VENDOR_PATHS = (
     "/v1/users/credits",
 )
 #: The private files the spec writes (numbers and codes; the words are in separate ``*-texts.json`` files).
-RESULT_FILES = ("instruments", "probe", "call", "injection", "polly")
+RESULT_FILES = ("instruments", "probe", "call", "call-lite", "injection", "polly")
+#: The side-by-side table of the in-app arms (:func:`comparison`): each row's key and title, and which measurement
+#: of each arm fills it (None: that arm has no such moment).
+COMPARISON_ROWS: tuple[tuple[str, str, str | None, str | None, str | None], ...] = (
+    (
+        "first_face_audio_ms",
+        "Turn sent → first audio (level onset)",
+        "first_face_audio_ms",
+        "first_face_audio_ms",
+        "first_audio_ms",
+    ),
+    (
+        "first_speak_started_ms",
+        "Turn sent → first avatar.speak_started",
+        "first_speak_started_ms",
+        "first_speak_started_ms",
+        None,
+    ),
+    (
+        "first_hand_over_ms",
+        "Turn sent → first hand-over to the face (FULL speak_text, LITE face/speak)",
+        "first_hand_over_ms",
+        "first_hand_over_ms",
+        None,
+    ),
+    (
+        "first_hand_over_done_ms",
+        "Turn sent → first hand-over relayed (LITE face/speak answered)",
+        None,
+        "first_hand_over_done_ms",
+        None,
+    ),
+    (
+        "unit_to_audio_ms",
+        "Each unit: hand-over → first audio",
+        "publish_to_audio_ms",
+        "hand_over_to_audio_ms",
+        None,
+    ),
+    (
+        "unit_to_started_ms",
+        "Each unit: hand-over → avatar.speak_started",
+        "publish_to_started_ms",
+        "hand_over_to_started_ms",
+        None,
+    ),
+)
 #: The instruments' self-test (a loopback data channel in the page): each must hold for the measurements to count.
 INSTRUMENT_FLAGS = (
     "delivered",
@@ -80,6 +135,7 @@ _REASON = re.compile(r"^[A-Z][A-Z_]{0,39}$")
 _ERROR = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,59}$")
 _HOST = re.compile(r"^[a-z0-9][a-z0-9.-]{0,120}$")
 _GRANT = re.compile(r"^(granted|already|not_found|skipped \(mock\))$|^failed \(exit -?\d{1,3}\)$")
+_TWIN = re.compile(r"^(ready|not_found|not_run)$|^failed \(exit -?\d{1,3}\)$")
 _CREDITS = re.compile(r"^[+-]?\d{0,12}(\.\d{0,6})?$")
 
 
@@ -96,21 +152,46 @@ def new_probe_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def face_env(*, mock: bool, probe_token: str | None) -> dict[str, str]:
-    """The local API's face configuration (no secret in it): the vendor's sandbox in FULL mode for admins with the
-    sandbox's stock avatar, or the development stand-in in the dry run."""
-    common = {"MEDIA_FACE_MODE": "full", "MEDIA_FACE_AUDIENCE": "admins"}
+def face_env(*, mock: bool, probe_token: str | None, mode: str = "full") -> dict[str, str]:
+    """The local API's face configuration (no secret in it): the vendor's sandbox for admins, in FULL mode with the
+    sandbox's stock avatar or in LITE mode (the persona's face reference, which the sandbox replaces with its own
+    avatar), or the development stand-in in the dry run."""
+    if mode not in ("full", "lite"):
+        raise ValueError("mode must be full or lite")
+    common = {"MEDIA_FACE_MODE": mode, "MEDIA_FACE_AUDIENCE": "admins"}
     if mock:
         return {**common, "EMBODIMENT_PROVIDER": "fake"}
     env = {
         **common,
         "MEDIA_FACE_PROVIDER": "heygen-liveavatar",
         "MEDIA_FACE_SANDBOX": "true",
-        "MEDIA_FACE_AVATAR_ID": SANDBOX_AVATAR,
+        **({"MEDIA_FACE_AVATAR_ID": SANDBOX_AVATAR} if mode == "full" else {}),
     }
     if probe_token:
         env[PROBE_TOKEN_ENV] = probe_token
     return env
+
+
+def with_face_mode(
+    env: Mapping[str, str], *, mock: bool, probe_token: str | None, mode: str
+) -> dict[str, str]:
+    """``env`` with its face configuration replaced by :func:`face_env` in ``mode`` (nothing of the other mode left
+    behind, such as FULL's stock avatar)."""
+    kept = {k: v for k, v in env.items() if k not in _FACE_KEYS}
+    return {**kept, **face_env(mock=mock, probe_token=probe_token, mode=mode)}
+
+
+_FACE_KEYS = frozenset(
+    {
+        "MEDIA_FACE_MODE",
+        "MEDIA_FACE_AUDIENCE",
+        "MEDIA_FACE_PROVIDER",
+        "MEDIA_FACE_SANDBOX",
+        "MEDIA_FACE_AVATAR_ID",
+        "EMBODIMENT_PROVIDER",
+        PROBE_TOKEN_ENV,
+    }
+)
 
 
 def api_process_env(env: Mapping[str, str], key: str) -> dict[str, str]:
@@ -136,6 +217,32 @@ def grant_admin(env: Mapping[str, str], log_dir: Path, *, pnpm: str) -> str:
         if line.startswith("lab-face-admin: ") and found:
             return found.group(1)
     return f"failed (exit {done.returncode})"
+
+
+def seed_twin(env: Mapping[str, str], log_dir: Path, *, pnpm: str) -> str:
+    """Gives the synthetic vEIR the seeded founder calls a face reference marked ready under likeness consent, in the
+    lab's own database (apps/api lab-face-twin.ts, local Postgres only): what a LITE face needs, as in production.
+    Returns the outcome (ready, not_found, or failed)."""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    done = subprocess.run(  # noqa: S603 - fixed argument list
+        [pnpm, "--filter", "@foundry/api", "exec", "tsx", "src/scripts/lab-face-twin.ts"],
+        cwd=REPO,
+        env=dict(env),
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
+    (log_dir / "face-twin.log").write_bytes(done.stdout + done.stderr)
+    return parse_twin_line(done.stdout.decode("utf-8", "replace")) or f"failed (exit {done.returncode})"
+
+
+def parse_twin_line(stdout: str) -> str | None:
+    """The outcome lab-face-twin.ts printed (``ready`` or ``not_found``), or None."""
+    for line in stdout.splitlines():
+        found = re.fullmatch(r"lab-face-twin: personas=(\d{1,3}) face=(ready|not_found)", line.strip())
+        if found:
+            return found.group(2)
+    return None
 
 
 def read_audit_ids(private: Path) -> list[int]:
@@ -412,6 +519,10 @@ def _turns(raw: Any) -> list[dict[str, int | None]]:
             "first_face_audio_ms": _int(t.get("firstFaceAudioMs")),
             "first_app_playback_ms": _int(t.get("firstAppPlaybackMs")),
             "first_app_audio_ms": _int(t.get("firstAppAudioMs")),
+            # The first hand-over of the turn's words to the face: FULL's speak_text on the room, LITE's audio
+            # POSTed to the server (and when the server answered it, having relayed it over the speak socket).
+            "first_hand_over_ms": _int(t.get("firstHandOverMs")),
+            "first_hand_over_done_ms": _int(t.get("firstHandOverDoneMs")),
         }
         for t in raw
         if isinstance(t, dict)
@@ -453,6 +564,7 @@ def public_call(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
         ),
         "publish_to_started_ms": percentile_ms(_ints(units.get("publishToStartedMs"))),
         "publish_to_audio_ms": percentile_ms(_ints(units.get("publishToAudioMs"))),
+        "first_hand_over_ms": _turn_percentile(turns, "first_hand_over_ms"),
         "speak_text_sent": _int(raw.get("speak_text_sent")),
         "say_requests": _int(raw.get("say_requests")),
         "app_playbacks_after_live": _int(raw.get("app_playbacks_after_live")),
@@ -467,6 +579,83 @@ def public_call(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
             "typed_line_editable": _bool(fallback.get("typed_line_editable")),
         },
         "error": _error(raw.get("error")),
+    }
+
+
+def _turn_percentile(turns: Sequence[Mapping[str, int | None]], key: str) -> dict[str, int] | None:
+    return percentile_ms([v for v in (t.get(key) for t in turns) if v is not None])
+
+
+def public_call_lite(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """The call arm with the face in LITE mode: the same turns and meters as :func:`public_call`. The LITE moments
+    in place of FULL's speak_text: each unit's audio hand-over (``POST /calls/:id/face/speak``, its first part) and
+    the server's answer once it relayed it over the speak socket; ``avatar.speak_started`` when the room carries it."""
+    if raw is None:
+        return None
+    session = raw.get("session") if isinstance(raw.get("session"), dict) else {}
+    units = raw.get("units") if isinstance(raw.get("units"), dict) else {}
+    provider = session.get("provider")
+    voicing = session.get("voicing")
+    turns = _turns(raw.get("turns"))
+    return {
+        "session": {
+            "provider": provider if provider in ("heygen", "fake", "builtin") else None,
+            "voicing": voicing if voicing in ("text", "audio", "engine") else None,
+            "stock_face": _bool(session.get("stockFace")),
+            "livekit_host": _host(session.get("livekitHost")),
+        },
+        "face_shown": _bool(raw.get("face_shown")),
+        "turns": turns,
+        "first_face_audio_ms": _turn_percentile(turns, "first_face_audio_ms"),
+        "first_speak_started_ms": _turn_percentile(turns, "first_speak_started_ms"),
+        "first_hand_over_ms": _turn_percentile(turns, "first_hand_over_ms"),
+        "first_hand_over_done_ms": _turn_percentile(turns, "first_hand_over_done_ms"),
+        "hand_over_to_audio_ms": percentile_ms(_ints(units.get("handOverToAudioMs"))),
+        "hand_over_to_started_ms": percentile_ms(_ints(units.get("handOverToStartedMs"))),
+        "hand_over_to_done_ms": percentile_ms(_ints(units.get("handOverToDoneMs"))),
+        "speak_requests": _int(raw.get("speak_requests")),
+        "speak_accepted": _int(raw.get("speak_accepted")),
+        "speak_text_sent": _int(raw.get("speak_text_sent")),
+        "app_playbacks_after_live": _int(raw.get("app_playbacks_after_live")),
+        "mic_requests_after_live": _int(raw.get("mic_requests_after_live")),
+        "audio_senders": _int(raw.get("audio_senders")),
+        "error": _error(raw.get("error")),
+    }
+
+
+def comparison(result: Mapping[str, Any]) -> dict[str, Any]:
+    """The in-app arms side by side (:data:`COMPARISON_ROWS`): FULL, LITE and Polly alone, each a {p50, p95, n} cell
+    or None, with which face arm reached first audio sooner at p50 and by how much (LITE minus FULL; negative: LITE
+    is faster)."""
+    arms = {
+        "full": result.get("call") or {},
+        "lite": result.get("call_lite") or {},
+        "polly": result.get("polly") or {},
+    }
+    rows: list[dict[str, Any]] = []
+    for key, title, full_key, lite_key, polly_key in COMPARISON_ROWS:
+        cells = {}
+        for arm, field in (("full", full_key), ("lite", lite_key), ("polly", polly_key)):
+            cell = arms[arm].get(field) if field else None
+            cells[arm] = cell if isinstance(cell, dict) else None
+        rows.append({"key": key, "title": title, **cells})
+    first = rows[0]
+    full_p50 = (first["full"] or {}).get("p50")
+    lite_p50 = (first["lite"] or {}).get("p50")
+    polly_p50 = (first["polly"] or {}).get("p50")
+    delta = None if full_p50 is None or lite_p50 is None else lite_p50 - full_p50
+    return {
+        "rows": rows,
+        "lite_minus_full_first_audio_p50_ms": delta,
+        "faster_first_audio": None
+        if delta is None
+        else ("lite" if delta < 0 else "full" if delta > 0 else "same"),
+        "full_minus_polly_first_audio_p50_ms": (
+            None if full_p50 is None or polly_p50 is None else full_p50 - polly_p50
+        ),
+        "lite_minus_polly_first_audio_p50_ms": (
+            None if lite_p50 is None or polly_p50 is None else lite_p50 - polly_p50
+        ),
     }
 
 
@@ -608,14 +797,21 @@ def public_result(
     vendor: str,
     admin_grant: str,
     injection_audits: Mapping[str, Any] | None = None,
+    face_mode: str = "full",
+    twin: str = "not_run",
 ) -> dict[str, Any]:
     """The suite's public result: numbers, codes, booleans and vendor end reasons only. ``injection_audits`` is
-    :func:`injection_audits` for the ids the injection test saw (None: not looked up, so E10 cannot pass)."""
+    :func:`injection_audits` for the ids the injection test saw (None: not looked up, so E10 cannot pass).
+    ``face_mode`` is the run's choice (full, lite, both) and ``twin`` the LITE face reference's outcome
+    (:func:`seed_twin`; ``not_run`` without a LITE pass). The checks grade the FULL arm only, as before; the LITE
+    arm is reported beside it (:func:`public_call_lite`, :func:`comparison`)."""
     before, after = credits_left(credits_before), credits_left(credits_after)
     calls = summarize_vendor_calls(vendor_calls)
     result: dict[str, Any] = {
         "vendor": vendor if vendor in ("heygen-sandbox", "stand-in") else None,
+        "face_mode": face_mode if face_mode in ("full", "lite", "both") else None,
         "admin_grant": admin_grant if _GRANT.match(admin_grant) else None,
+        "lite_face_reference": twin if _TWIN.match(twin) else None,
         "playwright_exit": playwright_exit,
         "credits": {
             "before": before,
@@ -631,7 +827,9 @@ def public_result(
         "call": public_call(_load(private, "call")),
         "injection": public_injection(_load(private, "injection"), injection_audits),
         "polly": public_polly(_load(private, "polly")),
+        "call_lite": public_call_lite(_load(private, "call-lite")),
     }
+    result["comparison"] = comparison(result)
     graded = checks(result)
     result["checks"] = graded
     result["passed"] = sum(1 for v in graded.values() if v is True)

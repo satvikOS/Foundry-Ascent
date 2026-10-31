@@ -116,6 +116,20 @@ def suites_for(choice: str) -> list[str]:
     return [choice]
 
 
+#: The face suite's in-app call arm, by the app's face mode (``--face-mode``, the workflow's ``face_mode``): ``full``
+#: (a stock avatar voices our admitted text), ``lite`` (the avatar lip-syncs our Polly audio, sent over the server's
+#: speak socket) or ``both`` (the default: FULL first with every sandbox check, then the API restarted in LITE for
+#: the same call arm, so the two are compared side by side with Polly alone).
+FACE_MODES: tuple[str, ...] = ("both", "full", "lite")
+
+
+def face_passes(choice: str) -> list[str]:
+    """The app's face mode in each pass of the face suite, in order (``both``: FULL, then LITE)."""
+    if choice not in FACE_MODES:
+        raise ValueError(f"face mode must be one of {', '.join(FACE_MODES)}")
+    return ["full", "lite"] if choice == "both" else [choice]
+
+
 def floor_cents(value: float) -> float:
     return math.floor(value * 100 + 1e-9) / 100
 

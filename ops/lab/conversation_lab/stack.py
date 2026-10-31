@@ -97,7 +97,7 @@ class Stack:
     web: bool
     api_port: int = API_PORT
     web_port: int = WEB_PORT
-    _procs: list[tuple[subprocess.Popen[bytes], IO[bytes]]] = field(default_factory=list)
+    _procs: list[tuple[str, subprocess.Popen[bytes], IO[bytes]]] = field(default_factory=list)
 
     @property
     def api_url(self) -> str:
@@ -113,14 +113,15 @@ class Stack:
         proc = subprocess.Popen(  # noqa: S603 - fixed argument lists
             args, cwd=REPO, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True
         )
-        self._procs.append((proc, log))
+        self._procs.append((name, proc, log))
+
+    def _start_api(self, env: dict[str, str]) -> None:
+        self._start("api", [PNPM, "--filter", "@foundry/api", "exec", "tsx", "src/dev-server.ts"], env)
+        wait_for(f"{self.api_url}/api/v1/health", timeout=180)
 
     def __enter__(self) -> Stack:
         try:
-            self._start(
-                "api", [PNPM, "--filter", "@foundry/api", "exec", "tsx", "src/dev-server.ts"], self.env
-            )
-            wait_for(f"{self.api_url}/api/v1/health", timeout=180)
+            self._start_api(self.env)
             if self.web:
                 web_env = {**os.environ, "API_PROXY_TARGET": self.api_url}
                 self._start(
@@ -147,17 +148,31 @@ class Stack:
     def __exit__(self, *exc: object) -> None:
         self.stop()
 
+    def restart_api(self, env: dict[str, str]) -> None:
+        """Stops the API process and starts it again with ``env`` on the same port (the face suite's LITE pass: the
+        face's mode is the process's configuration). The web preview keeps proxying to it; sessions live in the
+        database, so signed-in pages and clients carry on."""
+        for entry in [e for e in self._procs if e[0] == "api"]:
+            _terminate(entry[1], entry[2])
+            self._procs.remove(entry)
+        self.env = env
+        self._start_api(env)
+
     def stop(self) -> None:
-        for proc, log in reversed(self._procs):
-            if proc.poll() is None:
-                try:
-                    os.killpg(proc.pid, signal.SIGTERM)
-                    proc.wait(timeout=15)
-                except (ProcessLookupError, subprocess.TimeoutExpired):
-                    with contextlib.suppress(ProcessLookupError):
-                        os.killpg(proc.pid, signal.SIGKILL)
-            log.close()
+        for _name, proc, log in reversed(self._procs):
+            _terminate(proc, log)
         self._procs.clear()
+
+
+def _terminate(proc: subprocess.Popen[bytes], log: IO[bytes]) -> None:
+    if proc.poll() is None:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+            proc.wait(timeout=15)
+        except (ProcessLookupError, subprocess.TimeoutExpired):
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+    log.close()
 
 
 def run_backfill(env: dict[str, str], log_dir: Path) -> str:

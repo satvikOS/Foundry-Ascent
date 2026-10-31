@@ -38,7 +38,7 @@ E-crisis corpus, before production turns it on, with no app, browser or database
 In every other suite the app runs with the screen on (`CORE_SAFETY_SCREEN=on`).
 
 `face` runs on its own too (never part of `all`): the HeyGen LiveAvatar FULL stock face against the vendor's free
-sandbox, with the vendor key ("HeyGen sandbox face" below).
+sandbox, with the vendor key, and the same call arm in LITE side by side (`face_mode`; "HeyGen sandbox face" below).
 
 `matrix` has two sources (input `matrix_source`); the summary says which ran:
 
@@ -330,6 +330,8 @@ headless on GitHub instead of by hand.
 gh workflow run ops-conversation-lab.yml -f suite=face -f budget_usd=1
 # with what the avatar said, the Playwright report and the server logs, sealed to your key
 gh workflow run ops-conversation-lab.yml -f suite=face -f budget_usd=1 -f public_key="$(cat "$dir/public.b64")"
+# only one face mode in the in-app call arm (default both: FULL, then LITE, side by side with Polly alone)
+gh workflow run ops-conversation-lab.yml -f suite=face -f budget_usd=1 -f face_mode=lite
 ```
 
 **One-time setup:** the owner's HeyGen LiveAvatar API key as the repository secret `HEYGEN_LIVEAVATAR_API` (Settings →
@@ -390,9 +392,45 @@ production models and Polly (a few cents) and, in the app's own ledger, the face
 (USD 0.19 a minute, about USD 0.4 a run), which HeyGen does not charge in the sandbox: the credits check shows it.
 `budget_usd=1` is enough.
 
-**The LITE A/B arm.** The plan's E5 compares FULL with LITE + Polly. LITE needs a persona whose consent covers its
-likeness and a Ready HeyGen avatar, which the synthetic seed does not hold, so this suite compares FULL with Polly
-alone (the presence tile): LITE's first sound would be Polly's plus the hand-over to the vendor.
+**FULL vs LITE (`face_mode`).** The owner's question is latency: is LITE (HeyGen lip-syncs **our** Polly audio,
+which the page hands back to the server, `POST /calls/:id/face/speak`, and the server relays over the face's speak
+socket: the production LITE path, unchanged) faster to the first sound than FULL (the stock avatar voicing our
+admitted text)? `face_mode` picks the in-app call arm's face mode:
+
+| `face_mode`      | What runs                                                                                                                                                                                                                                          |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `both` (default) | The FULL pass above (every test and check), then the harness restarts the local API with `MEDIA_FACE_MODE=lite` (same sandbox, admins, key and probe token) and Playwright runs `call LITE` alone (`--grep "call LITE:"`, `playwright-lite.json`). |
+| `full`           | The FULL pass only (as before this input existed).                                                                                                                                                                                                 |
+| `lite`           | The API starts in LITE: `instruments`, `call LITE` and `polly` run; `probe`, `call` and `injection` are FULL-only and skip (their checks read "not measured").                                                                                     |
+
+LITE in the app needs what production LITE needs: the call's vEIR with a face reference marked Ready under a consent
+that covers likeness. Before the LITE pass, `apps/api/src/scripts/lab-face-twin.ts` records both for the synthetic vEIR
+of the founder's venture, in the lab's own database only (local Postgres; never the seed): a new consent record of the
+same synthetic EIR with `likeness` added, linked to the persona, and the persona's HeyGen face reference (the sandbox
+avatar's id) marked `ready`. The sandbox renders its own avatar (Wayne) whatever the reference names. The outcome is
+`lite_face_reference` in the summary (`ready`, `not_found`, `failed (exit N)`; `not_run` without a LITE pass).
+
+`call LITE` makes the same two typed founder turns as `call` and `polly`, with the same instruments: per turn, the time
+from the turn sent to the face's first sound (the remote-track level onset), to the first `avatar.speak_started` (when
+the room carries it; LITE's own events reach the server's socket), to the first hand-over (FULL: the `speak_text`
+published on the room; LITE: the first `face/speak` POST) and, for LITE, to the server's answer to it (relayed to the
+vendor); per unit, the hand-over to the first sound and to `speak_started` (and LITE's relay time).
+
+The summary then sets the arms side by side, p50 / p95 in ms with n (`comparison` in the public result):
+
+| Moment                                   | FULL                   | LITE                   | Polly only       |
+| ---------------------------------------- | ---------------------- | ---------------------- | ---------------- |
+| Turn sent → first audio (level onset)    | face track             | face track             | the app's output |
+| Turn sent → first `avatar.speak_started` | room event             | room event, if carried | -                |
+| Turn sent → first hand-over to the face  | `speak_text` published | `face/speak` POSTed    | -                |
+| Turn sent → first hand-over relayed      | -                      | `face/speak` answered  | -                |
+| Each unit: hand-over → first audio       | `speak_text` → onset   | `face/speak` → onset   | -                |
+| Each unit: hand-over → `speak_started`   | `speak_text` → event   | `face/speak` → event   | -                |
+
+with the p50 first-audio differences (LITE minus FULL, and each minus Polly). The checks above grade the FULL arm
+only, exactly as before; the LITE arm is reported beside them. Production stays FULL (sandbox off, admins only) until
+the owner decides; the comparison changes no configuration. Note the passes run one after the other (FULL first), so
+a slow sandbox minute affects one arm only: compare a few runs before deciding.
 
 ## Locally
 
@@ -409,7 +447,8 @@ The browser suites run through Playwright like the e2e suite (silent: fake audio
 `E2E_OWNER_ACCESS_CODE` and `DATABASE_URL` set (`LAB_RECALL_GAP_SECONDS=3` shortens the pauses). Unit tests:
 `cd ops/lab && python -m pytest` (offline; CI runs them in the Python job). The face suite's dry run
 (`--suite face --mock`) runs the call, polly and admin-grant plumbing on the development stand-in face (no key, no
-vendor, no probe).
+vendor, no probe); with `--face-mode both` (the default) it also restarts the API in LITE and runs `call LITE` on the
+stand-in.
 
 ## Troubleshooting
 

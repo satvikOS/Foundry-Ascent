@@ -3,7 +3,8 @@
   plan --suite S --budget-usd B           which suites run and each one's hard cap (JSON; standard library only)
   run  --suite S --budget-usd B --out DIR  starts the app with the real models and runs one suite (safety: no app,
                                            the safety screen on the app's models over the E-crisis corpus; face:
-                                           the HeyGen sandbox face, its key from LAB_HEYGEN_API_KEY to the API only)
+                                           the HeyGen sandbox face, its key from LAB_HEYGEN_API_KEY to the API only;
+                                           --face-mode full|lite|both picks the in-app call arm's face mode)
 
 Everything printed is public-safe (ids, codes, counts, timings, dollars). Content (transcripts, judge rationales,
 screenshots, server logs) is written under DIR/private only; the workflow seals it to the operator's key or
@@ -26,11 +27,13 @@ from typing import Any
 
 from conversation_lab.config import (
     EXTRA_SUITES,
+    FACE_MODES,
     MAX_BUDGET_USD,
     REPO,
     SUITES,
     app_models,
     budget_parts,
+    face_passes,
     lab_models,
     polly_usd_per_million_characters,
     split_budget,
@@ -39,6 +42,8 @@ from conversation_lab.config import (
 
 PUBLIC_REPORTER = REPO / "apps" / "web" / "e2e" / "lab" / "public-reporter.ts"
 LAB_CONFIG = "e2e/lab/playwright.config.ts"
+#: The face spec's LITE call arm (apps/web/e2e/lab/face.lab.ts): the only test of a LITE pass after a FULL one.
+FACE_LITE_CALL_GREP = "call LITE:"
 
 #: The face suite's vendor key, taken out of this process's environment when the harness starts (face.take_key) and
 #: handed to the local API process only. Never printed, logged or written.
@@ -76,6 +81,9 @@ class Context:
     #: The face suite's lab-probe token (None in the dry run: no vendor) and the founder's admin grant outcome.
     face_probe_token: str | None = None
     face_admin: str = ""
+    #: The face suite's in-app arm: full, lite or both (config.FACE_MODES); and whether this is the dry run.
+    face_mode: str = "both"
+    mock: bool = False
 
     @property
     def private(self) -> Path:
@@ -185,6 +193,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         scenario_ids=tuple(i.strip() for i in (args.scenarios or "").split(",") if i.strip()),
         repeat=int(args.repeat),
         matrix_source=str(args.matrix_source),
+        face_mode=str(args.face_mode),
+        mock=bool(args.mock),
     )
     ctx.private.mkdir(parents=True, exist_ok=True)
     ctx.public.mkdir(parents=True, exist_ok=True)
@@ -243,9 +253,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         from conversation_lab.stack import PNPM
 
         ctx.face_probe_token = None if args.mock else new_probe_token()
-        env.update(face_env(mock=args.mock, probe_token=ctx.face_probe_token))
+        # The first pass's mode (both: FULL first; suite_face restarts the API in LITE for the second pass).
+        first_mode = face_passes(ctx.face_mode)[0]
+        env.update(face_env(mock=args.mock, probe_token=ctx.face_probe_token, mode=first_mode))
         ctx.face_admin = grant_admin(env, ctx.private / "logs", pnpm=PNPM)
         summary["face_admin"] = ctx.face_admin
+        summary["face_mode"] = ctx.face_mode
         api_process = api_process_env(env, "" if args.mock else _FACE_KEY)
     ctx.env = env
     if suite == "matrix" and ctx.matrix_source == "evals":
@@ -290,6 +303,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                         simulator_model=simulator_model,
                         judge_model=judge_model,
                         ledger=ledger,
+                        stack=stack,
                     )
                     summary["stopped_by"] = summary["result"].pop("stopped_by", None) or guard.stopped_by
                 usage_after = admin.usage()
@@ -852,11 +866,21 @@ def suite_agenda(
     }
 
 
-def suite_face(ctx: Context, *, browser: dict[str, str], **_: Any) -> dict[str, Any]:
-    """The HeyGen LiveAvatar FULL stock face against the vendor's sandbox (conversation_lab/face.py): the vendor's
-    credits before and after and the codes it answered (through the dev server's lab probe), and the browser spec's
-    measurements (apps/web/e2e/lab/face.lab.ts), as public numbers."""
-    from conversation_lab.face import PROBE_TOKEN_ENV, Probe, injection_audits, public_result, read_audit_ids
+def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_: Any) -> dict[str, Any]:
+    """The HeyGen LiveAvatar face against the vendor's sandbox (conversation_lab/face.py): the vendor's credits before
+    and after and the codes it answered (through the dev server's lab probe), and the browser spec's measurements
+    (apps/web/e2e/lab/face.lab.ts), as public numbers. One pass per face mode (``ctx.face_mode``; both: FULL with
+    every check, then the API restarted in LITE for the call arm alone, with the same turns and meters)."""
+    from conversation_lab.face import (
+        PROBE_TOKEN_ENV,
+        Probe,
+        api_process_env,
+        injection_audits,
+        public_result,
+        read_audit_ids,
+        seed_twin,
+        with_face_mode,
+    )
     from conversation_lab.stack import PNPM
 
     token = ctx.face_probe_token
@@ -865,15 +889,33 @@ def suite_face(ctx: Context, *, browser: dict[str, str], **_: Any) -> dict[str, 
     extra = {**browser, "LAB_FACE_VENDOR": "heygen" if probe else "stand-in"}
     if token:
         extra[PROBE_TOKEN_ENV] = token
-    rc = run_playwright(
-        ctx,
-        specs=["--project=face"],
-        config=LAB_CONFIG,
-        report=ctx.private / "face" / "playwright.json",
-        extra_env=extra,
-        timeout=30 * 60,
-    )
+    vendor_calls: list[dict[str, Any]] = []
+    exits: dict[str, int] = {}
+    twin = "not_run"
+    for index, mode in enumerate(face_passes(ctx.face_mode)):
+        if index > 0:
+            if stack is None:
+                raise RuntimeError("the face suite needs the stack to change the face's mode")
+            # The probe remembers the vendor calls of its own process: read them before it is replaced.
+            if probe:
+                vendor_calls += probe.vendor_calls()
+            ctx.env = with_face_mode(ctx.env, mock=ctx.mock, probe_token=token, mode=mode)
+            # The vendor key goes to the new API process only, as at the start (face.api_process_env).
+            stack.restart_api(api_process_env(ctx.env, "" if ctx.mock else _FACE_KEY))
+        if mode == "lite":
+            twin = seed_twin(ctx.env, ctx.private / "logs", pnpm=PNPM)
+        exits[mode] = run_playwright(
+            ctx,
+            specs=["--project=face"] if index == 0 else ["--project=face", "--grep", FACE_LITE_CALL_GREP],
+            config=LAB_CONFIG,
+            report=ctx.private / "face" / ("playwright.json" if index == 0 else f"playwright-{mode}.json"),
+            extra_env={**extra, "LAB_FACE_APP_MODE": mode},
+            timeout=30 * 60,
+        )
     after = probe.credits() if probe else None
+    if probe:
+        vendor_calls += probe.vendor_calls()
+    rc = next((code for code in exits.values() if code != 0), 0)
     # Heartbeat or end-of-face: the audits' metadata, read from the lab's own database (the admin API omits it).
     audits = injection_audits(ctx.env, ctx.private / "logs", read_audit_ids(ctx.private), pnpm=PNPM)
     result = public_result(
@@ -881,11 +923,14 @@ def suite_face(ctx: Context, *, browser: dict[str, str], **_: Any) -> dict[str, 
         playwright_exit=rc,
         credits_before=before,
         credits_after=after,
-        vendor_calls=probe.vendor_calls() if probe else [],
+        vendor_calls=vendor_calls,
         vendor="heygen-sandbox" if probe else "stand-in",
         admin_grant=ctx.face_admin,
         injection_audits=audits,
+        face_mode=ctx.face_mode,
+        twin=twin,
     )
+    result["playwright_exits"] = exits
     return {"face": result, "passed": result["passed"], "run": result["run"], "playwright_exit": rc}
 
 
@@ -920,6 +965,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         choices=("builtin", "evals"),
         default="builtin",
         help="matrix: the lab's 40 scenarios, or evals' conversation matrix (run --suite matrix)",
+    )
+    run.add_argument(
+        "--face-mode",
+        choices=FACE_MODES,
+        default="both",
+        help="face: the in-app call arm's face mode (full, lite, or both side by side)",
     )
     run.add_argument("--out", required=True)
     run.add_argument("--api-port", type=int, default=8787)

@@ -278,9 +278,10 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
         return out
     credits = face.get("credits") or {}
     out.append(
-        f"Vendor: {face.get('vendor')}; founder made a platform admin: {face.get('admin_grant')}; Playwright exit "
-        f"{face.get('playwright_exit')}; success codes (token, start): {face.get('success_codes') or '-'}; credits "
-        f"before {credits.get('before')}, after {credits.get('after')}, used {credits.get('used')}."
+        f"Vendor: {face.get('vendor')}; face mode: {face.get('face_mode') or 'full'}; founder made a platform admin: "
+        f"{face.get('admin_grant')}; Playwright exit {face.get('playwright_exit')}; success codes (token, start): "
+        f"{face.get('success_codes') or '-'}; credits before {credits.get('before')}, after {credits.get('after')}, "
+        f"used {credits.get('used')}."
     )
     out.append("")
     out.append("| Check | Result |")
@@ -290,6 +291,7 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
             f"| {name} | {'pass' if value is True else 'FAIL' if value is False else 'not measured'} |"
         )
     out.append("")
+    out.extend(_face_comparison(face))
     calls = face.get("vendor_calls") or {}
     if calls:
         out.append("| Vendor call | HTTP status | Envelope code |")
@@ -379,6 +381,30 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
             + (f"; error {call['error']}" if call.get("error") else "")
         )
         out.append("")
+    lite = face.get("call_lite") or {}
+    if lite:
+        session = lite.get("session") or {}
+        out.append(
+            "In-app call, LITE (the same founder turns; the avatar lip-syncs the call's Polly audio, relayed by the "
+            "server over the speak socket):"
+        )
+        out.append(
+            f"- Face: {session.get('provider')} / {session.get('voicing')}, stock {session.get('stock_face')}, "
+            f"LiveKit host {session.get('livekit_host')}; shown {lite.get('face_shown')}; face reference "
+            f"{face.get('lite_face_reference')}"
+        )
+        out.append(
+            f"- Each unit, face/speak → answered {_p(lite.get('hand_over_to_done_ms'))}; → speak_started "
+            f"{_p(lite.get('hand_over_to_started_ms'))}; → first audio {_p(lite.get('hand_over_to_audio_ms'))}; "
+            f"face/speak requests {lite.get('speak_requests')} (answered 204: {lite.get('speak_accepted')}), the "
+            f"call's own playback after the face joined {lite.get('app_playbacks_after_live')}"
+        )
+        out.append(
+            f"- Microphone requests after the face joined {lite.get('mic_requests_after_live')}; audio tracks "
+            f"published {lite.get('audio_senders')}"
+            + (f"; error {lite['error']}" if lite.get("error") else "")
+        )
+        out.append("")
     injection = face.get("injection") or {}
     if injection:
         out.append(
@@ -392,6 +418,41 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
         )
         out.append("")
     return out
+
+
+def _face_comparison(face: Mapping[str, Any]) -> list[str]:
+    """The in-app arms side by side (conversation_lab/face.py comparison): FULL, LITE and Polly alone."""
+    table = face.get("comparison") or {}
+    rows: Sequence[Mapping[str, Any]] = table.get("rows") or []
+    if not any(row.get(arm) for row in rows for arm in ("full", "lite", "polly")):
+        return []
+    out = [
+        "In-app arms side by side (the same founder turns, the same meters; p50 / p95 in ms, n):",
+        "",
+        "| Moment | FULL | LITE | Polly only |",
+        "| --- | --- | --- | --- |",
+    ]
+    for row in rows:
+        cells = [_p_short(row.get(arm)) for arm in ("full", "lite", "polly")]
+        out.append(f"| {row.get('title')} | {' | '.join(cells)} |")
+    out.append("")
+    delta = table.get("lite_minus_full_first_audio_p50_ms")
+    if delta is not None:
+        out.append(
+            f"First audio at p50: LITE minus FULL {delta:+d} ms (faster: {table.get('faster_first_audio')}); "
+            f"FULL minus Polly {_signed(table.get('full_minus_polly_first_audio_p50_ms'))}, LITE minus Polly "
+            f"{_signed(table.get('lite_minus_polly_first_audio_p50_ms'))}."
+        )
+        out.append("")
+    return out
+
+
+def _p_short(cell: Mapping[str, Any] | None) -> str:
+    return "-" if not cell else f"{cell['p50']} / {cell['p95']} (n={cell['n']})"
+
+
+def _signed(value: Any) -> str:
+    return "-" if not isinstance(value, int) else f"{value:+d} ms"
 
 
 def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:

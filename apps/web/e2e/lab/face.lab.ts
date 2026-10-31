@@ -33,6 +33,10 @@ import {
  *   injection  a tampered page rewrites the words of one `avatar.speak_text` after the server admitted them: the
  *              server's transcript check must end the face within a heartbeat (`call.face_injection`).
  *   polly      the same typed turn on a call without a face (Amazon Polly only): the A/B arm for first audio.
+ *   call LITE  the same call arm with the app's face in LITE mode (the avatar lip-syncs the call's own Polly audio,
+ *              which the page hands back to the server and the server relays over the speak socket), for the
+ *              FULL / LITE / Polly comparison. The lab restarts the API in LITE for it (LAB_FACE_APP_MODE=lite)
+ *              after the FULL pass, or runs only LITE (then the FULL-only tests skip).
  *
  * Every page records the vendor's room events by tapping the page's own WebRTC data channels (the JSON inside each
  * packet), the avatar's audio level, microphone requests and fetches, with the page clock. Words and texts go to
@@ -43,6 +47,8 @@ const PROBE_TOKEN = process.env.LAB_FACE_PROBE_TOKEN ?? '';
 /** `heygen` (the vendor sandbox, the lab on GitHub) or `stand-in` (the mock dry run: the development face). */
 const FACE = process.env.LAB_FACE_VENDOR === 'heygen' ? 'heygen' : 'stand-in';
 const API = process.env.E2E_API_URL ?? 'http://localhost:8787';
+/** The app's face mode in this pass (the lab sets MEDIA_FACE_MODE on the API to match): `full` or `lite`. */
+const APP_MODE = process.env.LAB_FACE_APP_MODE === 'lite' ? 'lite' : 'full';
 const LIVEKIT_UMD = join(
   REPO,
   'apps',
@@ -81,6 +87,14 @@ interface LabEvent {
   text: string | null;
   reason: string | null;
 }
+interface LabFetch {
+  at: number;
+  path: string;
+  method: string;
+  part: string | null;
+  doneAt: number | null;
+  status: number | null;
+}
 interface FaceLab {
   events: LabEvent[];
   /** Sound onsets / offsets on the avatar's remote WebRTC audio (the face's voice). */
@@ -91,7 +105,11 @@ interface FaceLab {
   appOffsets: number[];
   mic: number[];
   audioSenders: number;
-  fetches: { at: number; path: string; method: string }[];
+  /**
+   * The page's fetches: path, method, LITE's face hand-over part (`x-face-part`, null otherwise), and when the
+   * response arrived (with its status), so a LITE hand-over's relay by the server can be timed.
+   */
+  fetches: LabFetch[];
   plays: number[];
   injected: { at: number; text: string }[];
   injectNext: boolean;
@@ -330,14 +348,37 @@ function faceLabInit(): void {
   }
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    let entry: LabFetch | null = null;
     try {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
-      lab.fetches.push({ at: now(), path: new URL(url, location.href).pathname, method });
+      const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+      entry = {
+        at: now(),
+        path: new URL(url, location.href).pathname,
+        method,
+        part: headers.get('x-face-part'),
+        doneAt: null,
+        status: null,
+      };
+      lab.fetches.push(entry);
     } catch {
       /* never in the way of the app */
     }
-    return nativeFetch(input, init);
+    const pending = nativeFetch(input, init);
+    if (entry !== null) {
+      const seen = entry;
+      pending.then(
+        (response) => {
+          seen.doneAt = now();
+          seen.status = response.status;
+        },
+        () => {
+          seen.doneAt = now();
+        },
+      );
+    }
+    return pending;
   };
   type Play = (this: AudioBufferSourceNode, ...args: number[]) => void;
   const proto = AudioBufferSourceNode.prototype;
@@ -373,8 +414,20 @@ function words(text: string | null): string {
     .trim();
 }
 
-/** Waits (polling the page) until the face said everything it started and has been quiet for `quietMs`. */
-async function waitForFaceQuiet(page: Page, { quietMs = 1200, timeoutMs = 30_000 } = {}): Promise<void> {
+/** The LITE face hand-overs the page POSTed (`/calls/:id/face/speak`), each a part of a unit's audio. */
+const speakPosts = (lab: FaceLab, after = 0): LabFetch[] =>
+  lab.fetches.filter((f) => f.method === 'POST' && f.path.endsWith('/face/speak') && f.at >= after);
+
+/**
+ * Waits (polling the page) until the face said everything it started and has been quiet for `quietMs`. A LITE face
+ * (`pairedEvents: false`) need not pair its room events (the vendor's LITE events reach the server's socket; the room
+ * may carry some or none): its quiet is no sound on the face's track or the app's output (no onset without its
+ * offset) and no hand-over still waiting for the server.
+ */
+async function waitForFaceQuiet(
+  page: Page,
+  { quietMs = 1200, timeoutMs = 30_000, pairedEvents = true } = {},
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const lab = await readLab(page);
@@ -387,8 +440,14 @@ async function waitForFaceQuiet(page: Page, { quietMs = 1200, timeoutMs = 30_000
       ...lab.plays,
       ...lab.appOnsets,
       ...lab.appOffsets,
+      ...(pairedEvents ? [] : [...lab.onsets, ...lab.offsets]),
     );
-    if (started <= ended && t - last > quietMs) return;
+    const busy = pairedEvents
+      ? started > ended
+      : lab.onsets.length > lab.offsets.length ||
+        lab.appOnsets.length > lab.appOffsets.length ||
+        speakPosts(lab).some((f) => f.doneAt === null);
+    if (!busy && t - last > quietMs) return;
     await page.waitForTimeout(200);
   }
 }
@@ -609,9 +668,17 @@ interface TurnTiming {
   firstAppPlaybackMs: number | null;
   /** The first sound on the app's output, by the same meter as {@link firstFaceAudioMs}. */
   firstAppAudioMs: number | null;
+  /** The turn's first hand-over to the face: FULL's `avatar.speak_text` on the room, LITE's `face/speak` POST. */
+  firstHandOverMs: number | null;
+  /** When the server answered that LITE hand-over (it relayed the audio over the speak socket); null in FULL. */
+  firstHandOverDoneMs: number | null;
 }
 
-async function measuredTurn(page: Page, line: string): Promise<TurnTiming> {
+async function measuredTurn(
+  page: Page,
+  line: string,
+  { pairedEvents = true }: { pairedEvents?: boolean } = {},
+): Promise<TurnTiming> {
   const before = await pageNow(page);
   await typeOnCall(page, line);
   // The turn request the call sent (page clock), else when the line was typed.
@@ -633,14 +700,19 @@ async function measuredTurn(page: Page, line: string): Promise<TurnTiming> {
       firstAfter(lab.appOnsets, sentAt) !== null,
     FIRST_SOUND_MS,
   );
-  await waitForFaceQuiet(page, { timeoutMs: 40_000 });
+  await waitForFaceQuiet(page, { timeoutMs: 40_000, pairedEvents });
   const lab = await readLab(page);
+  // FULL hands the face words on the room, LITE audio to the server: a call only ever does one of the two.
+  const speakText = outEvents(lab, 'avatar.speak_text', sentAt)[0]?.at ?? null;
+  const speakPost = speakPosts(lab, sentAt)[0] ?? null;
   return {
     sentAt,
     firstSpeakStartedMs: ms(sentAt, inEvents(lab, 'avatar.speak_started', sentAt)[0]?.at ?? null),
     firstFaceAudioMs: ms(sentAt, firstAfter(lab.onsets, sentAt)),
     firstAppPlaybackMs: ms(sentAt, firstAfter(lab.plays, sentAt)),
     firstAppAudioMs: ms(sentAt, firstAfter(lab.appOnsets, sentAt)),
+    firstHandOverMs: ms(sentAt, speakText ?? speakPost?.at ?? null),
+    firstHandOverDoneMs: ms(sentAt, speakPost?.doneAt ?? null),
   };
 }
 
@@ -661,10 +733,32 @@ function unitTimings(
   return { publishToStartedMs, publishToAudioMs };
 }
 
+/**
+ * LITE: for every unit the page handed the server (its first `face/speak` part): time to the next speak_started (when
+ * the room carries it), to the next audio onset on the face's track, and to the server's 204 (relayed to the vendor).
+ */
+function liteUnitTimings(
+  lab: FaceLab,
+  after: number,
+): { handOverToStartedMs: number[]; handOverToAudioMs: number[]; handOverToDoneMs: number[] } {
+  const started = inEvents(lab, 'avatar.speak_started', after).map((e) => e.at);
+  const handOverToStartedMs: number[] = [];
+  const handOverToAudioMs: number[] = [];
+  const handOverToDoneMs: number[] = [];
+  for (const post of speakPosts(lab, after).filter((f) => f.part === '0')) {
+    const s = firstAfter(started, post.at);
+    const a = firstAfter(lab.onsets, post.at);
+    if (s !== null) handOverToStartedMs.push(Math.round(s - post.at));
+    if (a !== null) handOverToAudioMs.push(Math.round(a - post.at));
+    if (post.doneAt !== null && post.status === 204) handOverToDoneMs.push(Math.round(post.doneAt - post.at));
+  }
+  return { handOverToStartedMs, handOverToAudioMs, handOverToDoneMs };
+}
+
 // ---- the suite --------------------------------------------------------------------------------------------
 
 // Not serial: one failing test must not skip the others (a single worker runs them in order anyway).
-test.describe('Conversation lab · face (HeyGen LiveAvatar FULL, sandbox)', () => {
+test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbox)', () => {
   test.use({ storageState: FOUNDER_STATE });
 
   // The instruments themselves, first and in every run (the dry run included): a loopback data channel in one page
@@ -851,6 +945,7 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL, sandbox)', () =
 
   test('probe: the vendor sandbox commanded directly', async ({ page }) => {
     test.skip(FACE !== 'heygen' || PROBE_TOKEN === '', 'needs the vendor sandbox (the lab on GitHub)');
+    test.skip(APP_MODE !== 'full', 'the FULL pass only (the app runs its face in LITE)');
     test.setTimeout(6 * 60_000);
     const api = await probeApi();
     const result: Record<string, unknown> = {};
@@ -1020,6 +1115,7 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL, sandbox)', () =
     baseURL,
   }) => {
     if (!baseURL) throw new Error('baseURL is required');
+    test.skip(APP_MODE !== 'full', 'the FULL pass only (the app runs its face in LITE)');
     test.setTimeout(6 * 60_000);
     test.skip(!(await appWithinBudget(baseURL, 0.1)), 'the app reached its share of the budget');
     const result: Record<string, unknown> = { vendor: FACE };
@@ -1103,6 +1199,7 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL, sandbox)', () =
   }) => {
     if (!baseURL) throw new Error('baseURL is required');
     test.skip(FACE !== 'heygen', 'the stand-in keeps no transcript (nothing to reconcile)');
+    test.skip(APP_MODE !== 'full', 'the FULL pass only (a LITE face renders audio, not words)');
     test.setTimeout(5 * 60_000);
     test.skip(!(await appWithinBudget(baseURL, 0.1)), 'the app reached its share of the budget');
     const result: Record<string, unknown> = {};
@@ -1185,5 +1282,53 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL, sandbox)', () =
       writePrivate('face/polly.json', result);
     }
     expect(result.error ?? null, 'polly').toBeNull();
+  });
+
+  // The same call arm with the app's face in LITE (the lab restarted the API with MEDIA_FACE_MODE=lite, and gave the
+  // synthetic vEIR a face reference ready under likeness consent, as production LITE needs): the same founder turns
+  // and meters as the FULL call and Polly alone. A LITE face renders the call's own Polly audio, handed back to the
+  // server (`face/speak`) and relayed over the speak socket; the sandbox shows its own avatar whatever the reference.
+  test("call LITE: the face lip-syncs the call's Polly audio, the same turns", async ({ page, baseURL }) => {
+    if (!baseURL) throw new Error('baseURL is required');
+    test.skip(APP_MODE !== 'lite', 'the LITE pass only (the app runs its face in FULL)');
+    test.setTimeout(6 * 60_000);
+    test.skip(!(await appWithinBudget(baseURL, 0.1)), 'the app reached its share of the budget');
+    const result: Record<string, unknown> = { vendor: FACE, mode: 'lite' };
+    await page.addInitScript(faceLabInit);
+    const sessions = watchAvatarSession(page);
+    await faceSettings(baseURL, true);
+    let started = false;
+    try {
+      await acknowledgeNotices(page);
+      const call = await startCall(page);
+      started = true;
+      result.input_mode = call.inputMode;
+      await expect(videoTile(page)).toBeVisible({ timeout: 30_000 });
+      result.face_shown = true;
+      const live = await pageNow(page);
+      const micAtLive = (await readLab(page)).mic.length;
+      // The greeting (the call's intro), when there is one, is said first.
+      await waitForFaceQuiet(page, { timeoutMs: 20_000, pairedEvents: false });
+      const turns: TurnTiming[] = [];
+      for (const line of LINES) turns.push(await measuredTurn(page, line, { pairedEvents: false }));
+      const lab = await readLab(page);
+      const posts = speakPosts(lab, live);
+      result.session = sessions[0] ?? null;
+      result.turns = turns.map(({ sentAt: _sentAt, ...rest }) => rest);
+      result.units = liteUnitTimings(lab, live);
+      result.speak_requests = posts.length;
+      result.speak_accepted = posts.filter((f) => f.status === 204).length;
+      result.speak_text_sent = outEvents(lab, 'avatar.speak_text', live).length;
+      result.app_playbacks_after_live = lab.plays.filter((t) => t >= live).length;
+      result.mic_requests_after_live = lab.mic.length - micAtLive;
+      result.audio_senders = lab.audioSenders;
+    } catch (err) {
+      result.face_shown ??= false;
+      result.error = errorName(err);
+    } finally {
+      if (started) await hangUp(page).catch(() => undefined);
+      writePrivate('face/call-lite.json', result);
+    }
+    expect(result.error ?? null, 'call (LITE)').toBeNull();
   });
 });
