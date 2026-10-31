@@ -103,6 +103,43 @@ interface Envelope<T> {
   readonly code?: number;
   readonly data?: T | null;
   readonly message?: string;
+  /** A validation error's details (422: [{loc, msg}]). */
+  readonly detail?: unknown;
+}
+
+/** Longest vendor detail kept on an error. */
+const VENDOR_DETAIL_CHARS = 300;
+
+/**
+ * The vendor's code and message for a refused token or start request (they carry no conversation content), sanitised:
+ * a run of 24+ token characters with a digit (a key, a token, an id), or of 32+, is redacted, control characters dropped,
+ * length capped.
+ * The sandbox run of 2026-10-31 got 400 / code 4000 three times and nothing said why.
+ */
+export function vendorDetailOf(envelope: Envelope<unknown> | null): string | null {
+  if (envelope === null) return null;
+  const parts: string[] = [];
+  if (typeof envelope.code === 'number') parts.push(`code=${String(envelope.code)}`);
+  if (typeof envelope.message === 'string' && envelope.message.trim() !== '') parts.push(envelope.message);
+  if (Array.isArray(envelope.detail)) {
+    for (const item of envelope.detail.slice(0, 5)) {
+      const entry = item as { loc?: unknown; msg?: unknown };
+      const loc = Array.isArray(entry.loc) ? entry.loc.map(String).join('.') : '';
+      if (typeof entry.msg === 'string') parts.push(loc === '' ? entry.msg : `${loc}: ${entry.msg}`);
+    }
+  } else if (typeof envelope.detail === 'string') {
+    parts.push(envelope.detail);
+  }
+  if (parts.length === 0) return null;
+  const text = parts
+    .join(' | ')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    // A key, token or id: 24+ token characters with a digit in them, or any run of 32+ (field paths stay readable).
+    .replace(/[A-Za-z0-9_\-+/=]{24,}/g, (run) => (/\d/.test(run) || run.length >= 32 ? '[redacted]' : run))
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length > VENDOR_DETAIL_CHARS ? `${text.slice(0, VENDOR_DETAIL_CHARS - 1)}…` : text;
 }
 
 interface TokenData {
@@ -133,9 +170,10 @@ function succeeded(envelope: Envelope<unknown> | null): boolean {
   return typeof envelope?.code === 'number' && SUCCESS_CODES.has(envelope.code);
 }
 
-function failure(what: string, status?: number): EmbodimentSessionError {
+function failure(what: string, status?: number, vendorDetail: string | null = null): EmbodimentSessionError {
   return new EmbodimentSessionError(
     status === undefined ? `liveavatar ${what}` : `liveavatar ${what} ${String(status)}`,
+    vendorDetail,
   );
 }
 
@@ -369,7 +407,7 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
     const token = await this.#post<TokenData>('/v1/sessions/token', body, { apiKey });
     const tokenData = token.envelope?.data;
     if (token.status >= 300 || !succeeded(token.envelope) || !tokenData?.session_token) {
-      throw failure('token', token.status);
+      throw failure('token', token.status, vendorDetailOf(token.envelope));
     }
     const started = await this.#post<StartData>('/v1/sessions/start', undefined, {
       bearer: tokenData.session_token,
@@ -386,7 +424,7 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
     ) {
       // A started session must not run unseen: stop it if it got that far.
       if (data?.session_id) await this.#stop(apiKey, data.session_id).catch(() => undefined);
-      throw failure('start', started.status);
+      throw failure('start', started.status, vendorDetailOf(started.envelope));
     }
     const seconds = Math.min(request.maxSeconds, data.max_session_duration ?? request.maxSeconds);
     return {

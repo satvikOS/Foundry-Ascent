@@ -272,6 +272,17 @@ export interface VoiceSynthesisInput {
 /** Thrown when a vendor face session cannot be started or driven (vendor down, key missing, quota). */
 export class EmbodimentSessionError extends Error {
   override readonly name = 'EmbodimentSessionError';
+  /**
+   * What the vendor said when it refused a request that carries no conversation content (a session token or start):
+   * its envelope code and validation message, sanitised by the adapter (long tokens redacted, length capped). Logged
+   * so a refused session can be diagnosed; never set for a request that carries the founder's or the vEIR's words.
+   */
+  readonly vendorDetail: string | null;
+
+  constructor(message: string, vendorDetail: string | null = null) {
+    super(message);
+    this.vendorDetail = vendorDetail;
+  }
 }
 
 export interface FaceSessionRequest {

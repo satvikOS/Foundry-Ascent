@@ -2,7 +2,12 @@ import { type VerifiedFaceAudio } from '@foundry/core';
 import { describe, expect, it } from 'vitest';
 
 import fixtures from './fixtures/liveavatar.json' with { type: 'json' };
-import { type FaceSocket, HeygenLiveAvatarFace, LIVEAVATAR_SANDBOX_AVATAR } from './heygen-liveavatar.js';
+import {
+  vendorDetailOf,
+  type FaceSocket,
+  HeygenLiveAvatarFace,
+  LIVEAVATAR_SANDBOX_AVATAR,
+} from './heygen-liveavatar.js';
 
 /** The error a promise rejects with (fails the test when it resolves). */
 async function failure(promise: Promise<unknown>): Promise<Error> {
@@ -673,5 +678,28 @@ describe('HeygenLiveAvatarFace: a FULL session (a stock avatar with its stock vo
       fullAdapter(fetchFn).transcriptSince({ sessionRef: 'gone', control: null, requestId: 'r' }, 5),
     );
     expect(err).toMatchObject({ name: 'EmbodimentSessionError', message: 'liveavatar transcript 404' });
+  });
+});
+
+describe('vendorDetailOf: why the vendor refused a token or start request', () => {
+  it('keeps the code and the message, and the validation details', () => {
+    expect(vendorDetailOf({ code: 4000, message: 'Invalid max_session_duration for your plan' })).toBe(
+      'code=4000 | Invalid max_session_duration for your plan',
+    );
+    expect(
+      vendorDetailOf({ detail: [{ loc: ['body', 'avatar_persona', 'voice_id'], msg: 'Field required' }] }),
+    ).toBe('body.avatar_persona.voice_id: Field required');
+    expect(vendorDetailOf(null)).toBeNull();
+    expect(vendorDetailOf({})).toBeNull();
+  });
+
+  it('redacts anything shaped like a key or token and caps the length', () => {
+    const detail = vendorDetailOf({
+      code: 4000,
+      message: `bad token tok9ABCDEFGHIJKLMNOPQRSTUVWXYZ0123 for ${'x '.repeat(400)}`,
+    });
+    expect(detail).not.toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+    expect(detail).toContain('[redacted]');
+    expect(detail?.length).toBeLessThanOrEqual(300);
   });
 });

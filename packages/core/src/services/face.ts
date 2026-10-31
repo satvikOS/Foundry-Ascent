@@ -25,7 +25,7 @@ import { DomainError, fail, parseInput } from '../errors.js';
 import { audit, requireId, type AuditEvent, type Kit, type RequestScope } from '../internal/kit.js';
 import { decryptControl, encryptControl, verifyFaceAudio } from '../orchestrator/face-audio.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
-import { type EmbodimentProvider, type FaceSessionHandle } from '../ports.js';
+import { EmbodimentSessionError, type EmbodimentProvider, type FaceSessionHandle } from '../ports.js';
 import { CALL_LIMITS, callSecondsToday, callTimeLeft, remainingDailySeconds } from './call-usage.js';
 import { callVoiceFor } from './calls.js';
 import {
@@ -874,6 +874,10 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
           callId: face.callId,
           provider: provider.id,
           error: err instanceof Error ? err.name : 'unknown',
+          // The vendor's sanitised reason for refusing the session (no conversation content is in that request).
+          ...(err instanceof EmbodimentSessionError && err.vendorDetail !== null
+            ? { vendorDetail: err.vendorDetail }
+            : {}),
         });
         await record('failed', 'vendor_unavailable');
         return presence;
