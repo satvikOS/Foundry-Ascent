@@ -11,11 +11,17 @@ import {
   type HistoryTurn,
   type SystemPromptInput,
 } from '@foundry/ai';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { assembleContext } from './context-budget.js';
 import { answerSystemPrompt } from './turn-prompts.js';
-import { SYNTHETIC_WARM_UP_GUARDS, warmTurnEngine, type TurnWarmUpGuards } from './warm-up.js';
+import {
+  SYNTHETIC_WARM_UP_GUARDS,
+  setTurnEngineColdCheckForTests,
+  turnEngineLooksCold,
+  warmTurnEngine,
+  type TurnWarmUpGuards,
+} from './warm-up.js';
 
 const GUARDS: TurnWarmUpGuards = {
   personaName: "Corin's vEIR",
@@ -164,6 +170,8 @@ describe('warming the turn engine', () => {
   });
 
   it('warms once per set of names, never rejects, and gives the event loop back as it goes', async () => {
+    // The patterns stay compiled here (no garbage collection discards them in this test).
+    setTurnEngineColdCheckForTests(() => false);
     const names: TurnWarmUpGuards = { ...SYNTHETIC_WARM_UP_GUARDS, personaName: 'A (very) odd* name?' };
     let turns = 0;
     let counting = true;
@@ -179,4 +187,39 @@ describe('warming the turn engine', () => {
     expect(turns).toBeGreaterThan(10);
     expect(warmTurnEngine({ ...names })).toBe(first);
   });
+
+  it('warms again once garbage collection discarded the compiled patterns, and not before', async () => {
+    let cold = false;
+    setTurnEngineColdCheckForTests(() => cold);
+    const first = warmTurnEngine(GUARDS);
+    // Not finished yet: the same warm-up, whatever the check says.
+    cold = true;
+    expect(warmTurnEngine(GUARDS)).toBe(first);
+    await first;
+    cold = false;
+    expect(warmTurnEngine(GUARDS)).toBe(first);
+    cold = true;
+    const again = warmTurnEngine(GUARDS);
+    expect(again).not.toBe(first);
+    await expect(again).resolves.toBeUndefined();
+    // A check that throws counts as warm and never fails the warm-up.
+    setTurnEngineColdCheckForTests(() => {
+      throw new Error('probe failed');
+    });
+    const settled = warmTurnEngine(GUARDS);
+    await settled;
+    expect(warmTurnEngine(GUARDS)).toBe(settled);
+  });
+
+  it('reads a warmed engine as warm', async () => {
+    setTurnEngineColdCheckForTests(null);
+    await warmTurnEngine();
+    // One run of a compiled pattern takes microseconds; a few tries absorb a busy machine.
+    const reads = [turnEngineLooksCold(), turnEngineLooksCold(), turnEngineLooksCold()];
+    expect(reads).toContain(false);
+  });
+});
+
+afterEach(() => {
+  setTurnEngineColdCheckForTests(null);
 });

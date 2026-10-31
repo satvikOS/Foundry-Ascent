@@ -14,14 +14,19 @@ import {
   p,
   principalsRepo,
   type Db,
+  type SqlConnection,
+  type SqlDriver,
 } from '@foundry/db';
 import { createTestDatabase, type TestDatabase } from '@foundry/db/testing';
+
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 import { type ApiApp, createApp } from '../app.js';
 import { createJsonLogger, type Logger } from '../logging.js';
 import { InflightTracker } from '../runtime/inflight.js';
 import { observeGateway } from '../runtime/observed-gateway.js';
-import { recordDbCall } from '../runtime/request-metrics.js';
+import { currentRequestMetrics, recordDbCall } from '../runtime/request-metrics.js';
+import { warmApiProcess } from '../runtime/warm-up.js';
 import { buildRequest, nextViewerIp, type RequestOptions, sessionTokenFrom } from '../testing/api-harness.js';
 import { type SimulatedLatency, simulatedGateway } from './simulation.js';
 
@@ -38,6 +43,8 @@ export interface LatencyRig {
   readonly t: TestDatabase;
   readonly logs: string[];
   readonly latency: SimulatedLatency;
+  /** Every round trip the app made, with the request that made it (`LatencyRigOptions.traceQueries`; else empty). */
+  readonly queries: TracedRoundTrip[];
   readonly ventureId: string;
   readonly founderId: string;
   request(path: string, options?: RequestOptions): Promise<Response>;
@@ -65,12 +72,78 @@ export function harnessReply(context: MockGenerateContext): string {
   return /^.*?[.!?](?=\s|$)/su.exec(text)?.[0] ?? text;
 }
 
+/**
+ * One database round trip as the Data API would count it (`traceQueries`): a statement, or a transaction's begin and
+ * end together (`sql` = `BEGIN … COMMIT`, 2 round trips). `sql` is the statement's text with whitespace collapsed: the
+ * harness's own seeded data only, never printed with parameters.
+ */
+export interface TracedRoundTrip {
+  /** The rig request that made it (its path), or null outside one. */
+  readonly path: string | null;
+  readonly sql: string;
+  readonly roundTrips: number;
+  /** Whether the request's first streamed model call had not started yet when the round trip began. */
+  readonly beforeModel: boolean;
+  /** Milliseconds since the request reached the API, when the round trip began. */
+  readonly at: number;
+  /** The request's metrics object: one per request (to tell two requests on the same path apart). */
+  readonly request: object | null;
+}
+
 export interface LatencyRigOptions {
   /**
    * Extra copies of each of the venture's three most recent confirmed memory items, as production's venture
    * memory held them (the same advisor meeting four times): retrieval then meets the repeats a real turn does.
    */
   readonly duplicateMemory?: number;
+  /** Keep every round trip with its request and statement text (`LatencyRig.queries`, `latency --queries`). */
+  readonly traceQueries?: boolean;
+  /**
+   * Skip the process-start warm-up the API Lambda's init and the dev server run (runtime/warm-up.ts), to measure a
+   * process without it (`latency --skip-init-warm-up`).
+   */
+  readonly skipInitWarmUp?: boolean;
+}
+
+/** Records each statement and transaction of `driver` into `into`, labelled with the rig request (`label`). */
+function traceDriver(
+  driver: SqlDriver,
+  into: TracedRoundTrip[],
+  label: AsyncLocalStorage<string>,
+): SqlDriver {
+  const record = (sql: string, roundTrips: number): void => {
+    const metrics = currentRequestMetrics();
+    into.push({
+      path: label.getStore() ?? null,
+      sql: sql.replace(/\s+/gu, ' ').trim(),
+      roundTrips,
+      beforeModel: metrics === undefined || metrics.stream.startedAt === null,
+      at: metrics === undefined ? 0 : metrics.elapsed(),
+      request: metrics ?? null,
+    });
+  };
+  const wrap = (conn: SqlConnection): SqlConnection => ({
+    query: (sql, params) => {
+      record(sql, 1);
+      return conn.query(sql, params);
+    },
+  });
+  return {
+    driver: driver.driver,
+    query: (sql, params) => {
+      record(sql, 1);
+      return driver.query(sql, params);
+    },
+    queryWithOptions: (sql, params, options) => {
+      record(sql, 1);
+      return driver.queryWithOptions(sql, params, options);
+    },
+    transaction: (fn) => {
+      record('BEGIN … COMMIT', 2);
+      return driver.transaction((conn) => fn(wrap(conn)));
+    },
+    close: () => driver.close(),
+  };
 }
 
 export async function createLatencyRig(
@@ -96,8 +169,11 @@ export async function createLatencyRig(
       ),
     );
   }
+  const queries: TracedRoundTrip[] = [];
+  const label = new AsyncLocalStorage<string>();
+  const pg = createPgDriver({ connectionString: t.url, max: 6 });
   const db = createDbFromDriver(
-    instrumentDriver(createPgDriver({ connectionString: t.url, max: 6 }), {
+    instrumentDriver(options.traceQueries === true ? traceDriver(pg, queries, label) : pg, {
       onCall: recordDbCall,
       simulatedRoundTripMs: latency.dbRoundTripMs,
     }),
@@ -127,8 +203,10 @@ export async function createLatencyRig(
     },
   });
   const app = createApp({ core, db, logger, appEnv: 'test', appVersion: 'latency-harness', inflight });
-  const request = async (path: string, options?: RequestOptions): Promise<Response> =>
-    app.request(buildRequest(path, options));
+  // As a Lambda container's init and the dev server do before their first request.
+  if (options.skipInitWarmUp !== true) await warmApiProcess(logger);
+  const request = async (path: string, requestOptions?: RequestOptions): Promise<Response> =>
+    label.run(path, () => app.request(buildRequest(path, requestOptions)));
 
   const venture = seed.ventures.find((v) => v.key === 'quietquad');
   const founderId = seed.principals.maya;
@@ -143,6 +221,7 @@ export async function createLatencyRig(
     t,
     logs,
     latency,
+    queries,
     ventureId: venture.id,
     founderId,
     request,

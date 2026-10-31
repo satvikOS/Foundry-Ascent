@@ -26,8 +26,17 @@ import { ReplyExtractor } from './reply-extract.js';
  *
  * The work is cut into steps that each give the event loop back (a step is a few milliseconds of the classifier's
  * patterns, or one gate build: tens of milliseconds), so a request that arrives meanwhile, such as the call's intro
- * speech, waits for one step at most. It never rejects. On Lambda, work after the response is drained before the
- * container is frozen; pure CPU and idempotent, it is harmless if it is cut short.
+ * speech, waits for one step at most. It never rejects. Pure CPU and idempotent, it is harmless if it is cut short.
+ *
+ * Where it runs: once when the process starts (the API Lambda's init phase, before any invocation, and the dev server
+ * before it listens: `warmApiProcess`), so no request waits behind it in an invocation's drain; then the call screen
+ * and the call start only check it (`warmTurnEngine` is memoized) and warm the call's own guard names (~10 ms).
+ *
+ * V8 discards a regular expression's compiled code when the expression goes unused through a few major garbage
+ * collections (measured on Node 24: 3 organic major GCs; the classifier's patterns then cost ~100 ms again, whatever
+ * `--no-flush-bytecode` says). A memoized warm-up therefore checks one of the classifier's largest patterns first
+ * ({@link turnEngineLooksCold}) and warms again when it has gone cold. The latency harness saw no major GC in a whole
+ * founder flow (8 turns, 13 other requests), so this is rare.
  */
 export interface TurnWarmUpGuards {
   readonly personaName: string;
@@ -70,8 +79,54 @@ export const SYNTHETIC_WARM_UP_GUARDS: TurnWarmUpGuards = {
 const MAX_REMEMBERED = 64;
 
 const done = new Map<string, Promise<void>>();
+/** Warm-ups that have finished (their key), so the cold check runs only on a finished one. */
+const finished = new Set<string>();
 /** The classifier's rules hold no names: warmed once, whatever the guards. */
 let rulesWarmed: Promise<void> | null = null;
+
+/** Above this, one run of the probe pattern was compiling rather than running (warm: ~0.01 ms; cold: 3-9 ms). */
+const COLD_PROBE_MS = 1;
+
+let probePattern: RegExp | null = null;
+
+/** The classifier's longest pattern: the costliest to compile again, so the clearest sign it was discarded. */
+function probe(): RegExp {
+  if (probePattern !== null) return probePattern;
+  let longest: RegExp | null = null;
+  for (const rule of RISK_RULES) {
+    for (const pattern of rule.patterns)
+      if (longest === null || pattern.source.length > longest.source.length) longest = pattern;
+  }
+  probePattern = longest ?? /warm/u;
+  return probePattern;
+}
+
+function defaultColdCheck(): boolean {
+  const pattern = probe();
+  const line = FOUNDER_LINES[0].toLowerCase();
+  const started = performance.now();
+  if (pattern.global) Array.from(line.matchAll(pattern));
+  else new RegExp(pattern.source, pattern.flags).test(line);
+  return performance.now() - started > COLD_PROBE_MS;
+}
+
+let coldCheck: () => boolean = defaultColdCheck;
+
+/**
+ * Whether the turn engine's patterns look cold: one run of the classifier's longest pattern took longer than running
+ * it does (it was compiled again). Cheap when warm (~0.01 ms).
+ */
+export function turnEngineLooksCold(): boolean {
+  return coldCheck();
+}
+
+/** Tests only: replaces the cold check (null restores it) and forgets every warm-up. */
+export function setTurnEngineColdCheckForTests(check: (() => boolean) | null): void {
+  coldCheck = check ?? defaultColdCheck;
+  done.clear();
+  finished.clear();
+  rulesWarmed = null;
+}
 
 const nextTurnOfTheLoop = (): Promise<void> =>
   new Promise((resolve) => {
@@ -171,9 +226,29 @@ function keyOf(guards: TurnWarmUpGuards): string {
 export function warmTurnEngine(guards: TurnWarmUpGuards = SYNTHETIC_WARM_UP_GUARDS): Promise<void> {
   const key = keyOf(guards);
   const known = done.get(key);
-  if (known !== undefined) return known;
-  if (done.size >= MAX_REMEMBERED) done.clear();
-  const run = warm(guards).catch(() => undefined);
+  if (known !== undefined) {
+    if (!finished.has(key)) return known;
+    let cold: boolean;
+    try {
+      cold = turnEngineLooksCold();
+    } catch {
+      cold = false;
+    }
+    if (!cold) return known;
+    // Garbage collection discarded the compiled patterns: every warm-up of this process is stale.
+    done.clear();
+    finished.clear();
+    rulesWarmed = null;
+  }
+  if (done.size >= MAX_REMEMBERED) {
+    done.clear();
+    finished.clear();
+  }
+  const run = warm(guards)
+    .catch(() => undefined)
+    .then(() => {
+      if (done.get(key) === run) finished.add(key);
+    });
   done.set(key, run);
   return run;
 }

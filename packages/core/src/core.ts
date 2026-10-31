@@ -6,6 +6,7 @@ import { DirectoryCache } from './internal/directory.js';
 import { Kit } from './internal/kit.js';
 import { createOrchestrator, type Orchestrator } from './orchestrator/run-turn.js';
 import { createTestBench, type TestBench } from './orchestrator/test-turn.js';
+import { TurnContextKeyring } from './orchestrator/turn-context.js';
 import { createAdminService, type AdminService } from './services/admin.js';
 import { createCallsService, type CallsService } from './services/calls.js';
 import { createDistillService, type DistillService } from './services/distill.js';
@@ -91,6 +92,8 @@ export function createCore(deps: CoreDeps): Core {
   const face = createFaceService(kit, speechKeys, faceHooks);
   // A blocked or failed turn's pre-approved units are withdrawn from the face through its transcript check.
   const speech = createSpeechService(kit, speechKeys, faceHooks);
+  // The conversations' keys a turn reads its context by (orchestrator/turn-context.ts): a call's start fills them.
+  const turnContexts = new TurnContextKeyring();
   return {
     auth,
     me: createMeService(kit),
@@ -98,7 +101,7 @@ export function createCore(deps: CoreDeps): Core {
     sessions: createSessionsService(kit, directory),
     // One key cache signs the turn engine's speech units and verifies them for calls and /speech. A spoken turn on
     // a call with a live FULL face admits each unit to the face as it signs it (the speech service's checks).
-    orchestrator: createOrchestrator(kit, directory, { speechKeys, facePreapproval: speech }),
+    orchestrator: createOrchestrator(kit, directory, { speechKeys, facePreapproval: speech, turnContexts }),
     testBench: createTestBench(kit, directory),
     memory: createMemoryService(kit),
     documents: createDocumentsService(kit),
@@ -114,7 +117,7 @@ export function createCore(deps: CoreDeps): Core {
     distill,
     notebook: createNotebookService(kit, directory),
     veir: createVeirService(kit, face),
-    calls: createCallsService(kit, directory, speechKeys, distill, faceHooks),
+    calls: createCallsService(kit, directory, speechKeys, distill, faceHooks, turnContexts),
     speech,
     face,
     twin: createTwinService(kit),

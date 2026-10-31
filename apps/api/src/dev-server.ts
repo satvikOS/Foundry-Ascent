@@ -36,6 +36,7 @@ import { createDatabase, createGateway, createProcessLogger } from './runtime/co
 import { observeDatabase } from './runtime/db-observer.js';
 import { LOCAL_FACE_KEY, localFaceFor } from './runtime/local-face.js';
 import { localSpeechFor } from './runtime/local-speech.js';
+import { warmApiProcess } from './runtime/warm-up.js';
 import { workerDepsFor } from './runtime/worker.js';
 
 /** The database `pnpm --filter @foundry/db db:reset` creates (owner role fa_master, unix socket cluster). */
@@ -141,6 +142,8 @@ async function main(): Promise<void> {
   const probe = localFace.probe;
   const fetchHandler =
     probe === undefined ? app.fetch : (request: Request) => probe.handle(request) ?? app.fetch(request);
+  // As the API Lambda's init phase does: the turn engine is warm before the first request (runtime/warm-up.ts).
+  await warmApiProcess(logger);
   const server = serve({ fetch: fetchHandler, port }, (info) => {
     process.stdout.write(
       `Foundry Ascent API (development) listening on http://localhost:${String(info.port)}/api/v1\n`,

@@ -2,14 +2,16 @@
  * API Lambda (Function URL, invoke mode RESPONSE_STREAM, behind CloudFront OAC).
  *
  * Cold start: configuration, clients, core and the Hono app are built once per container at module
- * scope (no network I/O). Each invocation is served by `hono/aws-lambda` `streamHandle`; afterwards the
- * handler drains background work (a turn whose client went away still persists its outcome before the
- * execution environment is frozen).
+ * scope (no network I/O), and the turn engine is warmed there (runtime/warm-up.ts: the init phase runs
+ * before the container takes a request, so no invocation drains it). Each invocation is served by
+ * `hono/aws-lambda` `streamHandle`; afterwards the handler drains background work (a turn whose client
+ * went away still persists its outcome before the execution environment is frozen).
  */
 import type { LambdaFunctionURLEvent, StreamifyHandler } from 'aws-lambda';
 import { streamHandle } from 'hono/aws-lambda';
 
 import { createApiRuntime } from '../runtime/api.js';
+import { warmApiProcess } from '../runtime/warm-up.js';
 
 /** Time kept after the response to drain background work before Lambda's own deadline. */
 const DRAIN_MARGIN_MS = 1_000;
@@ -24,6 +26,7 @@ if (typeof lambda?.streamifyResponse !== 'function') {
 const streamifyResponse = lambda.streamifyResponse;
 
 const runtime = createApiRuntime(process.env);
+await warmApiProcess(runtime.logger);
 
 // streamHandle() returns an `awslambda.streamifyResponse` handler; its declared type is the plain
 // (event, context) shape, so it is re-typed to what the runtime actually calls.

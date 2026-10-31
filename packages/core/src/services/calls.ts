@@ -54,6 +54,7 @@ import { mentionsEir, personaNameClaimsEir, veirEirName } from '../internal/eir-
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 import { signSpeechUnit, verifySpeechUnit } from '../orchestrator/speech-units.js';
+import { type TurnContextKeyring, type TurnContextKeys } from '../orchestrator/turn-context.js';
 import { warmTurnEngine } from '../orchestrator/warm-up.js';
 import { SttGrantError } from '../ports.js';
 import {
@@ -531,6 +532,8 @@ interface Started {
   readonly conversationStarted: boolean;
   /** The caller started no other conversation of the venture: the vEIR introduces itself once. */
   readonly firstMeeting: boolean;
+  /** What the call's turns read their context by (turn-context.ts): known here, so the first turn reads it early. */
+  readonly contextKeys: TurnContextKeys;
 }
 
 export function createCallsService(
@@ -539,6 +542,7 @@ export function createCallsService(
   keys: PlatformKeyCache,
   distill: Pick<DistillService, 'afterCallEnd'>,
   face: FaceHooks,
+  turnContexts?: TurnContextKeyring,
 ): CallsService {
   const { logger } = kit.deps;
 
@@ -1061,6 +1065,15 @@ export function createCallsService(
           call,
           ventureId,
           personaId: persona.id,
+          contextKeys: {
+            tenantId: ctx.tenantId,
+            principalId: ctx.principalId,
+            sessionId,
+            ventureId,
+            personaId: active.persona.id,
+            assignedEirProfileId: active.eir?.id ?? null,
+            privacy: session.privacy,
+          },
           standard: session.privacy === 'standard',
           personaName: persona.name,
           personaKind: persona.kind,
@@ -1082,6 +1095,8 @@ export function createCallsService(
             })),
         };
       });
+      // The call's first turn reads the conversation's context beside its checks when it is served here (turn-context.ts).
+      turnContexts?.remember(started.contextKeys);
 
       // The connections the call's first turn and its first spoken reply use (the Bedrock runtime and Titan, Polly) are
       // opened while the greeting is prepared, with free requests (LAB-P2: after idle gaps every AWS call paid a new

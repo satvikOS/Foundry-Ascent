@@ -58,13 +58,7 @@ import { conversationGrounding } from '../services/memory-dedupe.js';
 import { historyAsHeard } from '../services/spoken-text.js';
 import { answerTurn, generationError } from './answer.js';
 import { blockedDetailOf, participantRiskLabel, participantTurnView, supportMessageFor } from './blocked.js';
-import {
-  leftOffThreads,
-  loadContinuity,
-  loadLeftOff,
-  withoutLeftOff,
-  type LoadedContinuity,
-} from './continuity.js';
+import { leftOffThreads, loadLeftOff, withoutLeftOff, type LoadedContinuity } from './continuity.js';
 import { renderLeftOffSection, type LeftOffData } from './continuity-prompt.js';
 import { candidateVisibility } from './evidence.js';
 import { type FaceApproval, generationTotals, SpeechStream } from './generate.js';
@@ -72,6 +66,13 @@ import { assertWithinSpendCaps } from './guards.js';
 import { embedRetrievalQuery, privateRetrievalOwner, retrieveEvidence } from './retrieval.js';
 import { safetyScreenDue, screenIndirectIdeation } from './safety-screen.js';
 import { secondsUntilUtcMidnight, shouldSampleForReview } from './sampling.js';
+import {
+  readTurnContext,
+  sameTurnContextKeys,
+  TurnContextKeyring,
+  type TurnContextKeys,
+  type TurnContextReads,
+} from './turn-context.js';
 
 export { enforceGateBlock } from './answer.js';
 
@@ -137,6 +138,18 @@ export interface OrchestratorOptions {
       args: { readonly callId: string; readonly sessionId: string },
     ): Promise<FaceApproval | null>;
   };
+  /**
+   * The conversations' keys this process knows (turn-context.ts), shared with the calls service, which fills them when
+   * a call starts. Default: the orchestrator's own.
+   */
+  readonly turnContexts?: TurnContextKeyring;
+}
+
+/** The context reads a turn started beside its preflight, for the keys it expected (turn-context.ts). */
+interface TurnContextPrefetch {
+  readonly keys: TurnContextKeys;
+  /** Null when the reads failed (the preflight then reads them itself). Never rejects. */
+  readonly reads: Promise<TurnContextReads | null>;
 }
 
 const SAFE_INTERNAL = (cause: unknown): DomainError =>
@@ -209,6 +222,22 @@ interface Coach {
   readonly memory: LoadedContinuity;
 }
 
+/** What the coach is before its conversation context (presence, notes) joins it ({@link Coach}). */
+type CoachBase = Omit<Coach, 'personaEirName' | 'presence' | 'memory'>;
+
+/** A turn past the preflight's checks, before its conversation context is in hand (turn-context.ts). */
+interface Checked extends Omit<Proceed, 'kind' | 'venture' | 'coach'> {
+  readonly kind: 'checked';
+  /** A crisis turn's venture (it reads no coach context); null otherwise. */
+  readonly crisisVenture: venturesRepo.VentureRecord | null;
+  readonly coach: CoachBase | null;
+  /** The keys the turn's checks resolved to (null on the crisis path). */
+  readonly keys: TurnContextKeys | null;
+  /** Read in the preflight, or the prefetch under way for the same keys (null on the crisis path). */
+  readonly context:
+    { readonly read: TurnContextReads } | { readonly prefetched: Promise<TurnContextReads | null> } | null;
+}
+
 /** The vEIR's last message as the founder heard it: the previous answer, or the opener on the first turn. */
 function previousReplyOf(coach: Coach | null): string | null {
   if (coach === null) return null;
@@ -234,6 +263,18 @@ export function createOrchestrator(
   const speechKeys =
     options.speechKeys ??
     new PlatformKeyCache(kit, Math.max(cfg.session.keyGraceSeconds, cfg.session.ttlSeconds));
+  const turnContexts = options.turnContexts ?? new TurnContextKeyring();
+
+  /**
+   * Starts the conversation's context reads in a transaction of their own, beside the preflight, when the process knows
+   * the conversation's keys (turn-context.ts); null otherwise. A crisis message reads no coach context.
+   */
+  function prefetchTurnContext(ctx: RequestContext, sessionId: string): TurnContextPrefetch | null {
+    const keys = turnContexts.get(ctx.tenantId, ctx.principalId, sessionId);
+    if (keys === null) return null;
+    const reads = kit.inRequest(ctx, ({ tx }) => readTurnContext(tx, keys)).catch(() => null);
+    return { keys, reads };
+  }
 
   function safeEmitter(emit: TurnEmitter, requestId: string): (event: TurnStreamEvent) => Promise<void> {
     let broken = false;
@@ -334,13 +375,33 @@ export function createOrchestrator(
 
   const MESSAGE_LIMIT_TEXT = 'You are sending messages very quickly. Please wait a few minutes.';
 
-  /** Step 1: authorize and check every gate except spend caps (owner-only ledger). */
-  function preflight(
+  /**
+   * Step 1: authorize and check every gate except spend caps (owner-only ledger). `prefetch`: the conversation's
+   * context reads already under way (turn-context.ts), used when the turn's own checks resolve to the same keys.
+   */
+  async function preflight(
     ctx: RequestContext,
     sessionId: string,
     input: z.output<typeof RunTurnInput>,
     crisis: boolean,
+    prefetch: TurnContextPrefetch | null = null,
   ): Promise<Proceed | Replay> {
+    const checked = await checkTurn(ctx, sessionId, input, crisis, prefetch);
+    return checked.kind === 'replay' ? checked : withContext(ctx, checked);
+  }
+
+  /**
+   * The preflight's transaction. When the prefetched context matches the turn's keys it is not waited for here: a
+   * transaction that holds a connection never waits on another that needs one (a pool of N deadlocks under N such
+   * turns); {@link withContext} waits for it once this transaction has ended.
+   */
+  function checkTurn(
+    ctx: RequestContext,
+    sessionId: string,
+    input: z.output<typeof RunTurnInput>,
+    crisis: boolean,
+    prefetch: TurnContextPrefetch | null,
+  ): Promise<Checked | Replay> {
     return kit.inRequest(ctx, async (scope) => {
       const { tx } = scope;
       const session = await sessionsRepo.getSession(tx, sessionId);
@@ -426,7 +487,9 @@ export function createOrchestrator(
       // The crisis path answers with a fixed human-support message and makes no model call, so the AI
       // gates (kill switch, coach persona/assignment, mode) never stand between a founder and support.
       let active: ActiveAssignment | null = null;
-      let coach: Coach | null = null;
+      let coach: CoachBase | null = null;
+      let context: Checked['context'] = null;
+      let keys: TurnContextKeys | null = null;
       if (!crisis) {
         if (!settings.aiEnabled) {
           throw reject(
@@ -456,18 +519,31 @@ export function createOrchestrator(
           tx,
           history.map((t) => t.id),
         );
-        // One round trip: the persona's EIR, its first-person consent and whether that EIR is the venture's.
-        const presence = await personasRepo.getPersonaPresence(tx, {
+        // The persona's presence (its EIR, first-person consent, whether that EIR is the venture's), the founder, the
+        // notes, the earlier conversations and the venture: read beside this transaction when the keys were known and
+        // still match, else here (turn-context.ts). The same reads either way.
+        keys = {
+          tenantId: ctx.tenantId,
+          principalId: ctx.principalId,
+          sessionId,
+          ventureId: session.ventureId,
           personaId: active.persona.id,
           assignedEirProfileId: active.eir?.id ?? null,
-        });
+          privacy: session.privacy,
+        };
+        if (prefetch !== null && sameTurnContextKeys(prefetch.keys, keys))
+          context = { prefetched: prefetch.reads };
+        else {
+          context = { read: await readTurnContext(tx, keys) };
+          logger.info('turn.context', {
+            requestId: ctx.requestId,
+            source: prefetch === null ? 'read' : 'keys_changed',
+          });
+        }
+        turnContexts.remember(keys);
         coach = {
           release,
           allowedModes,
-          personaEirName: presence.eirName,
-          // A private conversation is one the EIR never reads (turns_read RLS, 0003): the vEIR never says there
-          // that its EIR sees the work.
-          presence: { ...presence, eirSeesWork: presence.eirSeesWork && session.privacy !== 'ephemeral' },
           history,
           heardHistory: historyAsHeard(history, interruptions),
           // The opener is the conversation's first message: replayed while the history reaches back to it.
@@ -475,13 +551,6 @@ export function createOrchestrator(
             session.opener !== null && (history.length < cfg.turns.historyTurns || history[0]?.ordinal === 1)
               ? session.opener
               : null,
-          memory: await loadContinuity(tx, {
-            ventureId: session.ventureId,
-            personaId: active.persona.id,
-            sessionId,
-            principalId: ctx.principalId,
-            privacy: session.privacy,
-          }),
         };
       }
       const turnCount = await turnsRepo.countSessionTurns(tx, sessionId);
@@ -503,20 +572,68 @@ export function createOrchestrator(
       if (!crisis && (await overMessageLimit(scope, { channel, crisis }))) {
         throw reject('rate_limited', MESSAGE_LIMIT_TEXT, 'turn_rate_limit', cfg.turns.rateWindowSeconds);
       }
-      const venture = await venturesRepo.getVenture(tx, session.ventureId);
-      if (venture === null) throw fail.notFound('Venture');
+      // A crisis turn reads no coach context: the venture is read here.
+      const crisisVenture = crisis ? await venturesRepo.getVenture(tx, session.ventureId) : null;
+      if (crisis && crisisVenture === null) throw fail.notFound('Venture');
       return {
-        kind: 'proceed',
+        kind: 'checked',
         session,
         settings,
         active,
         mode,
         turnMode: mode ?? session.mode,
         channel,
-        venture,
+        crisisVenture,
         coach,
+        keys,
+        context,
       };
     });
+  }
+
+  /**
+   * Completes a checked turn with its context: the reads made in the preflight, or the prefetched ones (read again in a
+   * transaction of their own if the prefetch failed). The coach and the venture are built from them alike.
+   */
+  async function withContext(ctx: RequestContext, checked: Checked): Promise<Proceed> {
+    const { session, coach: base, keys } = checked;
+    let reads: TurnContextReads | null = null;
+    if (checked.context !== null && keys !== null) {
+      if ('read' in checked.context) reads = checked.context.read;
+      else {
+        reads = await checked.context.prefetched;
+        logger.info('turn.context', {
+          requestId: ctx.requestId,
+          source: reads === null ? 'prefetch_failed' : 'prefetched',
+        });
+        reads ??= await kit.inRequest(ctx, ({ tx }) => readTurnContext(tx, keys));
+      }
+    }
+    const venture = reads === null ? checked.crisisVenture : reads.venture;
+    if (venture === null) throw fail.notFound('Venture');
+    let coach: Coach | null = null;
+    if (base !== null && reads !== null) {
+      const { presence } = reads;
+      coach = {
+        ...base,
+        personaEirName: presence.eirName,
+        // A private conversation is one the EIR never reads (turns_read RLS, 0003): the vEIR never says there that its
+        // EIR sees the work.
+        presence: { ...presence, eirSeesWork: presence.eirSeesWork && session.privacy !== 'ephemeral' },
+        memory: reads.memory,
+      };
+    }
+    return {
+      kind: 'proceed',
+      session,
+      settings: checked.settings,
+      active: checked.active,
+      mode: checked.mode,
+      turnMode: checked.turnMode,
+      channel: checked.channel,
+      venture,
+      coach,
+    };
   }
 
   async function replay(
@@ -1225,7 +1342,13 @@ export function createOrchestrator(
         input = parseInput(RunTurnInput, rawInput);
         // Crisis detection does not depend on venture names; it decides which gates apply.
         crisis = classifyRisk(input.text).crisis;
-        const checked = await preflight(ctx, sessionId, input, crisis);
+        const checked = await preflight(
+          ctx,
+          sessionId,
+          input,
+          crisis,
+          crisis ? null : prefetchTurnContext(ctx, sessionId),
+        );
         if (checked.kind === 'replay') return await replay(ctx, emit, checked);
         pre = checked;
         if (!crisis) {

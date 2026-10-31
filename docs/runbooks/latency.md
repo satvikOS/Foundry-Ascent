@@ -170,6 +170,7 @@ pnpm --filter @foundry/api latency --duplicate-memory 3  # the venture's latest 
 pnpm --filter @foundry/api latency --profile local       # what the code itself costs on this machine
 pnpm --filter @foundry/api latency --set dbRoundTripMs=60 --set modelFirstTokenMs=1500   # recalibrate
 pnpm --filter @foundry/api latency --text 10 --voice 10 --json /tmp/latency.json --label "after X"
+pnpm --filter @foundry/api latency --cold --text 0 --voice 3 --queries   # each turn's round trips before its model call
 ```
 
 A run signs a founder in, opens the venture and its conversations, types the messages, then starts a call
@@ -251,12 +252,30 @@ stand-in). The cost is V8 compiling the regular expressions of the classifier's 
 craft checks the first time they run, and again to machine code the second time.
 
 The turn engine is warmed before the call's first turn needs it (`packages/core/src/orchestrator/warm-up.ts`): the
-same functions run on synthetic text, with the call's own guard names, in steps of a few milliseconds that each give
-the event loop back, after the response of `GET /ventures/:id/call-config` (the call screen opening) and of
-`POST /sessions/:id/calls` once the greeting is ready (cheap when already warm). It reads and writes nothing, calls no
-model and keeps no state of a call; the prompt, the classification and the gate's output are byte for byte the same
-with and without it (`warm-up.test.ts`), and a warm-up that fails or never ends leaves the call starting as before
-(`call-warm-up.db.test.ts`). It is logged as `call.turn_warm_up` (`ms`).
+same functions run on synthetic text, in steps of a few milliseconds that each give the event loop back. It reads and
+writes nothing, calls no model and keeps no state of a call; the prompt, the classification and the gate's output are
+byte for byte the same with and without it (`warm-up.test.ts`).
+
+- **When the process starts** (`apps/api/src/runtime/warm-up.ts`, `api.init_warm_up` `outcome`, `ms`): in the API
+  Lambda's init phase (`handlers/api.ts`, before the container takes its first request) and in the dev server before it
+  listens; it waits at most 3 s and a warm-up that fails or runs over never fails the start. ~485 ms wall, ~515 ms CPU
+  on this machine (Node 24); a Lambda CPU may be slower.
+- **The call screen and the call start** only check it (memoized: ~0.01 ms) and warm the call's own guard names
+  (`POST /sessions/:id/calls` once the greeting is ready: ~10 ms), after the response; a warm-up that fails or never
+  ends leaves the call starting as before (`call-warm-up.db.test.ts`). Logged as `call.turn_warm_up` (`ms`).
+
+Why not after a response only (the first version of this change): on Lambda, work after the response runs in the
+invocation's drain, and a container that is draining takes no other request, so the call screen's next requests went
+to another container, perhaps a cold one. On the single-process harness the same work showed as contention on the
+requests that followed the call screen (below). The cost moves to a container's cold start: init grows by the
+warm-up's ~0.5 s, paid by whichever request met the cold start (§2: 11 % of requests, init 738 ms), and no turn on any
+container pays the first-run cost. §8 lists what to read in production to confirm the trade.
+
+V8 discards a regular expression's compiled code when it goes unused through a few major garbage collections (Node 24:
+3 organic major GCs, or 2 forced ones; the classifier's patterns then cost ~100 ms again; `--no-flush-bytecode` and
+`--bytecode-old-age` do not change it). A memoized warm-up therefore times one run of the classifier's longest pattern
+(`turnEngineLooksCold`: ~0.01 ms warm, 3-9 ms cold) and warms again when it went cold. The harness saw no major GC in a
+whole founder flow (8 turns and 13 other requests, heap ~106 MB), so a re-warm is rare.
 
 | `latency --cold --text 0 --voice 4`, the call's first turn (later turns unchanged) | Before | After |
 | ---------------------------------------------------------------------------------- | ------ | ----- |
@@ -267,30 +286,87 @@ with and without it (`warm-up.test.ts`), and a warm-up that fails or never ends 
 | Profile production: first audio bytes (client)                                     | 5,141  | 4,932 |
 | Profile local: the call intro's `/speech` (the warm-up runs beside it)             | 9 ms   | 25 ms |
 
-The warm-up is ~300 ms of CPU, once per process (a dev server, a lab run) or per Lambda container that serves the call
-screen or the call start. A request that arrives while it runs shares the CPU with it (on the harness, a conversation
-created right after the call screen opened took up to ~250 ms longer); a founder opens the call screen and then
-presses Call, so it is normally done before. On Lambda it runs in the invocation's drain after the response; a call's
-first turn served by a container that did neither request still pays the cost (§8).
+Warm-up at process start against warm-up after the call screen's response (the first version), `latency --cold
+--text 0 --voice 3`, 3 runs each, profile local, ms (both versions also warm the call's guard names at call start):
+
+| Request (the call screen's, in order)       | After the call screen's response | At process start |
+| ------------------------------------------- | -------------------------------- | ---------------- |
+| `GET call-config`                           | 7–8                              | 3                |
+| `POST sessions` (×2, right after)           | 119–261                          | 15–25            |
+| `GET sessions/:id`                          | 41–61                            | 2                |
+| Call start                                  | 12–13                            | 12               |
+| The call intro's `/speech`                  | 26                               | 26–27            |
+| The call's first turn: model start          | 28                               | 26–31            |
+| The call's first turn: first audio (client) | 55–56                            | 53–59            |
+
+The intro's `/speech` stays at ~26 ms on profile local because the call start's warm-up of the call's guard names (the
+gate compiles a few patterns per name) runs beside it: without that step it is 9–10 ms and the first turn's first audio
+67–74 ms; started while the greeting is prepared instead, the call start takes 30 ms and the intro 9 ms. On profile
+production both are the same within 3 ms (the greeting's database round trips leave the CPU idle), so the step stays
+where it was.
+
+### What a call's turns read before the model (2026-10-31)
+
+`latency --profile production --cold --text 0 --voice 3 --queries` lists each turn's round trips before its model
+call by statement. A spoken turn makes 44–46 before its model starts, in this order (the second turn of a call, ms
+since the request; a transaction runs one statement at a time):
+
+| Stage                 | Round trips (sequential)                                                                                                                                                             | Same for the whole call                                                           |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| Idempotency key       | 1                                                                                                                                                                                    | no                                                                                |
+| Preflight transaction | 16: begin, context, session, access, settings, assignment, release, history (2), interruptions, **presence, founder, notes, earlier conversations**, turn count, **venture**, commit | the 5 in bold depend only on the conversation's keys; the rest are checks or live |
+| Spend caps            | 2 (global, then the person's)                                                                                                                                                        | no (live)                                                                         |
+| Admission transaction | 13: lock, session lock, in-flight, call, settings, call seconds, voice count, call turns, spend cap, the turn, audit                                                                 | no (live, atomic by design)                                                       |
+| Query embedding       | Titan, then 1 (usage ledger)                                                                                                                                                         | no                                                                                |
+| Retrieval transaction | 5 (with "Where you left off", 5, beside it)                                                                                                                                          | the left-off reads are, and already run beside it                                 |
+
+So 5 of the ~38 round trips on the critical path before the model are the same for the whole call; the rest are
+authorization, limits and live state, which a per-call cache must not answer. A cache of their results could not be
+trusted on Lambda without a round trip to check it (a note is changed by the distillation worker, another Lambda), so
+the turn reads them, but beside its checks instead of after them (`packages/core/src/orchestrator/turn-context.ts`):
+the process remembers each conversation's keys (tenant, person, conversation, venture, persona, the assignment's EIR,
+privacy), from the call's start and from every turn's preflight, and a turn whose keys are known starts those five
+reads at once in a transaction of their own. The preflight uses them when its own authorization reads resolve to the
+same keys, and waits for them only after its transaction has ended (a transaction holding a connection never waits on
+another that needs one). Keys that changed, an unknown conversation or a prefetch that failed fall back to reading
+them as before. Logged as `turn.context` (`source`: `prefetched`, `read`, `keys_changed`, `prefetch_failed`).
+
+Nothing but the keys is remembered, so a note written mid-call is in the next turn's prompt, and both paths run the
+same reads (`readTurnContext`), so the prompt is byte for byte the same (`turn-context.db.test.ts`: identical prompts
+with and without the prefetch, a note written between two turns, changed keys, a failed prefetch, a call's first turn).
+
+| `latency --cold --text 0 --voice 3`, 2 runs, profile production, ms | Before (6eefa05 + d06c2fd) | After           |
+| ------------------------------------------------------------------- | -------------------------- | --------------- |
+| The call's first turn: model start                                  | 2,015–2,022                | 1,774–1,781     |
+| The call's first turn: first spoken unit                            | 4,177–4,181                | 3,933–3,942     |
+| The call's first turn: first audio (client)                         | 4,848–4,857                | 4,608–4,617     |
+| Later turns: model start                                            | 2,098–2,102                | 1,860–1,869     |
+| Later turns: first audio (client)                                   | 4,817–4,938                | 4,577–4,704     |
+| The call start, its intro's `/speech`, `call-config`                | 1,707, 680, 572            | 1,702, 679, 568 |
+
+The preflight's chain goes from 16 round trips to 11 with an 8-round-trip transaction beside it: ~235 ms on every turn
+whose conversation the process knows (a call's first turn on the container that started it, and every later turn
+served by a container that served one before), at the Data API's ~45 ms a round trip. Locally (no simulated round
+trip) the change is within noise (first turn 26–31 ms, later turns 15–17 ms).
 
 ## 6. Measured and not kept
 
-| Tried                                                                                                                 | Result                                                                                                                                                                                                                                                                                                                                                                   |
-| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `<link rel="preload">` for the Latin Geist and Newsreader faces                                                       | first paint 168 → 276 ms: Chrome holds the first paint while a preloaded font downloads; the composer was no sooner                                                                                                                                                                                                                                                      |
-| Preloading the italic display face (the landing headline's "remembers")                                               | landing layout shift 0.179 → 0.174, first paint 172 → 288 ms                                                                                                                                                                                                                                                                                                             |
-| Local serif fallback faces sized like Newsreader (`size-adjust`, ascent/descent overrides, within 0.7 % of its width) | landing layout shift 0.179 → 0.162: the 80 px headline still sets 6 lines in the fallback and 5 in Newsreader (§7); New chat 0.030 → 0.024, within noise                                                                                                                                                                                                                 |
-| Warming the display face (`document.fonts.load`) and the first page's route chunks at start-up                        | the landing page 413 → 494 ms and `/me` queued behind the chunks on the local HTTP/1.1 preview; no gain measured                                                                                                                                                                                                                                                         |
-| Landing and sign-in out of the entry chunk                                                                            | landing ready 385 → 462 ms (one more chunk before it can render)                                                                                                                                                                                                                                                                                                         |
-| Loading the Mantle (Luna) adapter and the OpenAI SDK lazily                                                           | API bundle cold import 108 → 112 ms: parsing, not evaluation, dominates                                                                                                                                                                                                                                                                                                  |
-| Removing `motion` from the shell (prototype, not committed: the shell is another stream's)                            | first load 957 → 832 kB (entry 471 → 344 kB), cold load on the local preview unchanged within noise (§7)                                                                                                                                                                                                                                                                 |
-| A scheduled warm-up ping of the API Lambda                                                                            | not built: a page load fans out into 7–10 parallel requests, each needing its own warm container, and one ping keeps one; its gain needs a production measurement                                                                                                                                                                                                        |
-| Caching the call intro's audio                                                                                        | not built: a call's intro is synthesized once (a second request is refused as already played), so a per-call cache never hits; across calls the intro's words differ (name, where you left off), and the audio would have to reach whichever Lambda serves `POST /speech`. Polly is 200 of the intro's 687 ms; the rest is the checks, which this work cut from 1,095 ms |
-| A lower token limit on a call's reply (instead of stopping at the spoken budget)                                      | not kept: a reply cut by the limit ends mid-sentence in the transcript; stopping once 70 words were said ends on the sentence the budget ran out in                                                                                                                                                                                                                      |
-| Bedrock latency-optimized inference                                                                                   | not offered for Nova 2 Lite (Nova Pro, Claude 3.5 Haiku and Llama 3.1 only, checked 2026-10-16). The closest lever is the Priority service tier (`serviceTier: priority`; a third-party price list, unconfirmed by AWS, shows about 75 % more per token): an owner decision, to measure in production                                                                    |
-| Polly output format                                                                                                   | MP3 at the neural default 24 kHz kept: first bytes depend on synthesis, not on the format                                                                                                                                                                                                                                                                                |
-| Warming the turn engine at the start of every turn, beside its own database waits                                     | not kept: profile production's first turn 2,272 → 2,177 ms, but profile local's 284 → 381 ms (the warm-up competes with a turn whose database answers at once); the call screen and the call start warm it instead                                                                                                                                                       |
-| A per-call cache of the turn's context (persona, notes, policy), prebuilt at call start                               | not built: a later call's first turn was as fast as any other (lab run 41235680528 turns 3–4; harness), so nothing per call was slow; on the Data API the notes are 3 of a turn's ~60 round trips, and a cache shared by Lambda containers would need a round trip to check it                                                                                           |
+| Tried                                                                                                                 | Result                                                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<link rel="preload">` for the Latin Geist and Newsreader faces                                                       | first paint 168 → 276 ms: Chrome holds the first paint while a preloaded font downloads; the composer was no sooner                                                                                                                                                                                                                                                                            |
+| Preloading the italic display face (the landing headline's "remembers")                                               | landing layout shift 0.179 → 0.174, first paint 172 → 288 ms                                                                                                                                                                                                                                                                                                                                   |
+| Local serif fallback faces sized like Newsreader (`size-adjust`, ascent/descent overrides, within 0.7 % of its width) | landing layout shift 0.179 → 0.162: the 80 px headline still sets 6 lines in the fallback and 5 in Newsreader (§7); New chat 0.030 → 0.024, within noise                                                                                                                                                                                                                                       |
+| Warming the display face (`document.fonts.load`) and the first page's route chunks at start-up                        | the landing page 413 → 494 ms and `/me` queued behind the chunks on the local HTTP/1.1 preview; no gain measured                                                                                                                                                                                                                                                                               |
+| Landing and sign-in out of the entry chunk                                                                            | landing ready 385 → 462 ms (one more chunk before it can render)                                                                                                                                                                                                                                                                                                                               |
+| Loading the Mantle (Luna) adapter and the OpenAI SDK lazily                                                           | API bundle cold import 108 → 112 ms: parsing, not evaluation, dominates                                                                                                                                                                                                                                                                                                                        |
+| Removing `motion` from the shell (prototype, not committed: the shell is another stream's)                            | first load 957 → 832 kB (entry 471 → 344 kB), cold load on the local preview unchanged within noise (§7)                                                                                                                                                                                                                                                                                       |
+| A scheduled warm-up ping of the API Lambda                                                                            | not built: a page load fans out into 7–10 parallel requests, each needing its own warm container, and one ping keeps one; its gain needs a production measurement                                                                                                                                                                                                                              |
+| Caching the call intro's audio                                                                                        | not built: a call's intro is synthesized once (a second request is refused as already played), so a per-call cache never hits; across calls the intro's words differ (name, where you left off), and the audio would have to reach whichever Lambda serves `POST /speech`. Polly is 200 of the intro's 687 ms; the rest is the checks, which this work cut from 1,095 ms                       |
+| A lower token limit on a call's reply (instead of stopping at the spoken budget)                                      | not kept: a reply cut by the limit ends mid-sentence in the transcript; stopping once 70 words were said ends on the sentence the budget ran out in                                                                                                                                                                                                                                            |
+| Bedrock latency-optimized inference                                                                                   | not offered for Nova 2 Lite (Nova Pro, Claude 3.5 Haiku and Llama 3.1 only, checked 2026-10-16). The closest lever is the Priority service tier (`serviceTier: priority`; a third-party price list, unconfirmed by AWS, shows about 75 % more per token): an owner decision, to measure in production                                                                                          |
+| Polly output format                                                                                                   | MP3 at the neural default 24 kHz kept: first bytes depend on synthesis, not on the format                                                                                                                                                                                                                                                                                                      |
+| Warming the turn engine at the start of every turn, beside its own database waits                                     | not kept: profile production's first turn 2,272 → 2,177 ms, but profile local's 284 → 381 ms (the warm-up competes with a turn whose database answers at once); the call screen and the call start warm it instead                                                                                                                                                                             |
+| A per-call cache of the turn's context (persona, notes, policy), prebuilt at call start                               | not built as a cache of results: 5 of the ~38 round trips before the model are the same for the whole call (§5, "What a call's turns read before the model"), but on Lambda a cached note could be stale (the distillation worker writes it in another process) unless a round trip checks it; the turn reads them beside its checks instead, which saves the same ~235 ms and cannot be stale |
 
 ## 7. Proposals for the files other streams own (measured or derived)
 
@@ -338,9 +414,15 @@ first turn served by a container that did neither request still pays the cost (�
 - Nova 2 Lite's time to first token with and without a cache read, and the cache's share of the streamed reply's
   prompt (`modelFirstTokenMs`, `streamCacheReadInputTokens`, `streamInputTokens`; the query in §3).
 - Cold starts at 1,769 MB, and how often a founder meets one.
-- How often a call's first turn lands on a container the call screen or the call start warmed: `turn.timing`
-  `modelStartMs` of each call's first turn against its later turns, beside `call.turn_warm_up` `ms`. And whether the
-  Titan prewarm brings the first turn's `embedMs` down to the later turns' (a lab face run shows both).
+- What the process-start warm-up costs a cold start and gives a call's first turn: the REPORT lines' `Init Duration`
+  before and after the deploy, `api.init_warm_up` `ms` and `outcome`, and `turn.timing` `modelStartMs` of each call's
+  first turn against its later turns. And whether the Titan prewarm brings the first turn's `embedMs` down to the
+  later turns' (a lab face run shows both).
+- How often a turn finds its conversation's keys (`turn.context` `source = prefetched` against `read`), and so how
+  often a call's turns land on a container that served the call before.
+- Not taken here, live state on the turn's critical path that could still overlap (each one round trip, ~45 ms): the
+  two spend reads run one after the other; the admission reads the platform settings the preflight read a second
+  earlier; the query embedding's usage-ledger insert is awaited before retrieval starts.
 - The web app over CloudFront (HTTP/2 and HTTP/3, immutable assets): the local preview is HTTP/1.1 with six
   connections, so it penalises extra chunks that production does not.
 - How often someone meets a resume now that Aurora pauses after 30 idle minutes (was 10), and how much of it
