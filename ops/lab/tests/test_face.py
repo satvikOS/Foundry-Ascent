@@ -304,6 +304,7 @@ def measured(private: Path) -> None:
             "mic_requests_after_live": 0,
             "audio_senders": 0,
             "user_transcriptions": 0,
+            "av_same_stream": True,
             "fallback": {
                 "presence_back": True,
                 "seconds_live": 58.7,
@@ -404,6 +405,7 @@ def test_public_result_grades_every_sandbox_check_with_numbers_only(tmp_path: Pa
     assert result["call"]["unit_to_hand_over_ms"] == {"p50": 30, "p95": 40, "n": 2}
     assert result["call"]["first_unit_ms"] == {"p50": 1250, "p95": 1300, "n": 2}
     assert (result["call"]["units_preapproved"], result["call"]["units_streamed"]) == (4, 4)
+    assert result["call"]["av_same_stream"] is True
     assert checks["e5_hand_over_at_unit_arrival"] is True
     # ...and the server did not take that time instead: the FULL arm's first unit arrives about when Polly's does.
     assert result["polly"]["first_unit_ms"] == {"p50": 1220, "p95": 1260, "n": 2}
@@ -470,6 +472,7 @@ def test_nothing_but_numbers_and_codes_survives_from_the_private_files(tmp_path:
         "call",
         {
             "label_visible": "yes",
+            "av_same_stream": SAID,
             "session": {"provider": SAID, "voicing": "text", "livekitHost": "evil.example.com/x?a=b"},
             "fallback": {"end_reason": SAID, "seconds_live": "58"},
             "error": "Error: " + SAID,
@@ -501,6 +504,7 @@ def test_nothing_but_numbers_and_codes_survives_from_the_private_files(tmp_path:
         "livekit_host": None,
     }
     assert result["call"]["error"] is None
+    assert result["call"]["av_same_stream"] is None
     assert result["probe"]["queue"]["gaps_ms"] == [1]
     assert result["credits"]["used"] is None
     assert result["checks"]["e2_no_credits_used"] is None

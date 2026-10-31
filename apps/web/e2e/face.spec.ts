@@ -328,12 +328,14 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
 
     const says: { status: number; text: string }[] = [];
     const speech: string[] = [];
-    const faceEnds: string[] = [];
+    const faceEnds: { status: number; body: string }[] = [];
     page.on('response', (response) => {
       const path = new URL(response.url()).pathname;
       if (SAY.test(path)) says.push({ status: response.status(), text: bodyText(response.request()) });
       if (path.endsWith('/api/v1/speech')) speech.push(bodyText(response.request()));
-      if (path.endsWith('/face/end')) faceEnds.push(path);
+      if (path.endsWith('/face/end')) {
+        faceEnds.push({ status: response.status(), body: response.request().postData() ?? '{}' });
+      }
     });
     const sessions: Record<string, unknown>[] = [];
     page.on('response', (response) => {
@@ -394,14 +396,23 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
           ...says.filter((s) => s.status === 204).map((s) => s.text),
           ...(await streamedUnits(page)).flat().flatMap((u) => (u.face ? [u.text] : [])),
         ];
+        // Settled for a second: between two units of the reply the counts can match for a moment (one said, the
+        // next not streamed yet) while the vEIR is briefly not speaking.
+        let settledSince: number | null = null;
         await expect
           .poll(
             async () => {
               const said = spoken(await commands(page));
-              if (said.length === 0 || said.length !== (await admitted()).length) return false;
-              return interrupt.isHidden();
+              const done =
+                said.length > 0 && said.length === (await admitted()).length && (await interrupt.isHidden());
+              if (!done) {
+                settledSince = null;
+                return false;
+              }
+              settledSince ??= Date.now();
+              return Date.now() - settledSince >= 1_000;
             },
-            { timeout: 30_000 },
+            { timeout: 30_000, intervals: [250] },
           )
           .toBe(true);
         const said = spoken(await commands(page));
@@ -502,6 +513,9 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
         await expect(screen.locator('[data-slot="call-tile"][data-face="presence"]')).toBeVisible();
         await expect(line).toBeEditable();
         await expect.poll(() => faceEnds.length).toBe(1);
+        // The server is told which trigger ended the face (audited with its end).
+        expect(faceEnds[0]?.status).toBe(204);
+        expect(JSON.parse(faceEnds[0]?.body ?? '{}')).toEqual({ reason: 'video_ended' });
       });
     } finally {
       if (callId) {

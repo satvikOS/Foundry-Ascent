@@ -602,6 +602,8 @@ def public_call(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
         "mic_requests_after_live": _int(raw.get("mic_requests_after_live")),
         "audio_senders": _int(raw.get("audio_senders")),
         "user_transcriptions": _int(raw.get("user_transcriptions")),
+        # Whether the avatar's audio and video came in one remote stream (WebRTC keeps them in step only then).
+        "av_same_stream": _bool(raw.get("av_same_stream")),
         "fallback": {
             "presence_back": _bool(fallback.get("presence_back")),
             "seconds_live": _num(fallback.get("seconds_live")),

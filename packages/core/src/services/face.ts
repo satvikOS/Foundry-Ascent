@@ -1,6 +1,7 @@
 import {
   AvatarSessionRequest,
   type AvatarSessionResponse,
+  type FaceEndRequest,
   type PlatformRole,
   type PlatformSettingsView,
 } from '@foundry/contracts';
@@ -84,8 +85,11 @@ export interface FaceService {
   ): Promise<void>;
   /** `POST /calls/:id/face/interrupt`: barge-in, the face drops what it still has to say. */
   interrupt(ctx: RequestContext, callId: string): Promise<void>;
-  /** `POST /calls/:id/face/end`: the browser stopped showing the face; the vendor session ends. */
-  drop(ctx: RequestContext, callId: string): Promise<void>;
+  /**
+   * `POST /calls/:id/face/end`: the browser stopped showing the face; the vendor session ends. `client` is the
+   * page's account of why, recorded in the face's `call.face_ended` audit.
+   */
+  drop(ctx: RequestContext, callId: string, client?: FaceEndRequest): Promise<void>;
 }
 
 /** Seconds a vendor session needs at least to be worth opening (a call about to end keeps the presence). */
@@ -261,7 +265,12 @@ export interface FaceHooks {
   heartbeat(
     ctx: RequestContext,
     call: { readonly id: string; readonly ventureId: string },
-    decision: { readonly stopCause: FaceStopCause | null; readonly monthMinutes: number | null },
+    decision: {
+      readonly stopCause: FaceStopCause | null;
+      readonly monthMinutes: number | null;
+      /** The page's own account of why it stopped showing the face (`POST /calls/:id/face/end`), audited. */
+      readonly client?: FaceEndRequest;
+    },
   ): Promise<'continue' | 'stop' | undefined>;
   /**
    * After a call ended (any path): meters the face to its end, checks what a FULL face said to its end, and stops
@@ -626,7 +635,16 @@ export function createFaceHooks(kit: Kit): FaceHooks {
             objectType: 'call',
             objectId: call.id,
             policyReason: cause,
-            metadata: { provider: ended.vendor, mode: ended.mode, seconds: ended.lasted },
+            metadata: {
+              provider: ended.vendor,
+              mode: ended.mode,
+              seconds: ended.lasted,
+              // Which of the page's triggers ended it (the video ended, the room dropped, the vendor stopped it...).
+              ...(decision.client?.reason === undefined ? {} : { clientReason: decision.client.reason }),
+              ...(decision.client?.vendorReason === undefined
+                ? {}
+                : { vendorReason: decision.client.vendorReason }),
+            },
           });
         }
         await kit.flushDeferred(ctx, events);
@@ -1061,7 +1079,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
       }
     },
 
-    drop: async (ctx, rawCallId) => {
+    drop: async (ctx, rawCallId, client) => {
       const callId = requireId(rawCallId, 'Call');
       const call = await kit.inRequest(ctx, async (scope) => {
         const found = await callsRepo.getCall(scope.tx, callId);
@@ -1072,7 +1090,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
       await hooks.heartbeat(
         ctx,
         { id: call.id, ventureId: call.ventureId },
-        { stopCause: 'face_dropped', monthMinutes: null },
+        { stopCause: 'face_dropped', monthMinutes: null, ...(client === undefined ? {} : { client }) },
       );
     },
   };

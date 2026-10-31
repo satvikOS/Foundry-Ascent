@@ -237,11 +237,29 @@ DevTools open, faces and voices on.
    on, against off). Expect 0.3–0.6 s more; above about 1 s, compare with Anam (the fallback in the design).
 5. **The face's voice is heard, in step, and ducks.** In Chrome, Safari and Firefox, on the laptop's speakers and on
    Bluetooth headphones: the face's video and audio play in one element (the tile's `<video>` holds both tracks and
-   is not muted; [calls.md §4.3](../architecture/calls.md#43-the-face-of-a-call)), so the mouth moves with the
-   voice; a barge-in mutes it at once (before the vendor's interrupt arrives), the voice dips while a possible
-   barge-in is confirmed (not on iOS, which ignores an element's volume), no sentence is heard twice, minimizing the
-   call keeps the voice going, and ending the call silences it. In DevTools no `MediaStreamAudioSourceNode` of the
-   face's track connects to anything but an `AnalyserNode`.
+   is not muted; [calls.md §4.3](../architecture/calls.md#43-the-face-of-a-call)), so the voice no longer crosses
+   the call's Web Audio graph and its extra latency; a barge-in mutes it at once (before the vendor's interrupt
+   arrives), the voice dips while a possible barge-in is confirmed (not on iOS, which ignores an element's volume),
+   no sentence is heard twice, minimizing the call keeps the voice going, and ending the call silences it. In
+   DevTools no `MediaStreamAudioSourceNode` of the face's track connects to anything but an `AnalyserNode`.
+   - **Same remote stream.** WebRTC keeps an audio and a video track in step only when the sender put them in one
+     remote stream (the same msid; LiveKit tracks published under one `stream` name), whatever element plays them,
+     and Firefox does not pair them at all. The face lab's in-app call records it (`av_same_stream` in the face
+     summary; by hand: in DevTools, the `streams[0].id` of the subscriber connection's two `track` events, which
+     LiveKit writes `participantSid|streamName`). If the vendor sends them apart, the single element removes the
+     Web Audio delay but nothing else holds the two together: tell HeyGen and measure how far apart they drift.
+   - **Measure the offset**, before and after a change to this path: record the tile with a phone's camera on the
+     laptop's speakers and on Bluetooth headphones, and count frames between a plosive's lip closure and its sound
+     (30 fps: one frame is 33 ms). Note the browser, the output device and `av_same_stream`.
+   - **Sound refused.** On iOS Safari with typed input (no microphone), the element may be refused its sound: the
+     voice then comes through the call's own output, and at the founder's next tap (its end), click or key the
+     element sounds again. A tap must never cut the voice, even for a moment.
+   - **Why a face went away.** A face that leaves the call early has its reason in the audit log: the face's
+     `call.face_ended` event has the server's cause (`policy_reason`: `face_dropped` when the page ended it,
+     `face_injection` or `face_check_failed` from the transcript check, `face_limit`, `face_minutes`, `spend_cap`,
+     ...) and, when the page ended it, which trigger fired (`metadata.clientReason`: `video_ended`,
+     `video_unsubscribed`, `room_disconnected`, `vendor_stopped` with the vendor's `vendorReason`, `no_video`,
+     `connect_timeout`, `connect_failed`, `crisis`, `on_hold`).
 6. **The session limit, the envelope and the commands.** The token request carries `max_session_duration` (a 422
    means it is above the plan's session length: lower **per call**); the session must end by itself at the per-call
    limit. Responses must carry `code: 1000` on success (the vendor's SDK checks 1000; its API reference shows a
@@ -349,9 +367,15 @@ origins as LITE.
 9. Idle and keep-alive behaviour, `session.stopped` reasons, and that the session ends at the per-call limit.
 10. **Paid phase:** a 3-minute session with the chosen avatar costs 6 credits; no watermark; killing it mid-call
     falls back to the presence and Polly with no stray audio, the label still shown.
-11. **Lip sync.** Watch the mouth against the voice for a few sentences, on speakers and on Bluetooth: they must
-    move together (the face's video and voice play in one element, §8.5). A face whose mouth leads its voice by a
-    visible amount means the voice is being played somewhere else (check §8.5's DevTools point).
+11. **Lip sync.** Watch the mouth against the voice for a few sentences, on speakers and on Bluetooth, and measure the
+    offset as in §8.5: they must move together. The face's video and voice play in one element (no Web Audio
+    delay); check §8.5's DevTools point and whether the two tracks share one remote stream (`av_same_stream`: only
+    then does WebRTC keep them in step). A face whose mouth leads its voice by a visible amount with
+    `av_same_stream` true means the voice is being played somewhere else; with it false, the vendor sends them
+    apart.
+12. **A face that leaves early.** If the face disappears well before the session limit, read the `call.face_ended`
+    audit of that call (§8.5, "Why a face went away") before changing anything: it says whether the server stopped
+    it (and why) or which of the page's triggers fired.
 
 ### 9.6 Cost
 

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FaceRelay } from '../avatar';
 import type { FaceRenderHandlers, FaceRendererOutput, FaceUnitAudio } from '../playback';
 import { FakeAnalyser, FakeAudioContext, FakeGain, FakeMediaElement, FakeTrack, flush } from '../testing';
-import { tapFaceAudio } from './face-media';
+import { GESTURE_EVENTS, onNextGesture, tapFaceAudio } from './face-media';
 import {
   LIVEAVATAR_EVENTS_TOPIC,
   LiveAvatarFace,
@@ -110,9 +110,11 @@ function setup() {
     tap,
     element,
     createMediaElement,
-    /** The founder clicks or presses a key on the page. */
+    /** The founder clicks or presses a key on the page (a gesture fires its callback once, as onNextGesture). */
     gesture: () => {
-      gesture?.();
+      const fire = gesture;
+      gesture = null;
+      fire?.();
     },
     gestureArmed: () => gesture !== null,
     relay,
@@ -257,10 +259,33 @@ describe('LiveAvatarFace (HeyGen LiveAvatar, LITE: the browser only watches)', (
     await joined(s);
     for (const l of s.room.handlers.disconnected) l();
     expect(lost).toHaveBeenCalledTimes(1);
+    expect(lost).toHaveBeenCalledWith({ reason: 'room_disconnected' });
     expect(s.face.renderer().ready()).toBe(false);
     s.face.unmount();
     expect(s.room.disconnect).toHaveBeenCalled();
     expect(s.face.video()).toBeNull();
+  });
+});
+
+describe('LiveAvatarFace: the call is told which trigger ended the face', () => {
+  it('names the video track ending, and the video being unpublished', async () => {
+    const ended = setup();
+    const lostEnded = vi.fn();
+    ended.face.onLost(lostEnded);
+    const a = await joined(ended);
+    a.video.dispatchEvent(new Event('ended'));
+    expect(lostEnded).toHaveBeenCalledWith({ reason: 'video_ended' });
+
+    const gone = setup();
+    const lostGone = vi.fn();
+    gone.face.onLost(lostGone);
+    const b = await joined(gone);
+    // The audio track leaving is not the face going away; the video is.
+    for (const l of gone.room.handlers.gone) l({ kind: 'audio', mediaStreamTrack: b.audio });
+    expect(lostGone).not.toHaveBeenCalled();
+    for (const l of gone.room.handlers.gone) l({ kind: 'video', mediaStreamTrack: b.video });
+    expect(lostGone).toHaveBeenCalledTimes(1);
+    expect(lostGone).toHaveBeenCalledWith({ reason: 'video_unsubscribed' });
   });
 });
 
@@ -348,13 +373,48 @@ describe('LiveAvatarFace: the face is seen and heard together (one element, the 
     expect(s.gestureArmed()).toBe(true);
     s.face.renderer().render(s.buffer, s.output, s.handlers, s.audio);
     expect(s.tapAudio.mock.calls.map((c) => c[2])).toEqual(['output']);
-    // The founder's next click: the element sounds, and the copy in the call's output goes in the same moment.
-    s.element.soundRefused = false;
+    // The founder's next click (a gesture with user activation): the element asks to sound within it, unmuted at
+    // volume 0, while the call's output still plays the face...
+    s.element.activation = true;
     s.gesture();
+    s.element.activation = false;
+    expect(s.element.muted).toBe(false);
+    expect(s.element.volume).toBe(0);
+    expect(s.tap.disconnect).not.toHaveBeenCalled();
+    // ...and once its play() resolved, it is turned up and the copy in the call's output goes.
     await flush();
     expect(s.element.muted).toBe(false);
     expect(s.element.audible).toBe(true);
+    expect(s.element.volume).toBe(1);
     expect(s.tap.disconnect).toHaveBeenCalledTimes(1);
+    expect(s.tapAudio.mock.calls.map((c) => c[2])).toEqual(['output', 'analyser']);
+    expect(s.gestureArmed()).toBe(false);
+  });
+
+  it('a gesture that grants no activation (a touch pointerdown on iOS) never drops the voice: the call’s output keeps it', async () => {
+    const s = setup();
+    s.element.soundRefused = true;
+    await joined(s);
+    s.face.renderer().render(s.buffer, s.output, s.handlers, s.audio);
+    expect(s.tapAudio.mock.calls.map((c) => c[2])).toEqual(['output']);
+    // The browser refuses this try (and pauses the element it was asked to unmute).
+    s.gesture();
+    await flush();
+    // The voice was never taken off the call's output, nor muted there; the element plays on, muted, and the next
+    // gesture tries again.
+    expect(s.tap.disconnect).not.toHaveBeenCalled();
+    expect(s.tap.mute.mock.calls.every(([muted]) => !muted)).toBe(true);
+    expect(s.tapAudio.mock.calls.map((c) => c[2])).toEqual(['output']);
+    expect(s.element.muted).toBe(true);
+    expect(s.element.paused).toBe(false);
+    expect(s.element.volume).toBe(1);
+    expect(s.gestureArmed()).toBe(true);
+    // A real gesture later: the element sounds, the routed copy goes.
+    s.element.activation = true;
+    s.gesture();
+    s.element.activation = false;
+    await flush();
+    expect(s.element.audible).toBe(true);
     expect(s.tapAudio.mock.calls.map((c) => c[2])).toEqual(['output', 'analyser']);
   });
 
@@ -415,5 +475,28 @@ describe('tapFaceAudio: the call measures the face’s sound without playing it'
     expect(gain?.gain.value).toBe(1);
     tap.disconnect();
     expect(release).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('onNextGesture: the element tries its sound only at a gesture that carries user activation', () => {
+  it('ignores pointerdown (a touch pointerdown grants none) and fires once at pointerup, touchend, click or a key', () => {
+    for (const type of GESTURE_EVENTS) {
+      const callback = vi.fn();
+      const cancel = onNextGesture(callback);
+      window.dispatchEvent(new Event('pointerdown'));
+      expect(callback).not.toHaveBeenCalled();
+      window.dispatchEvent(new Event(type));
+      window.dispatchEvent(new Event(type));
+      expect(callback).toHaveBeenCalledTimes(1);
+      cancel();
+    }
+    expect([...GESTURE_EVENTS]).toEqual(['pointerup', 'touchend', 'click', 'keydown']);
+  });
+
+  it('fires nothing once cancelled', () => {
+    const callback = vi.fn();
+    onNextGesture(callback)();
+    window.dispatchEvent(new Event('click'));
+    expect(callback).not.toHaveBeenCalled();
   });
 });

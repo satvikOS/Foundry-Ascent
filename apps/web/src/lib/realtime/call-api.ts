@@ -6,6 +6,7 @@ import {
   EndCallRequest,
   EndCallResponse,
   InterruptTurnRequest,
+  FaceEndRequest,
   FaceSayRequest,
   SpeechRequest,
   StartCallRequest,
@@ -173,9 +174,16 @@ export function interruptFace(callId: string): Promise<void> {
   return apiSend(path`/calls/${callId}/face/interrupt`, { method: 'POST', waitForResume: false });
 }
 
-/** `POST /calls/:id/face/end` — the face is no longer shown: the vendor session ends. Best effort. */
-export function endFace(callId: string): Promise<void> {
-  return apiSend(path`/calls/${callId}/face/end`, { method: 'POST', waitForResume: false });
+/**
+ * `POST /calls/:id/face/end` — the face is no longer shown: the vendor session ends. Best effort. `loss` says why
+ * (the trigger that fired), which the server audits with the face's end.
+ */
+export function endFace(callId: string, loss?: FaceEndRequest): Promise<void> {
+  return apiSend(path`/calls/${callId}/face/end`, {
+    method: 'POST',
+    ...(loss === undefined ? {} : { body: encodeBody(FaceEndRequest, loss) }),
+    waitForResume: false,
+  });
 }
 
 /**

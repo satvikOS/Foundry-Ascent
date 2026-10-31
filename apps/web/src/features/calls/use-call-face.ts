@@ -1,7 +1,12 @@
 import type { AvatarSessionResponse, AvatarVoicing, EmbodimentProviderId } from '@foundry/contracts';
 import { useSyncExternalStore } from 'react';
 
-import { loadAvatarProvider, type AvatarProvider, type FaceRelay } from '@/lib/realtime/avatar';
+import {
+  loadAvatarProvider,
+  type AvatarProvider,
+  type FaceLoss,
+  type FaceRelay,
+} from '@/lib/realtime/avatar';
 import {
   endFace,
   interruptFace,
@@ -48,8 +53,8 @@ export interface CallFaceDeps {
   loadProvider(id: EmbodimentProviderId, voicing: AvatarVoicing): Promise<AvatarProvider | null>;
   /** The server path of the face's audio for this call. */
   relayFor(callId: string): FaceRelay;
-  /** Tells the server the face is no longer shown (it ends the vendor session). */
-  endFace(callId: string): Promise<void>;
+  /** Tells the server the face is no longer shown (it ends the vendor session), and why (audited there). */
+  endFace(callId: string, loss: FaceLoss): Promise<void>;
   /** A face that has not shown its first frame by then is given up for this call. */
   readonly connectTimeoutMs: number;
   /** A call on hold longer than this gives its face up (default {@link FACE_HOLD_GRACE_MS}). */
@@ -87,6 +92,14 @@ type FaceEngine = Pick<
 >;
 
 const PRESENCE: CallFace = { status: 'presence' };
+
+/** Why joining the face failed, from what the join threw. */
+function joinFailure(err: unknown): FaceLoss['reason'] {
+  const message = err instanceof Error ? err.message : '';
+  if (message === 'face_timeout') return 'connect_timeout';
+  if (message === 'face_no_video') return 'no_video';
+  return 'connect_failed';
+}
 
 function timeout(ms: number, signal: AbortSignal): Promise<never> {
   return new Promise((_resolve, reject) => {
@@ -169,7 +182,7 @@ export class CallFaceController {
           return;
         }
         if (loaded?.connect === undefined) {
-          this.close(true);
+          this.close(true, { reason: 'no_adapter' });
           return;
         }
         attempt.adapter = loaded;
@@ -180,8 +193,8 @@ export class CallFaceController {
         ]);
         if (stopped()) return;
         attempt.offLost =
-          loaded.onLost?.(() => {
-            this.close(true);
+          loaded.onLost?.((loss) => {
+            this.close(true, loss);
           }) ?? null;
         if (loaded.voicing === 'audio' || loaded.voicing === 'text') {
           this.engine.attachFace(loaded.renderer?.() ?? null);
@@ -195,17 +208,19 @@ export class CallFaceController {
           media: media instanceof HTMLVideoElement ? media : null,
           stock: session.stockFace,
         });
-      } catch {
-        if (!stopped()) this.close(true);
+      } catch (err) {
+        if (!stopped()) this.close(true, { reason: joinFailure(err) });
       }
     })();
   }
 
   /**
    * Gives the face up (the presence again). `tellServer`: the server does not know yet (the face dropped, or
-   * was given up while joining), so the vendor session is ended there too.
+   * was given up while joining), so the vendor session is ended there too, with `loss`, why (audited there).
    */
-  close(tellServer: boolean): void {
+  close(tellServer: false): void;
+  close(tellServer: true, loss: FaceLoss): void;
+  close(tellServer: boolean, loss?: FaceLoss): void {
     this.clearHold();
     const attempt = this.current;
     this.current = null;
@@ -216,7 +231,9 @@ export class CallFaceController {
       this.engine.attachFace(null);
       // Heartbeats say the face is gone, so the server stops a session it still holds.
       this.engine.setFaceShown(false);
-      if (tellServer) void this.deps.endFace(attempt.callId).catch(() => undefined);
+      if (tellServer && loss !== undefined) {
+        void this.deps.endFace(attempt.callId, loss).catch(() => undefined);
+      }
     }
     this.set(PRESENCE);
   }
@@ -231,7 +248,7 @@ export class CallFaceController {
       return;
     }
     if (snapshot.blocked?.reason === 'crisis_support') {
-      this.close(true);
+      this.close(true, { reason: 'crisis' });
       return;
     }
     if (!snapshot.held) {
@@ -241,7 +258,7 @@ export class CallFaceController {
     // On hold nobody watches the face, and the vendor bills it by the minute: past the grace it ends there too.
     this.holdTimer ??= setTimeout(() => {
       this.holdTimer = null;
-      if (this.current === attempt) this.close(true);
+      if (this.current === attempt) this.close(true, { reason: 'on_hold' });
     }, this.deps.holdGraceMs ?? FACE_HOLD_GRACE_MS);
   }
 

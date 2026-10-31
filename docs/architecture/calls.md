@@ -65,7 +65,7 @@ Contracts in `packages/contracts/src/calls.ts`; errors are problem+json.
 | `POST /calls/notice/acknowledge`                             | anyone signed in, for themselves | `{acknowledgedAt}`. The first-call privacy notice was read; stored with the person (migration 0010), idempotent, audited once. `GET /ventures/:id/call-config` reports it as `callNoticeAcknowledgedAt`, and the call screen shows the notice until it is set. |
 | `POST /calls/avatar-session` `{ventureId, callId}`           | founder/team                     | The face of the live call (§4.3): a room token for a vendor face, or the presence (no token).                                                                                                                                                                  |
 | `POST /calls/:id/face/speak`                                 | the caller                       | 204. Hands the face a unit's exact PCM with its `x-face-manifest` (§4.2); 422 otherwise.                                                                                                                                                                       |
-| `POST /calls/:id/face/interrupt`, `/face/end`                | the caller                       | 204. Barge-in on the face; the face is no longer shown (its vendor session ends).                                                                                                                                                                              |
+| `POST /calls/:id/face/interrupt`, `/face/end`                | the caller                       | 204. Barge-in on the face; the face is no longer shown (its vendor session ends; `/face/end` may say why, `{reason?, vendorReason?}`, audited).                                                                                                                |
 
 Someone else's call or turn is 404, as is a conversation the caller cannot see. Refusals:
 
@@ -552,10 +552,13 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
    before the unit's first sound, so the vendor ending its session leaves no gap).
    - **Seen and heard together** (`embodiment/face-media.ts`, LITE and FULL alike). The avatar's video and audio
      tracks play in **one** media element, one `MediaStream` with both tracks, unmuted, and the tile shows that very
-     element (`media()`), so the browser's own WebRTC playout keeps the lips in step with the voice. (Until
-     2026-10-31 the audio went through the call's Web Audio graph while a muted `<video>` showed the face: the two
-     drifted apart, by the `AudioContext`'s output latency too, which is large on Bluetooth, and the mouth looked
-     lagged.) The call never plays the face's sound itself: it taps the audio track with an analyser connected to
+     element (`media()`), so the voice goes from WebRTC's jitter buffer to the speakers as the picture goes to the
+     screen. (Until 2026-10-31 the audio went through the call's Web Audio graph while a muted `<video>` showed the
+     face: the voice also crossed the `AudioContext`'s buffering and output latency, large on Bluetooth, which the
+     picture never waited for, and the mouth looked lagged.) What keeps the two in step beyond that is WebRTC's
+     receiver-side audio/video sync, which does not depend on the element: it pairs the tracks only when the vendor
+     sends them in one remote stream (the same msid), and not at all in Firefox; the face lab records whether it
+     does (`av_same_stream`, [avatars.md §8](../runbooks/avatars.md)). The call never plays the face's sound itself: it taps the audio track with an analyser connected to
      nothing (`MediaStreamSource → AnalyserNode`, no output), which gives the unit's first sound for the heard-units
      accounting and the captions, and the presence's level. Ducking sets the element's volume (`setVolume`, 0.2 while
      a possible barge-in is confirmed); barge-in, the end of a unit's turn or a unit given back to the call mute the
@@ -563,14 +566,20 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
      the face's next unit turns it up again; ending the face pauses the element, empties it and takes it off the
      page. A call starts on a click and captures the microphone, so the browser lets the element sound; if it
      refuses (`play()` fails with `NotAllowedError`), the element plays muted (the face still shows) and the voice is
-     routed into the call's own output through a gain barge-in can close, until the founder's next click or key,
-     when the element sounds again and that route is removed in the same moment. A paused element (the browser
-     paused it) is played again.
+     routed into the call's own output through a gain barge-in can close. At the founder's next gesture that carries
+     user activation (`pointerup`, `touchend`, `click`, `keydown`; never `pointerdown`, which on a touch screen
+     carries none, and Safari grants playback per gesture) the element asks again within the gesture, unmuted at
+     volume 0 while that route still plays the voice; only once its `play()` resolved with the element playing
+     unmuted is it turned up and the route removed. A refused try mutes it again, keeps the route and waits for the
+     next gesture, so a tap never cuts the voice. A paused element (the browser paused it) is played again.
 4. The face belongs to the call: minimizing keeps it (the mini bar shows it as a thumbnail, the video alone and
    muted, or the monogram with reduced motion; the face's element plays on, still sounding, in a hidden 1 px spot
    of the page and returns to the tile when the call is shown again, so minimizing never cuts or doubles the voice);
    a face that drops, the stage giving it up, or a call left on hold (page hidden) for over a minute (the vendor
-   bills an idle face) tells the server (`POST /calls/:id/face/end`).
+   bills an idle face) tells the server (`POST /calls/:id/face/end`), with which trigger fired (`reason`: the
+   vendor's video track ended or was unpublished, its room dropped, it stopped the session, with its own
+   `vendorReason`, no first frame, a slow or failed join, no adapter, a crisis turn, the hold), recorded in the
+   face's `call.face_ended` audit (`metadata.clientReason`), so a face that left early can be explained.
 5. Heartbeats report whether the face is shown and answer `face: stop` (and the server ends the vendor session,
    asking twice if the first stop fails) when faces are switched off, likeness consent is withdrawn, the call's
    video limit or the month's video minutes are used up, the month's minutes cannot be read (the face never goes

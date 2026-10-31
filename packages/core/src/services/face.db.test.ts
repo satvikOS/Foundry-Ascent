@@ -519,6 +519,31 @@ describe('the face of a call: off by default, then the stand-in', () => {
     await local.calls.end(ctx.maya, started.call.id, { reason: 'user' });
   });
 
+  it('records which trigger the page names when it ends the face (POST /calls/:id/face/end)', async () => {
+    const started = await startCall(local);
+    const callId = started.call.id;
+    try {
+      await faceSession(local, callId);
+      await local.face.drop(ctx.maya, callId, { reason: 'vendor_stopped', vendorReason: 'IDLE_TIMEOUT' });
+      expect(standIn.ended.at(-1)?.reason).toBe('face_dropped');
+      const rows = await h.t.db.system((sx) =>
+        sx.query(
+          `SELECT policy_reason, metadata::text AS metadata FROM audit_events
+            WHERE action = 'call.face_ended' AND object_id = :id`,
+          { id: p.text(callId) },
+        ),
+      );
+      const ended = rows.rows as { policy_reason: string; metadata: string }[];
+      expect(ended.map((r) => r.policy_reason)).toEqual(['face_dropped']);
+      expect(JSON.parse(ended[0]?.metadata ?? '{}')).toMatchObject({
+        clientReason: 'vendor_stopped',
+        vendorReason: 'IDLE_TIMEOUT',
+      });
+    } finally {
+      await local.calls.end(ctx.maya, callId, { reason: 'user' }).catch(() => undefined);
+    }
+  });
+
   it('takes each part of a unit once, in order, one unit at a time, and nothing of it after barge-in', async () => {
     const started = await startCall(local);
     const callId = started.call.id;

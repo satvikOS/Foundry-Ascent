@@ -4,9 +4,15 @@ import type { FaceRendererOutput } from '../playback';
  * How a vendor face is seen and heard in the browser (docs/architecture/calls.md §4.3).
  *
  * The face's video and its audio play together in **one** media element holding one `MediaStream` with both of the
- * vendor's tracks, unmuted, so the browser keeps the mouth and the voice in step itself (WebRTC's own audio/video
- * playout). Rendering the two apart (the video in a muted element, the audio through Web Audio) loses that sync and
- * adds the `AudioContext`'s output latency, which is large on Bluetooth: the mouth visibly leads the voice.
+ * vendor's tracks, unmuted. Played that way, the voice goes from WebRTC's jitter buffer straight to the speakers, as
+ * the picture goes to the screen. Played apart (the video in a muted element, the audio through the call's Web Audio
+ * graph) the voice also crossed the `AudioContext`, whose own buffering and output latency (large on Bluetooth) the
+ * picture never waits for: the mouth led the voice by that much. The single element removes that extra delay.
+ *
+ * What keeps the two in step beyond that is WebRTC's receiver-side audio/video sync, and it does not depend on the
+ * element: the receiver pairs an audio and a video track only when the sender put them in the same remote stream
+ * (the same msid; in LiveKit, tracks published under one `stream` name), and Firefox does not pair them at all. The
+ * conversation lab records whether the vendor's two tracks share a stream (docs/runbooks/avatars.md §8.5).
  *
  * The call still needs the face's sound for its own accounting (a unit counts as heard from the face's first sound,
  * the captions follow it): an analyser taps the audio track and is connected to nothing, so nothing plays twice.
@@ -174,9 +180,16 @@ export function holdInMutedElement(stream: MediaStream): () => void {
   };
 }
 
+/**
+ * The page events that carry the user activation a browser asks before it lets an element sound: a click, the end
+ * of a tap or a press (`pointerup`, `touchend`), a key. Never `pointerdown`: a touch or pen `pointerdown` grants no
+ * activation (HTML's activation-triggering events), and Safari grants media playback per gesture, at its end.
+ */
+export const GESTURE_EVENTS = ['pointerup', 'touchend', 'click', 'keydown'] as const;
+
 /** Calls back once, at the founder's next click, tap or key on the page; returns its cancel. */
 export function onNextGesture(callback: () => void): () => void {
-  const events = ['pointerdown', 'keydown'] as const;
+  const events = GESTURE_EVENTS;
   const once = () => {
     cancel();
     callback();

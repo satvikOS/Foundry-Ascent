@@ -1,4 +1,9 @@
-import type { AvatarSessionResponse, AvatarVoicing, EmbodimentProviderId } from '@foundry/contracts';
+import type {
+  AvatarSessionResponse,
+  AvatarVoicing,
+  EmbodimentProviderId,
+  FaceEndReason,
+} from '@foundry/contracts';
 
 import type { FaceMediaElement } from './embodiment/face-media';
 import type { FaceRenderer, FaceUnitAudio, SpeechUnitToPlay } from './playback';
@@ -23,6 +28,13 @@ export type { FaceRenderer, FaceUnitAudio } from './playback';
  * relays a unit only when it is exactly the audio it synthesized for this call; the browser only watches. FULL:
  * the server admits each signed unit (`say`) before the browser may send the vendor its words.
  */
+/** Why a face went away (the trigger that fired), sent with the face's end to the server, which audits it. */
+export interface FaceLoss {
+  readonly reason: FaceEndReason;
+  /** The vendor's own `end_reason` of a stopped session, when it gave a plain one. */
+  readonly vendorReason?: string;
+}
+
 export interface FaceRelay {
   /** LITE: hands the server one unit's audio for the face; rejects when the server would not relay it. */
   speak(audio: FaceUnitAudio, signal: AbortSignal): Promise<void>;
@@ -88,7 +100,7 @@ export interface AvatarProvider {
   /** Voicing `audio` or `text`: where the call hands each validated unit. */
   renderer?(): FaceRenderer | null;
   /** The face stopped (the vendor dropped, its video ended): the call goes on with the presence. */
-  onLost?(listener: () => void): () => void;
+  onLost?(listener: (loss: FaceLoss) => void): () => void;
 }
 
 /**

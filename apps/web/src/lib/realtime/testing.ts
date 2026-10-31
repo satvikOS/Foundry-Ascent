@@ -340,17 +340,34 @@ export class FakeAudioContext {
  */
 export class FakeMediaElement extends EventTarget {
   srcObject: MediaProvider | null = null;
-  muted = false;
   volume = 1;
   paused = true;
   removed = false;
   plays = 0;
-  /** Test control: the browser refuses sound (autoplay policy) until set back to false. */
+  /** Test control: the browser refuses sound (autoplay policy) until set back to false, or a gesture allows it. */
   soundRefused = false;
+  /**
+   * Test control: the page is inside a gesture that carries user activation (a click, the end of a tap, a key).
+   * `play()` called unmuted then is allowed, and allows the element's sound from then on (as Safari does).
+   */
+  activation = false;
+  private isMuted = false;
+  get muted(): boolean {
+    return this.isMuted;
+  }
+  /** Unmuting a playing element its sound is refused to pauses it (Safari, outside a gesture). */
+  set muted(value: boolean) {
+    const unmuting = this.isMuted && !value;
+    this.isMuted = value;
+    if (unmuting && !this.paused && this.soundRefused && !this.activation) this.pause();
+  }
   play(): Promise<void> {
     this.plays += 1;
     if (this.soundRefused && !this.muted) {
-      return Promise.reject(new DOMException('play() needs a gesture', 'NotAllowedError'));
+      if (!this.activation) {
+        return Promise.reject(new DOMException('play() needs a gesture', 'NotAllowedError'));
+      }
+      this.soundRefused = false;
     }
     this.paused = false;
     return Promise.resolve();

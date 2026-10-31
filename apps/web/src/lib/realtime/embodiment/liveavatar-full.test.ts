@@ -292,7 +292,15 @@ describe('LiveAvatarFace FULL: when the face cannot say a unit', () => {
     ]);
     s.room.stopSession('MAX_DURATION_REACHED');
     expect(s.lost).toHaveBeenCalledTimes(1);
+    // The call is told which trigger fired, with the vendor's own end reason (audited with the face's end).
+    expect(s.lost).toHaveBeenCalledWith({ reason: 'vendor_stopped', vendorReason: 'MAX_DURATION_REACHED' });
     expect(s.face.renderer().ready()).toBe(false);
+  });
+
+  it('passes on no vendor end reason that is not a plain short token', async () => {
+    const s = await setup('queue');
+    s.room.stopSession('<b>not a token</b>');
+    expect(s.lost).toHaveBeenCalledWith({ reason: 'vendor_stopped' });
   });
 
   it('never says an unsigned passage (the call speaks it as before)', async () => {

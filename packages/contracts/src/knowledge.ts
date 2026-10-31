@@ -265,6 +265,39 @@ export const FaceSayRequest = z.object({
 });
 export type FaceSayRequest = z.infer<typeof FaceSayRequest>;
 
+/**
+ * Why the browser stopped showing a call's face (`POST /calls/:id/face/end`), recorded in the face's
+ * `call.face_ended` audit: the vendor's video track ended (`video_ended`) or was unpublished (`video_unsubscribed`),
+ * the vendor's room dropped (`room_disconnected`), the vendor stopped the session (`vendor_stopped`, with its
+ * `end_reason` as `vendorReason`), the face showed no first frame (`no_video`) or did not join in time
+ * (`connect_timeout`) or failed to join (`connect_failed`), the page has no adapter for it (`no_adapter`), a crisis
+ * turn (`crisis`), or the call stayed on hold too long (`on_hold`).
+ */
+export const FaceEndReason = z.enum([
+  'video_ended',
+  'video_unsubscribed',
+  'room_disconnected',
+  'vendor_stopped',
+  'no_video',
+  'connect_timeout',
+  'connect_failed',
+  'no_adapter',
+  'crisis',
+  'on_hold',
+]);
+export type FaceEndReason = z.infer<typeof FaceEndReason>;
+
+/** `POST /calls/:id/face/end` — the browser stopped showing the face. Both fields optional (an empty body is fine). */
+export const FaceEndRequest = z.object({
+  reason: FaceEndReason.optional(),
+  /** The vendor's own `end_reason` of a stopped session, a short plain token. */
+  vendorReason: z
+    .string()
+    .regex(/^[A-Za-z0-9_.:-]{1,64}$/)
+    .optional(),
+});
+export type FaceEndRequest = z.infer<typeof FaceEndRequest>;
+
 /** `POST /speech` — synthesize validated vEIR text; responds with `audio/mpeg`. */
 export const SpeechRequest = z.object({
   sessionId: Id,

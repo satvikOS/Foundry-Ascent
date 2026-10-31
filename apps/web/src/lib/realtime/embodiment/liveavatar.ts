@@ -5,6 +5,7 @@ import type {
   AvatarMountOptions,
   AvatarProvider,
   AvatarState,
+  FaceLoss,
   FaceRelay,
   SpokenUnit,
 } from '../avatar';
@@ -33,11 +34,13 @@ export type { FaceAudioTap, FaceMediaElement, FaceTapMode } from './face-media';
  * (voicing `audio`) or FULL (voicing `text`) mode.
  *
  * **Seen and heard together** (both modes, face-media.ts): the avatar's video and audio tracks play in one media
- * element (one `MediaStream`, unmuted), which the call tile shows, so the browser keeps the lips and the voice in
- * step. The call measures the face's sound through an analyser connected to nothing (nothing plays twice); ducking,
- * barge-in and the end act on that element (volume, `muted`, `pause`). If the browser refuses the element's sound
- * (autoplay policy; a call starts with a click and captures the microphone, so this is rare), the element plays
- * muted and the sound goes through the call's own output instead until the founder's next click or key.
+ * element (one `MediaStream`, unmuted), which the call tile shows, so the voice no longer crosses the call's Web
+ * Audio graph and its extra latency (WebRTC's own audio/video sync applies when the vendor sends both tracks in one
+ * stream, face-media.ts). The call measures the face's sound through an analyser connected to nothing (nothing plays
+ * twice); ducking, barge-in and the end act on that element (volume, `muted`, `pause`). If the browser refuses the
+ * element's sound (autoplay policy; a call starts with a click and captures the microphone, so this is rare), the
+ * element plays muted and the sound goes through the call's own output instead; at the founder's next click, tap or
+ * key the element tries its sound again, and that copy is removed only once the element plays sounding.
  *
  * **FULL** (a stock avatar with its stock voice, labelled "AI avatar"): the browser joins the room the same way
  * and still publishes no track (no microphone, no camera: plain livekit-client, so no microphone prompt). When a
@@ -111,7 +114,7 @@ export interface LiveAvatarDeps {
    * into `output.destination` (`output`: the browser refused the element's sound).
    */
   tapAudio(track: MediaStreamTrack, output: FaceRendererOutput, mode: FaceTapMode): FaceAudioTap;
-  /** Calls back once at the founder's next click or key on the page; returns its cancel. */
+  /** Calls back once at the founder's next click, tap or key on the page (inside its handler); returns its cancel. */
   onGesture?(callback: () => void): () => void;
   setTimeout(callback: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
@@ -180,6 +183,15 @@ export function browserFaceMediaDeps(): Pick<
   };
 }
 
+/** `element.play()` as a promise, also when it throws at once (an environment without media playback). */
+function playing(element: FaceMediaElement): Promise<void> {
+  try {
+    return element.play();
+  } catch (err) {
+    return Promise.reject(err instanceof Error ? err : new Error('play_failed'));
+  }
+}
+
 /** Whether `play()` was refused by the browser's autoplay policy (not merely cut short by a new source). */
 function refusedByPolicy(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'NotAllowedError';
@@ -192,6 +204,12 @@ function abortError(): DOMException {
 interface AgentEvent {
   readonly event_type?: string;
   readonly type?: string;
+  readonly end_reason?: unknown;
+}
+
+/** The vendor's `end_reason` of a stopped session, when it is a plain short token (anything else is dropped). */
+function vendorReason(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(value) ? value : undefined;
 }
 
 export interface LiveAvatarFaceOptions {
@@ -229,8 +247,10 @@ export class LiveAvatarFace implements AvatarProvider {
   /** Barge-in or a unit given back: the face is silent until the next unit it renders. */
   private silenced = false;
   private cancelGesture: (() => void) | null = null;
+  /** The element is trying its sound again (a gesture); the call's output still plays the face meanwhile. */
+  private trying = false;
   private live = false;
-  private readonly lostListeners = new Set<() => void>();
+  private readonly lostListeners = new Set<(loss: FaceLoss) => void>();
   /** The vendor's own speak events for the unit being rendered, when the room carries them; and the face's loss. */
   private speakEvents: { started(): void; ended(): void; lost(): void } | null = null;
   private readonly face: FaceRenderer;
@@ -324,7 +344,7 @@ export class LiveAvatarFace implements AvatarProvider {
         this.videoTrack = track.mediaStreamTrack;
         this.stream = this.deps.createStream([track.mediaStreamTrack]);
         track.mediaStreamTrack.addEventListener('ended', () => {
-          this.lose();
+          this.lose({ reason: 'video_ended' });
         });
         this.showMedia();
         this.deps.clearTimeout(timer);
@@ -332,10 +352,10 @@ export class LiveAvatarFace implements AvatarProvider {
       });
     });
     room.onTrackGone((track) => {
-      if (track.mediaStreamTrack === this.videoTrack) this.lose();
+      if (track.mediaStreamTrack === this.videoTrack) this.lose({ reason: 'video_unsubscribed' });
     });
     room.onDisconnected(() => {
-      this.lose();
+      this.lose({ reason: 'room_disconnected' });
     });
     room.onData((payload, topic) => {
       if (topic !== LIVEAVATAR_EVENTS_TOPIC) return;
@@ -349,7 +369,10 @@ export class LiveAvatarFace implements AvatarProvider {
       if (name === 'avatar.speak_started' || name === 'agent.speak_started') this.speakEvents?.started();
       if (name === 'avatar.speak_ended' || name === 'agent.speak_ended') this.speakEvents?.ended();
       // FULL: the vendor ended the session (idle, its limit, no credits): the call goes on with the presence.
-      if (name === 'session.stopped' && this.voicing === 'text') this.lose();
+      if (name === 'session.stopped' && this.voicing === 'text') {
+        const detail = vendorReason(event.end_reason);
+        this.lose({ reason: 'vendor_stopped', ...(detail === undefined ? {} : { vendorReason: detail }) });
+      }
     });
     try {
       await Promise.all([room.connect(session.url ?? '', session.token), firstFrame]);
@@ -377,7 +400,7 @@ export class LiveAvatarFace implements AvatarProvider {
     return this.face;
   }
 
-  onLost(listener: () => void): () => void {
+  onLost(listener: (loss: FaceLoss) => void): () => void {
     this.lostListeners.add(listener);
     return () => {
       this.lostListeners.delete(listener);
@@ -418,39 +441,80 @@ export class LiveAvatarFace implements AvatarProvider {
   private play(): void {
     const element = this.element;
     if (element === null) return;
-    element.play().catch((err: unknown) => {
-      if (this.element !== element) return;
+    playing(element).catch((err: unknown) => {
+      if (this.element !== element || this.trying) return;
       if (refusedByPolicy(err) && this.audible && !element.muted) this.refuseSound();
     });
   }
 
   /**
    * The browser refused the element's sound (autoplay policy). The face still shows (a muted element may play) and
-   * its sound goes through the call's own output, without the element's lip sync, rather than not at all; at the
-   * founder's next click or key the element sounds again.
+   * its sound goes through the call's own output, without the element, rather than not at all; at the founder's
+   * next click, tap or key the element tries its sound again ({@link trySound}).
    */
   private refuseSound(): void {
     this.audible = false;
     this.applyVolume();
     this.play();
     if (this.tap !== null) this.retap();
+    this.awaitGesture();
+  }
+
+  private awaitGesture(): void {
     this.cancelGesture?.();
     this.cancelGesture =
       this.deps.onGesture?.(() => {
         this.cancelGesture = null;
-        if (this.element === null) return;
+        this.trySound();
+      }) ?? null;
+  }
+
+  /**
+   * Inside the founder's gesture: the element asks to sound again (unmuted at volume 0, and `play()` called within
+   * the gesture, which is what lets Safari sound it), while the call's output still plays the face. Only once that
+   * `play()` resolved with the element still playing unmuted is the element turned up and the copy in the call's
+   * output removed (one moment, never both heard). A gesture that granted nothing (the browser refused again)
+   * leaves the call's output as it was, mutes the element again and waits for the next gesture: the face's voice
+   * never drops for a refused try.
+   */
+  private trySound(): void {
+    const element = this.element;
+    if (element === null || this.audible || this.trying) return;
+    this.trying = true;
+    element.volume = 0;
+    element.muted = false;
+    playing(element).then(
+      () => {
+        if (this.element !== element) return;
+        this.trying = false;
+        if (element.paused || element.muted) {
+          this.refusedAgain();
+          return;
+        }
         this.audible = true;
-        // Unmuted within the gesture, and the copy in the call's output removed in the same moment.
         this.applyVolume();
         if (this.tap !== null) this.retap();
-        this.play();
-      }) ?? null;
+      },
+      () => {
+        if (this.element !== element) return;
+        this.trying = false;
+        this.refusedAgain();
+      },
+    );
+  }
+
+  /** A gesture's try was refused: the element plays muted again, the call's output still plays the face. */
+  private refusedAgain(): void {
+    this.applyVolume();
+    this.play();
+    this.awaitGesture();
   }
 
   /** The element's volume and `muted`, and the routed copy's gain, from the call's level and barge-in. */
   private applyVolume(): void {
     const element = this.element;
-    if (element !== null) {
+    // While a gesture's try is pending, the element stays unmuted at volume 0 (the call's output is heard).
+    if (element !== null && !this.trying) {
       element.volume = this.silenced ? 0 : this.volume;
       // `muted` too: some browsers (iOS) ignore `volume`.
       element.muted = this.silenced || !this.audible;
@@ -749,11 +813,12 @@ export class LiveAvatarFace implements AvatarProvider {
     if (this.output !== null) this.ensureTap(this.output);
   }
 
-  private lose(): void {
+  /** The face went away: `loss` says which trigger fired (sent to the server with the face's end, audited). */
+  private lose(loss: FaceLoss): void {
     if (!this.live) return;
     this.live = false;
     this.speakEvents?.lost();
-    for (const listener of [...this.lostListeners]) listener();
+    for (const listener of [...this.lostListeners]) listener(loss);
   }
 
   private release(): void {
@@ -767,6 +832,7 @@ export class LiveAvatarFace implements AvatarProvider {
     this.admissionChain = Promise.resolve();
     this.cancelGesture?.();
     this.cancelGesture = null;
+    this.trying = false;
     this.tap?.disconnect();
     this.tap = null;
     this.output = null;

@@ -2,7 +2,7 @@ import type { AvatarSessionResponse } from '@foundry/contracts';
 import { act, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { AvatarProvider, FaceRelay, FaceRenderer } from '@/lib/realtime/avatar';
+import type { AvatarProvider, FaceLoss, FaceRelay, FaceRenderer } from '@/lib/realtime/avatar';
 
 import { CallStage } from './call-stage';
 import { LIVE, fakeEngine, json, renderWithRouter, stubFetch } from './testing';
@@ -58,7 +58,7 @@ function veir(provider: CallVeir['provider']): CallVeir {
 function vendorFace(options: { media?: HTMLVideoElement } = {}) {
   let connected: (() => void) | null = null;
   let failed: ((error: Error) => void) | null = null;
-  let lost: (() => void) | null = null;
+  let lost: ((loss: FaceLoss) => void) | null = null;
   const renderer: FaceRenderer = { ready: () => true, render: () => () => undefined };
   const stream = { getTracks: () => [] } as unknown as MediaStream;
   const provider = {
@@ -80,7 +80,7 @@ function vendorFace(options: { media?: HTMLVideoElement } = {}) {
     video: () => stream,
     media: () => options.media ?? null,
     renderer: () => renderer,
-    onLost: (listener: () => void) => {
+    onLost: (listener: (loss: FaceLoss) => void) => {
       lost = listener;
       return () => {
         lost = null;
@@ -97,8 +97,8 @@ function vendorFace(options: { media?: HTMLVideoElement } = {}) {
     fail: () => {
       failed?.(new Error('refused'));
     },
-    lose: () => {
-      lost?.();
+    lose: (loss: FaceLoss = { reason: 'video_ended' }) => {
+      lost?.(loss);
     },
   };
 }
@@ -109,7 +109,7 @@ function deps(face: ReturnType<typeof vendorFace>, session: AvatarSessionRespons
     startSession: vi.fn((_venture: string, _call: string, _signal: AbortSignal) => Promise.resolve(session)),
     loadProvider: vi.fn(() => Promise.resolve(face.provider as AvatarProvider)),
     relayFor: vi.fn((_callId: string) => relay),
-    endFace: vi.fn((_callId: string) => Promise.resolve()),
+    endFace: vi.fn((_callId: string, _loss: FaceLoss) => Promise.resolve()),
     connectTimeoutMs: 8_000,
   } satisfies CallFaceDeps;
 }
@@ -315,13 +315,17 @@ describe('CallStage: the face of a call', () => {
     });
     await screen.findByRole('figure');
     act(() => {
-      face.lose();
+      face.lose({ reason: 'vendor_stopped', vendorReason: 'session_timeout' });
     });
     await presenceShown();
     expect(engine.attachFace).toHaveBeenLastCalledWith(null);
     expect(engine.setFaceShown).toHaveBeenLastCalledWith(false);
     expect(face.provider.unmount).toHaveBeenCalled();
-    expect(faceDeps.endFace).toHaveBeenCalledWith(CALL);
+    // The server is told which trigger ended the face (audited with its end).
+    expect(faceDeps.endFace).toHaveBeenCalledWith(CALL, {
+      reason: 'vendor_stopped',
+      vendorReason: 'session_timeout',
+    });
     expect(onVideoChange).toHaveBeenLastCalledWith(false);
     // Never asked for again in this call.
     renderWithRouter(stage({ controller, engine: asEngine }));
@@ -363,7 +367,7 @@ describe('CallStage: the face of a call', () => {
       blocked: { reason: 'crisis_support', message: 'Support is available.', resources: [] } as never,
     });
     expect(b.controller.getSnapshot().status).toBe('presence');
-    expect(b.faceDeps.endFace).toHaveBeenCalledWith(CALL);
+    expect(b.faceDeps.endFace).toHaveBeenCalledWith(CALL, { reason: 'crisis' });
   });
 
   it('gives the face up when the call stays on hold (the vendor bills idle faces); a short hold keeps it', async () => {
@@ -390,7 +394,7 @@ describe('CallStage: the face of a call', () => {
     await waitFor(() => {
       expect(controller.getSnapshot().status).toBe('presence');
     });
-    expect(faceDeps.endFace).toHaveBeenCalledWith(CALL);
+    expect(faceDeps.endFace).toHaveBeenCalledWith(CALL, { reason: 'on_hold' });
     expect(face.provider.unmount).toHaveBeenCalled();
   });
 
@@ -418,7 +422,7 @@ describe('CallStage: the face of a call', () => {
       expect(refused.provider.unmount).toHaveBeenCalled();
     });
     expect(screen.queryByRole('figure')).not.toBeInTheDocument();
-    expect(b.faceDeps.endFace).toHaveBeenCalledWith(CALL);
+    expect(b.faceDeps.endFace).toHaveBeenCalledWith(CALL, { reason: 'connect_failed' });
   });
 
   it('gives up on a face that shows no frame in time, cancelling its join', async () => {
@@ -438,6 +442,7 @@ describe('CallStage: the face of a call', () => {
     await presenceShown();
     expect(screen.queryByRole('figure')).not.toBeInTheDocument();
     expect(fake.engine.attachFace).not.toHaveBeenCalledWith(slow.renderer);
+    expect(faceDeps.endFace).toHaveBeenCalledWith(CALL, { reason: 'connect_timeout' });
   });
 
   it('asks for no face before the call is live, and closes the face when the call ends', async () => {

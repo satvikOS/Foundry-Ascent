@@ -5,6 +5,7 @@ import type {
   AvatarMountOptions,
   AvatarProvider,
   AvatarState,
+  FaceLoss,
   FaceRelay,
   SpokenUnit,
 } from '../avatar';
@@ -89,7 +90,7 @@ export class FakeFaceAvatar implements AvatarProvider {
   private state: AvatarState = 'connecting';
   private mouth = 0;
   private target = 0;
-  private readonly lostListeners = new Set<() => void>();
+  private readonly lostListeners = new Set<(loss: FaceLoss) => void>();
   private relay: FaceRelay | null = null;
   private readonly face: FaceRenderer = {
     ready: () => this.live,
@@ -139,7 +140,7 @@ export class FakeFaceAvatar implements AvatarProvider {
           this.stream = stream;
           for (const track of stream.getVideoTracks()) {
             track.addEventListener('ended', () => {
-              this.lose();
+              this.lose({ reason: 'video_ended' });
             });
           }
           this.live = true;
@@ -162,7 +163,7 @@ export class FakeFaceAvatar implements AvatarProvider {
     return this.face;
   }
 
-  onLost(listener: () => void): () => void {
+  onLost(listener: (loss: FaceLoss) => void): () => void {
     this.lostListeners.add(listener);
     return () => {
       this.lostListeners.delete(listener);
@@ -172,7 +173,7 @@ export class FakeFaceAvatar implements AvatarProvider {
   /** Development control: the vendor drops mid-call (its video ends); the call goes on with the presence. */
   drop(): void {
     for (const track of this.stream?.getTracks() ?? []) track.stop();
-    this.lose();
+    this.lose({ reason: 'video_ended' });
   }
 
   unmount(): void {
@@ -247,11 +248,11 @@ export class FakeFaceAvatar implements AvatarProvider {
     };
   }
 
-  private lose(): void {
+  private lose(loss: FaceLoss): void {
     if (!this.live) return;
     this.live = false;
     this.stopLoop();
-    for (const listener of [...this.lostListeners]) listener();
+    for (const listener of [...this.lostListeners]) listener(loss);
   }
 
   private release(): void {

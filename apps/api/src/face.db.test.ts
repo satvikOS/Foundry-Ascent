@@ -221,8 +221,24 @@ describe('the digital twin over HTTP', () => {
     );
     expect(beat).toMatchObject({ action: 'continue', face: 'stop' });
     expect(face.ended.at(-1)?.reason).toBe('face_stopped');
-    // Idempotent: a face already gone ends again quietly.
+    // Idempotent: a face already gone ends again quietly, with or without the page's reason.
     expect((await api.request(`/calls/${callId}/face/end`, { body: {}, cookie: maya })).status).toBe(204);
+    expect(
+      (
+        await api.request(`/calls/${callId}/face/end`, {
+          body: { reason: 'video_unsubscribed' },
+          cookie: maya,
+        })
+      ).status,
+    ).toBe(204);
+    // A reason outside the contract is refused (it is audited, so never free text).
+    await problem(
+      await api.request(`/calls/${callId}/face/end`, {
+        body: { reason: 'whatever', vendorReason: 'two words' },
+        cookie: maya,
+      }),
+      422,
+    );
     expect(
       (await api.request(`/calls/${callId}/end`, { body: { reason: 'user' }, cookie: maya })).status,
     ).toBe(200);

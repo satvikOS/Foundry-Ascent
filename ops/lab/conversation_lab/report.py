@@ -405,6 +405,9 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
             f"published {call.get('audio_senders')}; user.transcription events {call.get('user_transcriptions')}"
         )
         out.append(
+            f"- Avatar audio and video in one remote stream (WebRTC lip sync applies): {call.get('av_same_stream')}"
+        )
+        out.append(
             f"- Session end: presence back {fallback.get('presence_back')} after {fallback.get('seconds_live')} s "
             f"live, end_reason {fallback.get('end_reason')}, typed line still editable "
             f"{fallback.get('typed_line_editable')}"

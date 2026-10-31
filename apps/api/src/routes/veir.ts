@@ -1,5 +1,6 @@
 import {
   AvatarSessionRequest,
+  FaceEndRequest,
   FaceSayRequest,
   SpeechRequest,
   UpdateNotebookRequest,
@@ -94,11 +95,12 @@ export function registerVeirRoutes(r: RouteBuilder, core: Core): void {
     },
     { idempotency: 'none' },
   );
-  // The browser stopped showing the face (it dropped): the vendor session ends, so it stops billing.
+  // The browser stopped showing the face (it dropped): the vendor session ends, so it stops billing. The body says
+  // why (optional; audited with the face's end).
   r.post(
     '/calls/:id/face/end',
     async (c, ctx) => {
-      await core.face.drop(ctx, pathParam(c, 'id'));
+      await core.face.drop(ctx, pathParam(c, 'id'), jsonBody(c, FaceEndRequest));
       return c.body(null, 204);
     },
     { idempotency: 'none' },

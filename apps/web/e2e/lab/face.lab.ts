@@ -119,6 +119,25 @@ interface FaceLab {
   injected: { at: number; text: string }[];
   injectNext: boolean;
   level: number;
+  /**
+   * Each remote track the page received and the id of the remote stream it came in (the RTCTrackEvent's
+   * `streams[0]`, LiveKit's `participantSid|streamName`): WebRTC keeps an audio and a video track in step only when
+   * they share one. Ids stay in the page; the result carries only whether they matched.
+   */
+  remoteTracks: { kind: string; stream: string | null }[];
+}
+
+/**
+ * Whether the page's remote audio and video arrived in one remote stream: true when an audio and a video track share
+ * a stream id, false when both kinds came but never together, null when one kind is missing (nothing to compare).
+ */
+function sameStream(tracks: readonly { kind: string; stream: string | null }[]): boolean | null {
+  const ids = (kind: string) =>
+    new Set(tracks.filter((t) => t.kind === kind && t.stream !== null).map((t) => t.stream));
+  const audio = ids('audio');
+  const video = ids('video');
+  if (audio.size === 0 || video.size === 0) return null;
+  return [...audio].some((id) => video.has(id));
 }
 
 /**
@@ -145,6 +164,7 @@ function faceLabInit(): void {
     injected: [],
     injectNext: false,
     level: 0,
+    remoteTracks: [],
   };
   (window as unknown as { __faceLab: FaceLab }).__faceLab = lab;
   const decoder = new TextDecoder('utf-8', { fatal: false });
@@ -317,6 +337,7 @@ function faceLabInit(): void {
         tapChannel(event.channel);
       });
       this.addEventListener('track', (event: RTCTrackEvent) => {
+        lab.remoteTracks.push({ kind: event.track.kind, stream: event.streams[0]?.id ?? null });
         if (event.track.kind === 'audio') tapAudio(event.track);
       });
     }
@@ -1195,6 +1216,8 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
       result.mic_requests_after_live = lab.mic.length - micAtLive;
       result.audio_senders = lab.audioSenders;
       result.user_transcriptions = inEvents(lab, 'user.transcription').length;
+      // Whether the avatar's voice and video arrive in one remote stream (WebRTC's lip sync), runbook §8.5.
+      result.av_same_stream = sameStream(lab.remoteTracks);
       // The sandbox ends the session by itself (about a minute): the call goes on with the presence, quietly. The
       // stand-in never ends by itself: in the dry run its video track is ended instead (a dropped face).
       if (FACE !== 'heygen') {
