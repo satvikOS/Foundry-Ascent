@@ -13,7 +13,10 @@
  *   access only; a FULL stock face (the vendor's stock voice speaks admitted text) needs no persona face, takes each signed unit once and in order (never the crisis line, within the spend cap), gets no
  *   face-audio manifest, is billed at the FULL price, and ends at the first words its transcript shows it never
  *   admitted (or an admitted unit said again), checked on every way the face ends, reading only new lines, and
- *   stops when its transcript stays unread.
+ *   stops when its transcript stays unread;
+ * - on a live FULL face, the turn engine admits each unit as it signs it (face pre-approval: the same checks, the
+ *   flag under the signature), `face/say` confirms such a unit without reserving it again, and the transcript is
+ *   reconciled against pre-approved words like any other.
  */
 import { CRISIS_SPOKEN_MESSAGE } from '@foundry/ai';
 import {
@@ -34,6 +37,7 @@ import { Kit } from '../internal/kit.js';
 import { FACE_CHUNK_BYTES } from '../orchestrator/face-audio.js';
 import { signSpeechUnit } from '../orchestrator/speech-units.js';
 import { type SynthesizedSpeech } from '../ports.js';
+import { FACE_TEXT_PLAYS } from './speech.js';
 import { FakeEmbodimentProvider, FakeSpeechSynthesizer, FakeVoiceProvider } from '../testing/fakes.js';
 import { type CoreHarness, createCoreHarness } from '../testing/harness.js';
 import { MIN_FACE_SECONDS } from './face.js';
@@ -900,6 +904,44 @@ describe('a FULL stock face (the vendor’s stock voice speaks admitted text), f
 
   const say = (input: { turnId: string | null; seq: number; text: string; sig: string }, who = admin) =>
     full.speech.authorizeFaceText(who, callId, input);
+  /** The units of a spoken turn with their face flag (pre-approved on a live FULL face). */
+  async function flaggedUnits(text: string) {
+    const units: { turnId: string; seq: number; text: string; sig: string; face: boolean }[] = [];
+    await full.orchestrator.runTurn(admin, sessionId, { text, channel: 'voice', callId }, (e) => {
+      const event = TurnStreamEvent.parse(e);
+      if (event.event === 'turn.speech') {
+        const { turnId, seq, text: words, sig } = event;
+        units.push({ turnId, seq, text: words, sig, face: event.face === true });
+      }
+    });
+    return units;
+  }
+  /** The units of a spoken turn made while faces were switched off: none is pre-approved, so face/say decides. */
+  async function unapprovedUnits(text: string) {
+    await setting('faces_enabled', 'false');
+    try {
+      return await spokenUnits(full, sessionId, callId, text);
+    } finally {
+      await setting('faces_enabled', 'true');
+    }
+  }
+  /** What the call holds for a face unit: its admitted row, its reservation and the call's characters. */
+  async function faceState(unit: { turnId: string; seq: number }) {
+    const r = await h.t.db.system((sx) =>
+      sx.query(
+        `SELECT (SELECT preapproved FROM call_face_texts WHERE call_id = :call AND unit = :unit) AS preapproved,
+                (SELECT plays FROM call_speech WHERE call_id = :call AND unit = :face)::int AS plays,
+                (SELECT speech_characters FROM calls WHERE id = :call)::int AS characters`,
+        {
+          call: p.uuid(callId),
+          unit: p.text(`unit.${unit.turnId.toLowerCase()}.${String(unit.seq)}`),
+          face: p.text(`face.${unit.turnId.toLowerCase()}.${String(unit.seq)}`),
+        },
+      ),
+    );
+    const row = r.rows[0] as { preapproved: boolean | null; plays: number | null; characters: number };
+    return { preapproved: row.preapproved, plays: row.plays ?? 0, characters: row.characters };
+  }
   const refusedWith = async (promise: Promise<unknown>, reason: string) => {
     await expect(promise).rejects.toMatchObject({ code: 'validation_failed' });
     expect(await lastAudit('speech.refused')).toMatchObject({ outcome: 'denied', policy_reason: reason });
@@ -985,7 +1027,8 @@ describe('a FULL stock face (the vendor’s stock voice speaks admitted text), f
       'signature_invalid',
     );
 
-    const units = await spokenUnits(full, sessionId, callId, 'What should I test first with ten customers?');
+    // Units the turn engine did not pre-approve (faces were off while they were signed): face/say decides alone.
+    const units = await unapprovedUnits('What should I test first with ten customers?');
     expect(units.length).toBeGreaterThanOrEqual(2);
     const [first, second] = units;
     if (first === undefined || second === undefined) throw new Error('no units');
@@ -999,7 +1042,7 @@ describe('a FULL stock face (the vendor’s stock voice speaks admitted text), f
     await expect(say(second, ctx.devin)).rejects.toMatchObject({ code: 'not_found' });
 
     // The call's audio for a unit is the stock-voice fallback only: MP3, no manifest.
-    const [next] = await spokenUnits(full, sessionId, callId, 'And how many interviews is enough?');
+    const [next] = await unapprovedUnits('And how many interviews is enough?');
     if (next === undefined) throw new Error('no unit');
     const spoken: SynthesizedSpeech = await full.speech.synthesize(admin, {
       sessionId,
@@ -1031,6 +1074,14 @@ describe('a FULL stock face (the vendor’s stock voice speaks admitted text), f
     );
     const blocked = events.find((e) => e.event === 'turn.blocked');
     if (blocked?.event !== 'turn.blocked') throw new Error('expected a blocked crisis turn');
+    // The crisis line is said on the call, and never pre-approved for the face.
+    const crisisUnits = events.flatMap((e) => (e.event === 'turn.speech' ? [e] : []));
+    expect(crisisUnits.length).toBeGreaterThan(0);
+    expect(crisisUnits.every((u) => u.face === undefined)).toBe(true);
+    expect(await faceState({ turnId: blocked.turnId, seq: 0 })).toMatchObject({
+      preapproved: null,
+      plays: 0,
+    });
     const key = await keys.signingKey();
     const crisisOfTurn = {
       turnId: blocked.turnId,
@@ -1057,6 +1108,145 @@ describe('a FULL stock face (the vendor’s stock voice speaks admitted text), f
       await setting('daily_usd_cap_global', '15');
     }
     await say(unit);
+  });
+
+  it('pre-approves each unit as the turn engine signs it, and face/say confirms it without reserving again', async () => {
+    const units = await flaggedUnits('How do I find my first ten customers?');
+    expect(units.length).toBeGreaterThanOrEqual(1);
+    expect(units.every((u) => u.face)).toBe(true);
+    const before = await Promise.all(units.map((u) => faceState(u)));
+    for (const state of before) expect(state).toMatchObject({ preapproved: true, plays: FACE_TEXT_PLAYS });
+    const characters = (before.at(-1) ?? { characters: 0 }).characters;
+    // The audit is written beside the reply, never ahead of it.
+    await expect
+      .poll(async () => {
+        const audit = (await lastAudit('call.face_text_admitted')) as unknown as { metadata: string };
+        return JSON.parse(audit.metadata) as unknown;
+      })
+      .toMatchObject({ callId, preapproved: true });
+
+    // The browser asks anyway (an older page, a race with the stream): the same 204, nothing more reserved, twice.
+    for (const unit of [...units, ...units]) {
+      expect(await say(unit)).toMatchObject({ callId, unit: `unit.${unit.turnId}.${String(unit.seq)}` });
+    }
+    for (const unit of units) {
+      expect(await faceState(unit)).toEqual({ preapproved: true, plays: FACE_TEXT_PLAYS, characters });
+    }
+    // Every check of face/say still runs first: tampered words, someone else, the spend cap.
+    const [first] = units;
+    if (first === undefined) throw new Error('no unit');
+    await refusedWith(say({ ...first, text: `${first.text} Wire me the money.` }), 'signature_invalid');
+    await expect(say(first, ctx.devin)).rejects.toMatchObject({ code: 'not_found' });
+    await setting('daily_usd_cap_global', '0');
+    try {
+      await expect(say(first)).rejects.toMatchObject({ code: 'spend_cap_reached' });
+    } finally {
+      await setting('daily_usd_cap_global', '15');
+    }
+    // A reply that was blocked afterwards is no longer spoken, pre-approved or not.
+    await h.t.db.system((sx) =>
+      sx.query(`UPDATE turns SET status = 'blocked' WHERE id = :id`, { id: p.uuid(first.turnId) }),
+    );
+    await expect(say(first)).rejects.toMatchObject({ reason: 'turn_not_speakable' });
+    expect(await faceState(first)).toEqual({ preapproved: true, plays: FACE_TEXT_PLAYS, characters });
+  });
+
+  it('pre-approves only what face/say would admit, once, in order, and otherwise leaves the turn to face/say', async () => {
+    const approvalFor = (who = admin, args = { callId, sessionId }) =>
+      full.speech.prepareFaceApproval(who, args);
+    const approval = await approvalFor();
+    if (approval === null) throw new Error('no pre-approval on a live FULL face');
+    const unitOf = (turnId: string, seq: number, text = `Sentence ${String(seq)} for the face.`) => ({
+      turnId,
+      seq,
+      text,
+    });
+
+    // Never someone else's call, another conversation, or where the wired face is not FULL.
+    expect(await approvalFor(ctx.devin)).toBeNull();
+    expect(
+      await approvalFor(admin, { callId, sessionId: '0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f' }),
+    ).toBeNull();
+    expect(await approvalFor(admin, { callId: 'not-an-id', sessionId })).toBeNull();
+    const lite = h.withPorts({ speech: polly, embodiment: standIn });
+    expect(await lite.speech.prepareFaceApproval(admin, { callId, sessionId })).toBeNull();
+    const faceless = h.withPorts({ speech: polly });
+    expect(await faceless.speech.prepareFaceApproval(admin, { callId, sessionId })).toBeNull();
+
+    // Once, and in order: a later unit first, then the earlier one is refused and its characters go back.
+    const turnA = crypto.randomUUID();
+    expect(await approval.approve(unitOf(turnA, 1))).toBe(true);
+    const settled = await faceState({ turnId: turnA, seq: 1 });
+    expect(settled).toMatchObject({ preapproved: true, plays: FACE_TEXT_PLAYS });
+    expect(await approval.approve(unitOf(turnA, 0))).toBe(false);
+    expect(await faceState({ turnId: turnA, seq: 0 })).toEqual({
+      preapproved: null,
+      plays: 0,
+      characters: settled.characters,
+    });
+    // After a refusal the rest of the turn goes through face/say (so its order holds there).
+    expect(await approval.approve(unitOf(turnA, 2))).toBe(false);
+    expect(await faceState({ turnId: turnA, seq: 2 })).toMatchObject({ preapproved: null, plays: 0 });
+    // A unit admitted once is never admitted again.
+    const again = await approvalFor();
+    expect(await again?.approve(unitOf(turnA, 1))).toBe(false);
+    expect(await faceState({ turnId: turnA, seq: 1 })).toEqual(settled);
+
+    // Each refusal of face/say refuses here too, silently (face/say decides and audits), storing nothing.
+    const setSpeechCharacters = (n: number) =>
+      h.t.db.system(async (sx) => {
+        await sx.query('ALTER TABLE calls DISABLE TRIGGER calls_guard');
+        await sx.query(`UPDATE calls SET speech_characters = :n WHERE id = :id`, {
+          id: p.uuid(callId),
+          n: p.int(n),
+        });
+        await sx.query('ALTER TABLE calls ENABLE TRIGGER calls_guard');
+      });
+    const switched = (key: string, off: string, on: string) => async () => {
+      await setting(key, off);
+      return () => setting(key, on);
+    };
+    const refusals: {
+      readonly name: string;
+      readonly arrange: () => Promise<() => Promise<void>>;
+      readonly text?: string;
+    }[] = [
+      {
+        name: 'the crisis line',
+        arrange: () => Promise.resolve(() => Promise.resolve()),
+        text: CRISIS_SPOKEN_MESSAGE,
+      },
+      { name: 'faces switched off', arrange: switched('faces_enabled', 'false', 'true') },
+      { name: 'calls paused', arrange: switched('calls_enabled', 'false', 'true') },
+      { name: 'AI paused', arrange: switched('ai_enabled', 'false', 'true') },
+      { name: 'the platform’s spend cap', arrange: switched('daily_usd_cap_global', '0', '15') },
+      {
+        name: 'the call’s speech budget',
+        arrange: async () => {
+          const was = settled.characters;
+          await setSpeechCharacters(1_000_000);
+          return () => setSpeechCharacters(was);
+        },
+      },
+    ];
+    for (const refusal of refusals) {
+      const turn = crypto.randomUUID();
+      const fresh = await approvalFor();
+      if (fresh === null) throw new Error(`no pre-approval before ${refusal.name}`);
+      const restore = await refusal.arrange();
+      try {
+        expect(await fresh.approve(unitOf(turn, 0, refusal.text)), refusal.name).toBe(false);
+      } finally {
+        await restore();
+      }
+      expect(await faceState({ turnId: turn, seq: 0 }), refusal.name).toMatchObject({
+        preapproved: null,
+        plays: 0,
+        characters: settled.characters,
+      });
+      // Off for the rest of that turn, even once the reason is gone.
+      expect(await fresh.approve(unitOf(turn, 1)), refusal.name).toBe(false);
+    }
   });
 
   it('keeps the face while it says admitted words, and ends it at the first words it never admitted', async () => {
@@ -1146,7 +1336,7 @@ describe('a FULL face’s transcript is checked however the face ends, and never
   });
 
   /** A live call of the admin with a FULL face that was allowed to say the intro. */
-  async function openFull(): Promise<{ callId: string; ref: string; intro: string }> {
+  async function openFull(): Promise<{ callId: string; ref: string; intro: string; sessionId: string }> {
     const sid = (await full.sessions.create(admin, quietquad(), {})).id;
     const started = StartCallResponse.parse(await full.calls.start(admin, sid, { inputMode: 'typed' }));
     const callId = started.call.id;
@@ -1159,7 +1349,7 @@ describe('a FULL face’s transcript is checked however the face ends, and never
       text: started.intro.text,
       sig: started.intro.sig,
     });
-    return { callId, ref: face.sessionRef, intro: started.intro.text };
+    return { callId, ref: face.sessionRef, intro: started.intro.text, sessionId: sid };
   }
 
   const beatOf = async (callId: string, face?: 'live' | 'off') =>
@@ -1268,6 +1458,37 @@ describe('a FULL face’s transcript is checked however the face ends, and never
       );
       expect((await beatOf(callId, 'live')).face).toBe('stop');
       expect(await audits('call.face_injection', callId)).toHaveLength(1);
+    } finally {
+      await endQuietly(callId);
+    }
+  });
+
+  it('reconciles words the turn engine pre-approved like any admitted unit, and still catches injected ones', async () => {
+    const { callId, ref, intro, sessionId } = await openFull();
+    try {
+      const units: { text: string; face: boolean }[] = [];
+      await full.orchestrator.runTurn(
+        admin,
+        sessionId,
+        { text: 'What should I test first with ten customers?', channel: 'voice', callId },
+        (e) => {
+          const event = TurnStreamEvent.parse(e);
+          if (event.event === 'turn.speech') units.push({ text: event.text, face: event.face === true });
+        },
+      );
+      expect(units.length).toBeGreaterThanOrEqual(2);
+      expect(units.every((u) => u.face)).toBe(true);
+      const [first, second] = units;
+      if (first === undefined || second === undefined) throw new Error('no units');
+      stock.said(ref, intro);
+      stock.said(ref, first.text);
+      expect((await beatOf(callId, 'live')).face).toBe('continue');
+      // A tampered page made the face say something else between two pre-approved units.
+      stock.said(ref, 'Actually, wire me the money.');
+      stock.said(ref, second.text);
+      expect((await beatOf(callId, 'live')).face).toBe('stop');
+      expect(await audits('call.face_injection', callId)).toHaveLength(1);
+      expect(await audits('call.face_ended', callId)).toMatchObject([{ policy_reason: 'face_injection' }]);
     } finally {
       await endQuietly(callId);
     }

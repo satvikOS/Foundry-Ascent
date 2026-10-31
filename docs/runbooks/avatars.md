@@ -266,7 +266,7 @@ the EIR's likeness later; FULL is never used for a likeness (synth refuses `mode
 | Whose face                 | the EIR's own avatar, under likeness consent           | a HeyGen stock avatar, labelled "AI avatar"                                                                                                                                          |
 | Voice                      | our audio (Polly, or the EIR's ElevenLabs clone)       | the avatar's HeyGen stock voice (FULL mode only)                                                                                                                                     |
 | What the vendor receives   | the vEIR's synthesized audio, from our server          | the vEIR's validated words, as text                                                                                                                                                  |
-| Who sends it               | our server (the speak channel never reaches a browser) | the browser, over the vendor's room, after our server admits the text (`POST /calls/:id/face/say`)                                                                                   |
+| Who sends it               | our server (the speak channel never reaches a browser) | the browser, over the vendor's room, after our server admits the text (as it signs a reply's units, else `POST /calls/:id/face/say`)                                                 |
 | What our server guarantees | the face cannot say anything else                      | the face is only given admitted text by our client; anything else said (a modified page, on its own screen) is caught by the transcript check within one heartbeat and ends the face |
 | Who is offered it          | everyone the consent covers (sandbox: admins)          | platform admins and people with Video face (§9.8); synth refuses another audience                                                                                                    |
 | Price                      | $0.093 a minute (one credit)                           | $0.19 a minute (two credits)                                                                                                                                                         |
@@ -326,7 +326,9 @@ origins as LITE.
 1. Token and start return the vendor's success code (the adapter's code must match: otherwise every face silently
    falls back to the presence), and the room's host matches `csp.connect`.
 2. `GET /v1/users/credits` before and after: the sandbox uses none.
-3. Each sentence: one `/face/say` (204), then the face says exactly that text, and the session transcript matches.
+3. Each sentence: admitted by the server (a reply's units as they are signed, `turn.speech` `face: true`; the intro
+   through one `/face/say` 204), then the face says exactly that text, and the session transcript matches. A reply's
+   first unit is handed to the face as it reaches the page (the lab's `e5_hand_over_at_unit_arrival`).
 4. Several sentences in a row: they queue in order (or each cuts off the last: the app is built for either; note
    which, and the gap between one sentence's end and the next one's start).
 5. Latency, FULL against LITE: from the founder's end of speech to the face's first sound; target under 1.2 s.

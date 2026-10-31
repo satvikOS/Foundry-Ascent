@@ -89,13 +89,15 @@ export function createCore(deps: CoreDeps): Core {
   };
   const faceHooks = createFaceHooks(kit);
   const face = createFaceService(kit, speechKeys, faceHooks);
+  const speech = createSpeechService(kit, speechKeys);
   return {
     auth,
     me: createMeService(kit),
     ventures: createVenturesService(kit, directory),
     sessions: createSessionsService(kit, directory),
-    // One key cache signs the turn engine's speech units and verifies them for calls and /speech.
-    orchestrator: createOrchestrator(kit, directory, { speechKeys }),
+    // One key cache signs the turn engine's speech units and verifies them for calls and /speech. A spoken turn on
+    // a call with a live FULL face admits each unit to the face as it signs it (the speech service's checks).
+    orchestrator: createOrchestrator(kit, directory, { speechKeys, facePreapproval: speech }),
     testBench: createTestBench(kit, directory),
     memory: createMemoryService(kit),
     documents: createDocumentsService(kit),
@@ -112,7 +114,7 @@ export function createCore(deps: CoreDeps): Core {
     notebook: createNotebookService(kit, directory),
     veir: createVeirService(kit, face),
     calls: createCallsService(kit, directory, speechKeys, distill, faceHooks),
-    speech: createSpeechService(kit, speechKeys),
+    speech,
     face,
     twin: createTwinService(kit),
     personas: createPersonaManagementService(kit, directory),

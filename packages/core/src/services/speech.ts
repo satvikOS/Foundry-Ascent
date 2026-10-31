@@ -8,7 +8,8 @@ import { requireAssignmentActive, requireVentureAccess } from '../authz/venture-
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { requireId, type AuditEvent, type Kit, type RequestScope } from '../internal/kit.js';
-import { enforceSpendCaps, readSpendState } from '../orchestrator/guards.js';
+import { type FaceApproval } from '../orchestrator/generate.js';
+import { enforceSpendCaps, readSpendState, spendCapExceeded } from '../orchestrator/guards.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 import {
   FACE_SAMPLE_RATE,
@@ -161,6 +162,22 @@ export interface SpeechService {
     callId: string,
     input: z.input<typeof FaceSayRequest>,
   ): Promise<VerifiedFaceText>;
+  /**
+   * Face pre-approval for one spoken turn of the caller's live call `callId` in conversation `sessionId`, read once
+   * when the turn starts: null unless the call has a live FULL face of the wired provider (then nothing changes: a
+   * LITE face, Polly alone, or a face that joins later takes the units as before). Otherwise the turn engine offers
+   * it each signed unit as it is produced, and `approve` admits it with the checks `authorizeFaceText` makes, in the
+   * same order: never the crisis line; the kill switches and faces on; the platform's daily spend cap; the call's
+   * speech budget (`reserveCallSpeech`, once per unit); each unit once and in order (`twinRepo.admitFaceText`,
+   * marked pre-approved), storing its salted digests for the transcript check. A unit it does not admit is left to
+   * `face/say`, which decides (and audits) it; after the first one, nothing more of the turn is pre-approved, so
+   * the units the browser still asks for keep their order. Blocked and failed turns never reach it: their units are
+   * never sent (the crisis path is not offered to it). Never throws.
+   */
+  prepareFaceApproval(
+    ctx: RequestContext,
+    args: { readonly callId: string; readonly sessionId: string },
+  ): Promise<FaceApproval | null>;
 }
 
 interface SpeechPlan {
@@ -929,8 +946,26 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           }),
         { transaction: false },
       );
+      const unit = callsRepo.speechUnitKey(
+        turnId === null ? { kind: 'intro' } : { kind: 'unit', turnId, seq: input.seq },
+      );
+      // The words the browser says (speakable), and the signed words when they differ.
+      const digests = faceTextDigests(call.id, text, input.text);
       if (!reservation.ok) {
         if (reservation.reason === 'already_played') {
+          // Pre-approved as the turn engine signed it (the browser asks anyway: an older page, or a race with the
+          // stream): the same answer again, with nothing more reserved or stored. Anything else was said once.
+          const preapproved = await kit.system(
+            (sx) =>
+              twinRepo.preapprovedFaceText(sx, {
+                callId: call.id,
+                sessionRef: face.sessionRef,
+                unit,
+                digests: digests.digests,
+              }),
+            { transaction: false },
+          );
+          if (preapproved) return { callId: call.id, unit, text } as unknown as VerifiedFaceText;
           return refuseText(ctx, call.ventureId, turnId, 'already_shown');
         }
         const error = speechRefusal(reservation.reason, false, kit.now());
@@ -947,11 +982,6 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
         ]);
         throw error;
       }
-      const unit = callsRepo.speechUnitKey(
-        turnId === null ? { kind: 'intro' } : { kind: 'unit', turnId, seq: input.seq },
-      );
-      // The words the browser says (speakable), and the signed words when they differ.
-      const digests = faceTextDigests(call.id, text, input.text);
       const admitted = await kit.system(
         (sx) =>
           twinRepo.admitFaceText(sx, {
@@ -982,5 +1012,136 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
       ]);
       return { callId: call.id, unit, text } as unknown as VerifiedFaceText;
     },
+
+    prepareFaceApproval: async (ctx, args) => {
+      const provider = kit.deps.embodiment;
+      if (provider?.mode !== 'full') return null;
+      try {
+        const callId = requireId(args.callId, 'Call');
+        const { call, face } = await kit.system(
+          async (sx) => ({
+            call: await callsRepo.getCall(sx, callId),
+            face: await twinRepo.getCallFace(sx, callId),
+          }),
+          { transaction: false },
+        );
+        if (
+          call?.startedBy !== ctx.principalId ||
+          call.status !== 'live' ||
+          call.sessionId.toLowerCase() !== args.sessionId.toLowerCase() ||
+          face?.endedAt !== null ||
+          face.mode !== 'full' ||
+          face.vendor !== provider.id
+        ) {
+          return null;
+        }
+        return faceApproval(ctx, call, face.sessionRef);
+      } catch (err) {
+        logger.warn('call.face_preapproval_unavailable', {
+          requestId: ctx.requestId,
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+        return null;
+      }
+    },
   };
+
+  /** The pre-approval of one turn's units for the live FULL face `sessionRef` of `call` (`prepareFaceApproval`). */
+  function faceApproval(ctx: RequestContext, call: callsRepo.CallRecord, sessionRef: string): FaceApproval {
+    // After a unit it did not admit, the rest of the turn goes through face/say, in order.
+    let off = false;
+    const approve = async (input: {
+      readonly turnId: string;
+      readonly seq: number;
+      readonly text: string;
+    }): Promise<boolean> => {
+      // Never the crisis line on a human-looking face.
+      if (isCrisisMessage(input.text)) return false;
+      const [settings, spend] = await Promise.all([
+        kit.system((sx) => settingsRepo.getPlatformSettings(sx), { transaction: false }),
+        readSpendState(kit, ctx, true),
+      ]);
+      if (!settings.aiEnabled || !settings.callsEnabled || !settings.facesEnabled) return false;
+      if (spendCapExceeded(spend, settings) !== null) return false;
+      const text = speakableText(input.text);
+      const faceUnit: callsRepo.SpeechUnitKey = { kind: 'face', turnId: input.turnId, seq: input.seq };
+      // Its characters count against the call's speech budget like any synthesis, once per unit.
+      const reservation = await kit.system(
+        (sx) =>
+          callsRepo.reserveCallSpeech(sx, {
+            callId: call.id,
+            principalId: ctx.principalId,
+            unit: faceUnit,
+            characters: text.length,
+            maxPlays: FACE_TEXT_PLAYS,
+            budget: speechBudget(settings),
+          }),
+        { transaction: false },
+      );
+      if (!reservation.ok) return false;
+      const unit = callsRepo.speechUnitKey({ kind: 'unit', turnId: input.turnId, seq: input.seq });
+      const digests = faceTextDigests(call.id, text, input.text);
+      const admitted = await kit.system(
+        (sx) =>
+          twinRepo.admitFaceText(sx, {
+            callId: call.id,
+            sessionRef,
+            unit,
+            turnKey: input.turnId.toLowerCase(),
+            seq: input.seq,
+            digests: digests.digests,
+            wholes: digests.wholes,
+            preapproved: true,
+          }),
+        { transaction: false },
+      );
+      if (!admitted) {
+        // Out of order, or the face ended meanwhile: its characters go back, and face/say decides.
+        await kit
+          .system(
+            (sx) =>
+              callsRepo.settleCallSpeech(sx, {
+                callId: call.id,
+                unit: faceUnit,
+                reservedCharacters: text.length,
+                characters: null,
+              }),
+            { transaction: false },
+          )
+          .catch(() => undefined);
+        return false;
+      }
+      // Recorded beside the reply, never ahead of it: the unit leaves the server as soon as it is admitted.
+      void kit
+        .flushDeferred(ctx, [
+          {
+            action: 'call.face_text_admitted',
+            outcome: 'succeeded',
+            ventureId: call.ventureId,
+            objectType: 'turn',
+            objectId: input.turnId,
+            metadata: { callId: call.id, seq: input.seq, characters: text.length, preapproved: true },
+          },
+        ])
+        .catch(() => undefined);
+      return true;
+    };
+    return {
+      approve: async (input) => {
+        if (off) return false;
+        let admitted = false;
+        try {
+          admitted = await approve(input);
+        } catch (err) {
+          logger.warn('call.face_preapproval_failed', {
+            requestId: ctx.requestId,
+            callId: call.id,
+            error: err instanceof Error ? err.name : 'unknown',
+          });
+        }
+        if (!admitted) off = true;
+        return admitted;
+      },
+    };
+  }
 }

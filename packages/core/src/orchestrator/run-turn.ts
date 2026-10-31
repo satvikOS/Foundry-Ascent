@@ -67,7 +67,7 @@ import {
 } from './continuity.js';
 import { renderLeftOffSection, type LeftOffData } from './continuity-prompt.js';
 import { candidateVisibility } from './evidence.js';
-import { generationTotals, SpeechStream } from './generate.js';
+import { type FaceApproval, generationTotals, SpeechStream } from './generate.js';
 import { assertWithinSpendCaps } from './guards.js';
 import { embedRetrievalQuery, privateRetrievalOwner, retrieveEvidence } from './retrieval.js';
 import { safetyScreenDue, screenIndirectIdeation } from './safety-screen.js';
@@ -126,6 +126,17 @@ export interface OrchestratorOptions {
   readonly admitVoiceTurn?: AdmitVoiceTurn;
   /** Key source for signed speech units; default the platform session-signing key. */
   readonly speechKeys?: { signingKey(): Promise<SessionSigningKey> };
+  /**
+   * Face pre-approval (the speech service): on a call whose FULL face is live, each signed unit of a spoken turn is
+   * admitted to the face as it is produced (docs/architecture/calls.md §4). Absent: every unit goes through
+   * `POST /calls/:id/face/say` as before.
+   */
+  readonly facePreapproval?: {
+    prepareFaceApproval(
+      ctx: RequestContext,
+      args: { readonly callId: string; readonly sessionId: string },
+    ): Promise<FaceApproval | null>;
+  };
 }
 
 const SAFE_INTERNAL = (cause: unknown): DomainError =>
@@ -219,6 +230,7 @@ export function createOrchestrator(
   const cfg = kit.config;
   const { logger } = kit.deps;
   const admitVoiceTurn = options.admitVoiceTurn ?? callsAdmission;
+  const facePreapproval = options.facePreapproval;
   const speechKeys =
     options.speechKeys ??
     new PlatformKeyCache(kit, Math.max(cfg.session.keyGraceSeconds, cfg.session.ttlSeconds));
@@ -593,13 +605,17 @@ export function createOrchestrator(
     }
   }
 
-  /** Signed `turn.speech` units of one voice turn (none once `signal`, the caller's, is aborted). */
+  /**
+   * Signed `turn.speech` units of one voice turn (none once `signal`, the caller's, is aborted), each admitted to the
+   * call's live FULL face as it is signed when `face` resolves to a pre-approval.
+   */
   function speechStream(
     ctx: RequestContext,
     ids: { readonly sessionId: string; readonly turnId: string },
     emit: (e: TurnStreamEvent) => Promise<void>,
     key: Promise<SessionSigningKey>,
     signal?: AbortSignal,
+    face: Promise<FaceApproval | null> | null = null,
   ): SpeechStream {
     return new SpeechStream(
       key,
@@ -609,6 +625,7 @@ export function createOrchestrator(
         logger.error('turn.speech_unsigned', fields);
       },
       signal,
+      { face },
     );
   }
 
@@ -710,6 +727,11 @@ export function createOrchestrator(
     /** Started while the turn was admitted. */
     readonly embedding: Promise<number[] | null> | null;
     readonly speechKey: Promise<SessionSigningKey> | null;
+    /**
+     * The call's FULL face pre-approval, started while the turn was admitted (null: not a spoken turn of a call, or
+     * no pre-approval wired). The crisis path never uses it: the crisis line never goes to a face.
+     */
+    readonly faceApproval: Promise<FaceApproval | null> | null;
     readonly emit: (e: TurnStreamEvent) => Promise<void>;
     readonly signal: AbortSignal | undefined;
     readonly startedAt: number;
@@ -840,6 +862,7 @@ export function createOrchestrator(
       guards: { eirNames, addressees, others },
       emit,
       speechKey: a.speechKey,
+      faceApproval: a.faceApproval,
       signal,
       startedAt: a.startedAt,
     });
@@ -877,7 +900,14 @@ export function createOrchestrator(
       stream?.speech ??
       (a.speechKey === null
         ? null
-        : speechStream(ctx, { sessionId: pre.session.id, turnId: turn.id }, emit, a.speechKey, signal));
+        : speechStream(
+            ctx,
+            { sessionId: pre.session.id, turnId: turn.id },
+            emit,
+            a.speechKey,
+            signal,
+            a.faceApproval,
+          ));
     // True as well when nothing was streamed (`stream` null).
     const writtenWhole = stream?.fallback !== null;
     if (speech !== null) {
@@ -1175,6 +1205,7 @@ export function createOrchestrator(
       let query: string;
       let embedding: Promise<number[] | null> | null = null;
       let speechKey: Promise<SessionSigningKey> | null = null;
+      let faceApproval: Promise<FaceApproval | null> | null = null;
       let crisis = false;
       try {
         const sessionId = requireId(rawSessionId, 'Session');
@@ -1212,6 +1243,12 @@ export function createOrchestrator(
         if (pre.channel === 'voice') {
           speechKey = speechKeys.signingKey();
           speechKey.catch(() => undefined); // a failure surfaces when a unit is signed
+          // The call's FULL face, read once for the turn (a face that joins later takes its units via face/say).
+          if (!crisis && parsed.callId !== undefined && facePreapproval !== undefined) {
+            faceApproval = facePreapproval
+              .prepareFaceApproval(ctx, { callId: parsed.callId, sessionId: session.id })
+              .catch(() => null);
+          }
         }
         const turnMode = pre.turnMode;
         let channel = pre.channel;
@@ -1266,6 +1303,7 @@ export function createOrchestrator(
         if (channel !== pre.channel) {
           pre = { ...pre, channel };
           speechKey = null;
+          faceApproval = null;
         }
         // The query embedding starts once the turn is admitted (a refused request buys no model call) and
         // overlaps the accepted and classifying events. A message the safety screen will read waits for its verdict
@@ -1306,6 +1344,7 @@ export function createOrchestrator(
           query,
           embedding,
           speechKey,
+          faceApproval,
           emit,
           signal: options.signal,
           startedAt,

@@ -13,6 +13,13 @@ import { type VerifiedSpeechUnit } from '../ports.js';
  * The HMAC key is derived (HKDF-SHA256) from the platform session-signing key with its own label, so a speech
  * signature can never stand in for a session token and vice versa. Signatures carry the signing key's id so
  * verification keeps working through a key rotation (the grace window of the session keys).
+ *
+ * A unit the turn engine admitted to the call's live FULL face as it signed it (face pre-approval,
+ * docs/architecture/calls.md §4) carries `face: true`, and its signature covers that flag (`|face` after the
+ * text): nobody without the key can mark a unit as admitted to the face, and the same words signed without the
+ * flag do not verify with it. Requests that hand a unit back (`POST /speech`, `face/say`, the heard units) do
+ * not say which form they hold, so with `face` left out either form verifies: a pre-approval grants nothing on
+ * the server, whose record of what a face may say is the admitted units (`call_face_texts`).
  */
 
 const HKDF_INFO = 'foundry-ascent/speech-unit/v1';
@@ -24,6 +31,11 @@ export interface SpeechUnitClaims {
   readonly turnId: string | null;
   readonly seq: number;
   readonly text: string;
+  /**
+   * Admitted to the call's FULL face as it was signed. Signing: covered by the signature when true. Verifying:
+   * true or false accepts only that form; left out, either.
+   */
+  readonly face?: boolean;
 }
 
 function unitKey(key: SessionSigningKey): Buffer {
@@ -31,9 +43,14 @@ function unitKey(key: SessionSigningKey): Buffer {
 }
 
 function message(claims: SpeechUnitClaims): string {
-  return [claims.sessionId, claims.turnId ?? 'intro', String(claims.seq), claims.text.normalize('NFC')].join(
-    '|',
-  );
+  const parts = [
+    claims.sessionId,
+    claims.turnId ?? 'intro',
+    String(claims.seq),
+    claims.text.normalize('NFC'),
+  ];
+  if (claims.face === true) parts.push('face');
+  return parts.join('|');
 }
 
 function mac(key: SessionSigningKey, claims: SpeechUnitClaims): Buffer {
@@ -66,8 +83,13 @@ export function verifySpeechUnit(
   } catch {
     return false;
   }
-  const expected = mac(key, claims);
-  return given.length === expected.length && timingSafeEqual(given, expected);
+  const forms = claims.face === undefined ? [false, true] : [claims.face];
+  let ok = false;
+  for (const face of forms) {
+    const expected = mac(key, { ...claims, face });
+    if (given.length === expected.length && timingSafeEqual(given, expected)) ok = true;
+  }
+  return ok;
 }
 
 /**

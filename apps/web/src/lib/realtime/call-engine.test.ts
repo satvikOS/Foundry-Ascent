@@ -693,6 +693,31 @@ describe('CallEngine · replies', () => {
     ]);
   });
 
+  it('carries the server’s face pre-approval of a streamed unit to the player, and nothing else', async () => {
+    const h = setup({ grant: null });
+    await startLive(h);
+    h.engine.sendText('Hello');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      {
+        event: 'turn.speech',
+        turnId: TURN_ID,
+        seq: 0,
+        text: 'Admitted to the face.',
+        sig: SIG,
+        final: false,
+        face: true,
+      },
+      speech(1, 'Not admitted yet.', true),
+      completed(),
+    );
+    h.script.close();
+    await flush(20);
+    expect(h.speechRequests[0]).toMatchObject({ seq: 0, sig: SIG, faceApproved: true });
+    for (const unit of h.speechRequests.slice(1)) expect(unit).not.toHaveProperty('faceApproved');
+  });
+
   it('shows (never voices) the opening of a reply that has no spoken form', async () => {
     const h = setup({ grant: null });
     await startLive(h);

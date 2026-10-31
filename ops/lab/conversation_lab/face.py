@@ -60,6 +60,10 @@ EXPECTED_LIVEKIT_HOSTS = frozenset({"heygen-feapbkvq.livekit.cloud"})
 HEARTBEAT_SECONDS = 15
 #: The founder's end of turn to the face's first sound, the plan's target (E5).
 FIRST_AUDIO_TARGET_MS = 1200
+#: A FULL turn's first spoken unit reaching the page to its hand-over to the face (``avatar.speak_text``), at p50.
+#: The server pre-approves each unit as it signs it (docs/architecture/calls.md §4), so the page hands it over on
+#: arrival: no ``face/say`` round trip (lab runs 41226018170 and 41226813922 measured about 0.6 s of it) sits there.
+HAND_OVER_AFTER_UNIT_TARGET_MS = 250
 #: The vendor paths the public summary may name; anything else is counted as ``other``.
 VENDOR_PATHS = (
     "/v1/sessions/token",
@@ -89,10 +93,24 @@ COMPARISON_ROWS: tuple[tuple[str, str, str | None, str | None, str | None], ...]
         None,
     ),
     (
+        "first_unit_ms",
+        "Turn sent → first spoken unit arrives (turn.speech)",
+        "first_unit_ms",
+        "first_unit_ms",
+        "first_unit_ms",
+    ),
+    (
         "first_hand_over_ms",
         "Turn sent → first hand-over to the face (FULL speak_text, LITE face/speak)",
         "first_hand_over_ms",
         "first_hand_over_ms",
+        None,
+    ),
+    (
+        "unit_to_hand_over_ms",
+        "First unit arrives → its hand-over to the face (FULL: pre-approved, no face/say)",
+        "unit_to_hand_over_ms",
+        "unit_to_hand_over_ms",
         None,
     ),
     (
@@ -523,6 +541,9 @@ def _turns(raw: Any) -> list[dict[str, int | None]]:
             # POSTed to the server (and when the server answered it, having relayed it over the speak socket).
             "first_hand_over_ms": _int(t.get("firstHandOverMs")),
             "first_hand_over_done_ms": _int(t.get("firstHandOverDoneMs")),
+            # The turn's first spoken unit reaching the page, and from there to that hand-over.
+            "first_unit_ms": _int(t.get("firstUnitMs")),
+            "unit_to_hand_over_ms": _int(t.get("unitToHandOverMs")),
         }
         for t in raw
         if isinstance(t, dict)
@@ -565,8 +586,12 @@ def public_call(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
         "publish_to_started_ms": percentile_ms(_ints(units.get("publishToStartedMs"))),
         "publish_to_audio_ms": percentile_ms(_ints(units.get("publishToAudioMs"))),
         "first_hand_over_ms": _turn_percentile(turns, "first_hand_over_ms"),
+        "first_unit_ms": _turn_percentile(turns, "first_unit_ms"),
+        "unit_to_hand_over_ms": _turn_percentile(turns, "unit_to_hand_over_ms"),
         "speak_text_sent": _int(raw.get("speak_text_sent")),
         "say_requests": _int(raw.get("say_requests")),
+        "units_streamed": _int(raw.get("units_streamed")),
+        "units_preapproved": _int(raw.get("units_preapproved")),
         "app_playbacks_after_live": _int(raw.get("app_playbacks_after_live")),
         "mic_requests_after_live": _int(raw.get("mic_requests_after_live")),
         "audio_senders": _int(raw.get("audio_senders")),
@@ -610,6 +635,8 @@ def public_call_lite(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
         "first_speak_started_ms": _turn_percentile(turns, "first_speak_started_ms"),
         "first_hand_over_ms": _turn_percentile(turns, "first_hand_over_ms"),
         "first_hand_over_done_ms": _turn_percentile(turns, "first_hand_over_done_ms"),
+        "first_unit_ms": _turn_percentile(turns, "first_unit_ms"),
+        "unit_to_hand_over_ms": _turn_percentile(turns, "unit_to_hand_over_ms"),
         "hand_over_to_audio_ms": percentile_ms(_ints(units.get("handOverToAudioMs"))),
         "hand_over_to_started_ms": percentile_ms(_ints(units.get("handOverToStartedMs"))),
         "hand_over_to_done_ms": percentile_ms(_ints(units.get("handOverToDoneMs"))),
@@ -696,6 +723,7 @@ def public_polly(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
         "first_scheduled_ms": percentile_ms(
             [t["first_app_playback_ms"] for t in turns if t["first_app_playback_ms"] is not None]
         ),
+        "first_unit_ms": _turn_percentile(turns, "first_unit_ms"),
         "error": _error(raw.get("error")),
     }
 
@@ -716,6 +744,7 @@ def checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
     idle = probe.get("idle_end") or {}
     fallback = call.get("fallback") or {}
     first = call.get("first_face_audio_ms") or {}
+    hand_over = call.get("unit_to_hand_over_ms") or {}
     full_room = probe.get("full_room") or {}
     lite_room = probe.get("lite_room") or {}
 
@@ -740,6 +769,12 @@ def checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
         ),
         "e5_first_audio_under_target": (
             first.get("p50") is not None and first["p50"] <= FIRST_AUDIO_TARGET_MS if first else None
+        ),
+        # Face pre-approval: the page hands each turn's first unit to the face as it arrives (no face/say first).
+        "e5_hand_over_at_unit_arrival": (
+            hand_over.get("p50") is not None and hand_over["p50"] <= HAND_OVER_AFTER_UNIT_TARGET_MS
+            if hand_over
+            else None
         ),
         "e6_interrupt_clears_queue": interrupt.get("queue_cleared"),
         "e7_no_microphone": (

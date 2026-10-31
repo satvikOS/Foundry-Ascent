@@ -390,7 +390,9 @@ export async function sealFaceUtterance(sx: SystemExecutor, callId: string): Pro
  * is saying (`turnKey`, a higher `seq`), or the first unit the face takes of a reply (or the intro) it never said
  * before. So validated units reach the face only once each, never replayed or reordered, never resumed from a reply
  * it already left. `digests` (salted SHA-256 of the unit's normalized words and sentences, never the words) are
- * what the face's transcript is reconciled against. False when refused.
+ * what the face's transcript is reconciled against. `preapproved` marks a unit the turn engine admitted as it signed
+ * it (0020), which `POST /calls/:id/face/say` may then confirm again ({@link preapprovedFaceText}). False when
+ * refused.
  */
 export async function admitFaceText(
   sx: SystemExecutor,
@@ -405,6 +407,8 @@ export async function admitFaceText(
     /** The whole unit's digests first (`wholes` of them), then its sentences' (`faceTextDigests`). */
     readonly digests: readonly string[];
     readonly wholes: number;
+    /** Admitted by the turn engine as it signed the unit (0020); false (the default) for `face/say`. */
+    readonly preapproved?: boolean;
   },
 ): Promise<boolean> {
   const admitted = await queryFirst(
@@ -418,8 +422,8 @@ export async function admitFaceText(
                    AND NOT EXISTS (SELECT 1 FROM call_face_texts t
                                     WHERE t.call_id = f.call_id AND t.turn_key = :turn)))
         RETURNING f.call_id)
-     INSERT INTO call_face_texts (call_id, unit, turn_key, seq, digests, wholes)
-     SELECT face.call_id, :unit, :turn, :seq, :digests, :wholes FROM face
+     INSERT INTO call_face_texts (call_id, unit, turn_key, seq, digests, wholes, preapproved)
+     SELECT face.call_id, :unit, :turn, :seq, :digests, :wholes, :preapproved FROM face
      ON CONFLICT (call_id, unit) DO NOTHING
      RETURNING call_id`,
     {
@@ -430,10 +434,42 @@ export async function admitFaceText(
       seq: p.int(input.seq),
       digests: p.textArray(input.digests),
       wholes: p.int(input.wholes),
+      preapproved: p.bool(input.preapproved === true),
     },
     (r) => col.uuid.decode(r.call_id, 'call_id'),
   );
   return admitted !== null;
+}
+
+/**
+ * Whether the turn engine already admitted exactly these words as `unit` to the call's live FULL face
+ * (`sessionRef`): a unit it pre-approved, whose `digests` (the whole unit's and its sentences', as
+ * {@link admitFaceText} stored them) are the same. A unit `face/say` admitted itself is never one.
+ */
+export async function preapprovedFaceText(
+  sx: SystemExecutor,
+  input: {
+    readonly callId: string;
+    readonly sessionRef: string;
+    readonly unit: string;
+    readonly digests: readonly string[];
+  },
+): Promise<boolean> {
+  const found = await queryFirst(
+    sx,
+    `SELECT t.call_id FROM call_face_texts t
+       JOIN call_faces f ON f.call_id = t.call_id
+      WHERE t.call_id = :call AND t.unit = :unit AND t.preapproved AND t.digests = :digests
+        AND f.session_ref = :ref AND f.ended_at IS NULL AND f.mode = 'full'`,
+    {
+      call: p.uuid(input.callId),
+      ref: p.text(input.sessionRef),
+      unit: p.text(input.unit),
+      digests: p.textArray(input.digests),
+    },
+    (r) => col.uuid.decode(r.call_id, 'call_id'),
+  );
+  return found !== null;
 }
 
 /** A unit a FULL face was allowed to say: its digests, and what of it the transcript already showed said. */

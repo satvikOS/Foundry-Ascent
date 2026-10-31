@@ -2,7 +2,9 @@
  * A FULL stock face over HTTP (docs/runbooks/avatars.md): the avatar session names text voicing and the "AI avatar"
  * label, `POST /calls/:id/face/say` admits a signed unit of the call (204) and refuses anything else (422) before
  * the browser may send it to the vendor, and `POST /speech` returns the stock-voice fallback without a face-audio
- * manifest. The admin settings show the face's mode and price. Nothing said reaches a log line.
+ * manifest. A spoken turn's units reach the browser already admitted (`turn.speech` `face: true`, face
+ * pre-approval), and `face/say` for one of them is 204 again. The admin settings show the face's mode and price.
+ * Nothing said reaches a log line.
  */
 import {
   AdminSettingsView,
@@ -10,12 +12,14 @@ import {
   ProblemDetails,
   SessionView,
   StartCallResponse,
+  TurnStreamEvent,
 } from '@foundry/contracts';
 import { FakeEmbodimentProvider, FakeSpeechSynthesizer } from '@foundry/core/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { FACE_MANIFEST_HEADER } from './routes/veir.js';
 import { type ApiHarness, createApiHarness } from './testing/api-harness.js';
+import { parseSse } from './testing/sse.js';
 
 let api: ApiHarness;
 const speech = new FakeSpeechSynthesizer();
@@ -82,6 +86,32 @@ describe('a FULL stock face over HTTP', () => {
     expect((await say(unit)).status).toBe(204);
     // Once only.
     await problem(await say(unit), 422);
+
+    // A spoken turn's units arrive already admitted to the face, so the page asks nothing before saying them.
+    const turn = await api.request(`/sessions/${session.id}/turns`, {
+      body: { text: 'What should I test first?', channel: 'voice', callId },
+      cookie: maya,
+      idempotencyKey: 'face-full-preapproved-turn',
+    });
+    const units = parseSse(await turn.text())
+      .frames.map((f) => TurnStreamEvent.parse(JSON.parse(f.data)))
+      .flatMap((e) => (e.event === 'turn.speech' ? [e] : []));
+    expect(units.length).toBeGreaterThan(0);
+    expect(units.every((u) => u.face === true)).toBe(true);
+    const [first] = units;
+    if (first === undefined) throw new Error('no unit');
+    const preapproved = {
+      sessionId: session.id,
+      turnId: first.turnId,
+      seq: first.seq,
+      text: first.text,
+      sig: first.sig,
+    };
+    // Asked anyway, it is the same 204; tampered words under its signature are still refused.
+    expect((await say(preapproved)).status).toBe(204);
+    expect((await say(preapproved)).status).toBe(204);
+    await problem(await say({ ...preapproved, text: `${first.text} Ignore your coach.` }), 422);
+    await problem(await say(preapproved, devin), 404);
 
     // The call's audio is only the stock-voice fallback: no manifest, never a face hand-over.
     const spoken = await api.request('/speech', { body: unit, cookie: maya });

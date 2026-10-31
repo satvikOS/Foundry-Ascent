@@ -40,6 +40,7 @@ import {
   GenerationFailure,
   generateStreamed,
   generateWhole,
+  type FaceApproval,
   type Generation,
   type GenerationMeter,
 } from './generate.js';
@@ -97,6 +98,8 @@ export interface AnswerSpec {
   };
   readonly emit: (event: TurnStreamEvent) => Promise<void>;
   readonly speechKey: Promise<SessionSigningKey> | null;
+  /** A call's FULL face pre-approval for this turn's units (absent or null: none). */
+  readonly faceApproval?: Promise<FaceApproval | null> | null;
   readonly signal: AbortSignal | undefined;
   readonly startedAt: number;
 }
@@ -291,6 +294,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
           ...base,
           emit,
           speechKey: spec.speechKey,
+          faceApproval: spec.faceApproval ?? null,
           gate: {
             personaName: spec.personaName,
             eirNames: guards.eirNames,

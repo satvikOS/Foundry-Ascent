@@ -290,6 +290,13 @@ export const TurnStreamEvent = z.discriminatedUnion('event', [
      * marked final: `turn.completed` ends the turn.
      */
     final: z.boolean(),
+    /**
+     * Present (true) when the server already admitted this unit to the call's live FULL face as it signed it (face
+     * pre-approval, docs/architecture/calls.md §4): the browser hands it to the face at once, without
+     * `POST /calls/:id/face/say`. Covered by `sig`; set only by the server's stream. Additive: older clients ask
+     * `face/say`, which answers 204 for a pre-approved unit.
+     */
+    face: z.literal(true).optional(),
   }),
   z.object({ event: z.literal('turn.completed'), turn: TurnView }),
   z.object({

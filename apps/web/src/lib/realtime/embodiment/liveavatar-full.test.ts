@@ -179,6 +179,51 @@ describe.each(['queue', 'cut'] as const)('LiveAvatarFace FULL, with a vendor tha
   });
 });
 
+describe('LiveAvatarFace FULL: units the server pre-approved as it signed them', () => {
+  const approved = (seq: number, text?: string): SpeechUnitToPlay => ({
+    ...unit(seq, text),
+    faceApproved: true,
+  });
+
+  it('says a pre-approved unit at once, without asking the server, while the server still never answers', async () => {
+    const s = await setup('queue');
+    // A server that would never answer face/say: a pre-approved unit must not wait for it.
+    s.relay.say.mockImplementation(() => new Promise<void>(() => undefined));
+    s.player.enqueue(approved(0));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.relay.say).not.toHaveBeenCalled();
+    expect(s.room.published.filter((c) => c.eventType === 'avatar.speak_text').map((c) => c.text)).toEqual([
+      unit(0).text,
+    ]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(s.room.said).toEqual([unit(0).text]);
+    expect(s.fetchSpeech).not.toHaveBeenCalled();
+    expect(s.log).toEqual(['start 0 server', 'end 0 done', 'idle']);
+  });
+
+  it('asks the server only for the units it did not pre-approve, in order, one at a time to the vendor', async () => {
+    const s = await setup('cut');
+    // The intro (never pre-approved), then a reply whose first unit came before the face joined.
+    const units = [unit(0), approved(1), approved(2)];
+    for (const u of units) s.player.enqueue(u);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(s.relay.say.mock.calls.map(([u]) => u.seq)).toEqual([0]);
+    expect(s.room.said).toEqual(units.map((u) => u.text));
+    expect(s.room.cutOff).toEqual([]);
+    expect(s.fetchSpeech).not.toHaveBeenCalled();
+  });
+
+  it('a pre-approved unit the face does not start is silenced at the vendor, then spoken by the call', async () => {
+    const s = await setup('queue', { startDelayMs: 60_000 });
+    s.player.enqueue(approved(0));
+    await vi.advanceTimersByTimeAsync(3_200);
+    expect(s.relay.say).not.toHaveBeenCalled();
+    const interrupt = s.events.indexOf('vendor avatar.interrupt');
+    expect(interrupt).toBeGreaterThan(s.events.indexOf(`vendor avatar.speak_text ${unit(0).text}`));
+    expect(interrupt).toBeLessThan(s.events.indexOf('speakers fetch 0'));
+  });
+});
+
 describe('LiveAvatarFace FULL: when the face cannot say a unit', () => {
   it('silences the vendor first, then the call speaks the unit itself (two voices never overlap)', async () => {
     const s = await setup('queue', { startDelayMs: 60_000 });

@@ -277,13 +277,29 @@ def measured(private: Path) -> None:
                 "livekitHost": "heygen-feapbkvq.livekit.cloud",
             },
             "turns": [
-                {"firstSpeakStartedMs": 2100, "firstFaceAudioMs": 2180, "firstAppPlaybackMs": None},
-                {"firstSpeakStartedMs": 1900, "firstFaceAudioMs": None, "firstAppPlaybackMs": None},
+                {
+                    "firstSpeakStartedMs": 2100,
+                    "firstFaceAudioMs": 2180,
+                    "firstAppPlaybackMs": None,
+                    "firstUnitMs": 1300,
+                    "firstHandOverMs": 1340,
+                    "unitToHandOverMs": 40,
+                },
+                {
+                    "firstSpeakStartedMs": 1900,
+                    "firstFaceAudioMs": None,
+                    "firstAppPlaybackMs": None,
+                    "firstUnitMs": 1250,
+                    "firstHandOverMs": 1280,
+                    "unitToHandOverMs": 30,
+                },
                 {"firstSpeakStartedMs": 1000, "firstFaceAudioMs": 1150, "firstAppPlaybackMs": None},
             ],
             "units": {"publishToStartedMs": [600, 650, 700], "publishToAudioMs": [680, 720]},
             "speak_text_sent": 5,
-            "say_requests": 5,
+            "say_requests": 1,
+            "units_streamed": 4,
+            "units_preapproved": 4,
             "app_playbacks_after_live": 0,
             "mic_requests_after_live": 0,
             "audio_senders": 0,
@@ -382,6 +398,11 @@ def test_public_result_grades_every_sandbox_check_with_numbers_only(tmp_path: Pa
     assert checks["e2_no_credits_used"] is True
     assert checks["e3_speak_text_exact"] is True
     assert checks["e5_first_audio_under_target"] is True
+    # Pre-approved units are handed to the face as they arrive (no face/say round trip in between).
+    assert result["call"]["unit_to_hand_over_ms"] == {"p50": 30, "p95": 40, "n": 2}
+    assert result["call"]["first_unit_ms"] == {"p50": 1250, "p95": 1300, "n": 2}
+    assert (result["call"]["units_preapproved"], result["call"]["units_streamed"]) == (4, 4)
+    assert checks["e5_hand_over_at_unit_arrival"] is True
     assert checks["e9_lite_token_cannot_publish"] is True
     assert checks["e10_injection_ends_face_in_a_heartbeat"] is True
     assert checks["e11_max_duration_enforced"] is True
@@ -395,7 +416,25 @@ def test_public_result_grades_every_sandbox_check_with_numbers_only(tmp_path: Pa
     rendered = render(summary)
     assert "e10_injection_ends_face_in_a_heartbeat | pass" in rendered
     assert "e5_first_audio_under_target | pass" in rendered
+    assert "e5_hand_over_at_unit_arrival | pass" in rendered
+    assert "units pre-approved as signed 4 of 4" in rendered
     assert SAID not in rendered
+
+
+def test_the_hand_over_waits_for_nothing_after_the_unit_arrives(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    measured(private)
+    raw = json.loads((private / "face" / "call.json").read_text(encoding="utf-8"))
+    # A face/say round trip between the unit's arrival and its hand-over (the path before pre-approval).
+    raw["turns"] = [
+        {**turn, "unitToHandOverMs": 640} if "unitToHandOverMs" in turn else turn for turn in raw["turns"]
+    ]
+    write(private, "call", raw)
+    assert graded(private)["checks"]["e5_hand_over_at_unit_arrival"] is False
+    # Not measured (no unit reached the page in the window): not a failure.
+    raw["turns"] = [{k: v for k, v in turn.items() if k != "unitToHandOverMs"} for turn in raw["turns"]]
+    write(private, "call", raw)
+    assert graded(private)["checks"]["e5_hand_over_at_unit_arrival"] is None
 
 
 def test_nothing_but_numbers_and_codes_survives_from_the_private_files(tmp_path: Path) -> None:
@@ -830,11 +869,15 @@ def test_the_lite_arm_sits_beside_full_and_polly_without_changing_the_checks(tmp
     assert list(rows) == [
         "first_face_audio_ms",
         "first_speak_started_ms",
+        "first_unit_ms",
         "first_hand_over_ms",
+        "unit_to_hand_over_ms",
         "first_hand_over_done_ms",
         "unit_to_audio_ms",
         "unit_to_started_ms",
     ]
+    assert rows["unit_to_hand_over_ms"]["full"] == {"p50": 30, "p95": 40, "n": 2}
+    assert rows["unit_to_hand_over_ms"]["polly"] is None
     assert rows["first_face_audio_ms"]["full"] == {"p50": 1150, "p95": 2180, "n": 2}
     assert rows["first_face_audio_ms"]["lite"] == {"p50": 1700, "p95": 1900, "n": 2}
     assert rows["first_face_audio_ms"]["polly"] == {"p50": 1540, "p95": 1760, "n": 2}

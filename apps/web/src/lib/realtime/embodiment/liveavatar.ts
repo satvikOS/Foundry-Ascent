@@ -23,9 +23,11 @@ import {
  *
  * **FULL** (a stock avatar with its stock voice, labelled "AI avatar"): the browser joins the room the same way
  * and still publishes no track (no microphone, no camera: plain livekit-client, so no microphone prompt). When a
- * signed unit's turn comes, `render` asks the server to admit it (`POST /calls/:id/face/say`, chained in order and
- * usually done ahead, while the unit before it is heard) and only on a 204 sends the vendor
- * `{event_id, event_type: 'avatar.speak_text', text}` on `agent-control` (reliable). The unit counts as heard from
+ * signed unit's turn comes, it is sent to the vendor as `{event_id, event_type: 'avatar.speak_text', text}` on
+ * `agent-control` (reliable) once the server admitted it: a unit the server admitted as it signed it (`faceApproved`,
+ * face pre-approval) is sent at once; any other (the intro, a face that joined mid-turn) is asked for first
+ * (`POST /calls/:id/face/say`, chained in order and usually done ahead, while the unit before it is heard) and sent
+ * only on a 204. The unit counts as heard from
  * `avatar.speak_started` (or the face's audio level), and to its end at `avatar.speak_ended` (or its estimated
  * length). Units go to the vendor one at a time, each after the last one ended, so it makes no difference whether
  * the vendor queues commands or a new one cuts off the one it is saying. Barge-in sends `avatar.interrupt` (and
@@ -365,9 +367,10 @@ export class LiveAvatarFace implements AvatarProvider {
 
   /**
    * FULL: the server's admission of a unit (once per unit, in the order asked; a refusal does not hold up the
-   * units after it).
+   * units after it). A unit the server pre-approved as it signed it is already admitted: nothing is asked.
    */
   private admit(unit: SpeechUnitToPlay): Promise<void> {
+    if (unit.faceApproved === true) return Promise.resolve();
     const key = unitKey(unit);
     const known = this.admissions.get(key);
     if (known !== undefined) return known;

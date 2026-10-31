@@ -110,6 +110,11 @@ interface FaceLab {
    * response arrived (with its status), so a LITE hand-over's relay by the server can be timed.
    */
   fetches: LabFetch[];
+  /**
+   * When each spoken unit (`turn.speech`) of a turn's stream reached the page, and whether the server pre-approved
+   * it for the FULL face as it signed it (`face: true`): times and flags only, never its words.
+   */
+  units: { at: number; face: boolean }[];
   plays: number[];
   injected: { at: number; text: string }[];
   injectNext: boolean;
@@ -135,6 +140,7 @@ function faceLabInit(): void {
     mic: [],
     audioSenders: 0,
     fetches: [],
+    units: [],
     plays: [],
     injected: [],
     injectNext: false,
@@ -372,6 +378,31 @@ function faceLabInit(): void {
         (response) => {
           seen.doneAt = now();
           seen.status = response.status;
+          // A turn's stream: the moment each spoken unit arrives (read from a copy, never in the app's way).
+          if (seen.method === 'POST' && seen.path.endsWith('/turns') && response.body !== null) {
+            void (async () => {
+              try {
+                const reader = response.clone().body?.getReader();
+                if (!reader) return;
+                const decoder = new TextDecoder();
+                let buffered = '';
+                for (;;) {
+                  const { done, value } = await reader.read();
+                  if (done) return;
+                  buffered += decoder.decode(value, { stream: true });
+                  const frames = buffered.split('\n\n');
+                  buffered = frames.pop() ?? '';
+                  for (const frame of frames) {
+                    if (frame.includes('"event":"turn.speech"')) {
+                      lab.units.push({ at: now(), face: frame.includes('"face":true') });
+                    }
+                  }
+                }
+              } catch {
+                /* never in the way of the app */
+              }
+            })();
+          }
         },
         () => {
           seen.doneAt = now();
@@ -672,6 +703,13 @@ interface TurnTiming {
   firstHandOverMs: number | null;
   /** When the server answered that LITE hand-over (it relayed the audio over the speak socket); null in FULL. */
   firstHandOverDoneMs: number | null;
+  /** The turn's first spoken unit (`turn.speech`) reaching the page. */
+  firstUnitMs: number | null;
+  /**
+   * From that unit's arrival to the turn's first hand-over to the face. With FULL face pre-approval the unit is
+   * already admitted, so the page hands it over at once: this is the round trip `face/say` used to add.
+   */
+  unitToHandOverMs: number | null;
 }
 
 async function measuredTurn(
@@ -705,14 +743,18 @@ async function measuredTurn(
   // FULL hands the face words on the room, LITE audio to the server: a call only ever does one of the two.
   const speakText = outEvents(lab, 'avatar.speak_text', sentAt)[0]?.at ?? null;
   const speakPost = speakPosts(lab, sentAt)[0] ?? null;
+  const firstUnit = lab.units.find((u) => u.at >= sentAt)?.at ?? null;
+  const handOver = speakText ?? speakPost?.at ?? null;
   return {
     sentAt,
     firstSpeakStartedMs: ms(sentAt, inEvents(lab, 'avatar.speak_started', sentAt)[0]?.at ?? null),
     firstFaceAudioMs: ms(sentAt, firstAfter(lab.onsets, sentAt)),
     firstAppPlaybackMs: ms(sentAt, firstAfter(lab.plays, sentAt)),
     firstAppAudioMs: ms(sentAt, firstAfter(lab.appOnsets, sentAt)),
-    firstHandOverMs: ms(sentAt, speakText ?? speakPost?.at ?? null),
+    firstHandOverMs: ms(sentAt, handOver),
     firstHandOverDoneMs: ms(sentAt, speakPost?.doneAt ?? null),
+    firstUnitMs: ms(sentAt, firstUnit),
+    unitToHandOverMs: ms(firstUnit, handOver),
   };
 }
 
@@ -1146,6 +1188,9 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
       result.units = units;
       result.speak_text_sent = outEvents(lab, 'avatar.speak_text', live).length;
       result.say_requests = sayResponses;
+      // The reply's units the server pre-approved for the face as it signed them (no face/say for those).
+      result.units_streamed = lab.units.filter((u) => u.at >= live).length;
+      result.units_preapproved = lab.units.filter((u) => u.at >= live && u.face).length;
       result.app_playbacks_after_live = lab.plays.filter((t) => t >= live).length;
       result.mic_requests_after_live = lab.mic.length - micAtLive;
       result.audio_senders = lab.audioSenders;

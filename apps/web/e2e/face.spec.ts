@@ -18,10 +18,13 @@ import {
  * whose development stand-in face runs in FULL mode (a second API on the same database, E2E_FACE_API_URL; the
  * page's API calls are routed to it). The stand-in is the real FULL adapter over an in-page room that "says"
  * each unit without a sound and announces every command it is sent. The test checks that every unit the face
- * says was admitted by the server first (one `POST /calls/:id/face/say` 204, then one `avatar.speak_text` with
- * the same words), that tampered words are refused (422) and never sent, that no track is published and no
- * microphone asked for, that barge-in interrupts the vendor, that the call never fetches its own audio for a
- * unit the face said, that the tile says "AI avatar", and that a face that drops leaves the call on the presence.
+ * says was admitted by the server first, then sent once as `avatar.speak_text` with the same words: a reply's
+ * units are admitted as the server signs them (`turn.speech` `face: true`, face pre-approval), so the page sends
+ * them without asking; any other unit (the intro, or units that reach the page without the flag) is asked for
+ * first (one `POST /calls/:id/face/say` 204). It also checks that tampered words are refused (422) and never sent,
+ * that no track is published and no microphone asked for, that barge-in interrupts the vendor, that the call
+ * never fetches its own audio for a unit the face said, that the tile says "AI avatar", and that a face that drops
+ * leaves the call on the presence.
  *
  * Like production, the FULL API shows the face to platform admins only and to the people a platform admin gave
  * Video face (Admin › People & access): the seeded founder gets no face until the owner turns hers on there.
@@ -29,6 +32,20 @@ import {
 
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
 const SAY = /\/api\/v1\/calls\/[0-9a-f-]{36}\/face\/say$/;
+const TURNS = /\/api\/v1\/sessions\/[0-9a-f-]{36}\/turns$/;
+
+interface StreamedUnit {
+  readonly text: string;
+  readonly face: boolean;
+}
+
+/**
+ * The `turn.speech` units each turn's stream delivered to the page, with their face pre-approval, in order (read in
+ * the page from a copy of the stream: Playwright cannot read an event stream's body).
+ */
+function streamedUnits(page: Page): Promise<StreamedUnit[][]> {
+  return page.evaluate(() => (window as unknown as { __turnUnits?: StreamedUnit[][] }).__turnUnits ?? []);
+}
 
 const apiURL = new URL(process.env.E2E_API_URL ?? 'http://localhost:8787');
 const FACE_API = new URL(
@@ -152,6 +169,48 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
       const w = window as unknown as { __faceCommands: unknown[]; __microphoneAsked: number };
       w.__faceCommands = [];
       w.__microphoneAsked = 0;
+      // Each turn's spoken units as the page receives them (a copy of the stream; never in the app's way).
+      const turns: { text: string; face: boolean }[][] = [];
+      (window as unknown as { __turnUnits: typeof turns }).__turnUnits = turns;
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const response = await nativeFetch(input, init);
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (/\/api\/v1\/sessions\/[0-9a-f-]{36}\/turns$/.test(new URL(url, location.href).pathname)) {
+          const units: { text: string; face: boolean }[] = [];
+          turns.push(units);
+          const reader = response.clone().body?.getReader();
+          const read = async (): Promise<void> => {
+            if (!reader) return;
+            const decoder = new TextDecoder();
+            let buffered = '';
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) return;
+              buffered += decoder.decode(value, { stream: true });
+              const frames = buffered.split('\n\n');
+              buffered = frames.pop() ?? '';
+              for (const frame of frames) {
+                const data = frame
+                  .split('\n')
+                  .filter((line) => line.startsWith('data:'))
+                  .map((line) => line.slice(5).trim())
+                  .join('');
+                try {
+                  const event = JSON.parse(data) as { event?: unknown; text?: unknown; face?: unknown };
+                  if (event.event === 'turn.speech' && typeof event.text === 'string') {
+                    units.push({ text: event.text, face: event.face === true });
+                  }
+                } catch {
+                  /* not a JSON frame */
+                }
+              }
+            }
+          };
+          read().catch(() => undefined);
+        }
+        return response;
+      };
       window.addEventListener('foundry:face-command', (event) => {
         w.__faceCommands.push((event as CustomEvent).detail);
       });
@@ -166,13 +225,22 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
     });
 
     // Every API call of the page goes to the FULL-mode API (same database, same sign-in); one face/say can be
-    // tampered with on its way.
+    // tampered with on its way, and one turn's units can reach the page without their face pre-approval (as if
+    // the face had joined after they were signed), so the page asks face/say for each of them.
     let tamperNext = false;
+    let stripNextTurn = false;
     await page.route(
       (url) => url.origin === site.origin && url.pathname.startsWith('/api/'),
       async (route) => {
         const request = route.request();
         const url = request.url().replace(site.origin, FACE_API.origin);
+        if (stripNextTurn && TURNS.test(new URL(request.url()).pathname)) {
+          stripNextTurn = false;
+          const response = await route.fetch({ url });
+          const body = (await response.text()).replaceAll(',"face":true', '');
+          await route.fulfill({ response, body });
+          return;
+        }
         if (tamperNext && SAY.test(new URL(request.url()).pathname)) {
           tamperNext = false;
           // A tampered page signs its own body as the API expects (the payload hash), so only the words differ.
@@ -256,26 +324,37 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
           .toBeGreaterThan(0);
         // The reply is said to its end: every admitted unit, once, in order.
         const interrupt = screen.getByRole('button', { name: 'Interrupt' });
+        const admitted = async () => [
+          ...says.filter((s) => s.status === 204).map((s) => s.text),
+          ...(await streamedUnits(page)).flat().flatMap((u) => (u.face ? [u.text] : [])),
+        ];
         await expect
           .poll(
             async () => {
               const said = spoken(await commands(page));
-              const admitted = says.filter((s) => s.status === 204).map((s) => s.text);
-              if (said.length === 0 || said.length !== admitted.length) return false;
+              if (said.length === 0 || said.length !== (await admitted()).length) return false;
               return interrupt.isHidden();
             },
             { timeout: 30_000 },
           )
           .toBe(true);
         const said = spoken(await commands(page));
-        expect(said).toEqual(says.filter((s) => s.status === 204).map((s) => s.text));
+        expect([...said].sort()).toEqual((await admitted()).sort());
         expect(new Set(said).size).toBe(said.length);
+        // The reply's units were admitted as the server signed them: the page said them without asking face/say.
+        const reply = (await streamedUnits(page))[0] ?? [];
+        expect(reply.length).toBeGreaterThan(0);
+        expect(reply.every((u) => u.face)).toBe(true);
+        expect(said).toEqual(expect.arrayContaining(reply.map((u) => u.text)));
+        expect(says.map((s) => s.text).filter((text) => reply.some((u) => u.text === text))).toEqual([]);
         // The call fetched no audio of its own for a unit the face said.
         expect(speech.filter((text) => said.includes(text))).toEqual([]);
       });
 
       await test.step('tampered words are refused and never sent; barge-in interrupts the vendor', async () => {
         const before = spoken(await commands(page)).length;
+        // This reply reaches the page without its pre-approval: each unit is asked for, and the first is tampered.
+        stripNextTurn = true;
         tamperNext = true;
         await line.fill('What should I test first with ten customers?');
         await line.press('Enter');

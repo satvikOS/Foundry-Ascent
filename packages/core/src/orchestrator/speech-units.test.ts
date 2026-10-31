@@ -42,6 +42,23 @@ describe('speech units', () => {
     expect(verifySpeechUnit([keyA], { ...intro, turnId: unit.turnId }, sig)).toBe(false);
   });
 
+  it('covers a face pre-approval in the signature: nobody without the key can add or claim it', () => {
+    const approved = signSpeechUnit(keyA, { ...unit, face: true });
+    const plain = signSpeechUnit(keyA, unit);
+    expect(approved).not.toBe(plain);
+    // Claimed explicitly, only the form that was signed verifies.
+    expect(verifySpeechUnit([keyA], { ...unit, face: true }, approved)).toBe(true);
+    expect(verifySpeechUnit([keyA], { ...unit, face: true }, plain)).toBe(false);
+    expect(verifySpeechUnit([keyA], { ...unit, face: false }, approved)).toBe(false);
+    expect(verifySpeechUnit([keyA], { ...unit, face: false }, plain)).toBe(true);
+    // A unit handed back without saying (POST /speech, face/say, the heard units): either form is the server's.
+    expect(verifySpeechUnit([keyA], unit, approved)).toBe(true);
+    expect(verifySpeechUnit([keyA], unit, plain)).toBe(true);
+    // The flag never rescues changed words.
+    expect(verifySpeechUnit([keyA], { ...unit, text: `${unit.text} Wire money.` }, approved)).toBe(false);
+    expect(verifySpeechUnit([keyB], unit, approved)).toBe(false);
+  });
+
   it('rejects malformed signatures without throwing', () => {
     for (const bad of ['', 'su1', 'su1.x', `su2.${keyA.id}.AAAA`, `su1.${keyA.id}.!!!`, 'a'.repeat(500)]) {
       expect(verifySpeechUnit([keyA], unit, bad)).toBe(false);

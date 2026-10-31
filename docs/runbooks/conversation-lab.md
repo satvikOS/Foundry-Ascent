@@ -388,7 +388,10 @@ the avatar said and the sent texts are in the sealed `face/*-texts.json`. `e5_fi
 face's first sound (the meter's onset; never the vendor's `speak_started`, which is reported as its own distribution)
 after a typed turn with the plan's 1.2 s target; a voice turn adds Transcribe's endpointing to both arms equally.
 Polly's first sound is the same meter on the app's output; the time its first buffer was scheduled is reported apart
-as `first_scheduled_ms`. The injection also reports how many seconds after the face went live the words went out
+as `first_scheduled_ms`. `e5_hand_over_at_unit_arrival` grades the FULL face's pre-approval: from a turn's first
+spoken unit reaching the page (`first_unit_ms`) to its `avatar.speak_text` must be at most 250 ms at p50
+(`unit_to_hand_over_ms`), since the server admitted the unit as it signed it and no `face/say` round trip sits there
+(runs 41226018170 and 41226813922 measured about 0.6 s of it before); the summary also counts the units pre-approved. The injection also reports how many seconds after the face went live the words went out
 (`seconds_into_session`): near the sandbox's minute, the session may end before a heartbeat can catch them.
 
 **Spend.** The vendor sandbox costs nothing. The app's share (the whole `budget_usd`) pays for the turns on the

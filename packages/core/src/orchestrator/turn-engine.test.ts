@@ -497,6 +497,73 @@ describe('SpeechStream', () => {
     ]);
   });
 
+  it('admits each unit to the call’s FULL face before it leaves, in order, flagged under its signature', async () => {
+    const events: TurnStreamEvent[] = [];
+    const asked: string[] = [];
+    const verdicts = [true, true, false];
+    const approval = {
+      approve: (unit: { turnId: string; seq: number; text: string }) => {
+        // Nothing of the unit has left the server when it is asked.
+        expect(events).toHaveLength(unit.seq);
+        asked.push(`${unit.turnId}:${String(unit.seq)}:${unit.text}`);
+        return Promise.resolve(verdicts[unit.seq] ?? false);
+      },
+    };
+    const speech = new SpeechStream(
+      Promise.resolve(key),
+      ids,
+      (e) => {
+        events.push(e);
+        return Promise.resolve();
+      },
+      () => undefined,
+      undefined,
+      { eager: true, face: Promise.resolve(approval) },
+    );
+    for (const text of ['One.', 'Two.', 'Three.']) await speech.queue(text);
+    expect(asked).toEqual([`${ids.turnId}:0:One.`, `${ids.turnId}:1:Two.`, `${ids.turnId}:2:Three.`]);
+    const units = events.flatMap((e) => (e.event === 'turn.speech' ? [e] : []));
+    expect(units.map((u) => [u.seq, u.face])).toEqual([
+      [0, true],
+      [1, true],
+      [2, undefined],
+    ]);
+    for (const u of units) {
+      const claims = { sessionId: ids.sessionId, turnId: ids.turnId, seq: u.seq, text: u.text };
+      // The flag is in the signature: the approved form verifies only as approved, the other only as not.
+      expect(verifySpeechUnit([key], { ...claims, face: u.face === true }, u.sig)).toBe(true);
+      expect(verifySpeechUnit([key], { ...claims, face: u.face !== true }, u.sig)).toBe(false);
+    }
+
+    // No pre-approval (not a FULL face), or one that fails: units go out unflagged, as before.
+    const plain: TurnStreamEvent[] = [];
+    const failing = new SpeechStream(
+      Promise.resolve(key),
+      ids,
+      (e) => {
+        plain.push(e);
+        return Promise.resolve();
+      },
+      () => undefined,
+      undefined,
+      { eager: true, face: Promise.reject(new Error('down')) },
+    );
+    await failing.queue('One.');
+    const none = new SpeechStream(
+      Promise.resolve(key),
+      ids,
+      (e) => {
+        plain.push(e);
+        return Promise.resolve();
+      },
+      () => undefined,
+      undefined,
+      { eager: true, face: Promise.resolve(null) },
+    );
+    await none.queue('One.');
+    expect(plain.map((e) => (e.event === 'turn.speech' ? e.face : 'other'))).toEqual([undefined, undefined]);
+  });
+
   it('drops the held unit of a blocked turn and stops speaking when signing fails', async () => {
     const events: TurnStreamEvent[] = [];
     const emit = (e: TurnStreamEvent): Promise<void> => {

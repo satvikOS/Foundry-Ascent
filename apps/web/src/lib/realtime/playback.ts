@@ -22,6 +22,11 @@ export interface SpeechUnitToPlay {
   readonly text: string;
   /** Server signature of a streamed unit or the intro; absent for a passage of a stored reply. */
   readonly sig?: string;
+  /**
+   * The server already admitted this streamed unit to the call's FULL face as it signed it (`turn.speech`
+   * `face: true`): the face says it without asking `POST /calls/:id/face/say` first.
+   */
+  readonly faceApproved?: boolean;
 }
 
 /** How a unit is heard. */
@@ -105,7 +110,7 @@ export interface FaceRenderHandlers {
  * - voicing `audio` (LITE, the stand-in): it renders, lip-synced, audio this call already fetched from
  *   `POST /speech` (signed, validated units), never text to voice;
  * - voicing `text` (FULL): the vendor voices a signed unit's words with its own stock voice, once the server
- *   admitted that unit (`POST /calls/:id/face/say`). The call fetches no audio for such a unit unless the face
+ *   admitted that unit (as it signed it, `faceApproved`, else `POST /calls/:id/face/say`). The call fetches no audio for such a unit unless the face
  *   cannot say it, and then speaks it itself in the stock voice.
  */
 export interface FaceRenderer {

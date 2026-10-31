@@ -497,13 +497,25 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
   `part_out_of_order`, …) before the vendor sees it, so validated speech cannot be cut up and re-sequenced. One
   synthesis serves both the speakers' copy and the face.
 - **FULL: admitted text, then reconciliation.** For a text face, `POST /speech` returns the stock-voice fallback
-  audio only (no manifest). When the unit's turn comes, the browser asks `POST /calls/:id/face/say`
-  `{sessionId, turnId, seq, text, sig}`; the server accepts only a signed unit of the caller's live call (never the
-  crisis line), under the call's speech caps, each unit once and in order (`twinRepo.admitFaceText`), and only on its
-  204 does the browser publish `avatar.speak_text` with that text into the vendor's room (no microphone track,
-  push-to-talk never started, no vendor context, so the vendor's own model never speaks). Anything else is a 422 and
-  nothing is published. At each heartbeat the server reads the vendor's transcript since the last check and compares
-  the avatar's lines with the admitted texts; a difference ends the face (audited `call.face_injection`).
+  audio only (no manifest). Every unit the face says is admitted by the server first: a signed unit of the caller's
+  live call (never the crisis line, never a blocked or failed reply), within the kill switches, the platform's spend
+  cap and the call's speech budget (reserved once per unit), each unit once and in order
+  (`twinRepo.admitFaceText`), with salted digests of its words stored for the transcript check. Only then does the
+  browser publish `avatar.speak_text` with that text into the vendor's room (no microphone track, push-to-talk never
+  started, no vendor context, so the vendor's own model never speaks).
+  - **Pre-approval (the common path).** When a spoken turn starts on a call whose FULL face is live, the turn engine
+    admits each unit with those same checks as it signs it (`SpeechService.prepareFaceApproval`, the face read once
+    per turn) and streams it as `turn.speech` with `face: true`, a flag the unit's signature covers
+    (`sessionId|turnId|seq|text|face`). The browser publishes such a unit at once: no browser-to-API round trip
+    sits between the unit's arrival and the face. The admitted row is marked `call_face_texts.preapproved` (0020).
+    A unit the server does not pre-approve is streamed without the flag, and after the first one nothing more of
+    that turn is pre-approved, so the units the browser still asks for keep their order.
+  - **`POST /calls/:id/face/say` (the fallback).** For any other unit (the call intro, a face that joined mid-turn,
+    a refused pre-approval), when its turn comes the browser asks `{sessionId, turnId, seq, text, sig}`; the server
+    makes the same checks and only on its 204 does the browser publish. Anything else is a 422 and nothing is
+    published. It is idempotent with pre-approval: asked for a pre-approved unit with the same words, it answers 204
+    again without reserving or storing anything more; a unit it admitted itself is refused if asked again. At each heartbeat the server reads the vendor's transcript since the last check and compares
+    the avatar's lines with the admitted texts; a difference ends the face (audited `call.face_injection`).
 - **The vendor's control protocol** (LITE events): the server waits for `session.state_updated: connected` before
   any command, sends one-second `agent.speak` chunks each with its own `event_id`, waits for every
   `agent.audio_buffer_appended`, and on a unit's last part sends `agent.speak_end` and waits for

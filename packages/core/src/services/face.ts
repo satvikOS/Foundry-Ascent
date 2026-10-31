@@ -55,7 +55,8 @@ import { resolveVeir } from './veir.js';
  *   against its face-audio manifest before relaying it (`speak`). So the face renders nothing the validators did
  *   not approve, and never the crisis line.
  * - FULL: the vendor takes its commands only over the room, from the browser. The server admits each signed unit
- *   first (`authorizeFaceText`, services/speech.ts: once, in order, never the crisis line), and the browser sends
+ *   first (as the turn engine signs it, `prepareFaceApproval`, or `authorizeFaceText` for any other unit;
+ *   services/speech.ts: once, in order, never the crisis line), and the browser sends
  *   the vendor only an admitted unit's words. A tampered page could still make the face say other words on its own
  *   screen, so every heartbeat reconciles the vendor's transcript against the admitted units (each said at most
  *   once) and ends the face at the first words it never admitted (`call.face_injection`), and so does every way a

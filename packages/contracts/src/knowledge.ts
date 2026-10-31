@@ -252,7 +252,9 @@ export type CallConfigResponse = z.infer<typeof CallConfigResponse>;
  * `POST /calls/:id/face/say` — admits one signed unit of the caller's live call (its `turn.speech` unit, or the
  * call intro with `turnId` null) to the call's FULL face: 204, then the browser sends the vendor exactly `text`;
  * 422 for words that are not that call's validated, signed speech (never the crisis line), or a unit already
- * admitted or out of order. `sessionId`, when sent, must be the call's conversation.
+ * admitted or out of order. `sessionId`, when sent, must be the call's conversation. A unit the server already
+ * admitted as it signed it (`turn.speech` with `face: true`) needs no request; asked anyway, it is 204 again,
+ * with nothing more reserved.
  */
 export const FaceSayRequest = z.object({
   sessionId: Id.optional(),

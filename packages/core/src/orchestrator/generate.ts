@@ -93,6 +93,16 @@ export class GenerationFailure extends Error {
   }
 }
 
+/**
+ * Face pre-approval for one voice turn (docs/architecture/calls.md §4): admits each unit to the call's live FULL
+ * face as it is signed, with the checks `POST /calls/:id/face/say` makes, so the browser hands it to the face at
+ * once instead of asking the server first. True when admitted (the unit is then sent with `face: true`, covered by
+ * its signature); false leaves the unit to `face/say` as before. Never throws.
+ */
+export interface FaceApproval {
+  approve(unit: { readonly turnId: string; readonly seq: number; readonly text: string }): Promise<boolean>;
+}
+
 /** Most a spoken unit may carry (`turn.speech` text). */
 const MAX_SPEECH_UNIT_CHARS = 600;
 
@@ -110,6 +120,9 @@ const MAX_SPEECH_UNIT_CHARS = 600;
  * and nothing is said after it: a closing unit offered to `finish` would come a whole model call after the
  * hand-back, over or after the founder's answer, so it is not said. When the stream is given up and the reply is written whole after all, `sayWhole` makes the stream
  * hold and finish like a reply said whole. Every unit was validated by the sentence gate either way.
+ *
+ * On a call whose FULL face is live (`face`, resolved once per turn), each unit is offered to the face's
+ * pre-approval before it is signed and sent: an admitted unit carries `face: true` (in its signature too).
  */
 export class SpeechStream {
   #held: string | null = null;
@@ -123,10 +136,17 @@ export class SpeechStream {
     private readonly emit: (event: TurnStreamEvent) => Promise<void>,
     private readonly onError: (fields: Record<string, string | number>) => void,
     private readonly signal?: AbortSignal,
-    options: { readonly eager?: boolean } = {},
+    options: {
+      readonly eager?: boolean;
+      /** The call's FULL face pre-approval for this turn (null: none, resolved lazily at the first unit). */
+      readonly face?: Promise<FaceApproval | null> | null;
+    } = {},
   ) {
     this.#eager = options.eager === true;
+    this.#face = options.face ?? null;
   }
+
+  readonly #face: Promise<FaceApproval | null> | null;
 
   /** Units sent so far. */
   get sent(): number {
@@ -172,12 +192,20 @@ export class SpeechStream {
   async #send(text: string, final: boolean): Promise<void> {
     if (this.#broken || this.signal?.aborted === true) return;
     let sig: string;
+    let face = false;
     try {
-      sig = signSpeechUnit(await this.key, {
+      const key = await this.key;
+      // Admitted to the call's FULL face here, in order, before the unit leaves the server.
+      const approval = this.#face === null ? null : await this.#face.catch(() => null);
+      if (approval !== null) {
+        face = await approval.approve({ turnId: this.ids.turnId, seq: this.#seq, text }).catch(() => false);
+      }
+      sig = signSpeechUnit(key, {
         sessionId: this.ids.sessionId,
         turnId: this.ids.turnId,
         seq: this.#seq,
         text,
+        ...(face ? { face: true } : {}),
       });
     } catch (err) {
       this.#broken = true;
@@ -188,7 +216,15 @@ export class SpeechStream {
       });
       return;
     }
-    await this.emit({ event: 'turn.speech', turnId: this.ids.turnId, seq: this.#seq, text, sig, final });
+    await this.emit({
+      event: 'turn.speech',
+      turnId: this.ids.turnId,
+      seq: this.#seq,
+      text,
+      sig,
+      final,
+      ...(face ? { face: true } : {}),
+    });
     this.#seq += 1;
   }
 }
@@ -240,6 +276,8 @@ export interface StreamArgs extends GenerateArgs {
   readonly emit: (event: TurnStreamEvent) => Promise<void>;
   /** Voice turns: the key the speech units are signed with. */
   readonly speechKey: Promise<SessionSigningKey> | null;
+  /** A call's FULL face pre-approval for this turn's units (absent or null: none). */
+  readonly faceApproval?: Promise<FaceApproval | null> | null;
 }
 
 /** Longest the annotations of a streamed answer may take (phase B). */
@@ -397,7 +435,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
           },
           a.signal,
           // Each validated sentence is spoken as soon as the gate releases it.
-          { eager: true },
+          { eager: true, face: a.faceApproval ?? null },
         )
       : null;
   const stop = new AbortController();

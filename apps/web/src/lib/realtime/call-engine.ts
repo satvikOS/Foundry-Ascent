@@ -1105,7 +1105,13 @@ export class CallEngine {
       case 'turn.speech':
         turn.turnId ??= event.turnId;
         turn.units += 1;
-        this.player?.enqueue({ turnId: event.turnId, seq: event.seq, text: event.text, sig: event.sig });
+        this.player?.enqueue({
+          turnId: event.turnId,
+          seq: event.seq,
+          text: event.text,
+          sig: event.sig,
+          ...(event.face === true ? { faceApproved: true } : {}),
+        });
         return null;
       case 'turn.completed': {
         const completed = event.turn;

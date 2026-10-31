@@ -385,6 +385,11 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
             f"{_p(polly.get('first_scheduled_ms'))}"
         )
         out.append(
+            f"- First spoken unit arrives {_p(call.get('first_unit_ms'))} after the turn was sent; → its hand-over "
+            f"to the face {_p(call.get('unit_to_hand_over_ms'))}; units pre-approved as signed "
+            f"{call.get('units_preapproved')} of {call.get('units_streamed')}"
+        )
+        out.append(
             f"- Each unit, publish → speak_started {_p(call.get('publish_to_started_ms'))}; → first audio "
             f"{_p(call.get('publish_to_audio_ms'))}; speak_text sent {call.get('speak_text_sent')}, face/say "
             f"requests {call.get('say_requests')}, the call's own playback after the face joined "
