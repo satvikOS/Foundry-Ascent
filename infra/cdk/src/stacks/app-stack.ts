@@ -161,6 +161,7 @@ export class AppStack extends Stack {
       SPEECH_ENGINE: config.speech.engine,
       MEDIA_FACE_PROVIDER: config.media.face.provider,
       MEDIA_FACE_SANDBOX: String(config.media.face.sandbox),
+      ...mediaFaceEnvironment(config.media.face),
       MEDIA_VOICE_PROVIDER: config.media.voice.provider,
       MEDIA_VOICE_MODEL: config.media.voice.model,
       MEDIA_VOICE_ZERO_RETENTION: String(config.media.voice.zeroRetention),
@@ -825,6 +826,21 @@ export class AppStack extends Stack {
  * the CloudFront origin read timeout and in the API Lambda timeout, and SSE keep-alives come well before
  * the read timeout.
  */
+/**
+ * The face's voicing for the API (`MEDIA_FACE_MODE`, `MEDIA_FACE_AVATAR_ID`, `MEDIA_FACE_VOICE_ID`,
+ * `MEDIA_FACE_AUDIENCE`; config `media.face`). An absent stock avatar or voice is the empty string, which the API reads
+ * as unset. Like every other variable, each reaches a function only when apps/api/lambda-contract.json lists it for
+ * that function's role (`environmentFor`).
+ */
+export function mediaFaceEnvironment(face: PlatformConfig['media']['face']): Record<string, string> {
+  return {
+    MEDIA_FACE_MODE: face.mode,
+    MEDIA_FACE_AVATAR_ID: face.stock?.avatarId ?? '',
+    MEDIA_FACE_VOICE_ID: face.stock?.voiceId ?? '',
+    MEDIA_FACE_AUDIENCE: face.audience,
+  };
+}
+
 export function assertTiming(apiTimeoutSeconds: number): void {
   const needed = API_DB_RESUME_BUDGET_SECONDS + API_TIMING_MARGIN_SECONDS;
   if (needed > API_ORIGIN_READ_TIMEOUT_SECONDS) {

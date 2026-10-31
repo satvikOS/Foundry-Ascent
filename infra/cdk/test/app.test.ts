@@ -15,7 +15,7 @@ import {
   VIEWER_IP_HEADER,
 } from '../src/lib/constants.js';
 import { environmentNames } from '../src/lib/lambda-contract.js';
-import { assertTiming } from '../src/stacks/app-stack.js';
+import { assertTiming, mediaFaceEnvironment } from '../src/stacks/app-stack.js';
 import { loadConfig } from '../src/config.js';
 import { effectiveModels } from '../src/lib/models.js';
 import { migrationsChecksum } from '../src/lib/migrations.js';
@@ -285,7 +285,14 @@ describe('FoundryAscent-App', () => {
         {
           ...config,
           media: {
-            face: { provider: 'heygen-liveavatar', sandbox: false, csp: { connect: room, media: [] } },
+            face: {
+              provider: 'heygen-liveavatar',
+              sandbox: false,
+              csp: { connect: room, media: [] },
+              mode: 'lite',
+              stock: null,
+              audience: 'everyone',
+            },
             voice: { provider: 'elevenlabs', model: 'eleven_flash_v2_5', zeroRetention: false },
           },
         },
@@ -327,6 +334,58 @@ describe('FoundryAscent-App', () => {
       const csp = JSON.stringify(resourcesOfType(templates.app, 'AWS::CloudFront::ResponseHeadersPolicy'));
       expect(csp).toContain(`${TRANSCRIBE_ORIGIN} ${room.join(' ')};`);
       expect(csp).not.toContain('*.livekit');
+    });
+
+    it('hands the API the face’s voicing (mode, stock avatar and voice, audience) from config media.face', () => {
+      const WAYNE = 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a';
+      const VOICE = '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0';
+      const room = ['wss://heygen-feapbkvq.livekit.cloud', 'https://heygen-feapbkvq.livekit.cloud'];
+      const config = loadConfig();
+      // Shipped off: LITE, no stock face, everyone (how faces behaved before FULL existed).
+      expect(mediaFaceEnvironment(config.media.face)).toEqual({
+        MEDIA_FACE_MODE: 'lite',
+        MEDIA_FACE_AVATAR_ID: '',
+        MEDIA_FACE_VOICE_ID: '',
+        MEDIA_FACE_AUDIENCE: 'everyone',
+      });
+      const full = {
+        provider: 'heygen-liveavatar',
+        sandbox: true,
+        csp: { connect: room, media: [] },
+        mode: 'full',
+        stock: { avatarId: WAYNE, voiceId: VOICE },
+        audience: 'admins',
+      } as const;
+      expect(mediaFaceEnvironment(full)).toEqual({
+        MEDIA_FACE_MODE: 'full',
+        MEDIA_FACE_AVATAR_ID: WAYNE,
+        MEDIA_FACE_VOICE_ID: VOICE,
+        MEDIA_FACE_AUDIENCE: 'admins',
+      });
+      expect(
+        mediaFaceEnvironment({ ...full, stock: { avatarId: WAYNE, voiceId: null } }).MEDIA_FACE_VOICE_ID,
+      ).toBe('');
+      // In the synthesized stack each of them reaches exactly the functions whose role the runtime contract lists it
+      // for (the API), with that value; FULL changes no permission: still only the HeyGen key, read-only.
+      const { templates } = synthesize({}, { ...config, media: { ...config.media, face: full } });
+      const functions = resourcesOfType(templates.app, 'AWS::Lambda::Function');
+      const variables = (name: string): Record<string, unknown> =>
+        (
+          functions.find(([, p]) => p.FunctionName === name)?.[1].Environment as {
+            Variables: Record<string, unknown>;
+          }
+        ).Variables;
+      for (const [name, role] of FUNCTIONS) {
+        const env = variables(name);
+        for (const [key, value] of Object.entries(mediaFaceEnvironment(full))) {
+          if (environmentNames(role).includes(key)) expect(env[key], `${name} ${key}`).toBe(value);
+          else expect(env, `${name} ${key}`).not.toHaveProperty(key);
+        }
+      }
+      const secrets = functionPolicyStatements(templates.app, 'FoundryAscent-Api').filter((s) =>
+        actionsOf(s).some((a) => a.startsWith('secretsmanager:')),
+      );
+      expect(secrets.flatMap(actionsOf)).toEqual(['secretsmanager:GetSecretValue']);
     });
 
     it('lets only the API presign Amazon Transcribe streaming URLs, pinned to the platform region', () => {
