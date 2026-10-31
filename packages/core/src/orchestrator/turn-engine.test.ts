@@ -508,6 +508,7 @@ describe('SpeechStream', () => {
         asked.push(`${unit.turnId}:${String(unit.seq)}:${unit.text}`);
         return Promise.resolve(verdicts[unit.seq] ?? false);
       },
+      withdraw: () => Promise.resolve(),
     };
     const speech = new SpeechStream(
       Promise.resolve(key),

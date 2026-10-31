@@ -64,6 +64,12 @@ FIRST_AUDIO_TARGET_MS = 1200
 #: The server pre-approves each unit as it signs it (docs/architecture/calls.md §4), so the page hands it over on
 #: arrival: no ``face/say`` round trip (lab runs 41226018170 and 41226813922 measured about 0.6 s of it) sits there.
 HAND_OVER_AFTER_UNIT_TARGET_MS = 250
+#: The FULL arm's first spoken unit may reach the page at most this much later than Polly alone's (both p50, the
+#: same founder turns). Pre-approval runs on the server as each unit is signed (spend and settings reads, the call's
+#: speech reservation, the admission: each unit's time is logged as ``turn.face_approval``), so a hand-over that
+#: waits for nothing after the unit arrives could still hide the round trip moved to the server; this bounds it. The
+#: margin allows for the two arms' different model calls.
+UNIT_ARRIVAL_GAP_TARGET_MS = 150
 #: The vendor paths the public summary may name; anything else is counted as ``other``.
 VENDOR_PATHS = (
     "/v1/sessions/token",
@@ -683,7 +689,17 @@ def comparison(result: Mapping[str, Any]) -> dict[str, Any]:
         "lite_minus_polly_first_audio_p50_ms": (
             None if lite_p50 is None or polly_p50 is None else lite_p50 - polly_p50
         ),
+        # What pre-approving each unit on the server adds before the FULL arm's first unit reaches the page.
+        "full_minus_polly_first_unit_p50_ms": _p50_gap(rows, "first_unit_ms", "full", "polly"),
     }
+
+
+def _p50_gap(rows: Sequence[Mapping[str, Any]], key: str, left: str, right: str) -> int | None:
+    """The p50 of arm ``left`` minus arm ``right`` on row ``key`` (None when either is missing)."""
+    row = next((r for r in rows if r.get("key") == key), None) or {}
+    a = (row.get(left) or {}).get("p50")
+    b = (row.get(right) or {}).get("p50")
+    return None if a is None or b is None else a - b
 
 
 def public_injection(
@@ -745,6 +761,8 @@ def checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
     fallback = call.get("fallback") or {}
     first = call.get("first_face_audio_ms") or {}
     hand_over = call.get("unit_to_hand_over_ms") or {}
+    full_unit = (call.get("first_unit_ms") or {}).get("p50")
+    polly_unit = ((result.get("polly") or {}).get("first_unit_ms") or {}).get("p50")
     full_room = probe.get("full_room") or {}
     lite_room = probe.get("lite_room") or {}
 
@@ -774,6 +792,12 @@ def checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
         "e5_hand_over_at_unit_arrival": (
             hand_over.get("p50") is not None and hand_over["p50"] <= HAND_OVER_AFTER_UNIT_TARGET_MS
             if hand_over
+            else None
+        ),
+        # ...and the server did not take that time instead: the FULL arm's first unit arrives about when Polly's does.
+        "e5_unit_arrival_matches_polly": (
+            full_unit - polly_unit <= UNIT_ARRIVAL_GAP_TARGET_MS
+            if full_unit is not None and polly_unit is not None
             else None
         ),
         "e6_interrupt_clears_queue": interrupt.get("queue_cleared"),

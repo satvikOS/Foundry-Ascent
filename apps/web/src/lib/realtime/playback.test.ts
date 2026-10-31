@@ -501,3 +501,62 @@ describe('SpeechPlayer with a face that renders the call’s audio (voicing audi
     expect(log).toEqual(['start 0 server', 'end 0 done', 'idle']);
   });
 });
+
+/** A FULL face (voicing text): records the units it was asked to prepare and to say. */
+class TextFace implements FaceRenderer {
+  readonly voicing = 'text' as const;
+  readonly prepared: SpeechUnitToPlay[] = [];
+  readonly said: { unit: SpeechUnitToPlay | undefined; handlers: FaceRenderHandlers }[] = [];
+  ready(): boolean {
+    return true;
+  }
+  prepare(u: SpeechUnitToPlay): void {
+    this.prepared.push(u);
+  }
+  render(
+    _buffer: AudioBuffer | null,
+    _output: FaceRendererOutput,
+    handlers: FaceRenderHandlers,
+    _audio: FaceUnitAudio | null,
+    u?: SpeechUnitToPlay,
+  ): () => void {
+    this.said.push({ unit: u, handlers });
+    return () => undefined;
+  }
+}
+
+describe('SpeechPlayer with a FULL face: the server’s pre-approval of a failed turn', () => {
+  const OTHER = '0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f';
+  const approved = (seq: number, turnId = TURN): SpeechUnitToPlay => ({
+    ...unit(seq),
+    turnId,
+    faceApproved: true,
+  });
+
+  it('takes it back from the failed turn’s queued units only, so the face asks face/say for them again', async () => {
+    const { player, fetchSpeech } = setup();
+    const face = new TextFace();
+    player.setFace(face);
+    player.enqueue(approved(0));
+    player.enqueue(approved(1));
+    player.enqueue(approved(2));
+    await flush();
+    expect(face.said.map((s) => s.unit)).toEqual([approved(0)]);
+
+    // The turn failed: the unit being said goes on; the ones still queued lose the approval.
+    player.withdrawFaceApproval(TURN);
+    player.enqueue(approved(3, OTHER));
+    face.said[0]?.handlers.onEnd('ended');
+    await flush();
+    expect(face.said[1]?.unit).toEqual(unit(1));
+    expect(face.said[1]?.unit).not.toHaveProperty('faceApproved');
+    face.said[1]?.handlers.onEnd('ended');
+    await flush();
+    expect(face.said[2]?.unit).toEqual(unit(2));
+    face.said[2]?.handlers.onEnd('ended');
+    await flush();
+    // Another turn's unit keeps its approval; nothing was fetched as audio (the face says every unit).
+    expect(face.said[3]?.unit).toEqual(approved(3, OTHER));
+    expect(fetchSpeech).not.toHaveBeenCalled();
+  });
+});

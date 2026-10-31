@@ -328,7 +328,10 @@ origins as LITE.
 2. `GET /v1/users/credits` before and after: the sandbox uses none.
 3. Each sentence: admitted by the server (a reply's units as they are signed, `turn.speech` `face: true`; the intro
    through one `/face/say` 204), then the face says exactly that text, and the session transcript matches. A reply's
-   first unit is handed to the face as it reaches the page (the lab's `e5_hand_over_at_unit_arrival`).
+   first unit is handed to the face as it reaches the page (the lab's `e5_hand_over_at_unit_arrival`), and reaches
+   the page about when Polly alone's does (`e5_unit_arrival_matches_polly`: the approval did not just move the round
+   trip to the server). A reply blocked or failed after its units were pre-approved has what the face did not say
+   withdrawn (`call.face_text_withdrawn`).
 4. Several sentences in a row: they queue in order (or each cuts off the last: the app is built for either; note
    which, and the gap between one sentence's end and the next one's start).
 5. Latency, FULL against LITE: from the founder's end of speech to the face's first sound; target under 1.2 s.

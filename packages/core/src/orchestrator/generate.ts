@@ -101,6 +101,12 @@ export class GenerationFailure extends Error {
  */
 export interface FaceApproval {
   approve(unit: { readonly turnId: string; readonly seq: number; readonly text: string }): Promise<boolean>;
+  /**
+   * The turn was blocked or failed after some of its units were admitted (a streamed reply the whole-reply check
+   * then blocked, a stream that broke): nothing more is admitted, and what was admitted that the face has not said
+   * is withdrawn, so the face cannot say it later (as `face/say` refuses a blocked or failed turn). Never throws.
+   */
+  withdraw(): Promise<void>;
 }
 
 /** Most a spoken unit may carry (`turn.speech` text). */
@@ -198,6 +204,7 @@ export class SpeechStream {
       // Admitted to the call's FULL face here, in order, before the unit leaves the server.
       const approval = this.#face === null ? null : await this.#face.catch(() => null);
       if (approval !== null) {
+        // Its cost is on the unit's way out: the approval logs it per unit (`turn.face_approval`, ms).
         face = await approval.approve({ turnId: this.ids.turnId, seq: this.#seq, text }).catch(() => false);
       }
       sig = signSpeechUnit(key, {

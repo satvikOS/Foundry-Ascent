@@ -509,7 +509,17 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
     (`sessionId|turnId|seq|text|face`). The browser publishes such a unit at once: no browser-to-API round trip
     sits between the unit's arrival and the face. The admitted row is marked `call_face_texts.preapproved` (0020).
     A unit the server does not pre-approve is streamed without the flag, and after the first one nothing more of
-    that turn is pre-approved, so the units the browser still asks for keep their order.
+    that turn is pre-approved, so the units the browser still asks for keep their order. Each unit's approval time
+    is logged (`turn.face_approval`, ms), since it sits before the unit is sent.
+  - **A streamed reply blocked or failed afterwards.** A streamed reply's units are admitted as they are sent,
+    before the whole-reply check. When the turn is then blocked or fails, the turn engine (after `turn.blocked` /
+    `turn.error`) reads the face's transcript and withdraws the turn's pre-approved units it has not shown, except
+    the first of them (the one an honest page may be handing over as the turn ends: it hands units over one at a
+    time, stops at `turn.blocked`, and on `turn.error` drops the approval of the units it still holds, which then go
+    through `face/say` and are refused), and gives back their speech reservations (audited
+    `call.face_text_withdrawn`). So the face can say no more of such a reply than `face/say` would have let it, and
+    a page that makes it say more ends the face at the next check (`call.face_injection`). When the transcript
+    cannot be read to its end then, nothing is withdrawn; the heartbeat decides that face.
   - **`POST /calls/:id/face/say` (the fallback).** For any other unit (the call intro, a face that joined mid-turn,
     a refused pre-approval), when its turn comes the browser asks `{sessionId, turnId, seq, text, sig}`; the server
     makes the same checks and only on its 204 does the browser publish. Anything else is a 422 and nothing is

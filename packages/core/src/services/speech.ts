@@ -30,6 +30,7 @@ import {
 import { refusalError, timeLimitRefusal } from './call-admission.js';
 import { CALL_LIMITS, type CallCaps, callSecondsToday, callTimeLeft, speechBudget } from './call-usage.js';
 import { callCanSpeak, voiceApproved } from './calls.js';
+import type { FaceHooks } from './face.js';
 import { faceTextDigests } from './face-text.js';
 import { voiceCostUsd } from './media-vendors.js';
 import { isCrisisMessage, speakableRunSpan, speakableText } from './spoken-text.js';
@@ -171,8 +172,11 @@ export interface SpeechService {
    * speech budget (`reserveCallSpeech`, once per unit); each unit once and in order (`twinRepo.admitFaceText`,
    * marked pre-approved), storing its salted digests for the transcript check. A unit it does not admit is left to
    * `face/say`, which decides (and audits) it; after the first one, nothing more of the turn is pre-approved, so
-   * the units the browser still asks for keep their order. Blocked and failed turns never reach it: their units are
-   * never sent (the crisis path is not offered to it). Never throws.
+   * the units the browser still asks for keep their order. The crisis path is never offered it. A streamed reply
+   * admits its units as they are sent, before the whole-reply check: when the turn is then blocked or failed, the
+   * turn engine calls `withdraw`, which takes back what the face has not said (`FaceHooks.withdrawTurn`, keeping
+   * only the unit a page may be handing over as the turn ends) and gives back its reservations, so the face can no
+   * more say the rest of such a turn than `face/say` would let it. Never throws.
    */
   prepareFaceApproval(
     ctx: RequestContext,
@@ -258,7 +262,12 @@ function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
   });
 }
 
-export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechService {
+export function createSpeechService(
+  kit: Kit,
+  keys: PlatformKeyCache,
+  /** Withdraws a blocked or failed turn's pre-approved units from the face (absent: they stay admitted). */
+  faceHooks?: Pick<FaceHooks, 'withdrawTurn'>,
+): SpeechService {
   const { logger } = kit.deps;
 
   /** Whether something can voice the plan here (the clone, or Amazon Polly). */
@@ -1050,6 +1059,11 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
   function faceApproval(ctx: RequestContext, call: callsRepo.CallRecord, sessionRef: string): FaceApproval {
     // After a unit it did not admit, the rest of the turn goes through face/say, in order.
     let off = false;
+    // The units it admitted (seq → reserved characters) and their turn, for `withdraw`.
+    const admittedUnits = new Map<number, number>();
+    let turnOf: string | null = null;
+    // The approval in progress, which `withdraw` waits for.
+    let inflight: Promise<unknown> = Promise.resolve();
     const approve = async (input: {
       readonly turnId: string;
       readonly seq: number;
@@ -1111,6 +1125,8 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           .catch(() => undefined);
         return false;
       }
+      admittedUnits.set(input.seq, text.length);
+      turnOf = input.turnId;
       // Recorded beside the reply, never ahead of it: the unit leaves the server as soon as it is admitted.
       void kit
         .flushDeferred(ctx, [
@@ -1126,21 +1142,84 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
         .catch(() => undefined);
       return true;
     };
+    const decide = async (input: {
+      readonly turnId: string;
+      readonly seq: number;
+      readonly text: string;
+    }): Promise<boolean> => {
+      if (off) return false;
+      const started = performance.now();
+      let admitted = false;
+      try {
+        admitted = await approve(input);
+      } catch (err) {
+        logger.warn('call.face_preapproval_failed', {
+          requestId: ctx.requestId,
+          callId: call.id,
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+      }
+      if (!admitted) off = true;
+      // Its cost on the unit's way out, per unit (numbers only).
+      logger.info('turn.face_approval', {
+        requestId: ctx.requestId,
+        turnId: input.turnId,
+        seq: input.seq,
+        approved: admitted,
+        ms: Math.round(performance.now() - started),
+      });
+      return admitted;
+    };
     return {
-      approve: async (input) => {
-        if (off) return false;
-        let admitted = false;
+      approve: (input) => {
+        const decided = decide(input);
+        inflight = decided;
+        return decided;
+      },
+      withdraw: async () => {
+        off = true;
         try {
-          admitted = await approve(input);
+          await inflight.catch(() => undefined);
+          if (turnOf === null || admittedUnits.size === 0 || faceHooks === undefined) return;
+          const turnId = turnOf;
+          const withdrawn = await faceHooks.withdrawTurn(ctx.requestId, call.id, turnId);
+          if (withdrawn === null || withdrawn.length === 0) return;
+          // Their characters go back to the call's speech budget: the face will not say them.
+          for (const seq of withdrawn) {
+            const characters = admittedUnits.get(seq);
+            if (characters === undefined) continue;
+            await kit.system(
+              (sx) =>
+                callsRepo.settleCallSpeech(sx, {
+                  callId: call.id,
+                  unit: { kind: 'face', turnId, seq },
+                  reservedCharacters: characters,
+                  characters: null,
+                }),
+              { transaction: false },
+            );
+          }
+          await kit.flushDeferred(ctx, [
+            {
+              action: 'call.face_text_withdrawn',
+              outcome: 'blocked',
+              ventureId: call.ventureId,
+              objectType: 'turn',
+              objectId: turnId,
+              metadata: {
+                callId: call.id,
+                units: withdrawn.length,
+                kept: admittedUnits.size - withdrawn.length,
+              },
+            },
+          ]);
         } catch (err) {
-          logger.warn('call.face_preapproval_failed', {
+          logger.warn('call.face_withdraw_failed', {
             requestId: ctx.requestId,
             callId: call.id,
             error: err instanceof Error ? err.name : 'unknown',
           });
         }
-        if (!admitted) off = true;
-        return admitted;
       },
     };
   }

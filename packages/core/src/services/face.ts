@@ -279,6 +279,16 @@ export interface FaceHooks {
     requestId: string,
     calls: readonly { readonly callId: string; readonly ventureId: string }[],
   ): Promise<void>;
+  /**
+   * A spoken turn whose units were pre-approved for the call's live FULL face was then blocked or failed: reads the
+   * face's transcript now (the heartbeat's check, recording what the face said) and withdraws the turn's
+   * pre-approved units it has not shown, but the first of them (`twinRepo.withdrawFaceTexts`), so a page that hands
+   * the face more of the turn afterwards ends the face at the next check (`call.face_injection`), as `face/say`
+   * refuses such a turn. Returns the withdrawn units' `seq`; null when nothing was withdrawn because the face is not
+   * live, or its transcript could not be read to its end or already shows words never admitted (the heartbeat
+   * decides those). Never throws.
+   */
+  withdrawTurn(requestId: string, callId: string, turnId: string): Promise<readonly number[] | null>;
   /** The inputs of {@link faceStopCause} the heartbeat reads inside its own transaction. */
   stopInputs(
     scope: RequestScope,
@@ -512,6 +522,33 @@ export function createFaceHooks(kit: Kit): FaceHooks {
   }
 
   return {
+    withdrawTurn: async (requestId, callId, turnId) => {
+      try {
+        const face = await kit.system((sx) => twinRepo.getCallFace(sx, callId), { transaction: false });
+        if (face?.endedAt !== null || face.mode !== 'full') return null;
+        // What the face said up to now is recorded first, so only units it has not shown are withdrawn.
+        const check = await checkTranscript(requestId, face, { final: false });
+        if (check.result !== 'ok') {
+          logger.warn('call.face_withdraw_skipped', { requestId, callId, reason: check.result });
+          return null;
+        }
+        return await kit.system((sx) =>
+          twinRepo.withdrawFaceTexts(sx, {
+            callId,
+            sessionRef: face.sessionRef,
+            turnKey: turnId.toLowerCase(),
+          }),
+        );
+      } catch (err) {
+        logger.warn('call.face_withdraw_failed', {
+          requestId,
+          callId,
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+        return null;
+      }
+    },
+
     stopInputs: async (scope, call, settings) => ({
       twinFace: settings.facesEnabled
         ? await twinFaceFor(scope.tx, kit.deps.embodiment, call.personaId)

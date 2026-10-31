@@ -337,12 +337,14 @@ def measured(private: Path) -> None:
                     "firstFaceAudioMs": None,
                     "firstAppPlaybackMs": 1500,
                     "firstAppAudioMs": 1540,
+                    "firstUnitMs": 1220,
                 },
                 {
                     "firstSpeakStartedMs": None,
                     "firstFaceAudioMs": None,
                     "firstAppPlaybackMs": 1700,
                     "firstAppAudioMs": 1760,
+                    "firstUnitMs": 1260,
                 },
             ]
         },
@@ -403,6 +405,10 @@ def test_public_result_grades_every_sandbox_check_with_numbers_only(tmp_path: Pa
     assert result["call"]["first_unit_ms"] == {"p50": 1250, "p95": 1300, "n": 2}
     assert (result["call"]["units_preapproved"], result["call"]["units_streamed"]) == (4, 4)
     assert checks["e5_hand_over_at_unit_arrival"] is True
+    # ...and the server did not take that time instead: the FULL arm's first unit arrives about when Polly's does.
+    assert result["polly"]["first_unit_ms"] == {"p50": 1220, "p95": 1260, "n": 2}
+    assert result["comparison"]["full_minus_polly_first_unit_p50_ms"] == 30
+    assert checks["e5_unit_arrival_matches_polly"] is True
     assert checks["e9_lite_token_cannot_publish"] is True
     assert checks["e10_injection_ends_face_in_a_heartbeat"] is True
     assert checks["e11_max_duration_enforced"] is True
@@ -435,6 +441,26 @@ def test_the_hand_over_waits_for_nothing_after_the_unit_arrives(tmp_path: Path) 
     raw["turns"] = [{k: v for k, v in turn.items() if k != "unitToHandOverMs"} for turn in raw["turns"]]
     write(private, "call", raw)
     assert graded(private)["checks"]["e5_hand_over_at_unit_arrival"] is None
+
+
+def test_a_round_trip_moved_to_the_server_still_fails_the_unit_arrival_check(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    measured(private)
+    raw = json.loads((private / "face" / "call.json").read_text(encoding="utf-8"))
+    # Hand-over right on arrival, but the units arrive about 0.6 s later than Polly's: the approval round trip
+    # now sits on the server, before each unit is sent.
+    raw["turns"] = [
+        {**turn, "firstUnitMs": turn["firstUnitMs"] + 600} if "firstUnitMs" in turn else turn
+        for turn in raw["turns"]
+    ]
+    write(private, "call", raw)
+    result = graded(private)
+    assert result["checks"]["e5_hand_over_at_unit_arrival"] is True
+    assert result["comparison"]["full_minus_polly_first_unit_p50_ms"] == 630
+    assert result["checks"]["e5_unit_arrival_matches_polly"] is False
+    # Polly's arm not measured: not a failure.
+    write(private, "polly", {"turns": []})
+    assert graded(private)["checks"]["e5_unit_arrival_matches_polly"] is None
 
 
 def test_nothing_but_numbers_and_codes_survives_from_the_private_files(tmp_path: Path) -> None:

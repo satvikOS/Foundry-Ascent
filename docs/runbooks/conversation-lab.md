@@ -391,7 +391,10 @@ Polly's first sound is the same meter on the app's output; the time its first bu
 as `first_scheduled_ms`. `e5_hand_over_at_unit_arrival` grades the FULL face's pre-approval: from a turn's first
 spoken unit reaching the page (`first_unit_ms`) to its `avatar.speak_text` must be at most 250 ms at p50
 (`unit_to_hand_over_ms`), since the server admitted the unit as it signed it and no `face/say` round trip sits there
-(runs 41226018170 and 41226813922 measured about 0.6 s of it before); the summary also counts the units pre-approved. The injection also reports how many seconds after the face went live the words went out
+(runs 41226018170 and 41226813922 measured about 0.6 s of it before); the summary also counts the units pre-approved.
+`e5_unit_arrival_matches_polly` checks the round trip did not just move to the server: the FULL arm's first unit
+must reach the page at most 150 ms later than Polly alone's at p50 (`full_minus_polly_first_unit_p50_ms`); the app's
+log summary reports each unit's server-side approval time (`turn.face_approval`, `face_approval_ms`). The injection also reports how many seconds after the face went live the words went out
 (`seconds_into_session`): near the sandbox's minute, the session may end before a heartbeat can catch them.
 
 **Spend.** The vendor sandbox costs nothing. The app's share (the whole `budget_usd`) pays for the turns on the

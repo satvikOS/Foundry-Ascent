@@ -606,6 +606,17 @@ export function createOrchestrator(
   }
 
   /**
+   * A turn blocked or failed after its units may have been pre-approved for the call's FULL face (a streamed reply
+   * admits each unit as it is sent, before the whole-reply check): withdraws what the face has not said. Called once
+   * the page was told (`turn.blocked` / `turn.error`), so an honest page has stopped handing units over. Never throws.
+   */
+  async function withdrawFaceUnits(face: Promise<FaceApproval | null> | null): Promise<void> {
+    if (face === null) return;
+    const approval = await face.catch(() => null);
+    await approval?.withdraw().catch(() => undefined);
+  }
+
+  /**
    * Signed `turn.speech` units of one voice turn (none once `signal`, the caller's, is aborted), each admitted to the
    * call's live FULL face as it is signed when `face` resolves to a pre-approval.
    */
@@ -870,6 +881,7 @@ export function createOrchestrator(
       const error = generationError(answered.cause);
       await failTurn(ctx, turn, error, answered.attempts);
       await emit(errorEvent(turn.id, error, ctx.requestId));
+      await withdrawFaceUnits(a.faceApproval);
       return { status: 'failed', turnId: turn.id, replayed: false, error };
     }
     const { context, shown, generation, checked } = answered;
@@ -1075,6 +1087,7 @@ export function createOrchestrator(
 
     if (persisted.blocked !== null) {
       await emit({ event: 'turn.blocked', turnId: turn.id, ...persisted.blocked });
+      await withdrawFaceUnits(a.faceApproval);
       return { status: 'blocked', turnId: turn.id, replayed: false, error: null };
     }
     await emit({ event: 'turn.completed', turn: persisted.view });
@@ -1359,6 +1372,7 @@ export function createOrchestrator(
         });
         await failTurn(ctx, turn, error, []);
         await emit(errorEvent(turn.id, error, ctx.requestId));
+        await withdrawFaceUnits(faceApproval);
         return { status: 'failed', turnId: turn.id, replayed: false, error };
       }
     },

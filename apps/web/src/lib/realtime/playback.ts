@@ -165,7 +165,7 @@ type Prepared = (
 };
 
 interface Entry {
-  readonly unit: SpeechUnitToPlay;
+  unit: SpeechUnitToPlay;
   controller: AbortController;
   prepared: Promise<Prepared> | null;
 }
@@ -259,6 +259,19 @@ export class SpeechPlayer {
     playing?.entry.controller.abort();
     playing?.stop();
     this.unduck();
+  }
+
+  /**
+   * The turn `turnId` failed: its units still queued lose the server's face pre-approval, so a FULL face asks
+   * `POST /calls/:id/face/say` for each as before (which refuses a failed turn) instead of saying it at once. The
+   * server withdraws those units too. Nothing else changes (the voice and LITE paths never read the flag).
+   */
+  withdrawFaceApproval(turnId: string): void {
+    for (const entry of this.queue) {
+      if (entry.unit.turnId !== turnId || entry.unit.faceApproved !== true) continue;
+      const { faceApproved: _withdrawn, ...unit } = entry.unit;
+      entry.unit = unit;
+    }
   }
 
   /**

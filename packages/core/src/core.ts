@@ -89,7 +89,8 @@ export function createCore(deps: CoreDeps): Core {
   };
   const faceHooks = createFaceHooks(kit);
   const face = createFaceService(kit, speechKeys, faceHooks);
-  const speech = createSpeechService(kit, speechKeys);
+  // A blocked or failed turn's pre-approved units are withdrawn from the face through its transcript check.
+  const speech = createSpeechService(kit, speechKeys, faceHooks);
   return {
     auth,
     me: createMeService(kit),

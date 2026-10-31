@@ -472,6 +472,33 @@ export async function preapprovedFaceText(
   return found !== null;
 }
 
+/**
+ * Withdraws what the turn engine pre-approved of a turn (`turnKey`) that was then blocked or failed, from the call's
+ * live FULL face (`sessionRef`): the units the face's transcript has not shown (`said_mask` 0, read just before),
+ * except the first of them, the one an honest page may be handing over as the turn ends (it hands units over one at
+ * a time, and stops at the turn's end). Units `face/say` admitted are left alone. Returns the withdrawn units' `seq`,
+ * in order (none when the face is not that live FULL face).
+ */
+export function withdrawFaceTexts(
+  sx: SystemExecutor,
+  input: { readonly callId: string; readonly sessionRef: string; readonly turnKey: string },
+): Promise<number[]> {
+  return queryRows(
+    sx,
+    `WITH unsaid AS (
+       SELECT t.unit, t.seq FROM call_face_texts t
+         JOIN call_faces f ON f.call_id = t.call_id
+        WHERE t.call_id = :call AND t.turn_key = :turn AND t.preapproved AND t.said_mask = 0
+          AND f.session_ref = :ref AND f.ended_at IS NULL AND f.mode = 'full'),
+     kept AS (SELECT min(seq) AS seq FROM unsaid)
+     DELETE FROM call_face_texts t USING unsaid, kept
+      WHERE t.call_id = :call AND t.unit = unsaid.unit AND unsaid.seq > kept.seq
+      RETURNING t.seq`,
+    { call: p.uuid(input.callId), ref: p.text(input.sessionRef), turn: p.text(input.turnKey) },
+    (r) => col.int.decode(r.seq, 'seq'),
+  ).then((seqs) => seqs.sort((a, b) => a - b));
+}
+
 /** A unit a FULL face was allowed to say: its digests, and what of it the transcript already showed said. */
 export interface FaceTextUnit {
   readonly unit: string;

@@ -122,6 +122,11 @@ def _log_tables(logs: Mapping[str, Any] | None) -> list[str]:
         f"Polly first audio {_ms_cell(logs.get('polly_first_audio_ms'))} ms. Stream fallbacks: "
         f"{logs.get('stream_fallbacks') or 'none'}; interrupt requests: {logs.get('interrupt_requests', 0)}."
     )
+    if logs.get("face_approval_ms"):
+        out.append(
+            f"FULL face pre-approval, per spoken unit before it is sent: {_ms_cell(logs.get('face_approval_ms'))} ms "
+            f"({logs.get('face_units_approved', 0)} admitted)."
+        )
     out.append("")
     voice_turns = [t for t in logs.get("turns") or [] if t.get("voice")]
     if voice_turns:

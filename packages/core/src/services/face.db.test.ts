@@ -16,9 +16,11 @@
  *   stops when its transcript stays unread;
  * - on a live FULL face, the turn engine admits each unit as it signs it (face pre-approval: the same checks, the
  *   flag under the signature), `face/say` confirms such a unit without reserving it again, and the transcript is
- *   reconciled against pre-approved words like any other.
+ *   reconciled against pre-approved words like any other; a streamed reply then blocked or failed has what the
+ *   face did not say withdrawn (but the unit a page may be handing over), its reservations given back, so the
+ *   face saying more of it ends the face at the next heartbeat.
  */
-import { CRISIS_SPOKEN_MESSAGE } from '@foundry/ai';
+import { CRISIS_SPOKEN_MESSAGE, MockModelGateway } from '@foundry/ai';
 import {
   AvatarSessionResponse,
   CallConfigResponse,
@@ -31,7 +33,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { PlatformKeyCache } from '../auth/keys.js';
 import { type RequestContext } from '../context.js';
-import { type Core } from '../core.js';
+import { type Core, createCore } from '../core.js';
 import { resolveDeps } from '../deps.js';
 import { Kit } from '../internal/kit.js';
 import { FACE_CHUNK_BYTES } from '../orchestrator/face-audio.js';
@@ -1489,6 +1491,241 @@ describe('a FULL face’s transcript is checked however the face ends, and never
       expect((await beatOf(callId, 'live')).face).toBe('stop');
       expect(await audits('call.face_injection', callId)).toHaveLength(1);
       expect(await audits('call.face_ended', callId)).toMatchObject([{ policy_reason: 'face_injection' }]);
+    } finally {
+      await endQuietly(callId);
+    }
+  });
+
+  /** A core on the FULL face whose model streams with `gateway` (a scripted reply, or a stream that breaks). */
+  const fullWith = (gateway: MockModelGateway): Core =>
+    createCore({
+      db: h.t.db,
+      gateway,
+      config: h.config,
+      objectStore: h.objectStore,
+      jobQueue: h.jobQueue,
+      logger: h.logger,
+      speech: polly,
+      embodiment: stock,
+    });
+  /** A spoken turn on the call: its outcome and its units with their face flag. */
+  async function spokenTurn(core: Core, callId: string, sessionId: string, text: string) {
+    const units: { turnId: string; seq: number; text: string; sig: string; face: boolean }[] = [];
+    const outcome = await core.orchestrator.runTurn(
+      admin,
+      sessionId,
+      { text, channel: 'voice', callId },
+      (e) => {
+        const event = TurnStreamEvent.parse(e);
+        if (event.event === 'turn.speech') {
+          const { turnId, seq, text: words, sig } = event;
+          units.push({ turnId, seq, text: words, sig, face: event.face === true });
+        }
+      },
+    );
+    return { outcome, units };
+  }
+  /** The turn's admitted units on the call (seq, and whether the transcript showed any of it said). */
+  async function admittedOf(callId: string, turnId: string) {
+    const rows = await h.t.db.system((sx) =>
+      sx.query(
+        `SELECT seq, said_mask <> 0 AS said FROM call_face_texts
+          WHERE call_id = :call AND turn_key = :turn ORDER BY seq`,
+        { call: p.uuid(callId), turn: p.text(turnId.toLowerCase()) },
+      ),
+    );
+    return rows.rows as { seq: number; said: boolean }[];
+  }
+  /** A face unit's reservation (plays) and the call's speech characters. */
+  async function reservationOf(callId: string, turnId: string, seq: number) {
+    const r = await h.t.db.system((sx) =>
+      sx.query(
+        `SELECT (SELECT plays FROM call_speech WHERE call_id = :call AND unit = :unit)::int AS plays,
+                (SELECT speech_characters FROM calls WHERE id = :call)::int AS characters`,
+        { call: p.uuid(callId), unit: p.text(`face.${turnId.toLowerCase()}.${String(seq)}`) },
+      ),
+    );
+    const row = r.rows[0] as { plays: number | null; characters: number };
+    return { plays: row.plays ?? 0, characters: row.characters };
+  }
+  /**
+   * The face says `words` after what it said so far: this heartbeat finds them matching nothing yet (pending, a
+   * vendor may still be splitting a unit), and the next one, 16 s on, ends the face.
+   */
+  async function saidThenNextBeat(callId: string, ref: string, words: string) {
+    stock.said(ref, words);
+    expect((await beatOf(callId, 'live')).face).toBe('continue');
+    await h.t.db.system((sx) =>
+      sx.query(
+        `UPDATE call_faces SET transcript_pending_since = now() - interval '16 seconds' WHERE call_id = :id`,
+        { id: p.uuid(callId) },
+      ),
+    );
+    return (await beatOf(callId, 'live')).face;
+  }
+  async function withdrawnAudit(turnId: string) {
+    const rows = await h.t.db.system((sx) =>
+      sx.query(
+        `SELECT outcome, metadata::text AS metadata FROM audit_events
+          WHERE action = 'call.face_text_withdrawn' AND object_id = :id ORDER BY id`,
+        { id: p.text(turnId) },
+      ),
+    );
+    return (rows.rows as { outcome: string; metadata: string }[]).map((r) => ({
+      outcome: r.outcome,
+      metadata: JSON.parse(r.metadata) as unknown,
+    }));
+  }
+
+  it('withdraws what it pre-approved of a turn that the face has not said, but the unit a page may be handing over', async () => {
+    const { callId, ref, intro, sessionId } = await openFull();
+    try {
+      const approval = await full.speech.prepareFaceApproval(admin, { callId, sessionId });
+      if (approval === null) throw new Error('no pre-approval on a live FULL face');
+      const turnId = crypto.randomUUID();
+      const texts = [
+        'First we count the doors.',
+        'Then we count the seats.',
+        'Then we ask about the peaks.',
+        'Then we compare the weeks.',
+      ];
+      for (const [seq, text] of texts.entries()) {
+        expect(await approval.approve({ turnId, seq, text })).toBe(true);
+      }
+      const before = await reservationOf(callId, turnId, 3);
+      expect(before.plays).toBe(FACE_TEXT_PLAYS);
+      // The page handed the face the first two units before the turn ended; the third may be on its way.
+      stock.said(ref, intro);
+      stock.said(ref, texts[0] ?? '');
+      stock.said(ref, texts[1] ?? '');
+      await approval.withdraw();
+      expect(await admittedOf(callId, turnId)).toEqual([
+        { seq: 0, said: true },
+        { seq: 1, said: true },
+        { seq: 2, said: false },
+      ]);
+      // The withdrawn unit's characters and play go back to the call's speech budget; the kept ones stay.
+      expect(await reservationOf(callId, turnId, 3)).toEqual({
+        plays: 0,
+        characters: before.characters - (texts[3] ?? '').length,
+      });
+      expect((await reservationOf(callId, turnId, 2)).plays).toBe(FACE_TEXT_PLAYS);
+      expect(await withdrawnAudit(turnId)).toEqual([
+        { outcome: 'blocked', metadata: { callId, units: 1, kept: 3 } },
+      ]);
+      // Nothing more is admitted for the turn, and withdrawing again changes nothing.
+      expect(await approval.approve({ turnId, seq: 4, text: 'And one more thing.' })).toBe(false);
+      await approval.withdraw();
+      expect((await admittedOf(callId, turnId)).map((u) => u.seq)).toEqual([0, 1, 2]);
+      expect((await reservationOf(callId, turnId, 3)).characters).toBe(
+        before.characters - (texts[3] ?? '').length,
+      );
+      expect(await withdrawnAudit(turnId)).toHaveLength(1);
+
+      // The unit the page was handing over is still words the face may say; anything after it is not.
+      stock.said(ref, texts[2] ?? '');
+      expect((await beatOf(callId, 'live')).face).toBe('continue');
+      expect(await saidThenNextBeat(callId, ref, texts[3] ?? '')).toBe('stop');
+      expect(await audits('call.face_injection', callId)).toHaveLength(1);
+      expect(await audits('call.face_ended', callId)).toMatchObject([{ policy_reason: 'face_injection' }]);
+    } finally {
+      await endQuietly(callId);
+    }
+  });
+
+  it('withdraws nothing when what the face said cannot be read now (the heartbeat decides that face)', async () => {
+    const { callId, sessionId } = await openFull();
+    try {
+      const approval = await full.speech.prepareFaceApproval(admin, { callId, sessionId });
+      if (approval === null) throw new Error('no pre-approval on a live FULL face');
+      const turnId = crypto.randomUUID();
+      for (const [seq, text] of ['One thing first.', 'Then another.', 'Then a third.'].entries()) {
+        expect(await approval.approve({ turnId, seq, text })).toBe(true);
+      }
+      stock.failTranscript = true;
+      try {
+        await approval.withdraw();
+      } finally {
+        stock.failTranscript = false;
+      }
+      expect((await admittedOf(callId, turnId)).map((u) => u.seq)).toEqual([0, 1, 2]);
+      expect((await reservationOf(callId, turnId, 2)).plays).toBe(FACE_TEXT_PLAYS);
+      expect(await withdrawnAudit(turnId)).toEqual([]);
+    } finally {
+      await endQuietly(callId);
+    }
+  });
+
+  it('a streamed reply blocked after its units were pre-approved: the face saying more of it ends the face', async () => {
+    const { callId, ref, intro, sessionId } = await openFull();
+    try {
+      // Every sentence passes the sentence gate and is sent as it is released; the last one names the EIR, so
+      // the reply is blocked after the units before it left the server (pre-approved).
+      const reply =
+        'Start with the door counts this week. Then count the seats at lunch every day. ' +
+        'Then ask the manager about the busy hours. Then compare the two weeks side by side. ' +
+        'corin here, by the way.';
+      const core = fullWith(new MockModelGateway({ streamDelayMs: 0, streamFixture: () => reply }));
+      const { outcome, units } = await spokenTurn(core, callId, sessionId, 'Where do we start?');
+      expect(outcome.status).toBe('blocked');
+      expect(units.length).toBeGreaterThanOrEqual(2);
+      expect(units.every((u) => u.face)).toBe(true);
+      const [first, second] = units;
+      if (first === undefined || second === undefined) throw new Error('no units');
+      // The page had said nothing of it yet: only the first unit is kept (it may have been on its way).
+      expect(await admittedOf(callId, first.turnId)).toEqual([{ seq: 0, said: false }]);
+      for (const unit of units.slice(1)) {
+        expect((await reservationOf(callId, unit.turnId, unit.seq)).plays).toBe(0);
+      }
+      expect(await withdrawnAudit(first.turnId)).toEqual([
+        { outcome: 'blocked', metadata: { callId, units: units.length - 1, kept: 1 } },
+      ]);
+      // face/say refuses the blocked turn's units, as before pre-approval.
+      await expect(full.speech.authorizeFaceText(admin, callId, second)).rejects.toMatchObject({
+        reason: 'turn_not_speakable',
+      });
+      // An honest page: the intro and the unit it was saying. A tampered page: more of the blocked reply.
+      stock.said(ref, intro);
+      stock.said(ref, first.text);
+      expect((await beatOf(callId, 'live')).face).toBe('continue');
+      expect(await saidThenNextBeat(callId, ref, second.text)).toBe('stop');
+      expect(await audits('call.face_injection', callId)).toHaveLength(1);
+      expect(await audits('call.face_ended', callId)).toMatchObject([{ policy_reason: 'face_injection' }]);
+    } finally {
+      await endQuietly(callId);
+    }
+  });
+
+  it('a streamed reply that failed after its units were pre-approved has them withdrawn the same way', async () => {
+    const { callId, ref, intro, sessionId } = await openFull();
+    try {
+      const reply =
+        'Start with the door counts this week. Then count the seats at lunch every day. ' +
+        'Then ask the manager about the busy hours. Then compare the two weeks side by side. ' +
+        'Then write down what surprised you most. Then bring the numbers to our next call. ' +
+        'Then pick the one hour that matters most. Then test a sign at the door for a week. ' +
+        'Then count again with the sign up. Then tell me which number moved and by how much.';
+      const gateway = new MockModelGateway({ streamDelayMs: 0, streamFixture: () => reply });
+      // The stream breaks halfway (its own scripted outcome lets it start), and the reply written whole instead
+      // cannot be made either.
+      gateway.scriptStream('fail_midway');
+      gateway.scriptNext('fallback', 'unavailable', 'unavailable', 'unavailable', 'unavailable');
+      const { outcome, units } = await spokenTurn(fullWith(gateway), callId, sessionId, 'Where do we start?');
+      expect(outcome.status).toBe('failed');
+      expect(units.length).toBeGreaterThanOrEqual(2);
+      expect(units.every((u) => u.face)).toBe(true);
+      const [first, second] = units;
+      if (first === undefined || second === undefined) throw new Error('no units');
+      expect(await admittedOf(callId, first.turnId)).toEqual([{ seq: 0, said: false }]);
+      expect((await reservationOf(callId, second.turnId, second.seq)).plays).toBe(0);
+      await expect(full.speech.authorizeFaceText(admin, callId, second)).rejects.toMatchObject({
+        reason: 'turn_not_speakable',
+      });
+      stock.said(ref, intro);
+      stock.said(ref, first.text);
+      expect((await beatOf(callId, 'live')).face).toBe('continue');
+      expect(await saidThenNextBeat(callId, ref, second.text)).toBe('stop');
+      expect(await audits('call.face_injection', callId)).toHaveLength(1);
     } finally {
       await endQuietly(callId);
     }

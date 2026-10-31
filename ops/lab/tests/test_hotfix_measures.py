@@ -60,6 +60,9 @@ LOG = [
     ),
     line(event="turn.timing", voice=False, totalMs=4000),
     line(event="speech.timing", time="2026-10-18T00:00:07.950Z", firstAudioMs=200),
+    line(event="turn.face_approval", turnId="t1", seq=0, approved=True, ms=12),
+    line(event="turn.face_approval", turnId="t1", seq=1, approved=True, ms=30),
+    line(event="turn.face_approval", turnId="t1", seq=2, approved=False, ms=8),
     line(event="turn.stream_fallback", reason="meta_narration"),
     line(event="http.request", route="/api/v1/turns/:id/interrupt", status=204),
 ]
@@ -90,6 +93,9 @@ def test_logstats_counts_first_attempt_failures_by_purpose_and_groups_issue_code
     assert out["turn_total_ms"]["voice"] == {"p50": 3000.0, "p95": 3000.0, "n": 1}
     assert out["voice_first_speech_ms"]["p50"] == 900.0
     assert out["polly_first_audio_ms"]["p50"] == 200.0
+    # A FULL face's pre-approval of each unit, on the server before the unit is sent.
+    assert out["face_approval_ms"] == {"p50": 12.0, "p95": 30.0, "n": 3}
+    assert out["face_units_approved"] == 2
     assert out["stream_fallbacks"] == {"meta_narration": 1}
     assert out["interrupt_requests"] == 1
     voice_turn = next(t for t in out["turns"] if t["voice"])

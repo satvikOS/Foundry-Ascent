@@ -1148,6 +1148,8 @@ export class CallEngine {
         });
         return null;
       case 'turn.error':
+        // The server takes back a failed turn's face pre-approvals: its queued units ask face/say again.
+        if (event.turnId !== null) this.player?.withdrawFaceApproval(event.turnId);
         this.set({ notice: { kind: 'turn_error', message: turnErrorLine(event.message) } });
         return null;
       case 'turn.status':
