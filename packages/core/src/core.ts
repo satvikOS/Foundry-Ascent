@@ -107,7 +107,7 @@ export function createCore(deps: CoreDeps): Core {
     eirProfiles: createEirProfilesService(kit, directory),
     program: createProgramService(kit, directory),
     admin: createAdminService(kit, onPrincipalChanged),
-    maintenance: createMaintenanceService(kit, distill),
+    maintenance: createMaintenanceService(kit, distill, faceHooks),
     distill,
     notebook: createNotebookService(kit, directory),
     veir: createVeirService(kit, face),

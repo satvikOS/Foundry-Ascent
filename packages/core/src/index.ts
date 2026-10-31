@@ -35,6 +35,7 @@ export {
   type StartedFaceSession,
   type VerifiedFaceAudio,
   type VerifiedFaceText,
+  type FaceTranscript,
   type FaceTranscriptLine,
   type VerifiedSpeechUnit,
   type VoiceProvider,

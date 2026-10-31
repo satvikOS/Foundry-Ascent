@@ -5,7 +5,7 @@ import {
   type EnvLike,
   type FaceSessionHandle,
   type FaceSessionRequest,
-  type FaceTranscriptLine,
+  type FaceTranscript,
   type StartedFaceSession,
 } from '@foundry/core';
 
@@ -70,11 +70,8 @@ export class DevelopmentFace implements EmbodimentProvider {
   }
 
   /** The stand-in keeps no transcript: there is never anything to reconcile. */
-  transcriptSince(
-    _session: FaceSessionHandle,
-    _since: number | null,
-  ): Promise<readonly FaceTranscriptLine[]> {
-    return Promise.resolve([]);
+  transcriptSince(_session: FaceSessionHandle, _since: number | null): Promise<FaceTranscript> {
+    return Promise.resolve({ lines: [], complete: true });
   }
 }
 

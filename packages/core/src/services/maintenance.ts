@@ -3,7 +3,7 @@ import { auditRepo, callsRepo, documentsRepo, sessionsRepo, twinRepo } from '@fo
 import { type Kit } from '../internal/kit.js';
 import { CALL_LIMITS } from './call-usage.js';
 import { type DistillBackstopReport, type DistillService } from './distill.js';
-import { meterFace } from './face.js';
+import { type FaceHooks, meterFace } from './face.js';
 import { settlePendingAiProposals, type PendingSettleResult } from './memory.js';
 
 export interface MaintenanceReport {
@@ -83,6 +83,7 @@ export function staleUploadSeconds(presignTtlSeconds: number): number {
 export function createMaintenanceService(
   kit: Kit,
   distill: Pick<DistillService, 'backstop' | 'distillSettled'>,
+  face: Pick<FaceHooks, 'afterCallsReaped'>,
 ): MaintenanceService {
   return {
     runDaily: async ({ requestId, deadline }) => {
@@ -120,9 +121,11 @@ export function createMaintenanceService(
         return calls;
       });
       const staleCalls = reaped.length;
+      // Their faces end like any call's: what a FULL face said is checked to its end (or recorded unchecked where
+      // this function wires no vendor), and the vendor session is stopped if it is still open.
+      await face.afterCallsReaped(requestId, reaped);
       // The faces of those calls (and any face whose end was not billed) go into the usage ledger now, each
-      // second once: the platform's daily cap reads the ledger. Their vendor sessions ended long ago at the
-      // vendor's idle timeout (no keep-alive comes after the last heartbeat).
+      // second once: the platform's daily cap reads the ledger.
       await billEndedFaces(kit, requestId);
       // A call that ends is distilled however it ends, the ones closed here too (inline: the worker never
       // enqueues), before the backstop takes the rest.

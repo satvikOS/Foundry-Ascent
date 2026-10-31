@@ -351,6 +351,17 @@ export interface FaceTranscriptLine {
   readonly at: number;
 }
 
+/** What one read of a FULL face session's transcript returned. */
+export interface FaceTranscript {
+  /** The lines at or after the cursor asked for, oldest first. */
+  readonly lines: readonly FaceTranscriptLine[];
+  /**
+   * False when the vendor has more lines than one read takes (its page limit): the lines after these were not
+   * read, so the check that reads them is not complete.
+   */
+  readonly complete: boolean;
+}
+
 /**
  * The face of calls (docs/architecture/calls.md §4) behind one port, in one of two modes:
  * - **LITE** (`voicing: 'audio'`): a vendor's realtime avatar renders audio our server synthesized from validated
@@ -400,10 +411,11 @@ export interface EmbodimentProvider {
   end(session: FaceSessionHandle, reason: 'call_ended' | 'face_stopped' | 'face_dropped'): Promise<void>;
   /**
    * FULL: the session's transcript lines at the vendor, oldest first, from the vendor's timestamp `since` on
-   * (inclusive; null: the whole session), so the server can check the face said only what it admitted. Rejects
-   * when the vendor cannot be read.
+   * (inclusive; null: the whole session), so the server can check the face said only what it admitted; each line
+   * once, also lines that share a timestamp. `complete` is false when more lines remain than one read takes.
+   * Rejects when the vendor cannot be read.
    */
-  transcriptSince?(session: FaceSessionHandle, since: number | null): Promise<readonly FaceTranscriptLine[]>;
+  transcriptSince?(session: FaceSessionHandle, since: number | null): Promise<FaceTranscript>;
 }
 
 export interface JobQueue {

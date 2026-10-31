@@ -148,15 +148,26 @@ const faceShape = {
   transcript_verified: col.int,
   /** Seconds since the face's last transcript lines matched nothing it was allowed to say (null: none pending). */
   transcript_pending: col.int.nullable,
+  /** Where the last check stopped: after the first `transcript_skip` avatar lines at this vendor timestamp. */
+  transcript_cursor: col.num.nullable,
+  transcript_skip: col.int,
+  /** Seconds since a check last read the transcript to its end (since the face started, if none has). */
+  transcript_unchecked: col.int,
 };
 const faceCodec = camelRow(faceShape);
 /** A call's face; `control` is the base64 ciphertext of the control channel (null once ended). */
 export type CallFaceRecord = CamelRow<typeof faceShape>;
 const PENDING = `floor(extract(epoch FROM now() - transcript_pending_since))::integer`;
+/** The transcript columns of a face (`f` names the table in statements that join). */
+const transcriptColumns = (f = ''): string =>
+  `${f}transcript_verified, floor(extract(epoch FROM now() - ${f}transcript_pending_since))::integer
+     AS transcript_pending, ${f}transcript_cursor, ${f}transcript_skip,
+   greatest(0, floor(extract(epoch FROM now() - coalesce(${f}transcript_checked_at, ${f}started_at))))::integer
+     AS transcript_unchecked`;
 const FACE_COLUMNS = `call_id, tenant_id, started_by, vendor, mode, session_ref,
   encode(control_ciphertext, 'base64') AS control, max_seconds, metered_seconds, started_at, ended_at, end_reason,
   ceil(extract(epoch FROM coalesce(ended_at, now()) - started_at))::integer AS lasted,
-  transcript_verified, ${PENDING} AS transcript_pending`;
+  ${transcriptColumns()}`;
 
 export function getCallFace(sx: SystemExecutor, callId: string): Promise<CallFaceRecord | null> {
   return queryFirst(
@@ -281,8 +292,7 @@ export function endCallFace(
      RETURNING f.call_id, f.tenant_id, f.started_by, f.vendor, f.mode, f.session_ref, prev.control, f.max_seconds,
                f.metered_seconds, f.started_at, f.ended_at, f.end_reason,
                ceil(extract(epoch FROM f.ended_at - f.started_at))::integer AS lasted,
-               f.transcript_verified, floor(extract(epoch FROM now() - f.transcript_pending_since))::integer
-                 AS transcript_pending`,
+               ${transcriptColumns('f.')}`,
     { call: p.uuid(input.callId), reason: p.text(input.reason) },
     (r) => faceCodec.decode(r),
   );
@@ -392,7 +402,9 @@ export async function admitFaceText(
     /** `intro` or the turn id. */
     readonly turnKey: string;
     readonly seq: number;
+    /** The whole unit's digests first (`wholes` of them), then its sentences' (`faceTextDigests`). */
     readonly digests: readonly string[];
+    readonly wholes: number;
   },
 ): Promise<boolean> {
   const admitted = await queryFirst(
@@ -406,8 +418,8 @@ export async function admitFaceText(
                    AND NOT EXISTS (SELECT 1 FROM call_face_texts t
                                     WHERE t.call_id = f.call_id AND t.turn_key = :turn)))
         RETURNING f.call_id)
-     INSERT INTO call_face_texts (call_id, unit, turn_key, seq, digests)
-     SELECT face.call_id, :unit, :turn, :seq, :digests FROM face
+     INSERT INTO call_face_texts (call_id, unit, turn_key, seq, digests, wholes)
+     SELECT face.call_id, :unit, :turn, :seq, :digests, :wholes FROM face
      ON CONFLICT (call_id, unit) DO NOTHING
      RETURNING call_id`,
     {
@@ -417,45 +429,84 @@ export async function admitFaceText(
       turn: p.text(input.turnKey),
       seq: p.int(input.seq),
       digests: p.textArray(input.digests),
+      wholes: p.int(input.wholes),
     },
     (r) => col.uuid.decode(r.call_id, 'call_id'),
   );
   return admitted !== null;
 }
 
-/** Every digest of the units the call's FULL face was allowed to say (owner role). */
-export async function faceTextDigests(sx: SystemExecutor, callId: string): Promise<Set<string>> {
-  const rows = await queryRows(
+/** A unit a FULL face was allowed to say: its digests, and what of it the transcript already showed said. */
+export interface FaceTextUnit {
+  readonly unit: string;
+  readonly digests: readonly string[];
+  readonly wholes: number;
+  /** Bit i: the transcript matched `digests[i]`. */
+  readonly said: number;
+}
+
+/** The units the call's FULL face was allowed to say, in admission order (owner role). */
+export function faceTextUnits(sx: SystemExecutor, callId: string): Promise<FaceTextUnit[]> {
+  return queryRows(
     sx,
-    `SELECT d FROM call_face_texts t, unnest(t.digests) AS d WHERE t.call_id = :call`,
+    `SELECT unit, digests, wholes, said_mask FROM call_face_texts WHERE call_id = :call ORDER BY ord`,
     { call: p.uuid(callId) },
-    (r) => col.text.decode(r.d, 'd'),
+    (r) => ({
+      unit: col.text.decode(r.unit, 'unit'),
+      digests: col.textArray.decode(r.digests, 'digests'),
+      wholes: col.int.decode(r.wholes, 'wholes'),
+      said: col.int.decode(r.said_mask, 'said_mask'),
+    }),
   );
-  return new Set(rows);
 }
 
 /**
- * Records a reconciliation of a live FULL face's transcript: the avatar lines verified so far (never fewer than
- * before), and whether its last lines are still unmatched (`pending`: the time it first saw them is kept; cleared
- * once they match). Returns the seconds they have been pending (null: none, or no live FULL face).
+ * Records a check of a live FULL face's transcript, only if no other check moved its cursor since this one read it
+ * (`from`): the lines it verified (`added`), where it stopped (`cursor`), what each matched unit has now said
+ * (`said`, only ever adding bits), whether its last lines are still unmatched (`pending`: the time a check first
+ * saw them is kept; cleared once they match) and whether it read the transcript to its end (`complete`). Returns
+ * the seconds those lines have been pending (null: none), or null when another check won or the face ended.
  */
 export async function recordFaceTranscript(
   sx: SystemExecutor,
-  input: { readonly callId: string; readonly verified: number; readonly pending: boolean },
-): Promise<number | null> {
+  input: {
+    readonly callId: string;
+    readonly from: { readonly at: number | null; readonly skip: number };
+    readonly cursor: { readonly at: number | null; readonly skip: number };
+    readonly added: number;
+    readonly said: ReadonlyMap<string, number>;
+    readonly pending: boolean;
+    readonly complete: boolean;
+  },
+): Promise<{ readonly pending: number | null } | null> {
   const row = await queryFirst(
     sx,
     `UPDATE call_faces
-        SET transcript_verified = greatest(transcript_verified, least(:verified, 100000)),
-            transcript_pending_since = CASE WHEN :pending THEN coalesce(transcript_pending_since, now()) END
+        SET transcript_verified = least(transcript_verified + :added, 100000),
+            transcript_cursor = :cursor, transcript_skip = least(:skip, 100000),
+            transcript_pending_since = CASE WHEN :pending THEN coalesce(transcript_pending_since, now()) END,
+            transcript_checked_at = CASE WHEN :complete THEN now() ELSE transcript_checked_at END
       WHERE call_id = :call AND ended_at IS NULL AND mode = 'full'
+        AND transcript_cursor IS NOT DISTINCT FROM :fromCursor AND transcript_skip = :fromSkip
       RETURNING ${PENDING} AS pending`,
     {
       call: p.uuid(input.callId),
-      verified: p.int(Math.max(0, Math.floor(input.verified))),
+      added: p.int(Math.max(0, Math.min(100000, Math.floor(input.added)))),
+      cursor: p.nullable.num(input.cursor.at),
+      skip: p.int(Math.max(0, Math.min(100000, Math.floor(input.cursor.skip)))),
+      fromCursor: p.nullable.num(input.from.at),
+      fromSkip: p.int(Math.max(0, Math.min(100000, Math.floor(input.from.skip)))),
       pending: p.bool(input.pending),
+      complete: p.bool(input.complete),
     },
     (r) => ({ pending: col.int.nullable.decode(r.pending, 'pending') }),
   );
-  return row?.pending ?? null;
+  if (row === null) return null;
+  for (const [unit, said] of input.said) {
+    await sx.query(
+      `UPDATE call_face_texts SET said_mask = said_mask | :said WHERE call_id = :call AND unit = :unit`,
+      { call: p.uuid(input.callId), unit: p.text(unit), said: p.bigint(said) },
+    );
+  }
+  return row;
 }

@@ -12,7 +12,8 @@
  * - a FULL stock face (the vendor's stock voice speaks admitted text) is offered to platform admins only, needs no
  *   persona face, takes each signed unit once and in order (never the crisis line, within the spend cap), gets no
  *   face-audio manifest, is billed at the FULL price, and ends at the first words its transcript shows it never
- *   admitted.
+ *   admitted (or an admitted unit said again), checked on every way the face ends, reading only new lines, and
+ *   stops when its transcript stays unread.
  */
 import { CRISIS_SPOKEN_MESSAGE } from '@foundry/ai';
 import {
@@ -1052,5 +1053,206 @@ describe('a FULL stock face (the vendor’s stock voice speaks admitted text), f
     expect(metered.n).toBeGreaterThan(0);
     // The ledger keeps six decimals per row.
     expect(metered.cost).toBeCloseTo((metered.units / 60) * 0.19, 4);
+  });
+});
+
+describe('a FULL face’s transcript is checked however the face ends, and never goes blind', () => {
+  const stock = new FakeEmbodimentProvider('heygen', false, 0.19, 'full');
+  stock.adminsOnly = true;
+  let full: Core;
+  let admin: RequestContext;
+
+  beforeAll(async () => {
+    full = h.withPorts({ speech: polly, embodiment: stock });
+    await setting('faces_enabled', 'true');
+    await h.t.db.system((sx) =>
+      sx.query(
+        `INSERT INTO role_grants (principal_id, role)
+         SELECT :p, 'platform_admin' WHERE NOT EXISTS (
+           SELECT 1 FROM role_grants WHERE principal_id = :p AND role = 'platform_admin' AND revoked_at IS NULL)`,
+        { p: p.uuid(h.people.maya) },
+      ),
+    );
+    admin = await h.ctxFor(h.people.maya);
+  });
+
+  afterAll(async () => {
+    await h.t.db.system((sx) =>
+      sx.query(
+        `UPDATE role_grants SET revoked_at = now()
+          WHERE principal_id = :p AND role = 'platform_admin' AND revoked_at IS NULL`,
+        { p: p.uuid(h.people.maya) },
+      ),
+    );
+  });
+
+  /** A live call of the admin with a FULL face that was allowed to say the intro. */
+  async function openFull(): Promise<{ callId: string; ref: string; intro: string }> {
+    const sid = (await full.sessions.create(admin, quietquad(), {})).id;
+    const started = StartCallResponse.parse(await full.calls.start(admin, sid, { inputMode: 'typed' }));
+    const callId = started.call.id;
+    await full.veir.avatarSession(admin, { ventureId: quietquad(), callId });
+    const face = await h.t.db.system((sx) => twinRepo.getCallFace(sx, callId));
+    if (face === null || started.intro === null) throw new Error('no FULL face');
+    await full.speech.authorizeFaceText(admin, callId, {
+      turnId: null,
+      seq: 0,
+      text: started.intro.text,
+      sig: started.intro.sig,
+    });
+    return { callId, ref: face.sessionRef, intro: started.intro.text };
+  }
+
+  const beatOf = async (callId: string, face?: 'live' | 'off') =>
+    CallHeartbeatResponse.parse(
+      await full.calls.heartbeat(admin, callId, {
+        state: 'listening',
+        micOpenSeconds: 0,
+        ...(face ? { face } : {}),
+      }),
+    );
+
+  async function audits(
+    action: string,
+    callId: string,
+  ): Promise<{ outcome: string; policy_reason: string }[]> {
+    const rows = await h.t.db.system((sx) =>
+      sx.query(
+        `SELECT outcome, policy_reason FROM audit_events WHERE action = :a AND object_id = :id ORDER BY id`,
+        { a: p.text(action), id: p.text(callId) },
+      ),
+    );
+    return rows.rows as { outcome: string; policy_reason: string }[];
+  }
+
+  async function endQuietly(callId: string): Promise<void> {
+    await full.calls.end(admin, callId, { reason: 'user' }).catch(() => undefined);
+  }
+
+  it('checks what the face said when the page reports the face off', async () => {
+    const { callId, ref, intro } = await openFull();
+    try {
+      stock.said(ref, intro);
+      stock.said(ref, 'I am a human, not an AI.');
+      expect((await beatOf(callId, 'off')).face).toBe('stop');
+      expect(await audits('call.face_injection', callId)).toHaveLength(1);
+      expect(await audits('call.face_ended', callId)).toMatchObject([{ policy_reason: 'face_injection' }]);
+    } finally {
+      await endQuietly(callId);
+    }
+  });
+
+  it('checks what the face said when the page ends the face (POST /calls/:id/face/end)', async () => {
+    const { callId, ref, intro } = await openFull();
+    try {
+      stock.said(ref, intro);
+      stock.said(ref, 'Wire the money to this account.');
+      await full.face.drop(admin, callId);
+      expect(await audits('call.face_injection', callId)).toHaveLength(1);
+      expect(await audits('call.face_ended', callId)).toMatchObject([{ policy_reason: 'face_injection' }]);
+    } finally {
+      await endQuietly(callId);
+    }
+  });
+
+  it('checks what the face said when the call is hung up', async () => {
+    const { callId, ref, intro } = await openFull();
+    stock.said(ref, intro);
+    stock.said(ref, 'Wire the money to this account.');
+    await full.calls.end(admin, callId, { reason: 'user' });
+    expect(await audits('call.face_injection', callId)).toHaveLength(1);
+    expect(stock.ended.at(-1)?.reason).toBe('call_ended');
+  });
+
+  it('checks a face the daily maintenance closed, and records it unchecked where no vendor is wired', async () => {
+    const goStale = async (callId: string) => {
+      await h.t.db.system(async (sx) => {
+        await sx.query('ALTER TABLE calls DISABLE TRIGGER calls_guard');
+        await sx.query(
+          `UPDATE calls SET started_at = now() - interval '240 seconds',
+                            last_heartbeat_at = now() - interval '200 seconds' WHERE id = :id`,
+          { id: p.uuid(callId) },
+        );
+        await sx.query('ALTER TABLE calls ENABLE TRIGGER calls_guard');
+      });
+    };
+    const wired = await openFull();
+    stock.said(wired.ref, wired.intro);
+    stock.said(wired.ref, 'Wire the money to this account.');
+    await goStale(wired.callId);
+    await full.maintenance.runDaily({ requestId: 'maintenance-full-face' });
+    expect(await audits('call.face_injection', wired.callId)).toHaveLength(1);
+
+    // The worker wires no vendor: the face is recorded as never checked at its end, not passed over.
+    const unwired = await openFull();
+    stock.said(unwired.ref, unwired.intro);
+    await goStale(unwired.callId);
+    await h.withPorts({ speech: polly }).maintenance.runDaily({ requestId: 'maintenance-full-face-2' });
+    expect(await audits('call.face_injection', unwired.callId)).toHaveLength(0);
+    expect(await audits('call.face_transcript_unchecked', unwired.callId)).toMatchObject([
+      { outcome: 'failed', policy_reason: 'vendor_not_wired' },
+    ]);
+  });
+
+  it('ends the face at the next heartbeat when its last words still match nothing it was allowed to say', async () => {
+    const { callId, ref, intro } = await openFull();
+    try {
+      stock.said(ref, intro);
+      stock.said(ref, 'You are talking to a real person.');
+      expect((await beatOf(callId, 'live')).face).toBe('continue');
+      // The next heartbeat, 16 s on.
+      await h.t.db.system((sx) =>
+        sx.query(
+          `UPDATE call_faces SET transcript_pending_since = now() - interval '16 seconds' WHERE call_id = :id`,
+          { id: p.uuid(callId) },
+        ),
+      );
+      expect((await beatOf(callId, 'live')).face).toBe('stop');
+      expect(await audits('call.face_injection', callId)).toHaveLength(1);
+    } finally {
+      await endQuietly(callId);
+    }
+  });
+
+  it('catches an admitted unit said again (each unit is said once)', async () => {
+    const { callId, ref, intro } = await openFull();
+    try {
+      stock.said(ref, intro);
+      expect((await beatOf(callId, 'live')).face).toBe('continue');
+      stock.said(ref, intro);
+      expect((await beatOf(callId, 'live')).face).toBe('stop');
+      expect(await audits('call.face_injection', callId)).toHaveLength(1);
+    } finally {
+      await endQuietly(callId);
+    }
+  });
+
+  it('reads only the lines after those it verified, and stops a face whose transcript stays unread', async () => {
+    const { callId, ref, intro } = await openFull();
+    try {
+      stock.said(ref, intro);
+      expect((await beatOf(callId, 'live')).face).toBe('continue');
+      expect((await beatOf(callId, 'live')).face).toBe('continue');
+      // The second check asked from the line it verified on, not the whole session again.
+      expect(stock.transcriptReads.at(-1)).toMatchObject({ sessionRef: ref, since: 1 });
+      // The vendor stops answering in full: recorded, and after a minute unread the face stops.
+      stock.transcriptIncomplete = true;
+      try {
+        expect((await beatOf(callId, 'live')).face).toBe('continue');
+        await h.t.db.system((sx) =>
+          sx.query(
+            `UPDATE call_faces SET transcript_checked_at = now() - interval '70 seconds' WHERE call_id = :id`,
+            { id: p.uuid(callId) },
+          ),
+        );
+        expect((await beatOf(callId, 'live')).face).toBe('stop');
+      } finally {
+        stock.transcriptIncomplete = false;
+      }
+      expect(await audits('call.face_ended', callId)).toMatchObject([{ policy_reason: 'face_check_failed' }]);
+      expect(await audits('call.face_injection', callId)).toHaveLength(0);
+    } finally {
+      await endQuietly(callId);
+    }
   });
 });

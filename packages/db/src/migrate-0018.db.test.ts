@@ -114,13 +114,32 @@ afterAll(async () => {
   await t.cleanup();
 });
 
+/** A transcript check that read from the start and verified nothing (fields overridden per case). */
+function record(callId: string): Parameters<typeof twinRepo.recordFaceTranscript>[1] {
+  return {
+    callId,
+    from: { at: null, skip: 0 },
+    cursor: { at: null, skip: 0 },
+    added: 0,
+    said: new Map(),
+    pending: false,
+    complete: true,
+  };
+}
+
 describe('migration 0018_face_mode', () => {
   it('applies cleanly on top of the earlier migrations with a face, which stays LITE', async () => {
     const report = await migrate(t.db);
     expect(report.applied).toEqual(['0018_face_mode']);
     expect(MODE && splitStatements(MODE.sql).length).toBeGreaterThanOrEqual(10);
     const old = must(await t.db.system((sx) => twinRepo.getCallFace(sx, oldFaceCall)));
-    expect(old).toMatchObject({ mode: 'lite', transcriptVerified: 0, transcriptPending: null });
+    expect(old).toMatchObject({
+      mode: 'lite',
+      transcriptVerified: 0,
+      transcriptPending: null,
+      transcriptCursor: null,
+      transcriptSkip: 0,
+    });
     // A LITE face never takes text, and has no transcript to reconcile.
     expect(
       await t.db.system((sx) =>
@@ -131,14 +150,21 @@ describe('migration 0018_face_mode', () => {
           turnKey: 'intro',
           seq: 0,
           digests: [DIGEST],
+          wholes: 1,
         }),
       ),
     ).toBe(false);
+    expect(await t.db.system((sx) => twinRepo.recordFaceTranscript(sx, record(oldFaceCall)))).toBeNull();
+    // A LITE face keeps no transcript state.
     expect(
-      await t.db.system((sx) =>
-        twinRepo.recordFaceTranscript(sx, { callId: oldFaceCall, verified: 5, pending: true }),
+      await sqlState(
+        t.db.system((sx) =>
+          sx.query(`UPDATE call_faces SET transcript_cursor = 5 WHERE call_id = :id`, {
+            id: p.uuid(oldFaceCall),
+          }),
+        ),
       ),
-    ).toBeNull();
+    ).toBe('23514');
     expect(
       await sqlState(
         t.db.system((sx) =>
@@ -168,7 +194,7 @@ describe('migration 0018_face_mode', () => {
       ),
     );
     expect(face).toMatchObject({ mode: 'full', control: null });
-    const admit = (turnKey: string, seq: number, sessionRef = 'sess-full', digests = [DIGEST]) =>
+    const admit = (turnKey: string, seq: number, sessionRef = 'sess-full', digests = [DIGEST], wholes = 1) =>
       t.db.system((sx) =>
         twinRepo.admitFaceText(sx, {
           callId: call.id,
@@ -177,6 +203,7 @@ describe('migration 0018_face_mode', () => {
           turnKey,
           seq,
           digests,
+          wholes,
         }),
       );
     expect(await admit('intro', 0, 'another-session')).toBe(false);
@@ -191,8 +218,15 @@ describe('migration 0018_face_mode', () => {
     expect(await admit('intro', 0)).toBe(false);
     // Only digests are kept, and only the owner role reads them.
     expect(await sqlState(admit(TURN_B, 1, 'sess-full', ['not a digest']))).toBe('23514');
-    const digests = await t.db.system((sx) => twinRepo.faceTextDigests(sx, call.id));
-    expect([...digests].sort()).toEqual([DIGEST, 'b'.repeat(64)]);
+    // More whole digests than digests.
+    expect(await sqlState(admit(TURN_B, 1, 'sess-full', [DIGEST], 2))).toBe('23514');
+    const units = await t.db.system((sx) => twinRepo.faceTextUnits(sx, call.id));
+    expect(units).toEqual([
+      { unit: 'intro', digests: [DIGEST], wholes: 1, said: 0 },
+      { unit: `unit.${TURN_A}.1`, digests: [DIGEST, 'b'.repeat(64)], wholes: 1, said: 0 },
+      { unit: `unit.${TURN_A}.3`, digests: [DIGEST], wholes: 1, said: 0 },
+      { unit: `unit.${TURN_B}.0`, digests: [DIGEST], wholes: 1, said: 0 },
+    ]);
     expect(await sqlState(t.db.withContext(maya, (tx) => tx.query('SELECT * FROM call_face_texts')))).toBe(
       '42501',
     );
@@ -206,32 +240,59 @@ describe('migration 0018_face_mode', () => {
       `unit.${TURN_B}.0`,
     ]);
 
-    // The transcript reconciliation: the lines verified so far, and since when lines are pending.
+    // The transcript reconciliation: where the last check stopped, what each unit said, since when lines are
+    // pending, and when the transcript was last read to its end. A check records only if no other moved the cursor.
+    const save = (input: Partial<Parameters<typeof twinRepo.recordFaceTranscript>[1]>) =>
+      t.db.system((sx) => twinRepo.recordFaceTranscript(sx, { ...record(call.id), ...input }));
     expect(
-      await t.db.system((sx) =>
-        twinRepo.recordFaceTranscript(sx, { callId: call.id, verified: 3, pending: false }),
-      ),
-    ).toBeNull();
+      await save({ cursor: { at: 1761900012, skip: 2 }, added: 3, said: new Map([['intro', 1]]) }),
+    ).toEqual({ pending: null });
+    // Another check that read before that one: refused, nothing changes.
+    expect(await save({ cursor: { at: 1761900099, skip: 1 }, added: 9 })).toBeNull();
     expect(
-      await t.db.system((sx) =>
-        twinRepo.recordFaceTranscript(sx, { callId: call.id, verified: 1, pending: true }),
-      ),
-    ).toBe(0);
+      await save({
+        from: { at: 1761900012, skip: 2 },
+        cursor: { at: 1761900020.5, skip: 1 },
+        added: 1,
+        said: new Map([[`unit.${TURN_A}.1`, 2]]),
+        pending: true,
+        complete: false,
+      }),
+    ).toEqual({ pending: 0 });
     await t.db.system((sx) =>
       sx.query(
-        `UPDATE call_faces SET transcript_pending_since = now() - interval '40 seconds' WHERE call_id = :id`,
+        `UPDATE call_faces SET transcript_pending_since = now() - interval '40 seconds',
+                               transcript_checked_at = now() - interval '70 seconds' WHERE call_id = :id`,
         { id: p.uuid(call.id) },
       ),
     );
+    const after = must(await t.db.system((sx) => twinRepo.getCallFace(sx, call.id)));
+    expect(after).toMatchObject({ transcriptVerified: 4, transcriptCursor: 1761900020.5, transcriptSkip: 1 });
+    expect(after.transcriptPending).toBeGreaterThanOrEqual(40);
+    expect(after.transcriptUnchecked).toBeGreaterThanOrEqual(70);
+    expect((await t.db.system((sx) => twinRepo.faceTextUnits(sx, call.id))).map((unit) => unit.said)).toEqual(
+      [1, 2, 0, 0],
+    );
+    // Bits only ever add; a bit past the unit's digests is refused.
     expect(
-      await t.db.system((sx) =>
-        twinRepo.recordFaceTranscript(sx, { callId: call.id, verified: 1, pending: true }),
+      await save({
+        from: { at: 1761900020.5, skip: 1 },
+        cursor: { at: 1761900020.5, skip: 1 },
+        said: new Map([['intro', 1]]),
+      }),
+    ).toEqual({ pending: null });
+    expect(
+      must(await t.db.system((sx) => twinRepo.getCallFace(sx, call.id))).transcriptUnchecked,
+    ).toBeLessThan(5);
+    expect(
+      await sqlState(
+        save({
+          from: { at: 1761900020.5, skip: 1 },
+          cursor: { at: 1761900020.5, skip: 1 },
+          said: new Map([['intro', 2]]),
+        }),
       ),
-    ).toBeGreaterThanOrEqual(40);
-    expect(must(await t.db.system((sx) => twinRepo.getCallFace(sx, call.id)))).toMatchObject({
-      // Never fewer verified lines than before.
-      transcriptVerified: 3,
-    });
+    ).toBe('23514');
 
     // Metering names the face's mode (it decides the price).
     expect(must(await t.db.system((sx) => twinRepo.meterCallFace(sx, call.id))).mode).toBe('full');

@@ -11,6 +11,7 @@ import {
   EmbodimentSessionError,
   type EmbodimentProvider,
   type FaceSessionHandle,
+  type FaceTranscript,
   type FaceTranscriptLine,
   type FaceSessionRequest,
   type StartedFaceSession,
@@ -231,6 +232,10 @@ export class FakeEmbodimentProvider implements EmbodimentProvider {
   readonly transcripts = new Map<string, FaceTranscriptLine[]>();
   /** The vendor transcript cannot be read (rejects). */
   failTranscript = false;
+  /** The vendor has more transcript than one read takes (the read says it is not complete). */
+  transcriptIncomplete = false;
+  /** Every transcript read: the session and the cursor it read from. */
+  readonly transcriptReads: { readonly sessionRef: string; readonly since: number | null }[] = [];
   failNext = false;
   failSpeak = false;
   /** How many of the next `end` calls fail (after being recorded), like a vendor 5xx. */
@@ -260,10 +265,14 @@ export class FakeEmbodimentProvider implements EmbodimentProvider {
     this.transcripts.set(sessionRef, lines);
   }
 
-  transcriptSince(handle: FaceSessionHandle, since: number | null): Promise<readonly FaceTranscriptLine[]> {
+  transcriptSince(handle: FaceSessionHandle, since: number | null): Promise<FaceTranscript> {
+    this.transcriptReads.push({ sessionRef: handle.sessionRef, since });
     if (this.failTranscript) return Promise.reject(new EmbodimentSessionError('transcript unavailable'));
     const lines = this.transcripts.get(handle.sessionRef) ?? [];
-    return Promise.resolve(lines.filter((line) => since === null || line.at >= since));
+    return Promise.resolve({
+      lines: lines.filter((line) => since === null || line.at >= since),
+      complete: !this.transcriptIncomplete,
+    });
   }
 
   createSession(request: FaceSessionRequest): Promise<StartedFaceSession> {

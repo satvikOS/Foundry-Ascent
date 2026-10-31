@@ -5,6 +5,7 @@ import {
   type EmbodimentProvider,
   type FaceSessionHandle,
   type FaceSessionRequest,
+  type FaceTranscript,
   type FaceTranscriptLine,
   type StartedFaceSession,
   type VerifiedFaceAudio,
@@ -477,10 +478,13 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
 
   /**
    * FULL: the session's transcript at the vendor, oldest first, from `since` (the vendor's timestamp, inclusive;
-   * null: the whole session), following its `next_timestamp` for a few pages. Lines with an unknown role or no
-   * words are skipped; the words are never logged or put in an error.
+   * null: the whole session), following its `next_timestamp` for at most {@link TRANSCRIPT_PAGES} pages; `complete`
+   * is false when the vendor still had more. A page repeats the lines at or after the timestamp it starts from, so
+   * those are taken off it once each (by timestamp, role and words, counting repeats), never by timestamp alone:
+   * two lines in the same second are both kept. Lines with an unknown role are skipped; the words are never logged
+   * or put in an error.
    */
-  async transcriptSince(handle: FaceSessionHandle, since: number | null): Promise<FaceTranscriptLine[]> {
+  async transcriptSince(handle: FaceSessionHandle, since: number | null): Promise<FaceTranscript> {
     const apiKey = await this.#options.apiKey();
     const lines: FaceTranscriptLine[] = [];
     let from = since;
@@ -502,18 +506,23 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
         const role = entry.role;
         if ((role !== 'avatar' && role !== 'user') || typeof entry.transcript !== 'string') return [];
         const at = typeof entry.absolute_timestamp === 'number' ? entry.absolute_timestamp : 0;
+        // The vendor's query takes whole seconds: nothing before the cursor asked for.
+        if (since !== null && at < since) return [];
         return [{ role, text: entry.transcript, at }];
       });
-      // A page that starts where the last one ended repeats its boundary lines: keep each line once.
-      const last = lines.at(-1);
-      const start = last === undefined ? 0 : fresh.findIndex((line) => line.at > last.at);
-      const added = start < 0 ? [] : fresh.slice(start);
+      const start = from;
+      const added = withoutRepeats(fresh, start === null ? [] : lines.filter((line) => line.at >= start));
       lines.push(...added);
       const next = typeof data.next_timestamp === 'number' ? data.next_timestamp : null;
-      if (added.length === 0 || next === null || (from !== null && next <= from)) break;
+      // The end: nothing new, no next page, or a next page that starts where this one did (the vendor's last page
+      // names its own last second). More lines in one second than a page holds could only be a flood, and the
+      // check refuses its first page already (each admitted unit is said once).
+      if (added.length === 0 || next === null || (from !== null && next <= from)) {
+        return { lines, complete: true };
+      }
       from = next;
     }
-    return lines;
+    return { lines, complete: false };
   }
 
   async end(handle: FaceSessionHandle): Promise<void> {
@@ -521,4 +530,24 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
     // A session the vendor already closed (it timed out, ran out of credits) is not an error.
     if (status >= 500) throw failure('stop', status);
   }
+}
+
+/**
+ * The lines of a page that are not among `seen` (the lines already kept at or after the timestamp the page starts
+ * from, which it repeats): each seen line takes off one equal line (timestamp, role and words), so repeats and
+ * lines sharing a second are counted, not merged.
+ */
+function withoutRepeats(
+  fresh: readonly FaceTranscriptLine[],
+  seen: readonly FaceTranscriptLine[],
+): FaceTranscriptLine[] {
+  const key = (line: FaceTranscriptLine): string => JSON.stringify([line.at, line.role, line.text]);
+  const left = new Map<string, number>();
+  for (const line of seen) left.set(key(line), (left.get(key(line)) ?? 0) + 1);
+  return fresh.filter((line) => {
+    const n = left.get(key(line)) ?? 0;
+    if (n === 0) return true;
+    left.set(key(line), n - 1);
+    return false;
+  });
 }

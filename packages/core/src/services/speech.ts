@@ -950,6 +950,8 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
       const unit = callsRepo.speechUnitKey(
         turnId === null ? { kind: 'intro' } : { kind: 'unit', turnId, seq: input.seq },
       );
+      // The words the browser says (speakable), and the signed words when they differ.
+      const digests = faceTextDigests(call.id, text, input.text);
       const admitted = await kit.system(
         (sx) =>
           twinRepo.admitFaceText(sx, {
@@ -958,9 +960,8 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
             unit,
             turnKey: turnId === null ? 'intro' : turnId.toLowerCase(),
             seq: input.seq,
-            digests: [
-              ...new Set([...faceTextDigests(call.id, text), ...faceTextDigests(call.id, input.text)]),
-            ],
+            digests: digests.digests,
+            wholes: digests.wholes,
           }),
         { transaction: false },
       );

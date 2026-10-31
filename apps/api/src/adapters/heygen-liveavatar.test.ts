@@ -575,22 +575,96 @@ describe('HeygenLiveAvatarFace: a FULL session (a stock avatar with its stock vo
         f('transcriptEnd'),
       ],
     });
-    const lines = await fullAdapter(fetchFn).transcriptSince(
+    const read = await fullAdapter(fetchFn).transcriptSince(
       { sessionRef: '7a0d2b3f-4c5e-4f60-9b1c-1d2e3f4a5b6c', control: null, requestId: 'r' },
       null,
     );
-    expect(lines).toEqual([
-      { role: 'avatar', text: 'Hi Maya, what are we testing this week?', at: 1761900004 },
-      { role: 'user', text: '', at: 1761900008 },
-      { role: 'avatar', text: 'Start with the riskiest assumption.', at: 1761900012 },
-      { role: 'avatar', text: 'Then test it this week.', at: 1761900020 },
-    ]);
+    expect(read).toEqual({
+      complete: true,
+      lines: [
+        { role: 'avatar', text: 'Hi Maya, what are we testing this week?', at: 1761900004 },
+        { role: 'user', text: '', at: 1761900008 },
+        { role: 'avatar', text: 'Start with the riskiest assumption.', at: 1761900012 },
+        { role: 'avatar', text: 'Then test it this week.', at: 1761900020 },
+      ],
+    });
     expect(sent.map((s) => s.url)).toEqual([
       'https://api.liveavatar.com/v1/sessions/7a0d2b3f-4c5e-4f60-9b1c-1d2e3f4a5b6c/transcript',
       'https://api.liveavatar.com/v1/sessions/7a0d2b3f-4c5e-4f60-9b1c-1d2e3f4a5b6c/transcript?start_timestamp=1761900012',
       'https://api.liveavatar.com/v1/sessions/7a0d2b3f-4c5e-4f60-9b1c-1d2e3f4a5b6c/transcript?start_timestamp=1761900020',
     ]);
     expect(sent.every((s) => s.method === 'GET' && s.headers['x-api-key'] === KEY)).toBe(true);
+  });
+
+  /** A transcript page at the vendor: `[timestamp, words]` lines and the page's `next_timestamp`. */
+  const transcriptPage = (next: number | null, lines: readonly (readonly [number, string])[]): Fixture => ({
+    status: 200,
+    body: {
+      code: 100,
+      data: {
+        session_active: true,
+        next_timestamp: next,
+        transcript_data: lines.map(([at, transcript]) => ({
+          role: 'avatar',
+          transcript,
+          absolute_timestamp: at,
+        })),
+      },
+      message: 'success',
+    },
+  });
+  const SESSION = { sessionRef: 's', control: null, requestId: 'r' };
+
+  it('says the transcript was not read to its end when one check reaches its page limit', async () => {
+    // A page per second, without end; words nobody admitted only after the tenth page.
+    const pages = Array.from({ length: 30 }, (_, t) =>
+      transcriptPage(t + 1, [[t, t >= 10 ? 'INJECTED WORDS' : 'Admitted sentence.']]),
+    );
+    const { fetchFn } = vendor({ '/v1/sessions/s/transcript': pages });
+    const read = await fullAdapter(fetchFn).transcriptSince(SESSION, null);
+    expect(read.complete).toBe(false);
+    expect(read.lines).toHaveLength(10);
+  });
+
+  it('keeps a new line that shares the second of the last line a page ended on, and each repeat', async () => {
+    const { fetchFn } = vendor({
+      '/v1/sessions/s/transcript': [
+        transcriptPage(5, [
+          [4, 'Admitted sentence.'],
+          [5, 'Admitted sentence.'],
+        ]),
+        transcriptPage(6, [
+          [5, 'Admitted sentence.'],
+          [5, 'INJECTED WORDS'],
+          [6, 'Admitted sentence.'],
+        ]),
+        transcriptPage(6, [[6, 'Admitted sentence.']]),
+      ],
+    });
+    const read = await fullAdapter(fetchFn).transcriptSince(SESSION, null);
+    expect(read).toEqual({
+      complete: true,
+      lines: [
+        { role: 'avatar', text: 'Admitted sentence.', at: 4 },
+        { role: 'avatar', text: 'Admitted sentence.', at: 5 },
+        { role: 'avatar', text: 'INJECTED WORDS', at: 5 },
+        { role: 'avatar', text: 'Admitted sentence.', at: 6 },
+      ],
+    });
+  });
+
+  it('reads from a cursor: only lines at or after it', async () => {
+    const { fetchFn, sent } = vendor({
+      '/v1/sessions/s/transcript': [
+        transcriptPage(null, [
+          [7, 'Earlier.'],
+          [8, 'Later.'],
+        ]),
+      ],
+    });
+    const read = await fullAdapter(fetchFn).transcriptSince(SESSION, 7.5);
+    expect(read).toEqual({ complete: true, lines: [{ role: 'avatar', text: 'Later.', at: 8 }] });
+    expect(sent[0]?.url).toBe('https://api.liveavatar.com/v1/sessions/s/transcript?start_timestamp=7');
   });
 
   it('fails a transcript it cannot read, without repeating the vendor’s words', async () => {

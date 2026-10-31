@@ -876,8 +876,9 @@ describe('reaping', () => {
     const reaped = await t.db.system((sx) =>
       callsRepo.reapStaleCalls(sx, { staleSeconds: 60, graceSeconds: 15 }),
     );
-    // The conversation each reaped call was in comes back with it (maintenance distils it next).
-    expect(reaped).toContainEqual({ callId: stale.id, sessionId: session });
+    // The conversation each reaped call was in comes back with it (maintenance distils it next), and its venture
+    // (the face's end is audited there).
+    expect(reaped).toContainEqual({ callId: stale.id, sessionId: session, ventureId: stale.ventureId });
     await t.db.withContext(amara, async (tx) => {
       const call = must(await callsRepo.getCall(tx, stale.id));
       expect(call).toMatchObject({ status: 'ended', endReason: 'timeout', endDetail: 'stale_heartbeat' });

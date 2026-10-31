@@ -777,6 +777,7 @@ export function speechPlays(
 export interface ReapedCall {
   readonly callId: string;
   readonly sessionId: string;
+  readonly ventureId: string;
 }
 
 /**
@@ -796,11 +797,12 @@ export function reapStaleCalls(
                     WHERE x.status = 'live'
                       AND coalesce(x.last_heartbeat_at, x.started_at) < now() - make_interval(secs => :stale::integer)
                     ORDER BY x.started_at LIMIT :limit)
-     RETURNING c.id, c.session_id`,
+     RETURNING c.id, c.session_id, c.venture_id`,
     { stale: p.int(input.staleSeconds), grace: p.int(input.graceSeconds), limit: p.int(input.limit ?? 500) },
     (r) => ({
       callId: col.uuid.decode(r.id, 'id'),
       sessionId: col.uuid.decode(r.session_id, 'session_id'),
+      ventureId: col.uuid.decode(r.venture_id, 'venture_id'),
     }),
   );
 }

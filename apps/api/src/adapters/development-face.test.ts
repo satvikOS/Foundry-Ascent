@@ -44,9 +44,10 @@ describe('the development stand-in face', () => {
       adminsOnly: true,
       likeness: false,
     });
-    expect(await full?.transcriptSince?.({ sessionRef: 's', control: null, requestId: 'r' }, null)).toEqual(
-      [],
-    );
+    expect(await full?.transcriptSince?.({ sessionRef: 's', control: null, requestId: 'r' }, null)).toEqual({
+      lines: [],
+      complete: true,
+    });
     expect(
       developmentFaceFor({ APP_ENV: 'development', EMBODIMENT_PROVIDER: 'fake' }).embodiment,
     ).toMatchObject({ mode: 'lite', voicing: 'audio', stock: false, adminsOnly: false });

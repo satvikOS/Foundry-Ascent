@@ -8,12 +8,15 @@
 --     the daily maintenance bill a face at its mode's price.
 --  2. call_faces.said_turn / said_seq: the last unit a FULL face was allowed to say (the order its units are
 --     admitted in: later units of the same reply, or a reply it never said before), under the face's row lock.
---  3. call_faces.transcript_verified / transcript_pending_since: how many avatar lines of a FULL face's vendor
---     transcript the reconciliation has verified, and since when its last avatar lines have matched no admitted
---     unit (a line still being transcribed, or words our server never admitted).
+--  3. call_faces.transcript_*: the reconciliation of a FULL face's vendor transcript. `verified`: the avatar
+--     lines it verified; `cursor` / `skip`: where it stopped (after the first `skip` avatar lines at the vendor's
+--     timestamp `cursor`), so each check reads only lines after those; `pending_since`: since when its last lines
+--     have matched no admitted unit (words our server never admitted, unless the vendor is still splitting a unit);
+--     `checked_at`: the last check that read the transcript to its end (a face left unread too long stops).
 --  4. call_face_texts: the units a FULL face was allowed to say, each once, as salted SHA-256 digests of their
---     normalized words and sentences (never the words). The heartbeat compares the vendor's transcript with them.
---     Owner role only; they go with the call.
+--     normalized words and sentences (never the words): `wholes` whole-unit digests first, then its sentences.
+--     `said_mask` has bit i set once the transcript matched digest i, so each unit is said at most once. The
+--     heartbeat compares the vendor's transcript with them. Owner role only; they go with the call.
 --  5. call_speech.unit also takes `face.intro` and `face.<turn>.<seq>`: a unit reserved for a FULL face (its
 --     characters within the call's speech budget, once), apart from the unit's own play, so the call can still
 --     speak it in the stock voice when the face cannot.
@@ -36,10 +39,17 @@ ALTER TABLE call_faces ADD CONSTRAINT call_faces_said_check CHECK (
 
 ALTER TABLE call_faces ADD COLUMN IF NOT EXISTS transcript_verified integer NOT NULL DEFAULT 0;
 ALTER TABLE call_faces ADD COLUMN IF NOT EXISTS transcript_pending_since timestamptz;
+ALTER TABLE call_faces ADD COLUMN IF NOT EXISTS transcript_cursor numeric;
+ALTER TABLE call_faces ADD COLUMN IF NOT EXISTS transcript_skip integer NOT NULL DEFAULT 0;
+ALTER TABLE call_faces ADD COLUMN IF NOT EXISTS transcript_checked_at timestamptz;
 ALTER TABLE call_faces DROP CONSTRAINT IF EXISTS call_faces_transcript_check;
 ALTER TABLE call_faces ADD CONSTRAINT call_faces_transcript_check CHECK (
   transcript_verified BETWEEN 0 AND 100000
-  AND (mode = 'full' OR (transcript_verified = 0 AND transcript_pending_since IS NULL)));
+  AND transcript_skip BETWEEN 0 AND 100000
+  AND (transcript_cursor IS NULL OR transcript_cursor BETWEEN 0 AND 1e15)
+  AND (transcript_cursor IS NOT NULL OR transcript_skip = 0)
+  AND (mode = 'full' OR (transcript_verified = 0 AND transcript_pending_since IS NULL
+                         AND transcript_cursor IS NULL AND transcript_checked_at IS NULL)));
 
 -- ---------------------------------------------------------------------------------------------------
 -- 4. The units a FULL face was allowed to say
@@ -56,6 +66,10 @@ CREATE TABLE IF NOT EXISTS call_face_texts (
   ord         bigint GENERATED ALWAYS AS IDENTITY,
   -- SHA-256 (hex) of the unit's normalized words and of each of its sentences, salted with the call id.
   digests     text[] NOT NULL,
+  -- How many of `digests` are the whole unit (the rest are its sentences).
+  wholes      smallint NOT NULL DEFAULT 1,
+  -- Bit i: the face's transcript matched digests[i].
+  said_mask   bigint NOT NULL DEFAULT 0,
   admitted_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (call_id, unit),
   CONSTRAINT call_face_texts_unit_check CHECK (
@@ -66,7 +80,10 @@ CREATE TABLE IF NOT EXISTS call_face_texts (
     AND seq BETWEEN 0 AND 99999),
   CONSTRAINT call_face_texts_digests_check CHECK (
     cardinality(digests) BETWEEN 1 AND 40
-    AND array_to_string(digests, ',') ~ '^[0-9a-f]{64}(,[0-9a-f]{64})*$')
+    AND array_to_string(digests, ',') ~ '^[0-9a-f]{64}(,[0-9a-f]{64})*$'),
+  CONSTRAINT call_face_texts_said_check CHECK (
+    wholes BETWEEN 1 AND cardinality(digests)
+    AND said_mask BETWEEN 0 AND (1::bigint << cardinality(digests)) - 1)
 );
 ALTER TABLE call_face_texts ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON call_face_texts FROM app_rls;
