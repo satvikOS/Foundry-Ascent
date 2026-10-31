@@ -10,8 +10,9 @@ sandbox: ``MEDIA_FACE_PROVIDER=heygen-liveavatar``, ``MEDIA_FACE_MODE=full``, ``
 process's environment at once, never put in the environment of Playwright, the web server or any script, never
 printed, never written to the private folder (so never sealed or uploaded).
 
-The browser spec (apps/web/e2e/lab/face.lab.ts) runs four tests and writes what it measured to the private folder:
-the vendor probe (raw sandbox rooms through the dev server's lab probe, :data:`PROBE_TOKEN_ENV`), a call with the
+The browser spec (apps/web/e2e/lab/face.lab.ts) runs its tests and writes what it measured to the private folder:
+the vendor probe (raw sandbox rooms through the dev server's lab probe, :data:`PROBE_TOKEN_ENV`), one unmeasured call
+turn before every measured arm (so none of them meets the API process's first turn: :func:`public_warm_up`), a call with the
 face (as the seeded founder, made a platform admin of the synthetic venture by apps/api lab-face-admin.ts), an
 injected ``speak_text`` that the server's transcript check must catch, and the same turns on Polly alone. This
 module reads the vendor's credits and the success codes it answered through the probe, and keeps public numbers
@@ -80,7 +81,12 @@ VENDOR_PATHS = (
     "/v1/users/credits",
 )
 #: The private files the spec writes (numbers and codes; the words are in separate ``*-texts.json`` files).
-RESULT_FILES = ("instruments", "probe", "call", "call-lite", "injection", "polly")
+RESULT_FILES = ("instruments", "probe", "warmup", "call", "call-lite", "injection", "polly")
+#: The arms whose measured turns carry their request ids, and the private file of each (``warm_up`` is the unmeasured
+#: turn the spec sends before every measured arm, so none of them meets a cold API: reported apart, never compared).
+SERVER_ARMS = {"call": "call", "call_lite": "call-lite", "polly": "polly", "warm_up": "warmup"}
+#: A request id as the app sends it (a UUID): anything else is not joined.
+_REQUEST_ID = re.compile(r"^[0-9a-fA-F-]{8,64}$")
 #: The side-by-side table of the in-app arms (:func:`comparison`): each row's key and title, and which measurement
 #: of each arm fills it (None: that arm has no such moment).
 COMPARISON_ROWS: tuple[tuple[str, str, str | None, str | None, str | None], ...] = (
@@ -125,6 +131,20 @@ COMPARISON_ROWS: tuple[tuple[str, str, str | None, str | None, str | None], ...]
         None,
         "first_hand_over_done_ms",
         None,
+    ),
+    (
+        "server_model_start_ms",
+        "Server: turn request → model call starts (turn.timing)",
+        "server_model_start_ms",
+        "server_model_start_ms",
+        "server_model_start_ms",
+    ),
+    (
+        "server_first_speech_ms",
+        "Server: turn request → first spoken unit sent (turn.timing)",
+        "server_first_speech_ms",
+        "server_first_speech_ms",
+        "server_first_speech_ms",
     ),
     (
         "unit_to_audio_ms",
@@ -746,6 +766,57 @@ def public_polly(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
+def _request_ids(raw: Mapping[str, Any] | None) -> list[str]:
+    turns = (raw or {}).get("turns")
+    if not isinstance(turns, list):
+        return []
+    return [
+        t["requestId"]
+        for t in turns
+        if isinstance(t, dict) and isinstance(t.get("requestId"), str) and _REQUEST_ID.match(t["requestId"])
+    ]
+
+
+def server_turns(private: Path, api_log: Path) -> dict[str, dict[str, Any]]:
+    """Each arm's server side (:data:`SERVER_ARMS`): the API's ``turn.timing`` lines of the arm's own turns, joined by
+    request id, as the request → model start and request → first spoken unit distributions (and how many turns were
+    joined). The ids stay here; only the numbers go out. Every arm comes out, empty when not run or not logged."""
+    from conversation_lab.logstats import timings_by_request
+
+    timings: dict[str, dict[str, float | None]] = {}
+    if api_log.is_file():
+        with api_log.open(encoding="utf-8", errors="replace") as fh:
+            timings = timings_by_request(fh)
+    out: dict[str, dict[str, Any]] = {}
+    for arm, name in SERVER_ARMS.items():
+        rows = [timings[i] for i in _request_ids(_load(private, name)) if i in timings]
+
+        def values(key: str, rows: list[dict[str, float | None]] = rows) -> list[int]:
+            return [round(v) for r in rows if isinstance(v := r.get(key), int | float)]
+
+        out[arm] = {
+            "server_turns": len(rows),
+            "server_model_start_ms": percentile_ms(values("modelStartMs")),
+            "server_first_speech_ms": percentile_ms(values("firstSpeechMs")),
+        }
+    return out
+
+
+def public_warm_up(raw: Mapping[str, Any] | None, server: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """The unmeasured warm-up turn before the arms: whether it ran, and its own numbers, kept apart from every arm."""
+    if raw is None:
+        return None
+    turns = _turns(raw.get("turns"))
+    server = server or {}
+    return {
+        "turns": len(turns),
+        "first_unit_ms": _turn_percentile(turns, "first_unit_ms"),
+        "server_model_start_ms": server.get("server_model_start_ms"),
+        "server_first_speech_ms": server.get("server_first_speech_ms"),
+        "error": _error(raw.get("error")),
+    }
+
+
 def checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
     """The plan's sandbox checks as pass (True), fail (False) or not measured (None)."""
     instruments = result.get("instruments")
@@ -891,6 +962,7 @@ def public_result(
     twin: str = "not_run",
     lite_vendor_calls: Sequence[Mapping[str, Any]] | None = None,
     lite_credits_after: Mapping[str, Any] | None = None,
+    server: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """The suite's public result: numbers, codes, booleans and vendor end reasons only. ``injection_audits`` is
     :func:`injection_audits` for the ids the injection test saw (None: not looked up, so E10 cannot pass).
@@ -901,7 +973,10 @@ def public_result(
     ``credits_after`` and ``vendor_calls`` are the first pass's alone (the one that runs every test), so E1 and E2
     grade it whatever a later pass does. ``lite_vendor_calls`` and ``lite_credits_after`` are the separate LITE
     pass's (its own API process; None without one), reported as ``call_lite_vendor``: its credits from the end of
-    the first pass to its own end, its vendor calls and its success codes, which no check reads."""
+    the first pass to its own end, its vendor calls and its success codes, which no check reads.
+
+    ``server`` is :func:`server_turns`: each arm's server-side model start and first spoken unit, added to the arm
+    and to the side-by-side table (and the warm-up turn's, reported apart). None: not read."""
     calls = summarize_vendor_calls(vendor_calls)
     result: dict[str, Any] = {
         "vendor": vendor if vendor in ("heygen-sandbox", "stand-in") else None,
@@ -924,6 +999,12 @@ def public_result(
         "polly": public_polly(_load(private, "polly")),
         "call_lite": public_call_lite(_load(private, "call-lite")),
     }
+    for arm in ("call", "call_lite", "polly"):
+        if result[arm] is not None:
+            cells = (server or {}).get(arm) or {}
+            result[arm]["server_model_start_ms"] = cells.get("server_model_start_ms")
+            result[arm]["server_first_speech_ms"] = cells.get("server_first_speech_ms")
+    result["warm_up"] = public_warm_up(_load(private, "warmup"), (server or {}).get("warm_up"))
     result["comparison"] = comparison(result)
     graded = checks(result)
     result["checks"] = graded

@@ -54,6 +54,7 @@ import { mentionsEir, personaNameClaimsEir, veirEirName } from '../internal/eir-
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 import { signSpeechUnit, verifySpeechUnit } from '../orchestrator/speech-units.js';
+import { warmTurnEngine } from '../orchestrator/warm-up.js';
 import { SttGrantError } from '../ports.js';
 import {
   CALL_LIMITS,
@@ -785,6 +786,39 @@ export function createCallsService(
     }
   }
 
+  /**
+   * Warms the turn engine for the call's first turn with the guard names that turn will use (warm-up.ts), read from the
+   * directory the greeting just filled. Logs how long it took (numbers only); never rejects.
+   */
+  async function warmTurnFor(ctx: RequestContext, started: Started): Promise<void> {
+    const began = performance.now();
+    try {
+      const { eirNames } = await directory.get(ctx.tenantId);
+      const others = await directory.others(ctx.tenantId, started.ventureId);
+      await warmTurnEngine({
+        personaName: started.personaName,
+        personaEirName: started.eirDisplayName,
+        eirNames,
+        addressees: await directory.addressees(ctx.tenantId, started.ventureId),
+        founderName: started.firstName,
+        otherVentureNames: others.names,
+        otherVentureCanaries: others.canaries,
+        otherVentureMemberNames: others.memberNames,
+      });
+      logger.info('call.turn_warm_up', {
+        requestId: ctx.requestId,
+        callId: started.call.id,
+        ms: Math.round(performance.now() - began),
+      });
+    } catch (err) {
+      logger.warn('call.turn_warm_up_failed', {
+        requestId: ctx.requestId,
+        callId: started.call.id,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+    }
+  }
+
   /** Mints a speech-to-text grant (already counted against the call). */
   async function mint(ctx: RequestContext, callId: string): Promise<SttGrant> {
     const issuer = kit.deps.sttGrants;
@@ -1049,16 +1083,31 @@ export function createCallsService(
         };
       });
 
-      // The connections the call's first turn and its first spoken reply use (the Bedrock runtime, Polly) are opened
-      // while the greeting is prepared, with free requests (LAB-P2: after idle gaps every AWS call paid a new
-      // connection). The host keeps the process alive for them; they never hold the response or fail the call.
-      const warming = Promise.all([kit.deps.gateway.prewarm?.(), kit.deps.speech?.prewarm?.()]).then(
+      // The connections the call's first turn and its first spoken reply use (the Bedrock runtime and Titan, Polly) are
+      // opened while the greeting is prepared, with free requests (LAB-P2: after idle gaps every AWS call paid a new
+      // connection). Once the greeting is ready, the turn engine's own code is warmed for the first turn (warm-up.ts:
+      // the first turn a process serves paid ~270 ms of first-run CPU before its model call). The host keeps the
+      // process alive for both; neither holds the response or fails the call.
+      let greetingReady = (): void => undefined;
+      const greeted = new Promise<void>((resolve) => {
+        greetingReady = resolve;
+      });
+      const warming = Promise.all([
+        kit.deps.gateway.prewarm?.(),
+        kit.deps.speech?.prewarm?.(),
+        greeted.then(() => warmTurnFor(ctx, started)),
+      ]).then(
         () => undefined,
         () => undefined,
       );
       if (kit.deps.afterResponse === undefined) void warming;
       else kit.deps.afterResponse(warming);
-      const intro = await openCall(ctx, started);
+      let intro: SpeechUnit | null;
+      try {
+        intro = await openCall(ctx, started);
+      } finally {
+        greetingReady();
+      }
       let sttGrant: SttGrant | null = null;
       if (started.call.inputMode === 'transcribe') {
         // The call works without it (typed input); the client can ask again through `stt-grant`.

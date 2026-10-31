@@ -42,8 +42,9 @@ from conversation_lab.config import (
 
 PUBLIC_REPORTER = REPO / "apps" / "web" / "e2e" / "lab" / "public-reporter.ts"
 LAB_CONFIG = "e2e/lab/playwright.config.ts"
-#: The face spec's LITE call arm (apps/web/e2e/lab/face.lab.ts): the only test of a LITE pass after a FULL one.
-FACE_LITE_CALL_GREP = "call LITE:"
+#: The face spec's tests of a LITE pass after a FULL one (apps/web/e2e/lab/face.lab.ts): the unmeasured warm-up turn
+#: (the pass's API process was restarted, so it is cold again) and the LITE call arm.
+FACE_LITE_CALL_GREP = "warm-up:|call LITE:"
 
 #: The face suite's vendor key, taken out of this process's environment when the harness starts (face.take_key) and
 #: handed to the local API process only. Never printed, logged or written.
@@ -879,6 +880,7 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
         public_result,
         read_audit_ids,
         seed_twin,
+        server_turns,
         with_face_mode,
     )
     from conversation_lab.stack import PNPM
@@ -919,6 +921,8 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
     rc = next((code for code in exits.values() if code != 0), 0)
     # Heartbeat or end-of-face: the audits' metadata, read from the lab's own database (the admin API omits it).
     audits = injection_audits(ctx.env, ctx.private / "logs", read_audit_ids(ctx.private), pnpm=PNPM)
+    # Each arm's server side (model start, first spoken unit), joined by request id from the API's own log.
+    server = server_turns(ctx.private, ctx.private / "logs" / "api.log")
     result = public_result(
         ctx.private,
         playwright_exit=rc,
@@ -932,6 +936,7 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
         twin=twin,
         lite_vendor_calls=calls["lite"] if "lite" in later else None,
         lite_credits_after=credits_after["lite"] if "lite" in later else None,
+        server=server,
     )
     result["playwright_exits"] = exits
     return {"face": result, "passed": result["passed"], "run": result["run"], "playwright_exit": rc}

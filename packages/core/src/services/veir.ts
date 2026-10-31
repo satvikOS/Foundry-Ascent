@@ -13,6 +13,7 @@ import { type RequestContext } from '../context.js';
 import { DomainError } from '../errors.js';
 import { veirEirName } from '../internal/eir-names.js';
 import { requireId, type Kit, type RequestScope } from '../internal/kit.js';
+import { warmTurnEngine } from '../orchestrator/warm-up.js';
 import { callSecondsToday, remainingDailyMinutes } from './call-usage.js';
 import {
   type FaceService,
@@ -157,6 +158,15 @@ export function createVeirService(kit: Kit, face: FaceService): VeirService {
         };
         return { response, faceOn, monthMinutes: settings.faceMinutesPerPrincipalMonth };
       });
+      // The call screen opened (the page reads this before a call starts): the turn engine's first-run CPU is spent now,
+      // after the response, rather than in the call's first reply (warm-up.ts). Once per process; never fails this.
+      if (config.response.aiEnabled && config.response.callsEnabled) {
+        const warming = Promise.resolve()
+          .then(() => warmTurnEngine())
+          .catch(() => undefined);
+        if (kit.deps.afterResponse === undefined) void warming;
+        else kit.deps.afterResponse(warming);
+      }
       if (!config.faceOn || provider === undefined) return config.response;
       const left = Math.max(0, config.monthMinutes * 60 - (await faceSecondsThisMonth(kit, ctx.principalId)));
       if (left < MIN_FACE_SECONDS) return config.response;

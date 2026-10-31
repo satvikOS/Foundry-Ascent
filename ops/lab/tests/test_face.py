@@ -903,6 +903,8 @@ def test_the_lite_arm_sits_beside_full_and_polly_without_changing_the_checks(tmp
         "first_hand_over_ms",
         "unit_to_hand_over_ms",
         "first_hand_over_done_ms",
+        "server_model_start_ms",
+        "server_first_speech_ms",
         "unit_to_audio_ms",
         "unit_to_started_ms",
     ]
@@ -1034,3 +1036,125 @@ def test_the_stack_restarts_its_api_alone_with_the_new_environment(
         assert [entry[0] for entry in stack._procs] == ["web", "api"]
     assert stack._procs == []
     assert web.wait(timeout=10) is not None
+
+
+def _ids(prefix: str, n: int) -> list[str]:
+    return [f"{prefix}{i:04d}-0000-4000-8000-000000000000" for i in range(n)]
+
+
+def _timing(request_id: str, model_start: int, first_speech: int) -> str:
+    return json.dumps(
+        {
+            "level": "info",
+            "event": "turn.timing",
+            "requestId": request_id,
+            "voice": True,
+            "modelStartMs": model_start,
+            "firstSpeechMs": first_speech,
+            "totalMs": first_speech + 2000,
+        }
+    )
+
+
+def test_each_arm_gets_its_own_server_timing_and_the_warm_up_stays_apart(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    measured(private)
+    lite_measured(private)
+    warm, full, polly, lite = _ids("aaaa", 1), _ids("bbbb", 2), _ids("cccc", 2), _ids("dddd", 2)
+
+    def with_ids(name: str, ids: list[str]) -> None:
+        raw = json.loads((private / "face" / f"{name}.json").read_text(encoding="utf-8"))
+        raw["turns"] = [{**turn, "requestId": rid} for turn, rid in zip(raw["turns"], ids, strict=False)]
+        write(private, name, raw)
+
+    with_ids("call", full)
+    with_ids("polly", polly)
+    with_ids("call-lite", lite)
+    write(private, "warmup", {"turns": [{"firstUnitMs": 1900, "requestId": warm[0]}]})
+    log = tmp_path / "api.log"
+    log.write_text(
+        "\n".join(
+            [
+                "not json",
+                # The first turn of the API process: slow before the model, and on no arm.
+                _timing(warm[0], 860, 1940),
+                _timing(full[0], 300, 1200),
+                _timing(full[1], 280, 1100),
+                _timing(polly[0], 270, 1150),
+                _timing(polly[1], 260, 1120),
+                _timing(lite[0], 310, 1250),
+                # A turn of no arm (the injection test's) and a forged id are never joined.
+                _timing("eeee0000-0000-4000-8000-000000000000", 900, 2000),
+                json.dumps({"event": "turn.timing", "requestId": "<script>", "modelStartMs": 1}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    server = face.server_turns(private, log)
+    assert server["warm_up"] == {
+        "server_turns": 1,
+        "server_model_start_ms": {"p50": 860, "p95": 860, "n": 1},
+        "server_first_speech_ms": {"p50": 1940, "p95": 1940, "n": 1},
+    }
+    assert server["call"]["server_first_speech_ms"] == {"p50": 1100, "p95": 1200, "n": 2}
+    assert server["call_lite"]["server_turns"] == 1
+    result = face.public_result(
+        private,
+        playwright_exit=0,
+        credits_before={"status": 200, "code": 100, "creditsLeft": "10.00"},
+        credits_after={"status": 200, "code": 100, "creditsLeft": "10.00"},
+        vendor_calls=CALLS,
+        vendor="heygen-sandbox",
+        admin_grant="granted",
+        injection_audits=HEARTBEAT_AUDIT,
+        face_mode="both",
+        server=server,
+    )
+    rows = {row["key"]: row for row in result["comparison"]["rows"]}
+    assert rows["server_model_start_ms"]["full"] == {"p50": 280, "p95": 300, "n": 2}
+    assert rows["server_model_start_ms"]["polly"] == {"p50": 260, "p95": 270, "n": 2}
+    assert rows["server_first_speech_ms"]["lite"] == {"p50": 1250, "p95": 1250, "n": 1}
+    assert result["warm_up"] == {
+        "turns": 1,
+        "first_unit_ms": {"p50": 1900, "p95": 1900, "n": 1},
+        "server_model_start_ms": {"p50": 860, "p95": 860, "n": 1},
+        "server_first_speech_ms": {"p50": 1940, "p95": 1940, "n": 1},
+        "error": None,
+    }
+    # The ids joined the numbers and stayed private.
+    text = json.dumps(result)
+    for rid in warm + full + polly + lite:
+        assert rid not in text
+    rendered = render({"suite": "face", "result": {"face": result, "passed": 1, "run": 1}, "spend": {}})
+    assert (
+        "| Server: turn request → first spoken unit sent (turn.timing) | 1100 / 1200 (n=2) | 1250 / 1250 (n=1) | "
+        "1120 / 1150 (n=2) |" in rendered
+    )
+    assert "one unmeasured warm-up turn on Polly alone" in rendered
+    assert "server model start 860 / 860 (n=1) ms" in rendered
+
+
+def test_without_logs_or_ids_the_server_cells_are_not_measured(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    measured(private)
+    server = face.server_turns(private, tmp_path / "missing.log")
+    assert server["call"] == {
+        "server_turns": 0,
+        "server_model_start_ms": None,
+        "server_first_speech_ms": None,
+    }
+    result = graded(private)
+    assert result["call"]["server_first_speech_ms"] is None
+    assert result["warm_up"] is None
+    # The checks are graded exactly as before.
+    assert result["checks"]["e5_unit_arrival_matches_polly"] is True
+
+
+def test_the_lite_pass_runs_its_own_warm_up_before_its_arm() -> None:
+    import re
+
+    grep = re.compile(cli.FACE_LITE_CALL_GREP)
+    assert grep.search("warm-up: one unmeasured call turn before the measured arms")
+    assert grep.search("call LITE: the face lip-syncs the call's Polly audio, the same turns")
+    assert not grep.search("call: the stock face in a call, admins only")
+    assert not grep.search("polly: the same turns without a face")

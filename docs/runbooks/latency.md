@@ -100,8 +100,11 @@ filter event = "turn.timing" and outcome = "completed"
 Connection reuse (LAB-P2: on browser-paced call turns Titan, Bedrock's first token and Polly's first audio were all
 slower than on back-to-back turns). The Bedrock and Polly clients share one keep-alive agent per process
 (`sharedAwsAgent`, packages/ai), and a call's start opens both connections with free requests while the greeting is
-prepared (a Converse the runtime refuses before any model runs, and `DescribeVoices`). A turn that opened a new
-connection rather than reusing one shows it:
+prepared (a Converse the runtime refuses before any model runs, then an InvokeModel of the embedding model with an
+empty body, refused the same way, on the same connection: a turn's first Bedrock call is its Titan query embedding;
+and `DescribeVoices`). Note: the Bedrock runtime client (SDK 3.1152) speaks HTTP/2 through its own default handler,
+which ignores the `httpsAgent` it is given, so its connection is the SDK's HTTP/2 session (kept and reused by the SDK)
+and the agent's counts below are Polly's alone. A turn that opened a new connection rather than reusing one shows it:
 
 ```text
 filter event = "turn.timing" and outcome = "completed"
@@ -229,6 +232,47 @@ React moved into a chunk it preloads). Landing page, signed out: ready at about 
 | A finished turn refreshes only what a turn changes (memory, overview, venture, escalations, conversations); the memory list and the overview stay fresh 5 minutes.                                                                                                             | `apps/web/src/lib/api/venture-refresh.ts`, hooks; one line in `create-engine.ts` | New chat, three turns, Knowledge and back: 42 → 36 API reads (call settings 4 → 1, documents 4 → 1); a return to the tab within 5 minutes reads neither the memory list nor the overview | fewer of the 93 memory reads (the review UI's own reads go with that UI); each saved overview read is 19 round trips                                       |
 | React in its own chunk. The build fails when the first load (the entry and every chunk it imports statically, which index.html preloads) exceeds 975 kB.                                                                                                                       | `apps/web/vite.config.ts`, `vite-plugins/page-speed.ts`                          | first load unchanged: 31 files, 957,134 → 957,129 bytes (307.6 → 307.2 kB compressed); only the entry file shrank (678 → 471 kB)                                                         | caching across releases only: a release changes the app chunk, the 219 kB React chunk stays cached                                                         |
 
+### The first turn a process serves (2026-10-31)
+
+Lab face run 41235680528 (GitHub runner, the dev server on real Bedrock): the run's first spoken turn started its model
+call 856 ms after the request (retrieval 394 ms, Titan 375 ms), the next four at 198–312 ms (retrieval 131–262 ms);
+first speech 1,941 ms against 1,110–1,609 ms. Turns 3 and 4 were the first turns of two new calls and were as fast as
+the rest, so the cost belongs to the process, not to the call or its conversation: nothing per call (persona, notes,
+history, policy) was slow to load.
+
+Reproduced on the harness (`latency --cold`, which skips the warm-up conversation): a fresh process's first spoken turn
+starts its model call at ~280 ms against ~15 ms for every later turn and for a second call's first turn (profile
+local; profile production: 2,272 against ~2,095 ms, the same ~180 ms on top of the simulated round trips). Stage by
+stage (profile local, first turn against later ones): the risk classifier 95 ms (its first call, on the message alone)
+and 85 ms (its second, with the other ventures' names) against 0.2 ms; building the sentence gate 73 ms against
+0.5 ms; reading the stream's first sentences ~40 ms against ~2 ms. The preflight, admission, retrieval and prompt
+assembly were within a few ms of a warm turn, and the AWS SDK's own first send costs ~10 ms (measured on a local
+stand-in). The cost is V8 compiling the regular expressions of the classifier's rules and of the gate's identity and
+craft checks the first time they run, and again to machine code the second time.
+
+The turn engine is warmed before the call's first turn needs it (`packages/core/src/orchestrator/warm-up.ts`): the
+same functions run on synthetic text, with the call's own guard names, in steps of a few milliseconds that each give
+the event loop back, after the response of `GET /ventures/:id/call-config` (the call screen opening) and of
+`POST /sessions/:id/calls` once the greeting is ready (cheap when already warm). It reads and writes nothing, calls no
+model and keeps no state of a call; the prompt, the classification and the gate's output are byte for byte the same
+with and without it (`warm-up.test.ts`), and a warm-up that fails or never ends leaves the call starting as before
+(`call-warm-up.db.test.ts`). It is logged as `call.turn_warm_up` (`ms`).
+
+| `latency --cold --text 0 --voice 4`, the call's first turn (later turns unchanged) | Before | After |
+| ---------------------------------------------------------------------------------- | ------ | ----- |
+| Profile local: model start                                                         | 285 ms | 27 ms |
+| Profile local: first spoken unit (`turn.speech`)                                   | 329 ms | 35 ms |
+| Profile local: first audio bytes (client)                                          | 444 ms | 52 ms |
+| Profile production: model start                                                    | 2,272  | 2,102 |
+| Profile production: first audio bytes (client)                                     | 5,141  | 4,932 |
+| Profile local: the call intro's `/speech` (the warm-up runs beside it)             | 9 ms   | 25 ms |
+
+The warm-up is ~300 ms of CPU, once per process (a dev server, a lab run) or per Lambda container that serves the call
+screen or the call start. A request that arrives while it runs shares the CPU with it (on the harness, a conversation
+created right after the call screen opened took up to ~250 ms longer); a founder opens the call screen and then
+presses Call, so it is normally done before. On Lambda it runs in the invocation's drain after the response; a call's
+first turn served by a container that did neither request still pays the cost (§8).
+
 ## 6. Measured and not kept
 
 | Tried                                                                                                                 | Result                                                                                                                                                                                                                                                                                                                                                                   |
@@ -245,6 +289,8 @@ React moved into a chunk it preloads). Landing page, signed out: ready at about 
 | A lower token limit on a call's reply (instead of stopping at the spoken budget)                                      | not kept: a reply cut by the limit ends mid-sentence in the transcript; stopping once 70 words were said ends on the sentence the budget ran out in                                                                                                                                                                                                                      |
 | Bedrock latency-optimized inference                                                                                   | not offered for Nova 2 Lite (Nova Pro, Claude 3.5 Haiku and Llama 3.1 only, checked 2026-10-16). The closest lever is the Priority service tier (`serviceTier: priority`; a third-party price list, unconfirmed by AWS, shows about 75 % more per token): an owner decision, to measure in production                                                                    |
 | Polly output format                                                                                                   | MP3 at the neural default 24 kHz kept: first bytes depend on synthesis, not on the format                                                                                                                                                                                                                                                                                |
+| Warming the turn engine at the start of every turn, beside its own database waits                                     | not kept: profile production's first turn 2,272 → 2,177 ms, but profile local's 284 → 381 ms (the warm-up competes with a turn whose database answers at once); the call screen and the call start warm it instead                                                                                                                                                       |
+| A per-call cache of the turn's context (persona, notes, policy), prebuilt at call start                               | not built: a later call's first turn was as fast as any other (lab run 41235680528 turns 3–4; harness), so nothing per call was slow; on the Data API the notes are 3 of a turn's ~60 round trips, and a cache shared by Lambda containers would need a round trip to check it                                                                                           |
 
 ## 7. Proposals for the files other streams own (measured or derived)
 
@@ -292,6 +338,9 @@ React moved into a chunk it preloads). Landing page, signed out: ready at about 
 - Nova 2 Lite's time to first token with and without a cache read, and the cache's share of the streamed reply's
   prompt (`modelFirstTokenMs`, `streamCacheReadInputTokens`, `streamInputTokens`; the query in §3).
 - Cold starts at 1,769 MB, and how often a founder meets one.
+- How often a call's first turn lands on a container the call screen or the call start warmed: `turn.timing`
+  `modelStartMs` of each call's first turn against its later turns, beside `call.turn_warm_up` `ms`. And whether the
+  Titan prewarm brings the first turn's `embedMs` down to the later turns' (a lab face run shows both).
 - The web app over CloudFront (HTTP/2 and HTTP/3, immutable assets): the local preview is HTTP/1.1 with six
   connections, so it penalises extra chunks that production does not.
 - How often someone meets a resume now that Aurora pauses after 30 idle minutes (was 10), and how much of it

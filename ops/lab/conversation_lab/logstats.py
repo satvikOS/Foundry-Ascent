@@ -116,6 +116,20 @@ def turn_breakdown(events: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     return turns
 
 
+def timings_by_request(lines: Iterable[str]) -> dict[str, dict[str, float | None]]:
+    """Each logged turn's server stages (:data:`TURN_STAGES`) by its request id, for joining a lab's own measured
+    turns to the server's timing (face.py ``server_turns``). The ids are for that join only: never put them in a
+    public result."""
+    out: dict[str, dict[str, float | None]] = {}
+    for e in _events(lines):
+        if (e.get("event") or e.get("msg")) != "turn.timing":
+            continue
+        request_id = e.get("requestId")
+        if isinstance(request_id, str) and request_id:
+            out[request_id] = {stage: _ms(e.get(stage)) for stage in TURN_STAGES}
+    return out
+
+
 def summarize(lines: Iterable[str]) -> dict[str, Any]:
     purposes: dict[str, Counter[str]] = {}
     issues: Counter[str] = Counter()

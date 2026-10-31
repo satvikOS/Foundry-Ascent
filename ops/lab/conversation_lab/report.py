@@ -469,6 +469,16 @@ def _face_comparison(face: Mapping[str, Any]) -> list[str]:
         cells = [_p_short(row.get(arm)) for arm in ("full", "lite", "polly")]
         out.append(f"| {row.get('title')} | {' | '.join(cells)} |")
     out.append("")
+    warm_up = face.get("warm_up") or {}
+    if warm_up:
+        out.append(
+            "Before the arms, one unmeasured warm-up turn on Polly alone (so no arm meets the API process's first turn): "
+            f"turns {warm_up.get('turns', 0)}, server model start {_p_short(warm_up.get('server_model_start_ms'))} ms, "
+            f"first spoken unit {_p_short(warm_up.get('server_first_speech_ms'))} ms"
+            + (f", error {warm_up['error']}" if warm_up.get("error") else "")
+            + "."
+        )
+        out.append("")
     delta = table.get("lite_minus_full_first_audio_p50_ms")
     if delta is not None:
         out.append(

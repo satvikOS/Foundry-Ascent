@@ -160,7 +160,13 @@ class BedrockModelGateway implements ModelGateway {
     const runtime = needsRuntime
       ? createBedrockRuntimeTransport({ region: config.region, ...credentials })
       : null;
-    this.#prewarm = runtime === null ? null : () => runtime.prewarm(config.primaryModelId);
+    // Titan is warmed with Nova when this gateway embeds with it over the same runtime client.
+    const warmsEmbeddings = !config.providers?.embedder && !config.transports?.invokeModel;
+    this.#prewarm =
+      runtime === null
+        ? null
+        : () =>
+            runtime.prewarm(config.primaryModelId, warmsEmbeddings ? config.embeddingsModelId : undefined);
     const converse = config.transports?.converse ?? runtime?.converse;
     const converseStream = config.transports?.converseStream ?? runtime?.converseStream;
 

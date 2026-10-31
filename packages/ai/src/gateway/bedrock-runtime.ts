@@ -38,11 +38,12 @@ export interface BedrockRuntimeTransport {
   converseStream: ConverseStreamFn;
   invokeModel: InvokeModelFn;
   /**
-   * Opens (or reuses) a connection to the Bedrock runtime with a request it refuses before any model runs (a
-   * Converse with no messages: a validation error, no tokens, no charge), so the next model call finds a warm
-   * connection. Never rejects.
+   * Opens (or reuses) a connection to the Bedrock runtime with requests it refuses before any model runs, so the next
+   * model calls find a warm connection: a Converse of `modelId` with no messages and, with `embeddingsModelId`, an
+   * InvokeModel of the embedding model with an empty body (no input text). Each is a validation error: no tokens, no
+   * charge. They go one after the other, on the same kept-alive connection. Never rejects.
    */
-  prewarm: (modelId: string) => Promise<void>;
+  prewarm: (modelId: string, embeddingsModelId?: string) => Promise<void>;
 }
 
 /** How long a prewarm request may take before it is abandoned. */
@@ -53,6 +54,8 @@ export interface BedrockRuntimeTransportOptions {
   credentials?: AwsCredentials | AwsCredentialProvider;
   /** SDK attempts per call (1 = no SDK retry). Default 2: one quick retry on throttling/5xx. */
   maxAttempts?: number;
+  /** Another endpoint than the region's (tests: a local stand-in). */
+  endpoint?: string;
 }
 
 /**
@@ -67,15 +70,35 @@ export function createBedrockRuntimeTransport(
     maxAttempts: options.maxAttempts ?? 2,
     requestHandler: { httpsAgent: sharedAwsAgent() },
     ...(options.credentials ? { credentials: options.credentials } : {}),
+    ...(options.endpoint ? { endpoint: options.endpoint } : {}),
   });
+  const refused = async (
+    send: (options: { abortSignal: AbortSignal }) => Promise<unknown>,
+  ): Promise<void> => {
+    try {
+      await send({ abortSignal: AbortSignal.timeout(PREWARM_TIMEOUT_MS) });
+    } catch {
+      // Refused by design (or unreachable): either way the connection, if any, is now open and kept.
+    }
+  };
   return {
-    prewarm: async (modelId) => {
-      try {
-        await client.send(new ConverseCommand({ modelId, messages: [] }), {
-          abortSignal: AbortSignal.timeout(PREWARM_TIMEOUT_MS),
-        });
-      } catch {
-        // Refused by design (or unreachable): either way the connection, if any, is now open and kept.
+    prewarm: async (modelId, embeddingsModelId) => {
+      await refused((options) => client.send(new ConverseCommand({ modelId, messages: [] }), options));
+      // A turn's first Bedrock call is its query embedding (lab face run 41235680528: Titan took ~375 ms on the run's
+      // first turn, ~230 ms on the next ones, after the Converse above had opened the connection).
+      if (embeddingsModelId !== undefined) {
+        const body = new TextEncoder().encode('{}');
+        await refused((options) =>
+          client.send(
+            new InvokeModelCommand({
+              modelId: embeddingsModelId,
+              contentType: 'application/json',
+              accept: 'application/json',
+              body,
+            }),
+            options,
+          ),
+        );
       }
     },
     converse: (input, signal) => client.send(new ConverseCommand(input), { abortSignal: signal }),

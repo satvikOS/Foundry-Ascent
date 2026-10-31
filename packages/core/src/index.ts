@@ -160,6 +160,7 @@ export {
   type KeyedEvidence,
 } from './orchestrator/evidence.js';
 export { privateRetrievalOwner } from './orchestrator/retrieval.js';
+export { SYNTHETIC_WARM_UP_GUARDS, warmTurnEngine, type TurnWarmUpGuards } from './orchestrator/warm-up.js';
 export { assembleContext, estimateTokens, type AssembledContext } from './orchestrator/context-budget.js';
 export { secondsUntilUtcMidnight, shouldSampleForReview } from './orchestrator/sampling.js';
 export {

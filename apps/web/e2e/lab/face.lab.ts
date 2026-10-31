@@ -32,6 +32,10 @@ import {
  *              falls back to the presence when the sandbox session ends.
  *   injection  a tampered page rewrites the words of one `avatar.speak_text` after the server admitted them: the
  *              server's transcript check must end the face within a heartbeat (`call.face_injection`).
+ *   warm-up    one turn on a call without a face, not measured, before any measured arm (in every pass, the LITE pass's
+ *              restarted API too): the first turn an API process serves pays the turn engine's first-run cost (lab run
+ *              41235680528: ~0.5 s before the model started on the run's first turn, ~0.05 s on the next ones), which
+ *              would otherwise land on whichever arm runs first and make the arms incomparable.
  *   polly      the same typed turn on a call without a face (Amazon Polly only): the A/B arm for first audio.
  *   call LITE  the same call arm with the app's face in LITE mode (the avatar lip-syncs the call's own Polly audio,
  *              which the page hands back to the server and the server relays over the speak socket), for the
@@ -62,6 +66,8 @@ const HEARTBEAT_SECONDS = 15;
 /** How long a turn waits for the first sound: the vendor, or the stand-in (which makes none) in a dry run. */
 const FIRST_SOUND_MS = FACE === 'heygen' ? 45_000 : 8_000;
 
+/** The warm-up turn's line (synthetic): never measured. */
+const WARM_UP_LINE = 'Quick check before we start: can you hear me?';
 /** Founder lines (synthetic): one per measured turn. */
 const LINES = [
   'What is the one thing I should test first with the clinic pilot?',
@@ -91,6 +97,8 @@ interface LabFetch {
   at: number;
   path: string;
   method: string;
+  /** The request's `x-request-id` (the app sends one with each API request): joins a turn to the server's timing. */
+  requestId: string | null;
   part: string | null;
   doneAt: number | null;
   status: number | null;
@@ -384,6 +392,7 @@ function faceLabInit(): void {
         at: now(),
         path: new URL(url, location.href).pathname,
         method,
+        requestId: headers.get('x-request-id'),
         part: headers.get('x-face-part'),
         doneAt: null,
         status: null,
@@ -399,6 +408,7 @@ function faceLabInit(): void {
         (response) => {
           seen.doneAt = now();
           seen.status = response.status;
+          seen.requestId ??= response.headers.get('x-request-id');
           // A turn's stream: the moment each spoken unit arrives (read from a copy, never in the app's way).
           if (seen.method === 'POST' && seen.path.endsWith('/turns') && response.body !== null) {
             void (async () => {
@@ -714,6 +724,11 @@ const presenceTile = (page: Page) =>
 /** Each turn: page time sent, first face speak_started / audio onset / app playback after it, and the units said. */
 interface TurnTiming {
   sentAt: number;
+  /**
+   * The turn request's id, which the server's `turn.timing` line carries: the lab reads the server's model start and
+   * first spoken unit per arm from it (ops/lab face.py server_turns). An id, never a word of the turn.
+   */
+  requestId: string | null;
   firstSpeakStartedMs: number | null;
   firstFaceAudioMs: number | null;
   /** When the app scheduled its first buffer (before any sound): kept apart from the sound itself. */
@@ -748,9 +763,8 @@ async function measuredTurn(
     5_000,
   );
   const lab0 = await readLab(page);
-  sentAt =
-    lab0.fetches.find((f) => f.method === 'POST' && f.path.endsWith('/turns') && f.at >= before)?.at ??
-    before;
+  const sent = lab0.fetches.find((f) => f.method === 'POST' && f.path.endsWith('/turns') && f.at >= before);
+  sentAt = sent?.at ?? before;
   await until(
     page,
     (lab) =>
@@ -768,6 +782,8 @@ async function measuredTurn(
   const handOver = speakText ?? speakPost?.at ?? null;
   return {
     sentAt,
+    // Read again now: a response header can fill it in after the request went out.
+    requestId: lab.fetches.find((f) => f.path === sent?.path && f.at === sent.at)?.requestId ?? null,
     firstSpeakStartedMs: ms(sentAt, inEvents(lab, 'avatar.speak_started', sentAt)[0]?.at ?? null),
     firstFaceAudioMs: ms(sentAt, firstAfter(lab.onsets, sentAt)),
     firstAppPlaybackMs: ms(sentAt, firstAfter(lab.plays, sentAt)),
@@ -1171,6 +1187,34 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
       await api.dispose();
     }
     expect(result.error ?? null, 'probe').toBeNull();
+  });
+
+  // Before any measured arm, in every pass (the LITE pass's API was restarted): one call turn nobody measures, so the API
+  // process's first-turn cost (orchestrator/warm-up.ts, lab run 41235680528) lands on no arm. On Polly alone, so it
+  // opens no vendor session. Its server timing is reported apart (face.py public_warm_up), never in an arm.
+  test('warm-up: one unmeasured call turn before the measured arms', async ({ page, baseURL }) => {
+    if (!baseURL) throw new Error('baseURL is required');
+    test.setTimeout(3 * 60_000);
+    test.skip(!(await appWithinBudget(baseURL, 0.1)), 'the app reached its share of the budget');
+    const result: Record<string, unknown> = {};
+    await page.addInitScript(faceLabInit);
+    await setFacesEnabled(baseURL, false);
+    let started = false;
+    try {
+      await acknowledgeNotices(page);
+      await startCall(page);
+      started = true;
+      await expect(presenceTile(page)).toBeVisible({ timeout: 30_000 });
+      await waitForFaceQuiet(page, { timeoutMs: 20_000 });
+      const turn = await measuredTurn(page, WARM_UP_LINE);
+      result.turns = [turn].map(({ sentAt: _sentAt, ...rest }) => rest);
+    } catch (err) {
+      result.error = errorName(err);
+    } finally {
+      if (started) await hangUp(page).catch(() => undefined);
+      writePrivate('face/warmup.json', result);
+    }
+    // Never a reason to stop the run: the measured arms go on whatever happened here.
   });
 
   test('call: the stock face in a call, admins only, labelled, without the microphone', async ({
