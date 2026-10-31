@@ -468,7 +468,6 @@ def test_deploy_role_workflows_call_only_what_the_deploy_role_grants() -> None:
 MEDIA_KEY_WORKFLOW = "ops-heygen-key.yml"
 MEDIA_KEY_CLI: dict[str, str | None] = {
     "sts:getcalleridentity": None,
-    "secretsmanager:describesecret": "secretsmanager:DescribeSecret",
     "secretsmanager:createsecret": "secretsmanager:CreateSecret",
     "secretsmanager:putsecretvalue": "secretsmanager:PutSecretValue",
 }

@@ -164,15 +164,17 @@ describe('config', () => {
       );
     });
 
-    it('accepts a stock avatar in LITE (our audio, a stock face) but no vendor voice there', () => {
-      expect(face({ stock: { avatarId: WAYNE }, audience: 'admins' })).toMatchObject({
-        mode: 'lite',
-        stock: { avatarId: WAYNE, voiceId: null },
-        audience: 'admins',
-      });
-      expect(() => face({ mode: 'lite', stock: { avatarId: WAYNE, voiceId: VOICE } })).toThrow(
-        /media\.face\.stock\.voiceId is FULL mode only/,
+    it('refuses a stock face in LITE: a stock avatar and its voice are FULL mode only', () => {
+      // The API shows a stock avatar only in FULL (in LITE it renders the persona's own face), so a LITE stock
+      // avatar would be silently ignored: refused instead.
+      expect(() => face({ stock: { avatarId: WAYNE }, audience: 'admins' })).toThrow(
+        /media\.face\.stock is FULL mode only/,
       );
+      expect(() => face({ mode: 'lite', stock: { avatarId: WAYNE, voiceId: VOICE } })).toThrow(
+        /media\.face\.stock is FULL mode only/,
+      );
+      // No stock key, or an explicit null, is LITE with the persona's own face.
+      expect(face({ mode: 'lite', stock: null })).toMatchObject({ mode: 'lite', stock: null });
     });
 
     it('refuses malformed values', () => {

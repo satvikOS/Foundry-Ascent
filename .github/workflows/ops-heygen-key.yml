@@ -13,8 +13,8 @@ name: Ops - sync HeyGen key
 #
 # AWS access: GitHub OIDC as the deploy role FoundryAscent-GitHubDeploy (the `production` environment is its only
 # trusted subject, and that environment deploys from main only). Of Secrets Manager the role may call exactly
-# DescribeSecret, CreateSecret and PutSecretValue, on this one secret (infra/cdk/src/stacks/foundation-stack.ts,
-# GitHubDeployMediaKeyPolicy): it cannot read the key back.
+# CreateSecret and PutSecretValue, on this one secret (infra/cdk/src/stacks/foundation-stack.ts,
+# GitHubDeployMediaKeyPolicy): it cannot read the key back, nor even its metadata.
 #
 # THE REPOSITORY IS PUBLIC: the key is never echoed, never on a command line (it goes from the step's environment
 # through bash builtins and jq's stdin into a 0600 file the AWS CLI reads with file://, removed on exit), and masked
@@ -143,40 +143,38 @@ jobs:
             exit 1
           fi
 
-          # Exists? describe-secret reads metadata only (never the value). Its output and errors may hold the
-          # secret's ARN, which carries the (masked) account id: neither is printed beyond a masked one-line reason.
-          if deleted="$(aws secretsmanager describe-secret --secret-id "${SECRET_NAME}" \
-            --query 'DeletedDate' --output text 2>"${err}")"; then
-            if [ -n "${deleted}" ] && [ "${deleted}" != "None" ]; then
-              echo "::error::${SECRET_NAME} is scheduled for deletion. Cancel the deletion in the AWS console (Secrets Manager, us-east-1), then run this again."
-              exit 1
-            fi
-            action=updated
-          elif grep -q 'ResourceNotFoundException' "${err}"; then
-            action=created
-          else
-            echo "::error::Could not read ${SECRET_NAME}'s metadata ($(one_line))."
+          # Create first, then put: CreateSecret is granted for the exact name, so it is authorized whether or not the
+          # secret exists, and an existing secret answers ResourceExistsException. (Asking first would not work on the
+          # first run: a call granted only on the suffixed ARN may be answered AccessDeniedException, not
+          # ResourceNotFoundException, while no such ARN exists.) A secret scheduled for deletion refuses both writes
+          # with InvalidRequestException. AWS output and errors may hold the secret's ARN, which carries the (masked)
+          # account id: none of it is printed beyond a masked one-line reason.
+          deletion_scheduled() {
+            grep -q 'InvalidRequestException' "${err}" && grep -q 'deletion' "${err}"
+          }
+          refuse_deleted() {
+            echo "::error::${SECRET_NAME} is scheduled for deletion. Cancel the deletion in the AWS console (Secrets Manager, us-east-1), then run this again."
             exit 1
-          fi
-
-          if [ "${action}" = "created" ]; then
-            if ! aws secretsmanager create-secret --name "${SECRET_NAME}" \
-              --description "HeyGen LiveAvatar API key for the vEIR's face (synced from GitHub by Ops - sync HeyGen key)" \
+          }
+          if aws secretsmanager create-secret --name "${SECRET_NAME}" \
+            --description "HeyGen LiveAvatar API key for the vEIR's face (synced from GitHub by Ops - sync HeyGen key)" \
+            --secret-string "file://${secret}" > /dev/null 2>"${err}"; then
+            action=created
+          elif grep -q 'ResourceExistsException' "${err}"; then
+            if aws secretsmanager put-secret-value --secret-id "${SECRET_NAME}" \
               --secret-string "file://${secret}" > /dev/null 2>"${err}"; then
-              # Created meanwhile by someone else: store the value as a new version instead.
-              if ! grep -q 'ResourceExistsException' "${err}"; then
-                echo "::error::Could not create ${SECRET_NAME} ($(one_line))."
-                exit 1
-              fi
               action=updated
-            fi
-          fi
-          if [ "${action}" = "updated" ]; then
-            if ! aws secretsmanager put-secret-value --secret-id "${SECRET_NAME}" \
-              --secret-string "file://${secret}" > /dev/null 2>"${err}"; then
+            elif deletion_scheduled; then
+              refuse_deleted
+            else
               echo "::error::Could not update ${SECRET_NAME} ($(one_line))."
               exit 1
             fi
+          elif deletion_scheduled; then
+            refuse_deleted
+          else
+            echo "::error::Could not create ${SECRET_NAME} ($(one_line))."
+            exit 1
           fi
           echo "${SECRET_NAME}: ${action}."
           echo "action=${action}" >> "${GITHUB_OUTPUT}"

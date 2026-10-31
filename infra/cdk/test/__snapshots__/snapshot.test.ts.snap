@@ -3857,10 +3857,7 @@ exports[`template snapshots > FoundryAscent-Foundation 1`] = `
               "Sid": "CreateFaceVendorKey",
             },
             {
-              "Action": [
-                "secretsmanager:DescribeSecret",
-                "secretsmanager:PutSecretValue",
-              ],
+              "Action": "secretsmanager:PutSecretValue",
               "Effect": "Allow",
               "Resource": {
                 "Fn::Join": [

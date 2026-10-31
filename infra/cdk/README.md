@@ -30,8 +30,8 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
   lookup roles (`cdk-hnb659fds-<kind>-<account>-<region>`, never the execution role), read-only CloudFormation on
   `FoundryAscent-*` and `CDKToolkit`, `logs:FilterLogEvents`/`GetLogEvents` on `/aws/lambda/FoundryAscent*`,
   `ce:GetCostAndUsage`. Everything else happens through the CDK bootstrap roles. Its one write outside
-  CloudFormation is a policy of its own, `GitHubDeployMediaKeyPolicy`: `secretsmanager:DescribeSecret` and
-  `PutSecretValue` on `foundry-ascent/media/heygen-??????`, and `CreateSecret` only for that exact name
+  CloudFormation is a policy of its own, `GitHubDeployMediaKeyPolicy`: `secretsmanager:PutSecretValue` on
+  `foundry-ascent/media/heygen-??????`, and `CreateSecret` only for that exact name
   (`secretsmanager:Name`), for **Ops - sync HeyGen key** (`.github/workflows/ops-heygen-key.yml`, which copies the
   repository secret `HEYGEN_LIVEAVATAR_API` into it). Never `GetSecretValue`: it cannot read the key back
   ([avatars runbook §2](../../docs/runbooks/avatars.md#2-keys-into-aws-secrets-manager-owner-us-east-1)).
@@ -228,7 +228,7 @@ are the infrastructure-level off switches (no permission, no schedule).
 | `media.face.sandbox`        | `false`                  | `MEDIA_FACE_SANDBOX`: LiveAvatar sandbox sessions (free, about a minute, the sandbox avatar) for the first live test                           |
 | `media.face.csp`            | `connect: [], media: []` | exact `wss://`/`https://` origins added to the CSP while a face is wired (no wildcard; empty with `none`; both schemes required when wired)    |
 | `media.face.mode`           | absent (`lite`)          | `MEDIA_FACE_MODE`: `lite` lip-syncs our audio; `full` lets a stock avatar say admitted text in its stock voice (requires `stock`, admins only) |
-| `media.face.stock`          | absent                   | `MEDIA_FACE_AVATAR_ID`, `MEDIA_FACE_VOICE_ID` (empty when absent): `{avatarId, voiceId?}` LiveAvatar UUIDs; `voiceId` is FULL only             |
+| `media.face.stock`          | absent                   | `MEDIA_FACE_AVATAR_ID`, `MEDIA_FACE_VOICE_ID` (empty when absent): `{avatarId, voiceId?}` LiveAvatar UUIDs; FULL only (refused with `lite`)    |
 | `media.face.audience`       | absent (`everyone`)      | `MEDIA_FACE_AUDIENCE`: `admins` or `everyone`; default `admins` with `full`, which accepts nothing else                                        |
 | `media.voice.provider`      | `polly`                  | `MEDIA_VOICE_PROVIDER`; `elevenlabs` wires the cloned voices and lets the API role read `foundry-ascent/media/elevenlabs` (only that secret)   |
 | `media.voice.model`         | `eleven_flash_v2_5`      | `MEDIA_VOICE_MODEL`                                                                                                                            |

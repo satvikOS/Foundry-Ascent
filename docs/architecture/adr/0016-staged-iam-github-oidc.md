@@ -78,7 +78,7 @@ Chosen option: **1** (details in `infra/iam/README.md`).
   `retire` mode (`confirm = RETIRE-STAGE-0`).
 
 - **Amendment (2026-10-31, the face vendor's key):** the deploy role gained one write outside CloudFormation, as
-  a separate policy (`GitHubDeployMediaKeyPolicy`): `secretsmanager:DescribeSecret`/`PutSecretValue` on
+  a separate policy (`GitHubDeployMediaKeyPolicy`): `secretsmanager:PutSecretValue` on
   `foundry-ascent/media/heygen-??????` and `CreateSecret` for exactly that name, so the manual **Ops - sync HeyGen
   key** workflow can copy the repository secret `HEYGEN_LIVEAVATAR_API` into Secrets Manager without the owner
   pasting the key into a shell. It cannot read the key back (no `GetSecretValue`). The role already deploys the code

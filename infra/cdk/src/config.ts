@@ -111,9 +111,10 @@ export interface PlatformConfig {
        */
       readonly mode: FaceMode;
       /**
-       * A vendor stock avatar instead of the persona's own face (`MEDIA_FACE_AVATAR_ID`, `MEDIA_FACE_VOICE_ID`):
-       * no likeness consent is involved, and the call tile labels it "AI avatar". `voiceId` (a vendor stock voice)
-       * is FULL mode only; absent, the avatar's default voice speaks. Null: the persona's own face (LITE only).
+       * FULL mode only (refused in LITE): the vendor stock avatar that replaces the persona's own face
+       * (`MEDIA_FACE_AVATAR_ID`, `MEDIA_FACE_VOICE_ID`). No likeness consent is involved, and the call tile labels it
+       * "AI avatar". `voiceId` is a vendor stock voice; absent, the avatar's default voice speaks. Null: the persona's
+       * own face (LITE).
        */
       readonly stock: { readonly avatarId: string; readonly voiceId: string | null } | null;
       /**
@@ -361,9 +362,13 @@ function parseFaceVoicing(face: Json): Pick<PlatformConfig['media']['face'], 'mo
       'must name a vendor stock avatar (stock.avatarId) when mode is full: FULL never renders an EIR’s likeness (docs/runbooks/avatars.md §9)',
     );
   }
-  // The vendor's voices exist in FULL mode only; in LITE the face says our own audio, so a voice id would be ignored.
-  if (mode === 'lite' && stock?.voiceId) {
-    throw new ConfigError(`${path}.stock.voiceId`, 'is FULL mode only (in LITE the face says our own audio)');
+  // A stock avatar and its voice are FULL mode only: in LITE the face is the persona's own likeness saying our own
+  // audio, and the API ignores a stock face there, so naming one would be a silent misconfiguration.
+  if (mode === 'lite' && stock !== null) {
+    throw new ConfigError(
+      `${path}.stock`,
+      'is FULL mode only (in LITE the face is the persona’s own, saying our own audio; docs/runbooks/avatars.md §9)',
+    );
   }
   const audience = oneOf(face, 'audience', path, FACE_AUDIENCES) ?? (mode === 'full' ? 'admins' : 'everyone');
   // In FULL the browser's room token can publish commands, so a modified page could make the face say other text

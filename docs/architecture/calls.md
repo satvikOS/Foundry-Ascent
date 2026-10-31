@@ -456,10 +456,13 @@ CallFaceController  features/calls/use-call-face.ts: one per engine; the face be
 ```
 
 Configuration: `MEDIA_FACE_PROVIDER` (`none` | `heygen-liveavatar`), `MEDIA_FACE_SANDBOX`, `MEDIA_FACE_MODE`
-(`lite` | `full`), `MEDIA_FACE_AVATAR_ID` and `MEDIA_FACE_VOICE_ID` (a stock avatar and, FULL only, its voice; empty
-for the persona's own face), `MEDIA_FACE_AUDIENCE` (`admins` | `everyone`), `MEDIA_VOICE_PROVIDER`
-(`polly` | `elevenlabs`), `MEDIA_VOICE_MODEL`, `MEDIA_VOICE_ZERO_RETENTION` (infra `media`, off in production.json;
-infra refuses `full` without a stock avatar or with an audience other than `admins`).
+(`lite` | `full`), `MEDIA_FACE_AVATAR_ID` and `MEDIA_FACE_VOICE_ID` (FULL only: the stock avatar and, optionally,
+its voice; empty in LITE, where the face is always the persona's own), `MEDIA_FACE_AUDIENCE` (`admins` |
+`everyone`), `MEDIA_VOICE_PROVIDER` (`polly` | `elevenlabs`), `MEDIA_VOICE_MODEL`, `MEDIA_VOICE_ZERO_RETENTION`
+(infra `media`, off in production.json; infra refuses `full` without a stock avatar or with an audience other than
+`admins`, and a stock avatar or voice with `lite`). Each reaches the API only when `apps/api/lambda-contract.json`
+lists it for the `api` role; synth refuses a configured value that no role lists unless it is what the API assumes
+without the variable (the LITE defaults), so a FULL configuration cannot deploy with its variables dropped.
 Vendor keys come from Secrets Manager (`foundry-ascent/media/heygen`, `foundry-ascent/media/elevenlabs`, JSON
 `{"apiKey"}`; names and prices in `packages/core/media-vendors.json`), read on first use, cached 5 minutes, never
 logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT_PROVIDER=fake` and

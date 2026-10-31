@@ -68,7 +68,8 @@ only once the deployment wires that vendor):
 
 The key is never printed: the workflow masks it, never puts it on a command line, writes it to Secrets Manager from
 a file only the runner's user can read and deletes that file, and installs or runs no project code. The deploy role
-may describe, create and write that one secret and nothing else of Secrets Manager; it cannot read the key back
+may create and write that one secret and nothing else of Secrets Manager; it cannot read the key (or even its
+metadata) back
 (`infra/cdk/src/stacks/foundation-stack.ts`, `GitHubDeployMediaKeyPolicy`). Giving the deploy role this one write
 adds nothing it could not already reach: it deploys the code that reads the key. A key that leaked or was abused is
 revoked at HeyGen first (§7), then replaced the same way.
@@ -276,11 +277,14 @@ Never the crisis line, in either mode: a crisis turn drops the face to the prese
 | Key              | Values                                                                                                   | API variable           |
 | ---------------- | -------------------------------------------------------------------------------------------------------- | ---------------------- |
 | `mode`           | `lite` (default) or `full`                                                                               | `MEDIA_FACE_MODE`      |
-| `stock.avatarId` | a LiveAvatar avatar id (UUID); required with `full`                                                      | `MEDIA_FACE_AVATAR_ID` |
+| `stock.avatarId` | a LiveAvatar avatar id (UUID); required with `full`, refused with `lite`                                 | `MEDIA_FACE_AVATAR_ID` |
 | `stock.voiceId`  | a LiveAvatar voice id (UUID), `full` only; absent: the avatar's default voice                            | `MEDIA_FACE_VOICE_ID`  |
 | `audience`       | `admins` or `everyone`; default `admins` with `full` (the only value it accepts), `everyone` with `lite` | `MEDIA_FACE_AUDIENCE`  |
 
-Synth refuses `full` without `stock.avatarId`, `full` with `audience: "everyone"`, and `stock.voiceId` with `lite`.
+Synth refuses `full` without `stock.avatarId`, `full` with `audience: "everyone"`, and any `stock` with `lite` (in
+LITE the face is always the persona's own; the API would ignore a stock avatar there). It also refuses any of these
+values other than the LITE defaults while `apps/api/lambda-contract.json` does not list the variable for the `api`
+role: a FULL configuration then fails the deploy loudly instead of running as LITE.
 FULL changes no permission: the API still reads only `foundry-ascent/media/heygen`, and the CSP the same LiveKit
 origins as LITE.
 
@@ -302,7 +306,10 @@ origins as LITE.
    `audience: "admins"`, `stock: {"avatarId": "dd73ea75-1218-4ef3-92ce-606d5f7fbc0a"}` (Wayne, the only sandbox
    avatar), `csp.connect: ["wss://heygen-feapbkvq.livekit.cloud", "https://heygen-feapbkvq.livekit.cloud"]`. Keep
    `voice.provider: "polly"` (the fallback when the face fails). Deploy. The deploy adds the read grant on the
-   HeyGen key, the `MEDIA_FACE_*` variables and the two CSP origins.
+   HeyGen key, the `MEDIA_FACE_*` variables and the two CSP origins. The variables reach the API only once
+   `apps/api/lambda-contract.json` lists `MEDIA_FACE_MODE`, `MEDIA_FACE_AVATAR_ID`, `MEDIA_FACE_VOICE_ID` and
+   `MEDIA_FACE_AUDIENCE` under `environment.api` (part of the app change); until then synth refuses this
+   configuration (`No function would receive MEDIA_FACE_MODE, …`) rather than deploying it as LITE.
 2. **Admin › Settings:** turn **Video faces** on; **per call** 20 minutes (the Essential session cap); about 600
    video minutes a month; a platform spend cap of at least $120.
 3. **Studio:** nothing. A stock face needs no avatar id or consent on the persona.

@@ -17,8 +17,8 @@
  *
  * The deploy role's one write outside CloudFormation is the face vendor's API key (GitHubDeployMediaKeyPolicy): the
  * **Ops - sync HeyGen key** workflow copies the repository secret `HEYGEN_LIVEAVATAR_API` into the Secrets Manager
- * secret `foundry-ascent/media/heygen`, so the owner never pastes the key into a shell. It may describe, create and
- * put a value into that one secret, never read it back (docs/runbooks/avatars.md §2).
+ * secret `foundry-ascent/media/heygen`, so the owner never pastes the key into a shell. It may create that one secret
+ * and put a value into it, never read it or its metadata back (docs/runbooks/avatars.md §2).
  */
 import { ArnFormat, CfnOutput, Duration, Stack, type StackProps } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -213,9 +213,10 @@ export class FoundationStack extends Stack {
 
     // ---- The face vendor's key (Ops - sync HeyGen key) ------------------------------------------------------------
     // Its own policy on the deploy role, so GitHubDeployPolicy stays read-only. Exactly what
-    // .github/workflows/ops-heygen-key.yml calls: DescribeSecret (does it exist?), then CreateSecret the first time or
-    // PutSecretValue after that. Never GetSecretValue (the workflow cannot read the key back), DeleteSecret,
-    // TagResource, PutResourcePolicy, replication or rotation. `-??????` is Secrets Manager's suffix of that one
+    // .github/workflows/ops-heygen-key.yml calls: CreateSecret (which an existing secret answers
+    // ResourceExistsException), then PutSecretValue if it exists. No DescribeSecret: asking first fails on the first run
+    // (no suffixed ARN to match yet, so AccessDeniedException rather than ResourceNotFoundException). Never
+    // GetSecretValue (the workflow cannot read the key back), DeleteSecret, TagResource, PutResourcePolicy, replication or rotation. `-??????` is Secrets Manager's suffix of that one
     // secret. CreateSecret is matched on the name in the request (secretsmanager:Name, exact) because the secret's
     // ARN does not exist yet; its resource only pins the region, the account and the name prefix. The secret uses the
     // AWS managed key, so no KMS grant is needed (the key policy admits callers through Secrets Manager).
@@ -237,7 +238,7 @@ export class FoundationStack extends Stack {
         }),
         new iam.PolicyStatement({
           sid: 'WriteFaceVendorKey',
-          actions: ['secretsmanager:DescribeSecret', 'secretsmanager:PutSecretValue'],
+          actions: ['secretsmanager:PutSecretValue'],
           resources: [faceKeyArn],
         }),
       ],

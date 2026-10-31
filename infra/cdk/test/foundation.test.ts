@@ -134,7 +134,7 @@ describe('FoundryAscent-Foundation', () => {
         {
           Sid: 'WriteFaceVendorKey',
           Effect: 'Allow',
-          Action: ['secretsmanager:DescribeSecret', 'secretsmanager:PutSecretValue'],
+          Action: 'secretsmanager:PutSecretValue',
           Resource: {
             'Fn::Join': [
               '',
@@ -156,12 +156,7 @@ describe('FoundryAscent-Foundation', () => {
         .match(/"secretsmanager:[A-Za-z]+"/g)
         ?.map((a) => a.slice(1, -1))
         .sort(),
-    ).toEqual([
-      'secretsmanager:CreateSecret',
-      'secretsmanager:DescribeSecret',
-      'secretsmanager:Name',
-      'secretsmanager:PutSecretValue',
-    ]);
+    ).toEqual(['secretsmanager:CreateSecret', 'secretsmanager:Name', 'secretsmanager:PutSecretValue']);
     expect(all).not.toContain('elevenlabs');
     expect(all).not.toContain('aurora');
     // The read-only deploy policy stays read-only.
