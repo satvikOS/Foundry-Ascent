@@ -11,6 +11,8 @@ interface CallFaceVideoProps {
   /** Both voices' loudness (0–1); the corner tile follows the founder's microphone. */
   levels: () => { veir: number; founder: number };
   reducedMotion: boolean;
+  /** A vendor's stock avatar (no one's likeness): labelled "AI avatar" on the tile, so it is never taken for the EIR. */
+  stock?: boolean;
   className?: string;
 }
 
@@ -18,9 +20,16 @@ interface CallFaceVideoProps {
  * The call tile as a video call: the vEIR's face fills the tile, and the founder sits in a small corner tile
  * (initials, never a camera). The video element is always muted: the call's own audio path plays the vEIR's
  * voice (with ducking for barge-in and the captions' timing), so the tile can never double the audio or play
- * anything the call did not.
+ * anything the call did not. A stock avatar carries a visible "AI avatar" label in the corner.
  */
-export function CallFaceVideo({ stream, you, levels, reducedMotion, className }: CallFaceVideoProps) {
+export function CallFaceVideo({
+  stream,
+  you,
+  levels,
+  reducedMotion,
+  stock = false,
+  className,
+}: CallFaceVideoProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const ringRef = useRef<HTMLSpanElement | null>(null);
 
@@ -63,6 +72,14 @@ export function CallFaceVideo({ stream, you, levels, reducedMotion, className }:
         aria-hidden
         className="absolute inset-0 size-full object-cover"
       />
+      {stock ? (
+        <span
+          data-slot="call-ai-avatar-label"
+          className="absolute top-3 left-3 rounded-full bg-black/60 px-2.5 py-1 text-[0.6875rem] leading-none font-medium text-white ring-1 ring-white/20"
+        >
+          AI avatar
+        </span>
+      ) : null}
       <div
         aria-hidden
         data-slot="call-you-tile"
@@ -91,10 +108,13 @@ export function CallFaceVideo({ stream, you, levels, reducedMotion, className }:
 export function CallFaceThumbnail({
   stream,
   speaking,
+  stock = false,
   className,
 }: {
   stream: MediaStream | null;
   speaking: boolean;
+  /** A vendor's stock avatar: the thumbnail says "AI avatar" (on hover and to assistive technology). */
+  stock?: boolean;
   className?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -110,6 +130,7 @@ export function CallFaceThumbnail({
     <span
       data-slot="call-face-thumbnail"
       data-speaking={speaking || undefined}
+      {...(stock ? { role: 'img', 'aria-label': 'AI avatar', title: 'AI avatar' } : {})}
       className={cn(
         'relative inline-flex size-6 shrink-0 overflow-hidden rounded-full bg-black ring-1 ring-border',
         speaking && 'ring-2 ring-foreground/40',

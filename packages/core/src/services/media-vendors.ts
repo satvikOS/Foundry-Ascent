@@ -17,6 +17,8 @@ const MediaVendors = z.object({
       usdPerMinute: z.number().positive(),
       secretName: SecretName,
       apiOrigin: Origin,
+      /** FULL mode (the vendor's stock voice speaks admitted text): the same key and API, twice the credits. */
+      full: z.object({ product: z.string(), usdPerMinute: z.number().positive() }),
     }),
   }),
   voice: z.object({
@@ -32,6 +34,14 @@ const MediaVendors = z.object({
 export type MediaVendors = z.infer<typeof MediaVendors>;
 
 export const MEDIA_VENDORS: MediaVendors = MediaVendors.parse(raw);
+
+/** The price-file rate of a face of `vendor` in `mode` (the stand-in costs nothing). */
+export function faceListPrice(vendor: 'heygen' | 'fake', mode: 'lite' | 'full'): number {
+  if (vendor !== 'heygen') return 0;
+  return mode === 'full'
+    ? MEDIA_VENDORS.face.heygen.full.usdPerMinute
+    : MEDIA_VENDORS.face.heygen.usdPerMinute;
+}
 
 /** Cost of `seconds` of a face session at `usdPerMinute` (the vendor bills elapsed time, silence included). */
 export function faceCostUsd(seconds: number, usdPerMinute: number): number {

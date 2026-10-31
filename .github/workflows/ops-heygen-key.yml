@@ -1,0 +1,203 @@
+name: Ops - sync HeyGen key
+
+# Copies the repository secret HEYGEN_LIVEAVATAR_API (the owner's HeyGen LiveAvatar API key) into the AWS Secrets
+# Manager secret foundry-ascent/media/heygen in us-east-1, as {"apiKey": "<key>"}: the secret the API reads the face
+# vendor's key from (packages/core/media-vendors.json; docs/runbooks/avatars.md §2). The owner never pastes the key
+# into a shell. Run it by hand after setting or rotating the repository secret; the API picks a new key up within
+# 5 minutes.
+#
+# Why a separate, manual workflow and not a step of Deploy: the key is decrypted on a runner only when the owner asks
+# for it (not on every push to main), on a runner that installs and runs no dependency code (Deploy's job runs
+# `pnpm install` and the CDK app, and a process an earlier step leaves behind can read a later step's environment),
+# a failed copy never marks a deploy red or blocks one, and rotating the key needs no deploy.
+#
+# AWS access: GitHub OIDC as the deploy role FoundryAscent-GitHubDeploy (the `production` environment is its only
+# trusted subject, and that environment deploys from main only). Of Secrets Manager the role may call exactly
+# CreateSecret and PutSecretValue, on this one secret (infra/cdk/src/stacks/foundation-stack.ts,
+# GitHubDeployMediaKeyPolicy): it cannot read the key back, nor even its metadata.
+#
+# THE REPOSITORY IS PUBLIC: the key is never echoed, never on a command line (it goes from the step's environment
+# through bash builtins and jq's stdin into a 0600 file the AWS CLI reads with file://, removed on exit), and masked
+# with ::add-mask:: on top of GitHub's own secret masking. The log and the job summary say only created, updated or
+# skipped. An empty or unset repository secret skips cleanly. Idempotent: every run leaves the secret's current value
+# equal to the repository secret (a re-run stores the same value as a new version; the previous one stays as
+# AWSPREVIOUS).
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ops-heygen-key
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  sync:
+    name: Sync HeyGen key
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      SECRET_NAME: foundry-ascent/media/heygen
+    steps:
+      - name: Check the repository secret
+        id: key
+        env:
+          HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API }}
+        run: |
+          if [ -z "${HEYGEN_KEY}" ]; then
+            echo "::notice::The repository secret HEYGEN_LIVEAVATAR_API is empty or not set: nothing to copy."
+            echo "present=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          # Mask every line, as given and without surrounding whitespace (a multi-line value is a paste error, refused
+          # below, but must not print either; ::add-mask:: masks one line).
+          printf '%s\n' "${HEYGEN_KEY}" | while IFS= read -r line; do
+            trimmed="${line#"${line%%[![:space:]]*}"}"
+            trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+            if [ -n "${line}" ]; then echo "::add-mask::${line}"; fi
+            if [ -n "${trimmed}" ] && [ "${trimmed}" != "${line}" ]; then echo "::add-mask::${trimmed}"; fi
+          done
+          # Checked, never echoed: after dropping surrounding whitespace (a trailing newline from a copy-paste), one
+          # token of letters, digits and ._~+/=:- (no spaces, quotes or backslashes).
+          key="${HEYGEN_KEY#"${HEYGEN_KEY%%[![:space:]]*}"}"
+          key="${key%"${key##*[![:space:]]}"}"
+          if [ "${#key}" -lt 16 ] || [ "${#key}" -gt 1024 ] || [[ ! "${key}" =~ ^[A-Za-z0-9._~+/=:_-]+$ ]]; then
+            echo "::error::HEYGEN_LIVEAVATAR_API is not a single API key (16 to 1024 letters, digits or ._~+/=:_- without spaces or quotes). Set it again under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          echo "present=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Resolve the deploy role
+        if: steps.key.outputs.present == 'true'
+        env:
+          RAW_DEPLOY_ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN || vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          # An ARN or the 12-digit account id; masked, never printed. GitHub OIDC only (no stage-0 key).
+          role="$(printf '%s' "${RAW_DEPLOY_ROLE}" | tr -d "[:space:]\"'")"
+          if [[ "${role}" =~ ^([0-9]{12})$ ]] || [[ "${role}" =~ ^arn:aws:iam::([0-9]{12}):role/FoundryAscent-GitHubDeploy$ ]]; then
+            account="${BASH_REMATCH[1]}"
+          else
+            echo "::error::AWS_DEPLOY_ROLE_ARN is not set to the FoundryAscent-GitHubDeploy role ARN or a 12-digit account id."
+            exit 1
+          fi
+          echo "::add-mask::${account}"
+          deploy_role="arn:aws:iam::${account}:role/FoundryAscent-GitHubDeploy"
+          echo "::add-mask::${deploy_role}"
+          echo "DEPLOY_ROLE_ARN=${deploy_role}" >> "${GITHUB_ENV}"
+
+      - name: AWS credentials (GitHub OIDC, deploy role)
+        if: steps.key.outputs.present == 'true'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
+          role-session-name: foundry-ascent-heygen-key-${{ github.run_id }}
+          role-duration-seconds: 900
+          aws-region: us-east-1
+          mask-aws-account-id: true
+
+      - name: Mask account id
+        if: steps.key.outputs.present == 'true'
+        run: |
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          if [[ ! "${account}" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::sts:GetCallerIdentity did not return a 12-digit account id"
+            exit 1
+          fi
+          echo "::add-mask::${account}"
+
+      - name: Store the key in Secrets Manager
+        id: store
+        if: steps.key.outputs.present == 'true'
+        env:
+          HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API }}
+          # Throttling is retried by the CLI; any error that remains stops the run.
+          AWS_RETRY_MODE: standard
+          AWS_MAX_ATTEMPTS: '6'
+        run: |
+          umask 077
+          dir="$(mktemp -d "${RUNNER_TEMP}/heygen-key.XXXXXX")"
+          trap 'rm -rf "${dir}"' EXIT
+          secret="${dir}/secret.json"
+          err="${dir}/err"
+          one_line() { tr -s '\r\n\t' '   ' < "${err}" | head -c 300; }
+
+          # {"apiKey": "<key>"} with no trailing newline: printf is a bash builtin and jq reads the key on stdin,
+          # so it never appears in a process's arguments.
+          # The same trimming as the check above, which refused anything else.
+          key="${HEYGEN_KEY#"${HEYGEN_KEY%%[![:space:]]*}"}"
+          key="${key%"${key##*[![:space:]]}"}"
+          printf '%s' "${key}" | jq -R -s -c -j '{apiKey: .}' > "${secret}"
+          unset key HEYGEN_KEY
+          if ! jq -e '(keys == ["apiKey"]) and (.apiKey | type == "string" and length >= 16)' "${secret}" > /dev/null; then
+            echo "::error::Could not build the secret value."
+            exit 1
+          fi
+
+          # Create first, then put: CreateSecret is granted for the exact name, so it is authorized whether or not the
+          # secret exists, and an existing secret answers ResourceExistsException. (Asking first would not work on the
+          # first run: a call granted only on the suffixed ARN may be answered AccessDeniedException, not
+          # ResourceNotFoundException, while no such ARN exists.) A secret scheduled for deletion refuses both writes
+          # with InvalidRequestException. AWS output and errors may hold the secret's ARN, which carries the (masked)
+          # account id: none of it is printed beyond a masked one-line reason.
+          deletion_scheduled() {
+            grep -q 'InvalidRequestException' "${err}" && grep -q 'deletion' "${err}"
+          }
+          refuse_deleted() {
+            echo "::error::${SECRET_NAME} is scheduled for deletion. Cancel the deletion in the AWS console (Secrets Manager, us-east-1), then run this again."
+            exit 1
+          }
+          if aws secretsmanager create-secret --name "${SECRET_NAME}" \
+            --description "HeyGen LiveAvatar API key for the vEIR's face (synced from GitHub by Ops - sync HeyGen key)" \
+            --secret-string "file://${secret}" > /dev/null 2>"${err}"; then
+            action=created
+          elif grep -q 'ResourceExistsException' "${err}"; then
+            if aws secretsmanager put-secret-value --secret-id "${SECRET_NAME}" \
+              --secret-string "file://${secret}" > /dev/null 2>"${err}"; then
+              action=updated
+            elif deletion_scheduled; then
+              refuse_deleted
+            else
+              echo "::error::Could not update ${SECRET_NAME} ($(one_line))."
+              exit 1
+            fi
+          elif deletion_scheduled; then
+            refuse_deleted
+          else
+            echo "::error::Could not create ${SECRET_NAME} ($(one_line))."
+            exit 1
+          fi
+          echo "${SECRET_NAME}: ${action}."
+          echo "action=${action}" >> "${GITHUB_OUTPUT}"
+
+      - name: Job summary
+        if: always()
+        env:
+          PRESENT: ${{ steps.key.outputs.present }}
+          ACTION: ${{ steps.store.outputs.action }}
+          OUTCOME: ${{ steps.store.outcome }}
+        run: |
+          # Step summaries are not covered by ::add-mask::; only fixed words are written here.
+          case "${PRESENT}:${ACTION}:${OUTCOME}" in
+            false:*) result="skipped: the repository secret HEYGEN_LIVEAVATAR_API is empty or not set" ;;
+            true:created:success) result="created (the API reads it within 5 minutes)" ;;
+            true:updated:success) result="updated (the API reads it within 5 minutes)" ;;
+            *) result="not stored (see the log)" ;;
+          esac
+          {
+            echo "### HeyGen key"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Secret | \`${SECRET_NAME}\` (us-east-1) |"
+            echo "| Result | ${result} |"
+          } >> "${GITHUB_STEP_SUMMARY}"

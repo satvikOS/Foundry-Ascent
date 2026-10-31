@@ -435,7 +435,8 @@ Stacks (all `FoundryAscent-*`, termination protection on Foundation and Data, ta
    so context `githubOidcProviderArn` imports an existing provider instead) and the
    `FoundryAscent-GitHubDeploy` role (trust: exactly `repo:satvikOS@228056784/Foundry-Ascent@1356439229:environment:production`
    and `aud sts.amazonaws.com`; 1 h sessions; can assume the four CDK CLI bootstrap roles and read
-   CloudFormation/Logs/Cost Explorer). `deploy.yml` decides create / keep / import on every run (§12).
+   CloudFormation/Logs/Cost Explorer, and write (never read) the face vendor's key `foundry-ascent/media/heygen`
+   for the manual key-sync workflow). `deploy.yml` decides create / keep / import on every run (§12).
 2. **Data** — VPC (2 AZ, isolated subnets only, no IGW/NAT), Aurora Serverless v2 PostgreSQL 16.13
    (cluster `foundry-ascent`, `serverlessV2MinCapacity: 0`, `serverlessV2MaxCapacity: 2`, auto-pause
    30 min (set only at a minimum of 0), Data API on, deletion protection, storage encrypted with the AWS-managed key, 7-day backups,

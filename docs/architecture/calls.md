@@ -426,6 +426,16 @@ only says what the engine already validated. Both are off by default (`faces_ena
 needs its own consent scope, and each falls back without a word. How to turn them on:
 [docs/runbooks/avatars.md](../runbooks/avatars.md). The code is authoritative.
 
+**The face's invariant depends on its mode.** **LITE** (the EIR's own avatar; voicing `audio`): the face only
+renders audio our server made from a signed unit, and the server relays it itself, so nothing else can reach the
+face. **FULL** (a vendor stock avatar in its stock voice; voicing `text`; platform admins only, labelled "AI avatar"):
+the face is only handed text our server admitted from a signed unit (each unit once, in order), and the server
+reconciles the vendor's session transcript against the admitted text at every heartbeat, ending the face on any
+difference. In FULL the vendor takes commands only from the browser's room connection, so the server cannot prevent
+a modified page from making the face say other text on that page's own screen; it detects it within one heartbeat.
+That is why FULL is limited to platform admins and never renders an EIR's likeness (infra refuses both
+configurations, [runbook §9](../runbooks/avatars.md#9-full-mode-a-stock-avatar-with-its-stock-voice-platform-admins-only)).
+
 ### 4.1 Seams
 
 ```text
@@ -445,8 +455,14 @@ FaceRelay           speak(audio) → POST /calls/:id/face/speak · interrupt() �
 CallFaceController  features/calls/use-call-face.ts: one per engine; the face belongs to the call
 ```
 
-Configuration: `MEDIA_FACE_PROVIDER` (`none` | `heygen-liveavatar`), `MEDIA_FACE_SANDBOX`, `MEDIA_VOICE_PROVIDER`
-(`polly` | `elevenlabs`), `MEDIA_VOICE_MODEL`, `MEDIA_VOICE_ZERO_RETENTION` (infra `media`, off in production.json).
+Configuration: `MEDIA_FACE_PROVIDER` (`none` | `heygen-liveavatar`), `MEDIA_FACE_SANDBOX`, `MEDIA_FACE_MODE`
+(`lite` | `full`), `MEDIA_FACE_AVATAR_ID` and `MEDIA_FACE_VOICE_ID` (FULL only: the stock avatar and, optionally,
+its voice; empty in LITE, where the face is always the persona's own), `MEDIA_FACE_AUDIENCE` (`admins` |
+`everyone`), `MEDIA_VOICE_PROVIDER` (`polly` | `elevenlabs`), `MEDIA_VOICE_MODEL`, `MEDIA_VOICE_ZERO_RETENTION`
+(infra `media`, off in production.json; infra refuses `full` without a stock avatar or with an audience other than
+`admins`, and a stock avatar or voice with `lite`). Each reaches the API only when `apps/api/lambda-contract.json`
+lists it for the `api` role; synth refuses a configured value that no role lists unless it is what the API assumes
+without the variable (the LITE defaults), so a FULL configuration cannot deploy with its variables dropped.
 Vendor keys come from Secrets Manager (`foundry-ascent/media/heygen`, `foundry-ascent/media/elevenlabs`, JSON
 `{"apiKey"}`; names and prices in `packages/core/media-vendors.json`), read on first use, cached 5 minutes, never
 logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT_PROVIDER=fake` and
@@ -479,6 +495,14 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
   is no longer saying, an unsigned unit) is refused (422, audited `call.face_refused`: `already_shown`,
   `part_out_of_order`, …) before the vendor sees it, so validated speech cannot be cut up and re-sequenced. One
   synthesis serves both the speakers' copy and the face.
+- **FULL: admitted text, then reconciliation.** For a text face, `POST /speech` returns the stock-voice fallback
+  audio only (no manifest). When the unit's turn comes, the browser asks `POST /calls/:id/face/say`
+  `{sessionId, turnId, seq, text, sig}`; the server accepts only a signed unit of the caller's live call (never the
+  crisis line), under the call's speech caps, each unit once and in order (`twinRepo.admitFaceText`), and only on its
+  204 does the browser publish `avatar.speak_text` with that text into the vendor's room (no microphone track,
+  push-to-talk never started, no vendor context, so the vendor's own model never speaks). Anything else is a 422 and
+  nothing is published. At each heartbeat the server reads the vendor's transcript since the last check and compares
+  the avatar's lines with the admitted texts; a difference ends the face (audited `call.face_injection`).
 - **The vendor's control protocol** (LITE events): the server waits for `session.state_updated: connected` before
   any command, sends one-second `agent.speak` chunks each with its own `event_id`, waits for every
   `agent.audio_buffer_appended`, and on a unit's last part sends `agent.speak_end` and waits for
@@ -487,9 +511,10 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
 ### 4.3 The face of a call
 
 1. The call settings (`GET /ventures/:id/call-config`) name the face only while `faces_enabled` is on, a provider
-   is wired (a vendor sandbox, which shows the vendor's stock avatar, only to platform admins: the owner's first
-   live checks) and, for a real likeness, the persona's face is ready under `likeness` consent
-   (`app.persona_twin`), with the video minutes left (`faceMinutesLeft`).
+   is wired (a vendor sandbox, which shows the vendor's stock avatar, or an `admins` audience, only to platform
+   admins: the owner's live checks and FULL presentations) and, for a real likeness, the persona's face is ready
+   under `likeness` consent (`app.persona_twin`; a stock avatar needs none and is labelled "AI avatar"), with the
+   video minutes left (`faceMinutesLeft`).
 2. Once the call is live the stage asks the call's `CallFaceController` for it; the controller asks
    `POST /calls/avatar-session {ventureId, callId}` once per call. The server opens a vendor session only for the
    caller's own live call in that venture with that persona, for at most the call's time left, the per-call video
@@ -513,7 +538,8 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
 
 **Metering.** Face seconds come from the server's clock and go into the usage ledger as heartbeats come and when the
 face or the call ends, in the same transaction as the counter (`call_faces.metered_seconds`, never beyond the
-face's limit: exactly once), as `heygen:liveavatar-lite` at the vendor's per-minute price. Ending a call ends its
+face's limit: exactly once), as `heygen:liveavatar-lite` or, for a FULL face, `heygen:liveavatar-full` (by the mode
+stored on the face) at that mode's per-minute price. Ending a call ends its
 face in the database but leaves the seconds since the last heartbeat to that metering (right after commit), and the
 daily maintenance bills any ended face whose seconds are not all in the ledger (a call the reaper closed, a
 metering that failed): `maintenance.call_faces`. The month's video minutes count each face by the clock, whether or

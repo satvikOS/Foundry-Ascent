@@ -14,6 +14,11 @@
  * judge models, synthesize speech with Amazon Polly and presign Amazon Transcribe streaming, all for a local copy
  * of the app with synthetic data on the runner. It reaches no platform resource (no database, bucket, queue,
  * function, log or secret).
+ *
+ * The deploy role's one write outside CloudFormation is the face vendor's API key (GitHubDeployMediaKeyPolicy): the
+ * **Ops - sync HeyGen key** workflow copies the repository secret `HEYGEN_LIVEAVATAR_API` into the Secrets Manager
+ * secret `foundry-ascent/media/heygen`, so the owner never pastes the key into a shell. It may create that one secret
+ * and put a value into it, never read it or its metadata back (docs/runbooks/avatars.md §2).
  */
 import { ArnFormat, CfnOutput, Duration, Stack, type StackProps } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -24,6 +29,7 @@ import {
   OPS_INSIGHTS_ENVIRONMENT,
   STACK_PREFIX,
 } from '../lib/constants.js';
+import { loadMediaVendorSecrets, secretArnPattern } from '../lib/media-vendors.js';
 import type { BedrockRuntimeAccess } from '../lib/models.js';
 import { acknowledge, wildcardResource } from '../lib/nag.js';
 
@@ -202,6 +208,53 @@ export class FoundationStack extends Stack {
         id: wildcardResource(this, lambdaLogGroups),
         reason:
           'Read-only access to the log groups (and their streams) of the platform Lambda functions, all named FoundryAscent-*, for post-deploy smoke checks.',
+      },
+    );
+
+    // ---- The face vendor's key (Ops - sync HeyGen key) ------------------------------------------------------------
+    // Its own policy on the deploy role, so GitHubDeployPolicy stays read-only. Exactly what
+    // .github/workflows/ops-heygen-key.yml calls: CreateSecret (which an existing secret answers
+    // ResourceExistsException), then PutSecretValue if it exists. No DescribeSecret: asking first fails on the first run
+    // (no suffixed ARN to match yet, so AccessDeniedException rather than ResourceNotFoundException). Never
+    // GetSecretValue (the workflow cannot read the key back), DeleteSecret, TagResource, PutResourcePolicy, replication or rotation. `-??????` is Secrets Manager's suffix of that one
+    // secret. CreateSecret is matched on the name in the request (secretsmanager:Name, exact) because the secret's
+    // ARN does not exist yet; its resource only pins the region, the account and the name prefix. The secret uses the
+    // AWS managed key, so no KMS grant is needed (the key policy admits callers through Secrets Manager).
+    const faceKeyName = loadMediaVendorSecrets().face;
+    const faceKeyArn = secretArnPattern(this.partition, this.region, this.account, faceKeyName);
+    const faceKeyCreateArn = this.formatArn({
+      service: 'secretsmanager',
+      resource: 'secret',
+      resourceName: `${faceKeyName}*`,
+      arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+    });
+    const mediaKeyPolicy = new iam.Policy(this, 'GitHubDeployMediaKeyPolicy', {
+      statements: [
+        new iam.PolicyStatement({
+          sid: 'CreateFaceVendorKey',
+          actions: ['secretsmanager:CreateSecret'],
+          resources: [faceKeyCreateArn],
+          conditions: { StringEquals: { 'secretsmanager:Name': faceKeyName } },
+        }),
+        new iam.PolicyStatement({
+          sid: 'WriteFaceVendorKey',
+          actions: ['secretsmanager:PutSecretValue'],
+          resources: [faceKeyArn],
+        }),
+      ],
+    });
+    mediaKeyPolicy.attachToRole(this.deployRole);
+    acknowledge(
+      mediaKeyPolicy,
+      {
+        id: wildcardResource(this, faceKeyArn),
+        reason:
+          'The six ? are the random suffix Secrets Manager appends to a secret name: the pattern matches exactly the one face vendor key, foundry-ascent/media/heygen.',
+      },
+      {
+        id: wildcardResource(this, faceKeyCreateArn),
+        reason:
+          'CreateSecret is authorized before the secret ARN exists; the statement is limited to the exact name foundry-ascent/media/heygen by the secretsmanager:Name condition.',
       },
     );
 

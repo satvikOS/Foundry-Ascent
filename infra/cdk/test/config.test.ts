@@ -71,8 +71,16 @@ describe('config', () => {
   });
 
   it('ships the digital twin off, and reads it when configured', () => {
+    // The coordinator turns the face on after review; it ships off.
     expect(loadConfig().media).toEqual({
-      face: { provider: 'none', sandbox: false, csp: { connect: [], media: [] } },
+      face: {
+        provider: 'none',
+        sandbox: false,
+        csp: { connect: [], media: [] },
+        mode: 'lite',
+        stock: null,
+        audience: 'everyone',
+      },
       voice: { provider: 'polly', model: 'eleven_flash_v2_5', zeroRetention: false },
     });
     // Absent: off as well.
@@ -100,8 +108,93 @@ describe('config', () => {
           connect: ['wss://heygen-feapbkvq.livekit.cloud', 'https://heygen-feapbkvq.livekit.cloud'],
           media: [],
         },
+        // Absent voicing keys keep faces as they were before FULL: LITE, the persona's own face, everyone.
+        mode: 'lite',
+        stock: null,
+        audience: 'everyone',
       },
       voice: { provider: 'elevenlabs', model: 'eleven_turbo_v2_5', zeroRetention: true },
+    });
+  });
+
+  describe('the face’s voicing (mode, stock, audience)', () => {
+    const room = ['wss://heygen-feapbkvq.livekit.cloud', 'https://heygen-feapbkvq.livekit.cloud'];
+    const WAYNE = 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a';
+    const VOICE = '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0';
+    const face = (extra: Record<string, unknown>, provider = 'heygen-liveavatar') =>
+      parseConfig({
+        ...valid(),
+        media: {
+          face: {
+            provider,
+            sandbox: true,
+            csp: provider === 'none' ? { connect: [], media: [] } : { connect: room, media: [] },
+            ...extra,
+          },
+          voice: { provider: 'polly', model: 'eleven_flash_v2_5', zeroRetention: false },
+        },
+      }).media.face;
+
+    it('reads FULL with a stock avatar and voice, offered to admins (the default and only FULL audience)', () => {
+      expect(
+        face({ mode: 'full', stock: { avatarId: WAYNE, voiceId: VOICE }, audience: 'admins' }),
+      ).toMatchObject({
+        mode: 'full',
+        stock: { avatarId: WAYNE, voiceId: VOICE },
+        audience: 'admins',
+      });
+      // No voice: the avatar's own default voice; no audience: admins.
+      expect(face({ mode: 'full', stock: { avatarId: WAYNE } })).toMatchObject({
+        mode: 'full',
+        stock: { avatarId: WAYNE, voiceId: null },
+        audience: 'admins',
+      });
+    });
+
+    it('refuses FULL together with a likeness: FULL needs a stock avatar', () => {
+      expect(() => face({ mode: 'full' })).toThrow(/media\.face\.stock must name a vendor stock avatar/);
+      expect(() => face({ mode: 'full', stock: null })).toThrow(/FULL never renders an EIR’s likeness/);
+      // Also while the face is not wired: the rule does not wait for the deploy that wires it.
+      expect(() => face({ mode: 'full' }, 'none')).toThrow(/media\.face\.stock/);
+    });
+
+    it('refuses FULL for anyone but platform admins', () => {
+      expect(() => face({ mode: 'full', stock: { avatarId: WAYNE }, audience: 'everyone' })).toThrow(
+        /media\.face\.audience must be admins when mode is full/,
+      );
+    });
+
+    it('refuses a stock face in LITE: a stock avatar and its voice are FULL mode only', () => {
+      // The API shows a stock avatar only in FULL (in LITE it renders the persona's own face), so a LITE stock
+      // avatar would be silently ignored: refused instead.
+      expect(() => face({ stock: { avatarId: WAYNE }, audience: 'admins' })).toThrow(
+        /media\.face\.stock is FULL mode only/,
+      );
+      expect(() => face({ mode: 'lite', stock: { avatarId: WAYNE, voiceId: VOICE } })).toThrow(
+        /media\.face\.stock is FULL mode only/,
+      );
+      // No stock key, or an explicit null, is LITE with the persona's own face.
+      expect(face({ mode: 'lite', stock: null })).toMatchObject({ mode: 'lite', stock: null });
+    });
+
+    it('refuses malformed values', () => {
+      expect(() => face({ mode: 'FULL', stock: { avatarId: WAYNE } })).toThrow(
+        /media\.face\.mode must be one of lite, full/,
+      );
+      expect(() => face({ audience: 'founders' })).toThrow(
+        /media\.face\.audience must be one of admins, everyone/,
+      );
+      expect(() => face({ mode: 'full', stock: { avatarId: 'Wayne' } })).toThrow(
+        /media\.face\.stock\.avatarId/,
+      );
+      expect(() => face({ mode: 'full', stock: { avatarId: WAYNE.toUpperCase() } })).toThrow(ConfigError);
+      expect(() => face({ mode: 'full', stock: { avatarId: WAYNE, voiceId: '' } })).toThrow(
+        /media\.face\.stock\.voiceId/,
+      );
+      expect(() => face({ mode: 'full', stock: { avatarId: WAYNE, contextId: WAYNE } })).toThrow(
+        /media\.face\.stock has unknown keys: contextId/,
+      );
+      expect(() => face({ mode: 'full', stock: [WAYNE] })).toThrow(/media\.face\.stock must be an object/);
     });
   });
 

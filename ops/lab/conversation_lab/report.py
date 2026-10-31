@@ -264,12 +264,144 @@ def _safety_tables(result: Mapping[str, Any]) -> list[str]:
     return out
 
 
+def _p(cell: Mapping[str, Any] | None) -> str:
+    """A {p50, p95, n} cell of milliseconds."""
+    if not cell:
+        return "-"
+    return f"p50 {cell['p50']} ms, p95 {cell['p95']} ms (n={cell['n']})"
+
+
+def _face_tables(face: Mapping[str, Any]) -> list[str]:
+    """The face suite's public numbers (conversation_lab/face.py public_result): checks, then each measurement."""
+    out: list[str] = []
+    if not face:
+        return out
+    credits = face.get("credits") or {}
+    out.append(
+        f"Vendor: {face.get('vendor')}; founder made a platform admin: {face.get('admin_grant')}; Playwright exit "
+        f"{face.get('playwright_exit')}; success codes (token, start): {face.get('success_codes') or '-'}; credits "
+        f"before {credits.get('before')}, after {credits.get('after')}, used {credits.get('used')}."
+    )
+    out.append("")
+    out.append("| Check | Result |")
+    out.append("| --- | --- |")
+    for name, value in (face.get("checks") or {}).items():
+        out.append(
+            f"| {name} | {'pass' if value is True else 'FAIL' if value is False else 'not measured'} |"
+        )
+    out.append("")
+    calls = face.get("vendor_calls") or {}
+    if calls:
+        out.append("| Vendor call | HTTP status | Envelope code |")
+        out.append("| --- | --- | --- |")
+        for path, row in calls.items():
+            status = ", ".join(f"{k} x{v}" for k, v in row.get("status", {}).items()) or "-"
+            code = ", ".join(f"{k} x{v}" for k, v in row.get("code", {}).items()) or "-"
+            out.append(f"| {path} | {status} | {code} |")
+        out.append("")
+    probe = face.get("probe") or {}
+    if probe:
+        exact = probe.get("exact") or {}
+        queue = probe.get("queue") or {}
+        interrupt = probe.get("interrupt") or {}
+        transcript = probe.get("transcript_endpoint") or {}
+        room = probe.get("full_room") or {}
+        lite = probe.get("lite_room") or {}
+        out.append("Vendor probe (raw sandbox rooms):")
+        out.append(
+            f"- Room: connected {room.get('connected_ms')} ms, first video {room.get('first_video_ms')} ms; FULL "
+            f"token can publish data {room.get('can_publish_data')}, LITE token {lite.get('can_publish_data')}"
+        )
+        out.append(
+            f"- speak_text: exact words {exact.get('matches')} ({exact.get('transcriptions')} transcription events); "
+            f"publish → speak_started {exact.get('publish_to_started_ms')} ms, → first audio "
+            f"{exact.get('publish_to_audio_ms')} ms, → avatar.transcription {exact.get('publish_to_transcription_ms')} ms"
+        )
+        out.append(
+            f"- Three back to back: {queue.get('behaviour')} (starts {queue.get('starts')}, ends {queue.get('ends')}, "
+            f"in order {queue.get('in_order')}); speak_ended → next speak_started {queue.get('gaps_ms')} ms"
+        )
+        out.append(
+            f"- Interrupt: → speak_ended {interrupt.get('to_speak_ended_ms')} ms, → silence "
+            f"{interrupt.get('to_silence_ms')} ms; queue cleared {interrupt.get('queue_cleared')}"
+        )
+        out.append(
+            f"- speak_response in restricted mode ignored: {(probe.get('speak_response') or {}).get('ignored')}"
+        )
+        out.append(
+            f"- Transcript endpoint during the session: status {transcript.get('status')} in {transcript.get('ms')} ms, "
+            f"avatar lines {transcript.get('avatar_lines')}, user lines {transcript.get('user_lines')}, "
+            f"has the exact line {transcript.get('has_exact')}"
+        )
+        for key, title in (("idle_end", "Idle session"), ("max_duration", "max_session_duration")):
+            cell = probe.get(key) or {}
+            out.append(
+                f"- {title}: stopped {cell.get('stopped')} after {cell.get('seconds')} s"
+                + (f" (asked {cell.get('requested_seconds')} s)" if cell.get("requested_seconds") else "")
+                + f", end_reason {cell.get('end_reason')}"
+            )
+        out.append(
+            f"- user.transcription events {probe.get('user_transcriptions')}; microphone requests "
+            f"{probe.get('mic_requests')}; audio tracks published {probe.get('audio_senders')}"
+            + (f"; error {probe['error']}" if probe.get("error") else "")
+        )
+        out.append("")
+    call = face.get("call") or {}
+    polly = face.get("polly") or {}
+    if call:
+        session = call.get("session") or {}
+        fallback = call.get("fallback") or {}
+        out.append("In-app call (the seeded founder, a platform admin of the synthetic venture):")
+        out.append(
+            f"- Face: {session.get('provider')} / {session.get('voicing')}, stock {session.get('stock_face')}, "
+            f'LiveKit host {session.get("livekit_host")}; "AI avatar" label visible {call.get("label_visible")}'
+        )
+        out.append(
+            f"- After the turn was sent: first face audio (level onset) {_p(call.get('first_face_audio_ms'))}, "
+            f"first face speak_started {_p(call.get('first_speak_started_ms'))}; Polly alone (no face): first audio "
+            f"(level onset, same meter) {_p(polly.get('first_audio_ms'))}, first buffer scheduled "
+            f"{_p(polly.get('first_scheduled_ms'))}"
+        )
+        out.append(
+            f"- Each unit, publish → speak_started {_p(call.get('publish_to_started_ms'))}; → first audio "
+            f"{_p(call.get('publish_to_audio_ms'))}; speak_text sent {call.get('speak_text_sent')}, face/say "
+            f"requests {call.get('say_requests')}, the call's own playback after the face joined "
+            f"{call.get('app_playbacks_after_live')}"
+        )
+        out.append(
+            f"- Microphone requests after the face joined {call.get('mic_requests_after_live')}; audio tracks "
+            f"published {call.get('audio_senders')}; user.transcription events {call.get('user_transcriptions')}"
+        )
+        out.append(
+            f"- Session end: presence back {fallback.get('presence_back')} after {fallback.get('seconds_live')} s "
+            f"live, end_reason {fallback.get('end_reason')}, typed line still editable "
+            f"{fallback.get('typed_line_editable')}"
+            + (f"; error {call['error']}" if call.get("error") else "")
+        )
+        out.append("")
+    injection = face.get("injection") or {}
+    if injection:
+        out.append(
+            f"Injection (a tampered page's speak_text): injected {injection.get('injected')}; face ended "
+            f"{injection.get('face_ended')} after {injection.get('seconds_to_end')} s (heartbeat "
+            f"{injection.get('heartbeat_seconds')} s), injected {injection.get('seconds_into_session')} s into the "
+            f"session; call.face_injection audits {injection.get('audit_injection_events')} (heartbeat "
+            f"{injection.get('audit_heartbeat_events')}, after the face ended {injection.get('audit_at_end_events')}"
+            f"); vendor end_reason {injection.get('end_reason')}"
+            + (f"; error {injection['error']}" if injection.get("error") else "")
+        )
+        out.append("")
+    return out
+
+
 def _suite_tables(suite: str, result: Mapping[str, Any]) -> list[str]:
     out: list[str] = []
     if suite == "agenda":
         return _agenda_tables(result)
     if suite == "safety":
         return _safety_tables(result)
+    if suite == "face":
+        return _face_tables(result.get("face") or {})
     scenarios: Sequence[Mapping[str, Any]] = result.get("scenarios") or []
     greeting = result.get("greeting") if suite == "recall" else None
     if greeting:

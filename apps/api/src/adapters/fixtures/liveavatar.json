@@ -1,5 +1,5 @@
 {
-  "$comment": "LiveAvatar API responses in the shapes of the vendor's API reference (docs.liveavatar.com/api-reference, checked 2026-10-17) and of its web SDK 0.0.19 (code 1000 = success). Identifiers and tokens are made up; replace with sanitised recordings from the first sandbox session (docs/runbooks/avatars.md).",
+  "$comment": "LiveAvatar API responses in the shapes of the vendor's API reference (docs.liveavatar.com/api-reference, checked 2026-10-17 and 2026-10-31) and of its web SDK 0.0.19 (code 1000 = success; the OpenAPI document says 100, which the FULL fixtures use, so both are exercised). Identifiers, tokens and transcript words are made up; replace with sanitised recordings from the first sandbox session (docs/runbooks/avatars.md).",
   "token": {
     "status": 200,
     "body": {
@@ -25,7 +25,11 @@
   },
   "tokenBadKey": {
     "status": 401,
-    "body": { "code": 4010, "data": null, "message": "Invalid API key" }
+    "body": {
+      "code": 4010,
+      "data": null,
+      "message": "Invalid API key"
+    }
   },
   "start": {
     "status": 201,
@@ -44,14 +48,149 @@
   },
   "startNoCredits": {
     "status": 402,
-    "body": { "code": 4020, "data": null, "message": "Insufficient credits" }
+    "body": {
+      "code": 4020,
+      "data": null,
+      "message": "Insufficient credits"
+    }
   },
   "ok": {
     "status": 200,
-    "body": { "code": 1000, "data": null, "message": "success" }
+    "body": {
+      "code": 1000,
+      "data": null,
+      "message": "success"
+    }
   },
   "stopGone": {
     "status": 404,
-    "body": { "code": 4040, "data": null, "message": "Session not found" }
+    "body": {
+      "code": 4040,
+      "data": null,
+      "message": "Session not found"
+    }
+  },
+  "fullToken": {
+    "status": 200,
+    "body": {
+      "code": 100,
+      "data": {
+        "session_id": "7a0d2b3f-4c5e-4f60-9b1c-1d2e3f4a5b6c",
+        "session_token": "eyJhbGciOiJIUzI1NiJ9.full.session.token"
+      },
+      "message": "success"
+    }
+  },
+  "fullStart": {
+    "status": 201,
+    "body": {
+      "code": 100,
+      "data": {
+        "session_id": "7a0d2b3f-4c5e-4f60-9b1c-1d2e3f4a5b6c",
+        "livekit_url": "wss://heygen-feapbkvq.livekit.cloud",
+        "livekit_client_token": "eyJhbGciOiJIUzI1NiJ9.full.client.token",
+        "livekit_agent_token": "eyJhbGciOiJIUzI1NiJ9.full.agent.token",
+        "max_session_duration": 1200
+      },
+      "message": "success"
+    }
+  },
+  "fullKeepAlive": {
+    "status": 200,
+    "body": {
+      "code": 100,
+      "data": null,
+      "message": "success"
+    }
+  },
+  "fullStop": {
+    "status": 200,
+    "body": {
+      "code": 100,
+      "data": null,
+      "message": "success"
+    }
+  },
+  "transcriptPage1": {
+    "status": 200,
+    "body": {
+      "code": 100,
+      "data": {
+        "session_active": true,
+        "next_timestamp": 1761900012,
+        "transcript_data": [
+          {
+            "role": "avatar",
+            "transcript": "Hi Maya, what are we testing this week?",
+            "absolute_timestamp": 1761900004,
+            "relative_timestamp": 4
+          },
+          {
+            "role": "user",
+            "transcript": "",
+            "absolute_timestamp": 1761900008,
+            "relative_timestamp": 8
+          },
+          {
+            "role": "avatar",
+            "transcript": "Start with the riskiest assumption.",
+            "absolute_timestamp": 1761900012,
+            "relative_timestamp": 12
+          }
+        ]
+      },
+      "message": "success"
+    }
+  },
+  "transcriptPage2": {
+    "status": 200,
+    "body": {
+      "code": 100,
+      "data": {
+        "session_active": true,
+        "next_timestamp": 1761900020,
+        "transcript_data": [
+          {
+            "role": "avatar",
+            "transcript": "Start with the riskiest assumption.",
+            "absolute_timestamp": 1761900012,
+            "relative_timestamp": 12
+          },
+          {
+            "role": "avatar",
+            "transcript": "Then test it this week.",
+            "absolute_timestamp": 1761900020,
+            "relative_timestamp": 20
+          },
+          {
+            "role": "narrator",
+            "transcript": "ignored",
+            "absolute_timestamp": 1761900021,
+            "relative_timestamp": 21
+          }
+        ]
+      },
+      "message": "success"
+    }
+  },
+  "transcriptEnd": {
+    "status": 200,
+    "body": {
+      "code": 100,
+      "data": {
+        "session_active": true,
+        "next_timestamp": 1761900020,
+        "transcript_data": []
+      },
+      "message": "success"
+    }
+  },
+  "transcriptGone": {
+    "status": 404,
+    "body": {
+      "code": 4040,
+      "data": null,
+      "message": "Session not found"
+    }
   }
 }

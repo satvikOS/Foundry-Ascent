@@ -15,6 +15,9 @@ import { chromium, defineConfig, type PlaywrightTestConfig } from '@playwright/t
  * Environment:
  *   E2E_BASE_URL           SPA origin (default http://localhost:4173)
  *   E2E_API_URL            API origin the preview proxies to (default http://localhost:8787)
+ *   E2E_FACE_API_URL       a second API on the same database whose stand-in face runs in FULL mode (the
+ *                          stock face, e2e/face.spec.ts routes the page's API calls to it); default: the API
+ *                          port + 1
  *   E2E_OWNER_ACCESS_CODE  owner access code printed by `pnpm db:reset` (required; never logged)
  *   DATABASE_URL           the database `pnpm db:reset` created (passed through to the API)
  *
@@ -27,6 +30,11 @@ const CI = Boolean(process.env.CI);
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:4173';
 const apiURL = new URL(process.env.E2E_API_URL ?? 'http://localhost:8787');
 const site = new URL(baseURL);
+/** The FULL-mode API (same database, the stand-in face voicing admitted text): e2e/face.spec.ts. */
+const faceApiURL = new URL(
+  process.env.E2E_FACE_API_URL ??
+    `${apiURL.protocol}//${apiURL.hostname}:${String(Number(apiURL.port || '8787') + 1)}`,
+);
 const localStack = site.hostname === 'localhost' || site.hostname === '127.0.0.1';
 
 /**
@@ -86,6 +94,31 @@ const webServer: PlaywrightTestConfig['webServer'] = localStack
         },
       },
       {
+        // The same API with the stand-in face in FULL mode (a stock face voicing admitted text, for everyone so
+        // the seeded founder sees it; admins-only is covered by core's tests). Only e2e/face.spec.ts uses it.
+        name: 'api-face-full',
+        command: 'pnpm --filter @foundry/api exec tsx src/dev-server.ts',
+        url: `${faceApiURL.origin}/api/v1/health`,
+        reuseExistingServer: !CI,
+        timeout: 120_000,
+        stdout: 'ignore',
+        stderr: 'pipe',
+        gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
+        env: {
+          APP_ENV: 'development',
+          DB_DRIVER: process.env.DB_DRIVER ?? 'pg',
+          MODEL_PROVIDER: process.env.MODEL_PROVIDER ?? 'mock',
+          LOG_LEVEL: process.env.LOG_LEVEL ?? 'warn',
+          PORT: faceApiURL.port,
+          SITE_ORIGIN: process.env.SITE_ORIGIN ?? site.origin,
+          LOCAL_DOWNLOAD_ORIGIN: faceApiURL.origin,
+          CORE_TURN_RATE_LIMIT: process.env.CORE_TURN_RATE_LIMIT ?? '200',
+          EMBODIMENT_PROVIDER: 'fake',
+          MEDIA_FACE_MODE: 'full',
+          MEDIA_FACE_AUDIENCE: 'everyone',
+        },
+      },
+      {
         name: 'web',
         command: `pnpm exec vite preview --port ${site.port || '4173'} --strictPort`,
         url: baseURL,
@@ -129,7 +162,7 @@ export default defineConfig({
     { name: 'setup', testMatch: /auth\.setup\.ts$/ },
     {
       name: 'desktop',
-      testMatch: /(journey|documents|knowledge|safety|a11y|calls|studio|chat|theme|words)\.spec\.ts$/,
+      testMatch: /(journey|documents|knowledge|safety|a11y|calls|face|studio|chat|theme|words)\.spec\.ts$/,
       dependencies: ['setup'],
       use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } },
     },

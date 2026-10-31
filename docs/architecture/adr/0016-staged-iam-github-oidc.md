@@ -77,6 +77,14 @@ Chosen option: **1** (details in `infra/iam/README.md`).
   provider: managed by FoundryAscent-Foundation (kept)_; then the retire workflow ran in `plan` and
   `retire` mode (`confirm = RETIRE-STAGE-0`).
 
+- **Amendment (2026-10-31, the face vendor's key):** the deploy role gained one write outside CloudFormation, as
+  a separate policy (`GitHubDeployMediaKeyPolicy`): `secretsmanager:PutSecretValue` on
+  `foundry-ascent/media/heygen-??????` and `CreateSecret` for exactly that name, so the manual **Ops - sync HeyGen
+  key** workflow can copy the repository secret `HEYGEN_LIVEAVATAR_API` into Secrets Manager without the owner
+  pasting the key into a shell. It cannot read the key back (no `GetSecretValue`). The role already deploys the code
+  that reads that key, so the write adds no reach; a separate role would have needed a new GitHub environment for
+  one secret.
+
 ### Consequences
 
 - Good: steady state has no static AWS secret in GitHub; a stolen token expires within an hour and only

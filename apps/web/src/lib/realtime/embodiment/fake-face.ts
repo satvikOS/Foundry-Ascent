@@ -94,6 +94,7 @@ export class FakeFaceAvatar implements AvatarProvider {
   private readonly face: FaceRenderer = {
     ready: () => this.live,
     render: (buffer, output, handlers, audio) => this.render(buffer, output, handlers, audio),
+    voicing: 'audio',
   };
 
   constructor(private readonly deps: FakeFaceDeps) {}
@@ -182,7 +183,7 @@ export class FakeFaceAvatar implements AvatarProvider {
   // Internals -----------------------------------------------------------------------------------------
 
   private render(
-    buffer: AudioBuffer,
+    buffer: AudioBuffer | null,
     output: FaceRendererOutput,
     handlers: FaceRenderHandlers,
     audio: FaceUnitAudio | null,
@@ -196,7 +197,7 @@ export class FakeFaceAvatar implements AvatarProvider {
     const fail = () => {
       if (!stopped) handlers.onEnd('failed');
     };
-    if (audio === null || relay === null || !this.live) {
+    if (buffer === null || audio === null || relay === null || !this.live) {
       // The server gave the face nothing to render (a unit it may not show): the call plays it itself.
       timer = this.deps.setTimeout(fail, 0);
     } else {

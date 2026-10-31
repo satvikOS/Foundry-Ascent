@@ -367,6 +367,8 @@ def test_every_aws_cli_call_in_the_workflows_is_in_the_manifest_and_allowed() ->
     for workflow, action in calls:
         if workflow in OWN_ROLE_WORKFLOWS:
             continue  # checked against its own role below
+        if workflow == MEDIA_KEY_WORKFLOW:
+            continue  # deploy role only, through its own policy: checked below (and denied to stage 0)
         relevant = [e for e in entries if action in {a.lower() for a in e.actions}]
         if not relevant:
             problems.append(f"{workflow}: {action} is not in infra/iam/required-actions.json")
@@ -458,6 +460,104 @@ def test_deploy_role_workflows_call_only_what_the_deploy_role_grants() -> None:
         assert made == set(needs), (workflow, sorted(made ^ set(needs)))
         missing = {iam for iam in needs.values() if iam is not None} - granted
         assert missing == set(), (workflow, sorted(missing))
+
+
+# The HeyGen key sync (docs/runbooks/avatars.md §2): runs as the deploy role, and its Secrets Manager calls are granted
+# by a policy of their own on that role (GitHubDeployMediaKeyPolicy in foundation-stack.ts), not by the read-only
+# GitHubDeployPolicy and never by the stage-0 identity the manifest describes. IAM action each CLI call needs.
+MEDIA_KEY_WORKFLOW = "ops-heygen-key.yml"
+MEDIA_KEY_CLI: dict[str, str | None] = {
+    "sts:getcalleridentity": None,
+    "secretsmanager:createsecret": "secretsmanager:CreateSecret",
+    "secretsmanager:putsecretvalue": "secretsmanager:PutSecretValue",
+}
+MEDIA_KEY_SECRET_ENV = "HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API }}"
+
+
+def media_key_secret_name() -> str:
+    vendors = json.loads((REPO / "packages" / "core" / "media-vendors.json").read_text(encoding="utf-8"))
+    return vendors["face"]["heygen"]["secretName"]
+
+
+def test_the_heygen_key_workflow_runs_as_the_deploy_role_and_calls_exactly_what_its_policy_grants() -> None:
+    text = (WORKFLOWS / MEDIA_KEY_WORKFLOW).read_text(encoding="utf-8")
+    assert "role/FoundryAscent-GitHubDeploy" in text
+    assert STAGE0_SECRET not in text and "AWS_SECRET_ACCESS_KEY" not in text
+    assert "id-token: write" in text and "environment: production" in text
+    assert "if: github.ref == 'refs/heads/main'" in text
+    assert "mask-aws-account-id: true" in text and "::add-mask::" in text
+    made = {action for name, action in workflow_aws_calls() if name == MEDIA_KEY_WORKFLOW}
+    assert made == set(MEDIA_KEY_CLI), sorted(made ^ set(MEDIA_KEY_CLI))
+    granted = role_policy_actions("GitHubDeployMediaKeyPolicy")
+    needed = {iam for iam in MEDIA_KEY_CLI.values() if iam is not None}
+    assert granted == needed, sorted(granted ^ needed)
+    # The read-only deploy policy is not widened, and nothing in the stack may read the key back.
+    assert not any(a.startswith("secretsmanager:") for a in role_policy_actions("GitHubDeployPolicy"))
+    foundation = (REPO / "infra" / "cdk" / "src" / "stacks" / "foundation-stack.ts").read_text(encoding="utf-8")
+    assert "secretsmanager:GetSecretValue" not in foundation
+    assert "policy.attachToRole(this.deployRole)" in foundation
+    assert "mediaKeyPolicy.attachToRole(this.deployRole)" in foundation
+    # The one secret the API reads the face vendor's key from.
+    assert f"SECRET_NAME: {media_key_secret_name()}" in text
+
+
+def test_the_heygen_key_workflow_never_exposes_the_key() -> None:
+    text = (WORKFLOWS / MEDIA_KEY_WORKFLOW).read_text(encoding="utf-8")
+    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    # By hand only, and nothing else can start it (no push, schedule, workflow_run or pull_request trigger).
+    on = re.search(r"^on:\n((?:[ ].*\n|\n)*)", text, re.MULTILINE)
+    assert on is not None and on.group(1).strip() == "workflow_dispatch:", on and on.group(1)
+    assert "permissions: {}" in text
+    # No checkout and no dependency code on the runner that decrypts the key.
+    for absent in ("actions/checkout", "pnpm", "npm ", "pip ", "setup-node", "setup-python", "actions/cache"):
+        assert absent not in code, absent
+    # The secret reaches only the two steps that need it, through their environment.
+    assert code.count("secrets.HEYGEN_LIVEAVATAR_API") == 2
+    assert code.count(MEDIA_KEY_SECRET_ENV) == 2
+    # The value is masked line by line and never echoed: no line that names the key (HEYGEN_KEY, or `key` once
+    # trimmed) prints anything; only ::add-mask:: sees its lines.
+    for line in code.splitlines():
+        if re.search(r"\bHEYGEN_KEY\b|\$\{key\}", line):
+            assert not re.search(r"\b(echo|cat|tee)\b|GITHUB_(OUTPUT|ENV|STEP_SUMMARY)", line), line.strip()
+    masks = re.findall(r'echo "::add-mask::\$\{(\w+)\}"', code)
+    assert sorted(masks) == ["account", "account", "deploy_role", "line", "trimmed"], masks
+    # Written from a 0600 file that is removed on exit, never as an argument.
+    assert "umask 077" in code
+    assert "trap 'rm -rf \"${dir}\"' EXIT" in code
+    assert code.count('--secret-string "file://${secret}"') == 2
+    assert not re.search(r'--secret-string\s+(?!"file://\$\{secret\}")', code)
+    assert "jq -R -s -c -j '{apiKey: .}' > \"${secret}\"" in code
+    # The file is only ever written, checked silently, or handed to the CLI by path.
+    allowed_uses = (
+        'secret="${dir}/secret.json"',
+        "jq -R -s -c -j '{apiKey: .}' > \"${secret}\"",
+        '"${secret}" > /dev/null; then',
+        '--secret-string "file://${secret}"',
+    )
+    for line in code.splitlines():
+        if "${secret}" in line:
+            assert any(use in line for use in allowed_uses), f"the secret file may reach the log: {line.strip()}"
+            assert not re.search(r"\b(echo|cat|tee|head|tail|less|base64|xxd)\b", line), line.strip()
+    assert not re.search(r"jq[^\n|]*--(arg|args|rawfile)\b", code)
+    # No AWS output reaches the log (it carries the secret's ARN, and so the account id).
+    for command in ("create-secret", "put-secret-value"):
+        call = code[code.index(f"aws secretsmanager {command}") :]
+        call = call[: call.index("; then")]
+        assert '> /dev/null 2>"${err}"' in call, command
+    # An empty repository secret skips cleanly: every AWS step waits for the check.
+    steps = re.split(r"\n      - ", code.split("    steps:\n", 1)[1])
+    aws_steps = [s for s in steps if "aws " in s or "configure-aws-credentials" in s or "DEPLOY_ROLE" in s]
+    assert len(aws_steps) == 4
+    for step in aws_steps:
+        assert "if: steps.key.outputs.present == 'true'" in step, step.splitlines()[0]
+    assert 'echo "present=false" >> "${GITHUB_OUTPUT}"' in code
+
+
+def test_the_stage0_identity_cannot_write_or_read_the_heygen_key() -> None:
+    arn = f"arn:aws:secretsmanager:{REGION}:{ACCOUNT}:secret:{media_key_secret_name()}-AbCdEf"
+    for action in ("secretsmanager:CreateSecret", "secretsmanager:PutSecretValue", "secretsmanager:GetSecretValue"):
+        for docs in ([operator(), self_retirement()], [operator(), legacy(), self_retirement()]):
+            assert decide(docs, action, arn) != "allowed", (action, docs)
 
 
 def test_the_costs_workflow_uploads_only_a_sealed_file_kept_one_day() -> None:

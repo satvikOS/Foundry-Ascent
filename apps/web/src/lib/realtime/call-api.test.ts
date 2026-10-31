@@ -5,6 +5,7 @@ import {
   FACE_MANIFEST_HEADER,
   FACE_PART_HEADER,
   fetchSpeech,
+  sayFaceText,
   sendFaceAudio,
 } from './call-api';
 
@@ -112,5 +113,32 @@ describe('the face of a call over HTTP', () => {
     expect(sent[0]?.headers.get('x-amz-content-sha256')).toMatch(/^[0-9a-f]{64}$/);
     expect(sent[0]?.body.byteLength).toBe(FACE_CHUNK_BYTES * 18);
     expect(sent[1]?.body).toEqual(pcm.subarray(FACE_CHUNK_BYTES * 18));
+  });
+
+  it('asks the server to admit a signed unit for a FULL face, and rejects on a refusal or an unsigned unit', async () => {
+    const sent: { url: string; body: unknown }[] = [];
+    let answer: Response = new Response(null, { status: 204 });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: string, init: RequestInit) => {
+        const raw =
+          typeof init.body === 'string' ? init.body : new TextDecoder().decode(init.body as Uint8Array);
+        sent.push({ url: input, body: JSON.parse(raw) as unknown });
+        return Promise.resolve(answer);
+      }),
+    );
+    const unit = { turnId: TURN, seq: 2, text: 'Twelve is a good start.', sig: 'sig-2-0123456789abcdef' };
+    await sayFaceText('call-1', unit, new AbortController().signal);
+    expect(sent).toEqual([{ url: '/api/v1/calls/call-1/face/say', body: unit }]);
+    answer = problem(422, 'validation_failed');
+    await expect(sayFaceText('call-1', unit, new AbortController().signal)).rejects.toBeTruthy();
+    await expect(
+      sayFaceText(
+        'call-1',
+        { turnId: TURN, seq: 0, text: 'A stored passage.' },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow('unsigned_unit');
+    expect(sent).toHaveLength(2);
   });
 });

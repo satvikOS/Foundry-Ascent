@@ -17,6 +17,16 @@ name: Ops - conversation lab
 #           (ops/lab/scenarios/safety-screen.json, synthetic) exactly as a turn calls the screen, with the run's budget
 #           as its hard cap. No app, browser or database. The summary prints numbers only: precision, recall, counts
 #           by expected label, cost and latency; every line's verdict and the model's reasons are sealed.
+#   face    (on its own, never in `all`) the HeyGen LiveAvatar FULL stock face against the vendor's free SANDBOX
+#           (the Wayne avatar, sessions of about a minute, no credits): the app runs with the face wired as for the
+#           presentation (provider heygen-liveavatar, mode full, sandbox, audience admins), the seeded founder is
+#           made a platform admin of the synthetic venture, and apps/web/e2e/lab/face.lab.ts measures the plan's
+#           sandbox checks (success code, credits before/after, exact words, queue or cut, timing against Polly
+#           alone, interrupt, no microphone, restricted mode, token permissions, transcript-based injection
+#           detection, idle and max-duration ends). The vendor key (repository secret HEYGEN_LIVEAVATAR_API) is
+#           handed to the run step only and by the harness to the local API process only (LOCAL_MEDIA_FACE_API_KEY,
+#           refused outside development); it is never printed, sealed or uploaded. The summary keeps numbers,
+#           codes and vendor end reasons; what the avatar said is sealed.
 # The app runs with CORE_SAFETY_SCREEN=on in every suite (ops/lab conversation_lab/stack.py).
 #
 # Runs only from main, in the `conversation-lab` GitHub environment, whose OIDC subject is the only one the
@@ -39,7 +49,7 @@ on:
       suite:
         description: Which suite to run (all = every suite, in parallel jobs)
         type: choice
-        options: [recall, matrix, voice, ui, agenda, safety, all]
+        options: [recall, matrix, voice, ui, agenda, safety, face, all]
         default: recall
       budget_usd:
         description: Hard cap in USD for the whole run, split across the suites (0.5 to 50)
@@ -103,7 +113,7 @@ jobs:
           REPEAT: ${{ inputs.repeat }}
         run: |
           # Values are checked, never echoed (except the suite and the numbers, which are public).
-          case "${SUITE}" in recall|matrix|voice|ui|agenda|safety|all) ;; *) echo "::error::suite must be recall, matrix, voice, ui, agenda, safety or all."; exit 1;; esac
+          case "${SUITE}" in recall|matrix|voice|ui|agenda|safety|face|all) ;; *) echo "::error::suite must be recall, matrix, voice, ui, agenda, safety, face or all."; exit 1;; esac
           if [[ ! "${BUDGET}" =~ ^[0-9]{1,2}(\.[0-9]{1,2})?$ ]] || ! awk -v b="${BUDGET}" 'BEGIN { exit !(b >= 0.5 && b <= 50) }'; then
             echo "::error::budget_usd must be a number from 0.5 to 50."
             exit 1
@@ -207,6 +217,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # Before anything is installed: the face suite cannot run without the vendor key (checked, never echoed).
+      - name: Check the HeyGen sandbox key
+        if: matrix.suite == 'face'
+        env:
+          HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API }}
+        run: |
+          if [ -z "${HEYGEN_KEY}" ]; then
+            echo "::error::The face suite needs the repository secret HEYGEN_LIVEAVATAR_API (the HeyGen LiveAvatar API key)."
+            exit 1
+          fi
+
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       # No dependency cache in a job that holds cloud credentials; everything is installed before they exist.
@@ -303,10 +324,13 @@ jobs:
           fi
           echo "::add-mask::${account}"
 
+      # The face suite's vendor key is set on this step only, and only for that suite; the harness takes it out of its
+      # own environment at start and hands it to the local API process alone (conversation_lab/face.py).
       - name: Run the ${{ matrix.suite }} suite
         working-directory: ops/lab
         env:
           PYTHONPATH: ${{ github.workspace }}/evals
+          LAB_HEYGEN_API_KEY: ${{ matrix.suite == 'face' && secrets.HEYGEN_LIVEAVATAR_API || '' }}
         run: |
           python -m conversation_lab run --suite "${LAB_SUITE}" --budget-usd "${LAB_BUDGET_USD}" \
             --max-scenarios "${LAB_MAX_SCENARIOS}" --out "${LAB_OUT}" \

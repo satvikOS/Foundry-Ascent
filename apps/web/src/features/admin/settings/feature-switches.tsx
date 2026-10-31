@@ -1,3 +1,4 @@
+import type { FaceVendorView } from '@foundry/contracts';
 import { useId, useState, type ReactNode } from 'react';
 
 import {
@@ -28,6 +29,8 @@ interface FeatureSwitchesProps {
   facesEnabled: boolean;
   /** The EIRs' cloned voices on calls (off by default). */
   clonedVoiceEnabled: boolean;
+  /** The face this deployment wired: its mode, price and audience (null: none). */
+  faceVendor?: FaceVendorView | null;
   /** Sends one switch change; the switches always show the server's value. */
   onChange: (patch: FeatureSwitchPatch) => void;
   pending?: boolean;
@@ -70,6 +73,19 @@ function SwitchRow({
   );
 }
 
+/** The face's price per minute, as the settings say it ("$0.19/min"; the sandbox is free). */
+export function facePrice(vendor: Pick<FaceVendorView, 'usdPerMinute' | 'sandbox'>): string {
+  if (vendor.sandbox) return 'free sandbox';
+  return `$${vendor.usdPerMinute.toFixed(2)}/min`;
+}
+
+/** What the wired face is: its mode, who sees it and its price, in a line. */
+export function faceSummary(vendor: FaceVendorView): string {
+  const what = vendor.mode === 'full' ? 'Stock AI avatar' : 'EIR’s face';
+  const who = vendor.audience === 'admins' ? 'admins only' : 'everyone';
+  return `${what} · ${who} · ${facePrice(vendor)}`;
+}
+
 /** What turning on the face or the cloned voice means, said before it happens (they cost money per use). */
 const TURN_ON: Record<
   'facesEnabled' | 'clonedVoiceEnabled',
@@ -97,12 +113,22 @@ export function FeatureSwitches({
   streamingEnabled,
   facesEnabled,
   clonedVoiceEnabled,
+  faceVendor = null,
   onChange,
   pending = false,
   error,
 }: FeatureSwitchesProps) {
   const [confirmCallsOff, setConfirmCallsOff] = useState(false);
   const [confirmOn, setConfirmOn] = useState<'facesEnabled' | 'clonedVoiceEnabled' | null>(null);
+  const turnOn =
+    confirmOn === null
+      ? null
+      : confirmOn === 'facesEnabled' && faceVendor !== null
+        ? {
+            ...TURN_ON.facesEnabled,
+            description: faceSummary(faceVendor),
+          }
+        : TURN_ON[confirmOn];
   return (
     <SectionCard title="Calls and streaming">
       <div className="grid gap-4">
@@ -132,7 +158,13 @@ export function FeatureSwitches({
           />
           <SwitchRow
             label="Video faces"
-            description={facesEnabled ? 'On where a face is ready.' : 'Off.'}
+            description={
+              faceVendor === null
+                ? facesEnabled
+                  ? 'On where a face is ready.'
+                  : 'Off.'
+                : `${facesEnabled ? 'On' : 'Off'} · ${faceSummary(faceVendor)}`
+            }
             checked={facesEnabled}
             disabled={pending}
             onCheckedChange={(next) => {
@@ -183,8 +215,8 @@ export function FeatureSwitches({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{confirmOn ? TURN_ON[confirmOn].title : ''}</AlertDialogTitle>
-            <AlertDialogDescription>{confirmOn ? TURN_ON[confirmOn].description : ''}</AlertDialogDescription>
+            <AlertDialogTitle>{turnOn?.title ?? ''}</AlertDialogTitle>
+            <AlertDialogDescription>{turnOn?.description ?? ''}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Not now</AlertDialogCancel>
@@ -194,7 +226,7 @@ export function FeatureSwitches({
                 setConfirmOn(null);
               }}
             >
-              {confirmOn ? TURN_ON[confirmOn].action : ''}
+              {turnOn?.action ?? ''}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

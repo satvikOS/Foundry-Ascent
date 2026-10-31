@@ -34,6 +34,9 @@ export {
   type FaceSessionRequest,
   type StartedFaceSession,
   type VerifiedFaceAudio,
+  type VerifiedFaceText,
+  type FaceTranscript,
+  type FaceTranscriptLine,
   type VerifiedSpeechUnit,
   type VoiceProvider,
   type VoiceSynthesisInput,
@@ -82,7 +85,13 @@ export {
 export { type SpeechService } from './services/speech.js';
 export { type FaceService, MIN_FACE_SECONDS } from './services/face.js';
 export { type TwinService } from './services/twin.js';
-export { MEDIA_VENDORS, faceCostUsd, voiceCostUsd, type MediaVendors } from './services/media-vendors.js';
+export {
+  MEDIA_VENDORS,
+  faceCostUsd,
+  faceListPrice,
+  voiceCostUsd,
+  type MediaVendors,
+} from './services/media-vendors.js';
 export {
   FACE_CHUNK_BYTES,
   FACE_MAX_PART_CHUNKS,

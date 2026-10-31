@@ -264,8 +264,12 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
               },
             },
             "LOG_LEVEL": "info",
+            "MEDIA_FACE_AUDIENCE": "everyone",
+            "MEDIA_FACE_AVATAR_ID": "",
+            "MEDIA_FACE_MODE": "lite",
             "MEDIA_FACE_PROVIDER": "none",
             "MEDIA_FACE_SANDBOX": "false",
+            "MEDIA_FACE_VOICE_ID": "",
             "MEDIA_VOICE_MODEL": "eleven_flash_v2_5",
             "MEDIA_VOICE_PROVIDER": "polly",
             "MEDIA_VOICE_ZERO_RETENTION": "false",
@@ -3829,6 +3833,61 @@ exports[`template snapshots > FoundryAscent-Foundation 1`] = `
         "RoleName": "FoundryAscent-ConversationLab",
       },
       "Type": "AWS::IAM::Role",
+    },
+    "GitHubDeployMediaKeyPolicy8C118520": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "secretsmanager:CreateSecret",
+              "Condition": {
+                "StringEquals": {
+                  "secretsmanager:Name": "foundry-ascent/media/heygen",
+                },
+              },
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:aws:secretsmanager:us-east-1:",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":secret:foundry-ascent/media/heygen*",
+                  ],
+                ],
+              },
+              "Sid": "CreateFaceVendorKey",
+            },
+            {
+              "Action": "secretsmanager:PutSecretValue",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:aws:secretsmanager:us-east-1:",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":secret:foundry-ascent/media/heygen-??????",
+                  ],
+                ],
+              },
+              "Sid": "WriteFaceVendorKey",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "GitHubDeployMediaKeyPolicy8C118520",
+        "Roles": [
+          {
+            "Ref": "GitHubDeployRoleED73FD64",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
     },
     "GitHubDeployPolicyB814826B": {
       "Properties": {

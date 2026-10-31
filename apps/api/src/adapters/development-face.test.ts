@@ -30,6 +30,35 @@ describe('the development stand-in face', () => {
     );
   });
 
+  it('stands in for a FULL stock face when asked: text voicing, labelled, optionally admins-only', async () => {
+    const full = developmentFaceFor({
+      APP_ENV: 'development',
+      EMBODIMENT_PROVIDER: 'fake',
+      MEDIA_FACE_MODE: 'full',
+      MEDIA_FACE_AUDIENCE: 'admins',
+    }).embodiment;
+    expect(full).toMatchObject({
+      mode: 'full',
+      voicing: 'text',
+      stock: true,
+      adminsOnly: true,
+      likeness: false,
+    });
+    expect(await full?.transcriptSince?.({ sessionRef: 's', control: null, requestId: 'r' }, null)).toEqual({
+      lines: [],
+      complete: true,
+    });
+    expect(
+      developmentFaceFor({ APP_ENV: 'development', EMBODIMENT_PROVIDER: 'fake' }).embodiment,
+    ).toMatchObject({ mode: 'lite', voicing: 'audio', stock: false, adminsOnly: false });
+    expect(() =>
+      developmentFaceFor({ APP_ENV: 'development', EMBODIMENT_PROVIDER: 'fake', MEDIA_FACE_MODE: 'medium' }),
+    ).toThrow(/MEDIA_FACE_MODE/);
+    expect(() =>
+      developmentFaceFor({ APP_ENV: 'development', EMBODIMENT_PROVIDER: 'fake', MEDIA_FACE_AUDIENCE: 'all' }),
+    ).toThrow(/MEDIA_FACE_AUDIENCE/);
+  });
+
   it('opens a pretend session: a random token within a minute, no control channel, no one’s likeness, free', async () => {
     const face = new DevelopmentFace();
     expect(face).toMatchObject({ id: 'fake', voicing: 'audio', likeness: false, usdPerMinute: 0 });

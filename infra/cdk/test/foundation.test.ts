@@ -99,9 +99,69 @@ describe('FoundryAscent-Foundation', () => {
         ],
       },
     });
-    // Nothing that writes: no iam:*, cloudformation:Create*/Update*/Delete*, s3:*, cloudfront:*.
+    // Nothing that writes: no iam:*, cloudformation:Create*/Update*/Delete*, s3:*, cloudfront:* (its one write, the
+    // face vendor key, is a policy of its own: see below).
     const statements = JSON.stringify(template.toJSON());
     expect(statements).not.toMatch(/"(iam|s3|cloudfront):|cloudformation:(Create|Update|Delete|Execute)/);
+  });
+
+  it('lets the deploy role write only the face vendor key, and never read it back', () => {
+    const policies = resourcesOfType(template, 'AWS::IAM::Policy');
+    const media = policies.filter(([id]) => id.startsWith('GitHubDeployMediaKeyPolicy'));
+    expect(media).toHaveLength(1);
+    const [, props] = media[0] ?? ['', {}];
+    expect(props.Roles).toEqual([{ Ref: expect.stringMatching(/^GitHubDeployRole/) as unknown }]);
+    expect(props.PolicyDocument).toEqual({
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Sid: 'CreateFaceVendorKey',
+          Effect: 'Allow',
+          Action: 'secretsmanager:CreateSecret',
+          Resource: {
+            'Fn::Join': [
+              '',
+              [
+                'arn:aws:secretsmanager:us-east-1:',
+                { Ref: 'AWS::AccountId' },
+                ':secret:foundry-ascent/media/heygen*',
+              ],
+            ],
+          },
+          // The ARN does not exist before CreateSecret; the exact name in the request is what is pinned.
+          Condition: { StringEquals: { 'secretsmanager:Name': 'foundry-ascent/media/heygen' } },
+        },
+        {
+          Sid: 'WriteFaceVendorKey',
+          Effect: 'Allow',
+          Action: 'secretsmanager:PutSecretValue',
+          Resource: {
+            'Fn::Join': [
+              '',
+              [
+                'arn:aws:secretsmanager:us-east-1:',
+                { Ref: 'AWS::AccountId' },
+                ':secret:foundry-ascent/media/heygen-??????',
+              ],
+            ],
+          },
+        },
+      ],
+    });
+    // No other policy in the stack touches Secrets Manager, and none can read, delete, tag, share, replicate or
+    // rotate a secret, or reach the ElevenLabs key or the database secret.
+    const all = JSON.stringify(policies);
+    expect(
+      all
+        .match(/"secretsmanager:[A-Za-z]+"/g)
+        ?.map((a) => a.slice(1, -1))
+        .sort(),
+    ).toEqual(['secretsmanager:CreateSecret', 'secretsmanager:Name', 'secretsmanager:PutSecretValue']);
+    expect(all).not.toContain('elevenlabs');
+    expect(all).not.toContain('aurora');
+    // The read-only deploy policy stays read-only.
+    const deploy = policies.filter(([id]) => id.startsWith('GitHubDeployPolicy'));
+    expect(JSON.stringify(deploy)).not.toContain('secretsmanager');
   });
 
   it('lets only the ops-insights environment assume the insights role, for one hour', () => {

@@ -2,7 +2,8 @@
 
   plan --suite S --budget-usd B           which suites run and each one's hard cap (JSON; standard library only)
   run  --suite S --budget-usd B --out DIR  starts the app with the real models and runs one suite (safety: no app,
-                                           the safety screen on the app's models over the E-crisis corpus)
+                                           the safety screen on the app's models over the E-crisis corpus; face:
+                                           the HeyGen sandbox face, its key from LAB_HEYGEN_API_KEY to the API only)
 
 Everything printed is public-safe (ids, codes, counts, timings, dollars). Content (transcripts, judge rationales,
 screenshots, server logs) is written under DIR/private only; the workflow seals it to the operator's key or
@@ -39,6 +40,10 @@ from conversation_lab.config import (
 PUBLIC_REPORTER = REPO / "apps" / "web" / "e2e" / "lab" / "public-reporter.ts"
 LAB_CONFIG = "e2e/lab/playwright.config.ts"
 
+#: The face suite's vendor key, taken out of this process's environment when the harness starts (face.take_key) and
+#: handed to the local API process only. Never printed, logged or written.
+_FACE_KEY = ""
+
 
 def cmd_plan(args: argparse.Namespace) -> int:
     try:
@@ -68,6 +73,9 @@ class Context:
     memory_venture: str | None = None
     #: The agenda suite's founders by channel (chat, call), as the seed script reported them.
     agenda_founders: dict[str, str] = field(default_factory=dict)
+    #: The face suite's lab-probe token (None in the dry run: no vendor) and the founder's admin grant outcome.
+    face_probe_token: str | None = None
+    face_admin: str = ""
 
     @property
     def private(self) -> Path:
@@ -153,6 +161,13 @@ def cmd_run(args: argparse.Namespace) -> int:
             "run: the voice suite needs Amazon Polly and Transcribe; it has no mock dry run", file=sys.stderr
         )
         return 2
+    if suite == "face" and not args.mock and not _FACE_KEY:
+        print(
+            "run: the face suite needs the HeyGen LiveAvatar key in LAB_HEYGEN_API_KEY (the repository secret "
+            "HEYGEN_LIVEAVATAR_API); --mock runs it on the development stand-in face",
+            file=sys.stderr,
+        )
+        return 2
     owner_code = os.environ.get("E2E_OWNER_ACCESS_CODE", "").strip()
     database_url = os.environ.get("DATABASE_URL", "").strip()
     if not owner_code or not database_url:
@@ -215,11 +230,23 @@ def cmd_run(args: argparse.Namespace) -> int:
         os.environ,
         models=models,
         database_url=database_url,
-        speech=suite in ("recall", "voice"),
+        speech=suite in ("recall", "voice", "face"),
         api_port=args.api_port,
         web_port=args.web_port,
         mock=args.mock,
     )
+    # The local API's own environment: the face suite adds the vendor key there and nowhere else (not in ctx.env,
+    # which Playwright and the scripts get).
+    api_process = env
+    if suite == "face":
+        from conversation_lab.face import api_process_env, face_env, grant_admin, new_probe_token
+        from conversation_lab.stack import PNPM
+
+        ctx.face_probe_token = None if args.mock else new_probe_token()
+        env.update(face_env(mock=args.mock, probe_token=ctx.face_probe_token))
+        ctx.face_admin = grant_admin(env, ctx.private / "logs", pnpm=PNPM)
+        summary["face_admin"] = ctx.face_admin
+        api_process = api_process_env(env, "" if args.mock else _FACE_KEY)
     ctx.env = env
     if suite == "matrix" and ctx.matrix_source == "evals":
         # Before the API starts, so its directory knows the venture from the first request.
@@ -231,7 +258,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         summary["models"]["app"] = {"primary": "mock", "fallback": "mock", "embeddings": "mock"}
     error: str | None = None
     stack_cm = Stack(
-        env=env,
+        env=api_process,
         log_dir=ctx.private / "logs",
         web=suite not in ("matrix", "agenda"),
         api_port=args.api_port,
@@ -825,8 +852,46 @@ def suite_agenda(
     }
 
 
+def suite_face(ctx: Context, *, browser: dict[str, str], **_: Any) -> dict[str, Any]:
+    """The HeyGen LiveAvatar FULL stock face against the vendor's sandbox (conversation_lab/face.py): the vendor's
+    credits before and after and the codes it answered (through the dev server's lab probe), and the browser spec's
+    measurements (apps/web/e2e/lab/face.lab.ts), as public numbers."""
+    from conversation_lab.face import PROBE_TOKEN_ENV, Probe, injection_audits, public_result, read_audit_ids
+    from conversation_lab.stack import PNPM
+
+    token = ctx.face_probe_token
+    probe = Probe(browser["E2E_API_URL"], token) if token else None
+    before = probe.credits() if probe else None
+    extra = {**browser, "LAB_FACE_VENDOR": "heygen" if probe else "stand-in"}
+    if token:
+        extra[PROBE_TOKEN_ENV] = token
+    rc = run_playwright(
+        ctx,
+        specs=["--project=face"],
+        config=LAB_CONFIG,
+        report=ctx.private / "face" / "playwright.json",
+        extra_env=extra,
+        timeout=30 * 60,
+    )
+    after = probe.credits() if probe else None
+    # Heartbeat or end-of-face: the audits' metadata, read from the lab's own database (the admin API omits it).
+    audits = injection_audits(ctx.env, ctx.private / "logs", read_audit_ids(ctx.private), pnpm=PNPM)
+    result = public_result(
+        ctx.private,
+        playwright_exit=rc,
+        credits_before=before,
+        credits_after=after,
+        vendor_calls=probe.vendor_calls() if probe else [],
+        vendor="heygen-sandbox" if probe else "stand-in",
+        admin_grant=ctx.face_admin,
+        injection_audits=audits,
+    )
+    return {"face": result, "passed": result["passed"], "run": result["run"], "playwright_exit": rc}
+
+
 SUITE_RUNNERS: dict[str, Callable[..., dict[str, Any]]] = {
     "agenda": suite_agenda,
+    "face": suite_face,
     "recall": suite_recall,
     "voice": suite_voice,
     "matrix": suite_matrix,
@@ -872,6 +937,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     run.set_defaults(func=cmd_run)
     args = parser.parse_args(argv)
+    # Out of the environment before anything runs, so no child process inherits it (face.take_key).
+    global _FACE_KEY
+    from conversation_lab.face import take_key
+
+    _FACE_KEY = take_key(os.environ)
     try:
         return int(args.func(args))
     except KeyboardInterrupt:

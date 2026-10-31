@@ -37,6 +37,9 @@ openings) and each conversation is judged. About USD 0.2 a run.
 E-crisis corpus, before production turns it on, with no app, browser or database ("Safety screen evaluation" below).
 In every other suite the app runs with the screen on (`CORE_SAFETY_SCREEN=on`).
 
+`face` runs on its own too (never part of `all`): the HeyGen LiveAvatar FULL stock face against the vendor's free
+sandbox, with the vendor key ("HeyGen sandbox face" below).
+
 `matrix` has two sources (input `matrix_source`); the summary says which ran:
 
 - `builtin` (default): the lab's own scenarios (`ops/lab/scenarios/smoke.json`, 40, of which `max_scenarios` run).
@@ -85,6 +88,9 @@ The repository is public, so the log, the job summary and artifacts are world-re
   AES-256-GCM key, gzip; `apps/api/src/scripts/lab-seal.ts`) and uploaded for **1 day**; without it they are
   deleted. The upload step refuses any file that is not an envelope.
 - The public summary (`summary.json`, `summary.md`, the lab's spend ledger) is uploaded unsealed for 7 days.
+- The `face` suite's HeyGen key is the one exception to "no secret": the repository secret `HEYGEN_LIVEAVATAR_API`
+  is set on the suite's run step only and the harness hands it to the local API process only ("HeyGen sandbox face"
+  below). The AWS role still reads no secret.
 
 ## One-time setup (repository owner)
 
@@ -311,6 +317,83 @@ it); `--limit N` and `--concurrency N` (default 4) bound a run. Without `MODEL_P
 gateway's rule (a free plumbing check), as does the lab's dry run:
 `python -m conversation_lab run --suite safety --budget-usd 1 --out /tmp/lab --mock` (no database needed).
 
+## HeyGen sandbox face
+
+The `face` suite checks the presentation's video face (docs/runbooks/avatars.md: a HeyGen LiveAvatar **stock**
+avatar in **FULL** mode, voicing the vEIR's admitted text with its stock voice, shown to platform admins only and
+labelled "AI avatar") against the vendor's **sandbox**: free, the Wayne avatar only, sessions of about a minute, no
+credits used. It is the plan's section E, checks 1 to 11 ("Live checks with the real key", sandbox first), run
+headless on GitHub instead of by hand.
+
+```bash
+# numbers only
+gh workflow run ops-conversation-lab.yml -f suite=face -f budget_usd=1
+# with what the avatar said, the Playwright report and the server logs, sealed to your key
+gh workflow run ops-conversation-lab.yml -f suite=face -f budget_usd=1 -f public_key="$(cat "$dir/public.b64")"
+```
+
+**One-time setup:** the owner's HeyGen LiveAvatar API key as the repository secret `HEYGEN_LIVEAVATAR_API` (Settings →
+Secrets and variables → Actions; never in chat or a file). The job stops before installing anything when it is missing.
+
+**What the job does.** It starts the app exactly as the other suites do (PostgreSQL, the synthetic seed, the API dev
+server on the production models with Polly and Transcribe, the production web build), with the face wired as it will
+be for the presentation, in the sandbox: `MEDIA_FACE_PROVIDER=heygen-liveavatar`, `MEDIA_FACE_MODE=full`,
+`MEDIA_FACE_SANDBOX=true`, `MEDIA_FACE_AUDIENCE=admins`, `MEDIA_FACE_AVATAR_ID` the sandbox avatar. Before the app
+starts, `apps/api/src/scripts/lab-face-admin.ts` makes the seeded founder (Maya, a synthetic person) a platform admin
+in the lab's own database (local Postgres only), so the lab calls as an admin of the synthetic venture QuietQuad.
+Playwright (`apps/web/e2e/lab/face.lab.ts`, project `face`, `--disable-audio-output`, no fake microphone: the call is
+typed and the face must never ask for one) then runs four tests:
+
+| Test        | What it measures                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `probe`     | Raw sandbox rooms opened through the dev server's lab probe; the page joins them with livekit-client and commands the avatar itself. Session A: `speak_text` exact words vs `avatar.transcription` (E3), three texts back to back, queued or cut, with the gaps (E4), the transcript endpoint during the session (E10), then idle until the vendor ends it (E11). Session B (`max_session_duration` 30 s): `avatar.interrupt` time to silence and whether it cleared a queued text (E6), `avatar.speak_response` ignored in restricted mode (E8), whether the session stops at its maximum (E11). Session C: whether a LITE room token may publish data (E9). |
+| `call`      | A call with the face: the session the app opened (provider, voicing, stock, LiveKit host: E1), the "AI avatar" label, two typed turns with the time from the turn sent to the face's first `speak_started` and first sound, and from each published `speak_text` to `speak_started` (E5), microphone requests and audio tracks published after the face joined and `user.transcription` events (E7), then the sandbox ending the session and the call falling back to the presence.                                                                                                                                                                           |
+| `injection` | A tampered page: the next `avatar.speak_text` the app publishes is rewritten in the page's data channel with other words of the same length, after the server admitted the original. The server's transcript check must end the face within a heartbeat (15 s) and audit `call.face_injection` from a heartbeat check (`metadata.atEnd` false, read from the lab database by `apps/api/src/scripts/lab-face-audits.ts`), with a vendor `end_reason` other than `MAX_DURATION_REACHED` (E10).                                                                                                                                                                  |
+| `polly`     | The same turns on a call with faces off (Amazon Polly only): the A/B arm for the first audio (E5), measured by the same level meter on the app's output.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+
+The pages read the vendor's room events by tapping their own WebRTC data channels (the JSON inside each packet), on the
+page clock; nothing in the app is changed for the test. One level meter (an analyser polled every 20 ms; an onset
+above 0.01 RMS) listens to the avatar's remote audio track and, for Polly, to whatever the page's Web Audio sends to
+its speakers, so both arms of E5 time the first sound the same way. The `instruments` test proves the data-channel
+tap on a loopback packet and both meters on a loopback WebRTC tone and a tone played through Web Audio
+(`instruments_ok`). The harness
+reads the vendor's credits before and after the run and the HTTP status and envelope code of every call the API made
+to the vendor (the plan's E1: the real success code, 100 or 1000), through the probe.
+
+**The key.** The workflow sets `secrets.HEYGEN_LIVEAVATAR_API` as `LAB_HEYGEN_API_KEY` on the run step only. The
+harness takes it out of its own environment before anything starts (`conversation_lab/face.py` `take_key`) and passes
+it to the local API process alone as `LOCAL_MEDIA_FACE_API_KEY`; Playwright, the web server and the scripts never get
+it. The dev server reads it once (`apps/api/src/runtime/local-face.ts`), removes it from its own environment, and uses
+it only in the vendor adapter. The variable is refused outside development: `APP_ENV=production` fails configuration
+(`apps/api/src/config.ts`), and the dev server refuses it with the stand-in face, without
+`MEDIA_FACE_PROVIDER=heygen-liveavatar`, without `MEDIA_FACE_SANDBOX=true` or with an audience other than
+`MEDIA_FACE_AUDIENCE=admins`: a dev server never spends credits and never offers the face to every founder. It is never logged, printed, written to the private folder, sealed or
+uploaded, and GitHub masks it in the log.
+
+**The lab probe.** With `LAB_FACE_PROBE_TOKEN` (a random token per run), the dev server answers
+`/api/v1/_lab/face/{vendor-calls,credits,sessions,…}` for requests carrying that token (`x-lab-probe-token`); anything
+else gets 404. Probe sessions are always sandbox sessions, whatever the app's face is configured as. Deployed APIs
+never have the probe: it lives in the dev server only.
+
+**Reading it.** The summary lists each check as pass, FAIL or not measured, then the measurements: success codes and
+vendor calls by path, credits before, after and used (must be 0), the probe's timings and behaviours, the in-app
+timings against Polly alone, the vendor's `end_reason`s and the injection's seconds to end. Words never appear; what
+the avatar said and the sent texts are in the sealed `face/*-texts.json`. `e5_first_audio_under_target` compares the
+face's first sound (the meter's onset; never the vendor's `speak_started`, which is reported as its own distribution)
+after a typed turn with the plan's 1.2 s target; a voice turn adds Transcribe's endpointing to both arms equally.
+Polly's first sound is the same meter on the app's output; the time its first buffer was scheduled is reported apart
+as `first_scheduled_ms`. The injection also reports how many seconds after the face went live the words went out
+(`seconds_into_session`): near the sandbox's minute, the session may end before a heartbeat can catch them.
+
+**Spend.** The vendor sandbox costs nothing. The app's share (the whole `budget_usd`) pays for the turns on the
+production models and Polly (a few cents) and, in the app's own ledger, the face's minutes at the FULL list price
+(USD 0.19 a minute, about USD 0.4 a run), which HeyGen does not charge in the sandbox: the credits check shows it.
+`budget_usd=1` is enough.
+
+**The LITE A/B arm.** The plan's E5 compares FULL with LITE + Polly. LITE needs a persona whose consent covers its
+likeness and a Ready HeyGen avatar, which the synthetic seed does not hold, so this suite compares FULL with Polly
+alone (the presence tile): LITE's first sound would be Polly's plus the hand-over to the vendor.
+
 ## Locally
 
 The harness has a dry run that needs no AWS (the app on the mock model; no probes, no backfill, no voice):
@@ -324,15 +407,20 @@ cd ops/lab && PYTHONPATH=../../evals python -m conversation_lab run --suite matr
 The browser suites run through Playwright like the e2e suite (silent: fake audio output, silent speech synthesis):
 `pnpm --filter @foundry/web exec playwright test --config e2e/lab/playwright.config.ts --project=recall` with
 `E2E_OWNER_ACCESS_CODE` and `DATABASE_URL` set (`LAB_RECALL_GAP_SECONDS=3` shortens the pauses). Unit tests:
-`cd ops/lab && python -m pytest` (offline; CI runs them in the Python job).
+`cd ops/lab && python -m pytest` (offline; CI runs them in the Python job). The face suite's dry run
+(`--suite face --mock`) runs the call, polly and admin-grant plumbing on the development stand-in face (no key, no
+vendor, no probe).
 
 ## Troubleshooting
 
-| Problem                             | Cause and fix                                                                                                                                                                                         |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Could not assume role`             | The environment `conversation-lab` is missing or not limited to `main`, or the deploy that creates the role has not run.                                                                              |
-| Probes show `AccessDeniedException` | The model is not in the role's grant (it follows `ops/lab/models.json` and production.json; deploy after changing either) or not available to the account. The next model in the list is used.        |
-| Voice: `no_voice_input`             | The call started typed: no Transcribe grant (the API runs with `LOCAL_AWS_SPEECH=true` only in this workflow) or the daily grant quota. The sealed `voice/result.json` holds the call's status lines. |
-| Voice: `misheard` / high WER        | Compare the sealed transcripts with `ops/lab/scenarios/voice.json`; Transcribe accuracy, endpointing (600 ms of silence) or a line cut by the barge-in.                                               |
-| `Stopped by: budget_app`            | The app's share ran out (Admin → Usage numbers are in the summary). Raise `budget_usd` or lower `max_scenarios`.                                                                                      |
-| Luna enabled in production.json     | The app's primary model moves to the Mantle endpoint, which the lab role does not grant (`bedrock-mantle:CreateInference` on `*`); turns fall back to Nova 2 Lite until the role is extended.         |
+| Problem                                              | Cause and fix                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Could not assume role`                              | The environment `conversation-lab` is missing or not limited to `main`, or the deploy that creates the role has not run.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Probes show `AccessDeniedException`                  | The model is not in the role's grant (it follows `ops/lab/models.json` and production.json; deploy after changing either) or not available to the account. The next model in the list is used.                                                                                                                                                                                                                                                                                                                                                                                         |
+| Voice: `no_voice_input`                              | The call started typed: no Transcribe grant (the API runs with `LOCAL_AWS_SPEECH=true` only in this workflow) or the daily grant quota. The sealed `voice/result.json` holds the call's status lines.                                                                                                                                                                                                                                                                                                                                                                                  |
+| Voice: `misheard` / high WER                         | Compare the sealed transcripts with `ops/lab/scenarios/voice.json`; Transcribe accuracy, endpointing (600 ms of silence) or a line cut by the barge-in.                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `Stopped by: budget_app`                             | The app's share ran out (Admin → Usage numbers are in the summary). Raise `budget_usd` or lower `max_scenarios`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Luna enabled in production.json                      | The app's primary model moves to the Mantle endpoint, which the lab role does not grant (`bedrock-mantle:CreateInference` on `*`); turns fall back to Nova 2 Lite until the role is extended.                                                                                                                                                                                                                                                                                                                                                                                          |
+| Face: stops at "Check the HeyGen sandbox key"        | The repository secret `HEYGEN_LIVEAVATAR_API` is missing. Add it (Settings → Secrets and variables → Actions).                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Face: `call` fails, the tile never shows the video   | The sealed server log has `call.face_*` lines and the vendor calls table their status and code: a token or start refused (key, plan), or the app's face settings. A start answered with a code other than 100 or 1000 means the adapter's success codes need the new one.                                                                                                                                                                                                                                                                                                              |
+| Face: `e10_injection_ends_face_in_a_heartbeat` fails | `audit_heartbeat_events` 0 with `audit_at_end_events` 1, or `end_reason` `MAX_DURATION_REACHED`: the sandbox's minute ended the face and only the final check caught the words (look at `seconds_into_session`; re-run). `audit_heartbeat_events` null: the audit lookup failed (`logs/face-audits.log`). Otherwise the transcript endpoint (`e10_transcript_endpoint_live`) or the server's reconciliation: a product finding for the face stream. The order of `session.stopped` and the presence tile says nothing: the page drops the face on `session.stopped` whatever ended it. |

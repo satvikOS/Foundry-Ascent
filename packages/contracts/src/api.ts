@@ -798,6 +798,26 @@ export const PlatformSettingsView = z.object({
 });
 export type PlatformSettingsView = z.infer<typeof PlatformSettingsView>;
 export const UpdateSettingsRequest = PlatformSettingsView.partial();
+
+/**
+ * The face vendor this deployment wired (read-only: the deployment's configuration, not a setting): how the face
+ * speaks (`lite`: our audio; `full`: the vendor's stock voice speaks admitted text), its price per minute, who sees
+ * it, whether it is a stock avatar (labelled "AI avatar") and whether it runs the vendor's free sandbox.
+ */
+export const FaceVendorView = z.object({
+  mode: z.enum(['lite', 'full']),
+  usdPerMinute: z.number().min(0),
+  audience: z.enum(['admins', 'everyone']),
+  stock: z.boolean(),
+  sandbox: z.boolean(),
+});
+export type FaceVendorView = z.infer<typeof FaceVendorView>;
+
+/** `GET / PATCH /admin/settings` 200 body: the settings, and the face vendor wired (null: none). Additive. */
+export const AdminSettingsView = PlatformSettingsView.extend({
+  faceVendor: FaceVendorView.nullable().default(null),
+});
+export type AdminSettingsView = z.infer<typeof AdminSettingsView>;
 export const AuditEventView = z.object({
   id: z.number().int(),
   at: Timestamp,

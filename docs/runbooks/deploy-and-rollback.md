@@ -85,7 +85,9 @@ exercises the live paths:
 Any other CI probe gets a separate role in the Foundation stack the same way, in a reviewed change: trusted only
 from a dedicated GitHub environment, allowed `bedrock:InvokeModel` on the configured model ARNs (the set
 `lib/models.ts` derives) and, for speech, `polly:SynthesizeSpeech` pinned with `aws:RequestedRegion`. Never widen
-`FoundryAscent-GitHubDeploy` for it.
+`FoundryAscent-GitHubDeploy` for it. (Its one write outside CloudFormation, storing the HeyGen key for **Ops - sync
+HeyGen key**, is not a probe: it writes only the secret the code it deploys reads, and cannot read it back;
+[avatars runbook §2](avatars.md#2-keys-into-aws-secrets-manager-owner-us-east-1).)
 
 ## One-time setup
 

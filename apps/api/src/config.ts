@@ -59,6 +59,17 @@ const EnvSchema = z.object({
   MEDIA_FACE_PROVIDER: z.preprocess(emptyToUndefined, z.enum(['none', 'heygen-liveavatar']).default('none')),
   /** infra `media.face.sandbox`: LiveAvatar sandbox sessions (free, a minute long, the sandbox avatar). */
   MEDIA_FACE_SANDBOX: z.preprocess(emptyToUndefined, z.enum(['true', 'false']).default('false')),
+  /**
+   * infra `media.face.mode`: `lite` (the face renders our audio: the EIR's own avatar) or `full` (a vendor stock
+   * avatar voices admitted text with its stock voice).
+   */
+  MEDIA_FACE_MODE: z.preprocess(emptyToUndefined, z.enum(['lite', 'full']).default('lite')),
+  /** infra `media.face.stock.avatarId`: the stock avatar a FULL face shows (a LiveAvatar avatar id). */
+  MEDIA_FACE_AVATAR_ID: z.preprocess(emptyToUndefined, z.uuid().optional()),
+  /** infra `media.face.stock.voiceId`: its stock voice (absent: the avatar's default voice). */
+  MEDIA_FACE_VOICE_ID: z.preprocess(emptyToUndefined, z.uuid().optional()),
+  /** infra `media.face.audience`: who sees the face (default: admins for `full`, everyone for `lite`). */
+  MEDIA_FACE_AUDIENCE: z.preprocess(emptyToUndefined, z.enum(['admins', 'everyone']).optional()),
   /** infra `media.voice.provider`: the EIRs' cloned voices. Off: `polly` (stock voices only). */
   MEDIA_VOICE_PROVIDER: z.preprocess(emptyToUndefined, z.enum(['polly', 'elevenlabs']).default('polly')),
   /** infra `media.voice.model`: the ElevenLabs model. */
@@ -93,6 +104,12 @@ export interface ApiConfig {
   readonly media: {
     readonly face: 'none' | 'heygen-liveavatar';
     readonly faceSandbox: boolean;
+    /** `lite`: the face renders our audio. `full`: a stock avatar voices admitted text with its stock voice. */
+    readonly faceMode: 'lite' | 'full';
+    /** FULL: the stock avatar and (optionally) its voice at the vendor; null in LITE. */
+    readonly faceStock: { readonly avatarId: string | null; readonly voiceId: string | null } | null;
+    /** Who is offered the face: platform admins only, or everyone the face may serve. */
+    readonly faceAudience: 'admins' | 'everyone';
     readonly voice: 'polly' | 'elevenlabs';
     readonly voiceModel: string;
     readonly voiceZeroRetention: boolean;
@@ -119,6 +136,20 @@ export function loadApiConfig(env: EnvLike, role: ApiRole): ApiConfig {
     missing.push('DOCUMENTS_BUCKET');
   if (role === 'api' && e.JOBS_QUEUE_URL === undefined) missing.push('JOBS_QUEUE_URL');
   if (missing.length > 0) throw new ConfigError(`Missing required environment: ${missing.join(', ')}`);
+  // A FULL face shows a stock avatar: one must be named (the vendor sandbox has its own, whatever is named).
+  if (
+    e.MEDIA_FACE_PROVIDER === 'heygen-liveavatar' &&
+    e.MEDIA_FACE_MODE === 'full' &&
+    e.MEDIA_FACE_SANDBOX !== 'true' &&
+    e.MEDIA_FACE_AVATAR_ID === undefined
+  ) {
+    throw new ConfigError('Missing required environment: MEDIA_FACE_AVATAR_ID');
+  }
+  // The local dev server's vendor-face key (runtime/local-face.ts, the conversation lab): never a deployed API's.
+  if (e.APP_ENV !== 'development' && emptyToUndefined(env.LOCAL_MEDIA_FACE_API_KEY) !== undefined) {
+    throw new ConfigError('LOCAL_MEDIA_FACE_API_KEY is for the local development server only');
+  }
+  const full = e.MEDIA_FACE_MODE === 'full';
   return {
     appEnv: e.APP_ENV,
     appVersion: e.APP_VERSION,
@@ -132,6 +163,11 @@ export function loadApiConfig(env: EnvLike, role: ApiRole): ApiConfig {
     media: {
       face: e.MEDIA_FACE_PROVIDER,
       faceSandbox: e.MEDIA_FACE_SANDBOX === 'true',
+      faceMode: e.MEDIA_FACE_MODE,
+      faceStock: full
+        ? { avatarId: e.MEDIA_FACE_AVATAR_ID ?? null, voiceId: e.MEDIA_FACE_VOICE_ID ?? null }
+        : null,
+      faceAudience: e.MEDIA_FACE_AUDIENCE ?? (full ? 'admins' : 'everyone'),
       voice: e.MEDIA_VOICE_PROVIDER,
       voiceModel: e.MEDIA_VOICE_MODEL,
       voiceZeroRetention: e.MEDIA_VOICE_ZERO_RETENTION === 'true',

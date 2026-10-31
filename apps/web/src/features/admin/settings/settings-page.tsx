@@ -70,6 +70,7 @@ export function SettingsPage() {
             streamingEnabled={settings.data.streamingEnabled ?? true}
             facesEnabled={settings.data.facesEnabled ?? false}
             clonedVoiceEnabled={settings.data.clonedVoiceEnabled ?? false}
+            faceVendor={settings.data.faceVendor}
             pending={features.isPending}
             error={features.error}
             onChange={(patch) => {

@@ -559,13 +559,15 @@ export function getSpokenTurn(ex: SqlExecutor, turnId: string): Promise<SpokenTu
 
 /**
  * What a call speaks, as `call_speech` keys it (identifiers only): the intro, a signed unit of a reply, a run
- * of whole sentences of a stored reply (sentence indices, first to last), or a crisis turn's support message.
+ * of whole sentences of a stored reply (sentence indices, first to last), a crisis turn's support message, or a
+ * signed unit (or the intro, `turnId` null) handed to a FULL face as text (0018), counted apart from its own play.
  */
 export type SpeechUnitKey =
   | { readonly kind: 'intro' }
   | { readonly kind: 'unit'; readonly turnId: string; readonly seq: number }
   | { readonly kind: 'run'; readonly turnId: string; readonly first: number; readonly last: number }
-  | { readonly kind: 'crisis'; readonly turnId: string };
+  | { readonly kind: 'crisis'; readonly turnId: string }
+  | { readonly kind: 'face'; readonly turnId: string | null; readonly seq: number };
 
 /** The `call_speech.unit` text of a key. */
 export function speechUnitKey(key: SpeechUnitKey): string {
@@ -578,6 +580,8 @@ export function speechUnitKey(key: SpeechUnitKey): string {
       return `run.${key.turnId.toLowerCase()}.${String(key.first)}.${String(key.last)}`;
     case 'crisis':
       return `crisis.${key.turnId.toLowerCase()}`;
+    case 'face':
+      return key.turnId === null ? 'face.intro' : `face.${key.turnId.toLowerCase()}.${String(key.seq)}`;
   }
 }
 
@@ -773,6 +777,7 @@ export function speechPlays(
 export interface ReapedCall {
   readonly callId: string;
   readonly sessionId: string;
+  readonly ventureId: string;
 }
 
 /**
@@ -792,11 +797,12 @@ export function reapStaleCalls(
                     WHERE x.status = 'live'
                       AND coalesce(x.last_heartbeat_at, x.started_at) < now() - make_interval(secs => :stale::integer)
                     ORDER BY x.started_at LIMIT :limit)
-     RETURNING c.id, c.session_id`,
+     RETURNING c.id, c.session_id, c.venture_id`,
     { stale: p.int(input.staleSeconds), grace: p.int(input.graceSeconds), limit: p.int(input.limit ?? 500) },
     (r) => ({
       callId: col.uuid.decode(r.id, 'id'),
       sessionId: col.uuid.decode(r.session_id, 'session_id'),
+      ventureId: col.uuid.decode(r.venture_id, 'venture_id'),
     }),
   );
 }

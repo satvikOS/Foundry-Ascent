@@ -103,6 +103,27 @@ export interface PlatformConfig {
        * otherwise; never a wildcard.
        */
       readonly csp: { readonly connect: readonly string[]; readonly media: readonly string[] };
+      /**
+       * How the vendor face speaks (`MEDIA_FACE_MODE`). `lite` (default): the face lip-syncs audio our server made
+       * (Polly or the EIR's clone), the path for an EIR's own likeness. `full`: a vendor STOCK avatar speaks, in the
+       * vendor's stock voice, only text our server admitted (docs/architecture/calls.md §4.2). `full` never renders
+       * an EIR's likeness, so it requires `stock`.
+       */
+      readonly mode: FaceMode;
+      /**
+       * FULL mode only (refused in LITE): the vendor stock avatar that replaces the persona's own face
+       * (`MEDIA_FACE_AVATAR_ID`, `MEDIA_FACE_VOICE_ID`). No likeness consent is involved, and the call tile labels it
+       * "AI avatar". `voiceId` is a vendor stock voice; absent, the avatar's default voice speaks. Null: the persona's
+       * own face (LITE).
+       */
+      readonly stock: { readonly avatarId: string; readonly voiceId: string | null } | null;
+      /**
+       * Who is offered the face (`MEDIA_FACE_AUDIENCE`): `admins` (platform admins only) or `everyone` the
+       * persona's consent covers. Defaults: `admins` in FULL (the only audience it accepts: in FULL a browser can
+       * make the face say other text on its own screen, which the transcript check only catches afterwards),
+       * `everyone` in LITE (a sandbox face is offered to platform admins only either way).
+       */
+      readonly audience: FaceAudience;
     };
     readonly voice: {
       readonly provider: 'polly' | 'elevenlabs';
@@ -114,9 +135,21 @@ export interface PlatformConfig {
   readonly logRetentionDays: number;
 }
 
+export const FACE_MODES = ['lite', 'full'] as const;
+export type FaceMode = (typeof FACE_MODES)[number];
+export const FACE_AUDIENCES = ['admins', 'everyone'] as const;
+export type FaceAudience = (typeof FACE_AUDIENCES)[number];
+
 /** Used when `media` is absent from the file: no face, stock voices only. */
 const MEDIA_OFF: PlatformConfig['media'] = {
-  face: { provider: 'none', sandbox: false, csp: { connect: [], media: [] } },
+  face: {
+    provider: 'none',
+    sandbox: false,
+    csp: { connect: [], media: [] },
+    mode: 'lite',
+    stock: null,
+    audience: 'everyone',
+  },
   voice: { provider: 'polly', model: 'eleven_flash_v2_5', zeroRetention: false },
 };
 
@@ -279,6 +312,77 @@ function origins(parent: Json, key: string, path: string): string[] {
   });
 }
 
+/** LiveAvatar avatar and voice ids are UUIDs (e.g. the sandbox avatar `dd73ea75-1218-4ef3-92ce-606d5f7fbc0a`). */
+const VENDOR_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function oneOf<T extends string>(
+  parent: Json,
+  key: string,
+  path: string,
+  allowed: readonly T[],
+): T | undefined {
+  if (parent[key] === undefined) return undefined;
+  const value = parent[key];
+  if (typeof value !== 'string' || !(allowed as readonly string[]).includes(value)) {
+    throw new ConfigError(`${path}.${key}`, `must be one of ${allowed.join(', ')}`);
+  }
+  return value as T;
+}
+
+/**
+ * `media.face.mode`, `media.face.stock` and `media.face.audience` (all optional: absent means LITE with the
+ * persona's own face, offered to everyone the consent covers, which is how faces worked before FULL existed).
+ */
+function parseFaceVoicing(face: Json): Pick<PlatformConfig['media']['face'], 'mode' | 'stock' | 'audience'> {
+  const path = '$.media.face';
+  const mode = oneOf(face, 'mode', path, FACE_MODES) ?? 'lite';
+  let stock: PlatformConfig['media']['face']['stock'] = null;
+  if (face.stock !== undefined && face.stock !== null) {
+    const raw = obj(face.stock, `${path}.stock`);
+    const extra = Object.keys(raw).filter((key) => key !== 'avatarId' && key !== 'voiceId');
+    if (extra.length > 0) {
+      throw new ConfigError(
+        `${path}.stock`,
+        `has unknown keys: ${extra.join(', ')} (only avatarId, voiceId)`,
+      );
+    }
+    stock = {
+      avatarId: str(raw, 'avatarId', `${path}.stock`, VENDOR_UUID),
+      voiceId:
+        raw.voiceId === undefined || raw.voiceId === null
+          ? null
+          : str(raw, 'voiceId', `${path}.stock`, VENDOR_UUID),
+    };
+  }
+  // FULL hands the vendor text and lets the vendor's own voice say it: never for an EIR's likeness, whose face
+  // only ever lip-syncs audio our server made (LITE). So FULL needs a stock avatar.
+  if (mode === 'full' && stock === null) {
+    throw new ConfigError(
+      `${path}.stock`,
+      'must name a vendor stock avatar (stock.avatarId) when mode is full: FULL never renders an EIR’s likeness (docs/runbooks/avatars.md §9)',
+    );
+  }
+  // A stock avatar and its voice are FULL mode only: in LITE the face is the persona's own likeness saying our own
+  // audio, and the API ignores a stock face there, so naming one would be a silent misconfiguration.
+  if (mode === 'lite' && stock !== null) {
+    throw new ConfigError(
+      `${path}.stock`,
+      'is FULL mode only (in LITE the face is the persona’s own, saying our own audio; docs/runbooks/avatars.md §9)',
+    );
+  }
+  const audience = oneOf(face, 'audience', path, FACE_AUDIENCES) ?? (mode === 'full' ? 'admins' : 'everyone');
+  // In FULL the browser's room token can publish commands, so a modified page could make the face say other text
+  // on its own screen until the server's transcript check ends it: acceptable for platform admins presenting, not
+  // for founders.
+  if (mode === 'full' && audience !== 'admins') {
+    throw new ConfigError(
+      `${path}.audience`,
+      'must be admins when mode is full (docs/runbooks/avatars.md §9)',
+    );
+  }
+  return { mode, stock, audience };
+}
+
 function parseMedia(raw: unknown): PlatformConfig['media'] {
   if (raw === undefined) return MEDIA_OFF;
   const media = obj(raw, '$.media');
@@ -315,6 +419,7 @@ function parseMedia(raw: unknown): PlatformConfig['media'] {
       provider: faceProvider,
       sandbox: bool(face, 'sandbox', '$.media.face'),
       csp: { connect, media: mediaOrigins },
+      ...parseFaceVoicing(face),
     },
     voice: {
       provider: voiceProvider,

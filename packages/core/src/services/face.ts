@@ -5,6 +5,7 @@ import {
   type PlatformSettingsView,
 } from '@foundry/contracts';
 import {
+  auditRepo,
   callsRepo,
   personasRepo,
   settingsRepo,
@@ -21,27 +22,43 @@ import { loadPrincipalRoles } from '../authz/roles.js';
 import { requireAssignmentActive, requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
-import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
+import { audit, requireId, type AuditEvent, type Kit, type RequestScope } from '../internal/kit.js';
 import { decryptControl, encryptControl, verifyFaceAudio } from '../orchestrator/face-audio.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 import { type EmbodimentProvider, type FaceSessionHandle } from '../ports.js';
 import { CALL_LIMITS, callSecondsToday, callTimeLeft, remainingDailySeconds } from './call-usage.js';
 import { callVoiceFor } from './calls.js';
-import { faceCostUsd, MEDIA_VENDORS } from './media-vendors.js';
+import {
+  cursorAfter,
+  FACE_TRANSCRIPT_PENDING_SECONDS,
+  FACE_TRANSCRIPT_UNREAD_SECONDS,
+  linesAfter,
+  reconcileFaceTranscript,
+} from './face-text.js';
+import { faceCostUsd, faceListPrice } from './media-vendors.js';
 import { resolveVeir } from './veir.js';
 
 /**
- * The face of a call (docs/architecture/calls.md §4, docs/runbooks/avatars.md): a vendor's realtime avatar of the
- * EIR (HeyGen LiveAvatar, LITE mode) behind the {@link EmbodimentProvider} port, off unless the program turned
- * faces on (`faces_enabled`).
+ * The face of a call (docs/architecture/calls.md §4, docs/runbooks/avatars.md): a vendor's realtime avatar behind
+ * the {@link EmbodimentProvider} port, off unless the program turned faces on (`faces_enabled`). In LITE mode it is
+ * the EIR's own avatar rendering audio our server made (HeyGen LiveAvatar LITE); in FULL mode a vendor's stock
+ * avatar voices, with its stock voice, text our server admitted (HeyGen LiveAvatar FULL), labelled "AI avatar".
  *
- * - A face is offered only to a persona whose face is ready under likeness consent (the development stand-in
- *   draws no one and serves any), within the person's video minutes this month and the per-call limit, and while
- *   the platform's daily spend cap allows. The vendor session ends by itself at that limit.
- * - The server holds the face's speak channel. The browser only watches (a room token that cannot publish) and
- *   hands back, at each unit's turn, audio the server synthesized from a signed unit, which the server checks
+ * - A face of a likeness is offered only to a persona whose face is ready under likeness consent (a stock avatar
+ *   and the development stand-in draw no one and serve any); a sandbox or admins-only face only to platform admins;
+ *   always within the person's video minutes this month and the per-call limit, and while the platform's daily
+ *   spend cap allows. The vendor session ends by itself at that limit.
+ * - LITE: the server holds the face's speak channel. The browser only watches (a room token that cannot publish)
+ *   and hands back, at each unit's turn, audio the server synthesized from a signed unit, which the server checks
  *   against its face-audio manifest before relaying it (`speak`). So the face renders nothing the validators did
  *   not approve, and never the crisis line.
+ * - FULL: the vendor takes its commands only over the room, from the browser. The server admits each signed unit
+ *   first (`authorizeFaceText`, services/speech.ts: once, in order, never the crisis line), and the browser sends
+ *   the vendor only an admitted unit's words. A tampered page could still make the face say other words on its own
+ *   screen, so every heartbeat reconciles the vendor's transcript against the admitted units (each said at most
+ *   once) and ends the face at the first words it never admitted (`call.face_injection`), and so does every way a
+ *   FULL face ends: the page reporting it off or ending it, the call's end, the daily reaper. A face whose
+ *   transcript stays unread stops; one whose end could not be checked is recorded (`call.face_transcript_unchecked`).
  * - The face takes a unit's parts only in order, each once, one unit at a time: a later part must continue the
  *   unit the face is saying, exactly where the last part ended (`twinRepo.admitFacePart`), and barge-in seals
  *   it. So the parts of validated units can never be replayed, skipped, reordered or spliced together.
@@ -78,24 +95,39 @@ export type FaceSettings = Required<
 >;
 
 export type FaceRefusal =
-  'faces_disabled' | 'no_provider' | 'sandbox_only' | 'no_face' | 'face_minutes' | 'spend_cap' | 'too_short';
+  | 'faces_disabled'
+  | 'no_provider'
+  | 'sandbox_only'
+  | 'admins_only'
+  | 'no_face'
+  | 'face_minutes'
+  | 'spend_cap'
+  | 'too_short';
 
-/** Whether a provider may show a face to this caller at all: a sandbox face only to a platform admin (pure). */
+/** Whether a provider shows its face to platform admins only (a vendor sandbox, or an admins-only audience). */
+export function faceForAdminsOnly(provider: Pick<EmbodimentProvider, 'sandbox' | 'adminsOnly'>): boolean {
+  return provider.sandbox === true || provider.adminsOnly === true;
+}
+
+/**
+ * Whether a provider may show a face to this caller at all: a sandbox or admins-only face only to a platform admin
+ * (pure).
+ */
 export function faceOfferedTo(
-  provider: Pick<EmbodimentProvider, 'sandbox'>,
+  provider: Pick<EmbodimentProvider, 'sandbox' | 'adminsOnly'>,
   roles: readonly PlatformRole[],
 ): boolean {
-  return provider.sandbox !== true || roles.includes('platform_admin');
+  return !faceForAdminsOnly(provider) || roles.includes('platform_admin');
 }
 
 /**
  * Whether a call may have a face now, and for how long at most (pure). `twinFace` is the persona's face ready
- * under likeness consent (`app.persona_twin`); a provider without likeness (the stand-in) needs none. A sandbox
- * provider serves platform admins only (`callerRoles`, re-read from the database).
+ * under likeness consent (`app.persona_twin`); a provider without likeness (a stock avatar, the stand-in) needs
+ * none. A sandbox or admins-only provider serves platform admins only (`callerRoles`, re-read from the database).
  */
 export function faceAllowance(input: {
   readonly settings: FaceSettings;
-  readonly provider: Pick<EmbodimentProvider, 'likeness' | 'sandbox'> | undefined;
+  readonly provider: Pick<EmbodimentProvider, 'likeness' | 'sandbox' | 'adminsOnly'> | undefined;
   readonly callerRoles: readonly PlatformRole[];
   readonly twinFace: { readonly ref: string } | null;
   readonly monthSecondsUsed: number;
@@ -105,7 +137,9 @@ export function faceAllowance(input: {
   { readonly ok: true; readonly maxSeconds: number } | { readonly ok: false; readonly reason: FaceRefusal } {
   if (!input.settings.facesEnabled) return { ok: false, reason: 'faces_disabled' };
   if (input.provider === undefined) return { ok: false, reason: 'no_provider' };
-  if (!faceOfferedTo(input.provider, input.callerRoles)) return { ok: false, reason: 'sandbox_only' };
+  if (!faceOfferedTo(input.provider, input.callerRoles)) {
+    return { ok: false, reason: input.provider.sandbox === true ? 'sandbox_only' : 'admins_only' };
+  }
   if (input.provider.likeness && input.twinFace === null) return { ok: false, reason: 'no_face' };
   if (input.spendCapReached) return { ok: false, reason: 'spend_cap' };
   const monthLeft = Math.max(0, input.settings.faceMinutesPerPrincipalMonth * 60 - input.monthSecondsUsed);
@@ -125,7 +159,8 @@ export type FaceStopCause =
   | 'face_limit'
   | 'face_check_failed'
   | 'spend_cap'
-  | 'face_dropped';
+  | 'face_dropped'
+  | 'face_injection';
 
 /**
  * The video-minute causes, from the face itself (pure): its per-call limit (the vendor session ends there too,
@@ -153,7 +188,7 @@ export function faceStopCause(input: {
   readonly spendCapReached: boolean;
   /** The browser reports the face is no longer shown. */
   readonly clientOff: boolean;
-}): Exclude<FaceStopCause, 'face_limit' | 'face_check_failed'> | null {
+}): Exclude<FaceStopCause, 'face_limit' | 'face_check_failed' | 'face_injection'> | null {
   if (!input.settings.facesEnabled || input.provider === undefined) return 'faces_disabled';
   if (input.provider.likeness && input.twinFace === null) return 'likeness_withdrawn';
   if (input.spendCapReached) return 'spend_cap';
@@ -162,9 +197,12 @@ export function faceStopCause(input: {
   return null;
 }
 
-/** The vendor's metered model id for a face (`<provider>:face`). */
-export function faceModelId(provider: Pick<EmbodimentProvider, 'id'>): string {
-  return provider.id === 'heygen' ? 'heygen:liveavatar-lite' : `${provider.id}:face`;
+/** The vendor's metered model id for a face in its mode (`heygen:liveavatar-<mode>`, `<provider>:face`). */
+export function faceModelId(face: {
+  readonly id: 'heygen' | 'fake';
+  readonly mode: 'lite' | 'full';
+}): string {
+  return face.id === 'heygen' ? `heygen:liveavatar-${face.mode}` : `${face.id}:face`;
 }
 
 /** What binds a face's control channel ciphertext to its call (AES-GCM associated data). */
@@ -198,10 +236,21 @@ export interface FaceHooks {
     call: { readonly id: string; readonly ventureId: string },
     decision: { readonly stopCause: FaceStopCause | null; readonly monthMinutes: number | null },
   ): Promise<'continue' | 'stop' | undefined>;
-  /** After a call ended (any path): meters the face to its end and stops the vendor session. */
+  /**
+   * After a call ended (any path): meters the face to its end, checks what a FULL face said to its end, and stops
+   * the vendor session.
+   */
   afterCallEnded(
     ctx: RequestContext,
     call: { readonly id: string; readonly ventureId: string },
+  ): Promise<void>;
+  /**
+   * After the daily maintenance closed calls whose page went away: the same for their faces, as the system (the
+   * worker may wire no vendor: then a FULL face is recorded as unchecked).
+   */
+  afterCallsReaped(
+    requestId: string,
+    calls: readonly { readonly callId: string; readonly ventureId: string }[],
   ): Promise<void>;
   /** The inputs of {@link faceStopCause} the heartbeat reads inside its own transaction. */
   stopInputs(
@@ -212,13 +261,17 @@ export interface FaceHooks {
 }
 
 /**
- * The per-minute price a face of `vendor` is billed at: the wired provider's, else the price file (the worker,
- * which meters faces the reaper closed, wires no vendor); the stand-in costs nothing.
+ * The per-minute price a face of `vendor` in `mode` is billed at: the wired provider's when it is that vendor in
+ * that mode, else the price file (the worker, which meters faces the reaper closed, wires no vendor; a face started
+ * before the deployment changed mode); the stand-in costs nothing.
  */
-function faceUsdPerMinute(kit: Kit, vendor: 'heygen' | 'fake'): number {
-  const provider = kit.deps.embodiment;
-  if (provider?.id === vendor) return provider.usdPerMinute;
-  return vendor === 'heygen' ? MEDIA_VENDORS.face.heygen.usdPerMinute : 0;
+export function faceUsdPerMinute(
+  provider: Pick<EmbodimentProvider, 'id' | 'mode' | 'usdPerMinute'> | undefined,
+  vendor: 'heygen' | 'fake',
+  mode: 'lite' | 'full',
+): number {
+  if (provider?.id === vendor && provider.mode === mode) return provider.usdPerMinute;
+  return faceListPrice(vendor, mode);
 }
 
 /**
@@ -235,10 +288,13 @@ export async function meterFace(kit: Kit, callId: string, requestId: string): Pr
       ventureId: metered.ventureId,
       principalId: metered.startedBy,
       purpose: 'speech',
-      modelId: metered.vendor === 'heygen' ? 'heygen:liveavatar-lite' : `${metered.vendor}:face`,
+      modelId: faceModelId({ id: metered.vendor, mode: metered.mode }),
       inputTokens: metered.added,
       outputTokens: 0,
-      costUsd: faceCostUsd(metered.added, faceUsdPerMinute(kit, metered.vendor)),
+      costUsd: faceCostUsd(
+        metered.added,
+        faceUsdPerMinute(kit.deps.embodiment, metered.vendor, metered.mode),
+      ),
       requestId,
     });
     return metered.added;
@@ -265,7 +321,7 @@ export function createFaceHooks(kit: Kit): FaceHooks {
   }
 
   async function stopVendor(
-    ctx: RequestContext,
+    requestId: string,
     face: twinRepo.CallFaceRecord,
     reason: 'call_ended' | 'face_stopped' | 'face_dropped',
   ): Promise<void> {
@@ -274,11 +330,11 @@ export function createFaceHooks(kit: Kit): FaceHooks {
     // Once more on a failure: a session left open bills until the vendor's idle timeout (5 minutes).
     for (let attempt = 1; attempt <= VENDOR_STOP_ATTEMPTS; attempt += 1) {
       try {
-        await provider.end({ sessionRef: face.sessionRef, control: null, requestId: ctx.requestId }, reason);
+        await provider.end({ sessionRef: face.sessionRef, control: null, requestId }, reason);
         return;
       } catch (err) {
         logger.warn('call.face_end_failed', {
-          requestId: ctx.requestId,
+          requestId,
           callId: face.callId,
           provider: provider.id,
           attempt,
@@ -286,6 +342,146 @@ export function createFaceHooks(kit: Kit): FaceHooks {
         });
       }
     }
+  }
+
+  /**
+   * FULL: reads the vendor's transcript of the face after the lines earlier checks verified, and checks each avatar
+   * line is words of a unit the server admitted and the face had not said yet (face-text.ts).
+   * - `injected`: words never admitted, an admitted unit said again, or last lines still unmatched a heartbeat
+   *   later (`final`: at once, since the face is ending and nothing more of a unit will come).
+   * - `unread`: the vendor could not be read (or this deployment does not drive the face's vendor), or not to its
+   *   end (its page limit). A live face records the lines it did verify; one left unread too long stops.
+   * - `ok` otherwise. A live check records where it stopped, so the next reads only newer lines.
+   */
+  async function checkTranscript(
+    requestId: string,
+    face: twinRepo.CallFaceRecord,
+    options: { readonly final: boolean },
+  ): Promise<
+    | { readonly result: 'ok' }
+    | {
+        readonly result: 'injected';
+        readonly why: 'words_not_admitted' | 'said_again' | 'words_left_unmatched';
+      }
+    | {
+        readonly result: 'unread';
+        readonly why: 'vendor_not_wired' | 'vendor_unreadable' | 'transcript_incomplete';
+      }
+  > {
+    if (face.mode !== 'full') return { result: 'ok' };
+    const provider = kit.deps.embodiment;
+    if (
+      provider?.id !== face.vendor ||
+      provider.mode !== face.mode ||
+      provider.transcriptSince === undefined
+    ) {
+      return { result: 'unread', why: 'vendor_not_wired' };
+    }
+    const from = { at: face.transcriptCursor, skip: face.transcriptSkip };
+    let read;
+    try {
+      read = await provider.transcriptSince(
+        { sessionRef: face.sessionRef, control: null, requestId },
+        from.at,
+      );
+    } catch (err) {
+      logger.warn('call.face_transcript_unread', {
+        requestId,
+        callId: face.callId,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+      return { result: 'unread', why: 'vendor_unreadable' };
+    }
+    const units = await kit.system((sx) => twinRepo.faceTextUnits(sx, face.callId), { transaction: false });
+    const lines = linesAfter(read.lines, from);
+    const verdict = reconcileFaceTranscript({ callId: face.callId, lines, units });
+    if (verdict.verdict === 'mismatch') return { result: 'injected', why: verdict.why };
+    if (options.final) {
+      if (verdict.verdict === 'pending') return { result: 'injected', why: 'words_left_unmatched' };
+    } else {
+      const recorded = await kit.system((sx) =>
+        twinRepo.recordFaceTranscript(sx, {
+          callId: face.callId,
+          from,
+          cursor: cursorAfter(from, lines, verdict.verified),
+          added: verdict.verified,
+          said: verdict.said,
+          pending: verdict.verdict === 'pending',
+          complete: read.complete,
+        }),
+      );
+      // Lines a check already saw unmatched, still unmatched now (a heartbeat later).
+      if ((recorded?.pending ?? -1) >= FACE_TRANSCRIPT_PENDING_SECONDS) {
+        return { result: 'injected', why: 'words_left_unmatched' };
+      }
+    }
+    if (!read.complete) {
+      logger.warn('call.face_transcript_incomplete', {
+        requestId,
+        callId: face.callId,
+        lines: read.lines.length,
+      });
+      return { result: 'unread', why: 'transcript_incomplete' };
+    }
+    return { result: 'ok' };
+  }
+
+  /** The audit of a FULL face whose transcript showed words it never admitted (never the words). */
+  function injectionEvent(
+    face: twinRepo.CallFaceRecord,
+    ventureId: string,
+    why: string,
+    final: boolean,
+  ): AuditEvent {
+    return {
+      action: 'call.face_injection',
+      outcome: 'blocked',
+      ventureId,
+      objectType: 'call',
+      objectId: face.callId,
+      policyReason: 'words_not_admitted',
+      metadata: { provider: face.vendor, mode: face.mode, check: why, atEnd: final },
+    };
+  }
+
+  /** The audit of a FULL face that ended without its transcript read to its end. */
+  function uncheckedEvent(face: twinRepo.CallFaceRecord, ventureId: string, why: string): AuditEvent {
+    return {
+      action: 'call.face_transcript_unchecked',
+      outcome: 'failed',
+      ventureId,
+      objectType: 'call',
+      objectId: face.callId,
+      policyReason: why,
+      metadata: { provider: face.vendor, mode: face.mode },
+    };
+  }
+
+  /**
+   * A face the call's end already ended in the database (calls_end_face): checks what a FULL face said to its end
+   * (before the vendor session stops, while the vendor still serves it), bills its seconds and stops the vendor
+   * session. Returns the audit events to write.
+   */
+  async function closeEndedFace(
+    requestId: string,
+    face: twinRepo.CallFaceRecord,
+    ventureId: string,
+  ): Promise<AuditEvent[]> {
+    const events: AuditEvent[] = [];
+    const check = await checkTranscript(requestId, face, { final: true });
+    if (check.result === 'injected') events.push(injectionEvent(face, ventureId, check.why, true));
+    if (check.result === 'unread') events.push(uncheckedEvent(face, ventureId, check.why));
+    try {
+      await meterFace(kit, face.callId, requestId);
+    } catch (err) {
+      logger.error('call.face_meter_failed', {
+        requestId,
+        callId: face.callId,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+    }
+    await stopVendor(requestId, face, 'call_ended');
+    return events;
   }
 
   return {
@@ -322,8 +518,30 @@ export function createFaceHooks(kit: Kit): FaceHooks {
             monthMinutes: decision.monthMinutes,
           });
         }
+        // FULL: what the face said is checked at every heartbeat, and also when this one ends it (whatever the
+        // cause: the page reporting the face off or ending it never skips the check).
+        const final = stopCause !== null;
+        const check = await checkTranscript(ctx.requestId, face, { final });
+        const events: AuditEvent[] = [];
+        if (check.result === 'injected') {
+          stopCause = 'face_injection';
+          events.push(injectionEvent(face, call.ventureId, check.why, final));
+        } else if (check.result === 'unread') {
+          if (final) {
+            events.push(uncheckedEvent(face, call.ventureId, check.why));
+          } else if (face.transcriptUnchecked >= FACE_TRANSCRIPT_UNREAD_SECONDS) {
+            // Never a face that goes on unchecked.
+            logger.error('call.face_transcript_unchecked', {
+              requestId: ctx.requestId,
+              callId: call.id,
+              reason: check.why,
+              seconds: face.transcriptUnchecked,
+            });
+            stopCause = 'face_check_failed';
+          }
+        }
         if (stopCause === null) {
-          // An idle LITE session times out at the vendor; a heartbeat now and then keeps it.
+          // An idle session times out at the vendor; a heartbeat now and then keeps it.
           const provider = kit.deps.embodiment;
           if (provider?.id === face.vendor && face.lasted % 60 < CALL_LIMITS.heartbeatSeconds) {
             await provider
@@ -332,24 +550,22 @@ export function createFaceHooks(kit: Kit): FaceHooks {
           }
           return 'continue';
         }
-        const ended = await kit.system((sx) =>
-          twinRepo.endCallFace(sx, { callId: call.id, reason: stopCause }),
-        );
+        const cause: FaceStopCause = stopCause;
+        const ended = await kit.system((sx) => twinRepo.endCallFace(sx, { callId: call.id, reason: cause }));
         if (ended !== null) {
           await meter(ctx, call.id);
-          await stopVendor(ctx, ended, stopCause === 'face_dropped' ? 'face_dropped' : 'face_stopped');
-          await kit.flushDeferred(ctx, [
-            {
-              action: 'call.face_ended',
-              outcome: stopCause === 'face_dropped' ? 'succeeded' : 'blocked',
-              ventureId: call.ventureId,
-              objectType: 'call',
-              objectId: call.id,
-              policyReason: stopCause,
-              metadata: { provider: ended.vendor, seconds: ended.lasted },
-            },
-          ]);
+          await stopVendor(ctx.requestId, ended, cause === 'face_dropped' ? 'face_dropped' : 'face_stopped');
+          events.push({
+            action: 'call.face_ended',
+            outcome: cause === 'face_dropped' ? 'succeeded' : 'blocked',
+            ventureId: call.ventureId,
+            objectType: 'call',
+            objectId: call.id,
+            policyReason: cause,
+            metadata: { provider: ended.vendor, mode: ended.mode, seconds: ended.lasted },
+          });
         }
+        await kit.flushDeferred(ctx, events);
         return 'stop';
       } catch (err) {
         logger.error('call.face_heartbeat_failed', {
@@ -364,17 +580,44 @@ export function createFaceHooks(kit: Kit): FaceHooks {
     afterCallEnded: async (ctx, call) => {
       try {
         const face = await kit.system((sx) => twinRepo.getCallFace(sx, call.id), { transaction: false });
-        // The call's end ended the face in the database (calls_end_face); its seconds up to that end are billed
-        // now, and the vendor session ends.
+        // The call's end ended the face in the database (calls_end_face): checked, billed and stopped now.
         if (face?.endReason !== 'call_ended') return;
-        await meter(ctx, call.id);
-        await stopVendor(ctx, face, 'call_ended');
+        await kit.flushDeferred(ctx, await closeEndedFace(ctx.requestId, face, call.ventureId));
       } catch (err) {
         logger.warn('call.face_close_failed', {
           requestId: ctx.requestId,
           callId: call.id,
           error: err instanceof Error ? err.name : 'unknown',
         });
+      }
+    },
+
+    afterCallsReaped: async (requestId, calls) => {
+      for (const call of calls) {
+        try {
+          const face = await kit.system((sx) => twinRepo.getCallFace(sx, call.callId), {
+            transaction: false,
+          });
+          if (face?.endReason !== 'call_ended') continue;
+          const events = await closeEndedFace(requestId, face, call.ventureId);
+          if (events.length === 0) continue;
+          await kit.system(async (sx) => {
+            for (const event of events) {
+              await auditRepo.appendAudit(sx, {
+                ...event,
+                tenantId: face.tenantId,
+                actorId: null,
+                requestId,
+              });
+            }
+          });
+        } catch (err) {
+          logger.warn('call.face_close_failed', {
+            requestId,
+            callId: call.callId,
+            error: err instanceof Error ? err.name : 'unknown',
+          });
+        }
       }
     },
   };
@@ -403,7 +646,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
   async function liveFace(
     ctx: RequestContext,
     rawCallId: string,
-    options: { readonly forSpeech: boolean },
+    options: { readonly forSpeech: boolean; readonly mode?: 'lite' | 'full' },
   ): Promise<{
     readonly call: callsRepo.CallRecord;
     readonly face: twinRepo.CallFaceRecord;
@@ -427,7 +670,12 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
       return found;
     });
     const face = await kit.system((sx) => twinRepo.getCallFace(sx, call.id), { transaction: false });
-    if (face?.endedAt !== null || provider?.id !== face.vendor) {
+    if (
+      face?.endedAt !== null ||
+      provider?.id !== face.vendor ||
+      provider.mode !== face.mode ||
+      (options.mode !== undefined && face.mode !== options.mode)
+    ) {
       throw fail.conflict('The face of this call has ended.', 'face_not_active');
     }
     let control: string | null = null;
@@ -521,6 +769,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
           voiceId,
           voicing: 'engine',
           url: null,
+          stockFace: false,
         };
         if (provider === undefined || callId === null) {
           await audit(scope, {
@@ -561,7 +810,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
             personaId: identity.personaId,
             settings: faceSettings(settings),
             twinFace: await twinFaceFor(scope.tx, provider, identity.personaId),
-            callerRoles: provider.sandbox === true ? await loadPrincipalRoles(scope.tx, ctx) : [],
+            callerRoles: faceForAdminsOnly(provider) ? await loadPrincipalRoles(scope.tx, ctx) : [],
             callSecondsLeft: left.seconds,
             // Only the platform's cap stops a face (speech never counts against a person's AI budget).
             spendCapReached: spendCap === 'global',
@@ -581,7 +830,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
             objectId: face.callId,
             ...(reason === null ? {} : { policyReason: reason }),
             // Identifiers only: tokens and the control channel are credentials and are never recorded.
-            metadata: { provider: provider.id, voicing: provider.voicing },
+            metadata: { provider: provider.id, mode: provider.mode, voicing: provider.voicing },
           },
         ]);
       };
@@ -614,7 +863,8 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
         started = await provider.createSession({
           callId: face.callId,
           personaId: face.personaId,
-          avatarRef: face.twinFace?.ref ?? null,
+          // A face of the EIR's likeness is the persona's avatar; a stock face is the provider's own.
+          avatarRef: provider.likeness ? (face.twinFace?.ref ?? null) : null,
           maxSeconds: allowance.maxSeconds,
           requestId: ctx.requestId,
         });
@@ -635,6 +885,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
             callId: face.callId,
             startedBy: ctx.principalId,
             vendor: provider.id,
+            mode: provider.mode,
             sessionRef: started.sessionRef,
             control:
               started.control === null
@@ -663,11 +914,16 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
         voiceId: presence.voiceId,
         voicing: provider.voicing,
         url: started.browser.url,
+        stockFace: provider.stock === true,
       };
     },
 
     speak: async (ctx, rawCallId, input) => {
-      const { call, face, provider, handle } = await liveFace(ctx, rawCallId, { forSpeech: true });
+      // Audio only for a LITE face: a FULL face voices admitted text with its own voice.
+      const { call, face, provider, handle } = await liveFace(ctx, rawCallId, {
+        forSpeech: true,
+        mode: 'lite',
+      });
       const check = verifyFaceAudio(
         await keys.verificationKeys(),
         input.manifest,
@@ -720,6 +976,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
     },
 
     interrupt: async (ctx, rawCallId) => {
+      // FULL: the browser interrupts the vendor over the room; this seals the server's side all the same.
       const { call, provider, handle } = await liveFace(ctx, rawCallId, { forSpeech: false });
       // What the face was saying is over: no later part of it is taken, even if the vendor cannot be reached.
       await kit.system((sx) => twinRepo.sealFaceUtterance(sx, call.id), { transaction: false });

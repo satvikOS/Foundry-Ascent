@@ -2,8 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { FakeVoiceProvider } from '../testing/fakes.js';
 import { callCanSpeak, callVoiceVendor } from './calls.js';
-import { MIN_FACE_SECONDS, faceAllowance, faceMinutesCause, faceStopCause } from './face.js';
-import { faceCostUsd, voiceCostUsd, MEDIA_VENDORS } from './media-vendors.js';
+import {
+  MIN_FACE_SECONDS,
+  faceAllowance,
+  faceMinutesCause,
+  faceModelId,
+  faceOfferedTo,
+  faceStopCause,
+  faceUsdPerMinute,
+} from './face.js';
+import { faceCostUsd, faceListPrice, voiceCostUsd, MEDIA_VENDORS } from './media-vendors.js';
 import { CloneRest, chooseVoice } from './speech.js';
 import { DEFAULT_SPEECH_VOICE } from './voices.js';
 
@@ -48,6 +56,25 @@ describe('faceAllowance: whether a call may have a face, and for how long', () =
       reason: 'sandbox_only',
     });
     expect(faceAllowance({ ...base, provider: sandbox, callerRoles: ['platform_admin'] }).ok).toBe(true);
+  });
+
+  it('offers an admins-only face (a stock avatar for a presentation) to platform admins only', () => {
+    const presentation = { likeness: false, adminsOnly: true };
+    expect(faceAllowance({ ...base, provider: presentation, twinFace: null })).toEqual({
+      ok: false,
+      reason: 'admins_only',
+    });
+    expect(
+      faceAllowance({ ...base, provider: presentation, twinFace: null, callerRoles: ['program_lead'] }),
+    ).toEqual({ ok: false, reason: 'admins_only' });
+    // A stock face draws no one: no persona face is needed, for an admin.
+    expect(
+      faceAllowance({ ...base, provider: presentation, twinFace: null, callerRoles: ['platform_admin'] }),
+    ).toEqual({ ok: true, maxSeconds: 20 * 60 });
+    // Admins-only is its own switch: a paid (non-sandbox) face stays admins-only.
+    expect(faceOfferedTo({ adminsOnly: true, sandbox: false }, [])).toBe(false);
+    expect(faceOfferedTo({ adminsOnly: false, sandbox: false }, [])).toBe(true);
+    expect(faceOfferedTo({ sandbox: true }, ['platform_admin'])).toBe(true);
   });
 
   it('stops at the spend cap, the month’s minutes and a call about to end', () => {
@@ -176,9 +203,25 @@ describe('the voice of a call', () => {
   });
 });
 
+describe('a face’s model id and price follow its mode', () => {
+  it('names LITE and FULL apart, and prices each from the wired provider or the price file', () => {
+    expect(faceModelId({ id: 'heygen', mode: 'lite' })).toBe('heygen:liveavatar-lite');
+    expect(faceModelId({ id: 'heygen', mode: 'full' })).toBe('heygen:liveavatar-full');
+    expect(faceModelId({ id: 'fake', mode: 'full' })).toBe('fake:face');
+    const full = { id: 'heygen' as const, mode: 'full' as const, usdPerMinute: 0.2 };
+    expect(faceUsdPerMinute(full, 'heygen', 'full')).toBe(0.2);
+    // A face of another mode than the wired one (started before the deployment changed): the price file.
+    expect(faceUsdPerMinute(full, 'heygen', 'lite')).toBe(0.093);
+    expect(faceUsdPerMinute(undefined, 'heygen', 'full')).toBe(0.19);
+    expect(faceUsdPerMinute(undefined, 'fake', 'full')).toBe(0);
+    expect(faceListPrice('heygen', 'full')).toBe(MEDIA_VENDORS.face.heygen.full.usdPerMinute);
+  });
+});
+
 describe('media vendor prices', () => {
   it('meters a face per minute and a clone per thousand characters, from the shared price file', () => {
     expect(MEDIA_VENDORS.face.heygen.usdPerMinute).toBe(0.093);
+    expect(MEDIA_VENDORS.face.heygen.full.usdPerMinute).toBe(0.19);
     expect(MEDIA_VENDORS.voice.elevenlabs.usdPer1kCharacters).toBe(0.04);
     expect(MEDIA_VENDORS.face.heygen.secretName).toBe('foundry-ascent/media/heygen');
     expect(MEDIA_VENDORS.voice.elevenlabs.secretName).toBe('foundry-ascent/media/elevenlabs');

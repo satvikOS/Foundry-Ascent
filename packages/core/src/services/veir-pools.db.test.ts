@@ -443,6 +443,7 @@ describe('calls', () => {
       voiceId: 'Matthew',
       voicing: 'engine',
       url: null,
+      stockFace: false,
     });
   });
 });

@@ -1,5 +1,5 @@
 import { CRISIS_SPOKEN_MESSAGE } from '@foundry/ai';
-import { type PlatformSettingsView, SpeechRequest } from '@foundry/contracts';
+import { FaceSayRequest, type PlatformSettingsView, SpeechRequest } from '@foundry/contracts';
 import { auditRepo, callsRepo, personasRepo, sessionsRepo, settingsRepo, twinRepo } from '@foundry/db';
 import { type z } from 'zod';
 
@@ -22,12 +22,14 @@ import { verifiedSpeechUnit, verifySpeechUnit } from '../orchestrator/speech-uni
 import {
   SpeechSynthesisError,
   type SynthesizedSpeech,
+  type VerifiedFaceText,
   type VerifiedSpeechUnit,
   type VoiceProvider,
 } from '../ports.js';
 import { refusalError, timeLimitRefusal } from './call-admission.js';
 import { CALL_LIMITS, type CallCaps, callSecondsToday, callTimeLeft, speechBudget } from './call-usage.js';
 import { callCanSpeak, voiceApproved } from './calls.js';
+import { faceTextDigests } from './face-text.js';
 import { voiceCostUsd } from './media-vendors.js';
 import { isCrisisMessage, speakableRunSpan, speakableText } from './spoken-text.js';
 import { observedAudio } from './speech-audio.js';
@@ -71,6 +73,9 @@ export function chooseVoice(args: {
     voiceId: voiceApproved(call.voiceId, args.persona, args.assets) ? call.voiceId : DEFAULT_SPEECH_VOICE,
   };
 }
+
+/** Hand-overs of one unit to a FULL face (a unit is said once). */
+export const FACE_TEXT_PLAYS = 1;
 
 /** The most raw PCM a unit may come back as (45 s at 24 kHz with room to spare). */
 const MAX_FACE_PCM_BYTES = 4 * 1024 * 1024;
@@ -143,6 +148,19 @@ export interface SpeechService {
     input: z.input<typeof SpeechRequest>,
     options?: { readonly signal?: AbortSignal },
   ): Promise<SynthesizedSpeech>;
+  /**
+   * `POST /calls/:id/face/say`: admits one signed unit of the caller's live call to its FULL face, which the
+   * browser may then send the vendor to voice (docs/architecture/calls.md §4). Only a unit whose signature verifies
+   * (the identity guard, the meta-narration gate and the sentence gate passed it), of a reply that was not blocked
+   * or failed, never the crisis line; within the kill switches, the platform's daily spend cap and the call's speech
+   * budget (`reserveCallSpeech`, once per unit); each unit once and in order (`twinRepo.admitFaceText`). Anything
+   * else is refused (audited) before the browser may send it.
+   */
+  authorizeFaceText(
+    ctx: RequestContext,
+    callId: string,
+    input: z.input<typeof FaceSayRequest>,
+  ): Promise<VerifiedFaceText>;
 }
 
 interface SpeechPlan {
@@ -170,7 +188,11 @@ interface SpeechPlan {
   readonly stockVoiceId: string;
   /** The signed unit (or intro) whose signature verified; null for stored-reply runs and crisis support. */
   readonly verified: VerifiedSpeechUnit | null;
-  /** The call's live face, when this unit may be shown on it (a verified unit; faces on; likeness in force). */
+  /**
+   * The call's live LITE face, when this unit's audio may be shown on it (a verified unit; faces on; likeness in
+   * force). A FULL face voices admitted text itself: its units get no manifest, and this audio is only the stock
+   * voice the call falls back to.
+   */
   readonly face: { readonly sessionRef: string } | null;
 }
 
@@ -236,10 +258,13 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
     now: { readonly facesEnabled: boolean; readonly twinFace: { readonly ref: string } | null },
   ): Promise<{ readonly sessionRef: string } | null> {
     const provider = kit.deps.embodiment;
-    if (provider === undefined || !now.facesEnabled || (provider.likeness && now.twinFace === null))
+    if (provider?.voicing !== 'audio' || !now.facesEnabled || (provider.likeness && now.twinFace === null)) {
       return null;
+    }
     const face = await kit.system((sx) => twinRepo.getCallFace(sx, callId), { transaction: false });
-    return face?.endedAt === null && face.vendor === provider.id ? { sessionRef: face.sessionRef } : null;
+    return face?.endedAt === null && face.vendor === provider.id && face.mode === 'lite'
+      ? { sessionRef: face.sessionRef }
+      : null;
   }
 
   const cloneRest = new CloneRest();
@@ -800,6 +825,162 @@ export function createSpeechService(kit: Kit, keys: PlatformKeyCache): SpeechSer
           beforeClose: () => bookkeeping,
         }),
       };
+    },
+
+    authorizeFaceText: async (ctx, rawCallId, rawInput) => {
+      const input = parseInput(FaceSayRequest, rawInput);
+      const callId = requireId(rawCallId, 'Call');
+      const turnId = input.turnId === null ? null : requireId(input.turnId, 'Turn');
+      const provider = kit.deps.embodiment;
+      const verificationKeys = await keys.verificationKeys();
+      const spend = readSpendState(kit, ctx, true);
+      spend.catch(() => undefined); // awaited below unless a check refuses first
+
+      const { call, settings } = await kit.inRequest(ctx, async (scope) => {
+        const { tx } = scope;
+        const found = await callsRepo.getCall(tx, callId);
+        if (found?.startedBy !== ctx.principalId) throw fail.notFound('Call');
+        if (found.status !== 'live' || found.idleSeconds > CALL_LIMITS.staleSeconds) {
+          throw fail.conflict('Speech is only available during a live call.', 'call_not_active');
+        }
+        await requireVentureAccess(scope, found.ventureId, 'write', {
+          objectType: 'call',
+          objectId: found.id,
+        });
+        const current = await settingsRepo.getPlatformSettings(tx);
+        if (!current.aiEnabled) {
+          throw new DomainError(
+            'ai_disabled',
+            'AI coaching is paused by the program. Please try again later.',
+            { reason: 'kill_switch' },
+          );
+        }
+        if (!current.callsEnabled) {
+          throw new DomainError('ai_disabled', 'Calls are paused by the program. You can keep chatting.', {
+            reason: 'calls_disabled',
+          });
+        }
+        if (!current.facesEnabled) throw fail.conflict('The face of this call has ended.', 'face_not_active');
+        if (
+          input.sessionId !== undefined &&
+          input.sessionId.toLowerCase() !== found.sessionId.toLowerCase()
+        ) {
+          refuseTextIn(scope, found.ventureId, turnId, 'session_mismatch');
+        }
+        if (turnId !== null) {
+          const turn = await callsRepo.getSpokenTurn(tx, turnId);
+          if (turn?.sessionId !== found.sessionId) throw fail.notFound('Turn');
+          // A unit passed the sentence gate, but the whole reply did not (a crisis turn is blocked too).
+          if (turn.status === 'blocked' || turn.status === 'failed') {
+            throw fail.conflict('This reply can no longer be spoken.', 'turn_not_speakable');
+          }
+        }
+        return { call: found, settings: current };
+      });
+      // Never the crisis line on a human-looking face, signed or not.
+      if (isCrisisMessage(input.text)) return refuseText(ctx, call.ventureId, turnId, 'crisis_line');
+      const verified = verifiedSpeechUnit(
+        verificationKeys,
+        { sessionId: call.sessionId, turnId, seq: input.seq, text: input.text },
+        input.sig,
+      );
+      if (verified === null) return refuseText(ctx, call.ventureId, turnId, 'signature_invalid');
+
+      const face = await kit.system((sx) => twinRepo.getCallFace(sx, call.id), { transaction: false });
+      if (
+        provider?.mode !== 'full' ||
+        face?.endedAt !== null ||
+        face.mode !== 'full' ||
+        face.vendor !== provider.id
+      ) {
+        throw fail.conflict('The face of this call has ended.', 'face_not_active');
+      }
+      await enforceSpendCaps(kit, ctx, await spend, settings, {
+        ventureId: call.ventureId,
+        operation: 'speech',
+      });
+
+      const text = speakableText(input.text);
+      const plan: SpeechPlan = {
+        ventureId: call.ventureId,
+        callId: call.id,
+        voiceId: call.voiceId,
+        text,
+        unit: { kind: 'face', turnId, seq: input.seq },
+        settings,
+        objectType: turnId === null ? 'call' : 'turn',
+        objectId: turnId ?? call.id,
+        crisis: false,
+        voice: { kind: 'polly', voiceId: call.voiceId },
+        stockVoiceId: call.voiceId,
+        verified,
+        face: null,
+      };
+      // Its characters count against the call's speech budget like any synthesis, once per unit.
+      const reservation = await kit.system(
+        (sx) =>
+          callsRepo.reserveCallSpeech(sx, {
+            callId: call.id,
+            principalId: ctx.principalId,
+            unit: plan.unit,
+            characters: text.length,
+            maxPlays: FACE_TEXT_PLAYS,
+            budget: speechBudget(settings),
+          }),
+        { transaction: false },
+      );
+      if (!reservation.ok) {
+        if (reservation.reason === 'already_played') {
+          return refuseText(ctx, call.ventureId, turnId, 'already_shown');
+        }
+        const error = speechRefusal(reservation.reason, false, kit.now());
+        await kit.flushDeferred(ctx, [
+          {
+            action: 'speech.refused',
+            outcome: 'blocked',
+            ventureId: call.ventureId,
+            objectType: plan.objectType,
+            objectId: plan.objectId,
+            policyReason: error.reason ?? error.code,
+            metadata: { callId: call.id, face: true },
+          },
+        ]);
+        throw error;
+      }
+      const unit = callsRepo.speechUnitKey(
+        turnId === null ? { kind: 'intro' } : { kind: 'unit', turnId, seq: input.seq },
+      );
+      // The words the browser says (speakable), and the signed words when they differ.
+      const digests = faceTextDigests(call.id, text, input.text);
+      const admitted = await kit.system(
+        (sx) =>
+          twinRepo.admitFaceText(sx, {
+            callId: call.id,
+            sessionRef: face.sessionRef,
+            unit,
+            turnKey: turnId === null ? 'intro' : turnId.toLowerCase(),
+            seq: input.seq,
+            digests: digests.digests,
+            wholes: digests.wholes,
+          }),
+        { transaction: false },
+      );
+      if (!admitted) {
+        // Out of order (or the face ended meanwhile): nothing is said, and its characters go back.
+        await settle(ctx, plan, text.length, null);
+        return refuseText(ctx, call.ventureId, turnId, 'out_of_order');
+      }
+      await kit.flushDeferred(ctx, [
+        {
+          action: 'call.face_text_admitted',
+          outcome: 'succeeded',
+          ventureId: call.ventureId,
+          objectType: plan.objectType,
+          objectId: plan.objectId,
+          metadata: { callId: call.id, seq: input.seq, characters: text.length },
+        },
+      ]);
+      return { callId: call.id, unit, text } as unknown as VerifiedFaceText;
     },
   };
 }

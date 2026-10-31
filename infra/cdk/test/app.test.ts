@@ -15,7 +15,12 @@ import {
   VIEWER_IP_HEADER,
 } from '../src/lib/constants.js';
 import { environmentNames } from '../src/lib/lambda-contract.js';
-import { assertTiming } from '../src/stacks/app-stack.js';
+import {
+  API_ASSUMES_WHEN_ABSENT,
+  assertEveryValueDelivered,
+  assertTiming,
+  mediaFaceEnvironment,
+} from '../src/stacks/app-stack.js';
 import { loadConfig } from '../src/config.js';
 import { effectiveModels } from '../src/lib/models.js';
 import { migrationsChecksum } from '../src/lib/migrations.js';
@@ -285,7 +290,14 @@ describe('FoundryAscent-App', () => {
         {
           ...config,
           media: {
-            face: { provider: 'heygen-liveavatar', sandbox: false, csp: { connect: room, media: [] } },
+            face: {
+              provider: 'heygen-liveavatar',
+              sandbox: false,
+              csp: { connect: room, media: [] },
+              mode: 'lite',
+              stock: null,
+              audience: 'everyone',
+            },
             voice: { provider: 'elevenlabs', model: 'eleven_flash_v2_5', zeroRetention: false },
           },
         },
@@ -327,6 +339,72 @@ describe('FoundryAscent-App', () => {
       const csp = JSON.stringify(resourcesOfType(templates.app, 'AWS::CloudFront::ResponseHeadersPolicy'));
       expect(csp).toContain(`${TRANSCRIBE_ORIGIN} ${room.join(' ')};`);
       expect(csp).not.toContain('*.livekit');
+    });
+
+    it('hands the API the face’s voicing (mode, stock avatar and voice, audience) from config media.face', () => {
+      const WAYNE = 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a';
+      const VOICE = '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0';
+      const room = ['wss://heygen-feapbkvq.livekit.cloud', 'https://heygen-feapbkvq.livekit.cloud'];
+      const config = loadConfig();
+      // Shipped off: LITE, no stock face, everyone (how faces behaved before FULL existed).
+      expect(mediaFaceEnvironment(config.media.face)).toEqual({
+        MEDIA_FACE_MODE: 'lite',
+        MEDIA_FACE_AVATAR_ID: '',
+        MEDIA_FACE_VOICE_ID: '',
+        MEDIA_FACE_AUDIENCE: 'everyone',
+      });
+      const full = {
+        provider: 'heygen-liveavatar',
+        sandbox: true,
+        csp: { connect: room, media: [] },
+        mode: 'full',
+        stock: { avatarId: WAYNE, voiceId: VOICE },
+        audience: 'admins',
+      } as const;
+      expect(mediaFaceEnvironment(full)).toEqual({
+        MEDIA_FACE_MODE: 'full',
+        MEDIA_FACE_AVATAR_ID: WAYNE,
+        MEDIA_FACE_VOICE_ID: VOICE,
+        MEDIA_FACE_AUDIENCE: 'admins',
+      });
+      expect(
+        mediaFaceEnvironment({ ...full, stock: { avatarId: WAYNE, voiceId: null } }).MEDIA_FACE_VOICE_ID,
+      ).toBe('');
+      // Never dropped on the way to the API (stated without reading the contract): a FULL synth either hands the API
+      // function every FULL value, or refuses and names the variables apps/api/lambda-contract.json must list.
+      // face-environment.test.ts checks the first case with the four names listed.
+      const fullConfig = { ...config, media: { ...config.media, face: full } };
+      let synthesized: ReturnType<typeof synthesize> | undefined;
+      let refusal: unknown;
+      try {
+        synthesized = synthesize({}, fullConfig);
+      } catch (error) {
+        refusal = error;
+      }
+      if (synthesized === undefined) {
+        expect(String(refusal)).toMatch(/apps\/api\/lambda-contract\.json/);
+        for (const key of Object.keys(mediaFaceEnvironment(full)))
+          if (!environmentNames('api').includes(key)) expect(String(refusal)).toContain(key);
+        // Shipped config stays deliverable: LITE values equal what the API assumes when a variable is absent.
+        expect(() => synthesize({}, config)).not.toThrow();
+        return;
+      }
+      const { templates } = synthesized;
+      const apiVariables = (
+        resourcesOfType(templates.app, 'AWS::Lambda::Function').find(
+          ([, p]) => p.FunctionName === 'FoundryAscent-Api',
+        )?.[1].Environment as { Variables: Record<string, unknown> }
+      ).Variables;
+      expect(apiVariables).toMatchObject({
+        MEDIA_FACE_MODE: 'full',
+        MEDIA_FACE_AVATAR_ID: WAYNE,
+        MEDIA_FACE_VOICE_ID: VOICE,
+        MEDIA_FACE_AUDIENCE: 'admins',
+      });
+      const secrets = functionPolicyStatements(templates.app, 'FoundryAscent-Api').filter((s) =>
+        actionsOf(s).some((a) => a.startsWith('secretsmanager:')),
+      );
+      expect(secrets.flatMap(actionsOf)).toEqual(['secretsmanager:GetSecretValue']);
     });
 
     it('lets only the API presign Amazon Transcribe streaming URLs, pinned to the platform region', () => {
@@ -1032,5 +1110,41 @@ describe('/api/* timing (Aurora resume vs CloudFront and Lambda timeouts)', () =
     expect(() => {
       assertTiming(60);
     }).not.toThrow();
+  });
+});
+
+describe('runtime-contract delivery (no configured value is silently dropped)', () => {
+  it('refuses a value no role lists unless the API assumes that same value when it is absent', () => {
+    const delivered = new Set(['APP_ENV', 'MEDIA_FACE_PROVIDER']);
+    expect(() => {
+      assertEveryValueDelivered({ APP_ENV: 'production', MEDIA_FACE_PROVIDER: 'none' }, delivered);
+    }).not.toThrow();
+    // A new variable nobody listed: refused whatever its value.
+    expect(() => {
+      assertEveryValueDelivered({ APP_ENV: 'production', NEW_SETTING: '' }, delivered);
+    }).toThrow(/No function would receive NEW_SETTING: apps\/api\/lambda-contract\.json/);
+    // The face's LITE defaults may go undelivered (the API assumes them); FULL values may not.
+    expect(() => {
+      assertEveryValueDelivered(mediaFaceEnvironment(loadConfig().media.face), delivered);
+    }).not.toThrow();
+    expect(() => {
+      assertEveryValueDelivered(
+        {
+          MEDIA_FACE_MODE: 'full',
+          MEDIA_FACE_AVATAR_ID: 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a',
+          MEDIA_FACE_VOICE_ID: '',
+          MEDIA_FACE_AUDIENCE: 'admins',
+        },
+        delivered,
+      );
+    }).toThrow(/No function would receive MEDIA_FACE_MODE, MEDIA_FACE_AVATAR_ID, MEDIA_FACE_AUDIENCE:/);
+    // Once listed, any value is delivered.
+    expect(() => {
+      assertEveryValueDelivered(
+        { MEDIA_FACE_MODE: 'full', MEDIA_FACE_AUDIENCE: 'admins' },
+        new Set(['MEDIA_FACE_MODE', 'MEDIA_FACE_AUDIENCE']),
+      );
+    }).not.toThrow();
+    expect(API_ASSUMES_WHEN_ABSENT).toEqual(mediaFaceEnvironment(loadConfig().media.face));
   });
 });

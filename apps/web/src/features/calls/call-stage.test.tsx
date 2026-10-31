@@ -36,6 +36,7 @@ const SESSION: AvatarSessionResponse = {
   voiceId: 'Matthew',
   voicing: 'audio',
   url: null,
+  stockFace: false,
 };
 
 function veir(provider: CallVeir['provider']): CallVeir {
@@ -200,6 +201,40 @@ describe('CallStage: the face of a call', () => {
     expect(engine.setFaceShown).toHaveBeenLastCalledWith(true);
     expect(onVideoChange).toHaveBeenLastCalledWith(true);
     expect(face.provider.setState).toHaveBeenCalledWith('speaking');
+  });
+
+  it('loads a FULL stock face for text voicing, hands it the call’s units and labels it "AI avatar"', async () => {
+    const face = vendorFace();
+    const full: AvatarSessionResponse = { ...SESSION, voicing: 'text', stockFace: true };
+    const { asEngine, engine, controller, faceDeps } = controllerWith(face, full);
+    const { container } = renderWithRouter(stage({ controller, engine: asEngine }));
+    await waitFor(() => {
+      expect(face.provider.connect).toHaveBeenCalled();
+    });
+    expect(faceDeps.loadProvider).toHaveBeenCalledWith('fake', 'text');
+    act(() => {
+      face.connect();
+    });
+    await screen.findByRole('figure');
+    expect(screen.getByText('AI avatar')).toBeVisible();
+    expect(container.querySelector('[data-slot="call-ai-avatar-label"]')).not.toBeNull();
+    expect(engine.attachFace).toHaveBeenLastCalledWith(face.renderer);
+    expect(controller.getSnapshot()).toMatchObject({ status: 'live', stock: true });
+  });
+
+  it('shows no "AI avatar" label on a face that is not a stock avatar', async () => {
+    const face = vendorFace();
+    const { asEngine, controller, faceDeps } = controllerWith(face);
+    renderWithRouter(stage({ controller, engine: asEngine }));
+    await waitFor(() => {
+      expect(face.provider.connect).toHaveBeenCalled();
+    });
+    expect(faceDeps.loadProvider).toHaveBeenCalledWith('fake', 'audio');
+    act(() => {
+      face.connect();
+    });
+    await screen.findByRole('figure');
+    expect(screen.queryByText('AI avatar')).toBeNull();
   });
 
   it('keeps the face while the call is minimized and shows it again, asking only once per call', async () => {

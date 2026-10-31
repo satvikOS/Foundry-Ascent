@@ -145,6 +145,10 @@ const FAKE_ENV: Readonly<Record<string, string>> = {
   // Both digital-twin vendors wired: the API must import with them without a key or any network.
   MEDIA_FACE_PROVIDER: 'heygen-liveavatar',
   MEDIA_FACE_SANDBOX: 'true',
+  MEDIA_FACE_MODE: 'full',
+  MEDIA_FACE_AVATAR_ID: 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a',
+  MEDIA_FACE_VOICE_ID: '',
+  MEDIA_FACE_AUDIENCE: 'admins',
   MEDIA_VOICE_PROVIDER: 'elevenlabs',
   MEDIA_VOICE_MODEL: 'eleven_flash_v2_5',
   MEDIA_VOICE_ZERO_RETENTION: 'false',

@@ -70,7 +70,7 @@ export function MiniCallBarView() {
         {barAnnouncement(snapshot)}
       </span>
       {current.status === 'live' && !ended && !reducedMotion ? (
-        <CallFaceThumbnail stream={current.stream} speaking={speaking} />
+        <CallFaceThumbnail stream={current.stream} speaking={speaking} stock={current.stock} />
       ) : (
         <PersonaAvatar
           name={veir.name}

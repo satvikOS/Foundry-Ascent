@@ -101,22 +101,35 @@ export interface FaceRenderHandlers {
 }
 
 /**
- * A face that makes the call's validated audio heard itself, lip-synced (voicing `audio`, docs/architecture/
- * calls.md §4): a vendor's speech-to-video over WebRTC, or the development stand-in. It only ever receives
- * audio this call already fetched from `POST /speech` (signed, validated units), never text to voice.
+ * A face that makes the call's validated speech heard itself (docs/architecture/calls.md §4):
+ * - voicing `audio` (LITE, the stand-in): it renders, lip-synced, audio this call already fetched from
+ *   `POST /speech` (signed, validated units), never text to voice;
+ * - voicing `text` (FULL): the vendor voices a signed unit's words with its own stock voice, once the server
+ *   admitted that unit (`POST /calls/:id/face/say`). The call fetches no audio for such a unit unless the face
+ *   cannot say it, and then speaks it itself in the stock voice.
  */
 export interface FaceRenderer {
+  /** How it makes a unit heard (default `audio`). */
+  readonly voicing?: 'audio' | 'text';
   /** Whether it can take a unit now (connected, video flowing). Otherwise the call plays the unit itself. */
   ready(): boolean;
   /**
-   * Makes one decoded unit heard; returns the function that stops it at once (barge-in, end). `audio` is what
-   * the face may render (null for a unit the server did not give the face: it is played by the call itself).
+   * Voicing `text`: gets a signed unit ready ahead of its turn (the server admits it, in order, while the unit
+   * before it is still being heard), so its turn costs no round trip. Best effort.
+   */
+  prepare?(unit: SpeechUnitToPlay): void;
+  /**
+   * Makes one unit heard; returns the function that stops it at once (barge-in, end). `buffer` is its decoded
+   * audio (null for a text face's unit the call fetched no audio for); `audio` is what an audio face may render
+   * (null for a unit the server did not give the face: it is played by the call itself); `unit` is the unit (a
+   * text face has the vendor say a signed unit's words, and gives back any other).
    */
   render(
-    buffer: AudioBuffer,
+    buffer: AudioBuffer | null,
     output: FaceRendererOutput,
     handlers: FaceRenderHandlers,
     audio: FaceUnitAudio | null,
+    unit?: SpeechUnitToPlay,
   ): () => void;
 }
 
@@ -133,6 +146,8 @@ export interface PlayerEvents {
 
 type Prepared = (
   | { readonly kind: 'buffer'; readonly buffer: AudioBuffer; readonly face?: FaceUnitAudio }
+  /** A text face voices it: no audio fetched (unless the face cannot say it). */
+  | { readonly kind: 'text' }
   | { readonly kind: 'browser' }
   | { readonly kind: 'captions' }
 ) & {
@@ -174,6 +189,11 @@ export function localEnglishVoice(
 /** Time to read a unit shown without a voice, and the guard for a browser voice that never ends. */
 export function readingTimeMs(text: string): number {
   return Math.min(12_000, 1_200 + text.length * 45);
+}
+
+/** About how long a voice takes to say `text` (15 characters a second): a text face's unit has no audio length. */
+export function speakingTimeMs(text: string): number {
+  return 600 + text.length * 70;
 }
 
 export class SpeechPlayer {
@@ -271,6 +291,13 @@ export class SpeechPlayer {
   }
 
   private async prepare(entry: Entry): Promise<Prepared> {
+    const face = this.face;
+    if (face?.voicing === 'text' && face.ready() && entry.unit.sig !== undefined) {
+      // The face voices this signed unit itself, whatever the call's own voice can do: the server admits it
+      // now, ahead of its turn.
+      face.prepare?.(entry.unit);
+      return { kind: 'text' };
+    }
     if (this.route === 'browser') return { kind: 'browser' };
     if (this.route === 'captions') return { kind: 'captions' };
     let result: SpeechFetchResult;
@@ -334,7 +361,11 @@ export class SpeechPlayer {
     this.prefetch();
 
     const route: VoiceRoute =
-      prepared.kind === 'buffer' ? 'server' : prepared.quiet === true ? this.route : prepared.kind;
+      prepared.kind === 'buffer' || prepared.kind === 'text'
+        ? 'server'
+        : prepared.quiet === true
+          ? this.route
+          : prepared.kind;
     const completed = await new Promise<boolean>((resolve) => {
       // A unit is announced when it starts being heard: at once here, or when a face reports its first sound
       // (never before `playing` is set, and never after it was stopped).
@@ -384,13 +415,59 @@ export class SpeechPlayer {
       const face = this.face;
       if (face?.ready() === true) {
         return {
-          stop: this.renderOnFace(face, prepared.buffer, prepared.face ?? null, settle, started),
+          stop: this.renderOnFace(face, prepared.buffer, prepared.face ?? null, unit, settle, started),
           deferred: true,
         };
       }
       return { stop: this.playBuffer(prepared.buffer, settle), deferred: false };
     }
+    if (prepared.kind === 'text') {
+      const face = this.face;
+      if (face?.ready() === true && face.voicing === 'text') {
+        return { stop: this.renderOnFace(face, null, null, unit, settle, started), deferred: true };
+      }
+      // The face went away meanwhile: the call speaks the unit itself.
+      return { stop: this.playFetched(unit, settle), deferred: false };
+    }
     return { stop: this.startWithoutAudio(prepared, unit, settle), deferred: false };
+  }
+
+  /**
+   * Fetches a unit's audio now and plays it (a text face's unit the face could not say): the stock voice, or the
+   * browser's voice or captions when the server has none for it.
+   */
+  private playFetched(unit: SpeechUnitToPlay, settle: (completed: boolean) => void): () => void {
+    const controller = new AbortController();
+    // Read after every await: the unit may have been stopped meanwhile.
+    const stopped = () => controller.signal.aborted;
+    let inner: (() => void) | null = null;
+    void (async () => {
+      let result: SpeechFetchResult;
+      try {
+        result = await this.audio.fetchSpeech(unit, controller.signal);
+      } catch {
+        result = { kind: 'failed' };
+      }
+      if (stopped()) return;
+      if (result.kind === 'audio') {
+        try {
+          const buffer = await this.audio.context.decodeAudioData(result.data);
+          if (!stopped()) inner = this.playBuffer(buffer, settle);
+          return;
+        } catch {
+          /* captions below */
+        }
+      }
+      if (stopped()) return;
+      const kind =
+        result.kind === 'unavailable' && localEnglishVoice(this.audio.synthesis) ? 'browser' : 'captions';
+      inner = this.startWithoutAudio({ kind }, unit, settle);
+    })();
+    return () => {
+      controller.abort();
+      if (inner) inner();
+      else settle(false);
+    };
   }
 
   /** Plays decoded audio through the call's own path (gain → analyser → speakers). */
@@ -429,8 +506,9 @@ export class SpeechPlayer {
    */
   private renderOnFace(
     face: FaceRenderer,
-    buffer: AudioBuffer,
+    buffer: AudioBuffer | null,
     audio: FaceUnitAudio | null,
+    unit: SpeechUnitToPlay,
     settle: (completed: boolean) => void,
     started: () => void,
   ): () => void {
@@ -442,7 +520,7 @@ export class SpeechPlayer {
         finished = true;
         settle(true);
       },
-      buffer.duration * 1000 + FACE_GUARD_MS,
+      (buffer === null ? speakingTimeMs(unit.text) : buffer.duration * 1000) + FACE_GUARD_MS,
     );
     const stopFace = face.render(
       buffer,
@@ -458,8 +536,10 @@ export class SpeechPlayer {
           finished = true;
           this.audio.clearTimeout(guard);
           if (outcome === 'failed' && !began) {
+            // The face has gone quiet first (a text face interrupts the vendor before it reports the failure),
+            // so two voices never overlap: the call speaks the unit itself.
             started();
-            fallback = this.playBuffer(buffer, settle);
+            fallback = buffer === null ? this.playFetched(unit, settle) : this.playBuffer(buffer, settle);
             return;
           }
           // A face that never reported the start still made the unit heard: announce it before its end.
@@ -468,6 +548,7 @@ export class SpeechPlayer {
         },
       },
       audio,
+      unit,
     );
     return () => {
       finished = true;

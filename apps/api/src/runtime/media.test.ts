@@ -47,4 +47,41 @@ describe('digital-twin wiring', () => {
     expect(media.clonedVoice).toMatchObject({ model: 'eleven_flash_v2_5', usdPer1kCharacters: 0.04 });
     expect(reads()).toBe(0);
   });
+
+  it('wires a FULL stock face at its own price, admins only by default, with the LITE path unchanged', () => {
+    const { secrets, reads } = counting();
+    const media = mediaFor(
+      loadApiConfig(
+        {
+          ...prod,
+          MEDIA_FACE_PROVIDER: 'heygen-liveavatar',
+          MEDIA_FACE_MODE: 'full',
+          MEDIA_FACE_SANDBOX: 'true',
+        },
+        'api',
+      ),
+      secrets,
+    );
+    expect(media.embodiment).toMatchObject({
+      id: 'heygen',
+      mode: 'full',
+      voicing: 'text',
+      likeness: false,
+      stock: true,
+      sandbox: true,
+      adminsOnly: true,
+      usdPerMinute: 0.19,
+    });
+    const lite = mediaFor(
+      loadApiConfig({ ...prod, MEDIA_FACE_PROVIDER: 'heygen-liveavatar' }, 'api'),
+      secrets,
+    );
+    expect(lite.embodiment).toMatchObject({
+      mode: 'lite',
+      voicing: 'audio',
+      likeness: true,
+      adminsOnly: false,
+    });
+    expect(reads()).toBe(0);
+  });
 });

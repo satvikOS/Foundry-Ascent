@@ -278,7 +278,10 @@ export interface FaceSessionRequest {
   /** The caller's live call: the vendor session belongs to it and ends with it. */
   readonly callId: string;
   readonly personaId: string;
-  /** The persona's avatar at the vendor (`persona_media.vendor_ref`); null for the stand-in. */
+  /**
+   * The persona's avatar at the vendor (`persona_media.vendor_ref`), for a face of the EIR's likeness; null for a
+   * stock face (the provider's own configured avatar) and the stand-in.
+   */
   readonly avatarRef: string | null;
   /** Seconds the face may last: the vendor session ends by itself then (`max_session_duration`). */
   readonly maxSeconds: number;
@@ -287,15 +290,16 @@ export interface FaceSessionRequest {
 
 export interface StartedFaceSession {
   /**
-   * What the browser joins the face's video with: a short-lived room token that can only watch (a LiveKit client
-   * token) and the room URL. A credential: never logged or stored.
+   * What the browser joins the face's video with: a short-lived room token (a LiveKit client token: watch only in
+   * LITE; in FULL it can also send the room the vendor's commands, which is how the browser makes the face say
+   * text the server admitted) and the room URL. A credential: never logged or stored.
    */
   readonly browser: { readonly token: string; readonly url: string | null; readonly expiresAt: string };
   /** The vendor's session id (not a secret). */
   readonly sessionRef: string;
   /**
    * The server-held control channel (LITE's `ws_url`), which can make the face speak: never sent to the
-   * browser, stored only encrypted, erased when the face ends. Null when the vendor has none (the stand-in).
+   * browser, stored only encrypted, erased when the face ends. Null when the vendor has none (FULL, the stand-in).
    */
   readonly control: string | null;
 }
@@ -324,37 +328,94 @@ export interface VerifiedFaceAudio {
 declare const verifiedFaceAudioBrand: unique symbol;
 
 /**
- * The face of calls (docs/architecture/calls.md §4): a vendor's realtime avatar that renders audio our server
- * synthesized from validated units (HeyGen LiveAvatar LITE), driven entirely from the API with the vendor key it
- * holds (Secrets Manager). The browser only watches. Absent: every call keeps the built-in presence. The local
- * API can run the development stand-in (`fake`, no one's likeness).
+ * Text a FULL face may say: the words of a {@link VerifiedSpeechUnit} of this call (never the crisis line), which
+ * the server admitted to the call's live face once and in order (`twinRepo.admitFaceText`), within the call's
+ * speech budget. Only `authorizeFaceText` (services/speech.ts) makes one; the browser then sends exactly these
+ * words to the vendor, and the heartbeat reconciles the vendor's transcript against what was admitted.
+ */
+export interface VerifiedFaceText {
+  readonly [verifiedFaceTextBrand]: true;
+  readonly callId: string;
+  /** The speech unit's call_speech key (`intro` or `unit.<turn>.<seq>`). */
+  readonly unit: string;
+  /** The admitted words. Content: never log them. */
+  readonly text: string;
+}
+declare const verifiedFaceTextBrand: unique symbol;
+
+/** One line of a FULL face session's transcript at the vendor. Content: never log `text`. */
+export interface FaceTranscriptLine {
+  readonly role: 'avatar' | 'user';
+  readonly text: string;
+  /** The vendor's timestamp of the line (its own unit; only compared and handed back as a cursor). */
+  readonly at: number;
+}
+
+/** What one read of a FULL face session's transcript returned. */
+export interface FaceTranscript {
+  /** The lines at or after the cursor asked for, oldest first. */
+  readonly lines: readonly FaceTranscriptLine[];
+  /**
+   * False when the vendor has more lines than one read takes (its page limit): the lines after these were not
+   * read, so the check that reads them is not complete.
+   */
+  readonly complete: boolean;
+}
+
+/**
+ * The face of calls (docs/architecture/calls.md §4) behind one port, in one of two modes:
+ * - **LITE** (`voicing: 'audio'`): a vendor's realtime avatar renders audio our server synthesized from validated
+ *   units (HeyGen LiveAvatar LITE), driven entirely from the API with the vendor key it holds (Secrets Manager).
+ *   The browser only watches. The mode for the EIR's own likeness.
+ * - **FULL** (`voicing: 'text'`): a vendor's stock avatar voices, with its own stock voice, text our server admitted
+ *   (`VerifiedFaceText`): the browser sends the vendor exactly those words over the room, and the server reconciles
+ *   the vendor's transcript against what it admitted at every heartbeat (`transcriptSince`). Never the EIR's
+ *   likeness (`likeness` is false), always labelled as an AI avatar (`stock`).
+ * Absent: every call keeps the built-in presence. The local API can run the development stand-in (`fake`, no one's
+ * likeness) in either mode.
  */
 export interface EmbodimentProvider {
   /** The provider id the call screen loads (`EmbodimentProviderId`). */
   readonly id: 'fake' | 'heygen';
-  /** The face renders the call's own audio (`AvatarVoicing` `audio`). */
-  readonly voicing: 'audio';
+  /** `lite`: the face renders audio our server made. `full`: the vendor voices text our server admitted. */
+  readonly mode: 'lite' | 'full';
+  /** How the vEIR is heard with this face (`AvatarVoicing`): `audio` in LITE, `text` in FULL. */
+  readonly voicing: 'audio' | 'text';
   /**
    * Whether the face is a real person's likeness (a vendor avatar of the EIR): then it serves only personas whose
-   * face is ready under likeness consent. The stand-in draws no one and serves any.
+   * face is ready under likeness consent. A stock avatar and the stand-in draw no one and serve any.
    */
   readonly likeness: boolean;
   /**
-   * Vendor sandbox sessions (LiveAvatar's stock avatar, whatever the persona): for the owner's first live checks
+   * A vendor's stock human avatar (no one's likeness): the call screen labels it "AI avatar", so it is never taken
+   * for the EIR.
+   */
+  readonly stock?: boolean;
+  /**
+   * Vendor sandbox sessions (LiveAvatar's sandbox avatar, whatever the persona): for the owner's first live checks
    * only, so a face is then offered to platform admins alone, never to founders under an EIR's name.
    */
   readonly sandbox?: boolean;
-  /** Per minute of face session (packages/core/media-vendors.json); the vendor bills elapsed time. */
+  /** A face shown to platform admins only (a presentation of a stock avatar), whatever `sandbox` says. */
+  readonly adminsOnly?: boolean;
+  /** Per minute of face session (packages/core/media-vendors.json, by mode); the vendor bills elapsed time. */
   readonly usdPerMinute: number;
   createSession(request: FaceSessionRequest): Promise<StartedFaceSession>;
-  /** Makes the face render one part of a unit's audio (and close the utterance on its last part). */
+  /** LITE: makes the face render one part of a unit's audio (and close the utterance on its last part). */
   speak(session: FaceSessionHandle, audio: VerifiedFaceAudio): Promise<void>;
-  /** Barge-in: discards what the face still has to say. */
+  /** Barge-in: discards what the face still has to say (FULL: the browser interrupts over the room). */
   interrupt(session: FaceSessionHandle): Promise<void>;
   /** Keeps an idle session from timing out at the vendor. */
   keepAlive(session: FaceSessionHandle): Promise<void>;
   /** Ends the vendor session (so it stops billing). Never throws for a session already gone. */
   end(session: FaceSessionHandle, reason: 'call_ended' | 'face_stopped' | 'face_dropped'): Promise<void>;
+  /**
+   * FULL: the session's transcript lines at the vendor, oldest first, from the vendor's timestamp `since` on
+   * (inclusive; null: the whole session), so the server can check the face said only what it admitted; each line
+   * once, also lines that share a timestamp. `complete` is false when more lines remain than one read takes.
+   * Rejects when the vendor cannot be read.
+   */
+  transcriptSince?(session: FaceSessionHandle, since: number | null): Promise<FaceTranscript>;
 }
 
 export interface JobQueue {

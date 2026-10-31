@@ -161,10 +161,14 @@ export class AppStack extends Stack {
       SPEECH_ENGINE: config.speech.engine,
       MEDIA_FACE_PROVIDER: config.media.face.provider,
       MEDIA_FACE_SANDBOX: String(config.media.face.sandbox),
+      ...mediaFaceEnvironment(config.media.face),
       MEDIA_VOICE_PROVIDER: config.media.voice.provider,
       MEDIA_VOICE_MODEL: config.media.voice.model,
       MEDIA_VOICE_ZERO_RETENTION: String(config.media.voice.zeroRetention),
     };
+    // A value no function receives is a variable dropped on the way: refused unless the API assumes that same value
+    // when the variable is absent (the face's LITE defaults, until the contract lists MEDIA_FACE_*).
+    assertEveryValueDelivered(values, new Set(LAMBDA_ROLES.flatMap((role) => environmentNames(role))));
     const environmentFor = (role: LambdaRole): Record<string, string> =>
       Object.fromEntries(
         environmentNames(role).map((name) => {
@@ -825,6 +829,58 @@ export class AppStack extends Stack {
  * the CloudFront origin read timeout and in the API Lambda timeout, and SSE keep-alives come well before
  * the read timeout.
  */
+/** Every function role of the runtime contract (apps/api/lambda-contract.json `environment`, besides `common`). */
+const LAMBDA_ROLES: readonly LambdaRole[] = ['api', 'worker', 'migrate', 'insights'];
+
+/**
+ * What the API assumes when one of these variables is absent from its environment (apps/api/src/config.ts defaults):
+ * the face's LITE voicing, the persona's own face, offered to everyone. A value equal to this changes nothing whether
+ * or not the variable reaches the API, so it may be set before apps/api/lambda-contract.json lists the variable; any
+ * other value must be delivered.
+ */
+export const API_ASSUMES_WHEN_ABSENT: Readonly<Record<string, string>> = {
+  MEDIA_FACE_MODE: 'lite',
+  MEDIA_FACE_AVATAR_ID: '',
+  MEDIA_FACE_VOICE_ID: '',
+  MEDIA_FACE_AUDIENCE: 'everyone',
+};
+
+/**
+ * Refuses a synth that would drop a configured value: each function receives only the variables its runtime-contract
+ * role lists (`environmentFor`), so a value no role lists never reaches a function. Allowed only when the value is
+ * what the API assumes without it (`absentMeans`).
+ */
+export function assertEveryValueDelivered(
+  values: Readonly<Record<string, string>>,
+  delivered: ReadonlySet<string>,
+  absentMeans: Readonly<Record<string, string>> = API_ASSUMES_WHEN_ABSENT,
+): void {
+  const dropped = Object.entries(values)
+    .filter(([name, value]) => !delivered.has(name) && absentMeans[name] !== value)
+    .map(([name]) => name);
+  if (dropped.length > 0) {
+    throw new Error(
+      `No function would receive ${dropped.join(', ')}: apps/api/lambda-contract.json lists ${dropped.length === 1 ? 'it' : 'them'} for no role, so the configured value would be silently dropped. List ${dropped.length === 1 ? 'it' : 'them'} under environment.api (the API reads ${dropped.length === 1 ? 'it' : 'them'}) or remove the value.`,
+    );
+  }
+}
+
+/**
+ * The face's voicing for the API (`MEDIA_FACE_MODE`, `MEDIA_FACE_AVATAR_ID`, `MEDIA_FACE_VOICE_ID`,
+ * `MEDIA_FACE_AUDIENCE`; config `media.face`). An absent stock avatar or voice is the empty string, which the API reads
+ * as unset. Like every other variable, each reaches a function only when apps/api/lambda-contract.json lists it for
+ * that function's role (`environmentFor`); until it does, synth refuses any value other than the LITE defaults
+ * (`assertEveryValueDelivered`).
+ */
+export function mediaFaceEnvironment(face: PlatformConfig['media']['face']): Record<string, string> {
+  return {
+    MEDIA_FACE_MODE: face.mode,
+    MEDIA_FACE_AVATAR_ID: face.stock?.avatarId ?? '',
+    MEDIA_FACE_VOICE_ID: face.stock?.voiceId ?? '',
+    MEDIA_FACE_AUDIENCE: face.audience,
+  };
+}
+
 export function assertTiming(apiTimeoutSeconds: number): void {
   const needed = API_DB_RESUME_BUDGET_SECONDS + API_TIMING_MARGIN_SECONDS;
   if (needed > API_ORIGIN_READ_TIMEOUT_SECONDS) {
