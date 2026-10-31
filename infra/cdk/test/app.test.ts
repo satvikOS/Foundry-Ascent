@@ -275,10 +275,13 @@ describe('FoundryAscent-App', () => {
       expect(pollyActions.sort()).toEqual(['polly:DescribeVoices', 'polly:SynthesizeSpeech']);
     });
 
-    it('grants no vendor key while the digital twin is off (production.json)', () => {
+    it('lets only the API read only the face vendor’s key as shipped (production.json: the sandbox stock face)', () => {
       const secrets = (name: string): Props[] =>
         rolePolicyStatements(name).filter((s) => actionsOf(s).some((a) => a.startsWith('secretsmanager:')));
-      expect(secrets('FoundryAscent-Api')).toEqual([]);
+      const api = secrets('FoundryAscent-Api');
+      expect(api.flatMap(actionsOf)).toEqual(['secretsmanager:GetSecretValue']);
+      expect(JSON.stringify(api)).toContain('foundry-ascent/media/heygen');
+      expect(JSON.stringify(api)).not.toContain('elevenlabs');
       expect(secrets('FoundryAscent-Worker')).toEqual([]);
     });
 
@@ -346,8 +349,24 @@ describe('FoundryAscent-App', () => {
       const VOICE = '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0';
       const room = ['wss://heygen-feapbkvq.livekit.cloud', 'https://heygen-feapbkvq.livekit.cloud'];
       const config = loadConfig();
-      // Shipped off: LITE, no stock face, everyone (how faces behaved before FULL existed).
+      // Shipped: the vendor sandbox's stock avatar in its own voice, platform admins only.
       expect(mediaFaceEnvironment(config.media.face)).toEqual({
+        MEDIA_FACE_MODE: 'full',
+        MEDIA_FACE_AVATAR_ID: WAYNE,
+        MEDIA_FACE_VOICE_ID: '',
+        MEDIA_FACE_AUDIENCE: 'admins',
+      });
+      // Off (provider none): LITE defaults, no stock face, everyone (how faces behaved before FULL existed).
+      expect(
+        mediaFaceEnvironment({
+          provider: 'none',
+          sandbox: false,
+          csp: { connect: [], media: [] },
+          mode: 'lite',
+          stock: null,
+          audience: 'everyone',
+        }),
+      ).toEqual({
         MEDIA_FACE_MODE: 'lite',
         MEDIA_FACE_AVATAR_ID: '',
         MEDIA_FACE_VOICE_ID: '',
@@ -701,8 +720,9 @@ describe('FoundryAscent-App', () => {
       expect(csp).toEqual({ 'Fn::Join': ['', [expect.any(String), bucketRef, expect.any(String)]] });
       const [, parts] = (csp as { 'Fn::Join': [string, [string, unknown, string]] })['Fn::Join'];
       const rendered = `${parts[0]}<bucket>${parts[2]}`;
+      // Then the shipped face's room (the vendor sandbox's LiveKit project, exact origins).
       expect(rendered).toContain(
-        `connect-src 'self' https://<bucket>.s3.us-east-1.amazonaws.com ${TRANSCRIBE_ORIGIN};`,
+        `connect-src 'self' https://<bucket>.s3.us-east-1.amazonaws.com ${TRANSCRIBE_ORIGIN} wss://heygen-feapbkvq.livekit.cloud https://heygen-feapbkvq.livekit.cloud;`,
       );
       expect(rendered).not.toContain('*');
     });
@@ -1123,9 +1143,17 @@ describe('runtime-contract delivery (no configured value is silently dropped)', 
     expect(() => {
       assertEveryValueDelivered({ APP_ENV: 'production', NEW_SETTING: '' }, delivered);
     }).toThrow(/No function would receive NEW_SETTING: apps\/api\/lambda-contract\.json/);
-    // The face's LITE defaults may go undelivered (the API assumes them); FULL values may not.
+    // The face's LITE defaults (a face that is off) may go undelivered (the API assumes them); FULL values may not.
+    const off = {
+      provider: 'none',
+      sandbox: false,
+      csp: { connect: [], media: [] },
+      mode: 'lite',
+      stock: null,
+      audience: 'everyone',
+    } as const;
     expect(() => {
-      assertEveryValueDelivered(mediaFaceEnvironment(loadConfig().media.face), delivered);
+      assertEveryValueDelivered(mediaFaceEnvironment(off), delivered);
     }).not.toThrow();
     expect(() => {
       assertEveryValueDelivered(
@@ -1145,6 +1173,6 @@ describe('runtime-contract delivery (no configured value is silently dropped)', 
         new Set(['MEDIA_FACE_MODE', 'MEDIA_FACE_AUDIENCE']),
       );
     }).not.toThrow();
-    expect(API_ASSUMES_WHEN_ABSENT).toEqual(mediaFaceEnvironment(loadConfig().media.face));
+    expect(API_ASSUMES_WHEN_ABSENT).toEqual(mediaFaceEnvironment(off));
   });
 });

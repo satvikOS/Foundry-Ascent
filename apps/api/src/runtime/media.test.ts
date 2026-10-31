@@ -70,8 +70,22 @@ describe('digital-twin wiring', () => {
       stock: true,
       sandbox: true,
       adminsOnly: true,
-      usdPerMinute: 0.19,
+      // The vendor's sandbox costs nothing (lab run 41219394722).
+      usdPerMinute: 0,
     });
+    const paid = mediaFor(
+      loadApiConfig(
+        {
+          ...prod,
+          MEDIA_FACE_PROVIDER: 'heygen-liveavatar',
+          MEDIA_FACE_MODE: 'full',
+          MEDIA_FACE_AVATAR_ID: 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a',
+        },
+        'api',
+      ),
+      secrets,
+    );
+    expect(paid.embodiment).toMatchObject({ mode: 'full', sandbox: false, usdPerMinute: 0.19 });
     const lite = mediaFor(
       loadApiConfig({ ...prod, MEDIA_FACE_PROVIDER: 'heygen-liveavatar' }, 'api'),
       secrets,

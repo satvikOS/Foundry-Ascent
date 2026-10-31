@@ -70,16 +70,20 @@ describe('config', () => {
     expect(config.distillation).toEqual({ sweepEnabled: true, sweepIntervalMinutes: 20 });
   });
 
-  it('ships the digital twin off, and reads it when configured', () => {
-    // The coordinator turns the face on after review; it ships off.
+  it('ships the vendor sandbox stock face for platform admins only, and reads the digital twin when configured', () => {
+    // 2026-10-31 (owner): HeyGen's stock avatar in its stock voice, in the vendor sandbox (free), platform admins only,
+    // until the mid-December presentation; no cloned voice.
     expect(loadConfig().media).toEqual({
       face: {
-        provider: 'none',
-        sandbox: false,
-        csp: { connect: [], media: [] },
-        mode: 'lite',
-        stock: null,
-        audience: 'everyone',
+        provider: 'heygen-liveavatar',
+        sandbox: true,
+        csp: {
+          connect: ['wss://heygen-feapbkvq.livekit.cloud', 'https://heygen-feapbkvq.livekit.cloud'],
+          media: [],
+        },
+        mode: 'full',
+        stock: { avatarId: 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a', voiceId: null },
+        audience: 'admins',
       },
       voice: { provider: 'polly', model: 'eleven_flash_v2_5', zeroRetention: false },
     });

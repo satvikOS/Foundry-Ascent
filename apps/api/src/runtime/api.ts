@@ -90,7 +90,9 @@ export function mediaFor(
             mode: config.media.faceMode,
             ...(config.media.faceStock === null ? {} : { stock: config.media.faceStock }),
             adminsOnly: config.media.faceAudience === 'admins',
-            usdPerMinute: full ? face.full.usdPerMinute : face.usdPerMinute,
+            // The vendor's sandbox costs nothing (lab run 41219394722: 0 credits used, while the ledger billed $0.30
+            // at list price and counted it against the daily cap).
+            usdPerMinute: config.media.faceSandbox ? 0 : full ? face.full.usdPerMinute : face.usdPerMinute,
           }),
         }
       : {}),

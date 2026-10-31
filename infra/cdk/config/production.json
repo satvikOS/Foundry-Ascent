@@ -49,9 +49,17 @@
   },
   "media": {
     "face": {
-      "provider": "none",
-      "sandbox": false,
-      "csp": { "connect": [], "media": [] }
+      "provider": "heygen-liveavatar",
+      "sandbox": true,
+      "mode": "full",
+      "audience": "admins",
+      "stock": {
+        "avatarId": "dd73ea75-1218-4ef3-92ce-606d5f7fbc0a"
+      },
+      "csp": {
+        "connect": ["wss://heygen-feapbkvq.livekit.cloud", "https://heygen-feapbkvq.livekit.cloud"],
+        "media": []
+      }
     },
     "voice": {
       "provider": "polly",

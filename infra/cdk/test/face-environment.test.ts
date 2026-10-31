@@ -85,8 +85,22 @@ describe('the face’s FULL voicing on the API function (contract listing MEDIA_
     expect(secrets.flatMap(actionsOf)).toEqual(['secretsmanager:GetSecretValue']);
   });
 
-  it('hands it the shipped LITE defaults (and an empty voice when the stock avatar keeps its own)', () => {
-    const lite = synthesize({}, config).templates;
+  it('hands it the LITE defaults when the face is off (and an empty voice when the stock avatar keeps its own)', () => {
+    const off = {
+      ...config,
+      media: {
+        ...config.media,
+        face: {
+          provider: 'none',
+          sandbox: false,
+          csp: { connect: [], media: [] },
+          mode: 'lite',
+          stock: null,
+          audience: 'everyone',
+        } as const,
+      },
+    };
+    const lite = synthesize({}, off).templates;
     expect(variablesOf(lite, 'FoundryAscent-Api')).toMatchObject({
       MEDIA_FACE_MODE: 'lite',
       MEDIA_FACE_AVATAR_ID: '',

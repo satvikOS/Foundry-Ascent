@@ -149,7 +149,6 @@ export function localFaceFor(
   const recorded = recordingFetch(inner, calls);
   const vendor = MEDIA_VENDORS.face.heygen;
   const apiKey = () => Promise.resolve(key);
-  const full = config.media.faceMode === 'full';
   const embodiment = new HeygenLiveAvatarFace({
     apiKey,
     apiOrigin: vendor.apiOrigin,
@@ -157,7 +156,8 @@ export function localFaceFor(
     mode: config.media.faceMode,
     ...(config.media.faceStock === null ? {} : { stock: config.media.faceStock }),
     adminsOnly: true,
-    usdPerMinute: full ? vendor.full.usdPerMinute : vendor.usdPerMinute,
+    // The lab's local face is always the vendor's sandbox, which costs nothing.
+    usdPerMinute: 0,
     fetch: recorded,
   });
   const token = env[LAB_FACE_PROBE_TOKEN]?.trim() ?? '';
