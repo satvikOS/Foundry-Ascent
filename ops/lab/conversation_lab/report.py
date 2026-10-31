@@ -301,6 +301,26 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
             code = ", ".join(f"{k} x{v}" for k, v in row.get("code", {}).items()) or "-"
             out.append(f"| {path} | {status} | {code} |")
         out.append("")
+    lite_vendor = face.get("call_lite_vendor") or {}
+    if lite_vendor:
+        lite_credits = lite_vendor.get("credits") or {}
+        lite_calls = lite_vendor.get("vendor_calls") or {}
+        out.append(
+            "LITE pass, its own API process (reported only; the checks above grade the FULL pass): success codes "
+            f"(token, start): {lite_vendor.get('success_codes') or '-'}; credits before "
+            f"{lite_credits.get('before')}, after {lite_credits.get('after')}, used {lite_credits.get('used')}; "
+            "calls: "
+            + (
+                "; ".join(
+                    f"{path} status {', '.join(f'{k} x{v}' for k, v in row.get('status', {}).items()) or '-'} "
+                    f"code {', '.join(f'{k} x{v}' for k, v in row.get('code', {}).items()) or '-'}"
+                    for path, row in lite_calls.items()
+                )
+                or "-"
+            )
+            + "."
+        )
+        out.append("")
     probe = face.get("probe") or {}
     if probe:
         exact = probe.get("exact") or {}

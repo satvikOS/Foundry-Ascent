@@ -889,16 +889,17 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
     extra = {**browser, "LAB_FACE_VENDOR": "heygen" if probe else "stand-in"}
     if token:
         extra[PROBE_TOKEN_ENV] = token
-    vendor_calls: list[dict[str, Any]] = []
+    passes = face_passes(ctx.face_mode)
+    # Each pass's own credits and vendor calls, read at its end: the probe remembers the calls of its own API
+    # process, and E1 and E2 grade the first pass alone (a later LITE pass is reported beside it, never graded).
+    credits_after: dict[str, dict[str, Any] | None] = {}
+    calls: dict[str, list[dict[str, Any]]] = {}
     exits: dict[str, int] = {}
     twin = "not_run"
-    for index, mode in enumerate(face_passes(ctx.face_mode)):
+    for index, mode in enumerate(passes):
         if index > 0:
             if stack is None:
                 raise RuntimeError("the face suite needs the stack to change the face's mode")
-            # The probe remembers the vendor calls of its own process: read them before it is replaced.
-            if probe:
-                vendor_calls += probe.vendor_calls()
             ctx.env = with_face_mode(ctx.env, mock=ctx.mock, probe_token=token, mode=mode)
             # The vendor key goes to the new API process only, as at the start (face.api_process_env).
             stack.restart_api(api_process_env(ctx.env, "" if ctx.mock else _FACE_KEY))
@@ -912,9 +913,9 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
             extra_env={**extra, "LAB_FACE_APP_MODE": mode},
             timeout=30 * 60,
         )
-    after = probe.credits() if probe else None
-    if probe:
-        vendor_calls += probe.vendor_calls()
+        credits_after[mode] = probe.credits() if probe else None
+        calls[mode] = probe.vendor_calls() if probe else []
+    first, later = passes[0], passes[1:]
     rc = next((code for code in exits.values() if code != 0), 0)
     # Heartbeat or end-of-face: the audits' metadata, read from the lab's own database (the admin API omits it).
     audits = injection_audits(ctx.env, ctx.private / "logs", read_audit_ids(ctx.private), pnpm=PNPM)
@@ -922,13 +923,15 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
         ctx.private,
         playwright_exit=rc,
         credits_before=before,
-        credits_after=after,
-        vendor_calls=vendor_calls,
+        credits_after=credits_after[first],
+        vendor_calls=calls[first],
         vendor="heygen-sandbox" if probe else "stand-in",
         admin_grant=ctx.face_admin,
         injection_audits=audits,
         face_mode=ctx.face_mode,
         twin=twin,
+        lite_vendor_calls=calls["lite"] if "lite" in later else None,
+        lite_credits_after=credits_after["lite"] if "lite" in later else None,
     )
     result["playwright_exits"] = exits
     return {"face": result, "passed": result["passed"], "run": result["run"], "playwright_exit": rc}

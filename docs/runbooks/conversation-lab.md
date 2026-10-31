@@ -360,7 +360,11 @@ its speakers, so both arms of E5 time the first sound the same way. The `instrum
 tap on a loopback packet and both meters on a loopback WebRTC tone and a tone played through Web Audio
 (`instruments_ok`). The harness
 reads the vendor's credits before and after the run and the HTTP status and envelope code of every call the API made
-to the vendor (the plan's E1: the real success code, 100 or 1000), through the probe.
+to the vendor (the plan's E1: the real success code, 100 or 1000), through the probe. With `face_mode=both` it
+reads them at the end of each pass, before the API restarts: the FULL pass's own calls and credits grade E1 and E2;
+the LITE pass's (its own API process) are reported as `call_lite_vendor` (credits from the end of the FULL pass to
+the end of the LITE pass, calls by path, success codes) and grade nothing, so a LITE refusal never turns a FULL
+check red.
 
 **The key.** The workflow sets `secrets.HEYGEN_LIVEAVATAR_API` as `LAB_HEYGEN_API_KEY` on the run step only. The
 harness takes it out of its own environment before anything starts (`conversation_lab/face.py` `take_key`) and passes

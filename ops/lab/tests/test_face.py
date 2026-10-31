@@ -592,26 +592,43 @@ class RestartingStack:
 
 
 class FakeProbe:
+    """Each API process remembers its own calls: one token call per process here, answered with that process's
+    code (``codes``, in order: the first API process, then the restarted one), and credits that drop by
+    ``spent`` in each process after the first."""
+
     process = 0
+    codes: ClassVar[list[int]] = [1000, 1000]
+    spent: ClassVar[list[str]] = ["10.00", "10.00", "10.00"]
 
     def __init__(self, api_url: str, token: str) -> None:
         self.api_url = api_url
+        self.reads = 0
 
     def credits(self) -> dict[str, Any]:
-        return {"status": 200, "code": 100, "creditsLeft": "10.00"}
+        left = FakeProbe.spent[min(self.reads, len(FakeProbe.spent) - 1)]
+        self.reads += 1
+        return {"status": 200, "code": 100, "creditsLeft": left}
 
     def vendor_calls(self) -> list[dict[str, Any]]:
-        # Each API process remembers its own calls: one token call per process here.
+        code = FakeProbe.codes[min(FakeProbe.process, len(FakeProbe.codes) - 1)]
         FakeProbe.process += 1
-        return [{"method": "POST", "path": "/v1/sessions/token", "status": 200, "code": 1000}]
+        return [{"method": "POST", "path": "/v1/sessions/token", "status": 200, "code": code}]
 
 
 def run_suite_face(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: str, *, mock: bool = False
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    mode: str,
+    *,
+    mock: bool = False,
+    codes: tuple[int, int] = (1000, 1000),
+    credits_left: tuple[str, str, str] = ("10.00", "10.00", "10.00"),
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[str], RestartingStack]:
     monkeypatch.setattr(cli, "_FACE_KEY", "" if mock else KEY)
     monkeypatch.setattr(face, "Probe", FakeProbe)
     FakeProbe.process = 0
+    monkeypatch.setattr(FakeProbe, "codes", list(codes))
+    monkeypatch.setattr(FakeProbe, "spent", list(credits_left))
     passes: list[dict[str, Any]] = []
     order: list[str] = []
 
@@ -670,8 +687,39 @@ def test_both_runs_full_then_restarts_the_api_in_lite_for_the_call_arm_alone(
     assert result["face_mode"] == "both"
     assert result["lite_face_reference"] == "ready"
     assert result["playwright_exits"] == {"full": 0, "lite": 0}
-    # Both API processes' vendor calls are counted.
-    assert result["vendor_calls"]["/v1/sessions/token"]["code"] == {"1000": 2}
+    # Each API process's vendor calls are its own pass's: FULL's grade E1, LITE's are reported beside them.
+    assert result["vendor_calls"]["/v1/sessions/token"]["code"] == {"1000": 1}
+    assert result["call_lite_vendor"]["vendor_calls"]["/v1/sessions/token"]["code"] == {"1000": 1}
+    assert result["call_lite_vendor"]["success_codes"] == [1000]
+
+
+def test_a_lite_pass_refused_by_the_vendor_leaves_the_full_checks_as_they_were(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    clean, *_ = run_suite_face(monkeypatch, tmp_path / "clean", "both")
+    # The restarted LITE process's token call answers 4000 and that pass spends credits (a misconfigured sandbox):
+    # the FULL pass is unchanged, so E1 and E2 (and every other check) read exactly as in the clean run.
+    refused, *_ = run_suite_face(
+        monkeypatch, tmp_path / "refused", "both", codes=(1000, 4000), credits_left=("10.00", "10.00", "9.50")
+    )
+    full, lite = clean["face"], refused["face"]
+    assert lite["checks"] == full["checks"]
+    assert (lite["passed"], lite["run"]) == (full["passed"], full["run"])
+    assert lite["checks"]["e1_success_code_recorded"] is True
+    assert lite["checks"]["e2_no_credits_used"] is True
+    assert lite["success_codes"] == [1000]
+    assert lite["vendor_calls"] == full["vendor_calls"]
+    assert lite["credits"] == full["credits"]
+    # The LITE pass's own numbers are public, beside the checks.
+    assert lite["call_lite_vendor"] == {
+        "credits": {"before": 10.0, "after": 9.5, "used": 0.5, "status": 200, "code": 100},
+        "vendor_calls": {"/v1/sessions/token": {"status": {"200": 1}, "code": {"4000": 1}}},
+        "success_codes": [4000],
+    }
+    rendered = render({"suite": "face", "result": refused, "spend": {}})
+    assert "LITE pass, its own API process (reported only" in rendered
+    assert "success codes (token, start): [4000]; credits before 10.0, after 9.5, used 0.5" in rendered
+    assert "/v1/sessions/token status 200 x1 code 4000 x1" in rendered
 
 
 def test_a_single_mode_runs_one_pass_without_a_restart(
@@ -681,11 +729,14 @@ def test_a_single_mode_runs_one_pass_without_a_restart(
     assert order == ["playwright:full"]
     assert stack.restarts == []
     assert out["face"]["lite_face_reference"] == "not_run"
+    assert out["face"]["call_lite_vendor"] is None
     out, passes, order, stack = run_suite_face(monkeypatch, tmp_path / "lite", "lite", mock=True)
     assert order == ["twin", "playwright:lite"]
     assert stack.restarts == []
     assert passes[0]["specs"] == ["--project=face"]
     assert out["face"]["vendor"] == "stand-in"
+    # A LITE-only run has one pass: it is the graded one, with no separate LITE vendor block.
+    assert out["face"]["call_lite_vendor"] is None
 
 
 def lite_measured(private: Path) -> None:
@@ -751,9 +802,20 @@ def test_the_lite_arm_sits_beside_full_and_polly_without_changing_the_checks(tmp
         injection_audits=HEARTBEAT_AUDIT,
         face_mode="both",
         twin="ready",
+        # The LITE pass's own process: a refused start and credits spent must not reach E1 or E2.
+        lite_vendor_calls=[
+            {"method": "POST", "path": "/v1/sessions/token", "status": 200, "code": 1000},
+            {"method": "POST", "path": "/v1/sessions/start", "status": 400, "code": 4000},
+        ],
+        lite_credits_after={"status": 200, "code": 100, "creditsLeft": "9.75"},
     )
     # The checks grade the FULL arm exactly as before.
     assert result["checks"] == full_only["checks"]
+    assert result["success_codes"] == full_only["success_codes"] == [1000]
+    assert result["credits"] == full_only["credits"]
+    assert result["call_lite_vendor"]["success_codes"] == [1000, 4000]
+    assert result["call_lite_vendor"]["credits"]["used"] == 0.25
+    assert full_only["call_lite_vendor"] is None
     assert (result["passed"], result["run"]) == (full_only["passed"], full_only["run"])
     lite = result["call_lite"]
     assert lite["session"]["voicing"] == "audio"

@@ -787,6 +787,35 @@ def checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
     }
 
 
+def public_credits(
+    read_before: Mapping[str, Any] | None, read_after: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """Credits left before and after (as read through the probe), the difference, and the first read's codes."""
+    before, after = credits_left(read_before), credits_left(read_after)
+    return {
+        "before": before,
+        "after": after,
+        "used": None if before is None or after is None else round(before - after, 4),
+        "status": _int((read_before or {}).get("status")),
+        "code": _int((read_before or {}).get("code")),
+    }
+
+
+def public_pass_vendor(
+    read_before: Mapping[str, Any] | None,
+    read_after: Mapping[str, Any] | None,
+    vendor_calls: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """One later pass's own vendor numbers (the LITE pass after FULL): credits across it, the calls its API process
+    made and the token and start codes. Reported only: the checks grade the first pass."""
+    calls = summarize_vendor_calls(vendor_calls)
+    return {
+        "credits": public_credits(read_before, read_after),
+        "vendor_calls": calls,
+        "success_codes": success_codes(calls),
+    }
+
+
 def public_result(
     private: Path,
     *,
@@ -799,13 +828,19 @@ def public_result(
     injection_audits: Mapping[str, Any] | None = None,
     face_mode: str = "full",
     twin: str = "not_run",
+    lite_vendor_calls: Sequence[Mapping[str, Any]] | None = None,
+    lite_credits_after: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The suite's public result: numbers, codes, booleans and vendor end reasons only. ``injection_audits`` is
     :func:`injection_audits` for the ids the injection test saw (None: not looked up, so E10 cannot pass).
     ``face_mode`` is the run's choice (full, lite, both) and ``twin`` the LITE face reference's outcome
     (:func:`seed_twin`; ``not_run`` without a LITE pass). The checks grade the FULL arm only, as before; the LITE
-    arm is reported beside it (:func:`public_call_lite`, :func:`comparison`)."""
-    before, after = credits_left(credits_before), credits_left(credits_after)
+    arm is reported beside it (:func:`public_call_lite`, :func:`comparison`).
+
+    ``credits_after`` and ``vendor_calls`` are the first pass's alone (the one that runs every test), so E1 and E2
+    grade it whatever a later pass does. ``lite_vendor_calls`` and ``lite_credits_after`` are the separate LITE
+    pass's (its own API process; None without one), reported as ``call_lite_vendor``: its credits from the end of
+    the first pass to its own end, its vendor calls and its success codes, which no check reads."""
     calls = summarize_vendor_calls(vendor_calls)
     result: dict[str, Any] = {
         "vendor": vendor if vendor in ("heygen-sandbox", "stand-in") else None,
@@ -813,15 +848,14 @@ def public_result(
         "admin_grant": admin_grant if _GRANT.match(admin_grant) else None,
         "lite_face_reference": twin if _TWIN.match(twin) else None,
         "playwright_exit": playwright_exit,
-        "credits": {
-            "before": before,
-            "after": after,
-            "used": None if before is None or after is None else round(before - after, 4),
-            "status": _int((credits_before or {}).get("status")),
-            "code": _int((credits_before or {}).get("code")),
-        },
+        "credits": public_credits(credits_before, credits_after),
         "vendor_calls": calls,
         "success_codes": success_codes(calls),
+        "call_lite_vendor": (
+            None
+            if lite_vendor_calls is None
+            else public_pass_vendor(credits_after, lite_credits_after, lite_vendor_calls)
+        ),
         "instruments": public_instruments(_load(private, "instruments")),
         "probe": public_probe(_load(private, "probe")),
         "call": public_call(_load(private, "call")),
