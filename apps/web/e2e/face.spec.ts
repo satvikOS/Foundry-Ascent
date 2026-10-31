@@ -386,10 +386,17 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
 
       await test.step('each unit it says was admitted once by the server, with exactly its words', async () => {
         await line.fill('What should I test first?');
+        const replied = page.waitForResponse(
+          (response) =>
+            response.request().method() === 'POST' && TURNS.test(new URL(response.url()).pathname),
+        );
         await line.press('Enter');
         await expect
           .poll(async () => spoken(await commands(page)).length, { timeout: 30_000 })
           .toBeGreaterThan(0);
+        // The whole reply streamed first: with only its first unit in, "every admitted unit said" would already hold
+        // while the rest of the reply is still on its way (a warm API answers fast enough for that to happen).
+        await (await replied).finished();
         // The reply is said to its end: every admitted unit, once, in order.
         const interrupt = screen.getByRole('button', { name: 'Interrupt' });
         const admitted = async () => [
