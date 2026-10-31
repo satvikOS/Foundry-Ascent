@@ -12,6 +12,8 @@
  * local demo of distillation, set CORE_DISTILL_DELAY_SECONDS (and CORE_DISTILL_ACTIVE_SECONDS below it).
  * Calls are typed and unspoken unless LOCAL_AWS_SPEECH=true with MODEL_PROVIDER=bedrock and AWS credentials
  * (the conversation lab): then they speak with Amazon Polly and listen through Amazon Transcribe, as deployed.
+ * Calls show the vendor face only with LOCAL_MEDIA_FACE_API_KEY and MEDIA_FACE_PROVIDER=heygen-liveavatar (the lab's
+ * face suite, against the vendor's free sandbox; runtime/local-face.ts), or the stand-in with EMBODIMENT_PROVIDER=fake.
  */
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -32,6 +34,7 @@ import { DAILY_MAINTENANCE_MESSAGE, dispatchJob } from './jobs/worker.js';
 import { errorFields } from './logging.js';
 import { createDatabase, createGateway, createProcessLogger } from './runtime/common.js';
 import { observeDatabase } from './runtime/db-observer.js';
+import { LOCAL_FACE_KEY, localFaceFor } from './runtime/local-face.js';
 import { localSpeechFor } from './runtime/local-speech.js';
 import { workerDepsFor } from './runtime/worker.js';
 
@@ -58,6 +61,12 @@ async function main(): Promise<void> {
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error('PORT must be a TCP port');
   const config = loadApiConfig(env, 'dev');
   const logger = createProcessLogger(config, 'dev');
+
+  // The vendor face with a key from the environment (the conversation lab's face suite; development only), else
+  // nothing. The key stays in this process: no child process inherits it.
+  const localFace = localFaceFor(env, config);
+  Reflect.deleteProperty(process.env, LOCAL_FACE_KEY);
+  Reflect.deleteProperty(env, LOCAL_FACE_KEY);
 
   const { db, state: dbState } = observeDatabase(createDatabase(env));
   const report = await migrate(db);
@@ -97,6 +106,8 @@ async function main(): Promise<void> {
     // VOICE_CLONE_PROVIDER=fake: a hum stands in for an EIR's cloned voice once cloned voices are on.
     ...developmentFaceFor(env),
     ...developmentVoiceFor(env),
+    // LOCAL_MEDIA_FACE_API_KEY with MEDIA_FACE_PROVIDER=heygen-liveavatar: the vendor face itself (runtime/local-face.ts).
+    ...(localFace.embodiment === undefined ? {} : { embodiment: localFace.embodiment }),
   });
   const workerDeps = workerDepsFor(core, { db, gateway, logger, maxReceiveCount: LOCAL_JOB_ATTEMPTS });
   jobQueue.attach(async (job, { attempt, requestId }) => {
@@ -126,7 +137,11 @@ async function main(): Promise<void> {
     appVersion: config.appVersion,
     localUploads: objectStore,
   });
-  const server = serve({ fetch: app.fetch, port }, (info) => {
+  // The lab's vendor probes (LAB_FACE_PROBE_TOKEN) answer their own paths; everything else is the app.
+  const probe = localFace.probe;
+  const fetchHandler =
+    probe === undefined ? app.fetch : (request: Request) => probe.handle(request) ?? app.fetch(request);
+  const server = serve({ fetch: fetchHandler, port }, (info) => {
     process.stdout.write(
       `Foundry Ascent API (development) listening on http://localhost:${String(info.port)}/api/v1\n`,
     );

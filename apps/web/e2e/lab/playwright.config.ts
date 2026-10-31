@@ -10,6 +10,10 @@ import { defineConfig, type PlaywrightTestConfig } from '@playwright/test';
  *                            minutes later asks what the first was about.
  *   voice   (voice.lab.ts)   a true voice call: Chromium's fake microphone plays the founder's synthesized lines
  *                            (LAB_FAKE_MIC_WAV, LAB_VOICE_MANIFEST), the app streams them to Amazon Transcribe.
+ *   face    (face.lab.ts)    the HeyGen LiveAvatar FULL stock face against the vendor's free sandbox: raw sandbox
+ *                            rooms through the dev server's lab probe (LAB_FACE_PROBE_TOKEN), then calls with the
+ *                            face (an admin of a synthetic venture), an injected `speak_text`, and Polly alone.
+ *                            No fake microphone: the call is typed and the face must never ask for one.
  *
  * In the lab (ops/lab, .github/workflows/ops-conversation-lab.yml) the app is already running with the real models
  * and both servers are reused; locally (the e2e script, mock model) Playwright starts them like the main suite.
@@ -103,6 +107,15 @@ export default defineConfig({
       testMatch: /recall\.lab\.ts$/,
       dependencies: ['setup'],
       use: { launchOptions: { args: ['--disable-audio-output'] } },
+    },
+    {
+      name: 'face',
+      testMatch: /face\.lab\.ts$/,
+      dependencies: ['setup'],
+      // Autoplay without a gesture: the suite's own level meter on the avatar's audio (an AudioContext) must run.
+      use: {
+        launchOptions: { args: ['--disable-audio-output', '--autoplay-policy=no-user-gesture-required'] },
+      },
     },
     {
       name: 'voice',

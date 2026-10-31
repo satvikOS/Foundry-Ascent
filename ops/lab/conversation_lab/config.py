@@ -18,13 +18,15 @@ SPEECH_VOICES = REPO / "packages" / "core" / "speech-voices.json"
 
 SUITES: tuple[str, ...] = ("recall", "voice", "matrix", "ui")
 #: Suites run on their own, never as part of ``all``: ``agenda`` (a regression: one dominant past-dated notebook
-#: commitment; conversation_lab/agenda.py) and ``safety`` (the model-based safety screen on the app's models over the
-#: E-crisis corpus; conversation_lab/safety.py).
-EXTRA_SUITES: tuple[str, ...] = ("agenda", "safety")
+#: commitment; conversation_lab/agenda.py), ``safety`` (the model-based safety screen on the app's models over the
+#: E-crisis corpus; conversation_lab/safety.py) and ``face`` (the HeyGen LiveAvatar FULL stock face against the
+#: vendor's free sandbox, with the vendor key; conversation_lab/face.py).
+EXTRA_SUITES: tuple[str, ...] = ("agenda", "safety", "face")
 
 #: Share of a suite's budget the app itself may spend (its own metering, hard-capped by the app's daily cap); the
 #: rest is for the lab's own calls (judge, simulator, the founder's synthesized voice). The UI suite makes none, nor
-#: does the safety suite, whose every call is a screen call on the app's models (lab-safety-screen.ts).
+#: does the safety suite, whose every call is a screen call on the app's models (lab-safety-screen.ts), nor the face
+#: suite (its vendor is the free sandbox; the app meters its calls, and the face at the vendor's list price).
 APP_SHARE: dict[str, float] = {
     "recall": 0.85,
     "voice": 0.85,
@@ -32,10 +34,19 @@ APP_SHARE: dict[str, float] = {
     "ui": 1.0,
     "agenda": 0.85,
     "safety": 1.0,
+    "face": 1.0,
 }
 
 #: How a run's budget is split when several suites run (suite=all), by expected spend.
-SUITE_WEIGHT: dict[str, int] = {"recall": 1, "voice": 1, "matrix": 2, "ui": 2, "agenda": 1, "safety": 1}
+SUITE_WEIGHT: dict[str, int] = {
+    "recall": 1,
+    "voice": 1,
+    "matrix": 2,
+    "ui": 2,
+    "agenda": 1,
+    "safety": 1,
+    "face": 1,
+}
 
 #: Largest budget the workflow accepts for one run, in USD (the app's daily cap allows at most 100).
 MAX_BUDGET_USD = 50.0

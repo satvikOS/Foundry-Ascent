@@ -145,6 +145,10 @@ export function loadApiConfig(env: EnvLike, role: ApiRole): ApiConfig {
   ) {
     throw new ConfigError('Missing required environment: MEDIA_FACE_AVATAR_ID');
   }
+  // The local dev server's vendor-face key (runtime/local-face.ts, the conversation lab): never a deployed API's.
+  if (e.APP_ENV !== 'development' && emptyToUndefined(env.LOCAL_MEDIA_FACE_API_KEY) !== undefined) {
+    throw new ConfigError('LOCAL_MEDIA_FACE_API_KEY is for the local development server only');
+  }
   const full = e.MEDIA_FACE_MODE === 'full';
   return {
     appEnv: e.APP_ENV,
