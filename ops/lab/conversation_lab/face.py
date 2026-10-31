@@ -70,6 +70,10 @@ INSTRUMENT_FLAGS = (
     "admittedGone",
     "injectCleared",
     "livekit",
+    # The level meters (the same onset rule on both arms of E5): a loopback WebRTC tone must give the remote-track
+    # meter an onset, and a tone the page plays to its speakers must give the app-output meter one.
+    "meter",
+    "appMeter",
 )
 
 _REASON = re.compile(r"^[A-Z][A-Z_]{0,39}$")
@@ -132,6 +136,51 @@ def grant_admin(env: Mapping[str, str], log_dir: Path, *, pnpm: str) -> str:
         if line.startswith("lab-face-admin: ") and found:
             return found.group(1)
     return f"failed (exit {done.returncode})"
+
+
+def read_audit_ids(private: Path) -> list[int]:
+    """The ``call.face_injection`` audit ids the injection test saw (positive integers, in order, once each)."""
+    raw = _load(private, "injection") or {}
+    ids = raw.get("audit_ids")
+    if not isinstance(ids, list):
+        return []
+    out: list[int] = []
+    for value in ids:
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0 and value not in out:
+            out.append(value)
+    return out[:50]
+
+
+def parse_audits_line(stdout: str) -> dict[str, int] | None:
+    """The counts lab-face-audits.ts printed (``heartbeat``, ``at_end``, ``unknown``), or None."""
+    for line in stdout.splitlines():
+        found = re.fullmatch(
+            r"lab-face-audits: heartbeat=(\d{1,6}) at_end=(\d{1,6}) unknown=(\d{1,6})", line.strip()
+        )
+        if found:
+            return {"heartbeat": int(found[1]), "at_end": int(found[2]), "unknown": int(found[3])}
+    return None
+
+
+def injection_audits(
+    env: Mapping[str, str], log_dir: Path, ids: Sequence[int], *, pnpm: str
+) -> dict[str, int] | None:
+    """Which of the injection test's audits came from a heartbeat check (``metadata.atEnd`` false) and which from
+    the final check after the face had ended (apps/api lab-face-audits.ts, the lab's local database: the admin audit
+    API returns no metadata). None when there are no ids or the script failed: E10 then cannot pass."""
+    if not ids:
+        return None
+    log_dir.mkdir(parents=True, exist_ok=True)
+    done = subprocess.run(  # noqa: S603 - fixed argument list; the ids are integers
+        [pnpm, "--filter", "@foundry/api", "exec", "tsx", "src/scripts/lab-face-audits.ts", *map(str, ids)],
+        cwd=REPO,
+        env=dict(env),
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
+    (log_dir / "face-audits.log").write_bytes(done.stdout + done.stderr)
+    return parse_audits_line(done.stdout.decode("utf-8", "replace"))
 
 
 class Probe:
@@ -362,6 +411,7 @@ def _turns(raw: Any) -> list[dict[str, int | None]]:
             "first_speak_started_ms": _int(t.get("firstSpeakStartedMs")),
             "first_face_audio_ms": _int(t.get("firstFaceAudioMs")),
             "first_app_playback_ms": _int(t.get("firstAppPlaybackMs")),
+            "first_app_audio_ms": _int(t.get("firstAppAudioMs")),
         }
         for t in raw
         if isinstance(t, dict)
@@ -393,8 +443,13 @@ def public_call(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
         "label_visible": _bool(raw.get("label_visible")),
         "label_text_ok": _bool(raw.get("label_text_ok")),
         "turns": turns,
+        # Two distributions, never mixed: the vendor's speak_started event, and the first sound the page's level
+        # meter heard on the avatar's track (the one E5 compares, with Polly measured by the same meter).
+        "first_speak_started_ms": percentile_ms(
+            [t["first_speak_started_ms"] for t in turns if t["first_speak_started_ms"] is not None]
+        ),
         "first_face_audio_ms": percentile_ms(
-            [v for t in turns if (v := t["first_face_audio_ms"] or t["first_speak_started_ms"]) is not None]
+            [t["first_face_audio_ms"] for t in turns if t["first_face_audio_ms"] is not None]
         ),
         "publish_to_started_ms": percentile_ms(_ints(units.get("publishToStartedMs"))),
         "publish_to_audio_ms": percentile_ms(_ints(units.get("publishToAudioMs"))),
@@ -415,16 +470,24 @@ def public_call(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
-def public_injection(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
+def public_injection(
+    raw: Mapping[str, Any] | None, audits: Mapping[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """The injection test's numbers, with its audits split by where the server's check ran (``audits``, from
+    :func:`injection_audits`): a heartbeat (the face still live) or the final check after the face had ended."""
     if raw is None:
         return None
+    audits = audits or {}
     return {
         "injected": _bool(raw.get("injected")),
         "face_ended": _bool(raw.get("face_ended")),
         "seconds_to_end": _num(raw.get("seconds_to_end")),
+        "seconds_into_session": _num(raw.get("seconds_into_session")),
         "heartbeat_seconds": _int(raw.get("heartbeat_seconds")),
         "audit_injection_events": _int(raw.get("audit_injection_events")),
-        "vendor_stopped_first": _bool(raw.get("vendor_stopped_first")),
+        "audit_heartbeat_events": _int(audits.get("heartbeat")),
+        "audit_at_end_events": _int(audits.get("at_end")),
+        "audit_unknown_events": _int(audits.get("unknown")),
         "end_reason": _reason(raw.get("end_reason")),
         "error": _error(raw.get("error")),
     }
@@ -436,7 +499,12 @@ def public_polly(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
     turns = _turns(raw.get("turns"))
     return {
         "turns": turns,
+        # The first sound on the app's output, by the same level meter as the face's track (E5's Polly arm).
         "first_audio_ms": percentile_ms(
+            [t["first_app_audio_ms"] for t in turns if t["first_app_audio_ms"] is not None]
+        ),
+        # When the app scheduled its first Polly buffer (AudioBufferSourceNode.start): before any sound.
+        "first_scheduled_ms": percentile_ms(
             [t["first_app_playback_ms"] for t in turns if t["first_app_playback_ms"] is not None]
         ),
         "error": _error(raw.get("error")),
@@ -505,9 +573,12 @@ def checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
             if present(transcript.get("status"))
             else None
         ),
+        # The heartbeat must be what caught it: an audit whose check ran while the face was live (atEnd false),
+        # and not a session the vendor ended at its maximum (whose final check writes the same audit, atEnd true).
         "e10_injection_ends_face_in_a_heartbeat": (
             bool(injection.get("face_ended"))
-            and (injection.get("audit_injection_events") or 0) >= 1
+            and (injection.get("audit_heartbeat_events") or 0) >= 1
+            and injection.get("end_reason") != "MAX_DURATION_REACHED"
             and seconds is not None
             and seconds <= HEARTBEAT_SECONDS + 5
             if present(injection.get("injected"))
@@ -536,8 +607,10 @@ def public_result(
     vendor_calls: Sequence[Mapping[str, Any]],
     vendor: str,
     admin_grant: str,
+    injection_audits: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """The suite's public result: numbers, codes, booleans and vendor end reasons only."""
+    """The suite's public result: numbers, codes, booleans and vendor end reasons only. ``injection_audits`` is
+    :func:`injection_audits` for the ids the injection test saw (None: not looked up, so E10 cannot pass)."""
     before, after = credits_left(credits_before), credits_left(credits_after)
     calls = summarize_vendor_calls(vendor_calls)
     result: dict[str, Any] = {
@@ -556,7 +629,7 @@ def public_result(
         "instruments": public_instruments(_load(private, "instruments")),
         "probe": public_probe(_load(private, "probe")),
         "call": public_call(_load(private, "call")),
-        "injection": public_injection(_load(private, "injection")),
+        "injection": public_injection(_load(private, "injection"), injection_audits),
         "polly": public_polly(_load(private, "polly")),
     }
     graded = checks(result)

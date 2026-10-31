@@ -141,6 +141,38 @@ describe('localFaceFor (the dev server, the conversation lab face suite)', () =>
     }
   });
 
+  it('keeps the dev server face in the free sandbox and to admins, with or without the probe', async () => {
+    // Without MEDIA_FACE_SANDBOX the key would buy real vendor minutes from a dev server; with audience
+    // `everyone` every founder of the local stack would be offered the owner's face. Neither is lab testing.
+    const outside = [
+      { ...lab, MEDIA_FACE_SANDBOX: 'false' },
+      { ...lab, MEDIA_FACE_AUDIENCE: 'everyone' },
+      { ...lab, MEDIA_FACE_SANDBOX: 'false', MEDIA_FACE_AUDIENCE: 'everyone' },
+    ];
+    for (const env of outside) {
+      const withoutSandbox = { ...env } as Record<string, string>;
+      delete withoutSandbox.MEDIA_FACE_SANDBOX;
+      for (const attempt of [env, withoutSandbox]) {
+        let message = '';
+        const { fetch, seen } = vendor(sandboxRoutes);
+        try {
+          await face(attempt, fetch).embodiment?.createSession({
+            callId: 'c',
+            personaId: 'p',
+            avatarRef: null,
+            maxSeconds: 60,
+            requestId: 'r',
+          });
+        } catch (err) {
+          message = err instanceof Error ? err.message : String(err);
+        }
+        expect(message, JSON.stringify(attempt)).not.toBe('');
+        expect(message).not.toContain(KEY);
+        expect(seen, 'no vendor call was made').toEqual([]);
+      }
+    }
+  });
+
   it('sends the key to the vendor only, and records each call by path, status and code', async () => {
     const { fetch, seen } = vendor(sandboxRoutes);
     const wired = face({ ...lab, [LAB_FACE_PROBE_TOKEN]: TOKEN }, fetch);

@@ -856,7 +856,8 @@ def suite_face(ctx: Context, *, browser: dict[str, str], **_: Any) -> dict[str, 
     """The HeyGen LiveAvatar FULL stock face against the vendor's sandbox (conversation_lab/face.py): the vendor's
     credits before and after and the codes it answered (through the dev server's lab probe), and the browser spec's
     measurements (apps/web/e2e/lab/face.lab.ts), as public numbers."""
-    from conversation_lab.face import PROBE_TOKEN_ENV, Probe, public_result
+    from conversation_lab.face import PROBE_TOKEN_ENV, Probe, injection_audits, public_result, read_audit_ids
+    from conversation_lab.stack import PNPM
 
     token = ctx.face_probe_token
     probe = Probe(browser["E2E_API_URL"], token) if token else None
@@ -873,6 +874,8 @@ def suite_face(ctx: Context, *, browser: dict[str, str], **_: Any) -> dict[str, 
         timeout=30 * 60,
     )
     after = probe.credits() if probe else None
+    # Heartbeat or end-of-face: the audits' metadata, read from the lab's own database (the admin API omits it).
+    audits = injection_audits(ctx.env, ctx.private / "logs", read_audit_ids(ctx.private), pnpm=PNPM)
     result = public_result(
         ctx.private,
         playwright_exit=rc,
@@ -881,6 +884,7 @@ def suite_face(ctx: Context, *, browser: dict[str, str], **_: Any) -> dict[str, 
         vendor_calls=probe.vendor_calls() if probe else [],
         vendor="heygen-sandbox" if probe else "stand-in",
         admin_grant=ctx.face_admin,
+        injection_audits=audits,
     )
     return {"face": result, "passed": result["passed"], "run": result["run"], "playwright_exit": rc}
 

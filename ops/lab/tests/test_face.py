@@ -203,6 +203,8 @@ def measured(private: Path) -> None:
             "injected": 1,
             "injectCleared": True,
             "livekit": True,
+            "meter": True,
+            "appMeter": True,
         },
     )
     write(
@@ -277,6 +279,7 @@ def measured(private: Path) -> None:
             "turns": [
                 {"firstSpeakStartedMs": 2100, "firstFaceAudioMs": 2180, "firstAppPlaybackMs": None},
                 {"firstSpeakStartedMs": 1900, "firstFaceAudioMs": None, "firstAppPlaybackMs": None},
+                {"firstSpeakStartedMs": 1000, "firstFaceAudioMs": 1150, "firstAppPlaybackMs": None},
             ],
             "units": {"publishToStartedMs": [600, 650, 700], "publishToAudioMs": [680, 720]},
             "speak_text_sent": 5,
@@ -303,7 +306,8 @@ def measured(private: Path) -> None:
             "seconds_to_end": 11.5,
             "heartbeat_seconds": 15,
             "audit_injection_events": 1,
-            "vendor_stopped_first": False,
+            "audit_ids": [41],
+            "seconds_into_session": 8.2,
             "end_reason": "USER_CLOSED",
         },
     )
@@ -312,8 +316,18 @@ def measured(private: Path) -> None:
         "polly",
         {
             "turns": [
-                {"firstSpeakStartedMs": None, "firstFaceAudioMs": None, "firstAppPlaybackMs": 1500},
-                {"firstSpeakStartedMs": None, "firstFaceAudioMs": None, "firstAppPlaybackMs": 1700},
+                {
+                    "firstSpeakStartedMs": None,
+                    "firstFaceAudioMs": None,
+                    "firstAppPlaybackMs": 1500,
+                    "firstAppAudioMs": 1540,
+                },
+                {
+                    "firstSpeakStartedMs": None,
+                    "firstFaceAudioMs": None,
+                    "firstAppPlaybackMs": 1700,
+                    "firstAppAudioMs": 1760,
+                },
             ]
         },
     )
@@ -329,10 +343,11 @@ CALLS = [
 ]
 
 
-def test_public_result_grades_every_sandbox_check_with_numbers_only(tmp_path: Path) -> None:
-    private = tmp_path / "private"
-    measured(private)
-    result = face.public_result(
+HEARTBEAT_AUDIT = {"heartbeat": 1, "at_end": 0, "unknown": 0}
+
+
+def graded(private: Path, *, injection_audits: dict[str, int] | None = None) -> dict[str, Any]:
+    return face.public_result(
         private,
         playwright_exit=0,
         credits_before={"status": 200, "code": 100, "creditsLeft": "10.00"},
@@ -340,32 +355,46 @@ def test_public_result_grades_every_sandbox_check_with_numbers_only(tmp_path: Pa
         vendor_calls=CALLS,
         vendor="heygen-sandbox",
         admin_grant="granted",
+        injection_audits=HEARTBEAT_AUDIT if injection_audits is None else injection_audits,
     )
+
+
+def test_public_result_grades_every_sandbox_check_with_numbers_only(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    measured(private)
+    result = graded(private)
     assert result["success_codes"] == [1000]
     assert result["credits"]["used"] == 0
     assert result["vendor_calls"]["other"] == {"status": {"404": 1}, "code": {}}
-    assert result["call"]["first_face_audio_ms"] == {"p50": 1900, "p95": 2180, "n": 2}
-    assert result["polly"]["first_audio_ms"] == {"p50": 1500, "p95": 1700, "n": 2}
+    # Two distributions, never mixed: the vendor's event and the sound the page heard.
+    assert result["call"]["first_speak_started_ms"] == {"p50": 1900, "p95": 2100, "n": 3}
+    assert result["call"]["first_face_audio_ms"] == {"p50": 1150, "p95": 2180, "n": 2}
+    # Polly measured the way the face is (a level onset on the app's output), the scheduling time apart.
+    assert result["polly"]["first_audio_ms"] == {"p50": 1540, "p95": 1760, "n": 2}
+    assert result["polly"]["first_scheduled_ms"] == {"p50": 1500, "p95": 1700, "n": 2}
+    assert result["injection"]["audit_heartbeat_events"] == 1
+    assert result["injection"]["seconds_into_session"] == 8.2
+    assert "audit_ids" not in result["injection"]
     assert result["probe"]["queue"]["behaviour"] == "queued"
     checks = result["checks"]
     assert checks["e1_success_code_recorded"] is True
     assert checks["e1_livekit_host_expected"] is True
     assert checks["e2_no_credits_used"] is True
     assert checks["e3_speak_text_exact"] is True
-    assert checks["e5_first_audio_under_target"] is False
+    assert checks["e5_first_audio_under_target"] is True
     assert checks["e9_lite_token_cannot_publish"] is True
     assert checks["e10_injection_ends_face_in_a_heartbeat"] is True
     assert checks["e11_max_duration_enforced"] is True
     assert checks["instruments_ok"] is True
     assert result["run"] == len(checks)
-    assert result["passed"] == len(checks) - 1
+    assert result["passed"] == len(checks)
     text = json.dumps(result)
     assert SAID not in text
     assert "/v1/secret/abc" not in text
     summary = {"suite": "face", "result": {"face": result, "passed": 1, "run": 1}, "spend": {}}
     rendered = render(summary)
     assert "e10_injection_ends_face_in_a_heartbeat | pass" in rendered
-    assert "e5_first_audio_under_target | FAIL" in rendered
+    assert "e5_first_audio_under_target | pass" in rendered
     assert SAID not in rendered
 
 
@@ -434,3 +463,68 @@ def test_vendor_calls_are_summarized_by_known_path() -> None:
     assert face.success_codes(face.summarize_vendor_calls([])) == []
     assert face.percentile_ms([]) is None
     assert face.percentile_ms([5, 1, 3]) == {"p50": 3, "p95": 5, "n": 3}
+
+
+def test_e10_counts_only_a_heartbeat_catching_the_injection(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    measured(private)
+    assert graded(private)["checks"]["e10_injection_ends_face_in_a_heartbeat"] is True
+    # The sandbox's minute ended the face and the final check wrote the audit (atEnd): not the heartbeat.
+    at_end = graded(private, injection_audits={"heartbeat": 0, "at_end": 1, "unknown": 0})
+    assert at_end["checks"]["e10_injection_ends_face_in_a_heartbeat"] is False
+    assert at_end["injection"]["audit_at_end_events"] == 1
+    # No audit lookup (the script failed): never a pass.
+    lookup_failed = face.public_result(
+        private,
+        playwright_exit=0,
+        credits_before=None,
+        credits_after=None,
+        vendor_calls=[],
+        vendor="heygen-sandbox",
+        admin_grant="granted",
+        injection_audits=None,
+    )
+    assert lookup_failed["checks"]["e10_injection_ends_face_in_a_heartbeat"] is False
+    # A heartbeat audit, but the vendor says the session ran out: the minute, not our stop, ended the face.
+    raw = json.loads((private / "face" / "injection.json").read_text(encoding="utf-8"))
+    write(private, "injection", {**raw, "end_reason": "MAX_DURATION_REACHED"})
+    assert graded(private)["checks"]["e10_injection_ends_face_in_a_heartbeat"] is False
+
+
+def test_e5_never_substitutes_the_vendor_event_for_the_sound(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    measured(private)
+    raw = json.loads((private / "face" / "call.json").read_text(encoding="utf-8"))
+    raw["turns"] = [
+        {"firstSpeakStartedMs": 900, "firstFaceAudioMs": None, "firstAppPlaybackMs": None},
+        {"firstSpeakStartedMs": 1000, "firstFaceAudioMs": None, "firstAppPlaybackMs": None},
+    ]
+    write(private, "call", raw)
+    result = graded(private)
+    assert result["call"]["first_face_audio_ms"] is None
+    assert result["call"]["first_speak_started_ms"] == {"p50": 900, "p95": 1000, "n": 2}
+    assert result["checks"]["e5_first_audio_under_target"] is None
+
+
+def test_the_instruments_include_both_level_meters(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    measured(private)
+    assert graded(private)["instruments"]["ok"] is True
+    for flag in ("meter", "appMeter"):
+        raw = json.loads((private / "face" / "instruments.json").read_text(encoding="utf-8"))
+        write(private, "instruments", {**raw, flag: False})
+        assert graded(private)["checks"]["instruments_ok"] is False
+        write(private, "instruments", raw)
+
+
+def test_injection_audits_reads_ids_and_parses_the_script_line(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    write(private, "injection", {"audit_ids": [41, "42", -1, True, 7.5, 43, 41]})
+    assert face.read_audit_ids(private) == [41, 43]
+    assert face.read_audit_ids(tmp_path / "nowhere") == []
+    assert face.parse_audits_line("lab-face-audits: heartbeat=1 at_end=2 unknown=0\n") == {
+        "heartbeat": 1,
+        "at_end": 2,
+        "unknown": 0,
+    }
+    assert face.parse_audits_line("lab-face-audits: refused (DATABASE_URL is not set)") is None

@@ -16,12 +16,14 @@ import { type ApiConfig } from '../config.js';
  * from {@link LOCAL_FACE_KEY} instead, set by the lab on the dev server's process only:
  *
  * - only with `MEDIA_FACE_PROVIDER=heygen-liveavatar` (the same `MEDIA_FACE_*` variables as deployed choose the
- *   mode, sandbox, stock avatar and audience) and only in development: `APP_ENV=production` refuses the variable
- *   at configuration already (config.ts), and anything but development refuses it here;
+ *   mode, stock avatar and voice) and only in development: `APP_ENV=production` refuses the variable at
+ *   configuration already (config.ts), and anything but development refuses it here;
+ * - only in the vendor's free sandbox (`MEDIA_FACE_SANDBOX=true`) and only for admins (`MEDIA_FACE_AUDIENCE=admins`):
+ *   the key never buys billable minutes from a dev server, nor offers the face to every local founder;
  * - never together with the stand-in face (`EMBODIMENT_PROVIDER=fake`);
  * - the key is held in this closure, never logged, never returned, never put in an error.
  *
- * With {@link LAB_FACE_PROBE_TOKEN} (the lab's random per-run token) and a sandbox face, the server also answers the
+ * With {@link LAB_FACE_PROBE_TOKEN} (the lab's random per-run token), the server also answers the
  * lab's vendor probes under `/api/v1/_lab/face/` (see {@link LabFaceProbe}): checks the vendor must be asked
  * directly (its success code, credits, a raw sandbox room to command), with the key staying in this process.
  */
@@ -114,7 +116,8 @@ export interface LocalFace {
 /**
  * The vendor face of the local dev server when {@link LOCAL_FACE_KEY} is set (see the module comment), else
  * nothing. Throws (the server does not start) on a key without the vendor face configured, the vendor face
- * without a key, the key outside development, or the key with the stand-in face.
+ * without a key, the key outside development, the key with the stand-in face, or a face outside the sandbox or
+ * offered to anyone but admins.
  */
 export function localFaceFor(
   env: EnvLike,
@@ -135,6 +138,12 @@ export function localFaceFor(
   if ((env.EMBODIMENT_PROVIDER?.trim() ?? '') !== '') {
     throw new Error(`${LOCAL_FACE_KEY} cannot be combined with the stand-in face (EMBODIMENT_PROVIDER)`);
   }
+  // The override exists for the lab, and all testing runs in the vendor's free sandbox, shown to admins only:
+  // a dev server never spends the owner's credits, and never offers the face to every founder of the local stack.
+  if (!config.media.faceSandbox) throw new Error(`${LOCAL_FACE_KEY} needs MEDIA_FACE_SANDBOX=true`);
+  if (config.media.faceAudience !== 'admins') {
+    throw new Error(`${LOCAL_FACE_KEY} needs MEDIA_FACE_AUDIENCE=admins`);
+  }
   const calls: VendorCall[] = [];
   const inner = options.fetch ?? ((input, init) => fetch(input, init));
   const recorded = recordingFetch(inner, calls);
@@ -147,7 +156,7 @@ export function localFaceFor(
     sandbox: config.media.faceSandbox,
     mode: config.media.faceMode,
     ...(config.media.faceStock === null ? {} : { stock: config.media.faceStock }),
-    adminsOnly: config.media.faceAudience === 'admins',
+    adminsOnly: true,
     usdPerMinute: full ? vendor.full.usdPerMinute : vendor.usdPerMinute,
     fetch: recorded,
   });
@@ -156,8 +165,6 @@ export function localFaceFor(
   if (!/^[A-Za-z0-9_-]{32,128}$/.test(token)) {
     throw new Error(`${LAB_FACE_PROBE_TOKEN} must be 32 to 128 URL-safe characters`);
   }
-  // Probes open vendor sessions of their own: only ever free sandbox ones.
-  if (!config.media.faceSandbox) throw new Error(`${LAB_FACE_PROBE_TOKEN} needs MEDIA_FACE_SANDBOX=true`);
   return {
     embodiment,
     probe: new LabFaceProbe({ token, apiKey, apiOrigin: vendor.apiOrigin, fetch: recorded, calls }),

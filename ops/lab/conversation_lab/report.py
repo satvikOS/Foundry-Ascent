@@ -357,8 +357,10 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
             f'LiveKit host {session.get("livekit_host")}; "AI avatar" label visible {call.get("label_visible")}'
         )
         out.append(
-            f"- First face audio after the turn was sent: {_p(call.get('first_face_audio_ms'))}; Polly alone (no "
-            f"face): {_p(polly.get('first_audio_ms'))}"
+            f"- After the turn was sent: first face audio (level onset) {_p(call.get('first_face_audio_ms'))}, "
+            f"first face speak_started {_p(call.get('first_speak_started_ms'))}; Polly alone (no face): first audio "
+            f"(level onset, same meter) {_p(polly.get('first_audio_ms'))}, first buffer scheduled "
+            f"{_p(polly.get('first_scheduled_ms'))}"
         )
         out.append(
             f"- Each unit, publish → speak_started {_p(call.get('publish_to_started_ms'))}; → first audio "
@@ -382,8 +384,10 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
         out.append(
             f"Injection (a tampered page's speak_text): injected {injection.get('injected')}; face ended "
             f"{injection.get('face_ended')} after {injection.get('seconds_to_end')} s (heartbeat "
-            f"{injection.get('heartbeat_seconds')} s); call.face_injection audits {injection.get('audit_injection_events')}"
-            f"; vendor stopped first {injection.get('vendor_stopped_first')}"
+            f"{injection.get('heartbeat_seconds')} s), injected {injection.get('seconds_into_session')} s into the "
+            f"session; call.face_injection audits {injection.get('audit_injection_events')} (heartbeat "
+            f"{injection.get('audit_heartbeat_events')}, after the face ended {injection.get('audit_at_end_events')}"
+            f"); vendor end_reason {injection.get('end_reason')}"
             + (f"; error {injection['error']}" if injection.get("error") else "")
         )
         out.append("")

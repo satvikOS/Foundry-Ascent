@@ -83,8 +83,12 @@ interface LabEvent {
 }
 interface FaceLab {
   events: LabEvent[];
+  /** Sound onsets / offsets on the avatar's remote WebRTC audio (the face's voice). */
   onsets: number[];
   offsets: number[];
+  /** Sound onsets / offsets on what the app sends to its speakers (Polly), by the same meter and rule. */
+  appOnsets: number[];
+  appOffsets: number[];
   mic: number[];
   audioSenders: number;
   fetches: { at: number; path: string; method: string }[];
@@ -99,7 +103,8 @@ interface FaceLab {
  * each packet's payload is read, an outgoing `avatar.speak_text` can be rewritten once with words of the same
  * length when `injectNext` is set, as a tampered page would), remote audio tracks (a level meter on the lab's own
  * AudioContext: onsets and offsets of the avatar's voice), and senders of audio (the face must publish none). Also
- * counts microphone requests, the app's Web Audio playback (Polly) and its fetches (paths and times only).
+ * counts microphone requests, the app's Web Audio playback (Polly: when each buffer is scheduled, and the sound on
+ * the app's output by the same level meter as the avatar's track) and its fetches (paths and times only).
  */
 function faceLabInit(): void {
   const now = (): number => performance.timeOrigin + performance.now();
@@ -107,6 +112,8 @@ function faceLabInit(): void {
     events: [],
     onsets: [],
     offsets: [],
+    appOnsets: [],
+    appOffsets: [],
     mic: [],
     audioSenders: 0,
     fetches: [],
@@ -210,6 +217,37 @@ function faceLabInit(): void {
       send(outgoing);
     };
   };
+  /**
+   * The one level meter both arms of E5 use: an analyser polled every 20 ms; an onset when the RMS level rises above
+   * 0.01, an offset after 250 ms at or below 0.004.
+   */
+  const meterOn = (analyser: AnalyserNode, onsets: number[], offsets: number[]): void => {
+    analyser.fftSize = 512;
+    const samples = new Float32Array(analyser.fftSize);
+    let loud = false;
+    let quietSince = 0;
+    window.setInterval(() => {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const s of samples) sum += s * s;
+      const level = Math.sqrt(sum / samples.length);
+      if (onsets === lab.onsets) lab.level = Math.max(lab.level * 0.9, level);
+      const t = now();
+      if (!loud && level > 0.01) {
+        loud = true;
+        onsets.push(t);
+      } else if (loud && level <= 0.004) {
+        if (quietSince === 0) quietSince = t;
+        if (t - quietSince >= 250) {
+          loud = false;
+          offsets.push(quietSince);
+          quietSince = 0;
+        }
+      } else {
+        quietSince = 0;
+      }
+    }, 20);
+  };
   let meter: AudioContext | null = null;
   const tapAudio = (track: MediaStreamTrack): void => {
     const stream = new MediaStream([track]);
@@ -221,33 +259,32 @@ function faceLabInit(): void {
     meter ??= new AudioContext();
     void meter.resume().catch(() => undefined);
     const analyser = meter.createAnalyser();
-    analyser.fftSize = 512;
     meter.createMediaStreamSource(stream).connect(analyser);
-    const samples = new Float32Array(analyser.fftSize);
-    let loud = false;
-    let quietSince = 0;
-    window.setInterval(() => {
-      analyser.getFloatTimeDomainData(samples);
-      let sum = 0;
-      for (const s of samples) sum += s * s;
-      const level = Math.sqrt(sum / samples.length);
-      lab.level = Math.max(lab.level * 0.9, level);
-      const t = now();
-      if (!loud && level > 0.01) {
-        loud = true;
-        lab.onsets.push(t);
-      } else if (loud && level <= 0.004) {
-        if (quietSince === 0) quietSince = t;
-        if (t - quietSince >= 250) {
-          loud = false;
-          lab.offsets.push(quietSince);
-          quietSince = 0;
-        }
-      } else {
-        quietSince = 0;
-      }
-    }, 20);
+    meterOn(analyser, lab.onsets, lab.offsets);
   };
+  // The app's output: whatever a page AudioContext sends to its speakers (the call's gain, for Polly) is also fed
+  // to one analyser per context (an analyser is processed without being connected onwards), metered as above.
+  const outputMeters = new WeakMap<BaseAudioContext, AnalyserNode>();
+  type Connect = (this: AudioNode, ...args: unknown[]) => unknown;
+  const nativeConnect: Connect = Reflect.get<AudioNode, 'connect'>(AudioNode.prototype, 'connect') as Connect;
+  AudioNode.prototype.connect = function (this: AudioNode, ...args: unknown[]) {
+    const result = nativeConnect.apply(this, args);
+    const target = args[0];
+    if (target instanceof AudioDestinationNode && target.context === this.context) {
+      try {
+        let analyser = outputMeters.get(this.context);
+        if (analyser === undefined) {
+          analyser = this.context.createAnalyser();
+          outputMeters.set(this.context, analyser);
+          meterOn(analyser, lab.appOnsets, lab.appOffsets);
+        }
+        nativeConnect.call(this, analyser);
+      } catch {
+        /* never in the way of the app */
+      }
+    }
+    return result;
+  } as AudioNode['connect'];
   const Native = window.RTCPeerConnection;
   class Tapped extends Native {
     constructor(configuration?: RTCConfiguration) {
@@ -344,7 +381,13 @@ async function waitForFaceQuiet(page: Page, { quietMs = 1200, timeoutMs = 30_000
     const t = await pageNow(page);
     const started = inEvents(lab, 'avatar.speak_started').length;
     const ended = inEvents(lab, 'avatar.speak_ended').length;
-    const last = Math.max(0, ...lab.events.map((e) => e.at), ...lab.plays);
+    const last = Math.max(
+      0,
+      ...lab.events.map((e) => e.at),
+      ...lab.plays,
+      ...lab.appOnsets,
+      ...lab.appOffsets,
+    );
     if (started <= ended && t - last > quietMs) return;
     await page.waitForTimeout(200);
   }
@@ -490,12 +533,13 @@ async function ownerApi(baseURL: string): Promise<APIRequestContext> {
   return playwrightRequest.newContext({ baseURL, storageState: OWNER_STATE });
 }
 
-async function auditCount(baseURL: string, action: string): Promise<number> {
+/** The ids of the audit events with `action` (newest first; null when the listing failed). */
+async function auditIds(baseURL: string, action: string): Promise<number[] | null> {
   const owner = await ownerApi(baseURL);
   try {
     const response = await owner.get(`/api/v1/admin/audit?action=${encodeURIComponent(action)}&limit=200`);
-    if (response.status() !== 200) return -1;
-    return ((await response.json()) as { items: unknown[] }).items.length;
+    if (response.status() !== 200) return null;
+    return ((await response.json()) as { items: { id: number }[] }).items.map((item) => item.id);
   } finally {
     await owner.dispose();
   }
@@ -561,7 +605,10 @@ interface TurnTiming {
   sentAt: number;
   firstSpeakStartedMs: number | null;
   firstFaceAudioMs: number | null;
+  /** When the app scheduled its first buffer (before any sound): kept apart from the sound itself. */
   firstAppPlaybackMs: number | null;
+  /** The first sound on the app's output, by the same meter as {@link firstFaceAudioMs}. */
+  firstAppAudioMs: number | null;
 }
 
 async function measuredTurn(page: Page, line: string): Promise<TurnTiming> {
@@ -581,7 +628,9 @@ async function measuredTurn(page: Page, line: string): Promise<TurnTiming> {
   await until(
     page,
     (lab) =>
-      inEvents(lab, 'avatar.speak_started', sentAt).length > 0 || firstAfter(lab.plays, sentAt) !== null,
+      inEvents(lab, 'avatar.speak_started', sentAt).length > 0 ||
+      firstAfter(lab.plays, sentAt) !== null ||
+      firstAfter(lab.appOnsets, sentAt) !== null,
     FIRST_SOUND_MS,
   );
   await waitForFaceQuiet(page, { timeoutMs: 40_000 });
@@ -591,6 +640,7 @@ async function measuredTurn(page: Page, line: string): Promise<TurnTiming> {
     firstSpeakStartedMs: ms(sentAt, inEvents(lab, 'avatar.speak_started', sentAt)[0]?.at ?? null),
     firstFaceAudioMs: ms(sentAt, firstAfter(lab.onsets, sentAt)),
     firstAppPlaybackMs: ms(sentAt, firstAfter(lab.plays, sentAt)),
+    firstAppAudioMs: ms(sentAt, firstAfter(lab.appOnsets, sentAt)),
   };
 }
 
@@ -712,6 +762,73 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL, sandbox)', () =
         };
       });
       Object.assign(result, loop);
+      // The level meters, which E5 compares across its arms: a tone sent over a loopback WebRTC audio track must
+      // give the remote-track meter (the face's voice) an onset, and a tone the page plays to its speakers through
+      // Web Audio (as the app plays Polly) must give the app-output meter one. Same meter, same rule, both arms.
+      const meters = await page.evaluate(async () => {
+        const lab = (window as unknown as { __faceLab: FaceLab }).__faceLab;
+        const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+        const waitFor = async (done: () => boolean, ms: number): Promise<boolean> => {
+          const deadline = performance.now() + ms;
+          while (!done() && performance.now() < deadline) await wait(50);
+          return done();
+        };
+        const source = new AudioContext();
+        await source.resume().catch(() => undefined);
+        const tone = source.createOscillator();
+        const level = source.createGain();
+        level.gain.value = 0.5;
+        const out = source.createMediaStreamDestination();
+        tone.connect(level);
+        level.connect(out);
+        tone.start();
+        const a = new RTCPeerConnection();
+        const b = new RTCPeerConnection();
+        a.addEventListener('icecandidate', (e) => {
+          if (e.candidate) void b.addIceCandidate(e.candidate);
+        });
+        b.addEventListener('icecandidate', (e) => {
+          if (e.candidate) void a.addIceCandidate(e.candidate);
+        });
+        const [track] = out.stream.getAudioTracks();
+        if (track !== undefined) a.addTrack(track, out.stream);
+        const offer = await a.createOffer();
+        await a.setLocalDescription(offer);
+        await b.setRemoteDescription(offer);
+        const answer = await b.createAnswer();
+        await b.setLocalDescription(answer);
+        await a.setRemoteDescription(answer);
+        const onsetsBefore = lab.onsets.length;
+        const meter = await waitFor(() => lab.onsets.length > onsetsBefore, 8000);
+        tone.stop();
+        a.close();
+        b.close();
+        await source.close().catch(() => undefined);
+
+        const speakers = new AudioContext();
+        await speakers.resume().catch(() => undefined);
+        const buffer = speakers.createBuffer(1, speakers.sampleRate, speakers.sampleRate);
+        const samples = buffer.getChannelData(0);
+        for (let i = 0; i < samples.length; i += 1)
+          samples[i] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / speakers.sampleRate);
+        const gain = speakers.createGain();
+        gain.connect(speakers.destination);
+        const play = speakers.createBufferSource();
+        play.buffer = buffer;
+        play.connect(gain);
+        const appBefore = lab.appOnsets.length;
+        const scheduledAt = performance.timeOrigin + performance.now();
+        play.start();
+        const appMeter = await waitFor(() => lab.appOnsets.length > appBefore, 4000);
+        const heard = lab.appOnsets[appBefore];
+        await speakers.close().catch(() => undefined);
+        return {
+          meter,
+          appMeter,
+          appScheduledToOnsetMs: heard === undefined ? null : Math.round(heard - scheduledAt),
+        };
+      });
+      Object.assign(result, meters);
     } catch (err) {
       result.error = errorName(err);
     } finally {
@@ -727,6 +844,8 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL, sandbox)', () =
       injected: 1,
       injectCleared: true,
       livekit: true,
+      meter: true,
+      appMeter: true,
     });
   });
 
@@ -989,7 +1108,7 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL, sandbox)', () =
     const result: Record<string, unknown> = {};
     await page.addInitScript(faceLabInit);
     await faceSettings(baseURL, true);
-    const auditsBefore = await auditCount(baseURL, 'call.face_injection');
+    const auditsBefore = new Set((await auditIds(baseURL, 'call.face_injection')) ?? []);
     let started = false;
     try {
       await acknowledgeNotices(page);
@@ -1011,18 +1130,26 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL, sandbox)', () =
       const back = await pageNow(page);
       lab = await readLab(page);
       const stopped = inEvents(lab, 'session.stopped', live)[0] ?? null;
-      let audits = auditsBefore;
+      // The audits this test caused; the harness reads where each check ran (heartbeat or after the face ended)
+      // from the lab's database (lab-face-audits.ts), since the admin listing carries no metadata. Whatever ended
+      // the face, `session.stopped` reaches the page first (the page drops the face on it), so its ORDER says
+      // nothing; its end_reason and the audits' atEnd do.
+      let added: number[] = [];
       const auditDeadline = Date.now() + 20_000;
-      while (Date.now() < auditDeadline && audits <= auditsBefore) {
-        audits = await auditCount(baseURL, 'call.face_injection');
-        if (audits <= auditsBefore) await page.waitForTimeout(1000);
+      while (Date.now() < auditDeadline && added.length === 0) {
+        added = ((await auditIds(baseURL, 'call.face_injection')) ?? []).filter(
+          (id) => !auditsBefore.has(id),
+        );
+        if (added.length === 0) await page.waitForTimeout(1000);
       }
       result.injected = injected;
       result.face_ended = ended;
       result.seconds_to_end = ended && at !== null ? Math.round((back - at) / 100) / 10 : null;
+      // From the face going live (the video tile shown) to the injection: against the sandbox's ~60 s minute.
+      result.seconds_into_session = at === null ? null : Math.round((at - live) / 100) / 10;
       result.heartbeat_seconds = HEARTBEAT_SECONDS;
-      result.audit_injection_events = Math.max(0, audits - auditsBefore);
-      result.vendor_stopped_first = stopped !== null && at !== null && stopped.at < back && stopped.at > at;
+      result.audit_injection_events = added.length;
+      result.audit_ids = added;
       result.end_reason = stopped?.reason ?? null;
       writePrivate('face/injection-texts.json', { injected: lab.injected.map((i) => i.text) });
     } catch (err) {
