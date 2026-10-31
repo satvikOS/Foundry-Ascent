@@ -103,6 +103,21 @@ export async function requireVentureAccess(
     ventureId,
     principalId: scope.ctx.principalId,
   });
+  return enforceVentureAccess(scope, ventureId, access, action, options);
+}
+
+/**
+ * {@link requireVentureAccess} over the caller's relationship to the venture as already read in the request's
+ * transaction (`venturesRepo.ventureAccessPart`, read with other reads in one statement): the same decision, audit and
+ * error.
+ */
+export function enforceVentureAccess(
+  scope: RequestScope,
+  ventureId: string,
+  access: venturesRepo.VentureAccess | null,
+  action: VentureAction,
+  options: RequireVentureAccessOptions = {},
+): VentureAccessDecision {
   const decision = decideVentureAccess(access, scope.ctx, action);
   if (!decision.allowed) {
     scope.deferAudit({
@@ -181,6 +196,19 @@ export async function requireAssignmentActive(
   ventureId: string,
 ): Promise<ActiveAssignment> {
   const resolved = await assignmentsRepo.resolveActiveAssignment(scope.tx, ventureId);
+  return enforceAssignmentActive(scope, ventureId, resolved);
+}
+
+/**
+ * {@link requireAssignmentActive} over the venture's assignment as already read in the request's transaction
+ * (`assignmentsRepo.activeAssignmentPart` with its release, read with other reads in one statement): the same check,
+ * audit and error.
+ */
+export function enforceAssignmentActive(
+  scope: RequestScope,
+  ventureId: string,
+  resolved: assignmentsRepo.ResolvedAssignment | null,
+): ActiveAssignment {
   const checked = checkAssignment(resolved);
   if (checked instanceof DomainError) {
     scope.deferAudit({

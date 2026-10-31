@@ -13,17 +13,20 @@ changed to make it faster. Every number below says how it was measured.
 A typed turn, from the founder pressing Enter to the first validated sentence on screen:
 
 ```text
-request ─ session check ─ preflight (one transaction: conversation, access, assignment, history, notes)
-        ─ spend check ─ admission (one transaction: limits, the pending turn) ─ turn.accepted
-        ─ query embedding (Titan) ─ retrieval (one transaction) ─ prompt ─ model (Nova 2 Lite, streamed)
-        ─ first sentence through the sentence gate ─ turn.delta  …  annotations ─ validation ─ persist
+request ─ session check ─ preflight (one transaction, two statements: the conversation and what its checks read,
+          then the history; the Idempotency-Key reserved and the vEIR's notes read beside it)
+        ─ admission (one transaction, three statements: the locks, every limit and the spend caps, the pending turn
+          with its audit) ─ turn.accepted (the stream opens)
+        ─ query embedding (Titan), retrieval's transaction opening beside it ─ retrieval (one statement)
+        ─ prompt ─ model (Nova 2 Lite, streamed) ─ first sentence through the sentence gate ─ turn.delta
+        …  annotations ─ validation ─ persist
 ```
 
 On a call the first validated sentence is also a signed `turn.speech` unit, which the browser sends to
 `POST /speech` (checks, a speech reservation, Polly) and plays as soon as the first audio bytes arrive.
 
 In production every database statement is an HTTPS call to the RDS Data API, and a transaction adds two more
-(BeginTransaction, CommitTransaction). A typed turn made **61 such round trips** (baseline; 57 now, a call's 64 → 60), so the
+(BeginTransaction, CommitTransaction). A typed turn made **61 such round trips** (baseline; 43 now, a call's 64 → 46), so the
 database round trip, not the queries, decides most of the time before the model starts. A Data API transaction
 runs one statement at a time (a second statement sent while one runs is refused), so independent reads only
 overlap when they are in separate transactions.
@@ -171,6 +174,7 @@ pnpm --filter @foundry/api latency --profile local       # what the code itself 
 pnpm --filter @foundry/api latency --set dbRoundTripMs=60 --set modelFirstTokenMs=1500   # recalibrate
 pnpm --filter @foundry/api latency --text 10 --voice 10 --json /tmp/latency.json --label "after X"
 pnpm --filter @foundry/api latency --cold --text 0 --voice 3 --queries   # each turn's round trips before its model call
+pnpm --filter @foundry/api latency --text 2 --voice 6 --queries --face  # calls with a FULL face; round trips in sequence
 ```
 
 A run signs a founder in, opens the venture and its conversations, types the messages, then starts a call
@@ -357,6 +361,101 @@ whose conversation the process knows (a call's first turn on the container that 
 served by a container that served one before), at the Data API's ~45 ms a round trip. Locally (no simulated round
 trip) the change is within noise (first turn 26–31 ms, later turns 15–17 ms).
 
+### Round trips before the stream and the first spoken unit (2026-10-31)
+
+On the Data API a transaction runs one statement at a time and every statement, begin and commit is one HTTPS call
+(~65 ms in production: `dbWaitMs / dbRoundTrips`), so what a turn waits for before the founder hears anything is the
+number of round trips it makes **one after another**, not the number it makes. A spoken turn made 30 of them before
+its stream opened and 35 before its first spoken unit (39 with a FULL face): ~2.3 s of database before the stream at
+production's round trip. Now 10 and 13 (14 with a FULL face): at ~65 ms a round trip, the stream opens ~1.3 s sooner
+and the first spoken unit ~1.4 s sooner (~1.6 s with a FULL face).
+
+| Round trips waited for one after another (`latency --queries`), voice turns, p50 | Before  | After   |
+| -------------------------------------------------------------------------------- | ------- | ------- |
+| To the stream opening (`turn.accepted`), without a face                          | 30      | 10      |
+| To the first spoken unit (`turn.speech`), without a face                         | 35      | 13      |
+| To the stream opening, FULL face                                                 | 30      | 10      |
+| To the first spoken unit, FULL face                                              | 39      | 14      |
+| Typed turn: to the stream opening / to the first sentence                        | 27 / 32 | 10 / 13 |
+
+| Profile production (45 ms a round trip), 6 voice turns after a warm-up, ms, p50 (p95) | Before        | After         |
+| ------------------------------------------------------------------------------------- | ------------- | ------------- |
+| Stream opening (response headers), without a face                                     | 1,390 (1,527) | 467 (606)     |
+| First spoken unit (`turn.speech`), without a face                                     | 3,896 (4,041) | 2,840 (2,930) |
+| First audio bytes (client), without a face                                            | 4,609 (4,704) | 3,520 (3,595) |
+| Stream opening, FULL face                                                             | 1,389 (1,573) | 467 (652)     |
+| First spoken unit, FULL face                                                          | 4,018 (4,303) | 2,890 (2,975) |
+| Model start (server), without a face                                                  | 1,831 (1,965) | 722 (864)     |
+| Typed turn: stream opening / first sentence                                           | 1,247 / 3,698 | 469 / 2,738   |
+| Database round trips of the whole voice turn (all of them, not in sequence)           | 67 (82 face)  | 46 (51 face)  |
+
+How it is counted: the harness traces every round trip with the time it was sent and answered (the simulated network
+time included) and takes the longest run of round trips each sent once the one before it was answered, among those
+answered by the moment measured (`perf/critical-path.ts`). It reads that on a second run of the same turns with the
+model's and the embedding's time at zero, where a round trip nobody waits for (a commit, a write handed to the host)
+is still in flight at the moment measured instead of filling the model's wait. A spoken reply of one sentence counts
+one more: its usage row is still written before its only unit (plan item 7 below, not taken). In production two of
+the 13 (the retrieval transaction's begin and context) overlap the ~155-200 ms query embedding.
+
+What changed, in the order of the way to the first spoken unit:
+
+| Step                    | Before                                                                                                                            | After                                                                                                                                                                                                                                                                                          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Idempotency-Key         | reserved (1), then everything else                                                                                                | reserved beside the preflight; the turn waits for it only before admission (`RunTurnOptions.beforeAdmission`)                                                                                                                                                                                  |
+| Preflight transaction   | begin, context, 9-12 statements (session, access, settings, assignment, release, history ×2-3, interruptions, turn count), commit | begin, context, **2 statements**: the conversation with everything its checks read (`readTogether`: session, access, settings, turn count, typed messages, assignment, release, pinned release), then the history (ids, the newest batch of rows, interruptions); the commit is not waited for |
+| Conversation context    | prefetched beside the preflight in 5 statements, or read in it                                                                    | the same reads in **1 statement** (`readTurnContext`), the prefetch's commit not waited for                                                                                                                                                                                                    |
+| Spend caps              | 2 reads in sequence before admission                                                                                              | removed: admission's `app.spend_cap_state` enforces both caps under the lock, with the same refusal and audit (`spend_cap.reached`, metadata `scope`)                                                                                                                                          |
+| Admission transaction   | begin, context, 11 statements, commit                                                                                             | begin, context, **3 statements**: the admission lock then the conversation's row lock (one statement, the advisory lock first), every limit's reads (`readTogether`, after the lock), the pending turn with its `turn.accepted` audit (one CTE), commit                                        |
+| Idempotency-Key, stored | before the stream opened                                                                                                          | once the stream is open; the stream ends only after it is stored                                                                                                                                                                                                                               |
+| "Where you left off"    | from `turn.accepted`, beside retrieval (5)                                                                                        | from the end of the preflight, beside the admission                                                                                                                                                                                                                                            |
+| Query embedding         | its usage row written before the vector was used (1)                                                                              | the usage row handed to the host                                                                                                                                                                                                                                                               |
+| Retrieval transaction   | opened after the embedding: begin, context, search, audit, commit                                                                 | opened while the query is embedded (begin and context beside it), then the search; the commit is not waited for, and the retrieval audit is written beside the reply (the same events)                                                                                                         |
+| FULL face, per unit     | settings and spend (1), speech reservation (1), face admission (1)                                                                | **1 statement** (`twinRepo.admitPreapprovedFaceUnit`): settings unchanged since the turn read them, the day's spend, the speech budget, the face's order, then the reservation and the face text, both or neither                                                                              |
+
+Guarantees kept:
+
+- **Admission stays atomic and serialised per person.** The advisory lock and the conversation's row lock are taken
+  in one statement whose plan evaluates the lock first (an uncorrelated condition: PostgreSQL's one-time filter, before
+  the row is scanned and locked); every limit is read in the next statement, which starts after the lock is held and so
+  counts a pending turn the person's previous admission just committed; the turn and its audit are one statement in the
+  same transaction (an `expectedOrdinal` mismatch rolls both back). `turn-engine.db.test.ts` (parallel turns, the
+  in-flight limit, a delete racing a turn).
+- **RLS context per transaction.** Every transaction still begins with `SET_CONTEXT_SQL`; the reads merged into one
+  statement are the same SQL under the same role (`readTogether` puts each read in a subquery and decodes its rows with
+  the decoder it had alone; a key one read resolves for another, such as the conversation's venture, is a subquery of
+  the same row).
+- **Spend caps.** Enforced under the lock as before; the refusal, its message, its retry time and its audit are the
+  ones the pre-check produced (the check read the same ledger the same way: `app.spend_cap_state` and
+  `usageRepo.spendToday` count the same rows).
+- **Idempotency.** A key used for another request, a request with the key still being answered (`IN_FLIGHT`) and an
+  answered one (replayed from storage) decide the response as they did when the reservation came first, whatever the
+  turn's checks found meanwhile; a reservation this request holds is released when the turn is refused; a retry before
+  the accepted turn is stored is still `IN_FLIGHT`, and the stream ends only after it is stored
+  (`turn-stream.test.ts`). The checks of a request whose reservation then refuses it have run, so their refusal audits
+  (`turn.rejected`) can exist for it.
+- **Audits.** Written as before; the ones moved off the way (retrieval, a FULL face unit's admission) and every
+  deferred write (the embedding's usage row, the ends of read transactions, "Where you left off") go to the host's
+  after-response work (`Kit.later` → `afterResponse` → the Lambda's `InflightTracker`, drained before the invocation
+  returns), or are waited for before `runTurn` returns when there is no host hook (tests).
+- **FULL face.** A unit is pre-approved only while the platform settings are still the ones the turn read with the call
+  and its face (a digest of every setting, `settingsRepo.SETTINGS_FINGERPRINT_SQL`); the switches and caps are then
+  the ones of the moment, and the day's spend, the call's speech budget and the face's order are read by the statement
+  itself. A unit refused for any reason, a settings change included, goes through `face/say` on the settings of that
+  moment (`face.db.test.ts`: every refusal, in order, once).
+- **The prompt.** Byte for byte what the separate reads gave (`turn-context.db.test.ts`); no data is remembered
+  between turns (the conversation's keys only, as before).
+
+The pin: `apps/api/src/perf/round-trips.db.test.ts` runs a call's spoken turns with and without a FULL face over the
+local database with every round trip delayed 100 ms and fails when a turn waits for more (or fewer) round trips than
+10 before its stream and 13 (14 with a face) before its first spoken unit. On the code before this change it reads
+28-30 and 33-36 (36-39 with a face).
+
+Not taken (the plan's items outside this change): a per-call cache of the conversation's data (a note the
+distillation worker writes from another process would be stale; the keys-only prefetch stays); a reply of one
+sentence still writes its usage row before its only unit (1 round trip, `generate.ts`); the 60 s caches are not
+refreshed in the background (up to 6 round trips on a turn that meets an expired one); preflight and admission are
+still two transactions (3 round trips of begin, context and commit).
+
 ## 6. Measured and not kept
 
 | Tried                                                                                                                 | Result                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -428,9 +527,10 @@ trip) the change is within noise (first turn 26–31 ms, later turns 15–17 ms)
   later turns' (a lab face run shows both).
 - How often a turn finds its conversation's keys (`turn.context` `source = prefetched` against `read`), and so how
   often a call's turns land on a container that served the call before.
-- Not taken here, live state on the turn's critical path that could still overlap (each one round trip, ~45 ms): the
-  two spend reads run one after the other; the admission reads the platform settings the preflight read a second
-  earlier; the query embedding's usage-ledger insert is awaited before retrieval starts.
+- The Data API round trip a turn now waits for 10 times before its stream and 13 times before its first spoken unit
+  (§5, "Round trips before the stream and the first spoken unit"): `dbRoundTrips` of `http.request` for
+  `POST /sessions/:id/turns` counts all of them, including those made alongside (the reservation, the context, "Where
+  you left off"); `dbWaitMs` of the same line is what the stream waited for.
 - The web app over CloudFront (HTTP/2 and HTTP/3, immutable assets): the local preview is HTTP/1.1 with six
   connections, so it penalises extra chunks that production does not.
 - How often someone meets a resume now that Aurora pauses after 30 idle minutes (was 10), and how much of it

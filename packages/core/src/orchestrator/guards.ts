@@ -66,7 +66,8 @@ export async function enforceSpendCaps(
 
 /**
  * Daily AI spend caps from `platform_settings`, measured on `usage_ledger` for the current UTC day
- * (checked on session create, every turn and session recap). Reaching a cap throws
+ * (checked on session create and session recap; a turn's admission enforces them under its lock with
+ * `app.spend_cap_state`, the same rows and the same refusal). Reaching a cap throws
  * `spend_cap_reached` (retry after UTC midnight) and is audited.
  */
 export async function assertWithinSpendCaps(

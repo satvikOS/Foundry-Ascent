@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { col } from '../columns.js';
 import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
-import { queryRows } from './common.js';
+import { readPart, rowsPart, type ReadPart } from './common.js';
 
 type PlatformSettingsValue = z.infer<typeof PlatformSettingsView>;
 
@@ -62,6 +62,22 @@ export const DEFAULT_SETTINGS: ResolvedPlatformSettings = {
   faceMinutesPerCall: 20,
 };
 
+/**
+ * A digest of every setting as stored (keys and JSON values): equal while nothing in `platform_settings` changed. A
+ * statement that acts on settings read earlier checks it, so it acts only while they are still what it decided on.
+ */
+export const SETTINGS_FINGERPRINT_SQL = `(SELECT md5(coalesce(string_agg(ps.key || '=' || ps.value::text, ',' ORDER BY ps.key), ''))
+   FROM platform_settings ps)`;
+
+/** The settings' digest ({@link SETTINGS_FINGERPRINT_SQL}) as a read of a combined statement (`readTogether`). */
+export function settingsFingerprintPart(): ReadPart<string> {
+  return {
+    sql: `SELECT ${SETTINGS_FINGERPRINT_SQL} AS fp`,
+    params: {},
+    decode: (rows) => col.text.decode(rows[0]?.fp ?? null, 'fp'),
+  };
+}
+
 const Coerced = z.object({
   aiEnabled: z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]),
   dailyUsdCapGlobal: z.coerce.number(),
@@ -82,11 +98,23 @@ const Coerced = z.object({
 });
 
 /** Current settings as the contract view (missing or malformed keys fall back to {@link DEFAULT_SETTINGS}). */
-export async function getPlatformSettings(ex: SqlExecutor): Promise<ResolvedPlatformSettings> {
-  const rows = await queryRows(ex, 'SELECT key, value FROM platform_settings', {}, (r) => ({
+export function getPlatformSettings(ex: SqlExecutor): Promise<ResolvedPlatformSettings> {
+  return readPart(ex, platformSettingsPart());
+}
+
+/**
+ * {@link getPlatformSettings} as a read of a combined statement (`readTogether`). The value is read as its JSON text,
+ * so a setting stored as a JSON string decodes the same whichever way the statement is run.
+ */
+export function platformSettingsPart(): ReadPart<ResolvedPlatformSettings> {
+  const part = rowsPart('SELECT key, value::text AS value FROM platform_settings', {}, (r) => ({
     key: col.text.decode(r.key, 'key'),
     value: col.json().decode(r.value, 'value'),
   }));
+  return { ...part, decode: (rows) => resolveSettings(part.decode(rows)) };
+}
+
+function resolveSettings(rows: readonly { key: string; value: unknown }[]): ResolvedPlatformSettings {
   const byKey = new Map(rows.map((r) => [r.key, r.value]));
   const out: Record<string, unknown> = {};
   for (const [field, key] of Object.entries(SETTING_KEYS)) {

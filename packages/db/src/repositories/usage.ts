@@ -57,7 +57,7 @@ const TODAY_START = `(date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE '
 
 /**
  * Spend so far in the current UTC day — globally, or for one principal (daily caps). Checked on session
- * create and every turn.
+ * create and recap (a turn's admission reads the same rows through `app.spend_cap_state`).
  */
 export function spendToday(sx: SystemExecutor, args: { principalId?: string | null } = {}): Promise<number> {
   // A person's spend is what their daily AI cap counts: speech (Polly and Transcribe during calls) is left out,

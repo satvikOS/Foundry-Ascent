@@ -13,6 +13,10 @@ import { QUICK_PREFIX, type LatencyRig } from './rig.js';
  */
 export interface TurnSample {
   readonly channel: 'text' | 'voice';
+  /** The request's `x-request-id` (its round trips in `LatencyRig.queries`). */
+  readonly requestId: string;
+  /** `performance.now()` when the request was sent (the marks below are relative to it). */
+  readonly sentAt: number;
   /** Response headers (the stream opened). */
   readonly headersMs: number;
   readonly acceptedMs: number | null;
@@ -244,6 +248,8 @@ export async function turn(
   const prompt = completedTurn === null ? null : await promptSize(rig, completedTurn);
   return {
     channel: voice ? 'voice' : 'text',
+    requestId,
+    sentAt: started,
     headersMs,
     acceptedMs: marks.accepted,
     firstDeltaMs: marks.firstDelta,
@@ -281,6 +287,26 @@ async function promptSize(
 export interface ScenarioResult {
   readonly turns: TurnSample[];
   readonly requests: RequestSample[];
+}
+
+/**
+ * Starts a call in `sessionId` as the call screen does (and, on a rig with a FULL face, opens the face as the call
+ * screen does once the call is live): the start request, the call, and its spoken intro if any.
+ */
+export async function startCall(
+  rig: LatencyRig,
+  cookie: string,
+  sessionId: string,
+): Promise<{ sample: RequestSample; started: StartCallResponse }> {
+  const start = await timed(rig, 'call-start', `/sessions/${sessionId}/calls`, { body: {}, cookie });
+  const started = StartCallResponse.parse(JSON.parse(start.body));
+  if (rig.face) {
+    await timed(rig, 'face-start', '/calls/avatar-session', {
+      body: { ventureId: rig.ventureId, callId: started.call.id },
+      cookie,
+    });
+  }
+  return { sample: start.sample, started };
 }
 
 /**
@@ -350,9 +376,9 @@ export async function runScenario(
   if (options.voiceTurns > 0) {
     const spoken = await newConversation(rig, cookie);
     requests.push(spoken);
-    const start = await timed(rig, 'call-start', `/sessions/${spoken.id}/calls`, { body: {}, cookie });
+    const start = await startCall(rig, cookie, spoken.id);
     requests.push(start.sample);
-    const started = StartCallResponse.parse(JSON.parse(start.body));
+    const { started } = start;
     if (started.intro !== null) {
       const intro = await timed(
         rig,

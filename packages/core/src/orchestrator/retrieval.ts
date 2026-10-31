@@ -147,6 +147,11 @@ export async function embedRetrievalQuery(
   meter: GenerationMeter,
   text: string,
   signal?: AbortSignal,
+  /**
+   * The turn's work for the host (`Kit.later`): given, the usage row is recorded there and the vector is returned as
+   * soon as the model answered, so waiting for it never needs a database connection; else it is recorded first.
+   */
+  tails?: Promise<void>[],
 ): Promise<number[] | null> {
   // A coaching turn's embedding is metered as `embedding`; a test conversation meters all of its calls alike.
   const purpose = meter.purpose === 'turn' ? 'embedding' : meter.purpose;
@@ -156,12 +161,14 @@ export async function embedRetrievalQuery(
       requestId: ctx.requestId,
       ...(signal ? { signal } : {}),
     });
-    await kit.recordUsage({
+    const recorded = kit.recordUsage({
       ctx,
       ventureId: meter.ventureId,
       purpose,
       attempts: [{ modelId: result.modelId, usage: result.usage, costUsd: result.costUsd }],
     });
+    if (tails === undefined) await recorded;
+    else tails.push(kit.later(recorded));
     return result.vectors[0] ?? null;
   } catch (err) {
     kit.deps.logger.warn('turn.query_embedding_failed', {

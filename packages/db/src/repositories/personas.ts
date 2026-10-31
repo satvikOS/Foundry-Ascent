@@ -16,7 +16,18 @@ import { z } from 'zod';
 import { camelRow, col, type CamelRow, type RawRow } from '../columns.js';
 import { type SqlExecutor } from '../executor.js';
 import { p } from '../params.js';
-import { principalFrom, principalSelect, queryFirst, queryOne, queryRows } from './common.js';
+import {
+  firstPart,
+  idRef,
+  principalFrom,
+  principalSelect,
+  queryFirst,
+  queryOne,
+  queryRows,
+  readPart,
+  type IdRef,
+  type ReadPart,
+} from './common.js';
 
 type CoachModeValue = (typeof CoachMode.options)[number];
 
@@ -249,7 +260,13 @@ const RELEASE_SELECT = `
   LEFT JOIN principals ab ON ab.id = r.approved_by`;
 
 export function getRelease(ex: SqlExecutor, id: string): Promise<PersonaReleaseRecord | null> {
-  return queryFirst(ex, `${RELEASE_SELECT} WHERE r.id = :id`, { id: p.uuid(id) }, decodeRelease);
+  return readPart(ex, releasePart(id));
+}
+
+/** {@link getRelease} as a read of a combined statement (`readTogether`); the id may be another read's (`IdRef`). */
+export function releasePart(id: IdRef): ReadPart<PersonaReleaseRecord | null> {
+  const ref = idRef(id, 'id');
+  return firstPart(`${RELEASE_SELECT} WHERE r.id = ${ref.sql}`, ref.params, decodeRelease);
 }
 
 /** Releases of a persona, newest version first. */
@@ -264,12 +281,20 @@ export function listReleases(ex: SqlExecutor, personaId: string): Promise<Person
 
 /** The newest approved, unexpired release (what sessions run on). */
 export function getActiveRelease(ex: SqlExecutor, personaId: string): Promise<PersonaReleaseRecord | null> {
-  return queryFirst(
-    ex,
+  return readPart(ex, activeReleasePart(personaId));
+}
+
+/**
+ * {@link getActiveRelease} as a read of a combined statement (`readTogether`); the persona may be another read's
+ * (`IdRef`).
+ */
+export function activeReleasePart(personaId: IdRef): ReadPart<PersonaReleaseRecord | null> {
+  const persona = idRef(personaId, 'personaId');
+  return firstPart(
     `${RELEASE_SELECT}
-     WHERE r.persona_id = :personaId AND r.status = 'approved' AND (r.expires_at IS NULL OR r.expires_at > now())
+     WHERE r.persona_id = ${persona.sql} AND r.status = 'approved' AND (r.expires_at IS NULL OR r.expires_at > now())
      ORDER BY r.version DESC LIMIT 1`,
-    { personaId: p.uuid(personaId) },
+    persona.params,
     decodeRelease,
   );
 }
@@ -510,12 +535,19 @@ export interface PersonaPresence {
  * The persona's EIR, whether the consent in force covers the first-person presentation, and whether that EIR is
  * the venture's assigned EIR (`assignedEirProfileId`, from the resolved assignment), in one round trip.
  */
-export async function getPersonaPresence(
+export function getPersonaPresence(
   ex: SqlExecutor,
   args: { personaId: string; assignedEirProfileId: string | null },
 ): Promise<PersonaPresence> {
-  const row = await queryFirst(
-    ex,
+  return readPart(ex, personaPresencePart(args));
+}
+
+/** {@link getPersonaPresence} as a read of a combined statement (`readTogether`). */
+export function personaPresencePart(args: {
+  personaId: string;
+  assignedEirProfileId: string | null;
+}): ReadPart<PersonaPresence> {
+  const part = firstPart(
     `SELECT e.display_name, pe.eir_profile_id, pe.kind,
             'first_person' = ANY (app.persona_consent_assets(pe.id)) AS first_person
        FROM personas pe LEFT JOIN eir_profiles e ON e.id = pe.eir_profile_id
@@ -528,11 +560,17 @@ export async function getPersonaPresence(
       firstPerson: col.bool.nullable.decode(r.first_person, 'first_person') === true,
     }),
   );
-  if (row === null) return { eirName: null, firstPerson: false, eirSeesWork: false };
   return {
-    eirName: row.eirName,
-    firstPerson: row.veir && row.firstPerson,
-    eirSeesWork: row.veir && row.eirProfileId !== null && row.eirProfileId === args.assignedEirProfileId,
+    ...part,
+    decode: (rows) => {
+      const row = part.decode(rows);
+      if (row === null) return { eirName: null, firstPerson: false, eirSeesWork: false };
+      return {
+        eirName: row.eirName,
+        firstPerson: row.veir && row.firstPerson,
+        eirSeesWork: row.veir && row.eirProfileId !== null && row.eirProfileId === args.assignedEirProfileId,
+      };
+    },
   };
 }
 

@@ -3,7 +3,16 @@ import { CoachMode, PersonaKind, PersonaStatus } from '@foundry/contracts';
 import { camelRow, col, type CamelRow } from '../columns.js';
 import { type SqlExecutor } from '../executor.js';
 import { p } from '../params.js';
-import { queryFirst, queryOne, queryRows } from './common.js';
+import {
+  firstPart,
+  idRef,
+  queryFirst,
+  queryOne,
+  queryRows,
+  readPart,
+  type IdRef,
+  type ReadPart,
+} from './common.js';
 import { getActiveRelease, type PersonaReleaseRecord } from './personas.js';
 
 type CoachModeValue = (typeof CoachMode.options)[number];
@@ -88,7 +97,34 @@ export async function resolveActiveAssignment(
   ex: SqlExecutor,
   ventureId: string,
 ): Promise<ResolvedAssignment | null> {
-  const result = await ex.query(
+  const resolved = await readPart(ex, activeAssignmentPart(ventureId));
+  if (resolved === null) return null;
+  return { ...resolved, release: await getActiveRelease(ex, resolved.assignment.personaId) };
+}
+
+/** The conditions of the venture's active assignment (`a`): the one {@link resolveActiveAssignment} resolves. */
+const ACTIVE_ASSIGNMENT = `a.status = 'active' AND a.starts_at <= now() AND (a.expires_at IS NULL OR a.expires_at > now())`;
+
+/**
+ * The persona of the venture's active assignment, for another read of the same statement (`IdRef`): the row
+ * {@link activeAssignmentPart} reads (a venture has at most one active assignment, `assignments_active_uq`).
+ */
+export function assignmentPersonaRef(ventureId: IdRef): IdRef {
+  const venture = idRef(ventureId, 'assignmentVentureId');
+  return {
+    sql: `(SELECT a.persona_id FROM assignments a WHERE a.venture_id = ${venture.sql} AND ${ACTIVE_ASSIGNMENT}
+           ORDER BY a.created_at DESC LIMIT 1)`,
+    params: venture.params,
+  };
+}
+
+/**
+ * {@link resolveActiveAssignment} without its release, as a read of a combined statement (`readTogether`; the
+ * release is `personasRepo.activeReleasePart(assignmentPersonaRef(…))`). The venture may be another read's (`IdRef`).
+ */
+export function activeAssignmentPart(ventureId: IdRef): ReadPart<Omit<ResolvedAssignment, 'release'> | null> {
+  const venture = idRef(ventureId, 'ventureId');
+  return firstPart(
     `SELECT a.id, a.tenant_id, a.venture_id, a.persona_id, a.eir_profile_id, a.allowed_modes, a.data_class_ceiling,
             a.status, a.starts_at, a.expires_at, a.created_by, a.created_at,
             pe.name AS persona_name, pe.kind AS persona_kind, pe.status AS persona_status,
@@ -98,16 +134,16 @@ export async function resolveActiveAssignment(
      FROM assignments a
      JOIN personas pe ON pe.id = a.persona_id
      LEFT JOIN eir_profiles e ON e.id = a.eir_profile_id
-     WHERE a.venture_id = :ventureId AND a.status = 'active'
-       AND a.starts_at <= now() AND (a.expires_at IS NULL OR a.expires_at > now())
+     WHERE a.venture_id = ${venture.sql} AND ${ACTIVE_ASSIGNMENT}
      ORDER BY a.created_at DESC
      LIMIT 1`,
-    { ventureId: p.uuid(ventureId) },
+    venture.params,
+    (raw) => decodeResolved(raw),
   );
-  const raw = result.rows[0];
-  if (!raw) return null;
+}
+
+function decodeResolved(raw: Parameters<typeof decodeAssignment>[0]): Omit<ResolvedAssignment, 'release'> {
   const assignment = decodeAssignment(raw);
-  const release = await getActiveRelease(ex, assignment.personaId);
   return {
     assignment,
     persona: {
@@ -117,7 +153,6 @@ export async function resolveActiveAssignment(
       status: col.enum(PersonaStatus.options).decode(raw.persona_status, 'persona_status'),
       suspendedReason: col.text.nullable.decode(raw.persona_suspended_reason, 'persona_suspended_reason'),
     },
-    release,
     eir: assignment.eirProfileId
       ? {
           id: assignment.eirProfileId,

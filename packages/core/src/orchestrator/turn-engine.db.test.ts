@@ -639,7 +639,18 @@ describe('spoken turns', () => {
       callId,
     });
     expect(outcome.status).toBe('completed');
-    expect(admitted).toEqual([{ sessionId: session.id, callId, now: expect.any(Date) as Date }]);
+    expect(admitted).toEqual([
+      expect.objectContaining({ sessionId: session.id, callId, now: expect.any(Date) as Date }),
+    ]);
+    // What admission reads about the call came with its other checks, in one statement (no call has this id here),
+    // and the settings are the turn's.
+    expect(admitted[0]?.reads).toEqual({
+      call: null,
+      usedSecondsToday: 0,
+      recentVoiceTurns: 0,
+      callTurns: 0,
+    });
+    expect(admitted[0]?.settings?.callsEnabled).toBe(true);
     const units = speechUnits(events);
     expect(units.length).toBeGreaterThan(0);
     expect(units.map((u) => u.seq)).toEqual(units.map((_, i) => i));
@@ -1654,8 +1665,19 @@ describe('what a turn kept is settled after the response (LAB-P1)', () => {
       'stream:',
       'generate:CoachAnnotations',
     ]);
-    // The settling was handed to the host, and finishes once the embedding comes back.
-    expect(after).toHaveLength(1);
+    // The settling was handed to the host, and finishes once the embedding comes back. The turn's other work after
+    // the response (the ends of its read transactions, its usage and retrieval audit rows) is handed over too, and
+    // is done at once.
+    expect(after.length).toBeGreaterThan(1);
+    const allSettled = await Promise.race([
+      Promise.all(after).then(() => true),
+      new Promise<boolean>((resolve) => {
+        setTimeout(() => {
+          resolve(false);
+        }, 300);
+      }),
+    ]);
+    expect(allSettled).toBe(false);
     const embedded = async (): Promise<number> => {
       const r = await h.t.db.system((sx) =>
         sx.query(

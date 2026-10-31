@@ -1,6 +1,7 @@
 import { MockModelGateway, mockCoachResponse, type MockGenerateContext } from '@foundry/ai';
 import { coreConfig, createCore, createRequestContext } from '@foundry/core';
 import {
+  FakeEmbodimentProvider,
   FakeSpeechSynthesizer,
   FakeSttGrantIssuer,
   MemoryJobQueue,
@@ -25,7 +26,7 @@ import { type ApiApp, createApp } from '../app.js';
 import { createJsonLogger, type Logger } from '../logging.js';
 import { InflightTracker } from '../runtime/inflight.js';
 import { observeGateway } from '../runtime/observed-gateway.js';
-import { currentRequestMetrics, recordDbCall } from '../runtime/request-metrics.js';
+import { currentRequestMetrics, recordDbCall, type RequestMetrics } from '../runtime/request-metrics.js';
 import { warmApiProcess } from '../runtime/warm-up.js';
 import { buildRequest, nextViewerIp, type RequestOptions, sessionTokenFrom } from '../testing/api-harness.js';
 import { type SimulatedLatency, simulatedGateway } from './simulation.js';
@@ -42,12 +43,20 @@ export interface LatencyRig {
   readonly db: Db;
   readonly t: TestDatabase;
   readonly logs: string[];
-  readonly latency: SimulatedLatency;
+  /**
+   * The simulated far ends, read at every call: a run may change the model's and the embedding's (`latency --queries`
+   * sets them to zero to read the round trips a turn waits for). The database round trip is fixed when the rig is made.
+   */
+  readonly latency: { -readonly [K in keyof SimulatedLatency]: SimulatedLatency[K] };
   /** Every round trip the app made, with the request that made it (`LatencyRigOptions.traceQueries`; else empty). */
   readonly queries: TracedRoundTrip[];
+  /** Whether calls get a FULL face (`LatencyRigOptions.face`). */
+  readonly face: boolean;
   readonly ventureId: string;
   readonly founderId: string;
   request(path: string, options?: RequestOptions): Promise<Response>;
+  /** Waits for the work requests handed over after their responses (as a Lambda drains it). */
+  drain(): Promise<void>;
   /** Signs a principal in through the real endpoint (an access code issued by the owner). */
   signIn(principalId: string): Promise<string>;
   cleanup(): Promise<void>;
@@ -73,15 +82,21 @@ export function harnessReply(context: MockGenerateContext): string {
 }
 
 /**
- * One database round trip as the Data API would count it (`traceQueries`): a statement, or a transaction's begin and
- * end together (`sql` = `BEGIN … COMMIT`, 2 round trips). `sql` is the statement's text with whitespace collapsed: the
- * harness's own seeded data only, never printed with parameters.
+ * One database round trip as the Data API counts it (`traceQueries`): a statement, a transaction's begin (`BEGIN`) or
+ * its end (`COMMIT`, also for a rollback), each with when it was sent and answered, the simulated network time
+ * included. `sql` is the statement's text with whitespace collapsed: the harness's own seeded data only, never printed
+ * with parameters.
  */
 export interface TracedRoundTrip {
   /** The rig request that made it (its path), or null outside one. */
   readonly path: string | null;
+  /** The `x-request-id` the rig request was sent with, or null. */
+  readonly requestId: string | null;
   readonly sql: string;
   readonly roundTrips: number;
+  /** `performance.now()` when it was sent and when it was answered. */
+  readonly start: number;
+  readonly end: number;
   /** Whether the request's first streamed model call had not started yet when the round trip began. */
   readonly beforeModel: boolean;
   /** Milliseconds since the request reached the API, when the round trip began. */
@@ -103,44 +118,88 @@ export interface LatencyRigOptions {
    * process without it (`latency --skip-init-warm-up`).
    */
   readonly skipInitWarmUp?: boolean;
+  /**
+   * Calls get a FULL face (a fake vendor that voices admitted text; faces switched on): each spoken unit of a turn is
+   * admitted to the face as it is signed (`latency --face`).
+   */
+  readonly face?: boolean;
 }
 
-/** Records each statement and transaction of `driver` into `into`, labelled with the rig request (`label`). */
+/** What the rig labels a request with, for the round trips it makes. */
+interface RequestLabel {
+  readonly path: string;
+  readonly requestId: string | null;
+}
+
+/**
+ * Records each round trip of `driver` (statements, and each transaction's begin and end) into `into`, labelled with
+ * the rig request (`label`). It wraps the instrumented driver, so its times include the simulated network time.
+ */
 function traceDriver(
   driver: SqlDriver,
   into: TracedRoundTrip[],
-  label: AsyncLocalStorage<string>,
+  label: AsyncLocalStorage<RequestLabel>,
 ): SqlDriver {
-  const record = (sql: string, roundTrips: number): void => {
+  const begin = (): {
+    metrics: RequestMetrics | undefined;
+    start: number;
+    beforeModel: boolean;
+    at: number;
+  } => {
     const metrics = currentRequestMetrics();
-    into.push({
-      path: label.getStore() ?? null,
-      sql: sql.replace(/\s+/gu, ' ').trim(),
-      roundTrips,
+    return {
+      metrics,
+      start: performance.now(),
       beforeModel: metrics === undefined || metrics.stream.startedAt === null,
       at: metrics === undefined ? 0 : metrics.elapsed(),
-      request: metrics ?? null,
+    };
+  };
+  const record = (sql: string, from: ReturnType<typeof begin>): void => {
+    const store = label.getStore();
+    into.push({
+      path: store?.path ?? null,
+      requestId: store?.requestId ?? null,
+      sql: sql.replace(/\s+/gu, ' ').trim(),
+      roundTrips: 1,
+      start: from.start,
+      end: performance.now(),
+      beforeModel: from.beforeModel,
+      at: from.at,
+      request: from.metrics ?? null,
     });
   };
-  const wrap = (conn: SqlConnection): SqlConnection => ({
-    query: (sql, params) => {
-      record(sql, 1);
-      return conn.query(sql, params);
-    },
-  });
+  const timed = async <T>(sql: string, run: () => Promise<T>): Promise<T> => {
+    const from = begin();
+    try {
+      return await run();
+    } finally {
+      record(sql, from);
+    }
+  };
   return {
     driver: driver.driver,
-    query: (sql, params) => {
-      record(sql, 1);
-      return driver.query(sql, params);
-    },
-    queryWithOptions: (sql, params, options) => {
-      record(sql, 1);
-      return driver.queryWithOptions(sql, params, options);
-    },
-    transaction: (fn) => {
-      record('BEGIN … COMMIT', 2);
-      return driver.transaction((conn) => fn(wrap(conn)));
+    query: (sql, params) => timed(sql, () => driver.query(sql, params)),
+    queryWithOptions: (sql, params, options) =>
+      timed(sql, () => driver.queryWithOptions(sql, params, options)),
+    async transaction<T>(fn: (conn: SqlConnection) => Promise<T>): Promise<T> {
+      // The begin is answered when the driver hands over the connection; the end once the driver returns.
+      const state = { from: begin(), began: false };
+      try {
+        return await driver.transaction(async (conn) => {
+          if (!state.began) {
+            state.began = true;
+            record('BEGIN', state.from);
+          }
+          try {
+            return await fn({ query: (sql, params) => timed(sql, () => conn.query(sql, params)) });
+          } finally {
+            state.from = begin();
+          }
+        });
+      } finally {
+        if (!state.began) record('BEGIN', state.from);
+        record('COMMIT', state.from);
+      }
     },
     close: () => driver.close(),
   };
@@ -170,21 +229,33 @@ export async function createLatencyRig(
     );
   }
   const queries: TracedRoundTrip[] = [];
-  const label = new AsyncLocalStorage<string>();
+  const label = new AsyncLocalStorage<RequestLabel>();
   const pg = createPgDriver({ connectionString: t.url, max: 6 });
+  const instrumented = instrumentDriver(pg, {
+    onCall: recordDbCall,
+    simulatedRoundTripMs: latency.dbRoundTripMs,
+  });
   const db = createDbFromDriver(
-    instrumentDriver(options.traceQueries === true ? traceDriver(pg, queries, label) : pg, {
-      onCall: recordDbCall,
-      simulatedRoundTripMs: latency.dbRoundTripMs,
-    }),
+    options.traceQueries === true ? traceDriver(instrumented, queries, label) : instrumented,
   );
+  const live = { ...latency };
   const logs: string[] = [];
   const logger: Logger = createJsonLogger({ level: 'info', write: (line) => logs.push(line) });
   const gateway = observeGateway(
-    simulatedGateway(new MockModelGateway({ streamDelayMs: 0, streamFixture: harnessReply }), latency),
+    simulatedGateway(new MockModelGateway({ streamDelayMs: 0, streamFixture: harnessReply }), live),
   );
   const speech = new FakeSpeechSynthesizer();
   speech.delayMs = latency.speechFirstByteMs;
+  const face = options.face === true;
+  if (face) {
+    await t.db.system((sx) =>
+      sx.query(
+        `INSERT INTO platform_settings (key, value) VALUES ('faces_enabled', 'true'::jsonb)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        {},
+      ),
+    );
+  }
   // As in production: work after a response (settling a turn's kept memory) is drained, never waited for.
   const inflight = new InflightTracker();
   const core = createCore({
@@ -198,6 +269,8 @@ export async function createLatencyRig(
     logger: logger.child({ component: 'core' }),
     speech,
     sttGrants: new FakeSttGrantIssuer(),
+    // A FULL face: the vendor voices the text the turn engine admits to it (faces switched on above).
+    ...(face ? { embodiment: new FakeEmbodimentProvider('heygen', false, 0.19, 'full') } : {}),
     afterResponse: (task) => {
       void inflight.track(task);
     },
@@ -206,7 +279,9 @@ export async function createLatencyRig(
   // As a Lambda container's init and the dev server do before their first request.
   if (options.skipInitWarmUp !== true) await warmApiProcess(logger);
   const request = async (path: string, requestOptions?: RequestOptions): Promise<Response> =>
-    label.run(path, () => app.request(buildRequest(path, requestOptions)));
+    label.run({ path, requestId: requestOptions?.headers?.['x-request-id'] ?? null }, () =>
+      app.request(buildRequest(path, requestOptions)),
+    );
 
   const venture = seed.ventures.find((v) => v.key === 'quietquad');
   const founderId = seed.principals.maya;
@@ -220,11 +295,15 @@ export async function createLatencyRig(
     db,
     t,
     logs,
-    latency,
+    latency: live,
     queries,
+    face,
     ventureId: venture.id,
     founderId,
     request,
+    async drain() {
+      await inflight.drain(10_000);
+    },
     async signIn(principalId) {
       const roles = await t.db.system((sx) =>
         principalsRepo.listActiveRoles(sx, { principalId: ownerId, tenantId: seed.tenantId }),

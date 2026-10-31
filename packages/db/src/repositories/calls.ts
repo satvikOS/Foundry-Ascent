@@ -17,8 +17,18 @@ import { z } from 'zod';
 
 import { col, type RawRow } from '../columns.js';
 import { type SqlExecutor, type SystemExecutor } from '../executor.js';
-import { p } from '../params.js';
-import { queryFirst, queryNumber, queryOne, queryRows } from './common.js';
+import { p, type SqlParams } from '../params.js';
+import {
+  firstPart,
+  numberPart,
+  queryFirst,
+  queryNumber,
+  queryOne,
+  queryRows,
+  readPart,
+  rowsPart,
+  type ReadPart,
+} from './common.js';
 
 type CallEndReasonValue = z.infer<typeof CallEndReason>;
 
@@ -112,7 +122,12 @@ export function toCallView(call: CallRecord): CallView {
 
 /** A call by id (null when it does not exist or is not visible). */
 export function getCall(ex: SqlExecutor, id: string): Promise<CallRecord | null> {
-  return queryFirst(ex, `SELECT ${COLUMNS} FROM calls c WHERE c.id = :id`, { id: p.uuid(id) }, decodeCall);
+  return readPart(ex, callPart(id));
+}
+
+/** {@link getCall} as a read of a combined statement (`readTogether`). */
+export function callPart(id: string): ReadPart<CallRecord | null> {
+  return firstPart(`SELECT ${COLUMNS} FROM calls c WHERE c.id = :id`, { id: p.uuid(id) }, decodeCall);
 }
 
 /** The live call a person started, in any conversation (at most one). */
@@ -323,8 +338,15 @@ export function callSecondsToday(
   ex: SqlExecutor,
   input: { readonly principalId: string; readonly graceSeconds: number },
 ): Promise<number> {
-  return queryNumber(
-    ex,
+  return readPart(ex, callSecondsTodayPart(input));
+}
+
+/** {@link callSecondsToday} as a read of a combined statement (`readTogether`). */
+export function callSecondsTodayPart(input: {
+  readonly principalId: string;
+  readonly graceSeconds: number;
+}): ReadPart<number> {
+  return numberPart(
     `WITH day AS (SELECT date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS start_at)
      SELECT coalesce(floor(sum(greatest(0, extract(epoch FROM
               least(coalesce(c.ended_at,
@@ -344,8 +366,15 @@ export function countRecentVoiceTurns(
   ex: SqlExecutor,
   input: { readonly authorId: string; readonly windowSeconds: number },
 ): Promise<number> {
-  return queryNumber(
-    ex,
+  return readPart(ex, countRecentVoiceTurnsPart(input));
+}
+
+/** {@link countRecentVoiceTurns} as a read of a combined statement (`readTogether`). */
+export function countRecentVoiceTurnsPart(input: {
+  readonly authorId: string;
+  readonly windowSeconds: number;
+}): ReadPart<number> {
+  return numberPart(
     `SELECT count(*) AS n FROM turns
      WHERE author_id = :authorId AND channel = 'voice' AND created_at > now() - make_interval(secs => :window)`,
     { authorId: p.uuid(input.authorId), window: p.num(input.windowSeconds) },
@@ -354,7 +383,12 @@ export function countRecentVoiceTurns(
 
 /** Turns of a call so far. */
 export function countCallTurns(ex: SqlExecutor, callId: string): Promise<number> {
-  return queryNumber(ex, 'SELECT count(*) AS n FROM turns WHERE call_id = :id', { id: p.uuid(callId) });
+  return readPart(ex, countCallTurnsPart(callId));
+}
+
+/** {@link countCallTurns} as a read of a combined statement (`readTogether`). */
+export function countCallTurnsPart(callId: string): ReadPart<number> {
+  return numberPart('SELECT count(*) AS n FROM turns WHERE call_id = :id', { id: p.uuid(callId) });
 }
 
 export interface CallTurn {
@@ -502,14 +536,29 @@ export async function listTurnInterruptions(
   turnIds: readonly string[],
 ): Promise<Map<string, TurnInterruption>> {
   if (turnIds.length === 0) return new Map();
-  const rows = await queryRows(
-    ex,
+  return readPart(ex, turnInterruptionsPart(turnIds));
+}
+
+/**
+ * {@link listTurnInterruptions} as a read of a combined statement (`readTogether`): of `turnIds`, or of the turns a
+ * subquery of the same statement selects (`turnsRepo.recentTurnIdsSubquery`).
+ */
+export function turnInterruptionsPart(
+  turnIds: readonly string[] | { readonly sql: string; readonly params: SqlParams },
+): ReadPart<Map<string, TurnInterruption>> {
+  const among = Array.isArray(turnIds)
+    ? { sql: 't.id = ANY (:ids)', params: { ids: p.uuidArray(turnIds) } }
+    : (({ sql, params }: { readonly sql: string; readonly params: SqlParams }) => ({
+        sql: `t.id IN (${sql})`,
+        params,
+      }))(turnIds as { readonly sql: string; readonly params: SqlParams });
+  const part = rowsPart(
     `SELECT t.id, t.heard_seq, t.heard_text, t.interrupted_at FROM turns t
-     WHERE t.id = ANY (:ids) AND t.interrupted_at IS NOT NULL`,
-    { ids: p.uuidArray(turnIds) },
+     WHERE ${among.sql} AND t.interrupted_at IS NOT NULL`,
+    among.params,
     decodeInterruption,
   );
-  return new Map(rows.map((r) => [r.turnId, r]));
+  return { ...part, decode: (rows) => new Map(part.decode(rows).map((r) => [r.turnId, r])) };
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -606,12 +655,12 @@ export type SpeechReservation =
       readonly reason: 'call_not_active' | 'already_played' | 'call_budget' | 'daily_budget';
     };
 
-const TODAY_UTC = `date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
+export const TODAY_UTC = `date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
 
 /** The budget conditions of `reserveCallSpeech` on the call row `c` (whose own counter is current). */
-const CALL_BUDGET_OK = `c.speech_characters + :n
+export const CALL_BUDGET_OK = `c.speech_characters + :n
        <= least(:rate * c.max_seconds, :headroom + :rate * floor(extract(epoch FROM now() - c.started_at))::integer)`;
-const DAY_BUDGET_OK = `c.speech_characters + :n
+export const DAY_BUDGET_OK = `c.speech_characters + :n
        + (SELECT coalesce(sum(o.speech_characters), 0)::integer FROM calls o
           WHERE o.started_by = c.started_by AND o.id <> c.id AND o.started_at >= ${TODAY_UTC}) <= :daily`;
 

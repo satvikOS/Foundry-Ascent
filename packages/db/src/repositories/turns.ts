@@ -15,15 +15,19 @@ import { type z } from 'zod';
 
 import { col, type RawRow } from '../columns.js';
 import { type SqlExecutor } from '../executor.js';
-import { p } from '../params.js';
+import { p, type SqlParams } from '../params.js';
+import { assertAuditMetadata } from './audit.js';
 import {
   clampLimit,
   excerptSql,
   fetchByIdsInBatches,
+  numberPart,
   queryFirst,
-  queryNumber,
   queryOne,
   queryRows,
+  readPart,
+  rowsPart,
+  type ReadPart,
 } from './common.js';
 import { escalationIdsByTurn } from './escalations.js';
 
@@ -164,9 +168,77 @@ export async function listRecentTurns(
   return (await getTurnsByIds(ex, ids)).reverse();
 }
 
+/** The ids of the last `limit` completed turns of a session, newest first (`listRecentTurns`). */
+function recentTurnIdsSql(): string {
+  return `SELECT t.id FROM turns t
+     WHERE t.session_id = :sessionId AND t.status = 'completed'
+     ORDER BY t.ordinal DESC LIMIT :limit`;
+}
+
+/**
+ * The ids of the last `limit` completed turns of a session, as a subquery for another read of the same statement
+ * (`callsRepo.turnInterruptionsPart`).
+ */
+export function recentTurnIdsSubquery(args: { sessionId: string; limit?: number }): {
+  readonly sql: string;
+  readonly params: SqlParams;
+} {
+  return {
+    sql: recentTurnIdsSql().replaceAll(':sessionId', ':recentSessionId').replaceAll(':limit', ':recentLimit'),
+    params: { recentSessionId: p.uuid(args.sessionId), recentLimit: p.int(clampLimit(args.limit, 8, 50)) },
+  };
+}
+
+/** What {@link recentTurnsParts} reads: the history's ids, newest first, and the newest of its rows. */
+export interface RecentTurnsRead {
+  /** The last `limit` completed turns, newest first. */
+  readonly ids: readonly string[];
+  /** The rows of the newest {@link TURN_BATCH_SIZE} of them (newest first). */
+  readonly newest: readonly TurnRecord[];
+}
+
+/**
+ * {@link listRecentTurns} (without `beforeOrdinal`) as reads of a combined statement (`readTogether`): the ids and
+ * the newest {@link TURN_BATCH_SIZE} rows (one batch, as the Data API's 1 MB response allows); `ids` and `newest` are
+ * the two parts. {@link recentTurnsFrom} reads the older rows, if any, and puts them in order.
+ */
+export function recentTurnsParts(args: { sessionId: string; limit?: number }): {
+  readonly ids: ReadPart<string[]>;
+  readonly newest: ReadPart<TurnRecord[]>;
+} {
+  const limit = clampLimit(args.limit, 8, 50);
+  const params = { sessionId: p.uuid(args.sessionId), limit: p.int(limit) };
+  return {
+    ids: rowsPart(recentTurnIdsSql(), params, (r) => col.uuid.decode(r.id, 'id')),
+    newest: rowsPart(
+      `SELECT ${COLUMNS} FROM turns t WHERE t.id IN (${recentTurnIdsSql()} ) ORDER BY t.ordinal DESC LIMIT :batch`,
+      { ...params, batch: p.int(TURN_BATCH_SIZE) },
+      decodeTurn,
+    ),
+  };
+}
+
+/** The history {@link recentTurnsParts} read, oldest first, the rows beyond the first batch read in batches. */
+export async function recentTurnsFrom(ex: SqlExecutor, read: RecentTurnsRead): Promise<TurnRecord[]> {
+  const have = new Map(read.newest.map((t) => [t.id, t] as const));
+  const missing = read.ids.filter((id) => !have.has(id));
+  for (const turn of await getTurnsByIds(ex, missing)) have.set(turn.id, turn);
+  return read.ids
+    .flatMap((id) => {
+      const turn = have.get(id);
+      return turn === undefined ? [] : [turn];
+    })
+    .reverse();
+}
+
 /** Number of turns in a session (max_turns_per_session). */
 export function countSessionTurns(ex: SqlExecutor, sessionId: string): Promise<number> {
-  return queryNumber(ex, 'SELECT count(*) AS n FROM turns WHERE session_id = :sessionId', {
+  return readPart(ex, countSessionTurnsPart(sessionId));
+}
+
+/** {@link countSessionTurns} as a read of a combined statement (`readTogether`). */
+export function countSessionTurnsPart(sessionId: string): ReadPart<number> {
+  return numberPart('SELECT count(*) AS n FROM turns WHERE session_id = :sessionId', {
     sessionId: p.uuid(sessionId),
   });
 }
@@ -189,20 +261,56 @@ export async function lockTurnAdmission(ex: SqlExecutor, principalId: string): P
 }
 
 /**
+ * {@link lockTurnAdmission} and then `sessionsRepo.lockSessionForTurn` in one statement (one round trip): the
+ * advisory lock is an uncorrelated condition, evaluated once before the conversation's row is scanned and locked, so
+ * the order of the locks is the two statements' order. True when the conversation is active, undeleted and visible
+ * (its row then stays locked until the transaction ends). The admission's checks must run in a later statement: a
+ * statement reads the database as it was when it started, and this one may start before a concurrent admission of
+ * the same person commits; the next statement starts after this one holds the lock, so it sees that admission's
+ * pending turn (the conversation row itself is locked as it is now, whatever the statement's start saw).
+ */
+export async function lockTurnAdmissionAndSession(
+  ex: SqlExecutor,
+  args: { principalId: string; sessionId: string },
+): Promise<boolean> {
+  const row = await queryFirst(
+    ex,
+    `SELECT s.id FROM coaching_sessions s
+     WHERE (SELECT count(*) FROM (SELECT pg_advisory_xact_lock(:namespace, hashtext(:principal))) AS l) = 1
+       AND s.id = :id AND s.status = 'active' AND s.deleted_at IS NULL
+     FOR NO KEY UPDATE OF s`,
+    {
+      namespace: p.int(TURN_ADMISSION_LOCK_NAMESPACE),
+      principal: p.text(args.principalId.toLowerCase()),
+      id: p.uuid(args.sessionId),
+    },
+    (r) => col.uuid.decode(r.id, 'id'),
+  );
+  return row !== null;
+}
+
+/**
  * Daily AI spend against the caps the caller read from platform_settings (`app.spend_cap_state`): which
  * cap is reached, or null. Runs under RLS without access to the ledger itself (no amounts are returned).
  */
-export async function spendCapState(
+export function spendCapState(
   ex: SqlExecutor,
   caps: { globalUsd: number; principalUsd: number },
 ): Promise<'global' | 'principal' | null> {
-  const row = await queryFirst(
-    ex,
-    'SELECT app.spend_cap_state(:globalCap, :principalCap) AS state',
-    { globalCap: p.num(caps.globalUsd), principalCap: p.num(caps.principalUsd) },
-    (r) => col.enum(['global', 'principal'] as const).nullable.decode(r.state, 'state'),
-  );
-  return row ?? null;
+  return readPart(ex, spendCapStatePart(caps));
+}
+
+/** {@link spendCapState} as a read of a combined statement (`readTogether`). */
+export function spendCapStatePart(caps: {
+  globalUsd: number;
+  principalUsd: number;
+}): ReadPart<'global' | 'principal' | null> {
+  return {
+    sql: 'SELECT app.spend_cap_state(:globalCap, :principalCap) AS state',
+    params: { globalCap: p.num(caps.globalUsd), principalCap: p.num(caps.principalUsd) },
+    decode: (rows) =>
+      col.enum(['global', 'principal'] as const).nullable.decode(rows[0]?.state ?? null, 'state'),
+  };
 }
 
 /**
@@ -235,8 +343,15 @@ export function countPendingTurnsByAuthor(
   ex: SqlExecutor,
   args: { authorId: string; withinSeconds: number },
 ): Promise<number> {
-  return queryNumber(
-    ex,
+  return readPart(ex, countPendingTurnsByAuthorPart(args));
+}
+
+/** {@link countPendingTurnsByAuthor} as a read of a combined statement (`readTogether`). */
+export function countPendingTurnsByAuthorPart(args: {
+  authorId: string;
+  withinSeconds: number;
+}): ReadPart<number> {
+  return numberPart(
     `SELECT count(*) AS n FROM turns
      WHERE author_id = :authorId AND status = 'pending' AND created_at > now() - make_interval(secs => :within)`,
     { authorId: p.uuid(args.authorId), within: p.num(args.withinSeconds) },
@@ -253,8 +368,17 @@ export function countRecentTurnsByAuthor(
   ex: SqlExecutor,
   args: { authorId: string; windowSeconds: number; channel?: TurnChannelValue; includeCrisis?: boolean },
 ): Promise<number> {
-  return queryNumber(
-    ex,
+  return readPart(ex, countRecentTurnsByAuthorPart(args));
+}
+
+/** {@link countRecentTurnsByAuthor} as a read of a combined statement (`readTogether`). */
+export function countRecentTurnsByAuthorPart(args: {
+  authorId: string;
+  windowSeconds: number;
+  channel?: TurnChannelValue;
+  includeCrisis?: boolean;
+}): ReadPart<number> {
+  return numberPart(
     `SELECT count(*) AS n FROM turns
      WHERE author_id = :authorId AND created_at > now() - make_interval(secs => :window)
        AND (:channel IS NULL OR channel = :channel OR (:includeCrisis AND risk_label = 'crisis'))`,
@@ -293,27 +417,68 @@ export interface CreateTurnInput {
 export function createTurn(ex: SqlExecutor, input: CreateTurnInput): Promise<TurnRecord> {
   return queryOne(
     ex,
-    `INSERT INTO turns AS t (id, tenant_id, venture_id, session_id, ordinal, author_id, mode, founder_text, risk_label,
-                             risk_categories, channel, created_at)
-     SELECT coalesce(:id, gen_random_uuid()), :tenantId, :ventureId, :sessionId,
-            coalesce((SELECT max(x.ordinal) FROM turns x WHERE x.session_id = :sessionId), 0) + 1,
-            :authorId, :mode, :text, :riskLabel, :riskCategories, coalesce(:channel, 'text'), clock_timestamp()
-     RETURNING ${COLUMNS}`,
-    {
-      id: p.nullable.uuid(input.id),
-      tenantId: p.uuid(input.tenantId),
-      ventureId: p.uuid(input.ventureId),
-      sessionId: p.uuid(input.sessionId),
-      authorId: p.uuid(input.authorId),
-      mode: p.text(input.mode),
-      text: p.text(input.founderText),
-      riskLabel: p.nullable.text(input.riskLabel),
-      riskCategories: p.textArray(input.riskCategories ?? []),
-      channel: p.nullable.text(input.channel),
-    },
+    `${CREATE_TURN_SQL} RETURNING ${COLUMNS}`,
+    createTurnParams(input),
     decodeTurn,
     'createTurn',
   );
+}
+
+const CREATE_TURN_SQL = `INSERT INTO turns AS t (id, tenant_id, venture_id, session_id, ordinal, author_id, mode, founder_text,
+                             risk_label, risk_categories, channel, created_at)
+     SELECT coalesce(:id, gen_random_uuid()), :tenantId, :ventureId, :sessionId,
+            coalesce((SELECT max(x.ordinal) FROM turns x WHERE x.session_id = :sessionId), 0) + 1,
+            :authorId, :mode, :text, :riskLabel, :riskCategories, coalesce(:channel, 'text'), clock_timestamp()`;
+
+/** The audit event of {@link createAuditedTurn}, about the new turn (its id is the object, its ordinal is added). */
+export interface TurnAuditInput {
+  readonly action: string;
+  readonly outcome: string;
+  readonly ventureId: string | null;
+  readonly metadata: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * {@link createTurn} and its audit event (`app.audit`, object `turn` with the new id, `ordinal` added to the
+ * metadata) in one statement (one round trip), inside the caller's RLS transaction: both are written, or neither.
+ */
+export function createAuditedTurn(
+  ex: SqlExecutor,
+  input: CreateTurnInput,
+  event: TurnAuditInput,
+): Promise<TurnRecord> {
+  assertAuditMetadata(event.metadata);
+  return queryOne(
+    ex,
+    `WITH t AS (${CREATE_TURN_SQL} RETURNING ${COLUMNS})
+     SELECT t.*, app.audit(:auditAction, 'turn', t.id::text, :auditOutcome, NULL, :auditVenture,
+                           :auditMetadata || jsonb_build_object('ordinal', t.ordinal)) AS audit_id
+     FROM t`,
+    {
+      ...createTurnParams(input),
+      auditAction: p.text(event.action),
+      auditOutcome: p.text(event.outcome),
+      auditVenture: p.nullable.uuid(event.ventureId),
+      auditMetadata: p.json(event.metadata),
+    },
+    decodeTurn,
+    'createAuditedTurn',
+  );
+}
+
+function createTurnParams(input: CreateTurnInput): SqlParams {
+  return {
+    id: p.nullable.uuid(input.id),
+    tenantId: p.uuid(input.tenantId),
+    ventureId: p.uuid(input.ventureId),
+    sessionId: p.uuid(input.sessionId),
+    authorId: p.uuid(input.authorId),
+    mode: p.text(input.mode),
+    text: p.text(input.founderText),
+    riskLabel: p.nullable.text(input.riskLabel),
+    riskCategories: p.textArray(input.riskCategories ?? []),
+    channel: p.nullable.text(input.channel),
+  };
 }
 
 export interface FinishTurnInput {

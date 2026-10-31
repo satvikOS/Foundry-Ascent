@@ -20,7 +20,7 @@ import { col, type RawRow } from '../columns.js';
 import { NotebookIntegrityError } from '../errors.js';
 import { type SqlExecutor } from '../executor.js';
 import { p } from '../params.js';
-import { queryFirst } from './common.js';
+import { firstPart, queryFirst, readPart, type ReadPart } from './common.js';
 
 /** At most this many conversations are recorded as the sources of the summary (oldest dropped first). */
 export const MAX_SUMMARY_SOURCES = 50;
@@ -156,8 +156,15 @@ export function getNotebook(
   ex: SqlExecutor,
   args: { ventureId: string; personaId: string },
 ): Promise<NotebookRecord | null> {
-  return queryFirst(
-    ex,
+  return readPart(ex, notebookPart(args));
+}
+
+/** {@link getNotebook} as a read of a combined statement (`readTogether`). */
+export function notebookPart(args: {
+  ventureId: string;
+  personaId: string;
+}): ReadPart<NotebookRecord | null> {
+  return firstPart(
     `SELECT ${COLUMNS}, pe.name AS persona_name
      FROM veir_notebooks n JOIN personas pe ON pe.id = n.persona_id
      WHERE n.venture_id = :ventureId AND n.persona_id = :personaId`,

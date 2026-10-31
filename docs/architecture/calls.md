@@ -504,8 +504,12 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
   browser publish `avatar.speak_text` with that text into the vendor's room (no microphone track, push-to-talk never
   started, no vendor context, so the vendor's own model never speaks).
   - **Pre-approval (the common path).** When a spoken turn starts on a call whose FULL face is live, the turn engine
-    admits each unit with those same checks as it signs it (`SpeechService.prepareFaceApproval`, the face read once
-    per turn) and streams it as `turn.speech` with `face: true`, a flag the unit's signature covers
+    admits each unit with those same checks as it signs it (`SpeechService.prepareFaceApproval`: the call, its face
+    and the platform settings read once per turn, in one statement; then each unit's checks and writes in one
+    statement, `twinRepo.admitPreapprovedFaceUnit`, which admits it only while the settings are still those read, and
+    reads the day's spend, the speech budget's counts and the face's order as it admits it; a unit it refuses, a
+    settings change included, goes through `face/say` on the settings of that moment) and streams it as
+    `turn.speech` with `face: true`, a flag the unit's signature covers
     (`sessionId|turnId|seq|text|face`). The browser publishes such a unit at once: no browser-to-API round trip
     sits between the unit's arrival and the face. The admitted row is marked `call_face_texts.preapproved` (0020).
     A unit the server does not pre-approve is streamed without the flag, and after the first one nothing more of

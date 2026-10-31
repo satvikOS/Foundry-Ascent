@@ -11,7 +11,19 @@ import { type z } from 'zod';
 import { col, type RawRow } from '../columns.js';
 import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
-import { clampLimit, fetchByIdsInBatches, queryFirst, queryNumber, queryOne, queryRows } from './common.js';
+import {
+  clampLimit,
+  fetchByIdsInBatches,
+  firstPart,
+  queryFirst,
+  queryNumber,
+  queryOne,
+  queryRows,
+  readPart,
+  rowsPart,
+  type IdRef,
+  type ReadPart,
+} from './common.js';
 import { ERASED_PACKET_SQL, TEMPORARY_CHAT_ENDED_TEXT, UNSHARED_NOT_ERASED_SQL } from './escalations.js';
 import { EPHEMERAL_REDACTION_TEXT } from './turns.js';
 
@@ -114,13 +126,36 @@ function decodeSession(r: RawRow): SessionRecord {
   };
 }
 
-export function getSession(ex: SqlExecutor, id: string): Promise<SessionRecord | null> {
-  return queryFirst(
-    ex,
+/** {@link getSession} as a read of a combined statement (`readTogether`). */
+export function sessionPart(id: string): ReadPart<SessionRecord | null> {
+  return firstPart(
     `SELECT ${COLUMNS} FROM coaching_sessions s WHERE s.id = :id`,
     { id: p.uuid(id) },
     decodeSession,
   );
+}
+
+export function getSession(ex: SqlExecutor, id: string): Promise<SessionRecord | null> {
+  return readPart(ex, sessionPart(id));
+}
+
+/**
+ * The venture of conversation `sessionId`, for another read of the same statement (`IdRef`): the same row, under the
+ * same visibility, as {@link sessionPart} reads.
+ */
+export function sessionVentureRef(sessionId: string): IdRef {
+  return {
+    sql: '(SELECT sv.venture_id FROM coaching_sessions sv WHERE sv.id = :sessionVentureId)',
+    params: { sessionVentureId: p.uuid(sessionId) },
+  };
+}
+
+/** The release conversation `sessionId` is pinned to, for another read of the same statement (`IdRef`). */
+export function sessionReleaseRef(sessionId: string): IdRef {
+  return {
+    sql: '(SELECT sr.persona_release_id FROM coaching_sessions sr WHERE sr.id = :sessionReleaseId)',
+    params: { sessionReleaseId: p.uuid(sessionId) },
+  };
 }
 
 /**
@@ -594,12 +629,21 @@ export interface RecentDigest {
  * assigned to the venture later still knows what was said before). Temporary and deleted conversations never
  * have one. Titles follow the session rule: null for readers outside the founder/team.
  */
-export async function listRecentDigests(
+export function listRecentDigests(
   ex: SqlExecutor,
   args: { ventureId: string; personaId?: string | null; excludeSessionId?: string | null; limit?: number },
 ): Promise<RecentDigest[]> {
-  const rows = await queryRows(
-    ex,
+  return readPart(ex, recentDigestsPart(args));
+}
+
+/** {@link listRecentDigests} as a read of a combined statement (`readTogether`). */
+export function recentDigestsPart(args: {
+  ventureId: string;
+  personaId?: string | null;
+  excludeSessionId?: string | null;
+  limit?: number;
+}): ReadPart<RecentDigest[]> {
+  const part = rowsPart(
     `SELECT s.id, r.persona_id, ${memberOnly('s.title')} AS title, s.last_activity_at, s.has_calls, s.digest
      FROM coaching_sessions s
      JOIN persona_releases r ON r.id = s.persona_release_id
@@ -622,7 +666,10 @@ export async function listRecentDigests(
       digest: decodeDigest(r.digest),
     }),
   );
-  return rows.flatMap((r) => (r.digest === null ? [] : [{ ...r, digest: r.digest }]));
+  return {
+    ...part,
+    decode: (raw) => part.decode(raw).flatMap((r) => (r.digest === null ? [] : [{ ...r, digest: r.digest }])),
+  };
 }
 
 /** One of a venture's latest earlier conversations, as "where you left off" reads it. */

@@ -1,6 +1,6 @@
-import { personasRepo, venturesRepo, type AppExecutor } from '@foundry/db';
+import { personasRepo, readTogether, venturesRepo, type AppExecutor } from '@foundry/db';
 
-import { loadContinuity, type LoadedContinuity } from './continuity.js';
+import { continuityFrom, continuityParts, type ContinuityKeys, type LoadedContinuity } from './continuity.js';
 
 /**
  * The part of a turn's context that only the conversation decides, read alongside the turn's checks rather than after
@@ -40,22 +40,26 @@ export interface TurnContextReads {
 
 /**
  * The reads, in one place for both paths: the persona's presence, the founder and the vEIR's notes and the venture's
- * earlier conversations (`loadContinuity`), and the venture.
+ * earlier conversations (`continuityParts`), and the venture, in one statement.
  */
 export async function readTurnContext(tx: AppExecutor, keys: TurnContextKeys): Promise<TurnContextReads> {
-  const presence = await personasRepo.getPersonaPresence(tx, {
-    personaId: keys.personaId,
-    assignedEirProfileId: keys.assignedEirProfileId,
-  });
-  const memory = await loadContinuity(tx, {
+  const continuity: ContinuityKeys = {
     ventureId: keys.ventureId,
     personaId: keys.personaId,
     sessionId: keys.sessionId,
     principalId: keys.principalId,
     privacy: keys.privacy,
+  };
+  // One statement (one round trip): every read depends only on the keys.
+  const { presence, venture, ...memory } = await readTogether(tx, {
+    presence: personasRepo.personaPresencePart({
+      personaId: keys.personaId,
+      assignedEirProfileId: keys.assignedEirProfileId,
+    }),
+    venture: venturesRepo.venturePart(keys.ventureId),
+    ...continuityParts(continuity),
   });
-  const venture = await venturesRepo.getVenture(tx, keys.ventureId);
-  return { presence, memory, venture };
+  return { presence, memory: continuityFrom(continuity, memory), venture };
 }
 
 export function sameTurnContextKeys(a: TurnContextKeys, b: TurnContextKeys): boolean {

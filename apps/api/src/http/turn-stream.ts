@@ -22,6 +22,7 @@ import {
   type IdempotencyStore,
   KEY_REUSED,
   requestHash,
+  type Reservation,
   routeKey,
 } from './idempotency.js';
 import { jsonBody, pathParam } from './input.js';
@@ -81,6 +82,12 @@ interface HeldReservation {
   readonly hash: string;
 }
 
+/** Refuses a turn whose Idempotency-Key this request did not reserve; the reservation then decides the response. */
+const NOT_RESERVED = (): DomainError =>
+  new DomainError('conflict', 'A request with this Idempotency-Key is still being processed', {
+    reason: 'idempotency_not_reserved',
+  });
+
 /**
  * POST /sessions/:id/turns (system design §6.1). Runs the orchestrator and streams its events as SSE
  * (`event: <name>` + `data: <json>`), with keep-alive comments and cancellation when the client goes away
@@ -91,7 +98,12 @@ interface HeldReservation {
  * response instead of a stream.
  *
  * `Idempotency-Key`: the key is bound to the accepted turn's ordinal; a retry with the same key and body
- * replays that turn from storage (core `expectedOrdinal`), without a second model call.
+ * replays that turn from storage (core `expectedOrdinal`), without a second model call. The key is reserved while the
+ * turn's checks run (one round trip off the way to the stream), and the turn is admitted only once it is reserved: a
+ * key used for another request, a request with this key still being answered, or one already answered decide the
+ * response as they did when the reservation came first (the last replays the stored turn). The accepted turn is
+ * stored against the key once the stream is open, and the stream ends only after it is: a retry meanwhile finds the
+ * key still reserved (`IN_FLIGHT`), as it does while the turn is answered.
  */
 export async function handleTurnRequest(
   c: AppContext,
@@ -103,13 +115,27 @@ export async function handleTurnRequest(
   let input = jsonBody(c, RunTurnInput);
   const requestId = ctx.requestId;
 
-  let held: HeldReservation | null = null;
-  let replayed = false;
+  // Set once the reservation decided (`reservationOutcome`): the reservation this request holds, and whether the turn
+  // is a replay of the stored one.
+  const reserved: { held: HeldReservation | null; replayed: boolean } = { held: null, replayed: false };
   const key = idempotencyKeyOf(c);
+  // The reservation, made while the turn's checks run; the turn waits for it before it is admitted (`beforeAdmission`).
+  let reserving: Promise<Reservation> | null = null;
+  let reservedScope: HeldReservation | null = null;
   if (key !== null) {
     const scope: IdempotencyScope = { principalId: ctx.principalId, route: routeKey(c), key };
     const hash = requestHash(c.req.method, new URL(c.req.url).pathname, c.get('rawBody'));
-    const reservation = await idempotency.reserve(scope, hash);
+    reservedScope = { scope, hash };
+    reserving = idempotency.reserve(scope, hash);
+    reserving.catch(() => undefined); // decided below, once the turn says whether it got that far
+  }
+  /**
+   * What the reservation decides, as when it came first: the key's other request or a request still answered refuse
+   * this one, and a stored turn replays (`expectedOrdinal`); null to go on (reserved, or no key).
+   */
+  const reservationOutcome = async (): Promise<'replay' | null> => {
+    if (reserving === null || reservedScope === null) return null;
+    const reservation = await reserving;
     switch (reservation.kind) {
       case 'mismatch':
         throw KEY_REUSED();
@@ -119,15 +145,25 @@ export async function handleTurnRequest(
         const stored = StoredTurn.safeParse(reservation.body);
         if (!stored.success) throw KEY_REUSED();
         input = { ...input, expectedOrdinal: stored.data.ordinal };
-        replayed = true;
-        break;
+        reserved.replayed = true;
+        return 'replay';
       }
       case 'reserved':
-        held = { scope, hash };
-        break;
+        reserved.held = reservedScope;
+        return null;
     }
-  }
+  };
+  // The turn is admitted only on a reservation this request holds.
+  const beforeAdmission =
+    reserving === null
+      ? undefined
+      : reserving.then((reservation) => {
+          if (reservation.kind !== 'reserved') throw NOT_RESERVED();
+        });
+  // A turn refused before admission never waits for it: the reservation then decides the response (below).
+  beforeAdmission?.catch(() => undefined);
   const release = async (): Promise<void> => {
+    const { held } = reserved;
     if (held === null) return;
     await idempotency.release(held.scope, held.hash).catch((err: unknown) => {
       logger.warn('idempotency.release_failed', { requestId, ...errorFields(err) });
@@ -155,65 +191,94 @@ export async function handleTurnRequest(
   }, budget);
 
   const started = performance.now();
-  const channel = new EventChannel<TurnStreamEvent>();
-  let acceptedTurnId: string | null = null;
   const counts = { deltas: 0, speech: 0, firstDeltaMs: null as number | null };
   const timeline = new TurnTimeline(currentRequestMetrics() ?? new RequestMetrics(started));
-  const run: Promise<RunTurnOutcome> = options.orchestrator
-    .runTurn(
-      ctx,
-      sessionId,
-      input,
-      (event) => {
-        timeline.observe(event);
-        if (event.event === 'turn.accepted') acceptedTurnId = event.turnId;
-        if (event.event === 'turn.delta') {
-          counts.deltas += 1;
-          counts.firstDeltaMs ??= Math.round(performance.now() - started);
-        }
-        if (event.event === 'turn.speech') counts.speech += 1;
-        channel.push(event);
-      },
-      { signal: controller.signal },
-    )
-    .catch((err: unknown): RunTurnOutcome => {
-      // runTurn reports failures as events; this only guards against a bug escaping it.
-      logger.error('turn.unexpected_rejection', { requestId, ...errorFields(err) });
-      const error = new DomainError('internal', 'Something went wrong while answering. Please try again.', {
-        reason: 'orchestrator_rejected',
+  const start = (
+    gate: Promise<unknown> | undefined,
+  ): { run: Promise<RunTurnOutcome>; channel: EventChannel<TurnStreamEvent> } => {
+    const events = new EventChannel<TurnStreamEvent>();
+    let acceptedTurnId: string | null = null;
+    const running: Promise<RunTurnOutcome> = options.orchestrator
+      .runTurn(
+        ctx,
+        sessionId,
+        input,
+        (event) => {
+          timeline.observe(event);
+          if (event.event === 'turn.accepted') acceptedTurnId = event.turnId;
+          if (event.event === 'turn.delta') {
+            counts.deltas += 1;
+            counts.firstDeltaMs ??= Math.round(performance.now() - started);
+          }
+          if (event.event === 'turn.speech') counts.speech += 1;
+          events.push(event);
+        },
+        { signal: controller.signal, ...(gate === undefined ? {} : { beforeAdmission: gate }) },
+      )
+      .catch((err: unknown): RunTurnOutcome => {
+        // runTurn reports failures as events; this only guards against a bug escaping it.
+        logger.error('turn.unexpected_rejection', { requestId, ...errorFields(err) });
+        const error = new DomainError('internal', 'Something went wrong while answering. Please try again.', {
+          reason: 'orchestrator_rejected',
+        });
+        events.push({ ...turnErrorEvent(acceptedTurnId, error, requestId), retryable: true });
+        return {
+          status: acceptedTurnId === null ? 'rejected' : 'failed',
+          turnId: acceptedTurnId,
+          replayed: false,
+          error,
+        };
+      })
+      .finally(() => {
+        events.close();
       });
-      channel.push({ ...turnErrorEvent(acceptedTurnId, error, requestId), retryable: true });
-      return {
-        status: acceptedTurnId === null ? 'rejected' : 'failed',
-        turnId: acceptedTurnId,
-        replayed: false,
-        error,
-      };
-    })
-    .finally(() => {
-      clearTimeout(deadline);
-      requestSignal.removeEventListener('abort', onRequestAbort);
-      channel.close();
-    });
-  void options.inflight?.track(run);
+    void options.inflight?.track(running);
+    return { run: running, channel: events };
+  };
+  const settle = (): void => {
+    clearTimeout(deadline);
+    requestSignal.removeEventListener('abort', onRequestAbort);
+  };
 
-  const first = await channel.first();
+  let { run, channel } = start(beforeAdmission);
+  let first = await channel.first();
   if (first === null || (first.event === 'turn.error' && first.turnId === null)) {
     const outcome = await run;
-    await release();
-    throw (
-      outcome.error ??
-      new DomainError('internal', 'Something went wrong while answering. Please try again.', {
-        reason: 'turn_without_events',
-      })
-    );
+    // Refused before acceptance: the reservation decides first, as when it was made before the turn ran.
+    let decided: 'replay' | null;
+    try {
+      decided = await reservationOutcome();
+    } catch (err) {
+      settle();
+      throw err;
+    }
+    if (decided === 'replay') {
+      // A turn already accepted for this key: replayed from storage.
+      ({ run, channel } = start(undefined));
+      first = await channel.first();
+    }
+    if (decided !== 'replay' || first === null || (first.event === 'turn.error' && first.turnId === null)) {
+      const refused = decided === 'replay' ? await run : outcome;
+      settle();
+      await release();
+      throw (
+        refused.error ??
+        new DomainError('internal', 'Something went wrong while answering. Please try again.', {
+          reason: 'turn_without_events',
+        })
+      );
+    }
   }
-  if (held !== null && first.event === 'turn.accepted') {
-    const { scope, hash } = held;
+  void run.finally(settle);
+  // Stored against the key once the stream is open; the stream ends after it (a retry meanwhile: IN_FLIGHT).
+  let storing: Promise<void> = Promise.resolve();
+  if (first.event === 'turn.accepted' && (await reservationOutcome()) === null && reserved.held !== null) {
+    const { scope, hash } = reserved.held;
     const stored: z.infer<typeof StoredTurn> = { turnId: first.turnId, ordinal: first.ordinal };
-    await idempotency.complete(scope, hash, 200, stored).catch((err: unknown) => {
+    storing = idempotency.complete(scope, hash, 200, stored).catch((err: unknown) => {
       logger.warn('idempotency.store_failed', { requestId, route: scope.route, ...errorFields(err) });
     });
+    void options.inflight?.track(storing);
   }
 
   let clientGone = false;
@@ -247,6 +312,7 @@ export async function handleTurnRequest(
       clearInterval(keepAlive);
     }
     const outcome = await run;
+    await storing;
     logger.info('turn.stream_finished', {
       requestId,
       turnId: outcome.turnId,
@@ -274,6 +340,6 @@ export async function handleTurnRequest(
   response.headers.delete('connection');
   response.headers.set('content-type', 'text/event-stream; charset=utf-8');
   response.headers.set('x-accel-buffering', 'no');
-  if (replayed) response.headers.set(IDEMPOTENCY_REPLAYED_HEADER, 'true');
+  if (reserved.replayed) response.headers.set(IDEMPOTENCY_REPLAYED_HEADER, 'true');
   return response;
 }

@@ -1,4 +1,4 @@
-import { callsRepo, isUuid, settingsRepo } from '@foundry/db';
+import { callsRepo, isUuid, settingsRepo, type ReadPart } from '@foundry/db';
 
 import { DomainError, fail } from '../errors.js';
 import { requireId, type RequestScope } from '../internal/kit.js';
@@ -24,6 +24,45 @@ export interface VoiceTurnAdmission {
   readonly sessionId: string;
   readonly callId: string | undefined;
   readonly now: Date;
+  /**
+   * What admission reads about the call, already read under the admission lock with the turn's other checks in one
+   * statement ({@link voiceTurnReadParts}); read here when absent.
+   */
+  readonly reads?: VoiceTurnReads;
+  /** The platform settings the turn read (calls switch, minute caps); read here when absent. */
+  readonly settings?: CallCaps & { readonly callsEnabled: boolean };
+}
+
+/** What {@link admitVoiceTurn} reads about the call and the person's calls. */
+export interface VoiceTurnReads {
+  readonly call: callsRepo.CallRecord | null;
+  readonly usedSecondsToday: number;
+  readonly recentVoiceTurns: number;
+  readonly callTurns: number;
+}
+
+/**
+ * The reads of {@link admitVoiceTurn} for `callId` (a valid id: {@link voiceTurnCallId}), for one statement with the
+ * turn's other admission checks (`readTogether`), run under the admission lock.
+ */
+export function voiceTurnReadParts(
+  principalId: string,
+  callId: string,
+): { readonly [K in keyof VoiceTurnReads]: ReadPart<VoiceTurnReads[K]> } {
+  return {
+    call: callsRepo.callPart(callId),
+    usedSecondsToday: callsRepo.callSecondsTodayPart({ principalId, graceSeconds: CALL_LIMITS.staleSeconds }),
+    recentVoiceTurns: callsRepo.countRecentVoiceTurnsPart({
+      authorId: principalId,
+      windowSeconds: CALL_LIMITS.voiceTurnRateWindowSeconds,
+    }),
+    callTurns: callsRepo.countCallTurnsPart(callId),
+  };
+}
+
+/** The call a spoken turn names, when it is a well-formed id (lower case); null when absent or malformed. */
+export function voiceTurnCallId(callId: string | undefined): string | null {
+  return callId !== undefined && isUuid(callId) ? callId.toLowerCase() : null;
 }
 
 export type AdmitVoiceTurn = (scope: RequestScope, admission: VoiceTurnAdmission) => Promise<void>;
@@ -123,11 +162,12 @@ export const admitVoiceTurn: AdmitVoiceTurn = async (scope, admission) => {
     throw deny(fail.conflict('Start a call before speaking.', 'call_required'), null);
   }
   const callId = requireId(admission.callId, 'Call');
-  const call = await callsRepo.getCall(tx, callId);
+  const { reads } = admission;
+  const call = reads === undefined ? await callsRepo.getCall(tx, callId) : reads.call;
   if (call?.sessionId !== admission.sessionId || call.startedBy !== ctx.principalId) {
     throw deny(fail.notFound('Call'), callId);
   }
-  const settings = await settingsRepo.getPlatformSettings(tx);
+  const settings = admission.settings ?? (await settingsRepo.getPlatformSettings(tx));
   const caps: CallCaps = settings;
   const refusal = voiceTurnRefusal({
     call,
@@ -135,14 +175,16 @@ export const admitVoiceTurn: AdmitVoiceTurn = async (scope, admission) => {
     timeLeft: callTimeLeft({
       elapsedSeconds: call.elapsedSeconds,
       maxSeconds: call.maxSeconds,
-      usedSecondsToday: await callSecondsToday(tx, ctx.principalId),
+      usedSecondsToday: reads?.usedSecondsToday ?? (await callSecondsToday(tx, ctx.principalId)),
       caps,
     }),
-    recentVoiceTurns: await callsRepo.countRecentVoiceTurns(tx, {
-      authorId: ctx.principalId,
-      windowSeconds: CALL_LIMITS.voiceTurnRateWindowSeconds,
-    }),
-    callTurns: await callsRepo.countCallTurns(tx, call.id),
+    recentVoiceTurns:
+      reads?.recentVoiceTurns ??
+      (await callsRepo.countRecentVoiceTurns(tx, {
+        authorId: ctx.principalId,
+        windowSeconds: CALL_LIMITS.voiceTurnRateWindowSeconds,
+      })),
+    callTurns: reads?.callTurns ?? (await callsRepo.countCallTurns(tx, call.id)),
   });
   if (refusal !== null) throw deny(refusalError(refusal, admission.now), callId);
 };

@@ -3,7 +3,16 @@ import { MembershipRole, PlatformRole, type PrincipalView } from '@foundry/contr
 import { camelRow, col, type CamelRow } from '../columns.js';
 import { type SqlExecutor } from '../executor.js';
 import { p } from '../params.js';
-import { queryFirst, queryNumber, queryOne, queryRows, setClause } from './common.js';
+import {
+  firstPart,
+  queryFirst,
+  queryNumber,
+  queryOne,
+  queryRows,
+  readPart,
+  setClause,
+  type ReadPart,
+} from './common.js';
 
 type PlatformRoleValue = (typeof PlatformRole.options)[number];
 type MembershipRoleValue = (typeof MembershipRole.options)[number];
@@ -31,7 +40,12 @@ export function toPrincipalView(
 }
 
 export function getPrincipal(ex: SqlExecutor, id: string): Promise<PrincipalRecord | null> {
-  return queryFirst(ex, `SELECT ${COLUMNS} FROM principals WHERE id = :id`, { id: p.uuid(id) }, (r) =>
+  return readPart(ex, principalPart(id));
+}
+
+/** {@link getPrincipal} as a read of a combined statement (`readTogether`). */
+export function principalPart(id: string): ReadPart<PrincipalRecord | null> {
+  return firstPart(`SELECT ${COLUMNS} FROM principals WHERE id = :id`, { id: p.uuid(id) }, (r) =>
     principalCodec.decode(r),
   );
 }

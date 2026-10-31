@@ -272,6 +272,52 @@ describe('turn SSE stream', () => {
     expect(conflict.status).toBe(409);
   });
 
+  it('stores the accepted turn against the key after the stream opened and before it ends; a retry meanwhile is in flight', async () => {
+    let store!: () => void;
+    const storing = new Promise<void>((resolve) => {
+      store = resolve;
+    });
+    class SlowStore extends MemoryIdempotencyStore {
+      override async complete(
+        ...args: Parameters<MemoryIdempotencyStore['complete']>
+      ): ReturnType<MemoryIdempotencyStore['complete']> {
+        await storing;
+        return super.complete(...args);
+      }
+    }
+    const turn: FakeTurn = async (input, emit) => {
+      await emit(acceptedEvent(input.expectedOrdinal ?? 3));
+      await emit({
+        event: 'turn.blocked',
+        turnId: TURN_ID,
+        reason: 'identity',
+        escalationId: null,
+        supportMessage: null,
+      });
+      return ok('blocked');
+    };
+    const { app, core } = appFor(turn, {}, new SlowStore());
+    const first = await app.request(post({ text: 'Same text' }, 'turn-idem-0003'));
+    // The stream opened before the key was stored.
+    expect(first.status).toBe(200);
+    const retry = await app.request(post({ text: 'Same text' }, 'turn-idem-0003'));
+    expect(retry.status).toBe(409);
+    // IN_FLIGHT: try again shortly.
+    expect(ProblemDetails.parse(await retry.json())).toMatchObject({
+      code: 'conflict',
+      retryAfterSeconds: 2,
+    });
+    // The stream ends only once the key is stored.
+    const body = first.text();
+    expect(await Promise.race([body.then(() => 'ended'), sleep(100).then(() => 'open')])).toBe('open');
+    store();
+    await body;
+    const replay = await app.request(post({ text: 'Same text' }, 'turn-idem-0003'));
+    expect(replay.headers.get('idempotency-replayed')).toBe('true');
+    await replay.text();
+    expect(core.calls.map((c) => c.expectedOrdinal)).toEqual([undefined, 3]);
+  });
+
   it('releases the key when the turn is refused, so a retry runs again', async () => {
     let calls = 0;
     const { app, store } = appFor(async (_input, emit) => {

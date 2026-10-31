@@ -1,6 +1,14 @@
 import { CRISIS_SPOKEN_MESSAGE } from '@foundry/ai';
 import { FaceSayRequest, type PlatformSettingsView, SpeechRequest } from '@foundry/contracts';
-import { auditRepo, callsRepo, personasRepo, sessionsRepo, settingsRepo, twinRepo } from '@foundry/db';
+import {
+  auditRepo,
+  callsRepo,
+  personasRepo,
+  readTogether,
+  sessionsRepo,
+  settingsRepo,
+  twinRepo,
+} from '@foundry/db';
 import { type z } from 'zod';
 
 import { type PlatformKeyCache } from '../auth/keys.js';
@@ -9,7 +17,7 @@ import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { requireId, type AuditEvent, type Kit, type RequestScope } from '../internal/kit.js';
 import { type FaceApproval } from '../orchestrator/generate.js';
-import { enforceSpendCaps, readSpendState, spendCapExceeded } from '../orchestrator/guards.js';
+import { enforceSpendCaps, readSpendState } from '../orchestrator/guards.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 import {
   FACE_SAMPLE_RATE,
@@ -177,6 +185,11 @@ export interface SpeechService {
    * turn engine calls `withdraw`, which takes back what the face has not said (`FaceHooks.withdrawTurn`, keeping
    * only the unit a page may be handing over as the turn ends) and gives back its reservations, so the face can no
    * more say the rest of such a turn than `face/say` would let it. Never throws.
+   *
+   * The call, its face and the platform settings are read here, once, in one statement; each unit's checks and
+   * writes are then one statement (`twinRepo.admitPreapprovedFaceUnit`: one round trip before the unit leaves),
+   * which admits a unit only while the settings are still those read here (else face/say decides it, on the settings
+   * of the moment) and reads the day's spend, the budget counts and the face's order as the unit is admitted.
    */
   prepareFaceApproval(
     ctx: RequestContext,
@@ -1027,11 +1040,14 @@ export function createSpeechService(
       if (provider?.mode !== 'full') return null;
       try {
         const callId = requireId(args.callId, 'Call');
-        const { call, face } = await kit.system(
-          async (sx) => ({
-            call: await callsRepo.getCall(sx, callId),
-            face: await twinRepo.getCallFace(sx, callId),
-          }),
+        const { call, face, settings, fingerprint } = await kit.system(
+          (sx) =>
+            readTogether(sx, {
+              call: callsRepo.callPart(callId),
+              face: twinRepo.callFacePart(callId),
+              settings: settingsRepo.platformSettingsPart(),
+              fingerprint: settingsRepo.settingsFingerprintPart(),
+            }),
           { transaction: false },
         );
         if (
@@ -1044,7 +1060,7 @@ export function createSpeechService(
         ) {
           return null;
         }
-        return faceApproval(ctx, call, face.sessionRef);
+        return faceApproval(ctx, call, face.sessionRef, { settings, fingerprint });
       } catch (err) {
         logger.warn('call.face_preapproval_unavailable', {
           requestId: ctx.requestId,
@@ -1056,7 +1072,14 @@ export function createSpeechService(
   };
 
   /** The pre-approval of one turn's units for the live FULL face `sessionRef` of `call` (`prepareFaceApproval`). */
-  function faceApproval(ctx: RequestContext, call: callsRepo.CallRecord, sessionRef: string): FaceApproval {
+  function faceApproval(
+    ctx: RequestContext,
+    call: callsRepo.CallRecord,
+    sessionRef: string,
+    /** The platform settings as read when the turn started, and their digest (`settingsFingerprintPart`). */
+    read: { readonly settings: settingsRepo.ResolvedPlatformSettings; readonly fingerprint: string },
+  ): FaceApproval {
+    const { settings, fingerprint } = read;
     // After a unit it did not admit, the rest of the turn goes through face/say, in order.
     let off = false;
     // The units it admitted (seq → reserved characters) and their turn, for `withdraw`.
@@ -1071,65 +1094,43 @@ export function createSpeechService(
     }): Promise<boolean> => {
       // Never the crisis line on a human-looking face.
       if (isCrisisMessage(input.text)) return false;
-      const [settings, spend] = await Promise.all([
-        kit.system((sx) => settingsRepo.getPlatformSettings(sx), { transaction: false }),
-        readSpendState(kit, ctx, true),
-      ]);
+      // The kill switches and faces on, in the settings the unit is admitted under (the statement below checks they
+      // are still these).
       if (!settings.aiEnabled || !settings.callsEnabled || !settings.facesEnabled) return false;
-      if (spendCapExceeded(spend, settings) !== null) return false;
       const text = speakableText(input.text);
       const faceUnit: callsRepo.SpeechUnitKey = { kind: 'face', turnId: input.turnId, seq: input.seq };
-      // Its characters count against the call's speech budget like any synthesis, once per unit.
-      const reservation = await kit.system(
-        (sx) =>
-          callsRepo.reserveCallSpeech(sx, {
-            callId: call.id,
-            principalId: ctx.principalId,
-            unit: faceUnit,
-            characters: text.length,
-            maxPlays: FACE_TEXT_PLAYS,
-            budget: speechBudget(settings),
-          }),
-        { transaction: false },
-      );
-      if (!reservation.ok) return false;
       const unit = callsRepo.speechUnitKey({ kind: 'unit', turnId: input.turnId, seq: input.seq });
       const digests = faceTextDigests(call.id, text, input.text);
+      // The settings unchanged, the platform's daily spend cap, the call's speech budget (its characters count like any
+      // synthesis, once per unit), the face's order: checked and written in one statement. A unit refused reserves
+      // nothing, and face/say decides it.
       const admitted = await kit.system(
         (sx) =>
-          twinRepo.admitFaceText(sx, {
+          twinRepo.admitPreapprovedFaceUnit(sx, {
             callId: call.id,
+            principalId: ctx.principalId,
             sessionRef,
+            speechUnit: callsRepo.speechUnitKey(faceUnit),
             unit,
             turnKey: input.turnId.toLowerCase(),
             seq: input.seq,
+            characters: text.length,
+            maxPlays: FACE_TEXT_PLAYS,
+            budget: speechBudget(settings),
+            caps: { globalUsd: settings.dailyUsdCapGlobal, principalUsd: settings.dailyUsdCapPerPrincipal },
+            settingsFingerprint: fingerprint,
             digests: digests.digests,
             wholes: digests.wholes,
-            preapproved: true,
           }),
         { transaction: false },
       );
-      if (!admitted) {
-        // Out of order, or the face ended meanwhile: its characters go back, and face/say decides.
-        await kit
-          .system(
-            (sx) =>
-              callsRepo.settleCallSpeech(sx, {
-                callId: call.id,
-                unit: faceUnit,
-                reservedCharacters: text.length,
-                characters: null,
-              }),
-            { transaction: false },
-          )
-          .catch(() => undefined);
-        return false;
-      }
+      if (!admitted) return false;
       admittedUnits.set(input.seq, text.length);
       turnOf = input.turnId;
-      // Recorded beside the reply, never ahead of it: the unit leaves the server as soon as it is admitted.
-      void kit
-        .flushDeferred(ctx, [
+      // Recorded beside the reply, never ahead of it: the unit leaves the server as soon as it is admitted (handed to
+      // the host's after-response work, so it is written before the invocation ends).
+      void kit.later(
+        kit.flushDeferred(ctx, [
           {
             action: 'call.face_text_admitted',
             outcome: 'succeeded',
@@ -1138,8 +1139,8 @@ export function createSpeechService(
             objectId: input.turnId,
             metadata: { callId: call.id, seq: input.seq, characters: text.length, preapproved: true },
           },
-        ])
-        .catch(() => undefined);
+        ]),
+      );
       return true;
     };
     const decide = async (input: {

@@ -1,5 +1,8 @@
 import { type TurnStreamEvent } from '@foundry/contracts';
 import {
+  DomainError,
+  isDomainError,
+  turnErrorEvent,
   type Core,
   type Orchestrator,
   type RunTurnInput,
@@ -34,7 +37,20 @@ export type FakeTurn = (
 export function fakeCore(turn: FakeTurn): Core & { readonly calls: RunTurnInput[] } {
   const calls: RunTurnInput[] = [];
   const orchestrator: Orchestrator = {
-    runTurn: (_ctx, _sessionId, input, emit, options = {}) => {
+    runTurn: async (ctx, _sessionId, input, emit, options = {}) => {
+      // As the turn engine: nothing is admitted before the Idempotency-Key reservation (`beforeAdmission`); a turn it
+      // refuses never runs.
+      if (options.beforeAdmission !== undefined) {
+        try {
+          await options.beforeAdmission;
+        } catch (err) {
+          const error = isDomainError(err)
+            ? err
+            : new DomainError('internal', 'Something went wrong while answering. Please try again.');
+          await emit(turnErrorEvent(null, error, ctx.requestId));
+          return { status: 'rejected', turnId: null, replayed: false, error };
+        }
+      }
       calls.push(input);
       return turn(input, emit, options);
     },

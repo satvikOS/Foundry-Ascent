@@ -16,7 +16,6 @@ import {
 import {
   CreateTurnRequest,
   type CoachMode,
-  type PlatformSettingsView,
   type TurnBlockedDetail,
   type TurnChannel,
   type TurnStreamEvent,
@@ -24,32 +23,38 @@ import {
   type ValidatorResults,
 } from '@foundry/contracts';
 import {
+  assignmentsRepo,
   callsRepo,
   escalationsRepo,
   memoryRepo,
   personasRepo,
+  readTogether,
   sessionsRepo,
   settingsRepo,
   turnsRepo,
   venturesRepo,
+  type ReadPart,
 } from '@foundry/db';
 import type { z } from 'zod';
 
 import { PlatformKeyCache } from '../auth/keys.js';
 import { type SessionSigningKey } from '../auth/session-token.js';
 import {
-  requireAssignmentActive,
-  requireVentureAccess,
+  enforceAssignmentActive,
+  enforceVentureAccess,
   type ActiveAssignment,
 } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, isDomainError, parseInput, toDomainError } from '../errors.js';
 import { type DirectoryCache, type OtherVentures } from '../internal/directory.js';
-import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
+import { audit, requireId, type AuditEvent, type Kit, type RequestScope } from '../internal/kit.js';
 import {
   admitVoiceTurn as callsAdmission,
   isLiveCallOf,
+  voiceTurnCallId,
+  voiceTurnReadParts,
   type AdmitVoiceTurn,
+  type VoiceTurnReads,
 } from '../services/call-admission.js';
 import { createDraftEscalation } from '../services/escalations.js';
 import { proposeMemoryCandidates, settleKeptMemory } from '../services/memory.js';
@@ -62,7 +67,6 @@ import { leftOffThreads, loadLeftOff, withoutLeftOff, type LoadedContinuity } fr
 import { renderLeftOffSection, type LeftOffData } from './continuity-prompt.js';
 import { candidateVisibility } from './evidence.js';
 import { type FaceApproval, generationTotals, SpeechStream } from './generate.js';
-import { assertWithinSpendCaps } from './guards.js';
 import { embedRetrievalQuery, privateRetrievalOwner, retrieveEvidence } from './retrieval.js';
 import { safetyScreenDue, screenIndirectIdeation } from './safety-screen.js';
 import { secondsUntilUtcMidnight, shouldSampleForReview } from './sampling.js';
@@ -91,6 +95,12 @@ export type TurnEmitter = (event: TurnStreamEvent) => void | Promise<void>;
 export interface RunTurnOptions {
   /** Client disconnect / Lambda deadline. Cancels the model call (no fallback) and fails the turn. */
   readonly signal?: AbortSignal;
+  /**
+   * Awaited just before the turn is admitted (nothing is written for the turn before it): the API's reservation of
+   * the request's Idempotency-Key, made while the turn's checks run. A rejection refuses the turn with that error
+   * (a domain error as it is), before acceptance.
+   */
+  readonly beforeAdmission?: Promise<unknown>;
 }
 
 export interface RunTurnOutcome {
@@ -152,8 +162,13 @@ export interface OrchestratorOptions {
  */
 interface TurnContextPrefetch {
   readonly keys: TurnContextKeys;
-  /** Null when the reads failed (the preflight then reads them itself). Never rejects. */
+  /**
+   * Null when the reads failed (the preflight then reads them itself). Never rejects. Resolves once they were read,
+   * before their transaction commits (`ended`).
+   */
   readonly reads: Promise<TurnContextReads | null>;
+  /** The prefetch's transaction ended (never rejects). */
+  readonly ended: Promise<void>;
   /** Whether the turn logged what became of it (prefetched, prefetch_failed, keys_changed); else it was unused. */
   accounted: boolean;
 }
@@ -194,7 +209,7 @@ export function errorEvent(
 interface Proceed {
   readonly kind: 'proceed';
   readonly session: sessionsRepo.SessionRecord;
-  readonly settings: PlatformSettingsView;
+  readonly settings: settingsRepo.ResolvedPlatformSettings;
   /** Null only on the crisis path, which makes no model call and needs no coach. */
   readonly active: ActiveAssignment | null;
   /** The fixed mode of this turn, or null when the model picks one (auto mode). */
@@ -226,10 +241,15 @@ interface Coach {
   /** The stored opener, when the history reaches back to the start of the conversation. */
   readonly opener: string | null;
   readonly memory: LoadedContinuity;
+  /**
+   * "Where you left off" (orchestrator/continuity.ts), started once the preflight passed so it reads beside the
+   * admission (it never waits for the distillation worker; null when it cannot be read).
+   */
+  readonly leftOff: Promise<LeftOffData | null>;
 }
 
 /** What the coach is before its conversation context (presence, notes) joins it ({@link Coach}). */
-type CoachBase = Omit<Coach, 'personaEirName' | 'presence' | 'memory'>;
+type CoachBase = Omit<Coach, 'personaEirName' | 'presence' | 'memory' | 'leftOff'>;
 
 /** A turn past the preflight's checks, before its conversation context is in hand (turn-context.ts). */
 interface Checked extends Omit<Proceed, 'kind' | 'venture' | 'coach'> {
@@ -277,8 +297,20 @@ export function createOrchestrator(
   function prefetchTurnContext(ctx: RequestContext, sessionId: string): TurnContextPrefetch | null {
     const keys = turnContexts.get(ctx.tenantId, ctx.principalId, sessionId);
     if (keys === null) return null;
-    const reads = kit.inRequest(ctx, ({ tx }) => readTurnContext(tx, keys)).catch(() => null);
-    return { keys, reads, accounted: false };
+    // The reads are used once read; the transaction's commit is not waited for (it only read).
+    const read = kit.readInRequest(ctx, ({ tx }) => readTurnContext(tx, keys));
+    return {
+      keys,
+      reads: read.then(
+        (r) => r.value,
+        () => null,
+      ),
+      ended: read.then(
+        (r) => r.ended,
+        () => undefined,
+      ),
+      accounted: false,
+    };
   }
 
   /**
@@ -290,8 +322,7 @@ export function createOrchestrator(
   async function endPrefetch(ctx: RequestContext, prefetch: TurnContextPrefetch | null): Promise<void> {
     if (prefetch === null) return;
     if (!prefetch.accounted) logger.info('turn.context', { requestId: ctx.requestId, source: 'unused' });
-    if (kit.deps.afterResponse === undefined) await prefetch.reads;
-    else kit.deps.afterResponse(prefetch.reads);
+    await kit.later(Promise.all([prefetch.reads, prefetch.ended]));
   }
 
   function safeEmitter(emit: TurnEmitter, requestId: string): (event: TurnStreamEvent) => Promise<void> {
@@ -317,24 +348,24 @@ export function createOrchestrator(
    */
   async function loadLeftOffFor(
     ctx: RequestContext,
-    pre: Proceed,
+    session: sessionsRepo.SessionRecord,
     personaId: string,
   ): Promise<LeftOffData | null> {
-    if (pre.session.privacy !== 'standard') return null;
+    if (session.privacy !== 'standard') return null;
     try {
       return await kit.inRequest(ctx, ({ tx }) =>
         loadLeftOff(tx, {
-          ventureId: pre.session.ventureId,
+          ventureId: session.ventureId,
           personaId,
-          sessionId: pre.session.id,
+          sessionId: session.id,
           principalId: ctx.principalId,
-          privacy: pre.session.privacy,
+          privacy: session.privacy,
         }),
       );
     } catch (err) {
       logger.warn('turn.left_off_unavailable', {
         requestId: ctx.requestId,
-        sessionId: pre.session.id,
+        sessionId: session.id,
         error: err instanceof Error ? err.name : 'unknown',
       });
       return null;
@@ -350,9 +381,10 @@ export function createOrchestrator(
     scope: RequestScope,
     session: sessionsRepo.SessionRecord,
     active: ActiveAssignment,
+    /** The release the conversation is pinned to, as read with the preflight's other reads. */
+    pinned: personasRepo.PersonaReleaseRecord | null,
   ): Promise<personasRepo.PersonaReleaseRecord> {
     if (session.personaReleaseId === active.release.id) return active.release;
-    const pinned = await personasRepo.getRelease(scope.tx, session.personaReleaseId);
     const usable =
       pinned !== null &&
       pinned.personaId === active.persona.id &&
@@ -373,22 +405,13 @@ export function createOrchestrator(
   }
 
   /**
-   * Whether the per-person message limit is reached. It counts typed messages and crisis messages on any
-   * channel; other spoken turns are limited by the calls service. Only an ordinary typed message is refused
+   * Whether the per-person message limit applies to a turn. It counts typed messages and crisis messages on any
+   * channel (`turnsRepo.countRecentTurnsByAuthorPart` with `channel: 'text'`, `includeCrisis`, read with the turn's
+   * other checks); other spoken turns are limited by the calls service. Only an ordinary typed message is refused
    * for it: a crisis message is always answered (see {@link admitTurn}).
    */
-  async function overMessageLimit(
-    scope: RequestScope,
-    args: { readonly channel: TurnChannel; readonly crisis: boolean },
-  ): Promise<boolean> {
-    if (args.channel !== 'text' && !args.crisis) return false;
-    const recent = await turnsRepo.countRecentTurnsByAuthor(scope.tx, {
-      authorId: scope.ctx.principalId,
-      windowSeconds: cfg.turns.rateWindowSeconds,
-      channel: 'text',
-      includeCrisis: true,
-    });
-    return recent >= cfg.turns.rateLimit;
+  function messageLimitApplies(args: { readonly channel: TurnChannel; readonly crisis: boolean }): boolean {
+    return args.channel === 'text' || args.crisis;
   }
 
   const MESSAGE_LIMIT_TEXT = 'You are sending messages very quickly. Please wait a few minutes.';
@@ -402,16 +425,24 @@ export function createOrchestrator(
     sessionId: string,
     input: z.output<typeof RunTurnInput>,
     crisis: boolean,
-    prefetch: TurnContextPrefetch | null = null,
+    prefetch: TurnContextPrefetch | null,
+    tails: Promise<void>[],
   ): Promise<Proceed | Replay> {
-    const checked = await checkTurn(ctx, sessionId, input, crisis, prefetch);
-    return checked.kind === 'replay' ? checked : withContext(ctx, checked);
+    const { value: checked, ended } = await checkTurn(ctx, sessionId, input, crisis, prefetch);
+    // Its commit is not waited for (it only read, or the result already waited for it: `wrote`).
+    tails.push(kit.later(ended));
+    return checked.kind === 'replay' ? checked : withContext(ctx, checked, tails);
   }
 
   /**
    * The preflight's transaction. When the prefetched context matches the turn's keys it is not waited for here: a
    * transaction that holds a connection never waits on another that needs one (a pool of N deadlocks under N such
-   * turns); {@link withContext} waits for it once this transaction has ended.
+   * turns); {@link withContext} waits for it once this transaction's work is done.
+   *
+   * Its reads are two statements (each one round trip on the Data API, where a transaction runs one statement at a
+   * time): the conversation with everything the checks decide on, then the history. Every check runs on them in the
+   * same order, with the same audits and errors, as when each was its own statement. Its result is used without
+   * waiting for the commit, unless it wrote (a conversation re-pinned to the current release).
    */
   function checkTurn(
     ctx: RequestContext,
@@ -419,10 +450,29 @@ export function createOrchestrator(
     input: z.output<typeof RunTurnInput>,
     crisis: boolean,
     prefetch: TurnContextPrefetch | null,
-  ): Promise<Checked | Replay> {
-    return kit.inRequest(ctx, async (scope) => {
+  ): Promise<{ readonly value: Checked | Replay; readonly ended: Promise<void> }> {
+    return kit.readInRequest(ctx, async (scope) => {
       const { tx } = scope;
-      const session = await sessionsRepo.getSession(tx, sessionId);
+      // The conversation, the caller's relationship to its venture, the settings, its turn count, the person's typed
+      // messages in the rate window, the venture's active assignment with its release, and the release the
+      // conversation is pinned to: keyed by the conversation, so one statement reads them all.
+      const ventureRef = sessionsRepo.sessionVentureRef(sessionId);
+      const first = await readTogether(tx, {
+        session: sessionsRepo.sessionPart(sessionId),
+        access: venturesRepo.ventureAccessPart({ ventureId: ventureRef, principalId: ctx.principalId }),
+        settings: settingsRepo.platformSettingsPart(),
+        turnCount: turnsRepo.countSessionTurnsPart(sessionId),
+        typedRecently: turnsRepo.countRecentTurnsByAuthorPart({
+          authorId: ctx.principalId,
+          windowSeconds: cfg.turns.rateWindowSeconds,
+          channel: 'text',
+          includeCrisis: true,
+        }),
+        assignment: assignmentsRepo.activeAssignmentPart(ventureRef),
+        release: personasRepo.activeReleasePart(assignmentsRepo.assignmentPersonaRef(ventureRef)),
+        pinned: personasRepo.releasePart(sessionsRepo.sessionReleaseRef(sessionId)),
+      });
+      const { session } = first;
       if (session === null) {
         scope.deferAudit({
           action: 'turn.rejected',
@@ -433,7 +483,7 @@ export function createOrchestrator(
         });
         throw fail.notFound('Session');
       }
-      await requireVentureAccess(scope, session.ventureId, 'write', {
+      enforceVentureAccess(scope, session.ventureId, first.access, 'write', {
         objectType: 'session',
         objectId: sessionId,
       });
@@ -490,7 +540,7 @@ export function createOrchestrator(
           `session_${session.status}`,
         );
       }
-      const settings = await settingsRepo.getPlatformSettings(tx);
+      const { settings } = first;
       // A counterpart is only used in a rehearsal, so sending one without a mode asks for that mode.
       const mode = input.mode ?? (input.rehearsalCounterpart ? 'rehearse' : null);
       // A spoken crisis message skips call admission (support is never refused for call reasons), so it is
@@ -516,7 +566,11 @@ export function createOrchestrator(
             'kill_switch',
           );
         }
-        active = await requireAssignmentActive(scope, session.ventureId);
+        active = enforceAssignmentActive(
+          scope,
+          session.ventureId,
+          first.assignment === null ? null : { ...first.assignment, release: first.release },
+        );
         if (active.assignment.id !== session.assignmentId) {
           throw reject(
             'assignment_inactive',
@@ -524,7 +578,9 @@ export function createOrchestrator(
             'assignment_changed',
           );
         }
-        const release = await conversationRelease(scope, session, active);
+        const release = await conversationRelease(scope, session, active, first.pinned);
+        // Re-pinned (written and audited): the result waits for the commit.
+        if (release.id !== session.personaReleaseId) scope.wrote();
         const allowedModes = active.assignment.allowedModes.filter((m) => release.allowedModes.includes(m));
         if (mode !== null && !allowedModes.includes(mode)) {
           throw reject('forbidden', `Mode "${mode}" is not enabled for this venture`, 'mode_not_allowed');
@@ -532,11 +588,15 @@ export function createOrchestrator(
         if (allowedModes.length === 0) {
           throw reject('forbidden', 'No coaching mode is enabled for this venture', 'no_modes_allowed');
         }
-        const history = await turnsRepo.listRecentTurns(tx, { sessionId, limit: cfg.turns.historyTurns });
-        const interruptions = await callsRepo.listTurnInterruptions(
-          tx,
-          history.map((t) => t.id),
-        );
+        // The history in one statement: its ids, the newest rows (one batch: the Data API's 1 MB response) and the
+        // interruptions among them; older rows, beyond the batch, in batches of their own.
+        const recent = { sessionId, limit: cfg.turns.historyTurns };
+        const historyRead = await readTogether(tx, {
+          ...turnsRepo.recentTurnsParts(recent),
+          interruptions: callsRepo.turnInterruptionsPart(turnsRepo.recentTurnIdsSubquery(recent)),
+        });
+        const history = await turnsRepo.recentTurnsFrom(tx, historyRead);
+        const { interruptions } = historyRead;
         // The persona's presence (its EIR, first-person consent, whether that EIR is the venture's), the founder, the
         // notes, the earlier conversations and the venture: read beside this transaction when the keys were known and
         // still match, else here (turn-context.ts). The same reads either way.
@@ -571,7 +631,7 @@ export function createOrchestrator(
               : null,
         };
       }
-      const turnCount = await turnsRepo.countSessionTurns(tx, sessionId);
+      const { turnCount } = first;
       // The session turn limit stops runaway conversations, never a founder in crisis (no model call).
       if (!crisis && turnCount >= settings.maxTurnsPerSession) {
         throw reject(
@@ -587,7 +647,8 @@ export function createOrchestrator(
           'ordinal_mismatch',
         );
       }
-      if (!crisis && (await overMessageLimit(scope, { channel, crisis }))) {
+      // The per-person message limit (only an ordinary typed message is refused for it: see messageLimitApplies).
+      if (!crisis && messageLimitApplies({ channel, crisis }) && first.typedRecently >= cfg.turns.rateLimit) {
         throw reject('rate_limited', MESSAGE_LIMIT_TEXT, 'turn_rate_limit', cfg.turns.rateWindowSeconds);
       }
       // A crisis turn reads no coach context: the venture is read here.
@@ -613,7 +674,11 @@ export function createOrchestrator(
    * Completes a checked turn with its context: the reads made in the preflight, or the prefetched ones (read again in a
    * transaction of their own if the prefetch failed). The coach and the venture are built from them alike.
    */
-  async function withContext(ctx: RequestContext, checked: Checked): Promise<Proceed> {
+  async function withContext(
+    ctx: RequestContext,
+    checked: Checked,
+    tails: Promise<void>[],
+  ): Promise<Proceed> {
     const { session, coach: base, keys } = checked;
     let reads: TurnContextReads | null = null;
     if (checked.context !== null && keys !== null) {
@@ -632,8 +697,11 @@ export function createOrchestrator(
     const venture = reads === null ? checked.crisisVenture : reads.venture;
     if (venture === null) throw fail.notFound('Venture');
     let coach: Coach | null = null;
-    if (base !== null && reads !== null) {
+    if (base !== null && reads !== null && checked.active !== null) {
       const { presence } = reads;
+      // Read beside the admission, in its own transaction; it never outlives the turn.
+      const leftOff = loadLeftOffFor(ctx, session, checked.active.persona.id);
+      tails.push(kit.later(leftOff));
       coach = {
         ...base,
         personaEirName: presence.eirName,
@@ -641,6 +709,7 @@ export function createOrchestrator(
         // EIR sees the work.
         presence: { ...presence, eirSeesWork: presence.eirSeesWork && session.privacy !== 'ephemeral' },
         memory: reads.memory,
+        leftOff,
       };
     }
     return {
@@ -883,6 +952,8 @@ export function createOrchestrator(
     readonly emit: (e: TurnStreamEvent) => Promise<void>;
     readonly signal: AbortSignal | undefined;
     readonly startedAt: number;
+    /** Work the turn hands to the host ({@link Kit.later}); runTurn waits for it before it returns when there is none. */
+    readonly tails: Promise<void>[];
   }
 
   async function accepted(a: Accepted): Promise<RunTurnOutcome> {
@@ -920,54 +991,68 @@ export function createOrchestrator(
       throw new DomainError('assignment_inactive', 'No active coach', { reason: 'no_assignment' });
 
     // Step 3: authorized, scoped retrieval. "Where you left off" (the latest earlier conversations, read as they
-    // were said when not distilled yet) loads alongside, in its own transaction: it never waits for the
-    // distillation worker, and the turn never waits for it longer than for retrieval.
+    // were said when not distilled yet) has been loading since the preflight, in its own transaction: it never waits
+    // for the distillation worker, and the turn never waits for it longer than for retrieval.
     await emit({ event: 'turn.status', phase: 'retrieving', detail: null, evidenceCount: null });
-    const leftOff = loadLeftOffFor(ctx, pre, active.persona.id);
-    const embedding = await (a.embedding ??
-      embedRetrievalQuery(kit, ctx, { purpose: 'turn', ventureId }, a.query, signal));
-    const pack = await kit.inRequest(ctx, async (scope) => {
+    const embedding =
+      a.embedding ?? embedRetrievalQuery(kit, ctx, { purpose: 'turn', ventureId }, a.query, signal, a.tails);
+    // The retrieval transaction opens while the query is embedded (its begin and context run beside the embedding,
+    // which needs no database connection), and the search is used without waiting for the commit: it only reads.
+    const { value: retrieved, ended } = await kit.readInRequest(ctx, async (scope) => {
+      const vector = await embedding;
       const evidencePack = await retrieveEvidence(scope.tx, {
         tenantId: ctx.tenantId,
         ventureId,
         personaId: active.persona.id,
         stage: pre.venture.stage,
         query: a.query,
-        embedding,
+        embedding: vector,
         dataClassCeiling: active.assignment.dataClassCeiling,
         budgets: cfg.retrieval,
         channel: pre.channel,
         // Always null today: no session is readable by its author alone (see privateRetrievalOwner).
         privateOwnerId: privateRetrievalOwner(pre.session, ctx.principalId),
       });
-      await audit(scope, {
-        action: 'retrieval.authorized',
-        outcome: 'allowed',
-        ventureId,
-        objectType: 'turn',
-        objectId: turn.id,
-        metadata: { ...evidencePack.counts, lexicalOnly: embedding === null },
-      });
-      if (evidencePack.dropped > 0) {
-        await audit(scope, {
-          action: 'retrieval.denied',
-          outcome: 'denied',
-          ventureId,
-          objectType: 'turn',
-          objectId: turn.id,
-          policyReason: 'isolation_filter',
-          metadata: { dropped: evidencePack.dropped },
-        });
-      }
-      return evidencePack;
+      return { evidencePack, lexicalOnly: vector === null };
     });
+    a.tails.push(kit.later(ended));
+    const pack = retrieved.evidencePack;
+    // What was retrieved for the turn is audited as before, written beside the reply rather than ahead of it (the
+    // events are the request's: its tenant, person and request id).
+    a.tails.push(
+      kit.later(
+        kit.flushDeferred(ctx, [
+          {
+            action: 'retrieval.authorized',
+            outcome: 'allowed',
+            ventureId,
+            objectType: 'turn',
+            objectId: turn.id,
+            metadata: { ...pack.counts, lexicalOnly: retrieved.lexicalOnly },
+          },
+          ...(pack.dropped > 0
+            ? [
+                {
+                  action: 'retrieval.denied',
+                  outcome: 'denied' as const,
+                  ventureId,
+                  objectType: 'turn',
+                  objectId: turn.id,
+                  policyReason: 'isolation_filter',
+                  metadata: { dropped: pack.dropped },
+                },
+              ]
+            : []),
+        ]),
+      ),
+    );
     await emit({
       event: 'turn.status',
       phase: 'retrieving',
       detail: `memory:${pack.counts.memory},documents:${pack.counts.chunks},library:${pack.counts.shared + pack.counts.resources + pack.counts.patterns}`,
       evidenceCount: pack.items.length,
     });
-    const leftOffData = await leftOff;
+    const leftOffData = await coach.leftOff;
     const leftOffSection = renderLeftOffSection(leftOffData, {
       now: kit.now(),
       threads: leftOffThreads(coach.memory.continuity),
@@ -1264,7 +1349,7 @@ export function createOrchestrator(
       readonly crisis: boolean;
       readonly ventureId: string;
       readonly sessionId: string;
-      readonly settings: PlatformSettingsView;
+      readonly settings: settingsRepo.ResolvedPlatformSettings;
       readonly channel: TurnChannel;
       readonly callId: string | undefined;
     },
@@ -1275,6 +1360,7 @@ export function createOrchestrator(
       message: string,
       reason: string,
       retryAfterSeconds: number,
+      metadata?: AuditEvent['metadata'],
     ) => {
       scope.deferAudit({
         action: code === 'spend_cap_reached' ? 'spend_cap.reached' : 'turn.rejected',
@@ -1283,14 +1369,20 @@ export function createOrchestrator(
         objectType: code === 'spend_cap_reached' ? 'turn' : 'session',
         objectId: code === 'spend_cap_reached' ? null : args.sessionId,
         policyReason: reason,
+        ...(metadata === undefined ? {} : { metadata }),
       });
       return new DomainError(code, message, { reason, retryAfterSeconds });
     };
-    await turnsRepo.lockTurnAdmission(tx, ctx.principalId);
-    // Preflight read the conversation in its own transaction. Deleting or ending it since then must win: the
-    // conversation is re-checked under the lock its delete and end take, so a turn admitted just after a
-    // delete is refused, and a delete that comes later waits for this turn and erases it with the rest.
-    if (!(await sessionsRepo.lockSessionForTurn(tx, args.sessionId))) {
+    // The person's admission lock, then the conversation's row (one statement). Preflight read the conversation in
+    // its own transaction. Deleting or ending it since then must win: the conversation is re-checked under the lock
+    // its delete and end take, so a turn admitted just after a delete is refused, and a delete that comes later waits
+    // for this turn and erases it with the rest.
+    if (
+      !(await turnsRepo.lockTurnAdmissionAndSession(tx, {
+        principalId: ctx.principalId,
+        sessionId: args.sessionId,
+      }))
+    ) {
       scope.deferAudit({
         action: 'turn.rejected',
         outcome: 'blocked',
@@ -1303,16 +1395,43 @@ export function createOrchestrator(
         reason: 'session_not_active',
       });
     }
-    const overLimit = await overMessageLimit(scope, { channel: args.channel, crisis: args.crisis });
+    // Every check's reads in one statement, read under the lock (a statement after the one that took it, so a turn
+    // the person's previous admission just added is counted). The checks then run in their usual order.
+    const countsMessages = messageLimitApplies(args);
+    const voiceCall = !args.crisis && args.channel === 'voice' ? voiceTurnCallId(args.callId) : null;
+    const parts: Record<string, ReadPart<unknown>> = {};
+    if (countsMessages) {
+      parts.recentMessages = turnsRepo.countRecentTurnsByAuthorPart({
+        authorId: ctx.principalId,
+        windowSeconds: cfg.turns.rateWindowSeconds,
+        channel: 'text',
+        includeCrisis: true,
+      });
+    }
+    if (!args.crisis) {
+      parts.inFlight = turnsRepo.countPendingTurnsByAuthorPart({
+        authorId: ctx.principalId,
+        withinSeconds: cfg.turns.inFlightWindowSeconds,
+      });
+      // Spend recorded by turns still in flight is not in the ledger yet; the in-flight limit bounds that.
+      parts.spendCap = turnsRepo.spendCapStatePart({
+        globalUsd: args.settings.dailyUsdCapGlobal,
+        principalUsd: args.settings.dailyUsdCapPerPrincipal,
+      });
+    }
+    if (voiceCall !== null) Object.assign(parts, voiceTurnReadParts(ctx.principalId, voiceCall));
+    const reads = (await readTogether(tx, parts)) as {
+      readonly recentMessages?: number;
+      readonly inFlight?: number;
+      readonly spendCap?: 'global' | 'principal' | null;
+    } & Partial<VoiceTurnReads>;
+    // The per-person message limit: typed messages and crisis messages on any channel (see messageLimitApplies).
+    const overLimit = countsMessages && (reads.recentMessages ?? 0) >= cfg.turns.rateLimit;
     if (args.crisis) return overLimit && args.channel === 'voice' ? 'text' : args.channel;
     if (overLimit) {
       throw reject('rate_limited', MESSAGE_LIMIT_TEXT, 'turn_rate_limit', cfg.turns.rateWindowSeconds);
     }
-    const inFlight = await turnsRepo.countPendingTurnsByAuthor(tx, {
-      authorId: ctx.principalId,
-      withinSeconds: cfg.turns.inFlightWindowSeconds,
-    });
-    if (inFlight >= cfg.turns.maxInFlight) {
+    if ((reads.inFlight ?? 0) >= cfg.turns.maxInFlight) {
       throw reject(
         'rate_limited',
         'Please wait for the answers you are already waiting for.',
@@ -1321,13 +1440,24 @@ export function createOrchestrator(
       );
     }
     if (args.channel === 'voice') {
-      await admitVoiceTurn(scope, { sessionId: args.sessionId, callId: args.callId, now: kit.now() });
+      await admitVoiceTurn(scope, {
+        sessionId: args.sessionId,
+        callId: args.callId,
+        now: kit.now(),
+        settings: args.settings,
+        ...(voiceCall === null
+          ? {}
+          : {
+              reads: {
+                call: reads.call ?? null,
+                usedSecondsToday: reads.usedSecondsToday ?? 0,
+                recentVoiceTurns: reads.recentVoiceTurns ?? 0,
+                callTurns: reads.callTurns ?? 0,
+              },
+            }),
+      });
     }
-    // Spend recorded by turns still in flight is not in the ledger yet; the in-flight limit bounds that.
-    const cap = await turnsRepo.spendCapState(tx, {
-      globalUsd: args.settings.dailyUsdCapGlobal,
-      principalUsd: args.settings.dailyUsdCapPerPrincipal,
-    });
+    const cap = reads.spendCap ?? null;
     if (cap !== null) {
       throw reject(
         'spend_cap_reached',
@@ -1336,6 +1466,7 @@ export function createOrchestrator(
           : 'You have reached your daily AI coaching budget. It resets at midnight UTC.',
         `${cap}_daily_cap`,
         secondsUntilUtcMidnight(kit.now()),
+        { scope: cap },
       );
     }
     return args.channel;
@@ -1344,6 +1475,8 @@ export function createOrchestrator(
   return {
     async runTurn(ctx, rawSessionId, rawInput, rawEmit, options = {}) {
       let prefetch: TurnContextPrefetch | null = null;
+      // Work handed to the host's after-response work (Kit.later); without that hook, waited for before returning.
+      const tails: Promise<void>[] = [];
       try {
         const startedAt = performance.now();
         const emit = safeEmitter(rawEmit, ctx.requestId);
@@ -1365,15 +1498,11 @@ export function createOrchestrator(
           // Crisis detection does not depend on venture names; it decides which gates apply.
           crisis = classifyRisk(input.text).crisis;
           prefetch = crisis ? null : prefetchTurnContext(ctx, sessionId);
-          const checked = await preflight(ctx, sessionId, input, crisis, prefetch);
+          const checked = await preflight(ctx, sessionId, input, crisis, prefetch, tails);
           if (checked.kind === 'replay') return await replay(ctx, emit, checked);
           pre = checked;
-          if (!crisis) {
-            await assertWithinSpendCaps(kit, ctx, pre.settings, {
-              ventureId: pre.session.ventureId,
-              operation: 'turn',
-            });
-          }
+          // The spend caps are enforced by the admission, under its lock (the same refusal and audit as the check that
+          // ran here, on one read of the day's spend).
           others = await directory.others(ctx.tenantId, pre.session.ventureId);
           eirNames = (await directory.get(ctx.tenantId)).eirNames;
           addressees = await directory.addressees(ctx.tenantId, pre.session.ventureId);
@@ -1405,6 +1534,8 @@ export function createOrchestrator(
           }
           const turnMode = pre.turnMode;
           let channel = pre.channel;
+          // Nothing is written for the turn before this (the API's Idempotency-Key reservation).
+          if (options.beforeAdmission !== undefined) await options.beforeAdmission;
           turn = await kit.inRequest(ctx, async (scope) => {
             // Admission is atomic per principal: the rate limit, the in-flight limit and the spend caps are
             // checked under a transaction-scoped advisory lock in the same transaction that inserts the
@@ -1417,39 +1548,41 @@ export function createOrchestrator(
               channel: pre.channel,
               callId: parsed.callId,
             });
-            const created = await turnsRepo.createTurn(scope.tx, {
-              tenantId: ctx.tenantId,
-              ventureId: session.ventureId,
-              sessionId: session.id,
-              authorId: ctx.principalId,
-              mode: turnMode,
-              founderText: parsed.text,
-              riskLabel: label,
-              riskCategories: risk.categories,
-              channel,
-            });
+            // The pending turn and its `turn.accepted` audit (its id and ordinal) in one statement.
+            const created = await turnsRepo.createAuditedTurn(
+              scope.tx,
+              {
+                tenantId: ctx.tenantId,
+                ventureId: session.ventureId,
+                sessionId: session.id,
+                authorId: ctx.principalId,
+                mode: turnMode,
+                founderText: parsed.text,
+                riskLabel: label,
+                riskCategories: risk.categories,
+                channel,
+              },
+              {
+                action: 'turn.accepted',
+                outcome: 'succeeded',
+                ventureId: session.ventureId,
+                metadata: {
+                  sessionId: session.id,
+                  mode: turnMode,
+                  autoMode: pre.mode === null,
+                  channel,
+                  riskLabel: label,
+                  riskRules: risk.matchedRules.slice(0, 20),
+                },
+              },
+            );
+            // Rolled back with its audit.
             if (parsed.expectedOrdinal !== undefined && created.ordinal !== parsed.expectedOrdinal) {
               throw fail.conflict(
                 'The conversation changed in another window. Reload the session.',
                 'ordinal_mismatch',
               );
             }
-            await audit(scope, {
-              action: 'turn.accepted',
-              outcome: 'succeeded',
-              ventureId: session.ventureId,
-              objectType: 'turn',
-              objectId: created.id,
-              metadata: {
-                sessionId: session.id,
-                ordinal: created.ordinal,
-                mode: turnMode,
-                autoMode: pre.mode === null,
-                channel,
-                riskLabel: label,
-                riskRules: risk.matchedRules.slice(0, 20),
-              },
-            });
             return created;
           });
           // A spoken crisis message admitted as a typed one (past the message limit) says nothing on the call.
@@ -1468,6 +1601,7 @@ export function createOrchestrator(
               { purpose: 'turn', ventureId: session.ventureId },
               query,
               options.signal,
+              tails,
             );
           }
         } catch (err) {
@@ -1501,6 +1635,7 @@ export function createOrchestrator(
             emit,
             signal: options.signal,
             startedAt,
+            tails,
           });
         } catch (err) {
           const error = asDomainError(err);
@@ -1517,6 +1652,7 @@ export function createOrchestrator(
         }
       } finally {
         await endPrefetch(ctx, prefetch);
+        await Promise.all(tails);
       }
     },
   };

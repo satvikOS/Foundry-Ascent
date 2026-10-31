@@ -13,7 +13,15 @@ import {
   untakenThread,
   type PromptContinuity,
 } from '@foundry/ai';
-import { notebooksRepo, personasRepo, principalsRepo, sessionsRepo, type AppExecutor } from '@foundry/db';
+import {
+  notebooksRepo,
+  personasRepo,
+  principalsRepo,
+  readTogether,
+  sessionsRepo,
+  type AppExecutor,
+  type ReadPart,
+} from '@foundry/db';
 
 import { mentionsEir } from '../internal/eir-names.js';
 import {
@@ -46,31 +54,54 @@ export interface LoadedContinuity {
   readonly digests: number;
 }
 
-export async function loadContinuity(
-  tx: AppExecutor,
-  args: {
-    readonly ventureId: string;
-    readonly personaId: string;
-    readonly sessionId: string;
-    readonly principalId: string;
-    readonly privacy: 'standard' | 'ephemeral';
+/** Who and what {@link continuityParts} reads for. */
+export interface ContinuityKeys {
+  readonly ventureId: string;
+  readonly personaId: string;
+  readonly sessionId: string;
+  readonly principalId: string;
+  readonly privacy: 'standard' | 'ephemeral';
+}
+
+/**
+ * The reads of {@link loadContinuity}, for one statement (`readTogether`) with others: the founder, and unless the
+ * chat is temporary the notebook and the earlier conversations' digests.
+ */
+export function continuityParts(args: ContinuityKeys): {
+  readonly principal: ReadPart<principalsRepo.PrincipalRecord | null>;
+  readonly notebook?: ReadPart<notebooksRepo.NotebookRecord | null>;
+  readonly digests?: ReadPart<sessionsRepo.RecentDigest[]>;
+} {
+  const principal = principalsRepo.principalPart(args.principalId);
+  if (args.privacy === 'ephemeral') return { principal };
+  return {
+    principal,
+    notebook: notebooksRepo.notebookPart({ ventureId: args.ventureId, personaId: args.personaId }),
+    // The venture's conversations with any of its vEIRs: a vEIR assigned later still knows what was said before
+    // (one with an earlier coach is marked as that coach's). A turn leaves out the ones "Where you left off"
+    // already shows ({@link withoutLeftOff}), so a few more are read than are shown.
+    digests: sessionsRepo.recentDigestsPart({
+      ventureId: args.ventureId,
+      excludeSessionId: args.sessionId,
+      limit: MAX_PROMPT_DIGESTS + LEFT_OFF_CONVERSATIONS,
+    }),
+  };
+}
+
+/** What the vEIR remembers, from the reads of {@link continuityParts}. */
+export function continuityFrom(
+  args: ContinuityKeys,
+  reads: {
+    readonly principal: principalsRepo.PrincipalRecord | null;
+    readonly notebook?: notebooksRepo.NotebookRecord | null;
+    readonly digests?: readonly sessionsRepo.RecentDigest[];
   },
-): Promise<LoadedContinuity> {
-  const principal = await principalsRepo.getPrincipal(tx, args.principalId);
+): LoadedContinuity {
+  const { principal } = reads;
   const founderFirstName = principal ? firstNameOf(principal.displayName) : null;
   if (args.privacy === 'ephemeral') return { continuity: { founderFirstName }, notebook: false, digests: 0 };
-  const notebook = await notebooksRepo.getNotebook(tx, {
-    ventureId: args.ventureId,
-    personaId: args.personaId,
-  });
-  // The venture's conversations with any of its vEIRs: a vEIR assigned later still knows what was said before
-  // (one with an earlier coach is marked as that coach's). A turn leaves out the ones "Where you left off"
-  // already shows ({@link withoutLeftOff}), so a few more are read than are shown.
-  const digests = await sessionsRepo.listRecentDigests(tx, {
-    ventureId: args.ventureId,
-    excludeSessionId: args.sessionId,
-    limit: MAX_PROMPT_DIGESTS + LEFT_OFF_CONVERSATIONS,
-  });
+  const notebook = reads.notebook ?? null;
+  const digests = reads.digests ?? [];
   return {
     continuity: {
       founderFirstName,
@@ -92,6 +123,11 @@ export async function loadContinuity(
     notebook: notebook !== null,
     digests: Math.min(MAX_PROMPT_DIGESTS, digests.length),
   };
+}
+
+/** What the vEIR remembers when a turn starts ({@link LoadedContinuity}), in one statement. */
+export async function loadContinuity(tx: AppExecutor, args: ContinuityKeys): Promise<LoadedContinuity> {
+  return continuityFrom(args, await readTogether(tx, continuityParts(args)));
 }
 
 /**

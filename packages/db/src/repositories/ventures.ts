@@ -14,12 +14,17 @@ import { camelRow, col, type CamelRow } from '../columns.js';
 import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
 import {
+  firstPart,
+  idRef,
   principalSelect,
   queryFirst,
   queryOne,
   queryRows,
+  readPart,
   requiredPrincipalFrom,
   setClause,
+  type IdRef,
+  type ReadPart,
 } from './common.js';
 
 type MembershipRoleValue = (typeof MembershipRole.options)[number];
@@ -44,7 +49,12 @@ const COLUMNS =
   'id, tenant_id, name, one_liner, stage, domain, cohort, classification, status, current_goal, created_at, updated_at';
 
 export function getVenture(ex: SqlExecutor, id: string): Promise<VentureRecord | null> {
-  return queryFirst(ex, `SELECT ${COLUMNS} FROM ventures WHERE id = :id`, { id: p.uuid(id) }, (r) =>
+  return readPart(ex, venturePart(id));
+}
+
+/** {@link getVenture} as a read of a combined statement (`readTogether`). */
+export function venturePart(id: string): ReadPart<VentureRecord | null> {
+  return firstPart(`SELECT ${COLUMNS} FROM ventures WHERE id = :id`, { id: p.uuid(id) }, (r) =>
     ventureCodec.decode(r),
   );
 }
@@ -172,8 +182,19 @@ export function getVentureAccess(
   ex: SqlExecutor,
   args: { ventureId: string; principalId: string },
 ): Promise<VentureAccess | null> {
-  return queryFirst(
-    ex,
+  return readPart(ex, ventureAccessPart(args));
+}
+
+/**
+ * {@link getVentureAccess} as a read of a combined statement (`readTogether`); the venture may be another read's
+ * (`IdRef`).
+ */
+export function ventureAccessPart(args: {
+  ventureId: IdRef;
+  principalId: string;
+}): ReadPart<VentureAccess | null> {
+  const venture = idRef(args.ventureId, 'ventureId');
+  return firstPart(
     `SELECT v.id, v.tenant_id, v.status,
             (SELECT m.role FROM venture_memberships m
              WHERE m.venture_id = v.id AND m.principal_id = :principalId AND m.revoked_at IS NULL
@@ -182,8 +203,8 @@ export function getVentureAccess(
             EXISTS (SELECT 1 FROM assignments a JOIN eir_profiles e ON e.id = a.eir_profile_id
                     WHERE a.venture_id = v.id AND a.tenant_id = v.tenant_id AND e.principal_id = :principalId
                       AND a.status = 'active' AND (a.expires_at IS NULL OR a.expires_at > now())) AS is_assigned_eir
-     FROM ventures v WHERE v.id = :ventureId`,
-    { ventureId: p.uuid(args.ventureId), principalId: p.uuid(args.principalId) },
+     FROM ventures v WHERE v.id = ${venture.sql}`,
+    { ...venture.params, principalId: p.uuid(args.principalId) },
     (r) => ({
       ventureId: col.uuid.decode(r.id, 'id'),
       tenantId: col.uuid.decode(r.tenant_id, 'tenant_id'),

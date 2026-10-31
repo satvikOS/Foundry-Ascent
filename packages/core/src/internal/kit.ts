@@ -21,6 +21,12 @@ export interface RequestScope {
   afterCommit(task: () => Promise<void>): void;
 }
 
+/** A {@link RequestScope} for {@link Kit.readInRequest}. */
+export interface ReadScope extends RequestScope {
+  /** The work wrote something: its result is handed back once the transaction committed. */
+  wrote(): void;
+}
+
 /**
  * Shared plumbing for services: request transactions with deferred denial audits, system work,
  * audit/usage helpers and error mapping. Never nests transactions (a request transaction holding the
@@ -67,6 +73,70 @@ export class Kit {
       }
     }
     return result;
+  }
+
+  /**
+   * {@link inRequest} for reads: `value` is `fn`'s result as soon as it returned, without waiting for the commit (one
+   * round trip on the RDS Data API, which a transaction that only read does not need before its result is used).
+   * `ended` settles once the transaction did (never rejects): hand it to {@link later}, so the transaction never
+   * outlives the request. When `fn` calls `scope.wrote()`, defers an audit or registers work after the commit, the
+   * result waits for the commit as {@link inRequest}'s does. A failure inside `fn` rejects as {@link inRequest}'s.
+   */
+  async readInRequest<T>(
+    ctx: RequestContext,
+    fn: (scope: ReadScope) => Promise<T>,
+  ): Promise<{ readonly value: T; readonly ended: Promise<void> }> {
+    let early: (value: T) => void = () => undefined;
+    const read = new Promise<T>((resolve) => {
+      early = resolve;
+    });
+    const run = this.inRequest(ctx, async (scope) => {
+      const commit = { needed: false };
+      const value = await fn({
+        ...scope,
+        deferAudit: (event) => {
+          commit.needed = true;
+          scope.deferAudit(event);
+        },
+        afterCommit: (task) => {
+          commit.needed = true;
+          scope.afterCommit(task);
+        },
+        wrote: () => {
+          commit.needed = true;
+        },
+      });
+      if (!commit.needed) early(value);
+      return value;
+    });
+    const value = await Promise.race([read, run]);
+    const ended = run.then(
+      () => undefined,
+      (err: unknown) => {
+        this.deps.logger.warn('core.read_transaction_end_failed', {
+          requestId: ctx.requestId,
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+      },
+    );
+    return { value, ended };
+  }
+
+  /**
+   * Work that must be done but need not hold up the response (a write nobody reads before the turn ends, the end of a
+   * read's transaction): handed to the host's after-response work, which the API Lambda drains before its invocation
+   * returns, so it is never abandoned in a frozen container. The returned promise is settled at once then; without
+   * that hook (tests, scripts) it settles when the work has, so a caller that awaits it waits as before. Never
+   * rejects.
+   */
+  later(task: Promise<unknown>): Promise<void> {
+    const settled = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    if (this.deps.afterResponse === undefined) return settled;
+    this.deps.afterResponse(settled);
+    return Promise.resolve();
   }
 
   /**

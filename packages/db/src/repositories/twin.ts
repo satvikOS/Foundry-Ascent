@@ -8,7 +8,17 @@ import { TwinMediaKind, TwinMediaStatus, TwinMediaVendor, type TwinMediaView } f
 import { camelRow, col, type CamelRow } from '../columns.js';
 import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
-import { queryFirst, queryNumber, queryOne, queryRows } from './common.js';
+import { CALL_BUDGET_OK, DAY_BUDGET_OK, TODAY_UTC, type SpeechBudget } from './calls.js';
+import {
+  firstPart,
+  queryFirst,
+  queryNumber,
+  queryOne,
+  queryRows,
+  readPart,
+  type ReadPart,
+} from './common.js';
+import { SETTINGS_FINGERPRINT_SQL } from './settings.js';
 
 // ------------------------------------------------------------------------------------------------
 // A persona's media at its vendors
@@ -170,8 +180,12 @@ const FACE_COLUMNS = `call_id, tenant_id, started_by, vendor, mode, session_ref,
   ${transcriptColumns()}`;
 
 export function getCallFace(sx: SystemExecutor, callId: string): Promise<CallFaceRecord | null> {
-  return queryFirst(
-    sx,
+  return readPart(sx, callFacePart(callId));
+}
+
+/** {@link getCallFace} as a read of a combined statement (`readTogether`; owner role). */
+export function callFacePart(callId: string): ReadPart<CallFaceRecord | null> {
+  return firstPart(
     `SELECT ${FACE_COLUMNS} FROM call_faces WHERE call_id = :call`,
     { call: p.uuid(callId) },
     (r) => faceCodec.decode(r),
@@ -435,6 +449,107 @@ export async function admitFaceText(
       digests: p.textArray(input.digests),
       wholes: p.int(input.wholes),
       preapproved: p.bool(input.preapproved === true),
+    },
+    (r) => col.uuid.decode(r.call_id, 'call_id'),
+  );
+  return admitted !== null;
+}
+
+/**
+ * The turn engine's admission of one signed unit to the call's live FULL face (`sessionRef`) as it is produced, in one
+ * statement (one round trip) instead of four: the same checks, each made when the unit is admitted, then the same two
+ * writes, both or neither.
+ *
+ * 1. The platform settings are still those the caller decided on (`settingsFingerprint`,
+ *    `settingsRepo.SETTINGS_FINGERPRINT_SQL`: the switches it checked and the caps and budget below), and the
+ *    platform's spend today is under `caps.globalUsd` (the person's cap is not reached by speech: `caps.principalUsd`
+ *    only has to be above 0, as `spendCapExceeded` reads a spend of 0).
+ * 2. The call is the person's and live, and `characters` more fit its speech budget and the person's budget today
+ *    (`callsRepo.reserveCallSpeech`; the call row is locked first, as there).
+ * 3. The face takes the unit in order (`admitFaceText`; its row is locked next) and has not taken it already.
+ * 4. Then the unit's play and characters are reserved on the call (`face` unit: at most `maxPlays`), and the face text
+ *    is stored as pre-approved. A unit refused at any step reserves nothing (the old order reserved, then gave the
+ *    play and characters back when the face refused).
+ *
+ * True when admitted.
+ */
+export async function admitPreapprovedFaceUnit(
+  sx: SystemExecutor,
+  input: {
+    readonly callId: string;
+    readonly principalId: string;
+    readonly sessionRef: string;
+    /** The call_speech key of the reservation (`face.<turn>.<seq>`). */
+    readonly speechUnit: string;
+    /** The face text's call_speech key (`unit.<turn>.<seq>`). */
+    readonly unit: string;
+    readonly turnKey: string;
+    readonly seq: number;
+    readonly characters: number;
+    readonly maxPlays: number;
+    readonly budget: SpeechBudget;
+    readonly caps: { readonly globalUsd: number; readonly principalUsd: number };
+    /** The settings the caller decided on (`settingsRepo.settingsFingerprintPart`). */
+    readonly settingsFingerprint: string;
+    readonly digests: readonly string[];
+    readonly wholes: number;
+  },
+): Promise<boolean> {
+  const admitted = await queryFirst(
+    sx,
+    `WITH gate AS (
+       SELECT ${SETTINGS_FINGERPRINT_SQL} = :settings
+              AND (SELECT coalesce(sum(u.cost_usd), 0) FROM usage_ledger u WHERE u.at >= ${TODAY_UTC}) < :globalCap
+              AND 0 < :principalCap AS ok),
+     me AS (
+       SELECT c.id FROM calls c
+       WHERE (SELECT ok FROM gate) AND c.id = :call AND c.started_by = :principal AND c.status = 'live'
+         AND ${CALL_BUDGET_OK}
+         AND ${DAY_BUDGET_OK}
+       FOR UPDATE OF c),
+     face AS (
+       SELECT f.call_id FROM call_faces f JOIN me ON me.id = f.call_id
+       WHERE f.session_ref = :ref AND f.ended_at IS NULL AND f.mode = 'full'
+         AND (f.said_turn IS NULL
+              OR (f.said_turn = :turn AND f.said_seq < :seq)
+              OR (f.said_turn <> :turn
+                  AND NOT EXISTS (SELECT 1 FROM call_face_texts t WHERE t.call_id = f.call_id AND t.turn_key = :turn)))
+         AND NOT EXISTS (SELECT 1 FROM call_face_texts t WHERE t.call_id = f.call_id AND t.unit = :unit)
+       FOR UPDATE OF f),
+     play AS (
+       INSERT INTO call_speech AS s (call_id, unit, plays, characters)
+       SELECT face.call_id, :speechUnit, 1, :n FROM face
+       ON CONFLICT (call_id, unit) DO UPDATE SET plays = s.plays + 1, characters = s.characters + EXCLUDED.characters
+         WHERE s.plays < :max
+       RETURNING s.call_id),
+     counted AS (
+       UPDATE calls AS c SET speech_characters = c.speech_characters + :n FROM play
+       WHERE c.id = play.call_id RETURNING c.id),
+     said AS (
+       UPDATE call_faces AS f SET said_turn = :turn, said_seq = :seq FROM counted
+       WHERE f.call_id = counted.id RETURNING f.call_id)
+     INSERT INTO call_face_texts (call_id, unit, turn_key, seq, digests, wholes, preapproved)
+     SELECT said.call_id, :unit, :turn, :seq, :digests, :wholes, true FROM said
+     ON CONFLICT (call_id, unit) DO NOTHING
+     RETURNING call_id`,
+    {
+      settings: p.text(input.settingsFingerprint),
+      globalCap: p.num(input.caps.globalUsd),
+      principalCap: p.num(input.caps.principalUsd),
+      call: p.uuid(input.callId),
+      principal: p.uuid(input.principalId),
+      ref: p.text(input.sessionRef),
+      speechUnit: p.text(input.speechUnit),
+      unit: p.text(input.unit),
+      turn: p.text(input.turnKey),
+      seq: p.int(input.seq),
+      n: p.int(Math.max(0, Math.floor(input.characters))),
+      max: p.int(input.maxPlays),
+      rate: p.int(input.budget.charactersPerSecond),
+      headroom: p.int(input.budget.headroomCharacters),
+      daily: p.int(input.budget.dailyCharacters),
+      digests: p.textArray(input.digests),
+      wholes: p.int(input.wholes),
     },
     (r) => col.uuid.decode(r.call_id, 'call_id'),
   );
