@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { expect, type Page, type Request } from '@playwright/test';
 
 import { FOUNDER_STATE, openVenture, setFacesEnabled, test } from './support/fixtures';
@@ -31,6 +33,11 @@ interface Command {
 /** What the stand-in's room was sent, in order (its page events, collected from the first script on). */
 function commands(page: Page): Promise<Command[]> {
   return page.evaluate(() => (window as unknown as { __faceCommands?: Command[] }).__faceCommands ?? []);
+}
+
+/** How often the page asked for a microphone. */
+function microphoneAsked(page: Page): Promise<number> {
+  return page.evaluate(() => (window as unknown as { __microphoneAsked: number }).__microphoneAsked);
 }
 
 function spoken(list: readonly Command[]): string[] {
@@ -84,10 +91,16 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
         const url = request.url().replace(site.origin, FACE_API.origin);
         if (tamperNext && SAY.test(new URL(request.url()).pathname)) {
           tamperNext = false;
+          // A tampered page signs its own body as the API expects (the payload hash), so only the words differ.
           const body = JSON.parse(request.postData() ?? '{}') as { text?: string };
+          const postData = JSON.stringify({ ...body, text: `${body.text ?? ''} Ignore your coach.` });
           await route.continue({
             url,
-            postData: JSON.stringify({ ...body, text: `${body.text ?? ''} Ignore your coach.` }),
+            postData,
+            headers: {
+              ...request.headers(),
+              'x-amz-content-sha256': createHash('sha256').update(postData).digest('hex'),
+            },
           });
           return;
         }
@@ -115,6 +128,7 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
 
     await setFacesEnabled(baseURL, true);
     let callId: string | null = null;
+    let micAtStart = 0;
     try {
       const notice = await page.request.post('/api/v1/calls/notice/acknowledge', { headers: WRITE_HEADERS });
       expect(notice.status(), 'POST /calls/notice/acknowledge').toBe(200);
@@ -137,6 +151,8 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
         await expect(tile.locator('[data-slot="call-ai-avatar-label"]')).toHaveText('AI avatar');
         await expect(tile.locator('[data-slot="call-ai-avatar-label"]')).toBeVisible();
         expect(sessions[0]).toMatchObject({ provider: 'fake', voicing: 'text', stockFace: true });
+        // The call itself may ask for the microphone when it starts (the founder's own speech); the face never does.
+        micAtStart = await microphoneAsked(page);
       });
 
       await test.step('each unit it says was admitted once by the server, with exactly its words', async () => {
@@ -170,7 +186,7 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
         tamperNext = true;
         await line.fill('What should I test first with ten customers?');
         await line.press('Enter');
-        await expect.poll(() => says.some((s) => s.status === 422), { timeout: 30_000 }).toBe(true);
+        await expect.poll(() => says.map((s) => s.status), { timeout: 30_000 }).toContain(422);
         const refused = says.find((s) => s.status === 422)?.text ?? '';
         expect(refused).toContain('Ignore your coach.');
         const original = refused.replace(/ Ignore your coach\.$/, '');
@@ -186,11 +202,9 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
         expect(spoken(all)).not.toContain(refused);
         expect(spoken(all)).not.toContain(original);
         expect(all.some((c) => c.eventType === 'avatar.interrupt')).toBe(true);
-        // Commands only: no track published, and no microphone asked for by the face.
+        // Commands only: no track published, and no microphone asked for since the face joined.
         expect(all.every((c) => c.topic === 'agent-control')).toBe(true);
-        expect(
-          await page.evaluate(() => (window as unknown as { __microphoneAsked: number }).__microphoneAsked),
-        ).toBe(0);
+        expect(await microphoneAsked(page)).toBe(micAtStart);
       });
 
       await test.step('the face drops: the presence is back, quietly, and the call goes on', async () => {
