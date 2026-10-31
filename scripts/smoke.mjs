@@ -9,7 +9,8 @@
  *   1. GET /                         200 text/html with the security headers (CSP, HSTS, nosniff, DENY)
  *                                    and the voice-call edge policy: Permissions-Policy microphone=(self)
  *                                    with the camera off, CSP media-src 'self' blob:, and a connect-src of
- *                                    exactly 'self', the documents bucket and Amazon Transcribe streaming
+ *                                    exactly 'self', the documents bucket, Amazon Transcribe streaming and
+ *                                    the wired video face's room origins (SMOKE_FACE_CONNECT), nothing else
  *   2. GET /assets/<entry>.js        200 JavaScript, immutable caching
  *   3. GET /api/v1/health            200 JSON, status ok/degraded [+ the deployed version]. The public
  *                                    health route never queries the database (so polling it cannot keep
@@ -24,6 +25,8 @@
  *   SMOKE_HEALTH_TIMEOUT_S  seconds to wait for the API to report ready and for Aurora to resume (default 120)
  *   SMOKE_EXPECT_VERSION    when set, /api/v1/health must report exactly this version (deployed commit)
  *   SMOKE_TENANT_SLUG       tenant of the deep link (default "ain")
+ *   SMOKE_FACE_CONNECT      the wired video face's exact room origins, space-separated (config media.face.csp.connect
+ *                           while a face provider is wired; empty or unset: none allowed)
  *   SMOKE_ALLOW_HTTP=1      accept an http:// base URL (local runs)
  *   SMOKE_RETRY_DELAY_MS    pause between first-contact retries (default 5000)
  *   SMOKE_FIRST_CONTACT_TIMEOUT_S  how long the first requests retry 403/404/5xx and network errors (default 180)
@@ -69,6 +72,18 @@ const PERMISSIONS = { microphone: '(self)', camera: '()' };
 const MEDIA_SRC = "'self' blob:";
 const SPEECH_TO_TEXT_ORIGIN = 'wss://transcribestreaming.us-east-1.amazonaws.com:8443';
 const UPLOAD_ORIGIN = /^https:\/\/[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]\.s3\.us-east-1\.amazonaws\.com$/;
+
+/**
+ * The wired video face's room origins the CSP must name exactly (SMOKE_FACE_CONNECT; deploy.yml reads them from
+ * config media.face.csp.connect while a face provider is wired). Only exact wss:// or https:// origins count.
+ * @param {string | undefined} [raw]
+ * @returns {string[]}
+ */
+export function faceConnectOrigins(raw = process.env.SMOKE_FACE_CONNECT) {
+  return (raw ?? '')
+    .split(/\s+/)
+    .filter((origin) => /^(?:wss|https):\/\/[a-z0-9][a-z0-9.-]*[a-z0-9](?::\d+)?$/.test(origin));
+}
 
 class CheckError extends Error {}
 
@@ -216,7 +231,7 @@ function directives(header, separator) {
  * @param {string} csp
  * @param {string} permissionsPolicy
  */
-function edgePolicyProblems(csp, permissionsPolicy) {
+function edgePolicyProblems(csp, permissionsPolicy, faceConnect = faceConnectOrigins()) {
   const problems = [];
   const features = directives(permissionsPolicy, ',');
   for (const [feature, allow] of Object.entries(PERMISSIONS)) {
@@ -230,8 +245,15 @@ function edgePolicyProblems(csp, permissionsPolicy) {
   const connect = policy.get('connect-src') ?? [];
   const uploads = connect.filter((source) => UPLOAD_ORIGIN.test(source));
   const unexpected = connect.filter(
-    (source) => source !== "'self'" && source !== SPEECH_TO_TEXT_ORIGIN && !UPLOAD_ORIGIN.test(source),
+    (source) =>
+      source !== "'self'" &&
+      source !== SPEECH_TO_TEXT_ORIGIN &&
+      !UPLOAD_ORIGIN.test(source) &&
+      !faceConnect.includes(source),
   );
+  for (const origin of faceConnect) {
+    if (!connect.includes(origin)) problems.push(`CSP connect-src lacks the face's ${origin}`);
+  }
   if (!connect.includes("'self'")) problems.push("CSP connect-src lacks 'self'");
   if (uploads.length !== 1)
     problems.push(`CSP connect-src has ${uploads.length} documents-bucket origins, expected 1`);

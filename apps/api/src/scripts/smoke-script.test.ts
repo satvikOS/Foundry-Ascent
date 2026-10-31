@@ -87,6 +87,7 @@ function runSmoke(
   origin: string,
   firstContactSeconds: number,
   edgePolicySeconds = firstContactSeconds,
+  extraEnv: Record<string, string> = {},
 ): Promise<{ code: number; stdout: string }> {
   return new Promise((ok) => {
     execFile(
@@ -101,6 +102,7 @@ function runSmoke(
           SMOKE_FIRST_CONTACT_TIMEOUT_S: String(firstContactSeconds),
           SMOKE_EDGE_POLICY_TIMEOUT_S: String(edgePolicySeconds),
           SMOKE_EXPECT_VERSION: 'test-version',
+          ...extraEnv,
         },
         timeout: 60_000,
       },
@@ -117,6 +119,36 @@ afterEach(async () => {
   const server = current;
   current = null;
   if (server) await new Promise((done) => server.close(done));
+});
+
+describe('scripts/smoke.mjs and the wired video face’s room (2026-10-31)', () => {
+  const ROOM = 'wss://heygen-feapbkvq.livekit.cloud https://heygen-feapbkvq.livekit.cloud';
+  const withRoom = {
+    'content-security-policy': PAGE_HEADERS['content-security-policy'].replace(
+      'connect-src',
+      `connect-src ${ROOM}`,
+    ),
+  };
+
+  it('accepts exactly the configured face origins, and requires them', async () => {
+    const { server, origin } = await serve({ transient: () => null, pageHeaders: withRoom });
+    current = server;
+    const wired = await runSmoke(origin, 1, 1, { SMOKE_FACE_CONNECT: ROOM });
+    expect(wired.stdout).not.toMatch(/FAIL/);
+    expect(wired.code).toBe(0);
+    // Not configured (no face wired): the room is an unexpected host, as before.
+    const unwired = await runSmoke(origin, 1);
+    expect(unwired.stdout).toMatch(/CSP connect-src allows wss:\/\/heygen-feapbkvq\.livekit\.cloud/);
+    expect(unwired.code).toBe(1);
+  });
+
+  it('fails a page whose CSP lacks a configured face origin', async () => {
+    const { server, origin } = await serve({ transient: () => null, pageHeaders: {} });
+    current = server;
+    const { code, stdout } = await runSmoke(origin, 1, 1, { SMOKE_FACE_CONNECT: ROOM });
+    expect(stdout).toMatch(/CSP connect-src lacks the face's wss:\/\/heygen-feapbkvq\.livekit\.cloud/);
+    expect(code).toBe(1);
+  });
 });
 
 describe('scripts/smoke.mjs first contact (R6)', () => {

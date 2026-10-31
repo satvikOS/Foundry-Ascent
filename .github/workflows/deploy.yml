@@ -374,6 +374,9 @@ jobs:
         run: |
           SMOKE_TENANT_SLUG="$(jq -r '.homeTenant.slug' infra/cdk/config/production.json)"
           export SMOKE_TENANT_SLUG
+          # The wired video face's room origins, which the CSP names exactly (none while the provider is "none").
+          SMOKE_FACE_CONNECT="$(jq -r 'if (.media.face.provider // "none") == "none" then "" else ((.media.face.csp.connect // []) | join(" ")) end' infra/cdk/config/production.json)"
+          export SMOKE_FACE_CONNECT
           node scripts/smoke.mjs "${SITE_URL}"
 
       - name: Job summary
