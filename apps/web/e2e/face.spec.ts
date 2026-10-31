@@ -24,7 +24,9 @@ import {
  * first (one `POST /calls/:id/face/say` 204). It also checks that tampered words are refused (422) and never sent,
  * that no track is published and no microphone asked for, that barge-in interrupts the vendor, that the call
  * never fetches its own audio for a unit the face said, that the tile says "AI avatar", and that a face that drops
- * leaves the call on the presence.
+ * leaves the call on the presence. The face's video and voice play together in one unmuted element (the browser
+ * keeps the lips in step with the voice): the tile shows that element, no other element plays the voice, the call's
+ * Web Audio only measures it (an analyser), and minimizing the call keeps it playing out of sight.
  *
  * Like production, the FULL API shows the face to platform admins only and to the people a platform admin gave
  * Video face (Admin › People & access): the seeded founder gets no face until the owner turns hers on there.
@@ -62,6 +64,47 @@ interface Command {
 /** What the stand-in's room was sent, in order (its page events, collected from the first script on). */
 function commands(page: Page): Promise<Command[]> {
   return page.evaluate(() => (window as unknown as { __faceCommands?: Command[] }).__faceCommands ?? []);
+}
+
+/** Every `createMediaStreamSource` of the page: the audio tracks it reads and the nodes it was connected to. */
+interface StreamTap {
+  readonly tracks: string[];
+  readonly targets: string[];
+}
+
+function streamTaps(page: Page): Promise<StreamTap[]> {
+  return page.evaluate(() => (window as unknown as { __streamTaps?: StreamTap[] }).__streamTaps ?? []);
+}
+
+/** The tile's face element: its tracks, and whether it sounds. */
+function faceElement(page: Page) {
+  return page
+    .getByRole('dialog', { name: /^Call with / })
+    .locator('[data-slot="call-tile"][data-face="video"] video')
+    .evaluate((element: HTMLVideoElement) => {
+      const stream = element.srcObject instanceof MediaStream ? element.srcObject : null;
+      return {
+        audio: stream?.getAudioTracks().map((t) => t.id) ?? [],
+        video: stream?.getVideoTracks().length ?? 0,
+        muted: element.muted,
+        volume: element.volume,
+        paused: element.paused,
+      };
+    });
+}
+
+/** How many media elements on the page play the audio track `id` unmuted. */
+function playersOf(page: Page, id: string): Promise<number> {
+  return page.evaluate(
+    (trackId) =>
+      [...document.querySelectorAll<HTMLMediaElement>('audio, video')].filter(
+        (element) =>
+          element.srcObject instanceof MediaStream &&
+          element.srcObject.getAudioTracks().some((t) => t.id === trackId) &&
+          !element.muted,
+      ).length,
+    id,
+  );
 }
 
 /** How often the page asked for a microphone. */
@@ -211,6 +254,29 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
         }
         return response;
       };
+      // Every Web Audio source made from a stream, and what it is connected to (the face's voice may feed an
+      // analyser only: the call's output and the speakers never carry it, so nothing plays twice).
+      const taps: { tracks: string[]; targets: string[] }[] = [];
+      (window as unknown as { __streamTaps: typeof taps }).__streamTaps = taps;
+      const sourceTaps = new WeakMap<AudioNode, { tracks: string[]; targets: string[] }>();
+      const nativeSource = Reflect.get<AudioContext, 'createMediaStreamSource'>(
+        AudioContext.prototype,
+        'createMediaStreamSource',
+      );
+      AudioContext.prototype.createMediaStreamSource = function (this: AudioContext, stream: MediaStream) {
+        const node = nativeSource.call(this, stream);
+        const tap = { tracks: stream.getAudioTracks().map((t) => t.id), targets: [] as string[] };
+        taps.push(tap);
+        sourceTaps.set(node, tap);
+        return node;
+      };
+      type Connect = (this: AudioNode, ...args: unknown[]) => unknown;
+      const nativeConnect = Reflect.get<AudioNode, 'connect'>(AudioNode.prototype, 'connect') as Connect;
+      AudioNode.prototype.connect = function (this: AudioNode, ...args: unknown[]) {
+        const target = args[0] as { constructor?: { name?: string } } | undefined;
+        sourceTaps.get(this)?.targets.push(target?.constructor?.name ?? 'unknown');
+        return nativeConnect.apply(this, args);
+      } as typeof AudioNode.prototype.connect;
       window.addEventListener('foundry:face-command', (event) => {
         w.__faceCommands.push((event as CustomEvent).detail);
       });
@@ -351,6 +417,52 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
         expect(speech.filter((text) => said.includes(text))).toEqual([]);
       });
 
+      await test.step('the face is seen and heard together: one unmuted element, both tracks, nothing twice', async () => {
+        const media = await faceElement(page);
+        expect(media.video).toBe(1);
+        expect(media.audio).toHaveLength(1);
+        expect(media.muted).toBe(false);
+        expect(media.paused).toBe(false);
+        expect(media.volume).toBeGreaterThan(0);
+        const voice = media.audio[0] ?? '';
+        // No other element plays the face's voice.
+        expect(await playersOf(page, voice)).toBe(1);
+        // The call measured the face's voice while it spoke, and only measured it: an analyser, connected to nothing.
+        const faceTaps = (await streamTaps(page)).filter((t) => t.tracks.includes(voice));
+        expect(faceTaps.length).toBeGreaterThan(0);
+        expect(faceTaps.flatMap((t) => t.targets)).toEqual(faceTaps.map(() => 'AnalyserNode'));
+
+        // Minimized, the element plays on out of sight (the voice is never cut), and the thumbnail is the muted
+        // video alone; shown again, the tile has the same element back.
+        await screen.getByRole('button', { name: 'Minimize call' }).click();
+        await expect(screen).toHaveCount(0);
+        expect(await playersOf(page, voice)).toBe(1);
+        const parked = await page.evaluate((trackId) => {
+          const element = [...document.querySelectorAll<HTMLVideoElement>('video')].find(
+            (v) =>
+              v.srcObject instanceof MediaStream &&
+              v.srcObject.getAudioTracks().some((t) => t.id === trackId),
+          );
+          return element ? { paused: element.paused, connected: element.isConnected } : null;
+        }, voice);
+        expect(parked).toEqual({ paused: false, connected: true });
+        const thumbnail = page.locator('[data-slot="call-face-thumbnail"] video');
+        if ((await thumbnail.count()) > 0) {
+          const thumb = await thumbnail.evaluate((element: HTMLVideoElement) => ({
+            muted: element.muted,
+            audio: element.srcObject instanceof MediaStream ? element.srcObject.getAudioTracks().length : 0,
+          }));
+          expect(thumb).toEqual({ muted: true, audio: 0 });
+        }
+        await page.getByRole('button', { name: 'Return to call' }).click();
+        await expect(tile).toBeVisible();
+        const back = await faceElement(page);
+        expect(back.audio).toEqual([voice]);
+        expect(back.muted).toBe(false);
+        expect(back.paused).toBe(false);
+        expect(await playersOf(page, voice)).toBe(1);
+      });
+
       await test.step('tampered words are refused and never sent; barge-in interrupts the vendor', async () => {
         const before = spoken(await commands(page)).length;
         // This reply reaches the page without its pre-approval: each unit is asked for, and the first is tampered.
@@ -374,6 +486,8 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
         expect(spoken(all)).not.toContain(refused);
         expect(spoken(all)).not.toContain(original);
         expect(all.some((c) => c.eventType === 'avatar.interrupt')).toBe(true);
+        // The face fell silent in the page at once, without waiting for the vendor.
+        await expect.poll(async () => (await faceElement(page)).muted).toBe(true);
         // Commands only: no track published, and no microphone asked for since the face joined.
         expect(all.every((c) => c.topic === 'agent-control')).toBe(true);
         expect(await microphoneAsked(page)).toBe(micAtStart);

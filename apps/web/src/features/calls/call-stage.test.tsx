@@ -54,8 +54,8 @@ function veir(provider: CallVeir['provider']): CallVeir {
   };
 }
 
-/** A vendor face whose connection the test controls. */
-function vendorFace() {
+/** A vendor face whose connection the test controls (`media`: it brings its own element, video and voice). */
+function vendorFace(options: { media?: HTMLVideoElement } = {}) {
   let connected: (() => void) | null = null;
   let failed: ((error: Error) => void) | null = null;
   let lost: (() => void) | null = null;
@@ -78,6 +78,7 @@ function vendorFace() {
         }),
     ),
     video: () => stream,
+    media: () => options.media ?? null,
     renderer: () => renderer,
     onLost: (listener: () => void) => {
       lost = listener;
@@ -201,6 +202,50 @@ describe('CallStage: the face of a call', () => {
     expect(engine.setFaceShown).toHaveBeenLastCalledWith(true);
     expect(onVideoChange).toHaveBeenLastCalledWith(true);
     expect(face.provider.setState).toHaveBeenCalledWith('speaking');
+  });
+
+  it('shows a vendor face’s own element (video and voice together, unmuted), and keeps it playing while minimized', async () => {
+    // The adapter's element: one stream with both tracks, unmuted, so the browser keeps the lips in step.
+    const media = document.createElement('video');
+    media.srcObject = { getTracks: () => [] } as unknown as MediaStream;
+    const play = vi.spyOn(media, 'play').mockResolvedValue(undefined);
+    const face = vendorFace({ media });
+    const { asEngine, controller } = controllerWith(face, { ...SESSION, voicing: 'text', stockFace: true });
+    const first = renderWithRouter(stage({ controller, engine: asEngine }));
+    await waitFor(() => {
+      expect(face.provider.connect).toHaveBeenCalled();
+    });
+    act(() => {
+      face.connect();
+    });
+    await screen.findByRole('figure');
+    // The tile shows that very element (never a muted copy), so the voice is heard once.
+    const shown = first.container.querySelectorAll('video');
+    expect(shown).toHaveLength(1);
+    expect(shown[0]).toBe(media);
+    expect(media.muted).toBe(false);
+    expect(first.container.querySelector('[data-slot="call-video-host"]')?.contains(media)).toBe(true);
+    await waitFor(() => {
+      expect(play).toHaveBeenCalled();
+    });
+    // Minimized: the element waits on the page, still playing, out of sight; the face stays with the call.
+    first.unmount();
+    expect(media.isConnected).toBe(true);
+    expect(media.muted).toBe(false);
+    expect(face.provider.unmount).not.toHaveBeenCalled();
+    // Shown again: the same element comes back into the tile.
+    const second = renderWithRouter(stage({ controller, engine: asEngine }));
+    await screen.findByRole('figure');
+    expect(second.container.querySelector('[data-slot="call-video-host"]')?.contains(media)).toBe(true);
+    expect(document.querySelectorAll('video')).toHaveLength(1);
+    // The face ends: the adapter takes its element off the page, and the tile never puts it back.
+    act(() => {
+      media.srcObject = null;
+      media.remove();
+      face.lose();
+    });
+    await presenceShown();
+    expect(media.isConnected).toBe(false);
   });
 
   it('loads a FULL stock face for text voicing, hands it the call’s units and labels it "AI avatar"', async () => {

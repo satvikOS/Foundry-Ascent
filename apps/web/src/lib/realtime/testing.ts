@@ -161,6 +161,9 @@ export function exceptionEvent(type: string, message: string): Uint8Array {
 
 /** A microphone track: `enabled`, `stop()` and the events a browser fires on it (`ended`, `mute`, `unmute`). */
 export class FakeTrack extends EventTarget {
+  constructor(readonly kind: 'audio' | 'video' = 'audio') {
+    super();
+  }
   enabled = true;
   muted = false;
   readyState: MediaStreamTrackState = 'live';
@@ -263,6 +266,9 @@ export class FakeAudioContext {
   readonly sources: FakeBufferSource[] = [];
   readonly worklets: FakeWorkletNode[] = [];
   readonly analysers: FakeAnalyser[] = [];
+  readonly gains: FakeGain[] = [];
+  /** Every `createMediaStreamSource`, with the stream it reads. */
+  readonly streamSources: { node: FakeNode; stream: MediaStream }[] = [];
   readonly modules: string[] = [];
   decodeFails = false;
   closed = false;
@@ -274,7 +280,9 @@ export class FakeAudioContext {
   };
 
   createGain(): FakeGain {
-    return new FakeGain();
+    const gain = new FakeGain();
+    this.gains.push(gain);
+    return gain;
   }
   createAnalyser(): FakeAnalyser {
     const analyser = new FakeAnalyser();
@@ -286,8 +294,10 @@ export class FakeAudioContext {
     this.sources.push(source);
     return source;
   }
-  createMediaStreamSource(): FakeNode {
-    return new FakeNode();
+  createMediaStreamSource(stream: MediaStream): FakeNode {
+    const node = new FakeNode();
+    this.streamSources.push({ node, stream });
+    return node;
   }
   decodeAudioData(data: ArrayBuffer): Promise<AudioBuffer> {
     if (this.decodeFails) return Promise.reject(new Error('decode failed'));
@@ -318,6 +328,50 @@ export class FakeAudioContext {
     const node = new FakeWorkletNode();
     this.worklets.push(node);
     return node;
+  }
+}
+
+// Media elements ---------------------------------------------------------------------------------------
+
+/**
+ * A media element as a vendor face drives it (`srcObject`, `muted`, `volume`, `play`, `pause`, `pause` events).
+ * `play()` resolves, or rejects with a `NotAllowedError` while `soundRefused` and the element is not muted (the
+ * browser's autoplay policy).
+ */
+export class FakeMediaElement extends EventTarget {
+  srcObject: MediaProvider | null = null;
+  muted = false;
+  volume = 1;
+  paused = true;
+  removed = false;
+  plays = 0;
+  /** Test control: the browser refuses sound (autoplay policy) until set back to false. */
+  soundRefused = false;
+  play(): Promise<void> {
+    this.plays += 1;
+    if (this.soundRefused && !this.muted) {
+      return Promise.reject(new DOMException('play() needs a gesture', 'NotAllowedError'));
+    }
+    this.paused = false;
+    return Promise.resolve();
+  }
+  pause(): void {
+    if (this.paused) return;
+    this.paused = true;
+    this.dispatchEvent(new Event('pause'));
+  }
+  remove(): void {
+    this.removed = true;
+  }
+  /** The tracks it holds, by kind. */
+  tracks(kind?: 'audio' | 'video'): MediaStreamTrack[] {
+    const stream = this.srcObject as { getTracks(): MediaStreamTrack[] } | null;
+    const all = stream?.getTracks() ?? [];
+    return kind === undefined ? all : all.filter((t) => t.kind === kind);
+  }
+  /** Whether it is heard: playing, unmuted, at a volume above zero. */
+  get audible(): boolean {
+    return !this.paused && !this.muted && this.volume > 0;
   }
 }
 

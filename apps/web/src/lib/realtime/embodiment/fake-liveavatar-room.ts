@@ -3,6 +3,7 @@ import {
   LIVEAVATAR_COMMAND_TOPIC,
   LIVEAVATAR_EVENTS_TOPIC,
   LIVEAVATAR_PARTICIPANT,
+  browserFaceMediaDeps,
   type LiveAvatarDeps,
   type LiveAvatarRoom,
   type RoomTrack,
@@ -11,10 +12,10 @@ import {
 /**
  * A LiveAvatar FULL room without the vendor (docs/architecture/calls.md §4): the stand-in for the unit tests and
  * for the development stand-in of a FULL face (`EMBODIMENT_PROVIDER=fake`, `MEDIA_FACE_MODE=full`). It shows the
- * avatar's video track once joined, records every command the page sends (`published`; a track can never be
- * published, there is no API for it), and answers `avatar.speak_text` the way the vendor documents it: on
- * `agent-response`, `avatar.speak_started` and `avatar.transcription` a moment later, then `avatar.speak_ended`
- * after the words' length. It says nothing aloud.
+ * avatar's audio track (when it has one) and video track once joined, as the vendor's room does, records every
+ * command the page sends (`published`; a track can never be published, there is no API for it), and answers
+ * `avatar.speak_text` the way the vendor documents it: on `agent-response`, `avatar.speak_started` and
+ * `avatar.transcription` a moment later, then `avatar.speak_ended` after the words' length. It says nothing aloud.
  *
  * What the vendor does with a second `avatar.speak_text` while it is still speaking is not documented, so the room
  * does either: `queue` says them one after another, `cut` drops what it is saying for the new words (recorded in
@@ -26,6 +27,8 @@ export interface FakeLiveAvatarRoomOptions {
   readonly behaviour?: 'queue' | 'cut';
   /** The avatar's video track, shown once joined (null: none, so the face never shows its first frame). */
   readonly video: () => Promise<MediaStreamTrack | null>;
+  /** The avatar's audio track, shown just before its video (default: none). */
+  readonly audio?: () => Promise<MediaStreamTrack | null>;
   setTimeout(callback: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
   /** From the command to `avatar.speak_started`. */
@@ -76,6 +79,13 @@ export class FakeLiveAvatarRoom implements LiveAvatarRoom {
     this.connected = true;
     this.epoch += 1;
     const joined = this.epoch;
+    const audio = (await this.options.audio?.()) ?? null;
+    if (joined !== this.epoch) return;
+    if (audio !== null) {
+      for (const listener of this.listeners.track) {
+        listener({ kind: 'audio', mediaStreamTrack: audio }, LIVEAVATAR_PARTICIPANT);
+      }
+    }
     const track = await this.options.video();
     if (joined !== this.epoch || track === null) return;
     this.videoTrack = track;
@@ -208,7 +218,9 @@ export const STAND_IN_COMMAND_EVENT = 'foundry:face-command';
 /**
  * The development stand-in of a FULL face in the browser: the real FULL adapter over a {@link FakeLiveAvatarRoom}
  * whose video is the stand-in's canvas face (no one's likeness) and whose mouth moves while it "speaks". It is
- * silent: it has no audio track. Every command is announced as a {@link STAND_IN_COMMAND_EVENT} page event.
+ * silent: its audio track carries silence, played with the video in the face's one element and measured by the
+ * same analyser as the vendor's, so the page's media path is the real one. Every command is announced as a
+ * {@link STAND_IN_COMMAND_EVENT} page event.
  */
 export function standInLiveAvatarDeps(): LiveAvatarDeps {
   const timers = {
@@ -220,8 +232,18 @@ export function standInLiveAvatarDeps(): LiveAvatarDeps {
   return {
     createRoom: () => {
       const canvas = new FakeFaceAvatar(browserFakeFaceDeps());
+      let silence: AudioContext | null = null;
       return new FakeLiveAvatarRoom({
         ...timers,
+        // A track of silence (nothing connected to it), like an idle avatar's.
+        audio: () => {
+          try {
+            silence = new AudioContext();
+            return Promise.resolve(silence.createMediaStreamDestination().stream.getAudioTracks()[0] ?? null);
+          } catch {
+            return Promise.resolve(null);
+          }
+        },
         video: async () => {
           const controller = new AbortController();
           await canvas.connect(
@@ -247,12 +269,12 @@ export function standInLiveAvatarDeps(): LiveAvatarDeps {
         },
         onDisconnect: () => {
           canvas.unmount();
+          void silence?.close().catch(() => undefined);
+          silence = null;
         },
       });
     },
-    createStream: (tracks) => new MediaStream([...tracks]),
-    // The stand-in has no audio track, so nothing is ever routed.
-    tapAudio: () => ({ level: () => 0, disconnect: () => undefined }),
+    ...browserFaceMediaDeps(),
     ...timers,
   };
 }

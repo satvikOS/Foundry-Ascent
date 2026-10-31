@@ -1,5 +1,6 @@
 import type { AvatarSessionResponse, AvatarVoicing, EmbodimentProviderId } from '@foundry/contracts';
 
+import type { FaceMediaElement } from './embodiment/face-media';
 import type { FaceRenderer, FaceUnitAudio, SpeechUnitToPlay } from './playback';
 import { PresenceAvatar } from './presence';
 
@@ -77,8 +78,13 @@ export interface AvatarProvider {
    * frame arrived, rejects when it cannot (the call keeps the presence). Audio for the face goes through `relay`.
    */
   connect?(session: AvatarSessionResponse, signal: AbortSignal, relay: FaceRelay): Promise<void>;
-  /** The face's live video for the call tile (a vendor's WebRTC stream). */
+  /** The face's live video alone (a vendor's WebRTC stream, the stand-in's canvas): thumbnails, muted. */
   video?(): MediaStream | null;
+  /**
+   * The one media element that plays a vendor face's video and audio together (unmuted, so the browser keeps the
+   * lips in step with the voice): the call tile shows this very element instead of a muted copy of `video()`.
+   */
+  media?(): FaceMediaElement | null;
   /** Voicing `audio` or `text`: where the call hands each validated unit. */
   renderer?(): FaceRenderer | null;
   /** The face stopped (the vendor dropped, its video ended): the call goes on with the presence. */

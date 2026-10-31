@@ -16,10 +16,28 @@ import {
   type FaceUnitAudio,
   type SpeechUnitToPlay,
 } from '../playback';
+import {
+  createFaceMediaElement,
+  holdInMutedElement,
+  onNextGesture,
+  tapFaceAudio,
+  type FaceAudioTap,
+  type FaceMediaElement,
+  type FaceTapMode,
+} from './face-media';
+
+export type { FaceAudioTap, FaceMediaElement, FaceTapMode } from './face-media';
 
 /**
  * The vEIR's face through HeyGen LiveAvatar (docs/architecture/calls.md §4, docs/runbooks/avatars.md), in LITE
  * (voicing `audio`) or FULL (voicing `text`) mode.
+ *
+ * **Seen and heard together** (both modes, face-media.ts): the avatar's video and audio tracks play in one media
+ * element (one `MediaStream`, unmuted), which the call tile shows, so the browser keeps the lips and the voice in
+ * step. The call measures the face's sound through an analyser connected to nothing (nothing plays twice); ducking,
+ * barge-in and the end act on that element (volume, `muted`, `pause`). If the browser refuses the element's sound
+ * (autoplay policy; a call starts with a click and captures the microphone, so this is rare), the element plays
+ * muted and the sound goes through the call's own output instead until the founder's next click or key.
  *
  * **FULL** (a stock avatar with its stock voice, labelled "AI avatar"): the browser joins the room the same way
  * and still publishes no track (no microphone, no camera: plain livekit-client, so no microphone prompt). When a
@@ -33,7 +51,8 @@ import {
  * the vendor queues commands or a new one cuts off the one it is saying. Barge-in sends `avatar.interrupt` (and
  * tells the server); a unit the face does not start saying in time is interrupted at the vendor first and then
  * spoken by the call itself in the stock voice, so two voices never overlap. While the founder may speak, the
- * avatar takes its listening pose (`avatar.start_listening` / `avatar.stop_listening`).
+ * avatar takes its listening pose (`avatar.start_listening` / `avatar.stop_listening`). Barge-in also silences the
+ * face's element at once (the vendor's interrupt takes a round trip); the next unit turns it up again.
  *
  * **LITE**:
  * The browser only **watches**: it joins the vendor's LiveKit room with the room token the API minted
@@ -41,8 +60,8 @@ import {
  * publishes anything (no microphone, no camera, no data). The face's speak channel (`ws_url`) stays on the
  * server. When a unit's turn comes, `render` hands the unit's audio back to the server through the relay
  * (`POST /calls/:id/face/speak`, checked against the server's manifest) and the vendor renders it: its audio
- * arrives on the room's audio track, which plays into the call's own gain (ducking, loudness and captions
- * unchanged) while the `<video>` stays muted. The unit counts as heard from the face's first sound (the vendor's
+ * arrives on the room's audio track and plays with the video in the face's element. The unit counts as heard from
+ * the face's first sound (the vendor's
  * `avatar.speak_started` event when the room carries it, else the audio track's level); a face that stays
  * silent gives the unit back to the call, which plays it itself. The SDK (livekit-client) loads only for a call
  * with this face, in its own chunk.
@@ -82,17 +101,18 @@ export interface LiveAvatarRoom {
   publish(topic: string, payload: Uint8Array<ArrayBuffer>): Promise<void>;
 }
 
-/** The face's audio routed into the call's output, and its loudness. */
-export interface FaceAudioTap {
-  level(): number;
-  disconnect(): void;
-}
-
 export interface LiveAvatarDeps {
   createRoom(): LiveAvatarRoom;
   createStream(tracks: readonly MediaStreamTrack[]): MediaStream;
-  /** Routes the face's audio track into `output.destination` and measures it. */
-  tapAudio(track: MediaStreamTrack, output: FaceRendererOutput): FaceAudioTap;
+  /** The face's one media element (video and audio together), holding nothing yet. */
+  createMediaElement(): FaceMediaElement;
+  /**
+   * Measures the face's audio track on the call's context: `analyser` only (connected to nothing), or also routed
+   * into `output.destination` (`output`: the browser refused the element's sound).
+   */
+  tapAudio(track: MediaStreamTrack, output: FaceRendererOutput, mode: FaceTapMode): FaceAudioTap;
+  /** Calls back once at the founder's next click or key on the page; returns its cancel. */
+  onGesture?(callback: () => void): () => void;
   setTimeout(callback: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
   /** A command's `event_id` (default: a random UUID). */
@@ -138,39 +158,31 @@ export async function browserLiveAvatarDeps(): Promise<LiveAvatarDeps> {
         publish: (topic, payload) => room.localParticipant.publishData(payload, { reliable: true, topic }),
       };
     },
-    createStream: (tracks) => new MediaStream([...tracks]),
-    tapAudio: (track, output) => {
-      const stream = new MediaStream([track]);
-      // Chromium plays a remote WebRTC track into Web Audio only while a media element holds it (kept muted).
-      const holder = new Audio();
-      holder.muted = true;
-      holder.srcObject = stream;
-      void holder.play().catch(() => undefined);
-      const context = output.context as unknown as AudioContext;
-      const source = context.createMediaStreamSource(stream);
-      const analyser = context.createAnalyser();
-      analyser.fftSize = 512;
-      const samples = new Float32Array(analyser.fftSize);
-      source.connect(output.destination);
-      source.connect(analyser);
-      return {
-        level: () => {
-          analyser.getFloatTimeDomainData(samples);
-          let sum = 0;
-          for (const s of samples) sum += s * s;
-          return Math.sqrt(sum / samples.length);
-        },
-        disconnect: () => {
-          source.disconnect();
-          holder.srcObject = null;
-        },
-      };
-    },
+    ...browserFaceMediaDeps(),
     setTimeout: (callback, ms) => window.setTimeout(callback, ms),
     clearTimeout: (handle) => {
       window.clearTimeout(handle as number);
     },
   };
+}
+
+/** The browser's face element and audio tap (shared with the development stand-in). */
+export function browserFaceMediaDeps(): Pick<
+  LiveAvatarDeps,
+  'createStream' | 'createMediaElement' | 'tapAudio' | 'onGesture'
+> {
+  return {
+    createStream: (tracks) => new MediaStream([...tracks]),
+    createMediaElement: createFaceMediaElement,
+    tapAudio: (track, output, mode) =>
+      tapFaceAudio(new MediaStream([track]), output, mode, holdInMutedElement),
+    onGesture: onNextGesture,
+  };
+}
+
+/** Whether `play()` was refused by the browser's autoplay policy (not merely cut short by a new source). */
+function refusedByPolicy(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'NotAllowedError';
 }
 
 function abortError(): DOMException {
@@ -203,12 +215,24 @@ export class LiveAvatarFace implements AvatarProvider {
   private relay: FaceRelay | null = null;
   private videoTrack: MediaStreamTrack | null = null;
   private audioTrack: MediaStreamTrack | null = null;
+  /** The video alone, for the thumbnail (muted, decorative). */
   private stream: MediaStream | null = null;
+  /** The one element that plays the face's video and audio together (the call tile shows it). */
+  private element: FaceMediaElement | null = null;
   private tap: FaceAudioTap | null = null;
+  /** The call's output the tap measures on (and routes into, when the element may not sound). */
+  private output: FaceRendererOutput | null = null;
+  /** Whether the element itself sounds (false: the browser refused it, and the call's output plays the face). */
+  private audible = true;
+  /** The call's level for the face (ducking). */
+  private volume = 1;
+  /** Barge-in or a unit given back: the face is silent until the next unit it renders. */
+  private silenced = false;
+  private cancelGesture: (() => void) | null = null;
   private live = false;
   private readonly lostListeners = new Set<() => void>();
-  /** The vendor's own speak events for the unit being rendered, when the room carries them. */
-  private speakEvents: { started(): void; ended(): void } | null = null;
+  /** The vendor's own speak events for the unit being rendered, when the room carries them; and the face's loss. */
+  private speakEvents: { started(): void; ended(): void; lost(): void } | null = null;
   private readonly face: FaceRenderer;
   /** FULL: the server's admission of each unit, in order (one chain), usually asked for ahead of its turn. */
   private readonly admissions = new Map<string, Promise<void>>();
@@ -235,6 +259,11 @@ export class LiveAvatarFace implements AvatarProvider {
         this.voicing === 'text'
           ? this.renderText(unit, output, handlers)
           : this.render(buffer, output, handlers, audio),
+      setVolume: (volume) => {
+        this.volume = Math.min(1, Math.max(0, volume));
+        this.applyVolume();
+      },
+      level: () => this.tap?.level() ?? 0,
     };
   }
 
@@ -283,9 +312,13 @@ export class LiveAvatarFace implements AvatarProvider {
         { once: true },
       );
       room.onTrack((track, participant) => {
-        if (participant !== LIVEAVATAR_PARTICIPANT) return;
+        if (participant !== LIVEAVATAR_PARTICIPANT || this.room !== room) return;
         if (track.kind === 'audio') {
+          if (track.mediaStreamTrack === this.audioTrack) return;
           this.audioTrack = track.mediaStreamTrack;
+          // A tap of an earlier track measures nothing any more.
+          if (this.tap !== null) this.retap();
+          this.showMedia();
           return;
         }
         this.videoTrack = track.mediaStreamTrack;
@@ -293,6 +326,7 @@ export class LiveAvatarFace implements AvatarProvider {
         track.mediaStreamTrack.addEventListener('ended', () => {
           this.lose();
         });
+        this.showMedia();
         this.deps.clearTimeout(timer);
         resolve();
       });
@@ -334,6 +368,11 @@ export class LiveAvatarFace implements AvatarProvider {
     return this.stream;
   }
 
+  /** The one element that plays the face's video and audio together; the call tile shows this very element. */
+  media(): FaceMediaElement | null {
+    return this.element;
+  }
+
   renderer(): FaceRenderer {
     return this.face;
   }
@@ -351,6 +390,88 @@ export class LiveAvatarFace implements AvatarProvider {
   }
 
   // Internals -----------------------------------------------------------------------------------------
+
+  /**
+   * The face's element holds its video and (once it arrived) its audio in one stream and plays it, sounding: the
+   * browser then keeps the two in step.
+   */
+  private showMedia(): void {
+    const video = this.videoTrack;
+    if (video === null) return;
+    let element = this.element;
+    if (element === null) {
+      element = this.deps.createMediaElement();
+      element.addEventListener('pause', this.resume);
+      this.element = element;
+    }
+    const tracks = this.audioTrack === null ? [video] : [video, this.audioTrack];
+    element.srcObject = this.deps.createStream(tracks);
+    this.applyVolume();
+    this.play();
+  }
+
+  /** The browser paused the element (it was moved, or its sound refused): it plays again. */
+  private readonly resume = (): void => {
+    if (this.element?.paused === true) this.play();
+  };
+
+  private play(): void {
+    const element = this.element;
+    if (element === null) return;
+    element.play().catch((err: unknown) => {
+      if (this.element !== element) return;
+      if (refusedByPolicy(err) && this.audible && !element.muted) this.refuseSound();
+    });
+  }
+
+  /**
+   * The browser refused the element's sound (autoplay policy). The face still shows (a muted element may play) and
+   * its sound goes through the call's own output, without the element's lip sync, rather than not at all; at the
+   * founder's next click or key the element sounds again.
+   */
+  private refuseSound(): void {
+    this.audible = false;
+    this.applyVolume();
+    this.play();
+    if (this.tap !== null) this.retap();
+    this.cancelGesture?.();
+    this.cancelGesture =
+      this.deps.onGesture?.(() => {
+        this.cancelGesture = null;
+        if (this.element === null) return;
+        this.audible = true;
+        // Unmuted within the gesture, and the copy in the call's output removed in the same moment.
+        this.applyVolume();
+        if (this.tap !== null) this.retap();
+        this.play();
+      }) ?? null;
+  }
+
+  /** The element's volume and `muted`, and the routed copy's gain, from the call's level and barge-in. */
+  private applyVolume(): void {
+    const element = this.element;
+    if (element !== null) {
+      element.volume = this.silenced ? 0 : this.volume;
+      // `muted` too: some browsers (iOS) ignore `volume`.
+      element.muted = this.silenced || !this.audible;
+    }
+    this.tap?.mute?.(this.silenced);
+  }
+
+  /** Barge-in, or a unit given back to the call: the face is silent at once (the vendor stops a moment later). */
+  private silence(): void {
+    if (this.silenced) return;
+    this.silenced = true;
+    this.applyVolume();
+  }
+
+  /** The face renders a unit again: it is heard again. */
+  private unsilence(): void {
+    if (!this.silenced) return;
+    this.silenced = false;
+    this.applyVolume();
+    if (this.element?.paused === true) this.play();
+  }
 
   /** FULL: sends the vendor one command (best effort; a room that cannot take it is about to drop). */
   private command(eventType: string, fields: Record<string, string> = {}): Promise<void> {
@@ -414,6 +535,8 @@ export class LiveAvatarFace implements AvatarProvider {
       timers.clear();
     };
     const silence = () => {
+      // Quiet in the page at once, then at the vendor.
+      this.silence();
       void this.command('avatar.interrupt').catch(() => undefined);
       relay?.interrupt();
     };
@@ -442,6 +565,12 @@ export class LiveAvatarFace implements AvatarProvider {
       ended: () => {
         if (began) end('ended');
       },
+      // The face went away before this unit's first sound: the call says it now, not after the onset timeout.
+      lost: () => {
+        later(() => {
+          if (!began) end('failed');
+        }, 0);
+      },
     };
 
     if (relay?.say === undefined || !this.live || unit?.sig === undefined) {
@@ -449,8 +578,9 @@ export class LiveAvatarFace implements AvatarProvider {
         end('failed');
       }, 0);
     } else {
-      // The face's audio plays into the call's own output (ducking, loudness and captions unchanged).
+      // The face's sound is measured (never played) on the call's context; the element plays it.
       const tap = this.ensureTap(output);
+      this.unsilence();
       this.speakEvents = events;
       this.admit(unit).then(
         () => {
@@ -491,6 +621,8 @@ export class LiveAvatarFace implements AvatarProvider {
       stopped = true;
       clearAll();
       if (this.speakEvents === events) this.speakEvents = null;
+      // Barge-in or the end: silent in the page at once, whatever the vendor still has in flight.
+      this.silence();
       if (published && !finished) silence();
     };
   }
@@ -524,7 +656,11 @@ export class LiveAvatarFace implements AvatarProvider {
       finished = true;
       clearAll();
       if (this.speakEvents === events) this.speakEvents = null;
-      if (outcome === 'failed' && relayed && !began) relay?.interrupt();
+      if (outcome === 'failed' && relayed && !began) {
+        // Silent in the page, and at the vendor: the call plays the unit itself, never over the face.
+        this.silence();
+        relay?.interrupt();
+      }
       handlers.onEnd(outcome);
     };
     const start = () => {
@@ -543,6 +679,11 @@ export class LiveAvatarFace implements AvatarProvider {
       ended: () => {
         if (began) end('ended');
       },
+      lost: () => {
+        later(() => {
+          if (!began) end('failed');
+        }, 0);
+      },
     };
 
     const tap = audio !== null && relay !== null && this.live ? this.ensureTap(output) : null;
@@ -552,6 +693,7 @@ export class LiveAvatarFace implements AvatarProvider {
         end('failed');
       }, 0);
     } else {
+      this.unsilence();
       this.speakEvents = events;
       relay.speak(audio, controller.signal).then(
         () => {
@@ -584,38 +726,66 @@ export class LiveAvatarFace implements AvatarProvider {
       controller.abort();
       clearAll();
       if (this.speakEvents === events) this.speakEvents = null;
+      // Barge-in or the end: silent in the page at once; the server tells the vendor.
+      this.silence();
       if (relayed) relay?.interrupt();
     };
   }
 
-  /** The face's audio track routed into the call's output (once), or null while it has none. */
+  /** The tap on the face's audio track (once), or null while it has none. */
   private ensureTap(output: FaceRendererOutput): FaceAudioTap | null {
+    this.output = output;
     if (this.tap !== null) return this.tap;
     if (this.audioTrack === null) return null;
-    this.tap = this.deps.tapAudio(this.audioTrack, output);
+    this.tap = this.deps.tapAudio(this.audioTrack, output, this.audible ? 'analyser' : 'output');
+    this.tap.mute?.(this.silenced);
     return this.tap;
+  }
+
+  /** A new tap for the current track and mode (the element's sound refused or allowed again, a new track). */
+  private retap(): void {
+    this.tap?.disconnect();
+    this.tap = null;
+    if (this.output !== null) this.ensureTap(this.output);
   }
 
   private lose(): void {
     if (!this.live) return;
     this.live = false;
+    this.speakEvents?.lost();
     for (const listener of [...this.lostListeners]) listener();
   }
 
   private release(): void {
     this.live = false;
+    this.speakEvents?.lost();
     this.speakEvents = null;
     this.listening = false;
     this.lifetime.abort();
     this.lifetime = new AbortController();
     this.admissions.clear();
     this.admissionChain = Promise.resolve();
+    this.cancelGesture?.();
+    this.cancelGesture = null;
     this.tap?.disconnect();
     this.tap = null;
+    this.output = null;
+    const element = this.element;
+    this.element = null;
+    if (element !== null) {
+      // The end: nothing of the face plays on.
+      element.removeEventListener('pause', this.resume);
+      element.pause();
+      element.srcObject = null;
+      element.remove();
+    }
     this.room?.disconnect();
     this.room = null;
     this.stream = null;
     this.videoTrack = null;
     this.audioTrack = null;
+    this.audible = true;
+    this.silenced = false;
+    this.volume = 1;
   }
 }

@@ -34,6 +34,11 @@ export type CallFace =
       readonly status: 'live';
       readonly provider: AvatarProvider;
       readonly stream: MediaStream | null;
+      /**
+       * The face's own element, playing its video and audio together (a vendor face): the call tile shows it, so
+       * the voice is heard in step with the lips. Null: the tile shows `stream`, muted (the canvas stand-in).
+       */
+      readonly media: HTMLVideoElement | null;
       /** A vendor's stock avatar (no one's likeness): the tile labels it "AI avatar". */
       readonly stock: boolean;
     };
@@ -182,10 +187,12 @@ export class CallFaceController {
           this.engine.attachFace(loaded.renderer?.() ?? null);
         }
         this.engine.setFaceShown(true);
+        const media = loaded.media?.() ?? null;
         this.set({
           status: 'live',
           provider: loaded,
           stream: loaded.video?.() ?? null,
+          media: media instanceof HTMLVideoElement ? media : null,
           stock: session.stockFace,
         });
       } catch {

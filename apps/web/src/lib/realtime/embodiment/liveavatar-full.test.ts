@@ -2,17 +2,31 @@ import type { AvatarSessionResponse } from '@foundry/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FaceRelay } from '../avatar';
-import { SpeechPlayer, type PlayerAudio, type SpeechFetchResult, type SpeechUnitToPlay } from '../playback';
-import { FakeAudioContext, FakeTrack } from '../testing';
+import {
+  SpeechPlayer,
+  type FaceRendererOutput,
+  type PlayerAudio,
+  type SpeechFetchResult,
+  type SpeechUnitToPlay,
+} from '../playback';
+import { FakeAnalyser, FakeAudioContext, FakeMediaElement, FakeTrack } from '../testing';
+import { tapFaceAudio } from './face-media';
 import { FakeLiveAvatarRoom } from './fake-liveavatar-room';
-import { LIVEAVATAR_COMMAND_TOPIC, LiveAvatarFace, type LiveAvatarDeps } from './liveavatar';
+import {
+  LIVEAVATAR_COMMAND_TOPIC,
+  LiveAvatarFace,
+  type FaceTapMode,
+  type LiveAvatarDeps,
+} from './liveavatar';
 
 /*
  * A FULL stock face (docs/architecture/calls.md §4) through the real call player: every unit is admitted by the
  * server first (`say`), then sent to the vendor as `avatar.speak_text` with exactly its words, one at a time, so it
  * makes no difference whether the vendor queues commands or a new one cuts off the current one (both behaviours of
  * the fake room run every test). Nothing refused is ever sent, no track is ever published, barge-in interrupts the
- * vendor, and a unit the face does not start is silenced at the vendor before the call speaks it itself.
+ * vendor, and a unit the face does not start is silenced at the vendor before the call speaks it itself. The
+ * avatar's video and voice play together in one unmuted element (the browser keeps them in step); the call only
+ * measures the voice (an analyser connected to nothing) and ducks, silences and ends it on that element.
  */
 
 const TURN = '7d1f2c4e-1a2b-4c3d-8e9f-0a1b2c3d4e5f';
@@ -37,23 +51,35 @@ const timers = {
   },
 };
 
+function fakeStream(tracks: readonly MediaStreamTrack[]): MediaStream {
+  return { getTracks: () => [...tracks] } as unknown as MediaStream;
+}
+
 async function setup(behaviour: 'queue' | 'cut', options: { startDelayMs?: number } = {}) {
   /** What happened, in order, across the server, the vendor and the call's own speakers. */
   const events: string[] = [];
+  const videoTrack = new FakeTrack('video') as unknown as MediaStreamTrack;
+  const audioTrack = new FakeTrack('audio') as unknown as MediaStreamTrack;
   const room = new FakeLiveAvatarRoom({
     ...timers,
     behaviour,
     startDelayMs: options.startDelayMs ?? 100,
     msPerCharacter: 20,
-    video: () => Promise.resolve(new FakeTrack() as unknown as MediaStreamTrack),
+    video: () => Promise.resolve(videoTrack),
+    audio: () => Promise.resolve(audioTrack),
     onPublish: (command) =>
       events.push(`vendor ${command.eventType}${command.text ? ` ${command.text}` : ''}`),
   });
   let ids = 0;
-  const tapAudio = vi.fn(() => ({ level: () => 0, disconnect: vi.fn() }));
+  // The real tap, on the call's own (fake) context: what it connects is what the browser would.
+  const tapAudio = vi.fn((track: MediaStreamTrack, output: FaceRendererOutput, mode: FaceTapMode) =>
+    tapFaceAudio(fakeStream([track]), output, mode),
+  );
+  const element = new FakeMediaElement();
   const deps: LiveAvatarDeps = {
     createRoom: () => room,
-    createStream: (tracks) => ({ getTracks: () => tracks }) as unknown as MediaStream,
+    createStream: fakeStream,
+    createMediaElement: () => element,
     tapAudio,
     ...timers,
     eventId: () => {
@@ -97,7 +123,22 @@ async function setup(behaviour: 'queue' | 'cut', options: { startDelayMs?: numbe
     onIdle: () => log.push('idle'),
   });
   player.setFace(face.renderer());
-  return { room, face, relay, refused, events, player, log, fetchSpeech, context, lost, tapAudio };
+  return {
+    room,
+    face,
+    relay,
+    refused,
+    events,
+    player,
+    log,
+    fetchSpeech,
+    context,
+    lost,
+    tapAudio,
+    element,
+    videoTrack,
+    audioTrack,
+  };
 }
 
 beforeEach(() => {
@@ -141,7 +182,8 @@ describe.each(['queue', 'cut'] as const)('LiveAvatarFace FULL, with a vendor tha
     ]);
     // Commands only, on the command topic: no track was ever published (the fake room has no way to).
     expect(s.room.published.every((c) => c.topic === LIVEAVATAR_COMMAND_TOPIC)).toBe(true);
-    expect(s.tapAudio).not.toHaveBeenCalled();
+    // The voice was heard from the face's own element; the call only measured it.
+    expect(s.tapAudio.mock.calls.map((c) => c[2])).toEqual(['analyser']);
   });
 
   it('sends nothing the server refused, and speaks that unit itself', async () => {
@@ -173,6 +215,9 @@ describe.each(['queue', 'cut'] as const)('LiveAvatarFace FULL, with a vendor tha
     s.player.stop();
     expect(s.room.published.at(-1)?.eventType).toBe('avatar.interrupt');
     expect(s.relay.interrupt).toHaveBeenCalledTimes(1);
+    // Silent in the page at once (the vendor's interrupt takes a round trip), and the call's unduck keeps it so.
+    expect(s.element.muted).toBe(true);
+    expect(s.element.volume).toBe(0);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(s.room.published.filter((c) => c.eventType === 'avatar.speak_text')).toHaveLength(1);
     expect(s.log).toEqual(['start 0 server', 'end 0 cut']);
@@ -256,5 +301,78 @@ describe('LiveAvatarFace FULL: when the face cannot say a unit', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(s.relay.say).not.toHaveBeenCalled();
     expect(s.fetchSpeech).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('LiveAvatarFace FULL: the face’s video and voice in one element', () => {
+  it('plays both of the avatar’s tracks in one unmuted element, and routes nothing into the call’s output', async () => {
+    const s = await setup('queue');
+    expect(s.face.media()).toBe(s.element);
+    expect(s.element.tracks()).toEqual([s.videoTrack, s.audioTrack]);
+    expect(s.element.audible).toBe(true);
+    s.player.enqueue(unit(0));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(s.log).toEqual(['start 0 server', 'end 0 done', 'idle']);
+    // The face's sound reaches the call's graph only as an analyser's input, and the analyser goes nowhere: the
+    // player's gain, its analyser and the speakers never carry it (nothing plays twice).
+    const faceSources = s.context.streamSources.filter((x) => x.stream.getTracks().includes(s.audioTrack));
+    expect(faceSources).toHaveLength(1);
+    for (const source of faceSources) {
+      expect(source.node.connections.every((n) => n instanceof FakeAnalyser)).toBe(true);
+      for (const analyser of source.node.connections) expect(analyser.connections).toEqual([]);
+    }
+    expect(s.context.sources).toEqual([]);
+  });
+
+  it('follows the call’s ducking on the element, and turns the face up again for the unit after a barge-in', async () => {
+    const s = await setup('queue');
+    s.player.enqueue(unit(0, 'A long sentence that is still being said when the founder starts to speak.'));
+    await vi.advanceTimersByTimeAsync(300);
+    s.player.duck();
+    expect(s.element.volume).toBe(0.2);
+    s.player.unduck();
+    expect(s.element.volume).toBe(1);
+    s.player.duck();
+    s.player.stop();
+    expect(s.element.audible).toBe(false);
+    s.player.enqueue(unit(1));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.element.audible).toBe(true);
+    expect(s.element.volume).toBe(1);
+  });
+
+  it('the vendor ending the session mid-call: the call takes over without overlap, and without waiting', async () => {
+    // A unit being said when the sandbox ends the session (about a minute): its caption runs to its end and the
+    // next unit is the call's own, after it; the face's element is silent and gone.
+    const s = await setup('queue');
+    s.face.onLost(() => {
+      s.player.setFace(null);
+      s.face.unmount();
+    });
+    s.player.enqueue(unit(0));
+    s.player.enqueue(unit(1));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(s.log).toEqual(['start 0 server']);
+    s.room.stopSession('MAX_DURATION_REACHED');
+    expect(s.element.paused).toBe(true);
+    expect(s.element.removed).toBe(true);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(s.log.slice(0, 3)).toEqual(['start 0 server', 'end 0 done', 'start 1 server']);
+    expect(s.fetchSpeech.mock.calls.map(([u]) => u.seq)).toEqual([1]);
+  });
+
+  it('the vendor ending the session before a unit’s first sound: the call says it at once', async () => {
+    const t = await setup('queue', { startDelayMs: 60_000 });
+    t.face.onLost(() => {
+      t.player.setFace(null);
+      t.face.unmount();
+    });
+    t.player.enqueue(unit(0));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(t.room.published.some((c) => c.eventType === 'avatar.speak_text')).toBe(true);
+    t.room.stopSession('MAX_DURATION_REACHED');
+    await vi.advanceTimersByTimeAsync(10);
+    // Well inside the 3 s onset timeout.
+    expect(t.fetchSpeech.mock.calls.map(([u]) => u.seq)).toEqual([0]);
   });
 });

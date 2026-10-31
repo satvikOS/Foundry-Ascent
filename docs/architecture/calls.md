@@ -450,8 +450,8 @@ SpeechSynthesizer   Amazon Polly (stock voices; pcm_16000 for a face)
 
 Browser (apps/web)
 AvatarProvider      builtin (presence) | fake (canvas) | heygen (lib/realtime/embodiment/liveavatar.ts)
-  connect(session, signal, relay) · video() · renderer() · onLost()
-FaceRenderer        render(buffer, output, handlers, audio: {pcm, manifest} | null) → stop
+  connect(session, signal, relay) · video() · media() · renderer() · onLost()
+FaceRenderer        render(buffer, output, handlers, audio: {pcm, manifest} | null) → stop · setVolume(v) · level()
 FaceRelay           speak(audio) → POST /calls/:id/face/speak · interrupt() → POST /calls/:id/face/interrupt
 CallFaceController  features/calls/use-call-face.ts: one per engine; the face belongs to the call
 ```
@@ -545,13 +545,32 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
    60), never above the platform spend cap, outside any transaction; one face per call (`call_faces`). The vendor
    session carries that limit (`max_session_duration`); a vendor that refuses it opens no session. Anything else
    answers the presence (no token); the audit names the provider and the reason, never a token.
-3. The adapter (its own chunk) joins within 8 s; at the first frame the same tile shows the face's video (muted),
-   the name tag stays, the founder's initials sit in the corner, and the engine hands the face each unit (§4.2).
-   A unit is announced at the face's first sound (the vendor's speak event, or its audio track's level); a unit the
-   face cannot start within 3 s, or the server refused, is played by the call itself.
-4. The face belongs to the call: minimizing keeps it (the mini bar shows it as a thumbnail, the monogram with
-   reduced motion); a face that drops, the stage giving it up, or a call left on hold (page hidden) for over a
-   minute (the vendor bills an idle face) tells the server (`POST /calls/:id/face/end`).
+3. The adapter (its own chunk) joins within 8 s; at the first frame the same tile shows the face, the name tag
+   stays, the founder's initials sit in the corner, and the engine hands the face each unit (§4.2). A unit is
+   announced at the face's first sound (the vendor's speak event, or its audio track's level); a unit the face
+   cannot start within 3 s, or the server refused, is played by the call itself (at once when the face is lost
+   before the unit's first sound, so the vendor ending its session leaves no gap).
+   - **Seen and heard together** (`embodiment/face-media.ts`, LITE and FULL alike). The avatar's video and audio
+     tracks play in **one** media element, one `MediaStream` with both tracks, unmuted, and the tile shows that very
+     element (`media()`), so the browser's own WebRTC playout keeps the lips in step with the voice. (Until
+     2026-10-31 the audio went through the call's Web Audio graph while a muted `<video>` showed the face: the two
+     drifted apart, by the `AudioContext`'s output latency too, which is large on Bluetooth, and the mouth looked
+     lagged.) The call never plays the face's sound itself: it taps the audio track with an analyser connected to
+     nothing (`MediaStreamSource → AnalyserNode`, no output), which gives the unit's first sound for the heard-units
+     accounting and the captions, and the presence's level. Ducking sets the element's volume (`setVolume`, 0.2 while
+     a possible barge-in is confirmed); barge-in, the end of a unit's turn or a unit given back to the call mute the
+     element at once (volume 0 and `muted`, since iOS ignores `volume`), before the vendor's interrupt arrives, and
+     the face's next unit turns it up again; ending the face pauses the element, empties it and takes it off the
+     page. A call starts on a click and captures the microphone, so the browser lets the element sound; if it
+     refuses (`play()` fails with `NotAllowedError`), the element plays muted (the face still shows) and the voice is
+     routed into the call's own output through a gain barge-in can close, until the founder's next click or key,
+     when the element sounds again and that route is removed in the same moment. A paused element (the browser
+     paused it) is played again.
+4. The face belongs to the call: minimizing keeps it (the mini bar shows it as a thumbnail, the video alone and
+   muted, or the monogram with reduced motion; the face's element plays on, still sounding, in a hidden 1 px spot
+   of the page and returns to the tile when the call is shown again, so minimizing never cuts or doubles the voice);
+   a face that drops, the stage giving it up, or a call left on hold (page hidden) for over a minute (the vendor
+   bills an idle face) tells the server (`POST /calls/:id/face/end`).
 5. Heartbeats report whether the face is shown and answer `face: stop` (and the server ends the vendor session,
    asking twice if the first stop fails) when faces are switched off, likeness consent is withdrawn, the call's
    video limit or the month's video minutes are used up, the month's minutes cannot be read (the face never goes

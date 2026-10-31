@@ -63,7 +63,12 @@ export interface PlayerAudio {
   now(): number;
 }
 
-/** Where a face plays the call's audio: the player's own input, so ducking and loudness work unchanged. */
+/**
+ * The call's own output, handed to a face with each unit: the player's input (→ analyser → speakers). A face that
+ * plays the call's audio itself (the canvas stand-in) plays it here, so ducking and loudness work unchanged. A vendor
+ * face plays its sound in its own media element, in step with its video, and taps this context only to measure it
+ * (it routes its sound here only when the browser refused the element's sound).
+ */
 export interface FaceRendererOutput {
   readonly context: PlayerAudio['context'];
   /** The player's gain (→ analyser → speakers). */
@@ -136,6 +141,13 @@ export interface FaceRenderer {
     audio: FaceUnitAudio | null,
     unit?: SpeechUnitToPlay,
   ): () => void;
+  /**
+   * A face that plays its sound outside the player's gain (a vendor face's own media element): the call's level
+   * for it, 0–1 (ducked while a possible barge-in is confirmed, 1 otherwise).
+   */
+  setVolume?(volume: number): void;
+  /** The loudness of the face's own sound now (RMS, 0–1), for the presence and the levels; 0 when unknown. */
+  level?(): number;
 }
 
 export interface PlayerEvents {
@@ -211,6 +223,8 @@ export class SpeechPlayer {
   private disposed = false;
   private generation = 0;
   private face: FaceRenderer | null = null;
+  /** The face making the current unit heard, while it does (its own sound is outside the gain). */
+  private rendering: FaceRenderer | null = null;
 
   constructor(
     private readonly audio: PlayerAudio,
@@ -234,13 +248,14 @@ export class SpeechPlayer {
     return this.playing !== null || this.queue.length > 0;
   }
 
-  /** RMS of what is playing through the speakers (0–1). */
+  /** RMS of what the vEIR is heard saying (0–1): the call's own output, or the face's own sound. */
   level(): number {
     if (this.playing === null) return 0;
     this.analyser.getFloatTimeDomainData(this.samples);
     let sum = 0;
     for (const s of this.samples) sum += s * s;
-    return Math.sqrt(sum / this.samples.length);
+    const own = Math.sqrt(sum / this.samples.length);
+    return Math.max(own, this.rendering?.level?.() ?? 0);
   }
 
   enqueue(unit: SpeechUnitToPlay): void {
@@ -282,13 +297,15 @@ export class SpeechPlayer {
     this.face = face;
   }
 
-  /** Turns the vEIR down while a possible barge-in is confirmed. */
+  /** Turns the vEIR down while a possible barge-in is confirmed (a face playing its own sound too). */
   duck(): void {
     this.gain.gain.setTargetAtTime(DUCK_GAIN, this.audio.context.currentTime, 0.01);
+    this.face?.setVolume?.(DUCK_GAIN);
   }
 
   unduck(): void {
     this.gain.gain.setTargetAtTime(1, this.audio.context.currentTime, 0.05);
+    this.face?.setVolume?.(1);
   }
 
   dispose(): void {
@@ -519,8 +536,9 @@ export class SpeechPlayer {
   }
 
   /**
-   * Hands decoded audio to the face, which plays it into the player's gain in step with its video. A face that
-   * fails before the unit's first sound gives it back: the call plays it itself, so no sentence is lost.
+   * Hands a unit to the face, which makes it heard in step with its video (a vendor face in its own media element,
+   * the stand-in into the player's gain). A face that fails before the unit's first sound gives it back: the call
+   * plays it itself, so no sentence is lost.
    */
   private renderOnFace(
     face: FaceRenderer,
@@ -533,9 +551,14 @@ export class SpeechPlayer {
     let finished = false;
     let began = false;
     let fallback: (() => void) | null = null;
+    this.rendering = face;
+    const done = () => {
+      if (this.rendering === face) this.rendering = null;
+    };
     const guard = this.audio.setTimeout(
       () => {
         finished = true;
+        done();
         settle(true);
       },
       (buffer === null ? speakingTimeMs(unit.text) : buffer.duration * 1000) + FACE_GUARD_MS,
@@ -552,6 +575,7 @@ export class SpeechPlayer {
         onEnd: (outcome) => {
           if (finished) return;
           finished = true;
+          done();
           this.audio.clearTimeout(guard);
           if (outcome === 'failed' && !began) {
             // The face has gone quiet first (a text face interrupts the vendor before it reports the failure),
@@ -570,6 +594,7 @@ export class SpeechPlayer {
     );
     return () => {
       finished = true;
+      done();
       this.audio.clearTimeout(guard);
       stopFace();
       if (fallback) fallback();

@@ -123,6 +123,7 @@ export function CallStage({
       {face.status === 'live' ? (
         <CallFaceVideo
           stream={face.stream}
+          media={face.media}
           you={me.data?.principal.displayName ?? 'You'}
           levels={levels}
           reducedMotion={reducedMotion}

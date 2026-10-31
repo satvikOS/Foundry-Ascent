@@ -235,8 +235,13 @@ DevTools open, faces and voices on.
    (`livekit_config`, subscribe-only tokens) before students.
 4. **Render delay.** From a sentence's hand-over to the face's first sound (the call's first-audio time with the face
    on, against off). Expect 0.3–0.6 s more; above about 1 s, compare with Anam (the fallback in the design).
-5. **The face's voice is heard and ducks.** In Chrome, Safari and Firefox: the face's audio plays through the call
-   (not the video element), barge-in stops it at once, and no sentence is heard twice.
+5. **The face's voice is heard, in step, and ducks.** In Chrome, Safari and Firefox, on the laptop's speakers and on
+   Bluetooth headphones: the face's video and audio play in one element (the tile's `<video>` holds both tracks and
+   is not muted; [calls.md §4.3](../architecture/calls.md#43-the-face-of-a-call)), so the mouth moves with the
+   voice; a barge-in mutes it at once (before the vendor's interrupt arrives), the voice dips while a possible
+   barge-in is confirmed (not on iOS, which ignores an element's volume), no sentence is heard twice, minimizing the
+   call keeps the voice going, and ending the call silences it. In DevTools no `MediaStreamAudioSourceNode` of the
+   face's track connects to anything but an `AnalyserNode`.
 6. **The session limit, the envelope and the commands.** The token request carries `max_session_duration` (a 422
    means it is above the plan's session length: lower **per call**); the session must end by itself at the per-call
    limit. Responses must carry `code: 1000` on success (the vendor's SDK checks 1000; its API reference shows a
@@ -344,6 +349,9 @@ origins as LITE.
 9. Idle and keep-alive behaviour, `session.stopped` reasons, and that the session ends at the per-call limit.
 10. **Paid phase:** a 3-minute session with the chosen avatar costs 6 credits; no watermark; killing it mid-call
     falls back to the presence and Polly with no stray audio, the label still shown.
+11. **Lip sync.** Watch the mouth against the voice for a few sentences, on speakers and on Bluetooth: they must
+    move together (the face's video and voice play in one element, §8.5). A face whose mouth leads its voice by a
+    visible amount means the voice is being played somewhere else (check §8.5's DevTools point).
 
 ### 9.6 Cost
 
