@@ -6,7 +6,8 @@ import {
   IssueAccessCodeRequest,
   UpdateSettingsRequest,
   type UsageSummary,
-  type PlatformSettingsView,
+  type AdminSettingsView,
+  type FaceVendorView,
 } from '@foundry/contracts';
 import {
   SqlUsageError,
@@ -24,6 +25,7 @@ import { type RequestContext } from '../context.js';
 import { fail, parseInput } from '../errors.js';
 import { expiryAfterDays, issueAndAuditAccessCode } from '../internal/access-codes.js';
 import { audit, requireId, type Kit } from '../internal/kit.js';
+import { faceForAdminsOnly } from './face.js';
 import { type AdminInsightsValue, readAdminInsights, summarizeAdminInsights } from './insights.js';
 
 type AdminPrincipalRowValue = z.infer<typeof AdminPrincipalRow>;
@@ -59,12 +61,13 @@ export interface AdminService {
     ctx: RequestContext,
     accessCodeId: string,
   ): Promise<{ accessCodeId: string; revokedAt: string }>;
-  getSettings(ctx: RequestContext): Promise<PlatformSettingsView>;
+  /** The settings and the face vendor this deployment wired (platform admin). */
+  getSettings(ctx: RequestContext): Promise<AdminSettingsView>;
   /** Kill switch, daily spend caps, thresholds (platform admin). */
   updateSettings(
     ctx: RequestContext,
     patch: z.input<typeof UpdateSettingsRequest>,
-  ): Promise<PlatformSettingsView>;
+  ): Promise<AdminSettingsView>;
   /** Platform-wide audit metadata, newest first, keyset cursor (platform admin). */
   listAudit(ctx: RequestContext, query?: z.input<typeof AuditQuery>): Promise<AuditPage>;
   /** Spend today / 30 days, by day, model and purpose, with the global cap (platform admin). */
@@ -188,8 +191,21 @@ export function createAdminService(
     );
   }
 
-  async function settingsFor(ex: SqlExecutor): Promise<PlatformSettingsView> {
-    return settingsRepo.getPlatformSettings(ex);
+  /** The face vendor this deployment wired, as Admin › Settings shows it (null: none). */
+  function faceVendor(): FaceVendorView | null {
+    const provider = kit.deps.embodiment;
+    if (provider === undefined) return null;
+    return {
+      mode: provider.mode,
+      usdPerMinute: provider.usdPerMinute,
+      audience: faceForAdminsOnly(provider) ? 'admins' : 'everyone',
+      stock: provider.stock === true,
+      sandbox: provider.sandbox === true,
+    };
+  }
+
+  async function settingsFor(ex: SqlExecutor): Promise<AdminSettingsView> {
+    return { ...(await settingsRepo.getPlatformSettings(ex)), faceVendor: faceVendor() };
   }
 
   return {
@@ -322,7 +338,7 @@ export function createAdminService(
             objectId: 'ai_enabled',
           });
         }
-        return after;
+        return { ...after, faceVendor: faceVendor() };
       });
     },
 

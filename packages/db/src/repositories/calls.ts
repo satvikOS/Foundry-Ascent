@@ -559,13 +559,15 @@ export function getSpokenTurn(ex: SqlExecutor, turnId: string): Promise<SpokenTu
 
 /**
  * What a call speaks, as `call_speech` keys it (identifiers only): the intro, a signed unit of a reply, a run
- * of whole sentences of a stored reply (sentence indices, first to last), or a crisis turn's support message.
+ * of whole sentences of a stored reply (sentence indices, first to last), a crisis turn's support message, or a
+ * signed unit (or the intro, `turnId` null) handed to a FULL face as text (0018), counted apart from its own play.
  */
 export type SpeechUnitKey =
   | { readonly kind: 'intro' }
   | { readonly kind: 'unit'; readonly turnId: string; readonly seq: number }
   | { readonly kind: 'run'; readonly turnId: string; readonly first: number; readonly last: number }
-  | { readonly kind: 'crisis'; readonly turnId: string };
+  | { readonly kind: 'crisis'; readonly turnId: string }
+  | { readonly kind: 'face'; readonly turnId: string | null; readonly seq: number };
 
 /** The `call_speech.unit` text of a key. */
 export function speechUnitKey(key: SpeechUnitKey): string {
@@ -578,6 +580,8 @@ export function speechUnitKey(key: SpeechUnitKey): string {
       return `run.${key.turnId.toLowerCase()}.${String(key.first)}.${String(key.last)}`;
     case 'crisis':
       return `crisis.${key.turnId.toLowerCase()}`;
+    case 'face':
+      return key.turnId === null ? 'face.intro' : `face.${key.turnId.toLowerCase()}.${String(key.seq)}`;
   }
 }
 

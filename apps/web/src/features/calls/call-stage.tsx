@@ -126,6 +126,7 @@ export function CallStage({
           you={me.data?.principal.displayName ?? 'You'}
           levels={levels}
           reducedMotion={reducedMotion}
+          stock={face.stock}
         />
       ) : (
         <div

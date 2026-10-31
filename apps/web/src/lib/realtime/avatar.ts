@@ -1,6 +1,6 @@
 import type { AvatarSessionResponse, AvatarVoicing, EmbodimentProviderId } from '@foundry/contracts';
 
-import type { FaceRenderer, FaceUnitAudio } from './playback';
+import type { FaceRenderer, FaceUnitAudio, SpeechUnitToPlay } from './playback';
 import { PresenceAvatar } from './presence';
 
 /**
@@ -9,7 +9,8 @@ import { PresenceAvatar } from './presence';
  * audio-reactive form around the vEIR's monogram (or consented portrait), drawn from the colour tokens.
  * A vendor face (a realtime avatar over WebRTC) implements the same interface plus the optional vendor part:
  * it connects with the API's single-use token, hands the call tile its video, and, with voicing `audio`,
- * renders the call's own validated audio itself, lip-synced, through `renderer()`.
+ * renders the call's own validated audio itself, lip-synced, through `renderer()`; with voicing `text` (a FULL
+ * stock face) it has the vendor voice each validated unit's words, once the server admitted them.
  */
 
 export type AvatarState = 'connecting' | 'listening' | 'thinking' | 'speaking' | 'muted' | 'idle';
@@ -17,12 +18,18 @@ export type AvatarState = 'connecting' | 'listening' | 'thinking' | 'speaking' |
 export type { FaceRenderer, FaceUnitAudio } from './playback';
 
 /**
- * The server path a face's audio takes (`POST /calls/:id/face/*`): the face's speak channel stays on the server,
- * which relays a unit only when it is exactly the audio it synthesized for this call. The browser only watches.
+ * The server path of a face (`POST /calls/:id/face/*`). LITE: the face's speak channel stays on the server, which
+ * relays a unit only when it is exactly the audio it synthesized for this call; the browser only watches. FULL:
+ * the server admits each signed unit (`say`) before the browser may send the vendor its words.
  */
 export interface FaceRelay {
-  /** Hands the server one unit's audio for the face; rejects when the server would not relay it. */
+  /** LITE: hands the server one unit's audio for the face; rejects when the server would not relay it. */
   speak(audio: FaceUnitAudio, signal: AbortSignal): Promise<void>;
+  /**
+   * FULL: asks the server to admit one signed unit (204); rejects when it would not (422: not this call's
+   * validated words, already said, out of order), and then nothing is sent to the vendor.
+   */
+  say?(unit: SpeechUnitToPlay, signal: AbortSignal): Promise<void>;
   /** Barge-in: the face drops what it still has to say (best effort). */
   interrupt(): void;
 }
@@ -53,7 +60,8 @@ export interface AvatarProvider {
   /**
    * How the vEIR is heard with this face. `engine`: the call plays its own audio and the face follows its
    * loudness (`setLevels`). `audio`: the face renders the call's validated audio itself (`renderer()`), and the
-   * call plays a unit itself whenever the face cannot. `text` (a vendor voicing validated text) is reserved.
+   * call plays a unit itself whenever the face cannot. `text`: the vendor voices each validated unit's words with
+   * its own stock voice (`renderer()`), and the call speaks a unit itself whenever the face cannot.
    */
   readonly voicing: AvatarVoicing;
   mount(stage: HTMLElement, options: AvatarMountOptions): void;
@@ -71,7 +79,7 @@ export interface AvatarProvider {
   connect?(session: AvatarSessionResponse, signal: AbortSignal, relay: FaceRelay): Promise<void>;
   /** The face's live video for the call tile (a vendor's WebRTC stream). */
   video?(): MediaStream | null;
-  /** Voicing `audio`: where the call hands each validated unit's audio. */
+  /** Voicing `audio` or `text`: where the call hands each validated unit. */
   renderer?(): FaceRenderer | null;
   /** The face stopped (the vendor dropped, its video ended): the call goes on with the presence. */
   onLost?(listener: () => void): () => void;
@@ -89,24 +97,41 @@ export function createAvatarProvider(_id?: EmbodimentProviderId): AvatarProvider
  * Vendor adapters, each its own chunk: a vendor SDK is downloaded only when a call uses that vendor (and the
  * shell's bundle never carries one). `fake` is the development stand-in the local API can serve.
  */
-const VENDOR_FACES: Partial<Record<EmbodimentProviderId, () => Promise<AvatarProvider>>> = {
-  fake: async () => {
+const VENDOR_FACES: Partial<
+  Record<EmbodimentProviderId, (voicing: AvatarVoicing) => Promise<AvatarProvider>>
+> = {
+  fake: async (voicing) => {
+    if (voicing === 'text') {
+      // The stand-in of a FULL face: the real text path, over an in-page room that says each unit silently.
+      const { LiveAvatarFace } = await import('./embodiment/liveavatar');
+      const { standInLiveAvatarDeps } = await import('./embodiment/fake-liveavatar-room');
+      return new LiveAvatarFace(standInLiveAvatarDeps(), { voicing: 'text', provider: 'fake' });
+    }
     const { FakeFaceAvatar, browserFakeFaceDeps } = await import('./embodiment/fake-face');
     return new FakeFaceAvatar(browserFakeFaceDeps());
   },
-  // HeyGen LiveAvatar (LITE): the room's video and audio over LiveKit, watched only.
-  heygen: async () => {
+  // HeyGen LiveAvatar over LiveKit: LITE watches the room; FULL also sends it the admitted words.
+  heygen: async (voicing) => {
     const { LiveAvatarFace, browserLiveAvatarDeps } = await import('./embodiment/liveavatar');
-    return new LiveAvatarFace(await browserLiveAvatarDeps());
+    return new LiveAvatarFace(await browserLiveAvatarDeps(), {
+      voicing: voicing === 'text' ? 'text' : 'audio',
+      provider: 'heygen',
+    });
   },
 };
 
-/** A vendor face's adapter, or null when this build has none for it (the call keeps the presence). */
-export async function loadAvatarProvider(id: EmbodimentProviderId): Promise<AvatarProvider | null> {
+/**
+ * A vendor face's adapter for the session's voicing, or null when this build has none for it (the call keeps the
+ * presence).
+ */
+export async function loadAvatarProvider(
+  id: EmbodimentProviderId,
+  voicing: AvatarVoicing = 'audio',
+): Promise<AvatarProvider | null> {
   const load = VENDOR_FACES[id];
   if (load === undefined) return null;
   try {
-    return await load();
+    return await load(voicing);
   } catch {
     // A chunk that failed to load (offline, a new deploy): the presence instead.
     return null;

@@ -5,6 +5,7 @@ import {
   type EmbodimentProvider,
   type FaceSessionHandle,
   type FaceSessionRequest,
+  type FaceTranscriptLine,
   type StartedFaceSession,
   type VerifiedFaceAudio,
 } from '@foundry/core';
@@ -12,10 +13,19 @@ import {
 import { type ApiKeySource } from './media-secrets.js';
 
 /**
- * The vEIR's face through **HeyGen LiveAvatar in LITE ("avatar only") mode** (core `EmbodimentProvider` port;
- * docs/runbooks/avatars.md). Written from the vendor's API reference (docs.liveavatar.com, 2026-10-17) and the
- * behaviour of its web SDK 0.0.19; never called in CI (tests use recorded responses).
+ * The vEIR's face through **HeyGen LiveAvatar**, in LITE ("avatar only") or FULL mode (core `EmbodimentProvider`
+ * port; docs/runbooks/avatars.md). Written from the vendor's API reference (docs.liveavatar.com, 2026-10-17 and
+ * 2026-10-31) and the behaviour of its web SDK 0.0.19; never called in CI (tests use recorded responses).
  *
+ * **FULL** (a stock avatar with its stock voice, for the presentation; never the EIR's likeness): the token asks for
+ * the configured stock avatar (`avatar_persona.voice_id`, or the avatar's default voice), with no `context_id`, so
+ * the vendor's LLM never writes a word (restricted mode: the avatar only says text it is sent), `PUSH_TO_TALK`
+ * that is never started (the vendor never listens), 720p H.264 and a session of at most 20 minutes (the Essential
+ * plan's limit). FULL has no server-side control channel: the browser sends `avatar.speak_text` over the room with
+ * the words of each unit the server admitted, and `transcriptSince` reads the vendor's transcript
+ * (`GET /v1/sessions/{id}/transcript`) so the server can check the face said nothing else.
+ *
+ * **LITE**:
  * - `createSession`: `POST /v1/sessions/token` with the API key (`X-API-KEY`; Secrets Manager
  *   `foundry-ascent/media/heygen`) for a LITE session of the persona's avatar that ends by itself at the call's
  *   limit (`max_session_duration`; a vendor that refuses the limit gets no session at all, so nothing bills past
@@ -33,12 +43,18 @@ import { type ApiKeySource } from './media-secrets.js';
  * - `keepAlive` / `end`: `POST /v1/sessions/keep-alive` and `/v1/sessions/stop` with the API key (no socket, so
  *   they never replace a speak in progress: the vendor allows one socket per session).
  *
- * Responses are `{code, data, message}`; `code` 1000 is success. Nothing here logs or returns the API key, the
- * session token or `ws_url` in an error message.
+ * Responses are `{code, data, message}`. The success `code` is 1000 in the vendor's web SDK 0.0.19 and 100 in its
+ * published OpenAPI document: both are taken, since a wrong guess would silently keep every call on the presence
+ * (runbook §8.6 records the one a live start returns). Nothing here logs or returns the API key, the session
+ * token or `ws_url` in an error message.
  */
 
-/** LiveAvatar's success code in its response envelope (the vendor's web SDK 0.0.19 checks the same). */
-const SUCCESS_CODE = 1000;
+/** LiveAvatar's success codes in its response envelope (web SDK 0.0.19: 1000; OpenAPI: 100). */
+const SUCCESS_CODES: ReadonlySet<number> = new Set([100, 1000]);
+/** The longest FULL session the Essential plan allows (20 minutes); the call's own limit is usually lower. */
+export const LIVEAVATAR_FULL_MAX_SECONDS = 1200;
+/** Transcript pages read per check at most (a 20-minute session has a few hundred lines). */
+const TRANSCRIPT_PAGES = 10;
 /**
  * Bytes per `agent.speak` event: one second of 24 kHz 16-bit mono, the chunk the vendor recommends (its web SDK
  * 0.0.19 sends 400 ms, then 1 s). A face-audio part is whole seconds already, so each chunk is one manifest chunk.
@@ -68,6 +84,12 @@ export interface HeygenLiveAvatarOptions {
   readonly apiOrigin: string;
   /** Sandbox sessions: free, about a minute long, the sandbox avatar only (`MEDIA_FACE_SANDBOX`). */
   readonly sandbox: boolean;
+  /** `lite` (default): the EIR's avatar renders our audio. `full`: a stock avatar voices admitted text. */
+  readonly mode?: 'lite' | 'full';
+  /** FULL: the stock avatar (required outside the sandbox) and its voice (absent: the avatar's default voice). */
+  readonly stock?: { readonly avatarId: string | null; readonly voiceId: string | null };
+  /** Shown to platform admins only (`MEDIA_FACE_AUDIENCE=admins`). */
+  readonly adminsOnly?: boolean;
   readonly usdPerMinute: number;
   readonly fetch?: typeof fetch;
   readonly openSocket?: (url: string) => FaceSocket;
@@ -87,12 +109,27 @@ interface TokenData {
   readonly session_token?: string;
 }
 
+interface TranscriptData {
+  readonly session_active?: boolean;
+  readonly next_timestamp?: number | null;
+  readonly transcript_data?: readonly {
+    readonly role?: unknown;
+    readonly transcript?: unknown;
+    readonly absolute_timestamp?: unknown;
+  }[];
+}
+
 interface StartData {
   readonly session_id?: string;
   readonly livekit_url?: string;
   readonly livekit_client_token?: string;
   readonly ws_url?: string;
   readonly max_session_duration?: number | null;
+}
+
+/** Whether a response envelope reports success (either code the vendor uses). */
+function succeeded(envelope: Envelope<unknown> | null): boolean {
+  return typeof envelope?.code === 'number' && SUCCESS_CODES.has(envelope.code);
 }
 
 function failure(what: string, status?: number): EmbodimentSessionError {
@@ -213,9 +250,13 @@ class ControlChannel {
 
 export class HeygenLiveAvatarFace implements EmbodimentProvider {
   readonly id = 'heygen' as const;
-  readonly voicing = 'audio' as const;
-  readonly likeness = true;
+  readonly mode: 'lite' | 'full';
+  readonly voicing: 'audio' | 'text';
+  /** LITE draws the EIR (likeness consent); FULL a stock avatar (no one's likeness, labelled "AI avatar"). */
+  readonly likeness: boolean;
+  readonly stock: boolean;
   readonly sandbox: boolean;
+  readonly adminsOnly: boolean;
   readonly usdPerMinute: number;
   readonly #options: HeygenLiveAvatarOptions;
   readonly #fetch: typeof fetch;
@@ -224,7 +265,12 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
 
   constructor(options: HeygenLiveAvatarOptions) {
     this.#options = options;
+    this.mode = options.mode ?? 'lite';
+    this.voicing = this.mode === 'full' ? 'text' : 'audio';
+    this.likeness = this.mode === 'lite';
+    this.stock = this.mode === 'full';
     this.sandbox = options.sandbox;
+    this.adminsOnly = options.adminsOnly === true;
     this.usdPerMinute = options.usdPerMinute;
     // Bound, so the global fetch never runs with this adapter as its receiver.
     this.#fetch = options.fetch ?? ((input, init) => fetch(input, init));
@@ -262,38 +308,80 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
     return { status: response.status, envelope };
   }
 
-  async createSession(request: FaceSessionRequest): Promise<StartedFaceSession> {
-    const apiKey = await this.#options.apiKey();
-    const avatarId = this.#options.sandbox ? LIVEAVATAR_SANDBOX_AVATAR : request.avatarRef;
+  /** The token request of a session (LITE: the persona's avatar; FULL: the stock avatar, restricted mode). */
+  tokenBody(request: FaceSessionRequest): Record<string, unknown> {
+    const full = this.mode === 'full';
+    const avatarId = this.#options.sandbox
+      ? LIVEAVATAR_SANDBOX_AVATAR
+      : full
+        ? (this.#options.stock?.avatarId ?? null)
+        : request.avatarRef;
     if (avatarId === null) throw failure('needs an avatar');
-    const base = {
-      mode: 'LITE',
+    const seconds = Math.max(1, Math.floor(request.maxSeconds));
+    const common = {
       avatar_id: avatarId,
+      // 720p: higher resolutions add streaming latency (vendor docs).
       video_settings: { quality: 'high', encoding: 'H264' },
       ...(this.#options.sandbox ? { is_sandbox: true } : {}),
     };
+    if (!full) return { mode: 'LITE', ...common, max_session_duration: seconds };
+    const voiceId = this.#options.stock?.voiceId ?? null;
+    return {
+      mode: 'FULL',
+      ...common,
+      // No `context_id`: restricted mode, the vendor's LLM never answers; the avatar says only text it is sent.
+      avatar_persona: { ...(voiceId === null ? {} : { voice_id: voiceId }), language: 'en' },
+      // Push-to-talk that is never started: the vendor never listens (and no microphone is ever published).
+      interactivity_type: 'PUSH_TO_TALK',
+      max_session_duration: Math.min(LIVEAVATAR_FULL_MAX_SECONDS, seconds),
+    };
+  }
+
+  async #get<T>(
+    path: string,
+    auth: { readonly apiKey: string },
+  ): Promise<{ readonly status: number; readonly envelope: Envelope<T> | null }> {
+    let response: Response;
+    try {
+      response = await this.#fetch(`${this.#options.apiOrigin}${path}`, {
+        method: 'GET',
+        headers: { accept: 'application/json', 'x-api-key': auth.apiKey },
+        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+      });
+    } catch {
+      throw failure('transcript unreachable');
+    }
+    let envelope: Envelope<T> | null;
+    try {
+      envelope = (await response.json()) as Envelope<T>;
+    } catch {
+      envelope = null;
+    }
+    return { status: response.status, envelope };
+  }
+
+  async createSession(request: FaceSessionRequest): Promise<StartedFaceSession> {
+    const body = this.tokenBody(request);
+    const apiKey = await this.#options.apiKey();
     // The vendor session ends by itself at the call's (and the person's video minutes') limit. A vendor that
     // refuses the limit (422: above the plan's session length) starts nothing: the call keeps the presence.
-    const token = await this.#post<TokenData>(
-      '/v1/sessions/token',
-      { ...base, max_session_duration: Math.max(1, Math.floor(request.maxSeconds)) },
-      { apiKey },
-    );
+    const token = await this.#post<TokenData>('/v1/sessions/token', body, { apiKey });
     const tokenData = token.envelope?.data;
-    if (token.status >= 300 || token.envelope?.code !== SUCCESS_CODE || !tokenData?.session_token) {
+    if (token.status >= 300 || !succeeded(token.envelope) || !tokenData?.session_token) {
       throw failure('token', token.status);
     }
     const started = await this.#post<StartData>('/v1/sessions/start', undefined, {
       bearer: tokenData.session_token,
     });
     const data = started.envelope?.data;
+    // LITE needs its speak channel (`ws_url`); FULL has none (the browser commands the room).
     if (
       started.status >= 300 ||
-      started.envelope?.code !== SUCCESS_CODE ||
+      !succeeded(started.envelope) ||
       !data?.session_id ||
       !data.livekit_url ||
       !data.livekit_client_token ||
-      !data.ws_url
+      (this.mode === 'lite' && !data.ws_url)
     ) {
       // A started session must not run unseen: stop it if it got that far.
       if (data?.session_id) await this.#stop(apiKey, data.session_id).catch(() => undefined);
@@ -307,7 +395,7 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
         expiresAt: new Date(Date.now() + Math.max(1, seconds) * 1000).toISOString(),
       },
       sessionRef: data.session_id,
-      control: data.ws_url,
+      control: this.mode === 'lite' ? (data.ws_url ?? null) : null,
     };
   }
 
@@ -365,6 +453,8 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
   }
 
   async interrupt(handle: FaceSessionHandle): Promise<void> {
+    // FULL: the browser sends `avatar.interrupt` over the room; the server has no channel to the vendor.
+    if (this.mode === 'full') return;
     await this.#withControl(handle, async (channel) => {
       await channel.acknowledged([channel.send({ type: 'agent.interrupt' })]);
     });
@@ -383,6 +473,47 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
       { apiKey },
     );
     return result.status;
+  }
+
+  /**
+   * FULL: the session's transcript at the vendor, oldest first, from `since` (the vendor's timestamp, inclusive;
+   * null: the whole session), following its `next_timestamp` for a few pages. Lines with an unknown role or no
+   * words are skipped; the words are never logged or put in an error.
+   */
+  async transcriptSince(handle: FaceSessionHandle, since: number | null): Promise<FaceTranscriptLine[]> {
+    const apiKey = await this.#options.apiKey();
+    const lines: FaceTranscriptLine[] = [];
+    let from = since;
+    for (let page = 0; page < TRANSCRIPT_PAGES; page += 1) {
+      const query = from === null ? '' : `?start_timestamp=${String(Math.floor(from))}`;
+      const result = await this.#get<TranscriptData>(
+        `/v1/sessions/${encodeURIComponent(handle.sessionRef)}/transcript${query}`,
+        { apiKey },
+      );
+      if (
+        result.status >= 300 ||
+        !succeeded(result.envelope) ||
+        !Array.isArray(result.envelope?.data?.transcript_data)
+      ) {
+        throw failure('transcript', result.status);
+      }
+      const data = result.envelope.data;
+      const fresh = (data.transcript_data ?? []).flatMap((entry): FaceTranscriptLine[] => {
+        const role = entry.role;
+        if ((role !== 'avatar' && role !== 'user') || typeof entry.transcript !== 'string') return [];
+        const at = typeof entry.absolute_timestamp === 'number' ? entry.absolute_timestamp : 0;
+        return [{ role, text: entry.transcript, at }];
+      });
+      // A page that starts where the last one ended repeats its boundary lines: keep each line once.
+      const last = lines.at(-1);
+      const start = last === undefined ? 0 : fresh.findIndex((line) => line.at > last.at);
+      const added = start < 0 ? [] : fresh.slice(start);
+      lines.push(...added);
+      const next = typeof data.next_timestamp === 'number' ? data.next_timestamp : null;
+      if (added.length === 0 || next === null || (from !== null && next <= from)) break;
+      from = next;
+    }
+    return lines;
   }
 
   async end(handle: FaceSessionHandle): Promise<void> {

@@ -77,14 +77,20 @@ export function mediaFor(
 ): { embodiment?: EmbodimentProvider; clonedVoice?: VoiceProvider } {
   const face = MEDIA_VENDORS.face.heygen;
   const voice = MEDIA_VENDORS.voice.elevenlabs;
+  const full = config.media.faceMode === 'full';
   return {
     ...(config.media.face === 'heygen-liveavatar'
       ? {
+          // LITE: the EIR's own avatar renders our audio. FULL (MEDIA_FACE_MODE=full): a stock avatar voices
+          // admitted text with its stock voice, at the FULL price; the same key and API either way.
           embodiment: new HeygenLiveAvatarFace({
             apiKey: secrets.apiKey(face.secretName),
             apiOrigin: face.apiOrigin,
             sandbox: config.media.faceSandbox,
-            usdPerMinute: face.usdPerMinute,
+            mode: config.media.faceMode,
+            ...(config.media.faceStock === null ? {} : { stock: config.media.faceStock }),
+            adminsOnly: config.media.faceAudience === 'admins',
+            usdPerMinute: full ? face.full.usdPerMinute : face.usdPerMinute,
           }),
         }
       : {}),

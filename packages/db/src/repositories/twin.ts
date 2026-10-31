@@ -1,7 +1,7 @@
 /**
- * The vEIR's digital twin (migration 0017): a persona's face and cloned voice at their vendors
+ * The vEIR's digital twin (migrations 0017, 0018): a persona's face and cloned voice at their vendors
  * (`persona_media`, curators only), what a call may use of them right now (`app.persona_twin`), and the vendor
- * face session of a call (`call_faces`, owner role only).
+ * face session of a call in its mode (`call_faces`, `call_face_texts`, owner role only).
  */
 import { TwinMediaKind, TwinMediaStatus, TwinMediaVendor, type TwinMediaView } from '@foundry/contracts';
 
@@ -126,11 +126,16 @@ export async function personaTwin(ex: SqlExecutor, personaId: string): Promise<P
 // The vendor face session of a call (owner role)
 // ------------------------------------------------------------------------------------------------
 
+/** How a face speaks (0018): `lite` renders audio our server made, `full` voices text our server admitted. */
+export type FaceMode = 'lite' | 'full';
+const FACE_MODES = ['lite', 'full'] as const;
+
 const faceShape = {
   call_id: col.uuid,
   tenant_id: col.uuid,
   started_by: col.uuid,
   vendor: col.enum(['heygen', 'fake'] as const),
+  mode: col.enum(FACE_MODES),
   session_ref: col.text,
   control: col.text.nullable,
   max_seconds: col.int,
@@ -139,13 +144,19 @@ const faceShape = {
   ended_at: col.ts.nullable,
   end_reason: col.text.nullable,
   lasted: col.int,
+  /** Avatar lines of the vendor transcript verified so far (FULL). */
+  transcript_verified: col.int,
+  /** Seconds since the face's last transcript lines matched nothing it was allowed to say (null: none pending). */
+  transcript_pending: col.int.nullable,
 };
 const faceCodec = camelRow(faceShape);
 /** A call's face; `control` is the base64 ciphertext of the control channel (null once ended). */
 export type CallFaceRecord = CamelRow<typeof faceShape>;
-const FACE_COLUMNS = `call_id, tenant_id, started_by, vendor, session_ref, encode(control_ciphertext, 'base64') AS control,
-  max_seconds, metered_seconds, started_at, ended_at, end_reason,
-  ceil(extract(epoch FROM coalesce(ended_at, now()) - started_at))::integer AS lasted`;
+const PENDING = `floor(extract(epoch FROM now() - transcript_pending_since))::integer`;
+const FACE_COLUMNS = `call_id, tenant_id, started_by, vendor, mode, session_ref,
+  encode(control_ciphertext, 'base64') AS control, max_seconds, metered_seconds, started_at, ended_at, end_reason,
+  ceil(extract(epoch FROM coalesce(ended_at, now()) - started_at))::integer AS lasted,
+  transcript_verified, ${PENDING} AS transcript_pending`;
 
 export function getCallFace(sx: SystemExecutor, callId: string): Promise<CallFaceRecord | null> {
   return queryFirst(
@@ -166,6 +177,8 @@ export function startCallFace(
     readonly callId: string;
     readonly startedBy: string;
     readonly vendor: 'heygen' | 'fake';
+    /** How the face speaks (default `lite`). */
+    readonly mode?: FaceMode;
     readonly sessionRef: string;
     /** Base64 AES-GCM ciphertext of the control channel, or null. */
     readonly control: string | null;
@@ -174,8 +187,8 @@ export function startCallFace(
 ): Promise<CallFaceRecord | null> {
   return queryFirst(
     sx,
-    `INSERT INTO call_faces (call_id, tenant_id, started_by, vendor, session_ref, control_ciphertext, max_seconds)
-     SELECT c.id, c.tenant_id, c.started_by, :vendor, :ref, decode(:control, 'base64'), :max
+    `INSERT INTO call_faces (call_id, tenant_id, started_by, vendor, mode, session_ref, control_ciphertext, max_seconds)
+     SELECT c.id, c.tenant_id, c.started_by, :vendor, :mode, :ref, decode(:control, 'base64'), :max
        FROM calls c WHERE c.id = :call AND c.started_by = :by AND c.status = 'live'
      ON CONFLICT (call_id) DO NOTHING
      RETURNING ${FACE_COLUMNS}`,
@@ -183,6 +196,7 @@ export function startCallFace(
       call: p.uuid(input.callId),
       by: p.uuid(input.startedBy),
       vendor: p.text(input.vendor),
+      mode: p.text(input.mode ?? 'lite'),
       ref: p.text(input.sessionRef),
       control: p.nullable.text(input.control),
       max: p.int(Math.max(0, Math.min(14_400, Math.floor(input.maxSeconds)))),
@@ -200,6 +214,8 @@ export interface FaceMetering {
   /** The person whose call it is (the face's starter). */
   readonly startedBy: string;
   readonly vendor: 'heygen' | 'fake';
+  /** The face's mode, which decides its price. */
+  readonly mode: FaceMode;
 }
 
 /**
@@ -217,7 +233,7 @@ export function meterCallFace(sx: SystemExecutor, callId: string): Promise<FaceM
               ceil(extract(epoch FROM coalesce(f.ended_at, now()) - f.started_at))::integer))
        FROM prev, calls c WHERE f.call_id = prev.call_id AND c.id = f.call_id
      RETURNING greatest(0, f.metered_seconds - prev.before)::integer AS added, f.tenant_id, c.venture_id,
-               f.started_by, f.vendor`,
+               f.started_by, f.vendor, f.mode`,
     { call: p.uuid(callId) },
     (r) => ({
       added: col.int.decode(r.added, 'added'),
@@ -225,6 +241,7 @@ export function meterCallFace(sx: SystemExecutor, callId: string): Promise<FaceM
       ventureId: col.uuid.decode(r.venture_id, 'venture_id'),
       startedBy: col.uuid.decode(r.started_by, 'started_by'),
       vendor: col.enum(['heygen', 'fake'] as const).decode(r.vendor, 'vendor'),
+      mode: col.enum(FACE_MODES).decode(r.mode, 'mode'),
     }),
   );
 }
@@ -261,9 +278,11 @@ export function endCallFace(
      UPDATE call_faces AS f SET ended_at = now(), end_reason = :reason, control_ciphertext = NULL,
                                 speaking_unit = NULL
        FROM prev WHERE f.call_id = prev.call_id
-     RETURNING f.call_id, f.tenant_id, f.started_by, f.vendor, f.session_ref, prev.control, f.max_seconds,
+     RETURNING f.call_id, f.tenant_id, f.started_by, f.vendor, f.mode, f.session_ref, prev.control, f.max_seconds,
                f.metered_seconds, f.started_at, f.ended_at, f.end_reason,
-               ceil(extract(epoch FROM f.ended_at - f.started_at))::integer AS lasted`,
+               ceil(extract(epoch FROM f.ended_at - f.started_at))::integer AS lasted,
+               f.transcript_verified, floor(extract(epoch FROM now() - f.transcript_pending_since))::integer
+                 AS transcript_pending`,
     { call: p.uuid(input.callId), reason: p.text(input.reason) },
     (r) => faceCodec.decode(r),
   );
@@ -353,4 +372,90 @@ export async function sealFaceUtterance(sx: SystemExecutor, callId: string): Pro
     (r) => col.uuid.decode(r.call_id, 'call_id'),
   );
   return sealed !== null;
+}
+
+/**
+ * Admits one validated unit to the call's live FULL face (`sessionRef`): the vendor may then voice its text. In one
+ * statement, under the face's row lock, each unit is admitted once and in order: a later unit of the reply the face
+ * is saying (`turnKey`, a higher `seq`), or the first unit the face takes of a reply (or the intro) it never said
+ * before. So validated units reach the face only once each, never replayed or reordered, never resumed from a reply
+ * it already left. `digests` (salted SHA-256 of the unit's normalized words and sentences, never the words) are
+ * what the face's transcript is reconciled against. False when refused.
+ */
+export async function admitFaceText(
+  sx: SystemExecutor,
+  input: {
+    readonly callId: string;
+    readonly sessionRef: string;
+    /** The speech unit's call_speech key (`intro` or `unit.<turn>.<seq>`). */
+    readonly unit: string;
+    /** `intro` or the turn id. */
+    readonly turnKey: string;
+    readonly seq: number;
+    readonly digests: readonly string[];
+  },
+): Promise<boolean> {
+  const admitted = await queryFirst(
+    sx,
+    `WITH face AS (
+       UPDATE call_faces f SET said_turn = :turn, said_seq = :seq
+        WHERE f.call_id = :call AND f.session_ref = :ref AND f.ended_at IS NULL AND f.mode = 'full'
+          AND (f.said_turn IS NULL
+               OR (f.said_turn = :turn AND f.said_seq < :seq)
+               OR (f.said_turn <> :turn
+                   AND NOT EXISTS (SELECT 1 FROM call_face_texts t
+                                    WHERE t.call_id = f.call_id AND t.turn_key = :turn)))
+        RETURNING f.call_id)
+     INSERT INTO call_face_texts (call_id, unit, turn_key, seq, digests)
+     SELECT face.call_id, :unit, :turn, :seq, :digests FROM face
+     ON CONFLICT (call_id, unit) DO NOTHING
+     RETURNING call_id`,
+    {
+      call: p.uuid(input.callId),
+      ref: p.text(input.sessionRef),
+      unit: p.text(input.unit),
+      turn: p.text(input.turnKey),
+      seq: p.int(input.seq),
+      digests: p.textArray(input.digests),
+    },
+    (r) => col.uuid.decode(r.call_id, 'call_id'),
+  );
+  return admitted !== null;
+}
+
+/** Every digest of the units the call's FULL face was allowed to say (owner role). */
+export async function faceTextDigests(sx: SystemExecutor, callId: string): Promise<Set<string>> {
+  const rows = await queryRows(
+    sx,
+    `SELECT d FROM call_face_texts t, unnest(t.digests) AS d WHERE t.call_id = :call`,
+    { call: p.uuid(callId) },
+    (r) => col.text.decode(r.d, 'd'),
+  );
+  return new Set(rows);
+}
+
+/**
+ * Records a reconciliation of a live FULL face's transcript: the avatar lines verified so far (never fewer than
+ * before), and whether its last lines are still unmatched (`pending`: the time it first saw them is kept; cleared
+ * once they match). Returns the seconds they have been pending (null: none, or no live FULL face).
+ */
+export async function recordFaceTranscript(
+  sx: SystemExecutor,
+  input: { readonly callId: string; readonly verified: number; readonly pending: boolean },
+): Promise<number | null> {
+  const row = await queryFirst(
+    sx,
+    `UPDATE call_faces
+        SET transcript_verified = greatest(transcript_verified, least(:verified, 100000)),
+            transcript_pending_since = CASE WHEN :pending THEN coalesce(transcript_pending_since, now()) END
+      WHERE call_id = :call AND ended_at IS NULL AND mode = 'full'
+      RETURNING ${PENDING} AS pending`,
+    {
+      call: p.uuid(input.callId),
+      verified: p.int(Math.max(0, Math.floor(input.verified))),
+      pending: p.bool(input.pending),
+    },
+    (r) => ({ pending: col.int.nullable.decode(r.pending, 'pending') }),
+  );
+  return row?.pending ?? null;
 }

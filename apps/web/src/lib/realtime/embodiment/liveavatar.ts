@@ -8,11 +8,32 @@ import type {
   FaceRelay,
   SpokenUnit,
 } from '../avatar';
-import type { FaceRenderer, FaceRendererOutput, FaceRenderHandlers, FaceUnitAudio } from '../playback';
+import {
+  speakingTimeMs,
+  type FaceRenderer,
+  type FaceRendererOutput,
+  type FaceRenderHandlers,
+  type FaceUnitAudio,
+  type SpeechUnitToPlay,
+} from '../playback';
 
 /**
- * The vEIR's face through HeyGen LiveAvatar, LITE mode (docs/architecture/calls.md §4, docs/runbooks/avatars.md).
+ * The vEIR's face through HeyGen LiveAvatar (docs/architecture/calls.md §4, docs/runbooks/avatars.md), in LITE
+ * (voicing `audio`) or FULL (voicing `text`) mode.
  *
+ * **FULL** (a stock avatar with its stock voice, labelled "AI avatar"): the browser joins the room the same way
+ * and still publishes no track (no microphone, no camera: plain livekit-client, so no microphone prompt). When a
+ * signed unit's turn comes, `render` asks the server to admit it (`POST /calls/:id/face/say`, chained in order and
+ * usually done ahead, while the unit before it is heard) and only on a 204 sends the vendor
+ * `{event_id, event_type: 'avatar.speak_text', text}` on `agent-control` (reliable). The unit counts as heard from
+ * `avatar.speak_started` (or the face's audio level), and to its end at `avatar.speak_ended` (or its estimated
+ * length). Units go to the vendor one at a time, each after the last one ended, so it makes no difference whether
+ * the vendor queues commands or a new one cuts off the one it is saying. Barge-in sends `avatar.interrupt` (and
+ * tells the server); a unit the face does not start saying in time is interrupted at the vendor first and then
+ * spoken by the call itself in the stock voice, so two voices never overlap. While the founder may speak, the
+ * avatar takes its listening pose (`avatar.start_listening` / `avatar.stop_listening`).
+ *
+ * **LITE**:
  * The browser only **watches**: it joins the vendor's LiveKit room with the room token the API minted
  * (`POST /calls/avatar-session`), subscribes to the avatar participant's (`heygen`) video and audio, and never
  * publishes anything (no microphone, no camera, no data). The face's speak channel (`ws_url`) stays on the
@@ -29,6 +50,8 @@ import type { FaceRenderer, FaceRendererOutput, FaceRenderHandlers, FaceUnitAudi
 export const LIVEAVATAR_PARTICIPANT = 'heygen';
 /** The topic the vendor's agent events arrive on in the room. */
 export const LIVEAVATAR_EVENTS_TOPIC = 'agent-response';
+/** The topic FULL commands go to the vendor on (reliable data, never a track). */
+export const LIVEAVATAR_COMMAND_TOPIC = 'agent-control';
 /** A face that shows no first frame by then is given up (the stage also gives up at 8 s). */
 const FIRST_FRAME_MS = 8_000;
 /** A unit the face does not start saying by then is played by the call itself. */
@@ -45,7 +68,7 @@ export interface RoomTrack {
   readonly mediaStreamTrack: MediaStreamTrack;
 }
 
-/** The part of a LiveKit room the adapter uses (watch only). */
+/** The part of a LiveKit room the adapter uses: it watches, and in FULL sends commands. It never publishes a track. */
 export interface LiveAvatarRoom {
   connect(url: string, token: string): Promise<void>;
   disconnect(): void;
@@ -53,6 +76,8 @@ export interface LiveAvatarRoom {
   onTrackGone(listener: (track: RoomTrack) => void): void;
   onDisconnected(listener: () => void): void;
   onData(listener: (payload: Uint8Array, topic: string | undefined) => void): void;
+  /** FULL: sends the vendor one command on `topic`, reliably (data only). */
+  publish(topic: string, payload: Uint8Array<ArrayBuffer>): Promise<void>;
 }
 
 /** The face's audio routed into the call's output, and its loudness. */
@@ -68,6 +93,8 @@ export interface LiveAvatarDeps {
   tapAudio(track: MediaStreamTrack, output: FaceRendererOutput): FaceAudioTap;
   setTimeout(callback: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
+  /** A command's `event_id` (default: a random UUID). */
+  eventId?(): string;
 }
 
 /** The browser's room (livekit-client, loaded with this chunk). */
@@ -105,6 +132,8 @@ export async function browserLiveAvatarDeps(): Promise<LiveAvatarDeps> {
             listener(payload, topic);
           });
         },
+        // Data only: no track is ever published (no microphone prompt, nothing for the vendor to hear).
+        publish: (topic, payload) => room.localParticipant.publishData(payload, { reliable: true, topic }),
       };
     },
     createStream: (tracks) => new MediaStream([...tracks]),
@@ -151,10 +180,22 @@ interface AgentEvent {
   readonly type?: string;
 }
 
+export interface LiveAvatarFaceOptions {
+  /** `audio` (LITE, default): the face renders the call's audio. `text` (FULL): the vendor voices admitted words. */
+  readonly voicing?: 'audio' | 'text';
+  /** `heygen`, or `fake` for the development stand-in of a FULL face (an in-page room). */
+  readonly provider?: 'heygen' | 'fake';
+}
+
+/** A unit's key while it waits for (or has) the server's admission. */
+function unitKey(unit: SpeechUnitToPlay): string {
+  return `${unit.turnId ?? 'intro'}.${String(unit.seq)}`;
+}
+
 export class LiveAvatarFace implements AvatarProvider {
-  readonly id = 'heygen' as const;
+  readonly id: 'heygen' | 'fake';
   readonly drawsFace = true;
-  readonly voicing = 'audio' as const;
+  readonly voicing: 'audio' | 'text';
 
   private room: LiveAvatarRoom | null = null;
   private relay: FaceRelay | null = null;
@@ -166,19 +207,47 @@ export class LiveAvatarFace implements AvatarProvider {
   private readonly lostListeners = new Set<() => void>();
   /** The vendor's own speak events for the unit being rendered, when the room carries them. */
   private speakEvents: { started(): void; ended(): void } | null = null;
-  private readonly face: FaceRenderer = {
-    ready: () => this.live,
-    render: (buffer, output, handlers, audio) => this.render(buffer, output, handlers, audio),
-  };
+  private readonly face: FaceRenderer;
+  /** FULL: the server's admission of each unit, in order (one chain), usually asked for ahead of its turn. */
+  private readonly admissions = new Map<string, Promise<void>>();
+  private admissionChain: Promise<unknown> = Promise.resolve();
+  /** Aborts every admission still in flight when the face goes. */
+  private lifetime = new AbortController();
+  /** FULL: whether the avatar was sent its listening pose. */
+  private listening = false;
 
-  constructor(private readonly deps: LiveAvatarDeps) {}
+  constructor(
+    private readonly deps: LiveAvatarDeps,
+    options: LiveAvatarFaceOptions = {},
+  ) {
+    this.voicing = options.voicing ?? 'audio';
+    this.id = options.provider ?? 'heygen';
+    this.face = {
+      voicing: this.voicing,
+      ready: () => this.live,
+      prepare: (unit) => {
+        if (this.voicing === 'text' && this.live && unit.sig !== undefined)
+          void this.admit(unit).catch(() => undefined);
+      },
+      render: (buffer, output, handlers, audio, unit) =>
+        this.voicing === 'text'
+          ? this.renderText(unit, output, handlers)
+          : this.render(buffer, output, handlers, audio),
+    };
+  }
 
   mount(_stage: HTMLElement, _options: AvatarMountOptions): void {
     // The face draws itself (the vendor's video); nothing to mount.
   }
 
-  setState(_state: AvatarState): void {
-    // The vendor's idle and listening loop is the face's listening state.
+  setState(state: AvatarState): void {
+    // LITE: the vendor's idle and listening loop is the face's listening state. FULL: the listening pose is a
+    // command, sent while the founder may speak and taken back otherwise.
+    if (this.voicing !== 'text' || !this.live) return;
+    const listening = state === 'listening';
+    if (listening === this.listening) return;
+    this.listening = listening;
+    void this.command(listening ? 'avatar.start_listening' : 'avatar.stop_listening');
   }
 
   setLevels(_levels: AudioLevels): void {
@@ -190,7 +259,8 @@ export class LiveAvatarFace implements AvatarProvider {
   }
 
   async connect(session: AvatarSessionResponse, signal: AbortSignal, relay: FaceRelay): Promise<void> {
-    if (session.provider !== 'heygen' || !session.token || !session.url) {
+    // The stand-in's in-page room needs no URL; the vendor's always has one.
+    if (session.provider !== this.id || !session.token || (this.id === 'heygen' && !session.url)) {
       throw new Error('not_liveavatar_session');
     }
     const stopped = () => signal.aborted;
@@ -242,9 +312,11 @@ export class LiveAvatarFace implements AvatarProvider {
       const name = event.event_type ?? event.type;
       if (name === 'avatar.speak_started' || name === 'agent.speak_started') this.speakEvents?.started();
       if (name === 'avatar.speak_ended' || name === 'agent.speak_ended') this.speakEvents?.ended();
+      // FULL: the vendor ended the session (idle, its limit, no credits): the call goes on with the presence.
+      if (name === 'session.stopped' && this.voicing === 'text') this.lose();
     });
     try {
-      await Promise.all([room.connect(session.url, session.token), firstFrame]);
+      await Promise.all([room.connect(session.url ?? '', session.token), firstFrame]);
     } catch (err) {
       this.release();
       throw err;
@@ -278,8 +350,150 @@ export class LiveAvatarFace implements AvatarProvider {
 
   // Internals -----------------------------------------------------------------------------------------
 
+  /** FULL: sends the vendor one command (best effort; a room that cannot take it is about to drop). */
+  private command(eventType: string, fields: Record<string, string> = {}): Promise<void> {
+    const room = this.room;
+    if (room === null) return Promise.reject(new Error('face_closed'));
+    const eventId = this.deps.eventId?.() ?? crypto.randomUUID();
+    const payload = new TextEncoder().encode(
+      JSON.stringify({ event_id: eventId, event_type: eventType, ...fields }),
+    );
+    const sent = room.publish(LIVEAVATAR_COMMAND_TOPIC, payload);
+    sent.catch(() => undefined);
+    return sent;
+  }
+
+  /**
+   * FULL: the server's admission of a unit (once per unit, in the order asked; a refusal does not hold up the
+   * units after it).
+   */
+  private admit(unit: SpeechUnitToPlay): Promise<void> {
+    const key = unitKey(unit);
+    const known = this.admissions.get(key);
+    if (known !== undefined) return known;
+    const say = this.relay?.say?.bind(this.relay);
+    if (say === undefined) return Promise.reject(new Error('face_closed'));
+    const signal = this.lifetime.signal;
+    const admitted = this.admissionChain.then(() => say(unit, signal));
+    this.admissionChain = admitted.catch(() => undefined);
+    admitted.catch(() => undefined);
+    // At most a few units wait ahead; a long call never accumulates them.
+    if (this.admissions.size >= 16) this.admissions.clear();
+    this.admissions.set(key, admitted);
+    return admitted;
+  }
+
+  /**
+   * FULL: has the vendor say one signed unit's words, once the server admitted it. Heard from the vendor's
+   * `avatar.speak_started` (or the face's audio level), to `avatar.speak_ended` (or the unit's estimated length).
+   * A unit not started in time is interrupted at the vendor, then given back to the call (`failed`).
+   */
+  private renderText(
+    unit: SpeechUnitToPlay | undefined,
+    output: FaceRendererOutput,
+    handlers: FaceRenderHandlers,
+  ): () => void {
+    let stopped = false;
+    let published = false;
+    let began = false;
+    let finished = false;
+    const timers = new Set<unknown>();
+    const relay = this.relay;
+    const later = (callback: () => void, ms: number) => {
+      const handle = this.deps.setTimeout(() => {
+        timers.delete(handle);
+        callback();
+      }, ms);
+      timers.add(handle);
+    };
+    const clearAll = () => {
+      for (const handle of timers) this.deps.clearTimeout(handle);
+      timers.clear();
+    };
+    const silence = () => {
+      void this.command('avatar.interrupt').catch(() => undefined);
+      relay?.interrupt();
+    };
+    const end = (outcome: 'ended' | 'failed') => {
+      if (stopped || finished) return;
+      finished = true;
+      clearAll();
+      if (this.speakEvents === events) this.speakEvents = null;
+      // Quiet at the vendor first: the call then speaks the unit itself, never over the face.
+      if (outcome === 'failed' && published && !began) silence();
+      handlers.onEnd(outcome);
+    };
+    const start = () => {
+      if (stopped || began || finished) return;
+      began = true;
+      handlers.onStart();
+      later(
+        () => {
+          end('ended');
+        },
+        speakingTimeMs(unit?.text ?? '') + TAIL_MS,
+      );
+    };
+    const events = {
+      started: start,
+      ended: () => {
+        if (began) end('ended');
+      },
+    };
+
+    if (relay?.say === undefined || !this.live || unit?.sig === undefined) {
+      later(() => {
+        end('failed');
+      }, 0);
+    } else {
+      // The face's audio plays into the call's own output (ducking, loudness and captions unchanged).
+      const tap = this.ensureTap(output);
+      this.speakEvents = events;
+      this.admit(unit).then(
+        () => {
+          this.admissions.delete(unitKey(unit));
+          if (stopped || finished) return;
+          if (!this.live) {
+            end('failed');
+            return;
+          }
+          published = true;
+          this.command('avatar.speak_text', { text: unit.text }).catch(() => {
+            end('failed');
+          });
+          const poll = (waited: number) => {
+            if (stopped || began || finished) return;
+            if (tap !== null && tap.level() > ONSET_LEVEL) {
+              start();
+              return;
+            }
+            if (waited >= ONSET_TIMEOUT_MS) {
+              end('failed');
+              return;
+            }
+            later(() => {
+              poll(waited + POLL_MS);
+            }, POLL_MS);
+          };
+          poll(0);
+        },
+        () => {
+          // Not admitted (the server refused it): nothing is sent to the vendor.
+          this.admissions.delete(unitKey(unit));
+          end('failed');
+        },
+      );
+    }
+    return () => {
+      stopped = true;
+      clearAll();
+      if (this.speakEvents === events) this.speakEvents = null;
+      if (published && !finished) silence();
+    };
+  }
+
   private render(
-    buffer: AudioBuffer,
+    buffer: AudioBuffer | null,
     output: FaceRendererOutput,
     handlers: FaceRenderHandlers,
     audio: FaceUnitAudio | null,
@@ -318,7 +532,7 @@ export class LiveAvatarFace implements AvatarProvider {
         () => {
           end('ended');
         },
-        buffer.duration * 1000 + TAIL_MS,
+        (buffer?.duration ?? 0) * 1000 + TAIL_MS,
       );
     };
     const events = {
@@ -329,7 +543,7 @@ export class LiveAvatarFace implements AvatarProvider {
     };
 
     const tap = audio !== null && relay !== null && this.live ? this.ensureTap(output) : null;
-    if (audio === null || relay === null || tap === null) {
+    if (buffer === null || audio === null || relay === null || tap === null) {
       // A unit the server did not give the face (or no face audio yet): the call plays it itself.
       later(() => {
         end('failed');
@@ -388,6 +602,11 @@ export class LiveAvatarFace implements AvatarProvider {
   private release(): void {
     this.live = false;
     this.speakEvents = null;
+    this.listening = false;
+    this.lifetime.abort();
+    this.lifetime = new AbortController();
+    this.admissions.clear();
+    this.admissionChain = Promise.resolve();
     this.tap?.disconnect();
     this.tap = null;
     this.room?.disconnect();

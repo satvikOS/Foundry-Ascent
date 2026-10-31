@@ -233,6 +233,7 @@ describe('vEIR identity and call configuration', () => {
       voiceId: 'Matthew',
       voicing: 'engine',
       url: null,
+      stockFace: false,
     });
   });
 

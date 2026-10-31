@@ -1,4 +1,9 @@
-import { AvatarSessionRequest, SpeechRequest, UpdateNotebookRequest } from '@foundry/contracts';
+import {
+  AvatarSessionRequest,
+  FaceSayRequest,
+  SpeechRequest,
+  UpdateNotebookRequest,
+} from '@foundry/contracts';
 import { type Core } from '@foundry/core';
 
 import { jsonBody, pathParam } from '../http/input.js';
@@ -67,6 +72,16 @@ export function registerVeirRoutes(r: RouteBuilder, core: Core): void {
         firstChunk: part,
         pcm: c.get('rawBody') ?? new Uint8Array(0),
       });
+      return c.body(null, 204);
+    },
+    { idempotency: 'none' },
+  );
+  // A FULL face: admits one signed unit of this call, which the browser may then send the vendor to say (204), or
+  // 422 for words that are not this call's validated speech, or a unit already admitted or out of order.
+  r.post(
+    '/calls/:id/face/say',
+    async (c, ctx) => {
+      await core.speech.authorizeFaceText(ctx, pathParam(c, 'id'), jsonBody(c, FaceSayRequest));
       return c.body(null, 204);
     },
     { idempotency: 'none' },

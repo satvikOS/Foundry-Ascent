@@ -11,6 +11,7 @@ import {
   EmbodimentSessionError,
   type EmbodimentProvider,
   type FaceSessionHandle,
+  type FaceTranscriptLine,
   type FaceSessionRequest,
   type StartedFaceSession,
   type VerifiedFaceAudio,
@@ -219,7 +220,17 @@ export class FakeEmbodimentProvider implements EmbodimentProvider {
   readonly interrupts: FaceSessionHandle[] = [];
   readonly keepAlives: FaceSessionHandle[] = [];
   readonly ended: { readonly handle: FaceSessionHandle; readonly reason: string }[] = [];
-  readonly voicing = 'audio' as const;
+  /** `lite` (renders our audio) unless constructed for `full` (voices admitted text). */
+  readonly mode: 'lite' | 'full';
+  readonly voicing: 'audio' | 'text';
+  /** A stock avatar (labelled "AI avatar"): FULL faces are. */
+  stock: boolean;
+  /** Shown to platform admins only. */
+  adminsOnly = false;
+  /** FULL: the vendor's transcript lines per session (what the avatar said), as `transcriptSince` returns them. */
+  readonly transcripts = new Map<string, FaceTranscriptLine[]>();
+  /** The vendor transcript cannot be read (rejects). */
+  failTranscript = false;
   failNext = false;
   failSpeak = false;
   /** How many of the next `end` calls fail (after being recorded), like a vendor 5xx. */
@@ -233,7 +244,27 @@ export class FakeEmbodimentProvider implements EmbodimentProvider {
     readonly id: EmbodimentProvider['id'] = 'fake',
     readonly likeness = false,
     readonly usdPerMinute = 0.093,
-  ) {}
+    mode: 'lite' | 'full' = 'lite',
+  ) {
+    this.mode = mode;
+    this.voicing = mode === 'full' ? 'text' : 'audio';
+    this.stock = mode === 'full';
+    // FULL has no server-held control channel: the browser sends the vendor its commands over the room.
+    if (mode === 'full') this.control = null;
+  }
+
+  /** Records a line the avatar said in a session (FULL). */
+  said(sessionRef: string, text: string, role: 'avatar' | 'user' = 'avatar'): void {
+    const lines = this.transcripts.get(sessionRef) ?? [];
+    lines.push({ role, text, at: lines.length + 1 });
+    this.transcripts.set(sessionRef, lines);
+  }
+
+  transcriptSince(handle: FaceSessionHandle, since: number | null): Promise<readonly FaceTranscriptLine[]> {
+    if (this.failTranscript) return Promise.reject(new EmbodimentSessionError('transcript unavailable'));
+    const lines = this.transcripts.get(handle.sessionRef) ?? [];
+    return Promise.resolve(lines.filter((line) => since === null || line.at >= since));
+  }
 
   createSession(request: FaceSessionRequest): Promise<StartedFaceSession> {
     this.sessions.push(request);

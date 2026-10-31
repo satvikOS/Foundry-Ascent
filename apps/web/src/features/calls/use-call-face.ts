@@ -1,8 +1,14 @@
-import type { AvatarSessionResponse, EmbodimentProviderId } from '@foundry/contracts';
+import type { AvatarSessionResponse, AvatarVoicing, EmbodimentProviderId } from '@foundry/contracts';
 import { useSyncExternalStore } from 'react';
 
 import { loadAvatarProvider, type AvatarProvider, type FaceRelay } from '@/lib/realtime/avatar';
-import { endFace, interruptFace, sendFaceAudio, startAvatarSession } from '@/lib/realtime/call-api';
+import {
+  endFace,
+  interruptFace,
+  sayFaceText,
+  sendFaceAudio,
+  startAvatarSession,
+} from '@/lib/realtime/call-api';
 import type { CallEngine } from '@/lib/realtime/call-engine';
 import type { CallSnapshot } from '@/lib/realtime/call-state';
 
@@ -10,7 +16,8 @@ import type { CallSnapshot } from '@/lib/realtime/call-state';
  * The face of a live call (docs/architecture/calls.md §4). The presence is the face until a vendor face is
  * live: the API opens the vendor's session for this call, the adapter loads (its own chunk) and joins, and only
  * then does the call tile show its video and hand it the call's audio (through the server, which relays only
- * the audio it synthesized). Anything that fails (no face offered, no adapter, a slow or refused join, the
+ * the audio it synthesized) or, for a FULL stock face, the validated units the server admits for the vendor to
+ * say. A stock face is labelled "AI avatar" (`stock`). Anything that fails (no face offered, no adapter, a slow or refused join, the
  * vendor dropping, the server saying stop) leaves the call on the presence and its own speakers, without a word
  * to the founder: the call itself never stops for its face.
  *
@@ -23,11 +30,17 @@ import type { CallSnapshot } from '@/lib/realtime/call-state';
 export type CallFace =
   | { readonly status: 'presence' }
   | { readonly status: 'connecting' }
-  | { readonly status: 'live'; readonly provider: AvatarProvider; readonly stream: MediaStream | null };
+  | {
+      readonly status: 'live';
+      readonly provider: AvatarProvider;
+      readonly stream: MediaStream | null;
+      /** A vendor's stock avatar (no one's likeness): the tile labels it "AI avatar". */
+      readonly stock: boolean;
+    };
 
 export interface CallFaceDeps {
   startSession(ventureId: string, callId: string, signal: AbortSignal): Promise<AvatarSessionResponse>;
-  loadProvider(id: EmbodimentProviderId): Promise<AvatarProvider | null>;
+  loadProvider(id: EmbodimentProviderId, voicing: AvatarVoicing): Promise<AvatarProvider | null>;
   /** The server path of the face's audio for this call. */
   relayFor(callId: string): FaceRelay;
   /** Tells the server the face is no longer shown (it ends the vendor session). */
@@ -46,6 +59,7 @@ export const BROWSER_FACE_DEPS: CallFaceDeps = {
   loadProvider: loadAvatarProvider,
   relayFor: (callId) => ({
     speak: (audio, signal) => sendFaceAudio(callId, audio, signal),
+    say: (unit, signal) => sayFaceText(callId, unit, signal),
     interrupt: () => {
       void interruptFace(callId).catch(() => undefined);
     },
@@ -144,7 +158,7 @@ export class CallFaceController {
           this.close(false);
           return;
         }
-        const loaded = await this.deps.loadProvider(session.provider);
+        const loaded = await this.deps.loadProvider(session.provider, session.voicing);
         if (stopped()) {
           loaded?.unmount();
           return;
@@ -164,9 +178,16 @@ export class CallFaceController {
           loaded.onLost?.(() => {
             this.close(true);
           }) ?? null;
-        if (loaded.voicing === 'audio') this.engine.attachFace(loaded.renderer?.() ?? null);
+        if (loaded.voicing === 'audio' || loaded.voicing === 'text') {
+          this.engine.attachFace(loaded.renderer?.() ?? null);
+        }
         this.engine.setFaceShown(true);
-        this.set({ status: 'live', provider: loaded, stream: loaded.video?.() ?? null });
+        this.set({
+          status: 'live',
+          provider: loaded,
+          stream: loaded.video?.() ?? null,
+          stock: session.stockFace,
+        });
       } catch {
         if (!stopped()) this.close(true);
       }

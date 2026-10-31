@@ -13,6 +13,7 @@ const SESSION: AvatarSessionResponse = {
   voiceId: 'Matthew',
   voicing: 'audio',
   url: null,
+  stockFace: false,
 };
 
 function setup() {

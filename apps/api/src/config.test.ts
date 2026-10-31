@@ -27,6 +27,9 @@ describe('loadApiConfig', () => {
     ).toEqual({
       face: 'heygen-liveavatar',
       faceSandbox: true,
+      faceMode: 'lite',
+      faceStock: null,
+      faceAudience: 'everyone',
       voice: 'elevenlabs',
       voiceModel: 'eleven_turbo_v2_5',
       voiceZeroRetention: true,
@@ -37,6 +40,48 @@ describe('loadApiConfig', () => {
     expect(() => loadApiConfig({ ...prod, MEDIA_VOICE_MODEL: 'Bad Model!' }, 'api')).toThrow(
       /MEDIA_VOICE_MODEL/,
     );
+  });
+
+  it('reads a FULL stock face: its avatar, its optional voice, admins only unless told otherwise', () => {
+    const avatar = 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a';
+    const voice = '0f8fad5b-d9cb-469f-a165-70867728950e';
+    const full = { ...prod, MEDIA_FACE_PROVIDER: 'heygen-liveavatar', MEDIA_FACE_MODE: 'full' };
+    expect(loadApiConfig({ ...full, MEDIA_FACE_AVATAR_ID: avatar }, 'api').media).toMatchObject({
+      faceMode: 'full',
+      faceStock: { avatarId: avatar, voiceId: null },
+      faceAudience: 'admins',
+    });
+    expect(
+      loadApiConfig(
+        {
+          ...full,
+          MEDIA_FACE_AVATAR_ID: avatar,
+          MEDIA_FACE_VOICE_ID: voice,
+          MEDIA_FACE_AUDIENCE: 'everyone',
+        },
+        'api',
+      ).media,
+    ).toMatchObject({ faceStock: { avatarId: avatar, voiceId: voice }, faceAudience: 'everyone' });
+    // The vendor sandbox has its own avatar; a paid FULL face must name one.
+    expect(loadApiConfig({ ...full, MEDIA_FACE_SANDBOX: 'true' }, 'api').media.faceStock).toEqual({
+      avatarId: null,
+      voiceId: null,
+    });
+    expect(() => loadApiConfig(full, 'api')).toThrow(/MEDIA_FACE_AVATAR_ID/);
+    expect(() => loadApiConfig({ ...full, MEDIA_FACE_AVATAR_ID: 'Wayne' }, 'api')).toThrow(
+      /MEDIA_FACE_AVATAR_ID/,
+    );
+    expect(() => loadApiConfig({ ...full, MEDIA_FACE_MODE: 'medium' }, 'api')).toThrow(/MEDIA_FACE_MODE/);
+    expect(() =>
+      loadApiConfig({ ...full, MEDIA_FACE_AVATAR_ID: avatar, MEDIA_FACE_AUDIENCE: 'founders' }, 'api'),
+    ).toThrow(/MEDIA_FACE_AUDIENCE/);
+    // An admins-only LITE face (the EIR's avatar, before founders see it).
+    expect(
+      loadApiConfig(
+        { ...prod, MEDIA_FACE_PROVIDER: 'heygen-liveavatar', MEDIA_FACE_AUDIENCE: 'admins' },
+        'api',
+      ).media,
+    ).toMatchObject({ faceMode: 'lite', faceStock: null, faceAudience: 'admins' });
   });
 
   it('reads the runtime contract with defaults', () => {
@@ -54,6 +99,9 @@ describe('loadApiConfig', () => {
       media: {
         face: 'none',
         faceSandbox: false,
+        faceMode: 'lite',
+        faceStock: null,
+        faceAudience: 'everyone',
         voice: 'polly',
         voiceModel: 'eleven_flash_v2_5',
         voiceZeroRetention: false,

@@ -6,6 +6,7 @@ import {
   EndCallRequest,
   EndCallResponse,
   InterruptTurnRequest,
+  FaceSayRequest,
   SpeechRequest,
   StartCallRequest,
   StartCallResponse,
@@ -151,6 +152,20 @@ export async function sendFaceAudio(
       waitForResume: false,
     });
   }
+}
+
+/**
+ * `POST /calls/:id/face/say` — asks the server to admit one signed unit to the call's FULL face (204). Rejects when
+ * it would not (422: not this call's validated words, already said, out of order); then nothing goes to the vendor.
+ */
+export function sayFaceText(callId: string, unit: SpeechUnitToPlay, signal: AbortSignal): Promise<void> {
+  if (unit.sig === undefined) return Promise.reject(new Error('unsigned_unit'));
+  return apiSend(path`/calls/${callId}/face/say`, {
+    method: 'POST',
+    body: encodeBody(FaceSayRequest, { turnId: unit.turnId, seq: unit.seq, text: unit.text, sig: unit.sig }),
+    signal,
+    waitForResume: false,
+  });
 }
 
 /** `POST /calls/:id/face/interrupt` — barge-in: the face drops what it still has to say. Best effort. */

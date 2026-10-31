@@ -18,6 +18,7 @@ import { callSecondsToday, remainingDailyMinutes } from './call-usage.js';
 import {
   type FaceService,
   MIN_FACE_SECONDS,
+  faceForAdminsOnly,
   faceOfferedTo,
   faceSecondsThisMonth,
   twinFaceFor,
@@ -136,13 +137,14 @@ export function createVeirService(kit: Kit, face: FaceService): VeirService {
         const { identity } = await requireVeir(scope, ventureId);
         const settings = await settingsRepo.getPlatformSettings(scope.tx);
         const used = await callSecondsToday(scope.tx, ctx.principalId);
-        // A vendor face for this vEIR: faces on, a provider wired (a sandbox one for platform admins only), and
-        // (for a real likeness) its face ready under likeness consent. The video minutes left are read below
-        // (owner role).
+        // A vendor face for this vEIR: faces on, a provider wired (a sandbox or admins-only one for platform admins
+        // only), and (for a real likeness) its face ready under likeness consent. The video minutes left are read
+        // below (owner role).
         const faceOn =
           provider !== undefined &&
           settings.facesEnabled &&
-          (provider.sandbox !== true || faceOfferedTo(provider, await loadPrincipalRoles(scope.tx, ctx))) &&
+          (!faceForAdminsOnly(provider) ||
+            faceOfferedTo(provider, await loadPrincipalRoles(scope.tx, ctx))) &&
           (!provider.likeness || (await twinFaceFor(scope.tx, provider, identity.personaId)) !== null);
         const response: CallConfigResponse = {
           veir: identity,

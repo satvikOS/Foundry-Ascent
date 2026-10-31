@@ -5,7 +5,7 @@ import {
   CreatePrincipalRequest,
   CreatePrincipalResponse,
   IssueAccessCodeRequest,
-  PlatformSettingsView,
+  AdminSettingsView,
   RevokeAccessCodeResponse,
   UpdateSettingsRequest,
   UsageSummary,
@@ -95,7 +95,7 @@ export function useRevokeAccessCode() {
 export const platformSettingsQueryOptions = () =>
   queryOptions({
     queryKey: queryKeys.admin.settings(),
-    queryFn: ({ signal }) => api.get('/admin/settings', PlatformSettingsView, { signal }),
+    queryFn: ({ signal }) => api.get('/admin/settings', AdminSettingsView, { signal }),
   });
 
 export function usePlatformSettings() {
@@ -109,7 +109,7 @@ export function useUpdatePlatformSettings() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (input: UpdateSettingsInput) =>
-      api.patch('/admin/settings', PlatformSettingsView, encodeBody(UpdateSettingsRequest, input), {
+      api.patch('/admin/settings', AdminSettingsView, encodeBody(UpdateSettingsRequest, input), {
         idempotencyKey: createIdempotencyKey(),
       }),
     onSuccess: (settings) => {

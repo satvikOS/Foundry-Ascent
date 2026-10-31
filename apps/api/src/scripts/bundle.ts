@@ -99,6 +99,11 @@ export const FAKE_ENV_VALUES: Readonly<Record<string, string>> = {
   // Both digital-twin vendors wired: the bundle must import (and construct them) without any network or key.
   MEDIA_FACE_PROVIDER: 'heygen-liveavatar',
   MEDIA_FACE_SANDBOX: 'true',
+  // The FULL stock face (read once infra passes these names through the lambda contract).
+  MEDIA_FACE_MODE: 'full',
+  MEDIA_FACE_AVATAR_ID: 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a',
+  MEDIA_FACE_VOICE_ID: '',
+  MEDIA_FACE_AUDIENCE: 'admins',
   MEDIA_VOICE_PROVIDER: 'elevenlabs',
   MEDIA_VOICE_MODEL: 'eleven_flash_v2_5',
   MEDIA_VOICE_ZERO_RETENTION: 'false',

@@ -157,8 +157,9 @@ export type EmbodimentProviderId = z.infer<typeof EmbodimentProviderId>;
 /**
  * How the vEIR is heard when a provider draws its face (docs/architecture/calls.md §4):
  * - `engine`: the call plays its own synthesized audio and the face follows its loudness (the presence);
- * - `audio`: the face renders the call's own validated audio itself, lip-synced (a vendor's speech-to-video);
- * - `text`: the vendor voices the validated text with its own voice (reserved: needs the unit receipt route).
+ * - `audio`: the face renders the call's own validated audio itself, lip-synced (a vendor's speech-to-video, LITE);
+ * - `text`: the vendor voices validated text with its own stock voice (FULL): each unit is admitted by the server
+ *   first (`POST /calls/:id/face/say`), and only then sent to the vendor.
  */
 export const AvatarVoicing = z.enum(['engine', 'audio', 'text']);
 export type AvatarVoicing = z.infer<typeof AvatarVoicing>;
@@ -246,6 +247,21 @@ export const CallConfigResponse = z.object({
   faceMinutesLeft: z.number().min(0).optional(),
 });
 export type CallConfigResponse = z.infer<typeof CallConfigResponse>;
+
+/**
+ * `POST /calls/:id/face/say` — admits one signed unit of the caller's live call (its `turn.speech` unit, or the
+ * call intro with `turnId` null) to the call's FULL face: 204, then the browser sends the vendor exactly `text`;
+ * 422 for words that are not that call's validated, signed speech (never the crisis line), or a unit already
+ * admitted or out of order. `sessionId`, when sent, must be the call's conversation.
+ */
+export const FaceSayRequest = z.object({
+  sessionId: Id.optional(),
+  turnId: Id.nullable(),
+  seq: z.number().int().min(0).max(99_999),
+  text: z.string().trim().min(1).max(1500),
+  sig: z.string().min(16).max(200),
+});
+export type FaceSayRequest = z.infer<typeof FaceSayRequest>;
 
 /** `POST /speech` — synthesize validated vEIR text; responds with `audio/mpeg`. */
 export const SpeechRequest = z.object({
@@ -560,5 +576,10 @@ export const AvatarSessionResponse = z.object({
   voicing: AvatarVoicing.default('engine'),
   /** The vendor room the token joins (a LiveKit `wss://` URL); null for `builtin` and the stand-in. Additive. */
   url: z.string().max(500).nullable().default(null),
+  /**
+   * The face is a vendor's stock avatar (no one's likeness): the call shows it labelled "AI avatar", never as the
+   * EIR. Additive: absent means no.
+   */
+  stockFace: z.boolean().default(false),
 });
 export type AvatarSessionResponse = z.infer<typeof AvatarSessionResponse>;

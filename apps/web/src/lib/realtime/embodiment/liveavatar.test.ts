@@ -20,6 +20,7 @@ const SESSION: AvatarSessionResponse = {
   voiceId: 'Matthew',
   voicing: 'audio',
   url: 'wss://heygen-feapbkvq.livekit.cloud',
+  stockFace: false,
 };
 
 /** A room the test drives: tracks arrive, data arrives, it disconnects. Nothing can be published from it. */
@@ -39,6 +40,7 @@ function room() {
     onTrackGone: (l) => handlers.gone.push(l),
     onDisconnected: (l) => handlers.disconnected.push(l),
     onData: (l) => handlers.data.push(l),
+    publish: vi.fn(() => Promise.reject(new Error('a LITE face never publishes'))),
   };
   const track = (kind: 'audio' | 'video', participant = 'heygen') => {
     const t = { kind, mediaStreamTrack: new FakeTrack() as unknown as MediaStreamTrack };
