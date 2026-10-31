@@ -7,6 +7,8 @@
  * - Nothing is cached but the keys: a note written between two turns of a call is in the next turn's prompt.
  * - Keys that no longer match fall back to reading in the preflight; a call's start fills the keys, so its first turn
  *   uses the early reads.
+ * - The prefetch's transaction never outlives the turn: a turn refused before it used the reads still hands that
+ *   transaction to the host's after-response work (drained before a Lambda invocation returns) or waits for it.
  */
 import { MockModelGateway, type MockGenerateContext } from '@foundry/ai';
 import { StartCallResponse, TurnStreamEvent } from '@foundry/contracts';
@@ -49,7 +51,11 @@ interface Rig {
  * An orchestrator on the shared database with its own keyring. `fail`: the model call fails once the prompt is seen,
  * so the turn completes nothing (the conversation stays as it was for the next run).
  */
-function rig(options: { readonly fail: boolean; readonly db?: Db }): Rig {
+function rig(options: {
+  readonly fail: boolean;
+  readonly db?: Db;
+  readonly afterResponse?: (task: Promise<unknown>) => void;
+}): Rig {
   const told: Told[] = [];
   const capture = (context: MockGenerateContext): string => {
     // The reply written anew after the gate leaves a sentence out is not the turn's prompt.
@@ -78,6 +84,7 @@ function rig(options: { readonly fail: boolean; readonly db?: Db }): Rig {
     objectStore: h.objectStore,
     jobQueue: h.jobQueue,
     logger,
+    ...(options.afterResponse === undefined ? {} : { afterResponse: options.afterResponse }),
   };
   const kit = new Kit(resolveDeps(deps));
   const keyring = new TurnContextKeyring();
@@ -232,6 +239,117 @@ describe('the conversation context read beside the turn’s checks', () => {
     expect(a.source).toBe('prefetch_failed');
     expect(b.source).toBe('read');
     expect(neutral(failing.told[0], first)).toBe(neutral(inline.told[0], second));
+  });
+});
+
+/**
+ * The shared database with the turn's first transaction (its prefetch, when the keys are known) held open `holdMs` after
+ * its reads, as a slow Data API round trip would: `open()` counts the transactions not yet ended.
+ */
+function holdingFirstTransaction(holdMs: number): { readonly db: Db; open(): number; held(): boolean } {
+  let open = 0;
+  let armed = true;
+  let held = false;
+  const db: Db = {
+    driver: h.t.db.driver,
+    withContext: async (ctx, fn) => {
+      const hold = armed;
+      armed = false;
+      open += 1;
+      try {
+        return await h.t.db.withContext(ctx, async (tx) => {
+          const result = await fn(tx);
+          if (hold) {
+            held = true;
+            await new Promise((resolve) => setTimeout(resolve, holdMs));
+          }
+          return result;
+        });
+      } finally {
+        open -= 1;
+      }
+    },
+    system: (fn, opts) => h.t.db.system(fn, opts),
+    ping: (opts) => h.t.db.ping(opts),
+    close: () => Promise.resolve(),
+  };
+  return { db, open: () => open, held: () => held };
+}
+
+describe('the prefetch’s transaction', () => {
+  async function refused(
+    r: Rig,
+    sessionId: string,
+    input: { readonly text: string; readonly expectedOrdinal?: number },
+  ): Promise<TurnStreamEvent[]> {
+    const events: TurnStreamEvent[] = [];
+    const outcome = await r.orchestrator.runTurn(maya, sessionId, input, (e) => {
+      events.push(TurnStreamEvent.parse(e));
+    });
+    expect(outcome.status).toBe('rejected');
+    return events;
+  }
+
+  it('has ended when a turn refused after its keys matched returns, and is logged unused', async () => {
+    const slow = holdingFirstTransaction(400);
+    const r = rig({ fail: true, db: slow.db });
+    const sessionId = await newConversation();
+    r.keyring.remember(await keysFor(sessionId));
+
+    // The turn's checks resolve to the remembered keys, then refuse it (another window moved the conversation on).
+    const events = await refused(r, sessionId, { text: 'What next?', expectedOrdinal: 99 });
+    expect(events.at(-1)).toMatchObject({ event: 'turn.error', turnId: null, code: 'conflict' });
+    expect(slow.held()).toBe(true);
+    expect(slow.open()).toBe(0);
+    expect(r.logger.records.filter((x) => x.event === 'turn.context').map((x) => x.fields.source)).toEqual([
+      'unused',
+    ]);
+  });
+
+  it('has ended when a turn of a conversation that is not there returns', async () => {
+    const slow = holdingFirstTransaction(400);
+    const r = rig({ fail: true, db: slow.db });
+    const missing = '00000000-0000-4000-8000-0000000d0e5c';
+    r.keyring.remember(await keysFor(missing));
+
+    const events = await refused(r, missing, { text: 'Are you there?' });
+    expect(events.at(-1)).toMatchObject({ event: 'turn.error', turnId: null, code: 'not_found' });
+    expect(slow.held()).toBe(true);
+    expect(slow.open()).toBe(0);
+    expect(r.logger.records.find((x) => x.event === 'turn.context')?.fields.source).toBe('unused');
+  });
+
+  it('is handed to the host’s after-response work, so the refusal is not held up by it', async () => {
+    const slow = holdingFirstTransaction(400);
+    const handed: Promise<unknown>[] = [];
+    const r = rig({
+      fail: true,
+      db: slow.db,
+      afterResponse: (task) => {
+        handed.push(task);
+      },
+    });
+    const sessionId = await newConversation();
+    r.keyring.remember(await keysFor(sessionId));
+
+    await refused(r, sessionId, { text: 'What next?', expectedOrdinal: 99 });
+    // The host (the API Lambda's drain) waits for what it was handed before the invocation returns.
+    expect(handed).toHaveLength(1);
+    expect(slow.open()).toBe(1);
+    await Promise.all(handed);
+    expect(slow.open()).toBe(0);
+  });
+
+  it('has ended when a completed turn that used it returns', async () => {
+    const slow = holdingFirstTransaction(100);
+    const r = rig({ fail: false, db: slow.db });
+    const sessionId = await newConversation();
+    r.keyring.remember(await keysFor(sessionId));
+
+    const { last, source } = await say(r, sessionId, 'Where do we start?');
+    expect(last?.event).toBe('turn.completed');
+    expect(source).toBe('prefetched');
+    expect(slow.open()).toBe(0);
   });
 });
 

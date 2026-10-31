@@ -329,11 +329,19 @@ privacy), from the call's start and from every turn's preflight, and a turn whos
 reads at once in a transaction of their own. The preflight uses them when its own authorization reads resolve to the
 same keys, and waits for them only after its transaction has ended (a transaction holding a connection never waits on
 another that needs one). Keys that changed, an unknown conversation or a prefetch that failed fall back to reading
-them as before. Logged as `turn.context` (`source`: `prefetched`, `read`, `keys_changed`, `prefetch_failed`).
+them as before. Logged as `turn.context` (`source`: `prefetched`, `read`, `keys_changed`, `prefetch_failed`, and
+`unused` for a turn that ended before it reached the reads: refused, replayed, its conversation gone).
+
+The prefetch's transaction never outlives its turn. Whatever became of the turn, runTurn hands that transaction to the
+host's after-response work, which the API Lambda drains before the invocation returns (`afterResponse` ->
+`InflightTracker`), so a frozen container never holds a Data API transaction open into a later invocation; without a
+host hook (tests) the turn waits for it. A refusal is therefore not held up by it, and a turn that used the reads has
+already waited for them.
 
 Nothing but the keys is remembered, so a note written mid-call is in the next turn's prompt, and both paths run the
 same reads (`readTurnContext`), so the prompt is byte for byte the same (`turn-context.db.test.ts`: identical prompts
-with and without the prefetch, a note written between two turns, changed keys, a failed prefetch, a call's first turn).
+with and without the prefetch, a note written between two turns, changed keys, a failed prefetch, a call's first turn,
+and the prefetch's transaction ended, or handed to the host, when a refused or completed turn returns).
 
 | `latency --cold --text 0 --voice 3`, 2 runs, profile production, ms | Before (6eefa05 + d06c2fd) | After           |
 | ------------------------------------------------------------------- | -------------------------- | --------------- |

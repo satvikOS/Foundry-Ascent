@@ -145,11 +145,17 @@ export interface OrchestratorOptions {
   readonly turnContexts?: TurnContextKeyring;
 }
 
-/** The context reads a turn started beside its preflight, for the keys it expected (turn-context.ts). */
+/**
+ * The context reads a turn started beside its preflight, for the keys it expected (turn-context.ts). Its transaction
+ * lives no longer than the turn: runTurn hands it to the host's after-response work (drained before a Lambda
+ * invocation returns) or waits for it, on every path, used or not.
+ */
 interface TurnContextPrefetch {
   readonly keys: TurnContextKeys;
   /** Null when the reads failed (the preflight then reads them itself). Never rejects. */
   readonly reads: Promise<TurnContextReads | null>;
+  /** Whether the turn logged what became of it (prefetched, prefetch_failed, keys_changed); else it was unused. */
+  accounted: boolean;
 }
 
 const SAFE_INTERNAL = (cause: unknown): DomainError =>
@@ -234,8 +240,7 @@ interface Checked extends Omit<Proceed, 'kind' | 'venture' | 'coach'> {
   /** The keys the turn's checks resolved to (null on the crisis path). */
   readonly keys: TurnContextKeys | null;
   /** Read in the preflight, or the prefetch under way for the same keys (null on the crisis path). */
-  readonly context:
-    { readonly read: TurnContextReads } | { readonly prefetched: Promise<TurnContextReads | null> } | null;
+  readonly context: { readonly read: TurnContextReads } | { readonly prefetched: TurnContextPrefetch } | null;
 }
 
 /** The vEIR's last message as the founder heard it: the previous answer, or the opener on the first turn. */
@@ -273,7 +278,20 @@ export function createOrchestrator(
     const keys = turnContexts.get(ctx.tenantId, ctx.principalId, sessionId);
     if (keys === null) return null;
     const reads = kit.inRequest(ctx, ({ tx }) => readTurnContext(tx, keys)).catch(() => null);
-    return { keys, reads };
+    return { keys, reads, accounted: false };
+  }
+
+  /**
+   * Ties a prefetch to the turn's life, whatever became of the turn (refused, replayed, failed, completed): its
+   * transaction is handed to the host's after-response work, which a Lambda invocation drains before it returns, or the
+   * turn waits for it (tests; never rejects, at most the prefetch's own round trips). A prefetch the turn never reached
+   * is logged as `unused`, so its cost is visible.
+   */
+  async function endPrefetch(ctx: RequestContext, prefetch: TurnContextPrefetch | null): Promise<void> {
+    if (prefetch === null) return;
+    if (!prefetch.accounted) logger.info('turn.context', { requestId: ctx.requestId, source: 'unused' });
+    if (kit.deps.afterResponse === undefined) await prefetch.reads;
+    else kit.deps.afterResponse(prefetch.reads);
   }
 
   function safeEmitter(emit: TurnEmitter, requestId: string): (event: TurnStreamEvent) => Promise<void> {
@@ -531,9 +549,9 @@ export function createOrchestrator(
           assignedEirProfileId: active.eir?.id ?? null,
           privacy: session.privacy,
         };
-        if (prefetch !== null && sameTurnContextKeys(prefetch.keys, keys))
-          context = { prefetched: prefetch.reads };
+        if (prefetch !== null && sameTurnContextKeys(prefetch.keys, keys)) context = { prefetched: prefetch };
         else {
+          if (prefetch !== null) prefetch.accounted = true;
           context = { read: await readTurnContext(tx, keys) };
           logger.info('turn.context', {
             requestId: ctx.requestId,
@@ -601,7 +619,9 @@ export function createOrchestrator(
     if (checked.context !== null && keys !== null) {
       if ('read' in checked.context) reads = checked.context.read;
       else {
-        reads = await checked.context.prefetched;
+        const { prefetched } = checked.context;
+        reads = await prefetched.reads;
+        prefetched.accounted = true;
         logger.info('turn.context', {
           requestId: ctx.requestId,
           source: reads === null ? 'prefetch_failed' : 'prefetched',
@@ -1323,180 +1343,180 @@ export function createOrchestrator(
 
   return {
     async runTurn(ctx, rawSessionId, rawInput, rawEmit, options = {}) {
-      const startedAt = performance.now();
-      const emit = safeEmitter(rawEmit, ctx.requestId);
-      let turn: turnsRepo.TurnRecord;
-      let pre: Proceed;
-      let input: z.output<typeof RunTurnInput>;
-      let risk: RiskClassification;
-      let others: OtherVentures;
-      let eirNames: readonly string[];
-      let addressees: readonly string[];
-      let query: string;
-      let embedding: Promise<number[] | null> | null = null;
-      let speechKey: Promise<SessionSigningKey> | null = null;
-      let faceApproval: Promise<FaceApproval | null> | null = null;
-      let crisis = false;
+      let prefetch: TurnContextPrefetch | null = null;
       try {
-        const sessionId = requireId(rawSessionId, 'Session');
-        input = parseInput(RunTurnInput, rawInput);
-        // Crisis detection does not depend on venture names; it decides which gates apply.
-        crisis = classifyRisk(input.text).crisis;
-        const checked = await preflight(
-          ctx,
-          sessionId,
-          input,
-          crisis,
-          crisis ? null : prefetchTurnContext(ctx, sessionId),
-        );
-        if (checked.kind === 'replay') return await replay(ctx, emit, checked);
-        pre = checked;
-        if (!crisis) {
-          await assertWithinSpendCaps(kit, ctx, pre.settings, {
-            ventureId: pre.session.ventureId,
-            operation: 'turn',
-          });
-        }
-        others = await directory.others(ctx.tenantId, pre.session.ventureId);
-        eirNames = (await directory.get(ctx.tenantId)).eirNames;
-        addressees = await directory.addressees(ctx.tenantId, pre.session.ventureId);
-        risk = classifyRisk(input.text, {
-          otherVentureNames: others.names,
-          otherVentureMemberNames: others.memberNames,
-        });
-        const label = riskLabel(risk);
-        const parsed = input;
-        const settings = pre.settings;
-        const session = pre.session;
-        // A short reply answers the vEIR's last message: the previous answer as the founder heard it, or the
-        // opener on the first turn.
-        query = buildRetrievalQuery({
-          founderText: parsed.text,
-          previousAnswer: previousReplyOf(pre.coach),
-          currentGoal: session.goal ?? pre.venture.currentGoal,
-        });
-        // Latency: the speech key loads while the turn is admitted.
-        if (pre.channel === 'voice') {
-          speechKey = speechKeys.signingKey();
-          speechKey.catch(() => undefined); // a failure surfaces when a unit is signed
-          // The call's FULL face, read once for the turn (a face that joins later takes its units via face/say).
-          if (!crisis && parsed.callId !== undefined && facePreapproval !== undefined) {
-            faceApproval = facePreapproval
-              .prepareFaceApproval(ctx, { callId: parsed.callId, sessionId: session.id })
-              .catch(() => null);
+        const startedAt = performance.now();
+        const emit = safeEmitter(rawEmit, ctx.requestId);
+        let turn: turnsRepo.TurnRecord;
+        let pre: Proceed;
+        let input: z.output<typeof RunTurnInput>;
+        let risk: RiskClassification;
+        let others: OtherVentures;
+        let eirNames: readonly string[];
+        let addressees: readonly string[];
+        let query: string;
+        let embedding: Promise<number[] | null> | null = null;
+        let speechKey: Promise<SessionSigningKey> | null = null;
+        let faceApproval: Promise<FaceApproval | null> | null = null;
+        let crisis = false;
+        try {
+          const sessionId = requireId(rawSessionId, 'Session');
+          input = parseInput(RunTurnInput, rawInput);
+          // Crisis detection does not depend on venture names; it decides which gates apply.
+          crisis = classifyRisk(input.text).crisis;
+          prefetch = crisis ? null : prefetchTurnContext(ctx, sessionId);
+          const checked = await preflight(ctx, sessionId, input, crisis, prefetch);
+          if (checked.kind === 'replay') return await replay(ctx, emit, checked);
+          pre = checked;
+          if (!crisis) {
+            await assertWithinSpendCaps(kit, ctx, pre.settings, {
+              ventureId: pre.session.ventureId,
+              operation: 'turn',
+            });
           }
-        }
-        const turnMode = pre.turnMode;
-        let channel = pre.channel;
-        turn = await kit.inRequest(ctx, async (scope) => {
-          // Admission is atomic per principal: the rate limit, the in-flight limit and the spend caps are
-          // checked under a transaction-scoped advisory lock in the same transaction that inserts the
-          // pending turn, so parallel requests cannot all pass the checks before any turn exists.
-          channel = await admitTurn(scope, {
-            crisis,
-            ventureId: session.ventureId,
-            sessionId: session.id,
-            settings,
-            channel: pre.channel,
-            callId: parsed.callId,
+          others = await directory.others(ctx.tenantId, pre.session.ventureId);
+          eirNames = (await directory.get(ctx.tenantId)).eirNames;
+          addressees = await directory.addressees(ctx.tenantId, pre.session.ventureId);
+          risk = classifyRisk(input.text, {
+            otherVentureNames: others.names,
+            otherVentureMemberNames: others.memberNames,
           });
-          const created = await turnsRepo.createTurn(scope.tx, {
-            tenantId: ctx.tenantId,
-            ventureId: session.ventureId,
-            sessionId: session.id,
-            authorId: ctx.principalId,
-            mode: turnMode,
+          const label = riskLabel(risk);
+          const parsed = input;
+          const settings = pre.settings;
+          const session = pre.session;
+          // A short reply answers the vEIR's last message: the previous answer as the founder heard it, or the
+          // opener on the first turn.
+          query = buildRetrievalQuery({
             founderText: parsed.text,
-            riskLabel: label,
-            riskCategories: risk.categories,
-            channel,
+            previousAnswer: previousReplyOf(pre.coach),
+            currentGoal: session.goal ?? pre.venture.currentGoal,
           });
-          if (parsed.expectedOrdinal !== undefined && created.ordinal !== parsed.expectedOrdinal) {
-            throw fail.conflict(
-              'The conversation changed in another window. Reload the session.',
-              'ordinal_mismatch',
+          // Latency: the speech key loads while the turn is admitted.
+          if (pre.channel === 'voice') {
+            speechKey = speechKeys.signingKey();
+            speechKey.catch(() => undefined); // a failure surfaces when a unit is signed
+            // The call's FULL face, read once for the turn (a face that joins later takes its units via face/say).
+            if (!crisis && parsed.callId !== undefined && facePreapproval !== undefined) {
+              faceApproval = facePreapproval
+                .prepareFaceApproval(ctx, { callId: parsed.callId, sessionId: session.id })
+                .catch(() => null);
+            }
+          }
+          const turnMode = pre.turnMode;
+          let channel = pre.channel;
+          turn = await kit.inRequest(ctx, async (scope) => {
+            // Admission is atomic per principal: the rate limit, the in-flight limit and the spend caps are
+            // checked under a transaction-scoped advisory lock in the same transaction that inserts the
+            // pending turn, so parallel requests cannot all pass the checks before any turn exists.
+            channel = await admitTurn(scope, {
+              crisis,
+              ventureId: session.ventureId,
+              sessionId: session.id,
+              settings,
+              channel: pre.channel,
+              callId: parsed.callId,
+            });
+            const created = await turnsRepo.createTurn(scope.tx, {
+              tenantId: ctx.tenantId,
+              ventureId: session.ventureId,
+              sessionId: session.id,
+              authorId: ctx.principalId,
+              mode: turnMode,
+              founderText: parsed.text,
+              riskLabel: label,
+              riskCategories: risk.categories,
+              channel,
+            });
+            if (parsed.expectedOrdinal !== undefined && created.ordinal !== parsed.expectedOrdinal) {
+              throw fail.conflict(
+                'The conversation changed in another window. Reload the session.',
+                'ordinal_mismatch',
+              );
+            }
+            await audit(scope, {
+              action: 'turn.accepted',
+              outcome: 'succeeded',
+              ventureId: session.ventureId,
+              objectType: 'turn',
+              objectId: created.id,
+              metadata: {
+                sessionId: session.id,
+                ordinal: created.ordinal,
+                mode: turnMode,
+                autoMode: pre.mode === null,
+                channel,
+                riskLabel: label,
+                riskRules: risk.matchedRules.slice(0, 20),
+              },
+            });
+            return created;
+          });
+          // A spoken crisis message admitted as a typed one (past the message limit) says nothing on the call.
+          if (channel !== pre.channel) {
+            pre = { ...pre, channel };
+            speechKey = null;
+            faceApproval = null;
+          }
+          // The query embedding starts once the turn is admitted (a refused request buys no model call) and
+          // overlaps the accepted and classifying events. A message the safety screen will read waits for its verdict
+          // (accepted() embeds it then): a screened crisis makes no retrieval call.
+          if (!crisis && !risk.crisis && !(cfg.turns.safetyScreen && safetyScreenDue(input.text))) {
+            embedding = embedRetrievalQuery(
+              kit,
+              ctx,
+              { purpose: 'turn', ventureId: session.ventureId },
+              query,
+              options.signal,
             );
           }
-          await audit(scope, {
-            action: 'turn.accepted',
-            outcome: 'succeeded',
-            ventureId: session.ventureId,
-            objectType: 'turn',
-            objectId: created.id,
-            metadata: {
-              sessionId: session.id,
-              ordinal: created.ordinal,
-              mode: turnMode,
-              autoMode: pre.mode === null,
-              channel,
-              riskLabel: label,
-              riskRules: risk.matchedRules.slice(0, 20),
-            },
-          });
-          return created;
-        });
-        // A spoken crisis message admitted as a typed one (past the message limit) says nothing on the call.
-        if (channel !== pre.channel) {
-          pre = { ...pre, channel };
-          speechKey = null;
-          faceApproval = null;
+        } catch (err) {
+          const error = asDomainError(err);
+          if (error.code === 'internal') {
+            logger.error('turn.preflight_failed', {
+              requestId: ctx.requestId,
+              error: err instanceof Error ? err.name : 'unknown',
+            });
+          }
+          await emit(errorEvent(null, error, ctx.requestId));
+          return { status: 'rejected', turnId: null, replayed: false, error };
         }
-        // The query embedding starts once the turn is admitted (a refused request buys no model call) and
-        // overlaps the accepted and classifying events. A message the safety screen will read waits for its verdict
-        // (accepted() embeds it then): a screened crisis makes no retrieval call.
-        if (!crisis && !risk.crisis && !(cfg.turns.safetyScreen && safetyScreenDue(input.text))) {
-          embedding = embedRetrievalQuery(
-            kit,
+
+        await emit({ event: 'turn.accepted', turnId: turn.id, ordinal: turn.ordinal });
+        try {
+          return await accepted({
             ctx,
-            { purpose: 'turn', ventureId: session.ventureId },
+            turn,
+            pre,
+            input,
+            risk,
+            crisis,
+            others,
+            eirNames,
+            addressees,
             query,
-            options.signal,
-          );
-        }
-      } catch (err) {
-        const error = asDomainError(err);
-        if (error.code === 'internal') {
-          logger.error('turn.preflight_failed', {
+            embedding,
+            speechKey,
+            faceApproval,
+            emit,
+            signal: options.signal,
+            startedAt,
+          });
+        } catch (err) {
+          const error = asDomainError(err);
+          logger.error('turn.failed', {
             requestId: ctx.requestId,
+            turnId: turn.id,
+            code: error.code,
             error: err instanceof Error ? err.name : 'unknown',
           });
+          await failTurn(ctx, turn, error, []);
+          await emit(errorEvent(turn.id, error, ctx.requestId));
+          await withdrawFaceUnits(faceApproval);
+          return { status: 'failed', turnId: turn.id, replayed: false, error };
         }
-        await emit(errorEvent(null, error, ctx.requestId));
-        return { status: 'rejected', turnId: null, replayed: false, error };
-      }
-
-      await emit({ event: 'turn.accepted', turnId: turn.id, ordinal: turn.ordinal });
-      try {
-        return await accepted({
-          ctx,
-          turn,
-          pre,
-          input,
-          risk,
-          crisis,
-          others,
-          eirNames,
-          addressees,
-          query,
-          embedding,
-          speechKey,
-          faceApproval,
-          emit,
-          signal: options.signal,
-          startedAt,
-        });
-      } catch (err) {
-        const error = asDomainError(err);
-        logger.error('turn.failed', {
-          requestId: ctx.requestId,
-          turnId: turn.id,
-          code: error.code,
-          error: err instanceof Error ? err.name : 'unknown',
-        });
-        await failTurn(ctx, turn, error, []);
-        await emit(errorEvent(turn.id, error, ctx.requestId));
-        await withdrawFaceUnits(faceApproval);
-        return { status: 'failed', turnId: turn.id, replayed: false, error };
+      } finally {
+        await endPrefetch(ctx, prefetch);
       }
     },
   };
