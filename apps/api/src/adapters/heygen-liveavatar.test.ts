@@ -7,6 +7,7 @@ import {
   type FaceSocket,
   HeygenLiveAvatarFace,
   LIVEAVATAR_SANDBOX_AVATAR,
+  LIVEAVATAR_SANDBOX_MAX_SECONDS,
 } from './heygen-liveavatar.js';
 
 /** The error a promise rejects with (fails the test when it resolves). */
@@ -701,5 +702,45 @@ describe('vendorDetailOf: why the vendor refused a token or start request', () =
     expect(detail).not.toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZ');
     expect(detail).toContain('[redacted]');
     expect(detail?.length).toBeLessThanOrEqual(300);
+  });
+});
+
+describe('HeygenLiveAvatarFace: the session length the vendor allows (lab run 41218878306)', () => {
+  const refusedAt = (seconds: number): Fixture => ({
+    status: 400,
+    body: {
+      code: 4000,
+      message: `max_session_duration (900s) exceeds the maximum allowed (${String(seconds)}s)`,
+    },
+  });
+
+  it('asks the sandbox for at most its 60 seconds', async () => {
+    const { fetchFn, sent } = vendor({
+      '/v1/sessions/token': [f('token')],
+      '/v1/sessions/start': [f('start')],
+    });
+    await adapter(fetchFn, socket().open, true).createSession(request);
+    expect(sent[0]?.body).toMatchObject({
+      is_sandbox: true,
+      max_session_duration: LIVEAVATAR_SANDBOX_MAX_SECONDS,
+    });
+  });
+
+  it('asks once more with exactly the length the plan allows, never longer than asked', async () => {
+    const { fetchFn, sent } = vendor({
+      '/v1/sessions/token': [refusedAt(120), f('token')],
+      '/v1/sessions/start': [f('start')],
+    });
+    await adapter(fetchFn).createSession(request);
+    const tokens = sent.filter((s) => s.url.endsWith('/v1/sessions/token'));
+    expect(tokens.map((t) => t.body?.max_session_duration)).toEqual([900, 120]);
+
+    // A refusal that names no shorter length, or a second refusal, starts nothing.
+    const twice = vendor({ '/v1/sessions/token': [refusedAt(120), refusedAt(60)] });
+    await expect(adapter(twice.fetchFn).createSession(request)).rejects.toThrow('liveavatar token 400');
+    expect(twice.sent).toHaveLength(2);
+    const longer = vendor({ '/v1/sessions/token': [refusedAt(1200)] });
+    await expect(adapter(longer.fetchFn).createSession(request)).rejects.toThrow('liveavatar token 400');
+    expect(longer.sent).toHaveLength(1);
   });
 });

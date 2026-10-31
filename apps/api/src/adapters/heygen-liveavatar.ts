@@ -70,6 +70,15 @@ const ACK_TIMEOUT_MS = 8_000;
 /** The sandbox's only avatar (vendor docs, "Developing in Sandbox Mode"). */
 export const LIVEAVATAR_SANDBOX_AVATAR = 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a';
 
+/**
+ * The sandbox's session length: the vendor refuses more ("max_session_duration (300s) exceeds the maximum allowed
+ * (60s)", code 4000; lab run 41218878306).
+ */
+export const LIVEAVATAR_SANDBOX_MAX_SECONDS = 60;
+
+/** The vendor's refusal of a session length above the plan's or the sandbox's limit, and the limit it names. */
+const MAX_DURATION_REFUSED = /max_session_duration\b.*?maximum allowed \((\d+)\s*s\)/i;
+
 /** The part of a WebSocket the adapter uses (Node's global WebSocket; injectable for tests). */
 export interface FaceSocket {
   readonly readyState: number;
@@ -356,7 +365,8 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
         ? (this.#options.stock?.avatarId ?? null)
         : request.avatarRef;
     if (avatarId === null) throw failure('needs an avatar');
-    const seconds = Math.max(1, Math.floor(request.maxSeconds));
+    const asked = Math.max(1, Math.floor(request.maxSeconds));
+    const seconds = this.#options.sandbox ? Math.min(LIVEAVATAR_SANDBOX_MAX_SECONDS, asked) : asked;
     const common = {
       avatar_id: avatarId,
       // 720p: higher resolutions add streaming latency (vendor docs).
@@ -403,8 +413,18 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
     const body = this.tokenBody(request);
     const apiKey = await this.#options.apiKey();
     // The vendor session ends by itself at the call's (and the person's video minutes') limit. A vendor that
-    // refuses the limit (422: above the plan's session length) starts nothing: the call keeps the presence.
-    const token = await this.#post<TokenData>('/v1/sessions/token', body, { apiKey });
+    // refuses that length because the plan allows less ("exceeds the maximum allowed (120s)") is asked once more with
+    // exactly the length it names (never longer than asked); any other refusal starts nothing: the call keeps the presence.
+    let token = await this.#post<TokenData>('/v1/sessions/token', body, { apiKey });
+    const allowed = Number(MAX_DURATION_REFUSED.exec(token.envelope?.message ?? '')?.[1] ?? NaN);
+    const asked = typeof body.max_session_duration === 'number' ? body.max_session_duration : NaN;
+    if (!succeeded(token.envelope) && allowed >= 10 && allowed < asked) {
+      token = await this.#post<TokenData>(
+        '/v1/sessions/token',
+        { ...body, max_session_duration: allowed },
+        { apiKey },
+      );
+    }
     const tokenData = token.envelope?.data;
     if (token.status >= 300 || !succeeded(token.envelope) || !tokenData?.session_token) {
       throw failure('token', token.status, vendorDetailOf(token.envelope));
