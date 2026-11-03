@@ -105,6 +105,6 @@
     "H060": "FA26-F17-17"
   },
   "boundary": "Blinded synthetic transcripts prepared for review; no human labels or live-model quality claim.",
-  "transcriptsSha256": "df7a9c7a6ec898402c923216b670f4a27535774f5d14b011c7a11d6c9043dbeb",
-  "runId": "merged-2026-11-03T19:31:41.116Z"
+  "transcriptsSha256": "645ab6a099677b3a71ad02a4dc6454fbd4ad9197fe58ecd6280d36e304551fe2",
+  "runId": "merged-2026-11-03T20:20:08.720Z"
 }

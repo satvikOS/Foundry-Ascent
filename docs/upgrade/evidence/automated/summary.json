@@ -20,12 +20,13 @@
   {
     "suite": "ai",
     "exit": 0,
-    "passed": 1773,
+    "passed": 1774,
     "failed": 0,
     "pending": 0,
-    "total": 1773,
+    "total": 1774,
     "elapsedSeconds": 11.309,
-    "elapsedBoundary": "Vitest startTime to latest file endTime; excludes process launch and report serialization"
+    "elapsedBoundary": "Vitest startTime to latest file endTime; excludes process launch and report serialization",
+    "code": "24a1af1"
   },
   {
     "suite": "core-unit",
@@ -76,12 +77,14 @@
   {
     "suite": "core-db",
     "exit": 0,
-    "passed": 448,
+    "passed": 449,
     "failed": 0,
     "pending": 0,
-    "total": 448,
-    "elapsedSeconds": 11.695,
-    "elapsedBoundary": "Vitest startTime to latest file endTime; excludes process launch and report serialization"
+    "total": 449,
+    "elapsedSeconds": 12.36,
+    "elapsedBoundary": "Vitest startTime to latest file endTime; excludes process launch and report serialization",
+    "code": "24ae653",
+    "latestEvidence": "../release-core-db.txt"
   },
   {
     "suite": "api-db",

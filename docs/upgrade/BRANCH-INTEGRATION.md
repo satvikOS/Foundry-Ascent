@@ -27,8 +27,12 @@ Delete a branch only after its exact head is an ancestor of the merged main revi
 
 ## Status
 
-Historical ancestry and dependency integration are in progress. Final merge, deployment and deletion results will be recorded after execution.
+All local and remote heads at the pre-merge audit are integrated (13 local and 25 remote refs including main). Runtime dependencies, source fixtures and the combined lockfile are installed. Final main merge/deployment and exact-head cleanup remain pending the release checks; the PR records their execution results.
 
 ## Lint resource recovery
 
 The combined SDK/type packages made a whole-monorepo typed-lint process exceed Node’s default ~4 GB heap. An isolated API pass completed in 4.22 s with ~1.27 GiB maximum resident memory, exposing three deprecated SDK callback-field references in a runtime-shaped test fixture. The fixture keeps its full structural Context shape without calling deprecated callbacks. The lint command now applies the unchanged strict root configuration separately to the root and every pnpm workspace, failing on any child error. No rules, warnings or real workspace source are excluded, and no heap-limit increase is required. Linked worktree copies retain their intended exclusion.
+
+## Database regression repair
+
+The Linux CI plan check exposed a 40-row fixture whose cheapest scan changed after statistics refresh. A local ANALYZE reproduced the failure. The fixture now contains 4,000 historical turns with current statistics and retains the original at-most-seven-read-rows assertion; no planner mode is forced. The full continuity suite then exposed timestamp precision loss in opener seeding. The source conversation is explicitly excluded from the count of newly opened conversations, with deterministic whole/sub-millisecond regression cases. The full 34-case continuity suite passes. Failure counts and the intermediate rate-window fixture correction are retained in `evidence/continuity-plan-repair.json`.

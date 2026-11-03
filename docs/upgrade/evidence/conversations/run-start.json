@@ -1,8 +1,8 @@
 {
-  "runId": "merged-2026-11-03T19:31:41.116Z",
-  "startedAt": "2026-11-03T19:31:41.116Z",
-  "sourceSha256": "8f593460e6072b518dd0633fed9fd22b8a20a0c6c27d3fd2cfcbe6adf0f89ea2",
-  "promptVersion": "fa-coach-policy/2026-11-03.1",
+  "runId": "merged-2026-11-03T20:20:08.720Z",
+  "startedAt": "2026-11-03T20:20:08.720Z",
+  "sourceSha256": "98f5e6d4ced00cb34b24e9d3005ed0b6c22e084028ab7e01dd2eb2bc3210249d",
+  "promptVersion": "fa-coach-policy/2026-11-03.2",
   "fixtureSha256": "6925fa5750c552cc73eaad112d4fc6f0c2f70b9a957cba6460188c85c06ddbf2",
   "model": "MockModelGateway; deterministic fixtures"
 }

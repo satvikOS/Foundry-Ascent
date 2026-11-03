@@ -1,0 +1,506 @@
+{
+  "config": {
+    "argv": [
+      "/opt/homebrew/Cellar/node@24/24.21.0/bin/node",
+      "/Users/account_clawteam1/Foundry-Ascent/apps/web/node_modules/@playwright/test/cli.js",
+      "test",
+      "--project=screens",
+      "--project=desktop",
+      "--grep",
+      "context, student profile|design review",
+      "--reporter=json"
+    ],
+    "configFile": "/Users/account_clawteam1/Foundry-Ascent/apps/web/playwright.config.ts",
+    "rootDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": true,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 1,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "setup",
+        "name": "setup",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "/auth\\.setup\\.ts$/"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 1,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "desktop",
+        "name": "desktop",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "/(journey|documents|knowledge|safety|a11y|calls|face|studio|chat|theme|words|upgrade)\\.spec\\.ts$/"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 1,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "mobile",
+        "name": "mobile",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "/mobile\\.spec\\.ts$/"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 1,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "screens",
+        "name": "screens",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "/screens\\.spec\\.ts$/"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 1,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "desktop",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "snapshotDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": {},
+        "timeout": 60000,
+        "use": {
+          "baseURL": "http://localhost:4203",
+          "trace": "off",
+          "screenshot": "only-on-failure",
+          "video": "off",
+          "locale": "en-US",
+          "timezoneId": "UTC",
+          "actionTimeout": 15000,
+          "navigationTimeout": 30000,
+          "launchOptions": {
+            "args": [
+              "--disable-audio-output"
+            ]
+          },
+          "browserName": "chromium",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          }
+        },
+        "dependencies": [
+          "setup"
+        ],
+        "ignoreSnapshots": false,
+        "__projectId": "desktop"
+      },
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 1,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "screens",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "snapshotDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": {},
+        "timeout": 60000,
+        "use": {
+          "baseURL": "http://localhost:4203",
+          "trace": "off",
+          "screenshot": "only-on-failure",
+          "video": "off",
+          "locale": "en-US",
+          "timezoneId": "UTC",
+          "actionTimeout": 15000,
+          "navigationTimeout": 30000,
+          "launchOptions": {
+            "args": [
+              "--disable-audio-output"
+            ]
+          },
+          "browserName": "chromium"
+        },
+        "dependencies": [
+          "setup"
+        ],
+        "ignoreSnapshots": false,
+        "__projectId": "screens"
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "auth.setup.ts",
+      "file": "auth.setup.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "owner and founder sessions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "setup",
+              "projectName": "setup",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 549,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-03T20:20:14.502Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "17e3fe6f4d9d8bd79c6b-7f57149bee6534b4fc99",
+          "file": "auth.setup.ts",
+          "line": 18,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "upgrade.spec.ts",
+      "file": "upgrade.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "desktop, dark: upgraded student journey",
+          "file": "upgrade.spec.ts",
+          "line": 25,
+          "column": 10,
+          "specs": [
+            {
+              "title": "context, student profile, reflection, memory approval, and free avatar share one venture",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 5376,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T20:20:15.362Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "805e295c1c0e8153e8c8-83a1d80fbbac6b482cb1",
+              "file": "upgrade.spec.ts",
+              "line": 27,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "desktop, light: upgraded student journey",
+          "file": "upgrade.spec.ts",
+          "line": 25,
+          "column": 10,
+          "specs": [
+            {
+              "title": "context, student profile, reflection, memory approval, and free avatar share one venture",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 5290,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T20:20:20.811Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "805e295c1c0e8153e8c8-7d5064dd780fd16fb072",
+              "file": "upgrade.spec.ts",
+              "line": 27,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "tablet, dark: upgraded student journey",
+          "file": "upgrade.spec.ts",
+          "line": 25,
+          "column": 10,
+          "specs": [
+            {
+              "title": "context, student profile, reflection, memory approval, and free avatar share one venture",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 4936,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T20:20:26.105Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "805e295c1c0e8153e8c8-8ce0450daef50aeb0957",
+              "file": "upgrade.spec.ts",
+              "line": 27,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "tablet, light: upgraded student journey",
+          "file": "upgrade.spec.ts",
+          "line": 25,
+          "column": 10,
+          "specs": [
+            {
+              "title": "context, student profile, reflection, memory approval, and free avatar share one venture",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 4915,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T20:20:31.045Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "805e295c1c0e8153e8c8-39fdb3ba418a19e1aab0",
+              "file": "upgrade.spec.ts",
+              "line": 27,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "mobile, dark: upgraded student journey",
+          "file": "upgrade.spec.ts",
+          "line": 25,
+          "column": 10,
+          "specs": [
+            {
+              "title": "context, student profile, reflection, memory approval, and free avatar share one venture",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 4562,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T20:20:35.964Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "805e295c1c0e8153e8c8-0e37fabb01110873721d",
+              "file": "upgrade.spec.ts",
+              "line": 27,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "mobile, light: upgraded student journey",
+          "file": "upgrade.spec.ts",
+          "line": 25,
+          "column": 10,
+          "specs": [
+            {
+              "title": "context, student profile, reflection, memory approval, and free avatar share one venture",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 4573,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T20:20:40.530Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "805e295c1c0e8153e8c8-cf27c26cf32754507029",
+              "file": "upgrade.spec.ts",
+              "line": 27,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-03T20:20:09.561Z",
+    "duration": 35593.706,
+    "expected": 7,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

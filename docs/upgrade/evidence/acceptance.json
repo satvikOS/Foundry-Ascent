@@ -1,34 +1,34 @@
 {
-  "code": "177cb51523ce611038819f98490ccb63513633f7",
-  "conversationalSourceSha256": "8f593460e6072b518dd0633fed9fd22b8a20a0c6c27d3fd2cfcbe6adf0f89ea2",
+  "code": "24ae653f50a167d3576f3c21563ef700d7cde487",
+  "conversationalSourceSha256": "98f5e6d4ced00cb34b24e9d3005ed0b6c22e084028ab7e01dd2eb2bc3210249d",
   "conversationProtocol": {
-    "code": "177cb51523ce611038819f98490ccb63513633f7",
-    "sourceSha256": "8f593460e6072b518dd0633fed9fd22b8a20a0c6c27d3fd2cfcbe6adf0f89ea2",
-    "promptVersion": "fa-coach-policy/2026-11-03.1",
+    "code": "24ae653f50a167d3576f3c21563ef700d7cde487",
+    "sourceSha256": "98f5e6d4ced00cb34b24e9d3005ed0b6c22e084028ab7e01dd2eb2bc3210249d",
+    "promptVersion": "fa-coach-policy/2026-11-03.2",
     "fixtureSha256": "6925fa5750c552cc73eaad112d4fc6f0c2f70b9a957cba6460188c85c06ddbf2",
     "model": "MockModelGateway; deterministic fixtures",
     "liveModel": false,
-    "runId": "merged-2026-11-03T19:31:41.116Z",
-    "startedAt": "2026-11-03T19:31:41.116Z",
-    "finishedAt": "2026-11-03T19:34:12.327Z",
+    "runId": "merged-2026-11-03T20:20:08.720Z",
+    "startedAt": "2026-11-03T20:20:08.720Z",
+    "finishedAt": "2026-11-03T20:22:41.215Z",
     "sourceUnchangedDuringRun": true,
     "concurrency": 4,
     "shardCount": 4,
     "isolation": "one disposable database per shard; one distinct venture per scenario",
     "shards": [
       {
-        "runId": "upgrade-2026-11-03T19-31-41-115Z-s0",
+        "runId": "upgrade-2026-11-03T20-20-08-719Z-s0",
         "range": {
           "offset": 0,
           "limit": 150
         },
-        "startedAt": "2026-11-03T19:31:41.116Z",
-        "finishedAt": "2026-11-03T19:34:12.327Z",
-        "code": "177cb51523ce611038819f98490ccb63513633f7",
-        "sourceSha256": "8f593460e6072b518dd0633fed9fd22b8a20a0c6c27d3fd2cfcbe6adf0f89ea2",
+        "startedAt": "2026-11-03T20:20:08.720Z",
+        "finishedAt": "2026-11-03T20:22:41.215Z",
+        "code": "24ae653f50a167d3576f3c21563ef700d7cde487",
+        "sourceSha256": "98f5e6d4ced00cb34b24e9d3005ed0b6c22e084028ab7e01dd2eb2bc3210249d",
         "sourceUnchangedDuringRun": true,
-        "workingDiffSha256": "ab3aa31eb67dc9e8c0aa8ea3c790e467b7dd6440cbfe48afea8ec50d27595ca2",
-        "promptVersion": "fa-coach-policy/2026-11-03.1",
+        "workingDiffSha256": "f391ac6fda9f6d90972b6c1b67a261fb813137d945627fb182ce0fa961c50770",
+        "promptVersion": "fa-coach-policy/2026-11-03.2",
         "fixtureSha256": "6925fa5750c552cc73eaad112d4fc6f0c2f70b9a957cba6460188c85c06ddbf2",
         "model": "MockModelGateway; deterministic fixtures",
         "liveModel": false,
@@ -45,18 +45,18 @@
         "behavioralScores": null
       },
       {
-        "runId": "upgrade-2026-11-03T19-31-41-115Z-s150",
+        "runId": "upgrade-2026-11-03T20-20-08-719Z-s150",
         "range": {
           "offset": 150,
           "limit": 150
         },
-        "startedAt": "2026-11-03T19:31:41.116Z",
-        "finishedAt": "2026-11-03T19:33:59.761Z",
-        "code": "177cb51523ce611038819f98490ccb63513633f7",
-        "sourceSha256": "8f593460e6072b518dd0633fed9fd22b8a20a0c6c27d3fd2cfcbe6adf0f89ea2",
+        "startedAt": "2026-11-03T20:20:08.720Z",
+        "finishedAt": "2026-11-03T20:22:41.058Z",
+        "code": "24ae653f50a167d3576f3c21563ef700d7cde487",
+        "sourceSha256": "98f5e6d4ced00cb34b24e9d3005ed0b6c22e084028ab7e01dd2eb2bc3210249d",
         "sourceUnchangedDuringRun": true,
-        "workingDiffSha256": "ab3aa31eb67dc9e8c0aa8ea3c790e467b7dd6440cbfe48afea8ec50d27595ca2",
-        "promptVersion": "fa-coach-policy/2026-11-03.1",
+        "workingDiffSha256": "f391ac6fda9f6d90972b6c1b67a261fb813137d945627fb182ce0fa961c50770",
+        "promptVersion": "fa-coach-policy/2026-11-03.2",
         "fixtureSha256": "6925fa5750c552cc73eaad112d4fc6f0c2f70b9a957cba6460188c85c06ddbf2",
         "model": "MockModelGateway; deterministic fixtures",
         "liveModel": false,
@@ -73,18 +73,18 @@
         "behavioralScores": null
       },
       {
-        "runId": "upgrade-2026-11-03T19-31-41-115Z-s300",
+        "runId": "upgrade-2026-11-03T20-20-08-719Z-s300",
         "range": {
           "offset": 300,
           "limit": 150
         },
-        "startedAt": "2026-11-03T19:31:41.116Z",
-        "finishedAt": "2026-11-03T19:34:08.045Z",
-        "code": "177cb51523ce611038819f98490ccb63513633f7",
-        "sourceSha256": "8f593460e6072b518dd0633fed9fd22b8a20a0c6c27d3fd2cfcbe6adf0f89ea2",
+        "startedAt": "2026-11-03T20:20:08.720Z",
+        "finishedAt": "2026-11-03T20:22:36.082Z",
+        "code": "24ae653f50a167d3576f3c21563ef700d7cde487",
+        "sourceSha256": "98f5e6d4ced00cb34b24e9d3005ed0b6c22e084028ab7e01dd2eb2bc3210249d",
         "sourceUnchangedDuringRun": true,
-        "workingDiffSha256": "ab3aa31eb67dc9e8c0aa8ea3c790e467b7dd6440cbfe48afea8ec50d27595ca2",
-        "promptVersion": "fa-coach-policy/2026-11-03.1",
+        "workingDiffSha256": "e0f9d78fb7218c402b20a5d732cf23c0a67e2390ecf8fecbcdaa276178531829",
+        "promptVersion": "fa-coach-policy/2026-11-03.2",
         "fixtureSha256": "6925fa5750c552cc73eaad112d4fc6f0c2f70b9a957cba6460188c85c06ddbf2",
         "model": "MockModelGateway; deterministic fixtures",
         "liveModel": false,
@@ -101,18 +101,18 @@
         "behavioralScores": null
       },
       {
-        "runId": "upgrade-2026-11-03T19-31-41-115Z-s450",
+        "runId": "upgrade-2026-11-03T20-20-08-719Z-s450",
         "range": {
           "offset": 450,
           "limit": 150
         },
-        "startedAt": "2026-11-03T19:31:41.116Z",
-        "finishedAt": "2026-11-03T19:33:58.115Z",
-        "code": "177cb51523ce611038819f98490ccb63513633f7",
-        "sourceSha256": "8f593460e6072b518dd0633fed9fd22b8a20a0c6c27d3fd2cfcbe6adf0f89ea2",
+        "startedAt": "2026-11-03T20:20:08.720Z",
+        "finishedAt": "2026-11-03T20:22:27.834Z",
+        "code": "24ae653f50a167d3576f3c21563ef700d7cde487",
+        "sourceSha256": "98f5e6d4ced00cb34b24e9d3005ed0b6c22e084028ab7e01dd2eb2bc3210249d",
         "sourceUnchangedDuringRun": true,
-        "workingDiffSha256": "ab3aa31eb67dc9e8c0aa8ea3c790e467b7dd6440cbfe48afea8ec50d27595ca2",
-        "promptVersion": "fa-coach-policy/2026-11-03.1",
+        "workingDiffSha256": "e0f9d78fb7218c402b20a5d732cf23c0a67e2390ecf8fecbcdaa276178531829",
+        "promptVersion": "fa-coach-policy/2026-11-03.2",
         "fixtureSha256": "6925fa5750c552cc73eaad112d4fc6f0c2f70b9a957cba6460188c85c06ddbf2",
         "model": "MockModelGateway; deterministic fixtures",
         "liveModel": false,
@@ -142,16 +142,16 @@
     "behavioralScores": null
   },
   "browser": {
-    "attempted": 121,
-    "passed": 121,
+    "attempted": 97,
+    "passed": 97,
     "failed": 0,
     "skipped": 0,
     "blocked": 0,
     "flaky": 0
   },
   "typescript": {
-    "attempted": 5260,
-    "passed": 5260,
+    "attempted": 5262,
+    "passed": 5262,
     "failed": 0,
     "skipped": 0,
     "blocked": 0
@@ -170,7 +170,7 @@
     "skipped": 0
   },
   "media": {
-    "at": "2026-11-03T17:30:27.129Z",
+    "at": "2026-11-03T20:14:21.991Z",
     "browser": "156.0.8078.4",
     "host": "arm64",
     "node": "v24.21.0",
@@ -182,15 +182,15 @@
     "concurrency": 1,
     "signalStart": {
       "n": 120,
-      "p50": 11.299999952316284,
-      "p95": 44.800000071525574,
-      "p99": 50.800000071525574
+      "p50": 9.799999952316284,
+      "p95": 47.5,
+      "p99": 50.700000047683716
     },
     "interruptionToGraphSilence": {
       "n": 60,
-      "p50": 19.40000009536743,
+      "p50": 18.5,
       "p95": 64.10000002384186,
-      "p99": 65.69999992847443
+      "p99": 65
     },
     "audioToMouthSameFrame": {
       "n": 120,
@@ -224,16 +224,44 @@
   },
   "allConversationRuns": {
     "distinctScenarios": 600,
-    "scenarioExecutions": 1200,
-    "sessionsCompleted": 1440,
-    "studentTurnsCompleted": 11640,
-    "preliminaryAndFinal": true
+    "scenarioExecutions": 3600,
+    "sessionsCompleted": 4320,
+    "studentTurnsCompleted": 34920,
+    "artifactFinalizationFailures": 1,
+    "smoke": {
+      "runId": "upgrade-2026-11-03T19-30-29-051Z-s0",
+      "range": {
+        "offset": 0,
+        "limit": 1
+      },
+      "startedAt": "2026-11-03T19:30:29.051Z",
+      "finishedAt": "2026-11-03T19:30:31.038Z",
+      "code": "bae464a700a7bceef0ace19f02a819bac31ef7b5",
+      "sourceSha256": "8f593460e6072b518dd0633fed9fd22b8a20a0c6c27d3fd2cfcbe6adf0f89ea2",
+      "sourceUnchangedDuringRun": true,
+      "workingDiffSha256": "92ed404bf4dbc1918dfb2915fb1791af4051079fd557ec6cc73eda16fb696b13",
+      "promptVersion": "fa-coach-policy/2026-11-03.1",
+      "fixtureSha256": "6925fa5750c552cc73eaad112d4fc6f0c2f70b9a957cba6460188c85c06ddbf2",
+      "model": "MockModelGateway; deterministic fixtures",
+      "liveModel": false,
+      "scenariosAttempted": 1,
+      "scenariosPassedProtocol": 1,
+      "scenariosFailed": 0,
+      "skipped": 0,
+      "blocked": 0,
+      "conversationsStarted": 3,
+      "conversationsCompleted": 3,
+      "attemptedTurns": 27,
+      "completedTurns": 27,
+      "humanReviewed": 0,
+      "behavioralScores": null
+    }
   },
   "mediaRunHistory": {
-    "executedCases": 651,
-    "passed": 531,
-    "failed": 120,
-    "note": "Repeated executions of the same 160-case matrix plus the small probe, not additional distinct scenarios. Initial failures were harness timer binding; final acceptance is results.json."
+    "executedCases": 971,
+    "passed": 701,
+    "failed": 270,
+    "note": "Repeated 160-case matrix executions and probe. Initial timer-binding failures and the integrated IPv4/IPv6 harness-origin mismatch remain in denominators; integrated-final/results.json is the repaired acceptance run."
   },
   "soak": {
     "cycles": 60,
@@ -290,5 +318,35 @@
       "longRunning": 2
     },
     "failedScenariosIncluded": 0
-  }
+  },
+  "pythonTooling": {
+    "attempted": 406,
+    "passed": 406,
+    "failed": 0,
+    "skipped": 0,
+    "blocked": 0,
+    "aws": 256,
+    "lab": 150,
+    "separatePinnedEnvironments": true
+  },
+  "integrationFailureHistory": {
+    "aiInitialFailed": 3,
+    "aiSerialFinalFailed": 0,
+    "awsInitialCollectionErrors": 4,
+    "awsFinalFailed": 0,
+    "browserStartupFailures": 2,
+    "browserCasesExecutedInStartupFailures": 0,
+    "mediaOriginMismatchFailed": 150,
+    "mediaFinalFailed": 0,
+    "databasePrecisionRepair": "continuity-plan-repair.json"
+  },
+  "postRepairBrowser": {
+    "attempted": 7,
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0,
+    "blocked": 0,
+    "flaky": 0
+  },
+  "preparedBeforeMainMerge": true
 }

@@ -1,0 +1,43 @@
+{
+  "issue": "Linux PostgreSQL chose a sequential scan for the 40-row long-history fixture. Fresh local ANALYZE reproduced 42 rows read against <=7 assertion.",
+  "fix": "4000 historical turns with ANALYZE, unchanged <=7-row plan assertion, planner settings untouched. Historical creation timestamps avoid consuming the synthetic caller rate window.",
+  "intermediateRuns": [
+    {
+      "cases": 1,
+      "failed": 1,
+      "notSelected": 32,
+      "cause": "40-row ANALYZE reproduction"
+    },
+    {
+      "cases": 33,
+      "passed": 22,
+      "failed": 11,
+      "cause": "4000 newly-created fixture turns exhausted caller rate limit; corrected historical timestamps"
+    },
+    {
+      "cases": 33,
+      "passed": 32,
+      "failed": 1,
+      "cause": "genuine opener stability issue exposed"
+    }
+  ],
+  "runtimeIssue": "PostgreSQL microseconds vs JavaScript milliseconds let the source session count as a newly opened conversation and alter previewed greetings. Source ID is now explicitly excluded.",
+  "finalContinuitySuite": {
+    "cases": 34,
+    "passed": 34,
+    "failed": 0,
+    "skipped": 0
+  },
+  "regressionCases": [
+    "whole-ms to fractional-ms source activity",
+    "fractional-ms to whole-ms source activity"
+  ],
+  "ciFailure": {
+    "run": "https://github.com/satvikOS/Foundry-Ascent/actions/runs/41710404610",
+    "job": "https://github.com/satvikOS/Foundry-Ascent/actions/runs/41710404610/job/126176660812",
+    "coreDatabasePassed": 447,
+    "coreDatabaseFailed": 1
+  },
+  "runtimeRevision": "24ae653",
+  "at": "2026-11-03T20:20:39.397880+00:00"
+}

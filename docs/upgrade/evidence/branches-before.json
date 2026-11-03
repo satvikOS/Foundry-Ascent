@@ -1,0 +1,198 @@
+{
+  "at": "2026-11-03T20:15:14.318686+00:00",
+  "integrationCode": "24a1af1dd2afa3049c196cf8e239497c65a0eeb2",
+  "branches": [
+    {
+      "ref": "refs/heads/codex/ascent-product-upgrade",
+      "head": "24a1af1dd2afa3049c196cf8e239497c65a0eeb2",
+      "integrated": true
+    },
+    {
+      "ref": "refs/heads/face-ab",
+      "head": "d67853253941c96139fabbb7fb017301fcec3a57",
+      "integrated": true
+    },
+    {
+      "ref": "refs/heads/face-access",
+      "head": "165e1086e65f56ab8accc7cfc7f043bc0bec2dc2",
+      "integrated": true
+    },
+    {
+      "ref": "refs/heads/face-full-app",
+      "head": "de4a752961ce0fbe90fc83ec92a586de6f659737",
+      "integrated": true
+    },
+    {
+      "ref": "refs/heads/face-full-infra",
+      "head": "b57549fb5f44b756a9e3d0008c6f877ea21abdc6",
+      "integrated": true
+    },
+    {
+      "ref": "refs/heads/face-full-lab",
+      "head": "6a3ad9bed5ec37075fb7bf65246ea12428298fb4",
+      "integrated": true
+    },
+    {
+      "ref": "refs/heads/face-preapprove",
+      "head": "156203cb68078da6ca20f5597a025e36790769d3",
+      "integrated": true
+    },
+    {
+      "ref": "refs/heads/face-sync",
+      "head": "bdf3f6800a4952c480691d9a05e8c99e94c33425",
+      "integrated": true
+    },
+    {
+      "ref": "refs/heads/face-vendor-detail",
+      "head": "156203cb68078da6ca20f5597a025e36790769d3",
+      "integrated": true
+    },
+    {
+      "ref": "refs/heads/fewer-trips",
+      "head": "04df9673aaf1d3dec3ece447faf07b5e32ebd0e1",
+      "integrated": true
+    },
+    {
+      "ref": "refs/heads/integrate-face",
+      "head": "44b46e8cd875b851ad7069ca45cdc70f898b4a48",
+      "integrated": true
+    },
+    {
+      "ref": "refs/heads/main",
+      "head": "44b46e8cd875b851ad7069ca45cdc70f898b4a48",
+      "integrated": true
+    },
+    {
+      "ref": "refs/heads/warm-first",
+      "head": "fefb2257cab5a02cc5a9a5c09c72ea86e67b8274",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/archive/2026-10-29/a11y-label-in-name",
+      "head": "e3a9b2a7697fba90ca7d67871c4d279cdc78e535",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/archive/2026-10-29/fix-a-continuation",
+      "head": "e625aba4df3cdc5ec8de88671a4006831e9e2732",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/archive/2026-10-29/fix-a2",
+      "head": "3d629461b9a20523a83ff33f12e2cd116957be71",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/archive/2026-10-29/fix-b-presence",
+      "head": "2c86fcd0ef30153aa9baaa28919cc76acc57585b",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/archive/2026-10-29/fix-b2",
+      "head": "193866774b0300353264b9a941b1d81aba78556a",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/archive/2026-10-29/fix-c-behaviour",
+      "head": "7f1e7df80f24f9d883cb474c2cc83711dccf5c96",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/archive/2026-10-29/fix-c3",
+      "head": "8c5a340e52947071554c58cec6deefb2401d8e55",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/archive/2026-10-29/fix-d-openers",
+      "head": "58f79efb228e4a3570585bd304a5a3204d939f3b",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/archive/2026-10-29/fix-e-crisis",
+      "head": "b3f76314578c322566c1e239ff4a62c4fd9a1c37",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/archive/2026-10-29/fix-e2",
+      "head": "98d77ed03782f1326dde6bd1a5103030b044ac91",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/archive/2026-10-29/w6-avatar",
+      "head": "df44c203a5b30977b6d530f3b4a3d68e400d03b5",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/codex/ascent-product-upgrade",
+      "head": "24a1af1dd2afa3049c196cf8e239497c65a0eeb2",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/github_actions/github-actions-5a66b01c52",
+      "head": "a130a533f8e6a4bf4b9713e7bc0eaa63247aa494",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/aws-cdk-aa56e09301",
+      "head": "7807ac1599e44622f6e2147e31a3ed47f8fcb425",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/aws-sdk-113490272a",
+      "head": "b3bac73f2f35c1a7ef829a897b548daacd024b10",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/build-e6386c2419",
+      "head": "dd0d456efb8a947fffdd9ea563039a9cedee49bb",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/lint-and-format-7c4b6b50e6",
+      "head": "fc31a60cbd3e8044ee60109c33729ca62de2682d",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/lint-and-format-8b5854b875",
+      "head": "f19160d776cda87fbb887d91f1a18e05c649e101",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/minor-and-patch-5485cfebe0",
+      "head": "5170c052dc00a801c81ccd99f945fbb85e9d5b87",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/npm_and_yarn/tanstack-1b127c14a0",
+      "head": "0d2af1cb9ae6c41f163e7c07e7ce3ff34444b640",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/dependabot/pip/evals/python-5d79d18cee",
+      "head": "6fbdeab70873a84ac0c34e5082f5591027f217ce",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/fix/identity-questions",
+      "head": "d687dc7381d3ec32626f79ffe5425ab759e5a251",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/fix/review-calls",
+      "head": "34d31cad7c056c89020b51d1b42a5a43eb1be391",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/integrate/wave1",
+      "head": "09befe9df2b5fa2891f26b622a12f255feb9d75d",
+      "integrated": true
+    },
+    {
+      "ref": "refs/remotes/origin/main",
+      "head": "d2c440b75613265b7fba22cd11fec40d85a965b7",
+      "integrated": true
+    }
+  ],
+  "notIntegrated": [],
+  "deletionRule": "Only delete exact heads that remain ancestors of final origin/main; detach clean linked worktrees without removing files."
+}
