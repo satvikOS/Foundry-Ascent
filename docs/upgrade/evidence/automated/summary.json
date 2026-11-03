@@ -1,0 +1,98 @@
+[
+  {
+    "suite": "contracts",
+    "exit": 0,
+    "passed": 48,
+    "failed": 0,
+    "pending": 0,
+    "total": 48,
+    "elapsedSeconds": 0.52
+  },
+  {
+    "suite": "db-unit",
+    "exit": 0,
+    "passed": 81,
+    "failed": 0,
+    "pending": 0,
+    "total": 81,
+    "elapsedSeconds": 2.04
+  },
+  {
+    "suite": "ai",
+    "exit": 0,
+    "passed": 1774,
+    "failed": 0,
+    "pending": 0,
+    "total": 1774,
+    "elapsedSeconds": 11.309,
+    "elapsedBoundary": "Vitest startTime to latest file endTime; excludes process launch and report serialization",
+    "code": "24a1af1"
+  },
+  {
+    "suite": "core-unit",
+    "exit": 0,
+    "passed": 919,
+    "failed": 0,
+    "pending": 0,
+    "total": 919,
+    "elapsedSeconds": 12.64
+  },
+  {
+    "suite": "api-unit",
+    "exit": 0,
+    "passed": 230,
+    "failed": 0,
+    "pending": 0,
+    "total": 230,
+    "elapsedSeconds": 10.46,
+    "elapsedBoundary": "Vitest startTime to latest file endTime; excludes process launch and report serialization"
+  },
+  {
+    "suite": "web",
+    "exit": 0,
+    "passed": 1066,
+    "failed": 0,
+    "pending": 0,
+    "total": 1066,
+    "elapsedSeconds": 93.31
+  },
+  {
+    "suite": "infra",
+    "exit": 0,
+    "passed": 228,
+    "failed": 0,
+    "pending": 0,
+    "total": 228,
+    "elapsedSeconds": 30.57
+  },
+  {
+    "suite": "db",
+    "exit": 0,
+    "passed": 276,
+    "failed": 0,
+    "pending": 0,
+    "total": 276,
+    "elapsedSeconds": 19.5
+  },
+  {
+    "suite": "core-db",
+    "exit": 0,
+    "passed": 449,
+    "failed": 0,
+    "pending": 0,
+    "total": 449,
+    "elapsedSeconds": 12.36,
+    "elapsedBoundary": "Vitest startTime to latest file endTime; excludes process launch and report serialization",
+    "code": "24ae653",
+    "latestEvidence": "../release-core-db.txt"
+  },
+  {
+    "suite": "api-db",
+    "exit": 0,
+    "passed": 191,
+    "failed": 0,
+    "pending": 0,
+    "total": 191,
+    "elapsedSeconds": 95.37
+  }
+]

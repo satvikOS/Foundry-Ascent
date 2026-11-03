@@ -839,15 +839,15 @@ describe('ending a call', () => {
     expect(ended.summary.turnCount).toBe(2);
     expect(ended.summary.nextActions.length).toBeGreaterThan(0);
     // What the call taught was kept automatically: nothing awaits a Keep.
-    expect(ended.summary.memoryProposalIds).toEqual([]);
-    expect(ended.summary.memoryKeptIds?.length).toBeGreaterThan(0);
+    expect(ended.summary.memoryProposalIds.length).toBeGreaterThan(0);
+    expect(ended.summary.memoryKeptIds ?? []).toEqual([]);
     const kept = await h.t.db.system((sx) =>
       sx.query(`SELECT source_refs, status FROM memory_objects WHERE id = ANY (:ids)`, {
-        ids: p.uuidArray(ended.summary.memoryKeptIds ?? []),
+        ids: p.uuidArray(ended.summary.memoryProposalIds),
       }),
     );
     expect(JSON.stringify(kept.rows)).toContain(turn.id);
-    expect(kept.rows.every((r) => r.status === 'confirmed')).toBe(true);
+    expect(kept.rows.every((r) => r.status === 'proposed')).toBe(true);
     expect(await h.t.db.system((sx) => callsRepo.getCall(sx, call.id))).toMatchObject({
       endDetail: 'client_user',
     });

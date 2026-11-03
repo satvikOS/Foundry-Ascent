@@ -53,7 +53,8 @@ let migrate: (event: CdkCustomResourceEvent, context: Context) => Promise<{ Phys
 let insights: (event: unknown) => Promise<{ kind: string }>;
 
 function lambdaContext(remainingMs = 50_000): Context {
-  return {
+  // Model the full runtime shape without calling the SDK’s deprecated callback APIs.
+  const context = {
     callbackWaitsForEmptyEventLoop: false,
     functionName: 'FoundryAscent-Test',
     functionVersion: '$LATEST',
@@ -67,6 +68,7 @@ function lambdaContext(remainingMs = 50_000): Context {
     fail: () => undefined,
     succeed: () => undefined,
   };
+  return context;
 }
 
 function urlEvent(

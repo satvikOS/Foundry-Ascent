@@ -1,5 +1,5 @@
 import { AudioLines } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, type ReactNode, type Ref } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { VeirName } from '@/components/faces/veir-name';
@@ -8,6 +8,8 @@ import { useMediaQuery } from '@/lib/hooks/use-media-query';
 import { createAvatarProvider, type AvatarState } from '@/lib/realtime/avatar';
 import type { CallEngine } from '@/lib/realtime/call-engine';
 import { cn } from '@/lib/utils';
+import { loadLocalCharacter } from '@/lib/realtime/presentation';
+import { usePresentationPreference } from './preferences';
 
 import { CallFaceVideo } from './call-video-tile';
 import { useCallFace, type CallFaceController } from './use-call-face';
@@ -56,9 +58,28 @@ export function CallStage({
   const stageRef = useRef<HTMLDivElement | null>(null);
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const presence = useMemo(() => createAvatarProvider(), []);
+  const [presentation, setPresentation] = usePresentationPreference();
+  const [character, setCharacter] = useState<ReturnType<typeof createAvatarProvider> | null>(null);
+  const [characterFailed, setCharacterFailed] = useState(false);
+  useEffect(() => {
+    if (presentation !== 'character') return undefined;
+    let current = true;
+    void loadLocalCharacter()
+      .then((provider) => {
+        if (current) setCharacter(provider);
+        else provider.unmount();
+      })
+      .catch(() => {
+        if (current) setCharacterFailed(true);
+      });
+    return () => {
+      current = false;
+    };
+  }, [presentation]);
+  const local = presentation === 'character' && character && !characterFailed ? character : presence;
   const face = useCallFace(controller);
   const video = face.status === 'live';
-  const active = face.status === 'live' ? face.provider : presence;
+  const active = face.status === 'live' ? face.provider : local;
 
   // Once the call is live, ask for its face (once per call; the controller keeps it while minimized).
   useEffect(() => {
@@ -77,11 +98,11 @@ export function CallStage({
   useEffect(() => {
     const stage = stageRef.current;
     if (video || !stage) return undefined;
-    presence.mount(stage, { reducedMotion });
+    local.mount(stage, { reducedMotion });
     return () => {
-      presence.unmount();
+      local.unmount();
     };
-  }, [presence, reducedMotion, video]);
+  }, [local, reducedMotion, video]);
 
   useEffect(() => {
     active.setState(state);
@@ -98,13 +119,24 @@ export function CallStage({
   useEffect(() => {
     if (reducedMotion) return undefined;
     let frame = 0;
+    const stage = stageRef.current;
     const loop = () => {
       active.setLevels(engine.levels());
       frame = requestAnimationFrame(loop);
     };
-    frame = requestAnimationFrame(loop);
+    const visibility = () => {
+      cancelAnimationFrame(frame);
+      const hidden = document.visibilityState === 'hidden';
+      stage?.setAttribute('data-hidden', String(hidden));
+      stage?.querySelector('.fa-character')?.setAttribute('data-hidden', String(hidden));
+      if (hidden) active.setLevels({ veir: 0, founder: 0 });
+      else frame = requestAnimationFrame(loop);
+    };
+    document.addEventListener('visibilitychange', visibility);
+    visibility();
     return () => {
       cancelAnimationFrame(frame);
+      document.removeEventListener('visibilitychange', visibility);
     };
   }, [engine, active, reducedMotion]);
 
@@ -112,7 +144,7 @@ export function CallStage({
     <div
       data-slot="call-tile"
       data-speaking={speaking || undefined}
-      data-face={video ? 'video' : 'presence'}
+      data-face={video ? 'video' : local.drawsFace ? 'character' : 'presence'}
       className={cn(
         'relative grid aspect-video max-w-[calc(100vw-2rem)] place-items-center overflow-hidden rounded-3xl border shadow-sm transition-[box-shadow,border-color] duration-300',
         video ? 'bg-black' : 'bg-card/60',
@@ -136,15 +168,47 @@ export function CallStage({
           data-state={state}
           className="relative grid aspect-square h-[86%] place-items-center"
         >
-          <PersonaAvatar
-            name={veir.name}
-            portraitUrl={veir.portraitUrl}
-            size="2xl"
-            decorative
-            className="relative shadow-lg"
-          />
+          {!local.drawsFace ? (
+            <PersonaAvatar
+              name={veir.name}
+              portraitUrl={veir.portraitUrl}
+              size="2xl"
+              decorative
+              className="relative shadow-lg"
+            />
+          ) : null}
         </div>
       )}
+      {!video ? (
+        <div
+          role="group"
+          aria-label="Conversation presentation"
+          className="absolute top-3 right-3 flex rounded-full border bg-background p-1 text-caption"
+        >
+          {(['sphere', 'character'] as const).map((choice) => (
+            <button
+              key={choice}
+              type="button"
+              aria-pressed={presentation === choice}
+              onClick={() => {
+                setPresentation(choice);
+                setCharacterFailed(false);
+              }}
+              className={cn(
+                'min-h-9 rounded-full px-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+                presentation === choice ? 'bg-secondary text-foreground' : 'text-muted-foreground',
+              )}
+            >
+              {choice === 'sphere' ? 'Sphere' : 'Avatar'}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {characterFailed && !video ? (
+        <p role="status" className="absolute top-16 right-3 text-caption text-muted-foreground">
+          Avatar unavailable. Voice stays on.
+        </p>
+      ) : null}
       <div className="absolute bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] items-center">
         {nameTag ?? <CallNameTag veir={veir} speaking={speaking} />}
       </div>

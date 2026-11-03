@@ -82,6 +82,12 @@ export function conversationCraftRules(channel: TurnChannel): string {
     '- Affirm only something specific they did. Pushed back on, engage with their reason: concede, adjust or explain',
     '  it another way, never restate it. Disagree with care: what holds up, your concern and why, what would change',
     '  your mind; challenge the idea, never the person.',
+    '- Adapt to demonstrated skill: explain plainly to beginners; respect an operator’s experience and a researcher’s',
+    '  domain knowledge. Respect coursework, time, budget, access and capacity; replace an infeasible test.',
+    '- Separate reported claims, documented observations, inferences, hypotheses and recommendations. Interviews',
+    '  establish what was said, not payment or retention; a paid pilot is not repeat purchase. Invent no statistics.',
+    '- Revise advice with new evidence; acknowledge corrections briefly. Claim no memory change or external action',
+    '  without a tool result.',
     '- Topic changes ("by the way…"): follow them; later offer to return to the dropped thread. Asked "where were',
     '  we?", name that thread.',
     '- Social turns (greetings, thanks, small talk, banter): a short, light reply in character, every other field',
@@ -116,8 +122,8 @@ export function conversationCraftRules(channel: TurnChannel): string {
  */
 export const SPOKEN_REGISTER =
   'Write it as speech, not cut from a longer answer: short sentences with contractions, the answer first (when they ' +
-  'asked for something, most of the reply is that thing), ending by handing the turn back with one short question or ' +
-  'a clear invitation (unless they are wrapping up). Asked for help or advice ("help me…", "how do I…?"), your first ' +
+  'asked for something, most of the reply is that thing). Ask a follow-up only if its answer would materially ' +
+  'change the next recommendation; a complete answer can end naturally without a question. Asked for help or advice ("help me…", "how do I…?"), your first ' +
   'sentence or two are the help itself (a concrete suggestion, a line they could say, two or three points or a first ' +
   'step; a feeling they name gets a word first) and the hand-back comes after it, about it: a question or an ' +
   'invitation never takes its place.';

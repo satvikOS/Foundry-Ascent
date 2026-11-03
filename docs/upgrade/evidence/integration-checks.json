@@ -1,0 +1,158 @@
+{
+  "code": "24a1af1dd2afa3049c196cf8e239497c65a0eeb2",
+  "checks": {
+    "integration-lint-sharded": {
+      "tail": [
+        "Lint packages/core",
+        "Lint packages/db"
+      ]
+    },
+    "integration-format-check": {
+      "tail": [
+        "Checking formatting...",
+        "All matched files use Prettier code style!"
+      ]
+    },
+    "integration-types": {
+      "tail": [
+        "apps/api typecheck$ tsc -p tsconfig.json",
+        "apps/api typecheck: Done"
+      ]
+    },
+    "integration-migrations": {
+      "tail": [
+        "> tsx src/scripts/gen-migrations.ts",
+        ""
+      ]
+    },
+    "integration-build": {
+      "tail": [
+        "",
+        "\u2713 built in 645ms"
+      ]
+    },
+    "integration-bundles": {
+      "tail": [
+        "ok   migrate    1.99 MiB  /var/folders/7x/rvqdyxh94jq5hk4s4rzf5rrr0000gn/T/fa-bundles-mwZjYB/migrate/index.mjs",
+        "ok   insights   1.58 MiB  /var/folders/7x/rvqdyxh94jq5hk4s4rzf5rrr0000gn/T/fa-bundles-mwZjYB/insights/index.mjs"
+      ]
+    },
+    "integration-synth": {
+      "tail": [
+        "Supply a stack id (FoundryAscent-Foundation, FoundryAscent-Data, FoundryAscent-App) to display its template.",
+        "2 feature flags are not configured. Run 'cdk flags --unstable=flags' to learn more."
+      ]
+    }
+  },
+  "testRows": [
+    {
+      "source": "units",
+      "package": "packages/contracts",
+      "passed": 48,
+      "failed": 0,
+      "total": 48
+    },
+    {
+      "source": "units",
+      "package": "packages/db",
+      "passed": 81,
+      "failed": 0,
+      "total": 81
+    },
+    {
+      "source": "units",
+      "package": "apps/web",
+      "passed": 1066,
+      "failed": 0,
+      "total": 1066
+    },
+    {
+      "source": "units",
+      "package": "packages/ai",
+      "passed": 1771,
+      "failed": 3,
+      "total": 1774
+    },
+    {
+      "source": "units",
+      "package": "packages/core",
+      "passed": 919,
+      "failed": 0,
+      "total": 919
+    },
+    {
+      "source": "units",
+      "package": "apps/api",
+      "passed": 230,
+      "failed": 0,
+      "total": 230
+    },
+    {
+      "source": "database",
+      "package": "packages/db",
+      "passed": 276,
+      "failed": 0,
+      "total": 276
+    },
+    {
+      "source": "database",
+      "package": "packages/core",
+      "passed": 448,
+      "failed": 0,
+      "total": 448
+    },
+    {
+      "source": "database",
+      "package": "apps/api",
+      "passed": 191,
+      "failed": 0,
+      "total": 191
+    },
+    {
+      "source": "infra",
+      "package": "infra",
+      "passed": 228,
+      "failed": 0,
+      "total": 228
+    }
+  ],
+  "aiSerial": {
+    "numTotalTests": 1774,
+    "numPassedTests": 1774,
+    "numFailedTests": 0
+  },
+  "initialFailures": {
+    "ai": 3,
+    "cause": [
+      "stale policy-version assertion, corrected",
+      "two timing checks contended with simultaneous lint/build/DB/pytest work; serial rerun passes without relaxed limits"
+    ],
+    "pythonAwsCollectionErrors": 4,
+    "causePython": "AWS SDK absent from eval-only virtualenv; rerun in separately pinned ops/aws environment passed"
+  },
+  "boundaries": [
+    "Counts cover deterministic tests; no human grading or physical-device certification",
+    "Account-level cdk diff is not available locally; offline synthesis, canonical snapshots and cdk-nag passed"
+  ],
+  "latestContinuityCode": "24ae653",
+  "timestampRegressionPassed": 34,
+  "functionalBrowser": {
+    "code": "24a1af1",
+    "passed": 97,
+    "failed": 0,
+    "notSelectedOptionalVisualCaptures": 24
+  },
+  "postRepairBrowser": {
+    "code": "24ae653",
+    "passed": 7,
+    "failed": 0,
+    "scope": "setup plus six responsive/theme development, memory and avatar journeys"
+  },
+  "postRepairCoreDatabase": {
+    "passed": 449,
+    "failed": 0,
+    "skipped": 0,
+    "source": "release-core-db.txt",
+    "runtimeCode": "24ae653"
+  }
+}

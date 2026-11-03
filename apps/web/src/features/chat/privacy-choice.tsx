@@ -84,7 +84,9 @@ const OPTIONS: readonly Option[] = [
 
 /** The one plain sentence under the choice. */
 export function privacyExplanation(privacy: ConversationPrivacy): string {
-  return privacy === 'ephemeral' ? 'Not remembered. Erased when it ends.' : 'Remembered for next time.';
+  return privacy === 'ephemeral'
+    ? 'Not remembered. Erased when it ends.'
+    : 'Conversation saved. Memory needs approval.';
 }
 
 interface PrivacyChoiceProps {

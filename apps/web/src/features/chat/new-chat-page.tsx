@@ -33,6 +33,7 @@ import { conversationOrigin, NEW_CHAT_ORIGIN } from '@/features/documents/upload
 import { useCallsAvailable } from '../calls/calls-available';
 import { coachingAvailability } from '../coach/availability';
 import { AttachButton, AttachmentTray, useComposerAttachments } from './attachments';
+import { ContextBrief } from './context-brief';
 import { Composer, MAX_TURN_CHARS, modeToSend, type ComposerMode } from './composer';
 import { newConversationRequest, setPendingFirstMessage } from './first-message';
 import { newChatGreeting } from './greeting';
@@ -316,7 +317,9 @@ function NewChat() {
           </p>
         </Greeting>
 
-        <div className="mt-10">
+        {!temporary ? <ContextBrief tenant={tenant} ventureId={ventureId} /> : null}
+
+        <div className="mt-7">
           <Composer
             value={text}
             onChange={setText}

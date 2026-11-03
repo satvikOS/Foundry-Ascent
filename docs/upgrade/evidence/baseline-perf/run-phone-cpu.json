@@ -1,0 +1,509 @@
+{
+  "label": "run-phone-cpu",
+  "device": {
+    "name": "phone-cpu",
+    "cpuSlowdown": 4
+  },
+  "network": {
+    "offline": false,
+    "latency": 40,
+    "downloadThroughput": 2500000,
+    "uploadThroughput": 625000
+  },
+  "ttfbMs": 1.100000023841858,
+  "domContentLoadedMs": 435.2000000476837,
+  "fcpMs": 200,
+  "entryScriptBytes": 83814,
+  "scriptsBeforeComposer": 76,
+  "waterfall": [
+    {
+      "path": "/assets/rolldown-runtime-hePW80VL.js",
+      "startMs": 58,
+      "endMs": 106
+    },
+    {
+      "path": "/assets/utils-CqdzfLvQ.js",
+      "startMs": 58,
+      "endMs": 146
+    },
+    {
+      "path": "/assets/framework-BChZNyHn.js",
+      "startMs": 58,
+      "endMs": 194
+    },
+    {
+      "path": "/assets/index-5N8dQkq_.js",
+      "startMs": 58,
+      "endMs": 201
+    },
+    {
+      "path": "/assets/button-BLKggo9f.js",
+      "startMs": 58,
+      "endMs": 125
+    },
+    {
+      "path": "/assets/matchContext-buNPKEmt.js",
+      "startMs": 58,
+      "endMs": 144
+    },
+    {
+      "path": "/assets/link-CXMDKlSG.js",
+      "startMs": 58,
+      "endMs": 170
+    },
+    {
+      "path": "/assets/useSelector-YrKT3YXK.js",
+      "startMs": 58,
+      "endMs": 185
+    },
+    {
+      "path": "/assets/useMatch-CGRYc1iZ.js",
+      "startMs": 59,
+      "endMs": 187
+    },
+    {
+      "path": "/assets/useParams-BKJ9JNdb.js",
+      "startMs": 59,
+      "endMs": 214
+    },
+    {
+      "path": "/assets/useNavigate-DFWNjYDo.js",
+      "startMs": 59,
+      "endMs": 215
+    },
+    {
+      "path": "/assets/route-Ine1V5hl.js",
+      "startMs": 59,
+      "endMs": 230
+    },
+    {
+      "path": "/assets/lazyRouteComponent-C8qp3dHp.js",
+      "startMs": 59,
+      "endMs": 235
+    },
+    {
+      "path": "/assets/storage-LbOzzmIs.js",
+      "startMs": 59,
+      "endMs": 242
+    },
+    {
+      "path": "/assets/auth-Dlp71wYf.js",
+      "startMs": 59,
+      "endMs": 259
+    },
+    {
+      "path": "/assets/body-BXfJdowM.js",
+      "startMs": 59,
+      "endMs": 277
+    },
+    {
+      "path": "/assets/check-Bu29Q-bL.js",
+      "startMs": 59,
+      "endMs": 271
+    },
+    {
+      "path": "/assets/chevron-right-DqpF57bx.js",
+      "startMs": 60,
+      "endMs": 276
+    },
+    {
+      "path": "/assets/x-CRS_bB_K.js",
+      "startMs": 60,
+      "endMs": 283
+    },
+    {
+      "path": "/assets/dist-kE5I6c20.js",
+      "startMs": 60,
+      "endMs": 285
+    },
+    {
+      "path": "/assets/dist-DJktxV4k.js",
+      "startMs": 60,
+      "endMs": 307
+    },
+    {
+      "path": "/assets/index-Cmi_hR-k.css",
+      "startMs": 60,
+      "endMs": 175
+    },
+    {
+      "path": "/assets/dist-o853HQG2.js",
+      "startMs": 60,
+      "endMs": 316
+    },
+    {
+      "path": "/assets/veir-BovpH8UU.js",
+      "startMs": 60,
+      "endMs": 317
+    },
+    {
+      "path": "/assets/venture-refresh-ttHEeXid.js",
+      "startMs": 60,
+      "endMs": 318
+    },
+    {
+      "path": "/assets/ventures-BKPyKYVB.js",
+      "startMs": 60,
+      "endMs": 325
+    },
+    {
+      "path": "/assets/geist-latin-wght-normal-BgDaEnEv.woff2",
+      "startMs": 182,
+      "endMs": 242
+    },
+    {
+      "path": "/api/v1/me",
+      "startMs": 455,
+      "endMs": 506
+    },
+    {
+      "path": "/assets/route-C6ZB3mF_.js",
+      "startMs": 514,
+      "endMs": 568
+    },
+    {
+      "path": "/assets/inspector-BDiMNm7n.js",
+      "startMs": 515,
+      "endMs": 569
+    },
+    {
+      "path": "/assets/use-media-query-DBNCLhkL.js",
+      "startMs": 515,
+      "endMs": 565
+    },
+    {
+      "path": "/assets/welcome-opnbJ9JB.js",
+      "startMs": 515,
+      "endMs": 565
+    },
+    {
+      "path": "/assets/venture-uploads-T6vTRxiL.js",
+      "startMs": 515,
+      "endMs": 569
+    },
+    {
+      "path": "/assets/_ventureId-Cr_bNPzD.js",
+      "startMs": 516,
+      "endMs": 570
+    },
+    {
+      "path": "/assets/audio-lines-BMTXPLqt.js",
+      "startMs": 516,
+      "endMs": 609
+    },
+    {
+      "path": "/assets/attachments-7l4eWFqf.js",
+      "startMs": 516,
+      "endMs": 612
+    },
+    {
+      "path": "/assets/rotate-ccw-eTRZRFbJ.js",
+      "startMs": 516,
+      "endMs": 610
+    },
+    {
+      "path": "/assets/upload-validation-DTeN-82b.js",
+      "startMs": 516,
+      "endMs": 611
+    },
+    {
+      "path": "/assets/composer-DfHfq3Ej.js",
+      "startMs": 516,
+      "endMs": 613
+    },
+    {
+      "path": "/assets/select-DpezBCQ6.js",
+      "startMs": 517,
+      "endMs": 616
+    },
+    {
+      "path": "/assets/chevron-down-X3BkbhZe.js",
+      "startMs": 517,
+      "endMs": 658
+    },
+    {
+      "path": "/assets/input-KRnQ7jkf.js",
+      "startMs": 517,
+      "endMs": 659
+    },
+    {
+      "path": "/assets/textarea-DhRvKglK.js",
+      "startMs": 517,
+      "endMs": 659
+    },
+    {
+      "path": "/assets/first-message-Cb050PDv.js",
+      "startMs": 517,
+      "endMs": 660
+    },
+    {
+      "path": "/assets/rotate-ccw-clock-Dva_DQW-.js",
+      "startMs": 517,
+      "endMs": 661
+    },
+    {
+      "path": "/assets/privacy-choice-DpnNCAcj.js",
+      "startMs": 517,
+      "endMs": 662
+    },
+    {
+      "path": "/assets/veir-name-BCQNSCRf.js",
+      "startMs": 517,
+      "endMs": 702
+    },
+    {
+      "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c",
+      "startMs": 519,
+      "endMs": 704
+    },
+    {
+      "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/overview",
+      "startMs": 519,
+      "endMs": 708
+    },
+    {
+      "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/opener",
+      "startMs": 519,
+      "endMs": 703
+    },
+    {
+      "path": "/assets/document-viewer-host-DYdalSyJ.js",
+      "startMs": 741,
+      "endMs": 794
+    },
+    {
+      "path": "/assets/_sessionId-8siRHqWB.js",
+      "startMs": 749,
+      "endMs": 801
+    },
+    {
+      "path": "/assets/status-badge-Bq63YCs2.js",
+      "startMs": 749,
+      "endMs": 797
+    },
+    {
+      "path": "/assets/circle-slash-LaBbRkOm.js",
+      "startMs": 750,
+      "endMs": 792
+    },
+    {
+      "path": "/assets/arrow-up-right-DNoJs75k.js",
+      "startMs": 750,
+      "endMs": 793
+    },
+    {
+      "path": "/assets/memory-saved-BweBRpNC.js",
+      "startMs": 750,
+      "endMs": 796
+    },
+    {
+      "path": "/assets/digest-view-0WKAL0si.js",
+      "startMs": 751,
+      "endMs": 848
+    },
+    {
+      "path": "/assets/veir-answer-DnXItT1g.js",
+      "startMs": 751,
+      "endMs": 850
+    },
+    {
+      "path": "/assets/hand-helping-CHje7i5P.js",
+      "startMs": 751,
+      "endMs": 843
+    },
+    {
+      "path": "/assets/plus-DHN-YQqL.js",
+      "startMs": 752,
+      "endMs": 844
+    },
+    {
+      "path": "/assets/shield-alert-CyvVJ67P.js",
+      "startMs": 752,
+      "endMs": 845
+    },
+    {
+      "path": "/assets/reasoning-Dz62HCGU.js",
+      "startMs": 752,
+      "endMs": 849
+    },
+    {
+      "path": "/assets/markdown-5SYPrtOv.js",
+      "startMs": 752,
+      "endMs": 946
+    },
+    {
+      "path": "/assets/external-link-CJnGJXJ2.js",
+      "startMs": 753,
+      "endMs": 894
+    },
+    {
+      "path": "/assets/alert-dialog-B7gZ9cu1.js",
+      "startMs": 753,
+      "endMs": 897
+    },
+    {
+      "path": "/assets/account-dialogs-BrREnnsM.js",
+      "startMs": 753,
+      "endMs": 898
+    },
+    {
+      "path": "/assets/sse-D68sKq4g.js",
+      "startMs": 754,
+      "endMs": 937
+    },
+    {
+      "path": "/assets/blocked-panel-B2yr2oDr.js",
+      "startMs": 754,
+      "endMs": 941
+    },
+    {
+      "path": "/assets/hand-heart-BLIf1V6Y.js",
+      "startMs": 754,
+      "endMs": 941
+    },
+    {
+      "path": "/assets/conversation-dialogs-DLqNCS0J.js",
+      "startMs": 754,
+      "endMs": 968
+    },
+    {
+      "path": "/assets/evidence-item-DxBe449u.js",
+      "startMs": 755,
+      "endMs": 983
+    },
+    {
+      "path": "/assets/brain-DkVTvBcM.js",
+      "startMs": 755,
+      "endMs": 982
+    },
+    {
+      "path": "/assets/freshness-PHqOJ23L.js",
+      "startMs": 755,
+      "endMs": 983
+    },
+    {
+      "path": "/assets/escalation-flow-dialog-D0OvT5eJ.js",
+      "startMs": 755,
+      "endMs": 989
+    },
+    {
+      "path": "/assets/memory-meta-c_WDxg6l.js",
+      "startMs": 756,
+      "endMs": 991
+    },
+    {
+      "path": "/assets/checkbox-CY4blevU.js",
+      "startMs": 756,
+      "endMs": 1016
+    },
+    {
+      "path": "/assets/minus-D1U8qfi9.js",
+      "startMs": 756,
+      "endMs": 1023
+    },
+    {
+      "path": "/assets/field-Cd5Zn5bZ.js",
+      "startMs": 756,
+      "endMs": 1024
+    },
+    {
+      "path": "/assets/zod-B90q9OF5.js",
+      "startMs": 756,
+      "endMs": 1025
+    },
+    {
+      "path": "/assets/form-errors-BoRVmvXR.js",
+      "startMs": 757,
+      "endMs": 1029
+    },
+    {
+      "path": "/assets/select-field-BfCur8JH.js",
+      "startMs": 757,
+      "endMs": 1032
+    },
+    {
+      "path": "/assets/packet-view-C1WboP9d.js",
+      "startMs": 757,
+      "endMs": 1067
+    },
+    {
+      "path": "/api/v1/sessions",
+      "startMs": 765,
+      "endMs": 1085
+    },
+    {
+      "path": "/api/v1/ventures",
+      "startMs": 766,
+      "endMs": 1066
+    },
+    {
+      "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/call-config",
+      "startMs": 766,
+      "endMs": 1067
+    },
+    {
+      "path": "/api/v1/health",
+      "startMs": 766,
+      "endMs": 1070
+    },
+    {
+      "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/documents",
+      "startMs": 766,
+      "endMs": 1073
+    },
+    {
+      "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/memory",
+      "startMs": 766,
+      "endMs": 1121
+    },
+    {
+      "path": "/assets/newsreader-latin-wght-normal-CCVVNp6i.woff2",
+      "startMs": 815,
+      "endMs": 950
+    },
+    {
+      "path": "/assets/geist-mono-latin-wght-normal-XN7g48iV.woff2",
+      "startMs": 816,
+      "endMs": 923
+    }
+  ],
+  "sansFont": {
+    "startMs": 182.30000007152557,
+    "endMs": 242.20000004768372
+  },
+  "serifFont": {
+    "startMs": 814.6000000238419,
+    "endMs": 949.7000000476837
+  },
+  "preloadedFonts": [],
+  "paints": {
+    "cls": 0.003085822094157236,
+    "lcp": 860,
+    "shifted": [
+      "p.boot-brand +0.000",
+      "div.min-h-0.flex-1.overflow-y-auto +0.003",
+      "button.group.flex.h-8 +0.003",
+      "div.ml-auto.flex.items-center +0.003"
+    ]
+  },
+  "shellMs": 767.8000000715256,
+  "composerMs": 881.3999999761581,
+  "transitions": {
+    "knowledge": {
+      "ms": 140.10000002384186,
+      "cls": 0
+    },
+    "documents": {
+      "ms": 84.69999992847443,
+      "cls": 0
+    },
+    "knowledgeAgain": {
+      "ms": 47.799999952316284,
+      "cls": 0
+    },
+    "newChat": {
+      "ms": 47.199999928474426,
+      "cls": 0
+    }
+  }
+}

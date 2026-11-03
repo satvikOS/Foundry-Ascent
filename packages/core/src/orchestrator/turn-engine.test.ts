@@ -109,7 +109,7 @@ describe('streamed-turn prompts', () => {
       'Write it as speech, not cut from a longer answer: short sentences with contractions',
     );
     expect(voice).toContain('(when they asked for something, most of the reply is that thing)');
-    expect(voice).toContain('ending by handing the turn back with one short question or a clear invitation');
+    expect(voice).toContain('Ask a follow-up only if its answer would materially');
     expect(voice).toContain('caveats or labels read out');
     // The general "a reply need not end with a question" is for typed replies only.
     expect(voice).not.toContain('need not end');

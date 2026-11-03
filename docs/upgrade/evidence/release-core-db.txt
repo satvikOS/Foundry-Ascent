@@ -1,0 +1,9 @@
+
+ RUN  v5.0.5 /Users/account_clawteam1/Foundry-Ascent/packages/core
+
+
+ Test Files  27 passed (27)
+      Tests  449 passed (449)
+   Start at  15:21:16
+   Duration  12.36s (tests 84%, import 13%, transform 2%)
+

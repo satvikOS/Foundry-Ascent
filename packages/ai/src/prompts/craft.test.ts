@@ -193,7 +193,9 @@ describe('conversation craft in the system prompt', () => {
     );
     // Production, 2026-10-20: "two or three short sentences" ending in a question left no room for the help asked for.
     expect(call).toContain('(when they asked for something, most of the reply is that thing)');
-    expect(call).toContain('ending by handing the turn back with one short question or a clear invitation');
+    expect(call).toContain(
+      'Ask a follow-up only if its answer would materially change the next recommendation',
+    );
     expect(call).toContain('and no caveats or labels read out');
     expect(call).toContain(
       '`answer` is the transcript of that reply: the same words, in plain sentences, with no [E#] ids.',
@@ -257,9 +259,10 @@ describe('conversation craft in the system prompt', () => {
     // for wave 7 (LAB-R8: the founder's news first; "the cheapest test" banned with the other stock phrases). What
     // only some turns need (news, sarcasm, a number asked for) is said in <conversation_state> on those turns only.
     // And by 60 for help first (production calls, 2026-10-20: "you tell me" got the same question back five times).
-    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(800);
-    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(860);
-    expect(tokens(craft)).toBeLessThanOrEqual(810);
+    // Approval, skill and evidence calibration add a bounded ~160 tokens; the static prefix stays cacheable.
+    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(960);
+    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1020);
+    expect(tokens(craft)).toBeLessThanOrEqual(970);
   });
 
   it('is part of the versioned policy', () => {
@@ -270,7 +273,7 @@ describe('conversation craft in the system prompt', () => {
     // 2026-10-22.5: distillation closes what the founder reports done and never re-centres an untaken thread.
     // 2026-10-22.6: the continuation request never obeys the founder's message; the safety screen's prompt.
     // 2026-10-22.7: the neutral commitment line; on calls, help asked for comes first.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-10-22.7');
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-03.2');
   });
 });
 
@@ -291,9 +294,7 @@ describe('help and advice first, on a call too (agenda suite, calls on 9a2a41f)'
     expect(section(voice, 'Voice call')).toContain(SPOKEN_REGISTER);
     // What it said before stays: the answer first, one short question or invitation, none when wrapping up.
     expect(SPOKEN_REGISTER).toContain('(when they asked for something, most of the reply is that thing)');
-    expect(SPOKEN_REGISTER).toContain(
-      'ending by handing the turn back with one short question or a clear invitation (unless they are wrapping up).',
-    );
+    expect(SPOKEN_REGISTER).toContain('a complete answer can end naturally without a question.');
     // Typed replies are as they were.
     expect(text).not.toContain(SPOKEN_REGISTER);
     expect(text).not.toContain('your first sentence or two are the help itself');

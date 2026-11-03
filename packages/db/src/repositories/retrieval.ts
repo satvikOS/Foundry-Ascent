@@ -146,7 +146,7 @@ function run(ex: SqlExecutor, search: StoreSearch): Promise<RetrievedItem[]> {
 
 export interface VentureMemoryQuery extends BaseQuery {
   readonly ventureId: string;
-  /** Default proposed + confirmed + disputed (disputed items carry a contradiction signal). */
+  /** Only approved memory is coach-readable; disputed items carry a contradiction signal. */
   readonly statuses?: readonly MemoryStatusValue[];
   readonly types?: readonly MemoryTypeValue[];
   /**
@@ -182,6 +182,8 @@ function memorySearch(q: VentureMemoryQuery): StoreSearch {
        FROM memory_objects m CROSS JOIN q
        WHERE m.tenant_id = :tenantId AND m.venture_id = :ventureId
          AND m.status = ANY (:statuses)
+         AND m.status <> 'proposed'
+         AND (m.origin <> 'ai' OR m.approved_by IS NOT NULL)
          AND (:types IS NULL OR m.type = ANY (:types))
          AND (m.visibility <> 'founder_private' OR (:privateOwner IS NOT NULL AND m.created_by = :privateOwner))
          AND (m.tsv @@ q.tsq OR m.pinned OR (:embedding IS NOT NULL AND m.embedding IS NOT NULL))

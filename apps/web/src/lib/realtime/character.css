@@ -1,0 +1,75 @@
+.fa-character {
+  --mouth: 0;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  contain: layout style;
+  transition: opacity var(--motion-feedback);
+}
+.fa-character svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.fa-character__head {
+  transform-origin: 160px 220px;
+  animation: fa-character-breathe var(--motion-presence) ease-in-out infinite;
+}
+.fa-character__eyes {
+  transform-origin: 160px 149px;
+  animation: fa-character-blink 7.3s linear infinite;
+}
+.fa-character__mouth {
+  transform-origin: 160px 193px;
+  transform: scaleY(calc(1 + var(--mouth) * 4));
+  opacity: 0;
+}
+.fa-character[data-audible='true'] .fa-character__mouth {
+  opacity: 1;
+}
+.fa-character[data-audible='true'] .fa-character__rest-mouth {
+  opacity: 0;
+}
+.fa-character[data-state='thinking'] .fa-character__head {
+  transform: rotate(-3deg);
+  animation: none;
+}
+.fa-character[data-state='muted'] {
+  opacity: 0.6;
+}
+.fa-character[data-motion='reduced'] *,
+.fa-character[data-state='muted'] *,
+.fa-character[data-state='idle'] *,
+.fa-character[data-hidden='true'] * {
+  animation: none;
+}
+.fa-character[data-hidden='true'] .fa-character__mouth {
+  opacity: 0;
+}
+@keyframes fa-character-breathe {
+  50% {
+    transform: translateY(-2px) rotate(0.6deg);
+  }
+}
+@keyframes fa-character-blink {
+  0%,
+  42%,
+  45%,
+  94%,
+  97%,
+  100% {
+    transform: scaleY(1);
+  }
+  43.5%,
+  95.5% {
+    transform: scaleY(0.08);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fa-character * {
+    animation: none !important;
+    transform: none !important;
+  }
+}

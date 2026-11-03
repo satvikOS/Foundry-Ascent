@@ -1,0 +1,1 @@
+{"status":"failed_harness","reason":"Vite full-page reload during concurrent source edits destroyed the browser execution context","completed":false,"repair":"Use a dedicated blank media harness page; rerun after source edits."}

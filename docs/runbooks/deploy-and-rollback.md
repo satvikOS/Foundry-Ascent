@@ -102,7 +102,7 @@ Done for production; repeat for a new account. Steps that only the owner can tak
    branches out); add required reviewers if deploys should wait for a human approval.
 3. **Credentials:** repository secret `AWS_DEPLOY_ROLE_ARN` = the `GitHubDeployRoleArn` output of
    `FoundryAscent-Foundation` (a secret keeps the account id masked in the public logs).
-4. **Branch protection on main** (not set today: pushes land directly and only CI gates the deploy):
+4. **Branch protection on main** (not enforced, verified 2026-11-03; `CONTRIBUTING.md` still requires PR/code-owner review):
    require the CI jobs (`quality`, `database`, `infra`, `python`, `e2e`), `Secret scan (gitleaks)`
    and CodeQL, and no force pushes. Requiring pull-request reviews also blocks direct pushes to `main`.
 5. **Lambda concurrency:** production reserves none (`api.reservedConcurrency: null`), because a
@@ -146,6 +146,13 @@ identical). When production must change faster than CI can run:
    commit is on main, deploys its infrastructure, functions and SPA, and the smoke test checks that
    `/api/v1/health` reports that version.
 3. Revert the bad change on main in a PR, or the next automatic deploy reintroduces it.
+
+**Memory-policy rollback (approval-restoring release, migrations 0021–0024):** pause AI using the
+[global kill switch](kill-switch-and-persona-suspension.md) before deploying an older auto-approval
+implementation. Its schema remains compatible, but its application behavior can auto-confirm new AI items
+and reuse source transcripts that the new continuity policy excludes. Keep AI paused until an
+approval/withdrawal-compatible release is restored. Do not promote pending items or clear digest-deletion
+fences as a rollback step; the source transcripts remain available for deliberate review.
 
 **Database:** migrations are forward-only and run before code goes live. A rollback deploy runs the
 older migration bundle; newer applied migrations are left in place and logged as

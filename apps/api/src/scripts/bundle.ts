@@ -146,8 +146,8 @@ export function importCheck(
   env: Readonly<Record<string, string>> = IMPORT_CHECK_ENV,
 ): Promise<ImportCheckResult> {
   const script = `${AWSLAMBDA_SHIM}
-const mod = await import(${JSON.stringify(pathToFileURL(bundle).href)});
-if (typeof mod.handler !== 'function') throw new Error('handler export is missing');
+const mod = await import(${JSON.stringify(pathToFileURL(bundle).href)}).catch((error) => { console.error(error instanceof Error ? error.message : 'import failed'); process.exitCode = 1; return {}; });
+if (typeof mod.handler !== 'function') { console.error('handler export is missing'); process.exitCode = 1; }
 process.stdout.write('handler:' + typeof mod.handler + '\\n');`;
   return runModuleScript(script, env, 'handler:function');
 }

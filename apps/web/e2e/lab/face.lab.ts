@@ -719,7 +719,7 @@ function watchAvatarSession(page: Page): FaceSessionSeen[] {
 
 const videoTile = (page: Page) => callScreen(page).locator('[data-slot="call-tile"][data-face="video"]');
 const presenceTile = (page: Page) =>
-  callScreen(page).locator('[data-slot="call-tile"][data-face="presence"]');
+  callScreen(page).locator('[data-slot="call-tile"]:is([data-face="presence"], [data-face="character"])');
 
 /** Each turn: page time sent, first face speak_started / audio onset / app playback after it, and the units said. */
 interface TurnTiming {

@@ -1,0 +1,10 @@
+{
+  "at": "2026-11-03T19:05:50.642Z",
+  "signedIn": true,
+  "priorThreadShown": true,
+  "newDecisionPreserved": true,
+  "studentTurnsCompleted": 4,
+  "consoleErrors": [],
+  "browser": "156.0.8078.4",
+  "boundary": "Real browser form and SSE through local Hono/Core/PostgreSQL, deterministic model; not live-model coaching."
+}

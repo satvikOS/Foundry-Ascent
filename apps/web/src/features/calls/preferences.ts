@@ -8,6 +8,7 @@ import { safeStorage } from '@/lib/storage';
  * preference (the dock's captions toggle, the call settings menu) stay in step through one small store.
  */
 const KEYS = {
+  presentation: 'fa.call.presentation',
   captions: 'fa.call.captions',
   captionSize: 'fa.call.caption-size',
   announceCaptions: 'fa.call.announce-captions',
@@ -84,4 +85,16 @@ export function useAnnounceCaptions(): [boolean, (on: boolean) => void] {
     write(KEYS.announceCaptions, next ? '1' : '0');
   }, []);
   return [on, update];
+}
+
+/** UI preference only: switching presentation never changes voice, identity or session. */
+export function usePresentationPreference(): [
+  'sphere' | 'character',
+  (value: 'sphere' | 'character') => void,
+] {
+  const value = useStored(KEYS.presentation) === 'sphere' ? 'sphere' : 'character';
+  const update = useCallback((next: 'sphere' | 'character') => {
+    write(KEYS.presentation, next);
+  }, []);
+  return [value, update];
 }

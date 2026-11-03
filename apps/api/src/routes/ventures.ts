@@ -7,6 +7,8 @@ import {
   MemoryAction,
   MemoryQuery,
   UpdateVentureRequest,
+  SaveStudentProfile,
+  LearningReflectionInput,
 } from '@foundry/contracts';
 import { type Core } from '@foundry/core';
 
@@ -24,6 +26,28 @@ export function registerVentureRoutes(r: RouteBuilder, core: Core): void {
   r.get('/ventures/:id/overview', async (c, ctx) =>
     c.json(await core.ventures.overview(ctx, pathParam(c, 'id'))),
   );
+
+  // Student-approved development context, independently scoped to person and venture.
+  r.get('/ventures/:id/student-profile', async (c, ctx) =>
+    c.json({ profile: await core.student.profile(ctx, pathParam(c, 'id')) }),
+  );
+  r.patch('/ventures/:id/student-profile', async (c, ctx) =>
+    c.json({ profile: await core.student.save(ctx, pathParam(c, 'id'), jsonBody(c, SaveStudentProfile)) }),
+  );
+  r.session('DELETE', '/ventures/:id/student-profile', async (c, ctx) => {
+    await core.student.forget(ctx, pathParam(c, 'id'));
+    return c.body(null, 204);
+  });
+  r.get('/ventures/:id/learning-log', async (c, ctx) =>
+    c.json({ items: await core.student.log(ctx, pathParam(c, 'id')) }),
+  );
+  r.post('/ventures/:id/learning-log', async (c, ctx) =>
+    c.json(await core.student.reflect(ctx, pathParam(c, 'id'), jsonBody(c, LearningReflectionInput)), 201),
+  );
+  r.session('DELETE', '/ventures/:id/learning-log/:reflectionId', async (c, ctx) => {
+    await core.student.removeReflection(ctx, pathParam(c, 'id'), pathParam(c, 'reflectionId'));
+    return c.body(null, 204);
+  });
 
   // Memory --------------------------------------------------------------------------------------------
   // One page (excerpts; `nextCursor`), so responses stay far below the Data API's 1 MB limit.

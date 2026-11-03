@@ -1,4 +1,5 @@
 import type {
+  StudentProfile,
   CommitmentStatus,
   ConversationDigest,
   NotebookCommitment,
@@ -57,6 +58,7 @@ export type PromptNotebook = Pick<
 export interface PromptContinuity {
   /** The founder's first name, used to address them. */
   founderFirstName?: string | null;
+  studentProfile?: StudentProfile | null;
   notebook?: PromptNotebook | null;
   /** Most recent conversation digests (at most three are used, newest first). */
   recentDigests?: readonly PromptDigest[];

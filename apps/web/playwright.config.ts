@@ -163,7 +163,8 @@ export default defineConfig({
     { name: 'setup', testMatch: /auth\.setup\.ts$/ },
     {
       name: 'desktop',
-      testMatch: /(journey|documents|knowledge|safety|a11y|calls|face|studio|chat|theme|words)\.spec\.ts$/,
+      testMatch:
+        /(journey|documents|knowledge|safety|a11y|calls|face|studio|chat|theme|words|upgrade)\.spec\.ts$/,
       dependencies: ['setup'],
       use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } },
     },

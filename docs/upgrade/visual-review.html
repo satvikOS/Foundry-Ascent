@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>
+    Foundry Ascent · upgrade review</title
+  ><style>
+    :root {
+      color-scheme: dark;
+      --bg: #000;
+      --fg: #f4f4f2;
+      --muted: #a6a6a3;
+      --line: #292929;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font:
+        15px system-ui,
+        sans-serif;
+      padding: 32px;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 550;
+      letter-spacing: -0.04em;
+    }
+    p {
+      max-width: 75ch;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+    nav {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin: 24px 0;
+    }
+    label {
+      display: grid;
+      gap: 8px;
+    }
+    select {
+      font: inherit;
+      color: inherit;
+      background: #111;
+      border: 1px solid #444;
+      padding: 10px;
+      border-radius: 8px;
+    }
+    select:focus-visible,
+    a:focus-visible {
+      outline: 2px solid #a3c8c9;
+      outline-offset: 4px;
+    }
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    figure {
+      margin: 0;
+      min-width: 0;
+    }
+    figcaption {
+      margin-bottom: 12px;
+      color: var(--muted);
+    }
+    img {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #111;
+    }
+    a {
+      color: inherit;
+    }
+    footer {
+      margin: 32px 0;
+    }
+    @media (max-width: 700px) {
+      body {
+        padding: 16px;
+      }
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        color-scheme: light;
+        --bg: #fafaf9;
+        --fg: #111110;
+        --muted: #5c5c58;
+        --line: #dededb;
+      }
+      select {
+        background: white;
+      }
+    }
+  </style>
+  <h1>Foundry Ascent · upgrade review</h1>
+  <p>
+    Actual local application captures, synthetic accounts and deterministic coaching fixtures. Before: initial
+    checkout 156203c. After: upgraded branch including upstream fixes through 04df967. Images establish visual
+    behavior, not model quality or speed. New learning and context controls have no direct before screen;
+    their prior venture screen is shown for comparison.
+  </p>
+  <nav>
+    <label
+      >Journey<select id="journey">
+        <option value="context">Return and review context</option>
+        <option value="avatar">Live avatar</option>
+        <option value="learning">Student development</option>
+        <option value="memory-review">Memory approval</option>
+        <option value="conversation">Conversation</option>
+        <option value="documents">Evidence documents</option>
+        <option value="help">Human handoff</option>
+      </select></label
+    ><label
+      >Viewport<select id="device">
+        <option>desktop</option>
+        <option>mobile</option>
+      </select></label
+    ><label
+      >Theme<select id="theme">
+        <option>dark</option>
+        <option>light</option>
+      </select></label
+    >
+  </nav>
+  <main>
+    <figure>
+      <figcaption>Before</figcaption>
+      <a id="before-link"><img id="before" alt="Foundry before this upgrade" /></a>
+    </figure>
+    <figure>
+      <figcaption>After</figcaption>
+      <a id="after-link"><img id="after" alt="Upgraded Foundry journey" /></a>
+    </figure>
+  </main>
+  <footer>
+    <a href="REPORT.md">Evidence and limitations</a> ·
+    <a href="PRESENTATION.md">Avatar contract and HeyGen replacement</a> ·
+    <a href="REFERENCES.md">Reference map</a>
+  </footer>
+  <script>
+    const controls = ['journey', 'device', 'theme'].map((id) => document.getElementById(id));
+    // Resolve DOM selections through a closed catalog; only repository image paths can be attached.
+    const assets = new Map();
+    for (const journey of [
+      'context',
+      'avatar',
+      'learning',
+      'memory-review',
+      'conversation',
+      'documents',
+      'help',
+    ]) {
+      for (const device of ['desktop', 'mobile']) {
+        for (const theme of ['dark', 'light']) {
+          const before =
+            {
+              context: 'venture-home',
+              avatar: 'call',
+              learning: 'venture-settings',
+              'memory-review': 'knowledge',
+            }[journey] ?? journey;
+          const custom = ['context', 'avatar', 'learning', 'memory-review'].includes(journey);
+          assets.set(`${journey}/${device}/${theme}`, {
+            before: `evidence/before/${before}-before-${device}-${theme}.png`,
+            after: custom
+              ? `evidence/after/${journey}-${device}-${theme}.png`
+              : `evidence/after/general/${journey}-after-${device}-${theme}.png`,
+          });
+        }
+      }
+    }
+    function show() {
+      const selected = assets.get(controls.map((c) => c.value).join('/'));
+      if (!selected) return;
+      for (const [id, url] of [
+        ['before', selected.before],
+        ['after', selected.after],
+      ]) {
+        document.getElementById(id).src = url;
+        document.getElementById(id + '-link').href = url;
+      }
+    }
+    controls.forEach((c) => c.addEventListener('change', show));
+    show();
+  </script>
+</html>

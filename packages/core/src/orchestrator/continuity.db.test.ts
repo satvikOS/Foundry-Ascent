@@ -523,7 +523,7 @@ async function liveTitled(title: string): Promise<memoryRepo.MemoryRecord[]> {
   ).filter((m) => m.title === title);
 }
 
-describe('memory kept automatically', () => {
+describe('memory proposed for student approval', () => {
   it('keeps a decision the founder states in a chat with that turn, though the model proposed nothing (LAB-K1)', async () => {
     const session = await scripted.sessions.create(maya, quietquad(), {});
     const generated = scriptedModel.calls.length;
@@ -538,8 +538,8 @@ describe('memory kept automatically', () => {
       expect.objectContaining({
         type: 'decision',
         content: 'The team decided to ask each library for a paid commitment before the pilot starts.',
-        status: 'confirmed',
-        keptAutomatically: true,
+        status: 'proposed',
+        keptAutomatically: false,
         origin: 'ai',
       }),
     ]);
@@ -572,7 +572,7 @@ describe('memory kept automatically', () => {
       session.id,
       'Two libraries agreed to a pilot in November and to share door-counter data.',
     );
-    const kept = (await scripted.memory.list(devin, quietquad(), { status: 'confirmed' })).items.filter((m) =>
+    const kept = (await scripted.memory.list(devin, quietquad(), { status: 'proposed' })).items.filter((m) =>
       m.sourceRefs.some((r) => r.kind === 'turn' && r.id === turn.id),
     );
     expect(kept.map((m) => m.title).sort()).toEqual(['Pilot agreement', 'Pilot libraries']);
@@ -581,7 +581,7 @@ describe('memory kept automatically', () => {
     if (item === undefined || other === undefined) throw new Error('nothing kept');
     expect(item).toMatchObject({
       origin: 'ai',
-      keptAutomatically: true,
+      keptAutomatically: false,
       approvedBy: null,
       visibility: 'team',
     });
@@ -592,13 +592,14 @@ describe('memory kept automatically', () => {
         { kind: 'turn', id: turn.id },
       ]),
     );
-    // Nothing waits for an approval.
+    // Both suggestions remain pending until the student approves them.
     expect(
       (await scripted.memory.list(maya, quietquad(), { status: 'proposed' })).items.filter(
-        (m) => m.origin === 'ai',
+        (m) => m.origin === 'ai' && m.sourceRefs.some((r) => r.id === turn.id),
       ),
-    ).toEqual([]);
+    ).toHaveLength(2);
     // The founder corrects one: the correction is hers, and survives the conversation's deletion.
+    await scripted.memory.act(maya, item.id, { action: 'approve' });
     const corrected = await scripted.memory.act(maya, item.id, {
       action: 'correct',
       patch: { content: 'Two libraries agreed to a pilot in December.' },
@@ -609,7 +610,7 @@ describe('memory kept automatically', () => {
     expect((await scripted.memory.get(maya, corrected?.id ?? '')).status).toBe('confirmed');
     // What the vEIR kept from that conversation alone is gone with it: the version it kept (the founder corrected
     // it), and the other item nobody touched.
-    expect(await statusOf(item.id)).toBe('deleted');
+    expect(await statusOf(item.id)).toBe('superseded');
     expect(await statusOf(other.id)).toBe('deleted');
     await expect(scripted.memory.get(maya, other.id)).rejects.toMatchObject({ code: 'not_found' });
     // Forgetting is the founder's at any time.
@@ -630,7 +631,7 @@ describe('memory kept automatically', () => {
     const turn = await say(maya, session.id, 'Honestly I just want this startup to make me rich, quickly.');
     const [goal] = await learnedFrom(turn.id);
     if (goal === undefined) throw new Error('the goal was not kept');
-    expect(goal).toMatchObject({ title: 'Personal goal', keptAutomatically: true, hasEmbedding: true });
+    expect(goal).toMatchObject({ title: 'Personal goal', keptAutomatically: false, hasEmbedding: true });
     // Maya makes the vEIR forget it, and the conversation ends: its distillation drafts the same item, then the
     // same goal in other words. Neither is kept, nothing has to be said again for it to come back otherwise.
     expect(await scripted.memory.act(maya, goal.id, { action: 'delete' })).toBeNull();
@@ -650,7 +651,7 @@ describe('memory kept automatically', () => {
         requestId: 'distill-forgotten',
         settled: true,
       });
-      expect(outcome).toMatchObject({ status: 'distilled', memoryProposed: 0 });
+      expect(outcome).toMatchObject({ status: 'skipped', reason: 'digest_deleted', memoryProposed: 0 });
     } finally {
       distilling = null;
     }
@@ -688,7 +689,7 @@ describe('memory kept automatically', () => {
         requestId: 'distill-corrected',
         settled: true,
       });
-      expect(outcome).toMatchObject({ status: 'distilled', memoryProposed: 0 });
+      expect(outcome).toMatchObject({ status: 'skipped', reason: 'digest_deleted', memoryProposed: 0 });
     } finally {
       distilling = null;
     }
@@ -720,7 +721,7 @@ describe('memory kept automatically', () => {
       // turn's work is done.
       expect(timeline).toEqual(['turn.completed', 'memory-embed-start', 'memory-embed-done']);
       const [reports] = await learnedFrom(turn.id);
-      expect(reports).toMatchObject({ keptAutomatically: true, hasEmbedding: true });
+      expect(reports).toMatchObject({ keptAutomatically: false, hasEmbedding: true });
     } finally {
       memoryEmbedMs = 0;
     }
@@ -743,30 +744,24 @@ describe('what the vEIR keeps', () => {
     const goalTurn = await say(maya, first.id, 'Frankly I want the company to make me a lot of money fast.');
     const kept = await learnedFrom(goalTurn.id);
     expect(kept.map((m) => m.title)).toEqual(['Money goal']);
-    expect(kept[0]).toMatchObject({ keptAutomatically: true, hasEmbedding: true });
+    expect(kept[0]).toMatchObject({ keptAutomatically: false, hasEmbedding: true });
 
     // The same thing said another way in a later conversation is not kept twice: it names the new conversation.
-    proposals.Pilot = [candidate('Pilot budget cap', 'The pilot budget is limited to five thousand.')];
-    const budgetTurn = await say(maya, first.id, 'Pilot budget is limited to five thousand.');
+    proposals.Pilot = [candidate('Pilot budget cap', 'The pilot budget is limited to 6100.')];
+    const budgetTurn = await say(maya, first.id, 'Pilot budget is limited to 6100.');
     const [budget] = await learnedFrom(budgetTurn.id);
     if (budget === undefined) throw new Error('the budget was not kept');
-    proposals.We = [
-      candidate('Pilot spending limit', 'Pilot spending cannot go beyond the five thousand cap.'),
-    ];
+    proposals.We = [candidate('Pilot spending limit', 'Pilot spending cannot go beyond the 6100 cap.')];
     const second = await scripted.sessions.create(maya, quietquad(), {});
-    const againTurn = await say(
-      maya,
-      second.id,
-      'We cannot let pilot spending go beyond the five thousand cap.',
-    );
+    const againTurn = await say(maya, second.id, 'We cannot let pilot spending go beyond the 6100 cap.');
     const again = (await learnedFrom(againTurn.id)).filter((m) => m.status !== 'deleted');
     expect(again.map((m) => m.id)).toEqual([budget.id]);
     expect(again[0]?.sourceRefs).toEqual(
       expect.arrayContaining([{ kind: 'session', id: second.id, label: 'Learned from the conversation' }]),
     );
     // A different number is a different fact, however close the meaning.
-    proposals.Actually = [candidate('Pilot budget raised', 'The pilot budget is limited to 7000 now.')];
-    const raisedTurn = await say(maya, second.id, 'Actually the pilot budget is limited to 7000 now.');
+    proposals.Actually = [candidate('Pilot budget raised', 'The pilot budget is limited to 7300 now.')];
+    const raisedTurn = await say(maya, second.id, 'Actually the pilot budget is limited to 7300 now.');
     expect((await learnedFrom(raisedTurn.id)).map((m) => m.title)).toEqual(['Pilot budget raised']);
   });
 
@@ -816,13 +811,17 @@ describe('what the vEIR keeps', () => {
     const report = await scripted.maintenance.runDaily({ requestId: 'maintenance-legacy' });
     // The constraint the founder stated after "and" was kept by the turn itself (founder-statements.ts reads each
     // clause), so the legacy proposal of it is a duplicate; the goal is kept from the proposals.
-    expect(report.pendingProposals).toMatchObject({ kept: 1, duplicates: 2, notTheFounders: 1 });
-    expect(await statusOf(goal)).toBe('confirmed');
-    expect(await statusOf(constraint)).toBe('expired');
+    expect(report.pendingProposals.kept).toBe(0);
+    // Maintenance also examines earlier pending fixtures in this shared venture. Assert the specific
+    // retirements below, without coupling this case to the number of earlier proposals.
+    expect(report.pendingProposals.duplicates).toBeGreaterThanOrEqual(2);
+    expect(report.pendingProposals.notTheFounders).toBeGreaterThanOrEqual(1);
+    expect(await statusOf(goal)).toBe('proposed');
+    expect(await statusOf(constraint)).toBe('proposed');
     expect(await statusOf(advice)).toBe('expired');
     expect(await statusOf(restated)).toBe('expired');
     const kept = await h.t.db.system((sx) => memoryRepo.getMemory(sx, goal));
-    expect(kept).toMatchObject({ keptAutomatically: true, approvedBy: null });
+    expect(kept).toMatchObject({ keptAutomatically: false, approvedBy: null });
     // Run again: nothing left to settle.
     expect(
       (await scripted.maintenance.runDaily({ requestId: 'maintenance-legacy-2' })).pendingProposals,
@@ -1208,10 +1207,11 @@ describe('continuity keyed by the venture and the founder (review)', () => {
     const long = await h.core.sessions.create(maya, quietquad(), {});
     await h.t.db.system((sx) =>
       sx.query(
-        `INSERT INTO turns (tenant_id, venture_id, session_id, ordinal, author_id, mode, founder_text, status, response)
+        `INSERT INTO turns (tenant_id, venture_id, session_id, ordinal, author_id, mode, founder_text, status, response, created_at)
          SELECT :tenant, :venture, :session, n, :author, 'coach', 'Message ' || n, 'completed',
-                jsonb_build_object('answer', repeat('A long answer. ', 200))
-         FROM generate_series(1, 40) AS n`,
+                jsonb_build_object('answer', repeat('A long answer. ', 200)),
+                now() - interval '30 days' + n * interval '1 second'
+         FROM generate_series(1, 4000) AS n`,
         {
           tenant: p.uuid(h.seed.tenantId),
           venture: p.uuid(quietquad()),
@@ -1220,6 +1220,10 @@ describe('continuity keyed by the venture and the founder (review)', () => {
         },
       ),
     );
+    // A 40-row fixture fits on a few pages: after statistics refresh PostgreSQL may correctly prefer
+    // scanning it. Exercise the long-history plan at meaningful cardinality with current statistics.
+    // Do not disable sequential scans: the plan must choose the existing ordinal index on its own.
+    await h.t.db.system((sx) => sx.query('ANALYZE turns'));
     const plan = await h.t.db.system((sx) =>
       sx.query(`EXPLAIN (ANALYZE, FORMAT JSON) ${sessionsRepo.LAST_EXCHANGES_SQL}`, {
         ids: p.uuidArray([long.id]),
@@ -1244,7 +1248,7 @@ describe('continuity keyed by the venture and the founder (review)', () => {
       sessionsRepo.listLastExchanges(sx, { sessionIds: [long.id], perSession: 6 }),
     );
     expect(exchanges.map((x) => x.founderText)).toEqual(
-      [35, 36, 37, 38, 39, 40].map((n) => `Message ${String(n)}`),
+      [3995, 3996, 3997, 3998, 3999, 4000].map((n) => `Message ${String(n)}`),
     );
     expect(exchanges.map((x) => x.fromEnd)).toEqual([6, 5, 4, 3, 2, 1]);
     await h.core.sessions.remove(maya, long.id);
@@ -1557,7 +1561,12 @@ describe('continuity keyed by the venture and the founder (review)', () => {
 
   it('never opens with a greeting the founder said, but with what they brought (review)', async () => {
     await ageAll(10);
+    // A deterministic previous thread: "whether" is question framing, not evidence of topic overlap.
+    // Pricing and pilot locations share only "libraries"; the new substantive question must survive.
+    const previous = await h.core.sessions.create(maya, quietquad(), {});
+    await talk(maya, previous.id, 'Should we charge libraries per seat?');
     const call = await h.core.sessions.create(maya, quietquad(), {});
+    expect(call.opener).toContain('whether to charge libraries per seat');
     await talk(maya, call.id, 'Hi');
     await talk(maya, call.id, 'Should the pilot run in two libraries or three?');
     await talk(maya, call.id, 'ok');
@@ -1578,17 +1587,30 @@ describe('New chat greets with the line its conversation opens with', () => {
     );
   }
 
-  it('opens with the line New chat showed, however long the founder took to write', async () => {
+  it.each([
+    [0, 456],
+    [456, 0],
+  ])('keeps the shown opener across timestamp precision %i → %i µs', async (firstMicros, nextMicros) => {
     await ageAll(5);
     const before = await h.core.sessions.create(maya, quietquad(), {});
     await talk(maya, before.id, 'We signed the first library for a paid pilot.');
-    await idle(before.id, 10);
+    const idlePrecisely = (minutes: number, micros: number) =>
+      h.t.db.system((sx) =>
+        sx.query(
+          `UPDATE coaching_sessions
+           SET last_activity_at = date_trunc('milliseconds', now()) - make_interval(mins => :minutes)
+                                  + :micros * interval '1 microsecond'
+           WHERE id = :id`,
+          { id: p.uuid(before.id), minutes: p.int(minutes), micros: p.int(micros) },
+        ),
+      );
+    await idlePrecisely(10, firstMicros);
     const shown = await h.core.sessions.previewOpener(maya, quietquad());
     expect(shown.opener).toMatch(/about 10 minutes ago/i);
     expect(Date.parse(shown.at)).toBeGreaterThan(Date.now() - 60_000);
 
     // Five minutes of writing later: the last conversation is 15 minutes old now, and a line phrased now says so.
-    await idle(before.id, 15);
+    await idlePrecisely(15, nextMicros);
     const now = await h.core.sessions.previewOpener(maya, quietquad());
     expect(now.opener).toMatch(/about 15 minutes ago/i);
     expect(now.opener).not.toBe(shown.opener);

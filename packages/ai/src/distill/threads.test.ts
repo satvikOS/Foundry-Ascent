@@ -102,6 +102,17 @@ describe('isAboutThread', () => {
     ).toBe(true);
   });
 
+  it('does not confuse different decisions that share question framing and one subject word', () => {
+    const pricing = threadWords('Last time, we talked about whether to charge libraries per seat.');
+    const replies = ['Hi', 'Should the pilot run in two libraries or three?', 'ok'];
+    expect(
+      untakenThread('Last time, we talked about whether to charge libraries per seat.', replies),
+    ).toEqual(pricing);
+    expect(isAboutThread('whether the pilot should run in two libraries or three', pricing)).toBe(false);
+    expect(isAboutThread('whether to charge libraries by seat count', pricing)).toBe(true);
+    expect([...pricing]).not.toContain('whether');
+  });
+
   it('never takes another subject for it', () => {
     expect(isAboutThread("the cofounder's full-time commitment requirements", raised)).toBe(false);
     expect(isAboutThread('your five-minute pitch at the health innovation competition', raised)).toBe(false);

@@ -519,6 +519,9 @@ export class SpeechPlayer {
     );
     source.onended = () => {
       this.audio.clearTimeout(guard);
+      source.onended = null;
+      source.disconnect();
+      source.buffer = null;
       settle(true);
     };
     source.start();

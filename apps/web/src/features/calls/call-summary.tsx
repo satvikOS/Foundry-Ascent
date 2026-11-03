@@ -160,8 +160,7 @@ function SummaryDetails({
   onLeave: () => void;
 }) {
   const remembered = !isPrivate && !supportShown && canWrite && summary.turnCount > 0;
-  // What the call saved to Knowledge, as it stands now (anything forgotten since is left out): kept by the vEIR
-  // by itself, or saved before memory was kept automatically.
+  // Show pending suggestions and previously approved items as they stand now.
   const savedIds = remembered ? [...(summary.memoryKeptIds ?? []), ...summary.memoryProposalIds] : [];
   const memories = useQueries({ queries: savedIds.map((id) => memoryItemQueryOptions(id)) });
   const saved = savedByIds(
@@ -182,15 +181,14 @@ function SummaryDetails({
           Private: nothing is remembered.
         </p>
       ) : remembered ? (
-        // A quiet "remembered" state: the call is kept with the conversation and the vEIR picks up from it
-        // next time, so the founder can trust the next call knows.
+        // Distinguish the saved session record from memory that still needs approval.
         <div className="grid justify-items-center gap-1">
           <p
             data-testid="call-remembered"
             className="flex items-center justify-center gap-1.5 text-small text-muted-foreground"
           >
             <Check aria-hidden className="size-4" />
-            Remembered for next time.
+            Conversation saved.
           </p>
           <MemorySaved
             tenant={tenant}

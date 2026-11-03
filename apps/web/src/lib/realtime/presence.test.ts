@@ -21,7 +21,7 @@ describe('PresenceAvatar (built-in avatar)', () => {
     presence.setLevels({ veir: 0.1, founder: 0 });
     expect(Number(root?.style.getPropertyValue('--fa-veir'))).toBeGreaterThan(0);
     presence.speak({ text: 'Hello.' });
-    expect(root?.classList.contains('is-blooming')).toBe(true);
+    expect(root?.classList.contains('is-blooming')).toBe(false);
 
     presence.unmount();
     expect(stage.querySelector('.fa-presence')).toBeNull();

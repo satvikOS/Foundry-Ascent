@@ -40,6 +40,9 @@ export const queryKeys = {
     memoryAll: (ventureId: string) => [ROOT, 'venture', ventureId, 'memory'] as const,
     memory: (ventureId: string, filters: MemoryFilters = {}) =>
       [ROOT, 'venture', ventureId, 'memory', filters] as const,
+    contextMemory: (ventureId: string) => [ROOT, 'venture', ventureId, 'memory', 'brief'] as const,
+    studentProfile: (ventureId: string) => [ROOT, 'venture', ventureId, 'student-profile'] as const,
+    learningLog: (ventureId: string) => [ROOT, 'venture', ventureId, 'learning-log'] as const,
     documents: (ventureId: string) => [ROOT, 'venture', ventureId, 'documents'] as const,
     escalations: (ventureId: string) => [ROOT, 'venture', ventureId, 'escalations'] as const,
     team: (ventureId: string) => [ROOT, 'venture', ventureId, 'team'] as const,

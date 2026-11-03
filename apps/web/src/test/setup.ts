@@ -13,8 +13,8 @@ const noop = (): void => undefined;
 if (!('matchMedia' in window)) {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
-    value: (query: string): MediaQueryList =>
-      ({
+    value: (query: string): MediaQueryList => {
+      const mediaQuery = {
         matches: false,
         media: query,
         onchange: null,
@@ -23,7 +23,9 @@ if (!('matchMedia' in window)) {
         addListener: noop,
         removeListener: noop,
         dispatchEvent: () => false,
-      }) as MediaQueryList,
+      };
+      return mediaQuery;
+    },
   });
 }
 

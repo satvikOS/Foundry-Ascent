@@ -1,0 +1,232 @@
+{
+  "runs": [
+    {
+      "source": "initial-results.json",
+      "at": "2026-11-03T16:53:27.145Z",
+      "browser": "156.0.8078.4",
+      "host": "arm64",
+      "node": "v26.0.0",
+      "cases": 160,
+      "passed": 40,
+      "failed": 120,
+      "skipped": 0,
+      "blocked": 0,
+      "concurrency": 1,
+      "signalStart": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "interruptionToGraphSilence": {
+        "n": 60,
+        "p50": 0,
+        "p95": 0.10000002384185791,
+        "p99": 0.10000002384185791
+      },
+      "audioToMouthSameFrame": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "boundary": "Synthetic WAV \u2192 real decodeAudioData \u2192 AudioBufferSourceNode \u2192 gain \u2192 analyser \u2192 fake Chromium output. Mouth sampled in the same polling callback. No acoustic loopback, accents, Bluetooth, live ASR/TTS or human listening tested."
+    },
+    {
+      "source": "media.log",
+      "at": "2026-11-03T16:56:05.625Z",
+      "browser": "156.0.8078.4",
+      "host": "arm64",
+      "node": "v24.21.0",
+      "cases": 160,
+      "passed": 160,
+      "failed": 0,
+      "skipped": 0,
+      "blocked": 0,
+      "concurrency": 1,
+      "signalStart": {
+        "n": 120,
+        "p50": 11.199999928474426,
+        "p95": 45.300000071525574,
+        "p99": 50.89999997615814
+      },
+      "interruptionToGraphSilence": {
+        "n": 60,
+        "p50": 20.09999990463257,
+        "p95": 64.40000009536743,
+        "p99": 66.59999990463257
+      },
+      "audioToMouthSameFrame": {
+        "n": 120,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0
+      },
+      "boundary": "Synthetic WAV \u2192 real decodeAudioData \u2192 AudioBufferSourceNode \u2192 gain \u2192 analyser \u2192 fake Chromium output. Mouth sampled in the same polling callback. No acoustic loopback, accents, Bluetooth, live ASR/TTS or human listening tested."
+    },
+    {
+      "source": "media-probe.log",
+      "at": "2026-11-03T16:54:42.234Z",
+      "browser": "156.0.8078.4",
+      "host": "arm64",
+      "node": "v26.0.0",
+      "cases": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "blocked": 0,
+      "concurrency": 1,
+      "signalStart": {
+        "n": 1,
+        "p50": 21.600000023841858,
+        "p95": 21.600000023841858,
+        "p99": 21.600000023841858
+      },
+      "interruptionToGraphSilence": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "audioToMouthSameFrame": {
+        "n": 1,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0
+      },
+      "boundary": "Synthetic WAV \u2192 real decodeAudioData \u2192 AudioBufferSourceNode \u2192 gain \u2192 analyser \u2192 fake Chromium output. Mouth sampled in the same polling callback. No acoustic loopback, accents, Bluetooth, live ASR/TTS or human listening tested."
+    },
+    {
+      "source": "media-final.log",
+      "at": "2026-11-03T17:14:11.841Z",
+      "browser": "156.0.8078.4",
+      "host": "arm64",
+      "node": "v24.21.0",
+      "cases": 160,
+      "passed": 160,
+      "failed": 0,
+      "skipped": 0,
+      "blocked": 0,
+      "concurrency": 1,
+      "signalStart": {
+        "n": 120,
+        "p50": 11.299999952316284,
+        "p95": 45.5,
+        "p99": 49.39999997615814
+      },
+      "interruptionToGraphSilence": {
+        "n": 60,
+        "p50": 18.699999928474426,
+        "p95": 64.19999992847443,
+        "p99": 67
+      },
+      "audioToMouthSameFrame": {
+        "n": 120,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0
+      },
+      "boundary": "Synthetic WAV \u2192 real decodeAudioData \u2192 AudioBufferSourceNode \u2192 gain \u2192 analyser \u2192 fake Chromium output. Mouth sampled in the same polling callback. No acoustic loopback, accents, Bluetooth, live ASR/TTS or human listening tested."
+    },
+    {
+      "source": "media-delivery.log",
+      "at": "2026-11-03T17:30:27.129Z",
+      "browser": "156.0.8078.4",
+      "host": "arm64",
+      "node": "v24.21.0",
+      "cases": 160,
+      "passed": 160,
+      "failed": 0,
+      "skipped": 0,
+      "blocked": 0,
+      "concurrency": 1,
+      "signalStart": {
+        "n": 120,
+        "p50": 11.299999952316284,
+        "p95": 44.800000071525574,
+        "p99": 50.800000071525574
+      },
+      "interruptionToGraphSilence": {
+        "n": 60,
+        "p50": 19.40000009536743,
+        "p95": 64.10000002384186,
+        "p99": 65.69999992847443
+      },
+      "audioToMouthSameFrame": {
+        "n": 120,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0
+      },
+      "boundary": "Synthetic WAV \u2192 real decodeAudioData \u2192 AudioBufferSourceNode \u2192 gain \u2192 analyser \u2192 fake Chromium output. Mouth sampled in the same polling callback. No acoustic loopback, accents, Bluetooth, live ASR/TTS or human listening tested."
+    },
+    {
+      "source": "integrated/results.json",
+      "at": "2026-11-03T20:13:14.066Z",
+      "browser": "156.0.8078.4",
+      "host": "arm64",
+      "node": "v24.21.0",
+      "cases": 160,
+      "passed": 10,
+      "failed": 150,
+      "skipped": 0,
+      "blocked": 0,
+      "concurrency": 1,
+      "signalStart": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "interruptionToGraphSilence": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "audioToMouthSameFrame": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null
+      },
+      "boundary": "Synthetic WAV \u2192 real decodeAudioData \u2192 AudioBufferSourceNode \u2192 gain \u2192 analyser \u2192 fake Chromium output. Mouth sampled in the same polling callback. No acoustic loopback, accents, Bluetooth, live ASR/TTS or human listening tested."
+    },
+    {
+      "source": "integrated-final/results.json",
+      "at": "2026-11-03T20:14:21.991Z",
+      "browser": "156.0.8078.4",
+      "host": "arm64",
+      "node": "v24.21.0",
+      "cases": 160,
+      "passed": 160,
+      "failed": 0,
+      "skipped": 0,
+      "blocked": 0,
+      "concurrency": 1,
+      "signalStart": {
+        "n": 120,
+        "p50": 9.799999952316284,
+        "p95": 47.5,
+        "p99": 50.700000047683716
+      },
+      "interruptionToGraphSilence": {
+        "n": 60,
+        "p50": 18.5,
+        "p95": 64.10000002384186,
+        "p99": 65
+      },
+      "audioToMouthSameFrame": {
+        "n": 120,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0
+      },
+      "boundary": "Synthetic WAV \u2192 real decodeAudioData \u2192 AudioBufferSourceNode \u2192 gain \u2192 analyser \u2192 fake Chromium output. Mouth sampled in the same polling callback. No acoustic loopback, accents, Bluetooth, live ASR/TTS or human listening tested."
+    }
+  ],
+  "executedCases": 971,
+  "passed": 701,
+  "failed": 270,
+  "note": "Repeated 160-case matrix executions and probe. Initial timer-binding failures and the integrated IPv4/IPv6 harness-origin mismatch remain in denominators; integrated-final/results.json is the repaired acceptance run."
+}

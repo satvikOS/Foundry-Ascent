@@ -333,8 +333,8 @@ describe('HeygenLiveAvatarFace: the server-held control channel', () => {
       SECOND,
       SECOND / 2,
     ]);
-    // The first chunk's id names the utterance; every command has its own, so each acknowledgement is matched.
-    expect(new Set(control.frames.map((frame) => frame.event_id)).size).toBe(control.frames.length);
+    // All chunk responses correlate to the first chunk's utterance id (official LITE events contract).
+    expect(new Set(control.frames.map((frame) => frame.event_id)).size).toBe(1);
     expect(control.frames.at(-1)?.type).toBe('agent.speak_end');
     expect(done).toBe(false);
     expect(control.closed()).toBe(0);
@@ -343,6 +343,54 @@ describe('HeygenLiveAvatarFace: the server-held control channel', () => {
     control.emit(commit);
     await speaking;
     expect(control.closed()).toBe(1);
+  });
+
+  it('counts duplicate chunk acknowledgements once and never mistakes a commit for appended audio', async () => {
+    let append = 0;
+    let utterance = '';
+    const control = socket({
+      reply: (frame) => {
+        utterance = String(frame.event_id);
+        if (frame.type === 'agent.speak') {
+          append += 1;
+          if (append === 1)
+            return [
+              { type: 'agent.audio_buffer_appended', event_id: 'same-ack', source_event_id: utterance },
+              { type: 'agent.audio_buffer_appended', event_id: 'same-ack', source_event_id: utterance },
+            ];
+          return [];
+        }
+        return undefined;
+      },
+    });
+    let done = false;
+    const speaking = adapter(vendor({}).fetchFn, control.open)
+      .speak(handle, audio(SECOND * 2, true))
+      .then(() => {
+        done = true;
+      });
+    await settle();
+    expect(done).toBe(false);
+    control.emit({ type: 'agent.audio_buffer_appended', event_id: 'second-ack', source_event_id: utterance });
+    await speaking;
+    expect(done).toBe(true);
+  });
+
+  it('preserves an utterance ID across parts and invalidates it on interruption', async () => {
+    const control = socket();
+    const provider = adapter(vendor({}).fetchFn, control.open);
+    await provider.speak(handle, audio(SECOND, false));
+    const firstId = control.frames[0]?.event_id;
+    await provider.speak(handle, { ...audio(SECOND, true), first: false });
+    expect(control.frames.filter((f) => f.type === 'agent.speak').map((f) => f.event_id)).toEqual([
+      firstId,
+      firstId,
+    ]);
+    await provider.speak(handle, audio(SECOND, false));
+    await provider.interrupt(handle);
+    await expect(provider.speak(handle, { ...audio(SECOND, true), first: false })).rejects.toThrow(
+      'utterance missing',
+    );
   });
 
   it('leaves the utterance open on a part that is not the last, once its audio was taken', async () => {

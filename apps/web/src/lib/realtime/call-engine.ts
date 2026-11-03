@@ -1,3 +1,4 @@
+import { VoiceTimings } from './voice-timings';
 import type { CallEndReason, CallState, SttGrant, TurnBlockedDetail, TurnView } from '@foundry/contracts';
 
 import type { CreateTurnBody, StreamTurnOptions, TurnStreamEventT } from '../api/sse';
@@ -181,6 +182,7 @@ interface ActiveTurn {
   done: boolean;
   interrupted: boolean;
   readonly submittedAt: number;
+  readonly estimatedVoiceEndAt: number | null;
   firstAudioAt: number | null;
 }
 
@@ -255,6 +257,14 @@ export class CallEngine {
   private micOpenMs = 0;
   private reconnectSince: number | null = null;
   private reconnectAttempt = 0;
+  private readonly timing = new VoiceTimings();
+  private lastVoicedAt: number | null = null;
+
+  /** Numeric diagnostics only; VAD boundary and playback callbacks are browser estimates. */
+  diagnostics() {
+    return this.timing.report();
+  }
+
   private readonly stats = { bargeIns: 0, reconnects: 0, firstAudioMs: [] as number[] };
 
   constructor(private readonly deps: CallEngineDeps) {
@@ -317,17 +327,13 @@ export class CallEngine {
     this.set({ captions: { ...this.snapshot.captions, ...patch } });
   }
 
-  /** Both sides' loudness for the avatar (0–1). A voice without a signal to measure gets a gentle pulse. */
+  /** Measured loudness only (0–1). Native speech exposes no waveform, so it reports zero. */
   levels(): { veir: number; founder: number } {
     const speaking = this.snapshot.activity === 'speaking' && this.snapshot.phase === 'live';
     let veir = 0;
     if (speaking && this.player) {
       if (this.snapshot.voice === 'server') {
         veir = this.player.level();
-      } else if (this.snapshot.voice === 'browser') {
-        // The browser's voice cannot be measured: a gentle pulse while it reads.
-        const t = this.deps.clock.now() / 1000;
-        veir = 0.03 + 0.025 * Math.abs(Math.sin(t * 5.3) * Math.sin(t * 2.1));
       }
     }
     return { veir, founder: this.snapshot.muted ? 0 : this.founderLevel };
@@ -338,7 +344,8 @@ export class CallEngine {
     const s = this.snapshot;
     if (s.phase === 'starting' || s.reconnecting) return 'connecting';
     if (s.phase !== 'live') return 'idle';
-    if (s.activity === 'speaking') return 'speaking';
+    if (s.held || s.audioBlocked) return 'muted';
+    if (s.activity === 'speaking') return s.voice === 'captions' ? 'idle' : 'speaking';
     if (s.activity === 'thinking') return 'thinking';
     if (s.muted) return 'muted';
     return s.activity === 'connecting' ? 'connecting' : 'listening';
@@ -354,6 +361,7 @@ export class CallEngine {
   async start(options: StartCallOptions): Promise<void> {
     if (this.snapshot.phase !== 'idle') return;
     const epoch = ++this.epoch;
+    const setupStarted = this.deps.clock.now();
     this.resetCounters();
     this.set({
       ...IDLE_CALL,
@@ -365,6 +373,8 @@ export class CallEngine {
     });
     try {
       await this.open(options, epoch);
+      if (this.getSnapshot().phase === 'live')
+        this.timing.record('sessionSetup', this.deps.clock.now() - setupStarted);
     } catch {
       // A browser API that threw: never leave a half-open call or a live microphone behind.
       if (epoch !== this.epoch) return;
@@ -918,7 +928,10 @@ export class CallEngine {
     }
     this.stt?.sendPcm(pcm);
     const vad = this.vad.update(rms);
-    if (vad.voiced) this.endpointer.onVoice();
+    if (vad.voiced) {
+      this.endpointer.onVoice();
+      this.lastVoicedAt = this.deps.clock.now();
+    }
     if (vad.onset && s.activity === 'speaking') this.duckForBargeIn();
     if (s.activity === 'speaking' && s.talkMode === 'hands_free') {
       // The voice runs on over the vEIR: the founder is taking the floor, before the transcript says so.
@@ -951,6 +964,8 @@ export class CallEngine {
     if (s.phase !== 'live' || s.muted) return;
     if (s.talkMode === 'push_to_talk' && !s.talking && this.releaseTimer === null) return;
     if (s.halfDuplex && s.activity === 'speaking') return;
+    if (!result.partial && this.lastVoicedAt !== null)
+      this.timing.record('transcriptAfterVadEnd', this.deps.clock.now() - this.lastVoicedAt);
     this.endpointer.onResult(result);
     const heard = this.endpointer.text();
     if (heard === '') return;
@@ -1060,8 +1075,12 @@ export class CallEngine {
       done: false,
       interrupted: false,
       submittedAt: this.deps.clock.now(),
+      estimatedVoiceEndAt: this.snapshot.input === 'voice' ? this.lastVoicedAt : null,
       firstAudioAt: null,
     };
+    if (turn.estimatedVoiceEndAt !== null)
+      this.timing.record('endpointing', turn.submittedAt - turn.estimatedVoiceEndAt);
+    this.lastVoicedAt = null;
     this.turn = turn;
     this.turnCount += 1;
     this.spokenSoFar = '';
@@ -1183,7 +1202,9 @@ export class CallEngine {
     const turn = this.turn;
     if (this.bargeTimer !== null) this.deps.clock.clearTimeout(this.bargeTimer);
     this.bargeTimer = null;
+    const stopStarted = this.deps.clock.now();
     this.player?.stop();
+    this.timing.record('interruptToStopScheduled', this.deps.clock.now() - stopStarted);
     this.stats.bargeIns += 1;
     const call = this.snapshot.call;
     if (turn && !turn.interrupted) {
@@ -1219,9 +1240,19 @@ export class CallEngine {
         onUnitStart: (unit, route) => {
           if (!current()) return;
           const turn = this.turn;
-          if (turn && unit.turnId !== null && unit.turnId === turn.turnId && turn.firstAudioAt === null) {
+          if (
+            route !== 'captions' &&
+            turn &&
+            unit.turnId !== null &&
+            unit.turnId === turn.turnId &&
+            turn.firstAudioAt === null
+          ) {
             turn.firstAudioAt = clock.now();
             this.stats.firstAudioMs.push(turn.firstAudioAt - turn.submittedAt);
+            if (this.stats.firstAudioMs.length > 128) this.stats.firstAudioMs.shift();
+            this.timing.record('submitToPlayback', turn.firstAudioAt - turn.submittedAt);
+            if (turn.estimatedVoiceEndAt !== null)
+              this.timing.record('vadEndToPlayback', turn.firstAudioAt - turn.estimatedVoiceEndAt);
           }
           this.spokenSoFar = `${this.spokenSoFar} ${unit.text}`;
           this.set({
@@ -1341,6 +1372,8 @@ export class CallEngine {
   }
 
   private resetCounters(): void {
+    this.timing.clear();
+    this.lastVoicedAt = null;
     this.turnCount = 0;
     this.missedHeartbeats = 0;
     this.falseBargeIns = 0;

@@ -1,0 +1,789 @@
+{
+  "config": {
+    "argv": [
+      "/opt/homebrew/Cellar/node@24/24.21.0/bin/node",
+      "/Users/account_clawteam1/Foundry-Ascent/apps/web/node_modules/@playwright/test/cli.js",
+      "test",
+      "web-perf.chat.spec.ts",
+      "--project=desktop",
+      "--repeat-each=5",
+      "--reporter=line,json"
+    ],
+    "configFile": "/Users/account_clawteam1/Foundry-Ascent/apps/web/playwright.config.ts",
+    "rootDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "setup",
+        "name": "setup",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "/auth\\.setup\\.ts$/"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 5,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "desktop",
+        "name": "desktop",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "/(journey|documents|knowledge|safety|a11y|calls|face|studio|chat|theme|words|upgrade)\\.spec\\.ts$/"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "mobile",
+        "name": "mobile",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "/mobile\\.spec\\.ts$/"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 5,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "desktop",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "snapshotDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": {},
+        "timeout": 60000,
+        "use": {
+          "baseURL": "http://localhost:4173",
+          "trace": "retain-on-failure",
+          "screenshot": "only-on-failure",
+          "video": "off",
+          "locale": "en-US",
+          "timezoneId": "UTC",
+          "actionTimeout": 15000,
+          "navigationTimeout": 30000,
+          "launchOptions": {
+            "args": [
+              "--disable-audio-output"
+            ]
+          },
+          "browserName": "chromium",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          }
+        },
+        "dependencies": [
+          "setup"
+        ],
+        "ignoreSnapshots": false,
+        "__projectId": "desktop"
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "auth.setup.ts",
+      "file": "auth.setup.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "owner and founder sessions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "setup",
+              "projectName": "setup",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 562,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-03T17:24:35.119Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "17e3fe6f4d9d8bd79c6b-7f57149bee6534b4fc99",
+          "file": "auth.setup.ts",
+          "line": 18,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "web-perf.chat.spec.ts",
+      "file": "web-perf.chat.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "page speed",
+          "file": "web-perf.chat.spec.ts",
+          "line": 139,
+          "column": 6,
+          "specs": [
+            {
+              "title": "cold load of New chat, its fonts, and the main route transitions (laptop)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3478,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf {\"label\":\"final-laptop\",\"device\":{\"name\":\"laptop\",\"cpuSlowdown\":1},\"network\":{\"offline\":false,\"latency\":40,\"downloadThroughput\":2500000,\"uploadThroughput\":625000},\"ttfbMs\":1.2999999523162842,\"domContentLoadedMs\":345.2000000476837,\"fcpMs\":180,\"entryScriptBytes\":83842,\"scriptsBeforeComposer\":76,\"sansFont\":{\"startMs\":172.20000004768372,\"endMs\":235.20000004768372},\"serifFont\":{\"startMs\":614.5,\"endMs\":700.7999999523163},\"preloadedFonts\":[],\"paints\":{\"cls\":0.003138039336446545,\"lcp\":640,\"shifted\":[\"p.boot-brand +0.000\",\"h1.mt-6.font-serif.text-title +0.000\",\"div.min-h-0.flex-1.overflow-y-auto +0.003\",\"button.group.flex.h-8 +0.003\",\"div.ml-auto.flex.items-center +0.003\"]},\"shellMs\":630.2000000476837,\"composerMs\":639.2999999523163,\"transitions\":{\"knowledge\":{\"ms\":81.70000004768372,\"cls\":0},\"documents\":{\"ms\":70.79999995231628,\"cls\":0},\"knowledgeAgain\":{\"ms\":14.5,\"cls\":0},\"newChat\":{\"ms\":13,\"cls\":0}}}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:24:35.984Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-1b1edc802b2ef85c747e",
+              "file": "web-perf.chat.spec.ts",
+              "line": 143,
+              "column": 5
+            },
+            {
+              "title": "cold load of New chat, its fonts, and the main route transitions (phone-cpu)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3960,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf {\"label\":\"final-phone-cpu\",\"device\":{\"name\":\"phone-cpu\",\"cpuSlowdown\":4},\"network\":{\"offline\":false,\"latency\":40,\"downloadThroughput\":2500000,\"uploadThroughput\":625000},\"ttfbMs\":1,\"domContentLoadedMs\":429,\"fcpMs\":200,\"entryScriptBytes\":83842,\"scriptsBeforeComposer\":76,\"sansFont\":{\"startMs\":182.89999997615814,\"endMs\":239.70000004768372},\"serifFont\":{\"startMs\":822.6000000238419,\"endMs\":948.3999999761581},\"preloadedFonts\":[],\"paints\":{\"cls\":0.003138039336446545,\"lcp\":876,\"shifted\":[\"p.boot-brand +0.000\",\"h1.mt-6.font-serif.text-title +0.000\",\"div.min-h-0.flex-1.overflow-y-auto +0.003\",\"button.group.flex.h-8 +0.003\",\"div.ml-auto.flex.items-center +0.003\"]},\"shellMs\":772.8999999761581,\"composerMs\":894,\"transitions\":{\"knowledge\":{\"ms\":143.39999997615814,\"cls\":0},\"documents\":{\"ms\":84.60000002384186,\"cls\":0},\"knowledgeAgain\":{\"ms\":56.10000002384186,\"cls\":0},\"newChat\":{\"ms\":51.700000047683716,\"cls\":0}}}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:24:39.538Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-771cb093b819ec952b45",
+              "file": "web-perf.chat.spec.ts",
+              "line": 143,
+              "column": 5
+            },
+            {
+              "title": "cold load of New chat, its fonts, and the main route transitions (laptop)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3461,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf {\"label\":\"final-laptop\",\"device\":{\"name\":\"laptop\",\"cpuSlowdown\":1},\"network\":{\"offline\":false,\"latency\":40,\"downloadThroughput\":2500000,\"uploadThroughput\":625000},\"ttfbMs\":1.2999999523162842,\"domContentLoadedMs\":345.2999999523163,\"fcpMs\":180,\"entryScriptBytes\":83842,\"scriptsBeforeComposer\":76,\"sansFont\":{\"startMs\":171.69999992847443,\"endMs\":235.39999997615814},\"serifFont\":{\"startMs\":614,\"endMs\":700.8999999761581},\"preloadedFonts\":[],\"paints\":{\"cls\":0.003138039336446545,\"lcp\":640,\"shifted\":[\"p.boot-brand +0.000\",\"h1.mt-6.font-serif.text-title +0.000\",\"div.min-h-0.flex-1.overflow-y-auto +0.003\",\"button.group.flex.h-8 +0.003\",\"div.ml-auto.flex.items-center +0.003\"]},\"shellMs\":629.7999999523163,\"composerMs\":638.7999999523163,\"transitions\":{\"knowledge\":{\"ms\":82.70000004768372,\"cls\":0},\"documents\":{\"ms\":58.800000071525574,\"cls\":0},\"knowledgeAgain\":{\"ms\":14.300000071525574,\"cls\":0},\"newChat\":{\"ms\":12.400000095367432,\"cls\":0}}}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:24:44.767Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-b8676a7c442840a6d75e",
+              "file": "web-perf.chat.spec.ts",
+              "line": 143,
+              "column": 5
+            },
+            {
+              "title": "cold load of New chat, its fonts, and the main route transitions (phone-cpu)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3975,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf {\"label\":\"final-phone-cpu\",\"device\":{\"name\":\"phone-cpu\",\"cpuSlowdown\":4},\"network\":{\"offline\":false,\"latency\":40,\"downloadThroughput\":2500000,\"uploadThroughput\":625000},\"ttfbMs\":1,\"domContentLoadedMs\":434.39999997615814,\"fcpMs\":204,\"entryScriptBytes\":83842,\"scriptsBeforeComposer\":76,\"sansFont\":{\"startMs\":183.10000002384186,\"endMs\":241.79999995231628},\"serifFont\":{\"startMs\":827.8999999761581,\"endMs\":958.7999999523163},\"preloadedFonts\":[],\"paints\":{\"cls\":0.003138039336446545,\"lcp\":880,\"shifted\":[\"p.boot-brand +0.000\",\"h1.mt-6.font-serif.text-title +0.000\",\"div.min-h-0.flex-1.overflow-y-auto +0.003\",\"button.group.flex.h-8 +0.003\",\"div.ml-auto.flex.items-center +0.003\"]},\"shellMs\":778,\"composerMs\":899.7999999523163,\"transitions\":{\"knowledge\":{\"ms\":142.70000004768372,\"cls\":0},\"documents\":{\"ms\":88.69999992847443,\"cls\":0},\"knowledgeAgain\":{\"ms\":57.10000002384186,\"cls\":0},\"newChat\":{\"ms\":49,\"cls\":0}}}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:24:48.298Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-91ec7215267dd7574e3b",
+              "file": "web-perf.chat.spec.ts",
+              "line": 143,
+              "column": 5
+            },
+            {
+              "title": "cold load of New chat, its fonts, and the main route transitions (laptop)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3469,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf {\"label\":\"final-laptop\",\"device\":{\"name\":\"laptop\",\"cpuSlowdown\":1},\"network\":{\"offline\":false,\"latency\":40,\"downloadThroughput\":2500000,\"uploadThroughput\":625000},\"ttfbMs\":1.1999999284744263,\"domContentLoadedMs\":346.09999990463257,\"fcpMs\":184,\"entryScriptBytes\":83842,\"scriptsBeforeComposer\":76,\"sansFont\":{\"startMs\":174.89999997615814,\"endMs\":236.69999992847443},\"serifFont\":{\"startMs\":615.6999999284744,\"endMs\":702.1999999284744},\"preloadedFonts\":[],\"paints\":{\"cls\":0.003138039336446545,\"lcp\":640,\"shifted\":[\"p.boot-brand +0.000\",\"h1.mt-6.font-serif.text-title +0.000\",\"div.min-h-0.flex-1.overflow-y-auto +0.003\",\"button.group.flex.h-8 +0.003\",\"div.ml-auto.flex.items-center +0.003\"]},\"shellMs\":631.0999999046326,\"composerMs\":640.5,\"transitions\":{\"knowledge\":{\"ms\":82.69999992847443,\"cls\":0},\"documents\":{\"ms\":71.39999997615814,\"cls\":0},\"knowledgeAgain\":{\"ms\":14,\"cls\":0},\"newChat\":{\"ms\":12.200000047683716,\"cls\":0}}}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:24:53.547Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-cb693128fcefaf4a4ec8",
+              "file": "web-perf.chat.spec.ts",
+              "line": 143,
+              "column": 5
+            },
+            {
+              "title": "cold load of New chat, its fonts, and the main route transitions (phone-cpu)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3957,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf {\"label\":\"final-phone-cpu\",\"device\":{\"name\":\"phone-cpu\",\"cpuSlowdown\":4},\"network\":{\"offline\":false,\"latency\":40,\"downloadThroughput\":2500000,\"uploadThroughput\":625000},\"ttfbMs\":1,\"domContentLoadedMs\":433.2000000476837,\"fcpMs\":200,\"entryScriptBytes\":83842,\"scriptsBeforeComposer\":76,\"sansFont\":{\"startMs\":182.60000002384186,\"endMs\":240.39999997615814},\"serifFont\":{\"startMs\":819.7000000476837,\"endMs\":954.3000000715256},\"preloadedFonts\":[],\"paints\":{\"cls\":0.003138039336446545,\"lcp\":868,\"shifted\":[\"p.boot-brand +0.000\",\"h1.mt-6.font-serif.text-title +0.000\",\"div.min-h-0.flex-1.overflow-y-auto +0.003\",\"button.group.flex.h-8 +0.003\",\"div.ml-auto.flex.items-center +0.003\"]},\"shellMs\":769.6000000238419,\"composerMs\":889.3999999761581,\"transitions\":{\"knowledge\":{\"ms\":136.5,\"cls\":0},\"documents\":{\"ms\":84.69999992847443,\"cls\":0},\"knowledgeAgain\":{\"ms\":56,\"cls\":0},\"newChat\":{\"ms\":53,\"cls\":0}}}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:24:57.092Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-04d64185f6f1df30aa2f",
+              "file": "web-perf.chat.spec.ts",
+              "line": 143,
+              "column": 5
+            },
+            {
+              "title": "cold load of New chat, its fonts, and the main route transitions (laptop)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3477,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf {\"label\":\"final-laptop\",\"device\":{\"name\":\"laptop\",\"cpuSlowdown\":1},\"network\":{\"offline\":false,\"latency\":40,\"downloadThroughput\":2500000,\"uploadThroughput\":625000},\"ttfbMs\":1.2000000476837158,\"domContentLoadedMs\":345.5,\"fcpMs\":180,\"entryScriptBytes\":83842,\"scriptsBeforeComposer\":76,\"sansFont\":{\"startMs\":171.80000007152557,\"endMs\":235},\"serifFont\":{\"startMs\":613.7000000476837,\"endMs\":700.5},\"preloadedFonts\":[],\"paints\":{\"cls\":0.003138039336446545,\"lcp\":640,\"shifted\":[\"p.boot-brand +0.000\",\"h1.mt-6.font-serif.text-title +0.000\",\"div.min-h-0.flex-1.overflow-y-auto +0.003\",\"button.group.flex.h-8 +0.003\",\"div.ml-auto.flex.items-center +0.003\"]},\"shellMs\":630,\"composerMs\":639.1000000238419,\"transitions\":{\"knowledge\":{\"ms\":81.60000002384186,\"cls\":0},\"documents\":{\"ms\":71,\"cls\":0},\"knowledgeAgain\":{\"ms\":13.700000047683716,\"cls\":0},\"newChat\":{\"ms\":11.899999976158142,\"cls\":0}}}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:25:02.325Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-9a711594fe40f372536d",
+              "file": "web-perf.chat.spec.ts",
+              "line": 143,
+              "column": 5
+            },
+            {
+              "title": "cold load of New chat, its fonts, and the main route transitions (phone-cpu)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3974,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf {\"label\":\"final-phone-cpu\",\"device\":{\"name\":\"phone-cpu\",\"cpuSlowdown\":4},\"network\":{\"offline\":false,\"latency\":40,\"downloadThroughput\":2500000,\"uploadThroughput\":625000},\"ttfbMs\":1,\"domContentLoadedMs\":432.40000009536743,\"fcpMs\":204,\"entryScriptBytes\":83842,\"scriptsBeforeComposer\":76,\"sansFont\":{\"startMs\":182.60000002384186,\"endMs\":240},\"serifFont\":{\"startMs\":821.2000000476837,\"endMs\":951},\"preloadedFonts\":[],\"paints\":{\"cls\":0.003138039336446545,\"lcp\":880,\"shifted\":[\"p.boot-brand +0.000\",\"h1.mt-6.font-serif.text-title +0.000\",\"div.min-h-0.flex-1.overflow-y-auto +0.003\",\"button.group.flex.h-8 +0.003\",\"div.ml-auto.flex.items-center +0.003\"]},\"shellMs\":771.6000000238419,\"composerMs\":891.5,\"transitions\":{\"knowledge\":{\"ms\":144.60000002384186,\"cls\":0},\"documents\":{\"ms\":86.60000002384186,\"cls\":0},\"knowledgeAgain\":{\"ms\":58.299999952316284,\"cls\":0},\"newChat\":{\"ms\":54.39999997615814,\"cls\":0}}}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:25:05.878Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-da0cf4a728d8659b9e97",
+              "file": "web-perf.chat.spec.ts",
+              "line": 143,
+              "column": 5
+            },
+            {
+              "title": "cold load of New chat, its fonts, and the main route transitions (laptop)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3468,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf {\"label\":\"final-laptop\",\"device\":{\"name\":\"laptop\",\"cpuSlowdown\":1},\"network\":{\"offline\":false,\"latency\":40,\"downloadThroughput\":2500000,\"uploadThroughput\":625000},\"ttfbMs\":1.3000000715255737,\"domContentLoadedMs\":348.10000002384186,\"fcpMs\":184,\"entryScriptBytes\":83842,\"scriptsBeforeComposer\":76,\"sansFont\":{\"startMs\":175,\"endMs\":237.5},\"serifFont\":{\"startMs\":616.5,\"endMs\":703.2000000476837},\"preloadedFonts\":[],\"paints\":{\"cls\":0.003138039336446545,\"lcp\":640,\"shifted\":[\"p.boot-brand +0.000\",\"h1.mt-6.font-serif.text-title +0.000\",\"div.min-h-0.flex-1.overflow-y-auto +0.003\",\"button.group.flex.h-8 +0.003\",\"div.ml-auto.flex.items-center +0.003\"]},\"shellMs\":632.2000000476837,\"composerMs\":640.8999999761581,\"transitions\":{\"knowledge\":{\"ms\":82.80000007152557,\"cls\":0},\"documents\":{\"ms\":71.90000009536743,\"cls\":0},\"knowledgeAgain\":{\"ms\":13.799999952316284,\"cls\":0},\"newChat\":{\"ms\":11.399999976158142,\"cls\":0}}}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:25:11.134Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-f7d8b4a52f7e5a62409f",
+              "file": "web-perf.chat.spec.ts",
+              "line": 143,
+              "column": 5
+            },
+            {
+              "title": "cold load of New chat, its fonts, and the main route transitions (phone-cpu)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3976,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf {\"label\":\"final-phone-cpu\",\"device\":{\"name\":\"phone-cpu\",\"cpuSlowdown\":4},\"network\":{\"offline\":false,\"latency\":40,\"downloadThroughput\":2500000,\"uploadThroughput\":625000},\"ttfbMs\":1,\"domContentLoadedMs\":428.2000000476837,\"fcpMs\":200,\"entryScriptBytes\":83842,\"scriptsBeforeComposer\":76,\"sansFont\":{\"startMs\":181.80000007152557,\"endMs\":243.80000007152557},\"serifFont\":{\"startMs\":820.7000000476837,\"endMs\":950},\"preloadedFonts\":[],\"paints\":{\"cls\":0.003138039336446545,\"lcp\":880,\"shifted\":[\"p.boot-brand +0.000\",\"h1.mt-6.font-serif.text-title +0.000\",\"div.min-h-0.flex-1.overflow-y-auto +0.003\",\"button.group.flex.h-8 +0.003\",\"div.ml-auto.flex.items-center +0.003\"]},\"shellMs\":772.2000000476837,\"composerMs\":892.2000000476837,\"transitions\":{\"knowledge\":{\"ms\":142.30000007152557,\"cls\":0},\"documents\":{\"ms\":86.20000004768372,\"cls\":0},\"knowledgeAgain\":{\"ms\":61.60000002384186,\"cls\":0},\"newChat\":{\"ms\":50.59999990463257,\"cls\":0}}}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:25:14.675Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-f8516f56442b018d8caf",
+              "file": "web-perf.chat.spec.ts",
+              "line": 143,
+              "column": 5
+            }
+          ]
+        },
+        {
+          "title": "page speed, signed out",
+          "file": "web-perf.chat.spec.ts",
+          "line": 224,
+          "column": 6,
+          "specs": [
+            {
+              "title": "cold load of the landing page",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1031,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf-landing {\"label\":\"final-landing\",\"fcpMs\":184,\"paints\":{\"cls\":0.000007195550947359396,\"lcp\":480,\"shifted\":[\"p.boot-brand +0.000\"]},\"landingMs\":467.7999999523163}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:24:43.502Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-607dc1adeeb71906ce16",
+              "file": "web-perf.chat.spec.ts",
+              "line": 227,
+              "column": 3
+            },
+            {
+              "title": "cold load of the landing page",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1036,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf-landing {\"label\":\"final-landing\",\"fcpMs\":180,\"paints\":{\"cls\":0.000007195550947359396,\"lcp\":480,\"shifted\":[\"p.boot-brand +0.000\"]},\"landingMs\":471.3000000715256}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:24:52.277Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-8551f279268ae6e0fbc7",
+              "file": "web-perf.chat.spec.ts",
+              "line": 227,
+              "column": 3
+            },
+            {
+              "title": "cold load of the landing page",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1036,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf-landing {\"label\":\"final-landing\",\"fcpMs\":180,\"paints\":{\"cls\":0.000007195550947359396,\"lcp\":484,\"shifted\":[\"p.boot-brand +0.000\"]},\"landingMs\":462.1999999284744}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:25:01.053Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-d5f9575b0412f5847b7a",
+              "file": "web-perf.chat.spec.ts",
+              "line": 227,
+              "column": 3
+            },
+            {
+              "title": "cold load of the landing page",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1037,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf-landing {\"label\":\"final-landing\",\"fcpMs\":180,\"paints\":{\"cls\":0.000007195550947359396,\"lcp\":480,\"shifted\":[\"p.boot-brand +0.000\"]},\"landingMs\":474.5}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:25:09.857Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-66e3fd68a5d9734ca34b",
+              "file": "web-perf.chat.spec.ts",
+              "line": 227,
+              "column": 3
+            },
+            {
+              "title": "cold load of the landing page",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1041,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf-landing {\"label\":\"final-landing\",\"fcpMs\":184,\"paints\":{\"cls\":0.000007195550947359396,\"lcp\":488,\"shifted\":[\"p.boot-brand +0.000\"]},\"landingMs\":466.2000000476837}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T17:25:18.656Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-bfc43e09dc884b6fa703",
+              "file": "web-perf.chat.spec.ts",
+              "line": 227,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-03T17:24:30.257Z",
+    "duration": 49488.316,
+    "expected": 16,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "runId": "upgrade-2026-11-03T16-48-05-468Z",
+  "startedAt": "2026-11-03T16:48:05.468Z",
+  "finishedAt": "2026-11-03T17:08:31.665Z",
+  "code": "04df9673aaf1d3dec3ece447faf07b5e32ebd0e1",
+  "workingDiffSha256": "a41b6f381bdbcfa682ba399d565f03b59855b74a16ef98657d5fe2d1223923d3",
+  "promptVersion": "fa-coach-policy/2026-11-03.1",
+  "fixtureSha256": "6925fa5750c552cc73eaad112d4fc6f0c2f70b9a957cba6460188c85c06ddbf2",
+  "model": "MockModelGateway; deterministic fixtures",
+  "liveModel": false,
+  "scenariosAttempted": 600,
+  "scenariosPassedProtocol": 600,
+  "scenariosFailed": 0,
+  "skipped": 0,
+  "blocked": 0,
+  "conversationsStarted": 720,
+  "conversationsCompleted": 720,
+  "attemptedTurns": 5820,
+  "completedTurns": 5820,
+  "humanReviewed": 0,
+  "behavioralScores": null
+}

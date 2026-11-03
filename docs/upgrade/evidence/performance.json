@@ -1,0 +1,1833 @@
+{
+  "baselineNPerProfile": 1,
+  "baseline": {
+    "laptop": {
+      "label": "run-laptop",
+      "device": {
+        "name": "laptop",
+        "cpuSlowdown": 1
+      },
+      "network": {
+        "offline": false,
+        "latency": 40,
+        "downloadThroughput": 2500000,
+        "uploadThroughput": 625000
+      },
+      "ttfbMs": 1,
+      "domContentLoadedMs": 343.40000009536743,
+      "fcpMs": 180,
+      "entryScriptBytes": 83814,
+      "scriptsBeforeComposer": 76,
+      "waterfall": [
+        {
+          "path": "/assets/rolldown-runtime-hePW80VL.js",
+          "startMs": 50,
+          "endMs": 100
+        },
+        {
+          "path": "/assets/index-5N8dQkq_.js",
+          "startMs": 50,
+          "endMs": 195
+        },
+        {
+          "path": "/assets/button-BLKggo9f.js",
+          "startMs": 50,
+          "endMs": 120
+        },
+        {
+          "path": "/assets/matchContext-buNPKEmt.js",
+          "startMs": 50,
+          "endMs": 137
+        },
+        {
+          "path": "/assets/utils-CqdzfLvQ.js",
+          "startMs": 50,
+          "endMs": 140
+        },
+        {
+          "path": "/assets/framework-BChZNyHn.js",
+          "startMs": 50,
+          "endMs": 189
+        },
+        {
+          "path": "/assets/link-CXMDKlSG.js",
+          "startMs": 50,
+          "endMs": 164
+        },
+        {
+          "path": "/assets/useSelector-YrKT3YXK.js",
+          "startMs": 50,
+          "endMs": 179
+        },
+        {
+          "path": "/assets/useMatch-CGRYc1iZ.js",
+          "startMs": 50,
+          "endMs": 182
+        },
+        {
+          "path": "/assets/useParams-BKJ9JNdb.js",
+          "startMs": 50,
+          "endMs": 208
+        },
+        {
+          "path": "/assets/useNavigate-DFWNjYDo.js",
+          "startMs": 50,
+          "endMs": 209
+        },
+        {
+          "path": "/assets/route-Ine1V5hl.js",
+          "startMs": 50,
+          "endMs": 224
+        },
+        {
+          "path": "/assets/lazyRouteComponent-C8qp3dHp.js",
+          "startMs": 50,
+          "endMs": 230
+        },
+        {
+          "path": "/assets/storage-LbOzzmIs.js",
+          "startMs": 50,
+          "endMs": 236
+        },
+        {
+          "path": "/assets/body-BXfJdowM.js",
+          "startMs": 50,
+          "endMs": 269
+        },
+        {
+          "path": "/assets/auth-Dlp71wYf.js",
+          "startMs": 50,
+          "endMs": 252
+        },
+        {
+          "path": "/assets/check-Bu29Q-bL.js",
+          "startMs": 50,
+          "endMs": 265
+        },
+        {
+          "path": "/assets/chevron-right-DqpF57bx.js",
+          "startMs": 50,
+          "endMs": 271
+        },
+        {
+          "path": "/assets/x-CRS_bB_K.js",
+          "startMs": 50,
+          "endMs": 277
+        },
+        {
+          "path": "/assets/dist-kE5I6c20.js",
+          "startMs": 50,
+          "endMs": 279
+        },
+        {
+          "path": "/assets/dist-DJktxV4k.js",
+          "startMs": 50,
+          "endMs": 298
+        },
+        {
+          "path": "/assets/dist-o853HQG2.js",
+          "startMs": 50,
+          "endMs": 313
+        },
+        {
+          "path": "/assets/veir-BovpH8UU.js",
+          "startMs": 50,
+          "endMs": 310
+        },
+        {
+          "path": "/assets/index-Cmi_hR-k.css",
+          "startMs": 50,
+          "endMs": 169
+        },
+        {
+          "path": "/assets/venture-refresh-ttHEeXid.js",
+          "startMs": 50,
+          "endMs": 312
+        },
+        {
+          "path": "/assets/ventures-BKPyKYVB.js",
+          "startMs": 50,
+          "endMs": 319
+        },
+        {
+          "path": "/assets/geist-latin-wght-normal-BgDaEnEv.woff2",
+          "startMs": 170,
+          "endMs": 235
+        },
+        {
+          "path": "/api/v1/me",
+          "startMs": 348,
+          "endMs": 396
+        },
+        {
+          "path": "/assets/route-C6ZB3mF_.js",
+          "startMs": 397,
+          "endMs": 451
+        },
+        {
+          "path": "/assets/inspector-BDiMNm7n.js",
+          "startMs": 397,
+          "endMs": 451
+        },
+        {
+          "path": "/assets/use-media-query-DBNCLhkL.js",
+          "startMs": 398,
+          "endMs": 447
+        },
+        {
+          "path": "/assets/welcome-opnbJ9JB.js",
+          "startMs": 398,
+          "endMs": 448
+        },
+        {
+          "path": "/assets/venture-uploads-T6vTRxiL.js",
+          "startMs": 398,
+          "endMs": 452
+        },
+        {
+          "path": "/assets/_ventureId-Cr_bNPzD.js",
+          "startMs": 398,
+          "endMs": 453
+        },
+        {
+          "path": "/assets/audio-lines-BMTXPLqt.js",
+          "startMs": 398,
+          "endMs": 496
+        },
+        {
+          "path": "/assets/attachments-7l4eWFqf.js",
+          "startMs": 398,
+          "endMs": 499
+        },
+        {
+          "path": "/assets/rotate-ccw-eTRZRFbJ.js",
+          "startMs": 398,
+          "endMs": 497
+        },
+        {
+          "path": "/assets/upload-validation-DTeN-82b.js",
+          "startMs": 398,
+          "endMs": 497
+        },
+        {
+          "path": "/assets/composer-DfHfq3Ej.js",
+          "startMs": 398,
+          "endMs": 500
+        },
+        {
+          "path": "/assets/select-DpezBCQ6.js",
+          "startMs": 398,
+          "endMs": 503
+        },
+        {
+          "path": "/assets/chevron-down-X3BkbhZe.js",
+          "startMs": 398,
+          "endMs": 544
+        },
+        {
+          "path": "/assets/input-KRnQ7jkf.js",
+          "startMs": 398,
+          "endMs": 545
+        },
+        {
+          "path": "/assets/textarea-DhRvKglK.js",
+          "startMs": 398,
+          "endMs": 545
+        },
+        {
+          "path": "/assets/first-message-Cb050PDv.js",
+          "startMs": 398,
+          "endMs": 546
+        },
+        {
+          "path": "/assets/privacy-choice-DpnNCAcj.js",
+          "startMs": 398,
+          "endMs": 548
+        },
+        {
+          "path": "/assets/rotate-ccw-clock-Dva_DQW-.js",
+          "startMs": 398,
+          "endMs": 547
+        },
+        {
+          "path": "/assets/veir-name-BCQNSCRf.js",
+          "startMs": 398,
+          "endMs": 593
+        },
+        {
+          "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/opener",
+          "startMs": 399,
+          "endMs": 594
+        },
+        {
+          "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c",
+          "startMs": 399,
+          "endMs": 595
+        },
+        {
+          "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/overview",
+          "startMs": 399,
+          "endMs": 599
+        },
+        {
+          "path": "/assets/document-viewer-host-DYdalSyJ.js",
+          "startMs": 606,
+          "endMs": 657
+        },
+        {
+          "path": "/assets/newsreader-latin-wght-normal-CCVVNp6i.woff2",
+          "startMs": 609,
+          "endMs": 697
+        },
+        {
+          "path": "/assets/geist-mono-latin-wght-normal-XN7g48iV.woff2",
+          "startMs": 609,
+          "endMs": 683
+        },
+        {
+          "path": "/assets/status-badge-Bq63YCs2.js",
+          "startMs": 617,
+          "endMs": 665
+        },
+        {
+          "path": "/assets/_sessionId-8siRHqWB.js",
+          "startMs": 617,
+          "endMs": 676
+        },
+        {
+          "path": "/assets/circle-slash-LaBbRkOm.js",
+          "startMs": 617,
+          "endMs": 659
+        },
+        {
+          "path": "/assets/arrow-up-right-DNoJs75k.js",
+          "startMs": 617,
+          "endMs": 698
+        },
+        {
+          "path": "/assets/memory-saved-BweBRpNC.js",
+          "startMs": 617,
+          "endMs": 701
+        },
+        {
+          "path": "/assets/digest-view-0WKAL0si.js",
+          "startMs": 617,
+          "endMs": 709
+        },
+        {
+          "path": "/assets/veir-answer-DnXItT1g.js",
+          "startMs": 617,
+          "endMs": 720
+        },
+        {
+          "path": "/assets/hand-helping-CHje7i5P.js",
+          "startMs": 617,
+          "endMs": 724
+        },
+        {
+          "path": "/assets/plus-DHN-YQqL.js",
+          "startMs": 617,
+          "endMs": 742
+        },
+        {
+          "path": "/assets/reasoning-Dz62HCGU.js",
+          "startMs": 617,
+          "endMs": 745
+        },
+        {
+          "path": "/assets/shield-alert-CyvVJ67P.js",
+          "startMs": 617,
+          "endMs": 743
+        },
+        {
+          "path": "/assets/markdown-5SYPrtOv.js",
+          "startMs": 617,
+          "endMs": 770
+        },
+        {
+          "path": "/assets/external-link-CJnGJXJ2.js",
+          "startMs": 618,
+          "endMs": 761
+        },
+        {
+          "path": "/assets/alert-dialog-B7gZ9cu1.js",
+          "startMs": 618,
+          "endMs": 766
+        },
+        {
+          "path": "/assets/account-dialogs-BrREnnsM.js",
+          "startMs": 618,
+          "endMs": 789
+        },
+        {
+          "path": "/assets/sse-D68sKq4g.js",
+          "startMs": 618,
+          "endMs": 790
+        },
+        {
+          "path": "/assets/blocked-panel-B2yr2oDr.js",
+          "startMs": 618,
+          "endMs": 790
+        },
+        {
+          "path": "/assets/hand-heart-BLIf1V6Y.js",
+          "startMs": 618,
+          "endMs": 805
+        },
+        {
+          "path": "/assets/conversation-dialogs-DLqNCS0J.js",
+          "startMs": 618,
+          "endMs": 808
+        },
+        {
+          "path": "/assets/evidence-item-DxBe449u.js",
+          "startMs": 618,
+          "endMs": 812
+        },
+        {
+          "path": "/assets/brain-DkVTvBcM.js",
+          "startMs": 618,
+          "endMs": 836
+        },
+        {
+          "path": "/assets/freshness-PHqOJ23L.js",
+          "startMs": 618,
+          "endMs": 837
+        },
+        {
+          "path": "/assets/escalation-flow-dialog-D0OvT5eJ.js",
+          "startMs": 618,
+          "endMs": 838
+        },
+        {
+          "path": "/assets/memory-meta-c_WDxg6l.js",
+          "startMs": 618,
+          "endMs": 847
+        },
+        {
+          "path": "/assets/checkbox-CY4blevU.js",
+          "startMs": 618,
+          "endMs": 850
+        },
+        {
+          "path": "/assets/minus-D1U8qfi9.js",
+          "startMs": 618,
+          "endMs": 853
+        },
+        {
+          "path": "/assets/zod-B90q9OF5.js",
+          "startMs": 618,
+          "endMs": 879
+        },
+        {
+          "path": "/assets/field-Cd5Zn5bZ.js",
+          "startMs": 618,
+          "endMs": 879
+        },
+        {
+          "path": "/assets/form-errors-BoRVmvXR.js",
+          "startMs": 619,
+          "endMs": 880
+        },
+        {
+          "path": "/assets/select-field-BfCur8JH.js",
+          "startMs": 619,
+          "endMs": 889
+        },
+        {
+          "path": "/assets/packet-view-C1WboP9d.js",
+          "startMs": 619,
+          "endMs": 891
+        },
+        {
+          "path": "/api/v1/sessions",
+          "startMs": 623,
+          "endMs": 911
+        },
+        {
+          "path": "/api/v1/health",
+          "startMs": 623,
+          "endMs": 923
+        },
+        {
+          "path": "/api/v1/ventures",
+          "startMs": 623,
+          "endMs": 923
+        },
+        {
+          "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/call-config",
+          "startMs": 623,
+          "endMs": 924
+        },
+        {
+          "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/documents",
+          "startMs": 623,
+          "endMs": 930
+        },
+        {
+          "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/memory",
+          "startMs": 623,
+          "endMs": 937
+        }
+      ],
+      "sansFont": {
+        "startMs": 170.40000009536743,
+        "endMs": 235.20000004768372
+      },
+      "serifFont": {
+        "startMs": 608.9000000953674,
+        "endMs": 696.6000000238419
+      },
+      "preloadedFonts": [],
+      "paints": {
+        "cls": 0.003085822094157236,
+        "lcp": 632,
+        "shifted": [
+          "p.boot-brand +0.000",
+          "div.min-h-0.flex-1.overflow-y-auto +0.003",
+          "button.group.flex.h-8 +0.003",
+          "div.ml-auto.flex.items-center +0.003"
+        ]
+      },
+      "shellMs": 624,
+      "composerMs": 631.3000000715256,
+      "transitions": {
+        "knowledge": {
+          "ms": 76.39999997615814,
+          "cls": 0
+        },
+        "documents": {
+          "ms": 71.59999990463257,
+          "cls": 0
+        },
+        "knowledgeAgain": {
+          "ms": 11.200000047683716,
+          "cls": 0
+        },
+        "newChat": {
+          "ms": 9.799999952316284,
+          "cls": 0
+        }
+      }
+    },
+    "phone-cpu": {
+      "label": "run-phone-cpu",
+      "device": {
+        "name": "phone-cpu",
+        "cpuSlowdown": 4
+      },
+      "network": {
+        "offline": false,
+        "latency": 40,
+        "downloadThroughput": 2500000,
+        "uploadThroughput": 625000
+      },
+      "ttfbMs": 1.100000023841858,
+      "domContentLoadedMs": 435.2000000476837,
+      "fcpMs": 200,
+      "entryScriptBytes": 83814,
+      "scriptsBeforeComposer": 76,
+      "waterfall": [
+        {
+          "path": "/assets/rolldown-runtime-hePW80VL.js",
+          "startMs": 58,
+          "endMs": 106
+        },
+        {
+          "path": "/assets/utils-CqdzfLvQ.js",
+          "startMs": 58,
+          "endMs": 146
+        },
+        {
+          "path": "/assets/framework-BChZNyHn.js",
+          "startMs": 58,
+          "endMs": 194
+        },
+        {
+          "path": "/assets/index-5N8dQkq_.js",
+          "startMs": 58,
+          "endMs": 201
+        },
+        {
+          "path": "/assets/button-BLKggo9f.js",
+          "startMs": 58,
+          "endMs": 125
+        },
+        {
+          "path": "/assets/matchContext-buNPKEmt.js",
+          "startMs": 58,
+          "endMs": 144
+        },
+        {
+          "path": "/assets/link-CXMDKlSG.js",
+          "startMs": 58,
+          "endMs": 170
+        },
+        {
+          "path": "/assets/useSelector-YrKT3YXK.js",
+          "startMs": 58,
+          "endMs": 185
+        },
+        {
+          "path": "/assets/useMatch-CGRYc1iZ.js",
+          "startMs": 59,
+          "endMs": 187
+        },
+        {
+          "path": "/assets/useParams-BKJ9JNdb.js",
+          "startMs": 59,
+          "endMs": 214
+        },
+        {
+          "path": "/assets/useNavigate-DFWNjYDo.js",
+          "startMs": 59,
+          "endMs": 215
+        },
+        {
+          "path": "/assets/route-Ine1V5hl.js",
+          "startMs": 59,
+          "endMs": 230
+        },
+        {
+          "path": "/assets/lazyRouteComponent-C8qp3dHp.js",
+          "startMs": 59,
+          "endMs": 235
+        },
+        {
+          "path": "/assets/storage-LbOzzmIs.js",
+          "startMs": 59,
+          "endMs": 242
+        },
+        {
+          "path": "/assets/auth-Dlp71wYf.js",
+          "startMs": 59,
+          "endMs": 259
+        },
+        {
+          "path": "/assets/body-BXfJdowM.js",
+          "startMs": 59,
+          "endMs": 277
+        },
+        {
+          "path": "/assets/check-Bu29Q-bL.js",
+          "startMs": 59,
+          "endMs": 271
+        },
+        {
+          "path": "/assets/chevron-right-DqpF57bx.js",
+          "startMs": 60,
+          "endMs": 276
+        },
+        {
+          "path": "/assets/x-CRS_bB_K.js",
+          "startMs": 60,
+          "endMs": 283
+        },
+        {
+          "path": "/assets/dist-kE5I6c20.js",
+          "startMs": 60,
+          "endMs": 285
+        },
+        {
+          "path": "/assets/dist-DJktxV4k.js",
+          "startMs": 60,
+          "endMs": 307
+        },
+        {
+          "path": "/assets/index-Cmi_hR-k.css",
+          "startMs": 60,
+          "endMs": 175
+        },
+        {
+          "path": "/assets/dist-o853HQG2.js",
+          "startMs": 60,
+          "endMs": 316
+        },
+        {
+          "path": "/assets/veir-BovpH8UU.js",
+          "startMs": 60,
+          "endMs": 317
+        },
+        {
+          "path": "/assets/venture-refresh-ttHEeXid.js",
+          "startMs": 60,
+          "endMs": 318
+        },
+        {
+          "path": "/assets/ventures-BKPyKYVB.js",
+          "startMs": 60,
+          "endMs": 325
+        },
+        {
+          "path": "/assets/geist-latin-wght-normal-BgDaEnEv.woff2",
+          "startMs": 182,
+          "endMs": 242
+        },
+        {
+          "path": "/api/v1/me",
+          "startMs": 455,
+          "endMs": 506
+        },
+        {
+          "path": "/assets/route-C6ZB3mF_.js",
+          "startMs": 514,
+          "endMs": 568
+        },
+        {
+          "path": "/assets/inspector-BDiMNm7n.js",
+          "startMs": 515,
+          "endMs": 569
+        },
+        {
+          "path": "/assets/use-media-query-DBNCLhkL.js",
+          "startMs": 515,
+          "endMs": 565
+        },
+        {
+          "path": "/assets/welcome-opnbJ9JB.js",
+          "startMs": 515,
+          "endMs": 565
+        },
+        {
+          "path": "/assets/venture-uploads-T6vTRxiL.js",
+          "startMs": 515,
+          "endMs": 569
+        },
+        {
+          "path": "/assets/_ventureId-Cr_bNPzD.js",
+          "startMs": 516,
+          "endMs": 570
+        },
+        {
+          "path": "/assets/audio-lines-BMTXPLqt.js",
+          "startMs": 516,
+          "endMs": 609
+        },
+        {
+          "path": "/assets/attachments-7l4eWFqf.js",
+          "startMs": 516,
+          "endMs": 612
+        },
+        {
+          "path": "/assets/rotate-ccw-eTRZRFbJ.js",
+          "startMs": 516,
+          "endMs": 610
+        },
+        {
+          "path": "/assets/upload-validation-DTeN-82b.js",
+          "startMs": 516,
+          "endMs": 611
+        },
+        {
+          "path": "/assets/composer-DfHfq3Ej.js",
+          "startMs": 516,
+          "endMs": 613
+        },
+        {
+          "path": "/assets/select-DpezBCQ6.js",
+          "startMs": 517,
+          "endMs": 616
+        },
+        {
+          "path": "/assets/chevron-down-X3BkbhZe.js",
+          "startMs": 517,
+          "endMs": 658
+        },
+        {
+          "path": "/assets/input-KRnQ7jkf.js",
+          "startMs": 517,
+          "endMs": 659
+        },
+        {
+          "path": "/assets/textarea-DhRvKglK.js",
+          "startMs": 517,
+          "endMs": 659
+        },
+        {
+          "path": "/assets/first-message-Cb050PDv.js",
+          "startMs": 517,
+          "endMs": 660
+        },
+        {
+          "path": "/assets/rotate-ccw-clock-Dva_DQW-.js",
+          "startMs": 517,
+          "endMs": 661
+        },
+        {
+          "path": "/assets/privacy-choice-DpnNCAcj.js",
+          "startMs": 517,
+          "endMs": 662
+        },
+        {
+          "path": "/assets/veir-name-BCQNSCRf.js",
+          "startMs": 517,
+          "endMs": 702
+        },
+        {
+          "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c",
+          "startMs": 519,
+          "endMs": 704
+        },
+        {
+          "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/overview",
+          "startMs": 519,
+          "endMs": 708
+        },
+        {
+          "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/opener",
+          "startMs": 519,
+          "endMs": 703
+        },
+        {
+          "path": "/assets/document-viewer-host-DYdalSyJ.js",
+          "startMs": 741,
+          "endMs": 794
+        },
+        {
+          "path": "/assets/_sessionId-8siRHqWB.js",
+          "startMs": 749,
+          "endMs": 801
+        },
+        {
+          "path": "/assets/status-badge-Bq63YCs2.js",
+          "startMs": 749,
+          "endMs": 797
+        },
+        {
+          "path": "/assets/circle-slash-LaBbRkOm.js",
+          "startMs": 750,
+          "endMs": 792
+        },
+        {
+          "path": "/assets/arrow-up-right-DNoJs75k.js",
+          "startMs": 750,
+          "endMs": 793
+        },
+        {
+          "path": "/assets/memory-saved-BweBRpNC.js",
+          "startMs": 750,
+          "endMs": 796
+        },
+        {
+          "path": "/assets/digest-view-0WKAL0si.js",
+          "startMs": 751,
+          "endMs": 848
+        },
+        {
+          "path": "/assets/veir-answer-DnXItT1g.js",
+          "startMs": 751,
+          "endMs": 850
+        },
+        {
+          "path": "/assets/hand-helping-CHje7i5P.js",
+          "startMs": 751,
+          "endMs": 843
+        },
+        {
+          "path": "/assets/plus-DHN-YQqL.js",
+          "startMs": 752,
+          "endMs": 844
+        },
+        {
+          "path": "/assets/shield-alert-CyvVJ67P.js",
+          "startMs": 752,
+          "endMs": 845
+        },
+        {
+          "path": "/assets/reasoning-Dz62HCGU.js",
+          "startMs": 752,
+          "endMs": 849
+        },
+        {
+          "path": "/assets/markdown-5SYPrtOv.js",
+          "startMs": 752,
+          "endMs": 946
+        },
+        {
+          "path": "/assets/external-link-CJnGJXJ2.js",
+          "startMs": 753,
+          "endMs": 894
+        },
+        {
+          "path": "/assets/alert-dialog-B7gZ9cu1.js",
+          "startMs": 753,
+          "endMs": 897
+        },
+        {
+          "path": "/assets/account-dialogs-BrREnnsM.js",
+          "startMs": 753,
+          "endMs": 898
+        },
+        {
+          "path": "/assets/sse-D68sKq4g.js",
+          "startMs": 754,
+          "endMs": 937
+        },
+        {
+          "path": "/assets/blocked-panel-B2yr2oDr.js",
+          "startMs": 754,
+          "endMs": 941
+        },
+        {
+          "path": "/assets/hand-heart-BLIf1V6Y.js",
+          "startMs": 754,
+          "endMs": 941
+        },
+        {
+          "path": "/assets/conversation-dialogs-DLqNCS0J.js",
+          "startMs": 754,
+          "endMs": 968
+        },
+        {
+          "path": "/assets/evidence-item-DxBe449u.js",
+          "startMs": 755,
+          "endMs": 983
+        },
+        {
+          "path": "/assets/brain-DkVTvBcM.js",
+          "startMs": 755,
+          "endMs": 982
+        },
+        {
+          "path": "/assets/freshness-PHqOJ23L.js",
+          "startMs": 755,
+          "endMs": 983
+        },
+        {
+          "path": "/assets/escalation-flow-dialog-D0OvT5eJ.js",
+          "startMs": 755,
+          "endMs": 989
+        },
+        {
+          "path": "/assets/memory-meta-c_WDxg6l.js",
+          "startMs": 756,
+          "endMs": 991
+        },
+        {
+          "path": "/assets/checkbox-CY4blevU.js",
+          "startMs": 756,
+          "endMs": 1016
+        },
+        {
+          "path": "/assets/minus-D1U8qfi9.js",
+          "startMs": 756,
+          "endMs": 1023
+        },
+        {
+          "path": "/assets/field-Cd5Zn5bZ.js",
+          "startMs": 756,
+          "endMs": 1024
+        },
+        {
+          "path": "/assets/zod-B90q9OF5.js",
+          "startMs": 756,
+          "endMs": 1025
+        },
+        {
+          "path": "/assets/form-errors-BoRVmvXR.js",
+          "startMs": 757,
+          "endMs": 1029
+        },
+        {
+          "path": "/assets/select-field-BfCur8JH.js",
+          "startMs": 757,
+          "endMs": 1032
+        },
+        {
+          "path": "/assets/packet-view-C1WboP9d.js",
+          "startMs": 757,
+          "endMs": 1067
+        },
+        {
+          "path": "/api/v1/sessions",
+          "startMs": 765,
+          "endMs": 1085
+        },
+        {
+          "path": "/api/v1/ventures",
+          "startMs": 766,
+          "endMs": 1066
+        },
+        {
+          "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/call-config",
+          "startMs": 766,
+          "endMs": 1067
+        },
+        {
+          "path": "/api/v1/health",
+          "startMs": 766,
+          "endMs": 1070
+        },
+        {
+          "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/documents",
+          "startMs": 766,
+          "endMs": 1073
+        },
+        {
+          "path": "/api/v1/ventures/dc7cc1bb-9dc4-53ab-8b24-c17cb9e7fe5c/memory",
+          "startMs": 766,
+          "endMs": 1121
+        },
+        {
+          "path": "/assets/newsreader-latin-wght-normal-CCVVNp6i.woff2",
+          "startMs": 815,
+          "endMs": 950
+        },
+        {
+          "path": "/assets/geist-mono-latin-wght-normal-XN7g48iV.woff2",
+          "startMs": 816,
+          "endMs": 923
+        }
+      ],
+      "sansFont": {
+        "startMs": 182.30000007152557,
+        "endMs": 242.20000004768372
+      },
+      "serifFont": {
+        "startMs": 814.6000000238419,
+        "endMs": 949.7000000476837
+      },
+      "preloadedFonts": [],
+      "paints": {
+        "cls": 0.003085822094157236,
+        "lcp": 860,
+        "shifted": [
+          "p.boot-brand +0.000",
+          "div.min-h-0.flex-1.overflow-y-auto +0.003",
+          "button.group.flex.h-8 +0.003",
+          "div.ml-auto.flex.items-center +0.003"
+        ]
+      },
+      "shellMs": 767.8000000715256,
+      "composerMs": 881.3999999761581,
+      "transitions": {
+        "knowledge": {
+          "ms": 140.10000002384186,
+          "cls": 0
+        },
+        "documents": {
+          "ms": 84.69999992847443,
+          "cls": 0
+        },
+        "knowledgeAgain": {
+          "ms": 47.799999952316284,
+          "cls": 0
+        },
+        "newChat": {
+          "ms": 47.199999928474426,
+          "cls": 0
+        }
+      }
+    },
+    "landing": {
+      "label": "run-landing",
+      "fcpMs": 180,
+      "paints": {
+        "cls": 7.195550947359396e-06,
+        "lcp": 480,
+        "shifted": [
+          "p.boot-brand +0.000"
+        ]
+      },
+      "landingMs": 471.7000000476837
+    }
+  },
+  "afterNPerProfile": 5,
+  "after": [
+    {
+      "label": "final-laptop",
+      "device": {
+        "name": "laptop",
+        "cpuSlowdown": 1
+      },
+      "network": {
+        "offline": false,
+        "latency": 40,
+        "downloadThroughput": 2500000,
+        "uploadThroughput": 625000
+      },
+      "ttfbMs": 1.2999999523162842,
+      "domContentLoadedMs": 345.2000000476837,
+      "fcpMs": 180,
+      "entryScriptBytes": 83842,
+      "scriptsBeforeComposer": 76,
+      "sansFont": {
+        "startMs": 172.20000004768372,
+        "endMs": 235.20000004768372
+      },
+      "serifFont": {
+        "startMs": 614.5,
+        "endMs": 700.7999999523163
+      },
+      "preloadedFonts": [],
+      "paints": {
+        "cls": 0.003138039336446545,
+        "lcp": 640,
+        "shifted": [
+          "p.boot-brand +0.000",
+          "h1.mt-6.font-serif.text-title +0.000",
+          "div.min-h-0.flex-1.overflow-y-auto +0.003",
+          "button.group.flex.h-8 +0.003",
+          "div.ml-auto.flex.items-center +0.003"
+        ]
+      },
+      "shellMs": 630.2000000476837,
+      "composerMs": 639.2999999523163,
+      "transitions": {
+        "knowledge": {
+          "ms": 81.70000004768372,
+          "cls": 0
+        },
+        "documents": {
+          "ms": 70.79999995231628,
+          "cls": 0
+        },
+        "knowledgeAgain": {
+          "ms": 14.5,
+          "cls": 0
+        },
+        "newChat": {
+          "ms": 13,
+          "cls": 0
+        }
+      }
+    },
+    {
+      "label": "final-phone-cpu",
+      "device": {
+        "name": "phone-cpu",
+        "cpuSlowdown": 4
+      },
+      "network": {
+        "offline": false,
+        "latency": 40,
+        "downloadThroughput": 2500000,
+        "uploadThroughput": 625000
+      },
+      "ttfbMs": 1,
+      "domContentLoadedMs": 429,
+      "fcpMs": 200,
+      "entryScriptBytes": 83842,
+      "scriptsBeforeComposer": 76,
+      "sansFont": {
+        "startMs": 182.89999997615814,
+        "endMs": 239.70000004768372
+      },
+      "serifFont": {
+        "startMs": 822.6000000238419,
+        "endMs": 948.3999999761581
+      },
+      "preloadedFonts": [],
+      "paints": {
+        "cls": 0.003138039336446545,
+        "lcp": 876,
+        "shifted": [
+          "p.boot-brand +0.000",
+          "h1.mt-6.font-serif.text-title +0.000",
+          "div.min-h-0.flex-1.overflow-y-auto +0.003",
+          "button.group.flex.h-8 +0.003",
+          "div.ml-auto.flex.items-center +0.003"
+        ]
+      },
+      "shellMs": 772.8999999761581,
+      "composerMs": 894,
+      "transitions": {
+        "knowledge": {
+          "ms": 143.39999997615814,
+          "cls": 0
+        },
+        "documents": {
+          "ms": 84.60000002384186,
+          "cls": 0
+        },
+        "knowledgeAgain": {
+          "ms": 56.10000002384186,
+          "cls": 0
+        },
+        "newChat": {
+          "ms": 51.700000047683716,
+          "cls": 0
+        }
+      }
+    },
+    {
+      "label": "final-landing",
+      "fcpMs": 184,
+      "paints": {
+        "cls": 7.195550947359396e-06,
+        "lcp": 480,
+        "shifted": [
+          "p.boot-brand +0.000"
+        ]
+      },
+      "landingMs": 467.7999999523163
+    },
+    {
+      "label": "final-laptop",
+      "device": {
+        "name": "laptop",
+        "cpuSlowdown": 1
+      },
+      "network": {
+        "offline": false,
+        "latency": 40,
+        "downloadThroughput": 2500000,
+        "uploadThroughput": 625000
+      },
+      "ttfbMs": 1.2999999523162842,
+      "domContentLoadedMs": 345.2999999523163,
+      "fcpMs": 180,
+      "entryScriptBytes": 83842,
+      "scriptsBeforeComposer": 76,
+      "sansFont": {
+        "startMs": 171.69999992847443,
+        "endMs": 235.39999997615814
+      },
+      "serifFont": {
+        "startMs": 614,
+        "endMs": 700.8999999761581
+      },
+      "preloadedFonts": [],
+      "paints": {
+        "cls": 0.003138039336446545,
+        "lcp": 640,
+        "shifted": [
+          "p.boot-brand +0.000",
+          "h1.mt-6.font-serif.text-title +0.000",
+          "div.min-h-0.flex-1.overflow-y-auto +0.003",
+          "button.group.flex.h-8 +0.003",
+          "div.ml-auto.flex.items-center +0.003"
+        ]
+      },
+      "shellMs": 629.7999999523163,
+      "composerMs": 638.7999999523163,
+      "transitions": {
+        "knowledge": {
+          "ms": 82.70000004768372,
+          "cls": 0
+        },
+        "documents": {
+          "ms": 58.800000071525574,
+          "cls": 0
+        },
+        "knowledgeAgain": {
+          "ms": 14.300000071525574,
+          "cls": 0
+        },
+        "newChat": {
+          "ms": 12.400000095367432,
+          "cls": 0
+        }
+      }
+    },
+    {
+      "label": "final-phone-cpu",
+      "device": {
+        "name": "phone-cpu",
+        "cpuSlowdown": 4
+      },
+      "network": {
+        "offline": false,
+        "latency": 40,
+        "downloadThroughput": 2500000,
+        "uploadThroughput": 625000
+      },
+      "ttfbMs": 1,
+      "domContentLoadedMs": 434.39999997615814,
+      "fcpMs": 204,
+      "entryScriptBytes": 83842,
+      "scriptsBeforeComposer": 76,
+      "sansFont": {
+        "startMs": 183.10000002384186,
+        "endMs": 241.79999995231628
+      },
+      "serifFont": {
+        "startMs": 827.8999999761581,
+        "endMs": 958.7999999523163
+      },
+      "preloadedFonts": [],
+      "paints": {
+        "cls": 0.003138039336446545,
+        "lcp": 880,
+        "shifted": [
+          "p.boot-brand +0.000",
+          "h1.mt-6.font-serif.text-title +0.000",
+          "div.min-h-0.flex-1.overflow-y-auto +0.003",
+          "button.group.flex.h-8 +0.003",
+          "div.ml-auto.flex.items-center +0.003"
+        ]
+      },
+      "shellMs": 778,
+      "composerMs": 899.7999999523163,
+      "transitions": {
+        "knowledge": {
+          "ms": 142.70000004768372,
+          "cls": 0
+        },
+        "documents": {
+          "ms": 88.69999992847443,
+          "cls": 0
+        },
+        "knowledgeAgain": {
+          "ms": 57.10000002384186,
+          "cls": 0
+        },
+        "newChat": {
+          "ms": 49,
+          "cls": 0
+        }
+      }
+    },
+    {
+      "label": "final-landing",
+      "fcpMs": 180,
+      "paints": {
+        "cls": 7.195550947359396e-06,
+        "lcp": 480,
+        "shifted": [
+          "p.boot-brand +0.000"
+        ]
+      },
+      "landingMs": 471.3000000715256
+    },
+    {
+      "label": "final-laptop",
+      "device": {
+        "name": "laptop",
+        "cpuSlowdown": 1
+      },
+      "network": {
+        "offline": false,
+        "latency": 40,
+        "downloadThroughput": 2500000,
+        "uploadThroughput": 625000
+      },
+      "ttfbMs": 1.1999999284744263,
+      "domContentLoadedMs": 346.09999990463257,
+      "fcpMs": 184,
+      "entryScriptBytes": 83842,
+      "scriptsBeforeComposer": 76,
+      "sansFont": {
+        "startMs": 174.89999997615814,
+        "endMs": 236.69999992847443
+      },
+      "serifFont": {
+        "startMs": 615.6999999284744,
+        "endMs": 702.1999999284744
+      },
+      "preloadedFonts": [],
+      "paints": {
+        "cls": 0.003138039336446545,
+        "lcp": 640,
+        "shifted": [
+          "p.boot-brand +0.000",
+          "h1.mt-6.font-serif.text-title +0.000",
+          "div.min-h-0.flex-1.overflow-y-auto +0.003",
+          "button.group.flex.h-8 +0.003",
+          "div.ml-auto.flex.items-center +0.003"
+        ]
+      },
+      "shellMs": 631.0999999046326,
+      "composerMs": 640.5,
+      "transitions": {
+        "knowledge": {
+          "ms": 82.69999992847443,
+          "cls": 0
+        },
+        "documents": {
+          "ms": 71.39999997615814,
+          "cls": 0
+        },
+        "knowledgeAgain": {
+          "ms": 14,
+          "cls": 0
+        },
+        "newChat": {
+          "ms": 12.200000047683716,
+          "cls": 0
+        }
+      }
+    },
+    {
+      "label": "final-phone-cpu",
+      "device": {
+        "name": "phone-cpu",
+        "cpuSlowdown": 4
+      },
+      "network": {
+        "offline": false,
+        "latency": 40,
+        "downloadThroughput": 2500000,
+        "uploadThroughput": 625000
+      },
+      "ttfbMs": 1,
+      "domContentLoadedMs": 433.2000000476837,
+      "fcpMs": 200,
+      "entryScriptBytes": 83842,
+      "scriptsBeforeComposer": 76,
+      "sansFont": {
+        "startMs": 182.60000002384186,
+        "endMs": 240.39999997615814
+      },
+      "serifFont": {
+        "startMs": 819.7000000476837,
+        "endMs": 954.3000000715256
+      },
+      "preloadedFonts": [],
+      "paints": {
+        "cls": 0.003138039336446545,
+        "lcp": 868,
+        "shifted": [
+          "p.boot-brand +0.000",
+          "h1.mt-6.font-serif.text-title +0.000",
+          "div.min-h-0.flex-1.overflow-y-auto +0.003",
+          "button.group.flex.h-8 +0.003",
+          "div.ml-auto.flex.items-center +0.003"
+        ]
+      },
+      "shellMs": 769.6000000238419,
+      "composerMs": 889.3999999761581,
+      "transitions": {
+        "knowledge": {
+          "ms": 136.5,
+          "cls": 0
+        },
+        "documents": {
+          "ms": 84.69999992847443,
+          "cls": 0
+        },
+        "knowledgeAgain": {
+          "ms": 56,
+          "cls": 0
+        },
+        "newChat": {
+          "ms": 53,
+          "cls": 0
+        }
+      }
+    },
+    {
+      "label": "final-landing",
+      "fcpMs": 180,
+      "paints": {
+        "cls": 7.195550947359396e-06,
+        "lcp": 484,
+        "shifted": [
+          "p.boot-brand +0.000"
+        ]
+      },
+      "landingMs": 462.1999999284744
+    },
+    {
+      "label": "final-laptop",
+      "device": {
+        "name": "laptop",
+        "cpuSlowdown": 1
+      },
+      "network": {
+        "offline": false,
+        "latency": 40,
+        "downloadThroughput": 2500000,
+        "uploadThroughput": 625000
+      },
+      "ttfbMs": 1.2000000476837158,
+      "domContentLoadedMs": 345.5,
+      "fcpMs": 180,
+      "entryScriptBytes": 83842,
+      "scriptsBeforeComposer": 76,
+      "sansFont": {
+        "startMs": 171.80000007152557,
+        "endMs": 235
+      },
+      "serifFont": {
+        "startMs": 613.7000000476837,
+        "endMs": 700.5
+      },
+      "preloadedFonts": [],
+      "paints": {
+        "cls": 0.003138039336446545,
+        "lcp": 640,
+        "shifted": [
+          "p.boot-brand +0.000",
+          "h1.mt-6.font-serif.text-title +0.000",
+          "div.min-h-0.flex-1.overflow-y-auto +0.003",
+          "button.group.flex.h-8 +0.003",
+          "div.ml-auto.flex.items-center +0.003"
+        ]
+      },
+      "shellMs": 630,
+      "composerMs": 639.1000000238419,
+      "transitions": {
+        "knowledge": {
+          "ms": 81.60000002384186,
+          "cls": 0
+        },
+        "documents": {
+          "ms": 71,
+          "cls": 0
+        },
+        "knowledgeAgain": {
+          "ms": 13.700000047683716,
+          "cls": 0
+        },
+        "newChat": {
+          "ms": 11.899999976158142,
+          "cls": 0
+        }
+      }
+    },
+    {
+      "label": "final-phone-cpu",
+      "device": {
+        "name": "phone-cpu",
+        "cpuSlowdown": 4
+      },
+      "network": {
+        "offline": false,
+        "latency": 40,
+        "downloadThroughput": 2500000,
+        "uploadThroughput": 625000
+      },
+      "ttfbMs": 1,
+      "domContentLoadedMs": 432.40000009536743,
+      "fcpMs": 204,
+      "entryScriptBytes": 83842,
+      "scriptsBeforeComposer": 76,
+      "sansFont": {
+        "startMs": 182.60000002384186,
+        "endMs": 240
+      },
+      "serifFont": {
+        "startMs": 821.2000000476837,
+        "endMs": 951
+      },
+      "preloadedFonts": [],
+      "paints": {
+        "cls": 0.003138039336446545,
+        "lcp": 880,
+        "shifted": [
+          "p.boot-brand +0.000",
+          "h1.mt-6.font-serif.text-title +0.000",
+          "div.min-h-0.flex-1.overflow-y-auto +0.003",
+          "button.group.flex.h-8 +0.003",
+          "div.ml-auto.flex.items-center +0.003"
+        ]
+      },
+      "shellMs": 771.6000000238419,
+      "composerMs": 891.5,
+      "transitions": {
+        "knowledge": {
+          "ms": 144.60000002384186,
+          "cls": 0
+        },
+        "documents": {
+          "ms": 86.60000002384186,
+          "cls": 0
+        },
+        "knowledgeAgain": {
+          "ms": 58.299999952316284,
+          "cls": 0
+        },
+        "newChat": {
+          "ms": 54.39999997615814,
+          "cls": 0
+        }
+      }
+    },
+    {
+      "label": "final-landing",
+      "fcpMs": 180,
+      "paints": {
+        "cls": 7.195550947359396e-06,
+        "lcp": 480,
+        "shifted": [
+          "p.boot-brand +0.000"
+        ]
+      },
+      "landingMs": 474.5
+    },
+    {
+      "label": "final-laptop",
+      "device": {
+        "name": "laptop",
+        "cpuSlowdown": 1
+      },
+      "network": {
+        "offline": false,
+        "latency": 40,
+        "downloadThroughput": 2500000,
+        "uploadThroughput": 625000
+      },
+      "ttfbMs": 1.3000000715255737,
+      "domContentLoadedMs": 348.10000002384186,
+      "fcpMs": 184,
+      "entryScriptBytes": 83842,
+      "scriptsBeforeComposer": 76,
+      "sansFont": {
+        "startMs": 175,
+        "endMs": 237.5
+      },
+      "serifFont": {
+        "startMs": 616.5,
+        "endMs": 703.2000000476837
+      },
+      "preloadedFonts": [],
+      "paints": {
+        "cls": 0.003138039336446545,
+        "lcp": 640,
+        "shifted": [
+          "p.boot-brand +0.000",
+          "h1.mt-6.font-serif.text-title +0.000",
+          "div.min-h-0.flex-1.overflow-y-auto +0.003",
+          "button.group.flex.h-8 +0.003",
+          "div.ml-auto.flex.items-center +0.003"
+        ]
+      },
+      "shellMs": 632.2000000476837,
+      "composerMs": 640.8999999761581,
+      "transitions": {
+        "knowledge": {
+          "ms": 82.80000007152557,
+          "cls": 0
+        },
+        "documents": {
+          "ms": 71.90000009536743,
+          "cls": 0
+        },
+        "knowledgeAgain": {
+          "ms": 13.799999952316284,
+          "cls": 0
+        },
+        "newChat": {
+          "ms": 11.399999976158142,
+          "cls": 0
+        }
+      }
+    },
+    {
+      "label": "final-phone-cpu",
+      "device": {
+        "name": "phone-cpu",
+        "cpuSlowdown": 4
+      },
+      "network": {
+        "offline": false,
+        "latency": 40,
+        "downloadThroughput": 2500000,
+        "uploadThroughput": 625000
+      },
+      "ttfbMs": 1,
+      "domContentLoadedMs": 428.2000000476837,
+      "fcpMs": 200,
+      "entryScriptBytes": 83842,
+      "scriptsBeforeComposer": 76,
+      "sansFont": {
+        "startMs": 181.80000007152557,
+        "endMs": 243.80000007152557
+      },
+      "serifFont": {
+        "startMs": 820.7000000476837,
+        "endMs": 950
+      },
+      "preloadedFonts": [],
+      "paints": {
+        "cls": 0.003138039336446545,
+        "lcp": 880,
+        "shifted": [
+          "p.boot-brand +0.000",
+          "h1.mt-6.font-serif.text-title +0.000",
+          "div.min-h-0.flex-1.overflow-y-auto +0.003",
+          "button.group.flex.h-8 +0.003",
+          "div.ml-auto.flex.items-center +0.003"
+        ]
+      },
+      "shellMs": 772.2000000476837,
+      "composerMs": 892.2000000476837,
+      "transitions": {
+        "knowledge": {
+          "ms": 142.30000007152557,
+          "cls": 0
+        },
+        "documents": {
+          "ms": 86.20000004768372,
+          "cls": 0
+        },
+        "knowledgeAgain": {
+          "ms": 61.60000002384186,
+          "cls": 0
+        },
+        "newChat": {
+          "ms": 50.59999990463257,
+          "cls": 0
+        }
+      }
+    },
+    {
+      "label": "final-landing",
+      "fcpMs": 184,
+      "paints": {
+        "cls": 7.195550947359396e-06,
+        "lcp": 488,
+        "shifted": [
+          "p.boot-brand +0.000"
+        ]
+      },
+      "landingMs": 466.2000000476837
+    }
+  ],
+  "summary": {
+    "final-laptop": {
+      "fcpMs": {
+        "n": 5,
+        "p50": 180,
+        "p95": 184,
+        "p99": 184
+      },
+      "shellMs": {
+        "n": 5,
+        "p50": 630.2000000476837,
+        "p95": 632.2000000476837,
+        "p99": 632.2000000476837
+      },
+      "composerMs": {
+        "n": 5,
+        "p50": 639.2999999523163,
+        "p95": 640.8999999761581,
+        "p99": 640.8999999761581
+      },
+      "lcpMs": {
+        "n": 5,
+        "p50": 640,
+        "p95": 640,
+        "p99": 640
+      },
+      "cls": {
+        "n": 5,
+        "p50": 0.003138039336446545,
+        "p95": 0.003138039336446545,
+        "p99": 0.003138039336446545
+      },
+      "warmTransitions": {
+        "knowledge": {
+          "n": 5,
+          "p50": 82.69999992847443,
+          "p95": 82.80000007152557,
+          "p99": 82.80000007152557
+        },
+        "documents": {
+          "n": 5,
+          "p50": 71,
+          "p95": 71.90000009536743,
+          "p99": 71.90000009536743
+        },
+        "knowledgeAgain": {
+          "n": 5,
+          "p50": 14,
+          "p95": 14.5,
+          "p99": 14.5
+        },
+        "newChat": {
+          "n": 5,
+          "p50": 12.200000047683716,
+          "p95": 13,
+          "p99": 13
+        }
+      }
+    },
+    "final-phone-cpu": {
+      "fcpMs": {
+        "n": 5,
+        "p50": 200,
+        "p95": 204,
+        "p99": 204
+      },
+      "shellMs": {
+        "n": 5,
+        "p50": 772.2000000476837,
+        "p95": 778,
+        "p99": 778
+      },
+      "composerMs": {
+        "n": 5,
+        "p50": 892.2000000476837,
+        "p95": 899.7999999523163,
+        "p99": 899.7999999523163
+      },
+      "lcpMs": {
+        "n": 5,
+        "p50": 880,
+        "p95": 880,
+        "p99": 880
+      },
+      "cls": {
+        "n": 5,
+        "p50": 0.003138039336446545,
+        "p95": 0.003138039336446545,
+        "p99": 0.003138039336446545
+      },
+      "warmTransitions": {
+        "knowledge": {
+          "n": 5,
+          "p50": 142.70000004768372,
+          "p95": 144.60000002384186,
+          "p99": 144.60000002384186
+        },
+        "documents": {
+          "n": 5,
+          "p50": 86.20000004768372,
+          "p95": 88.69999992847443,
+          "p99": 88.69999992847443
+        },
+        "knowledgeAgain": {
+          "n": 5,
+          "p50": 57.10000002384186,
+          "p95": 61.60000002384186,
+          "p99": 61.60000002384186
+        },
+        "newChat": {
+          "n": 5,
+          "p50": 51.700000047683716,
+          "p95": 54.39999997615814,
+          "p99": 54.39999997615814
+        }
+      }
+    },
+    "final-landing": {
+      "fcpMs": {
+        "n": 5,
+        "p50": 180,
+        "p95": 184,
+        "p99": 184
+      },
+      "landingMs": {
+        "n": 5,
+        "p50": 467.7999999523163,
+        "p95": 474.5,
+        "p99": 474.5
+      },
+      "lcpMs": {
+        "n": 5,
+        "p50": 480,
+        "p95": 488,
+        "p99": 488
+      },
+      "cls": {
+        "n": 5,
+        "p50": 7.195550947359396e-06,
+        "p95": 7.195550947359396e-06,
+        "p99": 7.195550947359396e-06
+      }
+    }
+  },
+  "controlFeedback": {
+    "n": 120,
+    "p50": 14.199999928474426,
+    "p95": 15.5,
+    "p99": 15.899999976158142
+  },
+  "controlBoundary": "Trusted pointerdown to aria-pressed mutation and next animation frame; not field INP",
+  "percentiles": "nearest rank; n=5 tails are observed maxima, not population-tail estimates",
+  "conditions": "environment.json; raw network waterfalls below",
+  "voiceUpgradeLatency": "not live-validated",
+  "allSuccessfulSamplesRetained": true
+}

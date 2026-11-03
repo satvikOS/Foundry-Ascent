@@ -351,7 +351,6 @@ export function CallScreen() {
           }}
           className={cn(
             'fixed inset-0 z-50 flex flex-col overflow-y-auto bg-background text-foreground outline-none',
-            'bg-[radial-gradient(ellipse_80%_55%_at_50%_30%,color-mix(in_oklab,var(--foreground)_5%,transparent),transparent_70%)]',
             'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-300',
           )}
         >

@@ -31,6 +31,8 @@ const FRAME_TEXT = [
   'Want to pick up where we left off, or start on something new? Want to pick up where your last conversation here left off, or start on something new? Your last conversation here was about.',
   'Where would you like to pick up? What would you like to work on?',
   // The shapes around a thread.
+  // Inverted-question subjects add "whether"; it must not manufacture topic overlap.
+  'Whether to. Whether you. Whether the.',
   'I wanted to come back to. Last time, we left off on. We talked about. When we last spoke. On a call. We were on.',
   "Last time you planned to, were going to, were planning to, were hoping to, said you'd, said you would, said you were going to, wanted to, hoped to. Your plan to. Your decision to.",
   'Did you get to? How did go? Where are things with? Any more thoughts on? Want to carry on with? Did you manage to? You mentioned. Are you ready? How did that go? Any update on? How are things with? What happened with? Did you get a chance to?',

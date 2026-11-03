@@ -377,10 +377,10 @@ describe('distillSession', () => {
 
     const proposals = await proposalsFrom(sessionId);
     expect(proposals).toHaveLength(learned);
-    for (const item of proposals) expect(item).toMatchObject({ status: 'confirmed', origin: 'ai' });
+    for (const item of proposals) expect(item).toMatchObject({ status: 'proposed', origin: 'ai' });
     const items = await Promise.all(proposals.map((item) => h.core.memory.get(maya, item.id)));
     const raised = items.find((m) => m.content.includes('I will interview five library staff'));
-    expect(raised).toMatchObject({ keptAutomatically: true, approvedBy: null });
+    expect(raised).toMatchObject({ keptAutomatically: false, approvedBy: null });
     // A merge keeps each item's own title and content together: the item a candidate restates gains a source and
     // nothing else, so Knowledge never shows one item's title over another's content.
     for (const item of items) {
@@ -885,7 +885,7 @@ describe('memory hygiene', () => {
       sx
         .query(
           `SELECT id, source_refs::text AS refs FROM memory_objects
-           WHERE venture_id = :v AND origin = 'ai' AND status = 'confirmed' AND approved_by IS NULL
+           WHERE venture_id = :v AND origin = 'ai' AND status = 'proposed' AND approved_by IS NULL
              AND content LIKE :quote`,
           { v: p.uuid(quietquad()), quote: p.text(`%${text}%`) },
         )
@@ -937,7 +937,7 @@ describe('memory hygiene', () => {
     const items = await h.t.db.system((sx) => memoryRepo.getMemoryByIds(sx, [old, kept.id]));
     // The proposal from before (no conversation to judge it by, nothing like it) is kept the way new memory is.
     expect(Object.fromEntries(items.map((m) => [m.id, [m.status, m.keptAutomatically]]))).toEqual({
-      [old]: ['confirmed', true],
+      [old]: ['proposed', false],
       [kept.id]: ['confirmed', true],
     });
     // The approval CHECK still forbids a confirmed AI item that neither a person nor the vEIR kept.
@@ -1766,6 +1766,9 @@ describe('what a distillation draws from a conversation, and its deletion', () =
       );
       expect(saved?.content.nextOpenerSource).toBeUndefined();
     };
+    // Keep this legacy-origin check independent of an earlier test's latest news, which correctly takes priority.
+    const neutral = await conversation(maya, ['How should we evaluate a library deposit?']);
+    await idle(neutral, 1);
     const UNKNOWN = 'Did the library deposit question get an answer?';
     await writeOpener(UNKNOWN);
     const copied = await h.core.sessions.create(maya, quietquad(), { mode: 'diagnose' });

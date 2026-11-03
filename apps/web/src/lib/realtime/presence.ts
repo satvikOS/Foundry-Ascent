@@ -69,12 +69,7 @@ export class PresenceAvatar implements AvatarProvider {
   }
 
   speak(_unit: SpokenUnit): void {
-    const root = this.root;
-    if (!root || this.reducedMotion) return;
-    root.classList.remove('is-blooming');
-    // Restart the animation for every sentence (reading layout flushes the removed class).
-    root.getBoundingClientRect();
-    root.classList.add('is-blooming');
+    // Captions and queued text are not audible. Only the analyser may animate the speaking presence.
   }
 
   unmount(): void {
