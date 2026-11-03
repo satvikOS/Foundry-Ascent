@@ -1,0 +1,38 @@
+{
+  "initialRun": "https://github.com/satvikOS/Foundry-Ascent/actions/runs/41685856775",
+  "initialCode": "49aec8f3a7e95343331cf4999a3f1b923dc329cf",
+  "failures": [
+    {
+      "suite": "core database",
+      "failed": 1,
+      "attempted": 448,
+      "test": "never opens with a greeting the founder said, but with what they brought (review)",
+      "rootCause": "Generated question subjects added whether, which falsely counted as a second topic match alongside libraries. Different decisions about pricing and pilot sites were conflated. Shared history made exposure depend on prior-session UUID tie order.",
+      "repair": "Exclude whether as question framing, and make the regression explicitly establish the prior pricing thread.",
+      "redRegression": {
+        "attempted": 1,
+        "failed": 1,
+        "skipped": 32
+      },
+      "greenContinuitySuite": {
+        "attempted": 33,
+        "passed": 33,
+        "failed": 0
+      }
+    },
+    {
+      "suite": "CodeQL",
+      "failed": 2,
+      "paths": [
+        "docs/upgrade/visual-review.html"
+      ],
+      "rule": "js/xss-through-dom",
+      "repair": "Resolve selection keys through a fixed image catalog; DOM values cannot form image or link URLs.",
+      "visualCheck": {
+        "pairs": 28,
+        "imagesLoaded": 56
+      }
+    }
+  ],
+  "finalCi": "pending new revision"
+}

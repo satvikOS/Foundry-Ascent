@@ -150,22 +150,42 @@
   </footer>
   <script>
     const controls = ['journey', 'device', 'theme'].map((id) => document.getElementById(id));
+    // Resolve DOM selections through a closed catalog; only repository image paths can be attached.
+    const assets = new Map();
+    for (const journey of [
+      'context',
+      'avatar',
+      'learning',
+      'memory-review',
+      'conversation',
+      'documents',
+      'help',
+    ]) {
+      for (const device of ['desktop', 'mobile']) {
+        for (const theme of ['dark', 'light']) {
+          const before =
+            {
+              context: 'venture-home',
+              avatar: 'call',
+              learning: 'venture-settings',
+              'memory-review': 'knowledge',
+            }[journey] ?? journey;
+          const custom = ['context', 'avatar', 'learning', 'memory-review'].includes(journey);
+          assets.set(`${journey}/${device}/${theme}`, {
+            before: `evidence/before/${before}-before-${device}-${theme}.png`,
+            after: custom
+              ? `evidence/after/${journey}-${device}-${theme}.png`
+              : `evidence/after/general/${journey}-after-${device}-${theme}.png`,
+          });
+        }
+      }
+    }
     function show() {
-      const [journey, device, theme] = controls.map((c) => c.value);
-      const before =
-        {
-          context: 'venture-home',
-          avatar: 'call',
-          learning: 'venture-settings',
-          'memory-review': 'knowledge',
-        }[journey] ?? journey;
-      const custom = ['context', 'avatar', 'learning', 'memory-review'].includes(journey);
-      const after = custom
-        ? `evidence/after/${journey}-${device}-${theme}.png`
-        : `evidence/after/general/${journey}-after-${device}-${theme}.png`;
+      const selected = assets.get(controls.map((c) => c.value).join('/'));
+      if (!selected) return;
       for (const [id, url] of [
-        ['before', `evidence/before/${before}-before-${device}-${theme}.png`],
-        ['after', after],
+        ['before', selected.before],
+        ['after', selected.after],
       ]) {
         document.getElementById(id).src = url;
         document.getElementById(id + '-link').href = url;

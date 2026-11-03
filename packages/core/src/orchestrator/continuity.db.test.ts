@@ -1556,7 +1556,12 @@ describe('continuity keyed by the venture and the founder (review)', () => {
 
   it('never opens with a greeting the founder said, but with what they brought (review)', async () => {
     await ageAll(10);
+    // A deterministic previous thread: "whether" is question framing, not evidence of topic overlap.
+    // Pricing and pilot locations share only "libraries"; the new substantive question must survive.
+    const previous = await h.core.sessions.create(maya, quietquad(), {});
+    await talk(maya, previous.id, 'Should we charge libraries per seat?');
     const call = await h.core.sessions.create(maya, quietquad(), {});
+    expect(call.opener).toContain('whether to charge libraries per seat');
     await talk(maya, call.id, 'Hi');
     await talk(maya, call.id, 'Should the pilot run in two libraries or three?');
     await talk(maya, call.id, 'ok');
