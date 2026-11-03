@@ -1,0 +1,553 @@
+{
+ "suite": "face",
+ "budget_usd": 2.0,
+ "max_scenarios": 1,
+ "stopped_by": null,
+ "models": {
+  "app": {
+   "primary": "us.amazon.nova-2-lite-v1:0",
+   "fallback": "global.amazon.nova-2-lite-v1:0",
+   "embeddings": "amazon.titan-embed-text-v2:0"
+  },
+  "simulator": null,
+  "judge": null,
+  "probes": {}
+ },
+ "face_admin": "granted",
+ "face_mode": "lite",
+ "backfill": "chunks=70 memory=50 stoppedBy=done",
+ "result": {
+  "face": {
+   "vendor": "heygen-sandbox",
+   "face_mode": "lite",
+   "admin_grant": "granted",
+   "lite_face_reference": "ready",
+   "playwright_exit": 0,
+   "credits": {
+    "before": 10.0,
+    "after": 10.0,
+    "used": 0.0,
+    "status": 200,
+    "code": 1000
+   },
+   "vendor_calls": {
+    "/v1/sessions/keep-alive": {
+     "status": {
+      "200": 2
+     },
+     "code": {
+      "1000": 2
+     }
+    },
+    "/v1/sessions/start": {
+     "status": {
+      "201": 1
+     },
+     "code": {
+      "1000": 1
+     }
+    },
+    "/v1/sessions/stop": {
+     "status": {
+      "200": 1
+     },
+     "code": {
+      "1000": 1
+     }
+    },
+    "/v1/sessions/token": {
+     "status": {
+      "200": 1
+     },
+     "code": {
+      "1000": 1
+     }
+    },
+    "/v1/users/credits": {
+     "status": {
+      "200": 2
+     },
+     "code": {
+      "1000": 2
+     }
+    }
+   },
+   "success_codes": [
+    1000
+   ],
+   "call_lite_vendor": null,
+   "instruments": {
+    "delivered": true,
+    "sameLength": true,
+    "injectedArrived": true,
+    "admittedGone": true,
+    "injectCleared": true,
+    "livekit": true,
+    "meter": true,
+    "appMeter": true,
+    "events_out": 1,
+    "events_in": 1,
+    "error": null,
+    "ok": true
+   },
+   "probe": null,
+   "call": null,
+   "injection": null,
+   "polly": {
+    "turns": [
+     {
+      "first_speak_started_ms": null,
+      "first_face_audio_ms": null,
+      "first_app_playback_ms": 3049,
+      "first_app_audio_ms": 3172,
+      "first_hand_over_ms": null,
+      "first_hand_over_done_ms": null,
+      "first_unit_ms": 2826,
+      "unit_to_hand_over_ms": null
+     },
+     {
+      "first_speak_started_ms": null,
+      "first_face_audio_ms": null,
+      "first_app_playback_ms": 1617,
+      "first_app_audio_ms": 1741,
+      "first_hand_over_ms": null,
+      "first_hand_over_done_ms": null,
+      "first_unit_ms": 1411,
+      "unit_to_hand_over_ms": null
+     }
+    ],
+    "first_audio_ms": {
+     "p50": 1741,
+     "p95": 3172,
+     "n": 2
+    },
+    "first_scheduled_ms": {
+     "p50": 1617,
+     "p95": 3049,
+     "n": 2
+    },
+    "first_unit_ms": {
+     "p50": 1411,
+     "p95": 2826,
+     "n": 2
+    },
+    "error": null,
+    "server_model_start_ms": {
+     "p50": 235,
+     "p95": 277,
+     "n": 2
+    },
+    "server_first_speech_ms": {
+     "p50": 1405,
+     "p95": 2822,
+     "n": 2
+    }
+   },
+   "call_lite": {
+    "session": {
+     "provider": "heygen",
+     "voicing": "audio",
+     "stock_face": false,
+     "livekit_host": "heygen-feapbkvq.livekit.cloud"
+    },
+    "face_shown": true,
+    "turns": [
+     {
+      "first_speak_started_ms": null,
+      "first_face_audio_ms": 3149,
+      "first_app_playback_ms": 10533,
+      "first_app_audio_ms": 10607,
+      "first_hand_over_ms": 2253,
+      "first_hand_over_done_ms": 10531,
+      "first_unit_ms": 1347,
+      "unit_to_hand_over_ms": 907
+     },
+     {
+      "first_speak_started_ms": null,
+      "first_face_audio_ms": 2419,
+      "first_app_playback_ms": 24165,
+      "first_app_audio_ms": 24276,
+      "first_hand_over_ms": 1563,
+      "first_hand_over_done_ms": 9812,
+      "first_unit_ms": 1166,
+      "unit_to_hand_over_ms": 397
+     }
+    ],
+    "first_face_audio_ms": {
+     "p50": 2419,
+     "p95": 3149,
+     "n": 2
+    },
+    "first_speak_started_ms": null,
+    "first_hand_over_ms": {
+     "p50": 1563,
+     "p95": 2253,
+     "n": 2
+    },
+    "first_hand_over_done_ms": {
+     "p50": 9812,
+     "p95": 10531,
+     "n": 2
+    },
+    "first_unit_ms": {
+     "p50": 1166,
+     "p95": 1347,
+     "n": 2
+    },
+    "unit_to_hand_over_ms": {
+     "p50": 397,
+     "p95": 907,
+     "n": 2
+    },
+    "hand_over_to_audio_ms": {
+     "p50": 859,
+     "p95": 1109,
+     "n": 7
+    },
+    "hand_over_to_started_ms": null,
+    "hand_over_to_done_ms": null,
+    "speak_requests": 7,
+    "speak_accepted": 0,
+    "speak_text_sent": 0,
+    "app_playbacks_after_live": 3,
+    "mic_requests_after_live": 0,
+    "audio_senders": 0,
+    "error": null,
+    "server_model_start_ms": {
+     "p50": 228,
+     "p95": 346,
+     "n": 2
+    },
+    "server_first_speech_ms": {
+     "p50": 1163,
+     "p95": 1343,
+     "n": 2
+    }
+   },
+   "warm_up": {
+    "turns": 1,
+    "first_unit_ms": {
+     "p50": 2021,
+     "p95": 2021,
+     "n": 1
+    },
+    "server_model_start_ms": {
+     "p50": 501,
+     "p95": 501,
+     "n": 1
+    },
+    "server_first_speech_ms": {
+     "p50": 2015,
+     "p95": 2015,
+     "n": 1
+    },
+    "error": null
+   },
+   "comparison": {
+    "rows": [
+     {
+      "key": "first_face_audio_ms",
+      "title": "Turn sent \u2192 first audio (level onset)",
+      "full": null,
+      "lite": {
+       "p50": 2419,
+       "p95": 3149,
+       "n": 2
+      },
+      "polly": {
+       "p50": 1741,
+       "p95": 3172,
+       "n": 2
+      }
+     },
+     {
+      "key": "first_speak_started_ms",
+      "title": "Turn sent \u2192 first avatar.speak_started",
+      "full": null,
+      "lite": null,
+      "polly": null
+     },
+     {
+      "key": "first_unit_ms",
+      "title": "Turn sent \u2192 first spoken unit arrives (turn.speech)",
+      "full": null,
+      "lite": {
+       "p50": 1166,
+       "p95": 1347,
+       "n": 2
+      },
+      "polly": {
+       "p50": 1411,
+       "p95": 2826,
+       "n": 2
+      }
+     },
+     {
+      "key": "first_hand_over_ms",
+      "title": "Turn sent \u2192 first hand-over to the face (FULL speak_text, LITE face/speak)",
+      "full": null,
+      "lite": {
+       "p50": 1563,
+       "p95": 2253,
+       "n": 2
+      },
+      "polly": null
+     },
+     {
+      "key": "unit_to_hand_over_ms",
+      "title": "First unit arrives \u2192 its hand-over to the face (FULL: pre-approved, no face/say)",
+      "full": null,
+      "lite": {
+       "p50": 397,
+       "p95": 907,
+       "n": 2
+      },
+      "polly": null
+     },
+     {
+      "key": "first_hand_over_done_ms",
+      "title": "Turn sent \u2192 first hand-over relayed (LITE face/speak answered)",
+      "full": null,
+      "lite": {
+       "p50": 9812,
+       "p95": 10531,
+       "n": 2
+      },
+      "polly": null
+     },
+     {
+      "key": "server_model_start_ms",
+      "title": "Server: turn request \u2192 model call starts (turn.timing)",
+      "full": null,
+      "lite": {
+       "p50": 228,
+       "p95": 346,
+       "n": 2
+      },
+      "polly": {
+       "p50": 235,
+       "p95": 277,
+       "n": 2
+      }
+     },
+     {
+      "key": "server_first_speech_ms",
+      "title": "Server: turn request \u2192 first spoken unit sent (turn.timing)",
+      "full": null,
+      "lite": {
+       "p50": 1163,
+       "p95": 1343,
+       "n": 2
+      },
+      "polly": {
+       "p50": 1405,
+       "p95": 2822,
+       "n": 2
+      }
+     },
+     {
+      "key": "unit_to_audio_ms",
+      "title": "Each unit: hand-over \u2192 first audio",
+      "full": null,
+      "lite": {
+       "p50": 859,
+       "p95": 1109,
+       "n": 7
+      },
+      "polly": null
+     },
+     {
+      "key": "unit_to_started_ms",
+      "title": "Each unit: hand-over \u2192 avatar.speak_started",
+      "full": null,
+      "lite": null,
+      "polly": null
+     }
+    ],
+    "lite_minus_full_first_audio_p50_ms": null,
+    "faster_first_audio": null,
+    "full_minus_polly_first_audio_p50_ms": null,
+    "lite_minus_polly_first_audio_p50_ms": 678,
+    "full_minus_polly_first_unit_p50_ms": null
+   },
+   "checks": {
+    "instruments_ok": true,
+    "e1_success_code_recorded": true,
+    "e1_livekit_host_expected": null,
+    "e2_no_credits_used": true,
+    "e3_speak_text_exact": null,
+    "e4_queue_measured": null,
+    "e5_first_audio_under_target": null,
+    "e5_hand_over_at_unit_arrival": null,
+    "e5_unit_arrival_matches_polly": null,
+    "e6_interrupt_clears_queue": null,
+    "e7_no_microphone": null,
+    "e7_no_user_transcription": null,
+    "e8_speak_response_ignored": null,
+    "e9_full_token_publishes": null,
+    "e9_lite_token_cannot_publish": null,
+    "e10_transcript_endpoint_live": null,
+    "e10_injection_ends_face_in_a_heartbeat": null,
+    "e11_idle_end_recorded": null,
+    "e11_max_duration_enforced": null,
+    "label_ai_avatar_visible": null,
+    "falls_back_to_presence": null
+   },
+   "passed": 3,
+   "run": 3,
+   "playwright_exits": {
+    "lite": 0
+   }
+  },
+  "passed": 3,
+  "run": 3,
+  "playwright_exit": 0
+ },
+ "app_logs": {
+  "model_attempts": {
+   "distill": {
+    "attempts": 1,
+    "first_attempts": 1,
+    "first_invalid_share_pct": 0.0
+   },
+   "turn": {
+    "attempts": 10,
+    "first_attempts": 10,
+    "first_invalid_share_pct": 0.0
+   }
+  },
+  "invalid_output_issues": {},
+  "root_max_tokens": 0,
+  "turn_total_ms": {
+   "chat": null,
+   "voice": {
+    "p50": 4515.0,
+    "p95": 6614.0,
+    "n": 5
+   }
+  },
+  "voice_first_speech_ms": {
+   "p50": 1405.0,
+   "p95": 2822.0,
+   "n": 5
+  },
+  "polly_first_audio_ms": {
+   "p50": 235.0,
+   "p95": 882.0,
+   "n": 16
+  },
+  "face_approval_ms": null,
+  "face_units_approved": 0,
+  "stream_fallbacks": {},
+  "interrupt_requests": 1,
+  "turns": [
+   {
+    "voice": true,
+    "retrievalMs": 412.0,
+    "embedMs": 391.0,
+    "modelStartMs": 501.0,
+    "modelFirstTokenMs": 1406.0,
+    "firstDeltaMs": 2014.0,
+    "firstSpeechMs": 2015.0,
+    "totalMs": 6614.0,
+    "modelFirstTokenAtMs": 1907.0,
+    "firstTokenToDeltaMs": 107,
+    "pollyFirstAudioMs": 601.0
+   },
+   {
+    "voice": true,
+    "retrievalMs": 204.0,
+    "embedMs": 183.0,
+    "modelStartMs": 235.0,
+    "modelFirstTokenMs": 2320.0,
+    "firstDeltaMs": 2822.0,
+    "firstSpeechMs": 2822.0,
+    "totalMs": 4485.0,
+    "modelFirstTokenAtMs": 2555.0,
+    "firstTokenToDeltaMs": 267,
+    "pollyFirstAudioMs": 122.0
+   },
+   {
+    "voice": true,
+    "retrievalMs": 196.0,
+    "embedMs": 176.0,
+    "modelStartMs": 277.0,
+    "modelFirstTokenMs": 910.0,
+    "firstDeltaMs": 1405.0,
+    "firstSpeechMs": 1405.0,
+    "totalMs": 3180.0,
+    "modelFirstTokenAtMs": 1187.0,
+    "firstTokenToDeltaMs": 218,
+    "pollyFirstAudioMs": 113.0
+   },
+   {
+    "voice": true,
+    "retrievalMs": 197.0,
+    "embedMs": 180.0,
+    "modelStartMs": 228.0,
+    "modelFirstTokenMs": 899.0,
+    "firstDeltaMs": 1343.0,
+    "firstSpeechMs": 1343.0,
+    "totalMs": 4515.0,
+    "modelFirstTokenAtMs": 1127.0,
+    "firstTokenToDeltaMs": 216,
+    "pollyFirstAudioMs": 445.0
+   },
+   {
+    "voice": true,
+    "retrievalMs": 286.0,
+    "embedMs": 262.0,
+    "modelStartMs": 346.0,
+    "modelFirstTokenMs": 680.0,
+    "firstDeltaMs": 1163.0,
+    "firstSpeechMs": 1163.0,
+    "totalMs": 5887.0,
+    "modelFirstTokenAtMs": 1026.0,
+    "firstTokenToDeltaMs": 137,
+    "pollyFirstAudioMs": 381.0
+   }
+  ]
+ },
+ "spend": {
+  "app_usd": 0.033015,
+  "lab_usd": 0.0,
+  "total_usd": 0.033015,
+  "app_budget_usd": 2.0,
+  "lab_budget_usd": 0.0,
+  "app_by_purpose": [
+   {
+    "purpose": "speech",
+    "usd": 0.017408,
+    "calls": 22,
+    "input_units": 1169
+   },
+   {
+    "purpose": "turn",
+    "usd": 0.010595,
+    "calls": 10,
+    "input_units": 56528
+   },
+   {
+    "purpose": "distill",
+    "usd": 0.004873,
+    "calls": 1,
+    "input_units": 5697
+   },
+   {
+    "purpose": "seed",
+    "usd": 0.000132,
+    "calls": 9,
+    "input_units": 6315
+   },
+   {
+    "purpose": "embedding",
+    "usd": 7e-06,
+    "calls": 6,
+    "input_units": 158
+   }
+  ],
+  "lab_by_purpose": {}
+ },
+ "duration_seconds": 138.2,
+ "harness_error": null
+}

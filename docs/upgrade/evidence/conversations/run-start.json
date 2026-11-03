@@ -1,0 +1,8 @@
+{
+  "runId": "upgrade-2026-11-03T17-08-51-909Z",
+  "startedAt": "2026-11-03T17:08:51.910Z",
+  "sourceSha256": "83e5675573a54e38b5bf80ac225cad89aaf7d9fb941a900aae0fc44f2dfedbb1",
+  "promptVersion": "fa-coach-policy/2026-11-03.1",
+  "model": "MockModelGateway",
+  "fixtureSha256": "6925fa5750c552cc73eaad112d4fc6f0c2f70b9a957cba6460188c85c06ddbf2"
+}

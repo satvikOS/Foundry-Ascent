@@ -33,6 +33,8 @@ const timer = setInterval(() => {
   void sample('during-soak').catch(() => undefined);
 }, 30000);
 const result = await page.evaluate(async () => {
+  const stylesPath = '/src/styles/globals.css';
+  await import(stylesPath);
   const playbackPath = '/src/lib/realtime/playback.ts';
   const characterPath = '/src/lib/realtime/character.ts';
   const { SpeechPlayer } = await import(playbackPath);

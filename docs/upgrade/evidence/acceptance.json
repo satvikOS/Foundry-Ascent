@@ -1,0 +1,135 @@
+{
+  "code": "864039a8b0a07c2a3c62ba3d64944fb883f23b1f",
+  "conversationalSourceSha256": "83e5675573a54e38b5bf80ac225cad89aaf7d9fb941a900aae0fc44f2dfedbb1",
+  "conversationProtocol": {
+    "runId": "upgrade-2026-11-03T17-08-51-909Z",
+    "startedAt": "2026-11-03T17:08:51.910Z",
+    "finishedAt": "2026-11-03T17:29:06.718Z",
+    "code": "864039a8b0a07c2a3c62ba3d64944fb883f23b1f",
+    "sourceSha256": "83e5675573a54e38b5bf80ac225cad89aaf7d9fb941a900aae0fc44f2dfedbb1",
+    "sourceUnchangedDuringRun": true,
+    "workingDiffSha256": "1a990346a37b297184eacaa0662e984ec2ff62f6e38edd0b4dd77b9dd85ffc64",
+    "promptVersion": "fa-coach-policy/2026-11-03.1",
+    "fixtureSha256": "6925fa5750c552cc73eaad112d4fc6f0c2f70b9a957cba6460188c85c06ddbf2",
+    "model": "MockModelGateway; deterministic fixtures",
+    "liveModel": false,
+    "scenariosAttempted": 600,
+    "scenariosPassedProtocol": 600,
+    "scenariosFailed": 0,
+    "skipped": 0,
+    "blocked": 0,
+    "conversationsStarted": 720,
+    "conversationsCompleted": 720,
+    "attemptedTurns": 5820,
+    "completedTurns": 5820,
+    "humanReviewed": 0,
+    "behavioralScores": null
+  },
+  "browser": {
+    "attempted": 121,
+    "passed": 121,
+    "failed": 0,
+    "skipped": 0,
+    "blocked": 0,
+    "flaky": 0
+  },
+  "typescript": {
+    "attempted": 5249,
+    "passed": 5249,
+    "failed": 0,
+    "skipped": 0,
+    "blocked": 0
+  },
+  "python": {
+    "attempted": 1981,
+    "passed": 1981,
+    "failed": 0,
+    "skipped": 0,
+    "blocked": 0
+  },
+  "failureSubset": {
+    "attempted": 176,
+    "passed": 176,
+    "failed": 0,
+    "skipped": 0
+  },
+  "media": {
+    "at": "2026-11-03T17:30:27.129Z",
+    "browser": "156.0.8078.4",
+    "host": "arm64",
+    "node": "v24.21.0",
+    "cases": 160,
+    "passed": 160,
+    "failed": 0,
+    "skipped": 0,
+    "blocked": 0,
+    "concurrency": 1,
+    "signalStart": {
+      "n": 120,
+      "p50": 11.299999952316284,
+      "p95": 44.800000071525574,
+      "p99": 50.800000071525574
+    },
+    "interruptionToGraphSilence": {
+      "n": 60,
+      "p50": 19.40000009536743,
+      "p95": 64.10000002384186,
+      "p99": 65.69999992847443
+    },
+    "audioToMouthSameFrame": {
+      "n": 120,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0
+    },
+    "boundary": "Synthetic WAV \u2192 real decodeAudioData \u2192 AudioBufferSourceNode \u2192 gain \u2192 analyser \u2192 fake Chromium output. Mouth sampled in the same polling callback. No acoustic loopback, accents, Bluetooth, live ASR/TTS or human listening tested."
+  },
+  "behavioralAcceptance": {
+    "executedLiveUpgraded": 0,
+    "humanReviewed": 0,
+    "naturalnessMean": null,
+    "usefulnessMean": null,
+    "blocked": "Upgraded credential-bearing workflow requires protected-main release; live corpus runner and calibration remain incomplete."
+  },
+  "physicalDeviceCases": 0,
+  "heygenUpgradedLiveSessions": 0,
+  "productionDeployed": false,
+  "baselineHeygen": {
+    "run": "41684319352",
+    "harnessChecksPassed": 3,
+    "harnessChecksAttempted": 3,
+    "relayRequests": 7,
+    "relay204": 0,
+    "localPlaybacksAfterFaceJoined": 3,
+    "acceptanceVerified": false,
+    "revision": "04df967",
+    "creditsConsumed": 0,
+    "cloudSpendUsd": 0.033
+  },
+  "allConversationRuns": {
+    "distinctScenarios": 600,
+    "scenarioExecutions": 1200,
+    "sessionsCompleted": 1440,
+    "studentTurnsCompleted": 11640,
+    "preliminaryAndFinal": true
+  },
+  "mediaRunHistory": {
+    "executedCases": 651,
+    "passed": 531,
+    "failed": 120,
+    "note": "Repeated executions of the same 160-case matrix plus the small probe, not additional distinct scenarios. Initial failures were harness timer binding; final acceptance is results.json."
+  },
+  "soak": {
+    "cycles": 60,
+    "starts": 300,
+    "disposed": 60,
+    "elapsedMs": 300603,
+    "frames": 18039,
+    "frameIntervalMs": {
+      "p50": 16.69999999999709,
+      "p95": 16.70000000001164,
+      "p99": 16.800000000017462
+    },
+    "boundary": "60 player/character start-dispose cycles, 300 real decoded audio units, one reused AudioContext closed at end. Fake Chromium output; no physical hardware or provider validation."
+  }
+}

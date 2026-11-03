@@ -42,13 +42,13 @@ export function ContextBrief({ tenant, ventureId }: { tenant: string; ventureId:
     'rounded-sm underline decoration-border-strong underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring';
   return (
     <details
-      className="group mx-auto mt-6 w-full max-w-xl border-y border-border text-small"
+      className="group mx-auto mt-[var(--space-section)] w-full max-w-xl border-y border-border text-small"
       data-slot="context-brief"
       onToggle={(event) => {
         setOpen(event.currentTarget.open);
       }}
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-2 focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-[var(--touch-target)] cursor-pointer list-none items-center justify-between gap-3 py-2 focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
         <span className="min-w-0 truncate">
           <span className="font-medium">{venture.data.name}</span>
           <span className="ml-2 text-muted-foreground">Review context</span>

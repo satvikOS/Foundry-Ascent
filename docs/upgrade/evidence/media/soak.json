@@ -1,0 +1,381 @@
+{
+  "startedAt": "2026-11-03T17:29:43.208Z",
+  "finishedAt": "2026-11-03T17:34:43.811Z",
+  "browser": "156.0.8078.4",
+  "host": "arm64",
+  "result": {
+    "cycles": 60,
+    "starts": 300,
+    "disposed": 60,
+    "elapsedMs": 300603,
+    "frames": 18039,
+    "frameIntervalMs": {
+      "p50": 16.69999999999709,
+      "p95": 16.70000000001164,
+      "p99": 16.800000000017462
+    },
+    "boundary": "60 player/character start-dispose cycles, 300 real decoded audio units, one reused AudioContext closed at end. Fake Chromium output; no physical hardware or provider validation."
+  },
+  "samples": [
+    {
+      "at": "baseline-forced-GC",
+      "dom": {
+        "documents": 1,
+        "nodes": 7,
+        "jsEventListeners": 0
+      },
+      "metrics": [
+        {
+          "name": "Documents",
+          "value": 1
+        },
+        {
+          "name": "Nodes",
+          "value": 7
+        },
+        {
+          "name": "TaskDuration",
+          "value": 0.00178
+        },
+        {
+          "name": "JSHeapUsedSize",
+          "value": 520804
+        },
+        {
+          "name": "JSHeapTotalSize",
+          "value": 786432
+        }
+      ]
+    },
+    {
+      "at": "during-soak",
+      "dom": {
+        "documents": 1,
+        "nodes": 102,
+        "jsEventListeners": 12
+      },
+      "metrics": [
+        {
+          "name": "Documents",
+          "value": 1
+        },
+        {
+          "name": "Nodes",
+          "value": 102
+        },
+        {
+          "name": "TaskDuration",
+          "value": 0.290015
+        },
+        {
+          "name": "JSHeapUsedSize",
+          "value": 1644000
+        },
+        {
+          "name": "JSHeapTotalSize",
+          "value": 2818048
+        }
+      ]
+    },
+    {
+      "at": "during-soak",
+      "dom": {
+        "documents": 1,
+        "nodes": 56,
+        "jsEventListeners": 6
+      },
+      "metrics": [
+        {
+          "name": "Documents",
+          "value": 1
+        },
+        {
+          "name": "Nodes",
+          "value": 56
+        },
+        {
+          "name": "TaskDuration",
+          "value": 0.694643
+        },
+        {
+          "name": "JSHeapUsedSize",
+          "value": 1156376
+        },
+        {
+          "name": "JSHeapTotalSize",
+          "value": 2293760
+        }
+      ]
+    },
+    {
+      "at": "during-soak",
+      "dom": {
+        "documents": 1,
+        "nodes": 56,
+        "jsEventListeners": 6
+      },
+      "metrics": [
+        {
+          "name": "Documents",
+          "value": 1
+        },
+        {
+          "name": "Nodes",
+          "value": 56
+        },
+        {
+          "name": "TaskDuration",
+          "value": 0.959321
+        },
+        {
+          "name": "JSHeapUsedSize",
+          "value": 1166824
+        },
+        {
+          "name": "JSHeapTotalSize",
+          "value": 2293760
+        }
+      ]
+    },
+    {
+      "at": "during-soak",
+      "dom": {
+        "documents": 1,
+        "nodes": 56,
+        "jsEventListeners": 8
+      },
+      "metrics": [
+        {
+          "name": "Documents",
+          "value": 1
+        },
+        {
+          "name": "Nodes",
+          "value": 56
+        },
+        {
+          "name": "TaskDuration",
+          "value": 1.101818
+        },
+        {
+          "name": "JSHeapUsedSize",
+          "value": 1307568
+        },
+        {
+          "name": "JSHeapTotalSize",
+          "value": 2293760
+        }
+      ]
+    },
+    {
+      "at": "during-soak",
+      "dom": {
+        "documents": 1,
+        "nodes": 56,
+        "jsEventListeners": 7
+      },
+      "metrics": [
+        {
+          "name": "Documents",
+          "value": 1
+        },
+        {
+          "name": "Nodes",
+          "value": 56
+        },
+        {
+          "name": "TaskDuration",
+          "value": 1.267104
+        },
+        {
+          "name": "JSHeapUsedSize",
+          "value": 1234868
+        },
+        {
+          "name": "JSHeapTotalSize",
+          "value": 2293760
+        }
+      ]
+    },
+    {
+      "at": "during-soak",
+      "dom": {
+        "documents": 1,
+        "nodes": 56,
+        "jsEventListeners": 10
+      },
+      "metrics": [
+        {
+          "name": "Documents",
+          "value": 1
+        },
+        {
+          "name": "Nodes",
+          "value": 56
+        },
+        {
+          "name": "TaskDuration",
+          "value": 1.41426
+        },
+        {
+          "name": "JSHeapUsedSize",
+          "value": 1588220
+        },
+        {
+          "name": "JSHeapTotalSize",
+          "value": 2555904
+        }
+      ]
+    },
+    {
+      "at": "during-soak",
+      "dom": {
+        "documents": 1,
+        "nodes": 148,
+        "jsEventListeners": 16
+      },
+      "metrics": [
+        {
+          "name": "Documents",
+          "value": 1
+        },
+        {
+          "name": "Nodes",
+          "value": 148
+        },
+        {
+          "name": "TaskDuration",
+          "value": 1.568771
+        },
+        {
+          "name": "JSHeapUsedSize",
+          "value": 1380636
+        },
+        {
+          "name": "JSHeapTotalSize",
+          "value": 2293760
+        }
+      ]
+    },
+    {
+      "at": "during-soak",
+      "dom": {
+        "documents": 1,
+        "nodes": 102,
+        "jsEventListeners": 11
+      },
+      "metrics": [
+        {
+          "name": "Documents",
+          "value": 1
+        },
+        {
+          "name": "Nodes",
+          "value": 102
+        },
+        {
+          "name": "TaskDuration",
+          "value": 1.735092
+        },
+        {
+          "name": "JSHeapUsedSize",
+          "value": 1687040
+        },
+        {
+          "name": "JSHeapTotalSize",
+          "value": 2555904
+        }
+      ]
+    },
+    {
+      "at": "during-soak",
+      "dom": {
+        "documents": 1,
+        "nodes": 102,
+        "jsEventListeners": 14
+      },
+      "metrics": [
+        {
+          "name": "Documents",
+          "value": 1
+        },
+        {
+          "name": "Nodes",
+          "value": 102
+        },
+        {
+          "name": "TaskDuration",
+          "value": 1.883302
+        },
+        {
+          "name": "JSHeapUsedSize",
+          "value": 1965088
+        },
+        {
+          "name": "JSHeapTotalSize",
+          "value": 3276800
+        }
+      ]
+    },
+    {
+      "at": "during-soak",
+      "dom": {
+        "documents": 1,
+        "nodes": 102,
+        "jsEventListeners": 12
+      },
+      "metrics": [
+        {
+          "name": "Documents",
+          "value": 1
+        },
+        {
+          "name": "Nodes",
+          "value": 102
+        },
+        {
+          "name": "TaskDuration",
+          "value": 2.051239
+        },
+        {
+          "name": "JSHeapUsedSize",
+          "value": 1781864
+        },
+        {
+          "name": "JSHeapTotalSize",
+          "value": 2752512
+        }
+      ]
+    },
+    {
+      "at": "after-soak-forced-GC",
+      "dom": {
+        "documents": 1,
+        "nodes": 55,
+        "jsEventListeners": 6
+      },
+      "metrics": [
+        {
+          "name": "Documents",
+          "value": 1
+        },
+        {
+          "name": "Nodes",
+          "value": 55
+        },
+        {
+          "name": "TaskDuration",
+          "value": 2.058794
+        },
+        {
+          "name": "JSHeapUsedSize",
+          "value": 1067764
+        },
+        {
+          "name": "JSHeapTotalSize",
+          "value": 2031616
+        }
+      ]
+    }
+  ]
+}

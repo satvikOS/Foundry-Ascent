@@ -1,0 +1,23 @@
+# Implemented visual system
+
+Source of truth: `apps/web/src/styles/globals.css`; local rendering: `character.css` and `presence.css`. The existing system was retained across auth, forms, settings, conversation, Knowledge and staff consoles. New UI uses the same semantic surfaces, type and controls. Existing variable fonts are self-hosted; no weights or external font hosts were added.
+
+| Foundation       | Tokens / values                                                                                                          | Application                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| Canvas           | `--fa-canvas`: light `#fafaf9`, dark `#000000`                                                                           | Main page and OLED canvas                                                                     |
+| Depth            | `--fa-raised`: `#ffffff` / `#0a0a0a`; `--fa-overlay`: `#ffffff` / `#141414`                                              | Quiet forms, cards and overlays                                                               |
+| Text             | `--fa-text`: `#111110` / `#f4f4f2`; secondary `#5c5c58` / `#a6a6a3`                                                      | Readable hierarchy without repeated banners                                                   |
+| Borders/focus    | `--border`, `--border-strong`, `--input`, `--ring`, `--selected-cue`                                                     | Dividers, boundaries, visible focus and selection independent of hover                        |
+| Semantic state   | `--success`, `--warning`, `--info`, `--destructive` and foreground partners                                              | Labels/icons accompany colors; no state relies on hue alone                                   |
+| Typography       | Geist UI, Newsreader conversation/display, Geist Mono compact metadata; body 15px/1.6, small 13px/1.45, caption 12px/1.4 | Existing shared type scale, metric-matched local fallbacks                                    |
+| Spacing          | Tailwind base spacing plus `--space-control: .5rem`, `--space-section: 1.5rem`                                           | New context and development sections use shared variables                                     |
+| Touch            | `--touch-target: 2.75rem`                                                                                                | New disclosure/form control minimums; native keyboard behavior retained                       |
+| Radius/elevation | `--radius: .625rem`; shared shadow/highlight variables                                                                   | Existing shared rounded surfaces and quiet depth                                              |
+| Feedback/motion  | `--motion-feedback: 120ms`, `--motion-presence: 7s`; existing hover 150ms and entry 360ms                                | Presence opacity and breathing; reduced motion disables optional movement                     |
+| Glass            | `--glass-bg`, `--glass-bg-bar`, `--glass-bg-strong`, border and blur                                                     | Existing compact floating controls/menus; solid fallback for unsupported/reduced transparency |
+| Voice accent     | `--voice-accent-start`, `--voice-accent-end`                                                                             | Bounded blue/green sphere accent; no animated application background                          |
+| Character        | `--presence-skin`, hair, ink, coat, lapel, seam and teeth                                                                | Original generic illustration, separate from semantic UI colors                               |
+
+Dark/light preference follows system `color-scheme` before JavaScript, with explicit `.dark`/`.light` user overrides. Contrast checks and browser axe results are retained. Reduced-motion rendering, captions-only silence and keyboard presentation selection are exercised in the upgraded journeys. CSS supplies reduced-transparency fallbacks; physical-device transparency/assistive-technology/zoom verification remains listed in the report.
+
+The local renderer has no React per-frame updates: CSS handles restrained idle motion and a bounded analyser sample changes one mouth property. Sampling pauses when hidden and resources are released on unmount. Artwork has no claim to a human EIR's likeness.

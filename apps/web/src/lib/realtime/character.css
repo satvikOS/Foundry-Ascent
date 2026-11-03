@@ -6,6 +6,7 @@
   place-items: center;
   pointer-events: none;
   contain: layout style;
+  transition: opacity var(--motion-feedback);
 }
 .fa-character svg {
   width: 100%;
@@ -14,7 +15,7 @@
 }
 .fa-character__head {
   transform-origin: 160px 220px;
-  animation: fa-character-breathe 7s ease-in-out infinite;
+  animation: fa-character-breathe var(--motion-presence) ease-in-out infinite;
 }
 .fa-character__eyes {
   transform-origin: 160px 149px;

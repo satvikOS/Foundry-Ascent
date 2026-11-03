@@ -1,0 +1,174 @@
+{
+  "attempted": 28,
+  "passed": 28,
+  "checks": [
+    {
+      "journey": "context",
+      "device": "desktop",
+      "theme": "dark",
+      "loaded": true
+    },
+    {
+      "journey": "context",
+      "device": "desktop",
+      "theme": "light",
+      "loaded": true
+    },
+    {
+      "journey": "context",
+      "device": "mobile",
+      "theme": "dark",
+      "loaded": true
+    },
+    {
+      "journey": "context",
+      "device": "mobile",
+      "theme": "light",
+      "loaded": true
+    },
+    {
+      "journey": "avatar",
+      "device": "desktop",
+      "theme": "dark",
+      "loaded": true
+    },
+    {
+      "journey": "avatar",
+      "device": "desktop",
+      "theme": "light",
+      "loaded": true
+    },
+    {
+      "journey": "avatar",
+      "device": "mobile",
+      "theme": "dark",
+      "loaded": true
+    },
+    {
+      "journey": "avatar",
+      "device": "mobile",
+      "theme": "light",
+      "loaded": true
+    },
+    {
+      "journey": "learning",
+      "device": "desktop",
+      "theme": "dark",
+      "loaded": true
+    },
+    {
+      "journey": "learning",
+      "device": "desktop",
+      "theme": "light",
+      "loaded": true
+    },
+    {
+      "journey": "learning",
+      "device": "mobile",
+      "theme": "dark",
+      "loaded": true
+    },
+    {
+      "journey": "learning",
+      "device": "mobile",
+      "theme": "light",
+      "loaded": true
+    },
+    {
+      "journey": "memory-review",
+      "device": "desktop",
+      "theme": "dark",
+      "loaded": true
+    },
+    {
+      "journey": "memory-review",
+      "device": "desktop",
+      "theme": "light",
+      "loaded": true
+    },
+    {
+      "journey": "memory-review",
+      "device": "mobile",
+      "theme": "dark",
+      "loaded": true
+    },
+    {
+      "journey": "memory-review",
+      "device": "mobile",
+      "theme": "light",
+      "loaded": true
+    },
+    {
+      "journey": "conversation",
+      "device": "desktop",
+      "theme": "dark",
+      "loaded": true
+    },
+    {
+      "journey": "conversation",
+      "device": "desktop",
+      "theme": "light",
+      "loaded": true
+    },
+    {
+      "journey": "conversation",
+      "device": "mobile",
+      "theme": "dark",
+      "loaded": true
+    },
+    {
+      "journey": "conversation",
+      "device": "mobile",
+      "theme": "light",
+      "loaded": true
+    },
+    {
+      "journey": "documents",
+      "device": "desktop",
+      "theme": "dark",
+      "loaded": true
+    },
+    {
+      "journey": "documents",
+      "device": "desktop",
+      "theme": "light",
+      "loaded": true
+    },
+    {
+      "journey": "documents",
+      "device": "mobile",
+      "theme": "dark",
+      "loaded": true
+    },
+    {
+      "journey": "documents",
+      "device": "mobile",
+      "theme": "light",
+      "loaded": true
+    },
+    {
+      "journey": "help",
+      "device": "desktop",
+      "theme": "dark",
+      "loaded": true
+    },
+    {
+      "journey": "help",
+      "device": "desktop",
+      "theme": "light",
+      "loaded": true
+    },
+    {
+      "journey": "help",
+      "device": "mobile",
+      "theme": "dark",
+      "loaded": true
+    },
+    {
+      "journey": "help",
+      "device": "mobile",
+      "theme": "light",
+      "loaded": true
+    }
+  ]
+}

@@ -1,0 +1,5171 @@
+{
+  "config": {
+    "argv": [
+      "/opt/homebrew/Cellar/node/26.0.0/bin/node",
+      "/Users/account_clawteam1/Foundry-Ascent/apps/web/node_modules/@playwright/test/cli.js",
+      "test",
+      "--project=desktop",
+      "--project=mobile",
+      "--project=screens",
+      "--reporter=line,json"
+    ],
+    "configFile": "/Users/account_clawteam1/Foundry-Ascent/apps/web/playwright.config.ts",
+    "rootDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "setup",
+        "name": "setup",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": ["/auth\\.setup\\.ts$/"],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "desktop",
+        "name": "desktop",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "/(journey|documents|knowledge|safety|a11y|calls|face|studio|chat|theme|words)\\.spec\\.ts$/"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "mobile",
+        "name": "mobile",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": ["/mobile\\.spec\\.ts$/"],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "screens",
+        "name": "screens",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": ["/screens\\.spec\\.ts$/"],
+        "timeout": 60000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "desktop",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "snapshotDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": {},
+        "timeout": 60000,
+        "use": {
+          "baseURL": "http://localhost:4173",
+          "trace": "retain-on-failure",
+          "screenshot": "only-on-failure",
+          "video": "off",
+          "locale": "en-US",
+          "timezoneId": "UTC",
+          "actionTimeout": 15000,
+          "navigationTimeout": 30000,
+          "launchOptions": {
+            "args": ["--disable-audio-output"]
+          },
+          "browserName": "chromium",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          }
+        },
+        "dependencies": ["setup"],
+        "ignoreSnapshots": false,
+        "__projectId": "desktop"
+      },
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "mobile",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "snapshotDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": {},
+        "timeout": 60000,
+        "use": {
+          "baseURL": "http://localhost:4173",
+          "trace": "retain-on-failure",
+          "screenshot": "only-on-failure",
+          "video": "off",
+          "locale": "en-US",
+          "timezoneId": "UTC",
+          "actionTimeout": 15000,
+          "navigationTimeout": 30000,
+          "launchOptions": {
+            "args": ["--disable-audio-output"]
+          },
+          "browserName": "chromium",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          },
+          "deviceScaleFactor": 3,
+          "isMobile": true,
+          "hasTouch": true
+        },
+        "dependencies": ["setup"],
+        "ignoreSnapshots": false,
+        "__projectId": "mobile"
+      },
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "screens",
+        "testDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "snapshotDir": "/Users/account_clawteam1/Foundry-Ascent/apps/web/e2e",
+        "testIgnore": [],
+        "testMatch": {},
+        "timeout": 60000,
+        "use": {
+          "baseURL": "http://localhost:4173",
+          "trace": "retain-on-failure",
+          "screenshot": "only-on-failure",
+          "video": "off",
+          "locale": "en-US",
+          "timezoneId": "UTC",
+          "actionTimeout": 15000,
+          "navigationTimeout": 30000,
+          "launchOptions": {
+            "args": ["--disable-audio-output"]
+          },
+          "browserName": "chromium"
+        },
+        "dependencies": ["setup"],
+        "ignoreSnapshots": false,
+        "__projectId": "screens"
+      }
+    ],
+    "quiet": false,
+    "reporter": [["line"], ["json"]],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "auth.setup.ts",
+      "file": "auth.setup.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "owner and founder sessions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "setup",
+              "projectName": "setup",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 757,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-03T16:36:57.784Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "17e3fe6f4d9d8bd79c6b-7f57149bee6534b4fc99",
+          "file": "auth.setup.ts",
+          "line": 18,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "a11y.spec.ts",
+      "file": "a11y.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "accessibility · dark theme",
+          "file": "a11y.spec.ts",
+          "line": 67,
+          "column": 8,
+          "specs": [
+            {
+              "title": "landing and sign-in",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1597,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:36:58.965Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "aa3ad05f8c0e05077efb-a537c8b5e12a61c0564a",
+              "file": "a11y.spec.ts",
+              "line": 72,
+              "column": 5
+            }
+          ],
+          "suites": [
+            {
+              "title": "founder",
+              "file": "a11y.spec.ts",
+              "line": 84,
+              "column": 10,
+              "specs": [
+                {
+                  "title": "new chat, a conversation and its panel, its summary, knowledge and the account menu",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "desktop",
+                      "projectName": "desktop",
+                      "results": [
+                        {
+                          "workerIndex": 1,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 4404,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:37:00.630Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "aa3ad05f8c0e05077efb-55382235048bc4ccceed",
+                  "file": "a11y.spec.ts",
+                  "line": 87,
+                  "column": 7
+                }
+              ]
+            },
+            {
+              "title": "platform admin",
+              "file": "a11y.spec.ts",
+              "line": 157,
+              "column": 10,
+              "specs": [
+                {
+                  "title": "people & access, reached from the old admin URL",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "desktop",
+                      "projectName": "desktop",
+                      "results": [
+                        {
+                          "workerIndex": 1,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 1019,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:37:05.039Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "aa3ad05f8c0e05077efb-4493d72fd1c88921101d",
+                  "file": "a11y.spec.ts",
+                  "line": 160,
+                  "column": 7
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "accessibility · light theme",
+          "file": "a11y.spec.ts",
+          "line": 67,
+          "column": 8,
+          "specs": [
+            {
+              "title": "landing and sign-in",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1563,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:37:06.061Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "aa3ad05f8c0e05077efb-533aa0e7e4ffe3b7b086",
+              "file": "a11y.spec.ts",
+              "line": 72,
+              "column": 5
+            }
+          ],
+          "suites": [
+            {
+              "title": "founder",
+              "file": "a11y.spec.ts",
+              "line": 84,
+              "column": 10,
+              "specs": [
+                {
+                  "title": "new chat, a conversation and its panel, its summary, knowledge and the account menu",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 90000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "desktop",
+                      "projectName": "desktop",
+                      "results": [
+                        {
+                          "workerIndex": 1,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 4343,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:37:07.628Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "aa3ad05f8c0e05077efb-dbcf3f09a55280530e27",
+                  "file": "a11y.spec.ts",
+                  "line": 87,
+                  "column": 7
+                }
+              ]
+            },
+            {
+              "title": "platform admin",
+              "file": "a11y.spec.ts",
+              "line": 157,
+              "column": 10,
+              "specs": [
+                {
+                  "title": "people & access, reached from the old admin URL",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "desktop",
+                      "projectName": "desktop",
+                      "results": [
+                        {
+                          "workerIndex": 1,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 1028,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:37:11.975Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "aa3ad05f8c0e05077efb-7a69ab37c27efb52ecf2",
+                  "file": "a11y.spec.ts",
+                  "line": 160,
+                  "column": 7
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "calls.spec.ts",
+      "file": "calls.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "vEIR calls",
+          "file": "calls.spec.ts",
+          "line": 272,
+          "column": 6,
+          "specs": [
+            {
+              "title": "call from the sidebar: typed fallback, reply in captions, mini bar, summary",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2976,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "from the sidebar: Remember or Private first, then Start call, in a new conversation",
+                          "duration": 1006
+                        },
+                        {
+                          "title": "no voice input here: the call continues by typing, and says why",
+                          "duration": 272
+                        },
+                        {
+                          "title": "a typed line is a voice turn; the validated reply is shown as it is spoken",
+                          "duration": 409
+                        },
+                        {
+                          "title": "minimized, the call continues in the mini bar over the conversation",
+                          "duration": 883
+                        },
+                        {
+                          "title": "ending shows the summary; what the call learned is kept with no click",
+                          "duration": 166
+                        }
+                      ],
+                      "startTime": "2026-11-03T16:37:13.018Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "46988341ec65045e624a-37dd9dbb02797f536465",
+              "file": "calls.spec.ts",
+              "line": 275,
+              "column": 3
+            },
+            {
+              "title": "a private call from New chat: chosen before it starts, marked while it lasts, keeps nothing",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1234,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:37:15.997Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "46988341ec65045e624a-5c16745b2faf6f37b71f",
+              "file": "calls.spec.ts",
+              "line": 451,
+              "column": 3
+            },
+            {
+              "title": "a second call minutes later picks up the first, remembers it when asked, and so does the next chat",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 150000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 4580,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "a first call: the founder talks about pricing, then hangs up",
+                          "duration": 1565
+                        },
+                        {
+                          "title": "a second call opens by picking up the first, not with the same greeting",
+                          "duration": 985
+                        },
+                        {
+                          "title": "\"do you remember what we talked about last time?\" is answered from the first call",
+                          "duration": 1782
+                        },
+                        {
+                          "title": "the next chat opens by picking up the calls too",
+                          "duration": 137
+                        }
+                      ],
+                      "startTime": "2026-11-03T16:37:17.234Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "46988341ec65045e624a-905136a0c87a11ad3c61",
+              "file": "calls.spec.ts",
+              "line": 518,
+              "column": 3
+            },
+            {
+              "title": "the first call says how voice is handled, once per person and in any browser",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2781,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "before the first call: AI, voice through Amazon Transcribe and not kept, text kept",
+                          "duration": 1070
+                        },
+                        {
+                          "title": "Start call stores it with the person on the server",
+                          "duration": 196
+                        },
+                        {
+                          "title": "another browser (nothing stored in it) does not show it again",
+                          "duration": 1102
+                        }
+                      ],
+                      "startTime": "2026-11-03T16:37:21.818Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "46988341ec65045e624a-c51c36ecf19cb5d955c6",
+              "file": "calls.spec.ts",
+              "line": 644,
+              "column": 3
+            },
+            {
+              "title": "a call opened in a fresh tab waits for Start call, then calls in that conversation",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2184,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:37:24.602Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "46988341ec65045e624a-7718fe59707700fe4291",
+              "file": "calls.spec.ts",
+              "line": 722,
+              "column": 3
+            },
+            {
+              "title": "a call live in another conversation moves here only when the founder says so",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3094,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:37:26.790Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "46988341ec65045e624a-9f476c5e866064fac25d",
+              "file": "calls.spec.ts",
+              "line": 752,
+              "column": 3
+            },
+            {
+              "title": "a refused call explains why and leaves no empty conversation behind",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 709,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:37:29.888Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "46988341ec65045e624a-f71673e602abad348b25",
+              "file": "calls.spec.ts",
+              "line": 791,
+              "column": 3
+            },
+            {
+              "title": "a call refused after it was minimized says why and leaves no empty conversation",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2796,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:37:30.601Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "46988341ec65045e624a-ce4deede527305a10bed",
+              "file": "calls.spec.ts",
+              "line": 831,
+              "column": 3
+            },
+            {
+              "title": "with calls switched off, no Call entry shows and an old call link says calls are paused",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1896,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:37:33.400Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "46988341ec65045e624a-84375402648ee73dfbb8",
+              "file": "calls.spec.ts",
+              "line": 880,
+              "column": 3
+            },
+            {
+              "title": "the call screen is keyboard and screen-reader friendly in both themes",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2162,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:37:35.300Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "46988341ec65045e624a-43c903e5a2990db5efc8",
+              "file": "calls.spec.ts",
+              "line": 912,
+              "column": 3
+            },
+            {
+              "title": "Back or Forward to a call’s URL never starts a call; only a click does",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3167,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:37:37.466Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "46988341ec65045e624a-0f4ddf100ddf398508b5",
+              "file": "calls.spec.ts",
+              "line": 948,
+              "column": 3
+            },
+            {
+              "title": "the mini bar and the conversation header never cover each other",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2868,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:37:40.637Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "46988341ec65045e624a-5257cc2dc9e0719215ec",
+              "file": "calls.spec.ts",
+              "line": 995,
+              "column": 3
+            },
+            {
+              "title": "a minimized call whose sound was interrupted offers Turn on sound in the mini bar",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2884,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:37:43.508Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "46988341ec65045e624a-45499543f1adf512c6fc",
+              "file": "calls.spec.ts",
+              "line": 1008,
+              "column": 3
+            },
+            {
+              "title": "a minimized call that ends out of view says so, and why",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 16617,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:37:46.396Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "46988341ec65045e624a-1878b8f2cc9956de619a",
+              "file": "calls.spec.ts",
+              "line": 1034,
+              "column": 3
+            }
+          ],
+          "suites": [
+            {
+              "title": "on a phone",
+              "file": "calls.spec.ts",
+              "line": 1053,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "New chat → call: no sideways scroll, controls within reach",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "desktop",
+                      "projectName": "desktop",
+                      "results": [
+                        {
+                          "workerIndex": 1,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 1234,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:38:03.016Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "46988341ec65045e624a-393f772b2d08aab17813",
+                  "file": "calls.spec.ts",
+                  "line": 1056,
+                  "column": 5
+                },
+                {
+                  "title": "the mini bar and the conversation header never cover each other",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "desktop",
+                      "projectName": "desktop",
+                      "results": [
+                        {
+                          "workerIndex": 1,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 2839,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:38:04.254Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "46988341ec65045e624a-54dea7d348297c2bf087",
+                  "file": "calls.spec.ts",
+                  "line": 1076,
+                  "column": 5
+                },
+                {
+                  "title": "Turn on sound fits in the mini bar beside its controls and the AI marker",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "desktop",
+                      "projectName": "desktop",
+                      "results": [
+                        {
+                          "workerIndex": 1,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 2955,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:38:07.097Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "46988341ec65045e624a-5d8bc0b3dcb50b04a925",
+                  "file": "calls.spec.ts",
+                  "line": 1090,
+                  "column": 5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "chat.spec.ts",
+      "file": "chat.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "conversation composer",
+          "file": "chat.spec.ts",
+          "line": 160,
+          "column": 6,
+          "specs": [
+            {
+              "title": "the latest answer’s actions stay clear of the follow-up chips, at both sizes and in both themes",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1337,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:38:10.061Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6dac514d5d837ca37b9e-f3855caaf9c76414876a",
+              "file": "chat.spec.ts",
+              "line": 163,
+              "column": 3
+            },
+            {
+              "title": "a long real-model answer with long chips ends in view above the composer, and the chips stay on one line (LAB-U1)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3407,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:38:11.401Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6dac514d5d837ca37b9e-53dffeb5c9c75dfbceb6",
+              "file": "chat.spec.ts",
+              "line": 193,
+              "column": 3
+            },
+            {
+              "title": "a reader who scrolls up while a long answer streams is left where they are when it finishes",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7339,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:38:14.812Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6dac514d5d837ca37b9e-ca3d1df12da2469d3f08",
+              "file": "chat.spec.ts",
+              "line": 229,
+              "column": 3
+            },
+            {
+              "title": "the conversation header keeps AA contrast over the prose under it, on a phone and a desktop",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1987,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:38:22.154Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6dac514d5d837ca37b9e-f23f6471800fb8159fbd",
+              "file": "chat.spec.ts",
+              "line": 266,
+              "column": 3
+            },
+            {
+              "title": "a follow-up chip sends its question and leaves an unsent draft where it was",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1318,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:38:24.145Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6dac514d5d837ca37b9e-10896644be6c9c16a76c",
+              "file": "chat.spec.ts",
+              "line": 328,
+              "column": 3
+            },
+            {
+              "title": "with the context panel open, the conversation stays in view and the page does not grow",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1416,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:38:25.467Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6dac514d5d837ca37b9e-5033be2ce86c86e084d8",
+              "file": "chat.spec.ts",
+              "line": 341,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "continuity-chat.spec.ts",
+      "file": "continuity-chat.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "continuity across conversations",
+          "file": "continuity-chat.spec.ts",
+          "line": 54,
+          "column": 6,
+          "specs": [
+            {
+              "title": "the next conversation opens from the last one and remembers it when asked",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 150000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2146,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "a first conversation about pricing, with a plan",
+                          "duration": 1464
+                        },
+                        {
+                          "title": "the second conversation opens from where the first left off",
+                          "duration": 254
+                        },
+                        {
+                          "title": "\"do you remember what we talked about last time?\" is answered from the first",
+                          "duration": 324
+                        }
+                      ],
+                      "startTime": "2026-11-03T16:38:26.890Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "7f7a0bd92f8b8cc27f6d-883e0341d844dfedaf87",
+              "file": "continuity-chat.spec.ts",
+              "line": 57,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "documents.spec.ts",
+      "file": "documents.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "a founder uploads a document and it becomes searchable evidence",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5761,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-03T16:38:29.047Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9111b41e0f82b685c9ea-641bd2e58d6cc58baebf",
+          "file": "documents.spec.ts",
+          "line": 23,
+          "column": 1
+        },
+        {
+          "title": "a failed upload is marked unfinished, and Retry finishes it in the same document",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 790,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-03T16:38:34.812Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9111b41e0f82b685c9ea-dfacd80356eb40e702b4",
+          "file": "documents.spec.ts",
+          "line": 134,
+          "column": 1
+        },
+        {
+          "title": "a cancelled upload leaves no document behind",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 496,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-03T16:38:35.605Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9111b41e0f82b685c9ea-72c95eacab9c57643a80",
+          "file": "documents.spec.ts",
+          "line": 173,
+          "column": 1
+        },
+        {
+          "title": "Retry on an unfinished document asks for the file and finishes it in the same document",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 798,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-03T16:38:36.105Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9111b41e0f82b685c9ea-0e43f261632b556277b5",
+          "file": "documents.spec.ts",
+          "line": 208,
+          "column": 1
+        },
+        {
+          "title": "a file attached in a conversation keeps uploading while another is open, and lands in Documents",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2135,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-03T16:38:36.907Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9111b41e0f82b685c9ea-70e957a77b55809bbfd4",
+          "file": "documents.spec.ts",
+          "line": 271,
+          "column": 1
+        }
+      ],
+      "suites": [
+        {
+          "title": "document viewer",
+          "file": "documents.spec.ts",
+          "line": 594,
+          "column": 6,
+          "specs": [
+            {
+              "title": "reads a Markdown file and a PDF from Documents, with find, pages and download",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 9766,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:38:39.045Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "9111b41e0f82b685c9ea-46c8f7dbb439644a68e0",
+              "file": "documents.spec.ts",
+              "line": 602,
+              "column": 3
+            },
+            {
+              "title": "opens program guidance a citation came from, at the passage",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1489,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:38:52.906Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "9111b41e0f82b685c9ea-f64d21c041fc94ee6872",
+              "file": "documents.spec.ts",
+              "line": 940,
+              "column": 3
+            }
+          ],
+          "suites": [
+            {
+              "title": "on a phone",
+              "file": "documents.spec.ts",
+              "line": 841,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "fills the screen, keeps its controls in a bottom toolbar, and zooms a PDF with a pinch",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "desktop",
+                      "projectName": "desktop",
+                      "results": [
+                        {
+                          "workerIndex": 1,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 4088,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:38:48.814Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "9111b41e0f82b685c9ea-bd15ea05f856a4ae5cd8",
+                  "file": "documents.spec.ts",
+                  "line": 845,
+                  "column": 5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "face.spec.ts",
+      "file": "face.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "vEIR calls · a FULL stock face (the vendor’s stock voice speaks admitted text)",
+          "file": "face.spec.ts",
+          "line": 108,
+          "column": 6,
+          "specs": [
+            {
+              "title": "a founder without Video face keeps the presence, faces on or not",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1494,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:38:54.404Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "277d34b2b90f287410c4-9a0309e0a22fd2bc028b",
+              "file": "face.spec.ts",
+              "line": 111,
+              "column": 3
+            },
+            {
+              "title": "says only admitted units, refuses tampered words, interrupts on barge-in and falls back quietly",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 17413,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "the owner turns on the founder’s Video face (Admin › People & access)",
+                          "duration": 742
+                        },
+                        {
+                          "title": "the stock face opens for this call, labelled \"AI avatar\"",
+                          "duration": 800
+                        },
+                        {
+                          "title": "each unit it says was admitted once by the server, with exactly its words",
+                          "duration": 9295
+                        },
+                        {
+                          "title": "tampered words are refused and never sent; barge-in interrupts the vendor",
+                          "duration": 5280
+                        },
+                        {
+                          "title": "the face drops: the presence is back, quietly, and the call goes on",
+                          "duration": 20
+                        }
+                      ],
+                      "startTime": "2026-11-03T16:38:55.902Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "277d34b2b90f287410c4-c3739840e186d0f14fd6",
+              "file": "face.spec.ts",
+              "line": 159,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "journey.spec.ts",
+      "file": "journey.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "founder journey",
+          "file": "journey.spec.ts",
+          "line": 93,
+          "column": 6,
+          "specs": [
+            {
+              "title": "a founder talks to their vEIR, which keeps what it learns, follows citations and ends with a summary",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 17722,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "landing → sign in as the owner, who lands in their workspace",
+                          "duration": 280
+                        },
+                        {
+                          "title": "admin issues an access code for a seeded founder",
+                          "duration": 1373
+                        },
+                        {
+                          "title": "sign out, then sign in as the founder, who lands in New chat",
+                          "duration": 465
+                        },
+                        {
+                          "title": "New chat: the vEIR greets the founder with starting points, its badge and no disclaimer line",
+                          "duration": 351
+                        },
+                        {
+                          "title": "the first message starts the conversation, named after it, with a cited answer",
+                          "duration": 5669
+                        },
+                        {
+                          "title": "a citation opens the Sources panel on that source; reasoning expands in place",
+                          "duration": 194
+                        },
+                        {
+                          "title": "what the vEIR learned goes to Knowledge on its own: nothing to keep or approve",
+                          "duration": 37
+                        },
+                        {
+                          "title": "a follow-up from the conversation composer stays in Auto (no mode is sent)",
+                          "duration": 326
+                        },
+                        {
+                          "title": "rename the conversation from its menu",
+                          "duration": 857
+                        },
+                        {
+                          "title": "end the conversation and read its summary, with the vEIR badge still in view",
+                          "duration": 936
+                        },
+                        {
+                          "title": "an old memory link lands on Knowledge with its search",
+                          "duration": 71
+                        },
+                        {
+                          "title": "the venture settings save a new current goal",
+                          "duration": 256
+                        },
+                        {
+                          "title": "a high-risk question is handed to a person and the founder approves sharing",
+                          "duration": 6816
+                        }
+                      ],
+                      "startTime": "2026-11-03T16:39:13.324Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "bf222bad70f76648f722-df8e7ccdf595b5e82613",
+              "file": "journey.spec.ts",
+              "line": 94,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "read-only roles",
+          "file": "journey.spec.ts",
+          "line": 400,
+          "column": 6,
+          "specs": [
+            {
+              "title": "an advisor opens their venture without requesting what only founders and team may read",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1243,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:39:31.049Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "bf222bad70f76648f722-e571c9c28cdb90ebf764",
+              "file": "journey.spec.ts",
+              "line": 401,
+              "column": 3
+            },
+            {
+              "title": "the assigned EIR opens the venture and a conversation link, and reads neither conversation",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1020,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:39:32.295Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "bf222bad70f76648f722-a2b93924999e3499c326",
+              "file": "journey.spec.ts",
+              "line": 436,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "knowledge.spec.ts",
+      "file": "knowledge.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "notebook and memory are accessible · dark",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5064,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-03T16:39:41.630Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "0828a03cd0e93ee0ce1b-14fc5af67624f02565e1",
+          "file": "knowledge.spec.ts",
+          "line": 438,
+          "column": 3
+        },
+        {
+          "title": "notebook and memory are accessible · light",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "desktop",
+              "projectName": "desktop",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5107,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-03T16:39:46.696Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "0828a03cd0e93ee0ce1b-d921bb6a2d2d8cbd4af1",
+          "file": "knowledge.spec.ts",
+          "line": 438,
+          "column": 3
+        }
+      ],
+      "suites": [
+        {
+          "title": "what the vEIR knows",
+          "file": "knowledge.spec.ts",
+          "line": 76,
+          "column": 6,
+          "specs": [
+            {
+              "title": "a founder corrects a notebook line and removes the opening line",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 738,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:39:33.325Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0828a03cd0e93ee0ce1b-f18898cb5eb45f169094",
+              "file": "knowledge.spec.ts",
+              "line": 77,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "memory",
+          "file": "knowledge.spec.ts",
+          "line": 147,
+          "column": 6,
+          "specs": [
+            {
+              "title": "what others add is simply in Knowledge, to edit or forget: there is no review queue",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2141,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:39:34.067Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0828a03cd0e93ee0ce1b-721a76fed8c6da8910f5",
+              "file": "knowledge.spec.ts",
+              "line": 148,
+              "column": 3
+            },
+            {
+              "title": "a replaced item keeps its detail and history",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 656,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:39:36.212Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0828a03cd0e93ee0ce1b-d7fd13c894aaf7e01c37",
+              "file": "knowledge.spec.ts",
+              "line": 219,
+              "column": 3
+            },
+            {
+              "title": "editing a disputed item settles it, with no approve step",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 657,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:39:36.871Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0828a03cd0e93ee0ce1b-9819f844385c0ace2ddc",
+              "file": "knowledge.spec.ts",
+              "line": 262,
+              "column": 3
+            },
+            {
+              "title": "editing what the vEIR learned in a conversation saves the edit, with nothing to approve",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1604,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:39:37.531Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0828a03cd0e93ee0ce1b-ef22fe8b5eb6ba27cdf5",
+              "file": "knowledge.spec.ts",
+              "line": 306,
+              "column": 3
+            },
+            {
+              "title": "type chips filter the memory list",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 449,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:39:39.139Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0828a03cd0e93ee0ce1b-ac04f3fd931c02d5f5c2",
+              "file": "knowledge.spec.ts",
+              "line": 370,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "human help",
+          "file": "knowledge.spec.ts",
+          "line": 391,
+          "column": 6,
+          "specs": [
+            {
+              "title": "people who only read the venture get a calm page and no refused requests",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2035,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:39:39.591Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0828a03cd0e93ee0ce1b-924bff69e06b445dcead",
+              "file": "knowledge.spec.ts",
+              "line": 392,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "presence.chat.spec.ts",
+      "file": "presence.chat.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "meeting the vEIR",
+          "file": "presence.chat.spec.ts",
+          "line": 65,
+          "column": 6,
+          "specs": [
+            {
+              "title": "the first visit shows the welcome once: stored with the person, in any browser",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2040,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "one calm screen: its face, two short sentences, one button",
+                          "duration": 723
+                        },
+                        {
+                          "title": "Continue stores it with the person and leaves New chat with no disclaimer line",
+                          "duration": 555
+                        },
+                        {
+                          "title": "not again: after a reload, nor in another browser of the same person",
+                          "duration": 414
+                        }
+                      ],
+                      "startTime": "2026-11-03T16:39:51.811Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "be398a146a7871e3529c-3e2eab13b9ef2a830097",
+              "file": "presence.chat.spec.ts",
+              "line": 66,
+              "column": 3
+            },
+            {
+              "title": "a call before the welcome says it on its start screen, and Start call stores it",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1464,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:39:53.855Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "be398a146a7871e3529c-1afa7ff4f45f75b69ac9",
+              "file": "presence.chat.spec.ts",
+              "line": 118,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "talking with the vEIR",
+          "file": "presence.chat.spec.ts",
+          "line": 171,
+          "column": 6,
+          "specs": [
+            {
+              "title": "no disclaimer line; honest in one warm line when asked; never \"I’m an AI, I don’t have a life\"",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2721,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "\"Are you real?\" gets the honest one-liner, then the conversation goes on",
+                          "duration": 859
+                        },
+                        {
+                          "title": "\"Do you have a life?\" gets a light line, not a lecture about being an AI",
+                          "duration": 208
+                        },
+                        {
+                          "title": "\"Am I talking to a bot?\" gets a yes, never a denial (LAB-M15)",
+                          "duration": 206
+                        },
+                        {
+                          "title": "the header names it like a call tile, and its badge explains it",
+                          "duration": 239
+                        },
+                        {
+                          "title": "the call tile shows \"Corin · vEIR\", with no chip clutter or disclaimer line",
+                          "duration": 976
+                        }
+                      ],
+                      "startTime": "2026-11-03T16:39:55.322Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "be398a146a7871e3529c-3ea6ad7d4fec7ae456b1",
+              "file": "presence.chat.spec.ts",
+              "line": 174,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "requests.chat.spec.ts",
+      "file": "requests.chat.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "API reads of a conversation",
+          "file": "requests.chat.spec.ts",
+          "line": 30,
+          "column": 6,
+          "specs": [
+            {
+              "title": "three turns read again only what a turn changes",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2265,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "api-reads {\"label\":\"run\",\"turns\":3,\"total\":32,\"counts\":{\"/me\":1,\"/ventures/:id\":4,\"/ventures/:id/overview\":2,\"/ventures/:id/opener\":1,\"/sessions\":5,\"/ventures\":5,\"/ventures/:id/call-config\":1,\"/health\":1,\"/ventures/:id/documents\":1,\"/ventures/:id/memory\":4,\"/ventures/:id/escalations\":4,\"/sessions/:id\":3}}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:39:58.048Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0257e67efae69f4adea5-bfe9911952bf8e0c0a30",
+              "file": "requests.chat.spec.ts",
+              "line": 33,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "safety.spec.ts",
+      "file": "safety.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "crisis support survives a reload",
+          "file": "safety.spec.ts",
+          "line": 34,
+          "column": 6,
+          "specs": [
+            {
+              "title": "a crisis-blocked turn shows the human-support message live and after reloading",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 436,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:00.320Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "373fb75b781aed161569-5977f093b2a8de2261c8",
+              "file": "safety.spec.ts",
+              "line": 37,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "private chats",
+          "file": "safety.spec.ts",
+          "line": 76,
+          "column": 6,
+          "specs": [
+            {
+              "title": "Remember is the default; a private chat keeps no title, nothing remembered, and ends with nothing kept",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1910,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:00.759Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "373fb75b781aed161569-458b7aba0e6ae1ad7e96",
+              "file": "safety.spec.ts",
+              "line": 79,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "routing an escalation from the people directory",
+          "file": "safety.spec.ts",
+          "line": 138,
+          "column": 6,
+          "specs": [
+            {
+              "title": "consent puts a request in the routing queue; a program lead routes it to an EIR",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1444,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:02.672Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "373fb75b781aed161569-1e448d676ca26bd62b29",
+              "file": "safety.spec.ts",
+              "line": 139,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "studio.spec.ts",
+      "file": "studio.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "program lead",
+          "file": "studio.spec.ts",
+          "line": 69,
+          "column": 6,
+          "specs": [
+            {
+              "title": "assigns a vEIR to a venture and sees who coaches what",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2188,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:04.125Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "64bdea7002f9c9cea9f4-b2102ff6ce9f331bad32",
+              "file": "studio.spec.ts",
+              "line": 75,
+              "column": 3
+            },
+            {
+              "title": "opens a venture’s Team without being a member: its name, only pages it can open, Invite",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 605,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:06.317Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "64bdea7002f9c9cea9f4-e3b5d5207eef5c55a8e4",
+              "file": "studio.spec.ts",
+              "line": 104,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "EIR",
+          "file": "studio.spec.ts",
+          "line": 143,
+          "column": 6,
+          "specs": [
+            {
+              "title": "adds a note to their vEIR’s library and publishes a lesson",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3268,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "a library note",
+                          "duration": 1011
+                        },
+                        {
+                          "title": "a lesson drafted, found in Lessons to review, then published",
+                          "duration": 1574
+                        }
+                      ],
+                      "startTime": "2026-11-03T16:40:06.926Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "64bdea7002f9c9cea9f4-6fda5a8aefa39663159c",
+              "file": "studio.spec.ts",
+              "line": 144,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "EIR registry",
+          "file": "studio.spec.ts",
+          "line": 226,
+          "column": 6,
+          "specs": [
+            {
+              "title": "a program lead adds an EIR; the EIR records consent; their vEIR is built and released",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7947,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "the person is invited with the EIR role (People & access)",
+                          "duration": 1084
+                        },
+                        {
+                          "title": "Add EIR links them, with no consent implied",
+                          "duration": 1176
+                        },
+                        {
+                          "title": "New vEIR starts from them and waits for their consent",
+                          "duration": 4288
+                        },
+                        {
+                          "title": "the EIR signs in, records consent and releases v1",
+                          "duration": 1151
+                        },
+                        {
+                          "title": "the EIR list shows the consent on file",
+                          "duration": 75
+                        }
+                      ],
+                      "startTime": "2026-11-03T16:40:10.197Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "64bdea7002f9c9cea9f4-3f051d360cf4d3149003",
+              "file": "studio.spec.ts",
+              "line": 227,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "platform admin",
+          "file": "studio.spec.ts",
+          "line": 328,
+          "column": 6,
+          "specs": [
+            {
+              "title": "turns voice calls off and back on",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 708,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:18.148Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "64bdea7002f9c9cea9f4-14dc8572641fcf5f193e",
+              "file": "studio.spec.ts",
+              "line": 334,
+              "column": 3
+            },
+            {
+              "title": "limits side by side line up on one row, even when a label or helper wraps",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 336,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:18.859Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "64bdea7002f9c9cea9f4-caad180ee7e88fd68f51",
+              "file": "studio.spec.ts",
+              "line": 351,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "staff consoles · dark theme",
+          "file": "studio.spec.ts",
+          "line": 390,
+          "column": 8,
+          "specs": [
+            {
+              "title": "persona sections, lessons, assignments and the admin pages meet WCAG 2.2 AA",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7036,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:19.200Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "64bdea7002f9c9cea9f4-8fc7b0c83e67635a5ad8",
+              "file": "studio.spec.ts",
+              "line": 396,
+              "column": 5
+            },
+            {
+              "title": "the EIR inbox and calibration reviews meet WCAG 2.2 AA",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2418,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:26.240Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "64bdea7002f9c9cea9f4-f2127baadb89821936be",
+              "file": "studio.spec.ts",
+              "line": 441,
+              "column": 5
+            }
+          ]
+        },
+        {
+          "title": "staff consoles · light theme",
+          "file": "studio.spec.ts",
+          "line": 390,
+          "column": 8,
+          "specs": [
+            {
+              "title": "persona sections, lessons, assignments and the admin pages meet WCAG 2.2 AA",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7176,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:28.662Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "64bdea7002f9c9cea9f4-9a74ac6b0e18c13b0f71",
+              "file": "studio.spec.ts",
+              "line": 396,
+              "column": 5
+            },
+            {
+              "title": "the EIR inbox and calibration reviews meet WCAG 2.2 AA",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2410,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:35.842Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "64bdea7002f9c9cea9f4-d1d5286706420ef5a399",
+              "file": "studio.spec.ts",
+              "line": 441,
+              "column": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "test-bench.studio.spec.ts",
+      "file": "test-bench.studio.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Test bench",
+          "file": "test-bench.studio.spec.ts",
+          "line": 99,
+          "column": 6,
+          "specs": [
+            {
+              "title": "an EIR tries a draft of their vEIR, sees what the checks did, and nothing is kept",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3359,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "an answer through the founder pipeline, and what the checks did",
+                          "duration": 851
+                        },
+                        {
+                          "title": "a crisis message gets the support a founder would get",
+                          "duration": 62
+                        },
+                        {
+                          "title": "Start over forgets the conversation",
+                          "duration": 39
+                        },
+                        {
+                          "title": "nothing is kept after leaving the tab or reloading",
+                          "duration": 463
+                        },
+                        {
+                          "title": "the active release can be tried too",
+                          "duration": 1279
+                        }
+                      ],
+                      "startTime": "2026-11-03T16:40:38.260Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "a068d50ac9ea05ae22d2-dcd932ae3fcfa727cc99",
+              "file": "test-bench.studio.spec.ts",
+              "line": 106,
+              "column": 3
+            },
+            {
+              "title": "another EIR is not offered the bench on a vEIR they do not curate",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 531,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:41.623Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "a068d50ac9ea05ae22d2-6270cc4272826148f829",
+              "file": "test-bench.studio.spec.ts",
+              "line": 190,
+              "column": 3
+            }
+          ],
+          "suites": [
+            {
+              "title": "light theme",
+              "file": "test-bench.studio.spec.ts",
+              "line": 206,
+              "column": 10,
+              "specs": [
+                {
+                  "title": "meets WCAG 2.2 AA and fits a phone",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "desktop",
+                      "projectName": "desktop",
+                      "results": [
+                        {
+                          "workerIndex": 1,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 1578,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:40:42.157Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "a068d50ac9ea05ae22d2-b42eb0c7f1258c63d955",
+                  "file": "test-bench.studio.spec.ts",
+                  "line": 209,
+                  "column": 7
+                }
+              ]
+            },
+            {
+              "title": "dark theme",
+              "file": "test-bench.studio.spec.ts",
+              "line": 206,
+              "column": 10,
+              "specs": [
+                {
+                  "title": "meets WCAG 2.2 AA and fits a phone",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "desktop",
+                      "projectName": "desktop",
+                      "results": [
+                        {
+                          "workerIndex": 1,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 1598,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:40:43.739Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "a068d50ac9ea05ae22d2-60bed6486efa1ed091a0",
+                  "file": "test-bench.studio.spec.ts",
+                  "line": 209,
+                  "column": 7
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "theme.spec.ts",
+      "file": "theme.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "OLED dark and glass",
+          "file": "theme.spec.ts",
+          "line": 88,
+          "column": 6,
+          "specs": [
+            {
+              "title": "true black canvas and sidebar; glass menus and palette; solid dialogs",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2542,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:45.345Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "8168eb6e17e693d86faf-061113b657a965d2f972",
+              "file": "theme.spec.ts",
+              "line": 91,
+              "column": 3
+            },
+            {
+              "title": "light theme keeps its palette, and its glass passes axe",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1261,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:47.890Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "8168eb6e17e693d86faf-615c4ac4d7e6c509d0f4",
+              "file": "theme.spec.ts",
+              "line": 131,
+              "column": 3
+            }
+          ],
+          "suites": [
+            {
+              "title": "phone",
+              "file": "theme.spec.ts",
+              "line": 141,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "the phone bar is glass, and modals do not blur the whole screen",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "desktop",
+                      "projectName": "desktop",
+                      "results": [
+                        {
+                          "workerIndex": 1,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 336,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:40:49.155Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "8168eb6e17e693d86faf-ffd589bfa827f7f09d4e",
+                  "file": "theme.spec.ts",
+                  "line": 144,
+                  "column": 5
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "selection reads in both themes",
+          "file": "theme.spec.ts",
+          "line": 158,
+          "column": 6,
+          "specs": [
+            {
+              "title": "the open help request and the pressed filter stand out from hover (light)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 458,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:49.494Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "8168eb6e17e693d86faf-123af0266623c8b304d2",
+              "file": "theme.spec.ts",
+              "line": 162,
+              "column": 5
+            },
+            {
+              "title": "the open help request and the pressed filter stand out from hover (dark)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 434,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:49.954Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "8168eb6e17e693d86faf-7a8d71fc4b4c731dd91c",
+              "file": "theme.spec.ts",
+              "line": 162,
+              "column": 5
+            }
+          ]
+        },
+        {
+          "title": "tables keep focus rings whole",
+          "file": "theme.spec.ts",
+          "line": 207,
+          "column": 6,
+          "specs": [
+            {
+              "title": "no control on a table edge has its focus ring clipped by the table’s scroll box",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 4652,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:50.392Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "8168eb6e17e693d86faf-b9421ad447e6d0bc66a3",
+              "file": "theme.spec.ts",
+              "line": 210,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "public pages",
+          "file": "theme.spec.ts",
+          "line": 285,
+          "column": 6,
+          "specs": [
+            {
+              "title": "the sign-in brand panel is true black in OLED dark",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 143,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:55.047Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "8168eb6e17e693d86faf-82376e1cda4009ea70fb",
+              "file": "theme.spec.ts",
+              "line": 286,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "video-calls.spec.ts",
+      "file": "video-calls.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "vEIR calls · a video face",
+          "file": "video-calls.spec.ts",
+          "line": 59,
+          "column": 6,
+          "specs": [
+            {
+              "title": "the face becomes the call tile’s video, and the call goes on with the presence when it drops",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2490,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "the server opens the face for this live call, and the tile shows it",
+                          "duration": 1116
+                        },
+                        {
+                          "title": "typing still works and the reply arrives while the face is shown",
+                          "duration": 19
+                        },
+                        {
+                          "title": "minimized, the call keeps its face and shows it in the bar",
+                          "duration": 105
+                        },
+                        {
+                          "title": "the face drops: the presence is back, quietly, and the call goes on",
+                          "duration": 22
+                        }
+                      ],
+                      "startTime": "2026-11-03T16:40:55.197Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "dcb6307fbc41845340ed-e51647c715bbe27d3a5f",
+              "file": "video-calls.spec.ts",
+              "line": 62,
+              "column": 3
+            },
+            {
+              "title": "with faces off (the default), the call tile is exactly the presence and no face is asked for",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2194,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:57.690Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "dcb6307fbc41845340ed-5f88deee15931d783d95",
+              "file": "video-calls.spec.ts",
+              "line": 165,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "web-perf.chat.spec.ts",
+      "file": "web-perf.chat.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "page speed",
+          "file": "web-perf.chat.spec.ts",
+          "line": 139,
+          "column": 6,
+          "specs": [
+            {
+              "title": "cold load of New chat, its fonts, and the main route transitions (laptop)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3426,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf {\"label\":\"run-laptop\",\"device\":{\"name\":\"laptop\",\"cpuSlowdown\":1},\"network\":{\"offline\":false,\"latency\":40,\"downloadThroughput\":2500000,\"uploadThroughput\":625000},\"ttfbMs\":1,\"domContentLoadedMs\":343.40000009536743,\"fcpMs\":180,\"entryScriptBytes\":83814,\"scriptsBeforeComposer\":76,\"sansFont\":{\"startMs\":170.40000009536743,\"endMs\":235.20000004768372},\"serifFont\":{\"startMs\":608.9000000953674,\"endMs\":696.6000000238419},\"preloadedFonts\":[],\"paints\":{\"cls\":0.003085822094157236,\"lcp\":632,\"shifted\":[\"p.boot-brand +0.000\",\"div.min-h-0.flex-1.overflow-y-auto +0.003\",\"button.group.flex.h-8 +0.003\",\"div.ml-auto.flex.items-center +0.003\"]},\"shellMs\":624,\"composerMs\":631.3000000715256,\"transitions\":{\"knowledge\":{\"ms\":76.39999997615814,\"cls\":0},\"documents\":{\"ms\":71.59999990463257,\"cls\":0},\"knowledgeAgain\":{\"ms\":11.200000047683716,\"cls\":0},\"newChat\":{\"ms\":9.799999952316284,\"cls\":0}}}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:40:59.891Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-1b1edc802b2ef85c747e",
+              "file": "web-perf.chat.spec.ts",
+              "line": 143,
+              "column": 5
+            },
+            {
+              "title": "cold load of New chat, its fonts, and the main route transitions (phone-cpu)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3911,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf {\"label\":\"run-phone-cpu\",\"device\":{\"name\":\"phone-cpu\",\"cpuSlowdown\":4},\"network\":{\"offline\":false,\"latency\":40,\"downloadThroughput\":2500000,\"uploadThroughput\":625000},\"ttfbMs\":1.100000023841858,\"domContentLoadedMs\":435.2000000476837,\"fcpMs\":200,\"entryScriptBytes\":83814,\"scriptsBeforeComposer\":76,\"sansFont\":{\"startMs\":182.30000007152557,\"endMs\":242.20000004768372},\"serifFont\":{\"startMs\":814.6000000238419,\"endMs\":949.7000000476837},\"preloadedFonts\":[],\"paints\":{\"cls\":0.003085822094157236,\"lcp\":860,\"shifted\":[\"p.boot-brand +0.000\",\"div.min-h-0.flex-1.overflow-y-auto +0.003\",\"button.group.flex.h-8 +0.003\",\"div.ml-auto.flex.items-center +0.003\"]},\"shellMs\":767.8000000715256,\"composerMs\":881.3999999761581,\"transitions\":{\"knowledge\":{\"ms\":140.10000002384186,\"cls\":0},\"documents\":{\"ms\":84.69999992847443,\"cls\":0},\"knowledgeAgain\":{\"ms\":47.799999952316284,\"cls\":0},\"newChat\":{\"ms\":47.199999928474426,\"cls\":0}}}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:41:03.320Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-771cb093b819ec952b45",
+              "file": "web-perf.chat.spec.ts",
+              "line": 143,
+              "column": 5
+            }
+          ]
+        },
+        {
+          "title": "page speed, signed out",
+          "file": "web-perf.chat.spec.ts",
+          "line": 224,
+          "column": 6,
+          "specs": [
+            {
+              "title": "cold load of the landing page",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1035,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "web-perf-landing {\"label\":\"run-landing\",\"fcpMs\":180,\"paints\":{\"cls\":0.000007195550947359396,\"lcp\":480,\"shifted\":[\"p.boot-brand +0.000\"]},\"landingMs\":471.7000000476837}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:41:07.235Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4b6782a17466856f3a03-607dc1adeeb71906ce16",
+              "file": "web-perf.chat.spec.ts",
+              "line": 227,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "words.spec.ts",
+      "file": "words.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "word budgets",
+          "file": "words.spec.ts",
+          "line": 148,
+          "column": 6,
+          "specs": [
+            {
+              "title": "the main founder screens stay within their word budgets",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "desktop",
+                  "projectName": "desktop",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 4334,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "steps": [
+                        {
+                          "title": "New chat",
+                          "duration": 583
+                        },
+                        {
+                          "title": "Knowledge",
+                          "duration": 579
+                        },
+                        {
+                          "title": "Documents",
+                          "duration": 562
+                        },
+                        {
+                          "title": "Conversation (private, one answered exchange)",
+                          "duration": 1164
+                        },
+                        {
+                          "title": "Call (typed, as in a browser without a microphone)",
+                          "duration": 921
+                        }
+                      ],
+                      "startTime": "2026-11-03T16:41:08.276Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "f477f2e0746d9d24ae5b-b6f0c9c831940febf361",
+              "file": "words.spec.ts",
+              "line": 149,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "mobile.spec.ts",
+      "file": "mobile.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "mobile 390×844",
+          "file": "mobile.spec.ts",
+          "line": 15,
+          "column": 6,
+          "specs": [
+            {
+              "title": "landing",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "mobile",
+                  "projectName": "mobile",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 282,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:41:13.100Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "e79c838550b25e92508e-ee5e261237cbb095ca92",
+              "file": "mobile.spec.ts",
+              "line": 16,
+              "column": 3
+            },
+            {
+              "title": "sign-in",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "mobile",
+                  "projectName": "mobile",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 239,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:41:13.448Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "e79c838550b25e92508e-851c560646d81548910f",
+              "file": "mobile.spec.ts",
+              "line": 24,
+              "column": 3
+            }
+          ],
+          "suites": [
+            {
+              "title": "founder",
+              "file": "mobile.spec.ts",
+              "line": 34,
+              "column": 8,
+              "specs": [
+                {
+                  "title": "navigation sheet",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "mobile",
+                      "projectName": "mobile",
+                      "results": [
+                        {
+                          "workerIndex": 2,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 1253,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:41:13.691Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "e79c838550b25e92508e-f13db3cb73d88448d103",
+                  "file": "mobile.spec.ts",
+                  "line": 37,
+                  "column": 5
+                },
+                {
+                  "title": "new chat and conversation",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "mobile",
+                      "projectName": "mobile",
+                      "results": [
+                        {
+                          "workerIndex": 2,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 2708,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:41:14.947Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "e79c838550b25e92508e-4eb3dccf0b5054acef98",
+                  "file": "mobile.spec.ts",
+                  "line": 54,
+                  "column": 5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "screens.spec.ts",
+      "file": "screens.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "desktop · dark",
+          "file": "screens.spec.ts",
+          "line": 61,
+          "column": 10,
+          "specs": [
+            {
+              "title": "public pages",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "screens",
+                  "projectName": "screens",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1241,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:41:17.914Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "2676ef668c5398eed988-484536af713932a11013",
+              "file": "screens.spec.ts",
+              "line": 67,
+              "column": 7
+            }
+          ],
+          "suites": [
+            {
+              "title": "founder",
+              "file": "screens.spec.ts",
+              "line": 78,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "venture pages",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 5977,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:41:19.221Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-e8291f8912c971fd76cc",
+                  "file": "screens.spec.ts",
+                  "line": 81,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "founder conversation",
+              "file": "screens.spec.ts",
+              "line": 116,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "conversation and call",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 120000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 2212,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:41:25.202Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-eae8ee99b5191b25e2c8",
+                  "file": "screens.spec.ts",
+                  "line": 119,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "founder conversation, a real-model-sized answer",
+              "file": "screens.spec.ts",
+              "line": 148,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "long answer with long follow-up chips",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 120000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 3614,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:41:27.419Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-4c734cb7514b1c1f4483",
+                  "file": "screens.spec.ts",
+                  "line": 151,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "staff",
+              "file": "screens.spec.ts",
+              "line": 202,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "studio, program and admin",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 8352,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:41:31.037Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-20ed2a6e3d544d2fbcbd",
+                  "file": "screens.spec.ts",
+                  "line": 205,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "EIR",
+              "file": "screens.spec.ts",
+              "line": 241,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "inbox and calibration reviews, with work in them",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 2788,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:41:39.393Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-adf053690a2523dfe993",
+                  "file": "screens.spec.ts",
+                  "line": 242,
+                  "column": 9
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "desktop · light",
+          "file": "screens.spec.ts",
+          "line": 61,
+          "column": 10,
+          "specs": [
+            {
+              "title": "public pages",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "screens",
+                  "projectName": "screens",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1236,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:41:42.188Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "2676ef668c5398eed988-20139e7f87721be16040",
+              "file": "screens.spec.ts",
+              "line": 67,
+              "column": 7
+            }
+          ],
+          "suites": [
+            {
+              "title": "founder",
+              "file": "screens.spec.ts",
+              "line": 78,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "venture pages",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 6032,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:41:43.428Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-355dc99c5eaab34187df",
+                  "file": "screens.spec.ts",
+                  "line": 81,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "founder conversation",
+              "file": "screens.spec.ts",
+              "line": 116,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "conversation and call",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 120000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 2221,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:41:49.464Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-a4e92b3703d1be3bb7e4",
+                  "file": "screens.spec.ts",
+                  "line": 119,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "founder conversation, a real-model-sized answer",
+              "file": "screens.spec.ts",
+              "line": 148,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "long answer with long follow-up chips",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 120000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 3059,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:41:51.688Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-d4ede86bc44ce4ed6f9e",
+                  "file": "screens.spec.ts",
+                  "line": 151,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "staff",
+              "file": "screens.spec.ts",
+              "line": 202,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "studio, program and admin",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 8376,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:41:54.751Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-0f1c7b85e41599554df9",
+                  "file": "screens.spec.ts",
+                  "line": 205,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "EIR",
+              "file": "screens.spec.ts",
+              "line": 241,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "inbox and calibration reviews, with work in them",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 2724,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:42:03.131Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-c4ff73f5da05cae7dc7e",
+                  "file": "screens.spec.ts",
+                  "line": 242,
+                  "column": 9
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "mobile · dark",
+          "file": "screens.spec.ts",
+          "line": 61,
+          "column": 10,
+          "specs": [
+            {
+              "title": "public pages",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "screens",
+                  "projectName": "screens",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1294,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:42:05.859Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "2676ef668c5398eed988-1cad3820bd05e9ec5ddf",
+              "file": "screens.spec.ts",
+              "line": 67,
+              "column": 7
+            }
+          ],
+          "suites": [
+            {
+              "title": "founder",
+              "file": "screens.spec.ts",
+              "line": 78,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "venture pages",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 5332,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:42:07.157Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-5e2a4c72f8a0874545d6",
+                  "file": "screens.spec.ts",
+                  "line": 81,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "founder conversation",
+              "file": "screens.spec.ts",
+              "line": 116,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "conversation and call",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 120000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 2294,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:42:12.493Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-dfe8b7a9a126a5aad15a",
+                  "file": "screens.spec.ts",
+                  "line": 119,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "founder conversation, a real-model-sized answer",
+              "file": "screens.spec.ts",
+              "line": 148,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "long answer with long follow-up chips",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 120000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 3618,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:42:14.790Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-db183db9a0932f14202e",
+                  "file": "screens.spec.ts",
+                  "line": 151,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "staff",
+              "file": "screens.spec.ts",
+              "line": 202,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "studio, program and admin",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 8534,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:42:18.412Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-ca6dff7b33d68338ea78",
+                  "file": "screens.spec.ts",
+                  "line": 205,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "EIR",
+              "file": "screens.spec.ts",
+              "line": 241,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "inbox and calibration reviews, with work in them",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 2778,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:42:26.950Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-346e38f0cdeda9ab9fc6",
+                  "file": "screens.spec.ts",
+                  "line": 242,
+                  "column": 9
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "mobile · light",
+          "file": "screens.spec.ts",
+          "line": 61,
+          "column": 10,
+          "specs": [
+            {
+              "title": "public pages",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "screens",
+                  "projectName": "screens",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1292,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-03T16:42:29.732Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "2676ef668c5398eed988-0333f94aa10fbc7bb615",
+              "file": "screens.spec.ts",
+              "line": 67,
+              "column": 7
+            }
+          ],
+          "suites": [
+            {
+              "title": "founder",
+              "file": "screens.spec.ts",
+              "line": 78,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "venture pages",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 60000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 5348,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:42:31.027Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-5495a83658597522f110",
+                  "file": "screens.spec.ts",
+                  "line": 81,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "founder conversation",
+              "file": "screens.spec.ts",
+              "line": 116,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "conversation and call",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 120000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 2279,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:42:36.380Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-57fc0ae2b4894c76f9d8",
+                  "file": "screens.spec.ts",
+                  "line": 119,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "founder conversation, a real-model-sized answer",
+              "file": "screens.spec.ts",
+              "line": 148,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "long answer with long follow-up chips",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 120000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 3619,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:42:38.663Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-0840d714bd3ab96d43a1",
+                  "file": "screens.spec.ts",
+                  "line": 151,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "staff",
+              "file": "screens.spec.ts",
+              "line": 202,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "studio, program and admin",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 8571,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:42:42.286Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-a722892c47484ad0db60",
+                  "file": "screens.spec.ts",
+                  "line": 205,
+                  "column": 9
+                }
+              ]
+            },
+            {
+              "title": "EIR",
+              "file": "screens.spec.ts",
+              "line": 241,
+              "column": 12,
+              "specs": [
+                {
+                  "title": "inbox and calibration reviews, with work in them",
+                  "ok": true,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 180000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "screens",
+                      "projectName": "screens",
+                      "results": [
+                        {
+                          "workerIndex": 3,
+                          "parallelIndex": 0,
+                          "status": "passed",
+                          "duration": 2782,
+                          "errors": [],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-11-03T16:42:50.860Z",
+                          "annotations": [],
+                          "attachments": []
+                        }
+                      ],
+                      "status": "expected"
+                    }
+                  ],
+                  "id": "2676ef668c5398eed988-5aaae3699fa587fbf760",
+                  "file": "screens.spec.ts",
+                  "line": 242,
+                  "column": 9
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-03T16:36:53.655Z",
+    "duration": 360085.141,
+    "expected": 115,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

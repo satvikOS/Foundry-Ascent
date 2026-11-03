@@ -130,7 +130,7 @@ export function StudentDevelopment({ ventureId }: { ventureId: string }) {
   };
   const error = save.error ?? clear.error ?? record.error ?? remove.error;
   return (
-    <section className="grid gap-4 border-t pt-6" aria-labelledby={`${id}-heading`}>
+    <section className="grid gap-4 border-t pt-[var(--space-section)]" aria-labelledby={`${id}-heading`}>
       <div>
         <h2 id={`${id}-heading`} className="text-subheading font-medium">
           Your development
@@ -143,7 +143,9 @@ export function StudentDevelopment({ ventureId }: { ventureId: string }) {
         <ErrorState error={profile.error} onRetry={() => void profile.refetch()} size="sm" headingLevel={3} />
       ) : null}
       <details className="rounded-xl border bg-card px-4">
-        <summary className="min-h-11 cursor-pointer py-3 text-small font-medium">Coaching profile</summary>
+        <summary className="min-h-[var(--touch-target)] cursor-pointer py-3 text-small font-medium">
+          Coaching profile
+        </summary>
         <form
           className="grid gap-4 pb-4"
           onSubmit={(event) => {
@@ -182,7 +184,7 @@ export function StudentDevelopment({ ventureId }: { ventureId: string }) {
               <select
                 id={`${id}-depth`}
                 value={draft.depth}
-                className="min-h-11 rounded-md border border-input bg-background px-3"
+                className="min-h-[var(--touch-target)] rounded-md border border-input bg-background px-3"
                 onChange={(event) => {
                   setDirty(true);
                   setDraft({ ...draft, depth: event.target.value as StudentProfileData['depth'] });
@@ -215,7 +217,7 @@ export function StudentDevelopment({ ventureId }: { ventureId: string }) {
                 }}
               />
             </label>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-[var(--space-control)]">
               <Button type="submit" size="sm" disabled={save.isPending || profile.isPending || !dirty}>
                 Approve profile
               </Button>
@@ -262,7 +264,9 @@ export function StudentDevelopment({ ventureId }: { ventureId: string }) {
         </form>
       </details>
       <details className="rounded-xl border bg-card px-4">
-        <summary className="min-h-11 cursor-pointer py-3 text-small font-medium">Learning log</summary>
+        <summary className="min-h-[var(--touch-target)] cursor-pointer py-3 text-small font-medium">
+          Learning log
+        </summary>
         <div className="grid gap-5 pb-4">
           <p className="text-caption text-muted-foreground">
             Record how evidence changed your judgment. These are your reflections, separate from the venture’s

@@ -42,6 +42,8 @@ outer: for (const sampleRate of [8000, 16000, 24000, 32000, 44100, 48000]) {
       try {
         const result = await page.evaluate(
           async ({ sampleRate, pattern, fault }) => {
+            const stylesPath = '/src/styles/globals.css';
+            await import(stylesPath);
             const playerModule = '/src/lib/realtime/playback.ts';
             const characterModule = '/src/lib/realtime/character.ts';
             const { SpeechPlayer } = await import(playerModule);

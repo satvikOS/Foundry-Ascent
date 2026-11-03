@@ -1,0 +1,1417 @@
+{
+  "selection": "Executed backend/database/provider tests with explicit negative/failure titles; reused existing regressions plus upgrade cases. These are separate from the conversation and real-media suites. No physical-network fault injection is claimed.",
+  "attempted": 176,
+  "passed": 176,
+  "failed": 0,
+  "skipped": 0,
+  "cases": [
+    {
+      "suite": "db",
+      "file": "packages/db/src/migrate-0003.db.test.ts",
+      "case": "migration 0003_security_hardening keeps venture names that were duplicated before the rule, and enforces it for new or changed names",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 1.9417500000000132
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/migrate-0011.db.test.ts",
+      "case": "migration 0011_eir_profiles_evidence_sources refused platform admins a profile before it (the gap it closes)",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.5428750000000377
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/migrate-0011.db.test.ts",
+      "case": "migration 0011 where someone already has two profiles applies without the one-per-person index (the service still refuses a second profile)",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 21.413374999999974
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/migrate-0012.db.test.ts",
+      "case": "migration 0012_test_bench refuses the purpose before it applies",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.2711669999999913
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/migrate-0013.db.test.ts",
+      "case": "migration 0013_automatic_memory refuses durable AI memory nobody approved before it applies",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.0508749999999623
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/migrate-0013.db.test.ts",
+      "case": "migration 0013_automatic_memory keeps what the founder made the vEIR forget as fingerprints, closed to app_rls, gone with the conversation",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 9.527209000000028
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/migrate-0017.db.test.ts",
+      "case": "migration 0017_digital_twin refuses a mismatched vendor, a malformed id, a guide, and anyone who does not curate the persona",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 2.536541999999997
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/migrate.db.test.ts",
+      "case": "migrate serialises concurrent runners on a fresh database",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 200.07975
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/migrate.db.test.ts",
+      "case": "migrate refuses to run when an applied migration no longer matches the bundle",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 3.056916000000001
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/security-0003.db.test.ts",
+      "case": "founder_private memory never becomes turn evidence (finding 1) denies citing a founder_private item, also for its own author, and allows shared items",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 14.339458000000036
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/lab/age-conversations.db.test.ts",
+      "case": "ageConversationsForLab refuses a conversation that is unknown, still going, or a gap that is not whole days",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.6946250000000305
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/audit-portfolio.db.test.ts",
+      "case": "audit hash chain chains app and system appends and detects tampering",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 6.174082999999996
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/audit-portfolio.db.test.ts",
+      "case": "portfolio k-anonymity is denied to founders and EIRs",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.2925000000000182
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/calls.db.test.ts",
+      "case": "one live call per person refuses a second live call until the first ends; other people call at the same time",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 13.191833000000031
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/calls.db.test.ts",
+      "case": "call minutes never credits more microphone seconds than the call has lasted, however fast or concurrent the heartbeats",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 327.1745
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/calls.db.test.ts",
+      "case": "what a call synthesizes serialises concurrent requests on two connections: a unit is not replayed and a budget not overrun",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 614.403125
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/conversations.db.test.ts",
+      "case": "conversation titles never exist for temporary chats (rename refuses; the database refuses any other write)",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 4.714749999999981
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/integration.db.test.ts",
+      "case": "idempotency reservations releases a failed request so a retry executes again",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 0.49433299999998326
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/integration.db.test.ts",
+      "case": "idempotency reservations takes over a stale reservation (crashed request) with the same hash only",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 0.922458000000006
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/memory.db.test.ts",
+      "case": "memory lifecycle refuses deletion by an advisor of the venture (visible items need founder/team)",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.5664160000000038
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/repositories.db.test.ts",
+      "case": "documents, sessions, turns, escalations re-opens an unfinished upload for a retry, and maintenance fails uploads left unfinished",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 6.18141700000001
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/review-privacy.db.test.ts",
+      "case": "a turn and the delete of its conversation a turn inserted while the delete is committing waits for it, then is refused",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 312.223833
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/review-privacy.db.test.ts",
+      "case": "a turn and the delete of its conversation an ended conversation is refused by the admission lock",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 2.7222909999998137
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/review-privacy.db.test.ts",
+      "case": "conversation titles from risky messages a first message labelled cross_venture never titles the conversation; the next ordinary one does",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 2.4412090000000717
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/review-privacy.db.test.ts",
+      "case": "notebook lines drawn from several conversations the database refuses earlier sources that are not an array",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.230750000000171
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/review-privacy.db.test.ts",
+      "case": "notebook lines drawn from several conversations the database refuses earlier sources that are not conversation ids",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.111417000000074
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/review-privacy.db.test.ts",
+      "case": "notebook lines drawn from several conversations the database refuses earlier sources that are more than 20",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.0332499999999527
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/veir.db.test.ts",
+      "case": "conversations pages the caller\u2019s conversations across ventures by latest activity",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 12.162166000000013
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/repositories/veir.db.test.ts",
+      "case": "the vEIR notebook writes against the version read: a stale write is refused; a first write creates the row",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 8.343166999999994
+    },
+    {
+      "suite": "db",
+      "file": "packages/db/src/seed/lab-memory-venture.db.test.ts",
+      "case": "the lab memory venture refuses a database without the seeded tenant",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.8003750000000309
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/auth/auth.db.test.ts",
+      "case": "sign-in concurrent attempts from one IP cannot slip past the lockout (exactly 10 are evaluated)",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 156.25516700000003
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/auth/auth.db.test.ts",
+      "case": "sessions and revocation rejects tampered, foreign-key and expired tokens",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 101.55854199999976
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/auth/auth.db.test.ts",
+      "case": "sessions and revocation expired codes are rejected",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 100.67945899999995
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/authz/authz-matrix.db.test.ts",
+      "case": "authorization matrix records denials in the audit log (after rollback) without content",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.7727500000000873
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/ingestion/ingestion.db.test.ts",
+      "case": "documents and ingestion marks unreadable, empty or missing files failed, and retries after a new complete()",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 17.492249999999785
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/continuity.db.test.ts",
+      "case": "memory proposed for student approval is visible to the team at once, editable and forgettable, and goes with its conversation",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 131.2102500000001
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/continuity.db.test.ts",
+      "case": "memory proposed for student approval stays forgotten: distilling the same conversation never keeps it again (review)",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 55.59433399999989
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/continuity.db.test.ts",
+      "case": "New chat greets with the line its conversation opens with opens with no line when New chat greeted without one, and with a line of now when the shown one is stale",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 653.1383330000008
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/orchestrator.db.test.ts",
+      "case": "turn pipeline replaying a message whose turn is still pending asks the client to retry after a delay",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 12.947832999999946
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/orchestrator.db.test.ts",
+      "case": "gates per-principal rate limit and per-session turn limit",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 199.3926670000003
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/orchestrator.db.test.ts",
+      "case": "gates model failure marks the turn failed, records billable attempts and emits turn.error",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 25.247208000000228
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/safety-screen.db.test.ts",
+      "case": "the safety screen in a turn a screen error leaves the turn as the rules decided (no flag) and is logged",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 401.2082909999999
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/safety-screen.db.test.ts",
+      "case": "the safety screen in a turn a screen slower than its budget is abandoned: the turn goes on as the rules decided",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 2537.565334
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/safety-screen.db.test.ts",
+      "case": "the safety screen in a turn a spoken message outside a live call is refused before it buys a screen call, as on main",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 106.594333
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/safety-screen.db.test.ts",
+      "case": "the safety screen in a turn a founder past the spend cap is refused before the screen, as on main",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 47.41229099999964
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/test-bench.db.test.ts",
+      "case": "test bench: who may use it admits the persona\u2019s own EIR and program leads; refuses another EIR, founders and admins who curate nothing",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 52.04754200000002
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/test-bench.db.test.ts",
+      "case": "test bench: the checks a curator sees never reveals which ventures or people the cross-venture guard knows",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 6.868624999999838
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/turn-context.db.test.ts",
+      "case": "the prefetch\u2019s transaction has ended when a turn refused after its keys matched returns, and is logged unused",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 449.4198329999999
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/turn-context.db.test.ts",
+      "case": "the prefetch\u2019s transaction is handed to the host\u2019s after-response work, so the refusal is not held up by it",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 462.10804099999996
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/turn-engine.db.test.ts",
+      "case": "spoken turns refuses spoken turns the calls service does not admit, without any model call",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 40.14870900000005
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/turn-engine.db.test.ts",
+      "case": "the honest one-liner survives every wave 7 filter, end to end (LAB-M15/M16 \u00d7 wave 7 craft) the SM-03 denial is said as the honest yes, and asking again (with news) says it again",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 273.56787499999973
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/turn-engine.db.test.ts",
+      "case": "a turn and the delete of its conversation a message sent just as its conversation is deleted is refused and stores nothing",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 40.678665999999794
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/orchestrator/turn-engine.db.test.ts",
+      "case": "release pinning and the opener check (run last: they change the persona and the notebook) a stored opener with the EIR speaking is not used (the notebook now refuses to save one)",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 24.175000000000182
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/calls.db.test.ts",
+      "case": "starting a call leaves out a stored opener that impersonates the EIR (the notebook now refuses to save one)",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 93.62587499999995
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/calls.db.test.ts",
+      "case": "starting a call starts with typed input where speech recognition is unavailable or fails",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 37.86170799999991
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/calls.db.test.ts",
+      "case": "starting a call refuses outsiders, closed switches, a live call elsewhere, a suspended vEIR and spent minutes",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 69.70474999999988
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/calls.db.test.ts",
+      "case": "starting a call refuses a call in the EIR\u2019s own voice once the voice consent is no longer in force",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 29.92145900000014
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/calls.db.test.ts",
+      "case": "heartbeats meter no more speech-to-text than the call has lasted, however fast or concurrently they come",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 122.55779199999984
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/calls.db.test.ts",
+      "case": "speech-to-text grants are refused on a call that has to stop, and capped per person per day",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 28.826458000000002
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/calls.db.test.ts",
+      "case": "speech speaks the intro and each signed unit once per call, however often or concurrently they are asked for",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 76.50654099999974
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/calls.db.test.ts",
+      "case": "the turn engine and the calls service together keeps a spoken turn the founder interrupted before it settled, and replays what they heard of it",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 1030.2107500000002
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/distill.db.test.ts",
+      "case": "distillSession distils the new turns of a conversation that continued, without duplicating proposals or lessons",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 47.42941699999983
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/distill.db.test.ts",
+      "case": "distillSession retries an unavailable model, records an unusable answer so it is not retried until a new turn",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 49.029583
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/distill.db.test.ts",
+      "case": "distillSession records a configuration error at once, and retries a call cancelled at the deadline",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 93.44566699999996
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/distill.db.test.ts",
+      "case": "memory hygiene raises a pending proposal again instead of duplicating it, and drops restated or rejected items",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 141.48945899999944
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/distill.db.test.ts",
+      "case": "batch review of memory proposals refuses people who may not write the venture, and audits the denial",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 4.0341669999997976
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/document-reader.db.test.ts",
+      "case": "document file (presigned GET) refuses a document whose file has not arrived, and a deleted one",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 13.805415999999923
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/eir-profiles.db.test.ts",
+      "case": "adding an EIR refuses at the field someone who can\u2019t have a profile, and a second profile for the same person",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 5.4376250000000255
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/eir-profiles.db.test.ts",
+      "case": "two leads adding the same person at once gives the person one profile; the other request is refused at the field",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 5.5688749999999345
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/face.db.test.ts",
+      "case": "a real likeness and the cloned voice refuses any audio, manifest or unit the server did not make for this call (the safety invariant)",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 47.31995800000004
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/studio-views.db.test.ts",
+      "case": "consent the persona can run on refuses a consent that does not cover doctrine and keeps the one in force",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 5.307707999999934
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/studio-views.db.test.ts",
+      "case": "persona names and releases refuses a vEIR name that does not say it is a vEIR",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 3.626457999999957
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/studio-views.db.test.ts",
+      "case": "persona names and releases refuses a draft older than the active release, which would roll doctrine back",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 10.231042000000002
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/twin.db.test.ts",
+      "case": "the digital twin in the studio records a voice under voice consent, a pending face without likeness, and refuses a guide",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 8.69941700000004
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/twin.db.test.ts",
+      "case": "the digital twin in the studio refuses a scope no longer in force, another EIR, and a founder",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 127.55979200000002
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/veir-pools.db.test.ts",
+      "case": "the vEIR notebook applies founder edits against the version read and refuses stale ones",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 14.304750000000013
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/veir-pools.db.test.ts",
+      "case": "conversations lists recents across ventures, renames, deletes digests and deletes conversations",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 65.928584
+    },
+    {
+      "suite": "core-db",
+      "file": "packages/core/src/services/wave1-fixes.db.test.ts",
+      "case": "team invitations refuses everyone else (audited) and ventures outside the tenant",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.236750000000029
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/auth.db.test.ts",
+      "case": "sign-in locks a viewer IP out after 10 failures (429 + Retry-After), per IP",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 556.015375
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/auth.db.test.ts",
+      "case": "sign-in validates the body shape (422 with field errors) and JSON syntax (400)",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 1.1032500000001164
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/auth.db.test.ts",
+      "case": "sessions rejects a forged or garbage cookie and clears it",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.4934589999998025
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/authz.db.test.ts",
+      "case": "authorization denials another venture\u2019s founder is refused on every venture-scoped endpoint",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 44.57445899999993
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/authz.db.test.ts",
+      "case": "authorization denials founders and program leads are refused on EIR, program and admin endpoints beyond their role",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 39.23070899999993
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/calls.db.test.ts",
+      "case": "a call over HTTP refuses with 409 for a live call elsewhere, 429 for spent minutes and 503 when calls are off",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 57.22762499999999
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/conversations.db.test.ts",
+      "case": "GET /sessions lists my conversations across ventures, each with its own venture and title rules",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 834.775667
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/conversations.db.test.ts",
+      "case": "GET /sessions refuses to rename a temporary chat",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 44.39599999999996
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/conversations.db.test.ts",
+      "case": "PATCH /ventures/:id/notebook: the opener the vEIR will say refuses an opener the vEIR could not say, with the reason at edit.text",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 67.92274999999995
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/eir-registry.db.test.ts",
+      "case": "EIR registry answers 422 and 409 with errors at the fields the form shows them on",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 4.17995899999994
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/face-full.db.test.ts",
+      "case": "a FULL stock face over HTTP admits signed units of the call (204) and refuses anything else (422)",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 613.8835409999999
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/face.db.test.ts",
+      "case": "the digital twin over HTTP hands the face exactly the audio it was given, once; anything else is refused",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 147.01316700000007
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/insights.db.test.ts",
+      "case": "GET /admin/insights refuses founders",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.5175829999998314
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/resilience.db.test.ts",
+      "case": "database resuming (Aurora auto-pause) maps DatabaseResumingError to 503 database_resuming with Retry-After, and health to resuming",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 61.609459000000015
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/resilience.db.test.ts",
+      "case": "unexpected errors answer 500 internal without leaking messages, and log the error name only",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 2.840958999999998
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/resilience.db.test.ts",
+      "case": "model failures during a turn stream turn.error (after acceptance) when the model is unavailable",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 381.29545800000005
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/resilience.db.test.ts",
+      "case": "idempotency under concurrency executes a key once even when two requests race",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 13.312999999999874
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/resilience.db.test.ts",
+      "case": "idempotency under concurrency reports an in-flight key as 409 conflict with Retry-After, and takes over stale reservations",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 8.871249999999918
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/security-review.db.test.ts",
+      "case": "finding 5: the classifier is no cross-venture oracle (PoC t1) labels another venture\u2019s name or member exactly like an unknown one, and never says cross_venture",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 122.20633300000009
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/security-review.db.test.ts",
+      "case": "finding 3: venture names cannot deny service to other ventures (PoC t3) refuses common-word names from the team, and the other venture keeps coaching",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 249.95445799999993
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/security-review.db.test.ts",
+      "case": "finding 4: ingestion obeys the spend caps and uploads have a daily quota (PoC t2a) refuses uploads beyond the per-person daily quota with 429 and Retry-After",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 9.284458000000086
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/security-review.db.test.ts",
+      "case": "finding 7: a locked-out network is answered from memory (PoC t2b) stops writing audit rows for repeated locked-out attempts and answers 429 with Retry-After",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 559.3718329999999
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/sessions.db.test.ts",
+      "case": "coaching sessions denies other ventures and non-writers",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 4.083917000000042
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/sessions.db.test.ts",
+      "case": "POST /sessions/:id/turns (SSE) answers refusals before acceptance with plain problem+json, not a stream",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 23.587957999999844
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/sessions.db.test.ts",
+      "case": "documents marks an upload that stopped as unfinished, and a retry reuses the same document",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 22.497375000000147
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/student.db.test.ts",
+      "case": "distinct student and learning models requires explicit approval, handles stale versions, and separates teammates",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 11.414125000000013
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/student.db.test.ts",
+      "case": "distinct student and learning models records a student reflection separately from venture memory and refuses another student deleting it",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 7.6294169999999895
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/ventures.db.test.ts",
+      "case": "memory does not store failed attempts: a retry after a 4xx executes again",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 1.3235839999999826
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/wake.db.test.ts",
+      "case": "POST /wake answers before a slow database call ends, tracks the call, and starts no second one meanwhile",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 0.9187500000000455
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/web-contract.db.test.ts",
+      "case": "x-request-id and Retry-After on error responses database_resuming carries Retry-After and retryAfterSeconds",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 1.43912499999999
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/web-contract.db.test.ts",
+      "case": "SSE turn stream framing turn.error carries the request id, and a replay of a pending turn says when to retry",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 65.8722499999999
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/web-contract.db.test.ts",
+      "case": "SSE turn stream framing answers a refusal before acceptance as problem+json, not a stream",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 4.5242920000000595
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/handlers/handlers.db.test.ts",
+      "case": "worker handler (SQS batch) drops malformed messages, skips stale jobs and runs embedding backfills",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 5.916707999999744
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/handlers/handlers.db.test.ts",
+      "case": "insights handler (direct invocation) answers a metadata request and refuses anything else with a code only",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 12.887667000000874
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/jobs/insights.db.test.ts",
+      "case": "export refuses a bad request or key with a code only",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.3840829999999187
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/jobs/insights.db.test.ts",
+      "case": "read-only a write in the insights transaction is refused by PostgreSQL",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.7784999999998945
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/jobs/schema-resource.db.test.ts",
+      "case": "migrations custom resource aborts the embedding call in flight at the deadline (R5)",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 203.27979200000004
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/scripts/lab-local-db.test.ts",
+      "case": "the lab scripts refuse every database but the lab\u2019s local Postgres refuses production, the Data API, a remote host and a missing or odd URL",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.18787500000001955
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/scripts/lab-local-db.test.ts",
+      "case": "lab-age-conversation refuses a deployed or remote database before it reads any argument",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.4127500000000168
+    },
+    {
+      "suite": "api-db",
+      "file": "apps/api/src/scripts/lab-local-db.test.ts",
+      "case": "lab-age-conversation refuses a malformed request",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.29104200000000446
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/bundle.test.ts",
+      "case": "Lambda bundles api: refuses to start without a variable of its role",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 368.3183750000003
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/bundle.test.ts",
+      "case": "Lambda bundles worker: refuses to start without a variable of its role",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 941.5252089999999
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/bundle.test.ts",
+      "case": "Lambda bundles migrate: refuses to start without a variable of its role",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 281.48324999999977
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/bundle.test.ts",
+      "case": "Lambda bundles insights: refuses to start without a variable of its role",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 301.62537500000053
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/config.test.ts",
+      "case": "loadApiConfig reads the digital-twin vendors, refusing anything it does not know",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 2.4774170000000026
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/config.test.ts",
+      "case": "speech variables (infra `speech`) refuses an engine or switch value it does not know, naming the variable",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.1758329999999546
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/aws-adapters.test.ts",
+      "case": "S3ObjectStore.presignPut refuses keys outside the documents prefix and bad lengths",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.6073340000000371
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/aws-adapters.test.ts",
+      "case": "S3ObjectStore.presignGet refuses keys outside the documents prefix",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.23629200000004857
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/aws-adapters.test.ts",
+      "case": "SqsJobQueue refuses delays SQS cannot honour",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.5459579999999846
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/heygen-liveavatar.test.ts",
+      "case": "HeygenLiveAvatarFace: a LITE session starts no session at all when the vendor refuses the per-call limit (never one without a limit)",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.337665999999956
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/heygen-liveavatar.test.ts",
+      "case": "HeygenLiveAvatarFace: the server-held control channel counts duplicate chunk acknowledgements once and never mistakes a commit for appended audio",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 6.6758330000000115
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/heygen-liveavatar.test.ts",
+      "case": "HeygenLiveAvatarFace: the server-held control channel preserves an utterance ID across parts and invalidates it on interruption",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 0.5526660000000447
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/heygen-liveavatar.test.ts",
+      "case": "HeygenLiveAvatarFace: the server-held control channel fails on the vendor\u2019s error event, without repeating what the vendor said",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 0.3057080000000383
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/heygen-liveavatar.test.ts",
+      "case": "HeygenLiveAvatarFace: the server-held control channel interrupts on barge-in once connected, and waits for the vendor to clear its buffer",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 0.14862499999998136
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/heygen-liveavatar.test.ts",
+      "case": "HeygenLiveAvatarFace: the server-held control channel fails when the channel refuses, or there is none",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.21195800000003828
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/heygen-liveavatar.test.ts",
+      "case": "HeygenLiveAvatarFace: the server-held control channel keeps the session alive and ends it with the API key; a session already gone is not an error",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 0.27958300000000236
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/heygen-liveavatar.test.ts",
+      "case": "HeygenLiveAvatarFace: a FULL session (a stock avatar with its stock voice) asks for the stock avatar in restricted push-to-talk mode, 720p, at most 20 minutes, with no context",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.2032909999999788
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/heygen-liveavatar.test.ts",
+      "case": "HeygenLiveAvatarFace: a FULL session (a stock avatar with its stock voice) keeps alive and stops with the API key, never opens a socket, and interrupts nothing server-side",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 0.28841699999998127
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/local-adapters.test.ts",
+      "case": "LocalObjectStore rejects expired URLs and keys outside the storage root",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 0.6175829999999678
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/local-adapters.test.ts",
+      "case": "InlineJobQueue processes jobs after enqueue returns and retries the ones that ask for it",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 1.6102500000000077
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/local-adapters.test.ts",
+      "case": "InlineJobQueue stops after a crash and refuses jobs without a processor",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.3394579999999792
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/local-adapters.test.ts",
+      "case": "InlineJobQueue drops delayed jobs on stop, refuses new ones and rejects delays SQS would refuse",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.3241249999999809
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/media-secrets.test.ts",
+      "case": "MediaSecrets refuses a secret that is not {\"apiKey\": \u2026}, names the secret and never the value, and caches no failure",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.31433400000003076
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/polly-speech.test.ts",
+      "case": "PollySpeechSynthesizer reports outages as SpeechSynthesisError without the text, and lets aborts through",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 0.9134999999999991
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/adapters/transcribe-presigner.test.ts",
+      "case": "Transcribe streaming presigner reports missing credentials as a grant error",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 0.4848330000000374
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/http/http-helpers.test.ts",
+      "case": "problem mapping maps infrastructure errors through core and hides unknown ones",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 0.6151669999999854
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/http/http-helpers.test.ts",
+      "case": "problem mapping always gives database_resuming, locked_out and rate_limited a retry hint",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 0.2969999999999686
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/http/http-helpers.test.ts",
+      "case": "problem mapping includes field errors and a stable type URI",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 0.13683399999996482
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/http/http-helpers.test.ts",
+      "case": "logging hashes principal ids and strips error messages",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 1.1569170000000213
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/http/http-helpers.test.ts",
+      "case": "EventChannel and InflightTracker drains tracked work with a timeout",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 22.680000000000007
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/http/turn-stream.test.ts",
+      "case": "turn SSE stream answers a pre-acceptance refusal with problem+json (status, Retry-After)",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.5977920000000267
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/http/turn-stream.test.ts",
+      "case": "turn SSE stream cancels the turn when the client disconnects, and still lets it finish",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 1.3823749999999109
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/http/turn-stream.test.ts",
+      "case": "turn SSE stream cancels at the deadline",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 53.08862499999998
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/http/turn-stream.test.ts",
+      "case": "turn SSE stream turns an unexpected orchestrator rejection into a final turn.error frame",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 2.9804580000001124
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/http/turn-stream.test.ts",
+      "case": "turn SSE stream stores the accepted turn against the key after the stream opened and before it ends; a retry meanwhile is in flight",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 104.17283299999997
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/http/turn-stream.test.ts",
+      "case": "turn SSE stream releases the key when the turn is refused, so a retry runs again",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.2574170000000322
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/http/turn-timing.test.ts",
+      "case": "TurnTimeline leaves the stages a turn never reached empty (a refused or replayed turn)",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.3474160000000097
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/routes/wake.test.ts",
+      "case": "WakeGate remembers a bounded number of IPs, forgetting the oldest",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 22.193917
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/jobs/insights-envelope.test.ts",
+      "case": "insights envelopes refuses another key, and a tampered ciphertext or key id",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 2.174583000000041
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/jobs/insights-render.test.ts",
+      "case": "the metadata report is strict: a field that could carry text, or text in a code field, is refused",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 1.0856660000000034
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/jobs/schema-resource.test.ts",
+      "case": "migrations custom resource: IAM propagation right after the role changed (R4) retries AccessDeniedException / ForbiddenException during the wake-up, then carries on",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 0.4633330000000342
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/jobs/schema-resource.test.ts",
+      "case": "migrations custom resource: IAM propagation right after the role changed (R4) gives up after about a minute of refusals",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.3048339999999712
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/jobs/schema-resource.test.ts",
+      "case": "migrations custom resource: IAM propagation right after the role changed (R4) never retries other errors (a resume timeout or a SQL error fails at once)",
+      "category": "provider-outage-and-timeout",
+      "status": "passed",
+      "durationMs": 0.1558329999999728
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/jobs/schema-resource.test.ts",
+      "case": "migrations custom resource: IAM propagation right after the role changed (R4) recognises the refusal through driver wrappers only",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.10333300000002055
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/jobs/worker.test.ts",
+      "case": "processSqsBatch runs backfill jobs within the invocation budget and never retries them",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 0.26116700000000037
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/jobs/worker.test.ts",
+      "case": "daily maintenance message (EventBridge schedule \u2192 jobs queue) runs core maintenance for the scheduled message and retries it when it fails",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 0.3234170000000063
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/jobs/worker.test.ts",
+      "case": "distillation jobs distils a queued conversation with the invocation deadline and retries transient failures",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 0.41037500000004457
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/jobs/worker.test.ts",
+      "case": "distillation jobs runs the sweep message inline (bounded backstop) and retries it when it fails",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 0.27095900000000483
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/runtime/local-face.test.ts",
+      "case": "localFaceFor (the dev server, the conversation lab face suite) refuses the key outside development, and production at configuration already",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.5914579999999887
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/runtime/local-face.test.ts",
+      "case": "localFaceFor (the dev server, the conversation lab face suite) refuses a half configuration and the stand-in alongside, never naming the key",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.48641699999996035
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/runtime/local-face.test.ts",
+      "case": "the lab probe (vendor checks with the key kept in the dev server) refuses a session outside the sandbox limits, and a vendor failure as its class name only",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.582540999999992
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/scripts/lab-local-db.test.ts",
+      "case": "the lab scripts refuse every database but the lab\u2019s local Postgres refuses production, the Data API, a remote host and a missing or odd URL",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.179458000000011
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/scripts/lab-local-db.test.ts",
+      "case": "lab-age-conversation refuses a deployed or remote database before it reads any argument",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.3012499999999818
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/scripts/lab-local-db.test.ts",
+      "case": "lab-age-conversation refuses a malformed request",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 0.2561670000000049
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/scripts/lab-seal.test.ts",
+      "case": "lab-seal refuses a weak or malformed key and an unsafe suite name",
+      "category": "isolation-and-authorization",
+      "status": "passed",
+      "durationMs": 70.77170800000002
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/scripts/smoke-script.test.ts",
+      "case": "scripts/smoke.mjs first contact (R6) retries 404 and 403 while a new distribution and its origin propagate, then passes",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 144.759458
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/scripts/smoke-script.test.ts",
+      "case": "scripts/smoke.mjs first contact (R6) gives a stale policy its own window, longer than first contact, on / and the deep link",
+      "category": "cancellation-and-stale-events",
+      "status": "passed",
+      "durationMs": 1524.8139169999995
+    },
+    {
+      "suite": "api-unit",
+      "file": "apps/api/src/scripts/smoke-script.test.ts",
+      "case": "scripts/smoke.mjs first contact (R6) retries a deep link that still carries the previous policy",
+      "category": "idempotency-and-concurrency",
+      "status": "passed",
+      "durationMs": 96.76974999999948
+    }
+  ]
+}
