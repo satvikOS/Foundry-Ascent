@@ -10,7 +10,7 @@ import {
   type MemoryObjectView,
   type SourceRef,
 } from '@foundry/contracts';
-import { knowledgeRepo, memoryRepo, settingsRepo, turnsRepo, type SqlExecutor } from '@foundry/db';
+import { knowledgeRepo, memoryRepo, p, settingsRepo, turnsRepo, type SqlExecutor } from '@foundry/db';
 import { type z } from 'zod';
 
 import { requireVentureAccess } from '../authz/venture-access.js';
@@ -196,9 +196,10 @@ async function findDuplicate(
 }
 
 /**
- * Keeps AI memory candidates (owner decision 2026-10-16: what a conversation teaches goes to memory by itself,
+ * Proposes AI memory candidates (the 2026-11-03 approval policy supersedes automatic confirmation).
+ * Historical implementation note: owner decision 2026-10-16 kept conversation memory automatically,
  * without an "add to memory" step). Each new candidate becomes an item of origin `ai` that is kept
- * automatically: `confirmed` with no approver and `auto_kept_at` (migration 0013), so the founder and their team
+ * as `proposed`, with no approver; it is excluded from coaching retrieval until a person approves it. The team
  * see it in Knowledge at once and can correct, dispute or delete it like any item. Its source refs name the
  * conversation it was learned from (and the turn, for a turn's candidates), so deleting that conversation
  * erases it. `visibility` is `team` normally, `founder_private` when it came from a turn or session that used
@@ -328,13 +329,16 @@ export async function proposeMemoryCandidates(
       type: candidate.type,
       title,
       content,
-      keptAutomatically: true,
+      status: 'proposed',
       visibility: args.visibility,
       confidence,
       origin: 'ai',
       createdBy: args.createdBy,
       sourceRefs: refs,
-      attributes: { evidence_keys: keys },
+      attributes: {
+        evidence_keys: keys,
+        epistemic_status: candidate.type === 'fact' ? 'student_reported' : candidate.type,
+      },
       embedding,
     });
     records.push(record);
@@ -388,7 +392,9 @@ export async function settleKeptMemory(
   },
 ): Promise<SettleResult> {
   const none: SettleResult = { embedded: 0, merged: 0, forgotten: 0 };
-  const items = args.items.filter((m) => m.keptAutomatically && !m.hasEmbedding && m.status === 'confirmed');
+  const items = args.items.filter(
+    (m) => !m.hasEmbedding && (m.status === 'proposed' || (m.keptAutomatically && m.status === 'confirmed')),
+  );
   if (items.length === 0) return none;
   try {
     const settings = await kit.inRequest(ctx, ({ tx }) => settingsRepo.getPlatformSettings(tx));
@@ -471,8 +477,8 @@ const PENDING_GROUNDING_CONVERSATIONS = 3;
  * only the coach's advice ({@link isCoachEcho}, judged against the conversations it was drawn from) or something
  * the founder made the vEIR forget is retired; one that restates an item the venture has (lexically, or by its
  * stored embedding at {@link MEMORY_DUPLICATE_COSINE} with the same numbers) is retired and its conversations go to
- * that item when it is AI memory nobody reviewed; every other one is kept automatically, as new memory is. Older
- * proposals are settled first, so of two that say the same the older is kept. At most `limit` per run.
+ * that item when it is AI memory nobody reviewed; every other one remains pending student approval. Older
+ * proposals are examined first, so of two that say the same the older remains pending. At most `limit` per run.
  */
 export async function settlePendingAiProposals(
   kit: Kit,
@@ -480,7 +486,7 @@ export async function settlePendingAiProposals(
 ): Promise<PendingSettleResult> {
   return kit.system(async (sx) => {
     const pending = await memoryRepo.listPendingAiProposals(sx, { limit: args.limit ?? 200 });
-    let kept = 0;
+    const kept = 0;
     let duplicates = 0;
     let notTheFounders = 0;
     const ventures = new Map<string, memoryRepo.PendingAiProposal[]>();
@@ -567,17 +573,10 @@ export async function settlePendingAiProposals(
             duplicates += 1;
           continue;
         }
-        if (
-          await memoryRepo.settlePendingAiProposal(sx, {
-            memoryId: item.id,
-            outcome: 'keep',
-            reason: memoryRepo.KEPT_AUTOMATICALLY,
-          })
-        ) {
-          kept += 1;
-          const now = await memoryRepo.getMemory(sx, item.id);
-          if (now !== null) known.unshift(now);
-        }
+        const stillPending = await memoryRepo.getMemory(sx, item.id);
+        if (stillPending) known.unshift(stillPending);
+        // A valid proposal stays pending. Neither maintenance nor a model may consent for a student.
+        // Approval through MemoryService.act/batch is the only path into durable coaching memory.
       }
     }
     return { kept, duplicates, notTheFounders };
@@ -597,6 +596,7 @@ async function rememberForgetting(
   if (!current.sourceRefs.some((r) => r.kind === 'session' || r.kind === 'turn')) return;
   const versions = await memoryRepo.listMemoryVersions(tx, current.id);
   const chosen = reason === 'deleted' ? versions : versions.filter((v) => v.id === current.id);
+  await tx.query('SELECT app.invalidate_memory_continuity(:memory)', { memory: p.uuid(current.id) });
   await memoryRepo.recordForgottenMemory(tx, {
     memoryId: current.id,
     reason,
@@ -757,6 +757,7 @@ export function createMemoryService(kit: Kit): MemoryService {
             result = await memoryRepo.approveMemory(tx, { memoryId, actorId });
             break;
           case 'reject':
+            await rememberForgetting(tx, current, 'deleted');
             result = await memoryRepo.rejectMemory(tx, { memoryId, actorId, reason: action.reason ?? null });
             break;
           case 'correct': {
@@ -764,8 +765,7 @@ export function createMemoryService(kit: Kit): MemoryService {
             if (Object.keys(patch).length === 0)
               throw fail.validation('A correction must change at least one field');
             // What the vEIR kept and the founder corrected is never kept again in its old words.
-            if (current.origin === 'ai' && current.approvedBy === null)
-              await rememberForgetting(tx, current, 'corrected');
+            await rememberForgetting(tx, current, 'corrected');
             result = await memoryRepo.correctMemory(tx, {
               memoryId,
               actorId,

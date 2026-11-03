@@ -19,6 +19,7 @@ import { createFaceHooks, createFaceService, type FaceService } from './services
 import { createKnowledgeLibraryService, type KnowledgeLibraryService } from './services/knowledge-library.js';
 import { createLessonsService, type LessonsService } from './services/lessons.js';
 import { createMaintenanceService, type MaintenanceService } from './services/maintenance.js';
+import { createStudentService, type StudentService } from './services/student.js';
 import { createMeService, type MeService } from './services/me.js';
 import { createMemoryService, type MemoryService } from './services/memory.js';
 import { createNotebookService, type NotebookService } from './services/notebook.js';
@@ -35,6 +36,7 @@ import { createVenturesService, type VenturesService } from './services/ventures
 export interface Core {
   readonly auth: AuthService;
   readonly me: MeService;
+  readonly student: StudentService;
   readonly ventures: VenturesService;
   readonly sessions: SessionsService;
   readonly orchestrator: Orchestrator;
@@ -97,6 +99,7 @@ export function createCore(deps: CoreDeps): Core {
   return {
     auth,
     me: createMeService(kit),
+    student: createStudentService(kit),
     ventures: createVenturesService(kit, directory),
     sessions: createSessionsService(kit, directory),
     // One key cache signs the turn engine's speech units and verifies them for calls and /speech. A spoken turn on

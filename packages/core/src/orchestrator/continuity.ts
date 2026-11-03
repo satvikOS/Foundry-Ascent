@@ -1,3 +1,4 @@
+import type { StudentProfile } from '@foundry/contracts';
 import {
   MAX_PROMPT_DIGESTS,
   firstNameOf,
@@ -14,6 +15,7 @@ import {
   type PromptContinuity,
 } from '@foundry/ai';
 import {
+  studentRepo,
   notebooksRepo,
   personasRepo,
   principalsRepo,
@@ -69,6 +71,7 @@ export interface ContinuityKeys {
  */
 export function continuityParts(args: ContinuityKeys): {
   readonly principal: ReadPart<principalsRepo.PrincipalRecord | null>;
+  readonly student?: ReturnType<typeof studentRepo.studentProfilePart>;
   readonly notebook?: ReadPart<notebooksRepo.NotebookRecord | null>;
   readonly digests?: ReadPart<sessionsRepo.RecentDigest[]>;
 } {
@@ -76,6 +79,7 @@ export function continuityParts(args: ContinuityKeys): {
   if (args.privacy === 'ephemeral') return { principal };
   return {
     principal,
+    student: studentRepo.studentProfilePart(args.ventureId),
     notebook: notebooksRepo.notebookPart({ ventureId: args.ventureId, personaId: args.personaId }),
     // The venture's conversations with any of its vEIRs: a vEIR assigned later still knows what was said before
     // (one with an earlier coach is marked as that coach's). A turn leaves out the ones "Where you left off"
@@ -93,6 +97,7 @@ export function continuityFrom(
   args: ContinuityKeys,
   reads: {
     readonly principal: principalsRepo.PrincipalRecord | null;
+    readonly student?: StudentProfile | null;
     readonly notebook?: notebooksRepo.NotebookRecord | null;
     readonly digests?: readonly sessionsRepo.RecentDigest[];
   },
@@ -105,6 +110,7 @@ export function continuityFrom(
   return {
     continuity: {
       founderFirstName,
+      studentProfile: reads.student ?? null,
       notebook: notebook ? { ...notebook.content, updatedAt: notebook.updatedAt } : null,
       recentDigests: digests.map((d) => ({
         sessionId: d.sessionId,

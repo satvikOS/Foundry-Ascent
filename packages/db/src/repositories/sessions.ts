@@ -648,7 +648,7 @@ export function recentDigestsPart(args: {
      FROM coaching_sessions s
      JOIN persona_releases r ON r.id = s.persona_release_id
      WHERE s.venture_id = :ventureId AND (:personaId IS NULL OR r.persona_id = :personaId)
-       AND s.digest IS NOT NULL AND s.privacy = 'standard' AND (:except IS NULL OR s.id <> :except)
+       AND s.digest IS NOT NULL AND s.digest_deleted_at IS NULL AND s.privacy = 'standard' AND (:except IS NULL OR s.id <> :except)
      ORDER BY s.last_activity_at DESC, s.id DESC
      LIMIT :limit`,
     {
@@ -713,7 +713,7 @@ export function listLeftOffConversations(
   ex: SqlExecutor,
   args: { ventureId: string; principalId: string; excludeSessionId?: string | null; teammate?: boolean },
 ): Promise<LeftOffConversation[]> {
-  const eligible = `s.venture_id = :ventureId AND s.deleted_at IS NULL AND s.privacy = 'standard'
+  const eligible = `s.venture_id = :ventureId AND s.deleted_at IS NULL AND s.digest_deleted_at IS NULL AND s.privacy = 'standard'
          AND (:except IS NULL OR s.id <> :except)
          AND EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id AND t.status = 'completed')`;
   return queryRows(

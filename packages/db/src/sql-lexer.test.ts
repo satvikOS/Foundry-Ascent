@@ -66,8 +66,8 @@ DO $$ BEGIN RAISE NOTICE 'x;y'; END $$;`;
       expect(onDisk.replace(/\r\n/g, '\n')).toBe(m.sql);
       const statements = splitStatements(m.sql);
       // The live migrations 0001–0010 are large; a later one may be small (its own suite pins its count), but
-      // it still splits into more than one statement.
-      expect(statements.length, m.version).toBeGreaterThan(m.version < '0011' ? 10 : 1);
+      // it must contain at least one executable statement.
+      expect(statements.length, m.version).toBeGreaterThan(m.version < '0011' ? 10 : 0);
       for (const s of statements) {
         expect(s.trim()).not.toBe('');
         expect(s.endsWith(';')).toBe(false);

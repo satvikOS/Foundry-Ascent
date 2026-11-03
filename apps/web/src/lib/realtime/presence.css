@@ -7,6 +7,7 @@
   --fa-veir: 0;
   --fa-founder: 0;
   --fa-ink: var(--foreground);
+  contain: layout style;
   position: absolute;
   inset: 0;
   display: grid;
@@ -25,8 +26,8 @@
   width: 100%;
   background: radial-gradient(
     closest-side,
-    color-mix(in oklab, var(--fa-ink) 10%, transparent),
-    color-mix(in oklab, var(--fa-ink) 4%, transparent) 58%,
+    color-mix(in oklab, var(--voice-accent-start) 24%, transparent),
+    color-mix(in oklab, var(--voice-accent-end) 12%, transparent) 58%,
     transparent
   );
   opacity: calc(0.45 + var(--fa-veir) * 0.55);
@@ -35,7 +36,13 @@
 
 .fa-presence__ring-outer {
   width: 76%;
-  border: 1px solid color-mix(in oklab, var(--fa-ink) 11%, transparent);
+  border: 1px solid color-mix(in oklab, var(--voice-accent-start) 28%, transparent);
+  background: radial-gradient(
+    ellipse at 25% 20%,
+    color-mix(in oklab, var(--voice-accent-start) 15%, transparent),
+    color-mix(in oklab, var(--voice-accent-end) 6%, transparent) 60%,
+    transparent
+  );
   transform: scale(calc(1 + var(--fa-veir) * 0.12));
   transition: border-color 360ms var(--ease-out-expo);
 }
@@ -127,5 +134,14 @@
 
   .fa-presence > * {
     transform: none !important;
+  }
+}
+
+[data-hidden='true'] .fa-presence * {
+  animation-play-state: paused !important;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .fa-presence__halo {
+    display: none;
   }
 }

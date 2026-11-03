@@ -318,7 +318,7 @@ test.describe('memory', () => {
     const saved = page.getByRole('article', { name: 'Exchange 1' }).getByTestId('memory-saved');
     await expect(saved).toBeVisible({ timeout: 30_000 });
     // Everything this conversation taught (removed again at the end, so a later run finds the memory as it was).
-    const listed = await page.request.get(`/api/v1/ventures/${ventureId}/memory?status=confirmed&limit=100`);
+    const listed = await page.request.get(`/api/v1/ventures/${ventureId}/memory?status=proposed&limit=100`);
     expect(listed.status()).toBe(200);
     const { items } = (await listed.json()) as {
       items: {
@@ -330,7 +330,7 @@ test.describe('memory', () => {
     };
     const learned = items.filter(
       (m) =>
-        m.keptAutomatically === true &&
+        m.keptAutomatically === false &&
         m.sourceRefs.some((r) => r.kind === 'session' && r.id === conversationId),
     );
     // One item saved links it; several ("2 items") link Knowledge, where the founder's decision is opened.

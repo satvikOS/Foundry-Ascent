@@ -167,7 +167,12 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
   }, [engine, live, pushToTalk, voice]);
 
   const status = callStatusLabel(snapshot);
-  const speaking = live && snapshot.activity === 'speaking';
+  const speaking =
+    live &&
+    snapshot.activity === 'speaking' &&
+    snapshot.voice !== 'captions' &&
+    !snapshot.audioBlocked &&
+    !snapshot.held;
   const halfDuplexInterrupt = speaking && voice && snapshot.halfDuplex;
   // Replies on screen only (no voice for them): they are shown whatever the captions setting, and read to a
   // screen reader, since there is no voice to talk over.

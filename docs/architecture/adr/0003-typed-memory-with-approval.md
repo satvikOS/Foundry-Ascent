@@ -86,3 +86,11 @@ automatically**: `confirmed`, origin `ai`, no approver, with `auto_kept_at` reco
 - Pending AI proposals that existed are not kept blindly: the daily maintenance runs each through the checks new
   memory goes through and keeps it (an `approved` event marked `system`) or retires it as a restatement or as the
   coach's advice. The 30-day expiry of AI proposals is gone.
+
+## Amendment 2026-11-03: restore explicit approval and withdraw stale continuity
+
+The current owner request explicitly requires review/approval for durable AI memory. It supersedes the automatic-confirmation decision above. AI turn, recap and distillation candidates remain `proposed`; only a student's authorized approval or correction admits them to durable retrieval. Maintenance may retire duplicates/advice, never approve them. Existing unapproved active AI items return to review in migration 0021; historical columns are retained for rollback compatibility. Approval does not turn student-reported information into independently verified evidence.
+
+Reject, correct and delete record forgetting fingerprints. Migration 0024 withdraws generated digests, opener copies and source-derived notebook lines from the affected source conversations. Their transcripts remain reviewable, but automatic continuity excludes them and the existing digest-deletion fence prevents queued background distillation from restoring them. This intentionally sacrifices automatic recall from an affected conversation rather than reuse withdrawn context; students can approve corrected memory and continue in a new conversation. Manually authored notebook lines with no source are preserved. This is not automatic redaction of an old user-authored transcript.
+
+`student_profiles` and `learning_log` are separate, explicitly submitted student records, isolated by tenant, venture and principal, rather than venture facts or AI inferences. Profile updates use version checks. Delete/export controls are available in Venture settings. A future cross-venture student profile requires a separate approved sharing design.

@@ -445,7 +445,7 @@ describe('Remember or Private for a call from New chat', () => {
     });
     const group = screen.getByRole('group', { name: 'Memory for this call' });
     expect(within(group).getByRole('radio', { name: 'Remember this call' })).toBeChecked();
-    expect(group).toHaveAccessibleDescription('Remembered for next time.');
+    expect(group).toHaveAccessibleDescription('Conversation saved. Memory needs approval.');
     // Nothing is created or started before the founder chooses.
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(sessionCreated()).toBe(false);

@@ -524,6 +524,8 @@ describe('RLS coverage', () => {
     const covered = [
       ...VENTURE_TABLES,
       ...TENANT_TABLES,
+      'student_profiles',
+      'learning_log',
       'usage_ledger',
       'audit_events',
       'call_faces',
@@ -977,6 +979,8 @@ describe('role visibility', () => {
       for (const table of [
         ...VENTURE_TABLES,
         ...TENANT_TABLES,
+        'student_profiles',
+        'learning_log',
         'tenants',
         'platform_settings',
         'persona_releases',

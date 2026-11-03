@@ -15,16 +15,21 @@ import {
 const NOW = '2026-10-05T09:00:00.000Z';
 
 describe('availableMemoryActions', () => {
-  it('never offers approve or reject: memory is kept automatically, and edited or forgotten', () => {
+  it('requires an explicit review action for proposed memory', () => {
     for (const status of ['proposed', 'confirmed', 'disputed'] as const) {
       const actions = availableMemoryActions(makeMemory({ status }));
       expect(actions).toContain('correct');
       expect(actions).toContain('delete');
-      expect(actions).not.toContain('approve');
-      expect(actions).not.toContain('reject');
+      expect(actions.includes('approve')).toBe(status === 'proposed');
+      expect(actions.includes('reject')).toBe(status === 'proposed');
       expect(actions).not.toContain('dispute');
     }
-    expect(availableMemoryActions(makeMemory({ status: 'proposed' }))).toEqual(['correct', 'delete']);
+    expect(availableMemoryActions(makeMemory({ status: 'proposed' }))).toEqual([
+      'approve',
+      'reject',
+      'correct',
+      'delete',
+    ]);
   });
 
   it('offers pin or unpin depending on the current state', () => {

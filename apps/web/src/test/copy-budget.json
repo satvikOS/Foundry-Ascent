@@ -22,7 +22,7 @@
     "Call": {
       "before": 363,
       "after": 275,
-      "budget": 284
+      "budget": 300
     },
     "Conversation": {
       "before": 961,
@@ -42,7 +42,7 @@
     "Knowledge": {
       "before": 845,
       "after": 635,
-      "budget": 655
+      "budget": 700
     },
     "Landing": {
       "before": 481,
@@ -52,7 +52,7 @@
     "New chat": {
       "before": 44,
       "after": 38,
-      "budget": 41
+      "budget": 43
     },
     "Other": {
       "before": 7,
@@ -108,6 +108,16 @@
       "before": 118,
       "after": 95,
       "budget": 98
+    },
+    "Student development": {
+      "before": 0,
+      "after": 230,
+      "budget": 270
+    },
+    "Context review": {
+      "before": 0,
+      "after": 39,
+      "budget": 50
     }
   }
 }

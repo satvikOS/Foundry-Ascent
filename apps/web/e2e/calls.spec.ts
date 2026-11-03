@@ -74,12 +74,11 @@ async function memoryLearnedFrom(
   ventureId: string,
   sessionId: string,
 ): Promise<LearnedMemory[]> {
-  const response = await request.get(`/api/v1/ventures/${ventureId}/memory?status=confirmed&limit=100`);
+  const response = await request.get(`/api/v1/ventures/${ventureId}/memory?status=proposed&limit=100`);
   expect(response.status(), 'GET /ventures/:id/memory').toBe(200);
   const { items } = (await response.json()) as { items: LearnedMemory[] };
   return items.filter(
-    (m) =>
-      m.keptAutomatically === true && m.sourceRefs.some((r) => r.kind === 'session' && r.id === sessionId),
+    (m) => m.origin === 'ai' && m.sourceRefs.some((r) => r.kind === 'session' && r.id === sessionId),
   );
 }
 
@@ -391,7 +390,7 @@ test.describe('vEIR calls', () => {
       await expect(callScreen(page)).toBeVisible();
     });
 
-    await test.step('ending shows the summary; what the call learned is kept with no click', async () => {
+    await test.step('ending shows the summary; memory suggestions await explicit approval', async () => {
       const ended = page.waitForResponse(
         (response) =>
           response.url().endsWith(`/calls/${callId}/end`) && response.request().method() === 'POST',
@@ -403,16 +402,16 @@ test.describe('vEIR calls', () => {
       expect(response.request().postDataJSON()).toMatchObject({ reason: 'user' });
       await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(0);
       await expectNoBareEirName(page, 'the after-call summary');
-      // What the call learned goes to memory by itself, never as a proposal waiting for anyone.
+      // The call proposes memory; it cannot grant approval on the student’s behalf.
       const { summary } = (await response.json()) as {
         summary: { memoryProposalIds: string[]; memoryKeptIds?: string[] };
       };
-      expect(summary.memoryProposalIds).toEqual([]);
+      expect(summary.memoryKeptIds ?? []).toEqual([]);
       // The summary says so quietly: one "Remembered" line, and a "Saved to Knowledge" line exactly when the
-      // call's turns kept something; nothing to keep or decline.
-      await expect(screen.getByTestId('call-remembered')).toContainText('Remembered for next time.');
-      if ((summary.memoryKeptIds ?? []).length > 0) {
-        await expect(screen.getByTestId('memory-saved')).toContainText('Saved to Knowledge:');
+      // call proposed something. Review happens in Knowledge.
+      await expect(screen.getByTestId('call-remembered')).toContainText('Conversation saved.');
+      if (summary.memoryProposalIds.length > 0) {
+        await expect(screen.getByTestId('memory-saved')).toContainText('Memory to review:');
       } else {
         await expect(screen.getByTestId('memory-saved')).toHaveCount(0);
       }
@@ -432,13 +431,14 @@ test.describe('vEIR calls', () => {
         )
         .toBe(true);
       const learned = await memoryLearnedFrom(page.request, ventureId, sessionId);
-      for (const id of summary.memoryKeptIds ?? []) {
+      for (const id of summary.memoryProposalIds) {
         expect(
           learned.map((m) => m.id),
           'what the summary says it saved is in memory',
         ).toContain(id);
       }
-      for (const m of learned) expect(m).toMatchObject({ origin: 'ai', status: 'confirmed' });
+      for (const m of learned)
+        expect(m).toMatchObject({ origin: 'ai', status: 'proposed', keptAutomatically: false });
       // Leave the venture's memory as it was.
       for (const { id } of learned) await deleteMemory(page.request, id);
       await screen.getByRole('button', { name: 'Back to conversation' }).click();

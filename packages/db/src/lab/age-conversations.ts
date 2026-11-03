@@ -119,7 +119,7 @@ export async function ageConversationsForLab(
   const earliest = live.rows[0] ? col.ts.decode(live.rows[0].started_at, 'started_at') : startedAt;
   const params = { ids: p.uuidArray(ids), days: p.int(days) };
   const shift = (column: string) =>
-    `${column} = CASE WHEN ${column} IS NULL THEN NULL ELSE ${column} - make_interval(days => :days) END`;
+    `${column} = CASE WHEN ${column} IS NULL THEN NULL ELSE ${column} - make_interval(hours => :days * 24) END`;
 
   const turns = await sx.query(
     `UPDATE turns SET ${shift('created_at')}, ${shift('completed_at')}, ${shift('interrupted_at')}
@@ -163,7 +163,7 @@ export async function ageConversationsForLab(
     const writtenSince = updatedAt !== null && Date.parse(updatedAt) >= Date.parse(earliest);
     await sx.query(
       `UPDATE veir_notebooks SET content = :content,
-         updated_at = CASE WHEN :since THEN updated_at - make_interval(days => :days) ELSE updated_at END
+         updated_at = CASE WHEN :since THEN updated_at - make_interval(hours => :days * 24) ELSE updated_at END
        WHERE id = :id`,
       {
         id: p.uuid(col.uuid.decode(row.id, 'id')),

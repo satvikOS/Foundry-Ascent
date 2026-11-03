@@ -33,9 +33,10 @@ import { type ApiKeySource } from './media-secrets.js';
  *   it), then `POST /v1/sessions/start` with that session token. The browser gets only `livekit_url` and
  *   `livekit_client_token` (it watches the room); `ws_url`, the channel that makes the face speak, stays on the
  *   server.
- * - The control channel follows the vendor's LITE events (docs.liveavatar.com/docs/lite-mode/events, 2026-10-18):
+ * - The control channel follows the vendor's LITE events (docs.liveavatar.com/docs/lite-mode/events, 2026-11-03):
  *   after the socket opens, nothing is sent until `session.state_updated` says `connected`; every command carries
- *   its own `event_id` and is acknowledged by an event whose `source_event_id` names it; an `error` event fails
+ *   an `event_id`; audio acknowledgements use the first chunk's utterance ID and a typed count, while interrupt
+ *   acknowledgements use the interrupt command's ID. Duplicate vendor event IDs count once. An `error` event fails
  *   the command. `speak` sends a part of a unit's PCM (16-bit mono 24 kHz, base64) as one-second `agent.speak`
  *   chunks (the size the vendor recommends; the first chunk's id names the utterance), waits until the vendor
  *   took every chunk (`agent.audio_buffer_appended`), and on the unit's last part sends `agent.speak_end` and
@@ -190,6 +191,7 @@ function failure(what: string, status?: number, vendorDetail: string | null = nu
 interface ControlEvent {
   readonly type?: unknown;
   readonly source_event_id?: unknown;
+  readonly event_id?: unknown;
   readonly state?: unknown;
   readonly error?: { readonly type?: unknown; readonly event_id?: unknown } | null;
 }
@@ -211,7 +213,8 @@ class ControlChannel {
   readonly #ackMs: number;
   #connected = false;
   #failed: EmbodimentSessionError | null = null;
-  readonly #acked = new Set<string>();
+  readonly #acked = new Map<string, number>();
+  readonly #seen = new Set<string>();
   #wake: (() => void) | null = null;
 
   constructor(socket: FaceSocket, ids: () => string, ackMs: number) {
@@ -243,8 +246,11 @@ class ControlChannel {
     } else if (event.type === 'error') {
       // Video starvation is a frame-gap diagnostic: the audio was taken.
       if (errorType(event) !== 'video_starvation') this.#fail(failure(`control ${errorType(event)}`));
-    } else if (typeof event.source_event_id === 'string') {
-      this.#acked.add(event.source_event_id);
+    } else if (typeof event.source_event_id === 'string' && typeof event.type === 'string') {
+      if (typeof event.event_id === 'string' && this.#seen.has(event.event_id)) return;
+      if (typeof event.event_id === 'string') this.#seen.add(event.event_id);
+      const key = `${event.type}:${event.source_event_id}`;
+      this.#acked.set(key, (this.#acked.get(key) ?? 0) + 1);
     }
     this.#wake?.();
   }
@@ -278,18 +284,18 @@ class ControlChannel {
     return this.#until(() => this.#connected, ms, 'control channel not connected');
   }
 
-  /** Sends a command with its own event id and returns the id (its acknowledgement names it). */
+  /** Sends with an explicit utterance ID, or allocates a command ID. */
   send(command: Record<string, unknown>): string {
     if (this.#failed !== null) throw this.#failed;
-    const eventId = this.#ids();
+    const eventId = typeof command.event_id === 'string' ? command.event_id : this.#ids();
     this.#socket.send(JSON.stringify({ ...command, event_id: eventId }));
     return eventId;
   }
 
-  /** Waits until every one of `eventIds` was acknowledged. */
-  acknowledged(eventIds: readonly string[]): Promise<void> {
+  /** Waits for the required count of this event type for this utterance/command. */
+  acknowledged(eventId: string, type: string, count = 1): Promise<void> {
     return this.#until(
-      () => eventIds.every((id) => this.#acked.has(id)),
+      () => (this.#acked.get(`${type}:${eventId}`) ?? 0) >= count,
       this.#ackMs,
       'control channel timed out',
     );
@@ -310,6 +316,7 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
   readonly #fetch: typeof fetch;
   readonly #openSocket: (url: string) => FaceSocket;
   readonly #ids: () => string;
+  readonly #utterances = new Map<string, string>();
 
   constructor(options: HeygenLiveAvatarOptions) {
     this.#options = options;
@@ -498,24 +505,42 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
   }
 
   async speak(handle: FaceSessionHandle, audio: VerifiedFaceAudio): Promise<void> {
-    await this.#withControl(handle, async (channel) => {
-      const sent: string[] = [];
-      for (let offset = 0; offset < audio.pcm.byteLength; offset += SPEAK_CHUNK_BYTES) {
-        const chunk = audio.pcm.subarray(offset, Math.min(audio.pcm.byteLength, offset + SPEAK_CHUNK_BYTES));
-        sent.push(channel.send({ type: 'agent.speak', audio: Buffer.from(chunk).toString('base64') }));
-      }
-      // The utterance stays open between parts; the unit's last part seals it, and the socket closes only once
-      // the vendor took all of it.
-      if (audio.last) sent.push(channel.send({ type: 'agent.speak_end' }));
-      await channel.acknowledged(sent);
-    });
+    // LITE acknowledges each chunk by the FIRST chunk's utterance id, not the command id.
+    // Reuse that id across parts. Count typed acknowledgements and deduplicate vendor event ids.
+    const utteranceId = audio.first ? this.#ids() : this.#utterances.get(handle.sessionRef);
+    if (utteranceId === undefined) throw failure('utterance missing');
+    this.#utterances.set(handle.sessionRef, utteranceId);
+    try {
+      await this.#withControl(handle, async (channel) => {
+        let chunks = 0;
+        for (let offset = 0; offset < audio.pcm.byteLength; offset += SPEAK_CHUNK_BYTES) {
+          const chunk = audio.pcm.subarray(
+            offset,
+            Math.min(audio.pcm.byteLength, offset + SPEAK_CHUNK_BYTES),
+          );
+          channel.send({
+            type: 'agent.speak',
+            event_id: utteranceId,
+            audio: Buffer.from(chunk).toString('base64'),
+          });
+          chunks += 1;
+        }
+        if (audio.last) channel.send({ type: 'agent.speak_end', event_id: utteranceId });
+        await channel.acknowledged(utteranceId, 'agent.audio_buffer_appended', chunks);
+        if (audio.last) await channel.acknowledged(utteranceId, 'agent.audio_buffer_committed');
+      });
+    } finally {
+      if (audio.last) this.#utterances.delete(handle.sessionRef);
+    }
   }
 
   async interrupt(handle: FaceSessionHandle): Promise<void> {
     // FULL: the browser sends `avatar.interrupt` over the room; the server has no channel to the vendor.
     if (this.mode === 'full') return;
+    this.#utterances.delete(handle.sessionRef);
     await this.#withControl(handle, async (channel) => {
-      await channel.acknowledged([channel.send({ type: 'agent.interrupt' })]);
+      const id = channel.send({ type: 'agent.interrupt' });
+      await channel.acknowledged(id, 'agent.audio_buffer_cleared');
     });
   }
 
@@ -584,6 +609,7 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
   }
 
   async end(handle: FaceSessionHandle): Promise<void> {
+    this.#utterances.delete(handle.sessionRef);
     const status = await this.#stop(await this.#options.apiKey(), handle.sessionRef);
     // A session the vendor already closed (it timed out, ran out of credits) is not an error.
     if (status >= 500) throw failure('stop', status);

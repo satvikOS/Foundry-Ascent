@@ -93,6 +93,24 @@
   --info-foreground: light-dark(#ffffff, #04203f);
   --neutral: var(--fa-text-secondary);
 
+  /* Original surrogate artwork and the single animated conversational accent. */
+  --presence-skin: light-dark(#d9ba9a, #d4b393);
+  --presence-skin-shadow: #aa8062;
+  --presence-hair: #30312f;
+  --presence-ink: #292927;
+  --presence-teeth: #f6f0e6;
+  --presence-coat: light-dark(#536c69, #76918a);
+  --presence-coat-shadow: light-dark(#344b48, #3c5750);
+  --presence-lapel: light-dark(#405954, #58756c);
+  --presence-seam: light-dark(#879d95, #a2b5a9);
+  --voice-accent-start: light-dark(#597b9d, #8bb5d9);
+  --voice-accent-end: light-dark(#6d8475, #9dbba9);
+  --space-control: 0.5rem;
+  --space-section: 1.5rem;
+  --touch-target: 2.75rem;
+  --motion-feedback: 120ms;
+  --motion-presence: 7s;
+
   /* App chrome */
   --sidebar: light-dark(#f5f5f3, #000000);
   --sidebar-foreground: var(--fa-text);

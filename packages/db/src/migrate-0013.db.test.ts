@@ -437,11 +437,17 @@ describe('migration 0013_automatic_memory', () => {
 
   it('is idempotent: re-running every statement, then the runner, changes nothing', async () => {
     if (!KEEP) throw new Error('0013 missing');
+    const replay = () =>
+      t.db.system(async (sx) => {
+        // Normalize fixtures written with 0013's former policy, then check the ordered suffix is idempotent.
+        // Later migrations intentionally amend its function, constraint and approval policy.
+        for (const migration of MIGRATIONS.filter((m) => m.version >= KEEP.version))
+          for (const statement of splitStatements(migration.sql)) await sx.query(statement);
+      });
+    await replay();
     const before = await schemaFingerprint(t.db);
     const events = await t.db.system((sx) => sx.query('SELECT count(*)::int AS n FROM memory_events'));
-    await t.db.system(async (sx) => {
-      for (const statement of splitStatements(KEEP.sql)) await sx.query(statement);
-    });
+    await replay();
     expect(await schemaFingerprint(t.db)).toBe(before);
     const after = await t.db.system((sx) => sx.query('SELECT count(*)::int AS n FROM memory_events'));
     expect(after.rows[0]).toEqual(events.rows[0]);

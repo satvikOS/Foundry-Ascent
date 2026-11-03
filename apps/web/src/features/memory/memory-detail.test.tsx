@@ -92,7 +92,8 @@ describe('MemoryDetail', () => {
     const buttons = screen.getAllByRole('button').map((button) => button.textContent);
     expect(buttons).toEqual(expect.arrayContaining(['Edit', 'Forget']));
     expect(buttons).not.toEqual(expect.arrayContaining(['Approve']));
-    expect(screen.queryByRole('button', { name: /Approve|Reject|Keep|Dispute/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Approve memory' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
   });
 
   it('names the person who added a memory themselves', async () => {

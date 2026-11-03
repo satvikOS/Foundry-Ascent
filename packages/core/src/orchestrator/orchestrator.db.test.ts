@@ -108,15 +108,15 @@ describe('turn pipeline', () => {
 
     // What the turn taught is kept automatically (owner decision: no "add to memory" step): AI-origin, nobody
     // approved it, and it names the conversation and the turn it was learned from.
-    const memory = (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'confirmed' })).items;
+    const memory = (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' })).items;
     const fromTurn = memory.filter((m) => m.sourceRefs.some((r) => r.kind === 'turn' && r.id === turn.id));
     expect(fromTurn.length).toBeGreaterThan(0);
     for (const m of fromTurn) {
       expect(m).toMatchObject({
-        status: 'confirmed',
+        status: 'proposed',
         origin: 'ai',
         approvedBy: null,
-        keptAutomatically: true,
+        keptAutomatically: false,
       });
       expect(m.sourceRefs[0]).toEqual({
         kind: 'session',
@@ -125,7 +125,7 @@ describe('turn pipeline', () => {
       });
     }
     expect(
-      (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' })).items.filter((m) =>
+      (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'confirmed' })).items.filter((m) =>
         m.sourceRefs.some((r) => r.kind === 'turn' && r.id === turn.id),
       ),
     ).toEqual([]);
@@ -536,7 +536,7 @@ describe('gates', () => {
 });
 
 describe('session end', () => {
-  it('produces a recap whose memory candidates are kept automatically', async () => {
+  it('produces a recap whose memory candidates await approval', async () => {
     const session = await h.core.sessions.create(maya, h.ventures.quietquad.id, {
       goal: 'Decide on the pilot',
     });
@@ -551,11 +551,11 @@ describe('session end', () => {
     expect(recap?.generated_at).toBeTruthy();
     const ids = recap?.memory_candidate_ids ?? [];
     expect(ids.length).toBeGreaterThan(0);
-    const kept = (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'confirmed' })).items;
+    const kept = (await h.core.memory.list(maya, h.ventures.quietquad.id, { status: 'proposed' })).items;
     for (const id of ids) {
       expect(kept.find((m) => m.id === id)).toMatchObject({
         origin: 'ai',
-        keptAutomatically: true,
+        keptAutomatically: false,
         approvedBy: null,
       });
     }

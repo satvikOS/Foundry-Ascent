@@ -23,6 +23,7 @@ import { applyFieldErrors } from '@/lib/form-errors';
 import { STAGE_LABELS, STAGE_ORDER } from '@/lib/labels';
 
 import { SelectField } from '@/components/ui/select-field';
+import { StudentDevelopment } from '@/features/student/student-development';
 import { GoalEditor } from './goal-editor';
 import { sentenceStart, useVeirName } from './veir-name';
 
@@ -70,6 +71,7 @@ export function VentureSettingsPage() {
         <div className="grid gap-10">
           <VentureProfileCard venture={venture.data} editable={editable} />
           <GoalEditor ventureId={ventureId} goal={venture.data.currentGoal} canEdit={editable} />
+          {editable ? <StudentDevelopment key={ventureId} ventureId={ventureId} /> : null}
         </div>
       )}
     </PageContainer>

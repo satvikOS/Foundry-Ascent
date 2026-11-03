@@ -66,7 +66,9 @@ export function MemorySaved({
       className={cn('flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground', className)}
     >
       <BookmarkCheck aria-hidden className="size-3.5 shrink-0" />
-      <span className="shrink-0">Saved to Knowledge:</span>{' '}
+      <span className="shrink-0">
+        {memories.some((m) => m.status === 'proposed') ? 'Memory to review:' : 'Saved to Knowledge:'}
+      </span>{' '}
       <Link
         to="/$tenant/app/v/$ventureId/knowledge"
         params={{ tenant, ventureId }}

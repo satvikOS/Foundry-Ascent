@@ -7,6 +7,7 @@ import {
   type FaceLoss,
   type FaceRelay,
 } from '@/lib/realtime/avatar';
+import { presentationCapabilities } from '@/lib/realtime/presentation';
 import {
   endFace,
   interruptFace,
@@ -196,7 +197,7 @@ export class CallFaceController {
           loaded.onLost?.((loss) => {
             this.close(true, loss);
           }) ?? null;
-        if (loaded.voicing === 'audio' || loaded.voicing === 'text') {
+        if (presentationCapabilities(loaded).audioOwner === 'presentation') {
           this.engine.attachFace(loaded.renderer?.() ?? null);
         }
         this.engine.setFaceShown(true);

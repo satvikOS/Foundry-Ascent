@@ -6,3 +6,6 @@ pnpm-lock.yaml
 docs/blueprints
 *.sql
 .claude
+
+# Raw reproducible upgrade reports and measurements retain their original serialization.
+docs/upgrade/evidence

@@ -24,7 +24,7 @@ export function availableMemoryActions(
 ): MemoryActionKind[] {
   switch (item.status) {
     case 'proposed':
-      return ['correct', 'delete'];
+      return ['approve', 'reject', 'correct', 'delete'];
     case 'confirmed':
     case 'disputed':
       return ['correct', item.pinned ? 'unpin' : 'pin', 'delete'];
