@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "pnpm --parallel --filter @foundry/api --filter @foundry/web dev",
     "build": "pnpm -r --if-present build",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "node scripts/lint.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --if-present typecheck",

@@ -35,6 +35,7 @@ function sourceHash(): string {
       '--cached',
       '--others',
       '--exclude-standard',
+      'pnpm-lock.yaml',
       'apps/api/src',
       'packages/ai/src',
       'packages/core/src',

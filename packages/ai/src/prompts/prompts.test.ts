@@ -81,6 +81,14 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('If fewer than 60% of your facts can be grounded');
   });
 
+  it('separates coursework from customer evidence and requires current programme sources', () => {
+    expect(prompt).toContain('completed canvases, quizzes, event attendance and AI reviews');
+    expect(prompt).toContain('not evidence of customer commitment');
+    expect(prompt).toContain('Use a worksheet only when it helps the current decision');
+    expect(prompt).toContain('without current approved evidence');
+    expect(prompt).toContain('relevant cohort instructions');
+  });
+
   it('writes the escalation tiers from the routing table the validator uses', () => {
     expect(prompt).toContain(
       '- P0 urgent: security_identity (signs of account compromise, data exposure or impersonation): requested_role program_lead.',
