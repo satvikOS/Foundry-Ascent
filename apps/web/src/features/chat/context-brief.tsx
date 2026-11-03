@@ -44,7 +44,9 @@ export function ContextBrief({ tenant, ventureId }: { tenant: string; ventureId:
     <details
       className="group mx-auto mt-6 w-full max-w-xl border-y border-border text-small"
       data-slot="context-brief"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onToggle={(event) => {
+        setOpen(event.currentTarget.open);
+      }}
     >
       <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 py-2 focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
         <span className="min-w-0 truncate">

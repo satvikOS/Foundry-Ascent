@@ -64,7 +64,7 @@ const result = await page.evaluate(async () => {
   };
   const frameTimes = [];
   let prior = performance.now();
-  let frame = 0;
+  let frame;
   let player = null;
   let character = null;
   const animate = (now) => {
