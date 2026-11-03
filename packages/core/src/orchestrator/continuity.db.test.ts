@@ -1207,10 +1207,11 @@ describe('continuity keyed by the venture and the founder (review)', () => {
     const long = await h.core.sessions.create(maya, quietquad(), {});
     await h.t.db.system((sx) =>
       sx.query(
-        `INSERT INTO turns (tenant_id, venture_id, session_id, ordinal, author_id, mode, founder_text, status, response)
+        `INSERT INTO turns (tenant_id, venture_id, session_id, ordinal, author_id, mode, founder_text, status, response, created_at)
          SELECT :tenant, :venture, :session, n, :author, 'coach', 'Message ' || n, 'completed',
-                jsonb_build_object('answer', repeat('A long answer. ', 200))
-         FROM generate_series(1, 40) AS n`,
+                jsonb_build_object('answer', repeat('A long answer. ', 200)),
+                now() - interval '30 days' + n * interval '1 second'
+         FROM generate_series(1, 4000) AS n`,
         {
           tenant: p.uuid(h.seed.tenantId),
           venture: p.uuid(quietquad()),
@@ -1219,6 +1220,10 @@ describe('continuity keyed by the venture and the founder (review)', () => {
         },
       ),
     );
+    // A 40-row fixture fits on a few pages: after statistics refresh PostgreSQL may correctly prefer
+    // scanning it. Exercise the long-history plan at meaningful cardinality with current statistics.
+    // Do not disable sequential scans: the plan must choose the existing ordinal index on its own.
+    await h.t.db.system((sx) => sx.query('ANALYZE turns'));
     const plan = await h.t.db.system((sx) =>
       sx.query(`EXPLAIN (ANALYZE, FORMAT JSON) ${sessionsRepo.LAST_EXCHANGES_SQL}`, {
         ids: p.uuidArray([long.id]),
@@ -1243,7 +1248,7 @@ describe('continuity keyed by the venture and the founder (review)', () => {
       sessionsRepo.listLastExchanges(sx, { sessionIds: [long.id], perSession: 6 }),
     );
     expect(exchanges.map((x) => x.founderText)).toEqual(
-      [35, 36, 37, 38, 39, 40].map((n) => `Message ${String(n)}`),
+      [3995, 3996, 3997, 3998, 3999, 4000].map((n) => `Message ${String(n)}`),
     );
     expect(exchanges.map((x) => x.fromEnd)).toEqual([6, 5, 4, 3, 2, 1]);
     await h.core.sessions.remove(maya, long.id);
@@ -1582,17 +1587,30 @@ describe('New chat greets with the line its conversation opens with', () => {
     );
   }
 
-  it('opens with the line New chat showed, however long the founder took to write', async () => {
+  it.each([
+    [0, 456],
+    [456, 0],
+  ])('keeps the shown opener across timestamp precision %i → %i µs', async (firstMicros, nextMicros) => {
     await ageAll(5);
     const before = await h.core.sessions.create(maya, quietquad(), {});
     await talk(maya, before.id, 'We signed the first library for a paid pilot.');
-    await idle(before.id, 10);
+    const idlePrecisely = (minutes: number, micros: number) =>
+      h.t.db.system((sx) =>
+        sx.query(
+          `UPDATE coaching_sessions
+           SET last_activity_at = date_trunc('milliseconds', now()) - make_interval(mins => :minutes)
+                                  + :micros * interval '1 microsecond'
+           WHERE id = :id`,
+          { id: p.uuid(before.id), minutes: p.int(minutes), micros: p.int(micros) },
+        ),
+      );
+    await idlePrecisely(10, firstMicros);
     const shown = await h.core.sessions.previewOpener(maya, quietquad());
     expect(shown.opener).toMatch(/about 10 minutes ago/i);
     expect(Date.parse(shown.at)).toBeGreaterThan(Date.now() - 60_000);
 
     // Five minutes of writing later: the last conversation is 15 minutes old now, and a line phrased now says so.
-    await idle(before.id, 15);
+    await idlePrecisely(15, nextMicros);
     const now = await h.core.sessions.previewOpener(maya, quietquad());
     expect(now.opener).toMatch(/about 15 minutes ago/i);
     expect(now.opener).not.toBe(shown.opener);

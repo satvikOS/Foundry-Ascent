@@ -451,6 +451,9 @@ export async function chooseOpener(
           ventureId: args.ventureId,
           principalId: args.principalId,
           since: latest.lastActivityAt,
+          // PostgreSQL timestamps retain microseconds; decoded JS dates retain milliseconds. Never
+          // count the source itself as a newly opened conversation because of that precision loss.
+          afterSessionId: latest.sessionId,
           excludeSessionId: args.sessionId ?? null,
           opener: stored,
         });

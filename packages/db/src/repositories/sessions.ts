@@ -761,7 +761,8 @@ export function listLeftOffConversations(
 }
 
 /**
- * The standard conversations `principalId` opened in a venture after `since` (excluding `excludeSessionId`):
+ * The standard conversations `principalId` opened in a venture after `since` (excluding the source
+ * `afterSessionId` and `excludeSessionId`):
  * conversations started after the latest one with anything said, in which nothing was said yet. `opened` counts
  * them (a new conversation's opener is phrased with it, so opening one after another never greets the same way
  * twice); `withOpener` counts those that opened with `opener` (a line already said once is not said again word
@@ -773,6 +774,7 @@ export async function countConversationsOpenedSince(
     ventureId: string;
     principalId: string;
     since: string;
+    afterSessionId: string;
     excludeSessionId?: string | null;
     opener?: string | null;
   },
@@ -783,11 +785,13 @@ export async function countConversationsOpenedSince(
      FROM coaching_sessions s
      WHERE s.started_by = :principal AND s.deleted_at IS NULL AND s.last_activity_at > :since
        AND s.venture_id = :ventureId AND s.privacy = 'standard' AND s.started_at > :since
+       AND s.id <> :afterSession
        AND (:except IS NULL OR s.id <> :except)`,
     {
       principal: p.uuid(args.principalId),
       ventureId: p.uuid(args.ventureId),
       since: p.ts(args.since),
+      afterSession: p.uuid(args.afterSessionId),
       except: p.nullable.uuid(args.excludeSessionId),
       opener: p.nullable.text(args.opener ?? null),
     },
