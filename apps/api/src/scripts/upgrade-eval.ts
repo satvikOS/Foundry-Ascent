@@ -3,12 +3,12 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { gzipSync } from 'node:zlib';
 import { POLICY_VERSION } from '@foundry/ai';
 import { MemoryListResponse, SessionView, TurnStreamEvent, type TurnView } from '@foundry/contracts';
 import { assignmentsRepo, p, venturesRepo } from '@foundry/db';
 import { createApiHarness } from '../testing/api-harness.js';
 import { parseSse } from '../testing/sse.js';
+import { archiveJournal, hashCommand, journalTranscript, scenarioRange } from './upgrade-evidence.js';
 
 interface Scenario {
   id: string;
@@ -56,18 +56,20 @@ function sourceHash(): string {
 }
 const sourceSha256 = sourceHash();
 const raw = readFileSync(`${root}/evals/datasets/upgrade/scenarios.jsonl`, 'utf8');
-const scenarios = raw
+const allScenarios = raw
   .trim()
   .split('\n')
-  .map((s) => JSON.parse(s) as Scenario)
-  .slice(0, Number(process.env.UPGRADE_LIMIT ?? 600));
-const runId = `upgrade-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  .map((s) => JSON.parse(s) as Scenario);
+const range = scenarioRange(allScenarios.length, process.env.UPGRADE_OFFSET, process.env.UPGRADE_LIMIT);
+const scenarios = allScenarios.slice(range.offset, range.offset + range.limit);
+const runId = `upgrade-${new Date().toISOString().replace(/[:.]/g, '-')}-s${String(range.offset)}`;
 const startedAt = new Date().toISOString();
 writeFileSync(
   `${output}/run-start.json`,
   JSON.stringify(
     {
       runId,
+      range,
       startedAt,
       sourceSha256,
       promptVersion: POLICY_VERSION,
@@ -79,7 +81,7 @@ writeFileSync(
   ),
 );
 const results: Record<string, unknown>[] = [];
-const transcripts: Record<string, unknown>[] = [];
+const transcriptJournal = `${output}/transcripts.jsonl`;
 const api = await createApiHarness({ config: { turns: { rateLimit: 20000 } } });
 const cookie = await api.signInAs(api.h.people.maya);
 const ctx = await api.h.ctxFor(api.h.people.maya);
@@ -316,7 +318,7 @@ try {
       elapsedMs: Math.round(performance.now() - start),
     };
     results.push(result);
-    transcripts.push({ id: s.id, family: s.familyName, transcript });
+    journalTranscript(transcriptJournal, { id: s.id, family: s.familyName, transcript });
     appendFileSync(`${output}/results.jsonl`, JSON.stringify(result) + '\n');
     // Keep the fixture model and diagnostic logger bounded during a long acceptance run.
     api.h.gateway.calls.splice(0);
@@ -333,16 +335,16 @@ try {
 } finally {
   await api.cleanup();
 }
+await archiveJournal(transcriptJournal);
 const manifest = {
   runId,
+  range,
   startedAt,
   finishedAt: new Date().toISOString(),
   code: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
   sourceSha256,
   sourceUnchangedDuringRun: sourceHash() === sourceSha256,
-  workingDiffSha256: createHash('sha256')
-    .update(execFileSync('git', ['diff', '--binary'], { cwd: root }))
-    .digest('hex'),
+  workingDiffSha256: await hashCommand('git', ['diff', '--binary'], root),
   promptVersion: POLICY_VERSION,
   fixtureSha256: createHash('sha256').update(raw).digest('hex'),
   model: 'MockModelGateway; deterministic fixtures',
@@ -363,23 +365,4 @@ const manifest = {
   behavioralScores: null,
 };
 writeFileSync(`${output}/manifest.json`, JSON.stringify(manifest, null, 2));
-writeFileSync(
-  `${output}/transcripts.jsonl.gz`,
-  gzipSync(transcripts.map((t) => JSON.stringify(t) + '\n').join('')),
-);
-// Blinded calibration sample: no model, pass/fail, family or score shown to the reviewer. Review has NOT occurred.
-writeFileSync(
-  `${output}/human-calibration.jsonl`,
-  transcripts
-    .filter((_, i) => i % 10 === 0)
-    .map(
-      (t, i) =>
-        JSON.stringify({
-          sampleId: `H${String(i + 1).padStart(2, '0')}`,
-          transcript: t.transcript,
-          scores: null,
-        }) + '\n',
-    )
-    .join(''),
-);
 process.stdout.write(JSON.stringify(manifest, null, 2) + '\n');

@@ -25,6 +25,8 @@ Rate applicable axes from 1 to 5; use 2/4 between anchors and N/A when genuinely
 | Repair               | Defends an error or loops                     | Acknowledges and fixes            | Updates reasoning/state promptly and continues coherently                |
 | Voice turn-taking    | Cuts off/plays stale speech                   | Understandable but awkward pauses | Correct pauses, interruption, backchannels and aligned captions/audio    |
 
+The delivery packet is selected with `evals/datasets/upgrade/calibration.py`: two scenarios per family with rotating offsets (24 correction, 24 conversation-control, 6 multisession and 2 long-running scenarios in the balanced sixty), plus every protocol failure. A stable hash shuffles the order. Give reviewers only `human-calibration.jsonl`; keep `selection-metadata.json` separate. This removes the every-tenth-row bias of the runner's initial provisional sample. These remain fixture transcripts; live-model and human calibration have not occurred.
+
 Independent evaluator process: hide model/run/pass metadata, sample across all families and all failures, use a different judge from the coaching model where available, then compare two human reviewers' labels against automated scores. Adjudicate disagreements, record inter-rater agreement and recalibrate thresholds. This procedure is prepared; no reviewer activity is claimed.
 
 ## Commands
@@ -34,7 +36,13 @@ python3 evals/datasets/upgrade/generate.py
 pnpm --filter @foundry/api exec tsx src/scripts/upgrade-eval.ts
 # Use a fresh destination for every repeat; never append different runs together.
 UPGRADE_RESULTS_DIR=/absolute/path/new-run pnpm --filter @foundry/api exec tsx src/scripts/upgrade-eval.ts
+# Optional disjoint shards: run offsets 0, 150, 300, 450, each with limit 150 and a fresh destination.
+UPGRADE_OFFSET=0 UPGRADE_LIMIT=150 UPGRADE_RESULTS_DIR=/absolute/path/shard-0 pnpm --filter @foundry/api exec tsx src/scripts/upgrade-eval.ts
+python3 evals/datasets/upgrade/merge_runs.py --runs /absolute/path/shard-0 /absolute/path/shard-150 /absolute/path/shard-300 /absolute/path/shard-450 --out /absolute/path/completed-run
+python3 evals/datasets/upgrade/calibration.py --run-dir /absolute/path/completed-run --output-dir /absolute/path/new-calibration-packet
 pnpm --filter @foundry/web exec node scripts/upgrade-media.mjs
 ```
 
 `TEST_DATABASE_ADMIN_URL` must identify a disposable PostgreSQL 16 + pgvector cluster. The runner creates/drops its own test database. Run media with Vite at `UPGRADE_WEB_URL` (default 127.0.0.1:5173). This uses an actual Chromium AudioContext and fake audio device; it does not validate provider speech recognition, synthesized voice naturalness or physical-device acoustics. Full results and unresolved acceptance dependencies are linked in the delivery report.
+
+Each scenario is synchronously journaled with flush before finalization. The transcript journal survives an evidence-export failure; gzip is published only after a complete stream. Git-diff hashing streams output rather than buffering it. A failed finalizer remains a failed run even when its scenario rows passed. Merge validation requires all 600 distinct IDs, matching source/prompt/fixture/code versions, unchanged source, and complete student/coach exchanges; it preserves failed scenario rows. Concurrency records overlapping shard intervals. The final protocol rerun uses four disposable databases; page/media latency measurements remain separate single-case laboratory runs.
