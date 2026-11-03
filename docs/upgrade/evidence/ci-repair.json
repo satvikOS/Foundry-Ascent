@@ -34,5 +34,12 @@
       }
     }
   ],
-  "finalCi": "pending new revision"
+  "finalCi": {
+    "code": "bae464a700a7bceef0ace19f02a819bac31ef7b5",
+    "ci": "https://github.com/satvikOS/Foundry-Ascent/actions/runs/41699870124",
+    "conclusion": "success",
+    "codeql": "https://github.com/satvikOS/Foundry-Ascent/actions/runs/41699880936",
+    "openCodeqlAlerts": 0,
+    "scope": "Continuity implementation revision. Export recovery and later evidence commits receive their own CI; PR status records the latest result."
+  }
 }

@@ -9,10 +9,12 @@
   },
   "localNetwork": "loopback unless the page-performance profile applies 40ms RTT, 20Mbit/s down and 5Mbit/s up",
   "concurrency": {
-    "conversations": 1,
+    "conversations": 4,
     "browserWorker": 1,
     "mediaCases": 1,
-    "otherWork": "some local verification suites overlapped; page-speed results are laboratory samples, not field INP or mobile hardware"
+    "otherWork": "some local verification suites overlapped; page-speed results are laboratory samples, not field INP or mobile hardware",
+    "priorConversationRuns": 1,
+    "finalCorpusIsolation": "Four disjoint shards, one disposable database each; one distinct venture per scenario."
   },
   "baseline": {
     "initialCheckout": "156203c",

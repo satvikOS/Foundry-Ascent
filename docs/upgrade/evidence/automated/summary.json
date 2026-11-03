@@ -20,11 +20,12 @@
   {
     "suite": "ai",
     "exit": 0,
-    "passed": 1772,
+    "passed": 1773,
     "failed": 0,
     "pending": 0,
-    "total": 1772,
-    "elapsedSeconds": 31.48
+    "total": 1773,
+    "elapsedSeconds": 11.309,
+    "elapsedBoundary": "Vitest startTime to latest file endTime; excludes process launch and report serialization"
   },
   {
     "suite": "core-unit",
@@ -38,11 +39,12 @@
   {
     "suite": "api-unit",
     "exit": 0,
-    "passed": 220,
+    "passed": 230,
     "failed": 0,
     "pending": 0,
-    "total": 220,
-    "elapsedSeconds": 27.65
+    "total": 230,
+    "elapsedSeconds": 10.46,
+    "elapsedBoundary": "Vitest startTime to latest file endTime; excludes process launch and report serialization"
   },
   {
     "suite": "web",
@@ -78,7 +80,8 @@
     "failed": 0,
     "pending": 0,
     "total": 448,
-    "elapsedSeconds": 69.77
+    "elapsedSeconds": 11.695,
+    "elapsedBoundary": "Vitest startTime to latest file endTime; excludes process launch and report serialization"
   },
   {
     "suite": "api-db",
