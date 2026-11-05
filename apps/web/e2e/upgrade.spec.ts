@@ -220,9 +220,12 @@ for (const [device, width, height] of [
         expect(violations.map((v) => ({ id: v.id, targets: v.nodes.map((n) => n.target) }))).toEqual([]);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
         await call.getByRole('button', { name: 'End call', exact: true }).click();
-        await expect(call.getByRole('button', { name: 'Back to conversation', exact: true })).toBeVisible();
-        await call.getByRole('button', { name: 'Back to conversation', exact: true }).click();
+        // After End's short Undo window the screen closes onto the conversation and its call review.
+        const review = page.getByRole('region', { name: 'Call ended' });
+        await expect(review).toBeVisible({ timeout: 20_000 });
         await expect(page.getByRole('dialog', { name: /^Call with / })).toHaveCount(0);
+        await review.getByRole('button', { name: 'Dismiss call review' }).click();
+        await expect(review).toHaveCount(0);
       });
     });
   }

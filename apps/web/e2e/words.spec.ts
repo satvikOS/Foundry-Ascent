@@ -233,8 +233,11 @@ test.describe('word budgets', () => {
         await settle(page);
         counts.Call = await visibleWords(screen);
         await screen.getByRole('button', { name: 'End call' }).click();
-        await screen.getByRole('button', { name: 'Back to conversation' }).click();
+        // After End's short Undo window the screen closes onto the conversation and its call review.
+        const review = page.getByRole('region', { name: 'Call ended' });
+        await expect(review).toBeVisible({ timeout: 20_000 });
         await expect(screen).toBeHidden();
+        await review.getByRole('button', { name: 'Dismiss call review' }).click();
       });
     } finally {
       if (sessionId) await deleteSession(page.request, sessionId);

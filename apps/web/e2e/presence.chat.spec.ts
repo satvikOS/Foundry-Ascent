@@ -262,7 +262,8 @@ test.describe('talking with the vEIR', () => {
         // The conversation behind the call holds the twin's own answers, which name Corin on purpose.
         await expectNoBareEirName(page, 'the call tile', [/Corin['’]s digital twin/]);
         await screen.getByRole('button', { name: 'End call' }).click();
-        await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
+        // After End's short Undo window the call ends, and its review closes the conversation.
+        await expect(page.getByRole('region', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
         for (const id of calls) {
           await page.request.post(`/api/v1/calls/${id}/end`, {
             headers: WRITE_HEADERS,
