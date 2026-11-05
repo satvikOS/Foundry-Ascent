@@ -153,8 +153,13 @@ describe('conversation craft in the system prompt', () => {
     ]) {
       expect(craft).toContain(rule);
     }
-    // Production's own habits ("I see", "I hear", "I understand you're asking", "I remember") are named too.
-    for (const stock of STOCK_OPENERS.filter((s) => s !== 'As an AI')) expect(craft).toContain(`"${stock}"`);
+    // Live pilot 42124259353: listed here by name, the stock openers still opened 133 of 600 replies (the list primed
+    // them). The rule says what to do instead, and the reply's start is read on the way out (validators/openers.ts).
+    expect(craft).toContain(
+      'Start with the substance (the answer, the pick, the draft), never a verdict on their',
+    );
+    for (const stock of ["That's a", 'Thanks for', 'Great question'])
+      expect(craft).not.toContain(`"${stock}"`);
     for (const habit of ['I see', "I understand you're asking", 'I remember', 'It sounds like']) {
       expect(STOCK_OPENERS).toContain(habit);
     }
@@ -270,9 +275,12 @@ describe('conversation craft in the system prompt', () => {
     // 2026-11-05.1 adds ~45 for answering from the founder's own evidence and wrap-ups (live pilot 42099643194), while
     // the whole turn prompt lost ~1,500 (the doctrine's scripts, the style's vocabulary, the claims contract in the
     // streamed reply): see prompts.test.ts.
-    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(1010);
-    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1070);
-    expect(tokens(craft)).toBeLessThanOrEqual(1020);
+    // 2026-11-05.2 adds ~45 for numbers (theirs, never one of its own: live pilot 42124259353's 43 figure findings) and
+    // guidance first; the stock-opener list is gone (the output check does that work). Moves only some turns need
+    // (rehearsal, a resend, "later", "no more questions") are said in <conversation_state> on those turns only.
+    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(1060);
+    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1120);
+    expect(tokens(craft)).toBeLessThanOrEqual(1070);
   });
 
   it('is part of the versioned policy', () => {
@@ -286,7 +294,10 @@ describe('conversation craft in the system prompt', () => {
     // 2026-11-05.1: the live pilot's fixes (42099643194): the doctrine as how it thinks, not a script; answers from the
     // founder's own evidence; a capability block; the claims contract only in the annotation call; a ledger of what was
     // asked and told; escalation once, then help.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-05.1');
+    // 2026-11-05.2: coaching v2 (live pilot 42124259353): the Thomas mentor identity, content-first openings (and the
+    // output check), the founder's numbers only, rehearsal that reacts and steps out, conversation control and recovery
+    // in the conversation state, the stated preferences enforced.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-05.2');
   });
 });
 

@@ -89,6 +89,8 @@ class LabModels:
     #: The live suite's own candidates (``live`` in models.json): other model families than the app's first.
     live_simulator: tuple[str, ...] = ()
     live_judge: tuple[str, ...] = ()
+    #: Alternative coach models the lab may run the app's coach on for an A/B (``live.coach``; never production's).
+    live_coach: tuple[str, ...] = ()
 
 
 def foundation_model_id(model_id: str) -> str:
@@ -107,7 +109,8 @@ def lab_models(path: Path = MODELS_FILE) -> LabModels:
     live = raw.get("live") or {}
     live_simulator = tuple(live.get("simulator") or ())
     live_judge = tuple(live.get("judge") or ())
-    for model in (*simulator, *judge, *live_simulator, *live_judge):
+    live_coach = tuple(live.get("coach") or ())
+    for model in (*simulator, *judge, *live_simulator, *live_judge, *live_coach):
         if foundation_model_id(model) not in prices:
             raise ValueError(f"models.json has no price for {model}")
     return LabModels(
@@ -116,7 +119,35 @@ def lab_models(path: Path = MODELS_FILE) -> LabModels:
         prices=prices,
         live_simulator=live_simulator,
         live_judge=live_judge,
+        live_coach=live_coach,
     )
+
+
+#: The ``coach_model`` input that keeps the production model configuration.
+DEFAULT_COACH = "default"
+
+
+def coach_app_models(choice: str, lab: LabModels, app: AppModels | None = None) -> AppModels:
+    """The app's models for a lab run: production's (``default``), or one of ``live.coach`` in models.json as both
+    primary and fallback, so the A/B arm is that model alone (a failure is counted, never answered by Nova). Production
+    is never changed: this is the lab's API process environment only (conversation_lab/stack.py)."""
+    base = app or app_models()
+    if choice in ("", DEFAULT_COACH):
+        return base
+    if choice not in lab.live_coach:
+        raise ValueError(
+            f"coach_model must be {DEFAULT_COACH} or one of {', '.join(lab.live_coach) or '(none listed)'}"
+        )
+    return AppModels(primary=choice, fallback=choice, embeddings=base.embeddings)
+
+
+def judges_for(coach_model: str, candidates: Sequence[str]) -> tuple[str, ...]:
+    """The judge candidates from another model family than the coach's, in order (evaluator independence: a Claude
+    coach is judged by Llama 4 Maverick, then Nova Premier). When every candidate shares the coach's family, all of
+    them (the summary then reports ``judge_independent: false``)."""
+    family = model_family(coach_model)
+    other = tuple(m for m in candidates if model_family(m) != family)
+    return other or tuple(candidates)
 
 
 def model_family(model_id: str) -> str:
@@ -168,7 +199,13 @@ def split_budget(total_usd: float, suites: Sequence[str]) -> dict[str, float]:
     return {s: floor_cents(total_usd * SUITE_WEIGHT[s] / weights) for s in suites}
 
 
-def budget_parts(suite: str, budget_usd: float) -> tuple[float, float]:
-    """(app share, lab share) of a suite's budget."""
-    app = floor_cents(budget_usd * APP_SHARE[suite])
+#: The live suite's app share when the coach runs on a Claude model (``coach_model``): its turns cost about 3.5 times
+#: Nova 2 Lite's (conversation_lab/live/plan.py ``coach_cost_factor``), so the app's part of the estimate is about 90%.
+LIVE_APP_SHARE_CLAUDE_COACH = 0.9
+
+
+def budget_parts(suite: str, budget_usd: float, app_share: float | None = None) -> tuple[float, float]:
+    """(app share, lab share) of a suite's budget (``app_share`` overrides the suite's own, e.g. for a Claude coach)."""
+    share = APP_SHARE[suite] if app_share is None else app_share
+    app = floor_cents(budget_usd * share)
     return app, max(0.0, round(budget_usd - app, 2))

@@ -1,7 +1,9 @@
 # ADR-0020: vEIR presence — disclose once, a persistent badge, a twin that speaks as itself
 
 - **Status:** Accepted (amends the persistent-disclosure line of the system design §9 and ADR-0019's
-  composer; ADR-0005's layers stand)
+  composer; ADR-0005's layers stand). Amended 2026-11-05 by [ADR-0021](0021-thomas-mentor-persona.md): a persona
+  the owner presents as a mentor under its own name (Thomas) speaks as itself, not as its EIR's twin; the honesty line
+  below is unchanged.
 - **Date:** 2026-10-17
 - **Deciders:** Platform owner
 - **Blueprint basis:** 01 F-09 (persistent synthetic-identity disclosure), 02 §8 founder transparency, 03

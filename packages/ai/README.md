@@ -277,6 +277,17 @@ DistillDraft })`. Texts the founder's team removed from the notebook are never s
 `sanitizeDistill(draft, context)` → `{ title, digest, notebookDelta, memoryCandidates, lessonCandidates,
 stats }` or `null`:
 
+- A persona presented as a mentor under its own name (`PromptRelease.mentor`, `resolvePersonaIdentity(name, eir,
+true)` → kind `mentor`; ADR-0021, "Thomas"): `MENTOR_IDENTITY_RULES` (first person as itself, an honest yes when
+  sincerely asked, no past of its own, never a vEIR, twin or anyone else); the identity validator's honest lines for it
+  are its own (`IdentityCheckOptions.mentor`: "I'm Thomas, an AI mentor.") while its EIR stays a guarded name.
+- Coaching v2 (live pilot 42124259353): the reply's start is read on the way out (`validators/openers.ts`:
+  `withoutStockOpener` leaves out a verdict on the founder's message, a thank-you for it, praise or "I hear you", never
+  small talk, a reaction to news or a verdict the founder asked for; `withoutVocativeName` keeps the founder's name to
+  one reply in four), figures nobody gave are counted and an example aside offering one is left out
+  (`validators/figures.ts`), and stated preferences hold (`statedPreferences`: "yes/no answers" and "short answers"
+  budgets, "no questions" enforced by the gate). `<conversation_state>` reads rehearsal, stepping out of a role-play,
+  "later", a fresh start, a summary request, a resend, a failure and a complaint, and the advice already given.
 - every text is plain, identity-rewritten and bounded (title ≤ 80, digest summary ≤ 1 200, 8 topics, 8
   commitments with valid dates, 6 open questions);
 - `notebookDelta` is the full next notebook, merged with the previous one: the model returns the full

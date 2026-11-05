@@ -243,8 +243,10 @@ export {
 export {
   CLOSING_FALLBACK,
   REPEAT_FALLBACK,
+  SHORT_BUDGET,
   SOCIAL_BUDGETS,
   SPOKEN_HAND_BACKS,
+  YES_NO_BUDGET,
   STRESSED_HAND_BACK,
   STRESSED_HAND_BACKS,
   asksToRepeat,
@@ -261,6 +263,19 @@ export {
   type WithoutRepeats,
   type WithoutRepeatsOptions,
 } from './validators/social.js';
+export {
+  asksForVerdict,
+  nameUsedRecently,
+  withoutStockOpener,
+  withoutVocativeName,
+  type OpenerRewrite,
+} from './validators/openers.js';
+export {
+  inventedFigures,
+  numbersIn,
+  withoutExampleFigures,
+  type InventedFigures,
+} from './validators/figures.js';
 export {
   SentenceGate,
   findUnitEnd,

@@ -26,6 +26,12 @@ from conversation_lab.live.student import persona_card
 COACH_USD_PER_TURN = 0.006
 #: Distillation and digest at the end of each standard session, on top of the per-turn figure (conservative).
 COACH_USD_PER_SESSION = 0.003
+#: The model those two figures were measured on (production's coach), and the tokens one coach turn sends and receives
+#: (live pilot 42099643194's API log: a median of ~15.9k prompt tokens a turn, both calls; ~330 out). An alternative coach
+#: (``coach_model``) is estimated at those tokens on its own prices, with no prompt-cache discount (conservative).
+COACH_BASELINE_MODEL = "amazon.nova-2-lite-v1:0"
+COACH_INPUT_TOKENS_PER_TURN = 15_900
+COACH_OUTPUT_TOKENS_PER_TURN = 330
 #: Token sizes (characters / 3.6, rounded up; real English is nearer 4 characters a token).
 STUDENT_MSG_TOKENS = 45
 COACH_CHAT_TOKENS = 190
@@ -142,7 +148,22 @@ def _price(prices: Mapping[str, Price], model: str) -> Price:
     return prices[foundation_model_id(model)]
 
 
-def estimate_scenario(s: Scenario, *, student_price: Price, judge_price: Price) -> ScenarioEstimate:
+def coach_cost_factor(prices: Mapping[str, Price], coach_model: str | None) -> float:
+    """How much an alternative coach costs per turn against the measured baseline (1.0 for production's coach)."""
+    if coach_model is None or coach_model in ("", "default"):
+        return 1.0
+    base = prices[COACH_BASELINE_MODEL]
+    other = _price(prices, coach_model)
+
+    def per_turn(p: Price) -> float:
+        return COACH_INPUT_TOKENS_PER_TURN * p.input + COACH_OUTPUT_TOKENS_PER_TURN * p.output
+
+    return max(1.0, per_turn(other) / per_turn(base))
+
+
+def estimate_scenario(
+    s: Scenario, *, student_price: Price, judge_price: Price, coach_factor: float = 1.0
+) -> ScenarioEstimate:
     sys_tokens = _tok(STUDENT_SYSTEM) + _tok(persona_card(s)) + 120
     history: list[int] = []
     student_in = 0
@@ -168,7 +189,7 @@ def estimate_scenario(s: Scenario, *, student_price: Price, judge_price: Price) 
     )
     judge_in = _tok(system_prompt()) + _tok(scenario_brief(s)) + transcript + MEMORY_TOKENS
     judge_usd = (judge_in * judge_price.input + JUDGE_OUT_TOKENS * judge_price.output) / 1_000_000
-    coach_usd = turns * COACH_USD_PER_TURN + len(s.sessions) * COACH_USD_PER_SESSION
+    coach_usd = (turns * COACH_USD_PER_TURN + len(s.sessions) * COACH_USD_PER_SESSION) * coach_factor
     seconds = (
         SETUP_SECONDS
         + coach_seconds
@@ -186,9 +207,14 @@ def estimate(
     student_model: str,
     judge_model: str,
     concurrency: int = DEFAULT_CONCURRENCY,
+    coach_model: str | None = None,
 ) -> dict[str, Any]:
     sp, jp = _price(prices, student_model), _price(prices, judge_model)
-    rows = [estimate_scenario(scenarios[p.scenario_id], student_price=sp, judge_price=jp) for p in picks]
+    factor = coach_cost_factor(prices, coach_model)
+    rows = [
+        estimate_scenario(scenarios[p.scenario_id], student_price=sp, judge_price=jp, coach_factor=factor)
+        for p in picks
+    ]
     coach = sum(r.coach_usd for r in rows)
     student = sum(r.student_usd for r in rows)
     judge = sum(r.judge_usd for r in rows)
@@ -202,11 +228,12 @@ def estimate(
             "judge": round(judge, 2),
             "total": round(coach + student + judge, 2),
         },
-        "models": {"student": student_model, "judge": judge_model},
+        "models": {"coach": coach_model or "default", "student": student_model, "judge": judge_model},
         "serial_hours": round(seconds / 3600, 2),
         "assumptions": {
             "coach_usd_per_turn": COACH_USD_PER_TURN,
             "coach_usd_per_session": COACH_USD_PER_SESSION,
+            "coach_cost_factor": round(factor, 2),
             "student_tokens_out_per_turn": STUDENT_OUT_TOKENS,
             "student_retry_factor": STUDENT_RETRY_FACTOR,
             "judge_tokens_out": JUDGE_OUT_TOKENS,
@@ -225,13 +252,18 @@ def shard(
     judge_model: str,
     budget_usd: float,
     concurrency: int = DEFAULT_CONCURRENCY,
+    coach_model: str | None = None,
 ) -> list[dict[str, Any]]:
     """Greedy split in selection order: a shard closes when adding the next run would pass the target wall time at
     ``concurrency`` or the per-run budget cap. Each shard's budget is its share of ``budget_usd`` by estimated cost
     (rounded down to the cent, never above MAX_BUDGET_USD)."""
     sp, jp = _price(prices, student_model), _price(prices, judge_model)
     target = SHARD_TARGET_MINUTES * 60 * concurrency
-    est = [estimate_scenario(scenarios[p.scenario_id], student_price=sp, judge_price=jp) for p in picks]
+    factor = coach_cost_factor(prices, coach_model)
+    est = [
+        estimate_scenario(scenarios[p.scenario_id], student_price=sp, judge_price=jp, coach_factor=factor)
+        for p in picks
+    ]
     total_usd = sum(e.usd for e in est) or 1.0
     shards: list[dict[str, Any]] = []
     current: list[int] = []

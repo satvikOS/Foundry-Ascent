@@ -6,7 +6,9 @@
   "githubBranch": "main",
   "homeTenant": {
     "slug": "ain",
-    "name": "Ain Foundry"
+    "name": "Ain Foundry",
+    "ownerReleases": ["thomas-2026-11-05"],
+    "note": "ownerReleases: persona releases the platform owner approved outside the studio, applied once by the deploy's seed (packages/db/src/seed/owner-releases.ts). thomas-2026-11-05 (approved 2026-11-05, ADR-0021): Corin's vEIR becomes Thomas, an AI mentor under his own name with a conversation-first doctrine."
   },
   "owner": {
     "displayName": "Platform Owner",

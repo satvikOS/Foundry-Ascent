@@ -198,8 +198,8 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
   bill. Each refusal is audited (`speech.refused`).
 
 - **The intro** greets the founder by first name. On a first meeting the vEIR introduces itself once ("Hi Maya,
-  I'm Corin's vEIR, Corin's digital twin.") and continues with the conversation's opener, or "What would you like
-  to work on?". With someone it has met, it is one sentence of at most 90 characters (`repeatGreetingOf`): phrased
+  I'm Corin's vEIR, Corin's digital twin."; a mentor under its own name, ADR-0021, only "Hi Maya, I'm Thomas.") and
+  continues with the conversation's opener, or "What would you like to work on?". With someone it has met, it is one sentence of at most 90 characters (`repeatGreetingOf`): phrased
   around what the opener is about ("Hi Maya, where are things with the facilities budget call you planned?"),
   shortened to fit rather than dropped ("…the Harbour Hall study room for the pilot kickoff on Monday" loses "on
   Monday", then "for the pilot kickoff"), else the opener itself as one sentence, else "Hi Maya, what would you like
@@ -709,8 +709,8 @@ replaces the first), cuts an utterance with the next one (no queue), and sounds 
   EIR or breaks the identity rules is left out.
 - **Disclosure.** Said once, in the welcome stored with the person (a call opened first says it on its start
   screen, beside the voice notice; Start call stores both); the tile's badge keeps it a tap away. The intro
-  introduces the vEIR only on a first meeting ("Hi Maya, I'm Corin's vEIR, Corin's digital twin."), and greets
-  afterwards.
+  introduces the vEIR only on a first meeting ("Hi Maya, I'm Corin's vEIR, Corin's digital twin."; Thomas, a mentor
+  under his own name: "Hi Maya, I'm Thomas.", what he is being said in the call's disclosure), and greets afterwards.
 - **Voice consent.** A vEIR speaks with its EIR's chosen voice only while the EIR's consent covers `voice`;
   otherwise calls are refused rather than switched to another voice. Heartbeats re-check the consent, so a
   revoked or expired consent ends a live call within 15 s. The EIR's cloned voice (§4) also needs `voice`;

@@ -54,6 +54,11 @@ export interface IdentityCheckOptions {
    */
   personaEirName?: string | null;
   /**
+   * The persona is an AI mentor presented under its own name ("Thomas", ADR-0021): it says what it is as itself ("I'm
+   * Thomas, an AI mentor."), never as its EIR's twin. Its EIR (`personaEirName`) stays a name it never speaks as.
+   */
+  mentor?: boolean;
+  /**
    * The text is said aloud on a call (`CoachResponse.spoken`, or one sentence of it). Case means nothing
    * to text-to-speech, so every rule matches an EIR's first name in any case, and a text that is only the
    * name ("Corin.") is a sign-off. In typed text a first name counts only capitalised ("Corin", "CORIN"),
@@ -1568,12 +1573,13 @@ export function identityReplacement(
   kind: IdentityViolationKind,
   personaName: string,
   eirFirstName: string | null = null,
+  mentor = false,
 ): string {
   if (kind === 'ai_disclaimer') return '';
   if (eirFirstName === null) {
     return kind === 'endorsement'
       ? "I can't speak for anyone in the program on that."
-      : honestLine(personaName);
+      : honestLine(personaName, null, mentor);
   }
   return kind === 'endorsement'
     ? `I can't speak for ${eirFirstName} on that.`
@@ -1590,10 +1596,11 @@ export function identityAnswer(
   question: Exclude<IdentityQuestion, 'open'>,
   personaName: string,
   eirFirstName: string | null = null,
+  mentor = false,
 ): string {
   const answer = question === 'machine' ? 'Yes' : 'No';
   return eirFirstName === null
-    ? `${answer} — I'm ${personaName}, the program's AI coach.`
+    ? `${answer} — I'm ${personaName}, ${mentor ? 'an AI mentor' : "the program's AI coach"}.`
     : `${answer} — I'm ${eirFirstName}'s digital twin, an AI built from how ${eirFirstName} coaches.`;
 }
 
@@ -1605,9 +1612,9 @@ export const DISCLAIMER_FALLBACK = "Let's keep the focus on you. What's on your 
  * just an AI." → "Honestly? I'm Corin's digital twin, built from how Corin coaches."), so the rewrite never takes the
  * honest answer away.
  */
-export function honestLine(personaName: string, eirFirstName: string | null = null): string {
+export function honestLine(personaName: string, eirFirstName: string | null = null, mentor = false): string {
   return eirFirstName === null
-    ? `I'm ${personaName}, the program's AI coach.`
+    ? `I'm ${personaName}, ${mentor ? 'an AI mentor' : "the program's AI coach"}.`
     : `I'm ${eirFirstName}'s digital twin, built from how ${eirFirstName} coaches.`;
 }
 
@@ -1764,6 +1771,8 @@ interface DisclaimerContext {
   readonly identified: boolean;
   readonly personaName: string;
   readonly eirFirstName: string | null;
+  /** An AI mentor under its own name (`IdentityCheckOptions.mentor`). */
+  readonly mentor: boolean;
 }
 
 /**
@@ -1787,7 +1796,7 @@ function withoutDisclaimers(
     ctx.identified ||
     saysWhatItIs(first.text, ctx.personaName, ctx.eirFirstName)
       ? first
-      : stripDisclaimers(text, ctx, honestLine(ctx.personaName, ctx.eirFirstName));
+      : stripDisclaimers(text, ctx, honestLine(ctx.personaName, ctx.eirFirstName, ctx.mentor));
   if (result.findings.length === 0) return { text, findings: [] };
   const out = result.text.trim();
   if (/\p{L}/u.test(out)) return { text: out, findings: result.findings };
@@ -1985,8 +1994,10 @@ function withoutIntroduction(
 }
 
 interface ResolvedNames {
-  /** The persona's own EIR first name, for vEIR personas. */
+  /** The persona's own EIR first name, for vEIR personas presented as the EIR's twin (null for a mentor). */
   eirFirstName: string | null;
+  /** An AI mentor under its own name: its EIR is guarded like any EIR, never the name it speaks under. */
+  mentor: boolean;
   specs: NameSpec[];
 }
 
@@ -2014,7 +2025,12 @@ function resolveNames(options: IdentityCheckOptions): ResolvedNames {
     seen.add(spec.full.toLowerCase());
     specs.push(spec);
   }
-  return { eirFirstName: personaEir === null ? null : firstNameOf(normalizeText(personaEir)), specs };
+  const mentor = options.mentor === true;
+  return {
+    eirFirstName: personaEir === null || mentor ? null : firstNameOf(normalizeText(personaEir)),
+    mentor,
+    specs,
+  };
 }
 
 /**
@@ -2022,12 +2038,15 @@ function resolveNames(options: IdentityCheckOptions): ResolvedNames {
  * `askedLifeOf`): the one name it may greet is the coach's own first name ("hey corin!").
  */
 export function askedLifeFor(founderText: string, options: IdentityCheckOptions): AskedLife | null {
-  return askedLifeOf(founderText, resolveNames(options).eirFirstName);
+  const names = resolveNames(options);
+  // The one name the founder may greet the coach by: its EIR's first name for a twin, its own for a mentor.
+  return askedLifeOf(founderText, names.mentor ? options.personaName : names.eirFirstName);
 }
 
 /** The sentence `rewriteIdentity` puts in place of a violation of `kind`, for these options. */
 export function identityReplacementFor(kind: IdentityViolationKind, options: IdentityCheckOptions): string {
-  return identityReplacement(kind, options.personaName, resolveNames(options).eirFirstName);
+  const names = resolveNames(options);
+  return identityReplacement(kind, options.personaName, names.eirFirstName, names.mentor);
 }
 
 /** Whether `text` says honestly what the coach is ("I'm Corin's digital twin", "I'm an AI", "not a person"). */
@@ -2372,11 +2391,12 @@ function wrongAnswer(
   question: IdentityQuestion | null | undefined,
   personaName: string,
   eirFirstName: string | null,
+  mentor = false,
 ): { start: number; rule: 'denies_ai' | 'answers_as_person'; right: string } | null {
   if (question === null || question === undefined || question === 'open') return null;
   const machine = question === 'machine';
   const rule = machine ? 'denies_ai' : 'answers_as_person';
-  const right = identityAnswer(question, personaName, eirFirstName);
+  const right = identityAnswer(question, personaName, eirFirstName, mentor);
   const strict = (machine ? DENIAL_OPENING : AFFIRMATION_OPENING).exec(text);
   if (strict !== null) return { start: strict[0].length - (strict.groups?.answer ?? '').length, rule, right };
   if (!(machine ? DENIES : AFFIRMS).test(text)) return null;
@@ -2473,7 +2493,7 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
       .filter((word) => word !== '' && !eirFirstNames.has(word.replace(/'s$/, ''))),
   );
   const replacementFor = (kind: IdentityViolationKind): string =>
-    identityReplacement(kind, options.personaName, names.eirFirstName);
+    identityReplacement(kind, options.personaName, names.eirFirstName, names.mentor);
 
   // Every round replaces at least one sentence and a replacement never matches, so the number of sentences
   // bounds the rounds (no violation can outlast the loop).
@@ -2484,7 +2504,7 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
     // A wrong yes or no to a sincere question about the coach: read once, on the reply as written.
     const wrong =
       round === 0 && options.checkHumanClaims !== false
-        ? wrongAnswer(current, options.answers, options.personaName, names.eirFirstName)
+        ? wrongAnswer(current, options.answers, options.personaName, names.eirFirstName, names.mentor)
         : null;
     // The hit ends inside the sentence (before its own punctuation), so only the answer's sentence is replaced.
     if (wrong !== null)
@@ -2629,6 +2649,7 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
       identified: options.identified === true,
       personaName: options.personaName,
       eirFirstName: names.eirFirstName,
+      mentor: names.mentor,
     });
     current = plain.text;
     findings.push(...plain.findings);

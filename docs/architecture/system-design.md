@@ -424,6 +424,13 @@ vEIR is. Exports carry the persona release's full disclosure, for example: "You 
 vEIR, an AI coach built from Corin Halvorsen's approved frameworks and coaching style. It is not a person,
 and no human EIR, including Corin, wrote or approved these responses."
 
+**A mentor under its own name (ADR-0021):** the owner presents the Ain tenant's vEIR as **Thomas** (owner-approved
+release of 2026-11-05, a stock-avatar mentor persona; `personas.presentation = 'mentor'`, migration 0028). Thomas speaks
+in the first person as himself, never as "Thomas's vEIR" and never narrating that he is a vEIR or a twin; asked
+sincerely, he says he is an AI ("I'm Thomas, an AI mentor."), never a person, never anyone else, and claims no past of
+his own. What he is is said before the first conversation, before every call and in his About panel. His doctrine is
+still an EIR's approved doctrine under that EIR's consent; its release was approved by the platform owner.
+
 ---
 
 ## 10. Infrastructure (CDK, `infra/cdk`)

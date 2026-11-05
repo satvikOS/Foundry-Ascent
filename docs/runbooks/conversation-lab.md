@@ -566,6 +566,52 @@ gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=60 -f se
 `approve_memory=true` adds a student who approves every pending AI memory proposal between sessions; the default
 leaves them as the product does (compare both when memory continuity is the question; the summary counts approvals).
 
+The lab seeds the persona releases production's deploy applies (`infra/cdk/config/production.json`
+`homeTenant.ownerReleases`, read by both workflows into `SEED_OWNER_RELEASES` before `pnpm db:reset`): every live run
+measures Thomas (ADR-0021), not Corin's v1 doctrine. Locally: `SEED_OWNER_RELEASES=thomas-2026-11-05 pnpm db:reset`.
+
+### Coach model A/B (the lab only)
+
+`coach_model` (workflow input of `ops-live-evals.yml`; `--coach-model` of `live-plan` and `run`) runs the app's coach
+on another Bedrock model for one run, to separate model limits from prompt and state effects (coaching diagnosis fix
+12). Production is never changed: the choice sets `MODEL_PRIMARY_ID` and `MODEL_FALLBACK_ID` of the lab's own API
+process only (`conversation_lab/stack.py`), both to the chosen model, so the arm is that model alone (a failure counts,
+it is never answered by Nova).
+
+| `coach_model`                                 | Coach (primary = fallback)                                       | Judge (another family, probed in order) |
+| --------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------- |
+| `default`                                     | production's (`us.amazon.nova-2-lite-v1:0`, fallback `global.…`) | Claude Haiku 4.5, then Llama 4 Maverick |
+| `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Claude Haiku 4.5 (us. profile)                                   | Llama 4 Maverick, then Nova Premier     |
+| `us.anthropic.claude-sonnet-4-6`              | Claude Sonnet 4.6 (us. profile)                                  | Llama 4 Maverick, then Nova Premier     |
+
+The choices are `ops/lab/models.json` `live.coach`, which the lab role may invoke (`infra/cdk/src/lib/lab-models.ts`;
+deploy main once after adding a model, and enable it in the Bedrock console). The judge is always of another model
+family than the coach (`judges_for`); the summary records `models.coach`, `models.judge` and `judge_independent`. With
+a Claude coach the app's share of a shard's budget is 0.9 (its turns are most of the cost). The plan (`dry_run`)
+estimates the coach at ~15.9k input and ~330 output tokens a turn on the chosen model's us. price, with no prompt-cache
+discount (an upper bound):
+
+| Selection                  | `default` (Nova 2 Lite) | Claude Haiku 4.5 | Claude Sonnet 4.6 |
+| -------------------------- | ----------------------- | ---------------- | ----------------- |
+| 10 scenarios (`sample=10`) | USD 0.92                | USD 2.53         | USD 7.25          |
+| 60 scenarios (`sample=60`) | USD 5.17                | USD 14.26        | USD 40.93         |
+
+```bash
+# Plan only (no model called): the estimate for a 10-scenario Haiku arm
+gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=10 -f seed=1 \
+  -f coach_model=us.anthropic.claude-haiku-4-5-20251001-v1:0 -f budget_usd=3
+# The two arms of an A/B on the same 10 scenarios (same seed), sealed
+gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=10 -f seed=1 -f budget_usd=1.5 \
+  -f dry_run=false -f public_key="$KEY"
+gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=10 -f seed=1 -f budget_usd=3 \
+  -f coach_model=us.anthropic.claude-haiku-4-5-20251001-v1:0 -f dry_run=false -f public_key="$KEY"
+```
+
+Production's coach model is configuration too: `infra/cdk/config/production.json` `models.primary` / `models.fallback`
+become `MODEL_PRIMARY_ID` / `MODEL_FALLBACK_ID` of every function (`infra/cdk/src/lib/models.ts`; the API's Bedrock
+grant follows them, and `packages/ai` prices Claude for the cost caps). Switching it is a config change and a normal
+deploy, after an A/B here; nothing switches it now.
+
 The merged public summary (artifact `live-evals-merged-<run>`, and the job summary) holds numbers, ids and codes
 only. Gates are computed over the planned runs and read "NOT met (incomplete)" while any planned run lacks a verdict
 (skipped by the deadline or a budget, stopped part-way, a simulator failure, a judge error). `live-merge` refuses

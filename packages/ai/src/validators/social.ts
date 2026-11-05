@@ -25,6 +25,14 @@ import { sentenceSpans } from './meta-narration.js';
  */
 
 /** How long a social reply may run: whole sentences, within a number of words (the first sentence always stays). */
+/**
+ * Replies to a founder who asked for yes/no answers, or for short ones (`statedPreferences`): live pilot 42124259353's
+ * "yes or no answers only" got three paragraphs two replies later. A flagged turn is never held to them (its referral is
+ * said whole).
+ */
+export const YES_NO_BUDGET = { sentences: 2, words: 40 } as const;
+export const SHORT_BUDGET = { sentences: 4, words: 70 } as const;
+
 export const SOCIAL_BUDGETS: Readonly<
   Record<SocialTurn, { readonly sentences: number; readonly words: number }>
 > = {
@@ -150,7 +158,9 @@ export function isListItem(text: string): boolean {
 }
 
 /** What a reply says when every sentence of it was the previous reply again. */
-export const REPEAT_FALLBACK = 'That still stands from a moment ago. Which part do you want to dig into?';
+// Live pilot 42124259353: the old line ("That still stands from a moment ago…") was itself a stock phrase the judge read
+// as canned.
+export const REPEAT_FALLBACK = 'We covered that a moment ago. Which part should we take further?';
 
 /**
  * A safety line: crisis support, a hotline, being unsafe. Never left out as a repeat, however often it was said (the

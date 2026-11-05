@@ -379,6 +379,24 @@ describe('config', () => {
     expect(config.distillation.sweepIntervalMinutes).toBe(15);
   });
 
+  it('reads the owner-approved releases the seed applies (none when absent; production ships Thomas)', () => {
+    expect(parseConfig(valid()).homeTenant.ownerReleases).toEqual([]);
+    expect(
+      parseConfig(withChange(['homeTenant', 'ownerReleases'], ['thomas-2026-11-05'])).homeTenant
+        .ownerReleases,
+    ).toEqual(['thomas-2026-11-05']);
+    expect(loadConfig().homeTenant.ownerReleases).toEqual(['thomas-2026-11-05']);
+    for (const bad of ['Thomas', 'thomas 2026', '', 7, ['thomas-2026-11-05']]) {
+      expect(() => parseConfig(withChange(['homeTenant', 'ownerReleases'], [bad]))).toThrow(ConfigError);
+    }
+    expect(() =>
+      parseConfig(withChange(['homeTenant', 'ownerReleases'], ['thomas-2026-11-05', 'thomas-2026-11-05'])),
+    ).toThrow(/must not repeat/);
+    expect(() => parseConfig(withChange(['homeTenant', 'ownerReleases'], 'thomas-2026-11-05'))).toThrow(
+      ConfigError,
+    );
+  });
+
   it('treats reserved concurrency as optional (null or absent = unreserved)', () => {
     expect(parseConfig(valid()).api.reservedConcurrency).toBe(10);
     expect(parseConfig(withChange(['api', 'reservedConcurrency'], null)).api.reservedConcurrency).toBeNull();

@@ -331,6 +331,88 @@ def test_live_plan_refuses_an_estimate_over_budget(
     assert cmd_plan(args) == 0
 
 
+def test_the_coach_model_ab_runs_the_lab_only_and_keeps_the_judge_independent(
+    dataset, tmp_path: Path
+) -> None:
+    from conversation_lab.config import (
+        DEFAULT_COACH,
+        app_models,
+        budget_parts,
+        coach_app_models,
+        judges_for,
+    )
+    from conversation_lab.live.plan import coach_cost_factor
+
+    lab = lab_models()
+    production = app_models()
+    # default: production's models, untouched.
+    assert coach_app_models(DEFAULT_COACH, lab) == production
+    # An A/B arm: that model alone, primary and fallback, production's embeddings.
+    haiku = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    arm = coach_app_models(haiku, lab)
+    assert (arm.primary, arm.fallback, arm.embeddings) == (haiku, haiku, production.embeddings)
+    assert "us.anthropic.claude-sonnet-4-6" in lab.live_coach
+    with pytest.raises(ValueError, match="coach_model must be"):
+        coach_app_models("us.anthropic.claude-opus-9-9", lab)
+    # A Claude coach is judged by another family: Llama 4 Maverick, then Nova Premier.
+    assert judges_for(haiku, lab.live_judge) == (
+        "us.meta.llama4-maverick-17b-instruct-v1:0",
+        "us.amazon.nova-premier-v1:0",
+    )
+    assert all(model_family(j) != "anthropic" for j in judges_for(haiku, lab.live_judge))
+    assert model_family(judges_for(production.primary, lab.live_judge)[0]) != model_family(production.primary)
+    # The estimate prices the chosen coach (about 3.5x Nova 2 Lite a turn for Haiku), the app's share follows it.
+    assert coach_cost_factor(lab.prices, None) == 1.0
+    assert 3.0 < coach_cost_factor(lab.prices, haiku) < 4.0
+    assert coach_cost_factor(lab.prices, "us.anthropic.claude-sonnet-4-6") > 9
+    picks = select(dataset.scenarios, families=list(range(1, 31)), sample=10, seed=1)
+    base = estimate(
+        picks,
+        dataset.by_id(),
+        prices=lab.prices,
+        student_model=lab.live_simulator[0],
+        judge_model=lab.live_judge[0],
+    )
+    claude = estimate(
+        picks,
+        dataset.by_id(),
+        prices=lab.prices,
+        student_model=lab.live_simulator[0],
+        judge_model=judges_for(haiku, lab.live_judge)[0],
+        coach_model=haiku,
+    )
+    assert claude["usd"]["coach_app"] > 3 * base["usd"]["coach_app"]
+    assert claude["models"]["coach"] == haiku
+    assert budget_parts("live", 10.0, 0.9) == (9.0, 1.0)
+    # The plan prints the choice, its judges and that production is unchanged; the shard job reproduces its split.
+    args = SimpleNamespace(
+        families="all",
+        sample=10,
+        repeats=1,
+        seed=1,
+        ids="",
+        budget_usd=20.0,
+        concurrency=4,
+        github_output=None,
+        coach_model=haiku,
+    )
+    assert cmd_plan(args) == 0
+    ctx = SimpleNamespace(
+        live_families="all",
+        live_sample=10,
+        live_seed=1,
+        repeat=1,
+        scenario_ids=(),
+        live_shard=(1, 1),
+        live_total_budget=20.0,
+        budget_usd=20.0,
+        concurrency=4,
+        coach_model=haiku,
+    )
+    _picks, selection = selection_from(ctx, dataset)
+    assert selection["coach_model"] == haiku
+
+
 def test_live_check_passes_on_the_committed_dataset() -> None:
     assert cmd_check(SimpleNamespace(json=False)) == 0
 

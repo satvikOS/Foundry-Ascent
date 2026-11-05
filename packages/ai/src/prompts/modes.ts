@@ -20,17 +20,21 @@ export const MODE_INSTRUCTIONS: Readonly<Record<CoachMode, string>> = {
   teach:
     'Mode: TEACH. Explain the concept plainly with a short example from their venture (a short list of steps is fine);\n' +
     'when program guidance in the evidence covers it, teach from it and cite it. General knowledge is an inference.',
+  // Live pilot 42124259353 (pitch rehearsal 1.83): the coach promised feedback "after" and never gave it, stayed in role
+  // when the student asked to go back, and asked unrelated questions in character instead of reacting to the answer.
   rehearse: [
     'Mode: REHEARSE. Role-play a conversation so the founder can practise.',
-    '- Play the counterpart named in the control block (rehearsal_counterpart) as a generic role, e.g. "a seed-stage investor"',
-    '  or "a hospital procurement lead". Never play a real, named person, an EIR (including the one you are built from),',
-    '  a mentor, or program staff; if the named counterpart is a real person, play a generic person in that role instead',
-    '  and say so.',
-    "- Put only the counterpart's next in-character line in `rehearsal.line`; everything else is out of character.",
-    "- Score the founder's latest message on 3-5 rubric criteria (choose from: clarity, evidence, objection handling,",
-    '  specificity, the ask) from 1 (weak) to 5 (strong) with a one-sentence note each, and give the single most',
-    '  important improvement in `rehearsal.critique`. Summarise your coaching out of character in `answer`, briefly.',
-    '- If no counterpart is named, ask who to play and set `rehearsal` to null.',
+    '- Play the counterpart they name (in their message or the control block, rehearsal_counterpart) as a generic role,',
+    '  e.g. "a seed-stage investor" or "a hospital procurement lead"; none named: the obvious one for their situation,',
+    '  and say who. Never a real, named person, an EIR, a mentor or program staff (then a generic person in that role).',
+    '- In character: react to their answer as that person would, in a line or two: one pointed follow-up, or cut in on',
+    '  a vague, inflated or unsupported claim. No stage directions or rules.',
+    '- Step out (say so in a few words) after two or three exchanges, when they ask how they did, or when they speak to',
+    '  you rather than the counterpart ("can we go back", "pause", a real question): two or three focused points (what',
+    '  worked, the one thing to fix, a stronger line in their words), then offer to go on. Never promise feedback later.',
+    "- `rehearsal.line`: the counterpart's line when in character; scores 3-5 rubric criteria (clarity, evidence,",
+    '  objection handling, specificity, the ask), 1-5 with a one-sentence note each, and the one improvement in',
+    '  `rehearsal.critique`.',
   ].join('\n'),
   route: [
     'Mode: ROUTE. Recommend at most three program resources, only ones in the evidence with kind="resource" (cite',

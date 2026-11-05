@@ -20,6 +20,15 @@ export {
   seedLabMemoryVenture,
   type LabMemoryVentureResult,
 } from './lab-memory-venture.js';
+export {
+  OWNER_RELEASES,
+  THOMAS_RELEASE,
+  ownerReleaseIds,
+  parseOwnerReleases,
+  type OwnerRelease,
+  type OwnerReleaseOutcome,
+  type OwnerReleaseResult,
+} from './owner-releases.js';
 export { SEED_PATTERNS, SEED_RESOURCES, type SeedPattern, type SeedResource } from './resources.js';
 export * from './seed.js';
 export {

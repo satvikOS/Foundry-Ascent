@@ -20,7 +20,15 @@ export interface PlatformConfig {
   readonly githubOwnerId: string;
   readonly githubRepositoryId: string;
   readonly githubBranch: string;
-  readonly homeTenant: { readonly slug: string; readonly name: string };
+  readonly homeTenant: {
+    readonly slug: string;
+    readonly name: string;
+    /**
+     * Owner-approved persona releases the seed applies once to this tenant (`SEED_OWNER_RELEASES`; keys of
+     * packages/db/src/seed/owner-releases.ts, ADR-0021). Empty when absent; an unknown key fails the deploy's seed.
+     */
+    readonly ownerReleases: readonly string[];
+  };
   readonly owner: {
     readonly displayName: string;
     readonly accessCodePrefix: string;
@@ -550,6 +558,29 @@ function parseMedia(raw: unknown): PlatformConfig['media'] {
   };
 }
 
+const OWNER_RELEASE_KEY = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** `$.homeTenant.ownerReleases`: at most 8 distinct release keys (lower-case words joined by hyphens). */
+function ownerReleases(value: unknown): readonly string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 8) {
+    throw new ConfigError('$.homeTenant.ownerReleases', 'must be an array of at most 8 release keys');
+  }
+  const keys = value.map((key, i) => {
+    if (typeof key !== 'string' || key.length > 60 || !OWNER_RELEASE_KEY.test(key)) {
+      throw new ConfigError(
+        `$.homeTenant.ownerReleases[${String(i)}]`,
+        'must be a release key such as thomas-2026-11-05',
+      );
+    }
+    return key;
+  });
+  if (new Set(keys).size !== keys.length) {
+    throw new ConfigError('$.homeTenant.ownerReleases', 'must not repeat a key');
+  }
+  return keys;
+}
+
 export function parseConfig(raw: unknown): PlatformConfig {
   const root = obj(raw, '$');
   const region = str(root, 'region', '$');
@@ -593,6 +624,7 @@ export function parseConfig(raw: unknown): PlatformConfig {
     homeTenant: {
       slug: str(homeTenant, 'slug', '$.homeTenant', SLUG),
       name: str(homeTenant, 'name', '$.homeTenant'),
+      ownerReleases: ownerReleases(homeTenant.ownerReleases),
     },
     owner: {
       displayName: str(owner, 'displayName', '$.owner'),

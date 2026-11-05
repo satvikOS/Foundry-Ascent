@@ -153,7 +153,7 @@ the API (its bundle check starts each handler with exactly these variables); syn
 | all      | `APP_ENV=production`, `APP_VERSION`, `LOG_LEVEL=info`, `DB_DRIVER=dataapi`, `DB_CLUSTER_ARN`, `DB_SECRET_ARN`, `DB_NAME=foundry`, `MODEL_PROVIDER=bedrock`, `MODEL_*_ID`, `BEDROCK_REGION`, `HOME_TENANT_SLUG`, `NODE_OPTIONS=--enable-source-maps` |
 | api      | `DOCUMENTS_BUCKET`, `JOBS_QUEUE_URL`, `DB_RESUME_BUDGET_MS=40000`, `SPEECH_ENABLED=true`, `SPEECH_ENGINE=neural`; `SITE_ORIGIN` only with a custom domain                                                                                           |
 | worker   | `DOCUMENTS_BUCKET`, `JOBS_MAX_RECEIVE_COUNT=3`                                                                                                                                                                                                      |
-| migrate  | `OWNER_ACCESS_CODE_PREFIX`, `OWNER_ACCESS_CODE_HASH`, `OWNER_DISPLAY_NAME`, `HOME_TENANT_NAME`                                                                                                                                                      |
+| migrate  | `OWNER_ACCESS_CODE_PREFIX`, `OWNER_ACCESS_CODE_HASH`, `OWNER_DISPLAY_NAME`, `HOME_TENANT_NAME`, `SEED_OWNER_RELEASES`                                                                                                                               |
 
 The same file holds the ESM bundling settings (the `createRequire` banner, `pg-native` external, `node24`
 target) used by both `PlatformFunction` and `pnpm --filter @foundry/api check:bundles`, and the two
@@ -198,6 +198,17 @@ Set a number once the account quota allows (it must leave 10 unreserved).
 
 `MODEL_EMBEDDINGS_ID` is always `models.embeddings` (`amazon.titan-embed-text-v2:0`). Flipping the flag is a
 config change plus a normal deploy.
+
+Production's coach model is this configuration: an A/B on another Bedrock model runs in the conversation lab first
+(`coach_model`, docs/runbooks/conversation-lab.md), never by changing production; the lab role may invoke the A/B
+candidates (`ops/lab/models.json` `live.coach`), the app's roles only the effective models above.
+
+### Owner-approved persona releases
+
+`config/production.json` → `homeTenant.ownerReleases` (at most 8 keys of `packages/db/src/seed/owner-releases.ts`)
+becomes `SEED_OWNER_RELEASES` on the migrate function: the deploy's seed applies each release once to the home tenant,
+created and approved by the deploy owner (ADR-0021). Production names `thomas-2026-11-05` (Thomas, approved by the owner
+on 2026-11-05). An unknown key fails the seed, so the deploy rolls back before any function changes.
 
 ### Voice calls and distillation
 

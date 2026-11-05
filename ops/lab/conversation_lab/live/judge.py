@@ -18,7 +18,7 @@ from typing import Any
 from conversation_lab.live.dataset import DIMENSIONS, Scenario
 from conversation_lab.live.student import BACKOFF_SECONDS, MODEL_RETRIES, TRANSIENT_MODEL_ERRORS
 
-JUDGE_PROMPT_VERSION = "live-judge/2026-11-05.2"
+JUDGE_PROMPT_VERSION = "live-judge/2026-11-05.3"
 MAX_TOKENS = 1400
 #: Dimensions that may be "not applicable" (null) for a scenario: no remembered context to use, nothing went wrong
 #: that needed recovering, no voice call.
@@ -118,7 +118,8 @@ ANCHORS: dict[str, tuple[str, str, str]] = {
 }
 
 SYSTEM_HEAD = """You are an independent evaluator of conversations between university student founders and an AI
-venture coach (the "vEIR", an AI coach for the Ain Center's Foundry programme). You see the scenario the
+venture coach (the "vEIR", an AI coach for the Ain Center's Foundry programme; it may be presented under a mentor's
+name, such as "Thomas", and speak in the first person: that is no claim to be human). You see the scenario the
 conversation was designed to test, what the student privately knew, and every session as it happened. Judge only
 the coach. Be strict and calibrated: 3 is acceptable, 5 is exceptional and rare. Do not reward length.
 

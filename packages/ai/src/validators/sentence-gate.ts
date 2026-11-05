@@ -17,6 +17,7 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown } from './markdown.js';
+import { withoutExampleFigures } from './figures.js';
 import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
 import { findMetaNarration, isThinkingAloudOpener, type NarrationNames } from './meta-narration.js';
 import {
@@ -32,6 +33,7 @@ import {
   repeatsPrevious,
 } from './social.js';
 import { founderMoves } from '../prompts/conversation-state.js';
+import { nameUsedRecently, withoutStockOpener, withoutVocativeName } from './openers.js';
 import { clampWords, toSpeakable } from './speech.js';
 
 /**
@@ -115,6 +117,8 @@ export interface SentenceGateOptions {
   eirNames?: readonly string[];
   /** Display name of the EIR the persona is built from ("Corin Halvorsen"). */
   personaEirName?: string | null;
+  /** An AI mentor under its own name ("Thomas", ADR-0021; `IdentityCheckOptions.mentor`). */
+  mentor?: boolean;
   /** Display names of the founder and their team: "Thanks, Ruth." to one of them is not an EIR's sign-off. */
   addressees?: readonly string[];
   /**
@@ -195,6 +199,16 @@ export interface SentenceGateOptions {
   maxUnitChars?: number;
   /** Words the spoken forms of all units may use together (calls). Default: unlimited. */
   spokenWordBudget?: number;
+  /**
+   * The founder asked for no more questions (`<conversation_state>` preferences): once something was released, a unit
+   * that is a question is left out. Default false.
+   */
+  noQuestions?: boolean;
+  /**
+   * What the founder said and the sources shown, for the figures a reply may use: an aside offering a figure nobody gave
+   * as an example ("(say, $10 a month)") is left out of the unit (validators/figures.ts). Absent: not checked.
+   */
+  knownFigures?: string;
 }
 
 export interface GateUnit {
@@ -221,7 +235,7 @@ export interface GateResult {
 
 /** A unit the gate left out, and why (kept only with `keepDropped`, for the conversation lab's stream trace). */
 export interface DroppedUnit {
-  readonly reason: 'repeat' | 'reask' | 'agenda' | 'greeting';
+  readonly reason: 'repeat' | 'reask' | 'agenda' | 'greeting' | 'opener' | 'question';
   readonly text: string;
 }
 
@@ -238,6 +252,11 @@ export interface GateTrace {
   readonly agendaDropped: number;
   /** A greeting the opening line already gave was left out. */
   readonly greetingDropped: boolean;
+  /**
+   * Stock openers left out of the reply's start ("That's a solid plan.", "Thanks for the update."; validators/openers.ts):
+   * whole units, or the start of the first one.
+   */
+  readonly openersDropped: number;
   /** The units left out, in order (only with `keepDropped`; empty otherwise). */
   readonly dropped: readonly DroppedUnit[];
 }
@@ -438,6 +457,10 @@ export class SentenceGate {
   #afterDroppedDisclaimer = false;
   /** A greeting the opening line already gave was left out of the reply's start (`greeted`). */
   #droppedGreeting = false;
+  /** Stock openers left out of the reply's start (validators/openers.ts). */
+  #openersDropped = 0;
+  /** One of the latest replies named the founder: this one leaves the name out where it is said to them. */
+  readonly #stripName: boolean;
   #reasksDropped = 0;
   readonly #dropped: DroppedUnit[] = [];
   /** The previous reply's four-word sequences (null: no repeat check). */
@@ -507,6 +530,11 @@ export class SentenceGate {
     );
     // No repeat check for a sincere question about the coach: its honest answer is said however recently it was
     // said (the intro of a first meeting, or the last reply when they ask again; the presence policy).
+    // Newest first: the previous reply, then the earlier ones from the latest back.
+    this.#stripName = nameUsedRecently(options.founderName, [
+      options.previousReply,
+      ...[...(options.earlierReplies ?? [])].reverse(),
+    ]);
     if (said.length === 0 || asksToRepeat(options.founderText ?? '') || this.#question !== null) {
       this.#previousGrams = null;
       this.#previousQuestions = [];
@@ -552,6 +580,7 @@ export class SentenceGate {
       reasksDropped: this.#reasksDropped,
       agendaDropped: this.#agendaDropped,
       greetingDropped: this.#droppedGreeting,
+      openersDropped: this.#openersDropped,
       dropped: [...this.#dropped],
     };
   }
@@ -672,6 +701,49 @@ export class SentenceGate {
           }
           rawUnit = greeting.text;
         }
+      }
+      if (this.#nothingReleased() && this.#question === null) {
+        // The reply starts with its substance, never a stock opener (validators/openers.ts): the start of a unit goes,
+        // and a unit that is nothing but the opener goes once the next unit shows that more follows.
+        const opener = withoutStockOpener(rawUnit, {
+          names: this.#greetingNames,
+          ...(this.#options.founderText === undefined ? {} : { founderText: this.#options.founderText }),
+        });
+        if (opener.removed) {
+          this.#openersDropped += 1;
+          this.#keepDropped('opener', rawUnit);
+          rawUnit = opener.text;
+        } else if (opener.onlyOpener) {
+          const next =
+            findUnitEnd(this.#raw, end, this.#maxUnitChars) ?? (this.#ended ? this.#raw.length : null);
+          if (next === null || (!this.#ended && stable.length < next + this.#holdBack)) break;
+          if (/[\p{L}\p{N}]/u.test(this.#raw.slice(end, next))) {
+            this.#cursor = end;
+            this.#openersDropped += 1;
+            this.#keepDropped('opener', rawUnit);
+            continue;
+          }
+        }
+      }
+      // The founder's name, while one of the latest replies already said it; an example figure nobody gave.
+      if (this.#stripName) {
+        rawUnit = withoutVocativeName(rawUnit, this.#options.founderName, {
+          spoken: this.#options.spoken === true,
+        }).text;
+      }
+      if (this.#options.knownFigures !== undefined) {
+        rawUnit = withoutExampleFigures(rawUnit, this.#options.knownFigures).text;
+      }
+      if (
+        this.#options.noQuestions === true &&
+        !this.#nothingReleased() &&
+        /\?["'”’)\]*_]*\s*$/u.test(rawUnit) &&
+        !isProtectedLine(rawUnit, this.#keepReferrals)
+      ) {
+        // They asked for no more questions: a question after the reply's substance is left out.
+        this.#cursor = end;
+        this.#keepDropped('question', rawUnit);
+        continue;
       }
       if (
         this.#nothingReleased() &&
@@ -951,6 +1023,7 @@ export class SentenceGate {
       personaName: o.personaName,
       ...(o.eirNames ? { eirNames: o.eirNames } : {}),
       ...(o.personaEirName !== undefined ? { personaEirName: o.personaEirName } : {}),
+      ...(o.mentor === true ? { mentor: true } : {}),
       ...(o.addressees ? { addressees: o.addressees } : {}),
     };
   }

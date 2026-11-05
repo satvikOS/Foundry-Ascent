@@ -46,6 +46,7 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       'amazon.nova-pro-v1:0',
       'amazon.titan-embed-text-v2:0',
       'anthropic.claude-haiku-4-5-20251001-v1:0',
+      'anthropic.claude-sonnet-4-6',
       'meta.llama4-maverick-17b-instruct-v1:0',
     ]);
     expect(access.globalFoundationModels).toEqual(['amazon.nova-2-lite-v1:0']);
@@ -55,8 +56,29 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       'us.amazon.nova-premier-v1:0',
       'us.amazon.nova-pro-v1:0',
       'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      'us.anthropic.claude-sonnet-4-6',
       'us.meta.llama4-maverick-17b-instruct-v1:0',
     ]);
+  });
+
+  it('grants the A/B coach candidates (live.coach) to the lab only, priced, and never to the app', () => {
+    expect(LAB_MODELS.live.coach).toEqual([
+      'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      'us.anthropic.claude-sonnet-4-6',
+    ]);
+    expect(LAB_MODELS.usdPerMillionTokens['anthropic.claude-sonnet-4-6']).toEqual({
+      input: 3.3,
+      output: 16.5,
+    });
+    // Production's models are untouched: the coach candidates are no effective app model.
+    expect(Object.values(effectiveModels(loadConfig().models))).not.toContain(
+      'us.anthropic.claude-sonnet-4-6',
+    );
+    const { coach: _coach, ...live } = LAB_MODELS.live;
+    expect(parseLabModels({ ...raw(), live }).live.coach).toEqual([]);
+    expect(() =>
+      parseLabModels({ ...raw(), live: { ...live, coach: ['us.anthropic.claude-opus-9-9'] } }),
+    ).toThrow(/no price/);
   });
 
   it("lists the live evaluation's simulator and judge from other model families first, Nova as fallback", () => {

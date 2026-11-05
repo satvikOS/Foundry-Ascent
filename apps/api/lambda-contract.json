@@ -56,7 +56,8 @@
       "OWNER_ACCESS_CODE_PREFIX",
       "OWNER_ACCESS_CODE_HASH",
       "OWNER_DISPLAY_NAME",
-      "HOME_TENANT_NAME"
+      "HOME_TENANT_NAME",
+      "SEED_OWNER_RELEASES"
     ],
     "insights": []
   },

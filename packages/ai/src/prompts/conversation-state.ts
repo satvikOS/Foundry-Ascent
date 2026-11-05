@@ -30,7 +30,15 @@ export type FounderMove =
   | 'news'
   | 'short_reply'
   | 'question'
-  | 'help';
+  | 'help'
+  | 'rehearse'
+  | 'step_out'
+  | 'defer'
+  | 'restart'
+  | 'summary'
+  | 'complaint'
+  | 'lost_reply'
+  | 'hesitant';
 
 /** A completed earlier exchange (the shape of `HistoryTurn`). */
 export interface StateTurn {
@@ -113,6 +121,18 @@ export interface ConversationState {
   /** Completed exchanges in view. */
   readonly earlierTurns: number;
   /**
+   * How many of the vEIR's latest replies in a row were in character in a role-play (a line for the counterpart,
+   * "**Investor:** …"): 0 when it is not role-playing ({@link inRole}).
+   */
+  readonly inRoleReplies?: number;
+  /** The new message is the founder's previous message again, word for word (a resend). */
+  readonly duplicate?: boolean;
+  /**
+   * The vEIR's advice earlier in this conversation, one line each, oldest first (replies before the last two): built
+   * on, never given again (long sessions: live pilot 42124259353's marathon and long-session runs repeated feedback).
+   */
+  readonly adviceGiven?: readonly string[];
+  /**
    * The new message is the founder's first reply to the vEIR's own opening line (the conversation's stored opener,
    * which already picked up the last conversation): the reply must not say it again.
    */
@@ -154,7 +174,7 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
   ],
   [
     'repair',
-    /(?:\b(?:that's not what i (?:meant|said|asked|was asking)|that isn't what i (?:meant|said|asked)|you misunderstood|you misread|you got (?:that|it|me) wrong|i didn't (?:mean|say|ask) that)\b|^(?:no|nope|not quite|not exactly|sorry|wait)[,.!]?\s+(?:i|what i)\s+(?:meant|mean|was asking|asked|said)\b|^i meant\b)/,
+    /(?:\b(?:that's not what i (?:meant|said|asked|was asking)|that isn't what i (?:meant|said|asked)|you misunderstood|you misread|you got (?:that|it|me) wrong|i didn't (?:mean|say|ask) that|you (?:were|are) wrong|(?:that's|that is|that was) (?:not right|wrong|incorrect|not true|not correct)|you made a mistake|you said (?:something )?wrong|correction:)\b|^(?:no|nope|not quite|not exactly|sorry|wait)[,.!]?\s+(?:i|what i)\s+(?:meant|mean|was asking|asked|said)\b|^i meant\b)/,
   ],
   [
     'closing',
@@ -175,7 +195,7 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
   ],
   [
     'topic_shift',
-    /(?:\b(?:by the way|btw|(?:a )?(?:different|another|unrelated|separate|random|new) (?:question|topic|thing|subject)|on (?:another|a different|a separate) note|chang(?:e|ing) (?:the )?(?:topic|subject)|before i forget|switching gears|quick (?:question|one))\b|^(?:oh|also)[,.]? (?:and |also )?(?:what|how|can|could|should|one more)\b|^actually[,.]? (?:can|could|let's|i want|i'd like)\b)/,
+    /(?:\b(?:by the way|btw|(?:a )?(?:different|another|unrelated|separate|random|new) (?:question|topic|thing|subject)|(?:talk|focus|move on) (?:about|on|to) something (?:else|different)|something else (?:entirely|now)|(?:let's|can we) (?:talk|move on) (?:about|to) (?!(?:it|that|this)\b)|on (?:another|a different|a separate) note|chang(?:e|ing) (?:the )?(?:topic|subject)|before i forget|switching gears|quick (?:question|one))\b|^(?:oh|also)[,.]? (?:and |also )?(?:what|how|can|could|should|one more)\b|^actually[,.]? (?:can|could|let's|i want|i'd like)\b)/,
   ],
   [
     'greeting',
@@ -203,6 +223,42 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
     'sarcasm',
     // Praise for something unwelcome ("Oh great, ANOTHER meeting. Love that for me."): the matrix's SM-08.
     /(?:\blove (?:that|this) for (?:me|us)\b|^oh,? (?:great|joy|wonderful|perfect|fantastic|lovely|brilliant|goody)\b[^?]*\b(?:another|more|again)\b|\bjust what (?:i|we) (?:needed|wanted)\b|\b(?:yay|woohoo|whoopee),? (?:another|more)\b|\bcan't wait (?:for|to do) (?:another|more)\b|\bthanks a lot,? (?:for nothing|really)\b)/,
+  ],
+  // Live pilot 42124259353 (pitch rehearsal 1.83, conversation control 1.83, recovery 1.83): the moves below were
+  // answered as ordinary messages: a request to practise got advice, "can we go back to a simpler question?" got the
+  // next in-character question, "can we come back to that later?" got the topic pushed, "your replies seem generic
+  // today" got more of the same.
+  [
+    'rehearse',
+    /\b(?:(?:let's|let us|can we|could we|i want to|i'd like to|help me|want to) (?:do (?:a |some )?)?(?:practi[cs]e|rehearse|role-?play|run through|drill|do a (?:mock|dry run|practice run))|(?:can|could) (?:you|we) (?:help me )?practi[cs]e\b|(?:mock|practice|dry) (?:pitch|interview|q ?& ?a|run|panel|meeting|call)|pretend (?:you(?:'re| are)|to be)|(?:play|be|act as) (?:a |an |the |my )?(?:\w+ )?(?:investor|vc|judge|panel(?:list)?|customer|buyer|landlord|board(?: member)?|reviewer|procurement|skeptic|sceptic|grant panel|dean|partner|cofounder)\b|role-?play)/,
+  ],
+  [
+    'step_out',
+    /\b(?:how did i do|how was (?:that|my (?:answer|pitch))|(?:give me|i want|real|honest) feedback|pause (?:the |this )?(?:role-?play|rehearsal|practice|drill)?|(?:stop|end|break) (?:the )?(?:role-?play|rehearsal|practice|drill|character)|out of (?:character|role)|time ?out|(?:can|could) we (?:go back|stop|pause|step out)|let me (?:try|start) (?:that |it )?(?:again|over)|start (?:the pitch )?over|i froze|i'm (?:blanking|frozen))\b/,
+  ],
+  [
+    'defer',
+    /\b(?:(?:come|get|circle) back to (?:that|this|it) (?:later|another time|next time)|(?:park|shelve|table) (?:that|this|it)|(?:let's |can we )?leave (?:that|this|it) (?:for (?:now|later|another time)|aside)|not (?:right )?now,? (?:though|please)?|later,? (?:please|though)|save (?:that|this|it) for (?:later|another time|next time))\b/,
+  ],
+  [
+    'restart',
+    /\b(?:start (?:over|again|from scratch|fresh)|(?:a )?fresh start|from scratch|(?:let's |can we )?(?:reset|restart)(?: (?:this|the conversation|everything))?|forget (?:everything|all (?:of )?that|what (?:i|we) said))\b/,
+  ],
+  [
+    'summary',
+    /\b(?:summar(?:y|ise|ize)|recap|sum (?:it|this|that) up|what (?:did|have) we (?:decide|agree)d?(?: on)?(?: today| in this| so far)?|where did we land)\b/,
+  ],
+  [
+    'complaint',
+    /\b(?:you(?:'re| are) not (?:listening|getting it|helping)|you keep (?:saying|repeating|asking|telling)|you already (?:said|asked|told me)(?: that)?|that(?:'s| is| was) not (?:helpful|what i asked|an answer)|that doesn't (?:help|answer)|you didn't answer|answer my question|(?:this|that|you|your (?:replies|answers))(?:'re| are| is| seem| feel)? (?:so |really |pretty |a bit |kind of )?(?:generic|robotic|repetitive|useless|vague|canned|slow)|(?:replies|answers) (?:seem|are|feel) (?:generic|slow|off)|stop repeating)\b/,
+  ],
+  [
+    'lost_reply',
+    /\b(?:(?:your|the) (?:last )?(?:reply|message|answer|response)s? (?:got )?(?:cut off|didn't (?:come through|load|arrive)|was cut|stopped|broke)|cut off (?:halfway|mid)|(?:got|saw|had) an error|(?:it|that) (?:failed|errored|didn't send|didn't go through)|something went wrong|didn't get your (?:reply|message|answer)|(?:the )?(?:call|line|connection|audio|voice) (?:dropped|cut out|froze|died|stopped working)|lost (?:you|the connection|connection)|i only (?:heard|got) (?:half|part)|(?:sent|sending) (?:it|this|that) again)\b/,
+  ],
+  [
+    'hesitant',
+    /^(?:hmm+|hm+|uh+|um+|i guess|i suppose|maybe|sure\.{2,}|ok\.{2,}|okay\.{2,}|i don't know\.{2,}|if you say so|not sure)[.!?…]*$/,
   ],
 ];
 
@@ -587,19 +643,36 @@ const PREFERENCES: readonly (readonly [string, RegExp])[] = [
   ['yes/no answers', /\b(?:yes(?: or |\/)no(?: answers?| only)|(?:just|only) (?:a )?yes(?: or |\/)no)\b/],
   [
     'short answers',
-    /\b(?:keep (?:it|them|answers?) (?:short|brief)|short answers?|be (?:brief|quick)|no essays?|(?:one|a) (?:line|sentence) (?:answers?|only)|tl;?dr)\b/,
+    /\b(?:keep (?:it|them|answers?|replies) (?:short|brief|tight)|short(?:er)? (?:answers?|replies)|be (?:brief|quick)|no essays?|(?:one|a) (?:line|sentence) (?:answers?|only)|tl;?dr|too long|less text|fewer words|(?:shorter|briefer),? please)\b/,
   ],
   [
     'just the steps',
     /\b(?:just|only) (?:give|tell|list) (?:me|us) the (?:\w+ )?(?:steps|answer|bottom line)\b/,
   ],
   ['no frameworks', /\bno (?:more )?(?:frameworks?|theory|lectures?|jargon)\b/],
+  [
+    'no questions',
+    /\b(?:stop asking(?: me)?(?: so many| all these)? questions|no more questions|(?:don't|do not) ask me (?:any(?:thing| more| questions)|more questions|questions)|(?:fewer|less) questions|without (?:the |all the )?questions|enough (?:with the )?questions|just tell me,? (?:don't|do not|no) ask)\b/,
+  ],
 ];
 
 /** The preferences a message states ({@link PREFERENCES}). */
 export function preferencesOf(text: string): string[] {
   const t = normalize(text);
   return PREFERENCES.filter(([, cue]) => cue.test(t)).map(([label]) => label);
+}
+
+/**
+ * How the founder asked to be answered in this conversation (`earlier` messages oldest first, then `latest`), newest
+ * first and distinct: kept to until they change it (the turn engine also enforces "yes/no answers", "short answers" and
+ * "no questions" on the reply: validators/social.ts budgets, the sentence gate's `noQuestions`).
+ */
+export function statedPreferences(earlier: readonly string[], latest: string): string[] {
+  const out: string[] = [];
+  for (const text of [latest, ...[...earlier].reverse()]) {
+    for (const p of preferencesOf(text)) if (!out.includes(p)) out.push(p);
+  }
+  return out;
 }
 
 /** A first-person plan of their own: what they will do next. */
@@ -804,6 +877,32 @@ export function lastQuestionOf(answer: string): string | null {
   return null;
 }
 
+/**
+ * A reply in character in a role-play: a line for the counterpart ("**Investor:** "…"", "Judge: "…""), or a reply that
+ * is a quoted line and nothing before it (REHEARSE mode, `rehearsal.line`).
+ */
+const IN_ROLE =
+  /(?:^|\n)\s*(?:\*\*|__)?(?:[A-Z][\w'’.-]*)(?: [A-Za-z][\w'’.-]*){0,4}:(?:\*\*|__)?\s*["“]|^\s*(?:\*\*|__)?["“][^"”]{12,}["”]/u;
+
+/** Whether a reply is in character in a role-play ({@link IN_ROLE}). */
+export function inRole(answer: string): boolean {
+  return IN_ROLE.test(answer);
+}
+
+/** Most earlier advice lines reported. */
+export const MAX_ADVICE = 4;
+
+/** The first sentence of a reply that says something (not a greeting, thanks or a question), one bounded line. */
+function adviceLineOf(answer: string): string | null {
+  for (const raw of plain(answer).split(/(?<=[.!?])\s+/)) {
+    const sentence = raw.trim();
+    if (wordCount(sentence) < 6 || sentence.endsWith('?')) continue;
+    if (inRole(sentence)) return null;
+    return truncate(sentence, GIST_CHARS);
+  }
+  return null;
+}
+
 /** A hello and nothing else ("Hi!", "Good morning", "Hi, it's me again", "How are you?"). */
 function onlyGreets(text: string, moves: readonly FounderMove[]): boolean {
   if (!moves.includes('greeting')) return false;
@@ -963,10 +1062,10 @@ export function deriveConversationState(
       escalatedEarlier.push(category);
     }
   }
-  const preferences: string[] = [];
-  for (const text of [founderText, ...turns.map((t) => t.founderText).reverse()]) {
-    for (const p of preferencesOf(text)) if (!preferences.includes(p)) preferences.push(p);
-  }
+  const preferences = statedPreferences(
+    turns.map((t) => t.founderText),
+    founderText,
+  );
   // The founder's first message answers the opener: it is the vEIR's last reply so far.
   const opener = options.opener?.trim() ?? '';
   const afterOpener = turns.length === 0 && opener !== '';
@@ -979,6 +1078,16 @@ export function deriveConversationState(
   }
   const lastAsked = lastQuestionOf(afterOpener ? opener : (turns.at(-1)?.answer ?? ''));
   const moves = founderMoves(founderText);
+  // A role-play under way: the vEIR's latest replies in character, newest first.
+  let inRoleReplies = 0;
+  for (let i = turns.length - 1; i >= 0 && inRole(turns[i]?.answer ?? ''); i -= 1) inRoleReplies += 1;
+  const lastFounder = turns.at(-1)?.founderText ?? '';
+  const duplicate = wordCount(founderText) >= 3 && normalize(lastFounder) === normalize(founderText);
+  const adviceGiven: string[] = [];
+  for (const t of turns.slice(0, -2)) {
+    const line = adviceLineOf(t.answer ?? '');
+    if (line !== null && !adviceGiven.includes(line)) adviceGiven.push(line);
+  }
 
   const prev: Thread | null = previous;
   const open = parked.filter((p) => p !== current).slice(0, MAX_PARKED);
@@ -1008,6 +1117,9 @@ export function deriveConversationState(
     openQuestion: lastAsked !== null && !takesUp(lastAsked, founderText, moves),
     earlierTurns: turns.length,
     afterOpener,
+    inRoleReplies,
+    duplicate,
+    adviceGiven: adviceGiven.slice(-MAX_ADVICE),
   };
 }
 
@@ -1026,6 +1138,14 @@ const MOVE_LABELS: Readonly<Record<FounderMove, string>> = {
   short_reply: 'is a short reply to your last message',
   question: 'asks a question',
   help: 'asks you to do it, or says they are stuck',
+  rehearse: 'asks to practise a conversation with you playing the other side',
+  step_out: 'steps out of the practice',
+  defer: 'parks something for later',
+  restart: 'wants a fresh start',
+  summary: 'asks for a summary',
+  complaint: 'is unhappy with your replies',
+  lost_reply: 'says a reply or the connection failed',
+  hesitant: 'sounds unsure',
 };
 
 /** Moves worth reporting even on the first message of a conversation. */
@@ -1042,6 +1162,14 @@ const NOTABLE: ReadonlySet<FounderMove> = new Set([
   'sarcasm',
   'news',
   'help',
+  'rehearse',
+  'step_out',
+  'defer',
+  'restart',
+  'summary',
+  'complaint',
+  'lost_reply',
+  'hesitant',
 ]);
 
 function quoted(text: string): string {
@@ -1065,7 +1193,9 @@ export function renderConversationState(state: ConversationState): string {
     state.wrapUp === true ||
     state.aboutOthers === true ||
     (state.escalatedEarlier ?? []).length > 0 ||
-    (state.preferences ?? []).length > 0;
+    (state.preferences ?? []).length > 0 ||
+    state.duplicate === true ||
+    (state.inRoleReplies ?? 0) > 0;
   if (state.earlierTurns === 0 && !notable && !state.afterOpener) return '';
   const what = state.moves.map((m) => MOVE_LABELS[m]);
   const length =
@@ -1110,9 +1240,18 @@ export function renderConversationState(state: ConversationState): string {
     );
   }
   if ((state.preferences ?? []).length > 0) {
-    lines.push(
-      `- They asked for ${(state.preferences ?? []).join(' and ')}: keep to it until they say otherwise.`,
-    );
+    const prefs = state.preferences ?? [];
+    lines.push(`- They asked for ${prefs.join(' and ')}: keep to it until they say otherwise.`);
+    // Live pilot 42124259353: "yes or no answers only" was answered "Yes." to a statement and to "raise or keep?".
+    if (prefs.includes('yes/no answers')) {
+      lines.push(
+        '  A yes/no question gets yes or no and one short reason; "this or that" gets the pick in a few words; a',
+        '  statement gets a few words of acknowledgement. Never a bare "Yes." to anything else.',
+      );
+    }
+    if (prefs.includes('no questions')) {
+      lines.push('  No questions at all: say what you recommend and why, in statements.');
+    }
   }
   if (state.moves.includes('news')) {
     lines.push(
@@ -1145,6 +1284,90 @@ export function renderConversationState(state: ConversationState): string {
         `- They handed your question back (${quoted(handedBack)}): answer it yourself now, concretely.`,
       );
     }
+  }
+  if (state.duplicate === true) {
+    lines.push(
+      '- They sent the same message as last time (most likely a resend): do not answer it as new. Say in a few words',
+      '  that it looks like a repeat and add only what your last reply left out, or ask whether they meant something else.',
+    );
+  }
+  if (state.moves.includes('lost_reply')) {
+    lines.push(
+      '- Something failed on their side (a reply cut off, an error, a dropped line): give briefly what they missed, from',
+      '  where it broke; never start over, recap everything or introduce yourself again.',
+    );
+  }
+  if (state.moves.includes('complaint')) {
+    lines.push(
+      '- They are unhappy with your replies: own it in a few plain words (no excuses, no technical talk, no apology',
+      '  loop), then give something specific and new on what they actually asked.',
+    );
+  }
+  if (state.moves.includes('restart')) {
+    lines.push(
+      '- They want a fresh start: drop your earlier framing and advice and take their message as the beginning; keep',
+      '  only the facts they gave. No recap of what came before.',
+    );
+  }
+  if (state.moves.includes('summary')) {
+    lines.push(
+      '- They want a summary: the decisions and next steps of this conversation only, briefly (a short list is fine);',
+      '  nothing new, no question.',
+    );
+  }
+  if (state.moves.includes('defer')) {
+    const parkedNow = state.previous?.gist ?? null;
+    lines.push(
+      parkedNow === null
+        ? '- They parked something for later: drop it now; bring it back once, later, at a natural moment.'
+        : `- They parked ${quoted(parkedNow)} for later: drop it now; bring it back once, later, at a natural moment.`,
+    );
+  }
+  if (state.moves.includes('topic_shift')) {
+    lines.push(
+      '- They changed the subject: follow them fully. Do not steer back to the earlier thread unless they return to it.',
+    );
+  }
+  if (state.moves.includes('hesitant') && state.earlierTurns > 0) {
+    lines.push(
+      '- A short, unsure reply: check lightly, in one line, whether your last suggestion fits or something is off,',
+      '  instead of ploughing on.',
+    );
+  }
+  const rolePlaying = (state.inRoleReplies ?? 0) > 0;
+  if (rolePlaying && (state.moves.includes('step_out') || state.moves.includes('summary'))) {
+    lines.push(
+      '- They stepped out of the role-play: answer as yourself at once (say you are stepping out). Give two or three',
+      '  focused points (what worked, the one thing to fix, a stronger line they could use) or answer what they asked,',
+      '  then offer to go back in.',
+    );
+  } else if (rolePlaying && (state.moves.includes('topic_shift') || state.moves.includes('stress'))) {
+    lines.push(
+      '- They left the role-play for something real: pause it, answer as yourself, then offer to resume.',
+    );
+  } else if (rolePlaying) {
+    const n = state.inRoleReplies ?? 0;
+    lines.push(
+      '- You are role-playing: stay in character for their answer. React as that person would, in a line or two: one',
+      '  pointed follow-up, or cut in on a vague, inflated or unsupported claim. Never a new question unrelated to it.',
+      ...(n >= 2
+        ? [
+            `  Your last ${n} replies were all in character: after this answer, step out briefly with two or three focused`,
+            '  points (what worked, the one thing to fix, a stronger line), then offer to go on.',
+          ]
+        : []),
+    );
+  } else if (state.moves.includes('rehearse')) {
+    lines.push(
+      '- They want to practise: play the person they name (else the obvious one for their situation, and say who) in',
+      "  character, starting with that person's first question or opening line. No preamble, rules or homework.",
+    );
+  }
+  if ((state.adviceGiven ?? []).length > 0) {
+    lines.push(
+      `- Earlier in this conversation you already said: ${(state.adviceGiven ?? []).map(quoted).join(' | ')}. Build on`,
+      '  it; never give it again.',
+    );
   }
   const asks = state.moves.includes('help') || state.moves.includes('question');
   const aboutNotes = state.moves.includes('recall') || state.moves.includes('resume');

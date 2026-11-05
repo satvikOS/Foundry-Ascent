@@ -157,6 +157,7 @@ export class AppStack extends Stack {
       OWNER_DISPLAY_NAME: config.owner.displayName,
       HOME_TENANT_SLUG: config.homeTenant.slug,
       HOME_TENANT_NAME: config.homeTenant.name,
+      SEED_OWNER_RELEASES: config.homeTenant.ownerReleases.join(','),
       SPEECH_ENABLED: String(config.speech.enabled),
       SPEECH_ENGINE: config.speech.engine,
       MEDIA_FACE_PROVIDER: config.media.face.provider,

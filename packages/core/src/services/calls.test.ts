@@ -662,6 +662,21 @@ describe('the call intro', () => {
     expect(openerKept(null, plan)).toBe(plan);
   });
 
+  it('introduces Thomas, a mentor under his own name, as "I\'m Thomas" and nothing about what he is (ADR-0021)', () => {
+    const intro = callIntro({
+      firstName: 'Mina',
+      personaName: 'Thomas',
+      eirFirstName: null,
+      mentor: true,
+      firstMeeting: true,
+      opener: null,
+      conversationStarted: false,
+      seed: 'a',
+    });
+    expect(intro.text).toBe("Hi Mina, I'm Thomas. What would you like to work on?");
+    expect(intro.text).not.toMatch(/vEIR|digital twin|AI coach/);
+  });
+
   it('introduces the vEIR once, on a first meeting, as its EIR’s digital twin (never "an AI coach" again)', () => {
     expect(
       callIntroText({

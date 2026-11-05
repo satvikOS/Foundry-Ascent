@@ -230,7 +230,7 @@ interface Coach {
   readonly allowedModes: readonly CoachMode[];
   readonly personaEirName: string | null;
   /** How the vEIR is present to this venture's founders (first-person consent, the EIR sees the work). */
-  readonly presence: Pick<personasRepo.PersonaPresence, 'firstPerson' | 'eirSeesWork'>;
+  readonly presence: Pick<personasRepo.PersonaPresence, 'firstPerson' | 'eirSeesWork' | 'mentor'>;
   /** Earlier completed turns, oldest first (at most `historyTurns`). */
   readonly history: readonly turnsRepo.TurnRecord[];
   /**

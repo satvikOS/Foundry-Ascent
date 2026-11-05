@@ -2,8 +2,10 @@
 
 live-check [--json]                       dataset schema, distinctness and overlap; exits 1 on any failure
 live-plan --families F --sample N --repeats R --seed S --budget-usd B [--concurrency C] [--ids ...]
-          [--github-output FILE]          the selection, the dry-run cost estimate and the shard split; exits 3
-                                          when the estimate exceeds the budget
+          [--coach-model default|<live.coach id>] [--github-output FILE]
+                                          the selection, the dry-run cost estimate (for the chosen coach, with a
+                                          judge of another family) and the shard split; exits 3 when the estimate
+                                          exceeds the budget
 live-merge --out DIR SUMMARY.json...      shards' public summaries into one (numbers only)
 live-calibration packet --private DIR... --out DIR [--size 60] [--seed N]
 live-calibration agreement --key key.json --form form.csv
@@ -57,7 +59,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
-    from conversation_lab.config import lab_models
+    from conversation_lab.config import DEFAULT_COACH, app_models, coach_app_models, judges_for, lab_models
     from conversation_lab.live.dataset import load, overlap
     from conversation_lab.live.plan import estimate, parse_families, select, shard
 
@@ -77,31 +79,40 @@ def cmd_plan(args: argparse.Namespace) -> int:
             raise ValueError("the selection is empty")
         lab = lab_models()
         by = dataset.by_id()
+        choice = getattr(args, "coach_model", None) or DEFAULT_COACH
+        coach = coach_app_models(choice, lab).primary
+        coach_arg = None if choice == DEFAULT_COACH else choice
+        # The judge is of another model family than the coach (a Claude coach: Llama 4 Maverick, then Nova Premier).
+        judges = judges_for(coach, lab.live_judge)
         first = estimate(
             picks,
             by,
             prices=lab.prices,
             student_model=lab.live_simulator[0],
-            judge_model=lab.live_judge[0],
+            judge_model=judges[0],
             concurrency=args.concurrency,
+            coach_model=coach_arg,
         )
         fallback = estimate(
             picks,
             by,
             prices=lab.prices,
             student_model=lab.live_simulator[-1],
-            judge_model=lab.live_judge[-1],
+            judge_model=judges[-1],
             concurrency=args.concurrency,
+            coach_model=coach_arg,
         )
         shards = shard(
             picks,
             by,
             prices=lab.prices,
             student_model=lab.live_simulator[0],
-            judge_model=lab.live_judge[0],
+            judge_model=judges[0],
             budget_usd=args.budget_usd,
             concurrency=args.concurrency,
+            coach_model=coach_arg,
         )
+        production = app_models().primary
     except ValueError as exc:
         print(f"live-plan: {exc}", file=sys.stderr)
         return 2
@@ -116,6 +127,13 @@ def cmd_plan(args: argparse.Namespace) -> int:
             "scenario_runs": len(picks),
         },
         "budget_usd": args.budget_usd,
+        "coach": {
+            "choice": choice,
+            "model": coach,
+            "production_model": production,
+            "judges": list(judges),
+            "note": "the lab's API only; production's models are unchanged",
+        },
         "estimate": first,
         "estimate_if_nova_fallbacks": fallback["usd"],
         "within_budget": total <= args.budget_usd,
@@ -209,6 +227,11 @@ def add_commands(sub: Any) -> None:
     plan.add_argument("--budget-usd", type=float, required=True)
     plan.add_argument("--concurrency", type=int, default=4)
     plan.add_argument("--github-output", default=None)
+    plan.add_argument(
+        "--coach-model",
+        default="default",
+        help="default (production's models) or one of ops/lab/models.json live.coach (the lab's API only)",
+    )
     plan.set_defaults(func=cmd_plan)
 
     merge = sub.add_parser("live-merge", help="merge shard summaries (numbers only)")

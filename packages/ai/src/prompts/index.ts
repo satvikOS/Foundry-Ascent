@@ -51,8 +51,10 @@ export {
   founderMoves,
   gistOf,
   openingOf,
+  inRole,
   preferencesOf,
   renderConversationState,
+  statedPreferences,
   socialTurnOf,
   wrapUpOf,
 } from './conversation-state.js';

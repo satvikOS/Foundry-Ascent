@@ -27,7 +27,15 @@ export interface LabModels {
    * The live evaluation's own candidates (`live` in models.json): a student simulator and a judge from model
    * families other than the app's, falling back to Nova. Empty when the file has no `live` section.
    */
-  readonly live: { readonly simulator: readonly string[]; readonly judge: readonly string[] };
+  readonly live: {
+    readonly simulator: readonly string[];
+    readonly judge: readonly string[];
+    /**
+     * Alternative coach models a lab run may put the app's coach on for an A/B (`coach_model` of ops-live-evals.yml):
+     * the lab's API process only, never production's configuration. Empty when absent.
+     */
+    readonly coach: readonly string[];
+  };
   /** Foundation-model id → USD per million input / output tokens (what the lab meters its own calls at). */
   readonly usdPerMillionTokens: Readonly<Record<string, { readonly input: number; readonly output: number }>>;
 }
@@ -56,7 +64,7 @@ export function parseLabModels(raw: unknown): LabModels {
   const root = raw as Record<string, unknown>;
   const simulator = modelList(root.simulator, '$.simulator');
   const judge = modelList(root.judge, '$.judge');
-  let live: LabModels['live'] = { simulator: [], judge: [] };
+  let live: LabModels['live'] = { simulator: [], judge: [], coach: [] };
   if (root.live !== undefined) {
     if (typeof root.live !== 'object' || root.live === null || Array.isArray(root.live))
       fail('$.live', 'must be an object');
@@ -64,6 +72,7 @@ export function parseLabModels(raw: unknown): LabModels {
     live = {
       simulator: modelList(l.simulator, '$.live.simulator'),
       judge: modelList(l.judge, '$.live.judge'),
+      coach: l.coach === undefined ? [] : modelList(l.coach, '$.live.coach'),
     };
   }
   const prices = root.usdPerMillionTokens;
@@ -84,7 +93,7 @@ export function parseLabModels(raw: unknown): LabModels {
     }
     usdPerMillionTokens[id] = { input: p.input, output: p.output };
   }
-  for (const id of [...simulator, ...judge, ...live.simulator, ...live.judge]) {
+  for (const id of [...simulator, ...judge, ...live.simulator, ...live.judge, ...live.coach]) {
     if (!Object.hasOwn(usdPerMillionTokens, foundationModelId(id)))
       fail('$.usdPerMillionTokens', `has no price for ${foundationModelId(id)}`);
   }
@@ -97,10 +106,13 @@ export const LAB_MODELS: LabModels = parseLabModels(
 
 /**
  * Every Bedrock resource the lab invokes: the app's effective reasoning and embeddings models (it runs the app
- * with the production model configuration) and the lab's simulator and judge models, the live evaluation's included.
+ * with the production model configuration) and the lab's simulator and judge models, the live evaluation's included,
+ * and the alternative coach models a lab run may run the app's coach on (`live.coach`: an A/B, the lab only).
  */
 export function conversationLabAccess(app: EffectiveModels, lab: LabModels): BedrockRuntimeAccess {
-  const own = [...new Set([...lab.simulator, ...lab.judge, ...lab.live.simulator, ...lab.live.judge])];
+  const own = [
+    ...new Set([...lab.simulator, ...lab.judge, ...lab.live.simulator, ...lab.live.judge, ...lab.live.coach]),
+  ];
   const parts = [reasoningAccess(app), embeddingsAccess(app)];
   const ownAccess: BedrockRuntimeAccess = {
     foundationModels: own.map(foundationModelId),

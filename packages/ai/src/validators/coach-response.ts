@@ -30,7 +30,9 @@ import {
 } from './identity.js';
 import { sanitizeMarkdown, sanitizePlainText } from './markdown.js';
 import { contentWords, founderMoves, socialTurnOf, type SocialTurn } from '../prompts/conversation-state.js';
+import { inventedFigures, withoutExampleFigures } from './figures.js';
 import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
+import { nameUsedRecently, withoutStockOpener, withoutVocativeName } from './openers.js';
 import { cutMetaNarration } from './meta-narration.js';
 import {
   NEWS_FALLBACK,
@@ -106,6 +108,8 @@ export interface ValidateCoachResponseOptions {
    * "<first name>'s vEIR" persona name and `eirNames` when omitted.
    */
   personaEirName?: string | null;
+  /** An AI mentor under its own name ("Thomas", ADR-0021; `IdentityCheckOptions.mentor`). */
+  mentor?: boolean;
   /**
    * Display names of the founder and venture team the reply may address. "Thanks, Ruth." ending a reply
    * to a founder called Ruth addresses her; without it, an EIR named Ruth is read as signing off.
@@ -149,6 +153,13 @@ export interface ValidateCoachResponseOptions {
    * hello left to pick up the last conversation). Omitted: read from `founderText`.
    */
   social?: SocialTurn | null;
+  /** The founder asked for no more questions: a reply's questions after its substance are left out (as the gate does). */
+  noQuestions?: boolean;
+  /**
+   * What the founder said and the sources shown: the figures of the answer nobody gave are counted on the turn record
+   * (`invented_figure:n`, `proposed_figure:n`), and an aside offering one as an example is left out (validators/figures.ts).
+   */
+  knownFigures?: string;
   /**
    * The founder's message this response answers. When it sincerely asks who or what the coach is ("are you
    * real?"), the honest answer stands as written: no volunteered disclaimer is rewritten out of the reply.
@@ -476,6 +487,7 @@ export function validateCoachResponse(
     personaName,
     ...(options.eirNames ? { eirNames: options.eirNames } : {}),
     ...(options.personaEirName !== undefined ? { personaEirName: options.personaEirName } : {}),
+    ...(options.mentor === true ? { mentor: true } : {}),
     ...(options.addressees ? { addressees: options.addressees } : {}),
   };
   const question =
@@ -519,9 +531,52 @@ export function validateCoachResponse(
       if (trimmed !== out && note) notes.push('social_reply_trimmed');
       out = trimmed;
     }
+    // What the gate does to a streamed reply (validators/openers.ts, figures.ts), for a reply written whole.
+    if (options.released !== true) {
+      if (!identityAsked) {
+        const opener = withoutStockOpener(out, {
+          names: greetingNames,
+          ...(options.founderText === undefined ? {} : { founderText: options.founderText }),
+        });
+        if (opener.removed) {
+          if (note) notes.push('stock_opener_removed');
+          out = opener.text;
+        }
+      }
+      // Newest first: the previous reply, then the earlier ones from the latest back.
+      if (
+        nameUsedRecently(options.founderName, [
+          options.previousReply,
+          ...[...(options.earlierReplies ?? [])].reverse(),
+        ])
+      ) {
+        const named = withoutVocativeName(out, options.founderName, { spoken: !note });
+        if (named.removed > 0 && note) notes.push(`name_removed:${named.removed}`);
+        out = named.text;
+      }
+      if (options.knownFigures !== undefined) {
+        const figures = withoutExampleFigures(out, options.knownFigures);
+        if (figures.removed > 0 && note) notes.push(`example_figure_removed:${figures.removed}`);
+        out = figures.text;
+      }
+      if (options.noQuestions === true) {
+        const sentences = out.split(/(?<=[.!?…]["'”’)\]*_]*)\s+/u);
+        const statements = sentences.filter((x) => !/\?["'”’)\]*_]*$/u.test(x.trim()));
+        if (statements.length > 0 && statements.length < sentences.length) {
+          if (note) notes.push(`questions_removed:${sentences.length - statements.length}`);
+          out = statements.join(' ');
+        }
+      }
+    }
     return out;
   };
   r.answer = crafted(r.answer, true);
+  // Figures nobody gave (counted; the lab's checks read the same split: live pilot 42124259353).
+  if (options.knownFigures !== undefined) {
+    const invented = inventedFigures(r.answer, options.knownFigures);
+    if (invented.unsourced.length > 0) notes.push(`invented_figure:${invented.unsourced.length}`);
+    if (invented.proposed.length > 0) notes.push(`proposed_figure:${invented.proposed.length}`);
+  }
   // A reply that announces more steps than it gives, or skips a number (counted, for the turn record and the lab).
   if (announcedCountGap(r.answer) !== null) notes.push('announced_count_gap');
   if (md.htmlRemoved > 0) notes.push(`html_removed:${md.htmlRemoved}`);
