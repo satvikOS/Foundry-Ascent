@@ -1,0 +1,15 @@
+{
+  "code": 1000,
+  "data": {
+    "id": "8a4e6b2c-1d3f-4e5a-b7c9-0f2e4d6a8b13",
+    "name": "Fake Voice Two",
+    "description": null,
+    "language": "English",
+    "gender": "female",
+    "created_at": "2026-02-01T00:00:00Z",
+    "updated_at": "2026-02-01T00:00:00Z",
+    "tags": [],
+    "voice_engines": ["fish", "cartesia"]
+  },
+  "message": "Success"
+}

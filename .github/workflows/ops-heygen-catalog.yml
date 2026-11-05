@@ -1,0 +1,111 @@
+name: Ops - HeyGen catalogue
+
+# Lists HeyGen LiveAvatar's stock avatars and voices with the owner's key (the repository secret
+# HEYGEN_LIVEAVATAR_API), so the vEIR's stock face can be chosen from what the account can actually use:
+# ops/aws/heygen_catalog.py reads GET /v1/avatars/public, /v1/voices (public, with each voice's engines) and
+# /v1/users/credits, validates every response against the vendor's published OpenAPI document, and marks each
+# avatar usable in LITE, in FULL, in the sandbox (Wayne only) and outside the sandbox on the account's credits.
+# Read-only: it starts no session and uses no credits. Run it by hand; the result is the run's `heygen-catalog`
+# artifact (catalog.json and catalog.md: names, ids, default voices, preview links and the credits left), kept
+# 7 days.
+#
+# THE REPOSITORY IS PUBLIC: the key is masked, never echoed and never on a command line (it reaches the script
+# through its environment and goes out only in the X-API-KEY header to api.liveavatar.com, redirects refused), and
+# the script refuses to write any output holding a piece of it. The public step summary holds fixed words and counts
+# only. An empty or unset repository secret skips cleanly. The job runs the repository's own standard-library
+# script and installs nothing.
+#
+# Same gate as Ops - sync HeyGen key: main only, the `production` environment, no token permissions beyond reading
+# the repository.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ops-heygen-catalog
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  catalog:
+    name: HeyGen catalogue
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Check the repository secret
+        id: key
+        env:
+          HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API }}
+        run: |
+          if [ -z "${HEYGEN_KEY}" ]; then
+            echo "::notice::The repository secret HEYGEN_LIVEAVATAR_API is empty or not set: nothing to list."
+            echo "present=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          # Mask every line, as given and without surrounding whitespace (as Ops - sync HeyGen key does).
+          printf '%s\n' "${HEYGEN_KEY}" | while IFS= read -r line; do
+            trimmed="${line#"${line%%[![:space:]]*}"}"
+            trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+            if [ -n "${line}" ]; then echo "::add-mask::${line}"; fi
+            if [ -n "${trimmed}" ] && [ "${trimmed}" != "${line}" ]; then echo "::add-mask::${trimmed}"; fi
+          done
+          key="${HEYGEN_KEY#"${HEYGEN_KEY%%[![:space:]]*}"}"
+          key="${key%"${key##*[![:space:]]}"}"
+          if [ "${#key}" -lt 16 ] || [ "${#key}" -gt 1024 ] || [[ ! "${key}" =~ ^[A-Za-z0-9._~+/=:_-]+$ ]]; then
+            echo "::error::HEYGEN_LIVEAVATAR_API is not a single API key (16 to 1024 letters, digits or ._~+/=:_- without spaces or quotes). Set it again under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          echo "present=true" >> "${GITHUB_OUTPUT}"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.key.outputs.present == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: steps.key.outputs.present == 'true'
+        with:
+          python-version: '3.12'
+
+      - name: List avatars and voices
+        id: catalog
+        if: steps.key.outputs.present == 'true'
+        env:
+          HEYGEN_API_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API }}
+        run: |
+          python -I ops/aws/heygen_catalog.py --out-dir "${RUNNER_TEMP}/heygen-catalog" --summary "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload the catalogue
+        if: steps.catalog.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: heygen-catalog
+          path: |
+            ${{ runner.temp }}/heygen-catalog/catalog.json
+            ${{ runner.temp }}/heygen-catalog/catalog.md
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Job summary
+        if: always() && steps.catalog.outcome != 'success'
+        env:
+          PRESENT: ${{ steps.key.outputs.present }}
+        run: |
+          # Fixed words only (step summaries are not covered by ::add-mask::).
+          case "${PRESENT}" in
+            false) result="skipped: the repository secret HEYGEN_LIVEAVATAR_API is empty or not set" ;;
+            *) result="not listed (see the log)" ;;
+          esac
+          {
+            echo "### HeyGen LiveAvatar catalogue"
+            echo
+            echo "${result}"
+          } >> "${GITHUB_STEP_SUMMARY}"

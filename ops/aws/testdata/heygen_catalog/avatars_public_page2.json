@@ -1,0 +1,44 @@
+{
+  "code": 1000,
+  "data": {
+    "count": 4,
+    "next": null,
+    "previous": "https://api.liveavatar.com/v1/avatars/public?page=1",
+    "results": [
+      {
+        "id": "09919247-f4b2-45d8-a75e-86fc2fceaebf",
+        "space_id": null,
+        "type": "VIDEO",
+        "status": "ACTIVE",
+        "name": "Katya in Pink Suit",
+        "preview_url": "https://files.liveavatar.example/previews/katya.png",
+        "default_voice": null,
+        "default_voice_agent_id": null,
+        "is_1080p": true,
+        "created_at": "2026-01-12T09:30:00Z",
+        "updated_at": "2026-10-01T12:00:00.123456Z",
+        "is_expired": false,
+        "error_message": null
+      },
+      {
+        "id": "6b0e2f4a-8c1d-4e3b-9f5a-7d2c0e4b6a81",
+        "space_id": null,
+        "type": "VIDEO",
+        "status": "DEACTIVATED",
+        "name": "Retired | Look",
+        "preview_url": null,
+        "default_voice": {
+          "id": "8a4e6b2c-1d3f-4e5a-b7c9-0f2e4d6a8b13",
+          "name": "Fake Voice Two"
+        },
+        "default_voice_agent_id": null,
+        "is_1080p": false,
+        "created_at": "2026-01-12T09:30:00Z",
+        "updated_at": "2026-10-01T12:00:00.123456Z",
+        "is_expired": true,
+        "error_message": null
+      }
+    ]
+  },
+  "message": "Success"
+}

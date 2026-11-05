@@ -1,0 +1,47 @@
+{
+  "code": 1000,
+  "data": {
+    "count": 4,
+    "next": "https://api.liveavatar.com/v1/avatars/public?page=2",
+    "previous": null,
+    "results": [
+      {
+        "id": "dd73ea75-1218-4ef3-92ce-606d5f7fbc0a",
+        "space_id": null,
+        "type": "VIDEO",
+        "status": "ACTIVE",
+        "name": "Wayne",
+        "preview_url": "https://files.liveavatar.example/previews/wayne.webp",
+        "default_voice": {
+          "id": "5f1c2a7e-0b3d-4c8e-9a61-2d7f4b8c9e01",
+          "name": "Fake Voice One"
+        },
+        "default_voice_agent_id": null,
+        "is_1080p": false,
+        "created_at": "2026-01-12T09:30:00Z",
+        "updated_at": "2026-10-01T12:00:00.123456Z",
+        "is_expired": false,
+        "error_message": null
+      },
+      {
+        "id": "03f8332d-9046-42a1-bff3-3b2309f77b58",
+        "space_id": null,
+        "type": "VIDEO",
+        "status": "ACTIVE",
+        "name": "Graham in Black Suit",
+        "preview_url": "https://files.liveavatar.example/previews/graham.png",
+        "default_voice": {
+          "id": "5f1c2a7e-0b3d-4c8e-9a61-2d7f4b8c9e01",
+          "name": "Fake Voice One"
+        },
+        "default_voice_agent_id": null,
+        "is_1080p": true,
+        "created_at": "2026-01-12T09:30:00Z",
+        "updated_at": "2026-10-01T12:00:00.123456Z",
+        "is_expired": false,
+        "error_message": null
+      }
+    ]
+  },
+  "message": "Success"
+}

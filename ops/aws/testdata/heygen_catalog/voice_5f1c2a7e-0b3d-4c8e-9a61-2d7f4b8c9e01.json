@@ -1,0 +1,15 @@
+{
+  "code": 1000,
+  "data": {
+    "id": "5f1c2a7e-0b3d-4c8e-9a61-2d7f4b8c9e01",
+    "name": "Fake Voice One",
+    "description": "A recorded fake voice",
+    "language": "English",
+    "gender": "male",
+    "created_at": "2026-02-01T00:00:00Z",
+    "updated_at": "2026-02-01T00:00:00Z",
+    "tags": ["calm", "narration"],
+    "voice_engines": ["elevenLabs"]
+  },
+  "message": "Success"
+}

@@ -324,7 +324,11 @@ origins as LITE.
    Free plan is not usable (5 FULL minutes a month, 2-minute sessions, a watermark).
 4. **Pick the avatar and voice** from the stock list (`GET /v1/avatars/public`, each with `default_voice` and
    `is_1080p`; voice previews from `GET /v1/voices`, preferring the `elevenLabs` engine) and give us the two ids.
-   Ids are not secrets; the key is.
+   Ids are not secrets; the key is. **Actions › Ops - HeyGen catalogue › Run workflow** (branch `main`) lists them
+   with the key: its `heygen-catalog` artifact (`catalog.md`, `catalog.json`) has every stock avatar's name, id,
+   preview link and default voice (with that voice's gender and language: avatars carry no gender, age or style
+   field), whether it can be used in LITE, in FULL, in the sandbox (Wayne only) and outside the sandbox on the
+   credits left, and every stock voice with its engines. The run's public summary shows counts only.
 
 ### 9.4 Turning it on (us, after review)
 

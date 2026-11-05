@@ -1,0 +1,31 @@
+{
+  "code": 1000,
+  "data": {
+    "count": 2,
+    "next": null,
+    "previous": null,
+    "results": [
+      {
+        "id": "5f1c2a7e-0b3d-4c8e-9a61-2d7f4b8c9e01",
+        "name": "Fake Voice One",
+        "description": "A recorded fake voice",
+        "language": "English",
+        "gender": "male",
+        "created_at": "2026-02-01T00:00:00Z",
+        "updated_at": "2026-02-01T00:00:00Z",
+        "tags": ["calm", "narration"]
+      },
+      {
+        "id": "8a4e6b2c-1d3f-4e5a-b7c9-0f2e4d6a8b13",
+        "name": "Fake Voice Two",
+        "description": null,
+        "language": "English",
+        "gender": "female",
+        "created_at": "2026-02-01T00:00:00Z",
+        "updated_at": "2026-02-01T00:00:00Z",
+        "tags": []
+      }
+    ]
+  },
+  "message": "Success"
+}

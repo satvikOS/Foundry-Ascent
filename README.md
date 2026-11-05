@@ -86,7 +86,7 @@ config change ([ADR-0014](docs/architecture/adr/0014-bedrock-models-luna-nova-ti
 | [`infra/cdk`](infra/cdk)                   | AWS CDK app: Foundation, Data and App stacks, cdk-nag, tests                                                                                 |
 | [`infra/iam`](infra/iam)                   | The permissions boundary and the (retired) stage-0 IAM policies                                                                              |
 | [`evals`](evals)                           | Python scenario benchmark and red-team suite against a running API                                                                           |
-| [`ops/aws`](ops/aws)                       | Python ops tooling: inventory, access verification, legacy cleanup, policy upsert                                                            |
+| [`ops/aws`](ops/aws)                       | Python ops tooling: inventory, access verification, legacy cleanup, policy upsert, HeyGen avatar catalogue                                   |
 | [`scripts/smoke.mjs`](scripts/smoke.mjs)   | Post-deploy smoke test                                                                                                                       |
 | [`docs`](docs)                             | [Blueprints](docs/blueprints), [system design](docs/architecture/system-design.md), [ADRs](docs/architecture/adr), [runbooks](docs/runbooks) |
 
