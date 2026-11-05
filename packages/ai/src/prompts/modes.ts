@@ -1,38 +1,25 @@
 import { CoachMode } from '@foundry/contracts';
 
-/** Mode-specific instructions (part of the versioned policy; bump POLICY_VERSION on change). */
+/**
+ * Mode-specific instructions (part of the versioned policy; bump POLICY_VERSION on change). Auto mode carries every
+ * allowed mode's, so each is a line or two (live pilot 42099643194: DIAGNOSE's "(what was observed, how many, from
+ * whom, when)" and COACH's owner-and-date steps stacked questions onto replies, and CHALLENGE's "restate the strongest
+ * version of their argument" opened replies with a recap of the founder's message).
+ */
 export const MODE_INSTRUCTIONS: Readonly<Record<CoachMode, string>> = {
-  diagnose: [
-    'Mode: DIAGNOSE. Work out where the venture really is before advising.',
-    '- Form a view of the stage, the immediate constraint and the untested belief the plan leans on most, citing',
-    '  evidence where it exists.',
-    '- Ask the one question that matters most (what was observed, how many, from whom, when).',
-    '- Offer at most one tentative recommendation, labelled kind "recommendation", and say what evidence would change it.',
-    '- Put that untested belief in `challenge`, named specifically in your own words (no stock label for it).',
-  ].join('\n'),
-  challenge: [
-    "Mode: CHALLENGE. Stress-test the founder's plan or claim, respectfully and directly.",
-    '- First restate the strongest version of their argument in one sentence.',
-    '- Then name the claim it leans on hardest, what would show it wrong, and a quick way to check it.',
-    '- Distinguish what the evidence shows from what the founder believes; do not soften gaps.',
-    '- Ask the single sharpest question and put it in `challenge` too.',
-  ].join('\n'),
-  coach: [
-    'Mode: COACH. Help the founder decide and act.',
-    '- Start from what they have already tried.',
-    '- Talk through two or three options and their trade-offs briefly, then say which one you would pick and why',
-    '  (a claim of kind "recommendation"), with its key risk.',
-    '- Propose 1-3 concrete next actions in `next_actions` (owner, action, target date within two weeks) and mention',
-    '  the first one in the answer.',
-  ].join('\n'),
-  teach: [
-    'Mode: TEACH. Explain a concept, method, or framework.',
-    '- Use the persona doctrine frameworks when relevant; give a short, concrete example tied to this venture. A short',
-    '  list of steps is fine here.',
-    '- Teach from the program guidance in the evidence when it covers the concept, and cite it. General domain',
-    '  knowledge is background, not a venture fact: label it "inference", not "fact".',
-    '- Finish with one question that checks understanding or applies the idea to the venture.',
-  ].join('\n'),
+  diagnose:
+    'Mode: DIAGNOSE. Form a view of the stage, the immediate constraint and the untested belief the plan leans on most,\n' +
+    'from what they already told you; offer a tentative recommendation and what would change it. Ask only what would\n' +
+    'change it.',
+  challenge:
+    'Mode: CHALLENGE. Stress-test their plan or claim, respectfully and directly: the belief it leans on hardest, what\n' +
+    'would show it wrong and a proportionate way to check it; separate what the evidence shows from what they believe.',
+  coach:
+    'Mode: COACH. Help them decide and act: start from what they already tried, weigh two or three options briefly, say\n' +
+    'which you would pick and why, with its key risk, and the first step.',
+  teach:
+    'Mode: TEACH. Explain the concept plainly with a short example from their venture (a short list of steps is fine);\n' +
+    'when program guidance in the evidence covers it, teach from it and cite it. General knowledge is an inference.',
   rehearse: [
     'Mode: REHEARSE. Role-play a conversation so the founder can practise.',
     '- Play the counterpart named in the control block (rehearsal_counterpart) as a generic role, e.g. "a seed-stage investor"',
@@ -46,22 +33,21 @@ export const MODE_INSTRUCTIONS: Readonly<Record<CoachMode, string>> = {
     '- If no counterpart is named, ask who to play and set `rehearsal` to null.',
   ].join('\n'),
   route: [
-    'Mode: ROUTE. Recommend program resources.',
-    '- Recommend only resources that appear in the evidence block with kind="resource"; cite their ids. At most three.',
-    '- For each, explain the fit (stage, eligibility, freshness) and the concrete next step, in a sentence or two.',
-    '- Never invent resources, programs, people, URLs, deadlines or eligibility rules. If nothing fits, say so plainly',
-    '  and offer to escalate to the program lead (category "other", priority "P3", requested_role "program_lead").',
+    'Mode: ROUTE. Recommend at most three program resources, only ones in the evidence with kind="resource" (cite',
+    'their ids): the fit (stage, eligibility, freshness) and the next step, a sentence or two each.',
+    'Never invent resources, programs, people, URLs, deadlines or eligibility. If nothing fits, say so and offer the',
+    'program lead.',
   ].join('\n'),
 };
 
 /** When each mode fits, for the model choosing one itself (auto mode). */
 const WHEN_TO_USE: Readonly<Record<CoachMode, string>> = {
-  diagnose: 'diagnose when you do not yet know where the venture stands or what the real problem is',
-  challenge: 'challenge when the founder presents a plan or claim to stress-test, or asks you to push back',
-  coach: 'coach when the founder must decide something or asks what to do next',
-  teach: 'teach when the founder asks how something works or what a concept means',
-  rehearse: 'rehearse only when the founder asks to practise a conversation',
-  route: 'route when the founder asks for program resources, support or people to talk to',
+  diagnose: 'diagnose: you do not yet know where the venture stands or what the real problem is',
+  challenge: 'challenge: they present a plan or claim to stress-test, or ask you to push back',
+  coach: 'coach: they must decide something or ask what to do next',
+  teach: 'teach: they ask how something works or what a concept means',
+  rehearse: 'rehearse: only when they ask to practise a conversation',
+  route: 'route: they ask for program resources, support or people to talk to',
 };
 
 /** Allowed modes in a stable order; all but rehearse when none are given. */
@@ -78,13 +64,10 @@ export function autoModes(allowed: readonly CoachMode[] | undefined): CoachMode[
 export function autoModeInstructions(allowed: readonly CoachMode[]): string {
   const modes = autoModes(allowed);
   return [
-    `Mode: AUTO. Choose the one mode that best fits the founder's latest message from: ${modes.join(', ')}. Set`,
-    '`mode` to it and follow its instructions below. Prefer:',
-    ...modes.map((m) => `- ${WHEN_TO_USE[m]};`),
-    'Stay in the mode of the conversation so far unless the founder clearly changes direction. A social turn (a',
-    'greeting, thanks, small talk, wrapping up, "do you remember…?") keeps that mode (diagnose on a first turn), without',
-    'its steps.',
+    `Mode: AUTO. Pick the one mode that fits their latest message (${modes.map((m) => WHEN_TO_USE[m]).join('; ')}),`,
+    'silently, and follow it. Stay in the mode of the conversation unless they change direction; a social turn (a',
+    'greeting, thanks, wrapping up, "do you remember…?") keeps it (diagnose on a first turn), without its steps.',
     '',
-    ...modes.flatMap((m, i) => (i === 0 ? [MODE_INSTRUCTIONS[m]] : ['', MODE_INSTRUCTIONS[m]])),
+    ...modes.map((m) => MODE_INSTRUCTIONS[m]),
   ].join('\n');
 }

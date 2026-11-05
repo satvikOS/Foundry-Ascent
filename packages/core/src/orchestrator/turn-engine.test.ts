@@ -138,8 +138,13 @@ describe('streamed-turn prompts', () => {
     for (const channel of ['text', 'voice'] as const) {
       const prompt = answerSystemPrompt(SYSTEM, { channel, mode: null, allowedModes: ['coach'] });
       expect(prompt).toContain(
-        'Stop when the reply ends: never write the mode name, claims, notes, field names',
+        '- Write only the reply, then stop: no label ("Answer:"), and nothing after it',
       );
+      expect(prompt).toContain('bracketed blocks, field names or JSON');
+      // Live pilot 42099643194: with the claims contract in the streamed reply's prompt, 39 replies in 5 runs went on
+      // with "[claims]", "- fact:" and "[uncertainty]" blocks. The contract is in the annotation call only.
+      expect(prompt).not.toMatch(/label every material statement|`claims`|- claims:/);
+      expect(SYSTEM).toContain('- claims: label every material statement of the answer');
     }
   });
 

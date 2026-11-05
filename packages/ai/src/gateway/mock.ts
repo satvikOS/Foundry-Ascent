@@ -323,11 +323,14 @@ function todayIn(text: string): string | null {
   return /Today: (\d{4}-\d{2}-\d{2})/.exec(text)?.[1] ?? null;
 }
 
+/** The persona's style, as "How you talk" says it ("- Be direct: … Keep a calm, professional warmth. …"). */
 function styleIn(system: string): { directness: keyof typeof LEADS; warmth: keyof typeof GREETINGS } {
-  const match = /Directness: (gentle|balanced|direct)\. Warmth: (reserved|warm)\./.exec(system);
+  const match = /^- Be (gentle|balanced|direct): .*? (Keep a calm, professional warmth\.|Be warm:)/m.exec(
+    system,
+  );
   return {
     directness: (match?.[1] as keyof typeof LEADS | undefined) ?? 'balanced',
-    warmth: (match?.[2] as keyof typeof GREETINGS | undefined) ?? 'warm',
+    warmth: match === null || match[2] === 'Be warm:' ? 'warm' : 'reserved',
   };
 }
 

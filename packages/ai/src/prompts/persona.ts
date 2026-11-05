@@ -28,9 +28,13 @@ export function veirFirstName(personaName: string): string | null {
   return first.replace(/[^\p{L}]/gu, '').length >= 2 ? first : null;
 }
 
-/** First word of a display name ("Ruth Abernathy-Song" → "Ruth"). */
+/** Honorifics before a name: never a first name (live pilot 42099643194: "Hi Dr." and "Thanks, Dr."). */
+const HONORIFIC = /^(?:dr|prof|professor|mr|mrs|ms|miss|mx|sir|dame|rev|fr)\.?$/i;
+
+/** First word of a display name, after any honorific ("Ruth Abernathy-Song" → "Ruth", "Dr. Ana Ruiz" → "Ana"). */
 export function firstNameOf(displayName: string): string {
-  return displayName.normalize('NFKC').trim().split(/\s+/)[0] ?? '';
+  const words = displayName.normalize('NFKC').trim().split(/\s+/);
+  return words.find((w) => !HONORIFIC.test(w)) ?? words[0] ?? '';
 }
 
 /**

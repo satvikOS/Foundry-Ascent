@@ -213,7 +213,7 @@ describe('vEIR identity rules', () => {
     expect(prompt).toContain('a body, a place or\n  real-world actions (a desk, a phone, a meeting)');
     expect(prompt).toMatch(/never say Corin or anyone in the program reviewed, approved,\s+said or agreed/);
     expect(prompt).toContain('never sign as Corin or write "I approve", "I endorse" or "I sign off"');
-    expect(prompt).toContain('never "your mentor" or "your EIR"');
+    expect(prompt).toContain('never "your digital twin", "your mentor" or "your EIR"');
     expect(prompt).toContain("Corin's own stories and career stay Corin's");
   });
 
@@ -257,8 +257,11 @@ describe('vEIR identity rules', () => {
           channel,
           release: { ...BASE.release, firstPerson, eirSeesWork: true },
         });
-        // 1,500 until banter was told never to make up a life (evals MX-0032), still under the old rules' 1,552.
-        expect(identity(p).length).toBeLessThanOrEqual(1_530);
+        // 1,500 until banter was told never to make up a life (evals MX-0032), still under the old rules' 1,552. The
+        // capability lines (live pilot 42099643194: 53 promises to relay, check in or wait) are counted apart.
+        const capabilities = p.slice(p.indexOf('- You only reply when'), p.indexOf('# How you talk'));
+        expect(identity(p).length - capabilities.length).toBeLessThanOrEqual(1_550);
+        expect(capabilities.length).toBeLessThanOrEqual(380);
       }
     }
   });
@@ -312,16 +315,17 @@ describe('how the persona talks', () => {
       'No headings, report sections or bold\n  labels unless the founder asks for a document',
     );
     expect(prompt).toContain('Be direct: say plainly what you think and why, and name the gap first.');
-    expect(prompt).toContain(
-      'Use the feedback structure as the order of your thinking, not as visible headings.',
-    );
-    expect(prompt).toContain('cite inline right after the sentence a source supports, as [E1]');
+    // The style's feedback structure is no longer rendered: replies echoed its wording (live pilot 42099643194).
+    expect(prompt).not.toContain('Feedback structure:');
+    expect(prompt).toContain('Cite inline right after the sentence a source supports, as [E1]');
   });
 
   it('uses the founder’s first name when it is known, and never guesses one', () => {
     const named = buildSystemPrompt({ ...BASE, continuity: { founderFirstName: 'Maya Okafor-Lindqvist' } });
     // The wave 6 lab: the founder's name in 66 of 81 replies.
-    expect(named).toContain("Use the founder's first name, Maya, rarely: a greeting or real emphasis");
+    expect(named).toContain(
+      "Use the founder's first name, Maya, rarely (a greeting or real emphasis), never to open a reply.",
+    );
     expect(parseControlBlock(named)?.founder).toBe('Maya');
     const unnamed = buildSystemPrompt(BASE);
     expect(unnamed).toContain('never guess their name');
@@ -346,9 +350,8 @@ describe('how the persona talks', () => {
 describe('auto mode', () => {
   it('lets the model choose among the allowed modes and lists their instructions', () => {
     const p = buildSystemPrompt({ ...BASE, mode: 'auto', allowedModes: ['coach', 'diagnose', 'teach'] });
-    expect(p).toContain(
-      "Mode: AUTO. Choose the one mode that best fits the founder's latest message from: diagnose, coach, teach.",
-    );
+    expect(p).toContain('Mode: AUTO. Pick the one mode that fits their latest message (diagnose: ');
+    expect(p).toContain('teach: they ask how something works or what a concept means),');
     expect(p).toContain(MODE_INSTRUCTIONS.diagnose);
     expect(p).toContain(MODE_INSTRUCTIONS.coach);
     expect(p).toContain(MODE_INSTRUCTIONS.teach);
@@ -372,7 +375,7 @@ describe('auto mode', () => {
       rehearsalCounterpart: 'a buyer',
     });
     expect(parseControlBlock(withRehearse)?.rehearsalCounterpart).toBe('a buyer');
-    expect(autoModeInstructions(['rehearse'])).toContain('rehearse only when the founder asks to practise');
+    expect(autoModeInstructions(['rehearse'])).toContain('rehearse: only when they ask to practise');
   });
 });
 

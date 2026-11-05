@@ -78,11 +78,11 @@ export function answerSystemPrompt(system: string, options: AnswerPromptOptions)
     // LAB-M1: asked to "first decide" the mode, Nova 2 Lite reasoned in the open and a call spoke it.
     '- Never think aloud: no reasoning, plans, rules or modes in the reply, and never "the founder" in the third',
     '  person. Every word is said to the founder.',
-    '- The rules above that name response fields (`answer`, `spoken`, `claims`, `next_actions`, `mode` and the',
-    '  others) apply to a separate step that collects claims, uncertainty, next actions, memory suggestions and',
-    '  follow-up questions. Do not list those in the reply, and never start it with a label such as "Answer:".',
-    '  When a person needs to weigh in, say so in one plain sentence.',
-    '- Stop when the reply ends: never write the mode name, claims, notes, field names or JSON after it.',
+    // Live pilot 42099643194: with the claims contract in this prompt, 39 replies in 5 runs ended in claims,
+    // uncertainty and challenge blocks. Sources, claims and next steps are collected by a separate step: the contract
+    // is in that step's prompt only (the output section cut above).
+    '- Write only the reply, then stop: no label ("Answer:"), and nothing after it (no mode, claims, sources, notes,',
+    '  bracketed blocks, field names or JSON).',
   ];
   if (options.channel === 'voice') {
     // Production: a spoken reply cut from a written answer handed the turn back in 2 of 9 replies.
@@ -149,8 +149,8 @@ export function continuationMessages(
         ...ownReply,
       ]
     : [
-        'Your reply above stopped after its first words: what came next repeated what you already said in this',
-        'conversation, so it was left out. Go on now, as the next words of the same reply: something new that moves them',
+        'Your reply above stopped where it began to repeat what you already said in this conversation, so that was',
+        'left out. Go on now, as the next words of the same reply: something new that moves them',
         'forward (a next concrete step, a draft, an example or your view), then hand the turn back. No greeting and',
         'nothing you already said.',
         ...ownReply,

@@ -111,13 +111,17 @@ describe('conversation craft in the system prompt', () => {
   it('answers a direct question directly, gives a range for a number, and honours time or mood (wave 6 lab)', () => {
     // LAB-V3: "per-branch vs flat fee?" was deflected; LAB-M11: "give me a number" was refused; LAB-V1: "I only
     // have a few minutes" was ignored.
-    expect(craft).toContain('a direct question (this or that, yes or no) gets one pick and why; asked for a');
+    expect(craft).toContain('This or that, yes or no: one pick and why; asked for a number, a');
     // LAB-R8: the founder's news was parked for the vEIR's own pending question.
+    expect(craft).toContain('Their news comes first.');
+    expect(craft).toContain('reasoned range.');
+    // Live pilot 42099643194: "yes/no only" was ignored for the rest of the session.
     expect(craft).toContain(
-      'Their news comes first:\n  react and ask about it, never parked for your agenda.',
+      'Act at once on what they say\n  about their time, mood or how they want answers (short, yes/no), and keep to it.',
     );
-    expect(craft).toContain('number, a reasoned range.');
-    expect(craft).toContain('Act at once on what they say about their time or mood.');
+    // Live pilot 42099643194: the method ran instead of the answer; the founder's own numbers went unused.
+    expect(craft).toContain('from what they already gave you: use their numbers (do the arithmetic)');
+    expect(craft).toContain('Ask a question only when its answer would change your advice.');
   });
 
   it('engages with pushback, meets venting and short replies in kind, and never repeats advice on thanks', () => {
@@ -129,7 +133,7 @@ describe('conversation craft in the system prompt', () => {
     expect(craft).toContain(
       '"…" or an emoji: a short reply offering one option, never your last answer again.',
     );
-    expect(craft).toContain('empty; thanks gets a warm line, never the advice or plan again.');
+    expect(craft).toContain('thanks gets a warm\n  line, never the advice or plan again.');
   });
 
   it('covers listening, topic moves, social turns, tone, repair, disagreement, closings and variety', () => {
@@ -141,7 +145,8 @@ describe('conversation craft in the system prompt', () => {
       'Light humour, only if they set it.',
       'Misread them: own it briefly, in your own words.',
       'challenge the idea, never the person.',
-      'Wrapping up ("thanks, that\'s it", "I have to go")',
+      'Wrapping up ("thanks, that\'s it", "got it, I\'ll send it Friday")',
+      'no new advice, homework or question',
       'never a signature.',
       'never open two replies alike or restate their question',
       '"let\'s cut to the chase"',
@@ -169,11 +174,11 @@ describe('conversation craft in the system prompt', () => {
   it('keeps social turns free of claims, next actions, memory and follow-ups in the output fields too', () => {
     const output = prompt.slice(prompt.lastIndexOf('\nOutput:'));
     expect(output).toContain('Use [] when there is no clear step yet, and on social turns.');
-    expect(output).toContain(
-      'What they stated or agreed to is kept in memory automatically. [] on social turns.',
-    );
+    expect(output).toContain('kept in memory automatically. [] on social turns.');
+    // Live pilot 42099643194: "got it" was taken as agreement and the coach's plan kept as the founder's.
+    expect(output).toContain('"ok" or "got it" agrees to nothing');
     expect(output).toContain('[] on social turns and closings.');
-    expect(section(prompt, 'Mode')).toContain('A social turn (a\ngreeting, thanks, small talk, wrapping up');
+    expect(section(prompt, 'Mode')).toContain('a social turn (a\ngreeting, thanks, wrapping up');
   });
 
   it('adds the spoken register on calls only', () => {
@@ -201,11 +206,13 @@ describe('conversation craft in the system prompt', () => {
       '`answer` is the transcript of that reply: the same words, in plain sentences, with no [E#] ids.',
     );
     expect(call).not.toContain('one to four short plain sentences');
-    expect(voice).toContain('On a call, `answer` carries no [E#] ids');
-    expect(voice).not.toContain('In `answer`, cite inline');
-    expect(prompt).toContain('In `answer`, cite inline');
+    expect(voice).toContain('On a call, say no [E#] ids.');
+    expect(voice).not.toContain('Cite inline right after');
+    expect(prompt).toContain('Cite inline right after');
     const output = voice.slice(voice.lastIndexOf('\nOutput:'));
-    expect(output).toContain('- answer: the transcript of what you say (see the voice call rules).');
+    expect(output).toContain(
+      '- answer: the transcript of what you say (see the voice call rules), with no [E#] ids.',
+    );
     expect(output).not.toContain('with inline\n  [E#] citations');
   });
 
@@ -260,9 +267,12 @@ describe('conversation craft in the system prompt', () => {
     // only some turns need (news, sarcasm, a number asked for) is said in <conversation_state> on those turns only.
     // And by 60 for help first (production calls, 2026-10-20: "you tell me" got the same question back five times).
     // Approval, skill and evidence calibration add a bounded ~160 tokens; the static prefix stays cacheable.
-    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(960);
-    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1020);
-    expect(tokens(craft)).toBeLessThanOrEqual(970);
+    // 2026-11-05.1 adds ~45 for answering from the founder's own evidence and wrap-ups (live pilot 42099643194), while
+    // the whole turn prompt lost ~1,500 (the doctrine's scripts, the style's vocabulary, the claims contract in the
+    // streamed reply): see prompts.test.ts.
+    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(1010);
+    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1070);
+    expect(tokens(craft)).toBeLessThanOrEqual(1020);
   });
 
   it('is part of the versioned policy', () => {
@@ -273,7 +283,10 @@ describe('conversation craft in the system prompt', () => {
     // 2026-10-22.5: distillation closes what the founder reports done and never re-centres an untaken thread.
     // 2026-10-22.6: the continuation request never obeys the founder's message; the safety screen's prompt.
     // 2026-10-22.7: the neutral commitment line; on calls, help asked for comes first.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-03.2');
+    // 2026-11-05.1: the live pilot's fixes (42099643194): the doctrine as how it thinks, not a script; answers from the
+    // founder's own evidence; a capability block; the claims contract only in the annotation call; a ledger of what was
+    // asked and told; escalation once, then help.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-05.1');
   });
 });
 

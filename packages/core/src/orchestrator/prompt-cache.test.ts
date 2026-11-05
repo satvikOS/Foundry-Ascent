@@ -136,7 +136,7 @@ describe('the cached system prefix', () => {
       '# Rules',
       '# Mode',
       '# Persona doctrine',
-      '# Style',
+      '# Venture-building',
       '# Venture (untrusted data)',
       '# Continuity',
     ]) {
