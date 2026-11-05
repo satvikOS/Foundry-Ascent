@@ -18,13 +18,17 @@ injected ``speak_text`` that the server's transcript check must catch, and the s
 module reads the vendor's credits and the success codes it answered through the probe, and keeps public numbers
 only (:func:`public_result`): codes, counts, booleans, milliseconds, vendor end reasons. Words stay private.
 
-LITE (``--face-mode lite`` or ``both``): the avatar lip-syncs the call's own Polly audio, which the browser hands back
-to the server (``POST /calls/:id/face/speak``) and the server relays over the face's speak socket: the production
-LITE path, unchanged. As in production, the call's vEIR needs a face reference marked ready under likeness consent:
-apps/api lab-face-twin.ts records one for the synthetic vEIR in the lab's own database (never the seed). The sandbox
-renders its own avatar whatever the reference names. With ``both`` the FULL pass runs first with every check; then
-the local API is restarted with ``MEDIA_FACE_MODE=lite`` and only the call arm runs again, with the same founder
-turns and the same meters (:func:`comparison`: FULL, LITE and Polly alone side by side).
+LITE (``--face-mode lite`` or ``both``): the production LITE path for a STOCK face, the sandbox's Wayne
+(``MEDIA_FACE_LITE_ROUTE=browser``, docs/architecture/calls.md section 4.4): the page holds the avatar's speak channel
+(``ws_url``, handed to it in the authenticated avatar-session response) and forwards each admitted unit's ElevenLabs
+PCM as it arrives, one utterance per turn; the founder hears only the avatar's own audio track. The spec taps the
+page's own frames on that channel (types, ids and sizes) and reports, beside the same turns and meters as every arm
+(:func:`comparison`: FULL, LITE and the voice alone side by side): the utterances of each turn (must be one), first
+chunk to ``agent.speak_started`` to sound, a barge-in turn (``agent.interrupt`` to the vendor's clear and to silence
+on the avatar's track), the units the call played itself while the face was live (fallbacks) and the doubled-audio
+detector (the avatar's track and the call's own output sounding at once). apps/api lab-face-twin.ts still records a
+face reference for the synthetic vEIR (a stock face needs none; it is harmless). With ``both`` the FULL pass runs
+first with every check; then the local API is restarted in LITE and only the call arm runs again.
 
 In the harness's dry run (``--mock``) the development stand-in face takes the vendor's place: no key, no probe, no
 vendor; only the in-app path is exercised.
@@ -78,6 +82,12 @@ HAND_OVER_AFTER_UNIT_TARGET_MS = 250
 #: waits for nothing after the unit arrives could still hide the round trip moved to the server; this bounds it. The
 #: margin allows for the two arms' different model calls.
 UNIT_ARRIVAL_GAP_TARGET_MS = 150
+#: A LITE stock face's first audio may come at most this much after the voice alone's (both p50, the same meter and
+#: founder turns), and never later than :data:`LITE_FIRST_AUDIO_MAX_MS` (docs: spec lite-elevenlabs-design section 6).
+LITE_FIRST_AUDIO_MARGIN_MS = 700
+LITE_FIRST_AUDIO_MAX_MS = 2200
+#: The page's agent.interrupt to silence on the avatar's track (the sandbox measured ~389 ms, lab run 42087743218).
+LITE_INTERRUPT_SILENCE_MAX_MS = 600
 #: The vendor paths the public summary may name; anything else is counted as ``other``.
 VENDOR_PATHS = (
     "/v1/sessions/token",
@@ -222,19 +232,20 @@ def api_face_mode(mode: str) -> str:
 
 
 def face_env(*, mock: bool, probe_token: str | None, mode: str = "full") -> dict[str, str]:
-    """The local API's face configuration (no secret in it): the vendor's sandbox for admins, in FULL mode with the
-    sandbox's stock avatar or in LITE mode (the persona's face reference, which the sandbox replaces with its own
-    avatar), or the development stand-in in the dry run. ``lite-probe`` configures the app as FULL
-    (:func:`api_face_mode`)."""
+    """The local API's face configuration (no secret in it): the vendor's sandbox for admins with the sandbox's stock
+    avatar, in FULL mode or in LITE mode fed by the page (``MEDIA_FACE_LITE_ROUTE=browser``: a stock face only), or
+    the development stand-in in the dry run. ``lite-probe`` configures the app as FULL (:func:`api_face_mode`)."""
     mode = api_face_mode(mode)
     common = {"MEDIA_FACE_MODE": mode, "MEDIA_FACE_AUDIENCE": "admins"}
+    if mode == "lite":
+        common["MEDIA_FACE_LITE_ROUTE"] = "browser"
     if mock:
         return {**common, "EMBODIMENT_PROVIDER": "fake"}
     env = {
         **common,
         "MEDIA_FACE_PROVIDER": "heygen-liveavatar",
         "MEDIA_FACE_SANDBOX": "true",
-        **({"MEDIA_FACE_AVATAR_ID": SANDBOX_AVATAR} if mode == "full" else {}),
+        "MEDIA_FACE_AVATAR_ID": SANDBOX_AVATAR,
     }
     if probe_token:
         env[PROBE_TOKEN_ENV] = probe_token
@@ -257,6 +268,7 @@ _FACE_KEYS = frozenset(
         "MEDIA_FACE_PROVIDER",
         "MEDIA_FACE_SANDBOX",
         "MEDIA_FACE_AVATAR_ID",
+        "MEDIA_FACE_LITE_ROUTE",
         "EMBODIMENT_PROVIDER",
         PROBE_TOKEN_ENV,
     }
@@ -670,10 +682,50 @@ def _turn_percentile(turns: Sequence[Mapping[str, int | None]], key: str) -> dic
     return percentile_ms([v for v in (t.get(key) for t in turns) if v is not None])
 
 
+def _lite_browser(raw: Any) -> dict[str, Any] | None:
+    """A LITE stock face the page feeds, as public numbers: counts, sizes, booleans and milliseconds (never an id)."""
+    if not isinstance(raw, dict):
+        return None
+    doubled = raw.get("doubledAudio") if isinstance(raw.get("doubledAudio"), dict) else {}
+    return {
+        "sockets": _int(raw.get("sockets")),
+        "utterances": _int(raw.get("utterances")),
+        "utterances_per_turn": _ints(raw.get("utterancesPerTurn")),
+        "chunks": _int(raw.get("chunks")),
+        "first_chunk_bytes": _ints(raw.get("firstChunkBytes")),
+        "max_chunk_bytes": _int(raw.get("maxChunkBytes")),
+        "speak_ends": _int(raw.get("speakEnds")),
+        "keep_alives": _int(raw.get("keepAlives")),
+        "interrupts": _int(raw.get("interrupts")),
+        "appended_ok": _bool(raw.get("appendedOk")),
+        "committed_ok": _bool(raw.get("committedOk")),
+        "first_chunk_to_started_ms": percentile_ms(_ints(raw.get("firstChunkToStartedMs"))),
+        "started_to_audio_ms": percentile_ms(_ints(raw.get("startedToAudioMs"))),
+        "errors": _int(raw.get("errors")),
+        "fallbacks": _int(raw.get("fallbacks")),
+        "doubled_audio_overlaps": _int(doubled.get("overlaps")),
+        "doubled_audio_ms": _int(doubled.get("ms")),
+    }
+
+
+def _barge_in(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    return {
+        "measured": _bool(raw.get("measured")),
+        "element_silenced": _bool(raw.get("elementSilenced")),
+        "interrupt_to_cleared_ms": _int(raw.get("interruptToClearedMs")),
+        "interrupt_to_silence_ms": _int(raw.get("interruptToSilenceMs")),
+        "server_told": _bool(raw.get("serverTold")),
+        "error": _error(raw.get("error")),
+    }
+
+
 def public_call_lite(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
-    """The call arm with the face in LITE mode: the same turns and meters as :func:`public_call`. The LITE moments
-    in place of FULL's speak_text: each unit's audio hand-over (``POST /calls/:id/face/speak``, its first part) and
-    the server's answer once it relayed it over the speak socket; ``avatar.speak_started`` when the room carries it."""
+    """The call arm with the face in LITE mode: the same turns and meters as :func:`public_call`. A stock face the page
+    feeds (``lite_browser``): its own speak channel's utterances, chunks, acknowledgements and timings, the fallbacks
+    and the doubled-audio detector, and a barge-in turn (``barge_in``). The older server relay's moments (each unit's
+    ``POST /calls/:id/face/speak`` and its answer) stay for a likeness face."""
     if raw is None:
         return None
     session = raw.get("session") if isinstance(raw.get("session"), dict) else {}
@@ -705,6 +757,8 @@ def public_call_lite(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
         "app_playbacks_after_live": _int(raw.get("app_playbacks_after_live")),
         "mic_requests_after_live": _int(raw.get("mic_requests_after_live")),
         "audio_senders": _int(raw.get("audio_senders")),
+        "lite_browser": _lite_browser(raw.get("lite_browser")),
+        "barge_in": _barge_in(raw.get("barge_in")),
         "error": _error(raw.get("error")),
     }
 
@@ -947,6 +1001,40 @@ def checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
         ),
         "label_ai_avatar_visible": call.get("label_visible"),
         "falls_back_to_presence": fallback.get("presence_back"),
+        **lite_checks(result),
+    }
+
+
+def lite_checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
+    """A LITE stock face the page feeds (the LITE arm): pass, fail, or not measured (None)."""
+    lite = result.get("call_lite") or {}
+    browser = lite.get("lite_browser") or {}
+    barge = lite.get("barge_in") or {}
+    per_turn = browser.get("utterances_per_turn") or []
+    lite_p50 = (lite.get("first_face_audio_ms") or {}).get("p50")
+    voice_p50 = ((result.get("polly") or {}).get("first_audio_ms") or {}).get("p50")
+    silence = barge.get("interrupt_to_silence_ms")
+    measured = bool(browser) and (browser.get("chunks") or 0) > 0
+    return {
+        "lite_ws_connected": browser.get("sockets") == 1 if measured else None,
+        "lite_one_utterance_per_turn": all(n == 1 for n in per_turn) if measured and per_turn else None,
+        "lite_acks_complete": (
+            bool(browser.get("appended_ok")) and bool(browser.get("committed_ok")) if measured else None
+        ),
+        "lite_first_audio_target": (
+            lite_p50 <= voice_p50 + LITE_FIRST_AUDIO_MARGIN_MS and lite_p50 <= LITE_FIRST_AUDIO_MAX_MS
+            if lite_p50 is not None and voice_p50 is not None and measured
+            else None
+        ),
+        "lite_barge_in": (
+            bool(barge.get("element_silenced"))
+            and silence is not None
+            and silence <= LITE_INTERRUPT_SILENCE_MAX_MS
+            if measured and barge.get("measured")
+            else None
+        ),
+        "lite_no_local_playback": browser.get("fallbacks") == 0 if measured else None,
+        "lite_no_double_voice": browser.get("doubled_audio_overlaps") == 0 if measured else None,
     }
 
 

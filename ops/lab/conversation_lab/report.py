@@ -418,8 +418,8 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
     if lite:
         session = lite.get("session") or {}
         out.append(
-            "In-app call, LITE (the same founder turns; the avatar lip-syncs the call's Polly audio, relayed by the "
-            "server over the speak socket):"
+            "In-app call, LITE (the same founder turns; the stock avatar lip-syncs the call's own voice, fed by the "
+            "page over its speak channel):"
         )
         out.append(
             f"- Face: {session.get('provider')} / {session.get('voicing')}, stock {session.get('stock_face')}, "
@@ -432,6 +432,33 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
             f"face/speak requests {lite.get('speak_requests')} (answered 204: {lite.get('speak_accepted')}), the "
             f"call's own playback after the face joined {lite.get('app_playbacks_after_live')}"
         )
+        browser = lite.get("lite_browser") or {}
+        if browser:
+            out.append(
+                f"- Speak channel: sockets {browser.get('sockets')}; utterances per turn "
+                f"{browser.get('utterances_per_turn')} (must be 1 each); chunks {browser.get('chunks')} (first "
+                f"{browser.get('first_chunk_bytes')} bytes, largest {browser.get('max_chunk_bytes')}); speak_end "
+                f"{browser.get('speak_ends')}; acks appended ok {browser.get('appended_ok')}, committed ok "
+                f"{browser.get('committed_ok')}; keep-alives {browser.get('keep_alives')}; errors {browser.get('errors')}"
+            )
+            out.append(
+                f"- First chunk → speak_started {_p(browser.get('first_chunk_to_started_ms'))}; speak_started → sound "
+                f"{_p(browser.get('started_to_audio_ms'))}; first face audio {_p(lite.get('first_face_audio_ms'))} "
+                f"against the voice alone {_p((face.get('polly') or {}).get('first_audio_ms'))} (same meter)"
+            )
+            out.append(
+                f"- The call's own speakers while the face was live (fallbacks) {browser.get('fallbacks')}; doubled "
+                f"audio (avatar track and own output sounding at once) {browser.get('doubled_audio_overlaps')} times, "
+                f"{browser.get('doubled_audio_ms')} ms"
+            )
+        barge = lite.get("barge_in") or {}
+        if barge:
+            out.append(
+                f"- Barge-in: measured {barge.get('measured')}; element silenced at once {barge.get('element_silenced')}; "
+                f"agent.interrupt → cleared {barge.get('interrupt_to_cleared_ms')} ms, → silence on the avatar's track "
+                f"{barge.get('interrupt_to_silence_ms')} ms; server told {barge.get('server_told')}"
+                + (f"; error {barge['error']}" if barge.get("error") else "")
+            )
         out.append(
             f"- Microphone requests after the face joined {lite.get('mic_requests_after_live')}; audio tracks "
             f"published {lite.get('audio_senders')}"

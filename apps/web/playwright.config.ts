@@ -18,6 +18,8 @@ import { chromium, defineConfig, type PlaywrightTestConfig } from '@playwright/t
  *   E2E_FACE_API_URL       a second API on the same database whose stand-in face runs in FULL mode (the
  *                          stock face, e2e/face.spec.ts routes the page's API calls to it); default: the API
  *                          port + 1
+ *   E2E_LITE_FACE_API_URL  a third API on the same database whose stand-in face is a LITE stock face the page
+ *                          feeds (e2e/lite-face.spec.ts); default: the API port + 2
  *   E2E_OWNER_ACCESS_CODE  owner access code printed by `pnpm db:reset` (required; never logged)
  *   DATABASE_URL           the database `pnpm db:reset` created (passed through to the API)
  *
@@ -34,6 +36,11 @@ const site = new URL(baseURL);
 const faceApiURL = new URL(
   process.env.E2E_FACE_API_URL ??
     `${apiURL.protocol}//${apiURL.hostname}:${String(Number(apiURL.port || '8787') + 1)}`,
+);
+/** The LITE-browser API (same database, the stand-in LITE stock face fed by the page): e2e/lite-face.spec.ts. */
+const liteFaceApiURL = new URL(
+  process.env.E2E_LITE_FACE_API_URL ??
+    `${apiURL.protocol}//${apiURL.hostname}:${String(Number(apiURL.port || '8787') + 2)}`,
 );
 const localStack = site.hostname === 'localhost' || site.hostname === '127.0.0.1';
 
@@ -116,6 +123,33 @@ const webServer: PlaywrightTestConfig['webServer'] = localStack
           CORE_TURN_RATE_LIMIT: process.env.CORE_TURN_RATE_LIMIT ?? '200',
           EMBODIMENT_PROVIDER: 'fake',
           MEDIA_FACE_MODE: 'full',
+          MEDIA_FACE_AUDIENCE: 'admins',
+        },
+      },
+      {
+        // The same API with the stand-in face as a LITE stock face the page feeds (its speak channel held by the
+        // page, in-page here), shown to platform admins and people given Video face, as in production. Only
+        // e2e/lite-face.spec.ts uses it.
+        name: 'api-face-lite',
+        command: 'pnpm --filter @foundry/api exec tsx src/dev-server.ts',
+        url: `${liteFaceApiURL.origin}/api/v1/health`,
+        reuseExistingServer: !CI,
+        timeout: 120_000,
+        stdout: 'ignore',
+        stderr: 'pipe',
+        gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
+        env: {
+          APP_ENV: 'development',
+          DB_DRIVER: process.env.DB_DRIVER ?? 'pg',
+          MODEL_PROVIDER: process.env.MODEL_PROVIDER ?? 'mock',
+          LOG_LEVEL: process.env.LOG_LEVEL ?? 'warn',
+          PORT: liteFaceApiURL.port,
+          SITE_ORIGIN: process.env.SITE_ORIGIN ?? site.origin,
+          LOCAL_DOWNLOAD_ORIGIN: liteFaceApiURL.origin,
+          CORE_TURN_RATE_LIMIT: process.env.CORE_TURN_RATE_LIMIT ?? '200',
+          EMBODIMENT_PROVIDER: 'fake',
+          MEDIA_FACE_MODE: 'lite',
+          MEDIA_FACE_LITE_ROUTE: 'browser',
           MEDIA_FACE_AUDIENCE: 'admins',
         },
       },

@@ -59,6 +59,43 @@ describe('the development stand-in face', () => {
     ).toThrow(/MEDIA_FACE_AUDIENCE/);
   });
 
+  it('stands in for a LITE stock face the page feeds: a speak channel that never reaches the network', async () => {
+    const lite = developmentFaceFor({
+      APP_ENV: 'development',
+      EMBODIMENT_PROVIDER: 'fake',
+      MEDIA_FACE_LITE_ROUTE: 'browser',
+      MEDIA_FACE_AUDIENCE: 'admins',
+    }).embodiment;
+    expect(lite).toMatchObject({
+      mode: 'lite',
+      voicing: 'audio',
+      liteRoute: 'browser',
+      likeness: false,
+      stock: true,
+    });
+    const started = await lite?.createSession(request);
+    expect(started?.browser.controlUrl).toMatch(/^wss:\/\/lite\.stand-in\.invalid\/[A-Za-z0-9_-]+$/);
+    expect(started?.control).toBeNull();
+    // The default LITE stand-in hands over no channel.
+    const plain = await new DevelopmentFace().createSession(request);
+    expect(plain.browser).not.toHaveProperty('controlUrl');
+    expect(() =>
+      developmentFaceFor({
+        APP_ENV: 'development',
+        EMBODIMENT_PROVIDER: 'fake',
+        MEDIA_FACE_MODE: 'full',
+        MEDIA_FACE_LITE_ROUTE: 'browser',
+      }),
+    ).toThrow(/LITE only/);
+    expect(() =>
+      developmentFaceFor({
+        APP_ENV: 'development',
+        EMBODIMENT_PROVIDER: 'fake',
+        MEDIA_FACE_LITE_ROUTE: 'tab',
+      }),
+    ).toThrow(/MEDIA_FACE_LITE_ROUTE/);
+  });
+
   it('opens a pretend session: a random token within a minute, no control channel, no one’s likeness, free', async () => {
     const face = new DevelopmentFace();
     expect(face).toMatchObject({ id: 'fake', voicing: 'audio', likeness: false, usdPerMinute: 0 });

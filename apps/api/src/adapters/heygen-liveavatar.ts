@@ -44,6 +44,12 @@ import { type ApiKeySource } from './media-secrets.js';
  *   `agent.audio_buffer_cleared`.
  * - `keepAlive` / `end`: `POST /v1/sessions/keep-alive` and `/v1/sessions/stop` with the API key (no socket, so
  *   they never replace a speak in progress: the vendor allows one socket per session).
+ * - **Browser route** (`liteRoute: 'browser'`, a stock avatar only, never a likeness): the session is the configured
+ *   stock avatar (the sandbox's in the sandbox), and `createSession` also returns `ws_url` as `browser.controlUrl`,
+ *   only when it is at exactly the configured origin (`socketOrigin`, the one the CSP allows; lab run 42087743218
+ *   saw `wss://webrtc-signaling.heygen.io` in every session), else the session is stopped and refused. The caller's
+ *   page then holds that socket for the whole call; the server never opens one (`speak` refuses, `interrupt` does
+ *   nothing): the vendor keeps one socket per session and a second replaces the first.
  *
  * Responses are `{code, data, message}`. The success `code` is 1000 in the vendor's web SDK 0.0.19 and 100 in its
  * published OpenAPI document: both are taken, since a wrong guess would silently keep every call on the presence
@@ -97,7 +103,21 @@ export interface HeygenLiveAvatarOptions {
   readonly sandbox: boolean;
   /** `lite` (default): the EIR's avatar renders our audio. `full`: a stock avatar voices admitted text. */
   readonly mode?: 'lite' | 'full';
-  /** FULL: the stock avatar (required outside the sandbox) and its voice (absent: the avatar's default voice). */
+  /**
+   * LITE: `server` (default) relays verified audio over the server's own speak channel (the EIR's likeness);
+   * `browser` shows the stock avatar (`stock.avatarId`, or the sandbox's) and hands the caller's page the speak
+   * channel (`ws_url`) to feed with admitted units: never a likeness.
+   */
+  readonly liteRoute?: 'server' | 'browser';
+  /**
+   * The one origin a browser-fed face's `ws_url` may have (packages/core/media-vendors.json `liteSocketOrigin`, the
+   * origin the CSP allows): any other is refused, so the page is never handed a socket its CSP would block.
+   */
+  readonly socketOrigin?: string;
+  /**
+   * FULL and a browser-fed LITE face: the stock avatar (required outside the sandbox) and, in FULL, its voice
+   * (absent: the avatar's default voice).
+   */
   readonly stock?: { readonly avatarId: string | null; readonly voiceId: string | null };
   /** Shown to platform admins only (`MEDIA_FACE_AUDIENCE=admins`). */
   readonly adminsOnly?: boolean;
@@ -306,7 +326,11 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
   readonly id = 'heygen' as const;
   readonly mode: 'lite' | 'full';
   readonly voicing: 'audio' | 'text';
-  /** LITE draws the EIR (likeness consent); FULL a stock avatar (no one's likeness, labelled "AI avatar"). */
+  readonly liteRoute: 'server' | 'browser';
+  /**
+   * LITE relayed by the server draws the EIR (likeness consent); FULL and a browser-fed LITE face a stock avatar
+   * (no one's likeness, labelled "AI avatar").
+   */
   readonly likeness: boolean;
   readonly stock: boolean;
   readonly sandbox: boolean;
@@ -322,8 +346,13 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
     this.#options = options;
     this.mode = options.mode ?? 'lite';
     this.voicing = this.mode === 'full' ? 'text' : 'audio';
-    this.likeness = this.mode === 'lite';
-    this.stock = this.mode === 'full';
+    this.liteRoute = this.mode === 'lite' ? (options.liteRoute ?? 'server') : 'server';
+    if (options.liteRoute === 'browser' && this.mode !== 'lite') {
+      throw new Error('liveavatar: the browser route is LITE only');
+    }
+    // A browser-fed face is a stock avatar, never a likeness: the page could make it say anything.
+    this.likeness = this.mode === 'lite' && this.liteRoute === 'server';
+    this.stock = !this.likeness;
     this.sandbox = options.sandbox;
     this.adminsOnly = options.adminsOnly === true;
     this.usdPerMinute = options.usdPerMinute;
@@ -363,12 +392,15 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
     return { status: response.status, envelope };
   }
 
-  /** The token request of a session (LITE: the persona's avatar; FULL: the stock avatar, restricted mode). */
+  /**
+   * The token request of a session (LITE: the persona's avatar, or the stock avatar the browser feeds; FULL: the
+   * stock avatar, restricted mode).
+   */
   tokenBody(request: FaceSessionRequest): Record<string, unknown> {
     const full = this.mode === 'full';
     const avatarId = this.#options.sandbox
       ? LIVEAVATAR_SANDBOX_AVATAR
-      : full
+      : this.stock
         ? (this.#options.stock?.avatarId ?? null)
         : request.avatarRef;
     if (avatarId === null) throw failure('needs an avatar');
@@ -454,15 +486,41 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
       throw failure('start', started.status, vendorDetailOf(started.envelope));
     }
     const seconds = Math.min(request.maxSeconds, data.max_session_duration ?? request.maxSeconds);
+    const browserFed = this.mode === 'lite' && this.liteRoute === 'browser';
+    // The page is handed only a speak channel at the one origin its CSP allows (never logged, never in an error).
+    if (browserFed && !this.#allowedSocket(data.ws_url ?? '')) {
+      await this.#stop(apiKey, data.session_id).catch(() => undefined);
+      throw failure('start: speak channel origin not allowed');
+    }
     return {
       browser: {
         token: data.livekit_client_token,
         url: data.livekit_url,
         expiresAt: new Date(Date.now() + Math.max(1, seconds) * 1000).toISOString(),
+        ...(browserFed && data.ws_url ? { controlUrl: data.ws_url } : {}),
       },
       sessionRef: data.session_id,
       control: this.mode === 'lite' ? (data.ws_url ?? null) : null,
     };
+  }
+
+  /** Whether `url` is a `wss://` URL at exactly the configured speak-channel origin (no user info, no port). */
+  #allowedSocket(url: string): boolean {
+    const origin = this.#options.socketOrigin;
+    if (origin === undefined) return false;
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return false;
+    }
+    return (
+      parsed.protocol === 'wss:' &&
+      parsed.username === '' &&
+      parsed.password === '' &&
+      parsed.port === '' &&
+      `${parsed.protocol}//${parsed.host}` === origin
+    );
   }
 
   /**
@@ -505,6 +563,8 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
   }
 
   async speak(handle: FaceSessionHandle, audio: VerifiedFaceAudio): Promise<void> {
+    // A browser-fed face: the page holds the speak channel, and a server socket would replace (cut off) the page's.
+    if (this.liteRoute === 'browser') throw failure('relay is not this face’s route');
     // LITE acknowledges each chunk by the FIRST chunk's utterance id, not the command id.
     // Reuse that id across parts. Count typed acknowledgements and deduplicate vendor event ids.
     const utteranceId = audio.first ? this.#ids() : this.#utterances.get(handle.sessionRef);
@@ -535,8 +595,9 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
   }
 
   async interrupt(handle: FaceSessionHandle): Promise<void> {
-    // FULL: the browser sends `avatar.interrupt` over the room; the server has no channel to the vendor.
-    if (this.mode === 'full') return;
+    // FULL: the browser sends `avatar.interrupt` over the room; the server has no channel to the vendor. A
+    // browser-fed LITE face: the page interrupts over its own speak channel (a server socket would replace it).
+    if (this.mode === 'full' || this.liteRoute === 'browser') return;
     this.#utterances.delete(handle.sessionRef);
     await this.#withControl(handle, async (channel) => {
       const id = channel.send({ type: 'agent.interrupt' });

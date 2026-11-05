@@ -37,10 +37,12 @@ import {
  *              41235680528: ~0.5 s before the model started on the run's first turn, ~0.05 s on the next ones), which
  *              would otherwise land on whichever arm runs first and make the arms incomparable.
  *   polly      the same typed turn on a call without a face (Amazon Polly only): the A/B arm for first audio.
- *   call LITE  the same call arm with the app's face in LITE mode (the avatar lip-syncs the call's own Polly audio,
- *              which the page hands back to the server and the server relays over the speak socket), for the
- *              FULL / LITE / Polly comparison. The lab restarts the API in LITE for it (LAB_FACE_APP_MODE=lite)
- *              after the FULL pass, or runs only LITE (then the FULL-only tests skip).
+ *   call LITE  the same call arm with the app's face as a LITE stock face the page feeds (the sandbox's Wayne,
+ *              lip-syncing the call's own ElevenLabs PCM: the page holds the avatar's speak channel, ws_url, and
+ *              forwards each admitted unit as its PCM arrives, one utterance per turn), for the FULL / LITE /
+ *              voice-only comparison, plus a barge-in turn. The lab restarts the API in LITE for it
+ *              (LAB_FACE_APP_MODE=lite, MEDIA_FACE_LITE_ROUTE=browser) after the FULL pass, or runs only LITE (then the
+ *              FULL-only tests skip). The page's own WebSocket frames on that channel are tapped (types, ids, sizes).
  *
  * Every page records the vendor's room events by tapping the page's own WebRTC data channels (the JSON inside each
  * packet), the avatar's audio level, microphone requests and fetches, with the page clock. Words and texts go to
@@ -73,6 +75,8 @@ const LINES = [
   'What is the one thing I should test first with the clinic pilot?',
   'How would I know in two weeks whether that test worked?',
 ];
+/** The LITE arm's barge-in turn (synthetic): its reply is cut off once the avatar started saying it. */
+const BARGE_IN_LINE = 'Can you walk me through the whole plan for the next month, step by step?';
 /** Words the probe asks the avatar to say (synthetic). */
 const PROBE_TEXT = {
   exact: 'This is the first lab check, said exactly as written.',
@@ -128,6 +132,16 @@ interface FaceLab {
   injectNext: boolean;
   level: number;
   /**
+   * A LITE stock face's speak channel as the page used it (window.WebSocket, tapped): the JSON frames it sent (type,
+   * the `event_id`, the decoded size of `audio`) and got (type, `source_event_id`), and how many such sockets the
+   * page opened. Never the URL, never the audio.
+   */
+  lite: {
+    sockets: number;
+    out: { at: number; type: string; id: string | null; bytes: number }[];
+    in: { at: number; type: string; source: string | null }[];
+  };
+  /**
    * Each remote track the page received and the id of the remote stream it came in (the RTCTrackEvent's
    * `streams[0]`, LiveKit's `participantSid|streamName`): WebRTC keeps an audio and a video track in step only when
    * they share one. Ids stay in the page; the result carries only whether they matched.
@@ -173,8 +187,56 @@ function faceLabInit(): void {
     injectNext: false,
     level: 0,
     remoteTracks: [],
+    lite: { sockets: 0, out: [], in: [] },
   };
   (window as unknown as { __faceLab: FaceLab }).__faceLab = lab;
+  // The LITE speak channel: JSON text frames whose type is an agent.* or session.* event (Transcribe's socket sends
+  // binary frames and is never counted). Types, ids and sizes only.
+  const NativeSocket = window.WebSocket;
+  const liteFrame = (data: unknown): Record<string, unknown> | null => {
+    if (typeof data !== 'string' || !data.startsWith('{')) return null;
+    try {
+      const parsed = JSON.parse(data) as Record<string, unknown>;
+      return typeof parsed.type === 'string' && /^(agent|session)\./.test(parsed.type) ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+  class TappedSocket extends NativeSocket {
+    #counted = false;
+    constructor(url: string | URL, protocols?: string | string[]) {
+      super(url, protocols);
+      this.addEventListener('message', (message: MessageEvent) => {
+        const frame = liteFrame(message.data);
+        if (frame === null) return;
+        if (!this.#counted) {
+          this.#counted = true;
+          lab.lite.sockets += 1;
+        }
+        lab.lite.in.push({
+          at: now(),
+          type: String(frame.type),
+          source: typeof frame.source_event_id === 'string' ? frame.source_event_id : null,
+        });
+      });
+    }
+
+    override send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+      const frame = liteFrame(data);
+      if (frame !== null) {
+        const audio = typeof frame.audio === 'string' ? frame.audio : '';
+        const padding = audio.endsWith('==') ? 2 : audio.endsWith('=') ? 1 : 0;
+        lab.lite.out.push({
+          at: now(),
+          type: String(frame.type),
+          id: typeof frame.event_id === 'string' ? frame.event_id : null,
+          bytes: audio === '' ? 0 : Math.floor((audio.length * 3) / 4) - padding,
+        });
+      }
+      super.send(data);
+    }
+  }
+  window.WebSocket = TappedSocket;
   const decoder = new TextDecoder('utf-8', { fatal: false });
   const encoder = new TextEncoder();
   const toBytes = (data: unknown): Uint8Array | null => {
@@ -476,6 +538,23 @@ function words(text: string | null): string {
     .trim();
 }
 
+/** The LITE speak-channel frames the page sent / got of `type` (at or after `after`). */
+const liteOut = (lab: FaceLab, type: string, after = 0) =>
+  lab.lite.out.filter((f) => f.type === type && f.at >= after);
+const liteIn = (lab: FaceLab, type: string, after = 0) =>
+  lab.lite.in.filter((f) => f.type === type && f.at >= after);
+
+/** Whether an utterance the page opened on its speak channel is still being said (started, not ended or cut). */
+function liteSpeaking(lab: FaceLab): boolean {
+  const over = new Set(
+    lab.lite.in
+      .filter((f) => f.type === 'agent.speak_ended' || f.type === 'agent.speak_interrupted')
+      .map((f) => f.source),
+  );
+  const opened = new Set(liteOut(lab, 'agent.speak').map((f) => f.id));
+  return [...opened].some((id) => !over.has(id));
+}
+
 /** The LITE face hand-overs the page POSTed (`/calls/:id/face/speak`), each a part of a unit's audio. */
 const speakPosts = (lab: FaceLab, after = 0): LabFetch[] =>
   lab.fetches.filter((f) => f.method === 'POST' && f.path.endsWith('/face/speak') && f.at >= after);
@@ -508,7 +587,8 @@ async function waitForFaceQuiet(
       ? started > ended
       : lab.onsets.length > lab.offsets.length ||
         lab.appOnsets.length > lab.appOffsets.length ||
-        speakPosts(lab).some((f) => f.doneAt === null);
+        speakPosts(lab).some((f) => f.doneAt === null) ||
+        liteSpeaking(lab);
     if (!busy && t - last > quietMs) return;
     await page.waitForTimeout(200);
   }
@@ -778,13 +858,19 @@ async function measuredTurn(
   // FULL hands the face words on the room, LITE audio to the server: a call only ever does one of the two.
   const speakText = outEvents(lab, 'avatar.speak_text', sentAt)[0]?.at ?? null;
   const speakPost = speakPosts(lab, sentAt)[0] ?? null;
+  // A LITE stock face the page feeds: its first chunk on the page's own speak channel.
+  const liteChunk = liteOut(lab, 'agent.speak', sentAt)[0]?.at ?? null;
   const firstUnit = lab.units.find((u) => u.at >= sentAt)?.at ?? null;
-  const handOver = speakText ?? speakPost?.at ?? null;
+  const handOver = speakText ?? speakPost?.at ?? liteChunk;
+  const speakStarted =
+    inEvents(lab, 'avatar.speak_started', sentAt)[0]?.at ??
+    liteIn(lab, 'agent.speak_started', sentAt)[0]?.at ??
+    null;
   return {
     sentAt,
     // Read again now: a response header can fill it in after the request went out.
     requestId: lab.fetches.find((f) => f.path === sent?.path && f.at === sent.at)?.requestId ?? null,
-    firstSpeakStartedMs: ms(sentAt, inEvents(lab, 'avatar.speak_started', sentAt)[0]?.at ?? null),
+    firstSpeakStartedMs: ms(sentAt, speakStarted),
     firstFaceAudioMs: ms(sentAt, firstAfter(lab.onsets, sentAt)),
     firstAppPlaybackMs: ms(sentAt, firstAfter(lab.plays, sentAt)),
     firstAppAudioMs: ms(sentAt, firstAfter(lab.appOnsets, sentAt)),
@@ -832,6 +918,117 @@ function liteUnitTimings(
     if (post.doneAt !== null && post.status === 204) handOverToDoneMs.push(Math.round(post.doneAt - post.at));
   }
   return { handOverToStartedMs, handOverToAudioMs, handOverToDoneMs };
+}
+
+/** Sound intervals [onset, offset] (an onset without its offset runs to `end`). */
+function intervals(onsets: readonly number[], offsets: readonly number[], after: number, end: number) {
+  const out: [number, number][] = [];
+  for (const onset of onsets.filter((t) => t >= after)) {
+    out.push([onset, firstAfter(offsets, onset) ?? end]);
+  }
+  return out;
+}
+
+/**
+ * A LITE stock face the page feeds, from its own speak channel and the same meters as every arm: the sockets it
+ * opened, the utterances of each turn (must be one), chunk sizes, acknowledgements, first chunk → speak_started →
+ * sound on the avatar's track, keep-alives, the units the call played itself while the face was live (fallbacks), and
+ * the doubled-audio detector: the avatar's track and the call's own output sounding at the same time.
+ */
+function liteBrowserSummary(lab: FaceLab, live: number, turnsSentAt: readonly number[], end: number) {
+  const speaks = liteOut(lab, 'agent.speak', live);
+  const utterancesPerTurn = turnsSentAt.map((sentAt, i) => {
+    const until = turnsSentAt[i + 1] ?? end;
+    return new Set(speaks.filter((f) => f.at >= sentAt && f.at < until).map((f) => f.id)).size;
+  });
+  const ids = [...new Set(speaks.map((f) => f.id))];
+  const firstChunkToStartedMs: number[] = [];
+  const startedToAudioMs: number[] = [];
+  const firstChunkBytes: number[] = [];
+  for (const id of ids) {
+    const first = speaks.find((f) => f.id === id);
+    if (first === undefined) continue;
+    firstChunkBytes.push(first.bytes);
+    const started = liteIn(lab, 'agent.speak_started', first.at).find((f) => f.source === id);
+    if (started === undefined) continue;
+    firstChunkToStartedMs.push(Math.round(started.at - first.at));
+    const sound = firstAfter(lab.onsets, started.at);
+    if (sound !== null) startedToAudioMs.push(Math.round(sound - started.at));
+  }
+  const appended = liteIn(lab, 'agent.audio_buffer_appended', live).length;
+  const committed = liteIn(lab, 'agent.audio_buffer_committed', live).length;
+  const face = intervals(lab.onsets, lab.offsets, live, end);
+  const own = intervals(lab.appOnsets, lab.appOffsets, live, end);
+  let overlaps = 0;
+  let overlapMs = 0;
+  for (const [a0, a1] of face) {
+    for (const [b0, b1] of own) {
+      const ms = Math.min(a1, b1) - Math.max(a0, b0);
+      if (ms > 0) {
+        overlaps += 1;
+        overlapMs += ms;
+      }
+    }
+  }
+  return {
+    sockets: lab.lite.sockets,
+    utterances: ids.length,
+    utterancesPerTurn,
+    chunks: speaks.length,
+    firstChunkBytes,
+    maxChunkBytes: Math.max(0, ...speaks.map((f) => f.bytes)),
+    speakEnds: liteOut(lab, 'agent.speak_end', live).length,
+    keepAlives: liteOut(lab, 'session.keep_alive', live).length,
+    interrupts: liteOut(lab, 'agent.interrupt', live).length,
+    appendedOk: appended === speaks.length,
+    committedOk: committed === liteOut(lab, 'agent.speak_end', live).length,
+    firstChunkToStartedMs,
+    startedToAudioMs,
+    errors: liteIn(lab, 'error', live).length,
+    // The call's own speakers while the face was live: units the face gave back (or never took).
+    fallbacks: lab.plays.filter((t) => t >= live).length,
+    doubledAudio: { overlaps, ms: Math.round(overlapMs) },
+  };
+}
+
+/**
+ * Barge-in on a LITE stock face the page feeds: a line is typed, and once the avatar started saying the reply the
+ * founder interrupts (the call's Interrupt button). From the page's `agent.interrupt` to the vendor's
+ * `agent.audio_buffer_cleared`, to silence on the avatar's track (the meter's offset), and whether the face's element
+ * was silenced at once (before the vendor answered).
+ */
+async function liteBargeIn(page: Page, line: string) {
+  const before = await pageNow(page);
+  await typeOnCall(page, line);
+  const started = await until(
+    page,
+    (lab) => liteIn(lab, 'agent.speak_started', before).length > 0,
+    FIRST_SOUND_MS,
+  );
+  if (!started) return { measured: false };
+  await page.waitForTimeout(600);
+  await callScreen(page).getByRole('button', { name: 'Interrupt' }).click({ timeout: 5_000 });
+  const elementSilenced = await videoTile(page)
+    .locator('video')
+    .evaluate((element: HTMLVideoElement) => element.muted || element.volume === 0)
+    .catch(() => null);
+  await until(page, (lab) => liteOut(lab, 'agent.interrupt', before).length > 0, 5_000);
+  await page.waitForTimeout(1_500);
+  const lab = await readLab(page);
+  const interrupt = liteOut(lab, 'agent.interrupt', before)[0] ?? null;
+  const cleared =
+    interrupt === null ? null : (liteIn(lab, 'agent.audio_buffer_cleared', interrupt.at)[0] ?? null);
+  const silence = interrupt === null ? null : firstAfter(lab.offsets, interrupt.at);
+  return {
+    measured: interrupt !== null,
+    elementSilenced,
+    interruptToClearedMs: ms(interrupt?.at ?? null, cleared?.at ?? null),
+    interruptToSilenceMs: ms(interrupt?.at ?? null, silence),
+    // The page interrupted once and told the server.
+    serverTold: lab.fetches.some(
+      (f) => f.method === 'POST' && f.path.endsWith('/face/interrupt') && f.at >= before,
+    ),
+  };
 }
 
 // ---- the suite --------------------------------------------------------------------------------------------
@@ -1396,11 +1593,14 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
     expect(result.error ?? null, 'polly').toBeNull();
   });
 
-  // The same call arm with the app's face in LITE (the lab restarted the API with MEDIA_FACE_MODE=lite, and gave the
-  // synthetic vEIR a face reference ready under likeness consent, as production LITE needs): the same founder turns
-  // and meters as the FULL call and Polly alone. A LITE face renders the call's own Polly audio, handed back to the
-  // server (`face/speak`) and relayed over the speak socket; the sandbox shows its own avatar whatever the reference.
-  test("call LITE: the face lip-syncs the call's Polly audio, the same turns", async ({ page, baseURL }) => {
+  // The same call arm with the app's face as a LITE stock face the page feeds (the lab restarted the API with
+  // MEDIA_FACE_MODE=lite and MEDIA_FACE_LITE_ROUTE=browser; the sandbox's Wayne, admins only): the same founder turns
+  // and meters as the FULL call and the voice alone. The page holds the avatar's speak channel and forwards each
+  // admitted unit's ElevenLabs PCM as it arrives, one utterance per turn; then one barge-in turn.
+  test("call LITE: the stock face lip-syncs the call's own voice, the same turns", async ({
+    page,
+    baseURL,
+  }) => {
     if (!baseURL) throw new Error('baseURL is required');
     test.skip(APP_MODE !== 'lite', 'the LITE pass only (the app runs its face in FULL)');
     test.setTimeout(6 * 60_000);
@@ -1423,11 +1623,22 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
       await waitForFaceQuiet(page, { timeoutMs: 20_000, pairedEvents: false });
       const turns: TurnTiming[] = [];
       for (const line of LINES) turns.push(await measuredTurn(page, line, { pairedEvents: false }));
+      const measuredEnd = await pageNow(page);
       const lab = await readLab(page);
       const posts = speakPosts(lab, live);
       result.session = sessions[0] ?? null;
       result.turns = turns.map(({ sentAt: _sentAt, ...rest }) => rest);
       result.units = liteUnitTimings(lab, live);
+      result.lite_browser = liteBrowserSummary(
+        lab,
+        live,
+        turns.map((t) => t.sentAt),
+        measuredEnd,
+      );
+      result.barge_in = await liteBargeIn(page, BARGE_IN_LINE).catch((err: unknown) => ({
+        measured: false,
+        error: errorName(err),
+      }));
       result.speak_requests = posts.length;
       result.speak_accepted = posts.filter((f) => f.status === 204).length;
       result.speak_text_sent = outEvents(lab, 'avatar.speak_text', live).length;

@@ -83,13 +83,16 @@ export function mediaFor(
   return {
     ...(config.media.face === 'heygen-liveavatar'
       ? {
-          // LITE: the EIR's own avatar renders our audio. FULL (MEDIA_FACE_MODE=full): a stock avatar voices
-          // admitted text with its stock voice, at the FULL price; the same key and API either way.
+          // LITE: the EIR's own avatar renders our audio (relayed by the server), or a stock avatar the caller's page
+          // feeds (MEDIA_FACE_LITE_ROUTE=browser). FULL (MEDIA_FACE_MODE=full): a stock avatar voices admitted text
+          // with its stock voice, at the FULL price; the same key and API either way.
           embodiment: new HeygenLiveAvatarFace({
             apiKey: secrets.apiKey(face.secretName),
             apiOrigin: face.apiOrigin,
             sandbox: config.media.faceSandbox,
             mode: config.media.faceMode,
+            liteRoute: config.media.faceLiteRoute,
+            socketOrigin: face.liteSocketOrigin,
             ...(config.media.faceStock === null ? {} : { stock: config.media.faceStock }),
             adminsOnly: config.media.faceAudience === 'admins',
             // The vendor's sandbox costs nothing (lab run 41219394722: 0 credits used, while the ledger billed $0.30

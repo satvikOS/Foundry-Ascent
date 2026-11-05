@@ -155,6 +155,8 @@ export function localFaceFor(
     apiOrigin: vendor.apiOrigin,
     sandbox: config.media.faceSandbox,
     mode: config.media.faceMode,
+    liteRoute: config.media.faceLiteRoute,
+    socketOrigin: vendor.liteSocketOrigin,
     ...(config.media.faceStock === null ? {} : { stock: config.media.faceStock }),
     adminsOnly: true,
     // The lab's local face is always the vendor's sandbox, which costs nothing.

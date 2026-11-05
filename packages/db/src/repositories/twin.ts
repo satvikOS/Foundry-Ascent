@@ -139,6 +139,14 @@ export async function personaTwin(ex: SqlExecutor, personaId: string): Promise<P
 /** How a face speaks (0018): `lite` renders audio our server made, `full` voices text our server admitted. */
 export type FaceMode = 'lite' | 'full';
 const FACE_MODES = ['lite', 'full'] as const;
+/**
+ * Who feeds a LITE face our audio (0027): `server` (the server's own speak channel; every FULL face too) or
+ * `browser` (a stock face the caller's page feeds with the units the server admitted).
+ */
+export type FaceRoute = 'server' | 'browser';
+const FACE_ROUTES = ['server', 'browser'] as const;
+/** The faces whose units the server admits as text (`call_face_texts`): FULL, and a LITE face the browser feeds. */
+const ADMITS_TEXT = `(f.mode = 'full' OR f.route = 'browser')`;
 
 const faceShape = {
   call_id: col.uuid,
@@ -146,6 +154,7 @@ const faceShape = {
   started_by: col.uuid,
   vendor: col.enum(['heygen', 'fake'] as const),
   mode: col.enum(FACE_MODES),
+  route: col.enum(FACE_ROUTES),
   session_ref: col.text,
   control: col.text.nullable,
   max_seconds: col.int,
@@ -163,6 +172,8 @@ const faceShape = {
   transcript_skip: col.int,
   /** Seconds since a check last read the transcript to its end (since the face started, if none has). */
   transcript_unchecked: col.int,
+  /** Barge-ins the page reported for the face (0027). */
+  interrupts: col.int,
 };
 const faceCodec = camelRow(faceShape);
 /** A call's face; `control` is the base64 ciphertext of the control channel (null once ended). */
@@ -174,10 +185,10 @@ const transcriptColumns = (f = ''): string =>
      AS transcript_pending, ${f}transcript_cursor, ${f}transcript_skip,
    greatest(0, floor(extract(epoch FROM now() - coalesce(${f}transcript_checked_at, ${f}started_at))))::integer
      AS transcript_unchecked`;
-const FACE_COLUMNS = `call_id, tenant_id, started_by, vendor, mode, session_ref,
+const FACE_COLUMNS = `call_id, tenant_id, started_by, vendor, mode, route, session_ref,
   encode(control_ciphertext, 'base64') AS control, max_seconds, metered_seconds, started_at, ended_at, end_reason,
   ceil(extract(epoch FROM coalesce(ended_at, now()) - started_at))::integer AS lasted,
-  ${transcriptColumns()}`;
+  ${transcriptColumns()}, interrupts`;
 
 export function getCallFace(sx: SystemExecutor, callId: string): Promise<CallFaceRecord | null> {
   return readPart(sx, callFacePart(callId));
@@ -204,6 +215,8 @@ export function startCallFace(
     readonly vendor: 'heygen' | 'fake';
     /** How the face speaks (default `lite`). */
     readonly mode?: FaceMode;
+    /** Who feeds a LITE face (default `server`; `browser` only for a LITE stock face). */
+    readonly route?: FaceRoute;
     readonly sessionRef: string;
     /** Base64 AES-GCM ciphertext of the control channel, or null. */
     readonly control: string | null;
@@ -212,8 +225,9 @@ export function startCallFace(
 ): Promise<CallFaceRecord | null> {
   return queryFirst(
     sx,
-    `INSERT INTO call_faces (call_id, tenant_id, started_by, vendor, mode, session_ref, control_ciphertext, max_seconds)
-     SELECT c.id, c.tenant_id, c.started_by, :vendor, :mode, :ref, decode(:control, 'base64'), :max
+    `INSERT INTO call_faces (call_id, tenant_id, started_by, vendor, mode, route, session_ref, control_ciphertext,
+                             max_seconds)
+     SELECT c.id, c.tenant_id, c.started_by, :vendor, :mode, :route, :ref, decode(:control, 'base64'), :max
        FROM calls c WHERE c.id = :call AND c.started_by = :by AND c.status = 'live'
      ON CONFLICT (call_id) DO NOTHING
      RETURNING ${FACE_COLUMNS}`,
@@ -222,6 +236,7 @@ export function startCallFace(
       by: p.uuid(input.startedBy),
       vendor: p.text(input.vendor),
       mode: p.text(input.mode ?? 'lite'),
+      route: p.text(input.route ?? 'server'),
       ref: p.text(input.sessionRef),
       control: p.nullable.text(input.control),
       max: p.int(Math.max(0, Math.min(14_400, Math.floor(input.maxSeconds)))),
@@ -303,10 +318,10 @@ export function endCallFace(
      UPDATE call_faces AS f SET ended_at = now(), end_reason = :reason, control_ciphertext = NULL,
                                 speaking_unit = NULL
        FROM prev WHERE f.call_id = prev.call_id
-     RETURNING f.call_id, f.tenant_id, f.started_by, f.vendor, f.mode, f.session_ref, prev.control, f.max_seconds,
-               f.metered_seconds, f.started_at, f.ended_at, f.end_reason,
+     RETURNING f.call_id, f.tenant_id, f.started_by, f.vendor, f.mode, f.route, f.session_ref, prev.control,
+               f.max_seconds, f.metered_seconds, f.started_at, f.ended_at, f.end_reason,
                ceil(extract(epoch FROM f.ended_at - f.started_at))::integer AS lasted,
-               ${transcriptColumns('f.')}`,
+               ${transcriptColumns('f.')}, f.interrupts`,
     { call: p.uuid(input.callId), reason: p.text(input.reason) },
     (r) => faceCodec.decode(r),
   );
@@ -385,14 +400,20 @@ export async function admitFacePart(
 }
 
 /**
- * Barge-in: the face no longer says the unit it was saying, so no later part of it is admitted. True when the
- * call has a live face.
+ * Barge-in: the face no longer says the unit it was saying, so no later part of it is admitted (`count`: the page
+ * reported it, counted for the face's end audit). True when the call has a live face.
  */
-export async function sealFaceUtterance(sx: SystemExecutor, callId: string): Promise<boolean> {
+export async function sealFaceUtterance(
+  sx: SystemExecutor,
+  callId: string,
+  options: { readonly count?: boolean } = {},
+): Promise<boolean> {
   const sealed = await queryFirst(
     sx,
-    `UPDATE call_faces SET speaking_unit = NULL WHERE call_id = :call AND ended_at IS NULL RETURNING call_id`,
-    { call: p.uuid(callId) },
+    `UPDATE call_faces SET speaking_unit = NULL,
+            interrupts = CASE WHEN :count THEN least(interrupts + 1, 100000) ELSE interrupts END
+      WHERE call_id = :call AND ended_at IS NULL RETURNING call_id`,
+    { call: p.uuid(callId), count: p.bool(options.count === true) },
     (r) => col.uuid.decode(r.call_id, 'call_id'),
   );
   return sealed !== null;
@@ -429,7 +450,7 @@ export async function admitFaceText(
     sx,
     `WITH face AS (
        UPDATE call_faces f SET said_turn = :turn, said_seq = :seq
-        WHERE f.call_id = :call AND f.session_ref = :ref AND f.ended_at IS NULL AND f.mode = 'full'
+        WHERE f.call_id = :call AND f.session_ref = :ref AND f.ended_at IS NULL AND ${ADMITS_TEXT}
           AND (f.said_turn IS NULL
                OR (f.said_turn = :turn AND f.said_seq < :seq)
                OR (f.said_turn <> :turn
@@ -509,7 +530,7 @@ export async function admitPreapprovedFaceUnit(
        FOR UPDATE OF c),
      face AS (
        SELECT f.call_id FROM call_faces f JOIN me ON me.id = f.call_id
-       WHERE f.session_ref = :ref AND f.ended_at IS NULL AND f.mode = 'full'
+       WHERE f.session_ref = :ref AND f.ended_at IS NULL AND ${ADMITS_TEXT}
          AND (f.said_turn IS NULL
               OR (f.said_turn = :turn AND f.said_seq < :seq)
               OR (f.said_turn <> :turn
@@ -575,7 +596,7 @@ export async function preapprovedFaceText(
     `SELECT t.call_id FROM call_face_texts t
        JOIN call_faces f ON f.call_id = t.call_id
       WHERE t.call_id = :call AND t.unit = :unit AND t.preapproved AND t.digests = :digests
-        AND f.session_ref = :ref AND f.ended_at IS NULL AND f.mode = 'full'`,
+        AND f.session_ref = :ref AND f.ended_at IS NULL AND ${ADMITS_TEXT}`,
     {
       call: p.uuid(input.callId),
       ref: p.text(input.sessionRef),

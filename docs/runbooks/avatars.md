@@ -32,6 +32,10 @@ for a fictional EIR).
 - A face or voice that fails costs the call nothing: the presence tile takes over from a face silently, and a
   standard voice speaks the same sentence when the cloned voice fails (that clone is then skipped for a minute).
 - The crisis line is never said by the face or the cloned voice.
+- **LITE fed by the page (§11)** is for a vendor **stock** avatar only: the caller's page holds the avatar's speak
+  channel and forwards only units our server admitted, but nothing on the server can detect a modified page making
+  that stock face say other audio on its own screen (LITE has no transcript). So it is never used for a real person's
+  likeness (infra, the API config and core all refuse it) and is offered to platform admins and the people they name.
 
 ## 1. Accounts and plans (owner)
 
@@ -447,7 +451,34 @@ Polly fallback are now male.
 
 This section records the choice only. The face's configuration (`media.face` in `infra/cdk/config/production.json`:
 mode, the avatar, the audience, sandbox off) is owned by the face workstream and changes with it, not here; until
-then production still shows the sandbox avatar (§9.4) to admins.
+then production still shows the sandbox avatar (§9.4) to admins, in LITE fed by the page (§11). Outside the sandbox
+Thomas is set as `stock.avatarId` with `sandbox` `false`.
+
+## 11. LITE fed by the page: a stock avatar in our own voice (platform admins and chosen people only)
+
+The stock avatar (the sandbox's Wayne, or a stock avatar from the vendor's list) lip-syncs the vEIR's own ElevenLabs
+voice ("AI voice"), labelled **"AI avatar"**. How it works: [calls.md §4.4](../architecture/calls.md#44-a-lite-stock-face-fed-by-the-page).
+
+**Configuration** (`infra/cdk/config/production.json`, `media.face`):
+
+| Key              | Value                                                                                 | Why                                                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `mode`           | `lite`                                                                                | the face renders our audio                                                                                                |
+| `liteRoute`      | `browser` (the default with `stock`)                                                  | the page holds the speak channel; refused without `stock`                                                                 |
+| `stock.avatarId` | the stock avatar (no `voiceId`)                                                       | never a person's likeness; the sandbox shows Wayne anyway                                                                 |
+| `audience`       | `admins` (the only one accepted)                                                      | platform admins and people given Video face (§9.8)                                                                        |
+| `sandbox`        | `true` (free, about a minute a session) or `false` (credits, 1 per minute)            |                                                                                                                           |
+| `csp.connect`    | the room's `wss://` and `https://` origins **and** `wss://webrtc-signaling.heygen.io` | the speak channel's one origin (`packages/core/media-vendors.json` `liteSocketOrigin`); the deploy smoke checks all three |
+
+The API reads them as `MEDIA_FACE_MODE=lite`, `MEDIA_FACE_LITE_ROUTE=browser`, `MEDIA_FACE_AVATAR_ID`,
+`MEDIA_FACE_AUDIENCE=admins`. Then **Admin › Settings › Video faces** on, and Video face for the people who may see it.
+
+**Checks** (the conversation lab's face suite, `face_mode` `lite`): sockets 1; one utterance per turn; acks complete;
+first face audio within 0.7 s of the voice alone and under 2.2 s; barge-in silences at once and the track within
+0.6 s; no local playback and no doubled audio while the face is healthy.
+
+**To stop it:** **Video faces** off (every face ends within a heartbeat), or the person's Video face off, or
+`mode` back to `full` (the stock voice) or `provider` `none`.
 
 ## What still needs real keys or a decision
 

@@ -55,6 +55,14 @@ import { resolveVeir } from './veir.js';
  *   and hands back, at each unit's turn, audio the server synthesized from a signed unit, which the server checks
  *   against its face-audio manifest before relaying it (`speak`). So the face renders nothing the validators did
  *   not approve, and never the crisis line.
+ * - LITE stock face fed by the browser (`liteRoute: 'browser'`, never a likeness: refused here as in infra and the
+ *   API config): the session response hands the caller's page the vendor's speak channel (`controlUrl`, never
+ *   logged). The server admits each unit as it signs it, exactly as for FULL below (`prepareFaceApproval`, or
+ *   `authorizeFaceText` for the intro: once, in order, never the crisis line, within the caps), and an honest page
+ *   forwards only admitted units' PCM, streamed from `/speech`. LITE has no transcript, so a modified page could make
+ *   the stock face say other audio on its own screen undetected: hence stock faces only, for a chosen audience. The
+ *   face's minutes, caps, kill switches and metering are the server's as for any face; barge-ins are counted
+ *   (`/face/interrupt` never opens a vendor channel: one would replace the page's) and audited at the face's end.
  * - FULL: the vendor takes its commands only over the room, from the browser. The server admits each signed unit
  *   first (as the turn engine signs it, `prepareFaceApproval`, or `authorizeFaceText` for any other unit;
  *   services/speech.ts: once, in order, never the crisis line), and the browser sends
@@ -226,6 +234,32 @@ export function faceStopCause(input: {
   if (input.monthSecondsUsed >= input.settings.faceMinutesPerPrincipalMonth * 60) return 'face_minutes';
   if (input.clientOff) return 'face_dropped';
   return null;
+}
+
+/**
+ * Who feeds a provider's LITE face our audio: `browser` only for a LITE **stock** face whose provider asks for it;
+ * `server` for everything else. A provider that asks for the browser route with a real person's likeness (or in
+ * FULL) is a misconfiguration infra and the API config refuse already: core refuses it too (`null`), so such a
+ * face never starts.
+ */
+export function faceRouteOf(
+  provider: Pick<EmbodimentProvider, 'mode' | 'likeness' | 'liteRoute'>,
+): 'server' | 'browser' | null {
+  if (provider.liteRoute !== 'browser') return 'server';
+  return provider.mode === 'lite' && !provider.likeness ? 'browser' : null;
+}
+
+/**
+ * Whether the server admits a face's units as text (`call_face_texts`, face pre-approval and `face/say`): a FULL
+ * face, or a LITE stock face the browser feeds. Both the wired provider and the face record must say so.
+ */
+export function faceAdmitsText(
+  provider: Pick<EmbodimentProvider, 'id' | 'mode' | 'likeness' | 'liteRoute'> | undefined,
+  face: Pick<twinRepo.CallFaceRecord, 'vendor' | 'mode' | 'route'>,
+): boolean {
+  if (provider?.id !== face.vendor || provider.mode !== face.mode) return false;
+  if (face.mode === 'full') return true;
+  return face.route === 'browser' && faceRouteOf(provider) === 'browser';
 }
 
 /** The vendor's metered model id for a face in its mode (`heygen:liveavatar-<mode>`, `<provider>:face`). */
@@ -527,7 +561,42 @@ export function createFaceHooks(kit: Kit): FaceHooks {
       });
     }
     await stopVendor(requestId, face, 'call_ended');
+    // A LITE face the browser fed: its end is audited with what it was allowed to say and how often it was cut off.
+    if (face.route === 'browser') {
+      events.push({
+        action: 'call.face_ended',
+        outcome: 'succeeded',
+        ventureId,
+        objectType: 'call',
+        objectId: face.callId,
+        policyReason: 'call_ended',
+        metadata: {
+          provider: face.vendor,
+          mode: face.mode,
+          seconds: face.lasted,
+          ...(await faceCounts(face)),
+        },
+      });
+    }
     return events;
+  }
+
+  /**
+   * The counts a face's end audit carries for a LITE face the browser fed (identifiers and numbers only): its
+   * route, the units the server admitted to it, and the barge-ins the page reported. Empty for any other face.
+   */
+  async function faceCounts(
+    face: twinRepo.CallFaceRecord,
+  ): Promise<{ route?: string; admitted?: number; interrupts?: number }> {
+    if (face.route !== 'browser') return {};
+    let admitted = -1;
+    try {
+      admitted = (await kit.system((sx) => twinRepo.faceTextUnits(sx, face.callId), { transaction: false }))
+        .length;
+    } catch {
+      // Unread: recorded as -1, the end is audited all the same.
+    }
+    return { route: face.route, admitted, interrupts: face.interrupts };
   }
 
   return {
@@ -639,6 +708,7 @@ export function createFaceHooks(kit: Kit): FaceHooks {
               provider: ended.vendor,
               mode: ended.mode,
               seconds: ended.lasted,
+              ...(await faceCounts(ended)),
               // Which of the page's triggers ended it (the video ended, the room dropped, the vendor stopped it...).
               ...(decision.client?.reason === undefined ? {} : { clientReason: decision.client.reason }),
               ...(decision.client?.vendorReason === undefined
@@ -728,7 +798,11 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
   async function liveFace(
     ctx: RequestContext,
     rawCallId: string,
-    options: { readonly forSpeech: boolean; readonly mode?: 'lite' | 'full' },
+    options: {
+      readonly forSpeech: boolean;
+      readonly mode?: 'lite' | 'full';
+      readonly route?: 'server' | 'browser';
+    },
   ): Promise<{
     readonly call: callsRepo.CallRecord;
     readonly face: twinRepo.CallFaceRecord;
@@ -756,7 +830,8 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
       face?.endedAt !== null ||
       provider?.id !== face.vendor ||
       provider.mode !== face.mode ||
-      (options.mode !== undefined && face.mode !== options.mode)
+      (options.mode !== undefined && face.mode !== options.mode) ||
+      (options.route !== undefined && face.route !== options.route)
     ) {
       throw fail.conflict('The face of this call has ended.', 'face_not_active');
     }
@@ -852,6 +927,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
           voicing: 'engine',
           url: null,
           stockFace: false,
+          controlUrl: null,
         };
         if (provider === undefined || callId === null) {
           await audit(scope, {
@@ -912,7 +988,12 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
             objectId: face.callId,
             ...(reason === null ? {} : { policyReason: reason }),
             // Identifiers only: tokens and the control channel are credentials and are never recorded.
-            metadata: { provider: provider.id, mode: provider.mode, voicing: provider.voicing },
+            metadata: {
+              provider: provider.id,
+              mode: provider.mode,
+              voicing: provider.voicing,
+              ...(provider.mode === 'lite' ? { route: faceRouteOf(provider) ?? 'refused' } : {}),
+            },
           },
         ]);
       };
@@ -923,6 +1004,13 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
       if (existing !== null) {
         // One face per call: a face that dropped is not opened again (nothing bills unseen).
         await record('denied', 'face_already_used');
+        return presence;
+      }
+      // A real person's likeness is never fed by the browser (infra and the API config refuse it too).
+      const route = faceRouteOf(provider);
+      if (route === null) {
+        logger.error('call.face_route_refused', { requestId: ctx.requestId, callId: face.callId });
+        await record('denied', 'likeness_browser_route');
         return presence;
       }
       const allowance = faceAllowance({
@@ -964,6 +1052,15 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
         await record('failed', 'vendor_unavailable');
         return presence;
       }
+      const controlUrl = route === 'browser' ? (started.browser.controlUrl ?? null) : null;
+      if (route === 'browser' && controlUrl === null) {
+        // A browser-fed face without its speak channel could never speak: nothing runs unseen.
+        await provider
+          .end({ sessionRef: started.sessionRef, control: null, requestId: ctx.requestId }, 'face_stopped')
+          .catch(() => undefined);
+        await record('failed', 'vendor_unavailable');
+        return presence;
+      }
       const key = await keys.signingKey();
       const stored = await kit
         .system((sx) =>
@@ -972,6 +1069,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
             startedBy: ctx.principalId,
             vendor: provider.id,
             mode: provider.mode,
+            route,
             sessionRef: started.sessionRef,
             control:
               started.control === null
@@ -1001,14 +1099,18 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
         voicing: provider.voicing,
         url: started.browser.url,
         stockFace: provider.stock === true,
+        // The page's speak channel, only for a LITE stock face (a credential: in this response alone, never logged).
+        controlUrl,
       };
     },
 
     speak: async (ctx, rawCallId, input) => {
       // Audio only for a LITE face: a FULL face voices admitted text with its own voice.
+      // A LITE face the browser feeds takes nothing from this relay (the page forwards admitted units itself).
       const { call, face, provider, handle } = await liveFace(ctx, rawCallId, {
         forSpeech: true,
         mode: 'lite',
+        route: 'server',
       });
       const check = verifyFaceAudio(
         await keys.verificationKeys(),
@@ -1063,9 +1165,16 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
 
     interrupt: async (ctx, rawCallId) => {
       // FULL: the browser interrupts the vendor over the room; this seals the server's side all the same.
-      const { call, provider, handle } = await liveFace(ctx, rawCallId, { forSpeech: false });
+      const { call, face, provider, handle } = await liveFace(ctx, rawCallId, { forSpeech: false });
       // What the face was saying is over: no later part of it is taken, even if the vendor cannot be reached.
-      await kit.system((sx) => twinRepo.sealFaceUtterance(sx, call.id), { transaction: false });
+      // Counted for the face's end audit.
+      await kit.system((sx) => twinRepo.sealFaceUtterance(sx, call.id, { count: true }), {
+        transaction: false,
+      });
+      // A LITE face the browser feeds: the page interrupted the vendor over its own speak channel. The server
+      // never opens a channel of its own here: the vendor keeps one per session, and a second would replace the
+      // page's (cutting the face off).
+      if (face.route === 'browser') return;
       try {
         await provider.interrupt(handle);
       } catch (err) {

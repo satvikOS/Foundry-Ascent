@@ -244,6 +244,11 @@ export class FakeEmbodimentProvider implements EmbodimentProvider {
   sandbox = false;
   /** The control channel each session gets (a credential at a real vendor). */
   control: string | null = 'wss://face.test.invalid/control';
+  /**
+   * LITE: who feeds the face (`browser`: a stock face whose speak channel the page holds; the session then hands
+   * the page `browser.controlUrl`).
+   */
+  liteRoute: 'server' | 'browser' = 'server';
 
   constructor(
     readonly id: EmbodimentProvider['id'] = 'fake',
@@ -287,6 +292,9 @@ export class FakeEmbodimentProvider implements EmbodimentProvider {
         token: `${this.id}.session-${n}`,
         url: this.id === 'fake' ? null : `wss://room-${n}.test.invalid`,
         expiresAt: new Date(Date.now() + Math.min(request.maxSeconds, 60) * 1000).toISOString(),
+        ...(this.liteRoute === 'browser' && this.control !== null
+          ? { controlUrl: `${this.control}/${n}` }
+          : {}),
       },
       sessionRef: `sess-${n}`,
       control: this.control === null ? null : `${this.control}/${n}`,

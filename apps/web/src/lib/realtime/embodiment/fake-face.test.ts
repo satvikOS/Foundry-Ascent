@@ -14,6 +14,7 @@ const SESSION: AvatarSessionResponse = {
   voicing: 'audio',
   url: null,
   stockFace: false,
+  controlUrl: null,
 };
 
 function setup() {

@@ -343,12 +343,23 @@ export interface StartedFaceSession {
    * LITE; in FULL it can also send the room the vendor's commands, which is how the browser makes the face say
    * text the server admitted) and the room URL. A credential: never logged or stored.
    */
-  readonly browser: { readonly token: string; readonly url: string | null; readonly expiresAt: string };
+  readonly browser: {
+    readonly token: string;
+    readonly url: string | null;
+    readonly expiresAt: string;
+    /**
+     * A LITE stock face fed by the browser (`liteRoute: 'browser'`, never a likeness): the vendor's speak channel
+     * (`ws_url`), handed to the caller's page only in the authenticated avatar-session response. A credential:
+     * never logged. Absent for every other face.
+     */
+    readonly controlUrl?: string;
+  };
   /** The vendor's session id (not a secret). */
   readonly sessionRef: string;
   /**
-   * The server-held control channel (LITE's `ws_url`), which can make the face speak: never sent to the
-   * browser, stored only encrypted, erased when the face ends. Null when the vendor has none (FULL, the stand-in).
+   * The server-held control channel (LITE's `ws_url`), which can make the face speak: stored only encrypted,
+   * erased when the face ends, never sent to the browser except for a LITE stock face fed by the browser
+   * (`browser.controlUrl`). Null when the vendor has none (FULL, the stand-in).
    */
   readonly control: string | null;
 }
@@ -414,8 +425,10 @@ export interface FaceTranscript {
 /**
  * The face of calls (docs/architecture/calls.md §4) behind one port, in one of two modes:
  * - **LITE** (`voicing: 'audio'`): a vendor's realtime avatar renders audio our server synthesized from validated
- *   units (HeyGen LiveAvatar LITE), driven entirely from the API with the vendor key it holds (Secrets Manager).
- *   The browser only watches. The mode for the EIR's own likeness.
+ *   units (HeyGen LiveAvatar LITE). For the EIR's own likeness it is driven entirely from the API with the vendor
+ *   key it holds (Secrets Manager) and the browser only watches (`liteRoute: 'server'`); a vendor STOCK avatar
+ *   (`liteRoute: 'browser'`, labelled "AI avatar") is fed by the caller's page, which forwards only the PCM of
+ *   units the server admitted.
  * - **FULL** (`voicing: 'text'`): a vendor's stock avatar voices, with its own stock voice, text our server admitted
  *   (`VerifiedFaceText`): the browser sends the vendor exactly those words over the room, and the server reconciles
  *   the vendor's transcript against what it admitted at every heartbeat (`transcriptSince`). Never the EIR's
@@ -430,6 +443,15 @@ export interface EmbodimentProvider {
   readonly mode: 'lite' | 'full';
   /** How the vEIR is heard with this face (`AvatarVoicing`): `audio` in LITE, `text` in FULL. */
   readonly voicing: 'audio' | 'text';
+  /**
+   * LITE only: who feeds the face our audio. `server` (default): the server relays each unit's verified audio
+   * over its own speak channel (the route for a real person's likeness). `browser`: a **stock** face only
+   * (`likeness` false): the caller's page holds the vendor's speak channel for the whole call and forwards the
+   * PCM of units the server admitted as it signed them (face pre-approval, or `face/say`). A modified page could
+   * make the stock face say other audio on its own screen; there is no server-side detection in LITE, which is
+   * why a likeness never takes this route (core refuses the pair at runtime as well as infra and config).
+   */
+  readonly liteRoute?: 'server' | 'browser';
   /**
    * Whether the face is a real person's likeness (a vendor avatar of the EIR): then it serves only personas whose
    * face is ready under likeness consent. A stock avatar and the stand-in draw no one and serve any.

@@ -496,7 +496,10 @@ export class CallEngine {
       })
       .catch(() => undefined);
 
-    if (intro) this.player.enqueue({ turnId: null, seq: 0, text: intro.text, sig: intro.sig });
+    if (intro) {
+      this.player.enqueue({ turnId: null, seq: 0, text: intro.text, sig: intro.sig });
+      this.player.endTurn(null);
+    }
     if (stream) await this.startCapture(stream, context, epoch);
   }
 
@@ -1129,6 +1132,9 @@ export class CallEngine {
       }
     } finally {
       turn.done = true;
+      // Every unit of the reply has reached the player: a face that says a turn as one piece may close it.
+      if (epoch === this.epoch && turn.turnId !== null && !turn.interrupted)
+        this.player?.endTurn(turn.turnId);
       if (epoch === this.epoch) {
         this.deps.onTurnSettled?.(sessionId, settled);
         if (this.turn === turn && !this.player?.busy) this.afterReply();

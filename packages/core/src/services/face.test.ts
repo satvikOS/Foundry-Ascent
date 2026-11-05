@@ -4,7 +4,9 @@ import { FakeVoiceProvider } from '../testing/fakes.js';
 import { callCanSpeak, callVoiceVendor } from './calls.js';
 import {
   MIN_FACE_SECONDS,
+  faceAdmitsText,
   faceAllowance,
+  faceRouteOf,
   faceMinutesCause,
   faceModelId,
   faceOfferedTo,
@@ -296,5 +298,35 @@ describe('media vendor prices', () => {
     expect(faceCostUsd(120, 0.093)).toBeCloseTo(0.186, 6);
     expect(voiceCostUsd(2500, 0.04)).toBeCloseTo(0.1, 6);
     expect(faceCostUsd(-5, 0.093)).toBe(0);
+  });
+});
+
+describe('who feeds a LITE face, and which faces the server admits units to as text', () => {
+  const stockBrowser = { id: 'heygen', mode: 'lite', likeness: false, liteRoute: 'browser' } as const;
+  it('feeds only a LITE stock face from the browser; a likeness (or FULL) asking for it is refused', () => {
+    expect(faceRouteOf(stockBrowser)).toBe('browser');
+    expect(faceRouteOf({ mode: 'lite', likeness: true, liteRoute: 'server' })).toBe('server');
+    expect(faceRouteOf({ mode: 'lite', likeness: true })).toBe('server');
+    expect(faceRouteOf({ mode: 'lite', likeness: true, liteRoute: 'browser' })).toBeNull();
+    expect(faceRouteOf({ mode: 'full', likeness: false, liteRoute: 'browser' })).toBeNull();
+    expect(faceRouteOf({ mode: 'full', likeness: false })).toBe('server');
+  });
+
+  it('admits text for FULL faces and LITE faces the browser feeds, when the wired provider agrees', () => {
+    const face = (mode: 'lite' | 'full', route: 'server' | 'browser') =>
+      ({ vendor: 'heygen', mode, route }) as const;
+    expect(faceAdmitsText(stockBrowser, face('lite', 'browser'))).toBe(true);
+    expect(faceAdmitsText(stockBrowser, face('lite', 'server'))).toBe(false);
+    expect(faceAdmitsText({ ...stockBrowser, likeness: true }, face('lite', 'browser'))).toBe(false);
+    expect(faceAdmitsText({ ...stockBrowser, liteRoute: 'server' }, face('lite', 'browser'))).toBe(false);
+    expect(faceAdmitsText({ ...stockBrowser, id: 'fake' }, face('lite', 'browser'))).toBe(false);
+    expect(faceAdmitsText(undefined, face('lite', 'browser'))).toBe(false);
+    const full = { id: 'heygen', mode: 'full', likeness: false } as const;
+    expect(faceAdmitsText(full, face('full', 'server'))).toBe(true);
+    expect(faceAdmitsText(full, face('lite', 'browser'))).toBe(false);
+  });
+
+  it('names exactly one origin for LITE’s speak channel (the CSP and the adapter read it)', () => {
+    expect(MEDIA_VENDORS.face.heygen.liteSocketOrigin).toBe('wss://webrtc-signaling.heygen.io');
   });
 });

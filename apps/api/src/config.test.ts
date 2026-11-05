@@ -30,6 +30,7 @@ describe('loadApiConfig', () => {
       faceMode: 'lite',
       faceStock: null,
       faceAudience: 'everyone',
+      faceLiteRoute: 'server',
       voice: 'elevenlabs',
       voiceId: null,
       voiceFallbackId: null,
@@ -83,6 +84,42 @@ describe('loadApiConfig', () => {
         'api',
       ).media,
     ).toMatchObject({ voiceId: null, voiceFallbackId: null });
+  });
+
+  it('reads a LITE stock face the browser feeds: a stock avatar only, admins only, never a likeness', () => {
+    const avatar = 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a';
+    const browser = {
+      ...prod,
+      MEDIA_FACE_PROVIDER: 'heygen-liveavatar',
+      MEDIA_FACE_MODE: 'lite',
+      MEDIA_FACE_LITE_ROUTE: 'browser',
+    };
+    expect(loadApiConfig({ ...browser, MEDIA_FACE_AVATAR_ID: avatar }, 'api').media).toMatchObject({
+      faceMode: 'lite',
+      faceLiteRoute: 'browser',
+      faceStock: { avatarId: avatar, voiceId: null },
+      faceAudience: 'admins',
+    });
+    // The sandbox's own stock avatar (Wayne) needs no id.
+    expect(loadApiConfig({ ...browser, MEDIA_FACE_SANDBOX: 'true' }, 'api').media).toMatchObject({
+      faceLiteRoute: 'browser',
+      faceStock: { avatarId: null, voiceId: null },
+    });
+    // Without a stock avatar the face would be the persona's likeness: never fed by the browser.
+    expect(() => loadApiConfig(browser, 'api')).toThrow(/likeness is never fed by the browser/);
+    expect(() =>
+      loadApiConfig({ ...browser, MEDIA_FACE_AVATAR_ID: avatar, MEDIA_FACE_AUDIENCE: 'everyone' }, 'api'),
+    ).toThrow(/MEDIA_FACE_AUDIENCE=admins/);
+    expect(() =>
+      loadApiConfig({ ...browser, MEDIA_FACE_MODE: 'full', MEDIA_FACE_AVATAR_ID: avatar }, 'api'),
+    ).toThrow(/LITE mode only/);
+    expect(() => loadApiConfig({ ...browser, MEDIA_FACE_LITE_ROUTE: 'page' }, 'api')).toThrow(
+      /MEDIA_FACE_LITE_ROUTE/,
+    );
+    // Absent: the server's relay (the likeness route), as before.
+    expect(
+      loadApiConfig({ ...prod, MEDIA_FACE_PROVIDER: 'heygen-liveavatar' }, 'api').media.faceLiteRoute,
+    ).toBe('server');
   });
 
   it('reads a FULL stock face: its avatar, its optional voice, admins only unless told otherwise', () => {
@@ -145,6 +182,7 @@ describe('loadApiConfig', () => {
         faceMode: 'lite',
         faceStock: null,
         faceAudience: 'everyone',
+        faceLiteRoute: 'server',
         voice: 'polly',
         voiceId: null,
         voiceFallbackId: null,

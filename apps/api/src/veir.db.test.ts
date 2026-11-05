@@ -234,6 +234,7 @@ describe('vEIR identity and call configuration', () => {
       voicing: 'engine',
       url: null,
       stockFace: false,
+      controlUrl: null,
     });
   });
 

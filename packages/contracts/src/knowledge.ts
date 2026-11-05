@@ -277,7 +277,8 @@ export type FaceSayRequest = z.infer<typeof FaceSayRequest>;
  * the vendor's room dropped (`room_disconnected`), the vendor stopped the session (`vendor_stopped`, with its
  * `end_reason` as `vendorReason`), the face showed no first frame (`no_video`) or did not join in time
  * (`connect_timeout`) or failed to join (`connect_failed`), the page has no adapter for it (`no_adapter`), a crisis
- * turn (`crisis`), or the call stayed on hold too long (`on_hold`).
+ * turn (`crisis`), or the call stayed on hold too long (`on_hold`). A LITE stock face the browser feeds: its speak
+ * channel closed or failed (`control_lost`), or it twice did not start saying a unit in time (`speech_stalled`).
  */
 export const FaceEndReason = z.enum([
   'video_ended',
@@ -290,6 +291,8 @@ export const FaceEndReason = z.enum([
   'no_adapter',
   'crisis',
   'on_hold',
+  'control_lost',
+  'speech_stalled',
 ]);
 export type FaceEndReason = z.infer<typeof FaceEndReason>;
 
@@ -624,8 +627,8 @@ export type AvatarSessionRequest = z.infer<typeof AvatarSessionRequest>;
 export const AvatarSessionResponse = z.object({
   provider: EmbodimentProviderId,
   /**
-   * Short-lived token the browser joins the face's video with (a vendor's room token, which can only watch:
-   * the face's speak channel stays on the server). Never stored or replayed. Null for `builtin`.
+   * Short-lived token the browser joins the face's video with (a vendor's room token; the face's speak channel
+   * stays on the server, except for a LITE stock face, `controlUrl`). Never stored or replayed. Null for `builtin`.
    */
   token: z.string().nullable(),
   expiresAt: Timestamp.nullable(),
@@ -639,5 +642,17 @@ export const AvatarSessionResponse = z.object({
    * EIR. Additive: absent means no.
    */
   stockFace: z.boolean().default(false),
+  /**
+   * A LITE **stock** face only (never a real person's likeness): the vendor's speak channel (LiveAvatar's `ws_url`,
+   * a `wss://` URL), which the browser holds for the whole call and feeds the PCM of units the server admitted
+   * (docs/architecture/calls.md §4.4). A credential for this call's face alone: kept in memory, never stored, put
+   * in a URL or logged. Null for every other face. Additive.
+   */
+  controlUrl: z
+    .string()
+    .max(1000)
+    .regex(/^wss:\/\/[^\s]+$/)
+    .nullable()
+    .default(null),
 });
 export type AvatarSessionResponse = z.infer<typeof AvatarSessionResponse>;

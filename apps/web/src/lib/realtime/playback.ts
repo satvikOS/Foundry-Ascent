@@ -5,7 +5,9 @@
  * passage of a completed turn's stored reply). Fetching is pipelined: while one unit plays, the next is
  * already being fetched. Without a face, the server streams raw PCM (ElevenLabs' stock voice, or Amazon Polly) and
  * each unit plays as its audio arrives, after a small jitter buffer (`pcm-stream.ts`), instead of after its whole
- * audio was downloaded and decoded; MP3 and a face's WAV are still decoded whole. Each request names the signed units
+ * audio was downloaded and decoded; MP3 and a face's WAV are still decoded whole. A LITE stock face the page feeds
+ * (voicing `stream`) gets a copy of each signed unit's PCM as it arrives and is the only thing heard; the call's own
+ * copy plays only for a unit the face gives back before it was heard. Each request names the signed units
  * around it, which the server hands the voice as context so sentences join up. Playback runs source → gain (ducking
  * on barge-in) → analyser (the presence reacts to it) → speakers, so `stop()` silences at once: it stops every piece
  * already scheduled and cancels every fetch, so nothing stale is heard after it.
@@ -147,10 +149,14 @@ export interface FaceRenderHandlers {
  * - voicing `text` (FULL): the vendor voices a signed unit's words with its own stock voice, once the server
  *   admitted that unit (as it signed it, `faceApproved`, else `POST /calls/:id/face/say`). The call fetches no audio for such a unit unless the face
  *   cannot say it, and then speaks it itself in the stock voice.
+ * - voicing `stream` (a LITE stock face the page feeds): the call fetches each signed unit's PCM as it is
+ *   synthesized and hands the face a copy as it arrives (`feed`, ahead of the unit's turn); the face forwards it
+ *   once the server admitted the unit, and the founder hears only the face's own audio. The call keeps the other
+ *   copy and plays it only when the face gives the unit back before it was heard (never both).
  */
 export interface FaceRenderer {
   /** How it makes a unit heard (default `audio`). */
-  readonly voicing?: 'audio' | 'text';
+  readonly voicing?: 'audio' | 'text' | 'stream';
   /** Whether it can take a unit now (connected, video flowing). Otherwise the call plays the unit itself. */
   ready(): boolean;
   /**
@@ -158,6 +164,18 @@ export interface FaceRenderer {
    * before it is still being heard), so its turn costs no round trip. Best effort.
    */
   prepare?(unit: SpeechUnitToPlay): void;
+  /**
+   * Voicing `stream`: takes a signed unit's PCM (16-bit mono at `sampleRate`, still arriving) ahead of its turn.
+   * True when the face owns the unit from now on (its `render` makes it heard, or gives it back before it was
+   * heard); false when the call plays it itself.
+   */
+  feed?(unit: SpeechUnitToPlay, pcm: ReadableStream<Uint8Array>, sampleRate: number): boolean;
+  /** Voicing `stream`: every unit of `turnId` (null: the intro) reached the call; its last is `lastSeq`. */
+  endTurn?(turnId: string | null, lastSeq: number): void;
+  /** Voicing `stream`: the turn failed; its units the face has not forwarded lose their pre-approval. */
+  withdraw?(turnId: string): void;
+  /** Voicing `stream`: the call stopped (barge-in, a blocked turn, the end): silent at once, everything dropped. */
+  halt?(): void;
   /**
    * Makes one unit heard; returns the function that stops it at once (barge-in, end). `buffer` is its decoded
    * audio (null for a text face's unit the call fetched no audio for); `audio` is what an audio face may render
@@ -195,6 +213,16 @@ type Prepared = (
   | { readonly kind: 'buffer'; readonly buffer: AudioBuffer; readonly face?: FaceUnitAudio }
   /** Raw PCM still arriving: played as it comes. */
   | { readonly kind: 'stream'; readonly stream: PcmStream }
+  /**
+   * Raw PCM still arriving, a copy of which a `stream` face took (`fed`): the face makes it heard, and `stream`
+   * (the call's own copy, never played unless the face gives the unit back) plays it otherwise.
+   */
+  | {
+      readonly kind: 'faceStream';
+      readonly stream: PcmStream;
+      readonly face: FaceRenderer;
+      readonly fed: boolean;
+    }
   /** A text face voices it: no audio fetched (unless the face cannot say it). */
   | { readonly kind: 'text' }
   | { readonly kind: 'browser' }
@@ -311,7 +339,20 @@ export class SpeechPlayer {
     this.playing = null;
     playing?.entry.controller.abort();
     playing?.stop();
+    // A face fed ahead holds units the call never reached: they stop too.
+    this.face?.halt?.();
     this.unduck();
+  }
+
+  /**
+   * Every unit of the turn `turnId` (null: the intro) has been enqueued: a face that says a turn as one piece
+   * (voicing `stream`) may close it after its last unit.
+   */
+  endTurn(turnId: string | null): void {
+    let last = -1;
+    for (const unit of this.recent) if (unit.turnId === turnId) last = Math.max(last, unit.seq);
+    for (const entry of this.queue) if (entry.unit.turnId === turnId) last = Math.max(last, entry.unit.seq);
+    if (last >= 0) this.face?.endTurn?.(turnId, last);
   }
 
   /**
@@ -325,6 +366,8 @@ export class SpeechPlayer {
       const { faceApproved: _withdrawn, ...unit } = entry.unit;
       entry.unit = unit;
     }
+    // Units a `stream` face already took ahead lose it there too.
+    this.face?.withdraw?.(turnId);
   }
 
   /**
@@ -373,20 +416,37 @@ export class SpeechPlayer {
     }
     if (this.route === 'browser') return { kind: 'browser' };
     if (this.route === 'captions') return { kind: 'captions' };
+    // A face fed as the PCM arrives takes streams like the speakers; another face takes whole units with their
+    // manifest.
+    const streamFace = face?.voicing === 'stream' && face.ready() ? face : null;
     let result: SpeechFetchResult;
     try {
       const context = this.neighbours(entry.unit);
-      // With a face set, the unit is fetched whole as before (a face renders whole units, with their manifest).
       result = await this.audio.fetchSpeech(entry.unit, entry.controller.signal, {
-        stream: face === null,
+        stream: face === null || streamFace !== null,
         ...(context === null ? {} : { context }),
       });
     } catch {
       result = { kind: 'failed' };
     }
     switch (result.kind) {
-      case 'stream':
-        return { kind: 'stream', stream: new PcmStream(result.body, result.sampleRate) };
+      case 'stream': {
+        if (streamFace?.feed === undefined || entry.unit.sig === undefined) {
+          return { kind: 'stream', stream: new PcmStream(result.body, result.sampleRate) };
+        }
+        // Two copies of the same bytes: the face's, forwarded as they arrive, and the call's own, held (played only
+        // if the face gives the unit back before it was heard).
+        const [toFace, toCall] = result.body.tee();
+        const stream = new PcmStream(toCall, result.sampleRate);
+        let fed: boolean;
+        try {
+          fed = streamFace.feed(entry.unit, toFace, result.sampleRate);
+        } catch {
+          fed = false;
+        }
+        if (!fed) void toFace.cancel().catch(() => undefined);
+        return { kind: 'faceStream', stream, face: streamFace, fed };
+      }
       case 'unavailable': {
         const route = localEnglishVoice(this.audio.synthesis) ? 'browser' : 'captions';
         return { kind: route, sticky: route };
@@ -454,7 +514,10 @@ export class SpeechPlayer {
     this.prefetch();
 
     const route: VoiceRoute =
-      prepared.kind === 'buffer' || prepared.kind === 'text' || prepared.kind === 'stream'
+      prepared.kind === 'buffer' ||
+      prepared.kind === 'text' ||
+      prepared.kind === 'stream' ||
+      prepared.kind === 'faceStream'
         ? 'server'
         : prepared.quiet === true
           ? this.route
@@ -515,6 +578,18 @@ export class SpeechPlayer {
       return { stop: this.playBuffer(prepared.buffer, settle), deferred: false };
     }
     if (prepared.kind === 'stream') {
+      return { stop: this.playStream(prepared.stream, unit, settle, started), deferred: true };
+    }
+    if (prepared.kind === 'faceStream') {
+      const face = this.face;
+      if (prepared.fed && face === prepared.face && face.ready()) {
+        return {
+          stop: this.renderOnFace(face, null, null, unit, settle, started, prepared.stream),
+          deferred: true,
+        };
+      }
+      // Not the face's (not admitted, not signed, the face went away): the call plays its own copy. A face that
+      // went away holds nothing that still sounds.
       return { stop: this.playStream(prepared.stream, unit, settle, started), deferred: true };
     }
     if (prepared.kind === 'text') {
@@ -650,6 +725,8 @@ export class SpeechPlayer {
     unit: SpeechUnitToPlay,
     settle: (completed: boolean) => void,
     started: () => void,
+    /** The call's own copy of a unit a `stream` face was fed: played only if the face gives the unit back. */
+    local: PcmStream | null = null,
   ): () => void {
     let finished = false;
     let began = false;
@@ -658,14 +735,19 @@ export class SpeechPlayer {
     const done = () => {
       if (this.rendering === face) this.rendering = null;
     };
-    const guard = this.audio.setTimeout(
-      () => {
-        finished = true;
-        done();
-        settle(true);
-      },
-      (buffer === null ? speakingTimeMs(unit.text) : buffer.duration * 1000) + FACE_GUARD_MS,
-    );
+    // A streamed unit's length is known only once it arrived: twice the estimate, so a slow voice is not cut short.
+    const expectedMs =
+      buffer !== null
+        ? buffer.duration * 1000
+        : local !== null
+          ? speakingTimeMs(unit.text) * 2
+          : speakingTimeMs(unit.text);
+    const guard = this.audio.setTimeout(() => {
+      finished = true;
+      done();
+      local?.stop();
+      settle(true);
+    }, expectedMs + FACE_GUARD_MS);
     const stopFace = face.render(
       buffer,
       { context: this.audio.context, destination: this.gain },
@@ -682,11 +764,18 @@ export class SpeechPlayer {
           this.audio.clearTimeout(guard);
           if (outcome === 'failed' && !began) {
             // The face has gone quiet first (a text face interrupts the vendor before it reports the failure),
-            // so two voices never overlap: the call speaks the unit itself.
+            // so two voices never overlap: the call speaks the unit itself (a streamed unit from its own copy,
+            // from the unit's start: nothing of it was heard).
+            if (local !== null) {
+              fallback = this.playStream(local, unit, settle, started);
+              return;
+            }
             started();
             fallback = buffer === null ? this.playFetched(unit, settle) : this.playBuffer(buffer, settle);
             return;
           }
+          // Heard on the face: the call's own copy is never played.
+          local?.stop();
           // A face that never reported the start still made the unit heard: announce it before its end.
           if (!began) started();
           settle(outcome === 'ended');
@@ -701,7 +790,10 @@ export class SpeechPlayer {
       this.audio.clearTimeout(guard);
       stopFace();
       if (fallback) fallback();
-      else settle(false);
+      else {
+        local?.stop();
+        settle(false);
+      }
     };
   }
 

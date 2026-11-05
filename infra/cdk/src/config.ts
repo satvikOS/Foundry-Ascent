@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { API_DB_RESUME_BUDGET_SECONDS, API_TIMING_MARGIN_SECONDS } from './lib/constants.js';
+import { loadFaceSocketOrigin } from './lib/media-vendors.js';
 import { SPEECH_ENGINES, SPEECH_VOICES, type SpeechEngine } from './lib/speech-voices.js';
 import { INFRA_ROOT } from './paths.js';
 
@@ -124,6 +125,16 @@ export interface PlatformConfig {
        * `everyone` in LITE (a sandbox face is offered to platform admins only either way).
        */
       readonly audience: FaceAudience;
+      /**
+       * LITE only (`MEDIA_FACE_LITE_ROUTE`): who feeds the face our audio. `server` (the default without `stock`):
+       * the server relays it over its own speak channel, the only route for a real person's likeness. `browser`
+       * (the default with `stock`, and only with it): a vendor STOCK avatar, labelled "AI avatar", whose speak
+       * channel the caller's page holds and feeds with the units the server admitted. A modified page could make
+       * that stock face say other audio on its own screen and LITE has no transcript to catch it, so `browser` is
+       * refused for a likeness (no `stock`) and needs the `admins` audience; the CSP's `connect` must name exactly
+       * the vendor's speak-channel origin (packages/core/media-vendors.json `liteSocketOrigin`). FULL: `server`.
+       */
+      readonly liteRoute: FaceLiteRoute;
     };
     /**
      * How the vEIR is heard (docs/runbooks/elevenlabs-voice.md): `polly` (Amazon Polly's stock voices), `elevenlabs`
@@ -161,6 +172,8 @@ export const FACE_MODES = ['lite', 'full'] as const;
 export type FaceMode = (typeof FACE_MODES)[number];
 export const FACE_AUDIENCES = ['admins', 'everyone'] as const;
 export type FaceAudience = (typeof FACE_AUDIENCES)[number];
+export const FACE_LITE_ROUTES = ['server', 'browser'] as const;
+export type FaceLiteRoute = (typeof FACE_LITE_ROUTES)[number];
 
 /** Used when `media` is absent from the file: no face, stock voices only. */
 const MEDIA_OFF: PlatformConfig['media'] = {
@@ -171,6 +184,7 @@ const MEDIA_OFF: PlatformConfig['media'] = {
     mode: 'lite',
     stock: null,
     audience: 'everyone',
+    liteRoute: 'server',
   },
   voice: {
     provider: 'polly',
@@ -362,7 +376,9 @@ function oneOf<T extends string>(
  * `media.face.mode`, `media.face.stock` and `media.face.audience` (all optional: absent means LITE with the
  * persona's own face, offered to everyone the consent covers, which is how faces worked before FULL existed).
  */
-function parseFaceVoicing(face: Json): Pick<PlatformConfig['media']['face'], 'mode' | 'stock' | 'audience'> {
+function parseFaceVoicing(
+  face: Json,
+): Pick<PlatformConfig['media']['face'], 'mode' | 'stock' | 'audience' | 'liteRoute'> {
   const path = '$.media.face';
   const mode = oneOf(face, 'mode', path, FACE_MODES) ?? 'lite';
   let stock: PlatformConfig['media']['face']['stock'] = null;
@@ -391,15 +407,39 @@ function parseFaceVoicing(face: Json): Pick<PlatformConfig['media']['face'], 'mo
       'must name a vendor stock avatar (stock.avatarId) when mode is full: FULL never renders an EIR’s likeness (docs/runbooks/avatars.md §9)',
     );
   }
-  // A stock avatar and its voice are FULL mode only: in LITE the face is the persona's own likeness saying our own
-  // audio, and the API ignores a stock face there, so naming one would be a silent misconfiguration.
-  if (mode === 'lite' && stock !== null) {
+  const askedRoute = oneOf(face, 'liteRoute', path, FACE_LITE_ROUTES);
+  if (mode === 'full' && askedRoute !== undefined) {
+    throw new ConfigError(`${path}.liteRoute`, 'is LITE mode only (a FULL face takes no audio)');
+  }
+  const liteRoute: FaceLiteRoute = askedRoute ?? (mode === 'lite' && stock !== null ? 'browser' : 'server');
+  // The browser holds the speak channel only for a vendor STOCK avatar: a real person's likeness (LITE without
+  // `stock`) stays on the server's relay, so a modified page can never make the EIR's face say anything.
+  if (mode === 'lite' && liteRoute === 'browser' && stock === null) {
     throw new ConfigError(
-      `${path}.stock`,
-      'is FULL mode only (in LITE the face is the persona’s own, saying our own audio; docs/runbooks/avatars.md §9)',
+      `${path}.liteRoute`,
+      'browser is for a vendor stock avatar only (stock.avatarId): a real person’s likeness is never fed by the browser (docs/runbooks/avatars.md §9)',
     );
   }
-  const audience = oneOf(face, 'audience', path, FACE_AUDIENCES) ?? (mode === 'full' ? 'admins' : 'everyone');
+  // A stock avatar in LITE is the browser route's face; the server relay is the likeness path, which ignores a
+  // stock face, so naming one there would be a silent misconfiguration. A stock voice is FULL only (LITE says our
+  // own audio).
+  if (mode === 'lite' && stock !== null && (liteRoute !== 'browser' || stock.voiceId !== null)) {
+    throw new ConfigError(
+      `${path}.stock`,
+      'in LITE names only the stock avatar of the browser route (liteRoute browser, no voiceId: LITE says our own audio; docs/runbooks/avatars.md §9)',
+    );
+  }
+  const audience =
+    oneOf(face, 'audience', path, FACE_AUDIENCES) ??
+    (mode === 'full' || liteRoute === 'browser' ? 'admins' : 'everyone');
+  // A page that holds the speak channel could make the stock face say other audio on its own screen, undetected
+  // (LITE has no transcript): platform admins and people given face access only, until the owner decides more.
+  if (liteRoute === 'browser' && audience !== 'admins') {
+    throw new ConfigError(
+      `${path}.audience`,
+      'must be admins when liteRoute is browser (docs/runbooks/avatars.md §9)',
+    );
+  }
   // In FULL the browser's room token can publish commands, so a modified page could make the face say other text
   // on its own screen until the server's transcript check ends it: acceptable for platform admins presenting, not
   // for founders.
@@ -409,7 +449,7 @@ function parseFaceVoicing(face: Json): Pick<PlatformConfig['media']['face'], 'mo
       'must be admins when mode is full (docs/runbooks/avatars.md §9)',
     );
   }
-  return { mode, stock, audience };
+  return { mode, stock, audience, liteRoute };
 }
 
 function parseMedia(raw: unknown): PlatformConfig['media'] {
@@ -480,12 +520,24 @@ function parseMedia(raw: unknown): PlatformConfig['media'] {
       'must name the vendor room’s wss:// and https:// origins while a face is wired (docs/runbooks/avatars.md §5)',
     );
   }
+  const voicing = parseFaceVoicing(face);
+  // The page's speak channel of a browser-fed LITE face: exactly the vendor's origin, so the socket opens (a
+  // blocked one would leave the face silent) and nothing broader is allowed.
+  if (faceProvider !== 'none' && voicing.mode === 'lite' && voicing.liteRoute === 'browser') {
+    const socket = loadFaceSocketOrigin();
+    if (!connect.includes(socket)) {
+      throw new ConfigError(
+        '$.media.face.csp.connect',
+        `must name ${socket} (LITE's speak channel, packages/core/media-vendors.json) when liteRoute is browser`,
+      );
+    }
+  }
   return {
     face: {
       provider: faceProvider,
       sandbox: bool(face, 'sandbox', '$.media.face'),
       csp: { connect, media: mediaOrigins },
-      ...parseFaceVoicing(face),
+      ...voicing,
     },
     voice: {
       provider: voiceProvider,

@@ -326,6 +326,7 @@ describe('FoundryAscent-App', () => {
               mode: 'lite',
               stock: null,
               audience: 'everyone',
+              liteRoute: 'server',
             },
             voice: {
               provider: 'elevenlabs',
@@ -382,12 +383,13 @@ describe('FoundryAscent-App', () => {
       const VOICE = '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0';
       const room = ['wss://heygen-feapbkvq.livekit.cloud', 'https://heygen-feapbkvq.livekit.cloud'];
       const config = loadConfig();
-      // Shipped: the vendor sandbox's stock avatar in its own voice, platform admins only.
+      // Shipped: the vendor sandbox's stock avatar in LITE, fed by the caller's page, platform admins only.
       expect(mediaFaceEnvironment(config.media.face)).toEqual({
-        MEDIA_FACE_MODE: 'full',
+        MEDIA_FACE_MODE: 'lite',
         MEDIA_FACE_AVATAR_ID: WAYNE,
         MEDIA_FACE_VOICE_ID: '',
         MEDIA_FACE_AUDIENCE: 'admins',
+        MEDIA_FACE_LITE_ROUTE: 'browser',
       });
       // Off (provider none): LITE defaults, no stock face, everyone (how faces behaved before FULL existed).
       expect(
@@ -398,12 +400,14 @@ describe('FoundryAscent-App', () => {
           mode: 'lite',
           stock: null,
           audience: 'everyone',
+          liteRoute: 'server',
         }),
       ).toEqual({
         MEDIA_FACE_MODE: 'lite',
         MEDIA_FACE_AVATAR_ID: '',
         MEDIA_FACE_VOICE_ID: '',
         MEDIA_FACE_AUDIENCE: 'everyone',
+        MEDIA_FACE_LITE_ROUTE: 'server',
       });
       const full = {
         provider: 'heygen-liveavatar',
@@ -412,12 +416,14 @@ describe('FoundryAscent-App', () => {
         mode: 'full',
         stock: { avatarId: WAYNE, voiceId: VOICE },
         audience: 'admins',
+        liteRoute: 'server',
       } as const;
       expect(mediaFaceEnvironment(full)).toEqual({
         MEDIA_FACE_MODE: 'full',
         MEDIA_FACE_AVATAR_ID: WAYNE,
         MEDIA_FACE_VOICE_ID: VOICE,
         MEDIA_FACE_AUDIENCE: 'admins',
+        MEDIA_FACE_LITE_ROUTE: 'server',
       });
       expect(
         mediaFaceEnvironment({ ...full, stock: { avatarId: WAYNE, voiceId: null } }).MEDIA_FACE_VOICE_ID,
@@ -753,10 +759,12 @@ describe('FoundryAscent-App', () => {
       expect(csp).toEqual({ 'Fn::Join': ['', [expect.any(String), bucketRef, expect.any(String)]] });
       const [, parts] = (csp as { 'Fn::Join': [string, [string, unknown, string]] })['Fn::Join'];
       const rendered = `${parts[0]}<bucket>${parts[2]}`;
-      // Then the shipped face's room (the vendor sandbox's LiveKit project, exact origins).
+      // Then the shipped face's room (the vendor sandbox's LiveKit project, exact origins) and LITE's speak channel
+      // (exactly its one origin: the stock face's page holds that socket).
       expect(rendered).toContain(
-        `connect-src 'self' https://<bucket>.s3.us-east-1.amazonaws.com ${TRANSCRIBE_ORIGIN} wss://heygen-feapbkvq.livekit.cloud https://heygen-feapbkvq.livekit.cloud;`,
+        `connect-src 'self' https://<bucket>.s3.us-east-1.amazonaws.com ${TRANSCRIBE_ORIGIN} wss://heygen-feapbkvq.livekit.cloud https://heygen-feapbkvq.livekit.cloud wss://webrtc-signaling.heygen.io;`,
       );
+      expect(rendered.match(/webrtc-signaling/g)).toHaveLength(1);
       expect(rendered).not.toContain('*');
     });
 
@@ -1184,6 +1192,7 @@ describe('runtime-contract delivery (no configured value is silently dropped)', 
       mode: 'lite',
       stock: null,
       audience: 'everyone',
+      liteRoute: 'server',
     } as const;
     expect(() => {
       assertEveryValueDelivered(mediaFaceEnvironment(off), delivered);

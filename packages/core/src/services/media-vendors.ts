@@ -17,6 +17,11 @@ const MediaVendors = z.object({
       usdPerMinute: z.number().positive(),
       secretName: SecretName,
       apiOrigin: Origin,
+      /**
+       * The one origin of LITE's speak channel (`ws_url`): a LITE stock face fed by the browser connects only
+       * there (the adapter refuses any other host), and the CSP's `connect-src` names exactly it.
+       */
+      liteSocketOrigin: z.string().regex(/^wss:\/\/[a-z0-9.-]+$/, 'an exact wss:// origin'),
       /** FULL mode (the vendor's stock voice speaks admitted text): the same key and API, twice the credits. */
       full: z.object({ product: z.string(), usdPerMinute: z.number().positive() }),
     }),

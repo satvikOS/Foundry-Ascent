@@ -111,14 +111,31 @@ export function createAvatarProvider(_id?: EmbodimentProviderId): AvatarProvider
   return new SphereAvatar();
 }
 
+/** What else decides a vendor face's adapter: the session handed the page a LITE speak channel (`controlUrl`). */
+export interface VendorFaceOptions {
+  readonly liteSocket?: boolean;
+}
+
 /**
  * Vendor adapters, each its own chunk: a vendor SDK is downloaded only when a call uses that vendor (and the
  * shell's bundle never carries one). `fake` is the development stand-in the local API can serve.
  */
 const VENDOR_FACES: Partial<
-  Record<EmbodimentProviderId, (voicing: AvatarVoicing) => Promise<AvatarProvider>>
+  Record<
+    EmbodimentProviderId,
+    (voicing: AvatarVoicing, options: VendorFaceOptions) => Promise<AvatarProvider>
+  >
 > = {
-  fake: async (voicing) => {
+  fake: async (voicing, options) => {
+    if (voicing === 'audio' && options.liteSocket === true) {
+      // The stand-in of a LITE stock face the page feeds: the real adapter over an in-page room and speak channel.
+      const { LiveAvatarFace } = await import('./embodiment/liveavatar');
+      const { standInLiveAvatarDeps } = await import('./embodiment/fake-liveavatar-room');
+      return new LiveAvatarFace(standInLiveAvatarDeps({ lite: true }), {
+        voicing: 'audio',
+        provider: 'fake',
+      });
+    }
     if (voicing === 'text') {
       // The stand-in of a FULL face: the real text path, over an in-page room that says each unit silently.
       const { LiveAvatarFace } = await import('./embodiment/liveavatar');
@@ -128,7 +145,8 @@ const VENDOR_FACES: Partial<
     const { FakeFaceAvatar, browserFakeFaceDeps } = await import('./embodiment/fake-face');
     return new FakeFaceAvatar(browserFakeFaceDeps());
   },
-  // HeyGen LiveAvatar over LiveKit: LITE watches the room; FULL also sends it the admitted words.
+  // HeyGen LiveAvatar over LiveKit: LITE watches the room (and, for a stock face, the page feeds its speak channel);
+  // FULL also sends it the admitted words.
   heygen: async (voicing) => {
     const { LiveAvatarFace, browserLiveAvatarDeps } = await import('./embodiment/liveavatar');
     return new LiveAvatarFace(await browserLiveAvatarDeps(), {
@@ -145,11 +163,12 @@ const VENDOR_FACES: Partial<
 export async function loadAvatarProvider(
   id: EmbodimentProviderId,
   voicing: AvatarVoicing = 'audio',
+  options: VendorFaceOptions = {},
 ): Promise<AvatarProvider | null> {
   const load = VENDOR_FACES[id];
   if (load === undefined) return null;
   try {
-    return await load(voicing);
+    return await load(voicing, options);
   } catch {
     // A chunk that failed to load (offline, a new deploy): the presence instead.
     return null;

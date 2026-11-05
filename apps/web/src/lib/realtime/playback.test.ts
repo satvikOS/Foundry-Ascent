@@ -680,3 +680,166 @@ describe('SpeechPlayer with PCM streamed as it is synthesized', () => {
     expect(fetchSpeech.mock.calls[0]?.[2]).toMatchObject({ stream: false });
   });
 });
+
+/** A LITE stock face the page feeds (voicing `stream`): records what it is handed and lets the test drive it. */
+class StreamFace implements FaceRenderer {
+  readonly voicing = 'stream' as const;
+  live = true;
+  accept = true;
+  readonly fed: { unit: SpeechUnitToPlay; bytes: number; done: boolean }[] = [];
+  readonly renders: { unit: SpeechUnitToPlay | undefined; handlers: FaceRenderHandlers; stopped: boolean }[] =
+    [];
+  readonly turns: [string | null, number][] = [];
+  readonly withdrawn: string[] = [];
+  halts = 0;
+  ready(): boolean {
+    return this.live;
+  }
+  feed(unit: SpeechUnitToPlay, pcm: ReadableStream<Uint8Array>): boolean {
+    if (!this.accept) return false;
+    const entry = { unit, bytes: 0, done: false };
+    this.fed.push(entry);
+    void (async () => {
+      const reader = pcm.getReader();
+      for (;;) {
+        const next = await reader.read().catch(() => ({ done: true as const, value: undefined }));
+        if (next.done) break;
+        entry.bytes += next.value.byteLength;
+      }
+      entry.done = true;
+    })();
+    return true;
+  }
+  endTurn(turnId: string | null, lastSeq: number): void {
+    this.turns.push([turnId, lastSeq]);
+  }
+  withdraw(turnId: string): void {
+    this.withdrawn.push(turnId);
+  }
+  halt(): void {
+    this.halts += 1;
+  }
+  render(
+    _buffer: AudioBuffer | null,
+    _output: FaceRendererOutput,
+    handlers: FaceRenderHandlers,
+    _audio: FaceUnitAudio | null,
+    unit?: SpeechUnitToPlay,
+  ): () => void {
+    const entry = { unit, handlers, stopped: false };
+    this.renders.push(entry);
+    return () => {
+      entry.stopped = true;
+    };
+  }
+}
+
+describe('SpeechPlayer with a LITE stock face the page feeds (voicing stream)', () => {
+  it('hands the face a copy of each signed unit’s PCM as it arrives, and never plays its own copy of a unit heard there', async () => {
+    const { context, pending, fetchSpeech, player, log } = setup();
+    const face = new StreamFace();
+    player.setFace(face);
+    player.enqueue(unit(0));
+    player.enqueue(unit(1));
+    // Streamed like the speakers (not whole units with a manifest).
+    expect(fetchSpeech.mock.calls[0]?.[2]).toMatchObject({ stream: true });
+    const first = pcmBody();
+    const second = pcmBody();
+    pending[0]?.resolve({ kind: 'stream', body: first.body, sampleRate: 24_000 });
+    pending[1]?.resolve({ kind: 'stream', body: second.body, sampleRate: 24_000 });
+    first.push(300);
+    second.push(200);
+    await flush(10);
+    // Both were fed ahead (the face chains a turn's sentences); the first is the one the call reached.
+    expect(face.fed.map((f) => f.unit.seq)).toEqual([0, 1]);
+    expect(face.fed[0]?.bytes).toBe(14_400);
+    expect(face.renders.map((r) => r.unit?.seq)).toEqual([0]);
+    face.renders[0]?.handlers.onStart();
+    await flush();
+    expect(log).toEqual(['start 0 server']);
+    first.push(300);
+    first.end();
+    await flush(30);
+    expect(face.fed[0]?.bytes).toBe(28_800);
+    face.renders[0]?.handlers.onEnd('ended');
+    await flush(10);
+    // The next unit is handed to the face, announced only at its first sound there.
+    expect(log).toEqual(['start 0 server', 'end 0 done']);
+    // Never both: nothing of the call's own copy was scheduled on the speakers.
+    expect(context.sources).toHaveLength(0);
+    expect(face.renders.map((r) => r.unit?.seq)).toEqual([0, 1]);
+  });
+
+  it('plays its own copy from the unit’s start when the face gives the unit back before it was heard', async () => {
+    const { context, pending, player, log } = setup();
+    const face = new StreamFace();
+    player.setFace(face);
+    player.enqueue(unit(0));
+    const body = pcmBody();
+    pending[0]?.resolve({ kind: 'stream', body: body.body, sampleRate: 24_000 });
+    body.push(300);
+    await flush(10);
+    expect(context.sources).toHaveLength(0);
+    face.renders[0]?.handlers.onEnd('failed');
+    body.push(100);
+    body.end();
+    await flush(10);
+    // Everything that arrived, from the start (nothing of it was heard on the face).
+    expect(log).toEqual(['start 0 server']);
+    const played = context.sources.reduce((n, s) => n + (s.buffer?.length ?? 0), 0);
+    // 400 ms at the context's rate (the resampler makes the last position with the next piece: within a sample).
+    expect(Math.abs(played - Math.round(0.4 * context.sampleRate))).toBeLessThanOrEqual(2);
+  });
+
+  it('never repeats a unit the face already made heard, whatever it reports after', async () => {
+    const { context, pending, player, log } = setup();
+    const face = new StreamFace();
+    player.setFace(face);
+    player.enqueue(unit(0));
+    const body = pcmBody();
+    pending[0]?.resolve({ kind: 'stream', body: body.body, sampleRate: 24_000 });
+    body.push(300);
+    body.end();
+    await flush(10);
+    face.renders[0]?.handlers.onStart();
+    face.renders[0]?.handlers.onEnd('failed');
+    await flush(10);
+    expect(log).toEqual(['start 0 server', 'end 0 cut', 'idle']);
+    expect(context.sources).toHaveLength(0);
+  });
+
+  it('plays a unit the face did not take (unsigned, refused) on the speakers', async () => {
+    const { context, pending, player, log } = setup();
+    const face = new StreamFace();
+    face.accept = false;
+    player.setFace(face);
+    player.enqueue(unit(0));
+    const body = pcmBody();
+    pending[0]?.resolve({ kind: 'stream', body: body.body, sampleRate: 24_000 });
+    body.push(200);
+    await flush(10);
+    expect(face.renders).toHaveLength(0);
+    expect(log).toEqual(['start 0 server']);
+    expect(context.sources.length).toBeGreaterThan(0);
+  });
+
+  it('tells the face where a turn ends, withdraws a failed turn there too, and halts it on barge-in', () => {
+    const { pending, player } = setup();
+    const face = new StreamFace();
+    player.setFace(face);
+    player.enqueue(unit(0));
+    player.enqueue(unit(1));
+    player.enqueue(unit(2));
+    player.endTurn(TURN);
+    expect(face.turns).toEqual([[TURN, 2]]);
+    player.withdrawFaceApproval(TURN);
+    expect(face.withdrawn).toEqual([TURN]);
+    player.stop();
+    expect(face.halts).toBe(1);
+    expect(pending.every((p) => p.signal.aborted)).toBe(true);
+    // The intro is a turn of its own.
+    player.enqueue({ turnId: null, seq: 0, text: 'Hello.', sig: 'sig-intro-0123456789abcdef' });
+    player.endTurn(null);
+    expect(face.turns.at(-1)).toEqual([null, 0]);
+  });
+});

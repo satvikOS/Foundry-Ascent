@@ -792,3 +792,129 @@ describe('HeygenLiveAvatarFace: the session length the vendor allows (lab run 41
     expect(longer.sent).toHaveLength(1);
   });
 });
+
+describe('HeygenLiveAvatarFace: a LITE stock face the browser feeds (lab run 42087743218)', () => {
+  const STOCK = '1b2c3d4e-5f60-4a7b-8c9d-0e1f2a3b4c5d';
+  const ORIGIN = 'wss://webrtc-signaling.heygen.io';
+  const WS = `${ORIGIN}/6f9c1a2e/interactive-avatar/session/6f9c1a2e`;
+  function browserAdapter(
+    fetchFn: typeof fetch,
+    options: { sandbox?: boolean; avatarId?: string | null; socketOrigin?: string } = {},
+  ) {
+    return new HeygenLiveAvatarFace({
+      apiKey: () => Promise.resolve(KEY),
+      apiOrigin: 'https://api.liveavatar.com',
+      sandbox: options.sandbox ?? false,
+      mode: 'lite',
+      liteRoute: 'browser',
+      socketOrigin: options.socketOrigin ?? ORIGIN,
+      stock: { avatarId: options.avatarId === undefined ? STOCK : options.avatarId, voiceId: null },
+      adminsOnly: true,
+      usdPerMinute: 0.093,
+      fetch: fetchFn,
+      openSocket: () => {
+        throw new Error('the server never opens the speak channel of a browser-fed face');
+      },
+    });
+  }
+  const startWith = (wsUrl: string | undefined): Fixture => {
+    const started = f('start');
+    (started.body as { data: { ws_url?: string } }).data.ws_url = wsUrl;
+    return started;
+  };
+
+  it('is a LITE stock face (no one’s likeness), labelled as such, fed by the browser', () => {
+    expect(browserAdapter(vendor({}).fetchFn)).toMatchObject({
+      mode: 'lite',
+      voicing: 'audio',
+      liteRoute: 'browser',
+      likeness: false,
+      stock: true,
+    });
+    // The server relay stays the likeness route; the browser route is LITE only.
+    expect(adapter(vendor({}).fetchFn)).toMatchObject({ liteRoute: 'server', likeness: true, stock: false });
+    expect(
+      () =>
+        new HeygenLiveAvatarFace({
+          apiKey: () => Promise.resolve(KEY),
+          apiOrigin: 'https://api.liveavatar.com',
+          sandbox: true,
+          mode: 'full',
+          liteRoute: 'browser',
+          usdPerMinute: 0,
+        }),
+    ).toThrow(/LITE only/);
+  });
+
+  it('asks for the stock avatar (never the persona’s) and hands the page the speak channel at the allowed origin', async () => {
+    const { fetchFn, sent } = vendor({
+      '/v1/sessions/token': [f('token')],
+      '/v1/sessions/start': [startWith(WS)],
+    });
+    const started = await browserAdapter(fetchFn).createSession(request);
+    expect(sent[0]?.body).toMatchObject({ mode: 'LITE', avatar_id: STOCK, max_session_duration: 900 });
+    expect(JSON.stringify(sent[0]?.body)).not.toContain('avatar-of-corin');
+    expect(started.browser.controlUrl).toBe(WS);
+    expect(started.browser.url).toBe('wss://heygen-feapbkvq.livekit.cloud');
+    // In the sandbox: Wayne, whatever is configured.
+    const sandbox = vendor({ '/v1/sessions/token': [f('token')], '/v1/sessions/start': [startWith(WS)] });
+    await browserAdapter(sandbox.fetchFn, { sandbox: true, avatarId: null }).createSession(request);
+    expect(sandbox.sent[0]?.body).toMatchObject({ avatar_id: LIVEAVATAR_SANDBOX_AVATAR, is_sandbox: true });
+    // Outside it, a browser-fed face without a stock avatar starts nothing.
+    const none = vendor({});
+    await expect(browserAdapter(none.fetchFn, { avatarId: null }).createSession(request)).rejects.toThrow(
+      'liveavatar needs an avatar',
+    );
+    expect(none.sent).toHaveLength(0);
+  });
+
+  it('refuses (and stops) a session whose speak channel is at any other origin, without naming it', async () => {
+    for (const other of [
+      'wss://webrtc-signaling.heygen.io.evil.example/x',
+      'ws://webrtc-signaling.heygen.io/x',
+      'wss://webrtc-signaling.heygen.io:8443/x',
+      'wss://user:pw@webrtc-signaling.heygen.io/x',
+      'not a url',
+    ]) {
+      const { fetchFn, sent } = vendor({
+        '/v1/sessions/token': [f('token')],
+        '/v1/sessions/start': [startWith(other)],
+        '/v1/sessions/stop': [f('ok')],
+      });
+      const err = await failure(browserAdapter(fetchFn).createSession(request));
+      expect(err.message).toBe('liveavatar start: speak channel origin not allowed');
+      expect(err.message).not.toContain('heygen.io');
+      expect(sent.at(-1)?.url).toBe('https://api.liveavatar.com/v1/sessions/stop');
+    }
+    // No configured origin: nothing is ever handed over.
+    const { fetchFn } = vendor({
+      '/v1/sessions/token': [f('token')],
+      '/v1/sessions/start': [startWith(WS)],
+      '/v1/sessions/stop': [f('ok')],
+    });
+    const unset = new HeygenLiveAvatarFace({
+      apiKey: () => Promise.resolve(KEY),
+      apiOrigin: 'https://api.liveavatar.com',
+      sandbox: true,
+      mode: 'lite',
+      liteRoute: 'browser',
+      usdPerMinute: 0,
+      fetch: fetchFn,
+    });
+    await expect(unset.createSession(request)).rejects.toThrow(/speak channel origin not allowed/);
+  });
+
+  it('never opens a server socket: the relay refuses and barge-in is the page’s', async () => {
+    const face = browserAdapter(vendor({}).fetchFn);
+    const handle = { sessionRef: 's', control: WS, requestId: 'r' };
+    await expect(
+      face.speak(handle, {
+        pcm: new Uint8Array(2),
+        utterance: 'intro',
+        first: true,
+        last: true,
+      } as unknown as VerifiedFaceAudio),
+    ).rejects.toThrow(/relay is not this face/);
+    await expect(face.interrupt(handle)).resolves.toBeUndefined();
+  });
+});

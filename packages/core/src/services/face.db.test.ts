@@ -1798,3 +1798,180 @@ describe('a FULL face’s transcript is checked however the face ends, and never
     }
   });
 });
+
+describe('a LITE stock face the page feeds (never a likeness), for platform admins only', () => {
+  const lite = new FakeEmbodimentProvider('heygen', false, 0.093, 'lite');
+  lite.liteRoute = 'browser';
+  lite.stock = true;
+  lite.adminsOnly = true;
+  let core: Core;
+  let admin: RequestContext;
+  let callId: string;
+  let sessionId: string;
+  let controlUrl: string;
+  let intro: { text: string; sig: string } | null;
+
+  const say = (input: { turnId: string | null; seq: number; text: string; sig: string }) =>
+    core.speech.authorizeFaceText(admin, callId, input);
+  async function flaggedUnits(text: string) {
+    const units: { turnId: string; seq: number; text: string; sig: string; face: boolean }[] = [];
+    await core.orchestrator.runTurn(admin, sessionId, { text, channel: 'voice', callId }, (e) => {
+      const event = TurnStreamEvent.parse(e);
+      if (event.event === 'turn.speech') {
+        const { turnId, seq, text: words, sig } = event;
+        units.push({ turnId, seq, text: words, sig, face: event.face === true });
+      }
+    });
+    return units;
+  }
+  /** Every audit row's text (the speak channel must be in none). */
+  async function allAudits(): Promise<string> {
+    const r = await h.t.db.system((sx) =>
+      sx.query(`SELECT coalesce(string_agg(metadata::text, ' '), '') AS all FROM audit_events`, {}),
+    );
+    return (r.rows[0] as { all: string }).all;
+  }
+
+  beforeAll(async () => {
+    core = h.withPorts({ speech: polly, embodiment: lite });
+    await setting('faces_enabled', 'true');
+    await h.t.db.system((sx) =>
+      sx.query(`INSERT INTO role_grants (principal_id, role) VALUES (:p, 'platform_admin')`, {
+        p: p.uuid(h.people.maya),
+      }),
+    );
+    admin = await h.ctxFor(h.people.maya);
+  });
+
+  afterAll(async () => {
+    await h.t.db.system((sx) =>
+      sx.query(
+        `UPDATE role_grants SET revoked_at = now()
+          WHERE principal_id = :p AND role = 'platform_admin' AND revoked_at IS NULL`,
+        { p: p.uuid(h.people.maya) },
+      ),
+    );
+  });
+
+  it('hands the caller’s page the speak channel only in the session response: never logged, never audited', async () => {
+    const sid = (await core.sessions.create(admin, quietquad(), {})).id;
+    const started = StartCallResponse.parse(await core.calls.start(admin, sid, { inputMode: 'typed' }));
+    callId = started.call.id;
+    sessionId = started.call.sessionId;
+    intro = started.intro;
+    const minted = AvatarSessionResponse.parse(
+      await core.veir.avatarSession(admin, { ventureId: quietquad(), callId }),
+    );
+    expect(minted).toMatchObject({ provider: 'heygen', voicing: 'audio', stockFace: true });
+    expect(minted.controlUrl).toMatch(/^wss:\/\/face\.test\.invalid\/control\/\d+$/);
+    controlUrl = minted.controlUrl ?? '';
+    // A stock face: the provider's own avatar, never the persona's.
+    expect(lite.sessions.at(-1)).toMatchObject({ callId, avatarRef: null });
+    const face = await h.t.db.system((sx) => twinRepo.getCallFace(sx, callId));
+    expect(face).toMatchObject({ mode: 'lite', route: 'browser', vendor: 'heygen', interrupts: 0 });
+    const opened = (await lastAudit('call.avatar_session')) as unknown as { metadata: string };
+    expect(JSON.parse(opened.metadata)).toMatchObject({ mode: 'lite', voicing: 'audio', route: 'browser' });
+    expect(h.logger.dump()).not.toContain(controlUrl);
+    expect(await allAudits()).not.toContain(controlUrl);
+  });
+
+  it('forwards only admitted units: each signed unit carries its admission, the intro asks face/say', async () => {
+    const units = await flaggedUnits('How do I find my first ten customers?');
+    expect(units.length).toBeGreaterThanOrEqual(1);
+    expect(units.every((u) => u.face)).toBe(true);
+    // The face's reservation counts no characters: the page fetches the unit's PCM from /speech, which counts them.
+    for (const unit of units) {
+      const r = await h.t.db.system((sx) =>
+        sx.query(`SELECT plays, characters FROM call_speech WHERE call_id = :call AND unit = :unit`, {
+          call: p.uuid(callId),
+          unit: p.text(`face.${unit.turnId.toLowerCase()}.${String(unit.seq)}`),
+        }),
+      );
+      expect(r.rows[0]).toMatchObject({ plays: FACE_TEXT_PLAYS, characters: 0 });
+    }
+    // The unit's audio is the streamed PCM of the speakers (no manifest, no relay).
+    const [first] = units;
+    if (first === undefined) throw new Error('no unit');
+    const spoken = await core.speech.synthesize(
+      admin,
+      { sessionId, turnId: first.turnId, seq: first.seq, text: first.text, sig: first.sig },
+      { pcm: true },
+    );
+    await new Response(spoken.audio).arrayBuffer();
+    expect(spoken.contentType).toBe('audio/pcm');
+    expect(spoken.faceManifest).toBeUndefined();
+    // The intro was signed before the face existed: face/say admits it once.
+    if (intro === null) throw new Error('no intro');
+    expect(await say({ turnId: null, seq: 0, text: intro.text, sig: intro.sig })).toMatchObject({
+      callId,
+      unit: 'intro',
+    });
+    await expect(say({ turnId: null, seq: 0, text: intro.text, sig: intro.sig })).rejects.toMatchObject({
+      code: 'validation_failed',
+    });
+    // Never the crisis line, and never through the server's relay.
+    const events: TurnStreamEvent[] = [];
+    await core.orchestrator.runTurn(
+      admin,
+      sessionId,
+      { text: 'I want to end my life tonight.', channel: 'voice', callId },
+      (e) => {
+        events.push(TurnStreamEvent.parse(e));
+      },
+    );
+    const crisis = events.flatMap((e) => (e.event === 'turn.speech' ? [e] : []));
+    expect(crisis.length).toBeGreaterThan(0);
+    expect(crisis.every((u) => u.face === undefined)).toBe(true);
+    await expect(
+      core.face.speak(admin, callId, { manifest: 'fa1.x.y.z', firstChunk: 0, pcm: new Uint8Array(2) }),
+    ).rejects.toMatchObject({ reason: 'face_not_active' });
+    expect(lite.spoken).toHaveLength(0);
+  });
+
+  it('counts barge-ins without opening a vendor channel, and audits them with the face’s end', async () => {
+    const before = lite.interrupts.length;
+    await core.face.interrupt(admin, callId);
+    await core.face.interrupt(admin, callId);
+    expect(lite.interrupts).toHaveLength(before);
+    expect(await h.t.db.system((sx) => twinRepo.getCallFace(sx, callId))).toMatchObject({ interrupts: 2 });
+    await core.calls.end(admin, callId, { reason: 'user' });
+    const ended = (await lastAudit('call.face_ended')) as unknown as {
+      policy_reason: string;
+      metadata: string;
+    };
+    expect(ended.policy_reason).toBe('call_ended');
+    const metadata = JSON.parse(ended.metadata) as { route: string; interrupts: number; admitted: number };
+    expect(metadata).toMatchObject({ route: 'browser', interrupts: 2 });
+    expect(metadata.admitted).toBeGreaterThanOrEqual(2);
+    expect(lite.ended.at(-1)).toMatchObject({ reason: 'call_ended' });
+    expect(h.logger.dump()).not.toContain(controlUrl);
+  });
+
+  it('never feeds a real likeness from the browser: a provider asking for it keeps the presence', async () => {
+    const likeness = new FakeEmbodimentProvider('heygen', true, 0.093, 'lite');
+    likeness.liteRoute = 'browser';
+    const refused = h.withPorts({ speech: polly, embodiment: likeness });
+    const sid = (await refused.sessions.create(admin, quietquad(), {})).id;
+    const started = StartCallResponse.parse(await refused.calls.start(admin, sid, { inputMode: 'typed' }));
+    try {
+      const minted = AvatarSessionResponse.parse(
+        await refused.veir.avatarSession(admin, { ventureId: quietquad(), callId: started.call.id }),
+      );
+      expect(minted).toMatchObject({ provider: 'builtin', token: null, controlUrl: null });
+      expect(likeness.sessions).toHaveLength(0);
+      expect(await lastAudit('call.avatar_session')).toMatchObject({
+        outcome: 'denied',
+        policy_reason: 'likeness_browser_route',
+      });
+      // …and nothing pre-approves units for it.
+      expect(
+        await refused.speech.prepareFaceApproval(admin, {
+          callId: started.call.id,
+          sessionId: started.call.sessionId,
+        }),
+      ).toBeNull();
+    } finally {
+      await refused.calls.end(admin, started.call.id, { reason: 'user' });
+    }
+  });
+});

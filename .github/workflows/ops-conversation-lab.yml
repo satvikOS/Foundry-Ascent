@@ -27,10 +27,11 @@ name: Ops - conversation lab
 #           handed to the run step only and by the harness to the local API process only (LOCAL_MEDIA_FACE_API_KEY,
 #           refused outside development); it is never printed, sealed or uploaded. The summary keeps numbers,
 #           codes and vendor end reasons; what the avatar said is sealed. `face_mode` picks the in-app call arm's
-#           face mode: full, lite (the avatar lip-syncs the call's Polly audio, relayed by the server over the speak
-#           socket; the lab gives the synthetic vEIR a face reference ready under likeness consent in its own database)
-#           or both (default: FULL with every check, then the API restarted in LITE for the same call arm), and the
-#           summary sets FULL, LITE and Polly alone side by side (p50/p95, n). lite-probe runs no call: the LITE
+#           face mode: full, lite (the sandbox's stock avatar lip-syncs the call's own ElevenLabs voice, fed by the
+#           page over the avatar's speak channel, MEDIA_FACE_LITE_ROUTE=browser: utterances per turn, first face audio
+#           against the voice alone, barge-in to silence, fallbacks and doubled audio are reported) or both (default:
+#           FULL with every check, then the API restarted in LITE for the same call arm), and the summary sets FULL,
+#           LITE and the voice alone side by side (p50/p95, n). lite-probe runs no call: the LITE
 #           protocol probe (apps/web/e2e/lab/lite-probe.lab.ts, conversation_lab/lite_probe.py) opens three raw LITE
 #           sandbox sessions through the local API's lab probe and drives each session's ws_url from the lab's own page
 #           with synthetic speech (no one's voice), probes L1-L10 of the LITE + ElevenLabs design: start fields and the

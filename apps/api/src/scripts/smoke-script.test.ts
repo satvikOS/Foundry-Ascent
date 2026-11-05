@@ -6,6 +6,7 @@
  *   URLs, and connect to nothing beyond the documents bucket and Amazon Transcribe streaming.
  */
 import { execFile } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { type AddressInfo } from 'node:net';
 import { dirname, resolve } from 'node:path';
@@ -148,6 +149,49 @@ describe('scripts/smoke.mjs and the wired video face’s room (2026-10-31)', () 
     const { code, stdout } = await runSmoke(origin, 1, 1, { SMOKE_FACE_CONNECT: ROOM });
     expect(stdout).toMatch(/CSP connect-src lacks the face's wss:\/\/heygen-feapbkvq\.livekit\.cloud/);
     expect(code).toBe(1);
+  });
+});
+
+describe('scripts/smoke.mjs and the LITE stock face’s speak channel (2026-11-05)', () => {
+  // What deploy.yml hands the smoke (SMOKE_FACE_CONNECT): config media.face.csp.connect while a face is wired.
+  const production = JSON.parse(
+    readFileSync(new URL('../../../../infra/cdk/config/production.json', import.meta.url), 'utf8'),
+  ) as { media: { face: { provider: string; csp: { connect: string[] } } } };
+  const shipped =
+    production.media.face.provider === 'none' ? '' : production.media.face.csp.connect.join(' ');
+
+  it('is the room’s two origins and exactly LITE’s one speak-channel origin', () => {
+    expect(shipped.split(' ')).toEqual([
+      'wss://heygen-feapbkvq.livekit.cloud',
+      'https://heygen-feapbkvq.livekit.cloud',
+      'wss://webrtc-signaling.heygen.io',
+    ]);
+  });
+
+  it('passes a page whose CSP names them all, and fails one that lacks the speak channel', async () => {
+    const withAll = {
+      'content-security-policy': PAGE_HEADERS['content-security-policy'].replace(
+        'connect-src',
+        `connect-src ${shipped}`,
+      ),
+    };
+    const ok = await serve({ transient: () => null, pageHeaders: withAll });
+    current = ok.server;
+    const passed = await runSmoke(ok.origin, 1, 1, { SMOKE_FACE_CONNECT: shipped });
+    expect(passed.stdout).not.toMatch(/FAIL/);
+    expect(passed.code).toBe(0);
+    await new Promise((done) => ok.server.close(done));
+    const roomOnly = {
+      'content-security-policy': PAGE_HEADERS['content-security-policy'].replace(
+        'connect-src',
+        'connect-src wss://heygen-feapbkvq.livekit.cloud https://heygen-feapbkvq.livekit.cloud',
+      ),
+    };
+    const lacking = await serve({ transient: () => null, pageHeaders: roomOnly });
+    current = lacking.server;
+    const failed = await runSmoke(lacking.origin, 1, 1, { SMOKE_FACE_CONNECT: shipped });
+    expect(failed.stdout).toMatch(/CSP connect-src lacks the face's wss:\/\/webrtc-signaling\.heygen\.io/);
+    expect(failed.code).toBe(1);
   });
 });
 

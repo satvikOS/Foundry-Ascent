@@ -37,6 +37,7 @@ const SESSION: AvatarSessionResponse = {
   voicing: 'audio',
   url: null,
   stockFace: false,
+  controlUrl: null,
 };
 
 function veir(provider: CallVeir['provider']): CallVeir {
@@ -256,7 +257,7 @@ describe('CallStage: the face of a call', () => {
     await waitFor(() => {
       expect(face.provider.connect).toHaveBeenCalled();
     });
-    expect(faceDeps.loadProvider).toHaveBeenCalledWith('fake', 'text');
+    expect(faceDeps.loadProvider).toHaveBeenCalledWith('fake', 'text', { liteSocket: false });
     act(() => {
       face.connect();
     });
@@ -274,7 +275,7 @@ describe('CallStage: the face of a call', () => {
     await waitFor(() => {
       expect(face.provider.connect).toHaveBeenCalled();
     });
-    expect(faceDeps.loadProvider).toHaveBeenCalledWith('fake', 'audio');
+    expect(faceDeps.loadProvider).toHaveBeenCalledWith('fake', 'audio', { liteSocket: false });
     act(() => {
       face.connect();
     });

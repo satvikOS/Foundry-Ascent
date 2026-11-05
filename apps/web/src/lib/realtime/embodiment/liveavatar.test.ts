@@ -22,6 +22,7 @@ const SESSION: AvatarSessionResponse = {
   voicing: 'audio',
   url: 'wss://heygen-feapbkvq.livekit.cloud',
   stockFace: false,
+  controlUrl: null,
 };
 
 /** A room the test drives: tracks arrive, data arrives, it disconnects. Nothing can be published from it. */

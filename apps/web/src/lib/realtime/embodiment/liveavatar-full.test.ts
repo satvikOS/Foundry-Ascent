@@ -38,6 +38,7 @@ const SESSION: AvatarSessionResponse = {
   voicing: 'text',
   url: 'wss://heygen-feapbkvq.livekit.cloud',
   stockFace: true,
+  controlUrl: null,
 };
 
 function unit(seq: number, text = `Sentence number ${String(seq)} of the reply.`): SpeechUnitToPlay {

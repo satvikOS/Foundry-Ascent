@@ -44,3 +44,18 @@ export function loadMediaVendorSecrets(file: string = MEDIA_VENDORS_FILE): Media
 export function secretArnPattern(partition: string, region: string, account: string, name: string): string {
   return `arn:${partition}:secretsmanager:${region}:${account}:secret:${name}-??????`;
 }
+
+/**
+ * The one origin of LiveAvatar LITE's speak channel (`face.heygen.liteSocketOrigin`): the CSP's `connect-src` must
+ * name exactly it while a LITE stock face is fed by the browser.
+ */
+export function loadFaceSocketOrigin(file: string = MEDIA_VENDORS_FILE): string {
+  const raw = JSON.parse(readFileSync(file, 'utf8')) as {
+    face?: { heygen?: { liteSocketOrigin?: unknown } };
+  };
+  const origin = raw.face?.heygen?.liteSocketOrigin;
+  if (typeof origin !== 'string' || !/^wss:\/\/[a-z0-9.-]+$/.test(origin)) {
+    throw new Error(`${file}: $.face.heygen.liteSocketOrigin must be an exact wss:// origin`);
+  }
+  return origin;
+}

@@ -416,8 +416,10 @@ def test_public_result_grades_every_sandbox_check_with_numbers_only(tmp_path: Pa
     assert checks["e10_injection_ends_face_in_a_heartbeat"] is True
     assert checks["e11_max_duration_enforced"] is True
     assert checks["instruments_ok"] is True
-    assert result["run"] == len(checks)
-    assert result["passed"] == len(checks)
+    # Every check is graded but the LITE arm's, which this pass did not run (not measured, never failed).
+    assert result["run"] == len([name for name in checks if not name.startswith("lite_")])
+    assert all(value is None for name, value in checks.items() if name.startswith("lite_"))
+    assert result["passed"] == len([name for name in checks if not name.startswith("lite_")])
     text = json.dumps(result)
     assert SAID not in text
     assert "/v1/secret/abc" not in text
@@ -614,27 +616,32 @@ def test_face_mode_is_full_lite_both_or_the_lite_probe_and_both_runs_full_first(
             config.face_passes(bad)
 
 
-def test_lite_face_env_is_the_sandbox_for_admins_without_a_stock_avatar() -> None:
+def test_lite_face_env_is_the_sandbox_stock_face_fed_by_the_page_for_admins() -> None:
     lite = face.face_env(mock=False, probe_token="t" * 43, mode="lite")
     assert lite == {
         "MEDIA_FACE_MODE": "lite",
         "MEDIA_FACE_AUDIENCE": "admins",
+        "MEDIA_FACE_LITE_ROUTE": "browser",
         "MEDIA_FACE_PROVIDER": "heygen-liveavatar",
         "MEDIA_FACE_SANDBOX": "true",
+        "MEDIA_FACE_AVATAR_ID": face.SANDBOX_AVATAR,
         "LAB_FACE_PROBE_TOKEN": "t" * 43,
     }
     assert face.face_env(mock=True, probe_token=None, mode="lite") == {
         "MEDIA_FACE_MODE": "lite",
         "MEDIA_FACE_AUDIENCE": "admins",
+        "MEDIA_FACE_LITE_ROUTE": "browser",
         "EMBODIMENT_PROVIDER": "fake",
     }
+    # FULL is never browser-fed.
+    assert "MEDIA_FACE_LITE_ROUTE" not in face.face_env(mock=False, probe_token=None, mode="full")
     with pytest.raises(ValueError, match="mode must be full, lite or lite-probe"):
         face.face_env(mock=False, probe_token=None, mode="both")
     # The lite probe mints its own LITE sessions: the app keeps the FULL sandbox configuration.
     assert face.face_env(mock=False, probe_token="t" * 43, mode="lite-probe") == face.face_env(
         mock=False, probe_token="t" * 43, mode="full"
     )
-    # Switching modes leaves nothing of the other behind (FULL's stock avatar) and keeps everything else.
+    # Switching modes leaves nothing of the other behind (LITE's route) and keeps everything else.
     full = {"A": "1", **face.face_env(mock=False, probe_token="t" * 43)}
     assert face.with_face_mode(full, mock=False, probe_token="t" * 43, mode="lite") == {"A": "1", **lite}
 
@@ -644,7 +651,8 @@ def test_run_starts_the_api_in_the_first_pass_mode(monkeypatch: pytest.MonkeyPat
     assert code == 0
     api = FakeStack.seen["env"]
     assert api["MEDIA_FACE_MODE"] == "lite"
-    assert "MEDIA_FACE_AVATAR_ID" not in api
+    assert api["MEDIA_FACE_LITE_ROUTE"] == "browser"
+    assert api["MEDIA_FACE_AVATAR_ID"] == face.SANDBOX_AVATAR
     assert api["LOCAL_MEDIA_FACE_API_KEY"] == KEY
     assert summary["face_mode"] == "lite"
     # The default: both, FULL first.
@@ -755,7 +763,8 @@ def test_both_runs_full_then_restarts_the_api_in_lite_for_the_call_arm_alone(
     assert restarted["MEDIA_FACE_MODE"] == "lite"
     assert restarted["LOCAL_MEDIA_FACE_API_KEY"] == KEY
     assert restarted["LAB_FACE_PROBE_TOKEN"] == "t" * 43
-    assert "MEDIA_FACE_AVATAR_ID" not in restarted
+    assert restarted["MEDIA_FACE_LITE_ROUTE"] == "browser"
+    assert restarted["MEDIA_FACE_AVATAR_ID"] == face.SANDBOX_AVATAR
     for p in passes:
         assert KEY not in json.dumps({k: v for k, v in p.items() if k != "report"}, default=str)
     result = out["face"]
@@ -1243,3 +1252,127 @@ def test_the_probe_grep_selects_the_probe_s_tests_and_nothing_of_the_face_spec()
     spec = (lab / "lite-probe.lab.ts").read_text(encoding="utf-8")
     assert spec.count("test.skip(!RUN, 'face_mode lite-probe only')") == 2
     assert "process.env.LAB_FACE_APP_MODE === 'lite-probe'" in spec
+
+
+def _lite_call(**changes: Any) -> dict[str, Any]:
+    """The LITE arm's private file as the spec writes it: a stock face the page feeds, two measured turns."""
+    raw: dict[str, Any] = {
+        "vendor": "heygen",
+        "mode": "lite",
+        "face_shown": True,
+        "session": {
+            "provider": "heygen",
+            "voicing": "audio",
+            "stockFace": True,
+            "livekitHost": "x.livekit.cloud",
+        },
+        "turns": [
+            {
+                "firstFaceAudioMs": 1700,
+                "firstSpeakStartedMs": 1550,
+                "firstHandOverMs": 1150,
+                "firstUnitMs": 1100,
+            },
+            {
+                "firstFaceAudioMs": 1900,
+                "firstSpeakStartedMs": 1750,
+                "firstHandOverMs": 1300,
+                "firstUnitMs": 1250,
+            },
+        ],
+        "units": {},
+        "speak_requests": 0,
+        "speak_accepted": 0,
+        "app_playbacks_after_live": 0,
+        "mic_requests_after_live": 0,
+        "audio_senders": 0,
+        "lite_browser": {
+            "sockets": 1,
+            "utterances": 2,
+            "utterancesPerTurn": [1, 1],
+            "chunks": 9,
+            "firstChunkBytes": [9600, 9600],
+            "maxChunkBytes": 48000,
+            "speakEnds": 2,
+            "keepAlives": 0,
+            "interrupts": 0,
+            "appendedOk": True,
+            "committedOk": True,
+            "firstChunkToStartedMs": [430, 470],
+            "startedToAudioMs": [110, 115],
+            "errors": 0,
+            "fallbacks": 0,
+            "doubledAudio": {"overlaps": 0, "ms": 0},
+            "secret": "wss://webrtc-signaling.heygen.io/never-published",
+        },
+        "barge_in": {
+            "measured": True,
+            "elementSilenced": True,
+            "interruptToClearedMs": 80,
+            "interruptToSilenceMs": 390,
+            "serverTold": True,
+        },
+    }
+    raw.update(changes)
+    return raw
+
+
+def _graded(call_lite: dict[str, Any], polly_p50: int = 1300) -> dict[str, bool | None]:
+    result = {
+        "call_lite": face.public_call_lite(call_lite),
+        "polly": {"first_audio_ms": {"p50": polly_p50, "p95": polly_p50, "n": 2}},
+    }
+    return face.lite_checks(result)
+
+
+def test_lite_browser_arm_reports_public_numbers_only_and_passes_when_healthy() -> None:
+    public = face.public_call_lite(_lite_call())
+    assert public is not None
+    browser = public["lite_browser"]
+    assert browser["utterances_per_turn"] == [1, 1]
+    assert browser["first_chunk_bytes"] == [9600, 9600]
+    assert browser["first_chunk_to_started_ms"] == {"p50": 430, "p95": 470, "n": 2}
+    assert browser["doubled_audio_overlaps"] == 0
+    assert public["barge_in"] == {
+        "measured": True,
+        "element_silenced": True,
+        "interrupt_to_cleared_ms": 80,
+        "interrupt_to_silence_ms": 390,
+        "server_told": True,
+        "error": None,
+    }
+    # Nothing the spec did not mean to publish (an id, a URL) reaches the public result.
+    assert "webrtc-signaling" not in json.dumps(public)
+    assert _graded(_lite_call()) == {
+        "lite_ws_connected": True,
+        "lite_one_utterance_per_turn": True,
+        "lite_acks_complete": True,
+        "lite_first_audio_target": True,
+        "lite_barge_in": True,
+        "lite_no_local_playback": True,
+        "lite_no_double_voice": True,
+    }
+
+
+def test_lite_browser_checks_fail_on_a_second_utterance_doubled_audio_a_fallback_or_a_slow_face() -> None:
+    def changed(**browser: Any) -> dict[str, Any]:
+        raw = _lite_call()
+        raw["lite_browser"] = {**raw["lite_browser"], **browser}
+        return raw
+
+    assert _graded(changed(utterancesPerTurn=[1, 2]))["lite_one_utterance_per_turn"] is False
+    assert _graded(changed(doubledAudio={"overlaps": 1, "ms": 300}))["lite_no_double_voice"] is False
+    assert _graded(changed(fallbacks=2))["lite_no_local_playback"] is False
+    assert _graded(changed(sockets=2))["lite_ws_connected"] is False
+    assert _graded(changed(appendedOk=False))["lite_acks_complete"] is False
+    # First face audio: within 700 ms of the voice alone (p50) and under 2.2 s.
+    assert _graded(_lite_call(), polly_p50=900)["lite_first_audio_target"] is False
+    slow = _lite_call(turns=[{"firstFaceAudioMs": 2400}, {"firstFaceAudioMs": 2500}])
+    assert _graded(slow, polly_p50=2000)["lite_first_audio_target"] is False
+    late = _lite_call(barge_in={"measured": True, "elementSilenced": True, "interruptToSilenceMs": 900})
+    assert _graded(late)["lite_barge_in"] is False
+    unmuted = _lite_call(barge_in={"measured": True, "elementSilenced": False, "interruptToSilenceMs": 300})
+    assert _graded(unmuted)["lite_barge_in"] is False
+    # Not measured (the dry run's in-page channel, or no LITE arm): never a failure.
+    assert set(_graded(_lite_call(lite_browser={"chunks": 0})).values()) == {None}
+    assert set(face.lite_checks({}).values()) == {None}

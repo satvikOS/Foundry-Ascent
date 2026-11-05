@@ -39,7 +39,7 @@ import {
 import { refusalError, timeLimitRefusal } from './call-admission.js';
 import { CALL_LIMITS, type CallCaps, callSecondsToday, callTimeLeft, speechBudget } from './call-usage.js';
 import { callCanSpeak, voiceApproved } from './calls.js';
-import type { FaceHooks } from './face.js';
+import { faceAdmitsText, faceRouteOf, type FaceHooks } from './face.js';
 import { faceTextDigests } from './face-text.js';
 import { voiceCostUsd } from './media-vendors.js';
 import { isCrisisMessage, speakableRunSpan, speakableText } from './spoken-text.js';
@@ -212,7 +212,8 @@ export interface SpeechService {
   ): Promise<SynthesizedSpeech>;
   /**
    * `POST /calls/:id/face/say`: admits one signed unit of the caller's live call to its FULL face, which the
-   * browser may then send the vendor to voice (docs/architecture/calls.md §4). Only a unit whose signature verifies
+   * browser may then send the vendor to voice, or to its LITE stock face the browser feeds, which the browser may
+   * then forward the unit's PCM to (docs/architecture/calls.md §4). Only a unit whose signature verifies
    * (the identity guard, the meta-narration gate and the sentence gate passed it), of a reply that was not blocked
    * or failed, never the crisis line; within the kill switches, the platform's daily spend cap and the call's speech
    * budget (`reserveCallSpeech`, once per unit); each unit once and in order (`twinRepo.admitFaceText`). Anything
@@ -225,8 +226,9 @@ export interface SpeechService {
   ): Promise<VerifiedFaceText>;
   /**
    * Face pre-approval for one spoken turn of the caller's live call `callId` in conversation `sessionId`, read once
-   * when the turn starts: null unless the call has a live FULL face of the wired provider (then nothing changes: a
-   * LITE face, Polly alone, or a face that joins later takes the units as before). Otherwise the turn engine offers
+   * when the turn starts: null unless the call has a live FULL face of the wired provider, or a live LITE stock face
+   * the browser feeds (then nothing changes: a LITE face the server relays, Polly alone, or a face that joins later
+   * takes the units as before). Otherwise the turn engine offers
    * it each signed unit as it is produced, and `approve` admits it with the checks `authorizeFaceText` makes, in the
    * same order: never the crisis line; the kill switches and faces on; the platform's daily spend cap; the call's
    * speech budget (`reserveCallSpeech`, once per unit); each unit once and in order (`twinRepo.admitFaceText`,
@@ -362,8 +364,13 @@ export function createSpeechService(
     if (provider?.voicing !== 'audio' || !now.facesEnabled || (provider.likeness && now.twinFace === null)) {
       return null;
     }
+    // A LITE stock face the browser feeds takes the streamed PCM like the speakers (no manifest, no relay).
+    if (faceRouteOf(provider) !== 'server') return null;
     const face = await kit.system((sx) => twinRepo.getCallFace(sx, callId), { transaction: false });
-    return face?.endedAt === null && face.vendor === provider.id && face.mode === 'lite'
+    return face?.endedAt === null &&
+      face.vendor === provider.id &&
+      face.mode === 'lite' &&
+      face.route === 'server'
       ? { sessionRef: face.sessionRef }
       : null;
   }
@@ -1054,20 +1061,19 @@ export function createSpeechService(
       if (verified === null) return refuseText(ctx, call.ventureId, turnId, 'signature_invalid');
 
       const face = await kit.system((sx) => twinRepo.getCallFace(sx, call.id), { transaction: false });
-      if (
-        provider?.mode !== 'full' ||
-        face?.endedAt !== null ||
-        face.mode !== 'full' ||
-        face.vendor !== provider.id
-      ) {
+      // A FULL face, or a LITE stock face the browser feeds (which also fetches the unit's audio from /speech,
+      // where its characters count: the face's reservation then counts none).
+      if (face?.endedAt !== null || !faceAdmitsText(provider, face)) {
         throw fail.conflict('The face of this call has ended.', 'face_not_active');
       }
+      const browserFed = face.route === 'browser';
       await enforceSpendCaps(kit, ctx, await spend, settings, {
         ventureId: call.ventureId,
         operation: 'speech',
       });
 
       const text = speakableText(input.text);
+      const reserved = browserFed ? 0 : text.length;
       const plan: SpeechPlan = {
         ventureId: call.ventureId,
         callId: call.id,
@@ -1091,7 +1097,7 @@ export function createSpeechService(
             callId: call.id,
             principalId: ctx.principalId,
             unit: plan.unit,
-            characters: text.length,
+            characters: reserved,
             maxPlays: FACE_TEXT_PLAYS,
             budget: speechBudget(settings),
           }),
@@ -1148,7 +1154,7 @@ export function createSpeechService(
       );
       if (!admitted) {
         // Out of order (or the face ended meanwhile): nothing is said, and its characters go back.
-        await settle(ctx, plan, text.length, null);
+        await settle(ctx, plan, reserved, null);
         return refuseText(ctx, call.ventureId, turnId, 'out_of_order');
       }
       await kit.flushDeferred(ctx, [
@@ -1166,7 +1172,9 @@ export function createSpeechService(
 
     prepareFaceApproval: async (ctx, args) => {
       const provider = kit.deps.embodiment;
-      if (provider?.mode !== 'full') return null;
+      // A FULL face, or a LITE stock face the browser feeds; any other face takes no pre-approval.
+      if (provider === undefined || (provider.mode !== 'full' && faceRouteOf(provider) !== 'browser'))
+        return null;
       try {
         const callId = requireId(args.callId, 'Call');
         const { call, face, settings, fingerprint } = await kit.system(
@@ -1184,12 +1192,15 @@ export function createSpeechService(
           call.status !== 'live' ||
           call.sessionId.toLowerCase() !== args.sessionId.toLowerCase() ||
           face?.endedAt !== null ||
-          face.mode !== 'full' ||
-          face.vendor !== provider.id
+          !faceAdmitsText(provider, face)
         ) {
           return null;
         }
-        return faceApproval(ctx, call, face.sessionRef, { settings, fingerprint });
+        return faceApproval(ctx, call, face.sessionRef, {
+          settings,
+          fingerprint,
+          browserFed: face.route === 'browser',
+        });
       } catch (err) {
         logger.warn('call.face_preapproval_unavailable', {
           requestId: ctx.requestId,
@@ -1205,10 +1216,19 @@ export function createSpeechService(
     ctx: RequestContext,
     call: callsRepo.CallRecord,
     sessionRef: string,
-    /** The platform settings as read when the turn started, and their digest (`settingsFingerprintPart`). */
-    read: { readonly settings: settingsRepo.ResolvedPlatformSettings; readonly fingerprint: string },
+    /**
+     * The platform settings as read when the turn started, and their digest (`settingsFingerprintPart`); whether
+     * the face is a LITE face the browser feeds (it fetches each unit's audio from /speech, where the characters
+     * count, so the face's reservation counts none).
+     */
+    read: {
+      readonly settings: settingsRepo.ResolvedPlatformSettings;
+      readonly fingerprint: string;
+      readonly browserFed?: boolean;
+    },
   ): FaceApproval {
     const { settings, fingerprint } = read;
+    const browserFed = read.browserFed === true;
     // After a unit it did not admit, the rest of the turn goes through face/say, in order.
     let off = false;
     // The units it admitted (seq → reserved characters) and their turn, for `withdraw`.
@@ -1243,7 +1263,7 @@ export function createSpeechService(
             unit,
             turnKey: input.turnId.toLowerCase(),
             seq: input.seq,
-            characters: text.length,
+            characters: browserFed ? 0 : text.length,
             maxPlays: FACE_TEXT_PLAYS,
             budget: speechBudget(settings),
             caps: { globalUsd: settings.dailyUsdCapGlobal, principalUsd: settings.dailyUsdCapPerPrincipal },
@@ -1254,7 +1274,7 @@ export function createSpeechService(
         { transaction: false },
       );
       if (!admitted) return false;
-      admittedUnits.set(input.seq, text.length);
+      admittedUnits.set(input.seq, browserFed ? 0 : text.length);
       turnOf = input.turnId;
       // Recorded beside the reply, never ahead of it: the unit leaves the server as soon as it is admitted (handed to
       // the host's after-response work, so it is written before the invocation ends).

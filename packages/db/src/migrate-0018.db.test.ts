@@ -348,9 +348,14 @@ describe('migration 0018_face_mode', () => {
 
   it('is idempotent: re-running every statement, then the runner, changes nothing', async () => {
     if (!MODE) throw new Error('0018 missing');
+    // 0027 redefines 0018's `call_faces_said_check` (a LITE face the browser feeds is ordered too): re-running 0018
+    // alone puts back the older constraint, so the later migration that rewrites it runs again after it.
+    const LATER = MIGRATIONS.find((m) => m.version === '0027_face_lite_browser');
+    if (!LATER) throw new Error('0027 missing');
     const before = await schemaFingerprint(t.db);
     await t.db.system(async (sx) => {
       for (const statement of splitStatements(MODE.sql)) await sx.query(statement);
+      for (const statement of splitStatements(LATER.sql)) await sx.query(statement);
     });
     expect(await schemaFingerprint(t.db)).toBe(before);
     expect((await migrate(t.db)).applied).toEqual([]);

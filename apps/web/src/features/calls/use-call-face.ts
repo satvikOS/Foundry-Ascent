@@ -51,7 +51,11 @@ export type CallFace =
 
 export interface CallFaceDeps {
   startSession(ventureId: string, callId: string, signal: AbortSignal): Promise<AvatarSessionResponse>;
-  loadProvider(id: EmbodimentProviderId, voicing: AvatarVoicing): Promise<AvatarProvider | null>;
+  loadProvider(
+    id: EmbodimentProviderId,
+    voicing: AvatarVoicing,
+    options?: { readonly liteSocket?: boolean },
+  ): Promise<AvatarProvider | null>;
   /** The server path of the face's audio for this call. */
   relayFor(callId: string): FaceRelay;
   /** Tells the server the face is no longer shown (it ends the vendor session), and why (audited there). */
@@ -177,7 +181,9 @@ export class CallFaceController {
           this.close(false);
           return;
         }
-        const loaded = await this.deps.loadProvider(session.provider, session.voicing);
+        const loaded = await this.deps.loadProvider(session.provider, session.voicing, {
+          liteSocket: session.controlUrl !== null,
+        });
         if (stopped()) {
           loaded?.unmount();
           return;

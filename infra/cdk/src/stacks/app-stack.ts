@@ -846,6 +846,7 @@ export const API_ASSUMES_WHEN_ABSENT: Readonly<Record<string, string>> = {
   MEDIA_FACE_AVATAR_ID: '',
   MEDIA_FACE_VOICE_ID: '',
   MEDIA_FACE_AUDIENCE: 'everyone',
+  MEDIA_FACE_LITE_ROUTE: 'server',
 };
 
 /**
@@ -870,7 +871,7 @@ export function assertEveryValueDelivered(
 
 /**
  * The face's voicing for the API (`MEDIA_FACE_MODE`, `MEDIA_FACE_AVATAR_ID`, `MEDIA_FACE_VOICE_ID`,
- * `MEDIA_FACE_AUDIENCE`; config `media.face`). An absent stock avatar or voice is the empty string, which the API reads
+ * `MEDIA_FACE_AUDIENCE`, `MEDIA_FACE_LITE_ROUTE`; config `media.face`). An absent stock avatar or voice is the empty string, which the API reads
  * as unset. Like every other variable, each reaches a function only when apps/api/lambda-contract.json lists it for
  * that function's role (`environmentFor`); until it does, synth refuses any value other than the LITE defaults
  * (`assertEveryValueDelivered`).
@@ -881,6 +882,7 @@ export function mediaFaceEnvironment(face: PlatformConfig['media']['face']): Rec
     MEDIA_FACE_AVATAR_ID: face.stock?.avatarId ?? '',
     MEDIA_FACE_VOICE_ID: face.stock?.voiceId ?? '',
     MEDIA_FACE_AUDIENCE: face.audience,
+    MEDIA_FACE_LITE_ROUTE: face.liteRoute,
   };
 }
 

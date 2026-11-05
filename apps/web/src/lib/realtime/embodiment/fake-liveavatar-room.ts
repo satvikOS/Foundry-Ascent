@@ -1,4 +1,5 @@
 import { browserFakeFaceDeps, FakeFaceAvatar } from './fake-face';
+import { FakeLiteSocket, type FakeLiteCommand } from './fake-lite-socket';
 import {
   LIVEAVATAR_COMMAND_TOPIC,
   LIVEAVATAR_EVENTS_TOPIC,
@@ -214,6 +215,12 @@ export class FakeLiveAvatarRoom implements LiveAvatarRoom {
 
 /** The page event each command of the stand-in's room is announced with (the end-to-end suite listens). */
 export const STAND_IN_COMMAND_EVENT = 'foundry:face-command';
+/** The page event each command of the stand-in's LITE speak channel is announced with (the end-to-end suite). */
+export const STAND_IN_LITE_EVENT = 'foundry:face-lite';
+/** The page event the stand-in's LITE avatar announces it starts or stops speaking with (`detail`: boolean). */
+export const STAND_IN_LITE_SPEAKING_EVENT = 'foundry:face-lite-speaking';
+/** A page event that makes the stand-in's LITE speak channel drop, as the vendor's does when its session ends. */
+export const STAND_IN_LITE_DROP_EVENT = 'foundry:face-lite-drop';
 
 /**
  * The development stand-in of a FULL face in the browser: the real FULL adapter over a {@link FakeLiveAvatarRoom}
@@ -222,7 +229,7 @@ export const STAND_IN_COMMAND_EVENT = 'foundry:face-command';
  * same analyser as the vendor's, so the page's media path is the real one. Every command is announced as a
  * {@link STAND_IN_COMMAND_EVENT} page event.
  */
-export function standInLiveAvatarDeps(): LiveAvatarDeps {
+export function standInLiveAvatarDeps(options: { readonly lite?: boolean } = {}): LiveAvatarDeps {
   const timers = {
     setTimeout: (callback: () => void, ms: number): unknown => window.setTimeout(callback, ms),
     clearTimeout: (handle: unknown) => {
@@ -255,6 +262,7 @@ export function standInLiveAvatarDeps(): LiveAvatarDeps {
               voicing: 'audio',
               url: null,
               stockFace: true,
+              controlUrl: null,
             },
             controller.signal,
             { speak: () => Promise.reject(new Error('silent')), interrupt: () => undefined },
@@ -276,5 +284,31 @@ export function standInLiveAvatarDeps(): LiveAvatarDeps {
     },
     ...browserFaceMediaDeps(),
     ...timers,
+    now: () => performance.now(),
+    // A LITE stock face's speak channel, in the page (never the network): `MEDIA_FACE_LITE_ROUTE=browser` locally.
+    ...(options.lite === true
+      ? {
+          openLiteSocket: () => {
+            const socket = new FakeLiteSocket({
+              ...timers,
+              now: () => performance.now(),
+              onCommand: (command: FakeLiteCommand) => {
+                window.dispatchEvent(new CustomEvent(STAND_IN_LITE_EVENT, { detail: command }));
+              },
+              onSpeaking: (speaking) => {
+                window.dispatchEvent(new CustomEvent(STAND_IN_LITE_SPEAKING_EVENT, { detail: speaking }));
+              },
+            });
+            window.addEventListener(
+              STAND_IN_LITE_DROP_EVENT,
+              () => {
+                socket.drop();
+              },
+              { once: true },
+            );
+            return socket;
+          },
+        }
+      : {}),
   };
 }

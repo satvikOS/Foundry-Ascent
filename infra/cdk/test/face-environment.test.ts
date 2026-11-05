@@ -14,6 +14,7 @@ const FACE_VARIABLES = [
   'MEDIA_FACE_AVATAR_ID',
   'MEDIA_FACE_VOICE_ID',
   'MEDIA_FACE_AUDIENCE',
+  'MEDIA_FACE_LITE_ROUTE',
 ];
 
 vi.mock('../src/lib/lambda-contract.js', async (importOriginal) => {
@@ -52,6 +53,7 @@ describe('the face’s FULL voicing on the API function (contract listing MEDIA_
     mode: 'full',
     stock: { avatarId: WAYNE, voiceId: VOICE },
     audience: 'admins',
+    liteRoute: 'server',
   } as const;
   const variablesOf = (
     templates: ReturnType<typeof synthesize>['templates'],
@@ -97,6 +99,7 @@ describe('the face’s FULL voicing on the API function (contract listing MEDIA_
           mode: 'lite',
           stock: null,
           audience: 'everyone',
+          liteRoute: 'server',
         } as const,
       },
     };
@@ -106,6 +109,14 @@ describe('the face’s FULL voicing on the API function (contract listing MEDIA_
       MEDIA_FACE_AVATAR_ID: '',
       MEDIA_FACE_VOICE_ID: '',
       MEDIA_FACE_AUDIENCE: 'everyone',
+    });
+    // The shipped face: the sandbox's stock avatar in LITE, fed by the caller's page.
+    expect(variablesOf(synthesize({}, config).templates, 'FoundryAscent-Api')).toMatchObject({
+      MEDIA_FACE_MODE: 'lite',
+      MEDIA_FACE_AVATAR_ID: WAYNE,
+      MEDIA_FACE_VOICE_ID: '',
+      MEDIA_FACE_AUDIENCE: 'admins',
+      MEDIA_FACE_LITE_ROUTE: 'browser',
     });
     const ownVoice = synthesize(
       {},

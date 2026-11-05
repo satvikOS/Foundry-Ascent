@@ -26,6 +26,8 @@ import {
   type FaceMediaElement,
   type FaceTapMode,
 } from './face-media';
+import { LiteControl, type LiteSocket } from './lite-socket';
+import { LiteSpeaker, type LiteReport } from './lite-speaker';
 
 export type { FaceAudioTap, FaceMediaElement, FaceTapMode } from './face-media';
 
@@ -57,7 +59,16 @@ export type { FaceAudioTap, FaceMediaElement, FaceTapMode } from './face-media';
  * avatar takes its listening pose (`avatar.start_listening` / `avatar.stop_listening`). Barge-in also silences the
  * face's element at once (the vendor's interrupt takes a round trip); the next unit turns it up again.
  *
- * **LITE**:
+ * **LITE, a stock face the page feeds** (`controlUrl` in the session, never a likeness; the "AI avatar" label): once
+ * the room joined, the page opens the vendor's speak channel (`lite-socket.ts`) for the whole call and waits for its
+ * `connected`; from then on the call hands the face a copy of each signed unit's ElevenLabs PCM as it arrives
+ * (voicing `stream`), and `lite-speaker.ts` forwards the units the server admitted, one utterance per turn. The
+ * founder hears only the avatar's own audio track, in this element with its video; the call keeps its own copy and
+ * plays it only for a unit the face gives back before it was heard. Barge-in silences the element and interrupts
+ * the vendor at once. A channel that closes, or a face that twice does not start in time, ends the face
+ * (`control_lost`, `speech_stalled`): the call goes on with the presence and its own speakers.
+ *
+ * **LITE, the EIR's likeness** (no `controlUrl`):
  * The browser only **watches**: it joins the vendor's LiveKit room with the room token the API minted
  * (`POST /calls/avatar-session`), subscribes to the avatar participant's (`heygen`) video and audio, and never
  * publishes anything (no microphone, no camera, no data). The face's speak channel (`ws_url`) stays on the
@@ -82,6 +93,8 @@ const FIRST_FRAME_MS = 8_000;
 const ONSET_TIMEOUT_MS = 3_000;
 /** Level above which the face's audio counts as speech. */
 const ONSET_LEVEL = 0.01;
+/** A LITE speak channel that is not `connected` by then fails the face's join (the call keeps the presence). */
+const LITE_CONNECT_MS = 5_000;
 const POLL_MS = 40;
 /** Beyond a unit's own length before it counts as heard to its end. */
 const TAIL_MS = 250;
@@ -120,6 +133,10 @@ export interface LiveAvatarDeps {
   clearTimeout(handle: unknown): void;
   /** A command's `event_id` (default: a random UUID). */
   eventId?(): string;
+  /** Opens a LITE stock face's speak channel (the browser's WebSocket; an in-page stand-in in tests). */
+  openLiteSocket?(url: string): LiteSocket;
+  /** A monotonic clock in ms (default `performance.now`). */
+  now?(): number;
 }
 
 /** The browser's room (livekit-client, loaded with this chunk). */
@@ -162,6 +179,9 @@ export async function browserLiveAvatarDeps(): Promise<LiveAvatarDeps> {
       };
     },
     ...browserFaceMediaDeps(),
+    // Only ever the URL the API handed this call (a stock face's speak channel), at the origin the CSP allows.
+    openLiteSocket: (url) => new WebSocket(url),
+    now: () => performance.now(),
     setTimeout: (callback, ms) => window.setTimeout(callback, ms),
     clearTimeout: (handle) => {
       window.clearTimeout(handle as number);
@@ -261,6 +281,9 @@ export class LiveAvatarFace implements AvatarProvider {
   private lifetime = new AbortController();
   /** FULL: whether the avatar was sent its listening pose. */
   private listening = false;
+  /** A LITE stock face the page feeds: its speak channel, and what is said on it. */
+  private control: LiteControl | null = null;
+  private speaker: LiteSpeaker | null = null;
 
   constructor(
     private readonly deps: LiveAvatarDeps,
@@ -268,17 +291,35 @@ export class LiveAvatarFace implements AvatarProvider {
   ) {
     this.voicing = options.voicing ?? 'audio';
     this.id = options.provider ?? 'heygen';
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- the renderer's getter reads the face's state
+    const self = this;
     this.face = {
-      voicing: this.voicing,
-      ready: () => this.live,
+      // `stream` once a stock face's speak channel is connected (the page feeds it), else the session's voicing.
+      get voicing() {
+        return self.speaker !== null ? 'stream' : self.voicing;
+      },
+      ready: () => this.live && (this.speaker === null || this.speaker.ready),
       prepare: (unit) => {
         if (this.voicing === 'text' && this.live && unit.sig !== undefined)
           void this.admit(unit).catch(() => undefined);
       },
+      feed: (unit, pcm, sampleRate) =>
+        this.live && this.speaker !== null ? this.speaker.feed(unit, pcm, sampleRate) : false,
+      endTurn: (turnId, lastSeq) => {
+        this.speaker?.endTurn(turnId, lastSeq);
+      },
+      withdraw: (turnId) => {
+        this.speaker?.withdraw(turnId);
+      },
+      halt: () => {
+        this.speaker?.halt();
+      },
       render: (buffer, output, handlers, audio, unit) =>
-        this.voicing === 'text'
-          ? this.renderText(unit, output, handlers)
-          : this.render(buffer, output, handlers, audio),
+        this.speaker !== null
+          ? this.renderStream(unit, output, handlers)
+          : this.voicing === 'text'
+            ? this.renderText(unit, output, handlers)
+            : this.render(buffer, output, handlers, audio),
       setVolume: (volume) => {
         this.volume = Math.min(1, Math.max(0, volume));
         this.applyVolume();
@@ -376,6 +417,11 @@ export class LiveAvatarFace implements AvatarProvider {
     });
     try {
       await Promise.all([room.connect(session.url ?? '', session.token), firstFrame]);
+      // A stock face the page feeds: its speak channel opens once the room joined, and the face is live only once
+      // the vendor said `connected` on it.
+      if (this.voicing === 'audio' && session.controlUrl !== null) {
+        await this.openLite(session.controlUrl, signal);
+      }
     } catch (err) {
       this.release();
       throw err;
@@ -385,6 +431,11 @@ export class LiveAvatarFace implements AvatarProvider {
       throw abortError();
     }
     this.live = true;
+  }
+
+  /** What the LITE speaker did in this call (counts only), or null for any other face. */
+  liteReport(): LiteReport | null {
+    return this.speaker?.report() ?? null;
   }
 
   video(): MediaStream | null {
@@ -413,6 +464,85 @@ export class LiveAvatarFace implements AvatarProvider {
   }
 
   // Internals -----------------------------------------------------------------------------------------
+
+  /** Opens a stock face's speak channel and waits for the vendor's `connected` (bounded); then feeds it. */
+  private async openLite(url: string, signal: AbortSignal): Promise<void> {
+    const deps = this.deps;
+    if (deps.openLiteSocket === undefined) throw new Error('face_control_unavailable');
+    const now = () => deps.now?.() ?? performance.now();
+    const ids = () => deps.eventId?.() ?? crypto.randomUUID();
+    const control = new LiteControl(deps.openLiteSocket(url), { ids, now });
+    this.control = control;
+    let timer: unknown = null;
+    try {
+      await Promise.race([
+        control.ready(),
+        new Promise<never>((_resolve, reject) => {
+          timer = this.deps.setTimeout(() => {
+            reject(new Error('face_control_timeout'));
+          }, LITE_CONNECT_MS);
+          signal.addEventListener(
+            'abort',
+            () => {
+              reject(abortError());
+            },
+            { once: true },
+          );
+        }),
+      ]);
+    } finally {
+      if (timer !== null) this.deps.clearTimeout(timer);
+    }
+    this.speaker = new LiteSpeaker({
+      control,
+      setTimeout: (callback, ms) => this.deps.setTimeout(callback, ms),
+      clearTimeout: (handle) => {
+        this.deps.clearTimeout(handle);
+      },
+      now,
+      ids,
+      admit: (unit, admitSignal) => {
+        const say = this.relay?.say?.bind(this.relay);
+        return say === undefined ? Promise.reject(new Error('face_closed')) : say(unit, admitSignal);
+      },
+      silence: () => {
+        this.silence();
+      },
+      unsilence: () => {
+        this.unsilence();
+      },
+      level: () => this.tap?.level() ?? 0,
+      onBroken: (reason) => {
+        this.lose({ reason });
+      },
+      onInterrupt: () => {
+        this.relay?.interrupt();
+      },
+    });
+  }
+
+  /**
+   * A stock face the page feeds: the unit the call reached, which the face was handed ahead (`feed`), is heard when
+   * the avatar reaches it; a unit the face no longer holds goes back to the call at once.
+   */
+  private renderStream(
+    unit: SpeechUnitToPlay | undefined,
+    output: FaceRendererOutput,
+    handlers: FaceRenderHandlers,
+  ): () => void {
+    const speaker = this.speaker;
+    if (speaker === null || unit === undefined || !this.live) {
+      const handle = this.deps.setTimeout(() => {
+        handlers.onEnd('failed');
+      }, 0);
+      return () => {
+        this.deps.clearTimeout(handle);
+      };
+    }
+    // The face's sound is measured (never played) on the call's context; the element plays it.
+    this.ensureTap(output);
+    return speaker.render(unit, handlers);
+  }
 
   /**
    * The face's element holds its video and (once it arrived) its audio in one stream and plays it, sounding: the
@@ -817,12 +947,19 @@ export class LiveAvatarFace implements AvatarProvider {
   private lose(loss: FaceLoss): void {
     if (!this.live) return;
     this.live = false;
+    // What the face had not said yet goes back to the call, which plays it itself.
+    this.speaker?.lost();
     this.speakEvents?.lost();
     for (const listener of [...this.lostListeners]) listener(loss);
   }
 
   private release(): void {
     this.live = false;
+    this.speaker?.lost();
+    this.speaker?.dispose();
+    this.speaker = null;
+    this.control?.close();
+    this.control = null;
     this.speakEvents?.lost();
     this.speakEvents = null;
     this.listening = false;

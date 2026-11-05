@@ -436,6 +436,11 @@ difference. In FULL the vendor takes commands only from the browser's room conne
 a modified page from making the face say other text on that page's own screen; it detects it within one heartbeat.
 That is why FULL is limited to platform admins and the people they name (Video face) and never renders an EIR's likeness (infra refuses both
 configurations, [runbook §9](../runbooks/avatars.md#9-full-mode-a-stock-avatar-with-its-stock-voice-platform-admins-and-chosen-people-only)).
+**LITE fed by the page** (a vendor stock avatar lip-syncing the call's own ElevenLabs voice; §4.4) is the weakest of
+the three on purpose and for stock faces only: the face renders audio our server **admitted** (each unit once, in
+order, never the crisis line), forwarded by the caller's page, with **no server-side detection** (LITE has no
+transcript). A real person's likeness is never fed by the page: it stays on the server's relay (LITE) or is not
+offered (FULL).
 
 ### 4.1 Seams
 
@@ -633,6 +638,43 @@ label. The sphere is the face whenever no vendor face is live.
 (the vEIR from the playback level while it speaks, the founder from the microphone while their voice is detected),
 drawn on one canvas at most ten times a second, with a keyboard-reachable button per turn. It lives in the page's
 memory only and is dropped with the call; a past session without measured audio would draw a flat midline.
+
+### 4.4 A LITE stock face fed by the page
+
+`media.face.mode` `lite` with `liteRoute` `browser` (the default with `stock`; `MEDIA_FACE_LITE_ROUTE=browser`) shows a
+vendor **stock** avatar, labelled "AI avatar", that lip-syncs the call's own voice (the ElevenLabs stock voice, Polly
+on fallback). Measured in the vendor sandbox (lab run 42087743218, docs: spec lite-elevenlabs-design §8): LITE takes
+audio only over its WebSocket (`ws_url`, always at `wss://webrtc-signaling.heygen.io`), accepts a browser socket from
+the production origin, ignores data and audio published into the room, keeps one socket per session (a second one
+replaces the first), cuts an utterance with the next one (no queue), and sounds on the avatar's track about 0.56 s
+(p50) after the first chunk.
+
+- **Server.** `POST /calls/avatar-session` starts the LITE session for the call's owner (minutes, caps, kill switches
+  and audience as for any face; metered at the LITE price, the sandbox at $0) and returns `controlUrl` (`ws_url`) in
+  that authenticated response only: never logged, never audited, stored only encrypted. The adapter hands it over
+  only at the configured origin (`media-vendors.json` `liteSocketOrigin`), which is also the one origin infra adds to
+  `connect-src`. Each unit is admitted as the turn engine signs it (face pre-approval, `turn.speech` `face: true`;
+  the intro through `face/say`), with the FULL checks; the face's reservation counts no characters (the page fetches
+  the unit's audio from `/speech`, which counts them). `/face/speak` refuses this face, and `/face/interrupt` only
+  seals and counts (it never opens a socket: one would replace the page's). The face's end is audited with its route,
+  the units admitted and the barge-ins (`call.face_ended`). Core refuses a provider that asks for this route with a
+  likeness (`likeness_browser_route`), as infra and the API config do.
+- **Page** (`apps/web/src/lib/realtime/embodiment/lite-socket.ts`, `lite-speaker.ts`, `liveavatar.ts`). One socket per
+  call, opened once the room joined; the face is live only after `session.state_updated` `connected`. The call
+  fetches each signed unit's PCM as it is synthesized and hands the face a copy as it arrives (`playback.ts`, voicing
+  `stream`); the face forwards only admitted units, all of a turn's units as **one utterance** (a 200 ms first chunk,
+  then ~1 s chunks of 24 kHz 16-bit mono, base64, the utterance's id on every chunk; Polly's 16 kHz resampled), and
+  `agent.speak_end` after the turn's last unit. A new utterance never opens while another is open: the next turn
+  waits for `speak_ended` (or its interrupt). The founder hears only the avatar's audio track, in the face's one
+  element; the call's own copy is played only for a unit the face gives back before it was heard. A unit is heard
+  from `agent.speak_started` (or the track's level), later units of the utterance where the audio before them ends,
+  the last at `agent.speak_ended`; captions and the heard bookkeeping follow. Barge-in silences the element at once,
+  sends `agent.interrupt`, drops everything not forwarded and tells the server; the `speak_ended` that still follows
+  an interrupt is ignored. `session.keep_alive` once a minute while idle.
+- **Fallback, never both, never twice.** No `speak_started` within 2 s of the first chunk, a vendor error, or the
+  socket closing: the element is silenced and the vendor interrupted first, then every unit not yet heard is played
+  by the call from its own copy (units already heard are not repeated). A closed socket or a second stall ends the
+  face (`control_lost`, `speech_stalled`): the presence and the speakers carry on, as at the sandbox's one-minute end.
 
 ## 5. Privacy, consent and safety
 

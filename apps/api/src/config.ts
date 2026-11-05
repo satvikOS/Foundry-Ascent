@@ -68,8 +68,17 @@ const EnvSchema = z.object({
   MEDIA_FACE_AVATAR_ID: z.preprocess(emptyToUndefined, z.uuid().optional()),
   /** infra `media.face.stock.voiceId`: its stock voice (absent: the avatar's default voice). */
   MEDIA_FACE_VOICE_ID: z.preprocess(emptyToUndefined, z.uuid().optional()),
-  /** infra `media.face.audience`: who sees the face (default: admins for `full`, everyone for `lite`). */
+  /**
+   * infra `media.face.audience`: who sees the face (default: admins for `full` and for a browser-fed `lite` face,
+   * everyone for the server-relayed `lite` face).
+   */
   MEDIA_FACE_AUDIENCE: z.preprocess(emptyToUndefined, z.enum(['admins', 'everyone']).optional()),
+  /**
+   * infra `media.face.liteRoute`: who feeds a LITE face our audio. `server` (default): the server's relay, the only
+   * route for a real person's likeness. `browser`: a vendor STOCK avatar (`MEDIA_FACE_AVATAR_ID`, or the sandbox's)
+   * whose speak channel the caller's page holds; refused for a likeness and outside LITE.
+   */
+  MEDIA_FACE_LITE_ROUTE: z.preprocess(emptyToUndefined, z.enum(['server', 'browser']).default('server')),
   /**
    * infra `media.voice.provider`: `polly` (Amazon Polly's stock voices), `elevenlabs` (Polly, and the EIRs' cloned
    * voices at ElevenLabs) or `elevenlabs-stock` (the ElevenLabs stock voice `MEDIA_VOICE_ID` speaks every call, an "AI
@@ -136,6 +145,8 @@ export interface ApiConfig {
     readonly faceStock: { readonly avatarId: string | null; readonly voiceId: string | null } | null;
     /** Who is offered the face: platform admins only, or everyone the face may serve. */
     readonly faceAudience: 'admins' | 'everyone';
+    /** LITE: who feeds the face (`browser`: a stock face only, its speak channel held by the caller's page). */
+    readonly faceLiteRoute: 'server' | 'browser';
     readonly voice: 'polly' | 'elevenlabs' | 'elevenlabs-stock';
     /** The ElevenLabs stock voice (`elevenlabs-stock`); null otherwise. */
     readonly voiceId: string | null;
@@ -175,6 +186,25 @@ export function loadApiConfig(env: EnvLike, role: ApiRole): ApiConfig {
   ) {
     throw new ConfigError('Missing required environment: MEDIA_FACE_AVATAR_ID');
   }
+  // The browser holds a face's speak channel only for a vendor STOCK avatar in LITE: never a real person's likeness
+  // (a LITE face without a stock avatar is the persona's own), never FULL (it takes no audio).
+  const browserFed = e.MEDIA_FACE_LITE_ROUTE === 'browser';
+  if (browserFed && e.MEDIA_FACE_MODE !== 'lite') {
+    throw new ConfigError('MEDIA_FACE_LITE_ROUTE=browser is LITE mode only');
+  }
+  if (
+    browserFed &&
+    e.MEDIA_FACE_PROVIDER === 'heygen-liveavatar' &&
+    e.MEDIA_FACE_SANDBOX !== 'true' &&
+    e.MEDIA_FACE_AVATAR_ID === undefined
+  ) {
+    throw new ConfigError(
+      'MEDIA_FACE_LITE_ROUTE=browser needs a stock avatar (MEDIA_FACE_AVATAR_ID): a likeness is never fed by the browser',
+    );
+  }
+  if (browserFed && e.MEDIA_FACE_AUDIENCE === 'everyone') {
+    throw new ConfigError('MEDIA_FACE_LITE_ROUTE=browser needs MEDIA_FACE_AUDIENCE=admins');
+  }
   // The stock voice is named: there is no vendor default to fall back on (ElevenLabs' default voices end 2026-12-31).
   if (e.MEDIA_VOICE_PROVIDER === 'elevenlabs-stock' && e.MEDIA_VOICE_ID === undefined) {
     throw new ConfigError('Missing required environment: MEDIA_VOICE_ID');
@@ -204,8 +234,11 @@ export function loadApiConfig(env: EnvLike, role: ApiRole): ApiConfig {
       faceMode: e.MEDIA_FACE_MODE,
       faceStock: full
         ? { avatarId: e.MEDIA_FACE_AVATAR_ID ?? null, voiceId: e.MEDIA_FACE_VOICE_ID ?? null }
-        : null,
-      faceAudience: e.MEDIA_FACE_AUDIENCE ?? (full ? 'admins' : 'everyone'),
+        : browserFed
+          ? { avatarId: e.MEDIA_FACE_AVATAR_ID ?? null, voiceId: null }
+          : null,
+      faceAudience: e.MEDIA_FACE_AUDIENCE ?? (full || browserFed ? 'admins' : 'everyone'),
+      faceLiteRoute: e.MEDIA_FACE_LITE_ROUTE,
       voice: e.MEDIA_VOICE_PROVIDER,
       voiceId: e.MEDIA_VOICE_PROVIDER === 'elevenlabs-stock' ? (e.MEDIA_VOICE_ID ?? null) : null,
       voiceFallbackId:

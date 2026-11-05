@@ -23,20 +23,33 @@ const TOKEN_SECONDS = 60;
  * In `full` mode (`MEDIA_FACE_MODE=full`) it stands in for a FULL stock face: voicing `text`, labelled as an AI
  * avatar, each unit admitted through `POST /calls/:id/face/say` before the browser's in-page room "says" it
  * silently. It keeps no transcript (nothing to reconcile), and `MEDIA_FACE_AUDIENCE=admins` makes it admins-only.
+ *
+ * With `MEDIA_FACE_LITE_ROUTE=browser` (LITE only) it stands in for a LITE stock face the page feeds: labelled as an
+ * AI avatar, units admitted as the server signs them (or through `face/say`), and a `controlUrl` the browser's
+ * stand-in opens in the page (an in-page speak channel that answers like the vendor's; nothing reaches the network:
+ * the `.invalid` host can never resolve).
  */
 export class DevelopmentFace implements EmbodimentProvider {
   readonly id = 'fake' as const;
   readonly mode: 'lite' | 'full';
   readonly voicing: 'audio' | 'text';
+  readonly liteRoute: 'server' | 'browser';
   readonly likeness = false;
   readonly stock: boolean;
   readonly adminsOnly: boolean;
   readonly usdPerMinute = 0;
 
-  constructor(options: { readonly mode?: 'lite' | 'full'; readonly adminsOnly?: boolean } = {}) {
+  constructor(
+    options: {
+      readonly mode?: 'lite' | 'full';
+      readonly adminsOnly?: boolean;
+      readonly liteRoute?: 'server' | 'browser';
+    } = {},
+  ) {
     this.mode = options.mode ?? 'lite';
     this.voicing = this.mode === 'full' ? 'text' : 'audio';
-    this.stock = this.mode === 'full';
+    this.liteRoute = this.mode === 'lite' ? (options.liteRoute ?? 'server') : 'server';
+    this.stock = this.mode === 'full' || this.liteRoute === 'browser';
     this.adminsOnly = options.adminsOnly === true;
   }
 
@@ -47,6 +60,9 @@ export class DevelopmentFace implements EmbodimentProvider {
         token: `fake.${randomBytes(18).toString('base64url')}`,
         url: null,
         expiresAt: new Date(Date.now() + seconds * 1000).toISOString(),
+        ...(this.liteRoute === 'browser'
+          ? { controlUrl: `wss://lite.stand-in.invalid/${randomBytes(12).toString('base64url')}` }
+          : {}),
       },
       sessionRef: `dev-${randomBytes(9).toString('base64url')}`,
       control: null,
@@ -96,5 +112,12 @@ export function developmentFaceFor(env: EnvLike): { embodiment?: EmbodimentProvi
   if (audience !== 'admins' && audience !== 'everyone') {
     throw new Error('MEDIA_FACE_AUDIENCE must be "admins" or "everyone"');
   }
-  return { embodiment: new DevelopmentFace({ mode, adminsOnly: audience === 'admins' }) };
+  const wantedRoute = env.MEDIA_FACE_LITE_ROUTE?.trim().toLowerCase() ?? '';
+  const liteRoute = wantedRoute === '' ? 'server' : wantedRoute;
+  if (liteRoute !== 'server' && liteRoute !== 'browser') {
+    throw new Error('MEDIA_FACE_LITE_ROUTE must be "server" or "browser"');
+  }
+  if (liteRoute === 'browser' && mode !== 'lite')
+    throw new Error('MEDIA_FACE_LITE_ROUTE=browser is LITE only');
+  return { embodiment: new DevelopmentFace({ mode, adminsOnly: audience === 'admins', liteRoute }) };
 }

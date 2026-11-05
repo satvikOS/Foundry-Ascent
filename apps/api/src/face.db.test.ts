@@ -153,7 +153,9 @@ describe('the digital twin over HTTP', () => {
     const minted = AvatarSessionResponse.parse(JSON.parse(text));
     expect(minted).toMatchObject({ provider: 'heygen', voicing: 'audio' });
     expect(minted.url).toMatch(/^wss:\/\/room-/);
-    expect(text).not.toContain('control');
+    // The likeness face's speak channel stays on the server: never in the response.
+    expect(minted.controlUrl).toBeNull();
+    expect(text).not.toContain('face.test.invalid/control');
 
     // The intro: cloned voice, a WAV for the browser and the manifest for the face.
     const intro = started.intro;

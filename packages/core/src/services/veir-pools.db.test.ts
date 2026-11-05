@@ -444,6 +444,7 @@ describe('calls', () => {
       voicing: 'engine',
       url: null,
       stockFace: false,
+      controlUrl: null,
     });
   });
 });

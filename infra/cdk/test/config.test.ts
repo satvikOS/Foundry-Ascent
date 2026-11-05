@@ -73,18 +73,24 @@ describe('config', () => {
   it('ships the vendor sandbox stock face for platform admins only, and reads the digital twin when configured', () => {
     // 2026-10-31 (owner): HeyGen's stock avatar in its stock voice, in the vendor sandbox (free), platform admins only,
     // until the mid-December presentation. 2026-11-05 (owner): the vEIR's live voice is ElevenLabs (a stock library
-    // voice, an "AI voice"), with Amazon Polly saying any unit it fails on.
+    // voice, an "AI voice"), with Amazon Polly saying any unit it fails on. 2026-11-05: the stock avatar speaks that
+    // ElevenLabs voice in LITE, its speak channel held by the caller's page (exactly that origin in connect-src).
     expect(loadConfig().media).toEqual({
       face: {
         provider: 'heygen-liveavatar',
         sandbox: true,
         csp: {
-          connect: ['wss://heygen-feapbkvq.livekit.cloud', 'https://heygen-feapbkvq.livekit.cloud'],
+          connect: [
+            'wss://heygen-feapbkvq.livekit.cloud',
+            'https://heygen-feapbkvq.livekit.cloud',
+            'wss://webrtc-signaling.heygen.io',
+          ],
           media: [],
         },
-        mode: 'full',
+        mode: 'lite',
         stock: { avatarId: 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a', voiceId: null },
         audience: 'admins',
+        liteRoute: 'browser',
       },
       voice: {
         provider: 'elevenlabs-stock',
@@ -128,10 +134,12 @@ describe('config', () => {
           connect: ['wss://heygen-feapbkvq.livekit.cloud', 'https://heygen-feapbkvq.livekit.cloud'],
           media: [],
         },
-        // Absent voicing keys keep faces as they were before FULL: LITE, the persona's own face, everyone.
+        // Absent voicing keys keep faces as they were before FULL: LITE, the persona's own face on the server's
+        // relay, everyone.
         mode: 'lite',
         stock: null,
         audience: 'everyone',
+        liteRoute: 'server',
       },
       voice: {
         provider: 'elevenlabs',
@@ -234,17 +242,74 @@ describe('config', () => {
       );
     });
 
-    it('refuses a stock face in LITE: a stock avatar and its voice are FULL mode only', () => {
-      // The API shows a stock avatar only in FULL (in LITE it renders the persona's own face), so a LITE stock
-      // avatar would be silently ignored: refused instead.
-      expect(() => face({ stock: { avatarId: WAYNE }, audience: 'admins' })).toThrow(
-        /media\.face\.stock is FULL mode only/,
+    const SOCKET = 'wss://webrtc-signaling.heygen.io';
+    const liteFace = (extra: Record<string, unknown>) =>
+      parseConfig({
+        ...valid(),
+        media: {
+          face: {
+            provider: 'heygen-liveavatar',
+            sandbox: true,
+            csp: { connect: [...room, SOCKET], media: [] },
+            ...extra,
+          },
+          voice: { provider: 'polly', model: 'eleven_flash_v2_5', zeroRetention: false },
+        },
+      }).media.face;
+
+    it('reads a LITE stock face the browser feeds: admins by default, its speak channel’s exact origin allowed', () => {
+      expect(liteFace({ mode: 'lite', stock: { avatarId: WAYNE } })).toMatchObject({
+        mode: 'lite',
+        liteRoute: 'browser',
+        stock: { avatarId: WAYNE, voiceId: null },
+        audience: 'admins',
+      });
+      expect(liteFace({ mode: 'lite', liteRoute: 'browser', stock: { avatarId: WAYNE } }).liteRoute).toBe(
+        'browser',
       );
-      expect(() => face({ mode: 'lite', stock: { avatarId: WAYNE, voiceId: VOICE } })).toThrow(
-        /media\.face\.stock is FULL mode only/,
+      // The likeness route stays the default without a stock avatar, and FULL is never browser-fed.
+      expect(face({ mode: 'lite' })).toMatchObject({
+        liteRoute: 'server',
+        stock: null,
+        audience: 'everyone',
+      });
+      expect(face({ mode: 'full', stock: { avatarId: WAYNE } }).liteRoute).toBe('server');
+    });
+
+    it('refuses the browser route for a real person’s likeness, for everyone, or without its socket origin', () => {
+      // No stock avatar: the face would be the persona's likeness, never fed by the browser.
+      expect(() => liteFace({ mode: 'lite', liteRoute: 'browser' })).toThrow(
+        /media\.face\.liteRoute browser is for a vendor stock avatar only/,
       );
-      // No stock key, or an explicit null, is LITE with the persona's own face.
-      expect(face({ mode: 'lite', stock: null })).toMatchObject({ mode: 'lite', stock: null });
+      expect(() => liteFace({ mode: 'lite', liteRoute: 'browser', stock: null })).toThrow(
+        /real person’s likeness is never fed by the browser/,
+      );
+      expect(() => liteFace({ mode: 'lite', stock: { avatarId: WAYNE }, audience: 'everyone' })).toThrow(
+        /media\.face\.audience must be admins when liteRoute is browser/,
+      );
+      // The CSP must name exactly the speak channel's origin (the room's origins alone would block it).
+      expect(() => face({ mode: 'lite', stock: { avatarId: WAYNE } })).toThrow(
+        /media\.face\.csp\.connect must name wss:\/\/webrtc-signaling\.heygen\.io/,
+      );
+      // A stock avatar in LITE is the browser route's, and LITE says our own audio (no stock voice).
+      expect(() => liteFace({ mode: 'lite', liteRoute: 'server', stock: { avatarId: WAYNE } })).toThrow(
+        /media\.face\.stock in LITE names only the stock avatar of the browser route/,
+      );
+      expect(() => liteFace({ mode: 'lite', stock: { avatarId: WAYNE, voiceId: VOICE } })).toThrow(
+        /media\.face\.stock in LITE/,
+      );
+      expect(() => liteFace({ mode: 'full', liteRoute: 'browser', stock: { avatarId: WAYNE } })).toThrow(
+        /media\.face\.liteRoute is LITE mode only/,
+      );
+      expect(() => liteFace({ mode: 'lite', liteRoute: 'tab', stock: { avatarId: WAYNE } })).toThrow(
+        /media\.face\.liteRoute must be one of server, browser/,
+      );
+      // No stock key, or an explicit null, is LITE with the persona's own face, on the server's relay.
+      expect(face({ mode: 'lite', stock: null })).toMatchObject({
+        mode: 'lite',
+        stock: null,
+        liteRoute: 'server',
+      });
     });
 
     it('refuses malformed values', () => {
