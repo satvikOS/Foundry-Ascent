@@ -87,10 +87,43 @@ automatically**: `confirmed`, origin `ai`, no approver, with `auto_kept_at` reco
   memory goes through and keeps it (an `approved` event marked `system`) or retires it as a restatement or as the
   coach's advice. The 30-day expiry of AI proposals is gone.
 
-## Amendment 2026-11-03: restore explicit approval and withdraw stale continuity
+## Amendment 2026-11-03 (superseded): an approval step was restored by mistake
 
-The current owner request explicitly requires review/approval for durable AI memory. It supersedes the automatic-confirmation decision above. AI turn, recap and distillation candidates remain `proposed`; only a student's authorized approval or correction admits them to durable retrieval. Maintenance may retire duplicates/advice, never approve them. Existing unapproved active AI items return to review in migration 0021; historical columns are retained for rollback compatibility. Approval does not turn student-reported information into independently verified evidence.
+The 2026-11-03 upgrade read the owner's request to _preserve_ review (people can inspect, correct and delete what
+the vEIR keeps) as a request to _restore_ approval. It made AI candidates `proposed`, excluded unapproved AI memory
+from retrieval, stopped the daily maintenance from keeping pending proposals, and migration 0021 moved every item
+the vEIR had kept by itself back to `proposed`. That reversed the standing owner decision of 2026-10-16 without the
+owner's consent. The amendment below undoes it; what that release got right stays (the withdrawal of generated
+continuity, and the separate student records).
 
-Reject, correct and delete record forgetting fingerprints. Migration 0024 withdraws generated digests, opener copies and source-derived notebook lines from the affected source conversations. Their transcripts remain reviewable, but automatic continuity excludes them and the existing digest-deletion fence prevents queued background distillation from restoring them. This intentionally sacrifices automatic recall from an affected conversation rather than reuse withdrawn context; students can approve corrected memory and continue in a new conversation. Manually authored notebook lines with no source are preserved. This is not automatic redaction of an old user-authored transcript.
+## Amendment 2026-11-05: memory is automatic (owner decision of 2026-10-16, reconfirmed)
 
-`student_profiles` and `learning_log` are separate, explicitly submitted student records, isolated by tenant, venture and principal, rather than venture facts or AI inferences. Profile updates use version checks. Delete/export controls are available in Venture settings. A future cross-venture student profile requires a separate approved sharing design.
+The owner reconfirmed on 2026-11-05: **memory is automatic.** The vEIR remembers on its own in every standard
+conversation, typed or spoken (calls included). There is no "add to memory" approval step and no approval queue a
+student must work through.
+
+- At the start of a conversation the student chooses **Remember** (the default) or **Private** (one-off): a private
+  conversation keeps nothing, as before.
+- What the vEIR learns is kept at once (`confirmed`, origin `ai`, no approver, `auto_kept_at`), as the 2026-10-16
+  amendment describes, and retrieval and continuity use it at once. Only what the founder said or explicitly took
+  up is kept; the coach's own advice never is.
+- Students can view, correct, reject and delete anything the vEIR kept, and export it. Knowledge shows what was
+  remembered with Edit and Forget; an optional review list (filter by status) is fine, but nothing waits for it.
+- Rejected, deleted and corrected memory stays honoured: `rejected` and `deleted` items are never retrieved, a
+  corrected item is retrieved only in its new words, and the forgetting fingerprints keep the next distillation from
+  keeping it again (rejecting one item or several at once forgets each). Migration 0024's withdrawal stays: rejecting,
+  correcting or deleting memory withdraws the digests, openers and notebook lines generated from its conversations,
+  and the digest-deletion fence keeps a queued distillation from writing them back. The transcript stays reviewable.
+- Migration 0026 puts back the items 0021 demoted, identified by 0021's own marker event, unless a student acted on
+  one since (approved, rejected, corrected, deleted) or maintenance retired it; each gets back its status (confirmed
+  or disputed) and pin, with a history event marked `system` and `0026_automatic_memory_restored`. An item whose
+  conversation had something forgotten since 0021 is left to the daily maintenance, which applies the same checks
+  as new memory. The migration documents an exact undo.
+- The daily maintenance again keeps (or retires) every pending AI proposal, including those written while approval
+  was required, and walks them with a cursor, a page per transaction, so a backlog never starves newer proposals.
+- An EIR's suggestions stay proposals for the founder to accept, as in the 2026-10-16 amendment.
+
+`student_profiles` and `learning_log` (migration 0022) are separate, explicitly submitted student records,
+isolated by tenant, venture and principal, rather than venture facts or AI inferences. Profile updates use
+version checks. Delete and export controls are in Venture settings. A future cross-venture student profile needs a
+separate approved sharing design.

@@ -147,12 +147,14 @@ identical). When production must change faster than CI can run:
    `/api/v1/health` reports that version.
 3. Revert the bad change on main in a PR, or the next automatic deploy reintroduces it.
 
-**Memory-policy rollback (approval-restoring release, migrations 0021–0024):** pause AI using the
-[global kill switch](kill-switch-and-persona-suspension.md) before deploying an older auto-approval
-implementation. Its schema remains compatible, but its application behavior can auto-confirm new AI items
-and reuse source transcripts that the new continuity policy excludes. Keep AI paused until an
-approval/withdrawal-compatible release is restored. Do not promote pending items or clear digest-deletion
-fences as a rollback step; the source transcripts remain available for deliberate review.
+**Memory-policy rollback (automatic memory, migrations 0024 and 0026):** memory is automatic (owner decision
+2026-10-16, reconfirmed 2026-11-05; ADR-0003). A rollback to the 2026-11-03 approval release (4001b34) would
+stop keeping new memory and stop retrieving what 0026 restored: do not deploy it. If 0026's restore itself
+must be undone (only on an explicit owner decision), pause AI with the
+[global kill switch](kill-switch-and-persona-suspension.md) and run the exact undo documented in the header of
+`packages/db/migrations/0026_automatic_memory_restored.sql`: it returns only the items 0026 restored (marked
+by their `0026_automatic_memory_restored` event) to `proposed`. Never clear digest-deletion fences as a rollback
+step: they record a student's rejection, correction or deletion (migration 0024).
 
 **Database:** migrations are forward-only and run before code goes live. A rollback deploy runs the
 older migration bundle; newer applied migrations are left in place and logged as

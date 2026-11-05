@@ -89,14 +89,14 @@ export const STATUS_DEFINITIONS: { [K in StatusKind]: Defs<StatusKinds[K]> } = {
       icon: CircleDashed,
       tone: 'warning',
       shape: 'dashed',
-      description: 'Suggested from a session; waiting for founder approval before it is used as memory.',
+      description: 'Suggested, not kept yet. Edit or forget it anytime.',
     },
     confirmed: {
       label: 'Confirmed',
       icon: CircleCheck,
       tone: 'success',
       shape: 'solid',
-      description: 'Approved by the venture team and used as trusted context.',
+      description: 'Remembered and used as context. Edit or forget it anytime.',
     },
     disputed: {
       label: 'Disputed',

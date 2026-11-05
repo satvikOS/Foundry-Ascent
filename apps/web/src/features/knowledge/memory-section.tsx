@@ -105,7 +105,6 @@ export function MemorySection({
     pinned: search.pinned,
   });
   const chips = useMemo(() => typeChips(all.data ?? [], search.type), [all.data, search.type]);
-  const pendingCount = (all.data ?? []).filter((m) => m.status === 'proposed').length;
   const pinnedCount = useMemo(
     () => memoryListRows(all.data ?? [], undefined).filter((item) => item.pinned).length,
     [all.data],
@@ -131,25 +130,6 @@ export function MemorySection({
 
   return (
     <div className="grid gap-5">
-      {canEdit && pendingCount > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3">
-          <div>
-            <p className="text-small font-medium">{pluralize(pendingCount, 'memory suggestion')} to review</p>
-            <p className="text-caption text-muted-foreground">
-              Approve what is accurate before your coach uses it next time.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => {
-              setSearch({ status: search.status === 'proposed' ? undefined : 'proposed' });
-            }}
-          >
-            {search.status === 'proposed' ? 'All memory' : 'Review suggestions'}
-          </Button>
-        </div>
-      ) : null}
       <div role="search" aria-label="Filter memory" className="grid gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[12rem] flex-1">
@@ -244,7 +224,7 @@ export function MemorySection({
           <EmptyState
             headingLevel={2}
             title="Nothing yet"
-            description={`Review what ${veirName} suggests, or add context yourself.`}
+            description={`What ${veirName} learns shows up here.`}
             action={
               canEdit ? (
                 <Button size="sm" onClick={onCreate}>
@@ -267,9 +247,6 @@ export function MemorySection({
                   onSelect(item.id);
                 }}
               />
-              {item.status === 'proposed' ? (
-                <p className="px-4 pb-2 text-caption text-muted-foreground">Awaiting your approval</p>
-              ) : null}
               {canEdit && onEdit && onForget ? (
                 <RowActions item={item} onEdit={onEdit} onForget={onForget} />
               ) : null}

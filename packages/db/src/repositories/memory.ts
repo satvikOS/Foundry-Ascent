@@ -939,16 +939,23 @@ export interface PendingAiProposal {
   readonly conversationIds: string[];
 }
 
-/** Pending AI proposals (origin `ai`, status `proposed`), oldest first. Owner role. */
+/**
+ * Pending AI proposals (origin `ai`, status `proposed`), oldest first in (created_at, id) order, a page of
+ * `limit` after the proposal `after` (the last id of the previous page; null or omitted: from the oldest). The
+ * cursor compares the database's own timestamp of that row, never one read back into JavaScript (milliseconds), so
+ * no row is skipped or repeated. An `after` id that no longer exists ends the walk (an empty page). Owner role.
+ */
 export function listPendingAiProposals(
   sx: SqlExecutor,
-  args: { readonly limit?: number } = {},
+  args: { readonly limit?: number; readonly after?: string | null } = {},
 ): Promise<PendingAiProposal[]> {
   return queryRows(
     sx,
     `WITH pending AS (
        SELECT m.* FROM memory_objects m
        WHERE m.origin = 'ai' AND m.status = 'proposed'
+         AND (CAST(:after AS uuid) IS NULL
+              OR (m.created_at, m.id) > (SELECT c.created_at, c.id FROM memory_objects c WHERE c.id = :after))
        ORDER BY m.created_at, m.id
        LIMIT :limit)
      SELECT m.id, m.tenant_id, m.venture_id, m.type, m.title, m.content, m.visibility, m.created_by, m.source_refs,
@@ -967,7 +974,7 @@ export function listPendingAiProposals(
               ORDER BY s.last_activity_at DESC) AS text[]) AS conversation_ids
      FROM pending m
      ORDER BY m.created_at, m.id`,
-    { limit: p.int(clampLimit(args.limit, 200, 1000)) },
+    { limit: p.int(clampLimit(args.limit, 200, 1000)), after: p.nullable.uuid(args.after ?? null) },
     (r) => ({
       id: col.uuid.decode(r.id, 'id'),
       tenantId: col.uuid.decode(r.tenant_id, 'tenant_id'),

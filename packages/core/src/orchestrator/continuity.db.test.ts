@@ -523,7 +523,7 @@ async function liveTitled(title: string): Promise<memoryRepo.MemoryRecord[]> {
   ).filter((m) => m.title === title);
 }
 
-describe('memory proposed for student approval', () => {
+describe('memory kept automatically', () => {
   it('keeps a decision the founder states in a chat with that turn, though the model proposed nothing (LAB-K1)', async () => {
     const session = await scripted.sessions.create(maya, quietquad(), {});
     const generated = scriptedModel.calls.length;
@@ -538,8 +538,8 @@ describe('memory proposed for student approval', () => {
       expect.objectContaining({
         type: 'decision',
         content: 'The team decided to ask each library for a paid commitment before the pilot starts.',
-        status: 'proposed',
-        keptAutomatically: false,
+        status: 'confirmed',
+        keptAutomatically: true,
         origin: 'ai',
       }),
     ]);
@@ -572,7 +572,7 @@ describe('memory proposed for student approval', () => {
       session.id,
       'Two libraries agreed to a pilot in November and to share door-counter data.',
     );
-    const kept = (await scripted.memory.list(devin, quietquad(), { status: 'proposed' })).items.filter((m) =>
+    const kept = (await scripted.memory.list(devin, quietquad(), { status: 'confirmed' })).items.filter((m) =>
       m.sourceRefs.some((r) => r.kind === 'turn' && r.id === turn.id),
     );
     expect(kept.map((m) => m.title).sort()).toEqual(['Pilot agreement', 'Pilot libraries']);
@@ -581,7 +581,7 @@ describe('memory proposed for student approval', () => {
     if (item === undefined || other === undefined) throw new Error('nothing kept');
     expect(item).toMatchObject({
       origin: 'ai',
-      keptAutomatically: false,
+      keptAutomatically: true,
       approvedBy: null,
       visibility: 'team',
     });
@@ -592,14 +592,13 @@ describe('memory proposed for student approval', () => {
         { kind: 'turn', id: turn.id },
       ]),
     );
-    // Both suggestions remain pending until the student approves them.
+    // Nothing waits for an approval.
     expect(
       (await scripted.memory.list(maya, quietquad(), { status: 'proposed' })).items.filter(
-        (m) => m.origin === 'ai' && m.sourceRefs.some((r) => r.id === turn.id),
+        (m) => m.origin === 'ai',
       ),
-    ).toHaveLength(2);
+    ).toEqual([]);
     // The founder corrects one: the correction is hers, and survives the conversation's deletion.
-    await scripted.memory.act(maya, item.id, { action: 'approve' });
     const corrected = await scripted.memory.act(maya, item.id, {
       action: 'correct',
       patch: { content: 'Two libraries agreed to a pilot in December.' },
@@ -610,7 +609,7 @@ describe('memory proposed for student approval', () => {
     expect((await scripted.memory.get(maya, corrected?.id ?? '')).status).toBe('confirmed');
     // What the vEIR kept from that conversation alone is gone with it: the version it kept (the founder corrected
     // it), and the other item nobody touched.
-    expect(await statusOf(item.id)).toBe('superseded');
+    expect(await statusOf(item.id)).toBe('deleted');
     expect(await statusOf(other.id)).toBe('deleted');
     await expect(scripted.memory.get(maya, other.id)).rejects.toMatchObject({ code: 'not_found' });
     // Forgetting is the founder's at any time.
@@ -631,7 +630,7 @@ describe('memory proposed for student approval', () => {
     const turn = await say(maya, session.id, 'Honestly I just want this startup to make me rich, quickly.');
     const [goal] = await learnedFrom(turn.id);
     if (goal === undefined) throw new Error('the goal was not kept');
-    expect(goal).toMatchObject({ title: 'Personal goal', keptAutomatically: false, hasEmbedding: true });
+    expect(goal).toMatchObject({ title: 'Personal goal', keptAutomatically: true, hasEmbedding: true });
     // Maya makes the vEIR forget it, and the conversation ends: its distillation drafts the same item, then the
     // same goal in other words. Neither is kept, nothing has to be said again for it to come back otherwise.
     expect(await scripted.memory.act(maya, goal.id, { action: 'delete' })).toBeNull();
@@ -651,6 +650,7 @@ describe('memory proposed for student approval', () => {
         requestId: 'distill-forgotten',
         settled: true,
       });
+      // Forgetting withdrew the conversation's digest (migration 0024): a re-distillation is fenced off.
       expect(outcome).toMatchObject({ status: 'skipped', reason: 'digest_deleted', memoryProposed: 0 });
     } finally {
       distilling = null;
@@ -689,6 +689,7 @@ describe('memory proposed for student approval', () => {
         requestId: 'distill-corrected',
         settled: true,
       });
+      // Forgetting withdrew the conversation's digest (migration 0024): a re-distillation is fenced off.
       expect(outcome).toMatchObject({ status: 'skipped', reason: 'digest_deleted', memoryProposed: 0 });
     } finally {
       distilling = null;
@@ -721,7 +722,7 @@ describe('memory proposed for student approval', () => {
       // turn's work is done.
       expect(timeline).toEqual(['turn.completed', 'memory-embed-start', 'memory-embed-done']);
       const [reports] = await learnedFrom(turn.id);
-      expect(reports).toMatchObject({ keptAutomatically: false, hasEmbedding: true });
+      expect(reports).toMatchObject({ keptAutomatically: true, hasEmbedding: true });
     } finally {
       memoryEmbedMs = 0;
     }
@@ -744,7 +745,7 @@ describe('what the vEIR keeps', () => {
     const goalTurn = await say(maya, first.id, 'Frankly I want the company to make me a lot of money fast.');
     const kept = await learnedFrom(goalTurn.id);
     expect(kept.map((m) => m.title)).toEqual(['Money goal']);
-    expect(kept[0]).toMatchObject({ keptAutomatically: false, hasEmbedding: true });
+    expect(kept[0]).toMatchObject({ keptAutomatically: true, hasEmbedding: true });
 
     // The same thing said another way in a later conversation is not kept twice: it names the new conversation.
     proposals.Pilot = [candidate('Pilot budget cap', 'The pilot budget is limited to 6100.')];
@@ -811,17 +812,13 @@ describe('what the vEIR keeps', () => {
     const report = await scripted.maintenance.runDaily({ requestId: 'maintenance-legacy' });
     // The constraint the founder stated after "and" was kept by the turn itself (founder-statements.ts reads each
     // clause), so the legacy proposal of it is a duplicate; the goal is kept from the proposals.
-    expect(report.pendingProposals.kept).toBe(0);
-    // Maintenance also examines earlier pending fixtures in this shared venture. Assert the specific
-    // retirements below, without coupling this case to the number of earlier proposals.
-    expect(report.pendingProposals.duplicates).toBeGreaterThanOrEqual(2);
-    expect(report.pendingProposals.notTheFounders).toBeGreaterThanOrEqual(1);
-    expect(await statusOf(goal)).toBe('proposed');
-    expect(await statusOf(constraint)).toBe('proposed');
+    expect(report.pendingProposals).toMatchObject({ kept: 1, duplicates: 2, notTheFounders: 1 });
+    expect(await statusOf(goal)).toBe('confirmed');
+    expect(await statusOf(constraint)).toBe('expired');
     expect(await statusOf(advice)).toBe('expired');
     expect(await statusOf(restated)).toBe('expired');
     const kept = await h.t.db.system((sx) => memoryRepo.getMemory(sx, goal));
-    expect(kept).toMatchObject({ keptAutomatically: false, approvedBy: null });
+    expect(kept).toMatchObject({ keptAutomatically: true, approvedBy: null });
     // Run again: nothing left to settle.
     expect(
       (await scripted.maintenance.runDaily({ requestId: 'maintenance-legacy-2' })).pendingProposals,

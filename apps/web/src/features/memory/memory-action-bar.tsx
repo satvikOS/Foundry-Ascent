@@ -1,5 +1,5 @@
 import type { MemoryObjectView } from '@foundry/contracts';
-import { Check, X, Pencil, Pin, PinOff, Trash } from 'lucide-react';
+import { Pencil, Pin, PinOff, Trash } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -47,31 +47,6 @@ export function MemoryActionBar({
 
   return (
     <div className={cn('flex flex-wrap items-center gap-1.5', className)}>
-      {actions.includes('approve') ? (
-        <Button
-          size={buttonSize}
-          disabled={busy}
-          onClick={() => {
-            run(memory.id, { action: 'approve' });
-          }}
-        >
-          <Check aria-hidden />
-          Approve memory
-        </Button>
-      ) : null}
-      {actions.includes('reject') ? (
-        <Button
-          size={buttonSize}
-          variant="ghost"
-          disabled={busy}
-          onClick={() => {
-            run(memory.id, { action: 'reject' }, { onSuccess: () => onRemoved?.() });
-          }}
-        >
-          <X aria-hidden />
-          Reject
-        </Button>
-      ) : null}
       {actions.includes('correct') ? (
         <Button
           size={buttonSize}
