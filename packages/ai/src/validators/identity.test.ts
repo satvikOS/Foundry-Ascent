@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { expectLinearTime } from '../testing/linear-time.js';
 import {
   DISCLAIMER_FALLBACK,
   asksAboutIdentity,
@@ -385,35 +386,27 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     const out = rewriteIdentity(text, CORIN);
     expect(out.findings).toHaveLength(1_500);
     expect(out.text).not.toMatch(/I am Corin\.|Corin approved\./);
-    // Timing ratios of warm runs (not absolute times) keep this independent of the machine: eight times the
-    // violations take about eight times as long, not sixty-four.
-    const time = (count: number): number => {
+    // Eight times the violations take about eight times the CPU time, not sixty-four (see `expectLinearTime`).
+    expectLinearTime((count) => {
       const input = violations(count);
-      const started = performance.now();
-      for (let i = 0; i < 5; i += 1) rewriteIdentity(input, CORIN);
-      return performance.now() - started;
-    };
-    // Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
-    time(150);
-    let small = Infinity;
-    let large = Infinity;
-    for (let round = 0; round < 3; round += 1) {
-      small = Math.min(small, time(150));
-      large = Math.min(large, time(1_200));
-    }
-    expect(large).toBeLessThan(16 * small + 100);
-  }, 30_000);
+      return () => rewriteIdentity(input, CORIN);
+    }, 150);
+  }, 120_000);
 
   it.each(['hi ', 'ok so ', 'good morning ', 'hey there Maya '])(
     'checks the words before "<name> here" in linear time: 40 × %j',
     (lead) => {
-      rewriteIdentity('Hi Maya, Corin here. Thanks.\n— Corin', CORIN);
-      const text = `${lead.repeat(40)}1 Corin here.`;
-      const started = performance.now();
-      rewriteIdentity(text, CORIN);
-      rewriteIdentity(text, { ...CORIN, spoken: true });
-      expect(performance.now() - started).toBeLessThan(50);
+      // Eight times the words take about eight times the CPU time, never sixty-four or more (see
+      // `expectLinearTime`): the words before the name are never read back from each one.
+      expectLinearTime((count) => {
+        const text = `${lead.repeat(count)}1 Corin here.`;
+        return () => {
+          rewriteIdentity(text, CORIN);
+          rewriteIdentity(text, { ...CORIN, spoken: true });
+        };
+      }, 40);
     },
+    120_000,
   );
 
   it('stays fast on 6,400 characters of any repeated fragment, typed or spoken', () => {
@@ -453,38 +446,25 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     ];
     const endings = ['1 Corin here.', ' Corin.', '\nCorin', ' is here?', "'s listening x", '\n— Corin H.'];
     for (const ending of endings) rewriteIdentity(`Thanks. ${ending}`, CORIN);
-    // Timing ratios of warm runs (not absolute times) keep this independent of the machine: eight times the
-    // text takes about eight times as long, not sixty-four. Summed over every fragment so the fixed allowance
-    // is small next to one rule turning quadratic.
-    const time = (chars: number): number => {
-      let total = 0;
-      for (const spoken of [false, true]) {
-        for (const fragment of fragments) {
-          for (const ending of endings) {
-            const text = fragment.repeat(Math.ceil(chars / fragment.length)).slice(0, chars) + ending;
-            const started = performance.now();
-            rewriteIdentity(text, { ...CORIN, spoken });
-            total += performance.now() - started;
-          }
-        }
-      }
-      return total;
+    // Eight times the text takes about eight times the CPU time, not sixty-four (see `expectLinearTime`). Summed over
+    // every fragment so the fixed allowance is small next to one rule turning quadratic.
+    const texts = (chars: number): string[] =>
+      fragments.flatMap((fragment) =>
+        endings.map((ending) => fragment.repeat(Math.ceil(chars / fragment.length)).slice(0, chars) + ending),
+      );
+    const work = (chars: number) => {
+      const all = texts(chars);
+      return () => {
+        for (const spoken of [false, true])
+          for (const text of all) rewriteIdentity(text, { ...CORIN, spoken });
+      };
     };
-    // Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
-    time(800);
-    let small = Infinity;
-    let large = Infinity;
-    for (let round = 0; round < 3; round += 1) {
-      small = Math.min(small, time(800));
-      large = Math.min(large, time(6_400));
-    }
-    expect(large).toBeLessThan(16 * small + 100);
-  }, 60_000);
+    expectLinearTime(work, 800);
+  }, 120_000);
 
   it('stays linear on 20,000 characters of the question, relay and feedback rules, typed or spoken', () => {
-    // Timing ratios (not absolute times) keep this independent of the machine: eight times the text takes
-    // about eight times as long, not sixty-four. Summed over every fragment so the fixed allowance is small
-    // next to one rule turning quadratic.
+    // Eight times the text takes about eight times the CPU time, not sixty-four (see `expectLinearTime`). Summed over
+    // every fragment so the fixed allowance is small next to one rule turning quadratic.
     const fragments = [
       'Want me to tell ',
       'Should I let ',
@@ -511,33 +491,22 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
       'Did Corin approve your plan? No. ',
     ];
     const endings = [' Corin.', ' Yes, she has.'];
-    const time = (chars: number): number => {
-      let total = 0;
-      for (const spoken of [false, true]) {
-        for (const fragment of fragments) {
-          for (const ending of endings) {
-            const text = fragment.repeat(Math.ceil(chars / fragment.length)).slice(0, chars) + ending;
-            const started = performance.now();
-            rewriteIdentity(text, { ...CORIN, spoken });
-            total += performance.now() - started;
-          }
-        }
-      }
-      return total;
+    const texts = (chars: number): string[] =>
+      fragments.flatMap((fragment) =>
+        endings.map((ending) => fragment.repeat(Math.ceil(chars / fragment.length)).slice(0, chars) + ending),
+      );
+    const work = (chars: number) => {
+      const all = texts(chars);
+      return () => {
+        for (const spoken of [false, true])
+          for (const text of all) rewriteIdentity(text, { ...CORIN, spoken });
+      };
     };
-    // Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
-    time(2_500);
-    let small = Infinity;
-    let large = Infinity;
-    for (let round = 0; round < 3; round += 1) {
-      small = Math.min(small, time(2_500));
-      large = Math.min(large, time(20_000));
-    }
-    expect(large).toBeLessThan(16 * small + 100);
-  }, 60_000);
+    expectLinearTime(work, 2_500);
+  }, 120_000);
 
   it('stays linear on 20,000 characters of the presence, draft, denial and disclaimer rules', () => {
-    // Timing ratios, interleaved best of three (see above). Each match of a claim of presence reads a bounded
+    // CPU time ratios (see above). Each match of a claim of presence reads a bounded
     // window for the quote, lead or salutation that makes it a draft; a disclaimer reply is read at most twice.
     const fragments = [
       'no   no , ',
@@ -555,28 +524,18 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
     ];
     const endings = [' Corin.', " I'll call you tomorrow."];
     const options = { ...CORIN, addressees: ['Maya Chen'], disclaimers: 'reply' as const };
-    const time = (chars: number): number => {
-      let total = 0;
-      for (const spoken of [false, true]) {
-        for (const fragment of fragments) {
-          for (const ending of endings) {
-            const text = fragment.repeat(Math.ceil(chars / fragment.length)).slice(0, chars) + ending;
-            const started = performance.now();
-            rewriteIdentity(text, { ...options, spoken });
-            total += performance.now() - started;
-          }
-        }
-      }
-      return total;
+    const texts = (chars: number): string[] =>
+      fragments.flatMap((fragment) =>
+        endings.map((ending) => fragment.repeat(Math.ceil(chars / fragment.length)).slice(0, chars) + ending),
+      );
+    const work = (chars: number) => {
+      const all = texts(chars);
+      return () => {
+        for (const spoken of [false, true])
+          for (const text of all) rewriteIdentity(text, { ...options, spoken });
+      };
     };
-    time(2_500);
-    let small = Infinity;
-    let large = Infinity;
-    for (let round = 0; round < 3; round += 1) {
-      small = Math.min(small, time(2_500));
-      large = Math.min(large, time(20_000));
-    }
-    expect(large).toBeLessThan(16 * small + 100);
+    expectLinearTime(work, 2_500);
   }, 120_000);
 
   it('corrects a violation with one brief, natural line in the twin’s own voice', () => {
@@ -793,21 +752,12 @@ describe('rewriteIdentity — presence: the twin speaks as itself and never apol
             : 'Run the pilot.',
       ).join(' ');
     expect(rewriteIdentity(text(1_200), CORIN).text).not.toMatch(/an AI/);
-    const time = (count: number): number => {
+    // Eight times the disclaimers take about eight times the CPU time, not sixty-four (see `expectLinearTime`).
+    expectLinearTime((count) => {
       const input = text(count);
-      const started = performance.now();
-      for (let i = 0; i < 3; i += 1) rewriteIdentity(input, CORIN);
-      return performance.now() - started;
-    };
-    time(150);
-    let small = Infinity;
-    let large = Infinity;
-    for (let round = 0; round < 3; round += 1) {
-      small = Math.min(small, time(150));
-      large = Math.min(large, time(1_200));
-    }
-    expect(large).toBeLessThan(16 * small + 100);
-  }, 30_000);
+      return () => rewriteIdentity(input, CORIN);
+    }, 150);
+  }, 120_000);
 });
 
 describe('rewriteIdentity — the honest answer to a sincere question always survives', () => {
@@ -1020,30 +970,19 @@ describe('rewriteIdentity — the answer to a sincere question has the right yes
   });
 
   it('reads the opening in linear time, whatever the reply repeats', () => {
-    // Timing ratios, interleaved best of three (see above). The opening is read once, anchored at the start, with
-    // at most four preface words.
+    // CPU time ratios (see `expectLinearTime`). The opening is read once, anchored at the start, with at most four
+    // preface words.
     const fragments = ['ha, ', 'no worries, ', 'fair question! ', 'no ', 'yes and ', 'not a ', '   '];
-    const time = (chars: number): number => {
-      let total = 0;
-      for (const answers of ['machine', 'person'] as const) {
-        for (const fragment of fragments) {
-          const text = fragment.repeat(Math.ceil(chars / fragment.length)).slice(0, chars);
-          const started = performance.now();
-          rewriteIdentity(text, { ...CORIN, disclaimers: 'reply', answers });
-          total += performance.now() - started;
-        }
-      }
-      return total;
-    };
-    time(2_500);
-    let small = Infinity;
-    let large = Infinity;
-    for (let round = 0; round < 3; round += 1) {
-      small = Math.min(small, time(2_500));
-      large = Math.min(large, time(20_000));
-    }
-    expect(large).toBeLessThan(16 * small + 100);
-  }, 60_000);
+    expectLinearTime((chars) => {
+      const texts = fragments.map((fragment) =>
+        fragment.repeat(Math.ceil(chars / fragment.length)).slice(0, chars),
+      );
+      return () => {
+        for (const answers of ['machine', 'person'] as const)
+          for (const text of texts) rewriteIdentity(text, { ...CORIN, disclaimers: 'reply', answers });
+      };
+    }, 2_500);
+  }, 120_000);
 });
 
 describe('rewriteIdentity — once met, a reply never introduces the vEIR again (LAB-M16)', () => {
@@ -1123,32 +1062,23 @@ describe('rewriteIdentity — once met, a reply never introduces the vEIR again 
   });
 
   it('reads introductions in linear time', () => {
-    // Timing ratios, interleaved best of three (see above).
+    // CPU time ratios (see `expectLinearTime`).
     const fragments = [
       "Hi Ines, I'm Ruth's vEIR. ",
       'hi                ',
       "I'm Ruth's vEIR, ",
       'Hey there — ',
     ];
-    const time = (chars: number): number => {
-      let total = 0;
-      for (const fragment of fragments) {
-        const text = fragment.repeat(Math.ceil(chars / fragment.length)).slice(0, chars);
-        const started = performance.now();
-        rewriteIdentity(text, { ...RUTH_VEIR, disclaimers: 'reply', introduced: true });
-        total += performance.now() - started;
-      }
-      return total;
-    };
-    time(2_500);
-    let small = Infinity;
-    let large = Infinity;
-    for (let round = 0; round < 3; round += 1) {
-      small = Math.min(small, time(2_500));
-      large = Math.min(large, time(20_000));
-    }
-    expect(large).toBeLessThan(16 * small + 100);
-  }, 60_000);
+    expectLinearTime((chars) => {
+      const texts = fragments.map((fragment) =>
+        fragment.repeat(Math.ceil(chars / fragment.length)).slice(0, chars),
+      );
+      return () => {
+        for (const text of texts)
+          rewriteIdentity(text, { ...RUTH_VEIR, disclaimers: 'reply', introduced: true });
+      };
+    }, 2_500);
+  }, 120_000);
 });
 
 describe('asksAboutIdentity — a sincere question about what the coach is', () => {

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { expectLinearTime } from '../testing/linear-time.js';
 import {
   askedLifeOf,
   finishLifeReply,
@@ -413,39 +414,22 @@ describe('reading a made-up life stays linear', () => {
       ).join(' ');
     const founder = 'lowkey, how was your weekend?';
     expect(reply(text(1_200), founder, false).text).not.toMatch(/Weekend was good|Slept in/);
-    const time = (count: number): number => {
+    // Linear: eight times the text takes about eight times the CPU time, not sixty-four (see `expectLinearTime`).
+    expectLinearTime((count) => {
       const input = text(count);
-      const started = performance.now();
-      for (let i = 0; i < 3; i += 1) reply(input, founder, false);
-      return performance.now() - started;
-    };
-    time(150);
-    let small = Infinity;
-    let large = Infinity;
-    for (let round = 0; round < 3; round += 1) {
-      small = Math.min(small, time(150));
-      large = Math.min(large, time(1_200));
-    }
-    expect(large).toBeLessThan(16 * small + 100);
-  }, 30_000);
+      return () => reply(input, founder, false);
+    }, 150);
+  }, 120_000);
 
   it('reads a run of bare answers opening the reply in a few rounds, not one round each', () => {
     const founder = 'how was your weekend?';
-    const time = (count: number): number => {
+    // Each round reads every bare answer, but only the first rounds may take one out where the reply opens: a round
+    // per answer would take sixty-four times as long for eight times the answers (see `expectLinearTime`).
+    expectLinearTime((count) => {
       const input = 'Lovely! '.repeat(count).trim();
-      const started = performance.now();
-      for (let i = 0; i < 3; i += 1) reply(input, founder, false);
-      return performance.now() - started;
-    };
-    time(150);
-    let small = Infinity;
-    let large = Infinity;
-    for (let round = 0; round < 3; round += 1) {
-      small = Math.min(small, time(150));
-      large = Math.min(large, time(1_200));
-    }
-    expect(large).toBeLessThan(16 * small + 100);
-  }, 30_000);
+      return () => reply(input, founder, false);
+    }, 150);
+  }, 120_000);
 });
 
 describe('the reply still turns to the founder once its made-up life is out', () => {

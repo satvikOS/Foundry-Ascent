@@ -322,30 +322,33 @@ function askedLifeAccepts(form: LifeForm): NonNullable<IdentityPattern['acceptIn
     if (life === null || (form === 'bare' && life.asked !== 'past')) return false;
     const start = m.index;
     const end = start + m[0].length;
-    if (!lifeAsserted(text, start, end) || lifeQuoted(text, start, ctx)) return false;
-    if (form === 'i') return firstPersonLife(text, start, end, ctx, true);
-    if (lifeDrafted(text, start, ctx)) return false;
-    const sentence = boundsOf(text, start, end, isSentenceBreak);
-    if (ctx.saysWhatItIs(text.slice(sentence.start, sentence.end))) return false;
-    const clause = boundsOf(text, start, end, isClauseBreak);
-    if (aboutTheFounder(text.slice(sentence.start, clause.end + 1))) return false;
-    if (FOUNDER_NEXT.test(text.slice(clause.end, clause.end + 40))) return false;
-    if (form === 'told' && gerundSubject(m[0], text.slice(end, clause.end))) return false;
     const opening = form === 'bare' || form === 'fragment' || form === 'reaction';
-    const lead = afterThanks(text.slice(opening ? sentence.start : clause.start, start));
-    if (!wordsOf(lead).every((w) => LIFE_LEAD_WORDS.has(w.toLowerCase()))) return false;
-    if ((form === 'fragment' || form === 'reaction') && !onlyLifeTail(text.slice(end, sentence.end)))
-      return false;
-    if (!lifeAlone(text, start, end)) return false;
+    const sentence = boundsOf(text, start, end, isSentenceBreak);
     // Where the reply opens: after nothing but thanks (a few words, so a long text before it never is), read again in
-    // the first rounds only, as each one takes out the opening that made the next sentence open the reply.
-    return !(
+    // the first rounds only, as each one takes out the opening that made the next sentence open the reply. Read first,
+    // as it is the cheapest: a run of bare answers ("Lovely! Lovely! …") is one match each in every round, and every one
+    // but the opening fails here without the costlier reads below.
+    if (
       opening &&
       (ctx.lifeAfterOpening ||
         ctx.round >= OPENING_ROUNDS ||
         sentence.start > OPENING_THANKS_CHARS ||
         !isOnlyThanks(text.slice(0, sentence.start)))
-    );
+    )
+      return false;
+    if (!lifeAsserted(text, start, end) || lifeQuoted(text, start, ctx)) return false;
+    if (form === 'i') return firstPersonLife(text, start, end, ctx, true);
+    if (lifeDrafted(text, start, ctx)) return false;
+    if (ctx.saysWhatItIs(text.slice(sentence.start, sentence.end))) return false;
+    const clause = boundsOf(text, start, end, isClauseBreak);
+    if (aboutTheFounder(text.slice(sentence.start, clause.end + 1))) return false;
+    if (FOUNDER_NEXT.test(text.slice(clause.end, clause.end + 40))) return false;
+    if (form === 'told' && gerundSubject(m[0], text.slice(end, clause.end))) return false;
+    const lead = afterThanks(text.slice(opening ? sentence.start : clause.start, start));
+    if (!wordsOf(lead).every((w) => LIFE_LEAD_WORDS.has(w.toLowerCase()))) return false;
+    if ((form === 'fragment' || form === 'reaction') && !onlyLifeTail(text.slice(end, sentence.end)))
+      return false;
+    return lifeAlone(text, start, end);
   };
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { expectLinearTime } from '../testing/linear-time.js';
 import { REPEATED_GREETING_FALLBACK } from './greeting.js';
 import { NEWS_FALLBACK, REPEAT_FALLBACK } from './social.js';
 import { sanitizeMarkdown } from './markdown.js';
@@ -920,31 +921,20 @@ describe('SentenceGate', () => {
   });
 
   it('stays linear on a long stream of tiny units', () => {
-    // Each unit used to re-read everything shown before it. Timing ratios (not absolute times) keep this
-    // independent of the machine: eight times the text takes about eight times as long, not sixty-four.
-    // About 330 and 2,700 sentence boundaries, three streams each so that the fixed allowance is small next
-    // to a quadratic cost; CI runners are slower and share the machine, hence the timeout. Units with and
-    // without letters, so every per-unit check (identity, Markdown, other ventures) runs.
-    const time = (chars: number): number => {
+    // Each unit used to re-read everything shown before it: eight times the text takes about eight times the CPU
+    // time, not sixty-four (see `expectLinearTime`). About 330 and 2,700 sentence boundaries. Units with and without
+    // letters, so every per-unit check (identity, Markdown, other ventures) runs.
+    expectLinearTime((chars) => {
       const text = 'Ok. . '.repeat(chars / 6);
-      const started = performance.now();
-      for (let stream = 0; stream < 3; stream += 1) {
+      const units: string[] = [];
+      for (let i = 0; i < text.length; i += 8) units.push(text.slice(i, i + 8));
+      return () => {
         const g = gate();
-        for (let i = 0; i < text.length; i += 8) g.push(text.slice(i, i + 8));
+        for (const unit of units) g.push(unit);
         g.end();
-      }
-      return performance.now() - started;
-    };
-    // Interleaved, best of three: a burst of load on a shared machine slows one sample, not one size.
-    time(1_200);
-    const smalls: number[] = [];
-    const larges: number[] = [];
-    for (let round = 0; round < 3; round += 1) {
-      smalls.push(time(1_200));
-      larges.push(time(9_600));
-    }
-    expect(Math.min(...larges)).toBeLessThan(16 * Math.min(...smalls) + 100);
-  }, 60_000);
+      };
+    }, 1_200);
+  }, 120_000);
 
   it('counts removals and rewrites without keeping any text', () => {
     const g = gate({ evidenceKeys: new Set(['E1']) });

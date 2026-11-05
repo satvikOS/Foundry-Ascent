@@ -2,6 +2,7 @@ import { CoachResponse, ValidatorResults, type CoachResponse as CoachResponseTyp
 import { describe, expect, it } from 'vitest';
 
 import { classifyRisk } from '../risk/classifier.js';
+import { expectLinearTime } from '../testing/linear-time.js';
 import { DISCLAIMER_FALLBACK } from './identity.js';
 import { REPEATED_GREETING_FALLBACK } from './greeting.js';
 import { REPEAT_FALLBACK } from './social.js';
@@ -1218,15 +1219,19 @@ describe('spoken text (voice channel)', () => {
   });
 
   it('checks "<name> here" after a long run of greetings in linear time', () => {
-    const answer = `${'ok so '.repeat(40)}1 Corin here.`;
-    const started = performance.now();
-    const out = validateCoachResponse(
-      base({ answer, spoken: `${'hi '.repeat(40)}1 Corin here.` }),
-      corinCall,
-    );
-    expect(performance.now() - started).toBeLessThan(50);
-    expect(out.blocked).toBe(true);
-  });
+    const input = (greetings: number) =>
+      base({
+        answer: `${'ok so '.repeat(greetings)}1 Corin here.`,
+        spoken: `${'hi '.repeat(greetings)}1 Corin here.`,
+      });
+    expect(validateCoachResponse(input(40), corinCall).blocked).toBe(true);
+    // Eight times the greetings take about eight times the CPU time, never sixty-four or more (see
+    // `expectLinearTime`): the words before the name are never read back from each one.
+    expectLinearTime((greetings) => {
+      const response = input(greetings);
+      return () => validateCoachResponse(response, corinCall);
+    }, 40);
+  }, 120_000);
 
   it('never speaks a sign-off in a spoken reply derived from the answer', () => {
     const out = validateCoachResponse(
@@ -1259,24 +1264,13 @@ describe('spoken text (voice channel)', () => {
     expect(out.response.answer.length).toBeLessThanOrEqual(6_000);
     expect(out.response.answer).not.toMatch(/I am Corin\.|Corin approved\./);
     // Linear below the answer limit (both sizes are read in full): eight times the violations take about
-    // eight times as long, not sixty-four. Ratios of warm runs keep this independent of the machine.
-    const time = (count: number): number => {
-      const input = base({ answer: violations(count) });
-      const started = performance.now();
-      for (let i = 0; i < 5; i += 1) validateCoachResponse(input, corinCall);
-      return performance.now() - started;
-    };
+    // eight times the CPU time, not sixty-four (see `expectLinearTime`).
     expect(violations(400).length).toBeLessThan(6_000);
-    // Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
-    time(50);
-    let small = Infinity;
-    let large = Infinity;
-    for (let round = 0; round < 3; round += 1) {
-      small = Math.min(small, time(50));
-      large = Math.min(large, time(400));
-    }
-    expect(large).toBeLessThan(16 * small + 100);
-  }, 30_000);
+    expectLinearTime((count) => {
+      const input = base({ answer: violations(count) });
+      return () => validateCoachResponse(input, corinCall);
+    }, 50);
+  }, 120_000);
 
   it.each([
     ['another venture', 'BrightLoop solved this with a waitlist.'],

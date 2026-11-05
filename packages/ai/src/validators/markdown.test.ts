@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { expectLinearTime } from '../testing/linear-time.js';
 import { isSafeLinkTarget, sanitizeMarkdown, sanitizePlainText } from './markdown.js';
 
 describe('isSafeLinkTarget', () => {
@@ -78,24 +79,13 @@ describe('sanitizeMarkdown', () => {
     expect(sanitizeMarkdown('[the\nlead](https://library.example.edu)').unsafeLinksRemoved).toBe(0);
     // A blank line ends the paragraph: no link, nothing removed.
     expect(sanitizeMarkdown('[a\n\nb](data:text/html,x)').unsafeLinksRemoved).toBe(0);
-    // Linear on unclosed labels: eight times the labels take about eight times as long, not sixty-four.
-    // Ratios of warm runs (not absolute times) keep this independent of the machine.
-    const time = (labels: number): number => {
+    // Linear on unclosed labels: eight times the labels take about eight times the CPU time, not sixty-four (see
+    // `expectLinearTime`).
+    expectLinearTime((labels) => {
       const input = '[a\n'.repeat(labels);
-      const started = performance.now();
-      for (let i = 0; i < 5; i += 1) sanitizeMarkdown(input);
-      return performance.now() - started;
-    };
-    // Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
-    time(625);
-    let small = Infinity;
-    let large = Infinity;
-    for (let round = 0; round < 3; round += 1) {
-      small = Math.min(small, time(625));
-      large = Math.min(large, time(5_000));
-    }
-    expect(large).toBeLessThan(16 * small + 100);
-  }, 30_000);
+      return () => sanitizeMarkdown(input);
+    }, 625);
+  }, 120_000);
 
   it('handles autolinks', () => {
     const out = sanitizeMarkdown('Visit <https://example.org> not <javascript:alert(1)>');

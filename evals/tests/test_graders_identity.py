@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -21,6 +21,7 @@ from foundry_evals.graders.words import COMMON_WORDS, NAME_WORDS
 from foundry_evals.matrix.checks import volunteered
 from foundry_evals.text import TextField, turn_fields
 from tests.conftest import load_fixture, make_turn
+from tests.linear_time import assert_linear_time
 
 
 def codes(text: str, ctx: GradingContext, *, roleplay: bool = False, evidence: bool = False) -> list[str]:
@@ -395,22 +396,20 @@ def test_the_answer_has_the_yes_or_no_its_question_needs(asked: str, text: str, 
 
 
 def test_reading_the_answer_stays_linear() -> None:
-    """The opening is read once, anchored, with at most four preface words: ratio form, best of three."""
+    """The opening is read once, anchored, with at most four preface words: CPU time ratios (see linear_time)."""
+    fragments = ("ha, ", "no worries, ", "fair question! ", "no ", "yes and ", "not a ", "   ")
 
-    def timed(chars: int) -> float:
-        total = 0.0
-        for question in ("machine", "person"):
-            for fragment in ("ha, ", "no worries, ", "fair question! ", "no ", "yes and ", "not a ", "   "):
-                text = (fragment * (chars // len(fragment) + 1))[:chars]
-                started = time.perf_counter()
-                answer_violation(text, question, "Corin's vEIR", "Corin")
-                total += time.perf_counter() - started
-        return total
+    def work(chars: int) -> Callable[[], None]:
+        texts = [(fragment * (chars // len(fragment) + 1))[:chars] for fragment in fragments]
 
-    timed(2_500)
-    small = min(timed(2_500) for _ in range(3))
-    large = min(timed(20_000) for _ in range(3))
-    assert large < 16 * small + 0.1
+        def run() -> None:
+            for question in ("machine", "person"):
+                for text in texts:
+                    answer_violation(text, question, "Corin's vEIR", "Corin")
+
+        return run
+
+    assert_linear_time(work, 2_500)
 
 
 def test_a_bare_answer_is_read_only_where_the_reply_opens(veir_ctx: GradingContext) -> None:
@@ -480,15 +479,41 @@ def test_word_lists_match_the_validator() -> None:
     assert _ts_words(root / "validators" / "identity.ts", "const NAME_WORDS = new Set(") == set(NAME_WORDS)
 
 
+def _fragment_work(
+    fragments: list[str], endings: list[str], ctx: GradingContext
+) -> Callable[[int], Callable[[], None]]:
+    """The work of grading every fragment repeated to `chars` characters, with every ending, typed and spoken."""
+
+    def work(chars: int) -> Callable[[], None]:
+        fields = [
+            [TextField("answer", text), TextField("spoken", text)]
+            for text in (
+                (fragment * (chars // len(fragment) + 1))[:chars] + ending
+                for fragment in fragments
+                for ending in endings
+            )
+        ]
+
+        def run() -> None:
+            for pair in fields:
+                grade_identity(pair, ctx, 1)
+
+        return run
+
+    return work
+
+
 @pytest.mark.parametrize("lead", ["hi ", "ok so ", "good morning ", "hey there Maya "])
 def test_name_here_after_a_long_greeting_run_is_linear(lead: str, veir_ctx: GradingContext) -> None:
-    grade_identity(
-        [TextField("answer", "Hi Maya, Corin here."), TextField("spoken", "Corin here.")], veir_ctx, 1
-    )
-    text = f"{lead * 40}1 Corin here."
-    started = time.perf_counter()
-    grade_identity([TextField("answer", text), TextField("spoken", text)], veir_ctx, 1)
-    assert time.perf_counter() - started < 0.05
+    """Eight times the words take about eight times the CPU time, never sixty-four or more (see linear_time): the
+    words before the name are never read back from each one."""
+
+    def work(count: int) -> Callable[[], object]:
+        text = f"{lead * count}1 Corin here."
+        fields = [TextField("answer", text), TextField("spoken", text)]
+        return lambda: grade_identity(fields, veir_ctx, 1)
+
+    assert_linear_time(work, 40)
 
 
 def test_long_repeated_fragments_stay_fast(veir_ctx: GradingContext) -> None:
@@ -506,20 +531,14 @@ def test_long_repeated_fragments_stay_fast(veir_ctx: GradingContext) -> None:
         ". ",
     ]
     endings = ["1 Corin here.", " Corin.", "\nCorin", " is here?", "\n— Corin H."]
-    slowest = 0.0
-    for fragment in fragments:
-        for ending in endings:
-            text = (fragment * (6_400 // len(fragment) + 1))[:6_400] + ending
-            started = time.perf_counter()
-            grade_identity([TextField("answer", text), TextField("spoken", text)], veir_ctx, 1)
-            slowest = max(slowest, time.perf_counter() - started)
-    assert slowest < 0.5
+    # Eight times the text, up to 6,400 characters, takes about eight times the CPU time, not sixty-four (see
+    # linear_time), summed over every fragment so the fixed allowance is small next to one rule turning quadratic.
+    assert_linear_time(_fragment_work(fragments, endings, veir_ctx), 800)
 
 
 def test_question_relay_and_feedback_rules_stay_linear(veir_ctx: GradingContext) -> None:
-    """Eight times the text takes about eight times as long, not sixty-four: timing ratios of warm runs (not
-    absolute times) keep this independent of the machine, summed over every fragment so the fixed allowance
-    is small next to one rule turning quadratic."""
+    """Eight times the text takes about eight times the CPU time, not sixty-four (see linear_time), summed over every
+    fragment so the fixed allowance is small next to one rule turning quadratic."""
     fragments = [
         "Want me to tell ",
         "Should I let ",
@@ -547,23 +566,7 @@ def test_question_relay_and_feedback_rules_stay_linear(veir_ctx: GradingContext)
     ]
     endings = [" Corin.", " Yes, she has."]
 
-    def timed(chars: int) -> float:
-        total = 0.0
-        for fragment in fragments:
-            for ending in endings:
-                text = (fragment * (chars // len(fragment) + 1))[:chars] + ending
-                started = time.perf_counter()
-                grade_identity([TextField("answer", text), TextField("spoken", text)], veir_ctx, 1)
-                total += time.perf_counter() - started
-        return total
-
-    # Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
-    timed(2_500)
-    small = large = float("inf")
-    for _ in range(3):
-        small = min(small, timed(2_500))
-        large = min(large, timed(20_000))
-    assert large < 16 * small + 0.1
+    assert_linear_time(_fragment_work(fragments, endings, veir_ctx), 2_500)
 
 
 def test_presence_draft_denial_and_disclaimer_rules_stay_linear(veir_ctx: GradingContext) -> None:
@@ -586,22 +589,7 @@ def test_presence_draft_denial_and_disclaimer_rules_stay_linear(veir_ctx: Gradin
     endings = [" Corin.", " I'll call you tomorrow."]
     addressed = replace(veir_ctx, own=replace(veir_ctx.own, member_names=("Maya Chen",)))
 
-    def timed(chars: int) -> float:
-        total = 0.0
-        for fragment in fragments:
-            for ending in endings:
-                text = (fragment * (chars // len(fragment) + 1))[:chars] + ending
-                started = time.perf_counter()
-                grade_identity([TextField("answer", text), TextField("spoken", text)], addressed, 1)
-                total += time.perf_counter() - started
-        return total
-
-    timed(2_500)
-    small = large = float("inf")
-    for _ in range(3):
-        small = min(small, timed(2_500))
-        large = min(large, timed(20_000))
-    assert large < 16 * small + 0.1
+    assert_linear_time(_fragment_work(fragments, endings, addressed), 2_500)
 
 
 def test_persona_name_that_contains_the_eir_name_is_not_a_claim(ctx: GradingContext) -> None:

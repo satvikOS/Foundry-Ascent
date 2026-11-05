@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { expectLinearTime } from '../testing/linear-time.js';
 import {
   GIST_CHARS,
   MAX_PARKED,
@@ -246,30 +247,18 @@ describe('plain text in linear time', () => {
   });
 
   it('derives the state of a pasted wall of markup without quadratic backtracking', () => {
-    // Eight times the input takes about eight times as long, not sixty-four. Ratios of warm runs (not absolute
-    // times) keep this independent of the machine.
+    // Eight times the input takes about eight times the CPU time, not sixty-four (see `expectLinearTime`).
     const historyOf = (n: number) =>
       Array.from({ length: 8 }, (_, i) => ({
         founderText: `${'[x]('.repeat(n)} ${' '.repeat(n)}x ${'\n'.repeat(n)}y ${String(i)}`,
         answer: `${'[E1, '.repeat(n)} ok ${'\n- '.repeat(n)}?`,
       }));
-    const time = (n: number): number => {
+    expectLinearTime((n) => {
       const history = historyOf(n);
       const text = `${'[x]('.repeat(n)}?`;
-      const started = performance.now();
-      for (let i = 0; i < 5; i += 1) deriveConversationState(history, text);
-      return performance.now() - started;
-    };
-    // Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
-    time(250);
-    let small = Infinity;
-    let large = Infinity;
-    for (let round = 0; round < 3; round += 1) {
-      small = Math.min(small, time(250));
-      large = Math.min(large, time(2_000));
-    }
-    expect(large).toBeLessThan(16 * small + 100);
-  }, 60_000);
+      return () => deriveConversationState(history, text);
+    }, 250);
+  }, 120_000);
 });
 
 describe('content words, gists and openings', () => {
@@ -802,26 +791,15 @@ describe('a report of having done what they committed to (evals G12, the matrixâ
   });
 
   it('reads a pasted wall of unclosed quotes, clauses and doubted reports in linear time', () => {
-    // Eight times the input takes about eight times as long, not sixty-four (ratios of warm runs, interleaved, best of
-    // three: never absolute times).
+    // Eight times the input takes about eight times the CPU time, not sixty-four (see `expectLinearTime`).
     const wall = (n: number): string =>
       `${" 'a".repeat(n)} ${'â€œ'.repeat(n)} ${'"'.repeat(n)} ${' i finally'.repeat(n)} like we agreed ${'so, '.repeat(n)}` +
       `${" i don't think i did what you suggested".repeat(n)}${' not sure'.repeat(n)} we did what we agreed`;
-    const time = (n: number): number => {
+    expectLinearTime((n) => {
       const text = wall(n);
-      const started = performance.now();
-      for (let i = 0; i < 5; i += 1) reportsCommitmentDone(text);
-      return performance.now() - started;
-    };
-    time(250);
-    let small = Infinity;
-    let large = Infinity;
-    for (let round = 0; round < 3; round += 1) {
-      small = Math.min(small, time(250));
-      large = Math.min(large, time(2_000));
-    }
-    expect(large).toBeLessThan(16 * small + 100);
-  }, 60_000);
+      return () => reportsCommitmentDone(text);
+    }, 250);
+  }, 120_000);
 
   it('reaches the prompt next to the founder message', () => {
     const last = buildMessages(earlier, "So, I did the thing I said I'd do.").at(-1)?.content ?? '';

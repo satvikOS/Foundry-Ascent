@@ -7,6 +7,7 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { toStrictJsonSchema, type JsonObject } from '../gateway/json-schema.js';
+import { expectLinearTime } from '../testing/linear-time.js';
 import { MAX_DISTILL_TURNS, buildDistillPrompt, type DistillPromptInput } from './prompt.js';
 import {
   NOTEBOOK_OPENER_PIN,
@@ -661,26 +662,14 @@ describe('sanitizeDistill — notebook merge', () => {
     expect(over.notebookDelta.summary.length).toBeLessThanOrEqual(1_200);
     expect(over.notebookDelta.summary).not.toContain('I am Corin Halvorsen');
     // Linear, not quadratic: eight times the note (both under the 2,800 characters the check reads) takes
-    // about eight times as long. Ratios of warm runs keep this independent of the machine; a quadratic check
-    // (one rewrite round per violation) takes about sixty-four times as long and fails it. Each measurement
-    // repeats the run so that the fixed allowance is small next to a quadratic cost.
-    const time = (sentences: number): number => {
-      const d = draft({ notebook: { ...draft().notebook, summary: summaryOf(sentences) } });
-      const started = performance.now();
-      for (let i = 0; i < 20; i += 1) run(d);
-      return performance.now() - started;
-    };
-    // Interleaved, best of three: a burst of load on a shared runner slows one sample, not one size.
-    time(14);
-    let small = Infinity;
-    let large = Infinity;
-    for (let round = 0; round < 3; round += 1) {
-      small = Math.min(small, time(14));
-      large = Math.min(large, time(112));
-    }
+    // about eight times the CPU time; a quadratic check (one rewrite round per violation) takes about sixty-four
+    // times as long and fails it (see `expectLinearTime`).
     expect(summaryOf(112).length).toBeLessThan(2_800);
-    expect(large).toBeLessThan(16 * small + 100);
-  }, 30_000);
+    expectLinearTime((sentences) => {
+      const d = draft({ notebook: { ...draft().notebook, summary: summaryOf(sentences) } });
+      return () => run(d);
+    }, 14);
+  }, 120_000);
 
   it('closes commitments only explicitly and keeps the ones the model forgot', () => {
     const out = run();
