@@ -13,7 +13,7 @@ import pytest
 from conversation_lab.budget import BudgetExceededError
 from conversation_lab.config import MAX_BUDGET_USD, lab_models, model_family, suites_for
 from conversation_lab.live.calibration import agreement, build_packet
-from conversation_lab.live.checks import Turn, run_checks
+from conversation_lab.live.checks import BLOCKING, Turn, run_checks
 from conversation_lab.live.cli import cmd_check, cmd_plan
 from conversation_lab.live.dataset import DatasetError, load, own_text, validate_scenario
 from conversation_lab.live.fake import FakeApp
@@ -97,9 +97,10 @@ def test_fabrication_suspicions_and_false_actions() -> None:
     assert "unsourced_figure" in codes
     sourced = [T("1.1", "we sold 120 bags at 4 dollars", "So 120 bags at $4 each is your real baseline.")]
     assert "unsourced_figure" not in run_checks(sourced).codes()
-    # A figure the coach computed is flagged too, but only as a low-severity suspicion for the judge to weigh.
+    # A figure the coach computed from the student's own numbers is recomputed, not flagged (live pilot 42099643194:
+    # about 13 of 43 unsourced-figure findings were correct arithmetic).
     computed = run_checks([T("1.1", "we sold 120 bags at 4 dollars", "That is about $480 in a month.")])
-    assert computed.findings[0].severity == "low"
+    assert computed.codes() == []
     assert (
         "false_action_claim"
         in run_checks([T("1.1", "can you email them?", "Done - I've emailed the landlord.")]).codes()
@@ -357,6 +358,14 @@ def test_seed_plan_gives_every_run_its_own_venture_and_isolation_a_neighbour(dat
     assert seeded["LV-29-18"].neighbour_venture_id.endswith("000000000003")
     assert seeded["LV-01-01"].neighbour_venture_id is None
     assert venture_key("LV-01-01#2") == "lv-01-01-2"
+    # The coach's prompt never holds the student's private objective, nor a neighbour's name (H1).
+    for p in picks:
+        raw = dataset.by_id()[p.scenario_id].raw
+        entry = next(e for e in plan if e["key"] == venture_key(p.run_id))
+        assert entry["goal"] != raw["objective"]
+        assert raw["objective"] not in entry["goal"]
+        if raw.get("neighbour"):
+            assert raw["neighbour"]["venture"] not in entry["goal"]
 
 
 # ---- runner on the fake app (infrastructure only) --------------------------------------------------------
@@ -740,3 +749,87 @@ def test_the_calibration_packet_is_blinded_and_stratified(dataset, tmp_path: Pat
     assert result["human_reviewed"] == 1
     assert result["per_dimension"]["natural_flow"]["mean_abs_diff"] == 2.0
     assert code in key
+
+
+def test_live_pilot_precision_checks() -> None:
+    """Live pilot 42099643194 (paraphrased patterns): promises the coach cannot keep, structured blocks in the reply,
+    holes the repeat guard left, proposed thresholds told apart from invented figures, stock openers and name use."""
+    promise = run_checks(
+        [T("1.1", "can you tell their founder?", "Sure, I'll pass it on and keep you posted.")]
+    )
+    assert "false_promise" in promise.codes()
+    for reply in (
+        "Shall I set up a meeting with the buyer?",
+        "I'll check in after your call on Friday.",
+        "I can send you the template tonight.",
+        "Let me reach out to the program lead for you.",
+    ):
+        assert "false_promise" in run_checks([T("1.1", "ok", reply)]).codes(), reply
+    for reply in (
+        "I'll be direct: the data is strong.",
+        "Here's a draft you can send to their founder yourself.",
+        "I can help you write the email.",
+    ):
+        assert "false_promise" not in run_checks([T("1.1", "ok", reply)]).codes(), reply
+    for code in ("false_promise", "structured_leak", "reply_hole"):
+        assert code in BLOCKING
+
+    leak = run_checks([T("1.1", "q", "Lead with the reorders.\n\n[claims]\n- fact: 500 units\n[/claims]")])
+    assert "structured_leak" in leak.codes()
+    assert "structured_leak" not in run_checks([T("1.1", "q", "Two facts:\n- Fact one holds.")]).codes()
+
+    for reply in (
+        "Here's the plan.\n\n2. Price it.\n3. Pitch it.",
+        "Good call. Ask them:",
+        "You could pilot or",
+    ):
+        assert "reply_hole" in run_checks([T("1.1", "q", reply)]).codes(), reply
+    assert "reply_hole" not in run_checks([T("1.1", "q", "1. Call.\n2. Price.")]).codes()
+
+    proposed = run_checks(
+        [T("1.1", "how do I judge it?", "Set a bar first: if it's below, say, 60% retention, stop.")]
+    )
+    assert "proposed_figure" in proposed.codes()
+    assert "unsourced_figure" not in proposed.codes()
+    invented = run_checks(
+        [T("1.1", "what about the other team?", "They reportedly got 20% off the supplier.")]
+    )
+    assert "unsourced_figure" in invented.codes()
+
+    for opener in ("That's a solid plan.", "Thanks for sharing that.", "I hear the pressure."):
+        assert "canned_opener" in run_checks([T("1.1", "q", opener)]).codes(), opener
+
+    named = [T(f"1.{i}", "q", f"Dana, step {i} is next.") for i in range(1, 5)]
+    result = run_checks(named, student_name="Dr. Dana Reyes")
+    assert "name_overuse" in result.codes()
+    assert result.named_replies == 4
+    sparing = [T(f"1.{i}", "q", "Next step." if i > 1 else "Hi Dana.") for i in range(1, 5)]
+    assert "name_overuse" not in run_checks(sparing, student_name="Dana Reyes").codes()
+
+
+def test_a_transient_coach_error_is_sent_once_more(dataset) -> None:
+    """H4: one ``model_unavailable`` ended a run in live pilot 42099643194."""
+    from conversation_lab.live.fake import FakeApp as App
+
+    app = App()
+    calls = {"n": 0}
+
+    class Flaky:
+        def __init__(self, client) -> None:
+            self.client = client
+
+        def __getattr__(self, name):
+            return getattr(self.client, name)
+
+        def run_turn(self, session_id, text, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return SimpleNamespace(kind="error", error_code="model_unavailable", duration_seconds=0.1)
+            return self.client.run_turn(session_id, text, **kwargs)
+
+    founder_client = app.founder_client
+    app.founder_client = lambda pid: Flaky(founder_client(pid))  # type: ignore[method-assign]
+    _, results = _run(dataset, ["LV-01-01"], app=app)
+    run = results[0]
+    assert run.status == "completed", run.status
+    assert all(t.kind != "error" for t in run.turns)

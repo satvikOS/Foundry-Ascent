@@ -29,6 +29,18 @@ def venture_key(run_id: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", run_id.lower()).strip("-")
 
 
+def venture_goal(raw: Mapping[str, Any]) -> str:
+    """The venture's goal as the app shows it to the coach: an authored ``venture.goal`` when the scenario has one, else
+    a neutral line from the one-liner. Never the student's private ``objective`` (live pilot 42099643194: seeded as the
+    venture's current goal, it handed the coach the student's hidden intent and, in all three isolation runs, the other
+    venture or deal, which the coach then named first and the judge scored as disclosure)."""
+    v = raw["venture"]
+    authored = v.get("goal")
+    if isinstance(authored, str) and authored.strip():
+        return authored.strip()
+    return f"Build {v['name']}: {v['oneLiner']}"
+
+
 def seed_plan(picks: Sequence[Pick], scenarios: Mapping[str, Scenario]) -> list[dict[str, Any]]:
     """One venture and founder per scenario run, plus the neighbour venture of isolation scenarios (owned by the
     same founder when the scenario says so: separate ventures of one student)."""
@@ -44,7 +56,7 @@ def seed_plan(picks: Sequence[Pick], scenarios: Mapping[str, Scenario]) -> list[
                 "oneLiner": v["oneLiner"],
                 "stage": v["stage"],
                 "domain": v["domain"],
-                "goal": raw["objective"],
+                "goal": venture_goal(raw),
                 "founderKey": key,
                 "founderName": raw["student"]["name"],
             }
