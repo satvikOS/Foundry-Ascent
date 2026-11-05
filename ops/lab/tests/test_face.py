@@ -4,6 +4,7 @@ summary carries numbers, codes and vendor end reasons, never words."""
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -602,11 +603,12 @@ def test_injection_audits_reads_ids_and_parses_the_script_line(tmp_path: Path) -
 # ---- face_mode: FULL, LITE, or both side by side ------------------------------------------------------------
 
 
-def test_face_mode_is_full_lite_or_both_and_both_runs_full_first() -> None:
-    assert config.FACE_MODES == ("both", "full", "lite")
+def test_face_mode_is_full_lite_both_or_the_lite_probe_and_both_runs_full_first() -> None:
+    assert config.FACE_MODES == ("both", "full", "lite", "lite-probe")
     assert config.face_passes("both") == ["full", "lite"]
     assert config.face_passes("full") == ["full"]
     assert config.face_passes("lite") == ["lite"]
+    assert config.face_passes("lite-probe") == ["lite-probe"]
     for bad in ("", "FULL", "lite,full", "none"):
         with pytest.raises(ValueError, match="face mode must be one of"):
             config.face_passes(bad)
@@ -626,8 +628,12 @@ def test_lite_face_env_is_the_sandbox_for_admins_without_a_stock_avatar() -> Non
         "MEDIA_FACE_AUDIENCE": "admins",
         "EMBODIMENT_PROVIDER": "fake",
     }
-    with pytest.raises(ValueError, match="mode must be full or lite"):
+    with pytest.raises(ValueError, match="mode must be full, lite or lite-probe"):
         face.face_env(mock=False, probe_token=None, mode="both")
+    # The lite probe mints its own LITE sessions: the app keeps the FULL sandbox configuration.
+    assert face.face_env(mock=False, probe_token="t" * 43, mode="lite-probe") == face.face_env(
+        mock=False, probe_token="t" * 43, mode="full"
+    )
     # Switching modes leaves nothing of the other behind (FULL's stock avatar) and keeps everything else.
     full = {"A": "1", **face.face_env(mock=False, probe_token="t" * 43)}
     assert face.with_face_mode(full, mock=False, probe_token="t" * 43, mode="lite") == {"A": "1", **lite}
@@ -1158,3 +1164,72 @@ def test_the_lite_pass_runs_its_own_warm_up_before_its_arm() -> None:
     assert grep.search("call LITE: the face lip-syncs the call's Polly audio, the same turns")
     assert not grep.search("call: the stock face in a call, admins only")
     assert not grep.search("polly: the same turns without a face")
+
+
+# ---- face_mode lite-probe: the LITE protocol probe alone -------------------------------------------------------
+
+
+def test_the_lite_probe_pass_runs_only_the_probe_with_the_production_origin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv(face.PRODUCTION_ORIGIN_ENV, "https://D111111ABCDEF8.cloudfront.net/")
+    out, passes, order, stack = run_suite_face(monkeypatch, tmp_path, "lite-probe")
+    # No twin, no restart, no call arm: one pass of the probe's own tests, on the API's FULL sandbox configuration.
+    assert order == ["playwright:lite-probe"]
+    assert stack.restarts == []
+    (only,) = passes
+    assert only["specs"] == ["--project=face", "--grep", cli.FACE_LITE_PROBE_GREP]
+    assert only["ctx_env"]["MEDIA_FACE_MODE"] == "full"
+    assert only["extra_env"]["LAB_FACE_APP_MODE"] == "lite-probe"
+    assert only["extra_env"][face.PRODUCTION_ORIGIN_ENV] == "https://d111111abcdef8.cloudfront.net"
+    assert KEY not in json.dumps({k: v for k, v in only.items() if k != "report"}, default=str)
+    result = out["face"]
+    assert result["face_mode"] == "lite-probe"
+    assert result["lite_face_reference"] == "not_run"
+    assert result["lite_probe"] is None  # the fake Playwright wrote nothing
+    # Anything but a bare https origin is not passed on (the spec then uses a production-shaped stand-in).
+    for bad in (
+        "http://example.com",
+        "https://example.com/path",
+        "javascript:alert(1)",
+        "https://a b.com",
+        "",
+    ):
+        monkeypatch.setenv(face.PRODUCTION_ORIGIN_ENV, bad)
+        _, passes, *_ = run_suite_face(monkeypatch, tmp_path / "bad", "lite-probe")
+        assert face.PRODUCTION_ORIGIN_ENV not in passes[0]["extra_env"], bad
+
+
+def test_production_origin_is_a_bare_https_origin() -> None:
+    assert (
+        face.production_origin(" https://d38hejyf9iw77e.cloudfront.net/ ")
+        == "https://d38hejyf9iw77e.cloudfront.net"
+    )
+    assert face.production_origin("https://app.example.com:8443") == "https://app.example.com:8443"
+    for bad in (
+        "",
+        "https://localhost",
+        "https://x.com/a",
+        "https://x.com?q=1",
+        "ftp://x.com",
+        "https://.x.com",
+    ):
+        assert face.production_origin(bad) is None, bad
+
+
+def test_the_probe_grep_selects_the_probe_s_tests_and_nothing_of_the_face_spec() -> None:
+    lab = config.REPO / "apps" / "web" / "e2e" / "lab"
+    grep = re.compile(cli.FACE_LITE_PROBE_GREP)
+    probe_titles = re.findall(r"test\(\s*'([^']+)'", (lab / "lite-probe.lab.ts").read_text(encoding="utf-8"))
+    face_titles = re.findall(
+        r"test\(\s*['\"]([^'\"]+)['\"]", (lab / "face.lab.ts").read_text(encoding="utf-8")
+    )
+    assert len(probe_titles) == 2
+    assert all(grep.search(t) for t in probe_titles)
+    assert face_titles
+    assert not any(grep.search(t) for t in face_titles)
+    # The probe's tests skip outside their own pass (LAB_FACE_APP_MODE=lite-probe), so a FULL or LITE pass, which
+    # runs the whole face project, never opens LITE sessions.
+    spec = (lab / "lite-probe.lab.ts").read_text(encoding="utf-8")
+    assert spec.count("test.skip(!RUN, 'face_mode lite-probe only')") == 2
+    assert "process.env.LAB_FACE_APP_MODE === 'lite-probe'" in spec

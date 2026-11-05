@@ -45,6 +45,8 @@ LAB_CONFIG = "e2e/lab/playwright.config.ts"
 #: The face spec's tests of a LITE pass after a FULL one (apps/web/e2e/lab/face.lab.ts): the unmeasured warm-up turn
 #: (the pass's API process was restarted, so it is cold again) and the LITE call arm.
 FACE_LITE_CALL_GREP = "warm-up:|call LITE:"
+#: The face spec's tests of the ``lite-probe`` pass (apps/web/e2e/lab/lite-probe.lab.ts): its instruments and the probe.
+FACE_LITE_PROBE_GREP = "lite probe"
 
 #: The face suite's vendor key, taken out of this process's environment when the harness starts (face.take_key) and
 #: handed to the local API process only. Never printed, logged or written.
@@ -874,9 +876,11 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
     every check, then the API restarted in LITE for the call arm alone, with the same turns and meters)."""
     from conversation_lab.face import (
         PROBE_TOKEN_ENV,
+        PRODUCTION_ORIGIN_ENV,
         Probe,
         api_process_env,
         injection_audits,
+        production_origin,
         public_result,
         read_audit_ids,
         seed_twin,
@@ -891,6 +895,12 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
     extra = {**browser, "LAB_FACE_VENDOR": "heygen" if probe else "stand-in"}
     if token:
         extra[PROBE_TOKEN_ENV] = token
+    # The production site's origin for the lite probe's L10 (the workflow's FA_SITE_URL); the spec falls back to a
+    # production-shaped origin without it. Only a bare https origin is passed on.
+    extra.pop(PRODUCTION_ORIGIN_ENV, None)
+    origin = production_origin(os.environ.get(PRODUCTION_ORIGIN_ENV, ""))
+    if origin:
+        extra[PRODUCTION_ORIGIN_ENV] = origin
     passes = face_passes(ctx.face_mode)
     # Each pass's own credits and vendor calls, read at its end: the probe remembers the calls of its own API
     # process, and E1 and E2 grade the first pass alone (a later LITE pass is reported beside it, never graded).
@@ -907,9 +917,15 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
             stack.restart_api(api_process_env(ctx.env, "" if ctx.mock else _FACE_KEY))
         if mode == "lite":
             twin = seed_twin(ctx.env, ctx.private / "logs", pnpm=PNPM)
+        if mode == "lite-probe":
+            specs = ["--project=face", "--grep", FACE_LITE_PROBE_GREP]
+        elif index == 0:
+            specs = ["--project=face"]
+        else:
+            specs = ["--project=face", "--grep", FACE_LITE_CALL_GREP]
         exits[mode] = run_playwright(
             ctx,
-            specs=["--project=face"] if index == 0 else ["--project=face", "--grep", FACE_LITE_CALL_GREP],
+            specs=specs,
             config=LAB_CONFIG,
             report=ctx.private / "face" / ("playwright.json" if index == 0 else f"playwright-{mode}.json"),
             extra_env={**extra, "LAB_FACE_APP_MODE": mode},

@@ -119,12 +119,14 @@ def suites_for(choice: str) -> list[str]:
 #: The face suite's in-app call arm, by the app's face mode (``--face-mode``, the workflow's ``face_mode``): ``full``
 #: (a stock avatar voices our admitted text), ``lite`` (the avatar lip-syncs our Polly audio, sent over the server's
 #: speak socket) or ``both`` (the default: FULL first with every sandbox check, then the API restarted in LITE for
-#: the same call arm, so the two are compared side by side with Polly alone).
-FACE_MODES: tuple[str, ...] = ("both", "full", "lite")
+#: the same call arm, so the two are compared side by side with Polly alone). ``lite-probe`` runs no call arm: only the
+#: LITE protocol probe (apps/web/e2e/lab/lite-probe.lab.ts, conversation_lab/lite_probe.py), raw LITE sandbox sessions
+#: whose ``ws_url`` the lab's page drives itself (the API keeps its FULL sandbox configuration; the probe mints them).
+FACE_MODES: tuple[str, ...] = ("both", "full", "lite", "lite-probe")
 
 
 def face_passes(choice: str) -> list[str]:
-    """The app's face mode in each pass of the face suite, in order (``both``: FULL, then LITE)."""
+    """The face suite's passes, in order (``both``: FULL, then LITE; ``lite-probe``: the probe alone)."""
     if choice not in FACE_MODES:
         raise ValueError(f"face mode must be one of {', '.join(FACE_MODES)}")
     return ["full", "lite"] if choice == "both" else [choice]

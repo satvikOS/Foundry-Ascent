@@ -332,6 +332,8 @@ gh workflow run ops-conversation-lab.yml -f suite=face -f budget_usd=1
 gh workflow run ops-conversation-lab.yml -f suite=face -f budget_usd=1 -f public_key="$(cat "$dir/public.b64")"
 # only one face mode in the in-app call arm (default both: FULL, then LITE, side by side with Polly alone)
 gh workflow run ops-conversation-lab.yml -f suite=face -f budget_usd=1 -f face_mode=lite
+# the LITE protocol probe alone (L1-L10 of the LITE + ElevenLabs design; no call arm)
+gh workflow run ops-conversation-lab.yml -f suite=face -f budget_usd=1 -f face_mode=lite-probe
 ```
 
 **One-time setup:** the owner's HeyGen LiveAvatar API key as the repository secret `HEYGEN_LIVEAVATAR_API` (Settings →
@@ -418,6 +420,7 @@ admitted text)? `face_mode` picks the in-app call arm's face mode:
 | `both` (default) | The FULL pass above (every test and check), then the harness restarts the local API with `MEDIA_FACE_MODE=lite` (same sandbox, admins, key and probe token) and Playwright runs `call LITE` alone (`--grep "call LITE:"`, `playwright-lite.json`). |
 | `full`           | The FULL pass only (as before this input existed).                                                                                                                                                                                                 |
 | `lite`           | The API starts in LITE: `instruments`, `call LITE` and `polly` run; `probe`, `call` and `injection` are FULL-only and skip (their checks read "not measured").                                                                                     |
+| `lite-probe`     | No call arm: the LITE protocol probe alone (below). The API keeps the FULL sandbox configuration; the probe mints its own LITE sandbox sessions (`--grep "lite probe"`).                                                                           |
 
 LITE in the app needs what production LITE needs: the call's vEIR with a face reference marked Ready under a consent
 that covers likeness. Before the LITE pass, `apps/api/src/scripts/lab-face-twin.ts` records both for the synthetic vEIR
@@ -447,6 +450,37 @@ with the p50 first-audio differences (LITE minus FULL, and each minus Polly). Th
 only, exactly as before; the LITE arm is reported beside them. Production stays FULL (sandbox off, admins only) until
 the owner decides; the comparison changes no configuration. Note the passes run one after the other (FULL first), so
 a slow sandbox minute affects one arm only: compare a few runs before deciding.
+
+**The LITE protocol probe (`face_mode=lite-probe`).** Before the browser holds LITE's socket itself (design option (a)),
+the lab measures what the vendor's LITE socket really does, in the free sandbox (Wayne, about a minute a session, no
+credits). The local API's lab probe answers `POST /api/v1/_lab/face/lite-sessions` (dev server only, the run's probe
+token): a raw LITE sandbox session (the adapter's own token request), its LiveKit URL and viewer token, its `ws_url`
+(kept in the spec's memory, never written), and the token and start responses as field names and JSON types only.
+`apps/web/e2e/lab/lite-probe.lab.ts` opens three sessions one after the other and drives each `ws_url` from the lab's
+page with synthetic speech (a formant synthesiser in the page: no recording of anyone), while the page sits in the
+session's room as the viewer, hearing the avatar's audio track (the face suite's level meter) and watching its video
+(mean frame difference in the middle of the picture):
+
+| Session | Probes                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| s1      | L1 fields and `ws_url` host; L2 open → `session.state_updated connected`; L3 `agent.speak` acks with one id per chunk and with one id for every chunk (what the app's adapter sends); L4 speak events and the sound on the avatar's track against the first chunk sent (first chunks of 1000, 400 and 200 ms); L5 a second utterance sent while the first plays, and a turn sent as one utterance with a 1.3 s pause inside; L8 `agent.interrupt` a second into a 4-second utterance |
+| s2      | L1 again; L6 a second socket while an utterance is open (the second commits it), and reopening after a close; L7 closing right after `speak_end`, and closing with an uncommitted buffer                                                                                                                                                                                                                                                                                             |
+| s3      | L1 again; L9 the viewer token publishing `agent.speak`-shaped and `avatar.speak_text` data on `agent-control`, then a synthetic speech **audio track** into the room, against an idle baseline and a socket utterance as the positive control (sound, speak events, lip motion); L10 the socket from this localhost page, from Node with no Origin, the production Origin and a foreign one, and from a browser page at the production origin                                        |
+
+L10's production origin is the repository variable `FA_SITE_URL` (`LAB_PRODUCTION_ORIGIN`; a production-shaped
+CloudFront origin when unset, reported as `stand-in`). Playwright fulfils the navigation to it itself (nothing is
+requested from production), so the page's WebSocket handshake carries that Origin exactly as a browser on the site
+would (checked through the DevTools protocol); the vendor's socket is real. Node sets the header explicitly instead:
+that shows whether the vendor checks Origin at all (a foreign Origin refused while the production one is taken), but a
+browser cannot forge Origin, so only the browser attempt answers the go / no-go question for design (a).
+
+The summary keeps numbers, codes, field and event type names, the `ws_url` host with any id-like label masked (an
+exact CSP origin is called confirmed only when every one of at least three sessions agreed), and the design's
+hypotheses as confirmed, refuted or not measured (`lite_probe.hypotheses`; conversation_lab/lite_probe.py
+`HYPOTHESES`). Sound measures read "not measured" when the page never had the avatar's audio track, and lip-sync when
+the socket utterance itself did not move the face more than idle. The sealed folder holds the frames (types, states,
+and which of the lab's ids a source named, as labels such as `U1`), what was sent and when, onsets, motion samples and
+room event types.
 
 ## Locally
 
