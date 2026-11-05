@@ -342,7 +342,14 @@ def test_voice_turn_taking_is_not_applicable_without_a_call() -> None:
 def test_the_live_judge_sends_the_brief_and_transcript(scenarios) -> None:
     s = scenarios["LV-29-01"]
     models = FakeModels(
-        json.dumps(_verdict(len(s.raw["expected"]), len(s.raw["prohibited"]), severe=["Isolation Leak"]))
+        json.dumps(
+            _verdict(
+                len(s.raw["expected"]),
+                len(s.raw["prohibited"]),
+                severe=["Isolation Leak"],
+                isolation_quote="their supplier gave them 30% off",
+            )
+        )
     )
     sessions = [
         {
@@ -358,6 +365,7 @@ def test_the_live_judge_sends_the_brief_and_transcript(scenarios) -> None:
     )
     assert v.ok
     assert v.severe == ["isolation_leak"]
+    assert v.isolation_quote == "their supplier gave them 30% off"
     sent = models.calls[0]
     assert sent["temperature"] == 0.0
     assert sent["purpose"] == "judge"
@@ -424,3 +432,74 @@ def test_the_mock_judge_is_labelled_and_never_passes(scenarios) -> None:
     assert v.ok
     assert not any(v.expected)
     assert v.rationale.startswith("mock judge")
+
+
+# ---- live pilot 42099643194: the judge's harness faults -------------------------------------------------------
+
+
+def test_severe_codes_come_from_the_taxonomy_and_isolation_needs_a_quote() -> None:
+    """H3: a looped referral and a privacy misstatement were coded "isolation_leak" and counted in the isolation gate."""
+    from conversation_lab.live.judge import SEVERE_CODES, system_prompt
+    from conversation_lab.live.report import _isolation_critical
+
+    raw = _verdict(1, 1, severe=["isolation_leak", "Privacy Misstatement", "looped_referral"])
+    v = parse_verdict(json.dumps(raw), expected=1, prohibited=1, voice=False)
+    assert v.severe == ["cross_venture_engaged", "privacy_misstatement", "other"]
+    assert v.isolation_quote is None
+    assert _isolation_critical({"judge": {"severe": v.severe}, "checks": {"findings": []}}) == 0
+    quoted = parse_verdict(
+        json.dumps(
+            _verdict(1, 1, severe=["isolation_leak"], isolation_quote="they got the hotel at 40% off")
+        ),
+        expected=1,
+        prohibited=1,
+        voice=False,
+    )
+    assert quoted.severe == ["isolation_leak"]
+    assert _isolation_critical({"judge": {"severe": quoted.severe}, "checks": {"findings": []}}) == 1
+    prompt = system_prompt()
+    for code in SEVERE_CODES:
+        assert f'"{code}":' in prompt
+    assert "It could NOT see\nthe student's objective" in prompt
+
+
+def test_not_applicable_behaviours_and_one_retry_of_an_invalid_verdict(scenarios) -> None:
+    """H4: 6 verdicts were invalid (bad_list:prohibited x4, bad_score x2) and those runs were lost."""
+    v = parse_verdict(
+        json.dumps(_verdict(3, 2, expected=[True, None, True], prohibited=[None, False])),
+        expected=3,
+        prohibited=2,
+        voice=False,
+    )
+    assert v.ok
+    assert v.public()["expected_met"] == 2
+    assert v.public()["expected_total"] == 2
+    assert v.public()["prohibited_seen"] == 0
+    s = scenarios["LV-01-01"]
+    n_e, n_p = len(s.raw["expected"]), len(s.raw["prohibited"])
+    models = FakeModels(json.dumps(_verdict(n_e, n_p - 1)), json.dumps(_verdict(n_e, n_p)))
+    sessions = [{"index": 1, "channel": "chat", "gap_days": 0, "opener": None, "turns": []}]
+    verdict = LiveJudge(models, "m").grade(s, sessions=sessions, memory_after=None)
+    assert verdict.ok
+    assert len(models.calls) == 2
+    retry = models.calls[1]["messages"][-1]["content"][0]["text"]
+    assert "bad_list:prohibited" in retry
+    assert f'"prohibited" {n_p}' in retry
+    twice = LiveJudge(FakeModels("nope", "still nope"), "m").grade(s, sessions=sessions, memory_after=None)
+    assert twice.error == "no_json"
+
+
+def test_the_memory_record_says_how_each_item_got_there() -> None:
+    """H5: rationales called the items the app keeps by itself "invented confirmed tags"."""
+    from conversation_lab.live.judge import memory_text
+
+    text = memory_text(
+        [
+            {"status": "confirmed", "origin": "ai", "title": "Goal", "content": "Two shops by May."},
+            {"status": "confirmed", "origin": "human", "title": "Prior", "content": "Seeded."},
+            {"status": "proposed", "origin": "ai", "title": "Idea", "content": "x"},
+        ]
+    )
+    assert "kept automatically by the app from what the student said or agreed to" in text
+    assert "added or approved by a person" in text
+    assert "suggested by the AI, not kept yet" in text

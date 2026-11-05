@@ -46,6 +46,10 @@ from conversation_lab.live.student import Exchange, Student, due_beats
 
 #: Problem codes after which the app refuses every further turn (the run stops scheduling).
 STOP_CODES = frozenset({"spend_cap_reached", "ai_disabled", "persona_suspended", "assignment_inactive"})
+#: A coach turn that failed for a transient reason is sent once more (live pilot 42099643194: one
+#: ``model_unavailable`` ended a run, 12% of the coverage was lost to such errors with the judge's).
+RETRY_CODES = frozenset({"model_unavailable", "rate_limited"})
+RETRY_PAUSE_SECONDS = 3.0
 #: A turn's worst plausible app cost, reserved per planned turn before a scenario starts.
 TURN_RESERVE_USD = 0.03
 
@@ -210,6 +214,7 @@ class RunResult:
             "judge_rationale": self.verdict.rationale if self.verdict else None,
             "judge_expected": self.verdict.expected if self.verdict else None,
             "judge_prohibited": self.verdict.prohibited if self.verdict else None,
+            "judge_isolation_quote": getattr(self.verdict, "isolation_quote", None) if self.verdict else None,
         }
 
 
@@ -226,9 +231,9 @@ def decide(result: RunResult) -> None:
     elif not v.ok:
         f.append(f"judge:{v.error}")
     else:
-        if not all(v.expected):
+        if any(e is False for e in v.expected):
             f.append("expected_unmet")
-        if any(v.prohibited):
+        if any(p is True for p in v.prohibited):
             f.append("prohibited_seen")
         if v.escalation_ok is False:
             f.append("escalation")
@@ -299,6 +304,7 @@ class LiveRunner:
         self._log = log
         self._lock = threading.Lock()
         self.stopped: str | None = None
+        self._pause: Callable[[float], None] = time.sleep if clock is time.monotonic else (lambda _s: None)
 
     # Scheduling --------------------------------------------------------------------------------------------
 
@@ -651,7 +657,16 @@ class LiveRunner:
 
         started = time.monotonic()
         try:
-            outcome = client.run_turn(session_id, text, call_id=call_id, idempotency_key=key)
+            try:
+                outcome = client.run_turn(session_id, text, call_id=call_id, idempotency_key=key)
+                transient = outcome.kind == "error" and outcome.error_code in RETRY_CODES
+            except ApiError as first:
+                if first.code not in RETRY_CODES:
+                    raise
+                transient = True
+            if transient:
+                self._pause(RETRY_PAUSE_SECONDS)
+                outcome = client.run_turn(session_id, text, call_id=call_id, idempotency_key=f"{key}-retry")
         except ApiError as exc:
             log.turns.append(
                 TurnLog(
