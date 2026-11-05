@@ -47,7 +47,7 @@ export interface AdTimelineProps {
   elapsedMs: number;
   /** The span the bar's width stands for (ms): the ad's whole call. */
   spanMs: number;
-  /** The vEIR's name as the call's timeline labels it ("Corin · vEIR"). */
+  /** The vEIR's name as the call's timeline labels it ("Thomas"). */
   veirName: string;
   className?: string;
 }
