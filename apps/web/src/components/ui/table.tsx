@@ -48,7 +48,7 @@ export function TableRow({ className, ...props }: ComponentProps<'tr'>) {
     <tr
       data-slot="table-row"
       className={cn(
-        'border-b border-border transition-colors hover:bg-accent/30 data-[state=selected]:bg-accent',
+        'border-b border-border transition-colors hover:bg-surface-2 data-[state=selected]:bg-surface-3',
         className,
       )}
       {...props}

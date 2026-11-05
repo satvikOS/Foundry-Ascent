@@ -74,7 +74,7 @@ export function RubricForm({ onSubmit, submitting = false, footer }: RubricFormP
             name={`scores.${criterion.key}`}
             render={({ field }) => (
               <fieldset className="grid gap-2" aria-describedby={`${id}-desc${error ? ` ${id}-error` : ''}`}>
-                <legend className="text-sm font-semibold">
+                <legend className="text-sm font-medium">
                   {criterion.label}
                   <span aria-hidden className="text-muted-foreground">
                     *

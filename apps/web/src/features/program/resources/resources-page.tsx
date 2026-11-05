@@ -263,7 +263,7 @@ export function ResourcesPage() {
 
       {resources.isPending ? (
         <LoadingRegion label="Loading resources">
-          <Skeleton className="h-72 rounded-xl" />
+          <Skeleton className="h-72 rounded-lg" />
         </LoadingRegion>
       ) : resources.isError ? (
         <ErrorState

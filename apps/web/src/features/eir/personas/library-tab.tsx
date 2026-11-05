@@ -104,7 +104,7 @@ export function LibraryTab({ persona, displayName }: { persona: PersonaView; dis
   if (library.isPending) {
     return (
       <LoadingRegion label="Loading the library">
-        <Skeleton className="h-64 rounded-xl" />
+        <Skeleton className="h-64 rounded-lg" />
       </LoadingRegion>
     );
   }

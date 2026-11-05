@@ -30,6 +30,7 @@ import {
   TableRow,
   type SortState,
 } from '@/components/ui/table';
+import { TEAM_ANCHOR } from '@/features/venture/anchors';
 import { useProgramVentures, type ProgramVenture } from '@/lib/api/hooks/program';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { formatDate, pluralize } from '@/lib/format';
@@ -143,7 +144,7 @@ export function ProgramVenturesPage() {
 
       {ventures.isPending ? (
         <LoadingRegion label="Loading ventures">
-          <Skeleton className="h-64 rounded-xl" />
+          <Skeleton className="h-64 rounded-lg" />
         </LoadingRegion>
       ) : ventures.isError ? (
         <ErrorState
@@ -267,8 +268,9 @@ export function ProgramVenturesPage() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem asChild>
                           <Link
-                            to="/$tenant/app/v/$ventureId/team"
+                            to="/$tenant/app/v/$ventureId/settings"
                             params={{ tenant: me.tenant.slug, ventureId: row.id }}
+                            hash={TEAM_ANCHOR}
                           >
                             <Users aria-hidden />
                             Team

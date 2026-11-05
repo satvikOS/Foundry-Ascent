@@ -13,6 +13,7 @@ const GLOBAL_SHORTCUTS: { binding: string; label: string }[] = [
 
 const VENTURE_SHORTCUTS: { binding: string; label: string }[] = [
   { binding: 'g n', label: 'New chat' },
+  { binding: 'g v', label: 'Start a call' },
   ...VENTURE_DESTINATIONS.map((d) => ({ binding: d.shortcut, label: `Go to ${d.label}` })),
 ];
 

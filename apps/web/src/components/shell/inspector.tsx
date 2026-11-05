@@ -123,7 +123,10 @@ function MountTarget({ target }: { target: HTMLDivElement | null }) {
   return <div ref={ref} className="contents" />;
 }
 
-/** Layout-side: renders the inspector column (desktop) or sheet (mobile). Renders nothing if no page filled it. */
+/**
+ * Layout-side: renders the inspector (desktop: a solid card floating at the right, the side panel's mirror;
+ * smaller screens: a sheet). Renders nothing if no page filled it.
+ */
 export function InspectorRegion() {
   const { target, meta, open, setOpen, isDesktop } = useInspectorContext();
   if (!meta) return null;
@@ -133,7 +136,7 @@ export function InspectorRegion() {
     return (
       <aside
         aria-label={`${meta.title} inspector`}
-        className="sticky top-(--mini-call-height) hidden h-[calc(100dvh_-_var(--mini-call-height))] w-(--inspector-width) shrink-0 border-l border-border bg-background xl:block"
+        className="sticky top-[calc(var(--mini-call-height)+var(--panel-inset))] my-(--panel-inset) self-start mr-(--panel-inset) hidden h-[calc(100dvh_-_var(--mini-call-height)_-_2*var(--panel-inset))] w-(--inspector-width) shrink-0 overflow-hidden rounded-(--radius-panel) border border-border bg-surface-1 shadow-float xl:block"
       >
         <InspectorPanel
           title={meta.title}

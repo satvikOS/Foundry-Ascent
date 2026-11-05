@@ -33,8 +33,8 @@ export function SettingsPage() {
       {settings.isPending ? (
         <LoadingRegion label="Loading settings">
           <div className="grid gap-6">
-            <Skeleton className="h-48 rounded-xl" />
-            <Skeleton className="h-80 rounded-xl" />
+            <Skeleton className="h-48 rounded-lg" />
+            <Skeleton className="h-80 rounded-lg" />
           </div>
         </LoadingRegion>
       ) : settings.isError ? (

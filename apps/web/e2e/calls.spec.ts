@@ -122,6 +122,18 @@ async function withoutUserActivation(page: Page): Promise<void> {
   });
 }
 
+/**
+ * ⌘K → "Start a call": the keyboard entry to a call away from the composer (the side panel has none; one
+ * entry per action). It opens the venture's call on its start screen, as the side panel's link once did.
+ */
+async function startCallFromPalette(page: Page): Promise<void> {
+  await page.keyboard.press('ControlOrMeta+k');
+  await page
+    .getByRole('dialog')
+    .getByRole('option', { name: /^Start a call/ })
+    .click();
+}
+
 function callScreen(page: Page): Locator {
   return page.getByRole('dialog', { name: /^Call with / });
 }
@@ -271,7 +283,7 @@ async function expectBarAndHeaderApart(page: Page, bar: Locator): Promise<void> 
 test.describe('vEIR calls', () => {
   test.use({ storageState: FOUNDER_STATE });
 
-  test('call from the sidebar: typed fallback, reply in captions, mini bar, summary', async ({ page }) => {
+  test('call from ⌘K: typed fallback, reply in captions, mini bar, summary', async ({ page }) => {
     await voiceNoticeSeen(page);
     await openVenture(page);
     const token = runToken();
@@ -282,7 +294,7 @@ test.describe('vEIR calls', () => {
       if (request.url().endsWith('/api/v1/speech')) speech.push(request.url());
     });
 
-    await test.step('from the sidebar: Remember or Private first, then Start call, in a new conversation', async () => {
+    await test.step('from ⌘K: Remember or Private first, then Start call, in a new conversation', async () => {
       let created = 0;
       page.on('request', (request) => {
         if (request.method() === 'POST' && /\/ventures\/[0-9a-f-]{36}\/sessions$/.test(request.url()))
@@ -291,10 +303,7 @@ test.describe('vEIR calls', () => {
       const started = page.waitForResponse(
         (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
       );
-      await page
-        .getByRole('navigation', { name: 'Main' })
-        .getByRole('link', { name: /^Call / })
-        .click();
+      await startCallFromPalette(page);
       const screen = callScreen(page);
       await expect(screen).toBeVisible();
       // Away from New chat's choice, the call waits on its start screen: Remember is chosen, Private a click away.
@@ -524,18 +533,15 @@ test.describe('vEIR calls', () => {
     const calls = trackCalls(page);
     const created: string[] = [];
     /**
-     * Calls from the sidebar in a new conversation (Remember is preselected on the start screen); returns the
+     * Calls from ⌘K in a new conversation (Remember is preselected on the start screen); returns the
      * conversation and what the call said first.
      */
-    const callFromSidebar = async (): Promise<{ sessionId: string; intro: string }> => {
+    const callFromPalette = async (): Promise<{ sessionId: string; intro: string }> => {
       await openVenture(page);
       const started = page.waitForResponse(
         (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
       );
-      await page
-        .getByRole('navigation', { name: 'Main' })
-        .getByRole('link', { name: /^Call / })
-        .click();
+      await startCallFromPalette(page);
       const screen = callScreen(page);
       await expect(
         screen
@@ -579,14 +585,14 @@ test.describe('vEIR calls', () => {
     try {
       let first = '';
       await test.step('a first call: the founder talks about pricing, then hangs up', async () => {
-        const { sessionId } = await callFromSidebar();
+        const { sessionId } = await callFromPalette();
         first = sessionId;
         await sayOnCall(first, `We are weighing per-library pricing for the pilot. ${token}`, 1);
         await hangUp();
       });
 
       await test.step('a second call opens by picking up the first, not with the same greeting', async () => {
-        const { sessionId, intro } = await callFromSidebar();
+        const { sessionId, intro } = await callFromPalette();
         expect(sessionId).not.toBe(first);
         // Met before: one sentence that greets her and picks the first call up (no self-introduction, no "an AI
         // coach"), at most 90 characters.
@@ -667,10 +673,7 @@ test.describe('vEIR calls', () => {
     expect(await callNoticeAcknowledgedAt(page.request, emberloop.id)).toBeNull();
 
     await test.step('before the first call: AI, voice through Amazon Transcribe and not kept, text kept', async () => {
-      await page
-        .getByRole('navigation', { name: 'Main' })
-        .getByRole('link', { name: /^Call / })
-        .click();
+      await startCallFromPalette(page);
       const screen = callScreen(page);
       const notice = screen.getByTestId('voice-notice');
       await expect(notice).toContainText('Amazon Transcribe');
@@ -885,7 +888,7 @@ test.describe('vEIR calls', () => {
     await withCallsOff(baseURL, async () => {
       const ventureId = await openVenture(page);
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-      // Sidebar, New chat's composer and ⌘K offer no call.
+      // The side panel (never a call entry), New chat's composer and ⌘K offer no call.
       await expect(
         page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Call / }),
       ).toHaveCount(0);

@@ -104,15 +104,15 @@ function buildComponents(renderCitation: MarkdownProps['renderCitation']): Compo
       </span>
     ),
     h1: ({ children }) => (
-      <h3 className="mt-5 mb-2 text-base font-semibold tracking-tight first:mt-0">{children}</h3>
+      <h3 className="mt-5 mb-2 text-base font-medium tracking-tight first:mt-0">{children}</h3>
     ),
     h2: ({ children }) => (
-      <h4 className="mt-5 mb-2 text-body font-semibold tracking-tight first:mt-0">{children}</h4>
+      <h4 className="mt-5 mb-2 text-body font-medium tracking-tight first:mt-0">{children}</h4>
     ),
-    h3: ({ children }) => <h5 className="mt-4 mb-1.5 text-sm font-semibold first:mt-0">{children}</h5>,
-    h4: ({ children }) => <h6 className="mt-4 mb-1.5 text-sm font-semibold first:mt-0">{children}</h6>,
-    h5: ({ children }) => <p className="mt-3 mb-1 font-semibold first:mt-0">{children}</p>,
-    h6: ({ children }) => <p className="mt-3 mb-1 font-semibold first:mt-0">{children}</p>,
+    h3: ({ children }) => <h5 className="mt-4 mb-1.5 text-sm font-medium first:mt-0">{children}</h5>,
+    h4: ({ children }) => <h6 className="mt-4 mb-1.5 text-sm font-medium first:mt-0">{children}</h6>,
+    h5: ({ children }) => <p className="mt-3 mb-1 font-medium first:mt-0">{children}</p>,
+    h6: ({ children }) => <p className="mt-3 mb-1 font-medium first:mt-0">{children}</p>,
     p: ({ children }) => <p className="my-2.5 first:mt-0 last:mb-0">{children}</p>,
     ul: ({ children, className }) => (
       <ul

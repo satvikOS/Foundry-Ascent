@@ -214,7 +214,7 @@ export function AuditPage({ search, onSearchChange }: AuditPageProps) {
 
       {log.isPending ? (
         <LoadingRegion label="Loading audit events">
-          <Skeleton className="h-96 rounded-xl" />
+          <Skeleton className="h-96 rounded-lg" />
         </LoadingRegion>
       ) : log.data === undefined ? (
         <ErrorState error={log.error} onRetry={() => void log.refetch()} retrying={log.isRefetching} />

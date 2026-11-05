@@ -37,7 +37,7 @@ function Block({
 }) {
   return (
     <section className="grid gap-2">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+      <h3 className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
         <Icon aria-hidden className="size-3.5" />
         {title}
         {meta !== undefined ? <span className="font-medium normal-case">{meta}</span> : null}

@@ -1,11 +1,30 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import type { Me } from '@foundry/contracts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { bodyOf, json, renderWithRouter, stubFetch } from '@/features/knowledge/test-utils';
+import { bodyOf, json, renderWithRouter, stubFetch, testQueryClient } from '@/features/knowledge/test-utils';
 import { IDS, makeVenture } from '@/features/knowledge/testing';
+import { queryKeys } from '@/lib/api/query-keys';
 
-import { VentureProfileCard } from './venture-settings-page';
+import { VentureProfileCard, VentureSections } from './venture-settings-page';
+
+function person(overrides: Partial<Me> = {}): Me {
+  return {
+    principal: { id: IDS.principal, displayName: 'Maya Okafor-Lindqvist', title: null, synthetic: true },
+    tenant: { id: '44444444-4444-4444-8444-444444444444', slug: 'ain', name: 'AIN', kind: 'home' },
+    roles: [],
+    memberships: [],
+    assignedVentureIds: [],
+    disclosure: 'AI',
+    aiEnabled: true,
+    notices: [],
+    ...overrides,
+  };
+}
+
+let mockedMe: Me = person();
+vi.mock('@/lib/auth/use-me', () => ({ useRequiredMe: () => mockedMe }));
 
 let fetchMock: ReturnType<typeof stubFetch>;
 
@@ -76,5 +95,64 @@ describe('VentureProfileCard', () => {
       expect(screen.queryByText(TAKEN)).toBeNull();
     });
     expect(screen.queryByText('Couldn’t save the venture')).toBeNull();
+  });
+});
+
+describe('VentureSections: one page for the profile, the goal and the team', () => {
+  const team = {
+    venture: { id: IDS.venture, name: 'QuietQuad' },
+    items: [
+      {
+        principal: { id: IDS.principal, displayName: 'Maya Okafor-Lindqvist', title: null, synthetic: true },
+        role: 'founder',
+        grantedAt: '2026-10-01T12:00:00.000Z',
+        expiresAt: null,
+      },
+    ],
+  };
+
+  function answer(requests: string[]) {
+    fetchMock.mockImplementation((input) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      requests.push(url);
+      if (url === `/api/v1/ventures/${IDS.venture}/team`) return Promise.resolve(json(team));
+      return Promise.resolve(json({ items: [] }));
+    });
+  }
+
+  it('shows a founder the profile, the current goal and the team, in that order', async () => {
+    mockedMe = person({
+      memberships: [{ ventureId: IDS.venture, ventureName: 'QuietQuad', role: 'founder' }],
+    });
+    answer([]);
+    await renderWithRouter(<VentureSections ventureId={IDS.venture} />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Venture' })).toBeVisible();
+    await screen.findByRole('region', { name: 'Profile' });
+    expect(screen.getAllByRole('region').map((region) => region.querySelector('h2')?.textContent)).toEqual([
+      'Profile',
+      'Current goal',
+      'Team',
+    ]);
+    expect(await screen.findByRole('list', { name: 'Team members' })).toHaveTextContent(
+      'Maya Okafor-Lindqvist',
+    );
+    expect(screen.getByRole('region', { name: 'Team' })).toHaveAttribute('id', 'team');
+  });
+
+  it('shows staff who are not on the venture its team only, and never asks for the venture', async () => {
+    mockedMe = person({ roles: ['program_lead'] });
+    const requests: string[] = [];
+    answer(requests);
+    const client = testQueryClient();
+    client.removeQueries({ queryKey: queryKeys.venture.detail(IDS.venture) });
+    await renderWithRouter(<VentureSections ventureId={IDS.venture} />, client);
+    expect(await screen.findByRole('list', { name: 'Team members' })).toBeVisible();
+    expect(screen.queryByRole('region', { name: 'Profile' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Current goal' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Invite' })).toBeEnabled();
+    expect(requests).not.toContain(`/api/v1/ventures/${IDS.venture}`);
+    expect(screen.getByRole('button', { name: 'About Venture' })).toHaveAccessibleDescription(
+      'Who is on QuietQuad and what each can see.',
+    );
   });
 });

@@ -1,34 +1,32 @@
 import { MembershipRole } from '@foundry/contracts';
-import { getRouteApi } from '@tanstack/react-router';
 import { UserPlus, Users } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { UserAvatar } from '@/components/faces/user-avatar';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
-import { PageContainer, PageHeader } from '@/components/ui/page-header';
-import { HairlineSkeleton } from '@/components/ui/page-section';
+import { HairlineSkeleton, PageSection } from '@/components/ui/page-section';
+import { InviteMemberDialog } from '@/features/program/invite-member-dialog';
 import { useTeam } from '@/lib/api/hooks/team';
 import { canManageAnyTeam, ROLE_LABELS } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { formatDate, isoString } from '@/lib/format';
 import { MEMBERSHIP_ROLE_ACCESS } from '@/lib/labels';
-import { InviteMemberDialog } from '@/features/program/invite-member-dialog';
 
-const routeApi = getRouteApi('/$tenant/app/v/$ventureId/team');
+import { TEAM_ANCHOR } from './anchors';
 
 /**
- * Team: the people on the venture and what each can see. Program leads and platform admins invite
- * (one invitation flow for the whole product, with the one-time access code revealed once). They open any
- * venture's Team without reading the venture, so its name comes with the team.
+ * Team, a section of the Venture page: the people on the venture and what each can see. Program leads and
+ * platform admins invite (one invitation flow for the whole product, with the one-time access code revealed
+ * once). They open any venture's team without reading the venture, so its name comes with the team.
  */
-export function TeamPage() {
+export function TeamSection({ ventureId }: { ventureId: string }) {
   const me = useRequiredMe();
-  const { ventureId } = routeApi.useParams();
   const team = useTeam(ventureId);
   const canInvite = canManageAnyTeam(me);
   const [inviting, setInviting] = useState(false);
+  const section = useRef<HTMLElement | null>(null);
 
   const members = [...(team.data?.items ?? [])].sort(
     (a, b) =>
@@ -38,34 +36,43 @@ export function TeamPage() {
   const name =
     team.data?.venture?.name ?? me.memberships.find((m) => m.ventureId === ventureId)?.ventureName ?? null;
 
-  return (
-    <PageContainer className="max-w-4xl">
-      <PageHeader
-        title="Team"
-        info={`People on ${name ?? 'this venture'} and what each can see.`}
-        actions={
-          canInvite ? (
-            <Button
-              disabled={name === null}
-              onClick={() => {
-                setInviting(true);
-              }}
-            >
-              <UserPlus aria-hidden />
-              Invite
-            </Button>
-          ) : null
-        }
-      />
+  // Arriving at `#team` (an old Team link), bring the section into view once the members are in.
+  const ready = !team.isPending;
+  useEffect(() => {
+    if (ready && window.location.hash === `#${TEAM_ANCHOR}`)
+      section.current?.scrollIntoView({ block: 'start' });
+  }, [ready]);
 
+  return (
+    <PageSection
+      ref={section}
+      id={TEAM_ANCHOR}
+      title="Team"
+      className="scroll-mt-6"
+      actions={
+        canInvite ? (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={name === null}
+            onClick={() => {
+              setInviting(true);
+            }}
+          >
+            <UserPlus aria-hidden />
+            Invite
+          </Button>
+        ) : null
+      }
+    >
       {team.isError ? (
-        <ErrorState error={team.error} onRetry={() => void team.refetch()} headingLevel={2} />
+        <ErrorState error={team.error} onRetry={() => void team.refetch()} headingLevel={3} />
       ) : team.isPending ? (
         <HairlineSkeleton rows={3} label="Loading the team…" />
       ) : members.length === 0 ? (
         <EmptyState
           icon={Users}
-          headingLevel={2}
+          headingLevel={3}
           title="No members yet"
           description={
             canInvite ? 'Invite the founders first.' : 'A program lead adds members to the venture.'
@@ -78,11 +85,11 @@ export function TeamPage() {
             return (
               <li
                 key={member.principal.id}
-                className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 px-2 py-4 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,16rem)]"
+                className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 py-3.5 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,16rem)]"
               >
                 <UserAvatar name={member.principal.displayName} decorative />
                 <div className="grid min-w-0 content-start gap-0.5">
-                  <p className="flex flex-wrap items-baseline gap-x-2 text-body font-medium">
+                  <p className="flex flex-wrap items-baseline gap-x-2 text-small font-medium">
                     {member.principal.displayName}
                     {isMe ? (
                       <span className="text-caption font-normal text-muted-foreground">You</span>
@@ -102,7 +109,7 @@ export function TeamPage() {
                   </p>
                 </div>
                 <div className="col-start-2 grid content-start gap-0.5 sm:col-start-3">
-                  <p className="text-sm font-medium">{ROLE_LABELS[member.role]}</p>
+                  <p className="text-small font-medium">{ROLE_LABELS[member.role]}</p>
                   <p className="text-caption text-muted-foreground">{MEMBERSHIP_ROLE_ACCESS[member.role]}</p>
                 </div>
               </li>
@@ -119,6 +126,6 @@ export function TeamPage() {
           }}
         />
       ) : null}
-    </PageContainer>
+    </PageSection>
   );
 }

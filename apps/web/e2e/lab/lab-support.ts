@@ -183,7 +183,7 @@ export function callScreen(page: Page): Locator {
   return page.getByRole('dialog', { name: /^Call with / });
 }
 
-/** From New chat: the sidebar's Call, Remember (preselected), Start call. Returns the conversation and intro. */
+/** From New chat: ⌘K → Start a call, Remember (preselected), Start call. Returns the conversation and intro. */
 export async function startCall(
   page: Page,
 ): Promise<{ sessionId: string; intro: string | null; inputMode: string }> {
@@ -193,9 +193,10 @@ export async function startCall(
     (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
     { timeout: 60_000 },
   );
+  await page.keyboard.press('ControlOrMeta+k');
   await page
-    .getByRole('navigation', { name: 'Main' })
-    .getByRole('link', { name: /^Call / })
+    .getByRole('dialog')
+    .getByRole('option', { name: /^Start a call/ })
     .click();
   const screen = callScreen(page);
   const remember = screen.getByRole('radio', { name: /^Remember/ });

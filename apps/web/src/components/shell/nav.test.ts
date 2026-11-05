@@ -134,7 +134,7 @@ describe('ventureDestinations', () => {
   const ids = (person: Me) => ventureDestinations(person, VENTURE_A).map((d) => d.id);
 
   it('gives members and the assigned EIR every page of the venture', () => {
-    const all = ['knowledge', 'documents', 'help', 'team'];
+    const all = ['knowledge', 'documents', 'help', 'venture'];
     for (const role of ['founder', 'team', 'advisor'] as const) {
       expect(ids(me({ memberships: [{ ventureId: VENTURE_A, ventureName: 'QuietQuad', role }] }))).toEqual(
         all,
@@ -152,10 +152,10 @@ describe('ventureDestinations', () => {
     ).toEqual(all);
   });
 
-  it('gives program leads and platform admins who are not members only the Team page (no dead links)', () => {
-    expect(ids(me({ roles: ['platform_admin'] }))).toEqual(['team']);
-    expect(ids(me({ roles: ['program_lead'] }))).toEqual(['team']);
-    expect(ids(me({ roles: ['platform_admin', 'program_lead'] }))).toEqual(['team']);
+  it('gives program leads and platform admins who are not members only the Venture page, for its team (no dead links)', () => {
+    expect(ids(me({ roles: ['platform_admin'] }))).toEqual(['venture']);
+    expect(ids(me({ roles: ['program_lead'] }))).toEqual(['venture']);
+    expect(ids(me({ roles: ['platform_admin', 'program_lead'] }))).toEqual(['venture']);
     // A member of another venture is not a member of this one.
     expect(
       ids(
@@ -164,7 +164,7 @@ describe('ventureDestinations', () => {
           memberships: [{ ventureId: VENTURE_B, ventureName: 'BenchTally', role: 'founder' }],
         }),
       ),
-    ).toEqual(['team']);
+    ).toEqual(['venture']);
   });
 
   it('gives nothing to someone who cannot open the venture at all', () => {

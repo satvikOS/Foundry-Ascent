@@ -121,7 +121,7 @@ export function EirsPage({ tenant, canCreateVeir }: { tenant: string; canCreateV
         />
       ) : !list || !veirs ? (
         <LoadingRegion label="Loading EIRs">
-          <Skeleton className="h-56 rounded-xl" />
+          <Skeleton className="h-56 rounded-lg" />
         </LoadingRegion>
       ) : list.length === 0 ? (
         <EmptyState

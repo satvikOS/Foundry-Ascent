@@ -88,10 +88,10 @@ export function AccountMenu({
     <DropdownMenuTrigger
       aria-label={`Account menu for ${name}, ${roles}`}
       className={cn(
-        'group flex min-w-0 items-center gap-2.5 rounded-lg text-left transition-colors',
-        'hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring',
-        'data-[state=open]:bg-sidebar-accent',
-        compact ? 'size-10 justify-center' : 'h-12 w-full px-2',
+        'group flex min-w-0 items-center gap-2.5 rounded-[10px] text-left transition-colors duration-(--dur-hover)',
+        'hover:bg-sidebar-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring',
+        'data-[state=open]:bg-sidebar-hover',
+        compact ? 'size-10 justify-center' : 'h-11 w-full px-2',
       )}
     >
       <UserAvatar name={name} size="md" decorative />

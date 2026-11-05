@@ -4,15 +4,19 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import { FOUNDER_STATE, openVenture, OWNER_STATE, TENANT, test, useTheme } from './support/fixtures';
 
 /*
- * The OLED dark theme and where glass is used, as the browser renders them: a true-black canvas and
- * sidebar; floating layers (menus, the command palette) blurred glass; dialogs solid over a scrim; the
- * phone bar glass; no full-screen blur on phones. axe checks the contrast of text on the glass layers in
+ * The OLED dark theme and where glass is used, as the browser renders them: a true-black canvas; the side
+ * panel floating as frosted glass, inset with curved corners, and solid where transparency is reduced;
+ * floating layers (menus, the command palette) blurred glass; dialogs solid over a scrim; the phone bar
+ * glass; no full-screen blur on phones. axe checks the contrast of text on the glass layers in
  * both themes (their structure is covered by a11y.spec.ts; Radix's modal focus handling is out of scope).
  */
 
 const BLACK = 'rgb(0, 0, 0)';
 
-function style(locator: Locator, property: 'backgroundColor' | 'backdropFilter'): Promise<string> {
+function style(
+  locator: Locator,
+  property: 'backgroundColor' | 'backdropFilter' | 'borderTopLeftRadius',
+): Promise<string> {
   return locator.evaluate((element, name) => {
     const computed = getComputedStyle(element);
     // WebKit-prefixed in some builds; either carries the filter.
@@ -88,13 +92,28 @@ async function overlay(page: Page): Promise<Locator> {
 test.describe('OLED dark and glass', () => {
   test.use({ storageState: FOUNDER_STATE });
 
-  test('true black canvas and sidebar; glass menus and palette; solid dialogs', async ({ page }) => {
+  test('true black canvas, a floating frosted panel; glass menus and palette; solid dialogs', async ({
+    page,
+  }) => {
     await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
     await openVenture(page);
     await useTheme(page, 'dark');
 
     expect(await style(page.locator('body'), 'backgroundColor')).toBe(BLACK);
-    expect(await style(page.getByRole('complementary', { name: 'Sidebar' }), 'backgroundColor')).toBe(BLACK);
+    // The side panel floats 12 px in from the edges with 22 px corners: frosted glass, or its solid face on a
+    // device judged too slow for the blur (`data-perf="low"`, decided once per browser).
+    const panel = page.getByRole('complementary', { name: 'Sidebar' });
+    const box = await panel.boundingBox();
+    expect([box?.x, box?.y]).toEqual([12, 12]);
+    expect(await style(panel, 'borderTopLeftRadius')).toBe('22px');
+    const slow = await page.evaluate(() => document.documentElement.dataset.perf === 'low');
+    if (slow) {
+      expect(await style(panel, 'backgroundColor')).toBe('rgb(18, 18, 18)');
+    } else {
+      expect(await style(panel, 'backgroundColor')).toBe('rgba(20, 20, 20, 0.64)');
+      expect(await style(panel, 'backdropFilter')).toContain('blur(');
+    }
+    await expectReadable(page, 'side panel (dark)');
     const themeColor = await page
       .locator('meta[name="theme-color"][media="(prefers-color-scheme: dark)"]')
       .getAttribute('content');
@@ -126,6 +145,24 @@ test.describe('OLED dark and glass', () => {
     expect(await style(dialog, 'backgroundColor')).toBe('rgb(20, 20, 20)');
     expect(await style(await overlay(page), 'backdropFilter')).toContain('blur(');
     await expectReadable(page, 'shortcuts dialog (dark)');
+  });
+
+  test('with transparency reduced the panel is solid, and forced colours draw it in system colours', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }],
+    });
+    await openVenture(page);
+    await useTheme(page, 'dark');
+    const panel = page.getByRole('complementary', { name: 'Sidebar' });
+    expect(await style(panel, 'backgroundColor')).toBe('rgb(18, 18, 18)');
+    expect(await style(panel, 'backdropFilter')).toBe('none');
+    await page.emulateMedia({ forcedColors: 'active' });
+    expect(await style(panel, 'backdropFilter')).toBe('none');
+    await expect(panel.getByRole('link', { name: 'Knowledge' })).toBeVisible();
   });
 
   test('light theme keeps its palette, and its glass passes axe', async ({ page }) => {

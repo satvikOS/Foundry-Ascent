@@ -90,7 +90,7 @@ export function LessonsQueuePage({ tenant }: { tenant: string }) {
       />
       {loading ? (
         <LoadingRegion label="Loading lessons">
-          <Skeleton className="h-48 rounded-xl" />
+          <Skeleton className="h-48 rounded-lg" />
         </LoadingRegion>
       ) : error ? (
         <ErrorState

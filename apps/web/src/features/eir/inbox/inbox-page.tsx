@@ -161,7 +161,7 @@ export function InboxPage({ selectedId, filter, onSelect, onFilterChange }: Inbo
                   <PacketView escalation={selected} audience="assignee" />
                   {selected.resolution ? (
                     <section className="grid gap-2 border-t border-border pt-4">
-                      <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+                      <h3 className="flex items-center gap-1.5 text-sm font-medium">
                         <CircleCheck aria-hidden className="size-4 text-muted-foreground" />
                         Resolution
                       </h3>

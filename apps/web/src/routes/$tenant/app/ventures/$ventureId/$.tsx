@@ -1,5 +1,6 @@
 import { createFileRoute, redirect } from '@tanstack/react-router';
 
+import { TEAM_ANCHOR } from '@/features/venture/anchors';
 import { legacyVentureTarget } from '@/lib/legacy-routes';
 
 /**
@@ -43,8 +44,9 @@ export const Route = createFileRoute('/$tenant/app/ventures/$ventureId/$')({
         });
       case 'team':
         throw redirect({
-          to: '/$tenant/app/v/$ventureId/team',
+          to: '/$tenant/app/v/$ventureId/settings',
           params: { tenant, ventureId },
+          hash: TEAM_ANCHOR,
           replace: true,
         });
     }

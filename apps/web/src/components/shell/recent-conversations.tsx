@@ -15,6 +15,8 @@ import { useRecentConversations } from '@/lib/api/hooks/sessions';
 import { conversationTitle, groupByRecency } from '@/lib/conversations';
 import { cn } from '@/lib/utils';
 
+import { sidebarGroupLabelClasses, sidebarRowClasses } from './sidebar-styles';
+
 // Loaded on first use, so the shell's first paint doesn't carry them.
 const RenameConversationDialog = lazy(() =>
   import('@/features/chat/conversation-dialogs').then((m) => ({ default: m.RenameConversationDialog })),
@@ -28,6 +30,8 @@ interface RecentConversationsProps {
   /** Venture names by id, so a conversation from another venture says where it belongs. */
   ventureNames: ReadonlyMap<string, string>;
   onNavigate?: (() => void) | undefined;
+  /** Opens every conversation, searchable (the command palette filtered to conversations). */
+  onViewAll?: (() => void) | undefined;
 }
 
 type RowDialog = { kind: 'rename' | 'delete'; session: SessionView; title: string } | null;
@@ -38,7 +42,12 @@ type RowDialog = { kind: 'rename' | 'delete'; session: SessionView; title: strin
  * Calls are marked with a phone, private chats with a closed eye. Each row has a menu: rename, open the
  * summary (ended conversations) and delete.
  */
-export function RecentConversations({ tenant, ventureNames, onNavigate }: RecentConversationsProps) {
+export function RecentConversations({
+  tenant,
+  ventureNames,
+  onNavigate,
+  onViewAll,
+}: RecentConversationsProps) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const openId = /\/c\/([^/]+)/.exec(pathname)?.[1] ?? null;
@@ -83,10 +92,7 @@ export function RecentConversations({ tenant, ventureNames, onNavigate }: Recent
       <nav aria-label="Recent conversations" className="grid grid-cols-[minmax(0,1fr)] gap-1">
         {groups.map((group) => (
           <div key={group.id} role="group" aria-labelledby={`recents-${group.id}`}>
-            <h2
-              id={`recents-${group.id}`}
-              className="px-2.5 pt-4 pb-1 text-caption font-medium text-sidebar-muted"
-            >
+            <h2 id={`recents-${group.id}`} className={sidebarGroupLabelClasses}>
               {group.label}
             </h2>
             <ul className="grid grid-cols-[minmax(0,1fr)] gap-px">
@@ -100,11 +106,8 @@ export function RecentConversations({ tenant, ventureNames, onNavigate }: Recent
                       params={{ tenant, ventureId: session.ventureId, sessionId: session.id }}
                       onClick={onNavigate}
                       title={venture ? `${title} · ${venture}` : title}
-                      className={cn(
-                        'flex h-8 min-w-0 items-center gap-2 rounded-md pr-8 pl-2.5 text-small text-sidebar-foreground transition-colors',
-                        'hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring',
-                        'data-[status=active]:bg-sidebar-accent data-[status=active]:font-medium',
-                      )}
+                      data-slot="sidebar-row"
+                      className={cn(sidebarRowClasses, 'gap-2 pr-8')}
                     >
                       <span className="min-w-0 flex-1 truncate">{title}</span>
                       {session.hasCalls ? (
@@ -124,8 +127,8 @@ export function RecentConversations({ tenant, ventureNames, onNavigate }: Recent
                       <DropdownMenuTrigger
                         aria-label={`Options for ${title}`}
                         className={cn(
-                          'absolute top-1 right-1 flex size-6 items-center justify-center rounded-sm text-sidebar-muted transition-opacity',
-                          'hover:bg-sidebar-border hover:text-sidebar-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sidebar-ring',
+                          'absolute top-1 right-1 flex size-6 items-center justify-center rounded-sm text-sidebar-muted transition-opacity pointer-coarse:top-2.5',
+                          'hover:bg-sidebar-hover hover:text-sidebar-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sidebar-ring',
                           'opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100',
                         )}
                       >
@@ -175,12 +178,20 @@ export function RecentConversations({ tenant, ventureNames, onNavigate }: Recent
             </ul>
           </div>
         ))}
-        {recents.hasNextPage ? (
+        {onViewAll ? (
+          <button
+            type="button"
+            onClick={onViewAll}
+            className={cn(sidebarRowClasses, 'mt-1 text-sidebar-muted hover:text-sidebar-foreground')}
+          >
+            View all
+          </button>
+        ) : recents.hasNextPage ? (
           <button
             type="button"
             onClick={() => void recents.fetchNextPage()}
             disabled={recents.isFetchingNextPage}
-            className="mx-2.5 mt-2 h-8 rounded-md text-left text-caption text-sidebar-muted hover:text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-sidebar-ring"
+            className={cn(sidebarRowClasses, 'mt-1 text-sidebar-muted hover:text-sidebar-foreground')}
           >
             {recents.isFetchingNextPage ? 'Loading…' : 'Show more'}
           </button>

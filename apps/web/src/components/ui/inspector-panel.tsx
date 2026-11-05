@@ -36,7 +36,7 @@ export function InspectorPanel({
     >
       <div className="flex shrink-0 items-start justify-between gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0">
-          <h2 id={titleId} className="truncate text-sm font-semibold tracking-tight">
+          <h2 id={titleId} className="truncate text-sm font-medium tracking-tight">
             {title}
           </h2>
           {description ? <p className="mt-0.5 text-xs text-muted-foreground">{description}</p> : null}
@@ -83,7 +83,7 @@ export function InspectorSection({
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3
           id={id}
-          className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+          className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase"
         >
           {title}
           {meta ? <span className="tabular font-medium normal-case">{meta}</span> : null}

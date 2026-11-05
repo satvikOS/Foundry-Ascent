@@ -1,5 +1,6 @@
 import { VentureStage, type VentureDetail } from '@foundry/contracts';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useQuery } from '@tanstack/react-query';
 import { getRouteApi } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -16,16 +17,18 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
 import { MutationErrorAlert } from '@/features/admin/shared/form';
-import { useUpdateVenture, useVenture } from '@/lib/api/hooks/ventures';
-import { canWrite } from '@/lib/auth/roles';
+import { useTeam } from '@/lib/api/hooks/team';
+import { useUpdateVenture, ventureQueryOptions } from '@/lib/api/hooks/ventures';
+import { canAccessVenture, canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { applyFieldErrors } from '@/lib/form-errors';
 import { STAGE_LABELS, STAGE_ORDER } from '@/lib/labels';
+import { veirDisplay } from '@/lib/veir';
 
 import { SelectField } from '@/components/ui/select-field';
-import { StudentDevelopment } from '@/features/student/student-development';
 import { GoalEditor } from './goal-editor';
-import { sentenceStart, useVeirName } from './veir-name';
+import { TeamSection } from './team-section';
+import { NEUTRAL_VEIR_NAME, sentenceStart } from './veir-name';
 
 const routeApi = getRouteApi('/$tenant/app/v/$ventureId/settings');
 
@@ -43,37 +46,57 @@ function profileOf(venture: VentureDetail): ProfileValues {
   return { name: venture.name, oneLiner: venture.oneLiner, stage: venture.stage };
 }
 
-/** Venture settings: the profile the vEIR and the program see (name, one-liner, stage) and the current goal. */
-export function VentureSettingsPage() {
-  const me = useRequiredMe();
+/**
+ * The Venture page: the profile the vEIR and the program see (name, one-liner, stage), the current goal and
+ * the team, in one place. Program leads and platform admins who are not on the venture see its team only
+ * (the rest of it would refuse them). The student's own development lives under Knowledge → You.
+ */
+export function VenturePage() {
   const { ventureId } = routeApi.useParams();
-  const venture = useVenture(ventureId);
+  return <VentureSections ventureId={ventureId} />;
+}
+
+/** The Venture page's body for one venture (what the route renders, and what the tests render). */
+export function VentureSections({ ventureId }: { ventureId: string }) {
+  const me = useRequiredMe();
+  const readable = canAccessVenture(me, ventureId);
+  const venture = useQuery({ ...ventureQueryOptions(ventureId), enabled: readable });
   const editable = canWrite(me, ventureId);
-  const veirName = useVeirName(ventureId);
+  // From the query above, so a reader who cannot open the venture never requests it.
+  const veirName = veirDisplay(venture.data)?.name ?? NEUTRAL_VEIR_NAME;
+  // Program leads and admins who are not on the venture read its name with its team.
+  const team = useTeam(ventureId);
+  const name = venture.data?.name ?? team.data?.venture?.name ?? 'this venture';
 
   return (
     <PageContainer size="narrow">
       <PageHeader
-        title="Venture settings"
-        info={`${sentenceStart(veirName)} uses the stage and current goal to focus each conversation.`}
+        title="Venture"
+        info={
+          readable
+            ? `${sentenceStart(veirName)} uses the stage and current goal to focus each conversation.`
+            : `Who is on ${name} and what each can see.`
+        }
       />
-      {venture.isError ? (
-        <ErrorState error={venture.error} onRetry={() => void venture.refetch()} />
-      ) : !venture.data ? (
-        <div aria-busy="true" className="grid gap-6">
-          <span className="sr-only" role="status">
-            Loading…
-          </span>
-          <Skeleton className="h-64 w-full" />
-          <Skeleton className="h-24 w-full" />
-        </div>
-      ) : (
-        <div className="grid gap-10">
-          <VentureProfileCard venture={venture.data} editable={editable} />
-          <GoalEditor ventureId={ventureId} goal={venture.data.currentGoal} canEdit={editable} />
-          {editable ? <StudentDevelopment key={ventureId} ventureId={ventureId} /> : null}
-        </div>
-      )}
+      <div className="grid gap-10">
+        {!readable ? null : venture.isError ? (
+          <ErrorState error={venture.error} onRetry={() => void venture.refetch()} headingLevel={2} />
+        ) : !venture.data ? (
+          <div aria-busy="true" className="grid gap-6">
+            <span className="sr-only" role="status">
+              Loading…
+            </span>
+            <Skeleton className="h-64 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        ) : (
+          <>
+            <VentureProfileCard venture={venture.data} editable={editable} />
+            <GoalEditor ventureId={ventureId} goal={venture.data.currentGoal} canEdit={editable} />
+          </>
+        )}
+        <TeamSection ventureId={ventureId} />
+      </div>
     </PageContainer>
   );
 }

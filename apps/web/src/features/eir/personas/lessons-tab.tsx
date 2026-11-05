@@ -42,7 +42,7 @@ export function LessonsTab({ persona, displayName, openLessonId, onOpenLessonCha
   if (lessons.isPending) {
     return (
       <LoadingRegion label="Loading lessons">
-        <Skeleton className="h-56 rounded-xl" />
+        <Skeleton className="h-56 rounded-lg" />
       </LoadingRegion>
     );
   }

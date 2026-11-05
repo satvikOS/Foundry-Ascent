@@ -196,7 +196,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
         aria-label="Limits and thresholds"
       >
         <fieldset className="grid gap-4 sm:grid-cols-2">
-          <legend className="mb-2 text-sm font-semibold">Daily AI spend caps (USD)</legend>
+          <legend className="mb-2 text-sm font-medium">Daily AI spend caps (USD)</legend>
           <Field
             subgrid
             label="Platform cap per day"
@@ -215,7 +215,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
           </Field>
         </fieldset>
         <fieldset className="grid gap-4 sm:grid-cols-2">
-          <legend className="mb-2 text-sm font-semibold">Voice calls</legend>
+          <legend className="mb-2 text-sm font-medium">Voice calls</legend>
           <Field
             subgrid
             label="Longest call (minutes)"
@@ -234,7 +234,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
           </Field>
         </fieldset>
         <fieldset className="grid gap-4 sm:grid-cols-2">
-          <legend className="mb-2 text-sm font-semibold">Video face</legend>
+          <legend className="mb-2 text-sm font-medium">Video face</legend>
           <Field
             subgrid
             label="Video minutes per person per month"
@@ -253,7 +253,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
           </Field>
         </fieldset>
         <fieldset className="grid gap-4 sm:grid-cols-2">
-          <legend className="mb-2 text-sm font-semibold">Document uploads per person per day</legend>
+          <legend className="mb-2 text-sm font-medium">Document uploads per person per day</legend>
           <Field
             subgrid
             label="Documents per day"
@@ -272,7 +272,7 @@ export function LimitsCard({ settings, onSave, pending, error }: LimitsCardProps
           </Field>
         </fieldset>
         <fieldset className="grid gap-4 sm:grid-cols-3">
-          <legend className="mb-2 text-sm font-semibold">Coaching quality and privacy</legend>
+          <legend className="mb-2 text-sm font-medium">Coaching quality and privacy</legend>
           <Field
             subgrid
             label="Max turns per session"

@@ -138,9 +138,11 @@ async function startCall(page: Page) {
   const started = page.waitForResponse(
     (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
   );
+  // ⌘K → Start a call (the side panel has no Call entry: one entry per action).
+  await page.keyboard.press('ControlOrMeta+k');
   await page
-    .getByRole('navigation', { name: 'Main' })
-    .getByRole('link', { name: /^Call / })
+    .getByRole('dialog')
+    .getByRole('option', { name: /^Start a call/ })
     .click();
   const screen = page.getByRole('dialog', { name: /^Call with / });
   await screen.getByRole('button', { name: 'Start call' }).click();

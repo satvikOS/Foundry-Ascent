@@ -43,7 +43,7 @@ export function AlertDialogFooter({ className, ...props }: ComponentProps<'div'>
 export function AlertDialogTitle({ className, ...props }: ComponentProps<typeof AlertDialogPrimitive.Title>) {
   return (
     <AlertDialogPrimitive.Title
-      className={cn('text-base leading-tight font-semibold tracking-tight', className)}
+      className={cn('text-base leading-tight font-medium tracking-tight', className)}
       {...props}
     />
   );

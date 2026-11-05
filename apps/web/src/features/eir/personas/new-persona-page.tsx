@@ -68,7 +68,7 @@ export function NewPersonaPage({
       <PageContainer size="narrow">
         <PageHeader eyebrow={back} title="New vEIR" />
         <LoadingRegion label="Loading EIRs">
-          <Skeleton className="h-48 rounded-xl" />
+          <Skeleton className="h-48 rounded-lg" />
         </LoadingRegion>
       </PageContainer>
     );

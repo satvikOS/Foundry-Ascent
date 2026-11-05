@@ -10,7 +10,7 @@ function Command({ className, ...props }: ComponentProps<typeof CommandPrimitive
   return (
     <CommandPrimitive
       data-slot="command"
-      className={cn('flex size-full flex-col overflow-hidden rounded-2xl text-popover-foreground', className)}
+      className={cn('flex size-full flex-col overflow-hidden rounded-xl text-popover-foreground', className)}
       {...props}
     />
   );
@@ -43,7 +43,7 @@ export function CommandDialog({
         <DialogDescription className="sr-only">{description}</DialogDescription>
         <Command
           loop
-          className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
+          className="[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:pb-1.5 [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:leading-none [&_[cmdk-group-heading]]:tracking-[0.06em] [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:uppercase"
           {...commandProps}
         >
           {children}
@@ -53,13 +53,21 @@ export function CommandDialog({
   );
 }
 
-export function CommandInput({ className, ...props }: ComponentProps<typeof CommandPrimitive.Input>) {
+export function CommandInput({
+  className,
+  leading,
+  ...props
+}: Omit<ComponentProps<typeof CommandPrimitive.Input>, 'prefix'> & {
+  /** Shown before the field (e.g. the scope the search is limited to). */
+  leading?: ReactNode;
+}) {
   return (
     <div
       data-slot="command-input-wrapper"
       className="flex h-12 items-center gap-2.5 border-b border-border px-4"
     >
       <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+      {leading}
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
@@ -111,7 +119,7 @@ export function CommandItem({ className, ...props }: ComponentProps<typeof Comma
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        'relative flex h-10 cursor-default items-center gap-3 rounded-md px-2.5 text-sm outline-none select-none',
+        'relative flex h-9 cursor-default items-center gap-3 rounded-md px-2.5 text-[13px] font-[450] outline-none select-none pointer-coarse:h-11',
         'data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50',
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
         className,

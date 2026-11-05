@@ -51,7 +51,7 @@ export function ReleaseReview({
   if (release.isPending) {
     return (
       <LoadingRegion label="Loading release">
-        <Skeleton className="h-72 rounded-xl" />
+        <Skeleton className="h-72 rounded-lg" />
       </LoadingRegion>
     );
   }

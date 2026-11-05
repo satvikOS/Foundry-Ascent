@@ -1,9 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router';
 
-import { VentureSettingsPage } from '@/features/venture/venture-settings-page';
+import { VenturePage } from '@/features/venture/venture-settings-page';
+import { teamQueryOptions } from '@/lib/api/hooks/team';
 
-/** Venture settings (name, one-liner, stage, current goal), opened from the venture switcher. */
+/** The Venture page: profile (name, one-liner, stage), current goal and team. */
 export const Route = createFileRoute('/$tenant/app/v/$ventureId/settings')({
-  head: () => ({ meta: [{ title: 'Venture settings' }] }),
-  component: VentureSettingsPage,
+  loader: ({ context, params }) => {
+    context.queryClient.query(teamQueryOptions(params.ventureId)).catch(() => undefined);
+  },
+  head: () => ({ meta: [{ title: 'Venture' }] }),
+  component: VenturePage,
 });

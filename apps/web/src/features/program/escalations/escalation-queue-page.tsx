@@ -149,7 +149,7 @@ export function EscalationQueuePage() {
 
       {queue.isPending ? (
         <LoadingRegion label="Loading escalation queue">
-          <Skeleton className="h-72 rounded-xl" />
+          <Skeleton className="h-72 rounded-lg" />
         </LoadingRegion>
       ) : queue.isError ? (
         <ErrorState error={queue.error} onRetry={() => void queue.refetch()} retrying={queue.isRefetching} />

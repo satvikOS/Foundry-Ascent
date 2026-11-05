@@ -149,7 +149,7 @@ export function ReleaseEditor({
         ) : null}
 
         <fieldset className="grid gap-5">
-          <legend className="mb-3 text-base font-semibold">Doctrine</legend>
+          <legend className="mb-3 text-base font-medium">Doctrine</legend>
           <Field
             label="Summary"
             required
@@ -267,7 +267,7 @@ export function ReleaseEditor({
         </fieldset>
 
         <fieldset className="grid gap-5">
-          <legend className="mb-3 text-base font-semibold">Style</legend>
+          <legend className="mb-3 text-base font-medium">Style</legend>
           <div className="grid gap-5 md:grid-cols-3">
             <StyleDial control={control} name="directness" label="Directness" />
             <StyleDial control={control} name="warmth" label="Warmth" />
@@ -300,7 +300,7 @@ export function ReleaseEditor({
         </fieldset>
 
         <fieldset className="grid gap-5">
-          <legend className="mb-3 text-base font-semibold">Disclosure and modes</legend>
+          <legend className="mb-3 text-base font-medium">Disclosure and modes</legend>
           <Field
             label="Disclosure"
             required

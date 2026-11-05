@@ -19,9 +19,11 @@ import { canAccessVenture, canManageAnyTeam, hasAnyRole } from '@/lib/auth/roles
  */
 export const Route = createFileRoute('/$tenant/app/v/$ventureId')({
   loader: async ({ context, params, location }) => {
-    const teamPage = location.pathname.endsWith(`/v/${params.ventureId}/team`);
-    // Program leads and platform admins who are not on the venture open only its team (which carries the
-    // venture's name): the venture itself, which would be refused (and audited as denied), is not requested.
+    // The Venture page (and the old Team path that redirects to it).
+    const teamPage = /\/v\/[^/]+\/(?:settings|team)$/.test(location.pathname);
+    // Program leads and platform admins who are not on the venture open only its team, on the Venture page (the
+    // team carries the venture's name): the venture itself, which would be refused (and audited as denied), is
+    // not requested.
     if (teamPage && !canAccessVenture(context.me, params.ventureId) && canManageAnyTeam(context.me)) {
       return { ventureName: null };
     }

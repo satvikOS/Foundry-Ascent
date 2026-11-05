@@ -139,13 +139,16 @@ const SCHEMES: readonly Scheme[] = ['light', 'dark'];
 /** Opaque surfaces text can sit on directly. */
 const SOLID_SURFACES = [
   '--background',
+  '--surface-1',
+  '--surface-2',
+  '--surface-3',
+  '--surface-overlay',
   '--card',
   '--popover',
   '--muted',
   '--secondary',
   '--accent',
   '--sidebar',
-  '--sidebar-accent',
 ] as const;
 
 /** Translucent layers (`.glass`, `.glass-bar`, `.glass-strong`): measured composited over every solid surface. */
@@ -236,7 +239,47 @@ const NON_TEXT = [
  * two apart, so it must reach 3:1 (WCAG 1.4.11) on the selected fill, on the hover tint and on every page
  * surface a list sits on.
  */
-const SELECTION_SURFACES = ['--background', '--card', '--popover', '--sidebar'] as const;
+const SELECTION_SURFACES = ['--background', '--card', '--popover'] as const;
+
+/*
+ * The floating side panel (`.glass-float`). It can show three faces: docked on desktop, its glass over the canvas
+ * (nothing else passes beneath it); solid (`--sidebar`: no blur support, reduced transparency, a slow device);
+ * and over the content below 1024 px, its glass over a soft scrim over whatever content lies there. No credit
+ * is given for the blur: the worst content (a line of text, a filled button) counts as a solid block.
+ */
+const PANEL_TEXT = ['--sidebar-foreground', '--sidebar-muted'] as const;
+const PANEL_ROW_FILLS = ['--sidebar-hover', '--sidebar-accent'] as const;
+
+function panelFaces(scheme: Scheme): { name: string; color: Rgba }[] {
+  const glass = resolve('--glass-float-bg', scheme);
+  const dense = resolve('--glass-float-bg-over', scheme);
+  const scrim = resolve('--scrim-soft', scheme);
+  const contents = [
+    ...SOLID_SURFACES,
+    ...TEXT_TOKENS,
+    ...STATUS_TEXT,
+    ...FILLED_PAIRS.map(([, fill]) => fill),
+  ].map((name) => ({ name, color: resolve(name, scheme) }));
+  return [
+    { name: 'docked (glass over the canvas)', color: over(glass, resolve('--background', scheme)) },
+    { name: 'solid (--sidebar)', color: resolve('--sidebar', scheme) },
+    ...contents.map((content) => ({
+      name: `overlay (glass over --scrim-soft over ${content.name})`,
+      color: over(dense, over(scrim, content.color)),
+    })),
+  ];
+}
+
+/** Each panel face as it renders under a row: bare, hovered and selected. */
+function panelRows(scheme: Scheme): { name: string; color: Rgba }[] {
+  return panelFaces(scheme).flatMap((face) => [
+    face,
+    ...PANEL_ROW_FILLS.map((fill) => ({
+      name: `${fill} on ${face.name}`,
+      color: over(resolve(fill, scheme), face.color),
+    })),
+  ]);
+}
 
 function failures(
   pairs: { label: string; fg: Rgba; bg: Rgba }[],
@@ -256,6 +299,13 @@ describe('colour tokens (globals.css)', () => {
       ...TEXT_TOKENS,
       ...NON_TEXT.map((n) => n.token),
       '--selected-cue',
+      ...PANEL_TEXT,
+      ...PANEL_ROW_FILLS,
+      '--glass-float-bg',
+      '--glass-float-bg-over',
+      '--glass-float-border',
+      '--scrim-soft',
+      '--surface-control',
     ]) {
       expect(tokens.has(name), name).toBe(true);
     }
@@ -362,6 +412,71 @@ describe('colour tokens (globals.css)', () => {
         expect(row).toContain('hover:bg-accent/50');
       });
 
+      it('the floating panel keeps its text at 4.5:1 on every face, row fills included, with no credit for blur', () => {
+        const pairs = PANEL_TEXT.flatMap((text) =>
+          panelRows(scheme).map((row) => ({
+            label: `${text} on ${row.name} (${hex(row.color)})`,
+            fg: resolve(text, scheme),
+            bg: row.color,
+          })),
+        );
+        expect(pairs.length).toBeGreaterThan(150);
+        expect(failures(pairs, 4.5)).toEqual([]);
+        // Without the scrim, the overlay's glass would not hold over a line of text: that is why it is there.
+        if (scheme === 'dark') {
+          const bare = over(resolve('--glass-float-bg', scheme), resolve('--foreground', scheme));
+          expect(contrast(resolve('--sidebar-muted', scheme), bare)).toBeLessThan(4.5);
+        }
+      });
+
+      it('the selected row’s cue and the focus ring reach 3:1 on every panel face', () => {
+        const pairs = panelRows(scheme).flatMap((row) => [
+          { label: `--selected-cue on ${row.name}`, fg: resolve('--selected-cue', scheme), bg: row.color },
+          { label: `--sidebar-ring on ${row.name}`, fg: resolve('--sidebar-ring', scheme), bg: row.color },
+        ]);
+        expect(failures(pairs, 3)).toEqual([]);
+        // The rows and the overlay draw exactly what is measured here.
+        const shell = readFileSync(join(here, '..', 'components', 'shell', 'app-shell.tsx'), 'utf8');
+        expect(shell).toContain('[--glass-float-face:var(--glass-float-bg-over)]');
+        expect(shell).toContain('bg-(--scrim-soft)');
+        const rows = readFileSync(join(here, '..', 'components', 'shell', 'sidebar-styles.ts'), 'utf8');
+        expect(rows).toContain('hover:bg-sidebar-hover');
+        expect(rows).toContain(
+          'data-[status=active]:bg-sidebar-accent data-[status=active]:before:opacity-100',
+        );
+        expect(rows).toContain('before:bg-selected-cue');
+      });
+
+      it('round call controls hold their icon at 3:1, and the timeline bars at 3:1 on their segments', () => {
+        const control = resolve('--surface-control', scheme);
+        const pairs = [
+          ...['--background', '--fa-text'].map(() => ({
+            label: '--fa-text icon on --surface-control',
+            fg: resolve('--fa-text', scheme),
+            bg: control,
+          })),
+          {
+            label: '--surface-control on the canvas is visible',
+            fg: control,
+            bg: resolve('--background', scheme),
+          },
+          {
+            label: '--tl-bar-veir on --tl-veir',
+            fg: resolve('--tl-bar-veir', scheme),
+            bg: resolve('--tl-veir', scheme),
+          },
+          {
+            label: '--tl-bar-student on --tl-student',
+            fg: resolve('--tl-bar-student', scheme),
+            bg: resolve('--tl-student', scheme),
+          },
+        ];
+        expect(failures(pairs.slice(0, 2), 3)).toEqual([]);
+        expect(failures(pairs.slice(3), 3)).toEqual([]);
+        // The control is a lit step off the canvas, not a hole in it.
+        expect(contrast(control, resolve('--background', scheme))).toBeGreaterThanOrEqual(1.1);
+      });
+
       it('field boundaries and the focus ring reach 3:1 on the surfaces they sit on', () => {
         const pairs = NON_TEXT.flatMap(({ token, on }) =>
           on.map((surface) => ({
@@ -376,10 +491,25 @@ describe('colour tokens (globals.css)', () => {
   }
 
   describe('OLED dark', () => {
-    it('the canvas and the sidebar are true black', () => {
-      expect(hex(resolve('--background', 'dark'))).toBe('#000000');
-      expect(hex(resolve('--sidebar', 'dark'))).toBe('#000000');
+    it('the canvas is true black, and the floating panel a near-black float on it', () => {
+      const canvas = resolve('--background', 'dark');
+      expect(hex(canvas)).toBe('#000000');
       expect(hex(resolve('--primary-foreground', 'dark'))).toBe('#000000');
+      for (const face of [resolve('--sidebar', 'dark'), over(resolve('--glass-float-bg', 'dark'), canvas)]) {
+        expect(luminance(face)).toBeLessThan(0.01);
+        expect(contrast(face, canvas)).toBeGreaterThanOrEqual(1.05);
+      }
+    });
+
+    it('the grounds step up from the canvas: surface 1, 2, 3', () => {
+      for (const scheme of SCHEMES) {
+        const steps = ['--background', '--surface-1', '--surface-2', '--surface-3'].map((name) =>
+          luminance(resolve(name, scheme)),
+        );
+        // Dark lifts each step; light's canvas is the off-white under white cards, then wells darken.
+        if (scheme === 'dark') expect(steps).toEqual([...steps].sort((a, b) => a - b));
+        else expect(steps.slice(1)).toEqual([...steps.slice(1)].sort((a, b) => b - a));
+      }
     });
 
     it('raised surfaces are near-black steps that stay distinguishable from the canvas', () => {
@@ -397,13 +527,19 @@ describe('colour tokens (globals.css)', () => {
       // Hover and selected fills stay visible on the black canvas and sidebar (lit, not crushed). The fill
       // is only a secondary cue: the selected-row bar carries selection (checked above in both themes).
       expect(contrast(resolve('--accent', 'dark'), canvas)).toBeGreaterThanOrEqual(1.2);
-      expect(
-        contrast(resolve('--sidebar-accent', 'dark'), resolve('--sidebar', 'dark')),
-      ).toBeGreaterThanOrEqual(1.2);
+      const panel = over(resolve('--glass-float-bg', 'dark'), canvas);
+      expect(contrast(over(resolve('--sidebar-accent', 'dark'), panel), panel)).toBeGreaterThanOrEqual(1.2);
+      expect(contrast(over(resolve('--sidebar-hover', 'dark'), panel), panel)).toBeGreaterThanOrEqual(1.1);
     });
 
     it('borders are low-alpha white hairlines', () => {
-      for (const name of ['--fa-border', '--border-strong', '--sidebar-border', '--glass-border']) {
+      for (const name of [
+        '--fa-border',
+        '--border-strong',
+        '--sidebar-border',
+        '--glass-border',
+        '--glass-float-border',
+      ]) {
         const color = resolve(name, 'dark');
         expect(color, name).toMatchObject({ r: 255, g: 255, b: 255 });
         expect(color.a, name).toBeGreaterThan(0);

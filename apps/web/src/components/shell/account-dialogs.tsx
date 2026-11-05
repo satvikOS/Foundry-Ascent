@@ -21,7 +21,7 @@ import { shortVersion } from './account-menu';
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="grid gap-1.5">
-      <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
+      <h3 className="text-sm font-medium tracking-tight">{title}</h3>
       <div className="text-small text-muted-foreground [&_p]:leading-relaxed">{children}</div>
     </section>
   );

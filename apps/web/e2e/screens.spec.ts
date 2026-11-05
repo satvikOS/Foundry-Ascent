@@ -96,20 +96,50 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
             await expect(page.getByRole('menu')).toBeVisible();
             await shoot(page, 'shell-menu', device, scheme);
             await page.keyboard.press('Escape');
+            // The side panel's "View all": the palette, filtered to conversations.
+            const panel = page.getByRole('complementary', { name: 'Sidebar' });
+            await panel.getByRole('button', { name: 'View all' }).click();
+            await expect(page.getByRole('combobox', { name: 'Search conversations' })).toBeVisible();
+            await shoot(page, 'shell-palette-conversations', device, scheme);
+            await page.keyboard.press('Escape');
+            // Collapsed to the rail, then the tablet layout: the rail, and the panel over the content.
+            await panel.getByRole('button', { name: 'Collapse sidebar' }).click();
+            await expect(panel).toHaveAttribute('data-collapsed', 'true');
+            await shoot(page, 'shell-rail', device, scheme);
+            await panel.getByRole('button', { name: 'Expand sidebar' }).click();
+            await page.setViewportSize({ width: 900, height: 1000 });
+            await expect(panel).toHaveAttribute('data-collapsed', 'true');
+            await shoot(page, 'shell-tablet', device, scheme);
+            await panel.getByRole('button', { name: 'Expand sidebar' }).click();
+            await expect(page.getByRole('dialog', { name: 'Navigation' })).toBeVisible();
+            await shoot(page, 'shell-tablet-open', device, scheme);
+            await page.keyboard.press('Escape');
+            await page.setViewportSize(VIEWPORTS.desktop.viewport);
           }
           for (const [surface, path] of [
             ['knowledge', 'knowledge'],
             ['knowledge-notebook', 'knowledge?view=notebook'],
-            ['knowledge-conversations', 'knowledge?view=conversations'],
+            ['knowledge-evidence', 'knowledge?view=evidence'],
+            ['knowledge-you', 'knowledge?view=you'],
             ['documents', 'documents'],
-            ['team', 'team'],
             ['help', 'help'],
-            ['venture-settings', 'settings'],
+            ['venture', 'settings'],
           ] as const) {
             await page.goto(`/${TENANT}/app/v/${ventureId}/${path}`);
             await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
             await shoot(page, surface, device, scheme);
           }
+          // A memory item open in the inspector: on desktop, a solid card floating opposite the side panel.
+          await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge`);
+          await page
+            .getByRole('list', { name: 'Memory' })
+            .locator('li')
+            .first()
+            .getByRole('button')
+            .first()
+            .click();
+          await expect(page.getByRole('heading', { level: 3 }).first()).toBeVisible();
+          await shoot(page, 'knowledge-inspector', device, scheme);
         });
       });
 

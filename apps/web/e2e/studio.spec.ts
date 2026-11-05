@@ -114,17 +114,21 @@ test.describe('program lead', () => {
     const row = page.getByRole('row', { name: /QuietQuad/ });
     await row.getByRole('button', { name: /^Actions for / }).click();
     await page.getByRole('menuitem', { name: 'Team' }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Team' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'About Team' })).toHaveAccessibleDescription(
-      'People on QuietQuad and what each can see.',
+    // The Venture page, at its Team section: the only part of the venture a non-member may open.
+    await expect(page).toHaveURL(/\/settings#team$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Venture' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'About Venture' })).toHaveAccessibleDescription(
+      'Who is on QuietQuad and what each can see.',
     );
+    await expect(page.getByRole('region', { name: 'Team' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Profile' })).toHaveCount(0);
     await expect(page.getByRole('list', { name: 'Team members' })).toContainText('Maya Okafor-Lindqvist');
 
     const nav = page.getByRole('navigation', { name: 'Main' });
     await expect(
       nav.getByRole('button', { name: 'Switch venture or workspace. Current: QuietQuad' }),
     ).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Team', exact: true })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Venture', exact: true })).toBeVisible();
     // The venture's other pages would refuse a non-member: none is linked.
     for (const name of ['Knowledge', 'Documents', 'Human help', 'New chat']) {
       await expect(nav.getByRole('link', { name, exact: true })).toHaveCount(0);

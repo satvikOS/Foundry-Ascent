@@ -50,7 +50,7 @@ export function SectionCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <Heading id={headingId} className="text-sm leading-5 font-semibold tracking-tight">
+          <Heading id={headingId} className="text-sm leading-5 font-medium tracking-tight">
             {title}
           </Heading>
           {description ? <p className="mt-0.5 text-small text-muted-foreground">{description}</p> : null}

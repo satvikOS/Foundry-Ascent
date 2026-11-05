@@ -132,7 +132,7 @@ export function MemorySection({
   return (
     <div className="grid gap-5">
       {canEdit && pendingCount > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
           <div>
             <p className="text-small font-medium">{pluralize(pendingCount, 'memory suggestion')} to review</p>
             <p className="text-caption text-muted-foreground">

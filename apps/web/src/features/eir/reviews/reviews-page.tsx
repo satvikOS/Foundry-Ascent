@@ -92,8 +92,8 @@ export function ReviewsPage({ selectedTurnId, filter, onSelect, onFilterChange }
       ) : queue.isPending ? (
         <LoadingRegion label="Loading review queue">
           <div className="grid gap-6 lg:grid-cols-[18rem_1fr]">
-            <Skeleton className="h-64 rounded-xl" />
-            <Skeleton className="h-96 rounded-xl" />
+            <Skeleton className="h-64 rounded-lg" />
+            <Skeleton className="h-96 rounded-lg" />
           </div>
         </LoadingRegion>
       ) : queue.isError ? (

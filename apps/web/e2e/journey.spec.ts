@@ -141,7 +141,8 @@ test.describe('founder journey', () => {
         nav.getByRole('button', { name: new RegExp(`Current: ${VENTURE_NAME}, [^,]+$`) }),
       ).toBeVisible();
       await expect(nav.getByRole('link', { name: 'New chat' })).toHaveAttribute('aria-current', 'page');
-      await expect(nav.getByRole('link', { name: /^Call / })).toBeVisible();
+      // Calls start from the composer and ⌘K; the side panel has no Call entry (one entry per action).
+      await expect(nav.getByRole('link', { name: /^Call / })).toHaveCount(0);
       await expect(
         page.getByRole('list', { name: 'Suggestions' }).getByRole('listitem').first(),
       ).toBeVisible();
@@ -310,10 +311,10 @@ test.describe('founder journey', () => {
       await expect(page.getByRole('heading', { level: 1, name: 'Knowledge' })).toBeVisible();
     });
 
-    await test.step('the venture settings save a new current goal', async () => {
+    await test.step('the Venture page saves a new current goal', async () => {
       const original = await ventureGoal(page.request, ventureId);
       await page.goto(`/${TENANT}/app/v/${ventureId}/settings`);
-      await expect(page.getByRole('heading', { level: 1, name: 'Venture settings' })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 1, name: 'Venture' })).toBeVisible();
       await page.getByRole('button', { name: /^(Edit|Set goal)$/ }).click();
       await page.getByRole('textbox', { name: 'Current goal' }).fill(`Test exam-week demand ${token}`);
       await page.getByRole('button', { name: 'Save goal' }).click();

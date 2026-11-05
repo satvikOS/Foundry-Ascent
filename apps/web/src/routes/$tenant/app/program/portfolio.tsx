@@ -28,12 +28,12 @@ function PortfolioPage() {
         <LoadingRegion label="Loading portfolio">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {Array.from({ length: 5 }, (_, i) => (
-              <Skeleton key={i} className="h-[104px] rounded-xl" />
+              <Skeleton key={i} className="h-[104px] rounded-lg" />
             ))}
           </div>
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            <Skeleton className="h-72 rounded-xl" />
-            <Skeleton className="h-72 rounded-xl" />
+            <Skeleton className="h-72 rounded-lg" />
+            <Skeleton className="h-72 rounded-lg" />
           </div>
         </LoadingRegion>
       ) : portfolio.isError ? (

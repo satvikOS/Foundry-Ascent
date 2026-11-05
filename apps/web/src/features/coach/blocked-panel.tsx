@@ -78,7 +78,7 @@ export function BlockedPanel({
   return (
     <section
       aria-labelledby={titleId}
-      className="rounded-xl border border-border-strong bg-card p-5"
+      className="rounded-lg border border-border-strong bg-card p-5"
       data-testid="blocked-panel"
       data-reason={reason ?? undefined}
     >
@@ -87,7 +87,7 @@ export function BlockedPanel({
           <HandHeart aria-hidden className="size-4.5" />
         </span>
         <div className="min-w-0 space-y-2">
-          <h3 id={titleId} className="text-[15px] font-semibold tracking-tight">
+          <h3 id={titleId} className="text-[15px] font-medium tracking-tight">
             {title}
           </h3>
           {supportMessage ? (

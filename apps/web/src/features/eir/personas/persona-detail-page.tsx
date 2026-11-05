@@ -71,7 +71,7 @@ export function PersonaDetailPage({
       <PageContainer>
         <PageHeader eyebrow={back} title="Persona" />
         <LoadingRegion label="Loading persona">
-          <Skeleton className="h-96 rounded-xl" />
+          <Skeleton className="h-96 rounded-lg" />
         </LoadingRegion>
       </PageContainer>
     );

@@ -128,7 +128,7 @@ export function AttachmentTray({
           <li
             key={item.id}
             className={cn(
-              'flex max-w-full min-w-0 items-center gap-2 rounded-xl border bg-background py-1.5 pr-1 pl-2.5',
+              'flex max-w-full min-w-0 items-center gap-2 rounded-lg border bg-background py-1.5 pr-1 pl-2.5',
               failed ? 'border-destructive/50' : 'border-border',
             )}
           >
