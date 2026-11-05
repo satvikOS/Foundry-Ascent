@@ -116,4 +116,40 @@ test.describe('landing page device ad', () => {
     ).toBeInViewport();
     await expectNoHorizontalScroll(page);
   });
+
+  test('keeps its own type: Newsreader and Geist, the phone menu included, and leaves Inter to the platform', async ({
+    page,
+  }) => {
+    const fonts: { file: string; at: number }[] = [];
+    const start = Date.now();
+    page.on('request', (request) => {
+      const file = new URL(request.url()).pathname.split('/').pop() ?? '';
+      if (file.endsWith('.woff2')) fonts.push({ file, at: Date.now() - start });
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('someone who remembers');
+    await page.waitForLoadState('networkidle');
+    // The platform's face is not preloaded here (it competed with Newsreader, which the hero waits for), and its
+    // italic never loads (the device ad's pictures of the platform draw Inter from its upright file only).
+    expect(await page.locator('link[rel="preload"][as="font"]').count()).toBe(0);
+    const first = (name: string) => fonts.find((font) => font.file.startsWith(name))?.at ?? Infinity;
+    expect(first('newsreader-latin-wght-normal')).toBeLessThan(Infinity);
+    expect(first('inter-latin-wght-normal'), 'Inter only after the hero’s face').toBeGreaterThanOrEqual(
+      first('newsreader-latin-wght-normal'),
+    );
+    expect(fonts.filter((font) => font.file.startsWith('inter-latin-wght-italic'))).toEqual([]);
+    expect(
+      await page.getByRole('heading', { level: 1 }).evaluate((h) => getComputedStyle(h).fontFamily),
+    ).toMatch(/^"Newsreader Variable"/);
+    // The phone menu is portalled out of the page's scope, and keeps its type.
+    await page.getByRole('button', { name: 'Open menu' }).click();
+    const link = page
+      .getByRole('dialog')
+      .getByRole('navigation', { name: 'Page sections' })
+      .getByRole('link')
+      .first();
+    await expect(link).toBeVisible();
+    expect(await link.evaluate((a) => getComputedStyle(a).fontFamily)).toMatch(/^"Geist Variable"/);
+  });
 });

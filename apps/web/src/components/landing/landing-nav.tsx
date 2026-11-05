@@ -92,7 +92,7 @@ export function LandingNav({ me }: { me: Me | null | undefined }) {
             </Button>
             <SheetContent
               side="right"
-              className="top-2 right-2 bottom-auto h-auto rounded-3xl border p-6 pt-14"
+              className="type-landing top-2 right-2 bottom-auto h-auto rounded-3xl border p-6 pt-14"
             >
               <SheetTitle className="sr-only">Menu</SheetTitle>
               <SheetDescription className="sr-only">Sections of this page</SheetDescription>

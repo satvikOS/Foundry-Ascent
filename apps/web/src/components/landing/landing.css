@@ -5,11 +5,13 @@
  * (scripts/grain-tile.mjs) over art fields only, never behind body text or app UI, and never animated.
  */
 @layer components {
-  .landing {
-    /*
-     * The landing page's own type, unlike the platform's Inter: Newsreader for display, Geist for text, Geist Mono
-     * for eyebrows (the family roles of globals.css, reassigned here; fonts imported by routes/index.tsx).
-     */
+  /*
+   * The landing page's own type, unlike the platform's Inter: Newsreader for display, Geist for text, Geist Mono
+   * for eyebrows (the family roles of globals.css, reassigned here; fonts imported by routes/index.tsx).
+   * `.type-landing` carries it into what the page portals outside its scope (the phone menu's sheet).
+   */
+  .landing,
+  .type-landing {
     --ff-sans:
       'Geist Variable', 'Geist Fallback', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
       'Helvetica Neue', Arial, sans-serif;
@@ -21,7 +23,9 @@
       monospace;
     --ff-mono: var(--ff-label);
     font-family: var(--ff-sans);
+  }
 
+  .landing {
     /* Rhythm: 16 / 24 / 40 px gutters, sections clamp(64px, 10vw, 144px), content at most 1360 px. */
     --gutter: 1rem;
     --section-y: clamp(4rem, 10vw, 9rem);
@@ -434,6 +438,7 @@
 
   /* A product fragment floating in a card: a panel in the card's own scheme, in the platform's type. */
   .l-fragment {
+    --ff-ui: var(--ff-ui-pictured);
     --ff-sans: var(--ff-ui);
     --ff-display: var(--ff-ui);
     --ff-label: var(--ff-ui);

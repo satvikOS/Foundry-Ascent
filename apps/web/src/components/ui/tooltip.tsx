@@ -1,6 +1,7 @@
 import { Tooltip as TooltipPrimitive } from 'radix-ui';
 import type { ComponentProps, ReactNode } from 'react';
 
+import { useOverGlassClass } from '@/components/ui/glass-context';
 import { cn } from '@/lib/utils';
 
 export const TooltipProvider = TooltipPrimitive.Provider;
@@ -13,6 +14,7 @@ function TooltipContent({
   children,
   ...props
 }: ComponentProps<typeof TooltipPrimitive.Content>) {
+  const overGlass = useOverGlassClass();
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
@@ -21,6 +23,7 @@ function TooltipContent({
         className={cn(
           'glass-strong z-50 max-w-xs rounded-md border px-2 py-1 text-xs text-popover-foreground shadow-glass',
           'animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
+          overGlass,
           className,
         )}
         {...props}

@@ -52,7 +52,7 @@ export function DialogContent({
     <DialogPortal>
       <DialogOverlay
         data-surface={surface}
-        className={surface === 'glass' ? 'bg-(--scrim-soft) sm:backdrop-blur-none' : undefined}
+        className={surface === 'glass' ? 'bg-(--scrim-faint) sm:backdrop-blur-none' : undefined}
       />
       <DialogPrimitive.Content
         data-slot="dialog-content"

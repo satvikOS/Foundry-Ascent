@@ -5,6 +5,7 @@ import { Dialog as DialogPrimitive } from 'radix-ui';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { OverGlassContext } from '@/components/ui/glass-context';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { useCallsAvailable } from '@/features/calls/calls-available';
 import { MiniCallBar } from '@/features/calls/mini-call-bar';
@@ -217,15 +218,18 @@ export function AppShell({ me, children }: AppShellProps) {
             : 'w-(--sidebar-width) rounded-(--radius-panel)',
         )}
       >
-        <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col">
-          <SidebarContent
-            me={me}
-            workspace={workspace}
-            collapsed={railed}
-            headerAction={collapseButton}
-            {...sidebarActions}
-          />
-        </nav>
+        {/* Menus and tooltips opened from the panel are solid: they may lie over its glass. */}
+        <OverGlassContext.Provider value>
+          <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col">
+            <SidebarContent
+              me={me}
+              workspace={workspace}
+              collapsed={railed}
+              headerAction={collapseButton}
+              {...sidebarActions}
+            />
+          </nav>
+        </OverGlassContext.Provider>
       </aside>
 
       <PanelOverlay open={overlayOpen && !docked} onOpenChange={setOverlayOpen}>
@@ -335,7 +339,7 @@ function PanelOverlay({
           )}
         >
           <DialogPrimitive.Title className="sr-only">Navigation</DialogPrimitive.Title>
-          {children}
+          <OverGlassContext.Provider value>{children}</OverGlassContext.Provider>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

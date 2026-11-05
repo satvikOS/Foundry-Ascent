@@ -2,6 +2,7 @@ import { Check, ChevronRight, Circle } from 'lucide-react';
 import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
 import type { ComponentProps } from 'react';
 
+import { useOverGlassClass } from '@/components/ui/glass-context';
 import { cn } from '@/lib/utils';
 
 export const DropdownMenu = DropdownMenuPrimitive.Root;
@@ -11,8 +12,8 @@ export const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 export const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 
 /*
- * Menus float as glass. A submenu opens beside (and may overlap) its menu, so it is solid: glass never
- * stacks on glass.
+ * Menus float as glass. A submenu opens beside (and may overlap) its menu, so it is solid, and so is a menu
+ * opened from the side panel (glass-context.ts): glass never stacks on glass.
  */
 const menuContentClasses = cn(
   'z-50 min-w-[10rem] overflow-x-hidden overflow-y-auto rounded-lg border p-1 text-popover-foreground shadow-float',
@@ -31,6 +32,7 @@ export function DropdownMenuContent({
   sideOffset = 6,
   ...props
 }: ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  const overGlass = useOverGlassClass();
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
@@ -39,6 +41,7 @@ export function DropdownMenuContent({
         className={cn(
           menuContentClasses,
           'glass-strong max-h-(--radix-dropdown-menu-content-available-height)',
+          overGlass,
           className,
         )}
         {...props}

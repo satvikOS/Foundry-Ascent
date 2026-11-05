@@ -14,6 +14,11 @@ import { feedLongAnswers } from './support/long-answer';
  * own boxes are found, the layer's text is made transparent, the screen is captured, and the text's colour is
  * compared with every pixel of the glass behind it: the real backdrop, blurred, tinted and dimmed by the browser.
  * The lowest ratio of each text must reach 4.5:1 (WCAG 2.2 AA). The ratios are written to the test's output.
+ *
+ * And translucent, measured the same way: the same frame captured with the transcript shown and then hidden, the
+ * change in brightness inside each glass layer is what passes through it. Opaque-looking glass (a second blur over
+ * the first, a dimmed backdrop, a dense face) let through a mean of 0-2.4 of 255 over the prose; the layers must
+ * now let through a visible share. And one blur per region: a page scrolls under at most three.
  */
 
 interface TextBox {
@@ -208,6 +213,81 @@ function report(results: Measured[], testInfo: TestInfo, name: string): void {
   expect(failing, `${name}: text on glass below 4.5:1`).toEqual([]);
 }
 
+interface Passed {
+  layer: string;
+  /** Mean and largest change in brightness (0-255) inside the layer when the transcript beneath is hidden. */
+  mean: number;
+  max: number;
+}
+
+/** What `glass` lets through of the transcript beneath it: captured with the transcript shown, then hidden. */
+async function passedThrough(page: Page, glass: Locator, layer: string): Promise<Passed> {
+  const box = await glass.boundingBox();
+  if (!box) throw new Error(`${layer}: not on screen`);
+  // Inside its rounded edge and lit border.
+  const clip = { x: box.x + 6, y: box.y + 6, width: box.width - 12, height: box.height - 12 };
+  const frame = () =>
+    page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+  const shown = decodePng(await page.screenshot({ clip, animations: 'disabled', caret: 'hide' }));
+  await page.evaluate(() => {
+    const style = document.createElement('style');
+    style.id = 'glass-probe-hide';
+    style.textContent = 'section[aria-label="Transcript"] { opacity: 0 !important; }';
+    document.head.append(style);
+  });
+  await frame();
+  const hidden = decodePng(await page.screenshot({ clip, animations: 'disabled', caret: 'hide' }));
+  await page.evaluate(() => document.getElementById('glass-probe-hide')?.remove());
+  await frame();
+  let sum = 0;
+  let max = 0;
+  const pixels = shown.width * shown.height;
+  for (let i = 0; i < pixels; i++) {
+    const o = i * 4;
+    const a = ((shown.data[o] ?? 0) + (shown.data[o + 1] ?? 0) + (shown.data[o + 2] ?? 0)) / 3;
+    const b = ((hidden.data[o] ?? 0) + (hidden.data[o + 1] ?? 0) + (hidden.data[o + 2] ?? 0)) / 3;
+    const change = Math.abs(a - b);
+    sum += change;
+    if (change > max) max = change;
+  }
+  return { layer, mean: sum / pixels, max };
+}
+
+function reportPassed(results: Passed[], name: string): void {
+  process.stdout.write(
+    `glass-translucency ${name}\n${results.map((r) => `${r.layer}: mean ${r.mean.toFixed(2)} max ${r.max.toFixed(0)}`).join('\n')}\n`,
+  );
+}
+
+/** The elements with a backdrop filter (pseudo-elements included), and whether any sits inside another. */
+function blurLayers(page: Page): Promise<{ layers: string[]; nested: string[] }> {
+  return page.evaluate(() => {
+    const blurred = (element: Element, pseudo: string | null) => {
+      const style = getComputedStyle(element, pseudo);
+      const filter = style.backdropFilter || style.getPropertyValue('-webkit-backdrop-filter');
+      return filter !== '' && filter !== 'none';
+    };
+    const name = (element: Element) =>
+      `${element.tagName.toLowerCase()}${element.getAttribute('data-slot') ? `[${element.getAttribute('data-slot')}]` : ''}`;
+    const layers: string[] = [];
+    const nested: string[] = [];
+    for (const element of document.querySelectorAll('*')) {
+      if (element.getClientRects().length === 0) continue;
+      for (const pseudo of [null, '::before', '::after']) {
+        if (!blurred(element, pseudo)) continue;
+        layers.push(`${name(element)}${pseudo ?? ''}`);
+        // Inside a blurred ancestor, or above its own ::before blur (the composer over the dock's).
+        for (let up = pseudo ? null : element.parentElement; up; up = up.parentElement) {
+          if (blurred(up, null) || blurred(up, '::before')) nested.push(`${name(element)} in ${name(up)}`);
+        }
+      }
+    }
+    return { layers, nested };
+  });
+}
+
 /** Computed style of the first match. */
 function computed(root: Locator, property: 'backgroundColor' | 'backdropFilter'): Promise<string> {
   return root.evaluate((element, name) => {
@@ -256,38 +336,65 @@ test.describe('frosted glass', () => {
       await expect(page.getByRole('list', { name: 'Follow-up questions' })).toBeVisible();
       await page.mouse.move(720, 450);
 
-      // Translucent, with a blur: the composer, the docked panel.
+      // Translucent, with one blur: the docked panel has its own; the composer and its chips are tints over the
+      // dock's (a blur of their own over it left nothing showing through).
       const composerCard = page.locator('[data-slot="composer"]');
       const panel = page.locator('[data-slot="side-panel"]');
-      for (const [name, layer, max] of [
-        ['composer', composerCard, 0.62],
-        ['side panel', panel, 0.6],
-      ] as const) {
-        expect(alpha(await computed(layer, 'backgroundColor')), `${name} is translucent`).toBeLessThanOrEqual(
-          max,
-        );
-        expect(await computed(layer, 'backdropFilter'), `${name} is frosted`).toContain('blur(24px)');
-      }
+      const dock = page.locator('[data-slot="composer-dock"]');
+      expect(
+        alpha(await computed(panel, 'backgroundColor')),
+        'side panel is translucent',
+      ).toBeLessThanOrEqual(0.6);
+      expect(await computed(panel, 'backdropFilter'), 'side panel is frosted').toContain('blur(24px)');
+      expect(
+        alpha(await computed(composerCard, 'backgroundColor')),
+        'composer is translucent',
+      ).toBeLessThanOrEqual(0.6);
+      expect(await computed(composerCard, 'backdropFilter'), 'composer: no second blur').toBe('none');
+      expect(
+        await dock.evaluate((element) => getComputedStyle(element, '::before').backdropFilter),
+        'the dock frosts the transcript once',
+      ).toContain('blur(24px)');
+      // Never glass on glass, and few blurs while the transcript scrolls: the panel, the header, the dock.
+      const { layers, nested } = await blurLayers(page);
+      expect(nested, 'no blur over another').toEqual([]);
+      expect(layers.length, `blurred layers: ${layers.join(', ')}`).toBeLessThanOrEqual(3);
 
+      const settled = (layer: Locator) =>
+        layer.evaluate((element) =>
+          Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+        );
       // The answer's prose under the composer and its chips: scrolled up from the end.
       await page.evaluate(() => {
         window.scrollTo(0, document.documentElement.scrollHeight);
-        window.scrollBy(0, -320);
+        window.scrollBy(0, -520);
       });
       const results: Measured[] = [];
-      results.push(
-        ...(await measure(page, page.locator('[data-slot="composer-dock"]'), 'composer and chips')),
-      );
+      const passed: Passed[] = [];
+      passed.push(await passedThrough(page, composerCard, 'composer'));
+      results.push(...(await measure(page, dock, 'composer and chips')));
       results.push(...(await measure(page, panel, 'side panel')));
 
-      await page.getByRole('button', { name: /^Account menu for / }).click();
+      // A menu over the transcript (the conversation's), with the answer's prose beneath it.
+      await page.evaluate(() => {
+        window.scrollTo(0, 300);
+      });
+      await page.getByRole('button', { name: 'Conversation options' }).click();
       const menu = page.getByRole('menu');
-      await menu.evaluate((element) =>
-        Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)),
-      );
+      await settled(menu);
       expect(alpha(await computed(menu, 'backgroundColor')), 'the menu is translucent').toBeLessThanOrEqual(
-        0.65,
+        0.6,
       );
+      passed.push(await passedThrough(page, menu, 'conversation menu'));
+      results.push(...(await measure(page, menu, 'conversation menu')));
+      await page.keyboard.press('Escape');
+      await expect(menu).toBeHidden();
+
+      // A menu opened from the side panel may lie over the panel's glass: it is solid.
+      await page.getByRole('button', { name: /^Account menu for / }).click();
+      await settled(menu);
+      expect(alpha(await computed(menu, 'backgroundColor')), 'the account menu is solid').toBe(1);
+      expect(await computed(menu, 'backdropFilter')).toBe('none');
       results.push(...(await measure(page, menu, 'account menu')));
       await page.keyboard.press('Escape');
       await expect(menu).toBeHidden();
@@ -295,13 +402,21 @@ test.describe('frosted glass', () => {
       await page.keyboard.press('ControlOrMeta+k');
       const palette = page.locator('[data-slot="dialog-content"][data-surface="glass"]');
       await expect(palette).toBeVisible();
-      await palette.evaluate((element) =>
-        Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)),
-      );
+      await settled(palette);
+      passed.push(await passedThrough(page, palette, 'command palette'));
       results.push(...(await measure(page, palette, 'command palette')));
       await page.keyboard.press('Escape');
 
       report(results, testInfo, `glass-${scheme}-desktop`);
+      reportPassed(passed, `glass-${scheme}-desktop`);
+      // What passes through is visible: the prose's haze, not a flat face. Over prose the opaque-looking glass let
+      // through a mean of 0-2.4 of 255 (at most 4-9); this glass lets through 5-9 (at most 12-15). A 24 px blur
+      // turns a line of 16 px text into a haze of its ink, about a tenth of its line box, so that is the most a
+      // face dense enough for 4.5:1 over a blurred filled control (tokens.test.ts) can show of prose.
+      for (const layer of passed) {
+        expect(layer.mean, `${layer.layer}: mean change over the prose`).toBeGreaterThanOrEqual(4);
+        expect(layer.max, `${layer.layer}: largest change over the prose`).toBeGreaterThanOrEqual(10);
+      }
     });
 
     test(`the phone's navigation sheet holds 4.5:1 over the conversation beneath it (${scheme})`, async ({
@@ -318,6 +433,15 @@ test.describe('frosted glass', () => {
       await expect(
         page.getByRole('article', { name: 'Exchange 1' }).getByRole('button', { name: 'Copy answer' }),
       ).toBeVisible({ timeout: 30_000 });
+      // The composer over the answer's prose, on a phone too.
+      await page.evaluate(() => {
+        window.scrollTo(0, document.documentElement.scrollHeight);
+        window.scrollBy(0, -520);
+      });
+      const composer = await passedThrough(page, page.locator('[data-slot="composer"]'), 'composer');
+      reportPassed([composer], `glass-${scheme}-phone`);
+      expect(composer.mean, 'phone composer: mean change over the prose').toBeGreaterThanOrEqual(4);
+      expect(composer.max, 'phone composer: largest change over the prose').toBeGreaterThanOrEqual(10);
       await page.evaluate(() => {
         window.scrollTo(0, 0);
       });

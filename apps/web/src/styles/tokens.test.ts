@@ -319,11 +319,21 @@ function blurredBackdrops(scheme: Scheme): { name: string; color: Rgba }[] {
 
 /** Text on glass: the neutral tokens, with secondary text at its on-glass value (`.glass*` sets it). */
 const GLASS_TEXT = ['--foreground', '--popover-foreground', '--card-foreground', '--glass-muted'] as const;
-/** Row fills on glass (hover and selected): tints, so the glass still shows through them. */
+/**
+ * Row fills on glass: tints, so the glass still shows through them. `--glass-row` is a menu's or the palette's
+ * highlighted row (`--accent` on glass) and the panel's hover; `--glass-row-selected` is only the side panel's
+ * current page (`--sidebar-accent`), so it is measured on the panel's faces alone.
+ */
 const GLASS_ROW_FILLS = ['--glass-row', '--glass-row-selected'] as const;
+const LAYER_ROW_FILLS = ['--glass-row'] as const;
 
-/** A glass face over every blurred backdrop, bare and under each row fill. */
-function glassFaces(face: string, scheme: Scheme, scrim?: string): { name: string; color: Rgba }[] {
+/** A glass face over every blurred backdrop, bare and under each row fill it can carry. */
+function glassFaces(
+  face: string,
+  scheme: Scheme,
+  scrim?: string,
+  rowFills: readonly string[] = LAYER_ROW_FILLS,
+): { name: string; color: Rgba }[] {
   const glass = resolve(face, scheme);
   return blurredBackdrops(scheme).flatMap((backdrop) => {
     const beneath = dimmed(scrim ? over(resolve(scrim, scheme), backdrop.color) : backdrop.color, scheme);
@@ -331,7 +341,7 @@ function glassFaces(face: string, scheme: Scheme, scrim?: string): { name: strin
     const label = `${face}${scrim ? ` over ${scrim}` : ''} over ${backdrop.name}`;
     return [
       { name: label, color: bare },
-      ...GLASS_ROW_FILLS.map((fill) => ({
+      ...rowFills.map((fill) => ({
         name: `${fill} on ${label}`,
         color: over(resolve(fill, scheme), bare),
       })),
@@ -367,7 +377,11 @@ function panelRows(scheme: Scheme): { name: string; color: Rgba }[] {
       color: over(resolve(fill, scheme), solid),
     })),
   ];
-  return [...dockedFaces, ...solidFaces, ...glassFaces('--glass-float-bg-over', scheme, '--scrim-soft')];
+  return [
+    ...dockedFaces,
+    ...solidFaces,
+    ...glassFaces('--glass-float-bg-over', scheme, '--scrim-soft', GLASS_ROW_FILLS),
+  ];
 }
 
 function failures(
@@ -396,6 +410,7 @@ describe('colour tokens (globals.css)', () => {
       '--glass-float-border',
       '--glass-brightness',
       '--scrim-soft',
+      '--scrim-faint',
       '--surface-control',
       '--control-glass',
       '--control-glass-hover',
@@ -582,7 +597,8 @@ describe('colour tokens (globals.css)', () => {
           expect(a, `${face} (${scheme})`).toBeGreaterThanOrEqual(range[0] ?? 0);
           expect(a, `${face} (${scheme})`).toBeLessThanOrEqual(range[1] ?? 1);
         }
-        expect(backdropBrightness(scheme)).toBeGreaterThanOrEqual(scheme === 'dark' ? 0.7 : 1);
+        // A touch of dimming in dark at most: a heavier dim (0.8) made the glass read as an opaque panel.
+        expect(backdropBrightness(scheme)).toBeGreaterThanOrEqual(scheme === 'dark' ? 0.9 : 1);
         expect(backdropBrightness(scheme)).toBeLessThanOrEqual(1);
         for (const blur of ['--glass-blur']) {
           const px = Number.parseFloat(tokens.get(blur) ?? '');
@@ -707,6 +723,20 @@ describe('colour tokens (globals.css)', () => {
         1.2,
       );
       expect(contrast(over(resolve('--glass-row', 'dark'), panel), panel)).toBeGreaterThanOrEqual(1.1);
+    });
+
+    it('one blur per region: the dock frosts the transcript once, and a layer over the panel is solid', () => {
+      // The composer and its chips are tints over the dock's blur, never a second blur over it.
+      expect(css).toMatch(
+        /\.composer-dock \.glass \{\s*-webkit-backdrop-filter: none;\s*backdrop-filter: none;/,
+      );
+      expect(/\.composer-dock::before \{([^}]*)\}/.exec(css)?.[1]).toContain(
+        'backdrop-filter: blur(var(--glass-blur))',
+      );
+      // A menu, popover or tooltip opened from the side panel (`.over-glass`) is the solid popover face.
+      expect(css).toMatch(
+        /\.glass-strong\.over-glass \{\s*background-color: var\(--popover\);\s*-webkit-backdrop-filter: none;\s*backdrop-filter: none;/,
+      );
     });
 
     it('the atmosphere behind the glass is faint: OLED black stays dominant', () => {

@@ -16,6 +16,7 @@ import { createQueryClient, setUnauthenticatedHandler } from '@/lib/api/query-cl
 import { wakeDatabase } from '@/lib/api/wake';
 import { safeRedirectPath } from '@/lib/auth/guards';
 import { displayFacesReady } from '@/lib/display-faces';
+import { preloadPlatformFont } from '@/lib/font-preload';
 import { initPerfClass } from '@/lib/perf';
 import { initTheme } from '@/lib/theme';
 
@@ -23,6 +24,8 @@ import { createAppRouter } from './router';
 
 initTheme();
 initPerfClass();
+// The platform's face starts downloading now (not on the landing page, which is set in its own faces).
+preloadPlatformFont(window.location.pathname);
 // A paused database starts resuming now, while this page renders and the person reads or signs in (not awaited).
 wakeDatabase();
 

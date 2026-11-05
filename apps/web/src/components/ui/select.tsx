@@ -2,6 +2,7 @@ import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { Select as SelectPrimitive } from 'radix-ui';
 import type { ComponentProps } from 'react';
 
+import { useOverGlassClass } from '@/components/ui/glass-context';
 import { cn } from '@/lib/utils';
 
 export const Select = SelectPrimitive.Root;
@@ -51,6 +52,7 @@ export function SelectContent({
   position = 'popper',
   ...props
 }: ComponentProps<typeof SelectPrimitive.Content>) {
+  const overGlass = useOverGlassClass();
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
@@ -61,6 +63,7 @@ export function SelectContent({
           'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.97]',
           position === 'popper' &&
             'w-full min-w-(--radix-select-trigger-width) data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1',
+          overGlass,
           className,
         )}
         {...props}

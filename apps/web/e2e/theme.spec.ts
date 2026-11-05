@@ -92,7 +92,7 @@ async function overlay(page: Page): Promise<Locator> {
 test.describe('OLED dark and glass', () => {
   test.use({ storageState: FOUNDER_STATE });
 
-  test('true black canvas, a floating frosted panel; glass menus and palette; solid dialogs', async ({
+  test('true black canvas, a floating frosted panel; a glass palette; solid dialogs and panel menus', async ({
     page,
   }) => {
     await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
@@ -120,11 +120,13 @@ test.describe('OLED dark and glass', () => {
       .getAttribute('content');
     expect(themeColor?.toLowerCase()).toBe('#000000');
 
-    // A menu floats as glass, and its text passes axe on it.
+    // A menu opened from the side panel may lie over the panel's glass, so it is solid there (glass never stacks
+    // on glass; menus over the page are glass: e2e/glass.spec.ts), and its text passes axe on it.
     await page.getByRole('button', { name: /^Account menu for / }).click();
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();
-    expect(await style(menu, 'backdropFilter')).toContain('blur(');
+    expect(await style(menu, 'backdropFilter')).toBe('none');
+    expect(await style(menu, 'backgroundColor')).toBe('rgb(20, 20, 20)');
     await expectReadable(page, 'account menu (dark)');
     await page.keyboard.press('Escape');
 

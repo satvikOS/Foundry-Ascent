@@ -2,6 +2,7 @@ import { Info } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { useId, type ReactNode } from 'react';
 
+import { useOverGlassClass } from '@/components/ui/glass-context';
 import { cn } from '@/lib/utils';
 
 interface InfoTipProps {
@@ -19,6 +20,7 @@ interface InfoTipProps {
  * text is read as the button's description while closed, so a screen reader hears it without opening it.
  */
 export function InfoTip({ label, children, side = 'bottom', align = 'start', className }: InfoTipProps) {
+  const overGlass = useOverGlassClass();
   const described = useId();
   return (
     <PopoverPrimitive.Root>
@@ -48,6 +50,7 @@ export function InfoTip({ label, children, side = 'bottom', align = 'start', cla
           className={cn(
             'glass-strong z-50 max-w-[min(20rem,calc(100vw-1.5rem))] rounded-lg border px-3 py-2 text-small text-pretty text-popover-foreground shadow-glass',
             'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0',
+            overGlass,
           )}
         >
           {children}

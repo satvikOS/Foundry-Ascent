@@ -100,6 +100,14 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
         await useTheme(page, scheme);
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
         await shoot(page, 'landing', device, scheme);
+        if (device === 'mobile') {
+          await page.getByRole('button', { name: 'Open menu' }).click();
+          await expect(
+            page.getByRole('dialog').getByRole('navigation', { name: 'Page sections' }),
+          ).toBeVisible();
+          await shoot(page, 'landing-menu', device, scheme);
+          await page.keyboard.press('Escape');
+        }
         await page.goto('/sign-in');
         await useTheme(page, scheme);
         await expect(page.getByRole('textbox', { name: 'Access code' })).toBeVisible();

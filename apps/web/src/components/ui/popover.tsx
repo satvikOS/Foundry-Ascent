@@ -1,6 +1,7 @@
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import type { ComponentProps } from 'react';
 
+import { useOverGlassClass } from '@/components/ui/glass-context';
 import { cn } from '@/lib/utils';
 
 export const Popover = PopoverPrimitive.Root;
@@ -16,6 +17,7 @@ export function PopoverContent({
   align = 'start',
   ...props
 }: ComponentProps<typeof PopoverPrimitive.Content>) {
+  const overGlass = useOverGlassClass();
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
@@ -26,6 +28,7 @@ export function PopoverContent({
         className={cn(
           'glass-strong z-50 w-[min(20rem,calc(100vw-2rem))] rounded-lg border p-4 text-small text-popover-foreground shadow-glass outline-none',
           'animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
+          overGlass,
           className,
         )}
         {...props}

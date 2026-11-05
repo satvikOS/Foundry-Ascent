@@ -212,7 +212,8 @@ test.describe('page speed', () => {
       writeFileSync(join(dir, `${result.label}.json`), JSON.stringify(result, null, 2));
       process.stdout.write(`web-perf ${JSON.stringify({ ...result, waterfall: undefined })}\n`);
 
-      // The platform is set in Inter alone, preloaded by index.html; it never downloads the landing page's faces.
+      // The platform is set in Inter alone, preloaded as the app starts (lib/font-preload.ts); it never downloads the
+      // landing page's faces.
       expect(load.preloadedFonts.some((href) => href.includes('inter-latin-wght-normal'))).toBe(true);
       expect(load.sansFont, 'Inter (Latin) was fetched').not.toBeNull();
       expect(load.landingFonts, 'Newsreader or Geist fetched by a platform page').toEqual([]);

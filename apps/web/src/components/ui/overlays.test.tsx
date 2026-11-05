@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CommandDialog, CommandInput, CommandItem, CommandList } from './command';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './dialog';
+import { OverGlassContext } from './glass-context';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,7 +56,8 @@ describe('overlay surfaces', () => {
     expect(panel).toHaveClass('glass-strong');
     expect(panel).not.toHaveClass('bg-popover');
     const overlay = overlayOf();
-    expect(overlay).toHaveClass('sm:backdrop-blur-none', 'bg-(--scrim-soft)');
+    // The faintest scrim: the page beneath still shows through the palette's frost.
+    expect(overlay).toHaveClass('sm:backdrop-blur-none', 'bg-(--scrim-faint)');
     expect(overlay).not.toHaveClass('sm:backdrop-blur-xs');
   });
 
@@ -82,6 +84,23 @@ describe('overlay surfaces', () => {
     expect(menu).not.toHaveClass('bg-popover');
     expect(submenu).toHaveClass('bg-popover');
     expect(submenu).not.toHaveClass('glass-strong');
+  });
+
+  it('a menu opened from a glass surface (the side panel) is solid there', async () => {
+    const user = userEvent.setup();
+    render(
+      <OverGlassContext.Provider value>
+        <DropdownMenu>
+          <DropdownMenuTrigger>Account</DropdownMenuTrigger>
+          <DropdownMenuContent aria-label="Account">
+            <DropdownMenuItem>Shortcuts</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </OverGlassContext.Provider>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Account' }));
+    // `.over-glass` makes `.glass-strong` solid (globals.css): no blur over the panel's blur.
+    expect(await screen.findByRole('menu')).toHaveClass('glass-strong', 'over-glass');
   });
 
   it('a select’s list floats as glass', async () => {

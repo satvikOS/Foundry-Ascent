@@ -115,6 +115,7 @@
     transform: scale(var(--s, 0.5));
     transform-origin: 0 0;
     /* The platform as it is: its own type (Inter), not the landing page's. */
+    --ff-ui: var(--ff-ui-pictured);
     --ff-sans: var(--ff-ui);
     --ff-display: var(--ff-ui);
     --ff-label: var(--ff-ui);

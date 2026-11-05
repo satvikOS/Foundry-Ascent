@@ -66,10 +66,15 @@
    * Family roles. The platform sets text, headings and tags in Inter (`--ff-ui`); only code and identifiers (an
    * access code, a request ID, a model ID) take the system's monospace, which downloads nothing. The landing page
    * reassigns the roles in its own scope (landing.css); its pictures of the platform (the device ad, the
-   * fragments) hand them back, so they show the platform as it is.
+   * fragments) hand them back, so they show the platform as it is, through `--ff-ui-pictured`: the same Inter file
+   * under a family with no italic face (styles/inter.css), so an emphasis there is Inter slanted rather than a
+   * second download on the landing page.
    */
   --ff-ui:
     'Inter Variable', 'Inter Fallback', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --ff-ui-pictured:
+    'Inter Pictured', 'Inter Fallback', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
   --ff-code: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   --ff-sans: var(--ff-ui);
@@ -209,9 +214,12 @@
   /*
    * Glass (owner refinement 2026-11-05: "translucent, not opaque"). Frosted layers: a thin tinted face, a 24 px
    * blur with a little saturation, a lit 1 px edge and a soft shadow, so what lies beneath shows through softly.
-   *   `.glass`         the composer and the call's controls: content scrolls beneath them.
+   *   `.glass`         the composer and its chips, and the call's controls: content scrolls beneath them. In
+   *                    the conversation's dock the composer and chips are tints over the dock's one blur
+   *                    (`.composer-dock`), never a blur of their own over it.
    *   `.glass-strong`  layers that float above the page (menus, popovers, selects, tooltips, the command palette,
-   *                    toasts): a touch denser, as they hold the most text.
+   *                    toasts): a touch denser, as they hold the most text. A layer opened from the side panel
+   *                    is solid (`.over-glass`), as it may lie over the panel's own glass.
    *   `.glass-float`   the floating side panel (docked: only the ground is beneath; over the content below
    *                    1024 px: a soft scrim between, and the denser `--glass-float-bg-over` face).
    *   `.glass-bar`     sticky bars text scrolls under (a page's header, the phone bar, the mini call bar):
@@ -219,18 +227,20 @@
    * Secondary text on glass is a step stronger (`--glass-muted`) and row fills are tints (`--glass-row`), so
    * labels hold 4.5:1 over the worst content passing beneath the blur: tokens.test.ts models it (a 36 px filled
    * control under a 24 px blur keeps at most 55 % of its colour) and e2e/glass.spec.ts measures the pixels. Solid
-   * where blur is missing, transparency is reduced, the device is slow, or colours are forced. Never glass on glass.
+   * where blur is missing, transparency is reduced, the device is slow, or colours are forced. Never glass on glass:
+   * one blur per region, so a page scrolls under at most three (the panel, a sticky bar, the dock).
+   * Translucency is measured too (e2e/glass.spec.ts): what passes beneath must visibly change the glass.
    */
-  --glass-bg: light-dark(rgb(255 255 255 / 0.6), rgb(22 22 24 / 0.55));
-  --glass-bg-strong: light-dark(rgb(255 255 255 / 0.64), rgb(22 22 24 / 0.58));
+  --glass-bg: light-dark(rgb(255 255 255 / 0.55), rgb(22 22 24 / 0.44));
+  --glass-bg-strong: light-dark(rgb(255 255 255 / 0.58), rgb(22 22 24 / 0.46));
   --glass-bg-bar: light-dark(rgb(255 255 255 / 0.9), rgb(0 0 0 / 0.86));
   --glass-border: light-dark(rgb(17 17 16 / 0.08), rgb(255 255 255 / 0.1));
-  --glass-muted: light-dark(#474743, #cbcbc7);
+  --glass-muted: light-dark(#41413e, #dcdcd8);
   --glass-row: light-dark(rgb(17 17 16 / 0.06), rgb(255 255 255 / 0.06));
   --glass-row-selected: light-dark(rgb(17 17 16 / 0.09), rgb(255 255 255 / 0.1));
   --glass-blur: 24px;
   --glass-saturate: 160%;
-  /* Dark glass also dims what it blurs (bright content beneath stays a glow, not a glare); see :root.dark below. */
+  /* Dark glass dims what it blurs a touch (bright content beneath stays a glow, not a glare); see :root.dark. */
   --glass-brightness: 1;
   --glass-float-bg: light-dark(rgb(255 255 255 / 0.55), rgb(22 22 24 / 0.45));
   --glass-float-bg-over: light-dark(rgb(255 255 255 / 0.64), rgb(22 22 24 / 0.58));
@@ -245,9 +255,14 @@
    */
   --atmosphere-1: light-dark(rgb(92 121 245 / 0.07), rgb(92 121 245 / 0.14));
   --atmosphere-2: light-dark(rgb(127 163 122 / 0.07), rgb(127 163 122 / 0.08));
-  /* The scrim behind modals (dims and lightly blurs the page), and the lighter one under a glass panel. */
+  /*
+   * The scrim behind modals (dims and lightly blurs the page), the lighter one under the side panel over the
+   * content, and the faintest, under the command palette: its glass is what sets it apart, so the page beneath
+   * is dimmed only a little and still shows through the frost.
+   */
   --scrim: light-dark(rgb(17 17 16 / 0.32), rgb(0 0 0 / 0.72));
   --scrim-soft: light-dark(rgb(17 17 16 / 0.12), rgb(0 0 0 / 0.5));
+  --scrim-faint: light-dark(rgb(17 17 16 / 0.06), rgb(0 0 0 / 0.28));
 
   --radius: 0.625rem;
   --scrollbar: light-dark(#cfcfcb, #2a2a2a);
@@ -284,12 +299,12 @@
 
 :root.dark {
   color-scheme: dark;
-  --glass-brightness: 0.8;
+  --glass-brightness: 0.92;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
-    --glass-brightness: 0.8;
+    --glass-brightness: 0.92;
   }
 }
 
@@ -738,6 +753,15 @@
     }
   }
   /*
+   * A layer opened from the side panel (its account menu, a row's menu, a tooltip) may lie over the panel's own
+   * glass: it is solid there, so glass never stacks on glass (components/ui/glass-context.ts sets the class).
+   */
+  .glass-strong.over-glass {
+    background-color: var(--popover);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  /*
    * Over the call screen, popovers (call settings, the vEIR badge's explanation) are solid: beneath them are the
    * sphere's bright clouds and 22 px captions, larger than any blur averages away (tokens.test.ts).
    */
@@ -758,11 +782,12 @@
   }
 
   /*
-   * The conversation's composer area: no band of its own. The transcript scrolls beneath the glass composer and its
-   * chips; behind them, a scroll edge frosts it (a blur that fades in from the area's top, so there is no hard
-   * line), and the strip below the composer (and the safe area) fades to the ground, so no text shows sharp
-   * between them. The blur is its own layer: a mask on the area itself would make it the chips' and composer's
-   * backdrop root and leave their glass unblurred.
+   * The conversation's composer area: no band of its own. The transcript scrolls beneath it, frosted by ONE blur:
+   * the area's own layer (below), which fades in over its top padding (so there is no hard line) and is whole
+   * beneath the chips and the composer. They are tints over it with no blur of their own: a second blur over the
+   * first left nothing of the content showing through, and cost frames on scroll. The strip below the composer
+   * (and the safe area) fades to the ground. The blur is its own layer: a mask on the area itself would make it a
+   * backdrop root.
    */
   .composer-dock {
     isolation: isolate;
@@ -775,10 +800,16 @@
     inset: 0;
     z-index: -1;
     pointer-events: none;
-    -webkit-backdrop-filter: blur(var(--glass-blur)) brightness(var(--glass-brightness));
-    backdrop-filter: blur(var(--glass-blur)) brightness(var(--glass-brightness));
-    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 2.5rem);
-    mask-image: linear-gradient(to bottom, transparent, #000 2.5rem);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate))
+      brightness(var(--glass-brightness));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate))
+      brightness(var(--glass-brightness));
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 0.75rem);
+    mask-image: linear-gradient(to bottom, transparent, #000 0.75rem);
+  }
+  .composer-dock .glass {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
   @media (prefers-reduced-transparency: reduce) {
     .composer-dock::before {
@@ -849,7 +880,11 @@
   gap: 1rem;
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--ff-ui);
+  /*
+   * Inter's metric-matched local stand-in, not Inter itself: the boot shell is drawn on every page, the landing page
+   * included, and drawing it in Inter would download Inter there too (lib/font-preload.ts).
+   */
+  font-family: 'Inter Fallback', ui-sans-serif, system-ui, sans-serif;
 }
 .boot-brand {
   display: flex;
