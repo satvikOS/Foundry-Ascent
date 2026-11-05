@@ -125,6 +125,7 @@ describe('wrap-ups', () => {
       "I'll think about it.",
       "We'll launch next week and my cofounder just quit.",
       'I will need help with the pricing page.',
+      "Okay, I'll do the interviews, but I'm worried parents won't talk to me.",
     ]) {
       expect(wrapUpOf(text), text).toBe(false);
     }
@@ -158,6 +159,7 @@ describe('other ventures and relays, by phrasing alone', () => {
       'What discount should I offer my first customers?',
       'How do I write to the hotel manager?',
       'Our team got the deal signed.',
+      'We need another team member for the build.',
     ]) {
       expect(aboutOthersOf(text), text).toBe(false);
     }

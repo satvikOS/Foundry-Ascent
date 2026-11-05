@@ -600,14 +600,25 @@ const WILL_DO =
 const ON_BOARD =
   /^(?:(?:ok|okay|alright|right|great|perfect|cool|thanks|thank you|thx|cheers|got it|makes sense|sounds good|will do|understood|noted|fair enough|yes|yeah|yep)\b|.*\b(?:thanks|thank you|that helps|super helpful|very helpful|that's helpful)\b)/u;
 
+/** A reservation or a worry in a message that otherwise takes the advice on board. */
+const RESERVATION =
+  /\b(?:but|though|although|however|unless|except|worried|not sure|no idea|can't|cannot|won't)\b/;
+
 /**
  * Whether the message takes the advice on board and says what they will do, asking nothing ("Got it, I'll call the
  * three stores by Friday. Thanks!"). Live pilot 42099643194: 35 of 47 such turns got more than 40 words of new homework.
  * A message that is only social ({@link socialTurnOf}) is not one: it is answered as that.
  */
 export function wrapUpOf(text: string, moves: readonly FounderMove[] = founderMoves(text)): boolean {
-  if (asksSomething(text, moves) || moves.includes('help') || moves.includes('news')) return false;
+  if (asksSomething(text, moves)) return false;
+  if (
+    moves.some((m) => m === 'help' || m === 'news' || m === 'stress' || m === 'repair' || m === 'topic_shift')
+  ) {
+    return false;
+  }
   const t = normalize(text);
+  // A reservation is something to answer ("I'll call them, but the owner never picks up").
+  if (RESERVATION.test(t)) return false;
   return ON_BOARD.test(t) && WILL_DO.test(t) && socialTurnOf(text) === null;
 }
 
@@ -619,7 +630,7 @@ export function wrapUpOf(text: string, moves: readonly FounderMove[] = founderMo
  */
 const ABOUT_OTHERS = new RegExp(
   [
-    String.raw`\b(?:another|other|the other|that other|a different|some other) (?:team|venture|startup|founder|company|cohort team|group)s?\b`,
+    String.raw`\b(?:another|other|the other|that other|a different|some other) (?:team|venture|startup|founder|company|cohort team|group)s?\b(?! (?:members?|mates?|meetings?|leads?|roles?|sizes?|names?|ideas?|structures?))`,
     String.raw`\b(?:their|the other team's|the other founder's) (?:deal|discount|terms|pricing|price|contract|numbers|rate)\b`,
     String.raw`\b(?:pass (?:it|this|that|a message|my message|the message|this message|that message|word|my number|my details) (?:on|along)|put me in touch|(?:can|could|would) you (?:tell|ask|message|contact|reach out to|introduce me to|connect me (?:with|to))\b)`,
     String.raw`\b(?:rumou?r(?:s|ed)?|heard (?:that )?(?:they|the other))\b`,
