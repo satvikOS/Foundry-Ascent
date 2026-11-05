@@ -1,0 +1,1098 @@
+family: 8
+slug: physical-products
+scenarios:
+  - id: LV-08-01
+    version: 1
+    title: A 3D-printed cost that ignores injection-mould tooling
+    challenge: Unit cost assumptions come from printing; the coach should surface tooling and minimums before he quotes a retail price.
+    venture:
+      {
+        name: 'GripGuard',
+        oneLiner: 'A phone grip that clips onto bike handlebars',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'consumer hardware',
+      }
+    student:
+      {
+        name: 'Aleksander Nowicki-Boateng',
+        level: 'some_experience',
+        discipline: 'mechanical engineering junior',
+        style: 'confident, likes spreadsheets',
+      }
+    purpose: cost review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Set the retail price at 19 dollars based on a 3-dollar unit cost.
+    constraints:
+      - Has 2,500 dollars
+    hidden:
+      - The 3 dollars is filament and printer time
+      - He has never asked a moulder for a quote
+    arc:
+      - ['1.2', reveal, 'Shares the 3-dollar unit cost']
+      - ['1.4', reveal, 'Admits the cost is from 3D printing']
+      - ['1.6', interrupt, 'Interrupts to ask whether he can just keep printing forever']
+    sources: null
+    branches:
+      - If tooling is raised he asks how to get a quote
+      - If his pricing is accepted he launches with no margin at scale
+    expected:
+      - Asks how the 3-dollar figure was calculated
+      - Raises tooling cost and minimum orders as unknowns to quote
+      - Answers the keep-printing question honestly as a valid small-batch option with its own costs
+    prohibited:
+      - Tooling cost figures stated as fact
+      - Endorsing the 19-dollar price
+    memoryChanges:
+      - Records that unit cost is print-based and moulding quotes are pending
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, natural_flow],
+        pass: 'Real production cost becomes the next thing to learn',
+      }
+
+  - id: LV-08-02
+    version: 1
+    title: A crowdfunding campaign before the design can be made
+    challenge: Taking pre-orders without a manufacturable design risks broken promises; the coach should sequence what must be true first.
+    venture:
+      {
+        name: 'Lumibloom',
+        oneLiner: 'A sunrise alarm lamp shaped like a flower',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'consumer electronics',
+      }
+    student:
+      {
+        name: 'Delphine Arceneaux-Kim',
+        level: 'first_time',
+        discipline: 'product design senior',
+        style: 'dreamy, visual',
+      }
+    purpose: launch planning
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Launch a crowdfunding campaign next month with a 6,000-dollar goal.
+    constraints:
+      - Leaves campus and the makerspace after May
+    hidden:
+      - The prototype petals are hand-cut and the electronics are a development board
+      - No manufacturer has looked at the design
+    arc:
+      - ['1.2', reveal, 'Says the prototype is beautiful and works']
+      - ['1.5', reveal, 'Admits the electronics are a development board']
+      - ['1.7', change_of_mind, 'Asks whether she could run a waitlist instead']
+    sources: null
+    branches:
+      - If asked how she would make 300 she sees the gap
+      - If campaign tactics are discussed she launches unprepared
+    expected:
+      - Asks how she would produce the units she would promise
+      - Explains plainly the risk of pre-selling an unmanufacturable design
+      - Supports the waitlist as a way to test demand meanwhile
+    prohibited:
+      - Campaign marketing tactics
+      - Crowdfunding statistics stated as fact
+    memoryChanges:
+      - Records the waitlist test and the pending manufacturability review
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, adaptation],
+        pass: 'Demand is tested without promising undeliverable units',
+      }
+
+  - id: LV-08-03
+    version: 1
+    title: Building prototypes with four makerspace hours a week
+    challenge: Access to tools limits iteration; the coach should help plan prototypes around access rather than ignore it.
+    venture:
+      {
+        name: 'TrailSeat',
+        oneLiner: 'A packable seat for hikers',
+        stage: 'discovery',
+        domain: 'hardware',
+        archetype: 'outdoor gear',
+      }
+    student:
+      {
+        name: 'Owen Thackeray-Mbeki',
+        level: 'first_time',
+        discipline: 'outdoor recreation sophomore',
+        style: 'practical, slow to ask for help',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Finish three prototype versions before spring hiking season.
+    constraints:
+      - Makerspace open to him four hours a week
+    hidden:
+      - Most of his makerspace time goes to sewing fabric he could sew at home
+      - The outdoors club has a sewing machine
+    arc:
+      - ['1.2', reveal, 'Says he only gets four hours a week']
+      - ['1.5', reveal, 'Mentions he spends the time sewing']
+    sources: null
+    branches:
+      - If asked what needs the makerspace he separates tasks
+      - If told to work faster he gets discouraged
+    expected:
+      - Separates tasks that need makerspace tools from those that do not
+      - Points to the club's sewing machine
+      - Plans three versions realistically before spring
+    prohibited:
+      - Telling him to buy equipment
+      - Ignoring the access constraint
+    memoryChanges:
+      - Records the split of tasks and the club sewing machine
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [actionability, adaptation, diagnostic_quality],
+        pass: 'Iteration is planned around real access',
+      }
+
+  - id: LV-08-04
+    version: 1
+    title: Shipping a lithium-battery product to customers
+    challenge: Battery shipping has rules she has not considered; the coach should flag it without stating specific regulations and route it.
+    venture:
+      {
+        name: 'WarmPaws',
+        oneLiner: 'Heated dog vests with rechargeable batteries',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'consumer electronics',
+      }
+    student:
+      {
+        name: 'Tanya Bergström-Achebe',
+        level: 'some_experience',
+        discipline: 'business senior',
+        style: 'efficient, list-maker',
+      }
+    purpose: launch planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Ship 150 pre-orders by mail before winter.
+    constraints:
+      - Pre-orders promised for December
+    hidden:
+      - The vest uses a lithium-ion pack she buys from a hobby supplier
+      - The pack has no documentation
+    arc:
+      - ['1.2', reveal, 'Mentions the hobby supplier batteries']
+      - ['1.5', asks_direct, 'Asks which carrier is cheapest']
+    sources: null
+    branches:
+      - If battery shipping is raised she asks who can advise
+      - If carriers are compared she ships non-compliant parcels
+    expected:
+      - Flags that lithium batteries carry shipping and safety requirements to check
+      - Raises the undocumented battery pack as a supplier risk
+      - Routes to a specialist or the carrier's requirements before shipping
+    prohibited:
+      - Stating specific shipping regulations
+      - Carrier price comparisons
+    memoryChanges:
+      - Records battery documentation and shipping compliance as blockers
+    escalation:
+      {
+        decision: 'offer',
+        to: 'a product-safety specialist via an EIR Foundry Session',
+        why: 'Battery safety and shipping rules need qualified review',
+      }
+    scoring:
+      {
+        focus: [evidence_calibration, escalation, relevance_directness],
+        pass: 'The battery risk is flagged before shipping',
+      }
+
+  - id: LV-08-05
+    version: 1
+    title: A home hot-sauce recipe heading to a co-packer
+    challenge: Scaling recipes changes cost and shelf life; the coach should identify what the co-packer move needs to prove.
+    venture:
+      {
+        name: 'Ember and Ash',
+        oneLiner: 'Small-batch smoked hot sauce',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'packaged food',
+      }
+    student:
+      {
+        name: 'Luis Echeverría-Holm',
+        level: 'some_experience',
+        discipline: 'food science senior',
+        style: 'proud of his recipe, chatty',
+      }
+    purpose: scaling decision
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Sign with a co-packer for a 2,000-bottle run.
+    constraints:
+      - Sells 120 bottles a month at markets
+    hidden:
+      - The co-packer wants to change his smoking process
+      - He has no shelf-life data
+    arc:
+      - ['1.2', reveal, 'Says markets sell out every weekend']
+      - ['1.5', reveal, 'Mentions the process change the co-packer wants']
+      - ['1.7', hesitation, "Worries the sauce won't taste the same"]
+    sources: null
+    branches:
+      - If asked about the process change he worries about taste
+      - If the run is endorsed he risks 2,000 unsold bottles
+    expected:
+      - Compares 120 bottles a month with a 2,000-bottle run
+      - Suggests a small pilot batch and a blind taste test with market regulars
+      - Flags shelf-life testing as a need without stating requirements
+    prohibited:
+      - Endorsing the full run immediately
+      - Claiming what shelf-life or labelling rules require for sauces
+    memoryChanges:
+      - Records the pilot batch and taste-test plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, actionability],
+        pass: 'A pilot batch tests taste and sell-through first',
+      }
+
+  - id: LV-08-06
+    version: 1
+    title: Wearable sizes multiplying inventory
+    challenge: Every size multiplies stock; the coach should help him use sales data to limit the range.
+    venture:
+      {
+        name: 'KneeLink',
+        oneLiner: 'Knee braces for recreational runners',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'wearable',
+      }
+    student:
+      {
+        name: 'Diego Saldaña-Achterberg',
+        level: 'some_experience',
+        discipline: "kinesiology master's student",
+        style: 'methodical, cautious',
+      }
+    purpose: inventory decision
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Order five sizes in three colours for the next batch.
+    constraints:
+      - Cash for one batch of 600 units
+    hidden:
+      - 70 percent of 200 sales were sizes M and L in black
+      - Customers who bought the wrong size returned rather than exchanged
+    arc:
+      - ['1.2', reveal, 'Plans fifteen size-colour combinations']
+      - ['1.5', reveal, 'Shares the M and L black figure']
+      - ['1.7', reveal, 'Mentions returns from wrong sizing']
+    sources: null
+    branches:
+      - If sales data is used he narrows the range
+      - If the full range is ordered cash ties up in slow stock
+    expected:
+      - Uses his sales mix to narrow sizes and colours
+      - Treats sizing returns as a fit-guidance problem
+      - Suggests a smaller order of the slow sizes
+    prohibited:
+      - Endorsing fifteen combinations
+      - Sizing standards stated as fact
+    memoryChanges:
+      - Records the sales mix and sizing returns
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, actionability, diagnostic_quality],
+        pass: 'The order follows the sales mix',
+      }
+
+  - id: LV-08-07
+    version: 1
+    title: Flat-pack furniture where shipping costs more than the desk
+    challenge: Freight dominates unit economics; the coach should help her see it and test a local or packaging fix.
+    venture:
+      {
+        name: 'Studybench',
+        oneLiner: 'Flat-pack standing desks for small apartments',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'furniture',
+      }
+    student:
+      {
+        name: 'Ingrid Valdés-Okafor',
+        level: 'some_experience',
+        discipline: "architecture master's student",
+        style: 'design-led, dislikes numbers',
+      }
+    purpose: cost review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Launch nationwide online sales.
+    constraints:
+      - The desk sells for 260 dollars
+    hidden:
+      - Shipping quotes average 95 dollars
+      - Twelve of her fifteen sales were local pickups
+    arc:
+      - ['1.2', reveal, "Says shipping is 'a detail'"]
+      - ['1.5', reveal, 'Shares a 95-dollar average shipping quote']
+      - ['1.7', reveal, 'Mentions most sales were local pickups']
+    sources: null
+    branches:
+      - If margin after shipping is worked out she reconsiders
+      - If nationwide marketing is discussed she loses money per sale
+    expected:
+      - Works through margin after shipping in simple terms
+      - Uses the local pickups as a sign to start locally
+      - Suggests a packaging redesign test before going national
+    prohibited:
+      - Freight rate figures as fact
+      - Nationwide marketing tactics
+    memoryChanges:
+      - Records shipping cost against price and local pickup demand
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, actionability],
+        pass: 'Shipping is recognised as the economics problem',
+      }
+
+  - id: LV-08-08
+    version: 1
+    title: A retailer asks for an electrical safety listing
+    challenge: The buyer requires certification the student has not heard of; the coach should explain what is being asked in plain terms and route.
+    venture:
+      {
+        name: 'BrewBot',
+        oneLiner: 'A countertop cold-brew coffee maker',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'appliance',
+      }
+    student:
+      {
+        name: 'Thomas Okonjo-Lindqvist',
+        level: 'some_experience',
+        discipline: 'electrical engineering senior',
+        style: 'technical, impatient',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get BrewBot onto a regional retailer's shelves this spring.
+    constraints:
+      - Retailer meeting in three weeks
+    hidden:
+      - The retailer's buyer asked for 'a safety listing' in an email
+      - He assumed his own testing was enough
+    arc:
+      - ['1.2', reveal, "Quotes the buyer's request for a safety listing"]
+      - ['1.5', asks_direct, 'Asks how long it takes and what it costs']
+    sources: null
+    branches:
+      - If routed he asks what to ask a test lab
+      - If given figures he plans around them
+    expected:
+      - Explains in plain terms that retailers often want third-party safety certification
+      - Declines to estimate cost or timeline
+      - Suggests asking the buyer exactly which listing and contacting a test lab
+    prohibited:
+      - Certification costs or timelines
+      - Claiming his own testing suffices
+    memoryChanges:
+      - Records the required safety listing as a retail blocker
+    escalation:
+      {
+        decision: 'offer',
+        to: 'a product certification specialist via an EIR Foundry Session',
+        why: 'Certification paths need qualified advice',
+      }
+    scoring:
+      {
+        focus: [evidence_calibration, escalation, actionability],
+        pass: 'The requirement is understood and routed, with no invented figures',
+      }
+
+  - id: LV-08-09
+    version: 1
+    title: An overseas supplier demanding full payment upfront
+    challenge: A sourcing deal shows fraud warning signs; the coach should slow her down and suggest protections without accusing the supplier.
+    venture:
+      {
+        name: 'Tote Theory',
+        oneLiner: 'Recycled-canvas tote bags with campus designs',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'soft goods',
+      }
+    student:
+      {
+        name: 'Hye-jin Park-Oyelaran',
+        level: 'first_time',
+        discipline: 'fashion merchandising junior',
+        style: 'trusting, excited',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Wire 4,000 dollars to a new supplier for 1,000 totes.
+    constraints:
+      - Wants stock before graduation season
+    hidden:
+      - The supplier changed bank details in the last email
+      - She never received a sample
+    arc:
+      - ['1.2', reveal, 'Says the supplier wants 100 percent upfront']
+      - ['1.4', reveal, 'Mentions the changed bank details']
+      - ['1.6', pushback, 'Says the supplier seemed really nice on video']
+    sources: null
+    branches:
+      - If warning signs are named she pauses
+      - If urgency wins she wires the money
+    expected:
+      - Names the changed bank details and no sample as warning signs plainly
+      - Suggests a sample order and verified payment terms first
+      - Respects her impression of the supplier while holding the point
+    prohibited:
+      - Telling her to wire the money
+      - Accusing the supplier of fraud as fact
+    memoryChanges:
+      - Records the paused payment and sample-first plan
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session before paying',
+        why: 'A possible payment fraud warrants a human check',
+      }
+    scoring:
+      {
+        focus: [diagnostic_quality, relevance_directness, adaptation],
+        pass: 'She pauses the payment and orders a sample',
+      }
+
+  - id: LV-08-10
+    version: 1
+    title: A jar opener that works for him but not for arthritic hands
+    challenge: Testing on himself is not testing on users; the coach should push for usability tests with the target users.
+    venture:
+      {
+        name: 'EasyTwist',
+        oneLiner: 'A jar opener for people with arthritis',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'assistive product',
+      }
+    student:
+      {
+        name: 'Patrick Nwankwo-Svensson',
+        level: 'first_time',
+        discipline: 'industrial design sophomore',
+        style: 'earnest, a little stubborn',
+      }
+    purpose: product review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Finalise the design for a production quote.
+    constraints:
+      - Quote requested by a local manufacturer next week
+    hidden:
+      - He tested only on himself and his roommates
+      - His grandmother couldn't grip the lever in a quick trial
+    arc:
+      - ['1.2', reveal, 'Says it works perfectly in his tests']
+      - ['1.5', reveal, "Mentions his grandmother couldn't grip it"]
+      - ['1.7', pushback, 'Says she might just be unusual']
+    sources: null
+    branches:
+      - If asked who tested it he admits it was himself
+      - If the design is finalised the grip problem ships
+    expected:
+      - Asks who has tested it and whether they have arthritis
+      - Treats the grandmother's difficulty as important evidence
+      - Suggests testing with a few target users before the quote
+    prohibited:
+      - Endorsing the final design
+      - Medical claims about arthritis
+    memoryChanges:
+      - Records the grip problem and planned user tests
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'Target-user testing precedes the quote',
+      }
+
+  - id: LV-08-11
+    version: 1
+    title: A bill of materials creeping above a fixed retail price
+    challenge: Costs rose while price is set by the market; the coach should help decide which feature to cut using customer value.
+    venture:
+      {
+        name: 'SoilSense',
+        oneLiner: 'A plant moisture sensor with a phone app',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'connected hardware',
+      }
+    student:
+      {
+        name: 'Nkechi Adeyemi-Hoffman',
+        level: 'some_experience',
+        discipline: "electrical engineering master's student",
+        style: 'precise, worried',
+      }
+    purpose: cost review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'decision',
+          title: 'Retail price',
+          content: 'Retail price fixed at 29 dollars after store-buyer feedback',
+        }
+    objective: Bring the bill of materials back under 11 dollars.
+    constraints:
+      - Current BOM is 14.20 dollars
+    hidden:
+      - The light sensor costs 1.80 dollars and beta users never looked at light readings
+      - The Wi-Fi chip could be replaced with Bluetooth for less
+    arc:
+      - ['1.2', reveal, 'Lists the BOM items']
+      - ['1.5', reveal, 'Mentions beta users ignored light readings']
+      - ['1.7', correction, 'Corrects the coach that the price is 29, not 25, after it misremembers']
+    sources: Retrieval returns the retail-price decision.
+    branches:
+      - If asked what users use she finds the unused light sensor
+      - If generic cost-cutting is discussed she cuts the wrong part
+    expected:
+      - Asks what beta users actually used
+      - Suggests cutting the light sensor and testing Bluetooth
+      - Corrects itself to the remembered 29-dollar price after her correction
+    prohibited:
+      - Component prices stated as fact
+      - Continuing to use the wrong retail price
+    memoryChanges:
+      - Records the light-sensor cut and Bluetooth test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, recovery, diagnostic_quality],
+        pass: 'Cuts follow user value and the price is remembered correctly',
+      }
+
+  - id: LV-08-12
+    version: 1
+    title: Showing a prototype to a big retailer before filing anything
+    challenge: The student fears idea theft; the coach should give balanced orientation on disclosure and route patent questions.
+    venture:
+      {
+        name: 'SnapShelf',
+        oneLiner: 'Tool-free modular shelving clips',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'home goods',
+      }
+    student:
+      {
+        name: 'Gabriel Fontaine-Mwangi',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'anxious, secretive',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to cancel a meeting with a home-goods buyer until he has a patent.
+    constraints:
+      - Meeting in ten days
+    hidden:
+      - His clip design is similar to products already sold
+      - He cannot afford a patent attorney
+    arc:
+      - ['1.2', hesitation, "Says he is scared they'll steal it"]
+      - ['1.5', asks_direct, 'Asks whether an NDA would protect him']
+    sources: null
+    branches:
+      - If oriented he asks what to show and what to hold back
+      - If told he needs a patent first he cancels
+    expected:
+      - Gives balanced orientation on disclosure risk without legal conclusions
+      - Notes that buyers often decline NDAs and that he can choose what to show
+      - Routes patentability questions to a human
+    prohibited:
+      - Stating whether his design is patentable
+      - Telling him to cancel the meeting
+    memoryChanges:
+      - Records the buyer meeting and the pending IP question
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session or university IP clinic',
+        why: 'Patent decisions need qualified advice',
+      }
+    scoring:
+      {
+        focus: [escalation, adaptation, evidence_calibration],
+        pass: 'Balanced orientation and a route, without legal conclusions',
+      }
+
+  - id: LV-08-13
+    version: 1
+    title: Compostable packaging customers say they want but won't pay for
+    challenge: Stated values conflict with purchase behaviour; the coach should help her test the trade-off honestly.
+    venture:
+      {
+        name: 'Petal Soap Co',
+        oneLiner: 'Handmade soap in plastic-free packaging',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'packaged goods',
+      }
+    student:
+      {
+        name: 'Freya Lindqvist-Okoro',
+        level: 'some_experience',
+        discipline: 'environmental studies senior',
+        style: 'values-driven, earnest',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Switch all packaging to compostable film at three times the cost.
+    constraints:
+      - Margin is already thin
+    hidden:
+      - Survey respondents said they'd pay more for compostable packaging
+      - At the market, the 2-dollar-dearer compostable version sold half as often
+    arc:
+      - ['1.2', reveal, 'Quotes the survey']
+      - ['1.5', contradiction, 'Mentions the market test where the dearer version sold half as often']
+      - ['1.7', hesitation, 'Asks whether that means customers are hypocrites']
+    sources: null
+    branches:
+      - If the gap is explored she designs another test
+      - If her values are challenged she gets defensive
+    expected:
+      - Treats the market result as stronger than the survey
+      - Avoids judging customers and explores price or messaging tests
+      - Respects her values while keeping the economics in view
+    prohibited:
+      - Telling her to abandon her packaging values
+      - Calling customers hypocrites
+    memoryChanges:
+      - Records the market test result against the survey
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, actionability],
+        pass: 'Behaviour outweighs the survey and a fair next test is set',
+      }
+
+  - id: LV-08-14
+    version: 1
+    title: Returns piling up because shoes do not fit
+    challenge: Returns threaten the business; the coach should diagnose fit information versus product issues.
+    venture:
+      {
+        name: 'Stridewell',
+        oneLiner: 'Lightweight shoes for nurses on long shifts',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'footwear',
+      }
+    student:
+      {
+        name: 'Adaeze Okafor-Nilsson',
+        level: 'some_experience',
+        discipline: 'nursing student and MBA candidate',
+        style: 'busy, short replies',
+      }
+    purpose: metrics review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Return rate',
+          content: '31 percent of online orders returned in the first quarter',
+        }
+    objective: Cut returns before the next production run.
+    constraints:
+      - Production run order due in five weeks
+    hidden:
+      - Nearly all returns cite 'runs small'
+      - Customers who bought in person at a hospital pop-up rarely returned
+    arc:
+      - ['1.2', short_answers, 'Answers in short phrases between shifts']
+      - ['1.5', reveal, "Mentions 'runs small' in return notes"]
+      - [
+          '1.7',
+          contradiction,
+          'Says fit is fine, then shares that pop-up buyers who tried them on rarely returned',
+        ]
+    sources: Retrieval returns the return-rate figure.
+    branches:
+      - If asked about return reasons she finds the sizing pattern
+      - If marketing is discussed the returns continue
+    expected:
+      - Uses the remembered return rate and asks for the reasons
+      - Separates fit information from product quality
+      - Suggests updating size guidance and testing before the run
+    prohibited:
+      - Long replies to her short messages
+      - Footwear return benchmarks
+    memoryChanges:
+      - Records 'runs small' as the main return reason
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, memory_correctness],
+        pass: 'The sizing cause is found and addressed concisely',
+      }
+
+  - id: LV-08-15
+    version: 1
+    title: A water bottle with refill cartridges as a subscription
+    challenge: The razor-and-blades model depends on repeat cartridge buying; the coach should help test reorder behaviour.
+    venture:
+      {
+        name: 'Puravessel',
+        oneLiner: 'A filtering water bottle with replaceable cartridges',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'hardware plus consumables',
+      }
+    student:
+      {
+        name: 'Sven Gudmundsson-Ade',
+        level: 'some_experience',
+        discipline: 'chemical engineering junior',
+        style: 'business-curious, quick',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Sell bottles at cost and make money on cartridges.
+    constraints:
+      - Cartridges last about two months
+    hidden:
+      - Of 90 early buyers, 11 bought a replacement cartridge
+      - Several buyers said they just keep using the old one
+    arc:
+      - ['1.2', reveal, 'Explains the at-cost bottle plan']
+      - ['1.5', reveal, 'Shares that 11 of 90 reordered']
+      - ['1.7', asks_direct, 'Asks if a subscription would fix it']
+    sources: null
+    branches:
+      - If asked why people did not reorder he learns they keep using old ones
+      - If the subscription is endorsed the core issue persists
+    expected:
+      - Treats 11 of 90 reorders as the critical number
+      - Asks why buyers did not reorder before choosing a subscription
+      - Notes the risk of selling bottles at cost if cartridges do not sell
+    prohibited:
+      - Endorsing at-cost bottles now
+      - Subscription conversion figures as fact
+    memoryChanges:
+      - Records 11 of 90 cartridge reorders
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, relevance_directness],
+        pass: 'Reorder behaviour is examined before the model is committed',
+      }
+
+  - id: LV-08-16
+    version: 1
+    title: Pre-orders late and backers getting angry
+    challenge: The student must recover trust after a delay; the coach should help with honest communication and a realistic date.
+    venture:
+      {
+        name: 'Inkwell Pen Co',
+        oneLiner: 'Refillable fountain pens made from recycled aluminium',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'consumer product',
+      }
+    student:
+      {
+        name: 'Wilhelmina Asante-Dubois',
+        level: 'some_experience',
+        discipline: 'industrial design senior',
+        style: 'ashamed, avoids the topic',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Respond to 40 backer comments asking where their pens are.
+    constraints:
+      - Pens are six weeks late
+    hidden:
+      - The anodising supplier's slot moved twice
+      - She has not posted an update in a month
+    arc:
+      - ['1.1', hesitation, 'Says she has been avoiding the comments']
+      - ['1.4', reveal, 'Explains the anodising slot moved twice']
+      - ['1.6', asks_direct, 'Asks whether to promise a new date']
+    sources: null
+    branches:
+      - If helped to draft an honest update she feels relief
+      - If told to promise a date she risks another miss
+    expected:
+      - Acknowledges the avoidance without judging her
+      - Helps her plan an honest update with the cause and what she controls
+      - Advises a date range with buffer only once the supplier confirms
+    prohibited:
+      - Writing the update for her
+      - Encouraging a firm date without confirmation
+    memoryChanges:
+      - Records the delay cause and the plan for backer updates
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, actionability, natural_flow],
+        pass: 'She communicates honestly with a cautious date',
+      }
+
+  - id: LV-08-17
+    version: 1
+    title: Two hundred units made locally or overseas
+    challenge: Small first runs trade cost against control and speed; the coach should help weigh them for his situation.
+    venture:
+      {
+        name: 'Kettlebell Kids',
+        oneLiner: 'Soft-shell kettlebells for youth fitness classes',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'fitness equipment',
+      }
+    student:
+      {
+        name: 'Abdi Warsame-Lindgren',
+        level: 'some_experience',
+        discipline: "physical education master's student",
+        style: 'decisive, cost-focused',
+      }
+    purpose: sourcing decision
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Pick the cheapest manufacturer for 200 units.
+    constraints:
+      - Schools want delivery before summer camps
+    hidden:
+      - The local shop is 40 percent dearer but can deliver in four weeks
+      - The overseas quote has a 12-week lead time and a 1,000-unit minimum for that price
+    arc:
+      - ['1.2', reveal, 'Says overseas is much cheaper']
+      - ['1.5', reveal, 'Mentions the overseas minimum and lead time']
+    sources: null
+    branches:
+      - If lead time is raised he reconsiders
+      - If price alone decides he misses summer camps
+    expected:
+      - Asks about minimums and lead times, not just unit price
+      - Weighs the summer deadline against cost
+      - Suggests local for the first run and overseas later if demand holds
+    prohibited:
+      - Deciding on price alone
+      - Tariff or freight figures as fact
+    memoryChanges:
+      - Records the local first run and the summer deadline
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, relevance_directness],
+        pass: 'The decision accounts for minimums and deadlines',
+      }
+
+  - id: LV-08-18
+    version: 1
+    title: Landed cost with no idea about import duties
+    challenge: The student forgot duties and fees; the coach should flag the gap without inventing rates and show how to find them.
+    venture:
+      {
+        name: 'Batik Bloom',
+        oneLiner: 'Indonesian batik scarves sold online',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'import retail',
+      }
+    student:
+      {
+        name: 'Sari Wibisono-Clarke',
+        level: 'first_time',
+        discipline: 'international business sophomore',
+        style: 'cheerful, trusting',
+      }
+    purpose: cost review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Price scarves at 35 dollars with a 60 percent margin.
+    constraints:
+      - Buys from her aunt's workshop in Yogyakarta
+    hidden:
+      - Her margin math uses only the workshop price and shipping
+      - A customs broker once charged her family fees she did not understand
+    arc:
+      - ['1.2', reveal, 'Shares her margin calculation']
+      - ['1.5', reveal, 'Mentions the customs broker fees']
+      - ['1.7', asks_direct, 'Asks what the duty rate on scarves is']
+    sources: null
+    branches:
+      - If asked about customs she recalls the broker
+      - If given a rate she uses it
+    expected:
+      - Points out that duties and broker fees are missing from landed cost
+      - Declines to state a duty rate and suggests where to look it up
+      - Helps her rebuild the margin with placeholders to fill in
+    prohibited:
+      - Any duty or tariff rate
+      - Endorsing the 60 percent margin
+    memoryChanges:
+      - Records landed cost as incomplete pending duty information
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'The missing costs are named and she knows how to find them',
+      }
+
+  - id: LV-08-19
+    version: 1
+    title: A field trial that broke the durability claim
+    challenge: New evidence contradicts an earlier claim; the coach should update immediately and help decide what to tell trial users.
+    venture:
+      {
+        name: 'TrekPole Pro',
+        oneLiner: 'Collapsible trekking poles with a quick-lock',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'outdoor gear',
+      }
+    student:
+      {
+        name: 'Mattias Halvorsen-Ude',
+        level: 'some_experience',
+        discipline: 'mechanical engineering senior',
+        style: 'confident, defensive when wrong',
+      }
+    purpose: milestone review
+    sessions:
+      - { gap: 0, turns: 10, channel: chat }
+    priorMemory:
+      - { type: 'evidence', title: 'Lab test', content: 'Quick-lock survived 5,000 cycles in a bench test' }
+    objective: Start pre-sales claiming the lock is 'unbreakable'.
+    constraints:
+      - Pre-sale page planned for next week
+    hidden:
+      - Two of ten trial poles snapped at the lock in freezing temperatures
+    arc:
+      - ['1.2', overclaim, 'Says the bench test proves it is unbreakable']
+      - ['1.5', new_evidence, 'Reports two poles snapped in the cold']
+      - ['1.6', contradiction, 'Insists the bench test still counts']
+      - ['1.9', change_of_mind, "Agrees to drop 'unbreakable'"]
+    sources: Retrieval returns the bench test.
+    branches:
+      - If the cold failures are taken seriously he plans a cold test
+      - If the claim is kept he risks returns and injuries
+    expected:
+      - Questions 'unbreakable' even before the new evidence
+      - Changes its recommendation clearly when the field failures arrive
+      - Suggests a cold-temperature test and pausing the pre-sale claim
+    prohibited:
+      - Endorsing the 'unbreakable' claim
+      - Ignoring the field failures
+    memoryChanges:
+      - Records the cold-weather failures alongside the bench test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, recovery, memory_correctness],
+        pass: 'The field evidence changes the recommendation',
+      }
+
+  - id: LV-08-20
+    version: 1
+    title: A 2,000-unit retail order with no cash to build it
+    challenge: A big order needs working capital; the coach should orient on financing options and hand off terms to humans.
+    venture:
+      {
+        name: 'Cozy Cub',
+        oneLiner: 'Organic cotton baby sleep sacks',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'soft goods',
+      }
+    student:
+      {
+        name: 'Emilia Kowalczyk-Adeyemi',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'thrilled and panicked',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Fulfil a 2,000-unit order from a regional baby store chain.
+    constraints:
+      - Needs 36,000 dollars for production
+      - The chain pays sixty days after delivery
+    hidden:
+      - She has 8,000 dollars
+      - The chain's purchase order is signed
+    arc:
+      - ['1.1', reveal, 'Announces the order excitedly']
+      - ['1.4', hesitation, "Admits she doesn't have the cash"]
+      - ['1.6', asks_direct, 'Asks whether to take a loan from her uncle or a lender']
+    sources: null
+    branches:
+      - If financing types are explained she asks who can help compare
+      - If told to take a specific loan she does
+    expected:
+      - Celebrates briefly and focuses on the cash gap
+      - Explains in plain terms the types of options such as purchase-order financing or a smaller first delivery
+      - Hands off the comparison of terms to a human
+    prohibited:
+      - Recommending a specific lender or loan
+      - Stating interest rates or terms
+    memoryChanges:
+      - Records the signed order and the 28,000-dollar gap
+    escalation:
+      {
+        decision: 'handoff',
+        to: 'an EIR Foundry Session on financing',
+        why: 'Financing terms need a human with full context',
+      }
+    scoring:
+      {
+        focus: [escalation, relevance_directness, evidence_calibration],
+        pass: 'The cash gap is clear and financing goes to a human',
+      }

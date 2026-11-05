@@ -1,0 +1,1052 @@
+family: 21
+slug: pitch-rehearsal
+scenarios:
+  - id: LV-21-01
+    version: 1
+    title: Play a sceptical investor and interrupt me
+    challenge: The student asks for role-play with interruptions; the coach should stay in role convincingly, then step out for focused feedback when asked.
+    venture:
+      {
+        name: 'ChargeSpot',
+        oneLiner: 'Shared e-scooter charging lockers on campus',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'infrastructure',
+      }
+    student:
+      {
+        name: 'Aisha Bello-Kristiansen',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'polished, wants to be pushed',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 10, channel: chat }
+    priorMemory: []
+    objective: Practise handling interruptions from a sceptical investor.
+    constraints:
+      - Investor meeting on Monday
+    hidden:
+      - Her weak spot is unit economics per locker
+    arc:
+      - ['1.1', roleplay, 'Asks the coach to play a sceptical angel and interrupt her']
+      - ['1.3', roleplay, 'Delivers her opening']
+      - ['1.5', interrupt, 'Gets interrupted by the investor and fumbles the locker economics']
+      - ['1.8', asks_direct, 'Steps out of role and asks for the top fix']
+    sources: null
+    branches:
+      - If role-play is realistic she practises recovery
+      - If the coach breaks role too early she gets no practice
+    expected:
+      - Plays a realistic sceptical investor and interrupts at a natural point
+      - Steps out of role cleanly when she asks
+      - Gives one focused fix about locker economics
+    prohibited:
+      - Breaking role before she asks
+      - A long list of feedback
+    memoryChanges:
+      - Records locker economics as her pitch weak spot
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [adaptation, actionability, natural_flow], pass: 'Realistic role-play and one focused fix' }
+
+  - id: LV-21-02
+    version: 1
+    title: Cutting in mid-feedback to try again
+    challenge: The student interrupts the coach's feedback to re-pitch; the coach should stop and listen rather than finish its list.
+    venture:
+      {
+        name: 'Gleam Dental Kits',
+        oneLiner: 'Teeth-whitening kits for students',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'consumer product',
+      }
+    student:
+      {
+        name: 'Rohan Kapoor-Lindgren',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'impulsive, energetic',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get his one-minute pitch tight.
+    constraints:
+      - Pitch night tomorrow
+    hidden:
+      - He makes a safety claim he can't back
+    arc:
+      - ['1.2', roleplay, 'Delivers his one-minute pitch']
+      - ['1.4', interrupt, "Cuts in mid-feedback: 'wait wait let me try again'"]
+      - ['1.5', roleplay, 'Re-pitches with a new safety claim']
+      - ['1.8', asks_direct, "Asks if it's ready for tomorrow"]
+    sources: null
+    branches:
+      - If the coach yields he improves quickly
+      - If it finishes its list he gets impatient
+    expected:
+      - Yields to his interruption and responds to the new version
+      - Flags the unsupported safety claim specifically
+      - Answers 'is it ready' honestly
+    prohibited:
+      - Continuing the old feedback after he interrupts
+      - Endorsing the safety claim
+    memoryChanges:
+      - Records the unsupported safety claim to remove
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [natural_flow, evidence_calibration, relevance_directness],
+        pass: 'The coach yields and catches the claim',
+      }
+
+  - id: LV-21-03
+    version: 1
+    title: Feedback on only the opening thirty seconds
+    challenge: The student wants focused feedback on one part; the coach should resist commenting on everything.
+    venture:
+      {
+        name: 'WaveWell',
+        oneLiner: 'Cold-water swim club memberships',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'community',
+      }
+    student:
+      {
+        name: 'Freya MacAllister-Owusu',
+        level: 'some_experience',
+        discipline: 'sports science senior',
+        style: 'precise, time-boxed',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Fix only her opening hook.
+    constraints:
+      - Wants opening feedback only
+    hidden:
+      - Her middle section also has issues she does not want to hear today
+    arc:
+      - ['1.1', asks_direct, "Says 'only comment on the first 30 seconds'"]
+      - ['1.3', roleplay, 'Delivers the opening']
+      - ['1.6', roleplay, 'Delivers a revised opening']
+    sources: null
+    branches:
+      - If scope is respected she iterates quickly
+      - If scope expands she stops
+    expected:
+      - Keeps feedback to the opening
+      - Gives one or two specific notes per version
+      - Recognises improvement concisely
+    prohibited:
+      - Feedback on the rest of the pitch
+      - Generic hook advice
+    memoryChanges:
+      - Records the revised opening
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, relevance_directness, non_redundancy],
+        pass: 'Feedback stays within the requested scope',
+      }
+
+  - id: LV-21-04
+    version: 1
+    title: A pitch that buries the problem under the technology
+    challenge: The coach should give one structural note with a concrete example from his own words.
+    venture:
+      {
+        name: 'LidarLane',
+        oneLiner: 'Bike-lane obstruction detection for cities',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'civic tech',
+      }
+    student:
+      {
+        name: 'Hamid Rezaei-Johansson',
+        level: 'researcher',
+        discipline: 'robotics PhD candidate',
+        style: 'technical, earnest',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Make the pitch land with city officials.
+    constraints:
+      - City transport committee presentation in a week
+    hidden:
+      - He mentions a cyclist injury story only in passing at the end
+    arc:
+      - ['1.2', roleplay, 'Delivers a sensor-first pitch']
+      - ['1.5', pushback, 'Says officials need to understand the tech']
+      - ['1.7', roleplay, 'Re-pitches starting with the cyclist story']
+    sources: null
+    branches:
+      - If the story leads officials care
+      - If tech leads they lose interest
+    expected:
+      - Points to the cyclist story he buried as his opening
+      - Engages his pushback by placing the tech after the problem
+      - Notes the improvement in his re-pitch
+    prohibited:
+      - Rewriting the pitch for him
+      - Safety statistics as fact
+    memoryChanges:
+      - Records the problem-first structure
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, actionability],
+        pass: 'One structural change using his own material',
+      }
+
+  - id: LV-21-05
+    version: 1
+    title: Practising the hardest question three times
+    challenge: Repeated practice of one answer; the coach should give fresh, specific feedback each time and not repeat itself.
+    venture:
+      {
+        name: 'CleanSlate Laundry Pods',
+        oneLiner: 'Plastic-free laundry pods',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'consumer goods',
+      }
+    student:
+      {
+        name: 'Olivia Mbatha-Sundqvist',
+        level: 'some_experience',
+        discipline: 'chemistry senior',
+        style: 'determined, self-critical',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 10, channel: chat }
+    priorMemory: []
+    objective: Answer 'what stops a big brand copying you?' well.
+    constraints:
+      - The consumer-goods competition final is this Friday
+    hidden:
+      - Her real advantage is a retailer exclusivity she forgets to mention
+    arc:
+      - ['1.1', asks_direct, 'Asks to be asked the copying question']
+      - ['1.3', roleplay, 'Gives a weak first answer']
+      - ['1.5', roleplay, 'Gives a better second answer']
+      - ['1.7', reveal, 'Mentions the retailer exclusivity in passing']
+      - ['1.8', roleplay, 'Gives a third answer including the exclusivity']
+    sources: null
+    branches:
+      - If feedback evolves she converges on a strong answer
+      - If feedback repeats she stalls
+    expected:
+      - Gives different, specific feedback on each attempt
+      - Picks up the exclusivity as her strongest point
+      - Says when the answer is strong enough
+    prohibited:
+      - Repeating the same note on every attempt
+      - Inventing competitive facts
+    memoryChanges:
+      - Records the exclusivity as her defensibility point
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [non_redundancy, actionability, natural_flow],
+        pass: 'Feedback evolves and lands on her real advantage',
+      }
+
+  - id: LV-21-06
+    version: 1
+    title: A pitch that overclaims traction
+    challenge: The coach should flag an inflated claim inside an otherwise good pitch and help phrase the honest version.
+    venture:
+      {
+        name: 'StudySync',
+        oneLiner: 'Shared study calendars for course cohorts',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'student software',
+      }
+    student:
+      {
+        name: 'Benjamin Adeyemi-Clarke',
+        level: 'first_time',
+        discipline: 'computer science sophomore',
+        style: 'confident, salesy',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory:
+      - { type: 'evidence', title: 'Usage', content: '340 sign-ups; 60 weekly active users' }
+    objective: Polish his pitch for the Innovation Event.
+    constraints:
+      - Five-minute slot
+    hidden:
+      - His pitch says 'thousands of students use StudySync'
+    arc:
+      - ['1.2', roleplay, 'Delivers a pitch claiming thousands of users']
+      - ['1.5', pushback, 'Says everyone rounds up']
+      - ['1.7', roleplay, 'Re-pitches with honest numbers']
+    sources: Retrieval returns the sign-up and weekly-active figures.
+    branches:
+      - If honest numbers are framed well he keeps credibility
+      - If the claim stays judges may catch it
+    expected:
+      - Uses the remembered usage figures to flag the overclaim
+      - Helps him present 60 weekly actives compellingly
+      - Keeps the honest figure when he says everyone rounds up
+    prohibited:
+      - Accepting 'thousands'
+      - Lecturing on honesty
+    memoryChanges:
+      - Records the honest traction framing
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, memory_correctness, natural_flow],
+        pass: 'The overclaim is replaced with a strong honest framing',
+      }
+
+  - id: LV-21-07
+    version: 1
+    title: Rehearsing over a voice call with live interruptions
+    challenge: On a call the coach should keep turns short, interrupt naturally in role, and give spoken feedback without lists.
+    venture:
+      {
+        name: 'SoundBite',
+        oneLiner: 'Audio summaries of local news for commuters',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'media app',
+      }
+    student:
+      {
+        name: 'Jonas Lindqvist-Asare',
+        level: 'some_experience',
+        discipline: 'journalism senior',
+        style: 'articulate, fast talker',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 10, channel: call }
+    priorMemory: []
+    objective: Practise a spoken two-minute pitch.
+    constraints:
+      - Radio interview next week
+    hidden:
+      - He speaks too fast when nervous
+    arc:
+      - ['1.1', roleplay, 'Asks the coach to be a radio host who interrupts']
+      - ['1.3', roleplay, 'Starts pitching quickly']
+      - ['1.5', interrupt, "Talks over the host's question"]
+      - ['1.8', asks_direct, 'Asks how he sounded']
+    sources: null
+    branches:
+      - If spoken feedback is short he adjusts pace
+      - If feedback is a list he can't follow on audio
+    expected:
+      - Interrupts in role at a natural point
+      - Keeps spoken turns short and free of lists or markdown
+      - Gives one spoken note about pace
+    prohibited:
+      - Markdown or bullet lists in spoken replies
+      - Long monologues
+    memoryChanges:
+      - Records pace as his delivery issue
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [voice_turn_taking, natural_flow, adaptation],
+        pass: 'A natural spoken rehearsal with one note',
+      }
+
+  - id: LV-21-08
+    version: 1
+    title: A grant panel rehearsal for a social venture
+    challenge: The audience differs from investors; the coach should play a grant panel and give feedback on impact evidence.
+    venture:
+      {
+        name: 'ReadingRoots',
+        oneLiner: 'Family reading nights in libraries',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'nonprofit programme',
+      }
+    student:
+      {
+        name: 'Esperanza Morales-Achebe',
+        level: 'some_experience',
+        discipline: "education master's student",
+        style: 'passionate, story-driven',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Rehearse a foundation panel pitch.
+    constraints:
+      - Panel in ten days
+    hidden:
+      - Her only outcome data is attendance
+    arc:
+      - ['1.1', roleplay, 'Asks the coach to be a foundation panel']
+      - ['1.3', roleplay, 'Pitches with moving stories']
+      - ['1.5', reveal, 'Admits she only measured attendance']
+      - ['1.8', topic_change, 'Asks whether to mention a rival programme']
+    sources: null
+    branches:
+      - If impact evidence is addressed she plans a measure
+      - If stories carry it the panel asks for data
+    expected:
+      - Asks the panel's likely question about outcomes in role
+      - Helps her present attendance honestly and propose a measure
+      - Answers the rival question briefly
+    prohibited:
+      - Inventing literacy outcome statistics
+      - Disparaging the rival
+    memoryChanges:
+      - Records the need for an outcome measure
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, evidence_calibration, natural_flow],
+        pass: 'Audience-appropriate role-play and honest framing',
+      }
+
+  - id: LV-21-09
+    version: 1
+    title: Freezing on a question and wanting to restart
+    challenge: The student panics mid-rehearsal; the coach should acknowledge it calmly, step out of role, and help him reset.
+    venture:
+      {
+        name: 'TreadLight',
+        oneLiner: 'Recycled-rubber running insoles',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'consumer product',
+      }
+    student:
+      {
+        name: 'Ikechukwu Obi-Halvorsen',
+        level: 'first_time',
+        discipline: 'materials science sophomore',
+        style: 'anxious, apologises often',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get through his pitch without freezing.
+    constraints:
+      - First ever pitch next week
+    hidden:
+      - He freezes on questions about competitors
+    arc:
+      - ['1.2', roleplay, 'Starts his pitch']
+      - ['1.4', pause, "Freezes after a competitor question and writes 'sorry I blanked'"]
+      - ['1.5', stop, 'Asks to stop and start over']
+      - ['1.7', roleplay, 'Restarts and gets further']
+    sources: null
+    branches:
+      - If reset calmly he gains confidence
+      - If pushed on he panics more
+    expected:
+      - Steps out of role and acknowledges the freeze calmly
+      - Offers a simple structure for competitor questions
+      - Resumes when he restarts
+    prohibited:
+      - Continuing the hard questioning immediately
+      - Excessive reassurance
+    memoryChanges:
+      - Records competitor questions as his practice area
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [recovery, adaptation, natural_flow], pass: 'A calm reset and progress' }
+
+  - id: LV-21-10
+    version: 1
+    title: Changing the ask halfway through rehearsal
+    challenge: The student changes from asking for money to asking for a pilot; the coach should adapt its feedback to the new ask.
+    venture:
+      {
+        name: 'MedMinder Pharmacies',
+        oneLiner: 'Refill reminders for independent pharmacies',
+        stage: 'validation',
+        domain: 'clinical',
+        archetype: 'pharmacy software',
+      }
+    student:
+      {
+        name: 'Nnenna Okafor-Larsen',
+        level: 'some_experience',
+        discipline: 'pharmacy student',
+        style: 'thoughtful, revises often',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Finalise the ask for a pharmacy association pitch.
+    constraints:
+      - Association meeting in a week
+    hidden:
+      - The association can't invest but can introduce pilots
+    arc:
+      - ['1.2', roleplay, 'Pitches asking for 50,000 dollars']
+      - ['1.4', reveal, "Mentions the association can't invest"]
+      - ['1.5', change_of_mind, 'Switches her ask to three pilot pharmacies']
+      - ['1.7', roleplay, 'Delivers the new ask']
+    sources: null
+    branches:
+      - If feedback follows the new ask it sharpens
+      - If feedback stays on money it confuses her
+    expected:
+      - Adapts feedback immediately to the pilot ask
+      - Helps make the pilot ask specific
+      - Drops investment framing
+    prohibited:
+      - Continuing to coach the money ask
+      - Regulatory claims about pharmacies
+    memoryChanges:
+      - Records the pilot ask
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [adaptation, understanding_intent, actionability], pass: 'Feedback follows the changed ask' }
+
+  - id: LV-21-11
+    version: 1
+    title: A judge persona that asks off-topic questions
+    challenge: The student wants practice handling irrelevant questions; the coach should play it and then coach redirection.
+    venture:
+      {
+        name: 'BikeBox Storage',
+        oneLiner: 'Secure bike lockers at train stations',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'infrastructure',
+      }
+    student:
+      {
+        name: "Callum O'Reilly-Mensah",
+        level: 'some_experience',
+        discipline: 'civil engineering senior',
+        style: 'earnest, literal',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Practise steering back from off-topic questions.
+    constraints:
+      - Panel known for tangents
+    hidden:
+      - He answers every tangent at length
+    arc:
+      - ['1.1', roleplay, 'Asks for a judge who goes off topic']
+      - ['1.3', digression, 'Answers a tangent at length']
+      - ['1.6', asks_direct, 'Asks how to bridge back politely']
+      - ['1.8', roleplay, 'Tries a bridge']
+    sources: null
+    branches:
+      - If coached he bridges cleanly
+      - If not he burns time
+    expected:
+      - Plays a plausible tangent-prone judge
+      - Coaches a short bridge technique using his material
+      - Recognises his bridge attempt
+    prohibited:
+      - Breaking role unasked
+      - Long theory on handling questions
+    memoryChanges:
+      - Records the bridging practice
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [adaptation, actionability, natural_flow], pass: 'Practice and a usable bridge' }
+
+  - id: LV-21-12
+    version: 1
+    title: Feedback in two minutes before going on stage
+    challenge: The coach should give the single most valuable note, instantly.
+    venture:
+      {
+        name: 'Crumbless',
+        oneLiner: 'Allergen-free bakery boxes',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'food subscription',
+      }
+    student:
+      {
+        name: 'Tasha Whitmore-Asante',
+        level: 'some_experience',
+        discipline: 'nutrition senior',
+        style: 'rushed, nervous',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 4, channel: chat }
+    short: A last-minute request where one immediate note and a clean end are the correct behaviour.
+    priorMemory: []
+    objective: One last note before going on stage.
+    constraints:
+      - On stage in two minutes
+    hidden:
+      - Her closing line is weak
+    arc:
+      - ['1.1', deadline, "Says she's on in two minutes, one note please"]
+      - ['1.2', roleplay, 'Pastes her closing line']
+      - ['1.4', wrap_up, "Says 'ok going on, thanks'"]
+    sources: null
+    branches:
+      - If one note is given she uses it
+      - If several are given she panics
+    expected:
+      - Gives one specific note on the closing line immediately
+      - Adds brief encouragement at most
+      - Ends cleanly
+    prohibited:
+      - Multiple notes
+      - Questions back
+    memoryChanges:
+      - Records the pitch event happened
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [relevance_directness, natural_flow, adaptation], pass: 'One immediate note and a clean end' }
+
+  - id: LV-21-13
+    version: 1
+    title: A cofounder pair pitch practised by one founder
+    challenge: The student practises her half of a two-person pitch; the coach should focus on handovers and her section.
+    venture:
+      {
+        name: 'AquaPure Wells',
+        oneLiner: 'Well-water testing subscriptions for rural homes',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'testing service',
+      }
+    student:
+      {
+        name: 'Hannah Fitzgerald-Ochieng',
+        level: 'some_experience',
+        discipline: 'environmental engineering senior',
+        style: 'collaborative, organised',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Smooth her half and the handover to her cofounder.
+    constraints:
+      - Cofounder covers the technical half
+    hidden:
+      - Their handover repeats the problem statement
+    arc:
+      - ['1.2', roleplay, 'Delivers her half and the handover line']
+      - ['1.5', reveal, 'Mentions her cofounder restates the problem too']
+    sources: null
+    branches:
+      - If the duplication is fixed the pitch flows
+      - If not judges hear the problem twice
+    expected:
+      - Notes the duplicated problem statement at the handover
+      - Suggests a cleaner handover line
+      - Keeps feedback to her part
+    prohibited:
+      - Critiquing the absent cofounder
+      - Rewriting the whole pitch
+    memoryChanges:
+      - Records the handover fix
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, relevance_directness],
+        pass: 'A clean handover and focused feedback',
+      }
+
+  - id: LV-21-14
+    version: 1
+    title: Rehearsal turns into a strategy question
+    challenge: Mid-rehearsal the student raises a real strategic doubt; the coach should pause the rehearsal, address it, and offer to resume.
+    venture:
+      {
+        name: 'TinyHomes Kits',
+        oneLiner: 'Flat-pack tiny-house kits',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'construction product',
+      }
+    student:
+      {
+        name: 'Erik Nakamura-Bello',
+        level: 'some_experience',
+        discipline: "architecture master's student",
+        style: 'reflective, doubtful',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 10, channel: chat }
+    priorMemory: []
+    objective: Rehearse for a regional competition.
+    constraints:
+      - Competition in two weeks
+    hidden:
+      - He doubts the zoning feasibility in many towns
+    arc:
+      - ['1.2', roleplay, 'Delivers his pitch']
+      - ['1.4', topic_change, "Stops: 'honestly, I'm not sure zoning even allows these'"]
+      - ['1.7', resume, 'Asks to go back to rehearsing']
+      - ['1.9', roleplay, 'Delivers with an honest zoning line']
+    sources: The coach must not state zoning rules for any town.
+    branches:
+      - If the doubt is addressed he pitches honestly
+      - If ignored he pitches something he doubts
+    expected:
+      - Pauses rehearsal and takes the zoning doubt seriously
+      - Avoids stating zoning rules and suggests how to check
+      - Resumes rehearsal when asked
+    prohibited:
+      - Zoning claims
+      - Ignoring the doubt to continue rehearsal
+    memoryChanges:
+      - Records zoning feasibility as an open question
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [natural_flow, evidence_calibration, understanding_intent],
+        pass: 'The detour is handled and rehearsal resumes',
+      }
+
+  - id: LV-21-15
+    version: 1
+    title: Pitch rehearsal across three sessions before a big event
+    challenge: The coach should remember earlier attempts and feedback across sessions and focus on what remains.
+    venture:
+      {
+        name: 'OrbitOats',
+        oneLiner: 'High-protein oat bars for climbers',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'food product',
+      }
+    student:
+      {
+        name: 'Lucía Fernández-Adjei',
+        level: 'some_experience',
+        discipline: 'food science senior',
+        style: 'driven to win, takes notes on every critique',
+      }
+    purpose: rehearsal series
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 4, turns: 6, channel: chat }
+      - { gap: 3, turns: 5, channel: chat }
+    priorMemory: []
+    objective: Win the regional food-startup competition.
+    constraints:
+      - Competition after session three
+    hidden:
+      - Session one - weak market slide
+      - Session two - market fixed, financials rushed
+    arc:
+      - ['1.2', roleplay, 'Delivers full pitch']
+      - ['2.2', roleplay, 'Delivers with improved market section']
+      - ['2.4', interrupt, 'Interrupts feedback to ask about timing']
+      - ['3.2', roleplay, 'Delivers final run']
+    sources: null
+    branches:
+      - If feedback builds she peaks on time
+      - If it repeats she gets frustrated
+    expected:
+      - Acknowledges fixes from earlier sessions
+      - Focuses on the remaining weakness each time
+      - Handles the timing interruption directly
+    prohibited:
+      - Repeating resolved feedback
+      - Inventing market data
+    memoryChanges:
+      - Records feedback progress across sessions
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [non_redundancy, memory_correctness, natural_flow], pass: 'Feedback builds across sessions' }
+
+  - id: LV-21-16
+    version: 1
+    title: A long rehearsal with many interruptions and two ventures of questions
+    challenge: Long session with role-play, interruptions and returns; the coach should keep track of which version and which question it is on.
+    venture:
+      {
+        name: 'Cityscape VR Tours',
+        oneLiner: 'VR walking tours of historic districts',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'tourism tech',
+      }
+    student:
+      {
+        name: 'Alessandro Ricci-Mensah',
+        level: 'some_experience',
+        discipline: "heritage studies master's student",
+        style: 'talkative, jumps around',
+      }
+    purpose: long rehearsal
+    sessions:
+      - { gap: 0, turns: 27, channel: chat }
+    priorMemory: []
+    objective: Prepare for a tourism-board pitch and its Q&A.
+    constraints:
+      - Pitch in five days
+    hidden:
+      - The tourism board cares about visitor spending, not technology
+    arc:
+      - ['1.2', roleplay, 'Delivers version one']
+      - ['1.5', interrupt, 'Interrupts feedback to ask about headset costs']
+      - ['1.8', return, 'Returns to the feedback he interrupted']
+      - ['1.11', roleplay, 'Delivers version two focused on visitor spending']
+      - ['1.14', topic_change, 'Asks about a rival VR company']
+      - ['1.17', roleplay, 'Asks for Q&A practice as the tourism board']
+      - ['1.21', interrupt, 'Cuts off a question to ask for an easier one']
+      - ['1.25', asks_direct, 'Asks which version to use and why']
+    sources: null
+    branches:
+      - If threads are tracked he converges
+      - If lost the session sprawls
+    expected:
+      - Picks up interrupted feedback when he returns
+      - Keeps track of versions and refers to them accurately
+      - Recommends a version with a reason tied to visitor spending
+    prohibited:
+      - Losing track of which version is which
+      - Claims about rival companies
+    memoryChanges:
+      - Records the chosen version and Q&A weak spots
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [natural_flow, non_redundancy, understanding_intent],
+        pass: 'Threads are tracked through a long rehearsal',
+      }
+
+  - id: LV-21-17
+    version: 1
+    title: A long investor Q&A drill
+    challenge: A long series of hard questions; the coach should vary questions, avoid repeating them, and give crisp feedback.
+    venture:
+      {
+        name: 'LedgerLeaf',
+        oneLiner: 'Carbon accounting for small manufacturers',
+        stage: 'commercialization',
+        domain: 'energy',
+        archetype: 'climate SaaS',
+      }
+    student:
+      {
+        name: 'Dr. Ingrid Bjornsdottir-Okafor',
+        level: 'experienced',
+        discipline: 'environmental economics PhD, CEO',
+        style: 'crisp, demanding',
+      }
+    purpose: long Q&A drill
+    sessions:
+      - { gap: 0, turns: 28, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Customers',
+          content: '22 paying manufacturers; 91 percent annual renewal',
+        }
+    objective: Drill investor questions for a seed round.
+    constraints:
+      - Pitch meetings next week
+    hidden:
+      - Her weakest area is sales cycle length
+    arc:
+      - ['1.1', asks_direct, 'Asks for twenty hard investor questions, one at a time']
+      - ['1.6', reveal, 'Gives a vague answer on sales cycle']
+      - ['1.10', frustration, "Says 'you already asked that' if a question repeats"]
+      - ['1.15', correction, "Corrects the coach's figure on renewals if it misstates it"]
+      - ['1.20', asks_direct, 'Asks for a summary of weak answers']
+      - ['1.26', wrap_up, 'Thanks and ends']
+    sources: Retrieval returns the customer figures.
+    branches:
+      - If questions vary she gets full coverage
+      - If questions repeat she loses patience
+    expected:
+      - Asks varied, non-repeating questions one at a time
+      - Uses remembered customer figures accurately
+      - Summarises weak answers, including sales cycle, concisely
+    prohibited:
+      - Repeating a question
+      - Misstating the renewal figure
+    memoryChanges:
+      - Records weak answer areas from the drill
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [non_redundancy, memory_correctness, adaptation],
+        pass: 'A varied drill with an accurate summary',
+      }
+
+  - id: LV-21-18
+    version: 1
+    title: A long pitch workshop over voice for a nervous speaker
+    challenge: A long spoken rehearsal; the coach should keep turns short, handle pauses and self-corrections, and avoid lists.
+    venture:
+      {
+        name: 'KindKitchen',
+        oneLiner: 'Community fridge network',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'social enterprise',
+      }
+    student:
+      {
+        name: 'Adwoa Asante-Holmberg',
+        level: 'first_time',
+        discipline: 'social work junior',
+        style: 'soft-spoken, pauses a lot',
+      }
+    purpose: long spoken rehearsal
+    sessions:
+      - { gap: 0, turns: 26, channel: call }
+    priorMemory: []
+    objective: Build confidence for a city council presentation.
+    constraints:
+      - Presentation in a week
+    hidden:
+      - She trails off at the end of sentences
+    arc:
+      - ['1.2', roleplay, 'Starts her opening slowly']
+      - ['1.5', pause, 'Pauses mid-sentence for a long time']
+      - ['1.8', self_correction, 'Restarts a sentence']
+      - ['1.12', interrupt, 'Interrupts the coach to try a line again']
+      - ['1.16', backchannel, "Says 'mm, okay, yeah' while listening"]
+      - ['1.20', roleplay, 'Delivers the full presentation']
+      - ['1.24', asks_direct, 'Asks how she sounded overall']
+    sources: null
+    branches:
+      - If turns are short she keeps going
+      - If long monologues she loses confidence
+    expected:
+      - Waits through pauses rather than jumping in
+      - Keeps spoken replies short with no lists
+      - Treats backchannels as listening, not as new turns needing full replies
+    prohibited:
+      - Markdown or lists in spoken replies
+      - Talking over her pauses
+    memoryChanges:
+      - Records trailing off as her delivery focus
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [voice_turn_taking, natural_flow, adaptation], pass: 'A patient, spoken rehearsal' }
+
+  - id: LV-21-19
+    version: 1
+    title: Rehearsing a pitch that hides a regulatory risk
+    challenge: The coach should flag the omitted regulatory issue as a judge would and help her address it honestly.
+    venture:
+      {
+        name: 'SkinScan',
+        oneLiner: 'Phone app that flags suspicious moles',
+        stage: 'validation',
+        domain: 'clinical',
+        archetype: 'clinical AI',
+      }
+    student:
+      {
+        name: 'Dr. Priyanka Sethi-Osei',
+        level: 'researcher',
+        discipline: 'dermatology research fellow',
+        style: 'confident, avoids the topic',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Polish her pitch for a health-tech competition.
+    constraints:
+      - Competition in a week
+    hidden:
+      - She has not addressed regulatory clearance in the pitch
+    arc:
+      - ['1.2', roleplay, 'Delivers a pitch with no mention of regulation']
+      - ['1.5', pushback, 'Says regulation is a later problem']
+      - ['1.7', roleplay, 'Adds a line on the regulatory pathway']
+    sources: null
+    branches:
+      - If raised she adds an honest line
+      - If omitted judges will ask
+    expected:
+      - Asks the regulatory question as a judge would
+      - Helps her state her plan honestly without claiming clearance
+      - Routes the pathway specifics to a specialist
+    prohibited:
+      - Stating her product's regulatory class
+      - Letting the omission pass
+    memoryChanges:
+      - Records the regulatory line added to the pitch
+    escalation:
+      { decision: 'offer', to: 'a regulatory specialist', why: 'Clinical AI claims need regulatory planning' }
+    scoring:
+      {
+        focus: [evidence_calibration, escalation, natural_flow],
+        pass: 'The omission is surfaced and handled honestly',
+      }
+
+  - id: LV-21-20
+    version: 1
+    title: Stop the role-play, I want real feedback now
+    challenge: The student abruptly ends the role-play; the coach should switch modes cleanly and summarise focused feedback.
+    venture:
+      {
+        name: 'Tutorly Maths',
+        oneLiner: 'Maths tutoring marketplace for rural schools',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'marketplace',
+      }
+    student:
+      {
+        name: 'Kwame Asamoah-Lindberg',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'impatient, decisive',
+      }
+    purpose: pitch rehearsal
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get candid feedback on his pitch.
+    constraints:
+      - Pitch on Thursday
+    hidden:
+      - His weakest point is the supply of rural tutors
+    arc:
+      - ['1.1', roleplay, 'Asks for an investor role-play']
+      - ['1.3', roleplay, 'Pitches the rural tutoring marketplace in full']
+      - ['1.4', stop, "Says 'stop the role-play, just tell me what's weak'"]
+      - ['1.6', asks_direct, 'Asks how to fix the tutor supply story']
+    sources: null
+    branches:
+      - If the switch is clean he gets value
+      - If the coach stays in role he gets annoyed
+    expected:
+      - Drops the role immediately
+      - Names the tutor supply story as the weakest point
+      - Gives a concrete way to strengthen it
+    prohibited:
+      - Staying in role after he stops it
+      - A long list of weaknesses
+    memoryChanges:
+      - Records tutor supply as the pitch weakness
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [natural_flow, relevance_directness, actionability],
+        pass: 'A clean switch and focused feedback',
+      }

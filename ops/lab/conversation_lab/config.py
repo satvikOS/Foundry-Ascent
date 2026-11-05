@@ -21,7 +21,7 @@ SUITES: tuple[str, ...] = ("recall", "voice", "matrix", "ui")
 #: commitment; conversation_lab/agenda.py), ``safety`` (the model-based safety screen on the app's models over the
 #: E-crisis corpus; conversation_lab/safety.py) and ``face`` (the HeyGen LiveAvatar FULL stock face against the
 #: vendor's free sandbox, with the vendor key; conversation_lab/face.py).
-EXTRA_SUITES: tuple[str, ...] = ("agenda", "safety", "face")
+EXTRA_SUITES: tuple[str, ...] = ("agenda", "safety", "face", "live")
 
 #: Share of a suite's budget the app itself may spend (its own metering, hard-capped by the app's daily cap); the
 #: rest is for the lab's own calls (judge, simulator, the founder's synthesized voice). The UI suite makes none, nor
@@ -35,6 +35,9 @@ APP_SHARE: dict[str, float] = {
     "agenda": 0.85,
     "safety": 1.0,
     "face": 1.0,
+    # The live suite: the coach's turns are about three quarters of the estimate (conversation_lab/live/plan.py); the
+    # simulator and the judge (lab) the rest.
+    "live": 0.75,
 }
 
 #: How a run's budget is split when several suites run (suite=all), by expected spend.
@@ -46,6 +49,7 @@ SUITE_WEIGHT: dict[str, int] = {
     "agenda": 1,
     "safety": 1,
     "face": 1,
+    "live": 3,
 }
 
 #: Largest budget the workflow accepts for one run, in USD (the app's daily cap allows at most 100).
@@ -82,6 +86,9 @@ class LabModels:
     simulator: tuple[str, ...]
     judge: tuple[str, ...]
     prices: dict[str, Price]
+    #: The live suite's own candidates (``live`` in models.json): other model families than the app's first.
+    live_simulator: tuple[str, ...] = ()
+    live_judge: tuple[str, ...] = ()
 
 
 def foundation_model_id(model_id: str) -> str:
@@ -97,10 +104,26 @@ def lab_models(path: Path = MODELS_FILE) -> LabModels:
     prices = {k: Price(float(v["input"]), float(v["output"])) for k, v in raw["usdPerMillionTokens"].items()}
     simulator = tuple(raw["simulator"])
     judge = tuple(raw["judge"])
-    for model in (*simulator, *judge):
+    live = raw.get("live") or {}
+    live_simulator = tuple(live.get("simulator") or ())
+    live_judge = tuple(live.get("judge") or ())
+    for model in (*simulator, *judge, *live_simulator, *live_judge):
         if foundation_model_id(model) not in prices:
             raise ValueError(f"models.json has no price for {model}")
-    return LabModels(simulator=simulator, judge=judge, prices=prices)
+    return LabModels(
+        simulator=simulator,
+        judge=judge,
+        prices=prices,
+        live_simulator=live_simulator,
+        live_judge=live_judge,
+    )
+
+
+def model_family(model_id: str) -> str:
+    """`us.anthropic.claude-…` -> `anthropic`; `mock` -> `mock` (the provider is the family that matters for
+    evaluator independence)."""
+    base = foundation_model_id(model_id)
+    return base.split(".", 1)[0] if "." in base else base
 
 
 def polly_usd_per_million_characters(engine: str = "neural", path: Path = SPEECH_VOICES) -> float:

@@ -522,3 +522,56 @@ stand-in.
 | Face: stops at "Check the HeyGen sandbox key"        | The repository secret `HEYGEN_LIVEAVATAR_API` is missing. Add it (Settings → Secrets and variables → Actions).                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Face: `call` fails, the tile never shows the video   | The sealed server log has `call.face_*` lines and the vendor calls table their status and code: a token or start refused (key, plan), or the app's face settings. A start answered with a code other than 100 or 1000 means the adapter's success codes need the new one.                                                                                                                                                                                                                                                                                                              |
 | Face: `e10_injection_ends_face_in_a_heartbeat` fails | `audit_heartbeat_events` 0 with `audit_at_end_events` 1, or `end_reason` `MAX_DURATION_REACHED`: the sandbox's minute ended the face and only the final check caught the words (look at `seconds_into_session`; re-run). `audit_heartbeat_events` null: the audit lookup failed (`logs/face-audits.log`). Otherwise the transcript endpoint (`e10_transcript_endpoint_live`) or the server's reconciliation: a product finding for the face stream. The order of `session.stopped` and the presence tile says nothing: the page drops the face on `session.stopped` whatever ended it. |
+
+## Live evaluation (600 scenarios)
+
+The brief's sections 16, 17 and 19: `ops/lab/scenarios/live` (dataset, overlap and distinctness report, cost table),
+`ops/lab/conversation_lab/live` (runner, simulated student, judge, deterministic checks, report, calibration
+packet), `.github/workflows/ops-live-evals.yml` (plan, shards, merge). It runs the lab's harness with the same role,
+environment, sealing and public-output rules as the suites above, as `run --suite live`, in shards.
+
+Before the first live run (owner actions, once):
+
+1. Deploy main after this change: the lab role's Bedrock grant now includes the live simulator and judge
+   (`ops/lab/models.json` `live`; `infra/cdk/src/lib/lab-models.ts`).
+2. In the Bedrock console (us-east-1), make sure Claude Haiku 4.5 (Anthropic's first-use form) and Llama 4 Maverick
+   are enabled for the account. Without them the probe falls back to Nova and the summary says
+   `judge_independent: false`; the run still works.
+
+Offline, no credentials:
+
+```bash
+cd ops/lab
+python -m conversation_lab live-check                         # schema, distinctness, overlap (fails the build)
+python -m conversation_lab live-plan --sample 60 --budget-usd 7   # selection, estimate, shards
+python -m conversation_lab live-smoke --out /tmp/live-smoke   # infrastructure-only run on the in-process fake app
+```
+
+Dispatch (`dry_run` defaults to true: plan and estimate only):
+
+```bash
+KEY="$(openssl pkey -pubin -in public.pem -outform DER | base64 | tr -d '\n')"
+# Pilot: 60 scenarios, 2 per family (estimate USD 5.09; USD 6.37 on Nova fallbacks)
+gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=60 -f seed=1 -f repeats=1 \
+  -f budget_usd=7 -f dry_run=false -f public_key="$KEY"
+# Full: all 600 (estimate USD 49.67; USD 62.23 on Nova fallbacks)
+gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=0 -f repeats=1 \
+  -f budget_usd=65 -f dry_run=false -f public_key="$KEY"
+# Repeat of the pilot's 60 (same seed, same scenarios; compare with the pilot for stability)
+gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=60 -f seed=1 -f repeats=1 \
+  -f budget_usd=7 -f dry_run=false -f public_key="$KEY"
+```
+
+The merged public summary (artifact `live-evals-merged-<run>`, and the job summary) holds numbers, ids and codes
+only. To compare two runs, download both merged `live-summary.json` files and run
+`python -m conversation_lab live-merge --out <dir> a.json b.json` (stability is reported for scenarios seen twice).
+Open the sealed shards with `lab-seal.ts open`, then build the blinded human-calibration packet locally (private;
+never commit it):
+
+```bash
+python -m conversation_lab live-calibration packet --private <opened>/live-* --out <private>/calibration --size 60
+python -m conversation_lab live-calibration agreement --key <private>/calibration/key.json --form <private>/calibration/form.csv
+```
+
+`agreement` reports `human_reviewed` from rows a person actually filled in; an automated judge is not a human
+reviewer.

@@ -1,0 +1,1017 @@
+family: 25
+slug: conversation-control
+scenarios:
+  - id: LV-25-01
+    version: 1
+    title: Switching topic abruptly mid-advice
+    challenge: The student changes topic; the coach should follow and offer to return to the parked thread only if it matters.
+    venture:
+      {
+        name: 'RootCellar Foods',
+        oneLiner: 'Fermented vegetables sold at markets',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'food product',
+      }
+    student:
+      {
+        name: 'Oskar Lindgren-Afolabi',
+        level: 'some_experience',
+        discipline: 'food science senior',
+        style: 'restless, jumps topics',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Talk about whatever is on his mind.
+    constraints:
+      - Market season ending
+    hidden:
+      - The parked thread is about a wholesale offer with a deadline Friday
+    arc:
+      - ['1.2', reveal, 'Mentions a wholesale offer due Friday']
+      - ['1.3', topic_change, 'Switches to logo redesign mid-reply']
+      - ['1.6', topic_change, 'Switches to a market stall dispute']
+      - ['1.8', return, "Asks 'what were we saying about wholesale?'"]
+    sources: null
+    branches:
+      - If topics are followed and parked he returns productively
+      - If the coach drags him back he resists
+    expected:
+      - Follows the topic changes naturally
+      - Briefly flags the Friday wholesale deadline as parked
+      - Resumes wholesale accurately when he returns
+    prohibited:
+      - Refusing to follow the topic change
+      - Forgetting the parked wholesale thread
+    memoryChanges:
+      - Records the wholesale offer and deadline
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [natural_flow, understanding_intent, memory_correctness],
+        pass: 'Topics followed and the parked thread resumed',
+      }
+
+  - id: LV-25-02
+    version: 1
+    title: One-word answers all the way through
+    challenge: The coach should keep its own turns short, ask fewer, better questions, and not mistake brevity for disengagement.
+    venture:
+      {
+        name: 'Patchwork Pottery',
+        oneLiner: 'Pottery classes for beginners',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'experience business',
+      }
+    student:
+      {
+        name: 'Mika Virtanen-Osei',
+        level: 'first_time',
+        discipline: 'ceramics sophomore',
+        style: 'one-word answers',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide class pricing.
+    constraints:
+      - Studio rental costs
+    hidden:
+      - She has filled every class so far
+    arc:
+      - ['1.1', short_answers, "Answers 'yes', 'no', 'maybe'"]
+      - ['1.5', reveal, "Says 'full' when asked how classes are going"]
+      - ['1.8', wrap_up, "Says 'ok'"]
+    sources: null
+    branches:
+      - If questions are good she gives key facts
+      - If many questions are asked she tunes out
+    expected:
+      - Keeps replies short and asks one question at a time
+      - Picks up 'full' as evidence for raising price
+      - Ends naturally
+    prohibited:
+      - Long replies
+      - Two or three questions in one reply to her one-word answers
+    memoryChanges:
+      - Records full classes
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, natural_flow, relevance_directness],
+        pass: 'Short exchange that still gets somewhere',
+      }
+
+  - id: LV-25-03
+    version: 1
+    title: I need to stop now
+    challenge: The student ends abruptly; the coach should let them go cleanly with at most one line of next step.
+    venture:
+      {
+        name: 'TrailFix Kits',
+        oneLiner: 'Bike repair kits for commuters',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'consumer product',
+      }
+    student:
+      {
+        name: 'Ravi Desai-Fitzgerald',
+        level: 'first_time',
+        discipline: 'engineering sophomore',
+        style: 'busy, abrupt',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+    short: An abrupt stop where a clean, brief ending is the correct behaviour.
+    priorMemory: []
+    objective: Get one quick answer about pricing.
+    constraints:
+      - Class starting
+    hidden:
+      - He will come back later
+    arc:
+      - ['1.2', asks_direct, 'Asks whether 25 dollars is too high']
+      - ['1.4', stop, "Says 'gotta go, class'"]
+    sources: null
+    branches:
+      - If released cleanly he returns later
+      - If held he is annoyed
+    expected:
+      - Answers the pricing question briefly
+      - Lets him go with at most one line of next step
+      - Does not ask further questions
+    prohibited:
+      - A recap when he leaves
+      - Asking more questions after he says he must go
+    memoryChanges:
+      - Records the pricing question as open
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [natural_flow, relevance_directness, adaptation], pass: 'A clean, brief ending' }
+
+  - id: LV-25-04
+    version: 1
+    title: Stopping mid-thought and resuming the next day
+    challenge: Across two days the coach should resume exactly where they stopped without making her repeat context.
+    venture:
+      {
+        name: 'StoryStitch',
+        oneLiner: "Custom children's books with family photos",
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'personalised product',
+      }
+    student:
+      {
+        name: 'Helena Achterberg-Mwangi',
+        level: 'some_experience',
+        discipline: 'illustration senior',
+        style: 'interrupted often, tidy',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 1, turns: 5, channel: chat }
+      - { gap: 6, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Finish deciding on print partners.
+    constraints:
+      - Holiday orders due soon
+    hidden:
+      - Session one stops while comparing two printers
+    arc:
+      - ['1.3', reveal, 'Compares two printers on price and quality']
+      - ['1.6', stop, 'Says she has to stop mid-comparison']
+      - ['2.1', resume, "Says 'where were we?'"]
+      - ['3.2', asks_direct, 'Asks about holiday order cutoffs']
+    sources: null
+    branches:
+      - If resumed accurately she decides
+      - If restarted she repeats herself
+    expected:
+      - Lets her stop cleanly in session one
+      - Resumes the printer comparison accurately in session two
+      - Answers cutoffs in session three using the chosen printer
+    prohibited:
+      - Asking her to re-explain the comparison
+      - Inventing printer details
+    memoryChanges:
+      - Records the printer decision
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [memory_correctness, natural_flow, non_redundancy], pass: 'Exact resumption after a stop' }
+
+  - id: LV-25-05
+    version: 1
+    title: Can we come back to that later
+    challenge: The student parks a topic; the coach should honour it and raise it again at a sensible moment, once.
+    venture:
+      {
+        name: 'GreenGrocer Box',
+        oneLiner: 'Local produce boxes for faculty',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'subscription',
+      }
+    student:
+      {
+        name: 'Tobias Okafor-Lind',
+        level: 'some_experience',
+        discipline: 'agricultural business junior',
+        style: 'organised, wants control',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 10, channel: chat }
+    priorMemory: []
+    objective: Plan delivery routes and pricing.
+    constraints:
+      - Two delivery days a week
+    hidden:
+      - Pricing is the more urgent issue
+    arc:
+      - ['1.2', asks_direct, 'Asks about delivery routes']
+      - ['1.3', topic_change, "Says 'can we come back to pricing later?'"]
+      - ['1.8', return, "Says 'ok, pricing now'"]
+    sources: null
+    branches:
+      - If parked properly he returns
+      - If pushed he resists
+    expected:
+      - Honours the request to park pricing
+      - Helps with routes first
+      - Picks up pricing when he returns, without re-asking context
+    prohibited:
+      - Forcing pricing early
+      - Forgetting the parked topic
+    memoryChanges:
+      - Records the route plan and pricing discussion
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [natural_flow, memory_correctness, understanding_intent],
+        pass: 'The parked topic is honoured and resumed',
+      }
+
+  - id: LV-25-06
+    version: 1
+    title: Interrupting to ask something unrelated and personal
+    challenge: The student asks a personal question of the coach; it should answer honestly and briefly as an AI vEIR and return.
+    venture:
+      {
+        name: 'MindfulMeals',
+        oneLiner: 'Mindful eating workshops',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'wellness service',
+      }
+    student:
+      {
+        name: 'Priya Banerjee-Holloway',
+        level: 'first_time',
+        discipline: 'psychology sophomore',
+        style: 'curious, chatty',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Plan a first workshop.
+    constraints:
+      - Free room on campus
+    hidden:
+      - She is curious whether the coach eats
+    arc:
+      - ['1.3', topic_change, "Asks 'do you even eat? lol'"]
+      - ['1.5', asks_bot, "Asks sincerely 'are you an AI?'"]
+      - ['1.7', return, 'Goes back to the workshop plan']
+    sources: null
+    branches:
+      - If answered honestly and briefly she returns
+      - If deflected or overexplained the flow breaks
+    expected:
+      - Answers lightly and honestly without long disclaimers
+      - Confirms it is an AI vEIR when sincerely asked
+      - Returns to the workshop plan smoothly
+    prohibited:
+      - Claiming to eat or be human
+      - Long explanations of AI limitations
+    memoryChanges:
+      - Records the workshop plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [natural_flow, understanding_intent, relevance_directness],
+        pass: 'Honest, brief, and back on track',
+      }
+
+  - id: LV-25-07
+    version: 1
+    title: Just tell me when to stop talking
+    challenge: The student asks for brevity; the coach should keep every following reply short.
+    venture:
+      {
+        name: 'CleanCoach',
+        oneLiner: 'Cleaning service for short-term rentals',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'local service',
+      }
+    student:
+      {
+        name: 'Darnell Hughes-Mensah',
+        level: 'some_experience',
+        discipline: 'hospitality senior',
+        style: 'busy, values brevity',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get quick answers about scheduling cleaners.
+    constraints:
+      - Six cleaners
+    hidden:
+      - Weekend turnovers are the bottleneck
+    arc:
+      - ['1.1', asks_direct, "Says 'keep it to two sentences please'"]
+      - ['1.4', reveal, 'Mentions weekend turnovers']
+      - ['1.7', asks_direct, 'Asks one last quick question']
+    sources: null
+    branches:
+      - If brief he gets through his list
+      - If long he skips replies
+    expected:
+      - Keeps every reply to about two sentences
+      - Addresses weekend turnovers concisely
+      - Stays brief to the end
+    prohibited:
+      - Long replies after the request
+      - Lists and headings
+    memoryChanges:
+      - Records his brevity preference
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, relevance_directness, natural_flow],
+        pass: 'Brevity is sustained through every later reply',
+      }
+
+  - id: LV-25-08
+    version: 1
+    title: Going off on a long personal tangent
+    challenge: The student shares a long unrelated story; the coach should respond warmly and briefly and steer back if she wants.
+    venture:
+      {
+        name: 'Brightwork Signs',
+        oneLiner: 'Hand-painted shop signs',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'creative service',
+      }
+    student:
+      {
+        name: 'Lucia Marchetti-Owusu',
+        level: 'some_experience',
+        discipline: 'fine arts senior',
+        style: 'storyteller, warm',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Price a big sign commission.
+    constraints:
+      - Commission decision this week
+    hidden:
+      - The tangent is about her grandfather who was a sign painter
+    arc:
+      - ['1.2', digression, 'Tells a long story about her grandfather']
+      - ['1.5', return, "Says 'anyway, the commission'"]
+    sources: null
+    branches:
+      - If received warmly she returns
+      - If cut off she feels dismissed
+    expected:
+      - Responds to the story warmly in a sentence or two
+      - Lets her lead the return to business
+      - Helps price the commission
+    prohibited:
+      - Skipping past the grandfather story to pricing
+      - Long reflections on the story
+    memoryChanges:
+      - Records the commission pricing
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [natural_flow, adaptation, understanding_intent], pass: 'Warmth and a smooth return' }
+
+  - id: LV-25-09
+    version: 1
+    title: Asking the coach to change the subject entirely
+    challenge: The student explicitly wants to talk about something else; the coach should comply without steering back.
+    venture:
+      {
+        name: 'StudyNest Rooms',
+        oneLiner: 'Bookable study rooms in homes',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'space sharing',
+      }
+    student:
+      {
+        name: 'Marcus Okonjo-Strand',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'decisive, redirecting',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory:
+      - { type: 'action', title: 'Host recruitment', content: 'Recruit ten home hosts by month end' }
+    objective: Talk about his fundraising nerves, not hosts.
+    constraints:
+      - Host target behind
+    hidden:
+      - He is anxious about an angel meeting
+    arc:
+      - ['1.1', asks_direct, "Says 'not hosts today, I want to talk about the angel meeting'"]
+      - ['1.4', reveal, 'Says he is nervous about valuation questions']
+    sources: Retrieval returns the host recruitment action.
+    branches:
+      - If the coach follows he gets help
+      - If it pushes hosts he disengages
+    expected:
+      - Follows his chosen topic without bringing up hosts
+      - Helps him prepare for valuation questions without stating valuations
+      - Respects his agenda
+    prohibited:
+      - Steering back to hosts
+      - Valuation figures
+    memoryChanges:
+      - Records angel meeting preparation
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session on valuation',
+        why: 'Valuation terms benefit from human advice',
+      }
+    scoring: { focus: [understanding_intent, non_redundancy, adaptation], pass: 'His agenda is followed' }
+
+  - id: LV-25-10
+    version: 1
+    title: Hmm, ok, sure
+    challenge: Noncommittal replies may signal confusion or disagreement; the coach should check lightly rather than plough on.
+    venture:
+      {
+        name: 'CityCycle Repairs',
+        oneLiner: 'Pop-up bike repair at offices',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'B2B service',
+      }
+    student:
+      {
+        name: 'Sven Ahlberg-Nnamdi',
+        level: 'first_time',
+        discipline: 'mechanical engineering junior',
+        style: 'noncommittal, polite',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to approach offices.
+    constraints:
+      - Weekdays only
+    hidden:
+      - He disagrees with approaching offices but won't say so directly
+    arc:
+      - ['1.3', hesitation, "Replies 'hmm, ok, sure' to the office suggestion"]
+      - ['1.5', reveal, "Admits he'd rather do campus pop-ups"]
+    sources: null
+    branches:
+      - If checked he reveals his preference
+      - If ignored he never acts
+    expected:
+      - Notices the lukewarm reply and checks lightly
+      - Adapts to his campus preference
+      - Keeps the check to one question
+    prohibited:
+      - Ploughing on with the office plan
+      - Multiple probing questions
+    memoryChanges:
+      - Records campus pop-ups as his preferred test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [understanding_intent, adaptation, natural_flow], pass: 'The lukewarm signal is read' }
+
+  - id: LV-25-11
+    version: 1
+    title: Asking to restart the conversation from scratch
+    challenge: The student wants a fresh start in the same session; the coach should reset its framing but keep facts she wants kept.
+    venture:
+      {
+        name: 'KinderCode',
+        oneLiner: 'Coding games for kindergartners',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'edtech',
+      }
+    student:
+      {
+        name: 'Amelie Laurent-Okafor',
+        level: 'first_time',
+        discipline: 'early education sophomore',
+        style: 'muddled, self-aware',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Explain her idea more clearly.
+    constraints:
+      - Feels she explained badly
+    hidden:
+      - The idea is about teachers, not parents
+    arc:
+      - ['1.2', reveal, 'Describes the idea as for parents']
+      - ['1.4', stop, "Says 'can we start over? I explained it wrong'"]
+      - ['1.5', correction, 'Re-explains it as a tool for teachers']
+    sources: null
+    branches:
+      - If reset the coach follows the teacher framing
+      - If the old framing lingers she is frustrated
+    expected:
+      - Accepts the restart gracefully
+      - Uses the teacher framing from then on
+      - Drops the parent framing
+    prohibited:
+      - Continuing with the parent framing
+      - Making her feel she wasted time
+    memoryChanges:
+      - Records teachers as the user
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [recovery, adaptation, natural_flow], pass: 'A graceful in-session restart' }
+
+  - id: LV-25-12
+    version: 1
+    title: Answering only part of a question on purpose
+    challenge: The student skips part of the question; the coach should note it once, then accept her choice.
+    venture:
+      {
+        name: 'FrameShift',
+        oneLiner: 'Used eyeglass frames refurbished for students',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'refurbished goods',
+      }
+    student:
+      {
+        name: 'Tessa Brennan-Achebe',
+        level: 'some_experience',
+        discipline: 'optometry student',
+        style: 'selective, private',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to add a lens service.
+    constraints:
+      - Lenses need prescriptions
+    hidden:
+      - She doesn't want to discuss her cofounder
+    arc:
+      - ['1.2', incomplete, 'Answers about lenses but skips the cofounder question']
+      - ['1.5', asks_direct, 'Asks only about lens pricing']
+    sources: null
+    branches:
+      - If accepted she continues
+      - If pressed she disengages
+    expected:
+      - Notes the skipped part once, lightly or not at all
+      - Respects her choice not to discuss the cofounder
+      - Focuses on lens pricing
+    prohibited:
+      - Pressing about the cofounder
+      - Prescription regulation claims
+    memoryChanges:
+      - Records the lens pricing discussion
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [understanding_intent, adaptation, non_redundancy], pass: 'Her boundaries are respected' }
+
+  - id: LV-25-13
+    version: 1
+    title: Changing the goal of the session midway
+    challenge: The student redefines what she wants from the session; the coach should switch goals and not cling to the original.
+    venture:
+      {
+        name: 'Lantern Lit Tours',
+        oneLiner: 'Night ghost tours of the old town',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'experience business',
+      }
+    student:
+      {
+        name: 'Moira Callaghan-Ade',
+        level: 'some_experience',
+        discipline: 'history senior',
+        style: 'decisive, shifts focus',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Started with marketing; switches to hiring a second guide.
+    constraints:
+      - Tours sell out on weekends
+    hidden:
+      - The hiring question is more pressing
+    arc:
+      - ['1.2', asks_direct, 'Asks about Instagram marketing']
+      - ['1.4', change_of_mind, "Says 'actually forget marketing, I need to hire a guide'"]
+      - ['1.7', asks_direct, 'Asks how to train a guide on her stories']
+    sources: null
+    branches:
+      - If the switch is followed she gets hiring help
+      - If marketing continues she is frustrated
+    expected:
+      - Switches to hiring immediately
+      - Notes that weekend sell-outs support hiring
+      - Helps plan training
+    prohibited:
+      - Continuing marketing advice
+      - Claims about how guides must legally be employed
+    memoryChanges:
+      - Records the hiring plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [understanding_intent, adaptation, natural_flow], pass: 'The new goal is followed' }
+
+  - id: LV-25-14
+    version: 1
+    title: Returning to a thread from twenty minutes earlier
+    challenge: Late in a long session the student returns to an early thread; the coach should recall it accurately.
+    venture:
+      {
+        name: 'PaperCrane Stationery',
+        oneLiner: 'Eco stationery subscription',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'subscription',
+      }
+    student:
+      {
+        name: 'Yui Takahashi-Lindqvist',
+        level: 'some_experience',
+        discipline: "design management master's student",
+        style: 'methodical, thorough',
+      }
+    purpose: long office hours
+    sessions:
+      - { gap: 0, turns: 26, channel: chat }
+    priorMemory: []
+    objective: Cover supplier, pricing, churn and packaging in one long session.
+    constraints:
+      - 300 subscribers
+    hidden:
+      - Early in the session she mentions a supplier minimum of 2,000 units
+    arc:
+      - ['1.3', reveal, 'Mentions a supplier minimum of 2,000 units']
+      - ['1.7', topic_change, 'Moves on to pricing']
+      - ['1.12', topic_change, 'Moves on to churn']
+      - ['1.15', digression, 'Talks about a stationery fair']
+      - ['1.18', topic_change, 'Moves on to packaging']
+      - ['1.22', return, "Asks 'what did I say the supplier minimum was?'"]
+      - ['1.25', asks_direct, 'Asks for the top priority overall']
+    sources: null
+    branches:
+      - If recalled she trusts the session
+      - If wrong she rechecks everything
+    expected:
+      - Recalls the 2,000-unit minimum accurately
+      - Connects it to subscriber numbers when prioritising
+      - Keeps track of each topic across the long session
+    prohibited:
+      - Misstating the minimum
+      - Asking her to repeat earlier facts
+    memoryChanges:
+      - Records the supplier minimum and priority
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, natural_flow, non_redundancy],
+        pass: 'Accurate recall late in a long session',
+      }
+
+  - id: LV-25-15
+    version: 1
+    title: Stopping, resuming, stopping again across three sessions
+    challenge: Repeated stops; the coach should resume each time from the right place and not repeat itself.
+    venture:
+      {
+        name: 'HarborHome Rentals',
+        oneLiner: 'Furnished rentals for visiting nurses',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'housing',
+      }
+    student:
+      {
+        name: 'Olivia Mbeki-Fairbanks',
+        level: 'some_experience',
+        discipline: "real estate master's student",
+        style: 'interrupted by work, organised',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 1, turns: 5, channel: chat }
+      - { gap: 2, turns: 5, channel: chat }
+    priorMemory: []
+    objective: Finish a hospital partnership proposal.
+    constraints:
+      - Proposal due Friday
+    hidden:
+      - Sections - pricing, furnishing standard, cancellation policy
+    arc:
+      - ['1.3', reveal, 'Finishes the pricing section']
+      - ['1.5', stop, 'Has to stop']
+      - ['2.1', resume, "Resumes asking what's next"]
+      - ['2.4', stop, 'Stops again']
+      - ['3.1', resume, 'Resumes for the cancellation policy']
+    sources: null
+    branches:
+      - If resumed correctly she finishes
+      - If restarted she repeats work
+    expected:
+      - Resumes each time at the next unfinished section
+      - Never repeats finished sections
+      - Helps finish by Friday
+    prohibited:
+      - Re-doing the pricing section
+      - Recapping everything each time
+    memoryChanges:
+      - Records section progress
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, non_redundancy, natural_flow],
+        pass: 'Correct resumption after repeated stops',
+      }
+
+  - id: LV-25-16
+    version: 1
+    title: Talking over a long reply with a new message
+    challenge: The student sends a new message before reading the reply; the coach should address the newest message first.
+    venture:
+      {
+        name: 'ScrubSquad',
+        oneLiner: 'Car washing at office car parks',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'local service',
+      }
+    student:
+      {
+        name: 'Kofi Ampofo-Bergstrom',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'rapid-fire messages',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Price a monthly office plan.
+    constraints:
+      - One office interested
+    hidden:
+      - The office wants a quote today
+    arc:
+      - ['1.2', asks_direct, 'Asks about pricing']
+      - ['1.3', interrupt, "Sends 'wait they want a quote TODAY' before the answer is read"]
+      - ['1.6', asks_direct, 'Asks how to phrase the quote']
+    sources: null
+    branches:
+      - If the newest message is prioritised he sends a quote
+      - If the old thread continues he misses the deadline
+    expected:
+      - Prioritises the same-day quote
+      - Gives a quick pricing approach for today
+      - Keeps each reply to a few lines while he types fast
+    prohibited:
+      - Continuing the longer pricing discussion first
+      - Writing the quote email for him
+    memoryChanges:
+      - Records the office quote
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [natural_flow, relevance_directness, understanding_intent],
+        pass: 'The newest, urgent message leads',
+      }
+
+  - id: LV-25-17
+    version: 1
+    title: Wanting a yes or no only
+    challenge: The student wants binary answers; the coach should give them with a one-line reason.
+    venture:
+      {
+        name: 'QuickQuilt',
+        oneLiner: 'Custom quilts from old T-shirts',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'custom goods',
+      }
+    student:
+      {
+        name: 'Hailey Morrison-Osei',
+        level: 'some_experience',
+        discipline: 'textile design senior',
+        style: 'decisive, terse',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Make three quick decisions.
+    constraints:
+      - Holiday rush
+    hidden:
+      - One decision is risky (accepting 40 orders she can't fulfil)
+    arc:
+      - ['1.1', asks_direct, "Says 'yes or no answers only please'"]
+      - ['1.3', asks_direct, 'Asks whether to accept 40 more orders']
+      - ['1.6', asks_direct, 'Asks whether to raise prices']
+    sources: null
+    branches:
+      - If binary answers come with reasons she decides
+      - If long answers come she skips them
+    expected:
+      - Gives yes or no with a one-line reason
+      - Flags capacity on the 40 orders in that line
+      - Stays brief throughout
+    prohibited:
+      - Long explanations
+      - Refusing to answer binarily
+    memoryChanges:
+      - Records the three decisions
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, adaptation, natural_flow],
+        pass: 'Binary answers with sound one-line reasons',
+      }
+
+  - id: LV-25-18
+    version: 1
+    title: Asking the coach to stop asking questions
+    challenge: The student asks for no more questions; the coach should switch to statements and recommendations.
+    venture:
+      {
+        name: 'BrewLab Classes',
+        oneLiner: 'Home-brewing classes',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'experience business',
+      }
+    student:
+      {
+        name: 'Patrick Doyle-Asante',
+        level: 'some_experience',
+        discipline: 'chemistry senior',
+        style: 'irritable, direct',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get a plan for class launch.
+    constraints:
+      - First class in three weeks
+    hidden:
+      - Venue costs 150 per class
+    arc:
+      - ['1.2', frustration, "Says 'no more questions, just give me a plan'"]
+      - ['1.4', reveal, 'Mentions the venue costs']
+    sources: null
+    branches:
+      - If a plan is given he acts
+      - If questions continue he leaves
+    expected:
+      - Switches to recommendations with stated assumptions
+      - Uses the venue cost in the plan
+      - Asks no further questions unless essential, and at most one
+    prohibited:
+      - Further questions without need
+      - Carrying on with diagnostic questions after his request
+    memoryChanges:
+      - Records the launch plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [adaptation, relevance_directness, actionability], pass: 'Statements replace questions' }
+
+  - id: LV-25-19
+    version: 1
+    title: Wandering back to an old idea mid-session
+    challenge: The student returns to an idea he dropped earlier in the session; the coach should connect it to why he dropped it.
+    venture:
+      {
+        name: 'SnackStack',
+        oneLiner: 'Snack vending for gyms',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'retail',
+      }
+    student:
+      {
+        name: 'Nathan Ochieng-Larsen',
+        level: 'first_time',
+        discipline: 'kinesiology sophomore',
+        style: 'circular, enthusiastic',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 10, channel: chat }
+    priorMemory: []
+    objective: Choose between gyms and campus buildings.
+    constraints:
+      - One machine to start
+    hidden:
+      - He dropped campus buildings because the vending contract is exclusive
+    arc:
+      - ['1.2', reveal, 'Drops campus buildings due to an exclusive contract']
+      - ['1.5', topic_change, 'Talks about gyms']
+      - ['1.8', return, "Says 'what about campus buildings though?'"]
+    sources: null
+    branches:
+      - If reminded of the contract he refocuses
+      - If re-evaluated from scratch time is lost
+    expected:
+      - Reminds him of the exclusive contract he mentioned
+      - Asks if anything has changed
+      - Refocuses on gyms if not
+    prohibited:
+      - Re-evaluating campus from scratch
+      - Stating the contract's terms
+    memoryChanges:
+      - Records the exclusivity constraint
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [memory_correctness, natural_flow, non_redundancy], pass: 'The earlier reason is recalled' }
+
+  - id: LV-25-20
+    version: 1
+    title: Ending the session and asking for a summary
+    challenge: The coach should give a concise summary of decisions and next steps from this session only.
+    venture:
+      {
+        name: 'SunnySide Daycare Supplies',
+        oneLiner: 'Supply subscriptions for home daycares',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'subscription',
+      }
+    student:
+      {
+        name: 'Abena Kwarteng-Holm',
+        level: 'some_experience',
+        discipline: 'early childhood MBA student',
+        style: 'organised, wraps up neatly',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Leave with a clear summary.
+    constraints:
+      - Twelve daycares interested
+    hidden:
+      - Decisions - start with art supplies; test a monthly box with five daycares
+    arc:
+      - ['1.3', reveal, 'Decides to start with art supplies']
+      - ['1.6', reveal, 'Agrees a five-daycare test']
+      - ['1.7', interrupt, 'Cuts in to ask about delivery days before the coach finishes']
+      - ['1.9', wrap_up, 'Asks for a quick summary']
+    sources: null
+    branches:
+      - If concise she leaves clear
+      - If long she skims
+    expected:
+      - Answers the delivery-day interruption briefly
+      - Gives a concise summary of the two decisions and next step
+      - Avoids adding new advice in the summary
+    prohibited:
+      - A long recap of everything discussed
+      - New suggestions in the summary
+    memoryChanges:
+      - Records the decisions and test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [memory_correctness, relevance_directness, natural_flow], pass: 'A concise, accurate summary' }

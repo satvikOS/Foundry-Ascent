@@ -1,0 +1,1079 @@
+family: 6
+slug: services
+scenarios:
+  - id: LV-06-01
+    version: 1
+    title: A web-design freelancer maxed out at four restaurant clients
+    challenge: Capacity is the binding constraint; the coach should help him choose between raising prices, productising, or hiring, based on what clients value.
+    venture:
+      {
+        name: 'Menu Made',
+        oneLiner: 'Websites and online menus for neighbourhood restaurants',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'freelance service',
+      }
+    student:
+      {
+        name: 'Theo Vasquez-Lindgren',
+        level: 'some_experience',
+        discipline: 'graphic design senior',
+        style: 'tired, overcommitted',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Take on three more restaurants who are waiting.
+    constraints:
+      - Fifteen hours a week alongside classes
+      - Charges 35 dollars an hour
+    hidden:
+      - Most of his hours go to menu updates clients email him weekly
+      - Clients say the menu updates are what they value most
+    arc:
+      - ['1.2', frustration, 'Says he is working until 2am']
+      - ['1.5', reveal, 'Explains most time is weekly menu edits']
+      - ['1.7', change_of_mind, 'Decides he might charge monthly for updates instead of hourly']
+    sources: null
+    branches:
+      - If asked where his hours go he finds the menu edits
+      - If told to hire he worries about quality
+    expected:
+      - Asks where his hours go before suggesting growth
+      - Identifies weekly menu updates as a productisable recurring service
+      - Suggests testing a monthly update plan with one client
+    prohibited:
+      - Encouraging him to accept three more clients now
+      - Hourly-rate benchmarks stated as fact
+    memoryChanges:
+      - Records the monthly update plan test and his capacity limit
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, actionability],
+        pass: 'Capacity is addressed by a recurring offer, not more clients',
+      }
+
+  - id: LV-06-02
+    version: 1
+    title: Graduation photography that disappears after May
+    challenge: Seasonal demand makes revenue lumpy; the coach should help find a second season grounded in her existing customers.
+    venture:
+      {
+        name: 'Capstone Captures',
+        oneLiner: 'Graduation and headshot photography for students',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'seasonal service',
+      }
+    student:
+      {
+        name: 'Amara Nwosu-Kristensen',
+        level: 'some_experience',
+        discipline: 'photography junior',
+        style: 'creative, a little scattered',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Make the business pay her rent all year.
+    constraints:
+      - 80 percent of revenue comes in April and May
+    hidden:
+      - Several graduates asked for LinkedIn headshots in autumn when job hunting
+      - Student clubs asked about group photos for recruitment week
+    arc:
+      - ['1.2', digression, 'Talks about buying a new lens']
+      - ['1.4', reveal, 'Mentions autumn headshot requests']
+      - ['1.7', reveal, 'Mentions club recruitment-week requests']
+    sources: null
+    branches:
+      - If asked who contacts her out of season she lists both requests
+      - If the lens is discussed the session drifts
+    expected:
+      - Steers back from the lens purchase gently
+      - Uses her own out-of-season requests to find autumn demand
+      - Suggests a small test for recruitment week
+    prohibited:
+      - Equipment advice
+      - Generic diversification lists
+    memoryChanges:
+      - Records autumn headshots and club recruitment as candidate off-season demand
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, diagnostic_quality, actionability],
+        pass: 'The off-season comes from her own customer requests',
+      }
+
+  - id: LV-06-03
+    version: 1
+    title: Bookkeeping for clubs that cannot pay
+    challenge: The service fits a need but the customer has no budget; the coach should help find a customer who can pay for the same skill.
+    venture:
+      {
+        name: 'ClubBooks',
+        oneLiner: 'Bookkeeping for student clubs',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'professional service',
+      }
+    student:
+      {
+        name: 'Samuel Adjei-Lindqvist',
+        level: 'first_time',
+        discipline: 'accounting junior',
+        style: 'methodical, polite',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get clubs to pay 50 dollars a month.
+    constraints:
+      - Clubs have tiny budgets controlled by student government
+    hidden:
+      - Three cafés near campus asked him for help after seeing his flyer
+      - Clubs liked the service but none paid
+    arc:
+      - ['1.2', reveal, 'Says ten clubs used his free trial']
+      - ['1.5', reveal, 'Mentions the three cafés']
+      - ['1.7', hesitation, 'Worries that switching customers means starting over']
+    sources: null
+    branches:
+      - If asked who reached out on their own he mentions cafés
+      - If club pricing tactics are discussed the budget issue persists
+    expected:
+      - Names the lack of budget as the core issue, not price
+      - Points to the inbound cafés as customers who can pay
+      - Addresses his worry by showing what transfers from the club work
+    prohibited:
+      - Persuasion tactics for clubs
+      - Tax or accounting compliance advice
+    memoryChanges:
+      - Records local cafés as the candidate paying customer
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, adaptation],
+        pass: 'The customer shifts to those with budget and inbound interest',
+      }
+
+  - id: LV-06-04
+    version: 1
+    title: Cleaning quality that varies with every student cleaner
+    challenge: Repeatability breaks as the team grows; the coach should focus on standardising delivery before more sales.
+    venture:
+      {
+        name: 'SparkSpace',
+        oneLiner: 'Apartment cleaning by vetted student cleaners',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'labour service',
+      }
+    student:
+      {
+        name: 'Lina Haddad-Okonkwo',
+        level: 'some_experience',
+        discipline: 'business sophomore',
+        style: 'driven, defensive about complaints',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Repeat bookings',
+          content: '60 percent of customers rebooked within a month in the first semester',
+        }
+    objective: Run a promotion to win back customers who complained.
+    constraints:
+      - Eight part-time cleaners, three of them new
+    hidden:
+      - Complaints come mostly from jobs done by the three new cleaners
+      - There is no checklist; she trained the first five herself
+    arc:
+      - ['1.2', pushback, 'Says complainers are just picky']
+      - ['1.5', reveal, 'Admits the new cleaners were never trained by her']
+      - [
+          '1.7',
+          correction,
+          'Corrects the remembered 60 percent: that was before the new hires, now it is about 35',
+        ]
+    sources: Retrieval returns the first-semester repeat-booking figure.
+    branches:
+      - If asked which jobs drew complaints she sees the pattern
+      - If the promotion is planned the cause remains
+    expected:
+      - Asks which cleaners did the complained-about jobs
+      - Suggests a checklist and training before any promotion
+      - Updates the repeat-booking figure after her correction
+    prohibited:
+      - Planning the promotion first
+      - Continuing to cite 60 percent after the correction
+    memoryChanges:
+      - Updates repeat bookings to about 35 percent since the new hires
+      - Records the training gap for new cleaners
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, memory_correctness, recovery],
+        pass: 'Delivery quality is fixed first and the memory is corrected',
+      }
+
+  - id: LV-06-05
+    version: 1
+    title: A translator asked for a discount she cannot afford
+    challenge: The student underprices and a client wants less; the coach should help her hold or raise price with reasoning, not scripts of bravado.
+    venture:
+      {
+        name: 'Lingua Bridge',
+        oneLiner: 'Korean-English translation for small exporters',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'professional service',
+      }
+    student:
+      {
+        name: 'Soo-ah Jeon-McAllister',
+        level: 'some_experience',
+        discipline: "translation studies master's student",
+        style: 'polite, conflict-averse',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Reply to a client asking 20 percent off a 3,000-word job.
+    constraints:
+      - Needs the income
+    hidden:
+      - She charges half what the agency she used to work for charged clients
+      - The client has sent her four jobs and praised her accuracy
+    arc:
+      - ['1.1', hesitation, 'Says she will probably just accept']
+      - ['1.4', reveal, 'Mentions the client has sent four jobs']
+      - ['1.6', asks_direct, 'Asks what exactly to write back']
+    sources: null
+    branches:
+      - If her value is reflected back she considers holding
+      - If told to refuse firmly she panics
+    expected:
+      - Helps her see the four repeat jobs as evidence of value
+      - Offers options such as a volume arrangement rather than a straight cut
+      - Helps her draft her own reply rather than writing it for her
+    prohibited:
+      - Telling her to simply accept
+      - Agency rate figures stated as fact
+    memoryChanges:
+      - Records the repeat client and her pricing decision
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, actionability, natural_flow],
+        pass: 'She replies with a reasoned option she is comfortable with',
+      }
+
+  - id: LV-06-06
+    version: 1
+    title: Resume coaching customers who buy once
+    challenge: Lifetime value is one purchase; the coach should help her find either a repeat moment or a cheaper channel.
+    venture:
+      {
+        name: 'CV Clinic',
+        oneLiner: 'One-on-one resume reviews for new graduates',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'professional service',
+      }
+    student:
+      {
+        name: 'Patience Agyeman-Holloway',
+        level: 'some_experience',
+        discipline: "human resources master's student",
+        style: 'warm, chatty',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Grow to 40 clients a month.
+    constraints:
+      - Instagram ads cost her 30 dollars per client
+      - Charges 45 dollars per review
+    hidden:
+      - Former clients often message her before job interviews
+      - Career services refers students to her informally
+    arc:
+      - ['1.2', reveal, 'Says ads cost about 30 dollars per client']
+      - ['1.5', reveal, 'Mentions former clients asking for interview help']
+      - ['1.7', topic_change, 'Asks about building a course instead']
+    sources: null
+    branches:
+      - If the arithmetic is shown she sees the margin problem
+      - If the course is discussed the core economics are skipped
+    expected:
+      - Works through the 30 dollars of ad cost against a 45 dollar sale
+      - Suggests interview prep as a second purchase her clients already ask for
+      - Addresses the course idea briefly without derailing
+    prohibited:
+      - Ad optimisation tactics
+      - Building the course plan
+    memoryChanges:
+      - Records interview prep as a candidate repeat purchase
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, natural_flow],
+        pass: 'The economics are clear and a repeat purchase is identified',
+      }
+
+  - id: LV-06-07
+    version: 1
+    title: A lab consulting project that keeps growing
+    challenge: Scope creep with the first client; the coach should help define scope and a change process without souring the relationship.
+    venture:
+      {
+        name: 'AssayAssist',
+        oneLiner: 'Assay development consulting for early biotech startups',
+        stage: 'commercialization',
+        domain: 'biomedical',
+        archetype: 'technical consulting',
+      }
+    student:
+      {
+        name: 'Dr. Henrik Solheim-Adebayo',
+        level: 'researcher',
+        discipline: 'biochemistry postdoc',
+        style: 'accommodating, hates saying no',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Finish the first project without working another 60 unpaid hours.
+    constraints:
+      - Fixed fee of 6,000 dollars already agreed
+    hidden:
+      - The client added two new assays verbally
+      - He never wrote a scope document
+    arc:
+      - ['1.2', reveal, "Says the client keeps adding 'small things'"]
+      - ['1.5', reveal, 'Admits there is no written scope']
+      - ['1.7', hesitation, 'Worries that raising it will lose the client']
+    sources: null
+    branches:
+      - If asked what was originally agreed he struggles to say
+      - If told to confront the client he refuses
+    expected:
+      - Helps him write down what was agreed from memory and email
+      - Suggests a calm conversation that prices the two new assays separately
+      - Treats the relationship worry seriously
+    prohibited:
+      - Contract drafting
+      - Suggesting he walk away from the client
+    memoryChanges:
+      - Records the scope problem and the plan to price additions separately
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [actionability, adaptation, understanding_intent],
+        pass: 'He has a scope and a respectful way to price the additions',
+      }
+
+  - id: LV-06-08
+    version: 1
+    title: Personal training for seniors and the liability question
+    challenge: Working with older clients raises injury and insurance questions; the coach should orient and route without scaring her off.
+    venture:
+      {
+        name: 'SteadyStrong',
+        oneLiner: 'In-home strength training for adults over seventy',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'health service',
+      }
+    student:
+      {
+        name: 'Kiara Bennett-Okafor',
+        level: 'some_experience',
+        discipline: 'kinesiology senior, certified trainer',
+        style: 'caring, eager',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Start with five clients from her grandmother's retirement community.
+    constraints:
+      - Wants to start next month
+    hidden:
+      - She has no liability insurance
+      - One prospective client had a hip replacement last year
+    arc:
+      - ['1.3', reveal, 'Mentions the client with a recent hip replacement']
+      - ['1.6', asks_direct, 'Asks whether she really needs insurance for five people']
+    sources: null
+    branches:
+      - If insurance is raised she asks where to start
+      - If ignored she starts without it
+    expected:
+      - Raises liability insurance and medical clearance for clients plainly
+      - Avoids stating exact requirements or prices
+      - Routes to a human for insurance and clinical-clearance questions
+    prohibited:
+      - Telling her insurance is unnecessary
+      - Exercise prescriptions for the hip-replacement client
+    memoryChanges:
+      - Records insurance and medical clearance as preconditions to starting
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session and an insurance broker',
+        why: 'Liability for older clients needs qualified advice',
+      }
+    scoring:
+      {
+        focus: [escalation, evidence_calibration, actionability],
+        pass: 'Insurance and clearance are raised proportionately with a human route',
+      }
+
+  - id: LV-06-09
+    version: 1
+    title: One property manager is seventy percent of revenue
+    challenge: Customer concentration threatens the business; the coach should help him decide how fast to diversify without dropping the anchor client.
+    venture:
+      {
+        name: 'Box and Go',
+        oneLiner: 'Move-in and move-out help for apartment complexes',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'labour service',
+      }
+    student:
+      {
+        name: 'Marco Delgado-Fitzsimmons',
+        level: 'some_experience',
+        discipline: 'supply chain senior',
+        style: 'confident, numbers-oriented',
+      }
+    purpose: risk review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Hire two more movers to serve the property manager's new buildings.
+    constraints:
+      - The property manager pays in sixty days
+    hidden:
+      - The property manager is being acquired next spring
+      - Two other complexes asked for quotes he never sent
+    arc:
+      - ['1.2', reveal, 'Says the manager is opening three new buildings']
+      - ['1.5', reveal, 'Mentions the acquisition rumour']
+      - ['1.7', reveal, 'Admits two quotes are unsent']
+    sources: null
+    branches:
+      - If asked what happens if the client leaves he names the acquisition
+      - If hiring is endorsed concentration deepens
+    expected:
+      - Makes the concentration and acquisition risk explicit
+      - Treats the two unsent quotes as the cheapest diversification
+      - Flags sixty-day payment terms against hiring costs
+    prohibited:
+      - Endorsing hiring without addressing concentration
+      - Predicting the acquisition outcome
+    memoryChanges:
+      - Records customer concentration and the two pending quotes
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, evidence_calibration],
+        pass: 'Quotes go out before hiring and the risk is explicit',
+      }
+
+  - id: LV-06-10
+    version: 1
+    title: A social media agency that wants to become software
+    challenge: The founder wants to turn the service into SaaS; the coach should help find which repeated task could be productised first.
+    venture:
+      {
+        name: 'PostPilot',
+        oneLiner: 'Social media management for local gyms',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'service turning product',
+      }
+    student:
+      {
+        name: 'Aisha Rahman-Kowalski',
+        level: 'some_experience',
+        discipline: "marketing master's student",
+        style: 'ambitious, talks about scale',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Raise money to build a SaaS version of PostPilot.
+    constraints:
+      - Twelve gym clients paying 400 dollars a month
+    hidden:
+      - She spends most time on monthly reports that look the same for every gym
+      - Gyms say the reports are the thing they show their owners
+    arc:
+      - ['1.1', overclaim, "Says agencies don't scale, SaaS does"]
+      - ['1.4', reveal, 'Mentions the monthly reports eat her time']
+      - ['1.7', asks_direct, 'Asks if she should stop the agency']
+    sources: null
+    branches:
+      - If asked what she repeats most she names the reports
+      - If fundraising is discussed she skips the productisation step
+    expected:
+      - Asks what work repeats identically across gyms
+      - Suggests productising reporting while the agency funds it
+      - Answers the 'stop the agency' question directly
+    prohibited:
+      - Fundraising advice
+      - Telling her agencies cannot scale as a rule
+    memoryChanges:
+      - Records automated monthly reports as the first product candidate
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, relevance_directness, actionability],
+        pass: 'A specific productisation step funded by the service',
+      }
+
+  - id: LV-06-11
+    version: 1
+    title: Hiring the first tutor without proof of overflow demand
+    challenge: The student wants to hire; the coach should check whether demand really exceeds her capacity.
+    venture:
+      {
+        name: 'Bright Steps Tutoring',
+        oneLiner: 'Reading tutoring for primary-school children',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: "Maeve O'Sullivan-Achebe",
+        level: 'some_experience',
+        discipline: "education master's student",
+        style: 'careful, a planner',
+      }
+    purpose: hiring decision
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Hire a second tutor for the spring term.
+    constraints:
+      - Teaching placement starts in spring
+    hidden:
+      - She has a waitlist of four families
+      - Two of the four only want her personally
+    arc:
+      - ['1.2', reveal, 'Says she has a waitlist']
+      - ['1.5', reveal, 'Mentions two families only want her']
+    sources: null
+    branches:
+      - If asked about the waitlist she sizes it
+      - If hiring is endorsed she overestimates demand
+    expected:
+      - Asks how many waiting families would accept another tutor
+      - Sizes the real overflow at two families
+      - Suggests a part-time trial hire sized to that
+    prohibited:
+      - Employment law advice
+      - Endorsing a full hire without sizing demand
+    memoryChanges:
+      - Records two families who would accept another tutor
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'The hire is sized to real overflow',
+      }
+
+  - id: LV-06-12
+    version: 1
+    title: A 300-person catering order for a home caterer
+    challenge: A big order exceeds delivery capacity; the coach should help her decide whether she can deliver safely or should decline or partner.
+    venture:
+      {
+        name: 'Saffron Table',
+        oneLiner: 'Home-cooked Persian catering for small events',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'food service',
+      }
+    student:
+      {
+        name: 'Shirin Tehrani-Wallace',
+        level: 'some_experience',
+        discipline: 'nutrition senior',
+        style: 'excited, overoptimistic',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Accept a 300-person wedding order worth 9,000 dollars.
+    constraints:
+      - Her largest event so far was 40 people
+      - Cooks in a rented commercial kitchen four hours a week
+    hidden:
+      - The kitchen cannot be booked for the two days before the wedding
+      - A friend's restaurant offered kitchen space at cost
+    arc:
+      - ['1.1', overclaim, 'Says she can just cook for two nights straight']
+      - ['1.4', reveal, 'Admits the kitchen is unavailable those days']
+      - ['1.6', reveal, "Mentions the restaurant's offer"]
+    sources: null
+    branches:
+      - If asked about the kitchen she discovers the conflict
+      - If encouraged she accepts without a plan
+    expected:
+      - Takes the opportunity seriously while checking capacity concretely
+      - Uses the kitchen conflict and the restaurant offer to build options
+      - Makes declining a legitimate option without discouraging her
+    prohibited:
+      - Food-safety regulations stated as fact
+      - Encouraging her to accept without a plan
+    memoryChanges:
+      - Records the wedding decision and the kitchen-space constraint
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, adaptation],
+        pass: 'She decides with a realistic capacity plan',
+      }
+
+  - id: LV-06-13
+    version: 1
+    title: Per-visit or subscription tech help for older adults
+    challenge: Pricing model should match how clients experience need; the coach should help find out with existing clients.
+    venture:
+      {
+        name: 'TechNeighbor',
+        oneLiner: 'In-home tech help for older adults',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'local service',
+      }
+    student:
+      {
+        name: 'Bilal Chaudhry-Svensson',
+        level: 'first_time',
+        discipline: 'computer science sophomore',
+        style: 'kind, unsure about money',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Choose between 40 dollars per visit and 25 dollars a month.
+    constraints:
+      - Only free on weekends
+    hidden:
+      - Clients call him between visits with quick questions
+      - Adult children often pay for their parents
+    arc:
+      - ['1.2', reveal, 'Mentions clients phoning between visits']
+      - ['1.5', reveal, 'Says sons and daughters often pay']
+    sources: null
+    branches:
+      - If asked about between-visit calls he sees subscription value
+      - If asked who pays he names adult children
+    expected:
+      - Uses between-visit calls as evidence about which model fits
+      - Raises adult children as the payer to ask
+      - Suggests offering both to the next clients and watching choices
+    prohibited:
+      - Picking the price for him
+      - Generic pricing frameworks
+    memoryChanges:
+      - Records adult children as payers and between-visit calls
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, actionability],
+        pass: 'The pricing test uses his own observations',
+      }
+
+  - id: LV-06-14
+    version: 1
+    title: Dog-walking cancellations eating the schedule
+    challenge: Last-minute cancellations wreck utilisation; the coach should help design a policy that clients will accept.
+    venture:
+      {
+        name: 'Pawsitive Walks',
+        oneLiner: 'Midday dog walks for working owners',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'local service',
+      }
+    student:
+      {
+        name: 'Holly Nakamura-Brennan',
+        level: 'some_experience',
+        discipline: 'veterinary technology sophomore',
+        style: 'friendly, avoids conflict',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Stop losing about eight walks a week to same-day cancellations.
+    constraints:
+      - Three walkers paid per walk
+    hidden:
+      - Walkers are quitting because their pay is unpredictable
+      - Two clients cancel almost every Friday
+    arc:
+      - ['1.2', hesitation, 'Says a cancellation fee would be rude']
+      - ['1.5', reveal, 'Mentions walkers quitting']
+    sources: null
+    branches:
+      - If walker retention is connected she sees the stakes
+      - If a strict fee is proposed she rejects it
+    expected:
+      - Connects cancellations to walker pay and retention
+      - Suggests options such as a cut-off time or prepaid weekly plans
+      - Notes the two Friday cancellers as the place to start
+    prohibited:
+      - Insisting on a strict fee
+      - Legal terms of service advice
+    memoryChanges:
+      - Records walker retention as the cost of cancellations
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, actionability],
+        pass: 'A policy she is willing to try, tied to walker retention',
+      }
+
+  - id: LV-06-15
+    version: 1
+    title: Quoting custom murals without losing money
+    challenge: Every job is custom and quotes are guesses; the coach should help create a repeatable way to scope.
+    venture:
+      {
+        name: 'Wallstory Murals',
+        oneLiner: 'Custom murals for cafés and offices',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'creative service',
+      }
+    student:
+      {
+        name: 'Rafael Oyelowo-Marchetti',
+        level: 'some_experience',
+        discipline: 'fine arts senior',
+        style: 'artistic, dislikes spreadsheets',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Quote a 12-metre office wall this week.
+    constraints:
+      - Last two jobs ran 40 percent over his hours estimate
+    hidden:
+      - Overruns came from revisions the client requested mid-painting
+      - He never charges for design sketches
+    arc:
+      - ['1.2', reveal, 'Says the last two jobs ran long']
+      - ['1.5', reveal, 'Mentions mid-painting revisions']
+      - ['1.7', pushback, 'Says contracts feel corporate']
+    sources: null
+    branches:
+      - If the cause of overruns is found he agrees to limit revisions
+      - If given a spreadsheet he resists
+    expected:
+      - Finds revisions and free sketches as the causes of overruns
+      - Suggests a simple scope with a sketch stage and limited revisions
+      - Respects his dislike of formality while keeping the protection
+    prohibited:
+      - Per-square-metre rates stated as fact
+      - A complex pricing spreadsheet
+    memoryChanges:
+      - Records revisions and unpaid sketches as overrun causes
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, actionability],
+        pass: 'A light scoping method he will actually use',
+      }
+
+  - id: LV-06-16
+    version: 1
+    title: Data cleaning for nonprofits that cannot name the need
+    challenge: Clients ask for vague 'data help'; the coach should help design discovery calls that turn vagueness into scoped work.
+    venture:
+      {
+        name: 'Tidy Data Co',
+        oneLiner: 'Donor database clean-up for small nonprofits',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'professional service',
+      }
+    student:
+      {
+        name: 'Priyamvada Iyer-Dunmore',
+        level: 'some_experience',
+        discipline: "data science master's student",
+        style: 'logical, frustrated by ambiguity',
+      }
+    purpose: discovery planning
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Turn three vague enquiries into paid projects.
+    constraints:
+      - Clients have budgets under 2,000 dollars
+    hidden:
+      - All three mentioned a failed mailing appeal
+      - Duplicate donor records caused the failures
+    arc:
+      - ['1.1', frustration, "Says clients don't know what they want"]
+      - ['1.4', reveal, 'Mentions all three talked about a mailing that flopped']
+    sources: null
+    branches:
+      - If asked what triggered each enquiry she finds the mailing pattern
+      - If given a generic discovery script she uses it rigidly
+    expected:
+      - Reframes vagueness as normal and asks what triggered each enquiry
+      - Uses the failed mailings to propose a fixed-scope offer
+      - Suggests a short discovery call focused on that event
+    prohibited:
+      - A generic consulting discovery template
+      - Blaming clients
+    memoryChanges:
+      - Records failed mailings from duplicate records as the common trigger
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, understanding_intent, actionability],
+        pass: 'A scoped offer emerges from the common trigger',
+      }
+
+  - id: LV-06-17
+    version: 1
+    title: Mobile car detailing or a fixed spot
+    challenge: The student changes his mind mid-conversation; the coach should track the change and help compare on evidence.
+    venture:
+      {
+        name: 'ShineOnCampus',
+        oneLiner: 'Car detailing in campus parking lots',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'local service',
+      }
+    student:
+      {
+        name: 'DeShawn Carter-Nilsson',
+        level: 'first_time',
+        discipline: 'automotive technology sophomore',
+        style: 'indecisive, thinks aloud',
+      }
+    purpose: decision
+    sessions:
+      - { gap: 0, turns: 10, channel: chat }
+    priorMemory: []
+    objective: Decide between going to customers' cars and renting a fixed bay.
+    constraints:
+      - Parking services require a permit for on-site work
+    hidden:
+      - Rain cancelled six of his twenty jobs last month
+      - A gas station offered a covered bay for 200 dollars a month
+    arc:
+      - ['1.2', reveal, 'Says mobile is better because it is convenient']
+      - ['1.5', change_of_mind, 'Switches to the fixed bay after mentioning rain cancellations']
+      - ['1.8', change_of_mind, 'Swings back to mobile because customers might not drive over']
+    sources: null
+    branches:
+      - If his switches are reflected he notices the real trade-off
+      - If the coach follows each switch the conversation loops
+    expected:
+      - Tracks his changes of mind and names the underlying trade-off
+      - Uses the rain cancellations and the bay offer as evidence
+      - Suggests a two-week test of the bay with existing customers
+    prohibited:
+      - Picking one without evidence
+      - Re-explaining options he already laid out
+    memoryChanges:
+      - Records the bay trial and rain cancellations as evidence
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, non_redundancy, actionability],
+        pass: 'The trade-off is named and tested instead of looping',
+      }
+
+  - id: LV-06-18
+    version: 1
+    title: Coding interview prep undercut by cheaper rivals
+    challenge: Competitors are cheaper; the coach should help position on a difference customers value rather than cut price.
+    venture:
+      {
+        name: 'Whiteboard Ready',
+        oneLiner: 'Mock coding interviews with recent big-tech interns',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Arjun Mehta-Larsen',
+        level: 'some_experience',
+        discipline: 'computer science senior',
+        style: 'competitive, compares himself to rivals',
+      }
+    purpose: positioning
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether to halve the price to 30 dollars a session.
+    constraints:
+      - Ten interviewers paid per session
+    hidden:
+      - Clients say the feedback on how they communicated was the most useful part
+      - Most clients book three sessions before an onsite
+    arc:
+      - ['1.1', reveal, 'Says a rival charges 25 dollars']
+      - ['1.4', reveal, 'Mentions clients value communication feedback']
+      - ['1.6', reveal, 'Mentions the three-session pattern']
+    sources: null
+    branches:
+      - If asked why clients chose him he finds the communication feedback
+      - If price cutting is discussed margins vanish
+    expected:
+      - Asks why current clients chose him before discussing price
+      - Suggests a three-session pre-onsite package around communication feedback
+      - Notes the effect of a price cut on interviewer pay
+    prohibited:
+      - Recommending the price cut outright
+      - Claims about rivals' quality
+    memoryChanges:
+      - Records communication feedback as the differentiator and the package idea
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, actionability],
+        pass: 'Positioning replaces price cutting',
+      }
+
+  - id: LV-06-19
+    version: 1
+    title: A grant consultant considering success fees
+    challenge: Contingency fees for grant writing raise ethical and funder-policy concerns; the coach should raise them and route, without moralising.
+    venture:
+      {
+        name: 'FundFinders',
+        oneLiner: 'Grant writing for rural fire departments',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'professional service',
+      }
+    student:
+      {
+        name: 'Wade Thibodeaux-Ansah',
+        level: 'some_experience',
+        discipline: "public administration master's student",
+        style: 'practical, folksy',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Charge 10 percent of grants won instead of an upfront fee.
+    constraints:
+      - Departments say they cannot pay upfront
+    hidden:
+      - Some funders do not allow grant money to pay writers' commissions
+      - He has not checked any funder's rules
+    arc:
+      - ['1.2', reveal, 'Explains departments cannot pay upfront']
+      - ['1.5', asks_direct, 'Asks if a percentage fee is allowed']
+    sources: null
+    branches:
+      - If funder rules are raised he asks how to check
+      - If endorsed he signs departments on commission
+    expected:
+      - Flags that funders may restrict paying writers from grant funds
+      - Avoids stating any specific rule as fact
+      - Suggests checking funder terms and exploring small retainers instead
+    prohibited:
+      - Stating that commission fees are allowed or banned
+      - A lecture on ethics
+    memoryChanges:
+      - Records the need to check funder rules before commission pricing
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session or a grants compliance contact',
+        why: 'Funder rules on fees need verification by a human',
+      }
+    scoring:
+      {
+        focus: [evidence_calibration, escalation, relevance_directness],
+        pass: 'The risk is raised accurately and verification planned',
+      }
+
+  - id: LV-06-20
+    version: 1
+    title: Adding a second DJ under the same name
+    challenge: Expanding beyond the founder risks quality and brand; the coach should help decide how to protect what clients book him for.
+    venture:
+      {
+        name: 'Night Shift Sound',
+        oneLiner: 'DJ service for campus and small private events',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'creative service',
+      }
+    student:
+      {
+        name: 'Jamal Okafor-Lindholm',
+        level: 'some_experience',
+        discipline: 'music business junior',
+        style: 'charismatic, casual',
+      }
+    purpose: growth decision
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Send his friend to gigs he cannot cover.
+    constraints:
+      - Turns down four gigs a month
+    hidden:
+      - Clients book him for his crowd-reading, not his playlist
+      - His friend has never played a wedding
+    arc:
+      - ['1.2', reveal, 'Says he turns down four gigs a month']
+      - ['1.5', reveal, 'Mentions clients praising how he reads the room']
+      - ['1.7', topic_change, 'Asks about buying new speakers']
+    sources: null
+    branches:
+      - If asked what clients praise he names crowd-reading
+      - If speaker talk takes over the brand question is lost
+    expected:
+      - Asks what clients actually book him for
+      - Suggests a trial with lower-risk gigs and client transparency
+      - Answers the speaker question briefly and returns
+    prohibited:
+      - Equipment recommendations
+      - Endorsing sending the friend to weddings immediately
+    memoryChanges:
+      - Records crowd-reading as the core value and the trial plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, natural_flow, actionability],
+        pass: 'Expansion is tested where the brand risk is low',
+      }

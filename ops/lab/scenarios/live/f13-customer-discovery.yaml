@@ -1,0 +1,1048 @@
+family: 13
+slug: customer-discovery
+scenarios:
+  - id: LV-13-01
+    version: 1
+    title: Half the interviews blame price and half blame trust
+    challenge: Conflicting interviews may reflect two segments; the coach should help her find what separates them rather than average them.
+    venture:
+      {
+        name: 'SecondLife Phones',
+        oneLiner: 'Refurbished phones sold to students with a warranty',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'refurbished retail',
+      }
+    student:
+      {
+        name: 'Adwoa Sarpong-Bergman',
+        level: 'first_time',
+        discipline: 'economics junior',
+        style: 'diligent, confused by conflict',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether the main barrier is price or trust.
+    constraints:
+      - Fourteen interviews done
+    hidden:
+      - The trust group had bought a broken used phone before
+      - The price group had never bought used
+    arc:
+      - ['1.2', reveal, 'Says seven said price and seven said trust']
+      - ['1.5', reveal, 'Mentions trust interviewees had bad past purchases']
+      - ['1.7', topic_change, 'Asks whether to just run a survey to break the tie']
+    sources: null
+    branches:
+      - If past experience is examined she sees two segments
+      - If a survey is run the split is blurred
+    expected:
+      - Asks what distinguished the two groups
+      - Identifies past bad purchases as the separating factor
+      - Answers the survey question briefly and returns to the segment insight
+    prohibited:
+      - Averaging the two answers
+      - Recommending a survey to settle it
+    memoryChanges:
+      - Records two segments split by previous used-phone experience
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, natural_flow],
+        pass: 'The conflict becomes a segment insight',
+      }
+
+  - id: LV-13-02
+    version: 1
+    title: Leading questions visible in a pasted transcript
+    challenge: The coach should point to specific leading moments in his transcript and show alternatives, not lecture.
+    venture:
+      {
+        name: 'PlantDoc',
+        oneLiner: 'Photo diagnosis of houseplant problems',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Emeka Okonkwo-Larsen',
+        level: 'first_time',
+        discipline: 'botany sophomore',
+        style: 'earnest, eager for approval',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get feedback on his best interview.
+    constraints:
+      - Eight more interviews scheduled this week
+    hidden:
+      - He asked 'wouldn't it be frustrating to lose a plant?'
+      - He explained the app before asking about problems
+    arc:
+      - ['1.1', reveal, 'Pastes a transcript excerpt']
+      - ['1.4', hesitation, 'Asks if he did something wrong']
+      - ['1.7', asks_direct, 'Asks for one thing to change before tomorrow']
+    sources: null
+    branches:
+      - If specific moments are shown he rewrites them
+      - If general advice is given he repeats the pattern
+    expected:
+      - Quotes or points to the specific leading question in his excerpt
+      - Notes that explaining the app first shaped answers
+      - Gives one concrete change for tomorrow
+    prohibited:
+      - A generic list of interview tips
+      - Harsh criticism
+    memoryChanges:
+      - Records the change to ask about past plant losses before showing the app
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, actionability],
+        pass: 'Feedback is specific to his transcript and actionable',
+      }
+
+  - id: LV-13-03
+    version: 1
+    title: Every interviewee came from an enthusiast forum
+    challenge: The sample is skewed to enthusiasts; the coach should help her reach mainstream users and interpret what she has.
+    venture:
+      {
+        name: 'BrewLog',
+        oneLiner: 'Home-brewing batch tracker',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'hobby app',
+      }
+    student:
+      {
+        name: 'Frida Johansson-Mbatha',
+        level: 'first_time',
+        discipline: 'chemistry junior',
+        style: 'nerdy, detailed',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Conclude that brewers want advanced fermentation graphs.
+    constraints:
+      - Wants to start building next month
+    hidden:
+      - All twenty interviewees came from an expert forum
+      - A local brew shop owner said most customers brew twice a year
+    arc:
+      - ['1.2', reveal, 'Says all twenty want graphs']
+      - ['1.5', reveal, "Mentions the brew shop owner's comment"]
+    sources: null
+    branches:
+      - If the sample is questioned she visits the brew shop
+      - If enthusiasts are generalised she builds for a niche
+    expected:
+      - Asks where interviewees came from
+      - Explains that enthusiasts may not represent most brewers
+      - Suggests interviewing casual brewers via the shop
+    prohibited:
+      - Endorsing the graph conclusion
+      - Dismissing enthusiasts as useless
+    memoryChanges:
+      - Records the forum-only sample and the brew-shop route to casual brewers
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'The sample bias is recognised and addressed',
+      }
+
+  - id: LV-13-04
+    version: 1
+    title: Interviewing only people who already use a competitor
+    challenge: The sample excludes non-users; the coach should help him find out why most people use nothing.
+    venture:
+      {
+        name: 'SplitStay',
+        oneLiner: 'Splitting holiday rental costs among friends',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'consumer fintech',
+      }
+    student:
+      {
+        name: 'Arjun Nair-Fitzpatrick',
+        level: 'some_experience',
+        discipline: 'finance junior',
+        style: 'competitive, quick',
+      }
+    purpose: discovery planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Find features the competitor lacks.
+    constraints:
+      - Wants a differentiated feature list by Friday
+    hidden:
+      - All interviewees use the same expense-splitting app
+      - His own friends just use a group chat and cash transfers
+    arc:
+      - ['1.2', reveal, 'Says users want three missing features']
+      - ['1.5', reveal, 'Mentions his friends use a group chat']
+    sources: null
+    branches:
+      - If non-users are considered he interviews them
+      - If features are listed he fights for a small slice
+    expected:
+      - Notes that only existing app users were interviewed
+      - Treats non-users as a larger question worth exploring
+      - Suggests interviewing friends who use no app
+    prohibited:
+      - Producing a feature comparison
+      - Claims about the competitor's market share
+    memoryChanges:
+      - Records non-users as an unexplored segment
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, relevance_directness],
+        pass: 'Non-users enter the discovery plan',
+      }
+
+  - id: LV-13-05
+    version: 1
+    title: An interviewee who said exactly what she wanted to hear
+    challenge: The student suspects politeness; the coach should help her test it with follow-up questions about behaviour.
+    venture:
+      {
+        name: 'CareerCanvas',
+        oneLiner: 'Portfolio sites for art students',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'creator tool',
+      }
+    student:
+      {
+        name: 'Leila Ahmadi-Thorne',
+        level: 'first_time',
+        discipline: 'illustration sophomore',
+        style: 'perceptive, uncertain',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Know whether to trust a glowing interview.
+    constraints:
+      - Interviewee is a friend of a friend
+    hidden:
+      - The interviewee already has a free portfolio site she updates monthly
+    arc:
+      - ['1.2', hesitation, 'Says the interview felt too good']
+      - ['1.5', reveal, 'Mentions the interviewee updates a free site monthly']
+    sources: null
+    branches:
+      - If behaviour is examined she sees the existing solution
+      - If the praise is trusted she overestimates demand
+    expected:
+      - Validates her instinct to question the praise
+      - Points to the existing free site as the key fact
+      - Suggests follow-up questions about switching from it
+    prohibited:
+      - Telling her to trust the interview
+      - Generic interview tips
+    memoryChanges:
+      - Records that the interviewee already uses a free portfolio site
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, actionability],
+        pass: 'Her instinct is confirmed with a behavioural follow-up',
+      }
+
+  - id: LV-13-06
+    version: 1
+    title: Twenty-five interviews and no pattern
+    challenge: Discovery has stalled; the coach should help synthesise and decide whether the hypothesis is too broad.
+    venture:
+      {
+        name: 'SideHustle Hub',
+        oneLiner: 'Tools for students running side businesses',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'broad platform',
+      }
+    student:
+      {
+        name: 'Owen Mbeki-Castellano',
+        level: 'some_experience',
+        discipline: 'entrepreneurship minor, business junior',
+        style: 'tired, frustrated',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'hypothesis',
+          title: 'Core problem',
+          content: 'Students running side businesses struggle with admin tasks',
+        }
+    objective: Decide whether to keep interviewing.
+    constraints:
+      - Module 1 capstone in a month
+    hidden:
+      - Interviewees run very different businesses (reselling, tutoring, design)
+      - Resellers all mentioned shipping labels
+    arc:
+      - ['1.1', frustration, 'Says the interviews are all over the place']
+      - ['1.4', reveal, 'Lists the business types']
+      - ['1.6', reveal, 'Notices resellers all mentioned shipping labels']
+    sources: Retrieval returns the broad admin hypothesis.
+    branches:
+      - If the hypothesis is narrowed he focuses on resellers
+      - If more interviews are done the noise continues
+    expected:
+      - Suggests the remembered hypothesis is too broad to produce a pattern
+      - Helps him group interviews by business type
+      - Points to the reseller shipping-label pattern as a lead
+    prohibited:
+      - Recommending more interviews without narrowing
+      - Giving up on discovery
+    memoryChanges:
+      - Narrows the hypothesis to resellers and shipping labels
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, memory_correctness, adaptation],
+        pass: 'The hypothesis is narrowed using his own data',
+      }
+
+  - id: LV-13-07
+    version: 1
+    title: Pitching the product in every interview
+    challenge: Interviews became sales calls; the coach should explain the contamination and help separate learning from pitching.
+    venture:
+      {
+        name: 'GigGuard',
+        oneLiner: 'Income smoothing for gig workers',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'fintech',
+      }
+    student:
+      {
+        name: 'Darius Kowalski-Adeyemi',
+        level: 'some_experience',
+        discipline: 'MBA student, former salesperson',
+        style: 'persuasive, enthusiastic',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Count ten interviews as ten interested users.
+    constraints:
+      - Sales instincts are strong
+    hidden:
+      - He demoed the product in the first five minutes of each interview
+      - Two drivers asked if it was a loan
+    arc:
+      - ['1.2', reveal, 'Says all ten were interested']
+      - ['1.5', reveal, 'Admits he demoed early in each']
+      - ['1.7', reveal, 'Mentions two asked if it was a loan']
+    sources: null
+    branches:
+      - If contamination is explained he plans problem-only interviews
+      - If counted as interest he overestimates demand
+    expected:
+      - Explains how early demos shape answers, using his sales background
+      - Treats the loan question as a sign of confusion worth exploring
+      - Suggests problem-first interviews with new drivers
+    prohibited:
+      - Counting the ten as validated interest
+      - Financial regulation claims
+    memoryChanges:
+      - Records that interviews were contaminated by early demos
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, diagnostic_quality],
+        pass: 'He separates learning from pitching',
+      }
+
+  - id: LV-13-08
+    version: 1
+    title: Notes that only kept the supportive quotes
+    challenge: Confirmation bias shaped the notes and the student contradicts herself; the coach should help her reconstruct the full picture.
+    venture:
+      {
+        name: 'Plotline',
+        oneLiner: 'Community garden plot booking',
+        stage: 'discovery',
+        domain: 'social',
+        archetype: 'booking app',
+      }
+    student:
+      {
+        name: 'Gwendolyn Oyelaran-Price',
+        level: 'first_time',
+        discipline: 'urban agriculture sophomore',
+        style: 'hopeful, earnest',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Present findings showing gardeners want online booking.
+    constraints:
+      - Presentation to the garden association next week
+    hidden:
+      - She wrote down only positive comments
+      - Several older gardeners said they prefer the paper sign-up sheet
+    arc:
+      - ['1.2', reveal, 'Shares only positive quotes']
+      - ['1.5', contradiction, 'Says nobody objected, then remembers older gardeners preferred paper']
+      - ['1.7', asks_direct, 'Asks if she should mention the paper people']
+    sources: null
+    branches:
+      - If she reconstructs objections she presents a fuller picture
+      - If quotes are presented as is the association is misled
+    expected:
+      - Asks what people who were less keen said
+      - Treats the paper preference as important evidence
+      - Says yes, she should include it, and suggests how
+    prohibited:
+      - Endorsing the one-sided presentation
+      - Scolding her
+    memoryChanges:
+      - Records older gardeners' preference for paper sign-up
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [evidence_calibration, recovery, adaptation], pass: 'A fuller, honest picture emerges' }
+
+  - id: LV-13-09
+    version: 1
+    title: Getting meetings with busy operations directors
+    challenge: B2B discovery access is hard; the coach should help use warm introductions and respect buyers' time.
+    venture:
+      {
+        name: 'DockSync',
+        oneLiner: 'Loading-dock scheduling for distribution centres',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'logistics SaaS',
+      }
+    student:
+      {
+        name: 'Yusuf Demir-Halvorsen',
+        level: 'some_experience',
+        discipline: "supply chain master's student",
+        style: 'persistent, a bit shy',
+      }
+    purpose: discovery planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get five operations directors to talk.
+    constraints:
+      - Cold emails got no replies
+    hidden:
+      - His professor consults for two distribution firms
+      - The programme's alumni network includes logistics managers
+    arc:
+      - ['1.2', reveal, 'Says forty cold emails got zero replies']
+      - ['1.5', reveal, "Mentions his professor's consulting"]
+      - ['1.7', interrupt, 'Cuts in to ask whether he can just interview drivers instead']
+    sources: null
+    branches:
+      - If warm intros are explored he asks his professor
+      - If drivers are substituted he learns about the wrong role
+    expected:
+      - Suggests warm introductions via the professor and alumni
+      - Suggests a short, specific ask that respects directors' time
+      - Answers the drivers question honestly as different information
+    prohibited:
+      - Cold-email optimisation tactics
+      - Talking past his question about interviewing drivers
+    memoryChanges:
+      - Records warm-intro routes via the professor and alumni
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [actionability, natural_flow, adaptation], pass: 'Warm routes to the right role are planned' }
+
+  - id: LV-13-10
+    version: 1
+    title: Interviews through a translator
+    challenge: Language mediation may distort answers; the coach should help her design interviews that reduce translation bias.
+    venture:
+      {
+        name: 'Remit Simple',
+        oneLiner: 'Lower-fee remittances for Nepali workers',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'fintech',
+      }
+    student:
+      {
+        name: 'Sunita Gurung-Whitaker',
+        level: 'some_experience',
+        discipline: "development economics master's student",
+        style: 'careful, culturally attentive',
+      }
+    purpose: discovery planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Interview twenty workers this month.
+    constraints:
+      - Many workers speak limited English
+    hidden:
+      - Her cousin offered to translate but works for a remittance agent
+      - She speaks Nepali herself but not fluently
+    arc:
+      - ['1.2', reveal, 'Mentions her cousin will translate']
+      - ['1.5', reveal, 'Mentions the cousin works for a remittance agent']
+    sources: null
+    branches:
+      - If the conflict is noticed she finds another translator
+      - If the cousin translates answers may be shaded
+    expected:
+      - Flags the cousin's employer as a possible bias
+      - Suggests a neutral translator or her own Nepali with support
+      - Suggests behavioural questions that translate cleanly
+    prohibited:
+      - Assumptions about workers' culture
+      - Regulatory claims about remittances
+    memoryChanges:
+      - Records the translator conflict and the plan for neutral translation
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, actionability],
+        pass: 'Translation bias is addressed in the plan',
+      }
+
+  - id: LV-13-11
+    version: 1
+    title: Asking alumni about problems they had years ago
+    challenge: Recall bias from people who no longer have the problem; the coach should steer to current sufferers.
+    venture:
+      {
+        name: 'FirstFlat',
+        oneLiner: 'Guidance for students renting their first apartment',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'content plus service',
+      }
+    student:
+      {
+        name: "Patrick O'Neill-Asante",
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'sociable, networky',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Use alumni interviews to define the problem.
+    constraints:
+      - Lease signing season is in February
+    hidden:
+      - All twelve interviewees graduated three to eight years ago
+      - Current sophomores are signing leases now
+    arc:
+      - ['1.2', reveal, 'Says alumni remember awful landlords']
+      - ['1.5', reveal, 'Mentions all graduated years ago']
+    sources: null
+    branches:
+      - If current renters are suggested he plans February interviews
+      - If alumni recall is trusted he solves old problems
+    expected:
+      - Notes that memories from years ago may differ from today's experience
+      - Suggests interviewing sophomores signing leases now
+      - Keeps the alumni stories as useful background
+    prohibited:
+      - Treating recalled stories as current evidence
+      - Rental law claims
+    memoryChanges:
+      - Records the plan to interview current lease signers
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'Discovery shifts to people with the problem now',
+      }
+
+  - id: LV-13-12
+    version: 1
+    title: Hypothetical answers versus what people did
+    challenge: The student defends 'would you' questions; then his own data contradicts them; the coach should use the contradiction to teach.
+    venture:
+      {
+        name: 'BikeVault',
+        oneLiner: 'Secure bike lockers on campus',
+        stage: 'discovery',
+        domain: 'hardware',
+        archetype: 'campus infrastructure',
+      }
+    student:
+      {
+        name: 'Henrik Lund-Adewale',
+        level: 'first_time',
+        discipline: 'civil engineering sophomore',
+        style: 'argumentative, likes debate',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Prove students would pay 10 dollars a month for lockers.
+    constraints:
+      - Proposal to parking services next month
+    hidden:
+      - 80 percent said they would pay
+      - Only 3 of 40 have ever paid for any bike security beyond a lock
+    arc:
+      - ['1.2', pushback, 'Says hypotheticals are fine if you ask enough people']
+      - ['1.5', contradiction, 'Mentions only 3 of 40 ever paid for bike security']
+      - ['1.7', change_of_mind, 'Agrees past behaviour is more telling']
+    sources: null
+    branches:
+      - If the contradiction is used he redesigns questions
+      - If debated abstractly he digs in
+    expected:
+      - Engages his debate style briefly then uses his own numbers
+      - Shows the gap between 80 percent and 3 of 40
+      - Suggests a deposit-based locker trial
+    prohibited:
+      - A long abstract debate
+      - Endorsing the 80 percent claim
+    memoryChanges:
+      - Records the say-do gap in his data
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [evidence_calibration, adaptation, recovery], pass: 'His own data settles the debate' }
+
+  - id: LV-13-13
+    version: 1
+    title: Surveys only, because interviews take too long
+    challenge: Time constraints push her to surveys; the coach should find a compromise that still yields stories.
+    venture:
+      {
+        name: 'ShiftSwap Nurses',
+        oneLiner: 'Shift trading for hospital nurses',
+        stage: 'discovery',
+        domain: 'clinical',
+        archetype: 'workforce app',
+      }
+    student:
+      {
+        name: 'Abigail Mensah-Thornton',
+        level: 'some_experience',
+        discipline: 'nursing junior, works night shifts',
+        style: 'exhausted, practical',
+      }
+    purpose: discovery planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Send a survey to 300 nurses instead of interviewing.
+    constraints:
+      - Works three night shifts a week
+    hidden:
+      - Nurses chat in the break room during night shifts
+      - Her unit's charge nurse manages swaps on paper
+    arc:
+      - ['1.2', reveal, 'Says she has no time for interviews']
+      - ['1.5', reveal, 'Mentions break-room conversations']
+    sources: null
+    branches:
+      - If break-room chats are suggested she plans short conversations
+      - If only a survey is used she misses the swap process
+    expected:
+      - Respects her time constraint
+      - Suggests five-minute break-room conversations and the charge nurse
+      - Allows a short survey afterwards to size what she learns
+    prohibited:
+      - Insisting on hour-long interviews
+      - Clinical workflow claims
+    memoryChanges:
+      - Records break-room conversations and the charge nurse as discovery routes
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, actionability, diagnostic_quality],
+        pass: 'A discovery plan that fits her shifts',
+      }
+
+  - id: LV-13-14
+    version: 1
+    title: A goal of one hundred interviews
+    challenge: The student treats interview count as progress; the coach should introduce a stopping rule based on learning.
+    venture:
+      {
+        name: 'CampusCrate',
+        oneLiner: 'Care packages ordered by parents for students',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'gifting service',
+      }
+    student:
+      {
+        name: 'Theodora Papadakis-Owusu',
+        level: 'first_time',
+        discipline: 'marketing sophomore',
+        style: 'goal-oriented, competitive',
+      }
+    purpose: discovery planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Reach 100 interviews before deciding anything.
+    constraints:
+      - She has done 31
+    hidden:
+      - The last twelve interviews repeated the same three themes
+    arc:
+      - ['1.2', reveal, 'Says she is at 31 of 100']
+      - ['1.5', reveal, 'Admits the last twelve said the same things']
+    sources: null
+    branches:
+      - If a stopping rule is offered she moves to testing
+      - If the target is kept she wastes weeks
+    expected:
+      - Questions the fixed count as a goal
+      - Uses repeating themes as a sign to move to a test
+      - Proposes a test of the strongest theme
+    prohibited:
+      - Endorsing 100 interviews
+      - Saturation statistics
+    memoryChanges:
+      - Records the three repeating themes and the move to testing
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [diagnostic_quality, actionability, adaptation], pass: 'She moves from counting to testing' }
+
+  - id: LV-13-15
+    version: 1
+    title: What people say about tidiness versus what the dorm shows
+    challenge: Observation contradicts interview claims; the coach should help him trust observation and refine the problem.
+    venture:
+      {
+        name: 'Neatnik',
+        oneLiner: 'Shared chore scheduling for roommates',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Malik Johnson-Søberg',
+        level: 'first_time',
+        discipline: 'anthropology sophomore',
+        style: 'observant, quiet',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether chore scheduling is the problem.
+    constraints:
+      - Interviews and two weeks of observation done
+    hidden:
+      - Interviewees said chores are split fairly
+      - He observed that fights start over shared kitchen items, not chores
+    arc:
+      - ['1.2', reveal, 'Says interviews show chores are fine']
+      - ['1.5', reveal, 'Describes kitchen-item fights he observed']
+      - ['1.7', asks_direct, 'Asks which evidence to believe']
+    sources: null
+    branches:
+      - If observation is weighed he reframes the problem
+      - If interviews win he abandons a real problem
+    expected:
+      - Values his observation as strong evidence
+      - Reframes the problem around shared kitchen items
+      - Answers which evidence to believe with reasoning
+    prohibited:
+      - Dismissing observation as anecdote
+      - Feature suggestions
+    memoryChanges:
+      - Records the say-do gap and the shared-items problem
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, relevance_directness],
+        pass: 'Observation reshapes the problem',
+      }
+
+  - id: LV-13-16
+    version: 1
+    title: Interviewing students about food insecurity with dignity
+    challenge: A sensitive topic needs careful interviewing; the coach should help design respectful questions and point to support resources without treating the student as in crisis.
+    venture:
+      {
+        name: 'PantryLink',
+        oneLiner: 'Discreet campus food pantry pickup',
+        stage: 'discovery',
+        domain: 'social',
+        archetype: 'social service',
+      }
+    student:
+      {
+        name: 'Ngozi Ike-Halvorsen',
+        level: 'first_time',
+        discipline: 'social work junior',
+        style: 'compassionate, worried about harm',
+      }
+    purpose: discovery planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Interview students who use the food pantry.
+    constraints:
+      - The pantry director agreed to help recruit
+    hidden:
+      - She worries about embarrassing people
+      - Students told the director stigma keeps them away
+    arc:
+      - ['1.2', hesitation, 'Asks how to ask without embarrassing people']
+      - ['1.5', reveal, 'Mentions stigma keeps students away']
+    sources: null
+    branches:
+      - If dignity is built into the design she plans anonymous options
+      - If generic scripts are given they may harm participants
+    expected:
+      - Helps design opt-in, private conversations focused on pantry experience
+      - Suggests having support information available for participants
+      - Treats stigma as the core problem to understand
+    prohibited:
+      - Questions probing personal finances unnecessarily
+      - Treating the student herself as in crisis
+    memoryChanges:
+      - Records stigma as the focus and the dignity-first interview design
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, diagnostic_quality, understanding_intent],
+        pass: 'A respectful discovery design centred on stigma',
+      }
+
+  - id: LV-13-17
+    version: 1
+    title: Wanting to interview twelve-year-olds directly
+    challenge: Research with minors needs parental consent and care; the coach should route the process question and suggest parents first.
+    venture:
+      {
+        name: 'CodeQuest Club',
+        oneLiner: 'After-school coding clubs',
+        stage: 'discovery',
+        domain: 'general',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Oliver Kariuki-Lindgren',
+        level: 'first_time',
+        discipline: 'computer science sophomore',
+        style: 'enthusiastic, unaware of rules',
+      }
+    purpose: discovery planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Interview kids at a local middle school.
+    constraints:
+      - A teacher offered classroom time
+    hidden:
+      - He planned to record the interviews
+    arc:
+      - ['1.2', reveal, 'Says the teacher offered classroom time']
+      - ['1.5', reveal, 'Mentions he planned to record']
+    sources: null
+    branches:
+      - If consent is raised he plans parent interviews first
+      - If ignored he records minors without consent
+    expected:
+      - Flags parental consent and school approval for involving children
+      - Suggests interviewing parents and the teacher first
+      - Routes formal research questions to the review board
+    prohibited:
+      - Endorsing recording children without consent
+      - Stating specific legal requirements
+    memoryChanges:
+      - Records the consent requirement and the parents-first plan
+    escalation:
+      {
+        decision: 'route',
+        to: 'the school administration and the review board',
+        why: 'Research involving minors needs approvals',
+      }
+    scoring:
+      { focus: [escalation, actionability, adaptation], pass: 'Consent is addressed and parents come first' }
+
+  - id: LV-13-18
+    version: 1
+    title: Two cofounders read the same interviews differently
+    challenge: Cofounders' notes support opposite conclusions; the coach should help them compare raw evidence, not opinions.
+    venture:
+      {
+        name: 'Sprout Pay',
+        oneLiner: 'Allowance app that teaches kids budgeting',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'family fintech',
+      }
+    student:
+      {
+        name: 'Chiara Lombardi-Asamoah',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'diplomatic, frustrated',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Settle a disagreement with her cofounder about the target age.
+    constraints:
+      - Cofounder not present
+    hidden:
+      - She heard parents of teens want spending controls
+      - Her cofounder heard parents of younger kids want teaching tools
+      - They did different interviews with different parents
+    arc:
+      - ['1.2', reveal, 'Says her cofounder is reading it wrong']
+      - ['1.5', reveal, 'Realises they interviewed different age groups']
+      - ['1.7', asks_direct, 'Asks how to bring this to her cofounder']
+    sources: null
+    branches:
+      - If the sample split is seen she reframes it as two segments
+      - If sides are taken the conflict grows
+    expected:
+      - Does not take sides
+      - Helps her see the disagreement as different samples
+      - Suggests a joint review of raw notes by age group
+    prohibited:
+      - Siding with her against the cofounder
+      - Interpreting the cofounder's notes without seeing them
+    memoryChanges:
+      - Records the age-group split in interview samples
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, natural_flow, actionability],
+        pass: 'The disagreement becomes a shared evidence review',
+      }
+
+  - id: LV-13-19
+    version: 1
+    title: One power user's wishes taking over the roadmap
+    challenge: An enthusiastic extreme user dominates; the coach should help weigh her against typical users.
+    venture:
+      {
+        name: 'Notely',
+        oneLiner: 'Voice notes that auto-organise into to-dos',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'productivity app',
+      }
+    student:
+      {
+        name: 'Takumi Hayashi-Brennan',
+        level: 'some_experience',
+        discipline: 'information systems senior',
+        style: 'eager to please, responsive',
+      }
+    purpose: product review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Build the five features his top user requested.
+    constraints:
+      - Two-month build window
+    hidden:
+      - His top user records 60 notes a day; the median user records 3
+      - Median users mostly ask for better search
+    arc:
+      - ['1.2', reveal, 'Says his best user wants five features']
+      - ['1.5', reveal, "Mentions the median user's usage and requests"]
+    sources: null
+    branches:
+      - If usage distribution is shown he rebalances
+      - If the power user leads the product drifts
+    expected:
+      - Values the power user as a source while noting she is atypical
+      - Uses median usage and requests to set priorities
+      - Suggests checking which requests median users share
+    prohibited:
+      - Endorsing all five features
+      - Feature design
+    memoryChanges:
+      - Records median users' search request
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'Priorities follow typical users',
+      }
+
+  - id: LV-13-20
+    version: 1
+    title: Reusing old interviews as evidence for a new hypothesis
+    challenge: After changing hypothesis she wants to reinterpret old interviews; the coach should help her separate what old data can and cannot support.
+    venture:
+      {
+        name: 'KinCare',
+        oneLiner: 'Coordination app for families caring for a relative',
+        stage: 'discovery',
+        domain: 'social',
+        archetype: 'care coordination',
+      }
+    student:
+      {
+        name: 'Rosa Delgado-Abernathy',
+        level: 'some_experience',
+        discipline: "gerontology master's student",
+        style: 'resourceful, persuasive',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'hypothesis',
+          title: 'Original focus',
+          content: 'Families struggle to schedule caregiving shifts',
+        }
+    objective: Show that her old interviews prove families need medication tracking.
+    constraints:
+      - Wants to skip new interviews
+    hidden:
+      - Medication came up in only three of fifteen interviews, unprompted
+      - She never asked about medication
+    arc:
+      - ['1.2', change_of_mind, 'Announces her new focus on medication tracking']
+      - ['1.5', reveal, 'Admits medication came up in three interviews only']
+      - ['1.7', pushback, 'Says three is enough because it was unprompted']
+    sources: Retrieval returns the original scheduling hypothesis.
+    branches:
+      - If the limits are explained she plans targeted interviews
+      - If reinterpreted she overclaims
+    expected:
+      - Notes the change from the remembered scheduling hypothesis
+      - Treats three unprompted mentions as a lead, not proof
+      - Suggests a few targeted interviews on medication
+    prohibited:
+      - Endorsing the reinterpretation as proof
+      - Dismissing the unprompted mentions
+    memoryChanges:
+      - Records the hypothesis change and medication as a lead from three interviews
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, memory_correctness, actionability],
+        pass: 'Old data is used honestly as a lead',
+      }

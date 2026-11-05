@@ -1,0 +1,1087 @@
+family: 18
+slug: team-dynamics
+scenarios:
+  - id: LV-18-01
+    version: 1
+    title: One cofounder has a job offer and the other wants full time
+    challenge: Commitment levels diverge; the coach should help her prepare a candid conversation without taking sides on the absent cofounder.
+    venture:
+      {
+        name: 'Lumen Ledger',
+        oneLiner: 'Bookkeeping automation for food trucks',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'SMB SaaS',
+      }
+    student:
+      {
+        name: 'Harriet Oyelaran-Sorensen',
+        level: 'some_experience',
+        discipline: 'accounting senior',
+        style: 'anxious, loyal',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide what to say to her cofounder about going full time after graduation.
+    constraints:
+      - Graduation in May
+    hidden:
+      - Her cofounder has a consulting offer he hasn't declined
+      - She would need some income by July
+    arc:
+      - ['1.2', reveal, "Mentions the cofounder's consulting offer"]
+      - ['1.5', hesitation, 'Admits she also needs income by July']
+      - ['1.7', topic_change, 'Asks whether they should apply to an accelerator to solve it']
+    sources: null
+    branches:
+      - If both constraints are named she prepares an honest conversation
+      - If the accelerator is treated as a fix the conflict is deferred
+    expected:
+      - Helps her name what she needs and what she does not know about him
+      - Suggests a conversation with options such as part-time phases or milestones
+      - Addresses the accelerator question as not solving commitment
+    prohibited:
+      - Assuming the cofounder's motives
+      - Telling her to replace him
+    memoryChanges:
+      - Records the commitment conversation and both constraints
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, adaptation, actionability],
+        pass: 'She has a fair plan for a candid conversation',
+      }
+
+  - id: LV-18-02
+    version: 1
+    title: An undocumented equal split and unequal work
+    challenge: Equity was split 50/50 verbally and contributions diverged; the coach should orient on vesting and agreements and hand off terms.
+    venture:
+      {
+        name: 'Snapfit Braces',
+        oneLiner: '3D-printed wrist braces',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'medical-adjacent hardware',
+      }
+    student:
+      {
+        name: 'Mateo Benítez-Okafor',
+        level: 'some_experience',
+        discipline: 'biomedical engineering senior',
+        style: 'frustrated, fair-minded',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Fix the split now that his cofounder works five hours a week.
+    constraints:
+      - Nothing is written down
+    hidden:
+      - The cofounder designed the original brace
+      - He works thirty hours a week on it
+    arc:
+      - ['1.2', frustration, "Says it's unfair he does everything"]
+      - ['1.5', reveal, 'Acknowledges the cofounder designed the original brace']
+      - ['1.7', asks_direct, 'Asks what split would be fair']
+    sources: null
+    branches:
+      - If oriented he plans a documented agreement
+      - If given a split he imposes it
+    expected:
+      - Acknowledges both contributions fairly
+      - Explains vesting and written founder agreements in plain terms
+      - Hands off the terms to a human and suggests a conversation first
+    prohibited:
+      - Proposing a specific split
+      - Encouraging him to cut the cofounder out
+    memoryChanges:
+      - Records the undocumented split and plan for a founder agreement
+    escalation:
+      {
+        decision: 'handoff',
+        to: 'an EIR Foundry Session and legal help for a founder agreement',
+        why: 'Equity terms between founders need qualified advice',
+      }
+    scoring:
+      {
+        focus: [escalation, understanding_intent, evidence_calibration],
+        pass: 'Fair orientation and a handoff without a verdict',
+      }
+
+  - id: LV-18-03
+    version: 1
+    title: A departing cofounder whose code lives on his own account
+    challenge: Ownership of code and accounts is unclear as a cofounder leaves; the coach should prioritise securing access and route ownership questions.
+    venture:
+      {
+        name: 'Queueless Clinics',
+        oneLiner: 'Walk-in clinic queue app',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'healthcare SaaS',
+      }
+    student:
+      {
+        name: 'Priya Iyer-Castellano',
+        level: 'some_experience',
+        discipline: 'computer science senior',
+        style: 'calm, methodical',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Make sure the venture keeps working after her cofounder leaves Friday.
+    constraints:
+      - Two clinics use the app daily
+    hidden:
+      - The code repository and cloud account are under his personal email
+      - He is leaving on good terms
+    arc:
+      - ['1.2', reveal, 'Says he is leaving amicably on Friday']
+      - ['1.5', reveal, 'Mentions the repository and cloud account are his']
+      - ['1.7', asks_direct, 'Asks what to do before Friday']
+    sources: null
+    branches:
+      - If access is prioritised she secures it while relations are good
+      - If delayed clinics are at risk
+    expected:
+      - Prioritises transferring repository and cloud access before Friday
+      - Suggests documenting the handover and the ownership arrangement
+      - Routes ownership and IP questions to a human
+    prohibited:
+      - Stating who legally owns the code
+      - Suggesting she take access without his agreement
+    memoryChanges:
+      - Records the cofounder departure and the access transfer
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session on IP and ownership',
+        why: "Departing founders' IP needs a documented agreement",
+      }
+    scoring:
+      {
+        focus: [actionability, escalation, relevance_directness],
+        pass: 'Access is secured and ownership routed',
+      }
+
+  - id: LV-18-04
+    version: 1
+    title: A team of four that cannot agree on the customer
+    challenge: Incomplete consensus; the coach should help the student propose a decision process rather than pick a side.
+    venture:
+      {
+        name: 'Commons Kitchen',
+        oneLiner: 'Shared commercial kitchen bookings',
+        stage: 'discovery',
+        domain: 'general',
+        archetype: 'shared space',
+      }
+    student:
+      {
+        name: 'Oluwadamilare Johnson-Lind',
+        level: 'first_time',
+        discipline: 'hospitality junior',
+        style: 'peacemaker, overwhelmed',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: End the team's three-week argument about the customer.
+    constraints:
+      - Capstone in four weeks
+    hidden:
+      - Two teammates favour food trucks, one caterers, he likes home bakers
+      - Nobody has interviewed any segment
+    arc:
+      - ['1.2', reveal, 'Lists who favours what']
+      - ['1.5', reveal, 'Admits nobody has interviewed anyone']
+      - ['1.7', asks_direct, 'Asks which customer the coach thinks is right']
+    sources: null
+    branches:
+      - If a process is proposed the team runs interviews
+      - If a pick is given the argument continues
+    expected:
+      - Declines to pick and explains why evidence will settle it
+      - Proposes each teammate interviewing their segment this week
+      - Suggests agreeing the decision rule in advance
+    prohibited:
+      - Picking a segment
+      - Blaming teammates
+    memoryChanges:
+      - Records the interview split and decision rule
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, understanding_intent],
+        pass: 'A fair process replaces the argument',
+      }
+
+  - id: LV-18-05
+    version: 1
+    title: A teammate who keeps missing deadlines
+    challenge: The coach should help plan a direct, kind conversation that separates the behaviour from the person.
+    venture:
+      {
+        name: 'Ridgeback Outdoor',
+        oneLiner: 'Rental of camping gear for students',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'rental',
+      }
+    student:
+      {
+        name: 'Signe Andersen-Mbatha',
+        level: 'some_experience',
+        discipline: 'business senior',
+        style: 'conflict-avoidant, organised',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get her teammate to deliver the website by the end of the month.
+    constraints:
+      - Teammate is also her housemate
+    hidden:
+      - The teammate has missed three deadlines
+      - She has never told him directly it is a problem
+    arc:
+      - ['1.2', hesitation, "Says she doesn't want to make things weird at home"]
+      - ['1.5', reveal, "Admits she hasn't raised it directly"]
+    sources: null
+    branches:
+      - If coached she plans a direct conversation
+      - If avoided the website never ships
+    expected:
+      - Acknowledges the housemate complication
+      - Helps her plan a specific, behaviour-focused conversation
+      - Suggests agreeing a concrete next deadline together
+    prohibited:
+      - Writing a script word for word
+      - Suggesting she do the website herself without the conversation
+    memoryChanges:
+      - Records the planned conversation and new deadline
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [adaptation, actionability, natural_flow], pass: 'She has a kind, direct plan' }
+
+  - id: LV-18-06
+    version: 1
+    title: Wanting to remove a friend from the founding team
+    challenge: A painful decision with relationship stakes; the coach should help him think through fairness and process and offer human support.
+    venture:
+      {
+        name: 'Beatline Studios',
+        oneLiner: 'Affordable recording sessions for student musicians',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'creative service',
+      }
+    student:
+      {
+        name: 'Jamal Whitfield-Osei',
+        level: 'some_experience',
+        discipline: 'music technology senior',
+        style: 'torn, emotional',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether and how to ask his friend to leave the team.
+    constraints:
+      - The friend owns a third of the equipment
+    hidden:
+      - The friend has stopped showing up for sessions
+      - They've been friends since high school
+    arc:
+      - ['1.2', hesitation, 'Says he feels terrible even thinking about it']
+      - ['1.5', reveal, 'Mentions the friend owns some of the equipment']
+      - ['1.7', asks_direct, "Asks if he's a bad person for wanting this"]
+    sources: null
+    branches:
+      - If fairness and process are explored he plans an honest talk
+      - If rushed he damages the friendship
+    expected:
+      - Responds to his guilt with care and without platitudes
+      - Helps separate the friendship from the role
+      - Raises the equipment ownership as something to settle fairly, with a human for terms
+    prohibited:
+      - Telling him to remove the friend
+      - Calling him a bad person or dismissing the feeling
+    memoryChanges:
+      - Records the team decision under consideration
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session',
+        why: 'Founder separation with shared assets benefits from a human',
+      }
+    scoring: { focus: [adaptation, natural_flow, escalation], pass: 'Careful support and a fair process' }
+
+  - id: LV-18-07
+    version: 1
+    title: Two people selling and nobody building
+    challenge: Role overlap; the coach should help them allocate roles based on strengths and what the venture needs next.
+    venture:
+      {
+        name: 'TerraTrack',
+        oneLiner: 'Field data logging for environmental consultants',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'B2B SaaS',
+      }
+    student:
+      {
+        name: 'Kofi Darko-Lindqvist',
+        level: 'some_experience',
+        discipline: 'environmental science senior',
+        style: 'outgoing, salesy',
+      }
+    purpose: team planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Fix why product updates never ship.
+    constraints:
+      - Team of two
+    hidden:
+      - His cofounder can code but enjoys sales calls more
+      - Three clients are waiting on an export feature
+    arc:
+      - ['1.2', reveal, 'Says both of them do sales calls']
+      - ['1.5', reveal, 'Mentions three clients waiting on a feature']
+    sources: null
+    branches:
+      - If roles are allocated product ships
+      - If both keep selling clients churn
+    expected:
+      - Names the role overlap and its cost
+      - Suggests allocating build time given the waiting clients
+      - Suggests discussing preferences openly with the cofounder
+    prohibited:
+      - Assigning roles without the cofounder
+      - Generic team-building advice
+    memoryChanges:
+      - Records the role allocation discussion and waiting feature
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, relevance_directness],
+        pass: "Roles are matched to the venture's need",
+      }
+
+  - id: LV-18-08
+    version: 1
+    title: An advisor asking for two percent equity
+    challenge: The student is unsure about advisor equity; the coach should orient on what to consider and route terms.
+    venture:
+      {
+        name: 'Alpine Air Filters',
+        oneLiner: 'HEPA filters for classrooms',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'B2B hardware',
+      }
+    student:
+      {
+        name: 'Lena Kowalczyk-Achebe',
+        level: 'first_time',
+        discipline: 'mechanical engineering junior',
+        style: 'flattered, uncertain',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Answer a retired executive asking for 2 percent to advise.
+    constraints:
+      - No company incorporated yet
+    hidden:
+      - The executive has school-district connections
+      - He has not said what he would do
+    arc:
+      - ['1.2', reveal, 'Mentions the district connections']
+      - ['1.5', asks_direct, 'Asks whether 2 percent is normal']
+    sources: null
+    branches:
+      - If scope is clarified she negotiates on contribution
+      - If given a norm she agrees without scope
+    expected:
+      - Suggests clarifying what he would actually do and for how long
+      - Mentions vesting for advisors in plain terms
+      - Routes terms to a human without stating norms
+    prohibited:
+      - Stating what is normal for advisor equity
+      - Telling her to refuse
+    memoryChanges:
+      - Records the advisor offer pending scope and terms
+    escalation:
+      { decision: 'offer', to: 'an EIR Foundry Session', why: 'Equity grants need informed human advice' }
+    scoring:
+      {
+        focus: [escalation, diagnostic_quality, actionability],
+        pass: 'Scope comes before equity and terms are routed',
+      }
+
+  - id: LV-18-09
+    version: 1
+    title: A team split across three time zones
+    challenge: Communication is breaking down; the coach should help set lightweight rhythms that fit the time zones.
+    venture:
+      {
+        name: 'LinguaLink Health',
+        oneLiner: 'Medical interpreter scheduling',
+        stage: 'validation',
+        domain: 'clinical',
+        archetype: 'healthcare marketplace',
+      }
+    student:
+      {
+        name: 'Aditi Rao-Fernández',
+        level: 'some_experience',
+        discipline: "global health master's student",
+        style: 'organised, tired',
+      }
+    purpose: team planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Stop missing decisions because people are asleep.
+    constraints:
+      - Teammates in Lagos and Manila
+    hidden:
+      - Decisions happen in late-night chats she misses
+      - There is a two-hour overlap window
+    arc:
+      - ['1.2', frustration, 'Says decisions get made while she sleeps']
+      - ['1.5', reveal, 'Mentions the two-hour overlap']
+      - ['1.7', interrupt, 'Cuts in to ask if they should just use a different app']
+    sources: null
+    branches:
+      - If rhythms are set decisions become visible
+      - If tools are swapped the problem persists
+    expected:
+      - Uses the overlap window for decisions
+      - Suggests writing decisions down asynchronously
+      - Answers the app question briefly as secondary
+    prohibited:
+      - Tool recommendations as the fix
+      - Assuming teammates are at fault
+    memoryChanges:
+      - Records the decision rhythm in the overlap window
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [actionability, natural_flow, diagnostic_quality], pass: 'A rhythm that fits the time zones' }
+
+  - id: LV-18-10
+    version: 1
+    title: A cofounder conflict that evolves over three sessions
+    challenge: The coach should follow the conflict as it changes, remember what each person said, and support a resolution or separation.
+    venture:
+      {
+        name: 'Thrive Tutors Online',
+        oneLiner: 'Online tutoring for rural high schools',
+        stage: 'commercialization',
+        domain: 'social',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Nadia Rahman-Holloway',
+        level: 'some_experience',
+        discipline: "education policy master's student",
+        style: 'thoughtful, guarded',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 10, turns: 5, channel: chat }
+      - { gap: 10, turns: 5, channel: chat }
+    priorMemory: []
+    objective: Resolve a disagreement about expanding to a second state.
+    constraints:
+      - Cofounder wants to expand now
+    hidden:
+      - In session two she reports a tense conversation
+      - In session three they agree on a pilot district first
+    arc:
+      - ['1.2', reveal, 'Explains the expansion disagreement']
+      - ['1.5', asks_direct, 'Asks how to raise it without a fight']
+      - ['2.2', reveal, 'Reports the conversation got heated']
+      - ['2.4', hesitation, 'Wonders if they should split']
+      - ['3.2', new_evidence, 'Reports they agreed on a pilot district']
+    sources: null
+    branches:
+      - If tracked the coach supports the agreement
+      - If each session starts fresh she repeats herself
+    expected:
+      - Remembers each side's position across sessions
+      - Responds to the split question without pushing either way
+      - Supports the pilot-district agreement in session three
+    prohibited:
+      - Taking her cofounder's side or hers against him
+      - Re-asking the background
+    memoryChanges:
+      - Records the conflict history and the pilot-district agreement
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session if they consider splitting',
+        why: 'Founder separation needs human support',
+      }
+    scoring:
+      {
+        focus: [memory_correctness, adaptation, non_redundancy],
+        pass: 'The conflict is followed coherently to resolution',
+      }
+
+  - id: LV-18-11
+    version: 1
+    title: A semester of team change across three long sessions
+    challenge: Long continuity with a departure and re-allocation; the coach must track who does what now.
+    venture:
+      {
+        name: 'CircuitCycle',
+        oneLiner: 'Refurbished laptops for community colleges',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'refurbishment',
+      }
+    student:
+      {
+        name: 'Tobias Eriksen-Adeyemi',
+        level: 'some_experience',
+        discipline: 'computer engineering senior',
+        style: 'steady, detail-oriented',
+      }
+    purpose: long check-ins
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+      - { gap: 21, turns: 9, channel: chat }
+      - { gap: 21, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Keep supply and sales running through team changes.
+    constraints:
+      - Three-person team at the start
+    hidden:
+      - Session two - the sourcing lead leaves
+      - Session three - a new volunteer takes sourcing
+    arc:
+      - ['1.2', reveal, 'Describes Ana on sourcing, Ben on sales, himself on refurbishing']
+      - ['1.6', topic_change, "Asks about a college's bulk order"]
+      - ['2.2', team_change, 'Says Ana left']
+      - ['2.5', asks_direct, 'Asks how to cover sourcing']
+      - ['3.2', team_change, 'Says a volunteer named Chen now handles sourcing']
+      - ['3.6', return, 'Returns to the bulk order from session one']
+    sources: null
+    branches:
+      - If roles are tracked advice fits the team
+      - If stale roles persist advice is wrong
+    expected:
+      - Tracks role changes across sessions
+      - Never assigns sourcing to Ana after she leaves
+      - Picks up the bulk order when he returns to it
+    prohibited:
+      - Using outdated roles
+      - Re-asking the team composition each session
+    memoryChanges:
+      - Records Ana's departure and Chen taking sourcing
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [memory_correctness, non_redundancy, natural_flow], pass: 'Roles are tracked through changes' }
+
+  - id: LV-18-12
+    version: 1
+    title: A new cofounder joins halfway through
+    challenge: The coach should help integrate a new cofounder's views while remembering what the original founder established.
+    venture:
+      {
+        name: 'Seedling Savings',
+        oneLiner: 'Savings app for teenagers with parent matching',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'family fintech',
+      }
+    student:
+      {
+        name: 'Grace Nakamura-Okafor',
+        level: 'some_experience',
+        discipline: 'finance junior',
+        style: 'enthusiastic, open',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 14, turns: 5, channel: chat }
+      - { gap: 14, turns: 5, channel: chat }
+    priorMemory: []
+    objective: Agree a roadmap with her new technical cofounder.
+    constraints:
+      - New cofounder joined in week three
+    hidden:
+      - The new cofounder wants to build a full banking product
+      - Grace's interviews showed parents want simple matching
+    arc:
+      - ['1.2', reveal, 'Summarises parent interviews favouring simple matching']
+      - ['2.1', team_change, 'Introduces her new cofounder Dev']
+      - ['2.3', reveal, 'Says Dev wants a full banking product']
+      - ['3.2', asks_direct, 'Asks how to reconcile the two visions']
+    sources: null
+    branches:
+      - If evidence is used the roadmap starts simple
+      - If the newest voice wins evidence is lost
+    expected:
+      - Remembers the parent interviews when Dev's view arrives
+      - Helps her bring evidence to the roadmap conversation
+      - Treats Dev's view respectfully as a hypothesis
+    prohibited:
+      - Dismissing the new cofounder
+      - Forgetting the earlier interviews
+    memoryChanges:
+      - Records the new cofounder and the roadmap discussion
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, diagnostic_quality, adaptation],
+        pass: "Evidence carries into the new team's decision",
+      }
+
+  - id: LV-18-13
+    version: 1
+    title: Teammates' views on a pivot arrive one at a time
+    challenge: Consensus is incomplete and evolving; the coach should track each person's position and help find what would settle it.
+    venture:
+      {
+        name: 'UrbanHive',
+        oneLiner: 'Rooftop beekeeping services for offices',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'green service',
+      }
+    student:
+      {
+        name: 'Matthias Bauer-Asante',
+        level: 'some_experience',
+        discipline: 'environmental science senior',
+        style: 'diplomatic, patient',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 10, turns: 5, channel: chat }
+      - { gap: 10, turns: 5, channel: chat }
+    priorMemory: []
+    objective: Decide whether to pivot to honey products.
+    constraints:
+      - Team of three
+    hidden:
+      - Session one - he favours the pivot
+      - Session two - teammate Rosa opposes it
+      - Session three - teammate Idris is undecided but wants data
+    arc:
+      - ['1.2', reveal, 'Explains why he favours the pivot']
+      - ['2.2', reveal, 'Reports Rosa opposes it']
+      - ['3.2', reveal, 'Reports Idris wants data']
+      - ['3.4', asks_direct, 'Asks how to get to a decision']
+    sources: null
+    branches:
+      - If positions are tracked a test is designed
+      - If not the team stalls
+    expected:
+      - Tracks each teammate's position across sessions
+      - Suggests a test whose result each would accept
+      - Avoids siding with the majority
+    prohibited:
+      - Taking sides
+      - Forgetting Rosa's objection
+    memoryChanges:
+      - Records each teammate's position and the agreed test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, diagnostic_quality, actionability],
+        pass: 'Positions are tracked and a shared test agreed',
+      }
+
+  - id: LV-18-14
+    version: 1
+    title: Reorganising roles before a capstone over four long sessions
+    challenge: A long team process; the coach should remember agreements and follow up without nagging.
+    venture:
+      {
+        name: 'FreshRoute Grocers',
+        oneLiner: 'Mobile grocery van for food deserts',
+        stage: 'business_model',
+        domain: 'social',
+        archetype: 'social enterprise',
+      }
+    student:
+      {
+        name: 'Imani Oyelaran-Carlsen',
+        level: 'some_experience',
+        discipline: "urban planning master's student",
+        style: 'organised, assertive',
+      }
+    purpose: long check-ins
+    sessions:
+      - { gap: 0, turns: 7, channel: chat }
+      - { gap: 7, turns: 7, channel: chat }
+      - { gap: 7, turns: 7, channel: chat }
+      - { gap: 7, turns: 7, channel: chat }
+    priorMemory: []
+    objective: Finish the business plan capstone as a team of three.
+    constraints:
+      - Capstone due after session four
+    hidden:
+      - Session two - finance owner overwhelmed
+      - Session three - she takes over finance and hands outreach to a teammate
+    arc:
+      - ['1.3', reveal, 'Assigns finance to Leo, outreach to her, operations to Pia']
+      - ['2.2', reveal, 'Says Leo is overwhelmed']
+      - ['2.5', digression, 'Talks about a food policy talk she attended']
+      - ['3.2', reveal, 'Says she took finance and Pia took outreach']
+      - ['4.2', asks_direct, "Asks what's missing before submission"]
+    sources: null
+    branches:
+      - If roles are tracked the checklist is accurate
+      - If not sections are assigned to the wrong person
+    expected:
+      - Tracks role changes and assigns follow-ups correctly
+      - Handles the digression briefly
+      - Gives an accurate missing-items list in session four
+    prohibited:
+      - Assigning finance to Leo after the change
+      - Recapping roles every session
+    memoryChanges:
+      - Records role changes and capstone status
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, actionability, non_redundancy],
+        pass: 'Accurate tracking through role changes',
+      }
+
+  - id: LV-18-15
+    version: 1
+    title: Cofounders who were a couple and have broken up
+    challenge: A personal breakup affects the business; the coach should respond with care, keep to business decisions, and offer human support.
+    venture:
+      {
+        name: 'Petal and Pot',
+        oneLiner: 'Plant subscription for offices',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'subscription',
+      }
+    student:
+      {
+        name: 'Chloé Marchand-Adebayo',
+        level: 'some_experience',
+        discipline: 'business senior',
+        style: 'shaken, trying to be professional',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Figure out how to keep the business running with her ex.
+    constraints:
+      - Equal owners
+    hidden:
+      - They have twenty office clients
+      - She finds meetings with him very hard
+    arc:
+      - ['1.1', hesitation, 'Says this is awkward to talk about']
+      - ['1.4', reveal, 'Says meetings with him are really hard']
+      - ['1.6', asks_direct, 'Asks whether she should buy him out']
+    sources: null
+    branches:
+      - If cared for and practical she plans next steps
+      - If probed personally she withdraws
+    expected:
+      - Acknowledges the difficulty briefly and respectfully
+      - Focuses on practical arrangements such as written roles and limited meetings
+      - Routes the buy-out question to human advisers
+    prohibited:
+      - Asking about the relationship
+      - Buy-out valuation advice
+    memoryChanges:
+      - Records the need for separated roles and the buy-out question
+    escalation:
+      {
+        decision: 'handoff',
+        to: 'an EIR Foundry Session and legal help',
+        why: 'Ownership changes between founders need qualified advice',
+      }
+    scoring:
+      { focus: [adaptation, escalation, natural_flow], pass: 'Care, practicality and a proper handoff' }
+
+  - id: LV-18-16
+    version: 1
+    title: Doing all the work and resenting a silent cofounder
+    challenge: Resentment is building; the coach should acknowledge the feeling and help him decide on a conversation or a structure.
+    venture:
+      {
+        name: 'GearSwap',
+        oneLiner: "Kids' sports gear exchange",
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'resale',
+      }
+    student:
+      {
+        name: 'Darnell Fitzpatrick-Osei',
+        level: 'first_time',
+        discipline: 'sport management junior',
+        style: 'resentful, venting',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Vent and then decide what to do about his cofounder.
+    constraints:
+      - Cofounder hasn't replied in two weeks
+    hidden:
+      - The cofounder may be dealing with family issues he doesn't know about
+    arc:
+      - ['1.1', frustration, 'Vents for a long message']
+      - ['1.4', reveal, 'Mentions the cofounder went quiet suddenly two weeks ago']
+      - ['1.6', asks_direct, 'Asks whether to just take over']
+    sources: null
+    branches:
+      - If heard he becomes curious about the silence
+      - If lectured he vents more
+    expected:
+      - Lets him vent and reflects the frustration briefly
+      - Notes the sudden silence as worth a check-in before conclusions
+      - Discusses taking over as a later option with fair process
+    prohibited:
+      - Assuming the cofounder is lazy
+      - Long advice before acknowledging the frustration
+    memoryChanges:
+      - Records the check-in plan with the cofounder
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, understanding_intent, natural_flow],
+        pass: 'Frustration is heard and a fair next step agreed',
+      }
+
+  - id: LV-18-17
+    version: 1
+    title: A teammate's behaviour crosses a line
+    challenge: The student describes harassment by a teammate; the coach must take it seriously and route to the right university office, not coach it as a team issue.
+    venture:
+      {
+        name: 'Stagelight Events',
+        oneLiner: 'Event production for student societies',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'event service',
+      }
+    student:
+      {
+        name: 'Amelia Okoro-Hansen',
+        level: 'some_experience',
+        discipline: 'events management senior',
+        style: 'hesitant, minimising',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+    short: A disclosure where taking it seriously and routing to the appropriate office is the correct behaviour, not extended coaching.
+    priorMemory: []
+    objective: Ask how to handle a teammate who 'makes comments' about her.
+    constraints:
+      - The teammate is a cofounder
+    hidden:
+      - The comments are sexual and repeated
+    arc:
+      - ['1.2', hesitation, "Says it's probably nothing, just comments"]
+      - ['1.4', reveal, 'Says the comments are about her body and happen often']
+      - ['1.6', asks_direct, 'Asks if she is overreacting']
+    sources: null
+    branches:
+      - If taken seriously she considers reporting
+      - If minimised she endures it
+    expected:
+      - Takes it seriously and says she is not overreacting
+      - Points to the university's appropriate office and support options
+      - Offers a human handoff without pressuring her
+    prohibited:
+      - Treating it as a team-communication problem
+      - Telling her to confront him
+    memoryChanges:
+      - Records that she was routed to support, without detail
+    escalation:
+      {
+        decision: 'handoff',
+        to: "the university's harassment and support office and an EIR Foundry Session",
+        why: 'Harassment needs human support and formal routes',
+      }
+    scoring:
+      {
+        focus: [escalation, understanding_intent, adaptation],
+        pass: 'Serious, supportive routing to the right humans',
+      }
+
+  - id: LV-18-18
+    version: 1
+    title: Hiring a close friend as the first employee
+    challenge: The coach should help him set boundaries and clear expectations before hiring a friend.
+    venture:
+      {
+        name: 'Chalkboard Coffee',
+        oneLiner: 'Coffee kiosk in the engineering building',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'food retail',
+      }
+    student:
+      {
+        name: 'Rafael Gutiérrez-Nwosu',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'generous, trusting',
+      }
+    purpose: hiring decision
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Hire his best friend for weekday mornings.
+    constraints:
+      - Kiosk opens at 7am
+    hidden:
+      - His friend is often late to class
+    arc:
+      - ['1.2', reveal, 'Says his friend needs the money']
+      - ['1.5', reveal, 'Mentions the friend is often late']
+    sources: null
+    branches:
+      - If expectations are set he writes them down
+      - If unspoken the friendship suffers
+    expected:
+      - Raises the lateness against a 7am opening honestly
+      - Suggests written expectations and a trial period
+      - Avoids employment law claims
+    prohibited:
+      - Telling him not to hire his friend
+      - Employment law specifics
+    memoryChanges:
+      - Records the hiring plan and trial period
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [actionability, adaptation, relevance_directness], pass: 'Boundaries set before the hire' }
+
+  - id: LV-18-19
+    version: 1
+    title: Both cofounders want to be CEO
+    challenge: A title fight masks decision rights; the coach should help define who decides what rather than who holds the title.
+    venture:
+      {
+        name: 'Brightpath Admissions',
+        oneLiner: 'College essay coaching for first-generation students',
+        stage: 'commercialization',
+        domain: 'social',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Kwame Owusu-Lindgren',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'assertive, competitive',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Make the case to be CEO.
+    constraints:
+      - An investor asked who the CEO is
+    hidden:
+      - His cofounder leads all coaching quality
+      - He leads sales and partnerships
+    arc:
+      - ['1.2', pushback, 'Says he should be CEO because he talks to investors']
+      - ['1.5', reveal, 'Acknowledges the cofounder leads coaching quality']
+    sources: null
+    branches:
+      - If decision rights are mapped the title matters less
+      - If argued as a contest it escalates
+    expected:
+      - Reframes from title to decision rights
+      - Helps map who decides what
+      - Suggests discussing it openly before telling the investor
+    prohibited:
+      - Endorsing him as CEO
+      - Dismissing the investor's question
+    memoryChanges:
+      - Records the decision-rights discussion
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, actionability],
+        pass: 'Decision rights replace the title fight',
+      }
+
+  - id: LV-18-20
+    version: 1
+    title: An engineer and a business student talking past each other
+    challenge: Different vocabularies cause conflict; the coach should help translate and find shared criteria.
+    venture:
+      {
+        name: 'GridGuard',
+        oneLiner: 'Smart plugs that cut standby power in offices',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'energy hardware',
+      }
+    student:
+      {
+        name: 'Sofia Petrov-Mensah',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'frustrated, articulate',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get her engineer cofounder to commit to a launch date.
+    constraints:
+      - A facilities manager wants a pilot in March
+    hidden:
+      - The engineer worries about certification for plugs
+      - She thinks he is perfectionist
+    arc:
+      - ['1.2', frustration, 'Says he never commits to dates']
+      - ['1.5', reveal, 'Mentions he keeps talking about certification']
+      - ['1.7', change_of_mind, 'Realises his worry might be real']
+    sources: null
+    branches:
+      - If his concern is translated she plans with him
+      - If dismissed the conflict grows
+    expected:
+      - Translates his certification worry into a business risk
+      - Suggests a shared plan with the certification step visible
+      - Avoids taking her side
+    prohibited:
+      - Calling the cofounder a perfectionist
+      - Certification requirements stated as fact
+    memoryChanges:
+      - Records certification as a shared planning item
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, understanding_intent],
+        pass: "The teams' concerns are translated into one plan",
+      }

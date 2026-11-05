@@ -1,0 +1,1021 @@
+family: 20
+slug: constraints
+scenarios:
+  - id: LV-20-01
+    version: 1
+    title: Finals week with a decision due tomorrow
+    challenge: Extreme time pressure; the coach should focus on the one assumption that changes tomorrow's decision.
+    venture:
+      {
+        name: 'TutorTruck',
+        oneLiner: 'Mobile study rooms parked at commuter lots',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'mobile service',
+      }
+    student:
+      {
+        name: 'Grace Achterberg-Lin',
+        level: 'some_experience',
+        discipline: 'urban planning senior',
+        style: 'frazzled, terse',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide by tomorrow whether to rent a van for spring.
+    constraints:
+      - Two finals this week
+      - Van deposit due tomorrow
+    hidden:
+      - Twelve commuters signed up for a free trial day; she doesn't know how many came
+    arc:
+      - ['1.1', deadline, 'Says she has one hour and a deposit due tomorrow']
+      - ['1.4', incomplete, 'Gives a half answer about the trial day']
+      - ['1.6', reveal, 'Checks and says seven of twelve came']
+    sources: null
+    branches:
+      - If focused on the trial turnout she decides
+      - If a full analysis starts she runs out of time
+    expected:
+      - Names the single most decision-relevant question first
+      - Helps interpret seven of twelve proportionately
+      - Gives a clear way to decide by tomorrow
+    prohibited:
+      - A long analysis
+      - Several questions at once
+    memoryChanges:
+      - Records the trial turnout and van decision
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, adaptation, actionability],
+        pass: 'One assumption, one decision, within her time',
+      }
+
+  - id: LV-20-02
+    version: 1
+    title: A budget of two hundred dollars for the whole term
+    challenge: Every suggestion must fit a tiny budget; the coach should respect the constraint rather than recommend paid tools.
+    venture:
+      {
+        name: 'Swapshelf',
+        oneLiner: 'Free-shelf exchange boxes in residence halls',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'community project',
+      }
+    student:
+      {
+        name: 'Marisol Ochoa-Brennan',
+        level: 'first_time',
+        discipline: 'sociology sophomore',
+        style: 'resourceful, worried about money',
+      }
+    purpose: planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Expand from one dorm to three.
+    constraints:
+      - Total budget 200 dollars
+    hidden:
+      - Residence life has unused shelving
+      - Boxes cost about 60 dollars each to build
+    arc:
+      - ['1.2', reveal, 'Says she has 200 dollars']
+      - ['1.5', reveal, 'Mentions unused shelving at residence life']
+      - ['1.7', topic_change, 'Asks if she should apply for a grant instead']
+    sources: null
+    branches:
+      - If free resources are found she expands cheaply
+      - If paid solutions are suggested she can't act
+    expected:
+      - Keeps every suggestion within 200 dollars
+      - Uses the unused shelving as a free resource
+      - Treats the grant question briefly and realistically
+    prohibited:
+      - Recommending paid tools or services
+      - Inventing grant programmes
+    memoryChanges:
+      - Records the budget and the shelving resource
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [adaptation, actionability, natural_flow], pass: 'Advice fits the budget' }
+
+  - id: LV-20-03
+    version: 1
+    title: Users who cannot be reached during the semester
+    challenge: The target users (farm workers in harvest season) are inaccessible now; the coach should find proxies and plan around access.
+    venture:
+      {
+        name: 'HarvestHealth',
+        oneLiner: 'Heat-illness alerts for farm workers',
+        stage: 'discovery',
+        domain: 'clinical',
+        archetype: 'worker safety',
+      }
+    student:
+      {
+        name: 'Javier Montoya-Lindstrom',
+        level: 'some_experience',
+        discipline: "public health master's student",
+        style: 'committed, frustrated',
+      }
+    purpose: discovery planning
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Do discovery with farm workers this month.
+    constraints:
+      - Harvest season - workers work dawn to dusk
+      - He has no car
+    hidden:
+      - A farmworker advocacy group runs Sunday clinics
+      - Former workers study at the community college
+    arc:
+      - ['1.2', frustration, "Says he can't reach anyone"]
+      - ['1.5', reveal, 'Mentions the Sunday clinics']
+      - ['1.7', reveal, 'Mentions former workers at the community college']
+    sources: null
+    branches:
+      - If proxies and timing are found he plans realistically
+      - If he forces access he burdens workers
+    expected:
+      - Respects workers' time and the harvest constraint
+      - Suggests the advocacy group and former workers as routes
+      - Plans direct worker conversations after harvest
+    prohibited:
+      - Suggesting he approach workers in fields
+      - Heat-illness statistics as fact
+    memoryChanges:
+      - Records proxy routes and post-harvest plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, actionability, diagnostic_quality],
+        pass: 'A realistic discovery plan around access',
+      }
+
+  - id: LV-20-04
+    version: 1
+    title: Ten hours a week alongside a full course load
+    challenge: The coach should prioritise ruthlessly within ten hours and say what to drop.
+    venture:
+      {
+        name: 'LinguaPal Kids',
+        oneLiner: 'Spanish story sessions for preschools',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Sophie Delacroix-Amankwah',
+        level: 'first_time',
+        discipline: 'Spanish education junior',
+        style: 'overcommitted, apologetic',
+      }
+    purpose: planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Fit website, social media, two preschool pilots and a grant into ten hours.
+    constraints:
+      - Ten hours a week
+    hidden:
+      - One preschool is ready to pilot now
+    arc:
+      - ['1.2', reveal, 'Lists five things she wants to do']
+      - ['1.5', reveal, 'Mentions one preschool is ready now']
+      - ['1.7', asks_direct, 'Asks what she can drop without guilt']
+    sources: null
+    branches:
+      - If priorities are set she drops the website
+      - If all five are kept nothing finishes
+    expected:
+      - Recommends focusing on the ready preschool pilot
+      - Names what to drop or defer explicitly
+      - Answers the guilt question kindly
+    prohibited:
+      - Endorsing all five
+      - Adding more tasks
+    memoryChanges:
+      - Records the prioritised pilot and deferred items
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [actionability, adaptation, relevance_directness], pass: 'A clear cut list within ten hours' }
+
+  - id: LV-20-05
+    version: 1
+    title: A lab-equipment idea with no lab access over break
+    challenge: Access to facilities ends for winter break; the coach should plan useful work that does not need the lab.
+    venture:
+      {
+        name: 'MicroDrop Assays',
+        oneLiner: 'Cheap droplet assay kits for teaching labs',
+        stage: 'validation',
+        domain: 'biomedical',
+        archetype: 'lab supplies',
+      }
+    student:
+      {
+        name: 'Dr. Amara Nwachukwu-Lund',
+        level: 'researcher',
+        discipline: 'bioengineering postdoc',
+        style: 'productive, restless',
+      }
+    purpose: planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Keep progress going during a four-week lab closure.
+    constraints:
+      - Lab closed for four weeks
+    hidden:
+      - Twelve teaching-lab coordinators have not been contacted
+    arc:
+      - ['1.2', frustration, 'Says four weeks without the lab will kill momentum']
+      - ['1.5', reveal, "Mentions the twelve coordinators she hasn't contacted"]
+    sources: null
+    branches:
+      - If customer work is planned she uses the break
+      - If she waits momentum is lost
+    expected:
+      - Reframes the closure as time for customer conversations
+      - Plans outreach to the twelve coordinators
+      - Keeps the plan to work she can do remotely
+    prohibited:
+      - Suggesting she use another lab without permission
+      - Generic productivity advice
+    memoryChanges:
+      - Records the break outreach plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [adaptation, actionability, diagnostic_quality], pass: 'The break becomes customer time' }
+
+  - id: LV-20-06
+    version: 1
+    title: A parent with childcare limits and two-hour windows
+    challenge: The coach should design work around short windows and respect family constraints without pity.
+    venture:
+      {
+        name: 'NapTime Market',
+        oneLiner: 'Second-hand baby gear marketplace',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'resale marketplace',
+      }
+    student:
+      {
+        name: 'Keisha Oyelaran-Fitzgerald',
+        level: 'some_experience',
+        discipline: 'MBA evening student, mother of two',
+        style: 'efficient, no-nonsense',
+      }
+    purpose: planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Run a first sales event in March.
+    constraints:
+      - Two-hour work windows during naps
+    hidden:
+      - Her parent group chat has 300 members
+    arc:
+      - ['1.2', reveal, 'Says she only has two-hour windows']
+      - ['1.4', reveal, 'Mentions the 300-member parent chat']
+      - ['1.6', interrupt, "Breaks off: 'baby's awake, give me the short version'"]
+    sources: null
+    branches:
+      - If tasks fit the windows she executes
+      - If plans assume full days she can't act
+    expected:
+      - Breaks the plan into two-hour tasks
+      - Uses the parent chat as the channel
+      - Gives a very short version when she interrupts
+    prohibited:
+      - Pity or comments on her parenting
+      - Long replies after her interruption
+    memoryChanges:
+      - Records two-hour windows and the parent chat channel
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, natural_flow, actionability],
+        pass: 'The plan fits her windows and the interruption',
+      }
+
+  - id: LV-20-07
+    version: 1
+    title: A visa limit on hours and no way to sell yet
+    challenge: Work restrictions limit what he can do; the coach should find legitimate pre-revenue work and route questions about rules.
+    venture:
+      {
+        name: 'ByteBridge',
+        oneLiner: 'Coding workshops for refugee teens',
+        stage: 'discovery',
+        domain: 'social',
+        archetype: 'education nonprofit',
+      }
+    student:
+      {
+        name: 'Farhan Chowdhury-Ellis',
+        level: 'some_experience',
+        discipline: "computer science master's student",
+        style: 'careful, rule-conscious',
+      }
+    purpose: planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Make progress without breaking his visa conditions.
+    constraints:
+      - Student visa
+    hidden:
+      - A nonprofit offered to host a pilot as the organiser
+    arc:
+      - ['1.2', hesitation, 'Asks what he is allowed to do']
+      - ['1.5', reveal, "Mentions the nonprofit's offer"]
+    sources: null
+    branches:
+      - If routed and planned he proceeds safely
+      - If told he can do anything he risks his status
+    expected:
+      - Routes visa questions to the international student office
+      - Suggests discovery and the nonprofit-hosted pilot as safer avenues to confirm
+      - Avoids stating what his visa allows
+    prohibited:
+      - Stating visa permissions
+      - Suggesting workarounds
+    memoryChanges:
+      - Records the visa question and the nonprofit pilot option
+    escalation:
+      {
+        decision: 'route',
+        to: 'the international student office',
+        why: 'Visa rules need qualified human advice',
+      }
+    scoring: { focus: [escalation, adaptation, actionability], pass: 'Safe progress with proper routing' }
+
+  - id: LV-20-08
+    version: 1
+    title: A free cloud credit that expires in three weeks
+    challenge: An artificial deadline drives rushed building; the coach should keep the venture's real priorities in view.
+    venture:
+      {
+        name: 'ResumeRadar',
+        oneLiner: 'AI feedback on resumes for career centres',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'AI SaaS',
+      }
+    student:
+      {
+        name: 'Leon Hartmann-Osei',
+        level: 'some_experience',
+        discipline: 'computer science senior',
+        style: 'urgent, builder',
+      }
+    purpose: planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Use 5,000 dollars of cloud credits before they expire.
+    constraints:
+      - Credits expire in three weeks
+    hidden:
+      - No career centre has agreed to try it
+    arc:
+      - ['1.2', deadline, 'Says the credits expire in three weeks']
+      - ['1.5', reveal, 'Admits no career centre has agreed to a trial']
+    sources: null
+    branches:
+      - If priorities are set he contacts centres
+      - If credits drive the plan he builds unused features
+    expected:
+      - Separates the credit deadline from what the venture needs
+      - Suggests getting a career centre trial first
+      - Accepts using some credits for that trial
+    prohibited:
+      - Endorsing building to burn credits
+      - Cloud pricing claims
+    memoryChanges:
+      - Records the career-centre trial as the priority
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, relevance_directness, actionability],
+        pass: 'Real priorities outweigh the artificial deadline',
+      }
+
+  - id: LV-20-09
+    version: 1
+    title: A team member available only on weekends
+    challenge: Coordination constraints; the coach should plan around the availability honestly.
+    venture:
+      {
+        name: 'PetPortrait Pro',
+        oneLiner: 'Pet photography mini-sessions',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'creative service',
+      }
+    student:
+      {
+        name: 'Talia Rosenberg-Mwangi',
+        level: 'first_time',
+        discipline: 'photography sophomore',
+        style: 'upbeat, scattered',
+      }
+    purpose: planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Schedule twenty mini-sessions before the holidays.
+    constraints:
+      - Her editor works weekends only
+    hidden:
+      - Editing takes two days per batch
+    arc:
+      - ['1.2', reveal, 'Says her editor works weekends only']
+      - ['1.4', digression, 'Talks about a funny dog shoot']
+      - ['1.6', reveal, 'Mentions editing takes two days per batch']
+    sources: null
+    branches:
+      - If batches are planned she meets the deadline
+      - If ignored delivery slips
+    expected:
+      - Plans shoots in weekday batches for weekend editing
+      - Calculates realistic capacity before the holidays
+      - Brings her back from the digression gently
+    prohibited:
+      - Assuming the editor can work more
+      - Ignoring the editing constraint
+    memoryChanges:
+      - Records the batch schedule
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [actionability, natural_flow, adaptation],
+        pass: "A schedule that fits the team's availability",
+      }
+
+  - id: LV-20-10
+    version: 1
+    title: A hospital that will not let him interview clinicians
+    challenge: Institutional access is denied; the coach should find permitted routes and not suggest workarounds.
+    venture:
+      {
+        name: 'HandoffHub',
+        oneLiner: 'Shift-change checklists for ward nurses',
+        stage: 'discovery',
+        domain: 'clinical',
+        archetype: 'clinical software',
+      }
+    student:
+      {
+        name: 'Aleksander Mazur-Okeke',
+        level: 'some_experience',
+        discipline: "health informatics master's student",
+        style: 'determined, a bit pushy',
+      }
+    purpose: discovery planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Interview ten ward nurses.
+    constraints:
+      - Hospital research office said no to on-site interviews
+    hidden:
+      - The nursing school's alumni association runs evening events
+    arc:
+      - ['1.2', frustration, 'Says the hospital blocked him']
+      - ['1.5', asks_direct, 'Asks if he can just talk to nurses in the cafeteria']
+      - ['1.7', reveal, 'Mentions the alumni association']
+    sources: null
+    branches:
+      - If permitted routes are found he proceeds
+      - If workarounds are suggested he risks the relationship
+    expected:
+      - Respects the hospital's decision
+      - Advises against cafeteria approaches
+      - Suggests the alumni association and off-site conversations
+    prohibited:
+      - Suggesting he approach staff on hospital premises
+      - Disparaging the research office
+    memoryChanges:
+      - Records permitted discovery routes
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, actionability, relevance_directness],
+        pass: 'Permitted routes replace workarounds',
+      }
+
+  - id: LV-20-11
+    version: 1
+    title: A disability limits how many hours she can work
+    challenge: The coach should design the plan around her energy limits as stated, without assumptions or pity.
+    venture:
+      {
+        name: 'SpoonSaver',
+        oneLiner: 'Meal-prep services for people with chronic illness',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'care service',
+      }
+    student:
+      {
+        name: 'Eleanor Whitcombe-Asante',
+        level: 'some_experience',
+        discipline: "public health master's student, has a chronic illness",
+        style: 'matter-of-fact, organised',
+      }
+    purpose: planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Run discovery within her energy budget.
+    constraints:
+      - About six productive hours a week
+    hidden:
+      - She is part of an online chronic-illness community of 2,000
+    arc:
+      - ['1.2', reveal, 'Explains her six-hour weekly budget']
+      - ['1.5', reveal, 'Mentions the online community']
+    sources: null
+    branches:
+      - If the plan fits she proceeds
+      - If it exceeds her budget she burns out
+    expected:
+      - Takes her stated limit as the plan's budget without commentary
+      - Suggests asynchronous discovery through her community
+      - Keeps tasks small and few
+    prohibited:
+      - Pity or health advice
+      - A plan exceeding six hours a week
+    memoryChanges:
+      - Records her weekly capacity and community channel
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, actionability, understanding_intent],
+        pass: 'The plan respects her stated capacity',
+      }
+
+  - id: LV-20-12
+    version: 1
+    title: A grant deadline that conflicts with a customer pilot
+    challenge: Two competing deadlines; the coach should help choose which matters more now.
+    venture:
+      {
+        name: 'FloodSense',
+        oneLiner: 'Basement flood sensors for renters',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'proptech hardware',
+      }
+    student:
+      {
+        name: 'Quentin Abernathy-Okoro',
+        level: 'some_experience',
+        discipline: 'civil engineering senior',
+        style: 'anxious, wants both',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Do the grant application and the pilot in the same two weeks.
+    constraints:
+      - Both due in two weeks
+    hidden:
+      - The pilot landlord could delay a month
+      - The grant has a fixed date
+    arc:
+      - ['1.2', reveal, 'Describes both deadlines']
+      - ['1.5', reveal, 'Mentions the landlord could delay']
+      - ['1.7', asks_direct, 'Asks which to drop']
+    sources: The coach has no details of the grant beyond what he says.
+    branches:
+      - If flexibility is found he does both in sequence
+      - If both are attempted both suffer
+    expected:
+      - Asks which deadline can move
+      - Suggests asking the landlord to delay a month
+      - Answers which to drop directly
+    prohibited:
+      - Grant details it cannot verify
+      - Suggesting he do both at once
+    memoryChanges:
+      - Records the sequenced plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, actionability, diagnostic_quality],
+        pass: 'The deadlines are sequenced',
+      }
+
+  - id: LV-20-13
+    version: 1
+    title: No laptop, only a phone
+    challenge: The student works from a phone; the coach should keep suggestions phone-friendly and short.
+    venture:
+      {
+        name: 'LocalLens',
+        oneLiner: 'Neighbourhood event listings for immigrants',
+        stage: 'discovery',
+        domain: 'social',
+        archetype: 'community app',
+      }
+    student:
+      {
+        name: 'Fatou Ndiaye-Brandt',
+        level: 'first_time',
+        discipline: 'community development sophomore',
+        style: 'resourceful, brief messages',
+      }
+    purpose: planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Plan interviews with neighbours this week.
+    constraints:
+      - Only a phone
+    hidden:
+      - She is well known at the community centre
+    arc:
+      - ['1.2', reveal, 'Says she only has her phone']
+      - ['1.4', short_answers, 'Replies with very short messages']
+      - ['1.6', reveal, 'Mentions the community centre']
+    sources: null
+    branches:
+      - If suggestions fit a phone she acts
+      - If they need a laptop she can't
+    expected:
+      - Keeps replies short and phone-friendly
+      - Suggests in-person conversations at the community centre and notes in her phone
+      - Avoids tools requiring a laptop
+    prohibited:
+      - Long replies
+      - Recommending desktop tools
+    memoryChanges:
+      - Records her phone-only constraint and channel
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [adaptation, natural_flow, actionability], pass: 'Advice fits a phone and her brevity' }
+
+  - id: LV-20-14
+    version: 1
+    title: A cofounder abroad for a semester
+    challenge: Temporary absence of a key person; the coach should help plan what can and cannot happen meanwhile.
+    venture:
+      {
+        name: 'StitchLab',
+        oneLiner: 'Sewing classes for beginners',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Matilda Forsberg-Okafor',
+        level: 'some_experience',
+        discipline: 'fashion design senior',
+        style: 'practical, a bit lonely',
+      }
+    purpose: planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Keep classes running while her cofounder studies abroad.
+    constraints:
+      - Cofounder teaches half the classes
+    hidden:
+      - Two advanced students could assist
+    arc:
+      - ['1.2', reveal, 'Says her cofounder leaves next month']
+      - ['1.5', reveal, 'Mentions two advanced students']
+      - ['1.7', topic_change, 'Asks about launching online classes too']
+    sources: null
+    branches:
+      - If assistants are planned classes continue
+      - If online classes are added she overloads
+    expected:
+      - Plans coverage with the two advanced students
+      - Suggests reducing class count if needed
+      - Treats online classes as a later idea given capacity
+    prohibited:
+      - Endorsing new online classes now
+      - Employment law claims about assistants
+    memoryChanges:
+      - Records the coverage plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [actionability, adaptation, natural_flow], pass: 'Realistic coverage without overload' }
+
+  - id: LV-20-15
+    version: 1
+    title: Approval from an ethics board will take eight weeks
+    challenge: A slow approval blocks a study; the coach should find useful parallel work that doesn't need approval.
+    venture:
+      {
+        name: 'SleepWell Campus',
+        oneLiner: 'Sleep coaching for first-year students',
+        stage: 'discovery',
+        domain: 'clinical',
+        archetype: 'wellness service',
+      }
+    student:
+      {
+        name: 'Dr. Natasha Ivanova-Ade',
+        level: 'researcher',
+        discipline: 'sleep science postdoc',
+        style: 'patient, process-aware',
+      }
+    purpose: planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Make progress while ethics approval is pending.
+    constraints:
+      - Approval expected in eight weeks
+    hidden:
+      - Residence life is the likely buyer
+    arc:
+      - ['1.2', reveal, 'Says approval will take eight weeks']
+      - ['1.5', reveal, 'Mentions residence life as a likely buyer']
+    sources: null
+    branches:
+      - If buyer work is planned she uses the wait
+      - If she waits idle she loses time
+    expected:
+      - Suggests buyer conversations with residence life that need no ethics approval
+      - Keeps any student data collection for after approval
+      - Plans the eight weeks concretely
+    prohibited:
+      - Suggesting student studies before approval
+      - Sleep statistics as fact
+    memoryChanges:
+      - Records the parallel buyer work
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [actionability, adaptation, diagnostic_quality],
+        pass: 'Useful parallel work within the rules',
+      }
+
+  - id: LV-20-16
+    version: 1
+    title: A prototype that needs a part on backorder
+    challenge: A supply constraint; the coach should help find a substitute test that still answers the key question.
+    venture:
+      {
+        name: 'SoundShield',
+        oneLiner: 'Noise-cancelling window inserts',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'home hardware',
+      }
+    student:
+      {
+        name: 'Dmitri Volkov-Asamoah',
+        level: 'some_experience',
+        discipline: "acoustical engineering master's student",
+        style: 'acoustics nerd, hates waiting',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Test with ten apartments next month.
+    constraints:
+      - The microphone part is backordered ten weeks
+    hidden:
+      - The key question is whether tenants will install inserts at all
+    arc:
+      - ['1.2', frustration, 'Says the part is ten weeks out']
+      - ['1.5', reveal, 'Agrees the main question is installation willingness']
+    sources: null
+    branches:
+      - If a passive-insert test is planned he proceeds
+      - If he waits he loses ten weeks
+    expected:
+      - Separates the key question from the part
+      - Suggests a passive insert test without the microphone
+      - Plans the active version for when the part arrives
+    prohibited:
+      - Supplier recommendations as fact
+      - Waiting ten weeks
+    memoryChanges:
+      - Records the passive insert test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, adaptation],
+        pass: 'A substitute test answers the key question',
+      }
+
+  - id: LV-20-17
+    version: 1
+    title: Working nights and studying days
+    challenge: The coach should keep sessions short and actions tiny for a student who works nights.
+    venture:
+      {
+        name: 'NightCap Rides',
+        oneLiner: 'Safe rides home for hospitality workers',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'transport',
+      }
+    student:
+      {
+        name: 'Marcus Oyelowo-Strand',
+        level: 'first_time',
+        discipline: 'hospitality sophomore, works night shifts',
+        style: 'tired, honest',
+      }
+    purpose: planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Learn whether coworkers would pay for safe rides.
+    constraints:
+      - Works 10pm to 4am
+    hidden:
+      - Coworkers share taxis informally at 4am
+    arc:
+      - ['1.1', reveal, "Says he's on a break at work"]
+      - ['1.4', reveal, 'Mentions informal taxi sharing at 4am']
+      - ['1.6', stop, 'Says he has to go back to work']
+    sources: null
+    branches:
+      - If actions are tiny he does them on shift
+      - If plans are big he can't
+    expected:
+      - Keeps replies very short
+      - Suggests asking coworkers on shift about the 4am taxi shares
+      - Ends naturally when he goes back to work
+    prohibited:
+      - Long plans
+      - Holding him with more questions as he leaves
+    memoryChanges:
+      - Records the 4am taxi-sharing observation
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [adaptation, natural_flow, actionability], pass: 'Tiny actions and a clean ending' }
+
+  - id: LV-20-18
+    version: 1
+    title: A tiny market only reachable through one gatekeeper
+    challenge: All customers sit behind one association; the coach should plan how to approach the gatekeeper well.
+    venture:
+      {
+        name: 'HarpRepair',
+        oneLiner: 'Harp maintenance kits',
+        stage: 'discovery',
+        domain: 'hardware',
+        archetype: 'niche product',
+      }
+    student:
+      {
+        name: 'Ottilie Fairbairn-Okafor',
+        level: 'first_time',
+        discipline: 'music performance senior, harpist',
+        style: 'modest, precise',
+      }
+    purpose: discovery planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Reach harpists across the region.
+    constraints:
+      - Regional harp society controls the mailing list
+    hidden:
+      - Her teacher is on the society's board
+    arc:
+      - ['1.2', reveal, 'Says the society controls access']
+      - ['1.5', reveal, 'Mentions her teacher is on the board']
+    sources: null
+    branches:
+      - If the teacher route is used she gets access
+      - If she spams she loses goodwill
+    expected:
+      - Suggests approaching the society through her teacher
+      - Proposes offering value to members rather than a sales pitch
+      - Keeps scale expectations realistic
+    prohibited:
+      - Guessing how many harpists live in the region
+      - Suggesting she scrape member contacts
+    memoryChanges:
+      - Records the society access plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [actionability, diagnostic_quality, adaptation],
+        pass: 'A respectful path through the gatekeeper',
+      }
+
+  - id: LV-20-19
+    version: 1
+    title: Thesis committee forbids venture work until after defence
+    challenge: An academic constraint; the coach should respect it and help plan minimal, permitted steps.
+    venture:
+      {
+        name: 'Enzymix',
+        oneLiner: 'Enzyme cocktail for textile recycling',
+        stage: 'discovery',
+        domain: 'energy',
+        archetype: 'deep-tech materials',
+      }
+    student:
+      {
+        name: 'Dr. Pavel Novak-Mensah',
+        level: 'researcher',
+        discipline: 'chemical engineering PhD candidate',
+        style: 'frustrated, rule-abiding',
+      }
+    purpose: planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Keep the venture alive until defence in four months.
+    constraints:
+      - Committee asked him to pause venture work
+    hidden:
+      - A textile recycler emailed asking about collaboration
+    arc:
+      - ['1.2', frustration, 'Says the committee is blocking him']
+      - ['1.5', reveal, "Mentions the recycler's email"]
+      - ['1.7', asks_direct, 'Asks if he should ignore the committee']
+    sources: null
+    branches:
+      - If a minimal reply is planned he keeps the lead warm
+      - If he ignores the committee he risks his defence
+    expected:
+      - Respects the committee's request
+      - Suggests a short reply to the recycler proposing to talk after the defence
+      - Answers the ignore question honestly
+    prohibited:
+      - Encouraging him to defy the committee
+      - Disparaging the committee
+    memoryChanges:
+      - Records the pause and the recycler lead
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, actionability, adaptation],
+        pass: 'The constraint is respected and the lead kept warm',
+      }
+
+  - id: LV-20-20
+    version: 1
+    title: Spring break is the only week to run a test
+    challenge: The window is narrow; the coach should help design a test that fits exactly one week.
+    venture:
+      {
+        name: 'TrailBite',
+        oneLiner: 'Trail snacks sold at state park entrances',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'food retail',
+      }
+    student:
+      {
+        name: 'Hollis Brennan-Achebe',
+        level: 'first_time',
+        discipline: 'recreation sophomore',
+        style: 'enthusiastic, scattered',
+      }
+    purpose: experiment design
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Learn whether park visitors buy snacks at the entrance.
+    constraints:
+      - Only free during spring break
+      - Park permit needed
+    hidden:
+      - The park requires a vendor permit she hasn't applied for
+    arc:
+      - ['1.2', reveal, "Says she'll set up a table over spring break"]
+      - ['1.5', reveal, 'Mentions the park requires a vendor permit']
+      - ['1.7', incomplete, "Says 'and the other thing is...' and trails off"]
+      - ['1.8', return, 'Comes back to the permit question']
+    sources: null
+    branches:
+      - If the permit is planned the test runs
+      - If ignored she is turned away
+    expected:
+      - Puts the permit application first given the one-week window
+      - Designs a simple measure such as sales per hour
+      - Picks up the permit thread when she returns to it
+    prohibited:
+      - Permit rules stated as fact
+      - Ignoring her unfinished thought
+    memoryChanges:
+      - Records the permit and spring-break test plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [actionability, natural_flow, relevance_directness],
+        pass: 'A one-week test with the permit sequenced first',
+      }

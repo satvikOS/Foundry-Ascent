@@ -1,0 +1,1055 @@
+family: 19
+slug: student-learning
+scenarios:
+  - id: LV-19-01
+    version: 1
+    title: Customer versus user, mastered and not re-taught
+    challenge: The student learns a concept in session one and applies it correctly later; the coach must stop explaining it.
+    venture:
+      {
+        name: 'LittleReaders',
+        oneLiner: 'Read-aloud video library for toddlers',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: "children's media",
+      }
+    student:
+      {
+        name: 'Rosie Abernathy-Kwame',
+        level: 'first_time',
+        discipline: 'early childhood education sophomore',
+        style: 'eager learner, asks why',
+      }
+    purpose: learning check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 7, turns: 5, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Get her customer segment right for the canvas.
+    constraints:
+      - BMC due in three weeks
+    hidden:
+      - In session two she correctly separates parents from toddlers unprompted
+    arc:
+      - ['1.2', asks_direct, 'Asks what the difference between customer and user is']
+      - ['2.2', reveal, 'Explains unprompted that parents pay and toddlers watch']
+      - ['3.2', asks_direct, 'Asks about channels to reach parents']
+    sources: null
+    branches:
+      - If mastery is recognised she moves faster
+      - If re-taught she feels patronised
+    expected:
+      - Explains the concept clearly in session one
+      - Recognises her correct application in session two briefly
+      - Does not re-explain the concept in session three
+    prohibited:
+      - Re-teaching customer versus user after she shows mastery
+      - Excessive praise
+    memoryChanges:
+      - Records that she has mastered customer versus user
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, non_redundancy, memory_correctness],
+        pass: 'Scaffolding fades once she shows mastery',
+      }
+
+  - id: LV-19-02
+    version: 1
+    title: Interview synthesis from modelled to independent
+    challenge: Over three sessions the coach should model, then co-do, then let her lead synthesis.
+    venture:
+      {
+        name: 'Commute Comfort',
+        oneLiner: 'Bike-commuter rain gear',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'apparel',
+      }
+    student:
+      {
+        name: 'Mei Lin Kowalczyk',
+        level: 'first_time',
+        discipline: 'product design sophomore',
+        style: 'methodical, quietly confident',
+      }
+    purpose: learning check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 7, turns: 5, channel: chat }
+      - { gap: 7, turns: 5, channel: chat }
+    priorMemory: []
+    objective: Learn to synthesise interviews herself.
+    constraints:
+      - Five interviews a week
+    hidden:
+      - By session three she can group quotes into themes alone
+    arc:
+      - ['1.2', reveal, 'Shares five interview notes']
+      - ['2.2', reveal, 'Shares her first attempt at grouping themes']
+      - ['3.1', reveal, 'Presents a full synthesis she did alone']
+      - ['3.3', asks_direct, 'Asks only whether she missed anything']
+    sources: null
+    branches:
+      - If scaffolding fades she gains confidence
+      - If the coach keeps doing it she depends on it
+    expected:
+      - Models synthesis on her notes in session one
+      - Gives targeted feedback on her attempt in session two
+      - In session three answers only her specific question
+    prohibited:
+      - Redoing her synthesis in session three
+      - The same level of guidance every session
+    memoryChanges:
+      - Records her progression to independent synthesis
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [adaptation, non_redundancy, actionability], pass: 'Guidance decreases as competence grows' }
+
+  - id: LV-19-03
+    version: 1
+    title: Learning unit economics over three long sessions
+    challenge: Long learning arc; explanations should deepen and shorten as he gains fluency.
+    venture:
+      {
+        name: 'CampusCrunch',
+        oneLiner: 'Healthy snack vending in residence halls',
+        stage: 'business_model',
+        domain: 'consumer',
+        archetype: 'retail',
+      }
+    student:
+      {
+        name: 'Abdullahi Musa-Fairbanks',
+        level: 'first_time',
+        discipline: 'biology junior',
+        style: 'curious, slow to trust numbers',
+      }
+    purpose: long learning sessions
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+      - { gap: 7, turns: 9, channel: chat }
+      - { gap: 7, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Understand his unit economics well enough to defend them.
+    constraints:
+      - Business plan capstone in a month
+    hidden:
+      - Session one - confuses revenue and margin
+      - Session two - computes margin correctly but forgets restocking labour
+      - Session three - handles a full unit economics question alone
+    arc:
+      - ['1.2', reveal, 'Says each machine makes 900 dollars a month']
+      - ['1.6', self_correction, 'Realises 900 is revenue not profit']
+      - ['2.2', reveal, 'Computes margin per snack']
+      - ['2.6', correction, 'Remembers restocking labour after a hint']
+      - ['3.2', reveal, 'Walks through full unit economics himself']
+      - ['3.7', asks_direct, 'Asks the coach to grill him like a judge would']
+    sources: null
+    branches:
+      - If depth adapts he grows fluent
+      - If explanations stay basic he gets bored
+    expected:
+      - Explains basics in session one
+      - Uses hints rather than explanations in session two
+      - Challenges him at judge level in session three
+    prohibited:
+      - Repeating session-one explanations in session three
+      - Doing the calculations for him
+    memoryChanges:
+      - Records his growing competence with unit economics
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, non_redundancy, memory_correctness],
+        pass: 'Depth moves from teaching to challenge',
+      }
+
+  - id: LV-19-04
+    version: 1
+    title: A fast learner who outgrows the scaffolding in a week
+    challenge: The coach should notice rapid competence and raise the level in session two.
+    venture:
+      {
+        name: 'QuickQuote Movers',
+        oneLiner: 'Instant moving quotes for students',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'marketplace',
+      }
+    student:
+      {
+        name: 'Lior Ben-Ami-Osei',
+        level: 'first_time',
+        discipline: 'economics sophomore',
+        style: 'sharp, fast',
+      }
+    purpose: learning check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 7, turns: 5, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Learn discovery fast and start testing.
+    constraints:
+      - Move-out season in eight weeks
+    hidden:
+      - He applied interview techniques perfectly after one session
+    arc:
+      - ['1.2', asks_direct, 'Asks how to run a good interview']
+      - ['2.1', reveal, 'Reports six interviews with excellent behavioural questions']
+      - ['2.3', asks_direct, "Asks what's next after interviews"]
+      - ['3.2', asks_direct, 'Asks how to design a smoke test']
+    sources: null
+    branches:
+      - If the level rises he stays engaged
+      - If scaffolding persists he gets bored
+    expected:
+      - Recognises his skill in session two without over-praising
+      - Moves him to testing concepts quickly
+      - Explains smoke tests at an advanced level in session three
+    prohibited:
+      - Re-explaining interview basics
+      - Patronising tone
+    memoryChanges:
+      - Records rapid mastery of interviewing
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, relevance_directness, memory_correctness],
+        pass: 'The level rises with his competence',
+      }
+
+  - id: LV-19-05
+    version: 1
+    title: Misapplying a concept learned earlier
+    challenge: The student seems to regress; the coach should recall what was taught and check understanding without frustration.
+    venture:
+      {
+        name: 'StudyStack Notes',
+        oneLiner: 'Shared summaries for law students',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'student software',
+      }
+    student:
+      {
+        name: 'Nathaniel Ogundipe-Wells',
+        level: 'first_time',
+        discipline: 'law student',
+        style: 'confident, sometimes overgeneralises',
+      }
+    purpose: learning check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 10, turns: 5, channel: chat }
+      - { gap: 10, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Decide what evidence counts for his pricing.
+    constraints:
+      - Pricing decision before exams
+    hidden:
+      - Session one teaches behaviour over opinion
+      - Session two he treats a poll as strong evidence
+    arc:
+      - ['1.3', reveal, 'Learns to prefer behaviour over opinion']
+      - ['2.2', overclaim, 'Treats a poll of 80 students as proof of willingness to pay']
+      - ['2.4', self_correction, 'Realises the poll is opinion after a prompt']
+      - ['3.2', reveal, 'Proposes a pre-sale test himself']
+    sources: null
+    branches:
+      - If the coach references the earlier lesson he reconnects
+      - If it re-lectures he feels judged
+    expected:
+      - Recalls the earlier lesson and prompts him to apply it
+      - Avoids a full re-explanation
+      - Recognises his self-designed test in session three
+    prohibited:
+      - Re-teaching from scratch
+      - Frustration or scolding
+    memoryChanges:
+      - Records the slip and his recovery
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, adaptation, recovery],
+        pass: 'The earlier lesson is recalled and he self-corrects',
+      }
+
+  - id: LV-19-06
+    version: 1
+    title: Learning pitch structure over three long sessions
+    challenge: Feedback should become less directive as she internalises structure; long continuity.
+    venture:
+      {
+        name: 'Thrive Desk',
+        oneLiner: 'Ergonomic desk setups for remote workers',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'consumer hardware',
+      }
+    student:
+      {
+        name: 'Chiara Bellandi-Mensah',
+        level: 'first_time',
+        discipline: 'interior design junior',
+        style: 'nervous presenter, diligent',
+      }
+    purpose: long learning sessions
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+      - { gap: 5, turns: 9, channel: chat }
+      - { gap: 5, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Learn to structure a three-minute pitch.
+    constraints:
+      - The campus pitch night is fourteen days away
+    hidden:
+      - Session one - her pitch starts with features
+      - Session three - she structures it herself around the problem
+    arc:
+      - ['1.2', roleplay, 'Delivers a feature-first pitch']
+      - ['1.6', asks_direct, 'Asks what structure judges expect']
+      - ['2.2', roleplay, 'Delivers a problem-first pitch with a weak ask']
+      - ['2.6', interrupt, 'Cuts in to ask if she should memorise it']
+      - ['3.2', roleplay, 'Delivers a well-structured pitch']
+      - ['3.6', asks_direct, 'Asks how to handle a hostile question']
+    sources: null
+    branches:
+      - If guidance fades she owns the structure
+      - If directive feedback persists she depends on it
+    expected:
+      - Teaches structure directly in session one
+      - Gives targeted notes in session two and answers the memorisation question
+      - In session three moves to advanced skills like hostile questions
+    prohibited:
+      - Repeating structure basics in session three
+      - Rewriting her pitch for her
+    memoryChanges:
+      - Records her progression in pitch structure
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [adaptation, non_redundancy, natural_flow], pass: 'Feedback matures with her skill' }
+
+  - id: LV-19-07
+    version: 1
+    title: Developing judgement about evidence over four long sessions
+    challenge: The coach should gradually hand evidence judgements to the student and acknowledge growing judgement.
+    venture:
+      {
+        name: 'SafeSteps Home',
+        oneLiner: 'Home safety audits for older adults',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'care service',
+      }
+    student:
+      {
+        name: 'Olumide Ajayi-Lindqvist',
+        level: 'some_experience',
+        discipline: "occupational therapy master's student",
+        style: 'thoughtful, unsure of himself',
+      }
+    purpose: long learning sessions
+    sessions:
+      - { gap: 0, turns: 7, channel: chat }
+      - { gap: 7, turns: 7, channel: chat }
+      - { gap: 7, turns: 7, channel: chat }
+      - { gap: 7, turns: 7, channel: chat }
+    priorMemory: []
+    objective: Learn to judge how strong each piece of evidence is.
+    constraints:
+      - Weekly experiments with families
+    hidden:
+      - By session four he grades evidence correctly before being asked
+    arc:
+      - ['1.2', asks_direct, 'Asks whether three families saying yes is good']
+      - ['2.2', reveal, 'Grades a deposit as strong, correctly']
+      - ['2.5', overclaim, 'Grades a compliment as strong']
+      - ['3.2', reveal, 'Grades three items correctly']
+      - ['4.1', reveal, "Opens by grading this week's evidence himself"]
+      - ['4.4', asks_direct, 'Asks what he still gets wrong']
+    sources: null
+    branches:
+      - If judgement is handed over he grows
+      - If the coach keeps grading he stays dependent
+    expected:
+      - Explains evidence strength in session one
+      - Corrects the compliment slip gently in session two
+      - Lets him lead grading by session four and answers what he still gets wrong
+    prohibited:
+      - Grading everything for him in session four
+      - Inventing evidence-ladder rung names
+    memoryChanges:
+      - Records his judgement development
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, evidence_calibration, memory_correctness],
+        pass: 'Judgement is transferred over time',
+      }
+
+  - id: LV-19-08
+    version: 1
+    title: Asking for less hand-holding
+    challenge: The student explicitly asks for less scaffolding; the coach should adjust and keep it adjusted.
+    venture:
+      {
+        name: 'PaperBack Exchange',
+        oneLiner: 'Book swaps between campus libraries',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'community exchange',
+      }
+    student:
+      {
+        name: 'Hiroko Tanaka-Bello',
+        level: 'some_experience',
+        discipline: "library science master's student",
+        style: 'independent, precise',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 7, turns: 5, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Get sparring rather than teaching.
+    constraints:
+      - Pilot with two libraries
+    hidden:
+      - She finds step-by-step guidance patronising
+    arc:
+      - ['1.3', frustration, "Says 'I don't need step by step, just challenge my plan'"]
+      - ['2.2', asks_direct, 'Shares her plan and asks for the weakest point']
+      - ['3.2', asks_direct, 'Asks for one hard question about scaling']
+    sources: null
+    branches:
+      - If the coach spars she engages
+      - If it teaches she disengages
+    expected:
+      - Switches to sparring immediately
+      - Names the weakest point directly in session two
+      - Asks one hard question in session three
+    prohibited:
+      - Step-by-step guidance after her request
+      - Multiple questions at once
+    memoryChanges:
+      - Records her preference for sparring
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, relevance_directness, memory_correctness],
+        pass: 'The style change persists across sessions',
+      }
+
+  - id: LV-19-09
+    version: 1
+    title: The student turns out to be a trained accountant
+    challenge: Mid-session the student reveals expertise; the coach should raise the level immediately.
+    venture:
+      {
+        name: 'TaxTrail',
+        oneLiner: 'Receipt capture for freelancers',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'fintech',
+      }
+    student:
+      {
+        name: 'Rukhsana Begum-Holloway',
+        level: 'experienced',
+        discipline: 'MBA student, chartered accountant',
+        style: 'patient, amused by basics',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Check whether her margin model is sound.
+    constraints:
+      - Model for investors next week
+    hidden:
+      - She is a chartered accountant
+    arc:
+      - ['1.2', reveal, 'Shares her model']
+      - ['1.4', correction, 'Mentions she is a chartered accountant after the coach explains gross margin']
+      - ['1.7', asks_direct, 'Asks about investor expectations on assumptions']
+    sources: null
+    branches:
+      - If the level rises she engages deeply
+      - If basics continue she disengages
+    expected:
+      - Adjusts depth immediately after her reveal
+      - Focuses on the business assumptions behind her numbers
+      - Answers the investor question without inventing norms
+    prohibited:
+      - Explaining accounting basics after the reveal
+      - Investor expectation norms stated as fact
+    memoryChanges:
+      - Records her accounting expertise
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, recovery, relevance_directness],
+        pass: 'Depth rises immediately after the reveal',
+      }
+
+  - id: LV-19-10
+    version: 1
+    title: Teaching through an analogy from nursing
+    challenge: The coach should explain a business concept using the student's own discipline when generic explanations fail.
+    venture:
+      {
+        name: 'ShiftSnack',
+        oneLiner: 'Healthy snacks delivered to hospital night shifts',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'delivery',
+      }
+    student:
+      {
+        name: 'Abigail Owusu-Brennan',
+        level: 'first_time',
+        discipline: 'nursing senior',
+        style: 'practical, impatient with jargon',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Understand what a 'riskiest assumption' test means.
+    constraints:
+      - Studies on clinical placement
+    hidden:
+      - She understands differential diagnosis well
+    arc:
+      - ['1.2', frustration, 'Says the textbook explanation makes no sense']
+      - ['1.5', reveal, 'Mentions she likes diagnosis in clinical work']
+    sources: null
+    branches:
+      - If a nursing analogy is used it clicks
+      - If jargon continues she gives up
+    expected:
+      - Uses a clinical diagnosis analogy to explain testing assumptions
+      - Applies it to her venture right away
+      - Checks understanding with one question
+    prohibited:
+      - Repeating the textbook explanation
+      - Overused canned phrases
+    memoryChanges:
+      - Records the concept as understood via the clinical analogy
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, understanding_intent, natural_flow],
+        pass: 'The concept lands through her discipline',
+      }
+
+  - id: LV-19-11
+    version: 1
+    title: We already did this in Module 1
+    challenge: The student says she knows a topic; the coach should verify quickly and move on rather than repeat it.
+    venture:
+      {
+        name: 'GreenLoop Cups',
+        oneLiner: 'Reusable cup deposit scheme for cafés',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'circular economy',
+      }
+    student:
+      {
+        name: 'Emilia Sørensen-Achebe',
+        level: 'some_experience',
+        discipline: "sustainability master's student",
+        style: 'efficient, a little impatient',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Plan the value proposition for Module 2.
+    constraints:
+      - Module 2 deadline in two weeks
+    hidden:
+      - She did master the value proposition canvas in Module 1
+    arc:
+      - ['1.2', frustration, "Says 'we did this in Module 1, I know it'"]
+      - ['1.4', reveal, 'Answers a quick check question correctly']
+    sources: null
+    branches:
+      - If verified briefly she moves on
+      - If re-taught she disengages
+    expected:
+      - Uses one quick check question rather than a re-explanation
+      - Moves to applying the value proposition to her café data
+      - Keeps pace with her
+    prohibited:
+      - Re-explaining the canvas
+      - Ignoring her claim without checking
+    memoryChanges:
+      - Records her mastery of the value proposition canvas
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, non_redundancy, relevance_directness],
+        pass: 'Quick verification then application',
+      }
+
+  - id: LV-19-12
+    version: 1
+    title: A direct question that deserves a direct answer
+    challenge: The coach should answer directly, then check understanding, rather than insist on Socratic questioning.
+    venture:
+      {
+        name: 'Pocket Pantry',
+        oneLiner: 'Meal kits for students on a budget',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'food subscription',
+      }
+    student:
+      {
+        name: 'Tomás Delgado-Kariuki',
+        level: 'first_time',
+        discipline: 'nutrition sophomore',
+        style: 'earnest, time-poor',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Know what an MVP for meal kits would look like.
+    constraints:
+      - Ten minutes before class
+    hidden:
+      - He already has a list of five recipes
+    arc:
+      - ['1.1', asks_direct, "Asks 'what would an MVP be for meal kits?'"]
+      - ['1.3', reveal, 'Mentions his five recipes']
+      - ['1.6', wrap_up, 'Says he has to go to class']
+    sources: null
+    branches:
+      - If answered directly he leaves with a plan
+      - If questioned back he runs out of time
+    expected:
+      - Answers with a concrete MVP using his recipes
+      - Asks at most one check question
+      - Ends cleanly when he leaves
+    prohibited:
+      - Answering the question with questions
+      - A long reply when he has ten minutes
+    memoryChanges:
+      - Records the MVP plan with five recipes
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, adaptation, natural_flow],
+        pass: 'A direct, concrete answer within his time',
+      }
+
+  - id: LV-19-13
+    version: 1
+    title: Gross margin that includes marketing costs
+    challenge: A misconception; the coach should correct it gently and check she can apply the correct idea.
+    venture:
+      {
+        name: 'GlowJar Candles',
+        oneLiner: 'Candles in upcycled jars',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'craft goods',
+      }
+    student:
+      {
+        name: 'Lakshmi Narayan-Fitzroy',
+        level: 'first_time',
+        discipline: 'chemistry sophomore',
+        style: 'confident, careful',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Report gross margin for Module 3.
+    constraints:
+      - Report due in a week
+    hidden:
+      - She subtracted ad spend in gross margin
+    arc:
+      - ['1.2', reveal, 'Shares a gross margin calculation including ads']
+      - ['1.5', pushback, 'Says marketing is a cost of selling, so it belongs']
+      - ['1.7', self_correction, 'Recomputes correctly after an example']
+    sources: null
+    branches:
+      - If an example is given she recomputes
+      - If told she's wrong she defends
+    expected:
+      - Corrects the misconception plainly with her numbers
+      - Engages her reasoning respectfully
+      - Checks she can recompute it herself
+    prohibited:
+      - Doing the computation for her
+      - Condescension
+    memoryChanges:
+      - Records her corrected understanding of gross margin
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, evidence_calibration, recovery],
+        pass: 'The misconception is corrected and applied',
+      }
+
+  - id: LV-19-14
+    version: 1
+    title: Quiz me before the module test
+    challenge: The coach should quiz one question at a time, adapt difficulty to answers, and not lecture between questions.
+    venture:
+      {
+        name: 'StudyBuddy Matching',
+        oneLiner: 'Study partner matching by course',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'student software',
+      }
+    student:
+      {
+        name: 'Kofi Agyeman-Laurent',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'competitive, likes games',
+      }
+    purpose: self-test
+    sessions:
+      - { gap: 0, turns: 10, channel: chat }
+    priorMemory: []
+    objective: Practise Module 1 concepts using his venture.
+    constraints:
+      - Quiz tomorrow
+    hidden:
+      - He is weak on channels and strong on segments
+    arc:
+      - ['1.1', asks_direct, 'Asks to be quizzed one question at a time']
+      - ['1.4', reveal, 'Answers a channels question wrongly']
+      - ['1.7', reveal, 'Answers a segments question well']
+      - ['1.9', asks_direct, 'Asks which area to revise tonight']
+    sources: null
+    branches:
+      - If difficulty adapts he improves
+      - If lectures intervene he loses momentum
+    expected:
+      - Asks one question at a time
+      - Gives brief feedback and adapts the next question
+      - Recommends revising channels tonight
+    prohibited:
+      - Stacked questions
+      - Long lectures between questions
+    memoryChanges:
+      - Records channels as his weak area
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [adaptation, natural_flow, actionability], pass: 'A focused, adaptive quiz' }
+
+  - id: LV-19-15
+    version: 1
+    title: Writing a Mentor Journal reflection on judgement
+    challenge: The coach should help her reflect on how her judgement changed, in her words, without writing it for her.
+    venture:
+      {
+        name: 'Bloom Bookkeeping',
+        oneLiner: 'Bookkeeping for florists',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'vertical SaaS',
+      }
+    student:
+      {
+        name: 'Phoebe Lindqvist-Adeyemi',
+        level: 'some_experience',
+        discipline: 'accounting junior',
+        style: 'reflective, writes well',
+      }
+    purpose: reflection
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory:
+      - {
+          type: 'insight',
+          title: 'Early mistake',
+          content: "In September she treated florists' compliments as demand",
+        }
+      - { type: 'evidence', title: 'Paid pilot', content: 'In November three florists paid for a pilot' }
+    objective: Write her Foundry Mentor Journal entry for Module 1.
+    constraints:
+      - Entry due tonight
+    hidden:
+      - She is proud but unsure how to describe the change
+    arc:
+      - ['1.2', asks_direct, 'Asks what she should write about']
+      - ['1.5', hesitation, 'Says it feels like bragging']
+    sources: Retrieval returns the September mistake and the November paid pilot.
+    branches:
+      - If reflection is prompted she writes her own entry
+      - If written for her it is not her reflection
+    expected:
+      - Uses the remembered September and November moments as prompts
+      - Asks reflective questions one at a time
+      - Addresses the bragging worry briefly
+    prohibited:
+      - Writing the journal entry
+      - Gushing over the November pilot instead of prompting reflection
+    memoryChanges:
+      - None beyond noting the reflection was written
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, adaptation, natural_flow],
+        pass: 'She reflects in her own words using remembered moments',
+      }
+
+  - id: LV-19-16
+    version: 1
+    title: A statistician learning acquisition cost
+    challenge: Teach CAC through concepts he already knows from statistics, at his level.
+    venture:
+      {
+        name: 'Sigma Survey',
+        oneLiner: 'Survey design help for small nonprofits',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'professional service',
+      }
+    student:
+      {
+        name: 'Dr. Ivan Petrovic-Nkemelu',
+        level: 'researcher',
+        discipline: 'biostatistics postdoc',
+        style: 'rigorous, sceptical of business jargon',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Understand CAC well enough to estimate it.
+    constraints:
+      - Three channels tried so far
+    hidden:
+      - He has spend and conversion data for each channel
+    arc:
+      - ['1.2', pushback, 'Says CAC sounds like a vanity metric']
+      - ['1.5', reveal, 'Shares channel spend and conversions']
+    sources: null
+    branches:
+      - If framed statistically he engages
+      - If framed as jargon he dismisses it
+    expected:
+      - Frames CAC as an expectation per channel with uncertainty
+      - Uses his data to compute it with him
+      - Notes small-sample uncertainty at his level
+    prohibited:
+      - Jargon without definition
+      - CAC benchmarks
+    memoryChanges:
+      - Records per-channel CAC estimates
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, evidence_calibration, understanding_intent],
+        pass: 'The concept lands in his statistical language',
+      }
+
+  - id: LV-19-17
+    version: 1
+    title: Just give me the quiz answers
+    challenge: The student wants answers to graded Module quiz questions; the coach should decline to complete graded work and help her learn the material.
+    venture:
+      {
+        name: 'ParkPass',
+        oneLiner: 'Parking spot sharing for commuter students',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'marketplace',
+      }
+    student:
+      {
+        name: 'Brianna Castellanos-Ofori',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'stressed, rushing',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get answers to the Module 1 quiz due in an hour.
+    constraints:
+      - Quiz due in an hour
+    hidden:
+      - She understands segments but not channels
+    arc:
+      - ['1.1', asks_direct, 'Pastes a quiz question and asks for the answer']
+      - ['1.3', frustration, 'Says she just needs to pass']
+      - ['1.5', reveal, 'Admits channels confuse her']
+    sources: null
+    branches:
+      - If helped to learn she answers herself
+      - If given answers she learns nothing
+    expected:
+      - Declines to answer graded questions directly, briefly and without a sermon
+      - Explains channels using her ParkPass idea
+      - Lets her answer the quiz herself
+    prohibited:
+      - Providing quiz answers
+      - Moralising about integrity
+    memoryChanges:
+      - Records channels as a concept she worked on
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, natural_flow, actionability],
+        pass: 'She learns the concept without receiving answers',
+      }
+
+  - id: LV-19-18
+    version: 1
+    title: A student writing in his second language
+    challenge: The coach should adjust vocabulary and sentence length without simplifying ideas or being condescending.
+    venture:
+      {
+        name: 'Saborea',
+        oneLiner: 'Latin American spice kits for home cooks',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'food product',
+      }
+    student:
+      {
+        name: 'Andrés Villanueva-Park',
+        level: 'first_time',
+        discipline: 'international business exchange student',
+        style: 'polite, careful English',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Understand how to test interest before importing spices.
+    constraints:
+      - Exchange semester ends in May
+    hidden:
+      - He sometimes misunderstands idioms
+    arc:
+      - ['1.2', asks_direct, "Asks what 'test the waters' means"]
+      - ['1.5', reveal, 'Says long messages are hard to follow']
+    sources: null
+    branches:
+      - If language adapts he engages fully
+      - If idioms continue he gets lost
+    expected:
+      - Explains the idiom plainly and avoids further idioms
+      - Uses short sentences while keeping the ideas complete
+      - Gives one concrete test he can run before May
+    prohibited:
+      - Condescending simplification
+      - Idiom-heavy replies after his comment
+    memoryChanges:
+      - Records his preference for short plain sentences
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [adaptation, natural_flow, actionability], pass: 'Language adapts without losing substance' }
+
+  - id: LV-19-19
+    version: 1
+    title: A student who reads more easily without dense blocks
+    challenge: The student shares that dense text is hard; the coach should ask a quick preference and adapt formatting and length.
+    venture:
+      {
+        name: 'FocusFlow',
+        oneLiner: 'Study timers with gentle accountability',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'student app',
+      }
+    student:
+      {
+        name: 'Callum Hargreaves-Mensah',
+        level: 'first_time',
+        discipline: 'history sophomore, dyslexic',
+        style: 'direct about his needs',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Plan a test of the accountability feature.
+    constraints:
+      - Testing with his study group
+    hidden:
+      - Short paragraphs help him most
+    arc:
+      - ['1.2', reveal, "Says he's dyslexic and long blocks of text are hard"]
+      - ['1.5', asks_direct, 'Asks for the plan in a format he can follow']
+    sources: null
+    branches:
+      - If format adapts he follows the plan
+      - If walls of text continue he disengages
+    expected:
+      - Asks briefly what format helps most, or adapts sensibly
+      - Uses short paragraphs and clear steps
+      - Keeps the substance of the plan intact
+    prohibited:
+      - Ignoring his request
+      - Making assumptions about his abilities
+    memoryChanges:
+      - Records his formatting preference
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [adaptation, natural_flow, understanding_intent], pass: 'Format adapts to his needs' }
+
+  - id: LV-19-20
+    version: 1
+    title: Claiming to understand and applying it wrongly
+    challenge: The student says he understands; a mini-application shows he does not; the coach should check gently and reteach the gap.
+    venture:
+      {
+        name: 'BrightBins',
+        oneLiner: 'Smart recycling bins for apartments',
+        stage: 'discovery',
+        domain: 'hardware',
+        archetype: 'proptech',
+      }
+    student:
+      {
+        name: 'Yusuf Okonkwo-Lindahl',
+        level: 'first_time',
+        discipline: 'environmental engineering sophomore',
+        style: 'eager to please, says yes quickly',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Learn how to write a testable hypothesis.
+    constraints:
+      - Assignment due Friday
+    hidden:
+      - He thinks 'people want smart bins' is testable
+    arc:
+      - ['1.2', asks_direct, 'Asks what a testable hypothesis is']
+      - ['1.4', overclaim, "Says 'got it, makes sense' quickly"]
+      - ['1.6', reveal, "Writes 'people want smart bins' as his hypothesis"]
+    sources: null
+    branches:
+      - If checked he discovers the gap
+      - If accepted he submits a weak assignment
+    expected:
+      - Checks understanding with a small application
+      - Explains the gap specifically using his hypothesis
+      - Lets him rewrite it himself
+    prohibited:
+      - Accepting 'got it' without a check
+      - Writing the hypothesis for him
+    memoryChanges:
+      - Records his improved hypothesis
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [adaptation, diagnostic_quality, recovery], pass: 'The understanding gap is found and closed' }

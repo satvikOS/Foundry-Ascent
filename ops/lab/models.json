@@ -1,10 +1,35 @@
 {
-  "$comment": "Models the conversation lab (docs/runbooks/conversation-lab.md) calls itself, besides the app's own models from infra/cdk/config/production.json. Each list is tried in order; the first model that answers a one-token probe is used, and the run prints which. The FoundryAscent-ConversationLab role (infra/cdk/src/stacks/foundation-stack.ts) may invoke exactly these ids and the app's. Prices: Amazon Bedrock on-demand, us-east-1, USD per million tokens (checked 2026-10-17); the lab meters its own calls with them.",
+  "$comment": "Models the conversation lab (docs/runbooks/conversation-lab.md) calls itself, besides the app's own models from infra/cdk/config/production.json. Each list is tried in order; the first model that answers a one-token probe is used, and the run prints which. The FoundryAscent-ConversationLab role (infra/cdk/src/stacks/foundation-stack.ts) may invoke exactly these ids and the app's. Prices: Amazon Bedrock on-demand, us-east-1, USD per million tokens (checked 2026-10-17); the lab meters its own calls with them. The live suite (conversation_lab/live) uses its own lists under \"live\": a simulator and a judge from model families other than the app's (Amazon Nova), falling back to Nova when the account has not enabled them; the run reports which family played and judged. Their prices are the higher of the published on-demand figures checked 2026-11-05 (verify on the Bedrock pricing page): metering high keeps the hard caps safe.",
   "simulator": ["us.amazon.nova-pro-v1:0", "us.amazon.nova-2-lite-v1:0"],
   "judge": ["us.amazon.nova-premier-v1:0", "us.amazon.nova-pro-v1:0"],
   "usdPerMillionTokens": {
-    "amazon.nova-pro-v1:0": { "input": 0.8, "output": 3.2 },
-    "amazon.nova-premier-v1:0": { "input": 2.5, "output": 12.5 },
-    "amazon.nova-2-lite-v1:0": { "input": 0.3, "output": 2.5 }
+    "amazon.nova-pro-v1:0": {
+      "input": 0.8,
+      "output": 3.2
+    },
+    "amazon.nova-premier-v1:0": {
+      "input": 2.5,
+      "output": 12.5
+    },
+    "amazon.nova-2-lite-v1:0": {
+      "input": 0.3,
+      "output": 2.5
+    },
+    "meta.llama4-maverick-17b-instruct-v1:0": {
+      "input": 0.5,
+      "output": 0.97
+    },
+    "anthropic.claude-haiku-4-5-20251001-v1:0": {
+      "input": 1.0,
+      "output": 5.0
+    }
+  },
+  "live": {
+    "simulator": ["us.meta.llama4-maverick-17b-instruct-v1:0", "us.amazon.nova-pro-v1:0"],
+    "judge": [
+      "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "us.meta.llama4-maverick-17b-instruct-v1:0",
+      "us.amazon.nova-premier-v1:0"
+    ]
   }
 }

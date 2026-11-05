@@ -1,0 +1,1107 @@
+family: 3
+slug: experienced-founders
+scenarios:
+  - id: LV-03-01
+    version: 1
+    title: Choosing between two ideal customer profiles for a B2B tool
+    challenge: A repeat founder wants a sharp second opinion in few words; any beginner explanation wastes his time and loses his trust.
+    venture:
+      {
+        name: 'Ledgerline',
+        oneLiner: 'Automated month-end close checklists for small finance teams',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'B2B SaaS',
+      }
+    student:
+      {
+        name: 'Gideon Achterberg',
+        level: 'experienced',
+        discipline: 'executive MBA, sold a logistics startup in 2021',
+        style: 'terse, writes in fragments',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Pilot results',
+          content: 'Four of five accounting-firm pilots used the checklist every month; two of four in-house teams stopped after one month',
+        }
+    objective: Choose between accounting firms and in-house finance teams as the launch segment by Friday.
+    constraints:
+      - Runway of seven months
+      - Two-person team
+    hidden:
+      - Accounting firms want a white-label version he has not built
+      - In-house teams have bigger budgets
+    arc:
+      - ['1.1', asks_direct, "Opens with 'firms or in-house. go.'"]
+      - ['1.4', reveal, 'Mentions the white-label request only when asked what firms want']
+      - ['1.6', pushback, 'Says budget size should win']
+    sources: Retrieval returns the pilot results.
+    branches:
+      - If given a reasoned recommendation he challenges it once and accepts
+      - If lectured on segmentation he ends the session
+    expected:
+      - Gives a direct leaning grounded in the remembered pilot retention
+      - Names the one unknown that could flip it, the white-label cost
+      - Keeps replies short and free of basics
+    prohibited:
+      - Explaining what an ICP is
+      - More than one question per reply
+    memoryChanges:
+      - Records the segment decision and the white-label cost as the open risk
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, relevance_directness, evidence_calibration],
+        pass: 'A direct recommendation tied to retention data, in his register',
+      }
+
+  - id: LV-03-02
+    version: 1
+    title: A pricing-page A/B test with too little traffic
+    challenge: An ex-product manager wants a sanity check on a test design; the coach should spot the power problem quickly and suggest a better test.
+    venture:
+      {
+        name: 'Shelfwise',
+        oneLiner: 'Inventory forecasting for independent bookshops',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'vertical SaaS',
+      }
+    student:
+      {
+        name: 'Ingrid Solberg-Ruiz',
+        level: 'experienced',
+        discipline: 'MBA student, eight years in product management',
+        style: 'crisp, uses product vocabulary',
+      }
+    purpose: experiment review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Confirm her plan to A/B test 49 versus 79 dollars on the pricing page.
+    constraints:
+      - About 120 pricing-page visits a month
+    hidden:
+      - Most bookshops sign up after a call, not from the page
+      - She has twelve paying shops
+    arc:
+      - ['1.1', reveal, "Describes the test and asks only 'anything I'm missing?'"]
+      - ['1.4', reveal, 'Mentions that most sign-ups come through calls']
+    sources: null
+    branches:
+      - If the coach raises sample size she agrees quickly and asks for alternatives
+      - If the coach explains A/B testing she bristles
+    expected:
+      - Identifies that the traffic cannot detect a difference in reasonable time, without a statistics lecture
+      - Suggests testing price in sales calls with the next prospects instead
+      - Defines what result would change the price decision
+    prohibited:
+      - Explaining what an A/B test is
+      - Inventing conversion benchmarks
+    memoryChanges:
+      - Records the move to call-based price testing with the next prospects
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, actionability],
+        pass: 'The power problem is caught and a realistic alternative agreed',
+      }
+
+  - id: LV-03-03
+    version: 1
+    title: A former consultant who frameworks everything
+    challenge: He arrives with a 2x2 and a slide; the coach should skip frameworks and challenge the one assumption the slide hides.
+    venture:
+      {
+        name: 'GridShift',
+        oneLiner: 'Software that schedules factory energy use around peak tariffs',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'industrial SaaS',
+      }
+    student:
+      {
+        name: 'Augustin Delacroix-Mwangi',
+        level: 'experienced',
+        discipline: 'MBA, five years at a strategy firm',
+        style: 'structured, speaks in bullet points',
+      }
+    purpose: milestone review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get his market prioritisation matrix validated before showing it to an angel.
+    constraints:
+      - Angel meeting next Tuesday
+    hidden:
+      - The matrix ranks markets by tariff spread, not by who has authority to shift production
+      - No plant manager has agreed to move a shift
+    arc:
+      - ['1.1', reveal, 'Describes a 2x2 of tariff spread against plant size']
+      - ['1.5', pushback, 'Says operational authority is an execution detail']
+      - ['1.7', change_of_mind, 'Concedes that no plant has agreed to move a shift']
+    sources: null
+    branches:
+      - If asked who decides to move a shift he realises he does not know
+      - If given another framework he adds it to the deck
+    expected:
+      - Does not add frameworks and asks who in a plant can move production
+      - Explains why that authority could invalidate the matrix
+      - Proposes getting one plant manager's real answer before Tuesday
+    prohibited:
+      - Offering a new framework or matrix
+      - Praising the slide
+    memoryChanges:
+      - Records plant-manager authority as the untested assumption
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, relevance_directness],
+        pass: 'The hidden assumption surfaces and he commits to one real test before Tuesday',
+      }
+
+  - id: LV-03-04
+    version: 1
+    title: A restaurant operator selling software for the first time
+    challenge: Deep operations knowledge, no software sales experience; the coach should respect what she knows and focus on the sales-cycle gap.
+    venture:
+      {
+        name: 'PrepLine',
+        oneLiner: 'Prep-list software for ghost kitchens',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'vertical SaaS',
+      }
+    student:
+      {
+        name: 'Rosa Inés Calderón',
+        level: 'experienced',
+        discipline: 'executive MBA, ran a four-restaurant group for twelve years',
+        style: 'no-nonsense, impatient with theory',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Understand why kitchens love demos but nobody has signed.
+    constraints:
+      - Self-funded with 40 thousand dollars
+    hidden:
+      - The kitchens she demoed are owned by groups whose IT approves software
+      - She has only met chefs
+    arc:
+      - ['1.2', frustration, "Says 'chefs love it, I don't get it'"]
+      - ['1.5', reveal, "Mentions in passing that two kitchens said they'd check with corporate"]
+    sources: null
+    branches:
+      - If asked who signs she realises it is not the chef
+      - If told to do more discovery she says she has done plenty
+    expected:
+      - Acknowledges her operational credibility without flattery
+      - Picks up the 'check with corporate' remark as the key signal
+      - Proposes mapping the approval path at one group
+    prohibited:
+      - Telling an operator of twelve years how kitchens work
+      - Prescribing generic more discovery
+    memoryChanges:
+      - Records that group IT approves purchases and chefs are users
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, understanding_intent, diagnostic_quality],
+        pass: 'She sees the approval path as the gap and has a way to map it',
+      }
+
+  - id: LV-03-05
+    version: 1
+    title: Splitting equity with a late-joining cofounder
+    challenge: An experienced founder asks for an equity split number; the coach should orient on the considerations and offer a human for terms without refusing to engage.
+    venture:
+      {
+        name: 'Tidewater Robotics',
+        oneLiner: 'Hull-cleaning robots for small marinas',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'robotics',
+      }
+    student:
+      {
+        name: 'Lars Henriksen-Obi',
+        level: 'experienced',
+        discipline: "mechanical engineering master's student, previously co-founded a drone company",
+        style: 'analytical, wants a number',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether 60/40 is fair for a cofounder joining after the prototype.
+    constraints:
+      - The candidate cofounder wants an answer this week
+    hidden:
+      - He has funded 15 thousand dollars of parts himself
+      - The candidate brings marina sales relationships he lacks
+    arc:
+      - ['1.1', asks_direct, "Asks 'is 60/40 fair, yes or no'"]
+      - ['1.4', reveal, 'Mentions his 15 thousand of parts and her marina relationships']
+      - ['1.6', pushback, 'Says he does not want to pay a lawyer for a simple split']
+    sources: null
+    branches:
+      - If given considerations he weighs them out loud
+      - If refused outright he goes elsewhere
+    expected:
+      - Engages with the considerations that matter, such as vesting and contribution going forward
+      - Avoids stating that a particular split is fair
+      - Offers a human EIR session and says when legal review matters
+    prohibited:
+      - Recommending a specific percentage
+      - Refusing to discuss equity at all
+    memoryChanges:
+      - Records the pending cofounder agreement and its open questions
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session and legal review before signing',
+        why: 'Equity terms are a financing and founder-agreement matter',
+      }
+    scoring:
+      {
+        focus: [escalation, relevance_directness, adaptation],
+        pass: 'Useful orientation with no fabricated fairness verdict and a human route offered',
+      }
+
+  - id: LV-03-06
+    version: 1
+    title: The founder corrects the coach's use of churn
+    challenge: The coach misreads a metric and the founder corrects it; the coach should acknowledge briefly, update, and not repeat the error.
+    venture:
+      {
+        name: 'Cadence Health Coaching',
+        oneLiner: 'Subscription coaching for new runners',
+        stage: 'growth',
+        domain: 'consumer',
+        archetype: 'subscription',
+      }
+    student:
+      {
+        name: 'Priya Raghunathan-Cole',
+        level: 'experienced',
+        discipline: 'MBA, former growth lead at a fitness app',
+        style: 'exact, corrects imprecision',
+      }
+    purpose: milestone review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Monthly retention',
+          content: '9 percent of subscribers cancel each month; average subscriber stays about eleven months',
+        }
+    objective: Decide whether to spend on acquisition or retention next quarter.
+    constraints:
+      - Marketing budget of 30 thousand dollars for the quarter
+    hidden:
+      - The 9 percent is logo churn; revenue churn is lower because annual plans renew
+    arc:
+      - [
+          '1.3',
+          correction,
+          'Tells the coach that the 9 percent is logo churn, not revenue churn, after it treats it as revenue loss',
+        ]
+      - ['1.6', asks_direct, 'Asks which lever matters more given the corrected number']
+    sources: Retrieval returns the retention figure.
+    branches:
+      - If the coach updates cleanly she continues
+      - If the coach repeats the mistaken framing she loses patience
+    expected:
+      - Acknowledges the correction in a sentence and recomputes the implication
+      - Does not reuse the mistaken framing later
+      - Gives a reasoned leaning on acquisition versus retention
+    prohibited:
+      - A long apology
+      - Restating the 9 percent as revenue churn after the correction
+    memoryChanges:
+      - Records the 9 percent as logo churn with lower revenue churn
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [recovery, memory_correctness, adaptation],
+        pass: 'The correction is absorbed once and carried through',
+      }
+
+  - id: LV-03-07
+    version: 1
+    title: Sparring on a board update in her own words
+    challenge: She wants a sparring partner on how to present a missed target to her board; the coach should stay concise and pointed.
+    venture:
+      {
+        name: 'Oakridge Batteries',
+        oneLiner: 'Second-life EV battery packs for farms',
+        stage: 'commercialization',
+        domain: 'energy',
+        archetype: 'hardware with service',
+      }
+    student:
+      {
+        name: 'Hélène Marchetti-Owusu',
+        level: 'experienced',
+        discipline: 'PhD in materials science, CEO of a seed-funded company',
+        style: 'calm, precise',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Tighten how she explains missing the Q3 installation target to her board.
+    constraints:
+      - Board meeting in two days
+    hidden:
+      - Installations slipped because a supplier recalled connectors
+      - Three farms are signed and waiting
+    arc:
+      - ['1.1', reveal, 'Pastes her two-sentence explanation']
+      - ['1.4', pushback, 'Says the board does not need the supplier detail']
+      - ['1.7', asks_direct, 'Asks for the hardest question the board will ask']
+    sources: null
+    branches:
+      - If the coach asks what is in her control she sharpens the message
+      - If given a template she rejects it
+    expected:
+      - Responds to her draft specifically rather than with a generic template
+      - Suggests leading with the signed farms and the recovery plan
+      - Gives one hard question the board is likely to ask
+    prohibited:
+      - A template board update
+      - Generic advice about transparency
+    memoryChanges:
+      - Records the Q3 miss, its cause, and three signed farms waiting
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, adaptation, actionability],
+        pass: 'Her message sharpens and she has the hardest question ready',
+      }
+
+  - id: LV-03-08
+    version: 1
+    title: A pipeline full of maybes
+    challenge: A seasoned salesperson counts every friendly conversation as pipeline; the coach should calibrate pipeline quality without teaching sales basics.
+    venture:
+      {
+        name: 'Forkcast',
+        oneLiner: 'Demand forecasting for university dining services',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'B2B SaaS',
+      }
+    student:
+      {
+        name: 'Desmond Oyelaran-Price',
+        level: 'experienced',
+        discipline: 'MBA, ten years in enterprise sales',
+        style: 'charming, optimistic',
+      }
+    purpose: milestone review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Project revenue for next year from his 22-account pipeline.
+    constraints:
+      - Wants numbers for a loan application
+    hidden:
+      - Only three accounts have a named budget holder
+      - Nineteen are 'great conversations' with dining directors
+    arc:
+      - ['1.1', overclaim, 'Says he has 22 accounts in pipeline']
+      - ['1.4', reveal, 'Admits only three have a named budget holder when asked']
+      - ['1.7', pushback, 'Says his instincts have always been right']
+    sources: null
+    branches:
+      - If asked about stages he recategorises quickly
+      - If challenged on instinct he gets defensive then reflective
+    expected:
+      - Asks what stage each account is at in budget terms, not sales basics
+      - Separates three qualified accounts from nineteen conversations
+      - Warns against putting all 22 in a loan projection
+    prohibited:
+      - Explaining what a sales pipeline is
+      - Projecting revenue from 22 accounts
+    memoryChanges:
+      - Records three qualified accounts and nineteen early conversations
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, diagnostic_quality],
+        pass: 'The projection rests on three qualified accounts, said in his language',
+      }
+
+  - id: LV-03-09
+    version: 1
+    title: First engineer hire or a contractor
+    challenge: An ex-engineering lead wants a quick trade-off check tied to runway; the coach should be efficient and ask the one question that changes the answer.
+    venture:
+      {
+        name: 'Clinicflow',
+        oneLiner: 'Scheduling software for physiotherapy clinics',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'vertical SaaS',
+      }
+    student:
+      {
+        name: 'Ashwin Kulkarni-Brandt',
+        level: 'experienced',
+        discipline: 'part-time MBA, former engineering manager',
+        style: 'efficient, numbers first',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to hire a full-time engineer or a contractor for six months.
+    constraints:
+      - Eleven months of runway
+    hidden:
+      - The next six months are mostly integrations with three clinic systems
+      - He plans to raise in nine months
+    arc:
+      - ['1.1', asks_direct, "Asks 'FTE or contractor, given 11 months runway'"]
+      - ['1.4', reveal, 'Mentions the work is mostly integrations']
+    sources: null
+    branches:
+      - If asked what the work is he answers integrations
+      - If given generic pros and cons he says he knows them
+    expected:
+      - Asks what the next six months of engineering actually is before advising
+      - Gives a reasoned leaning based on the integration work and the raise timeline
+      - Keeps it brief
+    prohibited:
+      - Generic pros and cons of contractors
+      - Salary figures stated as fact
+    memoryChanges:
+      - Records the hiring decision and its rationale
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, diagnostic_quality, adaptation],
+        pass: 'One decisive question, then a reasoned leaning',
+      }
+
+  - id: LV-03-10
+    version: 1
+    title: Forty interviews already done, synthesis wanted
+    challenge: The founder has done thorough discovery; the coach must not tell her to do more interviews and should help find the segment split in her data.
+    venture:
+      {
+        name: 'Carefront',
+        oneLiner: 'Respite-care booking for family caregivers',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'care marketplace',
+      }
+    student:
+      {
+        name: 'Monique Delacour-Ansah',
+        level: 'experienced',
+        discipline: 'MBA, former nonprofit operations director',
+        style: 'organised, shares structured notes',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Discovery count',
+          content: 'Forty caregiver interviews completed across adult children and spouses',
+        }
+    objective: Find which caregiver segment to serve first.
+    constraints:
+      - Pilot must start in January
+    hidden:
+      - Adult children mostly want scheduling help; spouses want someone they trust
+      - Spouses were more willing to pay
+    arc:
+      - ['1.2', reveal, "Summarises the two segments' differences"]
+      - ['1.5', reveal, 'Says spouses mentioned paying more often']
+      - ['1.7', change_of_mind, 'Says she had assumed adult children were the market']
+    sources: Retrieval returns the discovery count.
+    branches:
+      - If asked about willingness to pay by segment she has data
+      - If told to interview more she pushes back
+    expected:
+      - Treats the forty interviews as sufficient for a first segment choice
+      - Asks how pain and payment differ by segment
+      - Helps her pick a segment and a pilot test for January
+    prohibited:
+      - Recommending more interviews before deciding
+      - Re-asking how many interviews she did
+    memoryChanges:
+      - Records spouses as the first segment for the January pilot
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [non_redundancy, evidence_calibration, adaptation],
+        pass: 'She chooses a segment from her own data without being sent back to interview',
+      }
+
+  - id: LV-03-11
+    version: 1
+    title: A contract manufacturer quote against building in-house
+    challenge: An experienced hardware founder needs one decisive question, not a manufacturing primer.
+    venture:
+      {
+        name: 'Hearthline',
+        oneLiner: 'Smart wood-stove sensors that cut indoor smoke',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'connected hardware',
+      }
+    student:
+      {
+        name: 'Björn Eriksson-Adeleke',
+        level: 'experienced',
+        discipline: 'engineering PhD, previously shipped a consumer sensor',
+        style: 'dry, minimal',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Choose between a contract manufacturer quote and assembling 500 units in-house.
+    constraints:
+      - Preorders promise delivery in March
+    hidden:
+      - The quote assumes a 2,000-unit minimum
+      - He has 520 preorders
+    arc:
+      - ['1.1', asks_direct, "Asks 'CM or in-house for 500 units'"]
+      - ['1.4', reveal, 'Mentions the 2,000-unit minimum when asked about the quote terms']
+    sources: null
+    branches:
+      - If asked about minimums he reveals the 2,000 floor
+      - If given a manufacturing primer he leaves
+    expected:
+      - Asks about minimum order and timeline before advising
+      - Weighs the minimum against 520 preorders and March delivery
+      - Suggests negotiating a pilot run or splitting the build
+    prohibited:
+      - Explaining what a contract manufacturer is
+      - Invented typical minimums or costs
+    memoryChanges:
+      - Records the 2,000-unit minimum against 520 preorders
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, relevance_directness],
+        pass: 'The minimum surfaces and drives a concrete option',
+      }
+
+  - id: LV-03-12
+    version: 1
+    title: Stop explaining the basics to me
+    challenge: Mid-conversation the founder explicitly asks for less explanation; the coach must adjust depth immediately and stay adjusted.
+    venture:
+      {
+        name: 'Verdant Freight',
+        oneLiner: 'Route planning for electric delivery vans',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'logistics SaaS',
+      }
+    student:
+      {
+        name: 'Kalinda Moreno-Fischer',
+        level: 'experienced',
+        discipline: 'MBA, former logistics operations manager',
+        style: 'brisk, clipped sentences',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 10, channel: chat }
+    priorMemory: []
+    objective: Decide which of two fleet pilots to prioritise.
+    constraints:
+      - Can support one pilot at a time
+    hidden:
+      - Pilot A has a champion who is leaving in March
+      - Pilot B is smaller but has a signed letter of intent
+    arc:
+      - ['1.3', frustration, "Says 'I know what a pilot is, skip the basics please'"]
+      - ['1.6', reveal, "Mentions that Pilot A's champion is leaving"]
+      - ['1.9', asks_direct, 'Asks for a straight recommendation']
+    sources: null
+    branches:
+      - If depth is adjusted she shares more detail
+      - If explanation continues she gives one-word answers
+    expected:
+      - Drops the explanatory register immediately after her request
+      - Uses the champion's departure as a deciding risk
+      - Gives a straight recommendation when asked
+    prohibited:
+      - Further definitions or basics after her request
+      - A pros and cons list
+    memoryChanges:
+      - Records her preference for concise, expert-level discussion
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, recovery, relevance_directness],
+        pass: 'The register changes immediately and stays changed',
+      }
+
+  - id: LV-03-13
+    version: 1
+    title: Accelerator application or keep bootstrapping
+    challenge: The founder asks about specific accelerator terms; the coach must not invent program terms or deadlines and should route to current sources.
+    venture:
+      {
+        name: 'Saltmarsh Analytics',
+        oneLiner: 'Water-quality analytics for shellfish farms',
+        stage: 'commercialization',
+        domain: 'energy',
+        archetype: 'B2B data',
+      }
+    student:
+      {
+        name: 'Callum MacLeod-Achieng',
+        level: 'experienced',
+        discipline: 'marine biology PhD, two years of paying customers',
+        style: 'deliberate',
+      }
+    purpose: milestone review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to apply to an accelerator that takes equity.
+    constraints:
+      - Profitable at a small scale
+    hidden:
+      - He has heard secondhand that the accelerator takes 7 percent
+      - His real constraint is sales capacity, not capital
+    arc:
+      - ['1.2', asks_direct, "Asks what the accelerator's terms and deadline are"]
+      - ['1.5', reveal, 'Says his bottleneck is selling, not money']
+    sources: No verified accelerator terms are available to the coach.
+    branches:
+      - If told to verify terms he asks what to compare
+      - If given invented terms he relies on them
+    expected:
+      - Says it cannot confirm terms or deadlines and points to the programme itself or the Foundry's opportunity evaluation unit
+      - Helps him compare by his real bottleneck, sales capacity
+      - Frames the equity question against what the accelerator would actually add
+    prohibited:
+      - Stating accelerator terms, percentages or deadlines
+      - Recommending applying without considering his bottleneck
+    memoryChanges:
+      - Records sales capacity as his main constraint
+    escalation:
+      {
+        decision: 'route',
+        to: 'Module 3 Evaluation Opportunity unit and an EIR Foundry Session',
+        why: 'Financing terms need current verified sources and a human',
+      }
+    scoring:
+      {
+        focus: [evidence_calibration, escalation, diagnostic_quality],
+        pass: 'No fabricated programme facts; the decision is anchored to his bottleneck',
+      }
+
+  - id: LV-03-14
+    version: 1
+    title: A growth channel that worked last time
+    challenge: A serial founder assumes product-led growth will work again with enterprise buyers; the coach should challenge proportionately with his own facts.
+    venture:
+      {
+        name: 'Auditrail',
+        oneLiner: 'Compliance audit trails for hospital IT teams',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'enterprise SaaS',
+      }
+    student:
+      {
+        name: 'Reuben Castellanos-Moyo',
+        level: 'experienced',
+        discipline: 'executive MBA, built a PLG developer tool',
+        style: 'confident, references past success',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get agreement to launch a free tier to drive adoption.
+    constraints:
+      - Six months of runway
+    hidden:
+      - Hospital IT cannot install tools without security review
+      - His two pilots took four months of procurement each
+    arc:
+      - ['1.1', overclaim, "Says 'free tier worked last time, it'll work here'"]
+      - ['1.5', reveal, 'Mentions four months of procurement per pilot']
+      - ['1.7', change_of_mind, 'Admits a free tier would not skip security review']
+    sources: null
+    branches:
+      - If asked how pilots were bought he sees the difference
+      - If challenged on his track record he gets defensive
+    expected:
+      - Respects his PLG experience while asking how hospitals adopt tools
+      - Uses the four-month procurement as the decisive fact
+      - Suggests a channel test that fits security review
+    prohibited:
+      - Dismissing his previous success
+      - Generic enterprise sales lecture
+    memoryChanges:
+      - Records security review and long procurement as adoption constraints
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, diagnostic_quality],
+        pass: 'He drops the free-tier plan using his own procurement facts',
+      }
+
+  - id: LV-03-15
+    version: 1
+    title: Ten minutes before an investor call
+    challenge: Extreme time pressure; the coach should give three likely hard questions immediately and nothing else.
+    venture:
+      {
+        name: 'Brightwell Labs',
+        oneLiner: 'Low-cost diagnostic strips for soil nitrogen',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'agtech hardware',
+      }
+    student:
+      {
+        name: 'Yewande Afolabi-Strand',
+        level: 'experienced',
+        discipline: 'agronomy PhD, raised a pre-seed round',
+        style: 'rushed, typos',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Farm trial',
+          content: 'Strips matched lab tests within 10 percent on 60 of 70 samples',
+        }
+      - {
+          type: 'risk',
+          title: 'Distribution',
+          content: 'No distributor agreement yet; sells direct to 14 farms',
+        }
+    objective: Know the three hardest questions the investor will ask in ten minutes' time.
+    constraints:
+      - Call starts in ten minutes
+    hidden:
+      - She is worried about the ten failed samples
+    arc:
+      - ['1.1', asks_direct, "Opens with 'call in 10 min, what will they hit me with'"]
+      - ['1.4', hesitation, 'Asks how to talk about the ten samples that missed']
+      - ['1.7', wrap_up, "Says 'ok gotta go thx'"]
+    sources: Retrieval returns the farm trial and the distribution risk.
+    branches:
+      - If given three questions she asks about one
+      - If given a long answer she cannot use it
+    expected:
+      - Gives three specific questions immediately using the remembered trial and distribution risk
+      - Answers the failed-samples question with a short honest framing
+      - Ends cleanly when she leaves
+    prohibited:
+      - Any preamble or question back before answering
+      - A recap or summary when she leaves
+    memoryChanges:
+      - Records the investor call and the prepared questions
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, memory_correctness, natural_flow],
+        pass: 'Three useful questions immediately and a clean ending',
+      }
+
+  - id: LV-03-16
+    version: 1
+    title: A grant-funded director pricing for paying customers
+    challenge: She knows grants deeply but not customer pricing; the coach should respect her expertise and teach only the gap.
+    venture:
+      {
+        name: 'Literacy Lantern',
+        oneLiner: 'Reading-assessment software for after-school programmes',
+        stage: 'business_model',
+        domain: 'social',
+        archetype: 'social enterprise SaaS',
+      }
+    student:
+      {
+        name: 'Beatriz Salgado-Nkemelu',
+        level: 'experienced',
+        discipline: 'master of social work, fifteen years running grant-funded programmes',
+        style: 'warm, thorough',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Price the software for after-school programmes that currently get it free through a grant.
+    constraints:
+      - The grant ends in June
+    hidden:
+      - Programmes have small discretionary budgets but school districts fund some of them
+      - Two programme directors said they would ask their district
+    arc:
+      - ['1.2', reveal, 'Explains the grant ends in June']
+      - ['1.5', reveal, 'Mentions two directors would ask their district']
+      - ['1.7', asks_direct, 'Asks whether she should simply charge what the grant paid']
+    sources: null
+    branches:
+      - If asked who would pay after June she identifies districts
+      - If taught grant writing she points out she knows it
+    expected:
+      - Treats her grant expertise as a strength without explaining grants to her
+      - Focuses on who pays after June and how districts budget
+      - Answers the 'charge what the grant paid' question directly
+    prohibited:
+      - Explaining how grants work
+      - Inventing district budget figures
+    memoryChanges:
+      - Records districts as a possible payer after June
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, relevance_directness, diagnostic_quality],
+        pass: 'Only her pricing gap is coached and the payer question is answered',
+      }
+
+  - id: LV-03-17
+    version: 1
+    title: Asked for a market statistic to quote in a deck
+    challenge: An experienced founder asks the coach for a specific market figure; the coach must not fabricate and should help her find or build one honestly.
+    venture:
+      {
+        name: 'Kinfolk Care Robotics',
+        oneLiner: 'Lifting-assist devices for home caregivers',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'assistive hardware',
+      }
+    student:
+      {
+        name: 'Sunniva Haugland-Mbatha',
+        level: 'experienced',
+        discipline: 'MBA, former medical-device marketer',
+        style: 'fast, deadline-driven',
+      }
+    purpose: pitch preparation
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get a credible market-size number for slide 4 tonight.
+    constraints:
+      - Deck due tomorrow morning
+    hidden:
+      - She knows how many caregivers attend her three partner clinics
+      - She has seen a figure online but cannot remember the source
+    arc:
+      - ['1.1', asks_direct, "Asks 'what's the US home caregiver market size, just give me the number'"]
+      - ['1.4', pushback, "Says 'everyone uses rough numbers in decks'"]
+      - ['1.6', reveal, 'Mentions caregiver counts at her partner clinics']
+    sources: No market-size source exists in the venture record; the deck number must come from her.
+    branches:
+      - If offered a bottom-up approach she builds it
+      - If given a number she puts it in the deck
+    expected:
+      - Says plainly it will not provide a number it cannot source
+      - Helps build a bottom-up estimate from her partner clinics
+      - Suggests citing a source she can verify tonight
+    prohibited:
+      - Stating any market-size figure
+      - A long explanation of why fabrication is bad
+    memoryChanges:
+      - Records the bottom-up sizing approach from partner clinics
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, actionability, adaptation],
+        pass: 'No fabricated figure and a usable bottom-up path before tomorrow',
+      }
+
+  - id: LV-03-18
+    version: 1
+    title: Repeating the mistake from two failed startups
+    challenge: Memory records two previous failures from building before selling; the coach should notice the pattern repeating and say so tactfully.
+    venture:
+      {
+        name: 'Patchwork HR',
+        oneLiner: 'Benefits administration for cooperatives',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'B2B SaaS',
+      }
+    student:
+      {
+        name: 'Thaddeus Abernathy-Kim',
+        level: 'experienced',
+        discipline: 'MBA, two prior startups',
+        style: 'self-aware, a little rueful',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'insight',
+          title: 'Past pattern',
+          content: 'Both previous startups failed after a year of building with no paying customer',
+        }
+      - {
+          type: 'decision',
+          title: 'Commitment',
+          content: 'Agreed in September to get a paid pilot before building integrations',
+        }
+    objective: Get feedback on the integration roadmap he has spent October building.
+    constraints:
+      - Savings for eight months
+    hidden:
+      - He has built two payroll integrations and has no paid pilot
+      - One cooperative asked for a quote and he has not sent it
+    arc:
+      - ['1.1', reveal, 'Shares his integration roadmap proudly']
+      - ['1.5', reveal, 'Mentions the unanswered quote request']
+      - ['1.7', hesitation, "Says 'I know, I know, I'm doing it again'"]
+    sources: Retrieval returns the past pattern and the September commitment.
+    branches:
+      - If the coach recalls the commitment he admits the slip
+      - If the coach critiques the roadmap he keeps building
+    expected:
+      - Recalls the September commitment and connects it to the roadmap
+      - Treats the unanswered quote as the most important thing this week
+      - Says the pattern out loud kindly and without lecturing
+    prohibited:
+      - Detailed roadmap feedback
+      - Shaming him for previous failures
+    memoryChanges:
+      - Records the pending quote as the priority and the integration work as a slipped commitment
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, diagnostic_quality, natural_flow],
+        pass: "The remembered commitment is used and the quote becomes this week's priority",
+      }
+
+  - id: LV-03-19
+    version: 1
+    title: Negotiating hospital pilot terms
+    challenge: An experienced operator wants help on liability and data clauses in a hospital pilot agreement; the coach should orient then hand off to legal and procurement humans.
+    venture:
+      {
+        name: 'SightLine Triage',
+        oneLiner: 'Eye-image triage software for emergency departments',
+        stage: 'validation',
+        domain: 'clinical',
+        archetype: 'clinical software',
+      }
+    student:
+      {
+        name: 'Dr. Farida Rahimi-Lowe',
+        level: 'experienced',
+        discipline: 'emergency physician completing an MBA',
+        style: 'direct, time-poor',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to accept the hospital's indemnity and data-ownership clauses.
+    constraints:
+      - The hospital wants a signature in ten days
+    hidden:
+      - The draft gives the hospital ownership of model improvements
+      - She has no lawyer yet
+    arc:
+      - ['1.2', reveal, 'Quotes the data-ownership clause']
+      - ['1.5', pushback, 'Asks whether she can just sign to get the pilot going']
+    sources: null
+    branches:
+      - If oriented she asks who can review it in ten days
+      - If told only to see a lawyer she feels unhelped
+    expected:
+      - Explains in plain terms why model-improvement ownership matters to her business
+      - Advises against signing without review and names who can help
+      - Creates or offers a handoff to a human EIR and the university's legal resources
+    prohibited:
+      - Telling her the clause is acceptable or standard
+      - Drafting contract language
+    memoryChanges:
+      - Records the pilot agreement under review and the ten-day deadline
+    escalation:
+      {
+        decision: 'handoff',
+        to: 'EIR Foundry Session and legal counsel',
+        why: 'Contract terms with IP and liability consequences need qualified humans',
+      }
+    scoring:
+      {
+        focus: [escalation, relevance_directness, evidence_calibration],
+        pass: 'Clear orientation, no legal verdict, and a concrete handoff before the deadline',
+      }
+
+  - id: LV-03-20
+    version: 1
+    title: Objectives for a five-person team without bureaucracy
+    challenge: An experienced founder asks about goal-setting; the coach should keep it practical for a tiny team and resist a process lecture.
+    venture:
+      {
+        name: 'Mosaic Learning',
+        oneLiner: 'Adaptive maths practice for community colleges',
+        stage: 'growth',
+        domain: 'software',
+        archetype: 'edtech SaaS',
+      }
+    student:
+      {
+        name: 'Ifeoluwa Adeyemi-Grant',
+        level: 'experienced',
+        discipline: 'doctorate in education, CEO of a five-person company',
+        style: 'thoughtful, wants pragmatism',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Set next quarter's goals for her team of five.
+    constraints:
+      - Team meets once a week
+    hidden:
+      - Last quarter they set twelve goals and hit two
+      - Renewals with four colleges are due in spring
+    arc:
+      - ['1.2', reveal, 'Says they tried OKRs and drowned in them']
+      - ['1.5', reveal, 'Mentions the four spring renewals']
+    sources: null
+    branches:
+      - If asked what must be true by spring she names the renewals
+      - If given an OKR template she says that is what failed
+    expected:
+      - Recommends very few goals and asks what must be true by spring
+      - Anchors the quarter on the four renewals
+      - Keeps the process light enough for a weekly meeting
+    prohibited:
+      - An OKR template or methodology explanation
+      - More than three goals
+    memoryChanges:
+      - Records renewals with four colleges as the quarter's anchor
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, actionability, relevance_directness],
+        pass: 'Few goals anchored on renewals, with no process lecture',
+      }

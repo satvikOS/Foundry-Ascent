@@ -304,6 +304,14 @@ OWN_ROLE_WORKFLOWS: dict[str, OwnRole] = {
         },
     ),
 }
+# The live conversation evaluation runs the same harness as the lab, in shards, under the same role and environment.
+OWN_ROLE_WORKFLOWS["ops-live-evals.yml"] = OwnRole(
+    role="FoundryAscent-ConversationLab",
+    policy_id="ConversationLabPolicy",
+    environment="conversation-lab",
+    cli={"sts:getcalleridentity": None},
+    sdk=dict(OWN_ROLE_WORKFLOWS["ops-conversation-lab.yml"].sdk),
+)
 
 # What the conversation lab runs with the role's credentials: the app's model gateway and speech adapters (the
 # dev server, MODEL_PROVIDER=bedrock, LOCAL_AWS_SPEECH=true) and the lab harness (ops/lab). The dev server keeps

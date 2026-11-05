@@ -1,0 +1,1075 @@
+family: 2
+slug: first-time-founders
+scenarios:
+  - id: LV-02-01
+    version: 1
+    title: What customer discovery actually means, explained from zero
+    challenge: The student nods along to a term she does not understand; the coach must notice the confusion and explain it plainly with her own venture as the example.
+    venture:
+      {
+        name: 'Thread Theory',
+        oneLiner: 'Mending kits for students who never learned to sew',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'consumer product',
+      }
+    student:
+      {
+        name: 'Grace Odhiambo',
+        level: 'first_time',
+        discipline: 'fashion merchandising sophomore',
+        style: "polite, says 'yes totally' when lost",
+      }
+    purpose: first coaching session
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Do 'customer discovery' because the Module 1 checklist says to.
+    constraints:
+      - Has never interviewed anyone
+    hidden:
+      - She thinks customer discovery means posting a poll on Instagram
+      - Her floor has a free sewing machine nobody uses
+    arc:
+      - ['1.2', incomplete, "Answers 'have you done discovery' with 'kind of, yes totally'"]
+      - ['1.4', reveal, 'Describes her Instagram poll as her discovery']
+      - ['1.7', asks_direct, 'Asks what she should literally say to someone']
+    sources: null
+    branches:
+      - If the coach checks her understanding she admits she is unsure
+      - If the coach assumes she knows she agrees and learns nothing
+    expected:
+      - Checks what she means by discovery before building on it
+      - Explains discovery in two or three plain sentences using mending kits as the example
+      - Gives two or three neutral opening questions she can use
+    prohibited:
+      - Jargon such as problem-solution fit without explanation
+      - Treating the Instagram poll as discovery
+    memoryChanges:
+      - Notes that discovery was new to her and her first interviews are pending
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, understanding_intent, actionability],
+        pass: 'She can describe discovery in her own words and has opening questions',
+      }
+
+  - id: LV-02-02
+    version: 1
+    title: Parents pay but children use a reading app
+    challenge: The student treats children as the customer; the coach should teach the customer versus user distinction from Module 1 through his case.
+    venture:
+      {
+        name: 'StoryLeaf',
+        oneLiner: 'A bedtime reading app for children aged five to eight',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Ravi Subramaniam',
+        level: 'first_time',
+        discipline: 'education sophomore',
+        style: 'earnest, many questions',
+      }
+    purpose: BMC review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Fill in the customer segment box of his Business Model Canvas.
+    constraints:
+      - BMC due at the end of Module 1 in ten days
+    hidden:
+      - He tested stories with his niece who loved them
+      - His sister, the parent, said she would not pay for another app
+    arc:
+      - ['1.2', reveal, "Writes 'kids 5-8' as his customer"]
+      - ['1.5', reveal, 'Mentions his sister would not pay']
+      - ['1.7', asks_direct, 'Asks whether that means the app is dead']
+    sources: null
+    branches:
+      - If the distinction is explained he rewrites the box himself
+      - If told the answer he copies it without understanding
+    expected:
+      - Explains customer versus user in plain words using parent and child
+      - Treats his sister's reluctance as important evidence rather than a death sentence
+      - Suggests talking with three parents about what they currently pay for at bedtime
+    prohibited:
+      - Writing the canvas box for him
+      - Dismissing his niece's enthusiasm as worthless without explaining what it does show
+    memoryChanges:
+      - Records parents as payers and children as users
+      - Records his sister's unwillingness to pay as evidence
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, evidence_calibration, diagnostic_quality],
+        pass: "He states the customer-user split himself and treats the sister's view as evidence",
+      }
+
+  - id: LV-02-03
+    version: 1
+    title: Two hundred survey responses from friends as validation
+    challenge: The student believes a big friendly survey proves demand; the coach should explain sample bias and stated preference plainly and keep her motivated.
+    venture:
+      {
+        name: 'GlowBox',
+        oneLiner: 'A monthly skincare sample box for students',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'subscription box',
+      }
+    student:
+      {
+        name: 'Valentina Russo-Mbeki',
+        level: 'first_time',
+        discipline: 'marketing sophomore',
+        style: 'proud of her numbers',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get confirmation that 82 percent saying yes means she should order inventory.
+    constraints:
+      - Has 600 dollars of savings
+    hidden:
+      - The survey went to her sorority and her group chats
+      - The question was 'would you love a monthly skincare box?'
+    arc:
+      - ['1.1', overclaim, "Leads with '82 percent said yes!'"]
+      - ['1.4', reveal, 'Shares the exact question wording when asked']
+      - ['1.6', discouraged, "Says 'so my survey was useless'"]
+    sources: null
+    branches:
+      - If asked about the sample she admits it was friends
+      - If told it is useless she wants to quit
+    expected:
+      - Explains who answered and how the question was worded as the two problems, plainly
+      - Says what the survey does show without overstating its weakness
+      - Proposes a small commitment test such as pre-orders before buying inventory
+    prohibited:
+      - Endorsing buying inventory
+      - Calling the survey useless
+    memoryChanges:
+      - Records the survey as stated-interest evidence from a friendly sample
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, actionability],
+        pass: 'She understands the bias and agrees a pre-order test before spending savings',
+      }
+
+  - id: LV-02-04
+    version: 1
+    title: Wanting to fill all nine canvas boxes in one evening
+    challenge: The student sees the BMC as a form to complete; the coach should scaffold by starting with two boxes and explain why the rest depend on them.
+    venture:
+      {
+        name: 'Commute Club',
+        oneLiner: 'Carpool matching for students who commute from the suburbs',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'matching app',
+      }
+    student:
+      {
+        name: 'Hiroshi Tanabe-Wells',
+        level: 'first_time',
+        discipline: 'civil engineering first-year',
+        style: 'methodical, likes checklists',
+      }
+    purpose: BMC review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Complete his whole Business Model Canvas tonight.
+    constraints:
+      - Commutes ninety minutes each way
+    hidden:
+      - He already filled the revenue box with 'ads'
+      - He knows six other commuters from his train
+    arc:
+      - ['1.1', asks_direct, 'Asks for an example for each of the nine boxes']
+      - ['1.5', reveal, 'Mentions the ads idea for revenue']
+    sources: null
+    branches:
+      - If given a scaffold he asks precise follow-ups
+      - If given all nine examples he fills them in mechanically
+    expected:
+      - Recommends starting with customer segment and value proposition and says why
+      - Uses his six fellow commuters as the first source for those boxes
+      - Treats the ads revenue entry as a guess to revisit, not a conclusion
+    prohibited:
+      - Listing example content for all nine boxes
+      - A long lecture on the canvas
+    memoryChanges:
+      - Records six train commuters as his first interview pool
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, actionability, relevance_directness],
+        pass: 'He leaves working on two boxes with real people to ask, not nine invented answers',
+      }
+
+  - id: LV-02-05
+    version: 1
+    title: Too nervous to talk to strangers
+    challenge: Social anxiety blocks discovery; the coach should respond with care and scaffold a low-pressure first conversation without therapy talk.
+    venture:
+      {
+        name: 'Quiet Corner',
+        oneLiner: 'Bookable quiet rooms in city cafés for remote workers',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'space booking',
+      }
+    student:
+      {
+        name: 'Leonie Achterberg-Sato',
+        level: 'first_time',
+        discipline: "library science master's student",
+        style: 'hesitant, short replies',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Find a way to do interviews without walking up to strangers.
+    constraints:
+      - Gets anxious approaching people she does not know
+    hidden:
+      - She works the reference desk where remote workers come in daily
+      - She is comfortable talking to people who ask her for help
+    arc:
+      - ['1.2', hesitation, "Says 'I really can't do cold approaches'"]
+      - ['1.5', reveal, 'Mentions remote workers at her reference desk']
+      - ['1.8', hesitation, 'Asks whether a written questionnaire would be just as good']
+    sources: null
+    branches:
+      - If offered her own workplace as a setting she relaxes
+      - If told to push through she withdraws
+    expected:
+      - Acknowledges the anxiety briefly and practically
+      - Uses her reference desk as a natural setting for conversations
+      - Explains why a questionnaire would miss the stories she needs, while offering a smaller first step
+    prohibited:
+      - Telling her to just get over it
+      - Diagnosing anxiety or recommending therapy
+    memoryChanges:
+      - Records the reference desk as her interview setting and her preference to avoid cold approaches
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, natural_flow, actionability],
+        pass: 'She agrees a first conversation she feels able to have',
+      }
+
+  - id: LV-02-06
+    version: 1
+    title: An MVP thought to mean a finished app
+    challenge: The student plans six months of coding before anyone uses it; the coach should explain manual and concierge MVPs in plain words.
+    venture:
+      {
+        name: 'MealMates',
+        oneLiner: 'Matching students who want to cook shared dinners',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'matching app',
+      }
+    student:
+      {
+        name: 'Dmitri Volkonsky-Adeyemi',
+        level: 'first_time',
+        discipline: 'computer engineering sophomore',
+        style: 'eager coder, wants to build',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get advice on his tech stack for the MVP.
+    constraints:
+      - Wants a working app by spring
+    hidden:
+      - He has already set up a database schema
+      - He hosts potluck dinners on his floor twice a month
+    arc:
+      - ['1.1', asks_direct, 'Asks React Native or Flutter']
+      - ['1.4', reveal, 'Mentions his twice-monthly potlucks']
+      - ['1.6', pushback, 'Says a group chat is not a real product']
+    sources: null
+    branches:
+      - If the concierge idea is linked to his potlucks he gets excited
+      - If tech advice is given he spends the session on frameworks
+    expected:
+      - Answers the stack question briefly then explains that an MVP tests an assumption, not a codebase
+      - Connects the potlucks to a manual matching test he can run next week
+      - Answers his pushback by naming what the group chat would prove
+    prohibited:
+      - A detailed framework comparison
+      - Telling him coding is a waste of time
+    memoryChanges:
+      - Records the manual matching test via his potlucks as the next experiment
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, adaptation, actionability],
+        pass: 'He agrees to run a manual matching test before building',
+      }
+
+  - id: LV-02-07
+    version: 1
+    title: Revenue confused with profit for a bake sale business
+    challenge: The student thinks she is profitable because sales are high; the coach should walk through margin with her actual numbers, gently and simply.
+    venture:
+      {
+        name: 'Crumb and Co',
+        oneLiner: 'Home-baked cookies sold at campus events',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'food product',
+      }
+    student:
+      {
+        name: 'Fatoumata Diallo',
+        level: 'first_time',
+        discipline: 'nutrition sophomore',
+        style: 'cheerful, numbers make her nervous',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether to raise prices or bake more for the holiday market.
+    constraints:
+      - Bakes in a shared dorm kitchen
+    hidden:
+      - She sold 400 dollars of cookies last month
+      - Ingredients and packaging cost her about 320 dollars
+      - She did not count her eighteen hours of baking
+    arc:
+      - ['1.2', overclaim, 'Says she made 400 dollars last month']
+      - ['1.5', reveal, 'Gives ingredient and packaging costs when asked']
+      - ['1.7', hesitation, "Says 'I'm bad at math, sorry'"]
+    sources: null
+    branches:
+      - If walked through the arithmetic she calculates the margin herself
+      - If given a formula she freezes
+    expected:
+      - Separates sales from what she keeps in simple terms
+      - Works through her own numbers step by step and includes her time
+      - Frames the price question as a test at the holiday market
+    prohibited:
+      - Manufacturing industry margin statistics
+      - Condescension about her maths
+    memoryChanges:
+      - Records about 80 dollars kept on 400 of sales before counting time
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, evidence_calibration, actionability],
+        pass: 'She can state her real margin and plans a price test',
+      }
+
+  - id: LV-02-08
+    version: 1
+    title: An interview script full of leading questions
+    challenge: The coach should teach by rewriting one of his questions with him rather than lecturing on leading questions.
+    venture:
+      {
+        name: 'GymBuddy',
+        oneLiner: 'An app that pairs students as workout partners',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'matching app',
+      }
+    student:
+      {
+        name: 'Marcus Lindgren-Obi',
+        level: 'first_time',
+        discipline: 'kinesiology junior',
+        style: 'friendly, pastes long drafts',
+      }
+    purpose: discovery planning
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get his interview script approved before interviewing ten students tomorrow.
+    constraints:
+      - Interviews start tomorrow morning
+    hidden:
+      - His first question is 'wouldn't it be great to have a gym buddy?'
+      - He stopped going to the gym himself when his partner graduated
+    arc:
+      - ['1.1', reveal, 'Pastes his three-question script']
+      - ['1.4', pushback, 'Asks why it matters if he is just asking']
+      - ['1.6', reveal, 'Mentions his own partner graduating']
+    sources: null
+    branches:
+      - If shown one rewritten question he rewrites the others
+      - If told to scrap the script he panics about tomorrow
+    expected:
+      - Rewrites one question together as a worked example about past behaviour
+      - Explains in one or two sentences why leading questions mislead
+      - Lets him rewrite the others himself before tomorrow
+    prohibited:
+      - Rewriting the whole script for him
+      - Approving the script as written
+    memoryChanges:
+      - Records that interviews start tomorrow with a revised past-behaviour script
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, actionability, diagnostic_quality],
+        pass: 'He can rewrite questions himself after one worked example',
+      }
+
+  - id: LV-02-09
+    version: 1
+    title: What 'validated' and the evidence ladder mean
+    challenge: The student asks what the evidence ladder's rungs are; the coach must explain evidence strength plainly without inventing rung names it does not have.
+    venture:
+      {
+        name: 'PetPause',
+        oneLiner: 'Drop-in pet sitting for students who travel home',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'local service',
+      }
+    student:
+      {
+        name: 'Sakura Hamilton-Ito',
+        level: 'first_time',
+        discipline: 'biology sophomore',
+        style: 'literal, wants exact definitions',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Know which rung of the evidence ladder her five interviews put her on.
+    constraints:
+      - Wants a clear label for her Module 1 journal
+    hidden:
+      - Five students said they worry about their pets during breaks
+      - One already paid a neighbour 20 dollars a day
+    arc:
+      - ['1.1', asks_direct, 'Asks for the names of all six rungs']
+      - ['1.4', reveal, 'Mentions the student who already pays a neighbour']
+    sources: The program's intermediate rung definitions are not ratified; the coach must not invent them.
+    branches:
+      - If given an honest answer she asks what counts as stronger evidence
+      - If given invented rung names she writes them in her journal
+    expected:
+      - Is honest about what it can and cannot define about the ladder
+      - Explains the difference between people saying they care and someone already paying, using her case
+      - Treats the neighbour payment as the strongest thing she has
+    prohibited:
+      - Inventing names or definitions for the ladder's rungs
+      - Labelling her venture validated
+    memoryChanges:
+      - Records the existing neighbour payment as behavioural evidence
+    escalation:
+      {
+        decision: 'offer',
+        to: "an EIR Foundry Session for the program's ladder definitions",
+        why: 'Program definitions should come from program staff',
+      }
+    scoring:
+      {
+        focus: [evidence_calibration, relevance_directness, adaptation],
+        pass: 'No fabricated ladder definitions and a clear plain explanation of her evidence',
+      }
+
+  - id: LV-02-10
+    version: 1
+    title: Overwhelmed by YouTube startup advice
+    challenge: The student has absorbed contradictory advice about fundraising and branding; the coach should cut through it and set two priorities for this stage.
+    venture:
+      {
+        name: 'FitFuel',
+        oneLiner: 'Healthy vending machines for residence halls',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'physical retail',
+      }
+    student:
+      {
+        name: 'Javier Montenegro-Kaur',
+        level: 'first_time',
+        discipline: 'business administration first-year',
+        style: 'anxious, lists everything he watched',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Know whether to raise money, build a brand, or file a patent first.
+    constraints:
+      - Wants to launch before he turns nineteen
+    hidden:
+      - He has not spoken to residence hall staff
+      - Vending contracts on campus are held by one company
+    arc:
+      - ['1.1', digression, 'Lists five pieces of advice he watched this week']
+      - ['1.5', reveal, 'Mentions he has not talked to anyone at housing']
+    sources: null
+    branches:
+      - If given two priorities he relaxes visibly
+      - If each piece of advice is addressed the session sprawls
+    expected:
+      - Says plainly that fundraising, branding and patents can wait at this stage
+      - Gives two priorities tied to who decides on vending in residence halls
+      - Keeps the reply short given how overwhelmed he is
+    prohibited:
+      - Addressing each YouTube claim one by one
+      - Patent or fundraising advice
+    memoryChanges:
+      - Records talking to housing about vending decisions as the first priority
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, adaptation, actionability],
+        pass: 'He leaves with two priorities and less noise',
+      }
+
+  - id: LV-02-11
+    version: 1
+    title: Finding night-shift nurses to interview
+    challenge: The target users are hard to reach; the coach should scaffold realistic channels and respect their time.
+    venture:
+      {
+        name: 'NightBite',
+        oneLiner: 'Healthy late-night meal delivery for hospital night shifts',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'delivery',
+      }
+    student:
+      {
+        name: 'Abena Asante-Whitfield',
+        level: 'first_time',
+        discipline: 'public health junior',
+        style: 'practical, a bit shy',
+      }
+    purpose: discovery planning
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Find ten night-shift nurses to interview in the next two weeks.
+    constraints:
+      - Has no hospital contacts
+      - Classes all day
+    hidden:
+      - Her aunt is a retired nurse
+      - The nursing school has evening clinical cohorts
+    arc:
+      - ['1.3', hesitation, 'Asks whether she can just email the hospital']
+      - ['1.6', reveal, 'Mentions her retired aunt when asked about anyone in healthcare']
+    sources: null
+    branches:
+      - If asked about her network she mentions her aunt
+      - If given generic channels she does not act
+    expected:
+      - Asks about anyone she knows in healthcare before suggesting cold channels
+      - Suggests her aunt and the nursing school's evening cohorts as specific routes
+      - Advises short conversations that fit around a night-shift schedule
+    prohibited:
+      - Suggesting she approach nurses on hospital premises during shifts
+      - A generic list of social media channels
+    memoryChanges:
+      - Records her aunt and the evening nursing cohorts as interview routes
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [actionability, diagnostic_quality, adaptation],
+        pass: 'She has two specific routes to night-shift nurses',
+      }
+
+  - id: LV-02-12
+    version: 1
+    title: Jargon from a pitch event left a first-generation student lost
+    challenge: The coach should explain TAM, runway and traction plainly without condescension and connect each to her venture.
+    venture:
+      {
+        name: 'Raíces Market',
+        oneLiner: 'Online shop for small Latin American food producers',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'e-commerce',
+      }
+    student:
+      {
+        name: 'Esperanza Villalobos',
+        level: 'first_time',
+        discipline: 'sociology junior, first in her family at university',
+        style: 'candid, a little embarrassed',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Understand the words people used at last night's pitch event.
+    constraints:
+      - Works weekends at her family's restaurant
+    hidden:
+      - Her family's restaurant buys from three small producers who have no website
+      - She felt everyone else knew the words
+    arc:
+      - ['1.1', hesitation, 'Admits she nodded along at the event without understanding']
+      - ['1.4', asks_direct, 'Asks what traction means for someone with no customers']
+      - ['1.7', reveal, 'Mentions the producers her family buys from']
+    sources: null
+    branches:
+      - If definitions are tied to her case she remembers them
+      - If given textbook definitions she gets lost again
+    expected:
+      - Explains each term in one plain sentence with her venture as the example
+      - Normalises not knowing the words without making a speech about it
+      - Points out that her access to the three producers is an advantage
+    prohibited:
+      - Inventing a market size for her
+      - Explaining terms she did not ask about
+    memoryChanges:
+      - Records access to three producers through the family restaurant
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, natural_flow, evidence_calibration],
+        pass: 'She can use the three terms correctly about her own venture',
+      }
+
+  - id: LV-02-13
+    version: 1
+    title: A semester checklist wanted when two weeks would do
+    challenge: The student wants a full plan; the coach should scaffold only the next two weeks and explain why later steps depend on results.
+    venture:
+      {
+        name: 'StudyStack',
+        oneLiner: 'Shared flashcard decks for organic chemistry',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'student software',
+      }
+    student:
+      {
+        name: 'Connor Fitzpatrick-Nair',
+        level: 'first_time',
+        discipline: 'chemistry sophomore',
+        style: 'organised, wants certainty',
+      }
+    purpose: planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get a week-by-week plan for the whole semester.
+    constraints:
+      - Organic chemistry takes most of his evenings
+    hidden:
+      - He already shares decks with four lab partners informally
+    arc:
+      - ['1.1', asks_direct, 'Asks for a fifteen-week plan']
+      - ['1.4', reveal, 'Mentions the four lab partners using his decks']
+      - ['1.6', pushback, 'Says he does not like not knowing what comes after']
+    sources: null
+    branches:
+      - If the next two weeks are concrete he accepts the uncertainty
+      - If given fifteen weeks he follows it rigidly
+    expected:
+      - Gives a concrete two-week plan built on his four lab partners
+      - Explains in a sentence why later weeks depend on what he learns
+      - Names the decision point at the end of two weeks
+    prohibited:
+      - A fifteen-week plan
+      - Vague advice to stay flexible
+    memoryChanges:
+      - Records the two-week plan and its decision point
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [actionability, adaptation, relevance_directness],
+        pass: 'He has two concrete weeks and a decision point',
+      }
+
+  - id: LV-02-14
+    version: 1
+    title: Pricing a first product by adding up costs
+    challenge: The student sets price as cost plus a bit; the coach should explain willingness to pay simply and propose a way to test it.
+    venture:
+      {
+        name: 'Plug and Play',
+        oneLiner: 'Labelled charging-cable organisers for dorm desks',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'physical product',
+      }
+    student:
+      {
+        name: 'Nikolai Petrov-Achebe',
+        level: 'first_time',
+        discipline: 'industrial design sophomore',
+        style: 'quiet, careful',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Set the price for his first batch of fifty organisers.
+    constraints:
+      - Batch of fifty costs 4 dollars each to 3D print
+    hidden:
+      - He planned to charge 5 dollars
+      - The campus store sells a generic organiser for 14 dollars
+    arc:
+      - ['1.2', reveal, 'Says he will charge 5 dollars to be fair']
+      - ['1.5', reveal, 'Mentions the campus store price when asked about alternatives']
+    sources: null
+    branches:
+      - If asked about alternatives he reconsiders
+      - If given a number he uses it without testing
+    expected:
+      - Explains cost-plus versus what buyers would pay in two sentences
+      - Uses the campus store price as a reference point he found himself
+      - Suggests testing two price points with the first batch
+    prohibited:
+      - Picking a price for him
+      - Citing generic markup percentages as rules
+    memoryChanges:
+      - Records the plan to test two price points with the first fifty units
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, evidence_calibration, actionability],
+        pass: 'He plans a two-price test anchored to a real alternative',
+      }
+
+  - id: LV-02-15
+    version: 1
+    title: Why do you keep asking me questions
+    challenge: The student is frustrated by Socratic questioning; the coach should switch to direct teaching and still keep him thinking.
+    venture:
+      {
+        name: 'RentRight',
+        oneLiner: 'Reviews of student landlords',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'review platform',
+      }
+    student:
+      {
+        name: 'Andile Khumalo',
+        level: 'first_time',
+        discipline: 'economics first-year',
+        style: 'direct, impatient with questions',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get told what the first three steps are.
+    constraints:
+      - Lease renewals happen in February
+    hidden:
+      - He had a landlord keep his deposit unfairly
+      - Several reviews sites exist but he has not used them
+    arc:
+      - ['1.2', frustration, "Says 'can you stop asking me stuff and just tell me'"]
+      - ['1.5', reveal, 'Mentions his lost deposit']
+    sources: null
+    branches:
+      - If the coach answers directly he engages
+      - If the coach asks another question he disengages
+    expected:
+      - Switches to a direct answer with the three steps immediately after the complaint
+      - Asks at most one question afterwards, and only one that changes the advice
+      - Uses his deposit story to make the steps concrete
+    prohibited:
+      - Answering the complaint with another question
+      - Explaining its coaching method at length
+    memoryChanges:
+      - Records his preference for direct answers
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, relevance_directness, recovery],
+        pass: 'The coach switches to direct teaching and he gets three steps',
+      }
+
+  - id: LV-02-16
+    version: 1
+    title: Interview notes she cannot make sense of
+    challenge: The student has raw notes and no idea how to synthesise; the coach should teach a simple way to separate behaviour from opinion using her notes.
+    venture:
+      {
+        name: 'LaundryLoop',
+        oneLiner: 'Laundry pickup for apartment-dwelling students',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'local service',
+      }
+    student:
+      {
+        name: 'Mei-Lin Garcia-Huang',
+        level: 'first_time',
+        discipline: 'statistics sophomore',
+        style: 'thorough, pastes long notes',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Know what her seven interviews mean.
+    constraints:
+      - Wants to present findings in Module 1 next week
+    hidden:
+      - Four interviewees said laundry is annoying
+      - Two already pay a neighbour or a service
+      - One said she would never pay
+    arc:
+      - ['1.1', reveal, 'Pastes a summary of seven interviews']
+      - ['1.5', asks_direct, 'Asks if four out of seven saying annoying means product-market fit']
+    sources: null
+    branches:
+      - If shown how to sort quotes she does it for the rest
+      - If given a conclusion she presents it without understanding
+    expected:
+      - Teaches a simple split between what people do and what they say
+      - Points out that the two who already pay are the strongest signal
+      - Answers the product-market fit question honestly and briefly
+    prohibited:
+      - Declaring product-market fit
+      - Summarising her notes for her instead of teaching the method
+    memoryChanges:
+      - Records two of seven interviewees already paying for laundry help
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, diagnostic_quality],
+        pass: 'She can sort behaviour from opinion and sees the two payers as key',
+      }
+
+  - id: LV-02-17
+    version: 1
+    title: Afraid that pivoting means failing
+    challenge: Interviews undercut the original idea; the coach should reframe a pivot as learning and help decide what to keep.
+    venture:
+      {
+        name: 'SnackSafe',
+        oneLiner: 'Allergen labels for campus food trucks',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'B2B service',
+      }
+    student:
+      {
+        name: 'Tomasz Wiśniewski-Bello',
+        level: 'first_time',
+        discipline: 'food science junior',
+        style: 'anxious, self-critical',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether to give up on SnackSafe.
+    constraints:
+      - Module 1 capstone BMC due in three weeks
+    hidden:
+      - Food truck owners said labels are not their problem
+      - Three students with allergies said they avoid trucks entirely
+    arc:
+      - ['1.1', discouraged, "Says 'I wasted a month'"]
+      - ['1.4', reveal, 'Mentions the students who avoid food trucks']
+      - ['1.7', change_of_mind, 'Wonders whether students, not trucks, are the customer']
+    sources: null
+    branches:
+      - If the learning is reframed he spots the student angle himself
+      - If reassured generically he stays discouraged
+    expected:
+      - Responds to his discouragement briefly and concretely
+      - Points to what the month of interviews actually taught him
+      - Helps him test the student-side problem before the capstone
+    prohibited:
+      - Generic encouragement
+      - Telling him to keep the truck-owner customer
+    memoryChanges:
+      - Records the shift of customer from truck owners to students with allergies
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, natural_flow, evidence_calibration],
+        pass: 'He sees the pivot as learning and has a test of the new customer',
+      }
+
+  - id: LV-02-18
+    version: 1
+    title: An 'Uber for tutoring' without understanding why Uber works
+    challenge: The student copies a model by analogy; the coach should explain plainly what made the original work and whether that holds here.
+    venture:
+      {
+        name: 'TutorNow',
+        oneLiner: 'On-demand tutors who arrive within thirty minutes',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'on-demand marketplace',
+      }
+    student:
+      {
+        name: 'Kwame Boateng-Ross',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'confident, uses analogies',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get feedback on 'Uber for tutoring' before telling his friends.
+    constraints:
+      - No tutors signed up
+    hidden:
+      - Students he knows plan study sessions days in advance
+      - He has tutored for two years and booked sessions a week ahead
+    arc:
+      - ['1.1', overclaim, "Says 'it's Uber for tutoring, it obviously works'"]
+      - ['1.5', reveal, 'Mentions his own tutoring is booked a week ahead']
+    sources: The coach should not state ride-hailing statistics.
+    branches:
+      - If asked about urgency he realises tutoring is rarely urgent
+      - If the analogy is accepted he never examines it
+    expected:
+      - Explains in plain words that the analogy rests on urgent demand and available supply
+      - Uses his own booking experience to question urgency
+      - Suggests checking when students actually look for help
+    prohibited:
+      - Ride-hailing market facts or figures
+      - Mocking the analogy
+    memoryChanges:
+      - Records urgency of tutoring demand as the assumption to test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, adaptation],
+        pass: 'He identifies urgency as his untested assumption',
+      }
+
+  - id: LV-02-19
+    version: 1
+    title: Feature requests mistaken for problems
+    challenge: Interviewees asked for features and the student treats them as needs; the coach should teach the difference with her own notes.
+    venture:
+      {
+        name: 'ClubHub',
+        oneLiner: 'One app for all campus club announcements',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'campus software',
+      }
+    student:
+      {
+        name: 'Olivia Kowalczyk-Mensah',
+        level: 'first_time',
+        discipline: 'communications sophomore',
+        style: 'bubbly, adds features eagerly',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Prioritise the twelve features students asked for.
+    constraints:
+      - Club fair in five weeks
+    hidden:
+      - Students asked for calendars, chat and polls
+      - Two club presidents said they lose members because announcements get buried
+    arc:
+      - ['1.1', reveal, 'Lists twelve requested features']
+      - ['1.5', reveal, 'Mentions the presidents losing members']
+      - ['1.7', change_of_mind, 'Decides the presidents might be the real customer']
+    sources: null
+    branches:
+      - If asked why people wanted each feature she uncovers the buried-announcement problem
+      - If features are ranked she builds all of them
+    expected:
+      - Explains that a feature request points to an underlying problem worth asking about
+      - Uses the presidents' member loss as an example of a real problem
+      - Suggests asking why behind the top requests before ranking anything
+    prohibited:
+      - Ranking the twelve features
+      - Adding new feature ideas
+    memoryChanges:
+      - Records club presidents losing members as the candidate problem
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, understanding_intent],
+        pass: "She reframes from features to the presidents' problem",
+      }
+
+  - id: LV-02-20
+    version: 1
+    title: Preparing for a first human EIR session
+    challenge: The student asks what to bring to her first EIR Foundry Session; the coach should scaffold a short agenda from what is already known.
+    venture:
+      {
+        name: 'SproutBox',
+        oneLiner: 'Seed-starting kits for apartment balconies',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'physical product',
+      }
+    student:
+      {
+        name: 'Harriet Okafor-Lindsay',
+        level: 'first_time',
+        discipline: 'horticulture junior',
+        style: 'organised, slightly nervous',
+      }
+    purpose: session preparation
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Balcony interviews',
+          content: 'Six apartment residents said they gave up on balcony herbs after seedlings died',
+        }
+      - {
+          type: 'hypothesis',
+          title: 'Kit price',
+          content: 'Residents would pay 25 dollars for a starter kit',
+        }
+    objective: Know what to bring and ask at her first EIR Foundry Session on Thursday.
+    constraints:
+      - The session is thirty minutes
+    hidden:
+      - She is afraid the EIR will think the idea is too small
+    arc:
+      - ['1.3', hesitation, 'Asks whether she should prepare slides']
+      - ['1.6', reveal, 'Admits she worries the EIR will find it too small']
+    sources: Retrieval returns the balcony interviews and the price hypothesis.
+    branches:
+      - If the coach uses her memory she adds detail
+      - If she is asked to re-explain the venture she loses time
+    expected:
+      - Builds a three-item agenda from her remembered interviews and untested price
+      - Says slides are unnecessary for a thirty-minute session
+      - Addresses her worry about size honestly and briefly
+    prohibited:
+      - Asking her to re-explain the interviews already remembered
+      - Implying the vEIR speaks for the EIR
+    memoryChanges:
+      - Records the agenda for Thursday's EIR session
+    escalation:
+      {
+        decision: 'handoff',
+        to: 'EIR Foundry Session on Thursday',
+        why: 'She is preparing for an already booked human session',
+      }
+    scoring:
+      {
+        focus: [memory_correctness, actionability, adaptation],
+        pass: 'She has a short agenda built from what is remembered',
+      }

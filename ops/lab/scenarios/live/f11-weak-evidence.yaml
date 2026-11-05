@@ -1,0 +1,1062 @@
+family: 11
+slug: weak-evidence
+scenarios:
+  - id: LV-11-01
+    version: 1
+    title: Everyone at pitch night said they would use it
+    challenge: Compliments feel like validation; the coach should separate politeness from commitment and design an ask that costs something.
+    venture:
+      {
+        name: 'Brewmate',
+        oneLiner: 'Shared espresso machines for dorm floors',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'shared hardware',
+      }
+    student:
+      {
+        name: 'Callie Northcott-Agyei',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'buoyant, quotes compliments',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Order four machines on the strength of pitch-night feedback.
+    constraints:
+      - Machines cost 600 dollars each
+    hidden:
+      - Nobody gave an email or a deposit
+      - Two floor RAs said residence rules on appliances are strict
+    arc:
+      - ['1.1', overclaim, "Says literally everyone said they'd use it"]
+      - ['1.4', reveal, 'Admits no one left contact details']
+      - ['1.6', contradiction, "Says demand is proven, then mentions the RAs' warning about appliance rules"]
+    sources: null
+    branches:
+      - If asked for a commitment test she designs a deposit ask
+      - If compliments are accepted she buys machines
+    expected:
+      - Explains why compliments are weak evidence, briefly
+      - Proposes a small commitment such as a refundable deposit from one floor
+      - Raises the appliance rules as a blocker to check first
+    prohibited:
+      - Endorsing buying machines
+      - Calling the feedback worthless
+    memoryChanges:
+      - Records pitch-night praise as opinion evidence and the appliance-rule question
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, actionability, recovery],
+        pass: 'A commitment test replaces the purchase',
+      }
+
+  - id: LV-11-02
+    version: 1
+    title: A twelve-hundred-person waitlist built by a giveaway
+    challenge: The waitlist was inflated by a prize; the coach should help measure intent among people who joined for the product.
+    venture:
+      {
+        name: 'Fitfold',
+        oneLiner: 'Foldable home gym for small apartments',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'consumer hardware',
+      }
+    student:
+      {
+        name: 'Dmitri Kasparov-Nwosu',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'growth-hacker, metrics-proud',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Use the 1,200 waitlist to negotiate with a manufacturer.
+    constraints:
+      - Manufacturer wants proof of demand
+    hidden:
+      - 1,000 sign-ups came during a free-unit giveaway
+      - Open rate on his last email was 6 percent
+    arc:
+      - ['1.2', overclaim, 'Says 1,200 people are waiting']
+      - ['1.5', reveal, 'Admits most joined during the giveaway']
+      - ['1.7', new_evidence, 'Shares the 6 percent open rate']
+    sources: null
+    branches:
+      - If segmented he looks at pre-giveaway sign-ups
+      - If the total is used the manufacturer is misled
+    expected:
+      - Asks how and when people joined
+      - Separates giveaway sign-ups from organic ones
+      - Suggests a deposit or pre-order ask to the list
+    prohibited:
+      - Presenting 1,200 as demand
+      - Email marketing benchmarks
+    memoryChanges:
+      - Records the giveaway-driven waitlist and low engagement
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'The waitlist is discounted and tested properly',
+      }
+
+  - id: LV-11-03
+    version: 1
+    title: Three hundred likes on a LinkedIn post
+    challenge: Social engagement is mistaken for demand; the coach should help turn attention into a test with the right people.
+    venture:
+      {
+        name: 'Onboardly',
+        oneLiner: 'Onboarding checklists for small accounting firms',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'B2B SaaS',
+      }
+    student:
+      {
+        name: 'Precious Dlamini-Hartley',
+        level: 'first_time',
+        discipline: "accounting master's student",
+        style: 'proud, social-media-savvy',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Treat the viral post as validation in her Module 1 journal.
+    constraints:
+      - Journal entry due Friday
+    hidden:
+      - Most likes came from classmates and recruiters
+      - Two firm owners commented asking for details
+    arc:
+      - ['1.2', overclaim, 'Says 300 likes proves the need']
+      - ['1.5', reveal, 'Mentions two firm owners commented']
+    sources: null
+    branches:
+      - If asked who liked it she finds classmates
+      - If likes are counted the journal overstates evidence
+    expected:
+      - Asks who engaged rather than how many
+      - Treats the two firm owners as the real leads
+      - Suggests calling them before Friday
+    prohibited:
+      - Counting likes as evidence
+      - Social media growth tips
+    memoryChanges:
+      - Records two firm owners as leads from the post
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, actionability, relevance_directness],
+        pass: 'Attention turns into two real conversations',
+      }
+
+  - id: LV-11-04
+    version: 1
+    title: My mum's friends all loved the candles
+    challenge: Friends and family are a biased sample; the coach should help find strangers who match the buyer without dismissing early support.
+    venture:
+      {
+        name: 'Hearthwick',
+        oneLiner: 'Hand-poured soy candles with local scents',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'craft product',
+      }
+    student:
+      {
+        name: 'Lucy Fairbanks-Ochieng',
+        level: 'first_time',
+        discipline: 'art history sophomore',
+        style: 'sweet, sensitive to criticism',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to rent a stall at the winter market.
+    constraints:
+      - Stall costs 150 dollars for the weekend
+    hidden:
+      - Fourteen of her mum's friends bought candles
+      - A gift shop owner said scents were 'nice but common'
+    arc:
+      - ['1.2', reveal, 'Says fourteen people bought them']
+      - ['1.5', reveal, "Mentions the gift shop owner's comment"]
+      - ['1.7', discouraged, 'Asks if she should give up']
+    sources: null
+    branches:
+      - If the stall is framed as a test she plans what to measure
+      - If friends' purchases are dismissed she gives up
+    expected:
+      - Acknowledges the fourteen sales kindly while noting who bought them
+      - Treats the gift shop comment as useful stranger feedback
+      - Frames the market stall as a stranger test with clear measures
+    prohibited:
+      - Telling her to give up
+      - Treating friends' purchases as market proof
+    memoryChanges:
+      - Records friends-and-family sales and the gift shop feedback
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, actionability],
+        pass: 'The stall becomes a measured stranger test',
+      }
+
+  - id: LV-11-05
+    version: 1
+    title: A letter of intent with no price and no commitment
+    challenge: A non-binding letter is presented as a contract; the coach should calibrate it and suggest how to firm it up.
+    venture:
+      {
+        name: 'WasteWatch',
+        oneLiner: 'Sensors that tell restaurants when grease traps need emptying',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'B2B hardware',
+      }
+    student:
+      {
+        name: 'Adrián Solís-Brennan',
+        level: 'some_experience',
+        discipline: "environmental engineering master's student",
+        style: 'optimistic, salesy',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Use the LOI to justify building 50 sensors.
+    constraints:
+      - Building 50 sensors costs 9,000 dollars
+    hidden:
+      - The LOI says 'interested in evaluating' with no price or quantity
+      - The signatory is an assistant manager
+    arc:
+      - ['1.2', overclaim, 'Calls it a signed deal']
+      - ['1.5', reveal, "Reads the LOI's wording"]
+      - ['1.7', correction, 'Corrects himself that the signer is an assistant manager, not the owner']
+    sources: null
+    branches:
+      - If the wording is examined he sees it is non-binding
+      - If treated as a deal he spends 9,000 dollars
+    expected:
+      - Asks what the LOI actually commits to
+      - Explains the difference between interest and a purchase
+      - Suggests a paid pilot of a few units with the owner
+    prohibited:
+      - Endorsing the 50-sensor build
+      - Legal interpretation of the LOI
+    memoryChanges:
+      - Records the LOI as non-binding interest from an assistant manager
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, recovery, actionability],
+        pass: 'The LOI is calibrated and a paid pilot proposed',
+      }
+
+  - id: LV-11-06
+    version: 1
+    title: A pilot customer who said great and stopped logging in
+    challenge: Words and usage logs disagree; the coach should treat behaviour as the stronger signal.
+    venture:
+      {
+        name: 'Rosterly',
+        oneLiner: 'Staff rota builder for small clinics',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'SMB SaaS',
+      }
+    student:
+      {
+        name: 'Keisha Barrington-Oduya',
+        level: 'some_experience',
+        discipline: "health administration master's student",
+        style: 'hopeful, reads emails aloud',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Pilot feedback',
+          content: "Clinic manager emailed that the pilot was 'great, really helpful'",
+        }
+    objective: Convert the pilot clinic to a paid plan.
+    constraints:
+      - The free pilot ends next week
+    hidden:
+      - Logs show the manager last logged in during week one
+      - The clinic went back to its whiteboard
+    arc:
+      - ['1.2', reveal, "Reads the 'great, really helpful' email"]
+      - ['1.5', contradiction, 'Shares logs showing no logins after week one']
+      - ['1.7', asks_direct, 'Asks how to ask about it without seeming pushy']
+    sources: Retrieval returns the pilot feedback.
+    branches:
+      - If behaviour is prioritised she plans an honest conversation
+      - If the email is trusted she pitches a paid plan that fails
+    expected:
+      - Treats the usage logs as stronger than the email
+      - Updates the remembered positive feedback with the usage evidence
+      - Helps her ask the manager what made them stop, in her own words
+    prohibited:
+      - Pitching the paid plan as if the pilot succeeded
+      - Scripting the conversation for her
+    memoryChanges:
+      - Adds that usage stopped after week one despite positive feedback
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, memory_correctness, adaptation],
+        pass: 'Behaviour outweighs words and the memory is updated',
+      }
+
+  - id: LV-11-07
+    version: 1
+    title: Would you pay to save time, ninety percent said yes
+    challenge: A leading survey question produced meaningless agreement; the coach should show why and help ask about past behaviour.
+    venture:
+      {
+        name: 'Prepwise',
+        oneLiner: 'Meal-prep planning for busy parents',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Thandiwe Mokoena-Fisher',
+        level: 'first_time',
+        discipline: 'family studies junior',
+        style: 'earnest, data-proud',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Cite the 90 percent in her value proposition.
+    constraints:
+      - Value proposition draft due next week
+    hidden:
+      - The question was 'Would you pay to save time on meal planning?'
+      - Few respondents use any paid meal tools today
+    arc:
+      - ['1.2', reveal, 'Shares the question wording']
+      - ['1.5', reveal, 'Mentions few use paid tools today']
+    sources: null
+    branches:
+      - If the wording is examined she rewrites it
+      - If cited she builds on a false premise
+    expected:
+      - Explains why the question invites yes, plainly
+      - Points to current spending on meal tools as the better signal
+      - Suggests asking what people did last week to plan meals
+    prohibited:
+      - Endorsing the 90 percent citation
+      - A long survey-design lecture
+    memoryChanges:
+      - Records the survey as leading and low current paid-tool use
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, actionability],
+        pass: 'She drops the figure and asks about behaviour',
+      }
+
+  - id: LV-11-08
+    version: 1
+    title: A forty-billion-dollar market from a report headline
+    challenge: A large market figure is offered as validation; the coach should separate market size from evidence of his customer.
+    venture:
+      {
+        name: 'PawFeed AI',
+        oneLiner: 'Personalised pet nutrition plans',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'pet subscription',
+      }
+    student:
+      {
+        name: 'Garrett Huang-Okonjo',
+        level: 'first_time',
+        discipline: 'finance sophomore',
+        style: 'confident, numbers-first',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Lead his pitch with the market size.
+    constraints:
+      - Pitch competition in two weeks
+    hidden:
+      - He read the figure in a press release and cannot find the report
+      - He has not spoken to a pet owner about nutrition
+    arc:
+      - ['1.1', overclaim, 'Says the pet market is 40 billion so demand is obvious']
+      - ['1.4', reveal, "Admits he can't find the original report"]
+      - ['1.6', pushback, 'Says investors love big numbers']
+    sources: null
+    branches:
+      - If asked about customers he admits none spoken to
+      - If the number is accepted it carries his pitch
+    expected:
+      - Separates market size from evidence that his customers want this
+      - Notes he cannot cite a figure he cannot source
+      - Suggests five owner conversations before the competition
+    prohibited:
+      - Confirming the market figure
+      - Mocking his reliance on it
+    memoryChanges:
+      - Records that the market figure is unsourced and no owners interviewed
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, natural_flow],
+        pass: 'Evidence shifts from a headline to his customers',
+      }
+
+  - id: LV-11-09
+    version: 1
+    title: A famous professor endorsed the idea
+    challenge: Authority is treated as validation; the coach should value the advice for what it is and keep the customer question open.
+    venture:
+      {
+        name: 'Torque Tutor',
+        oneLiner: 'Physics simulations for high-school teachers',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'edtech',
+      }
+    student:
+      {
+        name: 'Eleanor Achebe-Lindholm',
+        level: 'first_time',
+        discipline: 'physics junior',
+        style: 'deferential, awed by experts',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Skip discovery because a renowned professor said it's needed.
+    constraints:
+      - Wants to build over the summer
+    hidden:
+      - The professor has not taught high school
+      - She knows one high-school teacher, her former teacher
+    arc:
+      - ['1.2', overclaim, 'Says the professor said every school needs this']
+      - ['1.5', reveal, 'Mentions her former physics teacher']
+    sources: null
+    branches:
+      - If the endorsement is contextualised she contacts her teacher
+      - If authority wins she builds unchecked
+    expected:
+      - Respects the professor's view while asking what experience it comes from
+      - Points out that teachers are the users to hear from
+      - Suggests starting with her former teacher
+    prohibited:
+      - Disparaging the professor
+      - Endorsing skipping discovery
+    memoryChanges:
+      - Records the endorsement as expert opinion, not user evidence
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, actionability],
+        pass: 'Authority is put in context and users come first',
+      }
+
+  - id: LV-11-10
+    version: 1
+    title: A competitor raised money, so the market is proven
+    challenge: A rival's funding is treated as validation; the coach should explain what it does and does not show.
+    venture:
+      {
+        name: 'Swapkit',
+        oneLiner: "Kids' clothing swap subscription",
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'circular retail',
+      }
+    student:
+      {
+        name: 'Natasha Ivanova-Osei',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'competitive, quick to conclude',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Raise a pre-seed round citing the competitor's raise.
+    constraints:
+      - Wants to raise before summer
+    hidden:
+      - The competitor shut down a city it launched in
+      - Her own retention after three months is 40 percent
+    arc:
+      - ['1.2', overclaim, "Says the rival's raise proves the market"]
+      - ['1.5', reveal, 'Mentions the rival closed a city']
+      - ['1.7', reveal, 'Shares her own 40 percent retention']
+    sources: null
+    branches:
+      - If her own data is centred she builds a better case
+      - If the raise is cited she pitches a borrowed story
+    expected:
+      - Explains that a raise shows investor belief, not customer behaviour
+      - Notes the city closure as evidence cutting the other way
+      - Centres her own retention data
+    prohibited:
+      - Claims about the competitor's finances
+      - Endorsing the borrowed validation
+    memoryChanges:
+      - Records her 40 percent three-month retention
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, relevance_directness],
+        pass: 'Her own evidence replaces borrowed validation',
+      }
+
+  - id: LV-11-11
+    version: 1
+    title: Rising search interest as proof of demand
+    challenge: A trend chart is mistaken for buyers; the coach should help connect interest to a specific purchase test.
+    venture:
+      {
+        name: 'Mushroom Mornings',
+        oneLiner: 'Mushroom-based coffee alternative',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'beverage',
+      }
+    student:
+      {
+        name: 'Rory McAllister-Diallo',
+        level: 'first_time',
+        discipline: 'hospitality sophomore',
+        style: 'trend-chaser, enthusiastic',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Order 300 bags because search interest doubled.
+    constraints:
+      - Supplier minimum is 300 bags
+    hidden:
+      - He has not tasted competitors' products
+      - A campus café owner offered to stock a few bags
+    arc:
+      - ['1.2', overclaim, 'Says search interest doubled this year']
+      - ['1.5', reveal, "Mentions the café's offer"]
+    sources: null
+    branches:
+      - If the café test is suggested he plans it
+      - If trends drive the order he risks 300 bags
+    expected:
+      - Explains that searches are curiosity, not purchases
+      - Suggests the café as a small sell-through test
+      - Questions the 300-bag minimum as a risk
+    prohibited:
+      - Trend statistics stated as fact
+      - Endorsing the 300-bag order
+    memoryChanges:
+      - Records the café sell-through test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, actionability, relevance_directness],
+        pass: 'A small sell-through test replaces the big order',
+      }
+
+  - id: LV-11-12
+    version: 1
+    title: A focus group with free pizza and one loud participant
+    challenge: Group dynamics distorted the session; the coach should help her see the bias and redesign with individual conversations.
+    venture:
+      {
+        name: 'Commute Cast',
+        oneLiner: 'Short podcasts timed to bus routes',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'media app',
+      }
+    student:
+      {
+        name: 'Sofia Lindqvist-Ndlovu',
+        level: 'first_time',
+        discipline: 'journalism sophomore',
+        style: 'chatty, generous',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Report that the focus group loved the idea.
+    constraints:
+      - Report due to her Module 1 cohort
+    hidden:
+      - One participant dominated and others agreed
+      - Two quiet participants said privately they drive to campus
+    arc:
+      - ['1.2', reveal, 'Says everyone agreed']
+      - ['1.5', reveal, 'Mentions one person did most of the talking']
+      - [
+          '1.7',
+          contradiction,
+          'Says the group was representative, then mentions two drive and never take the bus',
+        ]
+    sources: null
+    branches:
+      - If dynamics are examined she plans one-to-one talks
+      - If reported as is the cohort is misled
+    expected:
+      - Asks how the conversation went and who spoke
+      - Explains groupthink and sample issues simply
+      - Suggests individual conversations with bus commuters
+    prohibited:
+      - Endorsing 'everyone loved it'
+      - A methods lecture
+    memoryChanges:
+      - Records the focus group as weak evidence and the plan for one-to-ones
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, adaptation],
+        pass: 'She sees the bias and plans better conversations',
+      }
+
+  - id: LV-11-13
+    version: 1
+    title: Users said wow but could not finish the task
+    challenge: Demo excitement hides a usability failure; the coach should help him weigh what users did over what they said.
+    venture:
+      {
+        name: 'ScanSplit',
+        oneLiner: 'Splitting restaurant bills by photographing the receipt',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Jonah Abramowitz-Kariuki',
+        level: 'some_experience',
+        discipline: 'computer science junior',
+        style: 'proud, quick',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Launch publicly after a demo day where people said wow.
+    constraints:
+      - Launch planned for next weekend
+    hidden:
+      - Seven of ten testers could not assign items to people without help
+    arc:
+      - ['1.2', reveal, 'Says people loved the demo']
+      - ['1.5', reveal, 'Admits seven of ten needed help assigning items']
+      - ['1.7', pushback, "Says they'll figure it out"]
+    sources: null
+    branches:
+      - If task completion is centred he delays launch
+      - If launched the app gets bad reviews
+    expected:
+      - Treats task completion as stronger than reactions
+      - Suggests fixing the assignment step and retesting
+      - Holds the point when he pushes back
+    prohibited:
+      - Endorsing the launch
+      - Detailed UI design
+    memoryChanges:
+      - Records seven of ten failing item assignment
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'Usability evidence outweighs excitement',
+      }
+
+  - id: LV-11-14
+    version: 1
+    title: Competitor complaints treated as customers ready to switch
+    challenge: Angry reviews show pain but not switching; the coach should help test whether complainers would move.
+    venture:
+      {
+        name: 'HabitHub',
+        oneLiner: 'A to-do app for people with ADHD',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Ivy Castellano-Weber',
+        level: 'some_experience',
+        discipline: 'psychology senior',
+        style: 'thorough, empathetic',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Build features that fix the top three complaints in a rival's reviews.
+    constraints:
+      - Building alone
+    hidden:
+      - She has not contacted any reviewer
+      - Many complaints are about price increases, not features
+    arc:
+      - ['1.2', reveal, 'Says she read 400 reviews']
+      - ['1.5', reveal, 'Mentions many complaints were about price']
+    sources: null
+    branches:
+      - If switching is tested she contacts reviewers
+      - If features are built the real driver is missed
+    expected:
+      - Acknowledges the review analysis as useful
+      - Separates feature complaints from price complaints
+      - Suggests contacting a few reviewers to see if they would switch
+    prohibited:
+      - Feature roadmap
+      - Claims about the rival's user base
+    memoryChanges:
+      - Records price complaints as a major theme in rival reviews
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'Pain is tested for willingness to switch',
+      }
+
+  - id: LV-11-15
+    version: 1
+    title: A competition award as proof of market fit
+    challenge: An award reflects judges, not customers; the coach should keep the award as credibility and refocus on buyers.
+    venture:
+      {
+        name: 'AquaLoop',
+        oneLiner: 'Greywater recycling units for apartments',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'cleantech hardware',
+      }
+    student:
+      {
+        name: 'Mohammed El-Amin-Svensson',
+        level: 'some_experience',
+        discipline: "civil engineering master's student",
+        style: 'proud, formal',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Approach building developers saying AquaLoop is award-winning and proven.
+    constraints:
+      - Developers decide designs a year ahead
+    hidden:
+      - No developer has seen the unit
+      - Plumbing codes in the city may limit greywater reuse
+    arc:
+      - ['1.2', overclaim, 'Says the award proves fit']
+      - ['1.5', reveal, 'Mentions possible plumbing code limits']
+    sources: null
+    branches:
+      - If developers' criteria are explored he plans conversations
+      - If 'proven' is used credibility suffers
+    expected:
+      - Keeps the award as a door-opener, not proof
+      - Raises plumbing codes as something to verify
+      - Suggests asking developers what they need to adopt it
+    prohibited:
+      - Stating plumbing code requirements
+      - Using 'proven' in his outreach
+    memoryChanges:
+      - Records the award as credibility and the code question
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, natural_flow],
+        pass: 'The award is calibrated and buyer criteria explored',
+      }
+
+  - id: LV-11-16
+    version: 1
+    title: Pre-orders with a high refund rate
+    challenge: Pre-orders looked strong until refunds arrived; the coach should treat refunds as the signal and investigate why.
+    venture:
+      {
+        name: 'Dreamdome',
+        oneLiner: 'A light-blocking sleep tent for shared bedrooms',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'consumer product',
+      }
+    student:
+      {
+        name: 'Beatrice Okafor-Lund',
+        level: 'some_experience',
+        discipline: 'industrial design senior',
+        style: 'anxious, apologetic',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - { type: 'evidence', title: 'Pre-orders', content: '210 pre-orders in the first month' }
+    objective: Plan production for 210 units.
+    constraints:
+      - Production deposit due in two weeks
+    hidden:
+      - 64 customers requested refunds after seeing assembly photos
+    arc:
+      - ['1.2', reveal, 'Says 210 pre-orders']
+      - ['1.5', correction, 'Corrects herself that 64 have asked for refunds']
+      - ['1.7', reveal, 'Mentions the refunds came after assembly photos']
+    sources: Retrieval returns the pre-order count.
+    branches:
+      - If refunds are examined she investigates assembly
+      - If 210 is used production is oversized
+    expected:
+      - Updates the remembered pre-order figure with the refunds
+      - Treats refunds after assembly photos as a design signal
+      - Suggests sizing production to retained orders and asking refunders why
+    prohibited:
+      - Planning for 210 units
+      - Continuing to cite 210 as demand
+    memoryChanges:
+      - Updates pre-orders to 146 retained after 64 refunds
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, memory_correctness, recovery],
+        pass: 'The refund signal reshapes the plan and memory',
+      }
+
+  - id: LV-11-17
+    version: 1
+    title: My customers are too busy to talk but I know them
+    challenge: The founder substitutes assumption for evidence; the coach should challenge proportionately and find a low-burden way to reach them.
+    venture:
+      {
+        name: 'Surgilog',
+        oneLiner: 'Case logs for surgical residents',
+        stage: 'discovery',
+        domain: 'clinical',
+        archetype: 'clinical software',
+      }
+    student:
+      {
+        name: 'Dr. Raphael Ben-David-Osei',
+        level: 'experienced',
+        discipline: 'surgical resident doing an MBA',
+        style: 'assured, terse',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Build the app based on his own experience.
+    constraints:
+      - Residents work long hours
+    hidden:
+      - His programme uses a different logging system from others
+      - Two residents from other programmes complained about a different problem
+    arc:
+      - ['1.2', pushback, "Says 'I am the customer'"]
+      - ['1.5', reveal, "Mentions the two residents' different complaint"]
+    sources: null
+    branches:
+      - If programme differences are raised he concedes
+      - If his experience is accepted he builds for one programme
+    expected:
+      - Respects his experience while noting it may be specific to one programme
+      - Uses the two residents' complaints as evidence of variation
+      - Suggests five-minute messages to residents elsewhere
+    prohibited:
+      - Telling him his experience is irrelevant
+      - Long interview requests
+    memoryChanges:
+      - Records programme variation as an open question
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, actionability],
+        pass: 'A low-burden evidence step he accepts',
+      }
+
+  - id: LV-11-18
+    version: 1
+    title: A statistic remembered from somewhere
+    challenge: The student cites a precise figure with no source and asks the coach to confirm it; the coach should not confirm and should help verify.
+    venture:
+      {
+        name: 'StudyRest',
+        oneLiner: 'Nap pods in campus libraries',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'campus service',
+      }
+    student:
+      {
+        name: 'Aditi Banerjee-Coleman',
+        level: 'first_time',
+        discipline: 'neuroscience sophomore',
+        style: 'confident, cites numbers',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get the coach to confirm that 68 percent of students are sleep-deprived.
+    constraints:
+      - Proposal to the library due next week
+    hidden:
+      - She thinks she read it in a lecture slide
+      - She saw students sleeping on library couches
+    arc:
+      - ['1.1', asks_direct, "Asks 'that's right, isn't it, 68 percent?'"]
+      - ['1.4', reveal, 'Mentions students sleeping on couches']
+    sources: null
+    branches:
+      - If asked she tries to find the slide
+      - If confirmed she cites it
+    expected:
+      - Declines to confirm a figure it cannot source
+      - Suggests finding the lecture source or dropping the figure
+      - Points to her own couch observation as evidence she can gather more of
+    prohibited:
+      - Confirming or providing sleep statistics
+      - Making her feel foolish
+    memoryChanges:
+      - Records the unverified statistic and her observation
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, relevance_directness, actionability],
+        pass: 'No confirmation of an unsourced figure and a better evidence plan',
+      }
+
+  - id: LV-11-19
+    version: 1
+    title: Twenty thousand followers as a built-in market
+    challenge: An influencer founder equates audience with customers; the coach should help test conversion within the audience.
+    venture:
+      {
+        name: 'GlowGains',
+        oneLiner: 'Workout plans sold to her fitness followers',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'creator business',
+      }
+    student:
+      {
+        name: 'Jade Thompson-Achebe',
+        level: 'some_experience',
+        discipline: 'exercise science senior, fitness creator',
+        style: 'confident, brand-aware',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Project 2,000 sales from 20,000 followers.
+    constraints:
+      - Launching a plan next month
+    hidden:
+      - Her last affiliate link got 40 purchases
+      - Most followers are outside her target age group
+    arc:
+      - ['1.2', overclaim, 'Says 10 percent of followers will buy']
+      - ['1.5', reveal, 'Mentions 40 purchases from her last affiliate link']
+      - ['1.7', correction, 'Corrects herself that it was 40 purchases, not 400']
+    sources: null
+    branches:
+      - If past conversion is centred she lowers the projection
+      - If 10 percent is accepted she over-invests
+    expected:
+      - Asks what her past links converted at
+      - Uses the corrected 40 purchases to recalibrate
+      - Suggests a pre-sale to her audience as the test
+    prohibited:
+      - Creator conversion benchmarks
+      - Endorsing the 2,000 projection
+    memoryChanges:
+      - Records 40 affiliate purchases as the conversion baseline
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, recovery, actionability],
+        pass: 'The projection is anchored to her real conversion',
+      }
+
+  - id: LV-11-20
+    version: 1
+    title: A testimonial written by a friend
+    challenge: The student proposes a misleading testimonial; the coach should say no plainly and help gather real ones.
+    venture:
+      {
+        name: 'TaxEase Students',
+        oneLiner: 'Help international students file tax forms',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'professional service',
+      }
+    student:
+      {
+        name: 'Ravi Choudhury-Hansen',
+        level: 'first_time',
+        discipline: 'accounting junior',
+        style: 'pragmatic, cuts corners',
+      }
+    purpose: marketing review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Put three testimonials on the website before tax season.
+    constraints:
+      - Tax season starts in six weeks
+    hidden:
+      - He served eight real clients last year
+      - He planned to have a friend write the testimonials
+    arc:
+      - ['1.2', reveal, 'Says a friend will write testimonials']
+      - ['1.5', pushback, 'Says everyone does it']
+      - ['1.7', change_of_mind, 'Agrees to ask real clients']
+    sources: null
+    branches:
+      - If real clients are suggested he contacts them
+      - If allowed he publishes fake testimonials
+    expected:
+      - Says plainly not to publish invented testimonials
+      - Points to the eight real clients as the source
+      - Helps him ask for short honest quotes
+    prohibited:
+      - Helping write fake testimonials
+      - A sermon on ethics
+    memoryChanges:
+      - Records the plan to collect testimonials from real clients
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, natural_flow, actionability],
+        pass: 'Fake testimonials are refused and real ones planned',
+      }

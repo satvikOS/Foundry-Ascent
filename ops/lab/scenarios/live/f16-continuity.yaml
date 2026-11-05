@@ -1,0 +1,1132 @@
+family: 16
+slug: continuity
+scenarios:
+  - id: LV-16-01
+    version: 1
+    title: Back after three weeks and expecting not to start over
+    challenge: The opener of a returning session should carry a compact, accurate picture of last time and ask what changed, not re-run intake.
+    venture:
+      {
+        name: 'Bloomline',
+        oneLiner: 'Subscription flowers for small offices',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'B2B subscription',
+      }
+    student:
+      {
+        name: 'Aurelia Fontaine-Mensah',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'busy, values efficiency',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 21, turns: 5, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Get a pilot price agreed with two offices.
+    constraints:
+      - Can only sell on Fridays
+    hidden:
+      - Session one establishes two offices interested and a 60-dollar weekly price idea
+      - Between sessions one office agreed to a four-week trial
+    arc:
+      - ['1.2', reveal, 'Describes the two interested offices and the 60-dollar idea']
+      - ['2.1', reveal, "Opens with 'so, update' expecting the coach to know the context"]
+      - ['2.3', new_evidence, 'Reports one office agreed to a four-week trial']
+      - ['3.2', asks_direct, 'Asks what to measure in week two of the trial']
+    sources: null
+    branches:
+      - If the coach recalls context she goes straight to the update
+      - If asked to re-explain she gets irritated
+    expected:
+      - Opens session two with a short accurate reference to the two offices and the price idea
+      - Does not ask her to re-explain the venture
+      - In session three builds on the trial without recapping everything
+    prohibited:
+      - Re-introducing itself or re-running intake
+      - Reciting the whole history at the start of a session
+    memoryChanges:
+      - Records the four-week trial with one office
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, non_redundancy, natural_flow],
+        pass: 'Each return picks up where they left off',
+      }
+
+  - id: LV-16-02
+    version: 1
+    title: Returning with an experiment that never happened
+    challenge: The commitment is overdue; the coach should ask about it once, without nagging, and help reset it realistically.
+    venture:
+      {
+        name: 'Trailhead Coffee Cart',
+        oneLiner: 'Coffee cart at hiking trailheads',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'mobile food',
+      }
+    student:
+      {
+        name: 'Callum Ferguson-Adebayo',
+        level: 'first_time',
+        discipline: 'recreation management junior',
+        style: 'sheepish, overcommits',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 14, turns: 5, channel: chat }
+      - { gap: 10, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Run a weekend test at one trailhead.
+    constraints:
+      - Weekends are also his shifts at the outdoor store
+    hidden:
+      - He did not run the weekend test because of work shifts
+      - A friend could cover one shift
+    arc:
+      - ['1.4', reveal, 'Commits to a test next weekend']
+      - ['2.2', hesitation, 'Avoids mentioning the test']
+      - ['2.4', reveal, "Admits he didn't run it because of work"]
+      - ['3.1', new_evidence, 'Reports the friend covered and he sold 46 coffees']
+    sources: null
+    branches:
+      - If asked kindly he admits the slip
+      - If nagged he gets defensive
+    expected:
+      - Recalls the commitment and asks about it naturally in session two
+      - Helps reset it around his work schedule without scolding
+      - Draws a conclusion from 46 coffees in session three
+    prohibited:
+      - Scolding or repeated reminders
+      - Forgetting the commitment
+    memoryChanges:
+      - Records the slipped test, the reset, and the 46-coffee result
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, adaptation, evidence_calibration],
+        pass: 'The overdue commitment is handled kindly and tracked',
+      }
+
+  - id: LV-16-03
+    version: 1
+    title: A teammate left between sessions
+    challenge: The situation changed; the coach must update its picture and not refer to the departed teammate's work as ongoing.
+    venture:
+      {
+        name: 'Lumen Labs Tutoring',
+        oneLiner: 'Physics tutoring by graduate students',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Dr. Ifeanyi Okeke-Larsson',
+        level: 'researcher',
+        discipline: 'physics PhD candidate',
+        style: 'calm, matter-of-fact',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 20, turns: 6, channel: chat }
+      - { gap: 14, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Keep tutoring running for the spring term.
+    constraints:
+      - Three tutors in session one
+    hidden:
+      - His cofounder who handled scheduling left for an internship
+    arc:
+      - ['1.2', reveal, 'Describes the team: he tutors, Mei handles scheduling, Sam tutors']
+      - ['2.1', team_change, 'Says Mei has left for an internship']
+      - ['2.4', asks_direct, 'Asks how to handle scheduling now']
+      - ['3.2', reveal, 'Says Sam is now doing scheduling']
+    sources: null
+    branches:
+      - If the update is absorbed the coach plans with two people
+      - If the old team is assumed advice is wrong
+    expected:
+      - Updates the team picture immediately in session two
+      - Never assigns tasks to the departed cofounder afterwards
+      - Uses the new arrangement in session three
+    prohibited:
+      - Referring to Mei as handling scheduling after she left
+      - Asking him to re-explain the team
+    memoryChanges:
+      - Records Mei's departure and Sam taking over scheduling
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, adaptation, actionability],
+        pass: 'The changed team is reflected immediately',
+      }
+
+  - id: LV-16-04
+    version: 1
+    title: What did we decide last time
+    challenge: The student directly asks for last session's decisions; the coach should recall accurately and specifically or say what it is unsure of.
+    venture:
+      {
+        name: 'GreenCrate',
+        oneLiner: 'Reusable delivery crates for local grocers',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'circular logistics',
+      }
+    student:
+      {
+        name: 'Mariam Abdullah-Whitfield',
+        level: 'some_experience',
+        discipline: "supply chain master's student",
+        style: 'organised, checks details',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 7, channel: chat }
+      - { gap: 9, turns: 4, channel: chat }
+      - { gap: 12, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Finalise the crate deposit scheme with two grocers.
+    constraints:
+      - Grocers want a simple scheme
+    hidden:
+      - Session one decides a 5-dollar deposit per crate and a two-grocer pilot in March
+    arc:
+      - ['1.3', reveal, 'Agrees a 5-dollar deposit']
+      - ['1.5', reveal, 'Agrees a two-grocer pilot starting in March']
+      - ['2.1', asks_direct, "Asks 'remind me, what did we decide?'"]
+      - ['3.1', asks_direct, 'Asks whether the deposit was 5 or 10 dollars']
+    sources: null
+    branches:
+      - If recall is accurate she proceeds
+      - If wrong she loses trust
+    expected:
+      - Recalls the 5-dollar deposit and the March two-grocer pilot accurately
+      - Answers the 5 or 10 question correctly and briefly
+      - Says honestly if any detail is uncertain rather than inventing
+    prohibited:
+      - Inventing decisions that were not made
+      - Vague recall like 'we discussed some options'
+    memoryChanges:
+      - Keeps the deposit and pilot decisions unchanged
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, relevance_directness, natural_flow],
+        pass: 'Specific, accurate recall on request',
+      }
+
+  - id: LV-16-05
+    version: 1
+    title: Returning for pitch practice, not the old agenda
+    challenge: The coach must follow the student's purpose for today rather than steer back to an open commitment from last time.
+    venture:
+      {
+        name: 'Sunbeam Solar Lamps',
+        oneLiner: 'Solar study lamps for off-grid households',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'impact hardware',
+      }
+    student:
+      {
+        name: 'Kwabena Mensah-Holloway',
+        level: 'some_experience',
+        discipline: "engineering for development master's student",
+        style: 'polite, purposeful',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 12, turns: 6, channel: chat }
+      - { gap: 5, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Practise his pitch for Friday's competition.
+    constraints:
+      - Competition on Friday
+    hidden:
+      - Session one leaves an open commitment to contact an NGO distributor
+      - He has not contacted the NGO yet
+    arc:
+      - ['1.4', reveal, 'Commits to emailing an NGO distributor']
+      - ['2.1', asks_direct, "Says 'today I just want to practise my pitch for Friday'"]
+      - ['2.4', topic_change, 'Briefly mentions the NGO email is still pending']
+      - ['3.1', asks_direct, 'Asks for last-minute feedback on his closing line']
+    sources: null
+    branches:
+      - If his agenda is followed he practises productively
+      - If the coach steers back to the NGO he feels unheard
+    expected:
+      - Follows his request for pitch practice in session two
+      - Mentions the NGO commitment at most once, lightly
+      - Gives focused feedback on the closing line in session three
+    prohibited:
+      - Repeatedly steering back to the NGO commitment
+      - Ignoring his stated purpose
+    memoryChanges:
+      - Keeps the NGO commitment open without forcing it
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, non_redundancy, adaptation],
+        pass: 'His agenda leads; the old commitment is not forced',
+      }
+
+  - id: LV-16-06
+    version: 1
+    title: A quick mid-week question needing no recap
+    challenge: Short return sessions should get a direct answer using context silently, without a summary of the relationship.
+    venture:
+      {
+        name: 'Dorm Dash',
+        oneLiner: 'Late-night snack delivery within residence halls',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'delivery',
+      }
+    student:
+      {
+        name: 'Tyrone Abernathy-Kwarteng',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'casual, texts in lowercase',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 7, channel: chat }
+      - { gap: 3, turns: 3, channel: chat }
+      - { gap: 4, turns: 3, channel: chat }
+    priorMemory: []
+    objective: Get quick answers between shifts.
+    constraints:
+      - Delivers 10pm to 1am
+    hidden:
+      - Session one sets a 2-dollar delivery fee and a 15-minute promise
+    arc:
+      - ['1.3', reveal, 'Sets a 2-dollar fee and 15-minute promise']
+      - ['2.1', asks_direct, "asks 'can i raise fee to 3 on fridays?'"]
+      - ['3.1', asks_direct, "asks 'whats a good way to handle a late order'"]
+    sources: null
+    branches:
+      - If answers are direct he says thanks and goes
+      - If recaps start he stops reading
+    expected:
+      - Answers the Friday fee question directly using the remembered 2-dollar fee
+      - Answers the late-order question with the 15-minute promise in mind
+      - Keeps both short and ends naturally
+    prohibited:
+      - Recapping the venture before answering
+      - Several questions back to a quick question
+    memoryChanges:
+      - Records any agreed Friday fee test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, memory_correctness, natural_flow],
+        pass: 'Quick, direct answers that use context silently',
+      }
+
+  - id: LV-16-07
+    version: 1
+    title: Sixty days later, what is still true
+    challenge: After a long gap the coach should check which remembered facts still hold, briefly, rather than assume or re-ask everything.
+    venture:
+      {
+        name: 'Repair Café Network',
+        oneLiner: 'Monthly community repair events with paid sponsors',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'community events',
+      }
+    student:
+      {
+        name: 'Hedda Johansen-Oyelaran',
+        level: 'some_experience',
+        discipline: "sustainability master's student",
+        style: 'warm, reflective',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 60, turns: 6, channel: chat }
+      - { gap: 14, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Restart planning after a semester break.
+    constraints:
+      - Lost access to the original venue
+    hidden:
+      - Session one covers a hardware-store sponsor and a church-hall venue
+      - The church hall is no longer available; the sponsor still is
+    arc:
+      - ['1.2', reveal, 'Describes sponsor and venue']
+      - ['2.1', hesitation, "Says a lot has changed but doesn't say what"]
+      - ['2.3', reveal, 'Says the venue is gone but the sponsor stayed']
+      - ['3.2', asks_direct, 'Asks about a library as the new venue']
+    sources: null
+    branches:
+      - If the coach checks what is still true she updates efficiently
+      - If it assumes nothing changed advice is stale
+    expected:
+      - Opens session two by naming the key remembered facts and asking which still hold
+      - Updates the venue fact and keeps the sponsor
+      - Helps evaluate the library in session three
+    prohibited:
+      - Assuming the church hall is still available
+      - Asking her to restate everything
+    memoryChanges:
+      - Records the lost venue and continuing sponsor
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, non_redundancy, adaptation],
+        pass: 'A brief check of what still holds after a long gap',
+      }
+
+  - id: LV-16-08
+    version: 1
+    title: Don't recap, I remember
+    challenge: The student explicitly rejects recaps; the coach should adapt immediately and stay adapted in later sessions.
+    venture:
+      {
+        name: 'Inkwise',
+        oneLiner: 'Tattoo aftercare kits',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'consumer product',
+      }
+    student:
+      {
+        name: 'Zane Kowalski-Achebe',
+        level: 'some_experience',
+        discipline: 'chemistry senior',
+        style: 'blunt, impatient',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 8, turns: 5, channel: chat }
+      - { gap: 8, turns: 5, channel: chat }
+    priorMemory: []
+    objective: Get studio partnerships.
+    constraints:
+      - Three studios interested
+    hidden:
+      - Session one establishes three studios and a wholesale price
+    arc:
+      - ['1.2', reveal, 'Lists three studios and a 12-dollar wholesale price']
+      - ['2.1', frustration, "Says 'skip the recap, I remember, just help with studio four'"]
+      - ['3.1', asks_direct, 'Starts straight with a question about reorders']
+    sources: null
+    branches:
+      - If the coach adapts he engages
+      - If recaps continue he leaves
+    expected:
+      - Drops the recap immediately after his request
+      - Does not recap at the start of session three either
+      - Still uses context silently when advising
+    prohibited:
+      - Recapping after he asked not to
+      - Forgetting the context entirely
+    memoryChanges:
+      - Records his preference for no recaps
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, non_redundancy, memory_correctness],
+        pass: 'The preference is honoured across sessions',
+      }
+
+  - id: LV-16-09
+    version: 1
+    title: A thread continued from chat onto a call and back
+    challenge: Continuity across channels; the call should know what was typed and the next chat should know what was said on the call.
+    venture:
+      {
+        name: 'PaperTrail Legal',
+        oneLiner: 'Plain-language lease reviews for students',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'legal-adjacent service',
+      }
+    student:
+      {
+        name: 'Esther Achterberg-Dlamini',
+        level: 'some_experience',
+        discipline: 'law student',
+        style: 'articulate, careful',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 2, turns: 5, channel: call }
+      - { gap: 3, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Decide how to scope the lease review service so it is not legal advice.
+    constraints:
+      - Supervised by a law clinic professor
+    hidden:
+      - Session one sets a checklist-only scope
+      - On the call she decides to add a referral to the clinic for complex cases
+    arc:
+      - ['1.3', reveal, 'Agrees a checklist-only scope']
+      - ['2.2', reveal, 'On the call adds clinic referrals for complex cases']
+      - ['3.1', asks_direct, 'Asks to write down what was decided on the call']
+    sources: null
+    branches:
+      - If channels share context she builds on it
+      - If the call forgets the chat she repeats herself
+    expected:
+      - Refers to the checklist scope naturally on the call
+      - Recalls the call decision about clinic referrals in the final chat
+      - Keeps call replies short and spoken
+    prohibited:
+      - Asking her to repeat the scope on the call
+      - Legal advice about leases
+    memoryChanges:
+      - Records the checklist scope and clinic referral rule
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, voice_turn_taking, non_redundancy],
+        pass: 'Context flows across chat and call',
+      }
+
+  - id: LV-16-10
+    version: 1
+    title: New evidence that overturns last session's conclusion
+    challenge: The coach should change its recommendation when the returning student brings contradicting evidence, and say so plainly.
+    venture:
+      {
+        name: 'HydroHome',
+        oneLiner: 'Indoor herb gardens for apartments',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'consumer hardware',
+      }
+    student:
+      {
+        name: 'Benjamin Okafor-Sundberg',
+        level: 'some_experience',
+        discipline: 'horticulture senior',
+        style: 'careful, data-minded',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 14, turns: 5, channel: chat }
+      - { gap: 10, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Decide which retailer to approach first.
+    constraints:
+      - One retailer conversation at a time
+    hidden:
+      - Session one concludes a garden centre is the best first retailer
+      - In session two he reports the garden centre's customers skew older and bought none
+    arc:
+      - ['1.4', reveal, 'Agrees to approach the garden centre first']
+      - ['2.2', new_evidence, 'Reports zero sales from a garden-centre trial']
+      - ['2.3', contradiction, 'Says the coach was wrong last time']
+      - ['3.2', reveal, 'Reports a homeware shop trial sold 12 units']
+    sources: null
+    branches:
+      - If the coach updates plainly he trusts it more
+      - If it defends the old advice he loses trust
+    expected:
+      - Says plainly that the new result changes the recommendation
+      - Acknowledges the earlier advice without defensiveness
+      - Builds on the homeware result in session three
+    prohibited:
+      - Defending the earlier recommendation
+      - Repeating the garden-centre advice
+    memoryChanges:
+      - Records the garden-centre failure and homeware success
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [recovery, evidence_calibration, memory_correctness],
+        pass: 'The recommendation changes with the evidence',
+      }
+
+  - id: LV-16-11
+    version: 1
+    title: The student misremembers what was said earlier
+    challenge: The student attributes a recommendation to the coach that it did not make; the coach should correct gently from memory.
+    venture:
+      {
+        name: 'Thrift Threads',
+        oneLiner: 'Upcycled clothing pop-ups',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'retail events',
+      }
+    student:
+      {
+        name: 'Precious Moyo-Svensson',
+        level: 'first_time',
+        discipline: 'fashion design sophomore',
+        style: 'confident, fast',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 10, turns: 5, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Plan the second pop-up.
+    constraints:
+      - Pop-ups need student union approval
+    hidden:
+      - Session one recommends testing prices at the first pop-up, not renting a bigger space
+    arc:
+      - ['1.4', reveal, 'Agrees to test two prices at the first pop-up']
+      - ['2.2', correction, "Says 'you told me to rent the bigger hall' which the coach did not say"]
+      - ['3.1', reveal, 'Shares the two-price results']
+    sources: null
+    branches:
+      - If corrected gently she accepts
+      - If agreed with she rents a hall she cannot afford
+    expected:
+      - Gently corrects the misremembered advice using what was actually agreed
+      - Does not make her feel foolish
+      - Uses the price-test results in session three
+    prohibited:
+      - Agreeing that it recommended the bigger hall
+      - A defensive correction
+    memoryChanges:
+      - Keeps the price-test agreement accurate
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, recovery, natural_flow],
+        pass: 'A gentle, accurate correction from memory',
+      }
+
+  - id: LV-16-12
+    version: 1
+    title: Four weekly check-ins before a funding deadline
+    challenge: Across four sessions the coach should track deadlines and sub-tasks, mentioning only what is due and changed.
+    venture:
+      {
+        name: 'AquaGrow Systems',
+        oneLiner: 'Aquaponics kits for school science labs',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'education hardware',
+      }
+    student:
+      {
+        name: 'Thandeka Nkosi-Halvorsen',
+        level: 'some_experience',
+        discipline: "science education master's student",
+        style: 'methodical, slightly anxious',
+      }
+    purpose: weekly check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Submit a foundation grant application in four weeks.
+    constraints:
+      - Needs three letters of support
+    hidden:
+      - Session one sets tasks - budget draft, three letters, outcomes section
+      - By session three one letter is still missing
+    arc:
+      - ['1.3', reveal, 'Lists the three tasks and deadline']
+      - ['2.1', reveal, 'Says the budget draft is done']
+      - ['3.1', hesitation, 'Mentions one letter is still missing']
+      - ['4.1', asks_direct, 'Asks if anything is left before submitting']
+    sources: The coach must not state the foundation's requirements; only what she reported.
+    branches:
+      - If tasks are tracked she submits on time
+      - If tracking fails a letter is missed
+    expected:
+      - Tracks the three tasks across sessions
+      - Raises the missing letter proactively but once
+      - Gives an accurate remaining-items list in session four
+    prohibited:
+      - Inventing grant requirements
+      - Recapping all tasks every session
+    memoryChanges:
+      - Records task status updates each week
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, actionability, non_redundancy],
+        pass: 'Tasks are tracked precisely across four sessions',
+      }
+
+  - id: LV-16-13
+    version: 1
+    title: Remembering due dates precisely
+    challenge: The coach should recall commitment dates correctly and handle one that passed without drama.
+    venture:
+      {
+        name: 'StudyBuddy Bots',
+        oneLiner: 'Reminder bots for study groups',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'student software',
+      }
+    student:
+      {
+        name: 'Ravi Menon-Oduya',
+        level: 'first_time',
+        discipline: 'computer science junior',
+        style: 'forgetful, friendly',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 12, turns: 4, channel: chat }
+      - { gap: 9, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Run a two-group pilot.
+    constraints:
+      - Midterms in three weeks
+    hidden:
+      - Session one sets 'recruit two groups by the 15th' and 'report results by the 30th'
+    arc:
+      - ['1.4', reveal, 'Agrees recruitment by the 15th and results by the 30th']
+      - ['2.1', asks_direct, "Asks when he said he'd have results"]
+      - ['3.1', reveal, 'Admits recruitment slipped past the 15th']
+    sources: null
+    branches:
+      - If dates are recalled accurately he replans
+      - If dates are wrong plans go off
+    expected:
+      - Recalls both dates accurately
+      - Handles the slipped date by helping replan around midterms
+      - Avoids repeated reminders
+    prohibited:
+      - Wrong dates
+      - Scolding
+    memoryChanges:
+      - Updates commitment dates after replanning
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, adaptation, actionability],
+        pass: 'Dates are recalled and replanned accurately',
+      }
+
+  - id: LV-16-14
+    version: 1
+    title: Building a business model canvas across three long sessions
+    challenge: Each session fills different boxes; the coach must never re-ask a completed box and must keep the canvas consistent.
+    venture:
+      {
+        name: 'GrandTech Help',
+        oneLiner: 'Tech help sessions for seniors at libraries',
+        stage: 'business_model',
+        domain: 'social',
+        archetype: 'community service',
+      }
+    student:
+      {
+        name: 'Fiona Gallagher-Owusu',
+        level: 'first_time',
+        discipline: 'social work sophomore',
+        style: 'diligent, asks for structure',
+      }
+    purpose: BMC sessions
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+      - { gap: 7, turns: 9, channel: chat }
+      - { gap: 7, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Complete the Module 1 BMC capstone across three sessions.
+    constraints:
+      - Capstone due after session three
+    hidden:
+      - Session one covers customer segments and value proposition
+      - Session two covers channels, relationships and revenue
+      - Session three covers costs, activities, resources and partners
+    arc:
+      - ['1.2', reveal, 'Defines seniors and libraries as segments']
+      - ['1.6', hesitation, 'Is unsure whether libraries are customers or partners']
+      - ['2.2', return, 'Returns to the libraries question from last time']
+      - ['2.6', change_of_mind, "Decides libraries are partners and seniors' families pay"]
+      - ['3.3', reveal, 'Lists volunteer tutors as a key resource']
+      - ['3.7', asks_direct, 'Asks if the canvas is consistent']
+    sources: null
+    branches:
+      - If boxes carry forward she builds steadily
+      - If boxes are re-asked she loses time
+    expected:
+      - Never re-asks a box already completed in earlier sessions
+      - Picks up the libraries question when she returns to it
+      - Checks consistency after the payer change in session three
+    prohibited:
+      - Filling boxes for her
+      - Re-asking completed boxes
+    memoryChanges:
+      - Records each box's content and the payer change to families
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, non_redundancy, adaptation],
+        pass: 'A consistent canvas built across sessions without re-asking',
+      }
+
+  - id: LV-16-15
+    version: 1
+    title: A four-session discovery debrief series
+    challenge: Long continuity; the coach should accumulate findings and notice when themes repeat across sessions.
+    venture:
+      {
+        name: 'Caregiver Connect',
+        oneLiner: 'Peer support groups for student caregivers',
+        stage: 'discovery',
+        domain: 'social',
+        archetype: 'community platform',
+      }
+    student:
+      {
+        name: 'Naomi Fitzwilliam-Ade',
+        level: 'some_experience',
+        discipline: "public health master's student",
+        style: 'thoughtful, thorough',
+      }
+    purpose: discovery debriefs
+    sessions:
+      - { gap: 0, turns: 7, channel: chat }
+      - { gap: 7, turns: 7, channel: chat }
+      - { gap: 7, turns: 7, channel: chat }
+      - { gap: 7, turns: 7, channel: chat }
+    priorMemory: []
+    objective: Synthesise four weeks of interviews into one problem statement.
+    constraints:
+      - Five interviews per week
+    hidden:
+      - Scheduling conflicts with class come up every week
+      - In week three a new theme appears - guilt about missing family duties
+    arc:
+      - ['1.3', reveal, 'Reports scheduling conflicts with class']
+      - ['2.3', reveal, 'Reports scheduling conflicts again plus isolation']
+      - ['3.2', new_evidence, 'Reports a new guilt theme']
+      - ['3.5', digression, 'Talks about her own grandmother']
+      - ['4.3', asks_direct, 'Asks which theme is strongest']
+    sources: null
+    branches:
+      - If themes accumulate she writes a strong statement
+      - If each week is treated alone patterns are missed
+    expected:
+      - Notices recurring themes across sessions without her restating them
+      - Treats the new guilt theme as fresh evidence
+      - Gives a reasoned view on the strongest theme in session four
+    prohibited:
+      - Asking her to repeat earlier weeks' findings
+      - Clinical claims about caregiver stress
+    memoryChanges:
+      - Records themes and their recurrence by week
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, diagnostic_quality, non_redundancy],
+        pass: 'Findings accumulate into a grounded statement',
+      }
+
+  - id: LV-16-16
+    version: 1
+    title: Pitch feedback that builds over three long sessions
+    challenge: The coach should remember which feedback was applied and not repeat resolved points.
+    venture:
+      {
+        name: 'VoltCycle',
+        oneLiner: 'E-bike battery swap stations on campus',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'mobility infrastructure',
+      }
+    student:
+      {
+        name: 'Sebastian Mwangi-Holm',
+        level: 'some_experience',
+        discipline: 'electrical engineering senior',
+        style: 'competitive, coachable',
+      }
+    purpose: pitch preparation series
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+      - { gap: 5, turns: 9, channel: chat }
+      - { gap: 5, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Prepare the Module 2 capstone pitch.
+    constraints:
+      - Five-minute pitch
+    hidden:
+      - Session one feedback - lead with the problem, cut technical detail
+      - Session two shows he fixed the opening but the ask is vague
+    arc:
+      - ['1.2', roleplay, 'Delivers his opening']
+      - ['1.6', pushback, 'Defends the technical detail']
+      - ['2.2', roleplay, 'Delivers the revised opening']
+      - ['2.6', interrupt, 'Cuts in to ask whether the ask should be money or a pilot']
+      - ['3.2', roleplay, 'Delivers the full pitch']
+      - ['3.7', asks_direct, 'Asks for the one remaining weakness']
+    sources: null
+    branches:
+      - If feedback builds he improves steadily
+      - If resolved points repeat he tunes out
+    expected:
+      - Acknowledges the fixed opening and does not repeat that feedback
+      - Focuses session two and three feedback on the ask
+      - Names one remaining weakness in session three
+    prohibited:
+      - Repeating already-resolved feedback
+      - Long lists of minor notes
+    memoryChanges:
+      - Records feedback given and applied each session
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [non_redundancy, memory_correctness, actionability],
+        pass: 'Feedback progresses without repeating resolved points',
+      }
+
+  - id: LV-16-17
+    version: 1
+    title: Three milestone reviews over a semester
+    challenge: Long continuity across milestone reviews; the coach should compare progress against what was planned last time.
+    venture:
+      {
+        name: 'Soilwise Analytics',
+        oneLiner: 'Soil testing service for community gardens',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'lab service',
+      }
+    student:
+      {
+        name: 'Dr. Maya Chen-Oyelowo',
+        level: 'researcher',
+        discipline: 'soil science postdoc',
+        style: 'precise, results-oriented',
+      }
+    purpose: milestone reviews
+    sessions:
+      - { gap: 0, turns: 10, channel: chat }
+      - { gap: 30, turns: 9, channel: chat }
+      - { gap: 30, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Reach ten paying gardens by semester end.
+    constraints:
+      - Lab time limited to evenings
+    hidden:
+      - Month one plan - five gardens paying 40 dollars per test
+      - Month two shows four paying and a request for bundled annual testing
+      - Month three shows nine paying
+    arc:
+      - ['1.3', reveal, 'Sets the month-one target of five']
+      - ['1.8', topic_change, 'Asks about a grant unrelated to the target']
+      - ['2.2', new_evidence, 'Reports four paying gardens']
+      - ['2.6', reveal, 'Mentions requests for annual bundles']
+      - ['3.2', new_evidence, 'Reports nine paying gardens']
+      - ['3.6', asks_direct, 'Asks whether to launch annual bundles now']
+    sources: null
+    branches:
+      - If progress is compared to plan she adjusts
+      - If each review starts fresh trends are missed
+    expected:
+      - Compares each month's result to the previous plan
+      - Treats the annual bundle requests as a lead to test
+      - Handles the grant digression briefly in session one
+    prohibited:
+      - Re-asking the target each session
+      - Grant facts it cannot verify
+    memoryChanges:
+      - Records monthly progress and the annual bundle idea
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, evidence_calibration, actionability],
+        pass: 'Progress is tracked against plan over three reviews',
+      }
+
+  - id: LV-16-18
+    version: 1
+    title: A business plan written across three long sessions
+    challenge: The coach should keep the plan's sections consistent and remember revisions made in earlier sessions.
+    venture:
+      {
+        name: 'Kidsfield Camps',
+        oneLiner: 'STEM day camps run by engineering students',
+        stage: 'business_model',
+        domain: 'general',
+        archetype: 'seasonal service',
+      }
+    student:
+      {
+        name: 'Oluwatobi Adeyemi-Strand',
+        level: 'some_experience',
+        discipline: 'mechanical engineering junior',
+        style: 'organised, eager',
+      }
+    purpose: business plan sessions
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+      - { gap: 10, turns: 9, channel: chat }
+      - { gap: 10, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Complete the Module 3 business plan capstone.
+    constraints:
+      - Camps run only in summer
+    hidden:
+      - Session one sets 40 campers a week at 250 dollars
+      - Session two revises to 30 campers after a venue limit
+      - Session three needs the financials to reflect 30
+    arc:
+      - ['1.3', reveal, 'Sets 40 campers a week']
+      - ['2.2', correction, 'Revises to 30 campers because the venue holds 30']
+      - ['2.6', topic_change, 'Asks about insurance for camps']
+      - ['3.3', reveal, 'Shares the financial section']
+      - ['3.6', contradiction, 'The financial section still uses 40 campers']
+      - ['3.8', asks_direct, 'Asks if the plan is ready to submit']
+    sources: null
+    branches:
+      - If revisions are remembered the inconsistency is caught
+      - If not the plan contradicts itself
+    expected:
+      - Remembers the revision to 30 campers
+      - Catches that the financials still use 40
+      - Routes the insurance question briefly to a human
+    prohibited:
+      - Insurance requirements stated as fact
+      - Approving the inconsistent plan
+    memoryChanges:
+      - Records the 30-camper capacity across the plan
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session for camp insurance',
+        why: "Insurance for minors' activities needs qualified advice",
+      }
+    scoring:
+      {
+        focus: [memory_correctness, diagnostic_quality, recovery],
+        pass: 'The plan stays consistent with remembered revisions',
+      }
+
+  - id: LV-16-19
+    version: 1
+    title: A recurring blocker across four sessions
+    challenge: The same blocker keeps coming back; the coach should notice the pattern from memory and change approach rather than repeat the same advice.
+    venture:
+      {
+        name: 'PrintPost',
+        oneLiner: 'On-demand campus poster printing',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'local service',
+      }
+    student:
+      {
+        name: 'Diego Ferreira-Nwosu',
+        level: 'first_time',
+        discipline: 'graphic design junior',
+        style: 'avoidant, apologetic',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 7, channel: chat }
+      - { gap: 7, turns: 7, channel: chat }
+      - { gap: 7, turns: 7, channel: chat }
+      - { gap: 7, turns: 7, channel: chat }
+    priorMemory: []
+    objective: Get the first five club customers.
+    constraints:
+      - Afraid of sales conversations
+    hidden:
+      - Each week he says he will message club presidents and does not
+      - He is comfortable posting in group chats
+    arc:
+      - ['1.4', reveal, 'Commits to messaging five presidents']
+      - ['2.2', hesitation, "Says he didn't get round to it"]
+      - ['3.2', hesitation, 'Says the same again']
+      - ['3.5', reveal, 'Mentions he is fine posting in group chats']
+      - ['4.2', new_evidence, 'Reports a group-chat post got two orders']
+    sources: null
+    branches:
+      - If the approach changes he acts
+      - If the same advice repeats he keeps avoiding it
+    expected:
+      - Notices the repeated slip by session three and names it kindly
+      - Changes the approach to group-chat posts he is comfortable with
+      - Builds on the two orders in session four
+    prohibited:
+      - Repeating 'message the presidents' every session
+      - Shaming him
+    memoryChanges:
+      - Records the changed approach and its first results
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [non_redundancy, adaptation, memory_correctness],
+        pass: 'The approach changes when the pattern repeats',
+      }
+
+  - id: LV-16-20
+    version: 1
+    title: Personal context shared earlier, handled with care later
+    challenge: The student mentioned a family illness last time; the coach should acknowledge it briefly and appropriately, not ignore it or dwell on it.
+    venture:
+      {
+        name: 'QuietBrew Tea',
+        oneLiner: 'Loose-leaf tea subscription for students',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'subscription',
+      }
+    student:
+      {
+        name: 'Leila Hosseini-Bergqvist',
+        level: 'some_experience',
+        discipline: 'business senior',
+        style: 'private, warm once comfortable',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 21, turns: 5, channel: chat }
+      - { gap: 10, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Get the subscription back on track after a few hard weeks.
+    constraints:
+      - Her mother had surgery; she went home for two weeks
+    hidden:
+      - She paused shipments while away
+      - She does not want to talk about her mother at length
+    arc:
+      - ['1.5', reveal, 'Mentions she is going home because her mum is having surgery']
+      - ['2.1', hesitation, 'Says she is back and wants to focus on the business']
+      - ['2.3', reveal, 'Mentions paused shipments']
+      - ['3.2', asks_direct, 'Asks how to win back lapsed subscribers']
+    sources: null
+    branches:
+      - If acknowledged briefly she relaxes
+      - If probed she withdraws
+    expected:
+      - Acknowledges her return and her mother briefly and warmly, then follows her lead to business
+      - Helps restart paused shipments
+      - Does not raise the surgery again unless she does
+    prohibited:
+      - Asking for details about her mother's health
+      - Ignoring what she shared entirely
+    memoryChanges:
+      - Records the shipment pause and restart, not health details
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, adaptation, natural_flow],
+        pass: 'Personal context is acknowledged with care and not overused',
+      }

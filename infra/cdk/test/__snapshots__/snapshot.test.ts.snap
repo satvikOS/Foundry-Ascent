@@ -3745,6 +3745,8 @@ exports[`template snapshots > FoundryAscent-Foundation 1`] = `
                 "arn:aws:bedrock:*::foundation-model/amazon.nova-premier-v1:0",
                 "arn:aws:bedrock:*::foundation-model/amazon.nova-pro-v1:0",
                 "arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0",
+                "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+                "arn:aws:bedrock:*::foundation-model/meta.llama4-maverick-17b-instruct-v1:0",
                 "arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0",
                 {
                   "Fn::Join": [
@@ -3791,6 +3793,30 @@ exports[`template snapshots > FoundryAscent-Foundation 1`] = `
                         "Ref": "AWS::AccountId",
                       },
                       ":inference-profile/us.amazon.nova-pro-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:bedrock:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:bedrock:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.meta.llama4-maverick-17b-instruct-v1:0",
                     ],
                   ],
                 },

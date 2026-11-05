@@ -8,6 +8,13 @@ export {
   type LabAgendaVenture,
 } from './lab-agenda-ventures.js';
 export {
+  LAB_LIVE_MAX_ENTRIES,
+  parseLabLivePlan,
+  seedLabLiveVentures,
+  type LabLiveVenture,
+  type LabLiveVenturePlan,
+} from './lab-live-ventures.js';
+export {
   LAB_MEMORY_VENTURE,
   LAB_MEMORY_VENTURE_KEY,
   seedLabMemoryVenture,

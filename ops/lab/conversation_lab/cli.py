@@ -87,6 +87,17 @@ class Context:
     #: The face suite's in-app arm: full, lite or both (config.FACE_MODES); and whether this is the dry run.
     face_mode: str = "both"
     mock: bool = False
+    #: The live suite (conversation_lab/live): selection, shard, the run's total budget (to reproduce the shard
+    #: split the plan job made), concurrent scenario runs, and the seeded venture per run.
+    live_families: str = "all"
+    live_sample: int = 0
+    live_seed: int = 1
+    live_shard: tuple[int, int] = (1, 1)
+    live_total_budget: float = 0.0
+    concurrency: int = 4
+    live_picks: list[Any] = field(default_factory=list)
+    live_selection: dict[str, Any] = field(default_factory=dict)
+    live_seeded: dict[str, Any] = field(default_factory=dict)
 
     @property
     def private(self) -> Path:
@@ -198,6 +209,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         matrix_source=str(args.matrix_source),
         face_mode=str(args.face_mode),
         mock=bool(args.mock),
+        live_families=str(args.live_families),
+        live_sample=int(args.live_sample),
+        live_seed=int(args.live_seed),
+        live_shard=_shard_arg(str(args.live_shard)),
+        live_total_budget=float(args.live_total_budget or 0),
+        concurrency=int(args.concurrency),
     )
     ctx.private.mkdir(parents=True, exist_ok=True)
     ctx.public.mkdir(parents=True, exist_ok=True)
@@ -235,6 +252,14 @@ def cmd_run(args: argparse.Namespace) -> int:
             result = lab_client.probe(lab.judge)
             probes.update(result.outcomes)
             judge_model = result.chosen
+        if suite == "live" and not args.mock:
+            # Other model families than the coach's first (ops/lab/models.json "live"); the summary says which ran.
+            result = lab_client.probe(lab.live_simulator)
+            probes.update(result.outcomes)
+            simulator_model = result.chosen
+            result = lab_client.probe(lab.live_judge)
+            probes.update(result.outcomes)
+            judge_model = result.chosen
     except BudgetExceededError as exc:
         summary["stopped_by"] = f"budget_{exc.side}"
     summary["models"].update({"simulator": simulator_model, "judge": judge_model, "probes": probes})
@@ -270,13 +295,24 @@ def cmd_run(args: argparse.Namespace) -> int:
         summary["memory_venture"] = ctx.memory_venture or "unavailable"
     if suite == "agenda":
         ctx.agenda_founders = run_agenda_ventures(env, ctx.private / "logs")
+    if suite == "live":
+        # Before the API starts, so its directory knows every venture from the first request.
+        from conversation_lab.live.dataset import load as load_live
+        from conversation_lab.live.lab import run_seed, seed_plan, seeded_map, selection_from
+        from conversation_lab.stack import PNPM
+
+        dataset = load_live()
+        ctx.live_picks, ctx.live_selection = selection_from(ctx, dataset)
+        ids = run_seed(env, ctx.private / "logs", seed_plan(ctx.live_picks, dataset.by_id()), pnpm=PNPM)
+        ctx.live_seeded = seeded_map(ctx.live_picks, dataset.by_id(), ids)
+        summary["live_seeded"] = f"{len(ctx.live_seeded)}/{len(ctx.live_picks)}"
     if args.mock:
         summary["models"]["app"] = {"primary": "mock", "fallback": "mock", "embeddings": "mock"}
     error: str | None = None
     stack_cm = Stack(
         env=api_process,
         log_dir=ctx.private / "logs",
-        web=suite not in ("matrix", "agenda"),
+        web=suite not in ("matrix", "agenda", "live"),
         api_port=args.api_port,
         web_port=args.web_port,
     )
@@ -963,9 +999,88 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
     return {"face": result, "passed": result["passed"], "run": result["run"], "playwright_exit": rc}
 
 
+def suite_live(
+    ctx: Context,
+    *,
+    admin: Any,
+    guard: Any,
+    lab_client: Any,
+    simulator_model: str | None,
+    judge_model: str | None,
+    **_: Any,
+) -> dict[str, Any]:
+    """The live 600-scenario evaluation (conversation_lab/live): this shard's scenario runs against the real app,
+    simulated student and independent judge; the public summary (numbers, ids, codes) beside the lab's own."""
+    from datetime import UTC, datetime
+
+    from conversation_lab.live.dataset import load as load_live
+    from conversation_lab.live.judge import LiveJudge, MockJudge
+    from conversation_lab.live.lab import LabApp, meta
+    from conversation_lab.live.report import aggregate, render
+    from conversation_lab.live.runner import LiveRunner
+    from conversation_lab.live.student import LlmStudent, MockStudent
+    from conversation_lab.stack import PNPM
+
+    started = datetime.now(UTC).isoformat(timespec="seconds")
+    dataset = load_live()
+    live = not ctx.mock and simulator_model is not None and judge_model is not None
+    if not ctx.mock and not live:
+        return {"passed": 0, "run": 0, "error": "live_models_unavailable", "stopped_by": None}
+    student = LlmStudent(lab_client, simulator_model) if live else MockStudent()
+    judge = LiveJudge(lab_client, judge_model) if live else MockJudge()
+    runner = LiveRunner(
+        app=LabApp(admin, ctx.env, ctx.private / "logs", pnpm=PNPM),
+        student=student,
+        judge=judge,
+        guard=guard,
+        private_dir=ctx.private,
+        concurrency=ctx.concurrency,
+        # The role session lasts an hour; the job spent some of it installing and seeding.
+        deadline_seconds=45 * 60,
+    )
+    results = runner.run(ctx.live_picks, dataset.by_id(), ctx.live_seeded)
+    coach = "mock" if ctx.mock else app_models().primary
+    summary = aggregate(
+        [r.public() for r in results],
+        meta(
+            dataset,
+            ctx.live_picks,
+            evidence="live"
+            if live
+            else "infrastructure-only (the app on its deterministic mock model, mock student, mock judge)",
+            coach=coach,
+            student=simulator_model or "mock",
+            judge=judge_model or "mock",
+            selection=ctx.live_selection,
+            started_at=started,
+        ),
+    )
+    summary["spend"] = guard.snapshot()
+    (ctx.public / "live-summary.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")
+    (ctx.public / "live-summary.md").write_text(render(summary), encoding="utf-8")
+    totals = summary["totals"]
+    return {
+        "passed": totals["passed"],
+        "run": totals["executed"],
+        "live": {
+            k: summary[k] for k in ("evidence", "totals", "scores", "latency_seconds", "gates", "models")
+        },
+        "stopped_by": runner.stopped,
+    }
+
+
+def _shard_arg(text: str) -> tuple[int, int]:
+    index, _, of = text.partition("/")
+    shard = (int(index), int(of or 1))
+    if not 1 <= shard[0] <= shard[1] <= 40:
+        raise ValueError("shard must be i/n with 1 <= i <= n <= 40")
+    return shard
+
+
 SUITE_RUNNERS: dict[str, Callable[..., dict[str, Any]]] = {
     "agenda": suite_agenda,
     "face": suite_face,
+    "live": suite_live,
     "recall": suite_recall,
     "voice": suite_voice,
     "matrix": suite_matrix,
@@ -1001,6 +1116,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         default="both",
         help="face: the in-app call arm's face mode (full, lite, or both side by side)",
     )
+    run.add_argument("--live-families", default="all", help="live: families (all, or e.g. 1,5,9-12)")
+    run.add_argument(
+        "--live-sample", type=int, default=0, help="live: stratified sample size (0 = every scenario)"
+    )
+    run.add_argument("--live-seed", type=int, default=1, help="live: sampling seed")
+    run.add_argument("--live-shard", default="1/1", help="live: this job's shard, i/n (the plan's split)")
+    run.add_argument(
+        "--live-total-budget", type=float, default=0.0, help="live: the whole run's budget (shard split)"
+    )
+    run.add_argument("--concurrency", type=int, default=4, help="live: scenario runs in parallel (1-6)")
     run.add_argument("--out", required=True)
     run.add_argument("--api-port", type=int, default=8787)
     run.add_argument("--web-port", type=int, default=4173)
@@ -1016,6 +1141,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="dry run of the harness itself: the app on the deterministic mock model, no AWS call at all",
     )
     run.set_defaults(func=cmd_run)
+    from conversation_lab.live.cli import add_commands
+
+    add_commands(sub)
     args = parser.parse_args(argv)
     # Out of the environment before anything runs, so no child process inherits it (face.take_key).
     global _FACE_KEY

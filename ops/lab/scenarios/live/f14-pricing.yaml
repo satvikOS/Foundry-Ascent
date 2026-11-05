@@ -1,0 +1,1057 @@
+family: 14
+slug: pricing
+scenarios:
+  - id: LV-14-01
+    version: 1
+    title: A price that cannot cover the hours it takes
+    challenge: Her unit economics assume she works for free; the coach should surface her time cost and the price it implies.
+    venture:
+      {
+        name: 'Petal Post',
+        oneLiner: 'Pressed-flower greeting cards',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'handmade goods',
+      }
+    student:
+      {
+        name: 'Juniper Achebe-Strand',
+        level: 'first_time',
+        discipline: 'botany sophomore',
+        style: 'gentle, avoids money talk',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Keep cards at 6 dollars so friends can afford them.
+    constraints:
+      - Each card takes 40 minutes
+    hidden:
+      - Materials cost 1.50 dollars per card
+      - A gift shop offered to stock them at wholesale
+    arc:
+      - ['1.2', reveal, 'Says 6 dollars feels fair']
+      - ['1.5', reveal, 'Mentions the 40 minutes per card']
+      - ['1.7', topic_change, 'Asks about the gift shop wholesale offer']
+    sources: null
+    branches:
+      - If her hourly earnings are computed she reconsiders
+      - If wholesale is accepted at 6 dollars retail she loses money
+    expected:
+      - Works out what she earns per hour at 6 dollars
+      - Shows what wholesale would do to that number
+      - Suggests testing a higher price with strangers
+    prohibited:
+      - Picking a price for her
+      - Making her feel greedy for charging more
+    memoryChanges:
+      - Records the time per card and the wholesale offer
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, actionability],
+        pass: 'She sees her real hourly earnings and plans a test',
+      }
+
+  - id: LV-14-02
+    version: 1
+    title: A spreadsheet with three different churn assumptions
+    challenge: His model uses inconsistent assumptions in different tabs; the coach should catch the inconsistency and ask which is evidence-based.
+    venture:
+      {
+        name: 'Fleetly',
+        oneLiner: 'Maintenance scheduling for small van fleets',
+        stage: 'business_model',
+        domain: 'software',
+        archetype: 'SMB SaaS',
+      }
+    student:
+      {
+        name: 'Rashid Al-Farsi-Hendricks',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'spreadsheet-heavy, detail-proud',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Finalise the financial model for the Module 3 business plan.
+    constraints:
+      - Capstone due in three weeks
+    hidden:
+      - Revenue tab assumes 2 percent monthly churn
+      - CAC payback tab assumes 5 percent
+      - His pilot customers churned at about 8 percent
+    arc:
+      - ['1.2', reveal, 'Shares the revenue projection']
+      - ['1.5', reveal, 'Mentions the payback tab uses 5 percent']
+      - ['1.7', contradiction, 'Says 2 percent is realistic, then shares pilot churn of 8 percent']
+    sources: null
+    branches:
+      - If the inconsistency is pointed out he aligns the model to pilot data
+      - If unnoticed the plan is internally inconsistent
+    expected:
+      - Notices the different churn figures across tabs
+      - Asks which number comes from evidence
+      - Suggests using pilot churn with a sensitivity range
+    prohibited:
+      - Churn benchmarks
+      - Endorsing the 2 percent assumption
+    memoryChanges:
+      - Records pilot churn of about 8 percent as the evidence-based figure
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, recovery],
+        pass: 'The model is aligned to evidence',
+      }
+
+  - id: LV-14-03
+    version: 1
+    title: Cost-plus pricing for a product that saves hours
+    challenge: Her price ignores the value to the customer; the coach should help her estimate customer value and test against it.
+    venture:
+      {
+        name: 'GrantTrack Pro',
+        oneLiner: 'Deadline tracking for university research offices',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'B2B SaaS',
+      }
+    student:
+      {
+        name: 'Hilde Svensson-Okoro',
+        level: 'some_experience',
+        discipline: "research administration master's student",
+        style: 'modest, careful',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Charge 50 dollars a month because hosting costs 10.
+    constraints:
+      - Three research offices interested
+    hidden:
+      - One office said missing a deadline cost them a 200,000-dollar grant
+      - Offices currently pay a part-time staffer to track deadlines
+    arc:
+      - ['1.2', reveal, 'Explains the cost-plus logic']
+      - ['1.5', reveal, 'Mentions the missed-grant story']
+    sources: null
+    branches:
+      - If value is estimated she raises the price test range
+      - If cost-plus stays she leaves value unclaimed
+    expected:
+      - Explains value-based thinking briefly using the missed grant
+      - Points to the staffer's time as a reference point
+      - Suggests testing a higher price with the three offices
+    prohibited:
+      - Picking a specific price
+      - Generic SaaS pricing benchmarks
+    memoryChanges:
+      - Records the missed-grant story and staffer cost as value anchors
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, actionability],
+        pass: 'Pricing is reframed around customer value',
+      }
+
+  - id: LV-14-04
+    version: 1
+    title: Free until we have users, then charge
+    challenge: Delaying pricing hides willingness to pay; the coach should propose an early price test proportionate to his stage.
+    venture:
+      {
+        name: 'Lectern',
+        oneLiner: 'Lecture recording summaries for students',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'student software',
+      }
+    student:
+      {
+        name: 'Dominic Achterberg-Yeboah',
+        level: 'first_time',
+        discipline: 'computer science sophomore',
+        style: 'confident, avoids sales',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Grow to 5,000 free users before thinking about price.
+    constraints:
+      - Hosting costs grow with users
+    hidden:
+      - 600 users now, costing him 90 dollars a month
+      - Several users asked if there is a paid plan with more storage
+    arc:
+      - ['1.2', reveal, 'Says monetisation can wait']
+      - ['1.5', reveal, 'Mentions users asking for a paid plan']
+      - ['1.7', interrupt, 'Interrupts to say charging feels like selling out']
+    sources: null
+    branches:
+      - If the paid-plan requests are tested he learns willingness to pay
+      - If delayed costs grow without signal
+    expected:
+      - Notes the rising hosting cost and users asking to pay
+      - Suggests a small paid tier test now
+      - Responds to the selling-out remark with understanding and a reason
+    prohibited:
+      - Endorsing the 5,000-user plan without a price signal
+      - Moralising about money
+    memoryChanges:
+      - Records paid-plan requests and hosting costs
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, actionability, natural_flow],
+        pass: 'An early, small price test is agreed',
+      }
+
+  - id: LV-14-05
+    version: 1
+    title: Customer acquisition cost from one lucky event
+    challenge: CAC is computed from a single unusually cheap channel; the coach should help him compute a realistic blended figure.
+    venture:
+      {
+        name: 'KeyFob Pets',
+        oneLiner: 'GPS tags for outdoor cats',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'pet tech',
+      }
+    student:
+      {
+        name: 'Callum Reid-Oyelowo',
+        level: 'some_experience',
+        discipline: 'marketing senior',
+        style: 'optimistic, quick',
+      }
+    purpose: unit economics review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Show a CAC of 4 dollars to his advisor.
+    constraints:
+      - Advisor meeting tomorrow
+    hidden:
+      - The 4 dollars came from a free local news story
+      - Paid ads since then cost 38 dollars per customer
+    arc:
+      - ['1.2', overclaim, 'Says CAC is 4 dollars']
+      - ['1.5', reveal, 'Mentions the news story']
+      - ['1.7', correction, 'Corrects himself that ads have cost 38 dollars per customer']
+    sources: null
+    branches:
+      - If channels are separated he presents a blended figure
+      - If 4 dollars is presented the plan is unrealistic
+    expected:
+      - Asks how the 4 dollars was calculated
+      - Separates a one-off free event from repeatable channels
+      - Helps him present channel-level figures honestly
+    prohibited:
+      - Presenting 4 dollars as CAC
+      - CAC benchmarks
+    memoryChanges:
+      - Records paid-channel cost of 38 dollars per customer
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, recovery, diagnostic_quality],
+        pass: 'A repeatable CAC replaces the outlier',
+      }
+
+  - id: LV-14-06
+    version: 1
+    title: Lifetime value assumed at five years for a two-year product
+    challenge: LTV uses an unrealistic lifetime; the coach should anchor lifetime to how long customers actually need the product.
+    venture:
+      {
+        name: 'Prepare Bar',
+        oneLiner: 'Bar exam study plans for law graduates',
+        stage: 'business_model',
+        domain: 'software',
+        archetype: 'education subscription',
+      }
+    student:
+      {
+        name: 'Victoria Adeyemi-Holmes',
+        level: 'some_experience',
+        discipline: 'law student',
+        style: 'precise, argumentative',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Justify spending 300 dollars to acquire each user.
+    constraints:
+      - Users study for about four months
+    hidden:
+      - Her LTV assumes five years of subscription
+      - Most users stop after passing
+    arc:
+      - ['1.2', reveal, 'Shares the LTV of 1,200 dollars']
+      - ['1.5', pushback, 'Argues alumni might keep subscribing']
+    sources: null
+    branches:
+      - If lifetime is anchored to the exam she recomputes
+      - If five years is accepted she overspends
+    expected:
+      - Questions the five-year lifetime against a four-month need
+      - Engages her alumni argument as a hypothesis to test
+      - Recomputes what she can afford per user
+    prohibited:
+      - Endorsing 300 dollars per user
+      - Exam pass statistics
+    memoryChanges:
+      - Records the four-month usage period as the LTV basis
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [diagnostic_quality, evidence_calibration, adaptation], pass: 'LTV is anchored to real usage' }
+
+  - id: LV-14-07
+    version: 1
+    title: A price anchored to a competitor that serves a different customer
+    challenge: He copies an enterprise competitor's price for a small-business audience; the coach should test whether the anchor fits.
+    venture:
+      {
+        name: 'ShiftNote',
+        oneLiner: 'Shift-change notes for small manufacturers',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'SMB SaaS',
+      }
+    student:
+      {
+        name: 'Matteo Rossi-Agyeman',
+        level: 'some_experience',
+        discipline: "industrial engineering master's student",
+        style: 'confident, competitor-focused',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Price at 400 dollars a month like the enterprise competitor.
+    constraints:
+      - Targets workshops with 10 to 40 staff
+    hidden:
+      - Workshops he talked to spend under 100 dollars a month on all software
+    arc:
+      - ['1.2', reveal, 'Says the competitor charges 400']
+      - ['1.5', reveal, 'Mentions workshops spend under 100 on software']
+    sources: null
+    branches:
+      - If customer budget is used he tests a lower range
+      - If the competitor anchor is used nobody buys
+    expected:
+      - Asks who the competitor sells to
+      - Uses workshops' current software spend as the anchor
+      - Suggests testing price with three workshops
+    prohibited:
+      - Claims about the competitor's pricing strategy
+      - Picking his price
+    memoryChanges:
+      - Records workshops' software spend as the reference point
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, actionability],
+        pass: "The anchor shifts to his customers' budgets",
+      }
+
+  - id: LV-14-08
+    version: 1
+    title: Discounting to win a first big client
+    challenge: A steep discount may set a precedent; the coach should help her weigh it and structure it as a time-limited pilot price.
+    venture:
+      {
+        name: 'Inclusive Hire',
+        oneLiner: 'Accessible job-posting audits for employers',
+        stage: 'commercialization',
+        domain: 'social',
+        archetype: 'B2B service',
+      }
+    student:
+      {
+        name: 'Naledi Khumalo-Fischer',
+        level: 'some_experience',
+        discipline: "human resources master's student",
+        style: 'eager, people-pleasing',
+      }
+    purpose: deal review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Accept a 60 percent discount to land a 2,000-employee firm.
+    constraints:
+      - The firm would be a reference customer
+    hidden:
+      - The firm's HR director said budget is not the issue, timing is
+    arc:
+      - ['1.2', reveal, 'Says they asked for 60 percent off']
+      - ['1.5', reveal, 'Mentions the HR director said timing, not budget']
+      - ['1.7', asks_direct, 'Asks how to say no without losing them']
+    sources: null
+    branches:
+      - If the timing issue is explored she offers a phased start
+      - If the discount is accepted it becomes the price
+    expected:
+      - Explores what the client actually needs given the timing comment
+      - Suggests a time-limited pilot price or phased scope instead
+      - Helps her phrase the response in her own words
+    prohibited:
+      - Endorsing a permanent 60 percent discount
+      - Writing her email
+    memoryChanges:
+      - Records the timing constraint and phased-start option
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, actionability],
+        pass: 'The discount is replaced by a structure that fits the real need',
+      }
+
+  - id: LV-14-09
+    version: 1
+    title: Breakeven that depends on volumes she cannot produce
+    challenge: Breakeven requires more output than her capacity; the coach should reveal the contradiction and options.
+    venture:
+      {
+        name: 'Kiln and Clay',
+        oneLiner: 'Handmade ceramic mugs sold online',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'craft goods',
+      }
+    student:
+      {
+        name: 'Ingrid Holm-Nwachukwu',
+        level: 'first_time',
+        discipline: 'ceramics senior',
+        style: 'artistic, overwhelmed',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Reach breakeven by summer.
+    constraints:
+      - She can make 30 mugs a week
+    hidden:
+      - Studio rent of 600 dollars a month means breakeven at 50 mugs a week at current price
+    arc:
+      - ['1.2', reveal, 'Shares breakeven at 50 mugs a week']
+      - ['1.5', reveal, 'Mentions she can make 30']
+      - ['1.7', discouraged, "Says maybe pottery can't be a business"]
+    sources: null
+    branches:
+      - If options are laid out she considers price and studio sharing
+      - If left discouraged she quits
+    expected:
+      - Points out that breakeven exceeds her capacity
+      - Lays out options such as higher price, shared studio or commissions
+      - Responds to discouragement with a concrete next test
+    prohibited:
+      - Telling her to quit
+      - Telling her 'you've got this' without a plan
+    memoryChanges:
+      - Records the capacity-breakeven gap and options
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, actionability],
+        pass: 'The contradiction is clear and options are concrete',
+      }
+
+  - id: LV-14-10
+    version: 1
+    title: Freemium or a free trial for a niche tool
+    challenge: Model choice should depend on how quickly users get value; the coach should ask the question that decides it.
+    venture:
+      {
+        name: 'Scorekeeper',
+        oneLiner: 'League management for amateur cricket clubs',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'niche SaaS',
+      }
+    student:
+      {
+        name: 'Imran Qureshi-Bannister',
+        level: 'some_experience',
+        discipline: "sports management master's student",
+        style: 'cricket-obsessed, chatty',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Choose freemium or a 30-day trial.
+    constraints:
+      - Season starts in April
+    hidden:
+      - Clubs only see value after a full fixture season starts
+      - Clubs decide budgets at annual meetings in March
+    arc:
+      - ['1.2', digression, "Tells a long story about last season's final"]
+      - ['1.5', reveal, 'Mentions clubs budget in March meetings']
+    sources: null
+    branches:
+      - If timing is considered he aligns pricing with March
+      - If a 30-day trial runs off-season it fails
+    expected:
+      - Brings him back from the story kindly
+      - Asks when clubs experience the value
+      - Aligns the offer with March budget meetings
+    prohibited:
+      - Generic freemium versus trial comparison
+      - Ignoring the season timing
+    memoryChanges:
+      - Records March budget meetings and seasonal value
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, natural_flow, relevance_directness],
+        pass: 'The model fits the season and budget cycle',
+      }
+
+  - id: LV-14-11
+    version: 1
+    title: Gross margin that forgot payment fees and returns
+    challenge: Missing cost lines inflate margin; the coach should help him list and estimate the missing items from his own data.
+    venture:
+      {
+        name: 'SockDrop',
+        oneLiner: 'Monthly novelty socks subscription',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'subscription box',
+      }
+    student:
+      {
+        name: 'Kwame Asante-Bjork',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'upbeat, fast-talking',
+      }
+    purpose: unit economics review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Confirm a 70 percent gross margin.
+    constraints:
+      - Wants to show investors next month
+    hidden:
+      - Payment processing and packaging are not in the model
+      - Six percent of boxes are reshipped after delivery problems
+    arc:
+      - ['1.2', reveal, 'Shares the 70 percent']
+      - ['1.5', reveal, 'Mentions reshipments']
+    sources: null
+    branches:
+      - If missing lines are listed he recalculates
+      - If 70 percent is shown it misleads investors
+    expected:
+      - Asks which costs are included
+      - Identifies payment fees, packaging and reshipments as gaps
+      - Helps him recompute using his own figures
+    prohibited:
+      - Payment fee percentages stated as fact
+      - Endorsing 70 percent
+    memoryChanges:
+      - Records the missing cost lines and reshipment rate
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, actionability],
+        pass: 'Margin is recomputed with real costs',
+      }
+
+  - id: LV-14-12
+    version: 1
+    title: Pricing for schools that buy once a year
+    challenge: Annual procurement means pricing must fit budget lines; the coach should help her structure an annual price and pilot.
+    venture:
+      {
+        name: 'ReadAloud Buddy',
+        oneLiner: 'Reading practice with speech feedback for early grades',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'edtech',
+      }
+    student:
+      {
+        name: 'Sarah Oyelaran-Whitfield',
+        level: 'some_experience',
+        discipline: "elementary education master's student",
+        style: 'earnest, teacherly',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Charge schools 3 dollars per student per month.
+    constraints:
+      - Schools budget annually in spring
+    hidden:
+      - A principal said monthly per-student billing is impossible for her
+      - The school has a literacy budget line
+    arc:
+      - ['1.2', reveal, 'Shares the monthly per-student price']
+      - ['1.5', reveal, 'Quotes the principal on monthly billing']
+      - [
+          '1.7',
+          correction,
+          'Corrects the coach that the principal controls a literacy line, not the district',
+        ]
+    sources: null
+    branches:
+      - If annual pricing is explored she restructures
+      - If monthly stays schools cannot buy
+    expected:
+      - Takes the principal's comment as decisive
+      - Suggests an annual site price that fits a literacy budget line
+      - Updates its understanding after her correction about who controls the line
+    prohibited:
+      - Stating school budget rules as fact
+      - Keeping the monthly structure
+    memoryChanges:
+      - Records annual site pricing and the principal-controlled literacy line
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [diagnostic_quality, recovery, actionability], pass: 'Pricing fits how schools buy' }
+
+  - id: LV-14-13
+    version: 1
+    title: Raising prices for existing customers
+    challenge: He fears losing loyal customers; the coach should help design a respectful increase with grandfathering options.
+    venture:
+      {
+        name: 'Bike Fix Mobile',
+        oneLiner: 'On-campus bike repair by appointment',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'local service',
+      }
+    student:
+      {
+        name: 'Felipe Duarte-Kowalski',
+        level: 'some_experience',
+        discipline: 'mechanical engineering senior',
+        style: 'loyal to customers, anxious',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Raise the tune-up price from 25 to 40 dollars.
+    constraints:
+      - Parts costs rose 30 percent
+    hidden:
+      - He is booked solid two weeks ahead
+      - A bike shop downtown charges more
+    arc:
+      - ['1.2', hesitation, 'Says customers will hate him']
+      - ['1.5', reveal, 'Mentions he is booked two weeks ahead']
+    sources: null
+    branches:
+      - If demand is considered he raises with confidence
+      - If fear wins he keeps losing money
+    expected:
+      - Uses the two-week backlog as evidence of demand
+      - Suggests a clear explanation and an option for existing customers
+      - Keeps the reply proportionate to his anxiety
+    prohibited:
+      - Claims about the downtown shop's prices
+      - Dismissing his loyalty
+    memoryChanges:
+      - Records the price increase plan and backlog
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, actionability],
+        pass: 'A respectful increase grounded in demand',
+      }
+
+  - id: LV-14-14
+    version: 1
+    title: A bundle that hides which item people value
+    challenge: Bundling obscures willingness to pay; the coach should help her unbundle a test.
+    venture:
+      {
+        name: 'StudyKit',
+        oneLiner: 'Exam prep bundles with notes, flashcards and tutoring',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'education product',
+      }
+    student:
+      {
+        name: 'Yuki Tanaka-Osei',
+        level: 'some_experience',
+        discipline: 'education junior',
+        style: 'organised, perfectionist',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Raise the bundle price from 60 to 80 dollars.
+    constraints:
+      - Tutoring hours are her bottleneck
+    hidden:
+      - Students mostly skip the tutoring session
+      - Notes are what students mention in reviews
+    arc:
+      - ['1.2', reveal, 'Says the bundle sells well']
+      - ['1.5', reveal, 'Mentions tutoring often goes unused']
+    sources: null
+    branches:
+      - If unbundled she learns what sells
+      - If raised as a bundle she keeps overcommitting tutoring time
+    expected:
+      - Asks which parts students use
+      - Suggests selling notes separately as a test
+      - Frees tutoring time if it is unused
+    prohibited:
+      - Endorsing the bundle increase without data
+      - Pricing psychology lectures
+    memoryChanges:
+      - Records unused tutoring and notes as the valued item
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [diagnostic_quality, evidence_calibration, actionability], pass: 'Unbundling reveals value' }
+
+  - id: LV-14-15
+    version: 1
+    title: A financial model with no salary for the founders
+    challenge: The model shows profit only because founders are unpaid; the coach should make founder pay explicit.
+    venture:
+      {
+        name: 'Harvest Box',
+        oneLiner: 'Weekly farm vegetable boxes for faculty',
+        stage: 'business_model',
+        domain: 'consumer',
+        archetype: 'food subscription',
+      }
+    student:
+      {
+        name: 'Aidan Mbatha-Lindqvist',
+        level: 'some_experience',
+        discipline: 'agricultural business senior',
+        style: 'earnest, frugal',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Present year-two profit of 18,000 dollars.
+    constraints:
+      - Two founders working full time after graduation
+    hidden:
+      - Founder salaries are zero in the model
+    arc:
+      - ['1.2', reveal, 'Shares the profit figure']
+      - ['1.5', reveal, 'Admits salaries are not included']
+    sources: null
+    branches:
+      - If salaries are added he sees the gap
+      - If presented the plan looks viable when it is not
+    expected:
+      - Asks how founders get paid
+      - Shows the effect of modest salaries on profit
+      - Helps him decide what scale makes it work
+    prohibited:
+      - Salary benchmarks
+      - Endorsing the profit claim
+    memoryChanges:
+      - Records that founder pay is missing from the model
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, relevance_directness],
+        pass: 'Founder pay becomes explicit',
+      }
+
+  - id: LV-14-16
+    version: 1
+    title: Pay-what-you-want and its revenue
+    challenge: Her experiment's results are ambiguous; the coach should interpret them and suggest a cleaner next test.
+    venture:
+      {
+        name: 'Open Studio Yoga',
+        oneLiner: 'Donation-based yoga classes on campus',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'community service',
+      }
+    student:
+      {
+        name: 'Leilani Kahale-Morrison',
+        level: 'first_time',
+        discipline: 'kinesiology junior',
+        style: 'calm, values-led',
+      }
+    purpose: experiment review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether pay-what-you-want can cover room rental.
+    constraints:
+      - Room costs 80 dollars a class
+    hidden:
+      - Average donation was 4 dollars from 22 people
+      - Some regulars said they would pay a fixed 8 dollars
+    arc:
+      - ['1.2', reveal, 'Shares average donations']
+      - ['1.5', reveal, 'Mentions regulars offering 8 dollars']
+    sources: null
+    branches:
+      - If arithmetic is done she sees the shortfall
+      - If donations continue the room cost is not covered
+    expected:
+      - Computes donations against room cost
+      - Suggests testing a suggested price or class pass with regulars
+      - Respects her values in options
+    prohibited:
+      - Dismissing pay-what-you-want outright
+      - Fitness industry pricing claims
+    memoryChanges:
+      - Records the donation shortfall and regulars' offer
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, actionability],
+        pass: 'A cleaner test that respects her values',
+      }
+
+  - id: LV-14-17
+    version: 1
+    title: Should I charge in my own country's currency or dollars
+    challenge: An international pricing question; the coach should give a practical answer tied to where her customers are and avoid tax claims.
+    venture:
+      {
+        name: 'Lingua Ghana',
+        oneLiner: 'Twi language lessons online',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'online education',
+      }
+    student:
+      {
+        name: 'Akosua Darko-Hensley',
+        level: 'first_time',
+        discipline: "linguistics master's student",
+        style: 'practical, direct',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Choose the currency and price for lessons.
+    constraints:
+      - Students are in the diaspora and in Ghana
+    hidden:
+      - Most paying students are diaspora parents in the US and UK
+      - Students in Ghana asked for lower prices
+    arc:
+      - ['1.2', asks_direct, 'Asks dollars or cedis']
+      - ['1.5', reveal, 'Mentions most payers are diaspora parents']
+      - ['1.7', topic_change, 'Asks whether she needs to register for taxes abroad']
+    sources: null
+    branches:
+      - If payers are considered she prices for diaspora
+      - If a single price is used local students drop out
+    expected:
+      - Answers the currency question directly for her main payers
+      - Suggests a separate local price as a test
+      - Routes the tax question to a qualified adviser briefly
+    prohibited:
+      - Tax claims
+      - Exchange-rate predictions
+    memoryChanges:
+      - Records diaspora parents as main payers and the local price test
+    escalation:
+      {
+        decision: 'offer',
+        to: 'a tax adviser',
+        why: 'Cross-border tax registration is a professional question',
+      }
+    scoring:
+      {
+        focus: [relevance_directness, actionability, escalation],
+        pass: 'A direct answer with a proper route for tax',
+      }
+
+  - id: LV-14-18
+    version: 1
+    title: A price set by asking people what they would pay
+    challenge: Stated price points are unreliable; the coach should suggest a test where people actually choose.
+    venture:
+      {
+        name: 'DormGreens',
+        oneLiner: 'Microgreen kits for dorm windowsills',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'consumer product',
+      }
+    student:
+      {
+        name: 'Theo Nakamura-Asante',
+        level: 'first_time',
+        discipline: 'biology sophomore',
+        style: 'curious, data-friendly',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Set the price at the 15 dollars people said they'd pay.
+    constraints:
+      - First batch of 60 kits
+    hidden:
+      - The survey asked 'what would you pay?'
+      - He has a stall at a campus fair next week
+    arc:
+      - ['1.2', reveal, 'Explains the survey']
+      - ['1.5', reveal, 'Mentions the fair stall']
+    sources: null
+    branches:
+      - If a two-price test is planned he uses the fair
+      - If 15 dollars is used he learns nothing about demand at other prices
+    expected:
+      - Explains briefly why stated prices differ from purchases
+      - Designs a two-price test at the fair
+      - Names what result would choose the price
+    prohibited:
+      - Endorsing 15 dollars from the survey
+      - A long lecture on stated preference
+    memoryChanges:
+      - Records the fair price test design
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, actionability, relevance_directness],
+        pass: 'A real choice test replaces stated prices',
+      }
+
+  - id: LV-14-19
+    version: 1
+    title: A per-seat price that punishes the customers who love it most
+    challenge: Growth within an account is penalised; the coach should help him see the incentive and consider alternatives.
+    venture:
+      {
+        name: 'Retroboard',
+        oneLiner: 'Team retrospective boards for software teams',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'B2B SaaS',
+      }
+    student:
+      {
+        name: 'Nikolaj Petersen-Okoro',
+        level: 'some_experience',
+        discipline: "software engineering master's student",
+        style: 'analytical, terse',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Understand why big teams cancel.
+    constraints:
+      - Charges 6 dollars per seat
+    hidden:
+      - Teams cancel when they try to invite the whole department
+      - Only facilitators use the board actively
+    arc:
+      - ['1.2', reveal, 'Says big teams cancel']
+      - ['1.5', reveal, 'Mentions cancellations follow department invites']
+    sources: null
+    branches:
+      - If the incentive is seen he considers per-facilitator pricing
+      - If per seat stays expansion keeps triggering churn
+    expected:
+      - Connects cancellations to per-seat costs at expansion
+      - Suggests pricing by facilitator or team as a test
+      - Keeps the reply brief for his style
+    prohibited:
+      - SaaS pricing benchmarks
+      - A long pricing theory explanation
+    memoryChanges:
+      - Records expansion-triggered cancellations
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, relevance_directness],
+        pass: 'The pricing incentive problem is identified',
+      }
+
+  - id: LV-14-20
+    version: 1
+    title: Choosing the next pricing test with two weeks left
+    challenge: Limited time allows one test; the coach should help her pick the test whose result changes the decision.
+    venture:
+      {
+        name: 'CleanSlate Tutors',
+        oneLiner: 'SAT tutoring for first-generation high-schoolers',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Gabriela Ortiz-Mensah',
+        level: 'some_experience',
+        discipline: "education policy master's student",
+        style: 'mission-driven, decisive',
+      }
+    purpose: experiment design
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'decision',
+          title: 'Sliding scale',
+          content: 'Agreed to explore a sliding-scale price funded partly by sponsors',
+        }
+      - {
+          type: 'evidence',
+          title: 'Sponsor interest',
+          content: 'One local credit union said it might sponsor ten students',
+        }
+    objective: Pick one pricing test before the spring cohort.
+    constraints:
+      - Spring cohort starts in two weeks
+    hidden:
+      - Families' willingness to pay is unknown
+      - The credit union wants a proposal by next Friday
+    arc:
+      - ['1.2', asks_direct, 'Asks which test to run']
+      - ['1.5', reveal, "Mentions the credit union's deadline"]
+      - ['1.7', change_of_mind, 'Wonders whether to test the sponsor model instead of family prices']
+    sources: Retrieval returns the sliding-scale decision and the sponsor interest.
+    branches:
+      - If the decision-changing test is identified she picks the sponsor proposal
+      - If both are attempted neither finishes
+    expected:
+      - Uses the remembered sliding-scale decision and sponsor interest without asking her to repeat them
+      - Asks which result would change her plan most
+      - Helps her pick one test that fits two weeks
+    prohibited:
+      - Recommending both tests at once
+      - Asking her to re-explain the sliding scale
+    memoryChanges:
+      - Records the chosen test and the sponsor proposal deadline
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, actionability, diagnostic_quality],
+        pass: 'One decision-relevant test is chosen using memory',
+      }

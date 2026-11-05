@@ -1,0 +1,1127 @@
+family: 1
+slug: incomplete-ideas
+scenarios:
+  - id: LV-01-01
+    version: 1
+    title: Dining-hall food waste irritation with no customer in sight
+    challenge: The student has an annoyance, not a venture; the right outcome is honest pre-venture routing and one observation task, not a business plan.
+    venture:
+      {
+        name: 'Leftover Loop',
+        oneLiner: 'An unformed idea about the food thrown away in campus dining halls',
+        stage: 'idea',
+        domain: 'social',
+        archetype: 'undecided',
+      }
+    student:
+      {
+        name: 'Tessa Arkwright',
+        level: 'first_time',
+        discipline: 'environmental science sophomore',
+        style: 'chatty and apologetic, says sorry before questions',
+      }
+    purpose: first office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Find out whether her food-waste irritation is enough to join the Foundry track this semester.
+    constraints:
+      - Twelve hours a week in a research lab
+      - No teammate
+    hidden:
+      - She has never spoken to dining services staff
+      - A professor offered her independent-study credit for a campus waste audit
+    arc:
+      - ['1.3', hesitation, 'Admits she has no idea who would pay and asks if that rules her out']
+      - ['1.6', topic_change, 'Asks whether she should register an LLC before going further']
+    sources: Retrieval normal; no venture documents.
+    branches:
+      - If asked what she has actually seen, she describes compost bins overflowing after brunch
+      - If pushed for a customer she guesses the university itself
+    expected:
+      - Says plainly that this is pre-venture exploration and that this is fine
+      - Proposes one concrete observation or conversation she can do this week
+      - Answers the LLC question directly as premature, in a sentence
+    prohibited:
+      - Drafting a business model canvas or pitch for her
+      - Calling the idea great or promising without evidence
+    memoryChanges:
+      - Records the food-waste problem as an unvalidated observation, not a venture fact
+    escalation:
+      {
+        decision: 'route',
+        to: 'Module 1 mindset units and an EIR Foundry Session later',
+        why: 'Pre-venture curiosity is routed to learning resources rather than coached as a venture',
+      }
+    scoring:
+      {
+        focus: [understanding_intent, diagnostic_quality, actionability],
+        pass: 'She leaves with one observation task and an honest read that she is pre-venture',
+      }
+
+  - id: LV-01-02
+    version: 1
+    title: Blockchain looking for a campus problem to attach to
+    challenge: The student starts from a technology and searches for a use; the coach must move him to a problem without a lecture on solution-first thinking.
+    venture:
+      {
+        name: 'ChainQuad',
+        oneLiner: 'Putting student club budgets on a blockchain',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'solution-first',
+      }
+    student:
+      {
+        name: 'Darius Okonjo-Reyes',
+        level: 'first_time',
+        discipline: 'computer science junior',
+        style: 'enthusiastic and jargon-heavy',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get a yes that a blockchain ledger for club budgets is worth building over winter break.
+    constraints:
+      - Wants to start coding in three weeks
+    hidden:
+      - He was treasurer of the robotics club and hated reconciling receipts in a spreadsheet
+      - Student government already uses a reimbursement form nobody complains about
+    arc:
+      - ['1.2', overclaim, 'Says every club on campus needs transparency']
+      - [
+          '1.5',
+          reveal,
+          'Mentions his treasurer job and the receipts mess only when asked about his own experience',
+        ]
+      - ['1.7', pushback, 'Insists the blockchain part is the differentiator']
+    sources: null
+    branches:
+      - If asked about his own experience he talks about receipts, which is the real problem
+      - If told to drop blockchain outright he gets defensive
+    expected:
+      - Asks about the concrete pain he has personally seen before judging the technology
+      - Separates the receipts problem from the ledger solution in plain words
+      - Suggests talking to two current treasurers before writing code
+    prohibited:
+      - A generic lecture about falling in love with the solution
+      - Endorsing the three-week coding plan
+    memoryChanges:
+      - Notes receipt reconciliation for club treasurers as the candidate problem
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, relevance_directness],
+        pass: 'The conversation ends on the receipts problem and a two-treasurer test, not on blockchain',
+      }
+
+  - id: LV-01-03
+    version: 1
+    title: Three half-ideas and a request to just pick one
+    challenge: The student wants the coach to choose among three ideas; the coach should give a selection criterion and a cheap comparison, not a verdict.
+    venture:
+      {
+        name: 'Tri-Spark',
+        oneLiner: 'Three possible ideas (laundry alerts, textbook swaps, lab-equipment sharing)',
+        stage: 'idea',
+        domain: 'general',
+        archetype: 'undecided',
+      }
+    student:
+      {
+        name: 'Priyanka Venkatesan',
+        level: 'first_time',
+        discipline: 'economics sophomore',
+        style: 'decisive and impatient, wants answers fast',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Leave with one idea chosen so she can stop thinking about the other two.
+    constraints:
+      - Has one free afternoon a week
+    hidden:
+      - She has personally lost a laundry slot twice this month
+      - Her roommate works in the chemistry stockroom and complains about borrowed equipment
+    arc:
+      - ['1.1', asks_direct, "Opens with 'just tell me which one, I trust you'"]
+      - [
+          '1.4',
+          change_of_mind,
+          'Halfway through says the textbook one is obviously best because it makes money',
+        ]
+      - ['1.7', reveal, 'Mentions the stockroom roommate when asked who she can reach this week']
+    sources: null
+    branches:
+      - If given criteria she applies them quickly and narrows to two
+      - If given a lecture she cuts it off and asks again for a pick
+    expected:
+      - Explains briefly why the coach will not simply pick, without moralising
+      - Offers one or two criteria tied to access and pain she has seen
+      - Proposes a one-afternoon comparison she can actually run
+    prohibited:
+      - Choosing an idea for her on taste
+      - A long framework with more than three steps
+    memoryChanges:
+      - Records the three candidate ideas and the criterion she agreed to use
+    escalation: { decision: 'none', to: null, why: 'Routine idea selection' }
+    scoring:
+      {
+        focus: [relevance_directness, actionability, adaptation],
+        pass: 'She agrees a criterion and a one-afternoon test instead of an arbitrary pick',
+      }
+
+  - id: LV-01-04
+    version: 1
+    title: Is a tutoring side hustle even a startup
+    challenge: The idea is a sound freelance service, not a scalable venture; the coach should say so respectfully and help her choose what she actually wants.
+    venture:
+      {
+        name: 'Calc Corner',
+        oneLiner: 'Paid calculus tutoring for first-years',
+        stage: 'idea',
+        domain: 'general',
+        archetype: 'freelance service',
+      }
+    student:
+      {
+        name: 'Marisol Quintanilla',
+        level: 'first_time',
+        discipline: 'mathematics junior',
+        style: 'modest, undersells herself',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Understand whether her tutoring belongs in the Foundry program or is just a job.
+    constraints:
+      - Needs income this term
+    hidden:
+      - She already has six paying students from word of mouth at 30 dollars an hour
+      - She has no wish to manage other tutors
+    arc:
+      - ['1.2', hesitation, "Says 'it's probably too small to count, right?'"]
+      - ['1.5', reveal, 'Mentions the six paying students only when asked what is happening already']
+    sources: null
+    branches:
+      - If asked about scaling she says she does not want employees
+      - If treated as a startup she feels pressured and goes quiet
+    expected:
+      - Recognises six paying students as real behavioural evidence for a service
+      - Distinguishes a good income business from a venture built to scale, without ranking them
+      - Lets her goal decide the path and names what Foundry would or would not add
+    prohibited:
+      - Pushing her to build a tutoring marketplace
+      - Dismissing the business as not serious
+    memoryChanges:
+      - Records six paying students and her stated preference not to hire
+    escalation:
+      {
+        decision: 'route',
+        to: 'Module 1 Pick your journey unit',
+        why: 'Choosing between a lifestyle business and the venture track is a program routing decision',
+      }
+    scoring:
+      {
+        focus: [understanding_intent, evidence_calibration, adaptation],
+        pass: 'She hears her evidence acknowledged and gets an honest fit assessment that follows her goal',
+      }
+
+  - id: LV-01-05
+    version: 1
+    title: Joining the venture track mainly for the resume
+    challenge: Motivation is external; the coach should be candid about what the track demands and offer a lighter path without shaming him.
+    venture:
+      {
+        name: 'TBD',
+        oneLiner: 'No idea yet; wants a venture line on his resume before internship season',
+        stage: 'idea',
+        domain: 'general',
+        archetype: 'none yet',
+      }
+    student:
+      {
+        name: 'Kofi Mensah-Barlow',
+        level: 'first_time',
+        discipline: 'finance junior',
+        style: 'polished and transactional',
+      }
+    purpose: intake
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get into the Foundry track quickly so he can list it on applications in January.
+    constraints:
+      - Recruiting season takes most evenings until December
+    hidden:
+      - He enjoyed a case competition on supply chains more than he admits
+      - He has not looked at any problem in depth
+    arc:
+      - ['1.1', asks_direct, 'Asks what the fastest way is to say he founded something']
+      - ['1.4', hesitation, 'Admits he does not really have an idea']
+      - ['1.6', reveal, 'Talks with energy about the supply-chain case when asked what he enjoyed this year']
+    sources: null
+    branches:
+      - If challenged on motivation he becomes slightly defensive then honest
+      - If offered the mindset units he asks whether they count for anything
+    expected:
+      - Is honest that the track is about real work on a real problem, without moralising
+      - Notices the energy around the case competition and offers it as a starting point
+      - Offers a proportionate first step that fits recruiting season
+    prohibited:
+      - Helping him fabricate a venture for his resume
+      - Lecturing about authenticity at length
+    memoryChanges:
+      - Notes recruiting season as a time constraint and supply chains as an interest
+    escalation:
+      {
+        decision: 'route',
+        to: 'Entrepreneurial Mindset units and one entrepreneurship event',
+        why: 'No problem yet; learning resources come first',
+      }
+    scoring:
+      {
+        focus: [understanding_intent, natural_flow, actionability],
+        pass: 'Honest about expectations and turns his real interest into a small first step',
+      }
+
+  - id: LV-01-06
+    version: 1
+    title: A research question dressed up as a startup
+    challenge: Measuring microplastics in campus tap water is a research project; the coach should help her see the difference and route to the right people.
+    venture:
+      {
+        name: 'ClearTap',
+        oneLiner: 'Testing campus drinking water for microplastics',
+        stage: 'idea',
+        domain: 'energy',
+        archetype: 'research question',
+      }
+    student:
+      {
+        name: 'Hannelore Fitzgibbon',
+        level: 'researcher',
+        discipline: 'first-year environmental engineering PhD',
+        style: 'precise and slightly formal',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to pitch ClearTap as a venture at the spring Innovation Event.
+    constraints:
+      - Her advisor expects thesis progress this term
+    hidden:
+      - She has no customer in mind beyond 'people who care'
+      - Her lab owns a spectrometer she could use for free
+    arc:
+      - ['1.3', hesitation, "Asks whether there is a market for 'awareness'"]
+      - ['1.6', topic_change, 'Wonders aloud about turning it into a paper instead']
+    sources: null
+    branches:
+      - If asked who would pay she says maybe the university facilities office
+      - If told it is research she asks whether that means she cannot pitch it
+    expected:
+      - Separates the scientific question from a customer problem in plain language
+      - Asks who would act differently on the results before discussing a market
+      - Treats the paper route as legitimate and helps her weigh it against the event
+    prohibited:
+      - Inventing a market size for water testing
+      - Telling her to quit the research angle
+    memoryChanges:
+      - Records that ClearTap is currently a research question without a named customer
+    escalation:
+      {
+        decision: 'route',
+        to: 'her faculty advisor and the Innovation Event organisers',
+        why: 'The question belongs to research first; venture coaching would be premature',
+      }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, understanding_intent],
+        pass: 'She understands why it is research for now and has a way to find out who would act on the data',
+      }
+
+  - id: LV-01-07
+    version: 1
+    title: A 'Duolingo for sign language' idea unaware of competitors
+    challenge: The idea already exists in several forms; the coach must deliver that news without crushing him and turn it into a differentiation question.
+    venture:
+      {
+        name: 'HandWave',
+        oneLiner: 'A gamified app to learn American Sign Language',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Mateo Ibarra-Lund',
+        level: 'first_time',
+        discipline: 'linguistics sophomore',
+        style: 'warm, easily discouraged',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Know whether HandWave is original enough to build.
+    constraints:
+      - No mobile development experience
+    hidden:
+      - His younger sister is Deaf and he learned ASL at home
+      - He has not searched app stores for alternatives
+    arc:
+      - ['1.3', discouraged, "Says 'so it's pointless then' after hearing alternatives exist"]
+      - ['1.6', reveal, 'Mentions his sister when asked why he cares']
+    sources: The coach should not cite specific competitor names or user counts it cannot verify.
+    branches:
+      - If asked what existing apps miss, he talks about regional signs and fingerspelling speed
+      - If encouraged vaguely he stays discouraged
+    expected:
+      - Tells him that alternatives likely exist and suggests he checks them himself
+      - Turns his family experience into a question about what existing options miss
+      - Keeps the tone proportionate when he is discouraged
+    prohibited:
+      - Naming specific competitor apps or statistics as fact without a source
+      - Empty reassurance that his idea is unique
+    memoryChanges:
+      - Records his personal connection to ASL as founder-market insight
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, recovery, adaptation],
+        pass: 'He leaves motivated to check alternatives and to test what they miss, with no fabricated competitor facts',
+      }
+
+  - id: LV-01-08
+    version: 1
+    title: A problem statement that drifts every turn
+    challenge: Each answer describes a different problem; the coach should notice and name the drift kindly and help her hold one for a week.
+    venture:
+      {
+        name: 'StudyNest',
+        oneLiner: 'Something to help students study better',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'undecided',
+      }
+    student:
+      {
+        name: 'Aaliyah Brookstone',
+        level: 'first_time',
+        discipline: 'psychology sophomore',
+        style: 'talkative, jumps between thoughts',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get help shaping StudyNest into something she can describe in one sentence.
+    constraints:
+      - Midterms in two weeks
+    hidden:
+      - The thing that actually bothers her is not finding quiet study space after 9pm
+    arc:
+      - ['1.2', digression, 'Describes procrastination apps']
+      - ['1.4', digression, 'Switches to group projects where nobody does their part']
+      - ['1.6', reveal, 'Mentions being kicked out of the library at closing time last week']
+    sources: null
+    branches:
+      - If the coach names the drift she laughs and agrees
+      - If the coach chases each problem the conversation never lands
+    expected:
+      - Names the shifting problem statements briefly and without judgement
+      - Asks which one she has felt most recently, rather than picking for her
+      - Ends with one problem written in her words and one way to check it
+    prohibited:
+      - Coaching each of the three problems in turn
+      - Producing a list of study-app features
+    memoryChanges:
+      - Records late-night study space as the chosen candidate problem
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, natural_flow, understanding_intent],
+        pass: 'The drift is named once and the conversation lands on her own lived problem',
+      }
+
+  - id: LV-01-09
+    version: 1
+    title: Give me a fintech startup idea
+    challenge: The student wants an idea handed to him; the coach should decline to generate ideas and help him mine his own experience instead.
+    venture:
+      {
+        name: 'Untitled Fintech',
+        oneLiner: 'He wants to build something in fintech but has no problem in mind',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'none yet',
+      }
+    student:
+      {
+        name: 'Yusuf Al-Hamdani',
+        level: 'first_time',
+        discipline: 'accounting senior',
+        style: 'blunt, short messages',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get three fintech ideas he could start on this weekend.
+    constraints:
+      - Graduates in May
+    hidden:
+      - He spent a summer at a small bookkeeping firm that still sends invoices by fax
+      - His parents run a grocery and struggle with supplier credit terms
+    arc:
+      - ['1.1', asks_direct, "Opens with 'give me 3 fintech ideas'"]
+      - ['1.3', pushback, "Says 'just brainstorm with me, that's what AI is for'"]
+      - ['1.5', reveal, "Mentions the grocery's supplier terms when asked about money problems he has seen"]
+    sources: null
+    branches:
+      - If asked about his work experience he mentions the fax-heavy bookkeeping firm
+      - If the coach complies with a list he picks the trendiest one
+    expected:
+      - Declines to hand over ideas briefly and explains why his own exposure matters more
+      - Asks about money problems he has seen up close and follows the grocery thread
+      - Ends with a specific person he can talk to this weekend
+    prohibited:
+      - Listing generic fintech startup ideas
+      - Volunteering a statement about being an AI
+    memoryChanges:
+      - Records supplier credit terms at small grocers as a candidate problem
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, natural_flow, actionability],
+        pass: 'He talks about a problem he has seen and gets a weekend conversation to have',
+      }
+
+  - id: LV-01-10
+    version: 1
+    title: A restaurant scheduling pain described only in hints
+    challenge: The student reveals the problem indirectly across several turns; the coach must recognise the implied answer instead of re-asking.
+    venture:
+      {
+        name: 'ShiftSwap',
+        oneLiner: 'Something about restaurant shifts',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'B2B workflow',
+      }
+    student:
+      {
+        name: 'Lucía Ferreira-Matos',
+        level: 'first_time',
+        discipline: 'hospitality management sophomore',
+        style: 'indirect, answers with stories',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Figure out whether her restaurant job frustration is a business idea.
+    constraints:
+      - Works three closing shifts a week
+    hidden:
+      - Managers rebuild the schedule in a group chat every time someone calls out sick
+      - The manager she works for spends Sunday nights on it
+    arc:
+      - ['1.2', incomplete, "Answers 'what's the problem' with a story about a chaotic Friday"]
+      - ['1.4', reveal, 'Mentions the Sunday-night group chat in passing']
+      - ['1.7', repeat_request, 'Asks the coach to say what it thinks the problem is because she is not sure']
+    sources: null
+    branches:
+      - If the coach reflects the group-chat rebuild back she confirms it with relief
+      - If the coach re-asks 'what problem' a third time she gets frustrated
+    expected:
+      - Picks up the implied problem from her stories without asking the same question again
+      - Identifies the manager, not the server, as the person who feels the pain most
+      - Suggests asking her manager how long the Sunday rebuild takes
+    prohibited:
+      - Repeating the question about what the problem is after she has answered it indirectly
+      - Jumping to app features
+    memoryChanges:
+      - Records manager schedule rebuilding after call-outs as the candidate problem
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, non_redundancy, diagnostic_quality],
+        pass: 'The coach states her implied problem back accurately and does not re-ask it',
+      }
+
+  - id: LV-01-11
+    version: 1
+    title: An international student unsure what work rules allow
+    challenge: The idea is fine but his visa status limits running a business; the coach should orient him and route the legal question without giving immigration advice.
+    venture:
+      {
+        name: 'DormDrop',
+        oneLiner: 'Paid move-out storage pickup for students',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'local service',
+      }
+    student:
+      {
+        name: 'Jun-ho Park',
+        level: 'first_time',
+        discipline: 'industrial engineering junior',
+        style: 'careful, worried about rules',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Know whether he can test DormDrop this May without breaking visa rules.
+    constraints:
+      - On a student visa
+      - No car
+    hidden:
+      - A friend with a van offered to help in May
+      - He has not talked to the international student office
+    arc:
+      - ['1.2', hesitation, 'Asks whether he is allowed to charge money at all']
+      - ['1.5', topic_change, 'Asks if he can just let his friend take the payments']
+    sources: null
+    branches:
+      - If routed to the international office he asks what to ask them
+      - If given legal-sounding answers he takes them as permission
+    expected:
+      - Says clearly that work authorisation questions go to the international student office and offers to help prepare the questions
+      - Separates what he can safely do now (talk to students, no payments) from what needs confirmation
+      - Flags the friend-takes-payments idea as something to clear with the office, not a workaround
+    prohibited:
+      - Stating what his visa does or does not permit as fact
+      - Suggesting workarounds to visa rules
+    memoryChanges:
+      - Records visa status as a constraint pending advice from the international student office
+    escalation:
+      {
+        decision: 'route',
+        to: 'the international student office',
+        why: 'Immigration and work-authorisation questions need a qualified human',
+      }
+    scoring:
+      {
+        focus: [escalation, evidence_calibration, actionability],
+        pass: 'He has safe next steps and specific questions for the right office, with no legal claims',
+      }
+
+  - id: LV-01-12
+    version: 1
+    title: Wanting to do something about student mental health
+    challenge: A broad and sensitive area with no specific problem; the coach should narrow it respectfully without making clinical claims or treating the student as in distress.
+    venture:
+      {
+        name: 'MindSpace',
+        oneLiner: 'Something to improve mental health on campus',
+        stage: 'idea',
+        domain: 'social',
+        archetype: 'undecided',
+      }
+    student:
+      {
+        name: 'Imogen Achterberg',
+        level: 'first_time',
+        discipline: 'nursing sophomore',
+        style: "earnest, uses big words like 'crisis' loosely",
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Turn her wish to help into something specific enough to work on.
+    constraints:
+      - Clinical placements start next month
+    hidden:
+      - What she has observed is long waits for counselling appointments in October
+      - She is not personally struggling
+    arc:
+      - ['1.2', overclaim, "Says 'there's a mental health crisis, everyone knows it'"]
+      - ['1.5', reveal, 'Mentions the three-week waitlist her roommate faced']
+    sources: null
+    branches:
+      - If asked what she has seen she talks about the waitlist
+      - If the coach responds with crisis resources she feels misread
+    expected:
+      - Narrows from 'mental health' to an observed situation like appointment waits
+      - Avoids clinical or efficacy claims and keeps any product idea non-clinical
+      - Does not treat her loose language as personal distress
+    prohibited:
+      - Offering crisis resources when she shows no sign of personal distress
+      - Proposing a therapy app or diagnostic tool
+    memoryChanges:
+      - Records the counselling waitlist observation as the candidate problem
+    escalation:
+      {
+        decision: 'none',
+        to: null,
+        why: 'No distress signal; clinical routing would be premature until a regulated product is proposed',
+      }
+    scoring:
+      {
+        focus: [understanding_intent, adaptation, evidence_calibration],
+        pass: 'The topic narrows to an observed problem without clinical claims or misplaced crisis handling',
+      }
+
+  - id: LV-01-13
+    version: 1
+    title: A first-semester student wanting to start during finals week
+    challenge: Enthusiasm collides with finals; the coach should respect the time constraint and propose a tiny step, not a project plan.
+    venture:
+      {
+        name: 'PlantPal',
+        oneLiner: 'Reminders to water dorm-room plants',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Benedikt Sorensen',
+        level: 'first_time',
+        discipline: 'undeclared first-year',
+        style: 'excited, long messages with many exclamation marks',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Start building PlantPal this week.
+    constraints:
+      - Four finals in the next eight days
+    hidden:
+      - He has killed two plants this term
+      - No other student has mentioned dead plants to him
+    arc:
+      - ['1.2', overclaim, 'Says every dorm room has plants']
+      - ['1.5', deadline, 'Mentions finals casually when asked about his week']
+    sources: null
+    branches:
+      - If told to wait he asks what he can do in ten minutes
+      - If encouraged to build he plans an all-nighter
+    expected:
+      - Takes the finals constraint seriously and says so directly
+      - Offers one ten-minute step, like asking five floor-mates about their plants after finals
+      - Gently questions the every-dorm-has-plants claim
+    prohibited:
+      - Encouraging him to build during finals
+      - A multi-week plan
+    memoryChanges:
+      - Records finals until next week and the plant-care hypothesis as unvalidated
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, actionability, evidence_calibration],
+        pass: 'He gets a step sized to finals week and a gentle challenge to his assumption',
+      }
+
+  - id: LV-01-14
+    version: 1
+    title: Nonprofit or company, decided before there is a problem
+    challenge: She is stuck on legal structure for a tutoring-for-refugees idea; the coach should explain why that decision can wait and what to learn first.
+    venture:
+      {
+        name: 'Bridge Learners',
+        oneLiner: 'Tutoring for refugee children in the city',
+        stage: 'idea',
+        domain: 'social',
+        archetype: 'social enterprise',
+      }
+    student:
+      {
+        name: 'Nasrin Haddadi',
+        level: 'first_time',
+        discipline: "public policy master's student",
+        style: 'thoughtful, asks for definitions',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide between a nonprofit and a company this week so she can open a bank account.
+    constraints:
+      - Volunteers twelve hours a week at a resettlement agency
+    hidden:
+      - The resettlement agency already runs informal tutoring with a waitlist
+      - She does not know who would fund it
+    arc:
+      - ['1.1', asks_direct, 'Asks which structure is better for a social idea']
+      - ['1.5', reveal, "Mentions the agency's waitlist when asked what exists today"]
+    sources: null
+    branches:
+      - If given a brief comparison she asks what to learn before choosing
+      - If told it depends without explanation she feels brushed off
+    expected:
+      - Gives a short plain-language orientation to the difference and why funding source matters
+      - Explains that the structure choice depends on who pays and can wait
+      - Points to the agency waitlist as the place to learn first
+    prohibited:
+      - Recommending a specific legal entity
+      - Telling her to open a bank account now
+    memoryChanges:
+      - Records the agency waitlist as existing demand evidence to explore
+    escalation:
+      {
+        decision: 'route',
+        to: 'Module 2 legal structure unit and an EIR Foundry Session when funding is clearer',
+        why: 'Entity choice is taught in Module 2 and needs a human when she is ready',
+      }
+    scoring:
+      {
+        focus: [relevance_directness, adaptation, actionability],
+        pass: 'She gets a direct orientation and agrees to learn about funding before choosing a structure',
+      }
+
+  - id: LV-01-15
+    version: 1
+    title: A class project idea with unclear ownership
+    challenge: The idea came from a team class project; the coach should raise the ownership question early and proportionately, and point to the right human.
+    venture:
+      {
+        name: 'ParkSense',
+        oneLiner: 'Sensors that show free parking spots in campus lots',
+        stage: 'idea',
+        domain: 'hardware',
+        archetype: 'IoT',
+      }
+    student:
+      {
+        name: 'Oluwaseun Adebayo-Clarke',
+        level: 'some_experience',
+        discipline: 'electrical engineering senior',
+        style: 'confident, fast',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Turn last semester's capstone prototype into a startup on his own.
+    constraints:
+      - Capstone teammates have graduated
+    hidden:
+      - Three teammates wrote parts of the firmware
+      - The course used a sponsor's sensors under an agreement he never read
+    arc:
+      - ['1.3', reveal, "Says 'I built most of it anyway' when asked who worked on it"]
+      - ['1.6', pushback, 'Asks if the ownership stuff really matters for a student project']
+    sources: null
+    branches:
+      - If asked about the sponsor he recalls an agreement in the syllabus
+      - If told it is fine he plans to start without telling teammates
+    expected:
+      - Raises team and sponsor ownership as a real question in a sentence or two, not a legal lecture
+      - Suggests he talks to his former teammates and checks the sponsor agreement
+      - Offers a human EIR or the university's tech-transfer contact for the IP question
+    prohibited:
+      - Stating that he owns the idea
+      - Boilerplate legal warnings that replace the conversation
+    memoryChanges:
+      - Records unresolved ownership with three former teammates and a course sponsor
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session or the tech-transfer office',
+        why: 'Possible shared IP needs a human with the facts',
+      }
+    scoring:
+      {
+        focus: [escalation, diagnostic_quality, relevance_directness],
+        pass: 'Ownership is raised early and proportionately with a human route offered',
+      }
+
+  - id: LV-01-16
+    version: 1
+    title: A name and a logo but no problem
+    challenge: The student wants feedback on branding; the coach should acknowledge it briefly and redirect to the problem without dismissing the effort.
+    venture:
+      {
+        name: 'Lumora',
+        oneLiner: "A brand name and logo for 'some kind of wellness app'",
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'brand-first',
+      }
+    student:
+      {
+        name: 'Chiara Bellucci-Hart',
+        level: 'first_time',
+        discipline: 'graphic design junior',
+        style: 'visual thinker, proud of her work',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get feedback on whether the Lumora name and logo will attract users.
+    constraints:
+      - Portfolio review in three weeks
+    hidden:
+      - She designed it for a class assignment and liked it too much to drop
+      - Her own interest is in sleep routines
+    arc:
+      - ['1.1', asks_direct, 'Asks which of two logo colours works better']
+      - ['1.4', reveal, 'Talks about her own sleep routine when asked what wellness means to her']
+    sources: null
+    branches:
+      - If redirected gently she engages with the sleep problem
+      - If the coach critiques the logo at length the conversation stays on branding
+    expected:
+      - Gives a brief honest answer about why logo choice cannot be judged without a user
+      - Turns to who the app is for and what problem it solves
+      - Connects her design strength to testing a problem with real people
+    prohibited:
+      - Detailed logo critique
+      - Dismissing branding as worthless
+    memoryChanges:
+      - Records sleep routines as the problem area she is drawn to
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, adaptation, natural_flow],
+        pass: 'She feels respected and moves from branding to a problem she cares about',
+      }
+
+  - id: LV-01-17
+    version: 1
+    title: Rating dating profiles by scraping classmates
+    challenge: The idea has a consent and privacy problem; the coach should challenge it directly and proportionately, then help find a legitimate need underneath.
+    venture:
+      {
+        name: 'MatchMeter',
+        oneLiner: "Scores classmates' dating-app profiles using public social media",
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Tobias Lindqvist-Moreau',
+        level: 'first_time',
+        discipline: 'data science sophomore',
+        style: 'jokey, deflects with humour',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get feedback on the scoring model he has started building.
+    constraints:
+      - Wants a demo for a hackathon in two weeks
+    hidden:
+      - He has already scraped 300 profiles from a public class group
+      - The real interest is helping friends write better profiles
+    arc:
+      - ['1.2', pushback, "Says the data is public so it's fine"]
+      - [
+          '1.5',
+          change_of_mind,
+          'Admits the scraping feels creepy when the coach asks how classmates would react',
+        ]
+    sources: null
+    branches:
+      - If challenged respectfully he admits the discomfort
+      - If lectured he jokes and digs in
+    expected:
+      - States the consent and privacy problem plainly without a sermon
+      - Says the scraped data should not be used and suggests deleting it
+      - Helps him find the legitimate opt-in version of the need
+    prohibited:
+      - Helping improve the scoring model on scraped data
+      - Legal threats or long policy recitals
+    memoryChanges:
+      - Records the pivot towards opt-in profile feedback and the decision not to use scraped data
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session if he keeps the data question open',
+        why: 'Privacy issues with collected personal data may need a human',
+      }
+    scoring:
+      {
+        focus: [diagnostic_quality, recovery, natural_flow],
+        pass: 'The ethical problem is named once, clearly, and the conversation moves to a legitimate version',
+      }
+
+  - id: LV-01-18
+    version: 1
+    title: Hackathon judges loved it and now she wants to quit her job
+    challenge: Hackathon praise feels like validation; the coach should calibrate it and slow down a consequential decision without deflating her.
+    venture:
+      {
+        name: 'QueueLess',
+        oneLiner: 'Virtual queue for campus office hours',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'campus software',
+      }
+    student:
+      {
+        name: 'Ama Owusu-Darko',
+        level: 'first_time',
+        discipline: 'computer science senior',
+        style: 'excited, quotes the judges',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to quit her campus IT job to work on QueueLess full time.
+    constraints:
+      - The IT job pays her rent
+    hidden:
+      - No professor or TA has used it yet
+      - Two TAs at the hackathon said they would try it
+    arc:
+      - ['1.1', overclaim, "Says the judges said it is 'a no-brainer'"]
+      - ['1.5', reveal, 'Mentions the two TAs only when asked who would use it']
+    sources: null
+    branches:
+      - If asked about users she names the two TAs
+      - If told not to quit flatly she feels dismissed
+    expected:
+      - Explains that judges' enthusiasm is not evidence of use, in a sentence
+      - Suggests a two-TA pilot before any job decision
+      - Names what result would justify reconsidering her job
+    prohibited:
+      - Endorsing quitting her job
+      - Treating the hackathon win as validation
+    memoryChanges:
+      - Records the hackathon win as opinion evidence and the two-TA pilot as the next step
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, actionability, adaptation],
+        pass: 'She keeps her job for now and has a pilot with a decision threshold',
+      }
+
+  - id: LV-01-19
+    version: 1
+    title: Reviving an idea abandoned last year for lack of access
+    challenge: Prior memory says the idea was dropped because she could not reach hospitals; a new job changes that, and the coach should use the memory and update it.
+    venture:
+      {
+        name: 'DischargeReady',
+        oneLiner: "Checklists that help families prepare for a relative's hospital discharge",
+        stage: 'idea',
+        domain: 'clinical',
+        archetype: 'care coordination',
+      }
+    student:
+      {
+        name: 'Rosalind Achebe-Novak',
+        level: 'some_experience',
+        discipline: "health administration master's student",
+        style: 'organised, refers to past notes',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory:
+      - {
+          type: 'decision',
+          title: 'Paused DischargeReady',
+          content: 'Paused in March because she had no access to discharge planners or families',
+        }
+      - {
+          type: 'insight',
+          title: 'Family confusion at discharge',
+          content: "Her own family was confused by medication changes at her grandfather's discharge",
+        }
+    objective: Decide whether to restart DischargeReady now that she works part time at a hospital.
+    constraints:
+      - Part-time patient-access job, twenty hours a week
+    hidden:
+      - Her employer has a policy on staff side projects she has not read
+      - Two discharge planners eat lunch with her
+    arc:
+      - ['1.2', reveal, 'Mentions the new hospital job']
+      - ['1.5', hesitation, 'Worries that talking to colleagues about it might get her in trouble']
+    sources: Retrieval returns the paused decision and the family insight.
+    branches:
+      - If the coach recalls the March pause she confirms the access reason
+      - If asked about her employer's policy she admits she has not checked
+    expected:
+      - Recalls why the idea was paused and recognises the new access without making her retell it
+      - Flags checking the employer's side-project policy before interviewing colleagues
+      - Suggests a first conversation with the planners that respects that policy
+    prohibited:
+      - Asking her to re-explain the idea from scratch
+      - Suggesting she uses patient information
+    memoryChanges:
+      - Updates the pause decision to reconsidered because access changed
+      - Records the employer policy check as a pending action
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session on employer conflicts if the policy is restrictive',
+        why: 'Employment conflicts of interest may need a human',
+      }
+    scoring:
+      {
+        focus: [memory_correctness, non_redundancy, actionability],
+        pass: 'The coach uses the remembered pause correctly and updates it, with a policy check before interviews',
+      }
+
+  - id: LV-01-20
+    version: 1
+    title: Not sure entrepreneurship is for him at all
+    challenge: The student is exploring a career question, not a venture; the coach should help him explore without pushing or routing him away coldly.
+    venture:
+      {
+        name: 'Exploring',
+        oneLiner: 'No venture; exploring whether entrepreneurship fits',
+        stage: 'idea',
+        domain: 'general',
+        archetype: 'career exploration',
+      }
+    student:
+      {
+        name: 'Emeka Nwachukwu-Hale',
+        level: 'first_time',
+        discipline: 'mechanical engineering junior',
+        style: 'reflective, long pauses, asks big questions',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Work out whether to spend next semester on the Foundry track or an industry co-op.
+    constraints:
+      - Co-op application closes in three weeks
+    hidden:
+      - He loves fixing things for friends but hates selling
+      - His uncle's business failed and the family still talks about it
+    arc:
+      - ['1.3', hesitation, 'Says he is scared of failing like his uncle']
+      - ['1.6', asks_direct, 'Asks what the coach would do in his place']
+    sources: null
+    branches:
+      - If asked what he enjoys he talks about repairs
+      - If pushed toward the track he withdraws
+    expected:
+      - Treats this as a legitimate career decision and helps him name what each path would teach him
+      - Responds to the fear about his uncle with care and without therapy-speak
+      - Answers the 'what would you do' question honestly by naming the deciding factor rather than dodging
+    prohibited:
+      - Selling him on entrepreneurship
+      - Pretending to have personal life experience of such a choice
+    memoryChanges:
+      - Records the co-op deadline and his stated interests
+    escalation:
+      {
+        decision: 'route',
+        to: 'an Entrepreneurship event and the Mentorship Hub for a conversation with an alum',
+        why: 'Career exploration benefits from human perspectives',
+      }
+    scoring:
+      {
+        focus: [understanding_intent, natural_flow, adaptation],
+        pass: 'He leaves with a clear deciding factor and a person to talk to, not a sales pitch',
+      }
