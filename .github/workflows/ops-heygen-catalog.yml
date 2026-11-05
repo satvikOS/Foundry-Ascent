@@ -1,19 +1,23 @@
 name: Ops - HeyGen catalogue
 
 # Lists HeyGen LiveAvatar's stock avatars and voices with the owner's key (the repository secret
-# HEYGEN_LIVEAVATAR_API), so the vEIR's stock face can be chosen from what the account can actually use:
-# ops/aws/heygen_catalog.py reads GET /v1/avatars/public, /v1/voices (public, with each voice's engines) and
-# /v1/users/credits, validates every response against the vendor's published OpenAPI document, and marks each
-# avatar usable in LITE, in FULL, in the sandbox (Wayne only) and outside the sandbox on the account's credits.
-# Read-only: it starts no session and uses no credits. Run it by hand; the result is the run's `heygen-catalog`
-# artifact (catalog.json and catalog.md: names, ids, default voices, preview links and the credits left), kept
-# 7 days.
+# HEYGEN_LIVEAVATAR_API), so the vEIR's stock face can be chosen from the stock list: ops/aws/heygen_catalog.py
+# reads GET /v1/avatars/public and /v1/voices (public, with each voice's engines), validates the envelope and paging
+# strictly and each avatar and voice on its own (an invalid one is skipped and counted by reason only), and marks
+# each avatar usable in LITE, in FULL and in the sandbox (Wayne only), and likely green-screen (studio) when its
+# preview image has an alpha channel (the first bytes of each preview, only from the vendor's own domains, never
+# with the key). Read-only: it starts no session and uses no credits. Run it by hand; the result is the run's
+# `heygen-catalog` artifact (catalog.json and catalog.md: public stock metadata only, i.e. names, ids, default
+# voices, preview links and the green-screen marks), kept 7 days.
 #
-# THE REPOSITORY IS PUBLIC: the key is masked, never echoed and never on a command line (it reaches the script
-# through its environment and goes out only in the X-API-KEY header to api.liveavatar.com, redirects refused), and
-# the script refuses to write any output holding a piece of it. The public step summary holds fixed words and counts
-# only. An empty or unset repository secret skips cleanly. The job runs the repository's own standard-library
-# script and installs nothing.
+# THE REPOSITORY IS PUBLIC, and so is everything a run leaves behind: the log, the step summary AND the artifact,
+# which any signed-in GitHub user can download. So the catalogue holds no account data at all (the account's credits
+# are not even read; see them in the LiveAvatar dashboard). The key is masked, never echoed and never on a command
+# line (it reaches the script through its environment and goes out only in the X-API-KEY header to
+# api.liveavatar.com, redirects refused); every line the script prints is scrubbed of the key and of any piece of it,
+# and it refuses to write any output holding a piece of it. The step summary holds fixed words and counts only. An
+# empty or unset repository secret skips cleanly. The job runs the repository's own standard-library script and
+# installs nothing.
 #
 # Same gate as Ops - sync HeyGen key: main only, the `production` environment, no token permissions beyond reading
 # the repository.

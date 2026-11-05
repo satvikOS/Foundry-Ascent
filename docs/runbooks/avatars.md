@@ -327,8 +327,12 @@ origins as LITE.
    Ids are not secrets; the key is. **Actions › Ops - HeyGen catalogue › Run workflow** (branch `main`) lists them
    with the key: its `heygen-catalog` artifact (`catalog.md`, `catalog.json`) has every stock avatar's name, id,
    preview link and default voice (with that voice's gender and language: avatars carry no gender, age or style
-   field), whether it can be used in LITE, in FULL, in the sandbox (Wayne only) and outside the sandbox on the
-   credits left, and every stock voice with its engines. The run's public summary shows counts only.
+   field), whether it can be used in LITE, in FULL and in the sandbox (Wayne only), whether it is likely a
+   green-screen studio avatar (its preview image has an alpha channel, the documented way to tell), and every stock
+   voice with its engines. An avatar or voice the API returns malformed is skipped and counted, not listed. The
+   repository is public, so the run's log, summary and artifact can be read or downloaded by any signed-in GitHub
+   user: the catalogue holds public stock metadata only, no account data. Check the credits in the LiveAvatar
+   dashboard (a paid session needs 1 credit a minute for LITE, 2 for FULL).
 
 ### 9.4 Turning it on (us, after review)
 
