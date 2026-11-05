@@ -114,7 +114,12 @@
     left: 0;
     transform: scale(var(--s, 0.5));
     transform-origin: 0 0;
-    font-family: var(--font-sans);
+    /* The platform as it is: its own type (Inter), not the landing page's. */
+    --ff-sans: var(--ff-ui);
+    --ff-display: var(--ff-ui);
+    --ff-label: var(--ff-ui);
+    --ff-mono: var(--ff-code);
+    font-family: var(--ff-ui);
   }
 
   .ad-canvas--laptop {

@@ -207,12 +207,7 @@ export function LibrarySourceSheet({ personaId, displayName, state, onClose }: L
                   description="Markdown headings and lists are kept as structure."
                   error={e.body?.message}
                 >
-                  <Textarea
-                    minRows={12}
-                    maxRows={28}
-                    className="font-serif text-base leading-7"
-                    {...register('body')}
-                  />
+                  <Textarea minRows={12} maxRows={28} className="text-reading" {...register('body')} />
                 </Field>
               ) : null}
               <MutationErrorAlert error={mutation.error} title="Not saved" />

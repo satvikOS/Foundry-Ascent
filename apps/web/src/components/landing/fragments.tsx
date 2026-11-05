@@ -75,7 +75,7 @@ export function CoachFragment() {
 export function RecordFragment() {
   return (
     <Fragment className="l-fragment select-none">
-      <p className="label-mono px-5 pt-5">Knowledge</p>
+      <p className="section-label px-5 pt-5">Knowledge</p>
       <ul className="mt-3 divide-y divide-border border-t border-border">
         {AD_MEMORY.map((item) => (
           <li key={item.id}>

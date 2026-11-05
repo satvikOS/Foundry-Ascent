@@ -38,7 +38,7 @@ export const TOPIC = "before:mr-2 before:text-border-strong before:content-['·'
 function Part({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="grid gap-2">
-      <h3 className="label-mono">{title}</h3>
+      <h3 className="section-label">{title}</h3>
       {children}
     </section>
   );
@@ -84,7 +84,7 @@ export function DigestView({
         aria-labelledby="digest-title"
         className="scroll-mt-24 border-t border-border pt-6"
       >
-        <h2 id="digest-title" className="font-serif text-subheading">
+        <h2 id="digest-title" className="text-subheading font-semibold">
           Private chat ended
         </h2>
         <p className="mt-1 text-small text-muted-foreground">Nothing from it was kept.</p>
@@ -102,7 +102,7 @@ export function DigestView({
       className="grid scroll-mt-24 gap-6 border-t border-border pt-6"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 id="digest-title" className="font-serif text-subheading">
+        <h2 id="digest-title" className="text-subheading font-semibold">
           Summary
         </h2>
         <p className="text-caption text-muted-foreground">
@@ -275,9 +275,7 @@ function RecapBody({
       </Part>
       {recap.challenge ? (
         <Part title="Challenge">
-          <p className="border-l-2 border-foreground/70 pl-3 font-serif text-[1.0625rem] leading-7">
-            {recap.challenge}
-          </p>
+          <p className="border-l-2 border-foreground/70 pl-3 text-reading">{recap.challenge}</p>
         </Part>
       ) : null}
       {recap.next_actions.length > 0 ? (

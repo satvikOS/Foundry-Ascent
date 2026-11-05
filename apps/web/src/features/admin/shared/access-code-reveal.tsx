@@ -94,7 +94,7 @@ function RevealContent({
             id={ids.code}
             aria-describedby={ids.hint}
             data-testid="access-code-value"
-            className="min-w-0 flex-1 font-mono text-base font-semibold tracking-wider break-all select-all sm:text-lg"
+            className="min-w-0 flex-1 font-mono text-base font-semibold tracking-wider break-all select-all sm:text-xl"
           >
             {issued.accessCode}
           </output>

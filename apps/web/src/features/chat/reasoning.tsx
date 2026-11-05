@@ -31,7 +31,7 @@ const UNCERTAINTY: Record<'low' | 'medium' | 'high', { label: string; icon: Luci
 function Block({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="grid gap-2">
-      <h4 className="label-mono">{title}</h4>
+      <h4 className="section-label">{title}</h4>
       {children}
     </section>
   );
@@ -126,9 +126,7 @@ export function ReasoningDetails({
       ) : null}
       {response.challenge ? (
         <Block title="Challenge">
-          <p className="border-l-2 border-foreground/70 pl-3 font-serif text-[1.0625rem] leading-7">
-            {response.challenge}
-          </p>
+          <p className="border-l-2 border-foreground/70 pl-3 text-reading">{response.challenge}</p>
         </Block>
       ) : null}
       {adjustments.length > 0 ? (

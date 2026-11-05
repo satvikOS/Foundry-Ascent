@@ -199,7 +199,7 @@ export function DigitalTwinSection({ persona }: { persona: PersonaView }) {
   return (
     <section aria-labelledby="twin-heading" className="grid gap-4" data-testid="digital-twin">
       <div className="grid gap-1">
-        <h2 id="twin-heading" className="font-serif text-subheading font-normal">
+        <h2 id="twin-heading" className="text-subheading font-semibold">
           Digital twin
         </h2>
         <p className="text-small text-muted-foreground">

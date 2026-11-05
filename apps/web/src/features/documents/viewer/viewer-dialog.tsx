@@ -422,10 +422,7 @@ export default function DocumentViewerDialog({ ventureId, target, onClose, retur
             <div className="flex h-14 items-center gap-3 pr-2 pl-4">
               <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
               <div className="grid min-w-0 flex-1 leading-tight">
-                <DialogPrimitive.Title
-                  className="truncate font-serif text-subheading font-medium tracking-tight"
-                  title={title}
-                >
+                <DialogPrimitive.Title className="truncate text-subheading font-semibold" title={title}>
                   {title}
                 </DialogPrimitive.Title>
                 <Meta subject={subject} veirName={veirName} />
@@ -624,7 +621,7 @@ function SizeControls({
         aria-label={pdf ? 'Zoom out' : 'A− Smaller text'}
         disabled={smallerDisabled}
         onClick={onSmaller}
-        className="font-serif text-[13px]"
+        className="text-[13px]"
       >
         {pdf ? <ZoomOut aria-hidden /> : <span aria-hidden>A−</span>}
       </Button>
@@ -637,7 +634,7 @@ function SizeControls({
         aria-label={pdf ? 'Zoom in' : 'A+ Larger text'}
         disabled={largerDisabled}
         onClick={onLarger}
-        className="font-serif text-[15px]"
+        className="text-[15px]"
       >
         {pdf ? <ZoomIn aria-hidden /> : <span aria-hidden>A+</span>}
       </Button>
@@ -882,7 +879,7 @@ function ViewerBody(props: BodyProps) {
     case 'missing':
       return (
         <Centered>
-          <p className="font-serif text-subheading">This document is no longer here</p>
+          <p className="text-subheading font-medium">This document is no longer here</p>
           <p className="mt-2 max-w-sm text-small text-muted-foreground">
             It may have been deleted, or it isn’t shared with you.
           </p>
@@ -909,7 +906,7 @@ function Column({ size, wide, children }: { size: number; wide: boolean; childre
   return (
     <div className="viewer-column">
       <div
-        className="mx-auto font-serif"
+        className="mx-auto"
         style={{
           ['--reader-size' as string]: `${String(size)}px`,
           fontSize: `${String(size)}px`,
@@ -935,7 +932,7 @@ function ExtractedNote() {
 function CitedCallout({ text }: { text: string }) {
   return (
     <aside aria-label="Cited passage" className="viewer-cited-callout">
-      <p className="label-mono mb-1.5">Cited passage</p>
+      <p className="section-label mb-1.5">Cited passage</p>
       <p className="whitespace-pre-wrap">{text}</p>
     </aside>
   );
@@ -992,7 +989,7 @@ function DocumentBody(props: BodyProps & { document: DocumentView }) {
   if (pdfError !== null) {
     return (
       <Centered>
-        <p className="max-w-md font-serif text-subheading">{pdfError}</p>
+        <p className="max-w-md text-subheading font-medium">{pdfError}</p>
         <p className="mt-2 max-w-sm text-small text-muted-foreground">
           Download it to open it in another app.
         </p>
@@ -1011,7 +1008,7 @@ function DocumentBody(props: BodyProps & { document: DocumentView }) {
         : ['The text shows here once it’s processed', 'Word documents are shown as their extracted text.'];
     return (
       <Centered>
-        <p className="font-serif text-subheading">{heading}</p>
+        <p className="text-subheading font-medium">{heading}</p>
         <p className="mt-2 max-w-sm text-small text-muted-foreground">{detail}</p>
       </Centered>
     );

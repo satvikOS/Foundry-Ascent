@@ -176,8 +176,11 @@ test.describe('page speed', () => {
             startMs: Math.round(r.startTime),
             endMs: Math.round(r.responseEnd),
           })),
-          sansFont: font('geist-latin-wght-normal'),
-          serifFont: font('newsreader-latin-wght-normal'),
+          // The platform's one face (Inter, preloaded); the landing page's faces must not load here.
+          sansFont: font('inter-latin-wght-normal'),
+          landingFonts: resources
+            .map((r) => new URL(r.name).pathname)
+            .filter((path) => /\/(?:geist|newsreader)[^/]*\.woff2$/.test(path)),
           preloadedFonts: [...document.querySelectorAll('link[rel="preload"][as="font"]')].map(
             (link) => link.getAttribute('href') ?? '',
           ),
@@ -209,6 +212,10 @@ test.describe('page speed', () => {
       writeFileSync(join(dir, `${result.label}.json`), JSON.stringify(result, null, 2));
       process.stdout.write(`web-perf ${JSON.stringify({ ...result, waterfall: undefined })}\n`);
 
+      // The platform is set in Inter alone, preloaded by index.html; it never downloads the landing page's faces.
+      expect(load.preloadedFonts.some((href) => href.includes('inter-latin-wght-normal'))).toBe(true);
+      expect(load.sansFont, 'Inter (Latin) was fetched').not.toBeNull();
+      expect(load.landingFonts, 'Newsreader or Geist fetched by a platform page').toEqual([]);
       // Machine-independent: the page does not jump while it loads.
       expect(load.paints.cls, 'cumulative layout shift of the cold load').toBeLessThan(0.1);
       // A page's skeleton gives way to its content without moving what is already on screen.

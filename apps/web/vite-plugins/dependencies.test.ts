@@ -14,11 +14,14 @@ function sources(dir: string): string[] {
   });
 }
 
-/** Whether `text` imports `name` (the package itself, or a file or subpath of it), from code or CSS. */
+/**
+ * Whether `text` imports `name` (the package itself, or a file or subpath of it), from code or CSS (an `@import`,
+ * or a `url()` the bundler resolves, as for a self-hosted font file).
+ */
 function imports(text: string, name: string): boolean {
   const escaped = name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
   return new RegExp(
-    `(?:from\\s+|import\\s*\\(?\\s*|@import\\s+|@plugin\\s+)['"]${escaped}(?:/[^'"]*)?['"]`,
+    `(?:from\\s+|import\\s*\\(?\\s*|@import\\s+|@plugin\\s+|url\\(\\s*)['"]${escaped}(?:/[^'"]*)?['"]`,
   ).test(text);
 }
 
@@ -43,6 +46,12 @@ describe('web dependencies', () => {
     expect(imports(`import '@fontsource-variable/geist-mono/wght.css';`, '@fontsource-variable/geist')).toBe(
       false,
     );
+    expect(
+      imports(
+        `src: url('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2') format('woff2');`,
+        '@fontsource-variable/inter',
+      ),
+    ).toBe(true);
     expect(imports(`// motion used to fade the banners`, 'motion')).toBe(false);
   });
 });

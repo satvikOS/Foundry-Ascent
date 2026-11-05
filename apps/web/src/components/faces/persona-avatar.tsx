@@ -50,8 +50,8 @@ interface PersonaAvatarProps
 }
 
 /**
- * The face of a vEIR: the consented portrait when one exists, otherwise a refined monogram (serif
- * initials inside a hairline ring). Exposed as an image named after the vEIR unless decorative.
+ * The face of a vEIR: the consented portrait when one exists, otherwise a refined monogram (the
+ * initial inside a hairline ring). Exposed as an image named after the vEIR unless decorative.
  */
 export function PersonaAvatar({
   name,
@@ -106,14 +106,7 @@ export function PersonaAvatar({
             }}
           />
         ) : (
-          <span
-            className={cn(
-              'font-serif leading-none font-medium tracking-[-0.02em]',
-              MONOGRAM_TEXT[key],
-              // Optical centring: serif capitals sit slightly high in their box.
-              'translate-y-[0.04em]',
-            )}
-          >
+          <span className={cn('leading-none font-medium tracking-[-0.01em]', MONOGRAM_TEXT[key])}>
             {faceMonogram(name)}
           </span>
         )}

@@ -1,14 +1,45 @@
 /*
- * The call surface's own chrome (design-spec §10.1): round controls on a quiet surface (the owner's reference
- * #1F1F1F on black), and a two-tone focus ring that holds on the black canvas, the sphere and glass.
+ * The call surface's own chrome (design-spec §10.1): round frosted controls (the owner's reference #1F1F1F on black,
+ * now a translucent tint with a blur and a lit edge, so the ground's atmosphere shows through), and a two-tone focus
+ * ring that holds on the black canvas, the sphere and glass. Solid `--surface-control` where glass is off.
  */
 .fa-call-control {
-  background-color: var(--surface-control);
+  background-color: var(--control-glass);
   color: var(--foreground);
+  box-shadow: var(--shadow-glass);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate))
+    brightness(var(--glass-brightness));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness));
 }
 
 .fa-call-control:hover {
-  background-color: light-dark(#e2e2de, #2a2a2a);
+  background-color: var(--control-glass-hover);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .fa-call-control {
+    background-color: var(--surface-control);
+  }
+  .fa-call-control:hover {
+    background-color: light-dark(#e2e2de, #2a2a2a);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .fa-call-control {
+    background-color: var(--surface-control);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .fa-call-control:hover {
+    background-color: light-dark(#e2e2de, #2a2a2a);
+  }
+}
+
+:where(:root[data-perf='low']) .fa-call-control {
+  background-color: var(--surface-control);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .fa-call-control[aria-pressed='true'],

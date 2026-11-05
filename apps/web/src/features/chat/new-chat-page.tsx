@@ -86,11 +86,7 @@ export function NewChatPage() {
 function Greeting({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="flex flex-col items-center text-center">
-      <h1
-        data-page-title
-        tabIndex={-1}
-        className="mt-6 font-serif text-title font-normal text-balance outline-none"
-      >
+      <h1 data-page-title tabIndex={-1} className="mt-6 text-title font-semibold text-balance outline-none">
         {title}
       </h1>
       {children}
@@ -311,7 +307,7 @@ function NewChat() {
         <Greeting title={welcome.title}>
           <p
             data-testid="greeting-line"
-            className="mt-3 max-w-xl font-serif text-subheading text-pretty text-muted-foreground"
+            className="mt-2 max-w-xl text-body text-pretty text-muted-foreground"
           >
             {welcome.line}
           </p>

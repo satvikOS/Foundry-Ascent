@@ -191,7 +191,7 @@ export function CallReviewCard({
             id="call-review-heading"
             ref={headingRef}
             tabIndex={-1}
-            className="font-serif text-subheading font-normal outline-none"
+            className="text-subheading font-semibold outline-none"
           >
             Call ended
           </h2>
@@ -323,7 +323,7 @@ function SummaryDetails({
 
       {summary.nextActions.length > 0 ? (
         <section aria-labelledby="call-summary-actions">
-          <h3 id="call-summary-actions" className="label-mono mb-2">
+          <h3 id="call-summary-actions" className="section-label mb-2">
             Next actions
           </h3>
           <ul className="grid gap-1.5">
@@ -346,7 +346,7 @@ function SummaryDetails({
 
       {summary.escalationIds.length > 0 ? (
         <section aria-labelledby="call-summary-help">
-          <h3 id="call-summary-help" className="label-mono mb-2">
+          <h3 id="call-summary-help" className="section-label mb-2">
             Human help
           </h3>
           <ul className="divide-y divide-border border-y border-border">

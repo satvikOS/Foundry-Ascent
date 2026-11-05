@@ -203,7 +203,7 @@ export function AppShell({ me, children }: AppShellProps) {
   );
 
   return (
-    <div className="min-h-dvh bg-background">
+    <div className="app-ground min-h-dvh">
       <aside
         aria-label="Sidebar"
         data-collapsed={railed}

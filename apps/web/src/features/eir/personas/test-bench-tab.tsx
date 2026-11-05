@@ -142,7 +142,7 @@ export function TestBenchTab({ persona, displayName }: TestBenchTabProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="grid min-w-0 gap-1.5">
           <div className="flex items-center gap-1">
-            <h2 className="font-serif text-subheading font-normal text-balance">Test bench</h2>
+            <h2 className="text-subheading font-semibold text-balance">Test bench</h2>
             <InfoTip label="the test bench">
               {`It answers from this release’s doctrine, library and lessons, through the same checks as a founder’s conversation. “What the checks did” says what they changed.`}
             </InfoTip>

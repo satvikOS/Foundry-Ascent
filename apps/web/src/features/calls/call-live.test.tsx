@@ -437,7 +437,8 @@ describe('CallLive', () => {
       captions: { veir: 'Twelve is a good start.', founder: null, founderLive: false },
     });
     const line = (await screen.findByRole('region', { name: 'Captions' })).querySelector('p');
-    expect(line?.className).toMatch(/1\.5rem/);
+    // Large: the type scale's 24 px step.
+    expect(line?.className).toMatch(/\btext-2xl\b/);
     expect(liveText()).toContain('Corin · vEIR: Twelve is a good start.');
   });
 

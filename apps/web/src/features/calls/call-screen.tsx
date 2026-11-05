@@ -357,7 +357,7 @@ export function CallScreen() {
             else hideCall({ replace: !live });
           }}
           className={cn(
-            'fixed inset-0 z-50 flex flex-col overflow-y-auto bg-background text-foreground outline-none',
+            'app-ground fixed inset-0 z-50 flex flex-col overflow-y-auto text-foreground outline-none',
             'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-300',
           )}
         >
@@ -452,7 +452,7 @@ function CallHeader({
       {live && snapshot.liveAt !== null ? (
         <p className="flex items-center gap-2 text-small">
           <span aria-hidden className="size-1.5 rounded-full bg-foreground motion-safe:animate-pulse" />
-          <span className="font-mono tabular" aria-hidden>
+          <span className="tabular" aria-hidden>
             {formatClock(clock.elapsed)}
           </span>
           <span className="sr-only">Call time {spokenDuration(clock.elapsed)}</span>

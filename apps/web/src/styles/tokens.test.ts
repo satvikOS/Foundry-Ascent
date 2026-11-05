@@ -160,13 +160,14 @@ function surfaces(scheme: Scheme): { name: string; color: Rgba }[] {
   for (const solid of solids) {
     expect(solid.color.a, `${solid.name} (${scheme}) must be opaque`).toBe(1);
   }
+  const bases = [...solids, ...grounds(scheme).slice(1)];
   const glass = GLASS_LAYERS.flatMap((layer) =>
-    solids.map((solid) => ({
+    bases.map((solid) => ({
       name: `${layer} over ${solid.name}`,
       color: over(resolve(layer, scheme), solid.color),
     })),
   );
-  return [...solids, ...glass];
+  return [...bases, ...glass];
 }
 
 /** Neutral text tokens: each must be readable on every surface above. */
@@ -242,43 +243,131 @@ const NON_TEXT = [
 const SELECTION_SURFACES = ['--background', '--card', '--popover'] as const;
 
 /*
- * The floating side panel (`.glass-float`). It can show three faces: docked on desktop, its glass over the canvas
- * (nothing else passes beneath it); solid (`--sidebar`: no blur support, reduced transparency, a slow device);
- * and over the content below 1024 px, its glass over a soft scrim over whatever content lies there. No credit
- * is given for the blur: the worst content (a line of text, a filled button) counts as a solid block.
+ * Glass, as it renders (globals.css `.glass`, `.glass-strong`, `.glass-float`). A thin face over what lies beneath,
+ * blurred: `backdrop-filter: blur(24px)` is a Gaussian with a 24 px standard deviation, so nothing narrower than
+ * the blur keeps its full colour beneath the glass. The widest content that passes under app glass and is not a
+ * surface (surfaces are measured whole) is a filled control, at most 36 px tall: at its centre the blur keeps
+ * erf(18 / (24·√2)) ≈ 0.55 of its colour, and a line of text far less (its ink is a fraction of its line box). So the
+ * worst backdrop is any content colour at 55 % over any surface. Where the blur is missing (no support, reduced
+ * transparency, a slow device) every glass layer is solid instead, measured with the solid surfaces.
  */
-const PANEL_TEXT = ['--sidebar-foreground', '--sidebar-muted'] as const;
-const PANEL_ROW_FILLS = ['--sidebar-hover', '--sidebar-accent'] as const;
+const BLUR_SIGMA_PX = 24;
+const WIDEST_CONTENT_PX = 36;
+/** erf, Abramowitz and Stegun 7.1.26 (|error| < 1.5e-7). */
+function erf(x: number): number {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const y =
+    1 -
+    ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) *
+      t *
+      Math.exp(-x * x);
+  return Math.sign(x) * y;
+}
+/** The share of a filled control's colour left at its centre beneath the blur. */
+const BLURRED_COVERAGE = erf(WIDEST_CONTENT_PX / 2 / (BLUR_SIGMA_PX * Math.SQRT2));
 
-function panelFaces(scheme: Scheme): { name: string; color: Rgba }[] {
-  const glass = resolve('--glass-float-bg', scheme);
-  const dense = resolve('--glass-float-bg-over', scheme);
-  const scrim = resolve('--scrim-soft', scheme);
-  const contents = [
-    ...SOLID_SURFACES,
-    ...TEXT_TOKENS,
-    ...STATUS_TEXT,
-    ...FILLED_PAIRS.map(([, fill]) => fill),
-  ].map((name) => ({ name, color: resolve(name, scheme) }));
+/** `brightness()` in the glass's backdrop filter: 1 in light, `:root.dark`'s value in dark (globals.css). */
+function backdropBrightness(scheme: Scheme): number {
+  if (scheme === 'light') return Number(tokens.get('--glass-brightness'));
+  const dark = /:root\.dark \{[^}]*--glass-brightness: ([\d.]+);/.exec(css)?.[1];
+  const os =
+    /@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\.light\) \{\s*--glass-brightness: ([\d.]+);/.exec(
+      css,
+    )?.[1];
+  expect(os, 'the OS dark theme dims the backdrop as the forced one does').toBe(dark);
+  return Number(dark);
+}
+
+/** What the glass shows of a backdrop: blurred (above), then dimmed by `brightness()` (per sRGB channel). */
+function dimmed(color: Rgba, scheme: Scheme): Rgba {
+  const k = backdropBrightness(scheme);
+  return { r: color.r * k, g: color.g * k, b: color.b * k, a: color.a };
+}
+
+/** Everything that can pass beneath glass: surfaces, text, status colours and filled controls. */
+const CONTENTS = [
+  ...SOLID_SURFACES,
+  ...TEXT_TOKENS,
+  ...STATUS_TEXT,
+  ...FILLED_PAIRS.map(([, fill]) => fill),
+] as const;
+
+/** The ground: the canvas, and the canvas under the atmosphere's two tints at their strongest. */
+function grounds(scheme: Scheme): { name: string; color: Rgba }[] {
+  const canvas = resolve('--background', scheme);
   return [
-    { name: 'docked (glass over the canvas)', color: over(glass, resolve('--background', scheme)) },
-    { name: 'solid (--sidebar)', color: resolve('--sidebar', scheme) },
-    ...contents.map((content) => ({
-      name: `overlay (glass over --scrim-soft over ${content.name})`,
-      color: over(dense, over(scrim, content.color)),
-    })),
+    { name: '--background', color: canvas },
+    { name: '--atmosphere-1 over --background', color: over(resolve('--atmosphere-1', scheme), canvas) },
+    { name: '--atmosphere-2 over --background', color: over(resolve('--atmosphere-2', scheme), canvas) },
   ];
 }
 
-/** Each panel face as it renders under a row: bare, hovered and selected. */
+/** What a glass face sits on once blurred: each content colour at BLURRED_COVERAGE over each surface or ground. */
+function blurredBackdrops(scheme: Scheme): { name: string; color: Rgba }[] {
+  const bases = [
+    ...SOLID_SURFACES.map((name) => ({ name, color: resolve(name, scheme) })),
+    ...grounds(scheme),
+  ];
+  return CONTENTS.flatMap((content) => {
+    const color = resolve(content, scheme);
+    return bases.map((base) => ({
+      name: `${content} (blurred) over ${base.name}`,
+      color: over({ ...color, a: BLURRED_COVERAGE }, base.color),
+    }));
+  });
+}
+
+/** Text on glass: the neutral tokens, with secondary text at its on-glass value (`.glass*` sets it). */
+const GLASS_TEXT = ['--foreground', '--popover-foreground', '--card-foreground', '--glass-muted'] as const;
+/** Row fills on glass (hover and selected): tints, so the glass still shows through them. */
+const GLASS_ROW_FILLS = ['--glass-row', '--glass-row-selected'] as const;
+
+/** A glass face over every blurred backdrop, bare and under each row fill. */
+function glassFaces(face: string, scheme: Scheme, scrim?: string): { name: string; color: Rgba }[] {
+  const glass = resolve(face, scheme);
+  return blurredBackdrops(scheme).flatMap((backdrop) => {
+    const beneath = dimmed(scrim ? over(resolve(scrim, scheme), backdrop.color) : backdrop.color, scheme);
+    const bare = over(glass, beneath);
+    const label = `${face}${scrim ? ` over ${scrim}` : ''} over ${backdrop.name}`;
+    return [
+      { name: label, color: bare },
+      ...GLASS_ROW_FILLS.map((fill) => ({
+        name: `${fill} on ${label}`,
+        color: over(resolve(fill, scheme), bare),
+      })),
+    ];
+  });
+}
+
+/*
+ * The floating side panel (`.glass-float`). Three faces: docked on desktop, its glass over the ground (the canvas
+ * and its atmosphere; nothing else passes beneath it); solid (`--sidebar`: no blur, reduced transparency, a slow
+ * device); and over the content below 1024 px, the denser face over a soft scrim over the blurred content.
+ */
+const PANEL_TEXT = ['--sidebar-foreground', '--glass-muted'] as const;
+
 function panelRows(scheme: Scheme): { name: string; color: Rgba }[] {
-  return panelFaces(scheme).flatMap((face) => [
-    face,
-    ...PANEL_ROW_FILLS.map((fill) => ({
-      name: `${fill} on ${face.name}`,
-      color: over(resolve(fill, scheme), face.color),
+  const docked = resolve('--glass-float-bg', scheme);
+  const dockedFaces = grounds(scheme).flatMap((ground) => {
+    const bare = over(docked, dimmed(ground.color, scheme));
+    const label = `docked (--glass-float-bg over ${ground.name})`;
+    return [
+      { name: label, color: bare },
+      ...GLASS_ROW_FILLS.map((fill) => ({
+        name: `${fill} on ${label}`,
+        color: over(resolve(fill, scheme), bare),
+      })),
+    ];
+  });
+  const solid = resolve('--sidebar', scheme);
+  const solidFaces = [
+    { name: 'solid (--sidebar)', color: solid },
+    ...['--sidebar-hover', '--sidebar-accent'].map((fill) => ({
+      name: `${fill} on solid (--sidebar)`,
+      color: over(resolve(fill, scheme), solid),
     })),
-  ]);
+  ];
+  return [...dockedFaces, ...solidFaces, ...glassFaces('--glass-float-bg-over', scheme, '--scrim-soft')];
 }
 
 function failures(
@@ -300,12 +389,18 @@ describe('colour tokens (globals.css)', () => {
       ...NON_TEXT.map((n) => n.token),
       '--selected-cue',
       ...PANEL_TEXT,
-      ...PANEL_ROW_FILLS,
+      ...GLASS_TEXT,
+      ...GLASS_ROW_FILLS,
       '--glass-float-bg',
       '--glass-float-bg-over',
       '--glass-float-border',
+      '--glass-brightness',
       '--scrim-soft',
       '--surface-control',
+      '--control-glass',
+      '--control-glass-hover',
+      '--atmosphere-1',
+      '--atmosphere-2',
     ]) {
       expect(tokens.has(name), name).toBe(true);
     }
@@ -432,7 +527,7 @@ describe('colour tokens (globals.css)', () => {
         expect(row).toContain('hover:bg-accent/50');
       });
 
-      it('the floating panel keeps its text at 4.5:1 on every face, row fills included, with no credit for blur', () => {
+      it('the floating panel keeps its text at 4.5:1 on every face, row fills included', () => {
         const pairs = PANEL_TEXT.flatMap((text) =>
           panelRows(scheme).map((row) => ({
             label: `${text} on ${row.name} (${hex(row.color)})`,
@@ -440,12 +535,60 @@ describe('colour tokens (globals.css)', () => {
             bg: row.color,
           })),
         );
-        expect(pairs.length).toBeGreaterThan(150);
+        expect(pairs.length).toBeGreaterThan(1000);
         expect(failures(pairs, 4.5)).toEqual([]);
-        // Without the scrim, the overlay's glass would not hold over a line of text: that is why it is there.
+        // The solid face keeps the ordinary secondary text.
+        expect(
+          contrast(resolve('--sidebar-muted', scheme), resolve('--sidebar', scheme)),
+        ).toBeGreaterThanOrEqual(4.5);
+        // With no blur, the translucent face would not hold over a line of text: that is why it turns solid then.
         if (scheme === 'dark') {
-          const bare = over(resolve('--glass-float-bg', scheme), resolve('--foreground', scheme));
-          expect(contrast(resolve('--sidebar-muted', scheme), bare)).toBeLessThan(4.5);
+          const bare = over(resolve('--glass-float-bg-over', scheme), resolve('--foreground', scheme));
+          expect(contrast(resolve('--glass-muted', scheme), bare)).toBeLessThan(4.5);
+        }
+      });
+
+      it('text on the composer, menus, popovers, the palette and toasts keeps 4.5:1 over the worst blurred content', () => {
+        expect(BLURRED_COVERAGE).toBeGreaterThan(0.54);
+        expect(BLURRED_COVERAGE).toBeLessThan(0.56);
+        for (const face of ['--glass-bg', '--glass-bg-strong']) {
+          const pairs = GLASS_TEXT.flatMap((text) =>
+            glassFaces(face, scheme).map((row) => ({
+              label: `${text} on ${row.name} (${hex(row.color)})`,
+              fg: resolve(text, scheme),
+              bg: row.color,
+            })),
+          );
+          expect(pairs.length).toBeGreaterThan(1000);
+          expect(failures(pairs, 4.5)).toEqual([]);
+        }
+        // The ordinary secondary text would not hold there: that is why glass carries its own.
+        const worst = Math.min(
+          ...glassFaces('--glass-bg', scheme).map((row) =>
+            contrast(over(resolve('--muted-foreground', scheme), row.color), row.color),
+          ),
+        );
+        expect(worst).toBeLessThan(4.5);
+        // And glass sets it: secondary text and row fills inside take their on-glass values.
+        expect(css).toMatch(
+          /\.glass,\s*\.glass-strong,\s*\.glass-float \{\s*--muted-foreground: var\(--glass-muted\);\s*--subtle-foreground: var\(--glass-muted\);\s*--sidebar-muted: var\(--glass-muted\);\s*--accent: var\(--glass-row\);\s*--sidebar-hover: var\(--glass-row\);\s*--sidebar-accent: var\(--glass-row-selected\);/,
+        );
+      });
+
+      it('the glass is genuinely translucent (owner, 2026-11-05) and blurs 20–28 px', () => {
+        const range = scheme === 'dark' ? [0.42, 0.6] : [0.55, 0.65];
+        for (const face of ['--glass-bg', '--glass-bg-strong', '--glass-float-bg', '--glass-float-bg-over']) {
+          const { a } = resolve(face, scheme);
+          expect(a, `${face} (${scheme})`).toBeGreaterThanOrEqual(range[0] ?? 0);
+          expect(a, `${face} (${scheme})`).toBeLessThanOrEqual(range[1] ?? 1);
+        }
+        expect(backdropBrightness(scheme)).toBeGreaterThanOrEqual(scheme === 'dark' ? 0.7 : 1);
+        expect(backdropBrightness(scheme)).toBeLessThanOrEqual(1);
+        for (const blur of ['--glass-blur']) {
+          const px = Number.parseFloat(tokens.get(blur) ?? '');
+          expect(px, blur).toBeGreaterThanOrEqual(20);
+          expect(px, blur).toBeLessThanOrEqual(28);
+          expect(px, `${blur}: the contrast model assumes this blur`).toBeGreaterThanOrEqual(BLUR_SIGMA_PX);
         }
       });
 
@@ -468,6 +611,18 @@ describe('colour tokens (globals.css)', () => {
       });
 
       it('round call controls hold their icon at 3:1, and the timeline bars at 3:1 on their segments', () => {
+        // Frosted over the ground (the canvas and its atmosphere), and solid where glass is off.
+        const canvas = resolve('--background', scheme);
+        for (const ground of grounds(scheme)) {
+          for (const tint of ['--control-glass', '--control-glass-hover']) {
+            const face = over(resolve(tint, scheme), dimmed(ground.color, scheme));
+            expect(
+              contrast(resolve('--fa-text', scheme), face),
+              `icon on ${tint} over ${ground.name}`,
+            ).toBeGreaterThanOrEqual(3);
+            expect(contrast(face, canvas), `${tint} stands off the canvas`).toBeGreaterThanOrEqual(1.1);
+          }
+        }
         const control = resolve('--surface-control', scheme);
         const pairs = [
           ...['--background', '--fa-text'].map(() => ({
@@ -548,8 +703,23 @@ describe('colour tokens (globals.css)', () => {
       // is only a secondary cue: the selected-row bar carries selection (checked above in both themes).
       expect(contrast(resolve('--accent', 'dark'), canvas)).toBeGreaterThanOrEqual(1.2);
       const panel = over(resolve('--glass-float-bg', 'dark'), canvas);
-      expect(contrast(over(resolve('--sidebar-accent', 'dark'), panel), panel)).toBeGreaterThanOrEqual(1.2);
-      expect(contrast(over(resolve('--sidebar-hover', 'dark'), panel), panel)).toBeGreaterThanOrEqual(1.1);
+      expect(contrast(over(resolve('--glass-row-selected', 'dark'), panel), panel)).toBeGreaterThanOrEqual(
+        1.2,
+      );
+      expect(contrast(over(resolve('--glass-row', 'dark'), panel), panel)).toBeGreaterThanOrEqual(1.1);
+    });
+
+    it('the atmosphere behind the glass is faint: OLED black stays dominant', () => {
+      const canvas = resolve('--background', 'dark');
+      for (const tint of ['--atmosphere-1', '--atmosphere-2']) {
+        const peak = over(resolve(tint, 'dark'), canvas);
+        expect(luminance(peak), `${tint} at its strongest`).toBeLessThan(0.01);
+        expect(contrast(peak, canvas), `${tint} at its strongest`).toBeLessThan(1.2);
+      }
+      // Static: painted once, fixed behind everything, never animated.
+      const ground = /\.app-ground::before \{([^}]*)\}/.exec(css)?.[1] ?? '';
+      expect(ground).toContain('position: fixed');
+      expect(ground).not.toMatch(/animation|transition/);
     });
 
     it('borders are low-alpha white hairlines', () => {

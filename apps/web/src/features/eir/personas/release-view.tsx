@@ -97,7 +97,7 @@ function Dial<K extends 'directness' | 'warmth' | 'pace'>({
   const current = options.find((o) => o.value === value);
   return (
     <div className="grid content-start gap-1.5">
-      <dt className="label-mono">{label}</dt>
+      <dt className="section-label">{label}</dt>
       <dd className="grid gap-1.5">
         <span className="text-body font-medium">{styleLabel(name, value)}</span>
         <span aria-hidden className="flex max-w-40 gap-1">
@@ -197,7 +197,7 @@ export function ReleaseContent({
   const ids = { doctrine: useId(), style: useId(), guardrails: useId() };
   const Heading = `h${headingLevel}` as const;
   const sub: SubLevel = headingLevel === 2 ? 3 : 4;
-  const heading = 'font-serif text-subheading font-normal';
+  const heading = 'text-subheading font-semibold';
   return (
     <div className="grid max-w-3xl gap-12">
       <section aria-labelledby={ids.doctrine} className="grid gap-5">

@@ -1,9 +1,7 @@
-// Self-hosted variable fonts (the CSP allows fonts from 'self' only): Geist for the interface,
-// Newsreader for display headings and the vEIR's prose, Geist Mono for labels and data.
-import '@fontsource-variable/geist/wght.css';
-import '@fontsource-variable/geist-mono/wght.css';
-import '@fontsource-variable/newsreader/wght.css';
-import '@fontsource-variable/newsreader/wght-italic.css';
+// Self-hosted variable fonts (the CSP allows fonts from 'self' only). The platform (sign-in and every signed-in
+// page) is set in Inter alone; the landing page's own faces (Newsreader, Geist, Geist Mono) are declared beside it
+// (routes/index.tsx) and download only where the landing page draws them.
+import './styles/inter.css';
 // Sonner also injects these rules at runtime; shipping them in our own stylesheet keeps toasts styled
 // under a strict CSP (style-src 'self') that blocks injected <style> tags.
 import 'sonner/dist/styles.css';

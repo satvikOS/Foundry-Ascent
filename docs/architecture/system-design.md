@@ -410,8 +410,9 @@ and the new-chat home. There is no global top bar or venture tab strip; the data
 only while the database wakes.
 
 **Visual system:** the colour tokens in `apps/web/src/styles/globals.css` (dark-first, muted black and grey
-with a matching light theme); self-hosted fonts: Geist for the interface, Newsreader for display headings
-and vEIR prose, Geist Mono for labels and data; 4-pt spacing grid; one motion grammar honouring reduced
+with a matching light theme; floating layers are translucent frosted glass with solid fallbacks); self-hosted
+fonts: the platform (sign-in and every signed-in page) in Inter alone, the public landing page in Newsreader,
+Geist and Geist Mono (owner decision, 2026-11-05); 4-pt spacing grid; one motion grammar honouring reduced
 motion; status = label + icon + shape (never colour alone); WCAG 2.2 AA; full keyboard path, visible
 focus, skip links, landmarks.
 

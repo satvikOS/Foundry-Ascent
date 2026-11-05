@@ -1,6 +1,6 @@
 /*
  * The document viewer: a dimmed, blurred overlay, a reading panel whose bars are glass over the page, and
- * reading prose (serif, a 68ch measure that the reader can widen, a text size they choose). Colours are the
+ * reading prose (the platform face, a 68ch measure that the reader can widen, a text size they choose). Colours are the
  * app's tokens, so light, dark (OLED black) and reduced transparency follow the rest of the platform.
  */
 .viewer-overlay {
@@ -171,7 +171,6 @@
   padding: 0.75rem 1rem;
 }
 .viewer-cited-callout p:last-child {
-  font-family: var(--font-serif);
   font-size: 0.95em;
   line-height: 1.6;
   display: -webkit-box;
@@ -182,10 +181,9 @@
 }
 
 .reader-prose {
-  font-family: var(--font-serif);
-  font-size: var(--reader-size, 17px);
-  line-height: 1.7;
-  font-variation-settings: 'opsz' 18;
+  font-family: var(--ff-sans);
+  font-size: var(--reader-size, 16px);
+  line-height: 1.6;
   color: var(--foreground);
   overflow-wrap: anywhere;
 }
@@ -205,9 +203,8 @@
 .reader-prose .reader-h2,
 .reader-prose .reader-h3,
 .reader-prose .reader-h4 {
-  font-family: var(--font-serif);
-  font-weight: 560;
-  letter-spacing: -0.012em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   line-height: 1.25;
   text-wrap: balance;
   margin-top: 1.6em;
@@ -254,7 +251,7 @@
 }
 
 .reader-prose code {
-  font-family: var(--font-mono);
+  font-family: var(--ff-mono);
   font-size: 0.85em;
   border: 1px solid var(--border);
   background: var(--muted);
@@ -263,7 +260,7 @@
 }
 
 .reader-prose pre {
-  font-family: var(--font-mono);
+  font-family: var(--ff-mono);
   font-size: 0.82em;
   line-height: 1.6;
   overflow-x: auto;
@@ -288,7 +285,7 @@
 .reader-prose table {
   width: 100%;
   border-collapse: collapse;
-  font-family: var(--font-sans);
+  font-family: var(--ff-sans);
   font-size: 0.82em;
 }
 .reader-prose th,
@@ -322,7 +319,7 @@
 }
 
 .reader-prose .reader-image {
-  font-family: var(--font-sans);
+  font-family: var(--ff-sans);
   font-size: 0.8em;
   color: var(--muted-foreground);
   border: 1px dashed var(--border);

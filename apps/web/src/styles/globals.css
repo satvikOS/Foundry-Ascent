@@ -10,16 +10,23 @@
  *   - <html class="dark"> → forced dark;  <html class="light"> → forced light (set by ThemeProvider)
  * Grounds: canvas → surface-1 (cards, inputs) → surface-2 (wells, hover) → surface-3 (selected, pressed),
  * plus the solid overlay (menus, dialogs) and the round call controls. Borders are hairlines (low-alpha
- * white in dark). One glass recipe floats (`.glass-float`: the side panel); it has solid fallbacks.
+ * white in dark). Floating layers are frosted glass (translucent, blurred, a lit edge) over a faint, static
+ * atmosphere on the app's ground; each has a solid fallback.
  * Contrast (checked from this file by tokens.test.ts): every text token meets WCAG 2.2 AA (≥ 4.5:1)
  * on every surface, glass included; `--input` and `--ring` meet 3:1 for boundaries and focus.
+ *
+ * Type: the platform (sign-in and every signed-in page) is set in Inter alone (styles/inter.css); the landing
+ * page keeps its own faces (Newsreader, Geist, Geist Mono), assigned in its scope (components/landing/landing.css)
+ * through the `--ff-*` family roles below. No serif anywhere in the platform.
  */
 
 @custom-variant dark (&:where(.dark, .dark *));
 @custom-variant light (&:where(.light, .light *));
 
 /*
- * Metric-matched stand-ins for the self-hosted faces while they load (`font-display: swap`). A local Times
+ * Metric-matched stand-ins for the self-hosted faces while they load (`font-display: swap`). Inter (the platform):
+ * a local Arial (Liberation Sans, Arimo) scaled to Inter's width (×1.07) with its ascent 0.969 and descent 0.241
+ * (units per em 2048: 1984 / 494), so text set in the stand-in wraps where Inter will. The landing's: a local Times
  * New Roman (or a metric twin: Liberation Serif, Tinos) scaled to Newsreader's width, and Arial (Liberation
  * Sans, Arimo) scaled to Geist's, with the real faces' ascent and descent: text set in the stand-in wraps
  * where the real face will, so nothing moves when it swaps in (the landing page shifted 0.17 as its display
@@ -27,6 +34,14 @@
  * New Roman's width, ascent 0.74, descent 0.26; Geist 1.024× Arial's, ascent 1.01, descent 0.29. Overrides
  * are divided by `size-adjust`, which scales them too. No download: `local()` only.
  */
+@font-face {
+  font-family: 'Inter Fallback';
+  src: local('Arial'), local('ArialMT'), local('Liberation Sans'), local('Arimo');
+  size-adjust: 107%;
+  ascent-override: 90.5%;
+  descent-override: 22.6%;
+  line-gap-override: 0%;
+}
 @font-face {
   font-family: 'Newsreader Fallback';
   src: local('Times New Roman'), local('TimesNewRomanPSMT'), local('Liberation Serif'), local('Tinos');
@@ -46,6 +61,21 @@
 
 :root {
   color-scheme: dark light;
+
+  /*
+   * Family roles. The platform sets text, headings and tags in Inter (`--ff-ui`); only code and identifiers (an
+   * access code, a request ID, a model ID) take the system's monospace, which downloads nothing. The landing page
+   * reassigns the roles in its own scope (landing.css); its pictures of the platform (the device ad, the
+   * fragments) hand them back, so they show the platform as it is.
+   */
+  --ff-ui:
+    'Inter Variable', 'Inter Fallback', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --ff-code: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --ff-sans: var(--ff-ui);
+  --ff-display: var(--ff-ui);
+  --ff-label: var(--ff-ui);
+  --ff-mono: var(--ff-code);
 
   /* Grounds (spec §5.1) */
   --fa-canvas: light-dark(#fafaf9, #000000);
@@ -177,32 +207,44 @@
   --highlight: light-dark(rgb(255 255 255 / 0), rgb(255 255 255 / 0.05));
 
   /*
-   * Glass: translucent surfaces over content.
-   *   `.glass`         surfaces in the page with little text of their own (the composer area, call controls):
-   *                    canvas-coloured, so on OLED they are black until content scrolls beneath.
-   *   `.glass-bar`     bars at the top of the page that text scrolls under (a page's sticky header, the phone
-   *                    bar, the mini call bar): canvas-coloured too, and dense enough that their own text keeps
-   *                    4.5:1 over the worst content passing beneath, unblurred (a line of prose, a filled button).
-   *   `.glass-strong`  layers that float above the page (menus, popovers, the command palette, toasts):
-   *                    a lifted near-black, dense enough for text.
-   * All fall back to a solid surface where blur is unsupported or transparency is reduced. Text on glass
-   * meets 4.5:1 composited over every surface (tokens.test.ts). Never stack glass on glass.
+   * Glass (owner refinement 2026-11-05: "translucent, not opaque"). Frosted layers: a thin tinted face, a 24 px
+   * blur with a little saturation, a lit 1 px edge and a soft shadow, so what lies beneath shows through softly.
+   *   `.glass`         the composer and the call's controls: content scrolls beneath them.
+   *   `.glass-strong`  layers that float above the page (menus, popovers, selects, tooltips, the command palette,
+   *                    toasts): a touch denser, as they hold the most text.
+   *   `.glass-float`   the floating side panel (docked: only the ground is beneath; over the content below
+   *                    1024 px: a soft scrim between, and the denser `--glass-float-bg-over` face).
+   *   `.glass-bar`     sticky bars text scrolls under (a page's header, the phone bar, the mini call bar):
+   *                    dense, canvas-coloured, with no credit for the blur.
+   * Secondary text on glass is a step stronger (`--glass-muted`) and row fills are tints (`--glass-row`), so
+   * labels hold 4.5:1 over the worst content passing beneath the blur: tokens.test.ts models it (a 36 px filled
+   * control under a 24 px blur keeps at most 55 % of its colour) and e2e/glass.spec.ts measures the pixels. Solid
+   * where blur is missing, transparency is reduced, the device is slow, or colours are forced. Never glass on glass.
    */
-  --glass-bg: light-dark(rgb(255 255 255 / 0.72), rgb(0 0 0 / 0.72));
+  --glass-bg: light-dark(rgb(255 255 255 / 0.6), rgb(22 22 24 / 0.55));
+  --glass-bg-strong: light-dark(rgb(255 255 255 / 0.64), rgb(22 22 24 / 0.58));
   --glass-bg-bar: light-dark(rgb(255 255 255 / 0.9), rgb(0 0 0 / 0.86));
-  --glass-bg-strong: light-dark(rgb(255 255 255 / 0.86), rgb(22 22 22 / 0.8));
-  --glass-border: light-dark(rgb(17 17 16 / 0.08), rgb(255 255 255 / 0.08));
-  --glass-blur: 20px;
-  /*
-   * `.glass-float`: the one floating recipe (the side panel). Docked on desktop, only the canvas is under it.
-   * Where content passes beneath (the tablet overlay, the phone sheet) a soft scrim sits between and the face
-   * is a little denser (`--glass-float-bg-over`), so its text keeps 4.5:1 over the worst content under that
-   * scrim with no credit for the blur (tokens.test.ts).
-   */
-  --glass-float-bg: light-dark(rgb(255 255 255 / 0.84), rgb(20 20 20 / 0.64));
-  --glass-float-bg-over: light-dark(rgb(255 255 255 / 0.84), rgb(20 20 20 / 0.82));
+  --glass-border: light-dark(rgb(17 17 16 / 0.08), rgb(255 255 255 / 0.1));
+  --glass-muted: light-dark(#474743, #cbcbc7);
+  --glass-row: light-dark(rgb(17 17 16 / 0.06), rgb(255 255 255 / 0.06));
+  --glass-row-selected: light-dark(rgb(17 17 16 / 0.09), rgb(255 255 255 / 0.1));
+  --glass-blur: 24px;
+  --glass-saturate: 160%;
+  /* Dark glass also dims what it blurs (bright content beneath stays a glow, not a glare); see :root.dark below. */
+  --glass-brightness: 1;
+  --glass-float-bg: light-dark(rgb(255 255 255 / 0.55), rgb(22 22 24 / 0.45));
+  --glass-float-bg-over: light-dark(rgb(255 255 255 / 0.64), rgb(22 22 24 / 0.58));
   --glass-float-border: light-dark(rgb(17 17 16 / 0.08), rgb(255 255 255 / 0.1));
-  --glass-float-blur: 24px;
+  /* The call's round controls, frosted: a tint of the foreground over whatever is beneath. */
+  --control-glass: light-dark(rgb(17 17 16 / 0.07), rgb(255 255 255 / 0.1));
+  --control-glass-hover: light-dark(rgb(17 17 16 / 0.11), rgb(255 255 255 / 0.15));
+  /*
+   * The ground's atmosphere, behind the glass (the app shell and sign-in only): two large, faint radial tints in the
+   * voice palette, static and never animated, at most these strengths at their centres. OLED black stays dominant
+   * (tokens.test.ts); without them a frosted panel on pure black reads as an opaque one.
+   */
+  --atmosphere-1: light-dark(rgb(92 121 245 / 0.07), rgb(92 121 245 / 0.14));
+  --atmosphere-2: light-dark(rgb(127 163 122 / 0.07), rgb(127 163 122 / 0.08));
   /* The scrim behind modals (dims and lightly blurs the page), and the lighter one under a glass panel. */
   --scrim: light-dark(rgb(17 17 16 / 0.32), rgb(0 0 0 / 0.72));
   --scrim-soft: light-dark(rgb(17 17 16 / 0.12), rgb(0 0 0 / 0.5));
@@ -242,6 +284,13 @@
 
 :root.dark {
   color-scheme: dark;
+  --glass-brightness: 0.8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --glass-brightness: 0.8;
+  }
 }
 
 :root.light {
@@ -250,45 +299,41 @@
 
 @theme inline {
   /*
-   * Type families (self-hosted with @fontsource-variable; the CSP has no third-party font origins):
-   *   Geist        the interface
-   *   Newsreader   display headings and the vEIR's own words (reading comfort, a human voice)
-   *   Geist Mono   labels, keys and data
+   * Type families: the roles above (`--ff-*`), so a scope can reassign them (the landing page does). `font-serif`
+   * does not exist: the platform has no serif. `font-mono` is for code and identifiers only.
    */
-  --font-sans:
-    'Geist Variable', 'Geist Fallback', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, sans-serif;
-  --font-serif:
-    'Newsreader Variable', 'Newsreader Fallback', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
-  --font-mono:
-    'Geist Mono Variable', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
-    monospace;
+  --font-serif: initial;
+  --font-sans: var(--ff-sans);
+  --font-display: var(--ff-display);
+  --font-label: var(--ff-label);
+  --font-mono: var(--ff-mono);
 
   /*
-   * Type scale: few steps, a dramatic display-to-body ratio. Each step carries its own leading and
-   * tracking, so `text-title` is a complete decision (use with font-serif for display roles).
+   * The platform's type scale (owner refinement 2026-11-05: "standard, modern, proper, lean"): 12 · 13 · 15 · 16 ·
+   * 20 · 24 px, plus Tailwind's 14 (`text-sm`); weights 400 · 500 · 600 only. Headings are 600 with -0.01em
+   * tracking; reading text 1.6 leading. Each step carries its own leading and tracking, so a size is a complete
+   * decision. The landing page has its own scale (landing.css).
    */
-  --text-display: clamp(2.75rem, 1.6rem + 4.6vw, 5rem);
-  --text-display--line-height: 1;
-  --text-display--letter-spacing: -0.035em;
-  --text-title: clamp(1.875rem, 1.5rem + 1.4vw, 2.5rem);
-  --text-title--line-height: 1.08;
-  --text-title--letter-spacing: -0.028em;
-  --text-heading: 1.75rem;
-  --text-heading--line-height: 1.15;
-  --text-heading--letter-spacing: -0.022em;
-  --text-subheading: 1.125rem;
-  --text-subheading--line-height: 1.35;
-  --text-subheading--letter-spacing: -0.012em;
+  --text-title: 1.5rem;
+  --text-title--line-height: 2rem;
+  --text-title--letter-spacing: -0.01em;
+  --text-heading: 1.25rem;
+  --text-heading--line-height: 1.75rem;
+  --text-heading--letter-spacing: -0.01em;
+  --text-subheading: 1rem;
+  --text-subheading--line-height: 1.5rem;
+  --text-subheading--letter-spacing: -0.01em;
+  --text-reading: 1rem;
+  --text-reading--line-height: 1.6;
   --text-body: 0.9375rem;
   --text-body--line-height: 1.6;
   --text-small: 0.8125rem;
-  --text-small--line-height: 1.45;
+  --text-small--line-height: 1.25rem;
   --text-caption: 0.75rem;
-  --text-caption--line-height: 1.4;
-  --text-label: 0.6875rem;
-  --text-label--line-height: 1;
-  --text-label--letter-spacing: 0.14em;
+  --text-caption--line-height: 1rem;
+  --text-label: 0.75rem;
+  --text-label--line-height: 1rem;
+  --text-label--letter-spacing: 0.01em;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -358,6 +403,11 @@
   --shadow-md: inset 0 1px 0 0 var(--highlight), 0 4px 12px -2px var(--shadow-color);
   --shadow-lg: inset 0 1px 0 0 var(--highlight), 0 12px 32px -8px var(--shadow-color);
   --shadow-xl: inset 0 1px 0 0 var(--highlight), 0 24px 64px -16px var(--shadow-color);
+  /* Glass layers: the lit 1 px top edge inside, a hairline ring and a soft shadow beneath. */
+  --shadow-glass:
+    inset 0 1px 0 0 light-dark(rgb(255 255 255 / 0.75), rgb(255 255 255 / 0.09)),
+    0 1px 2px 0 light-dark(rgb(17 17 16 / 0.05), rgb(0 0 0 / 0.35)),
+    0 16px 40px -12px light-dark(rgb(17 17 16 / 0.18), rgb(0 0 0 / 0.65));
   /* Floating layers only: the side panel, the call's floating timeline, popovers. */
   --shadow-float:
     inset 0 1px 0 0 var(--highlight), 0 0 0 1px light-dark(rgb(17 17 16 / 0.06), rgb(255 255 255 / 0.06)),
@@ -454,6 +504,14 @@
     line-height: 1.5;
   }
 
+  /* Digits that line up in columns: tables, times and anything marked numeric. */
+  table,
+  time,
+  output,
+  kbd {
+    font-variant-numeric: tabular-nums;
+  }
+
   ::selection {
     background-color: var(--selection);
     color: inherit;
@@ -479,7 +537,8 @@
   h3,
   h4 {
     text-wrap: balance;
-    letter-spacing: -0.012em;
+    letter-spacing: -0.01em;
+    font-weight: 600;
   }
 
   /* Hover and press feedback share one duration. */
@@ -532,42 +591,69 @@
   /* Metrics, counts, money and times line up in columns. */
   .tabular {
     font-variant-numeric: tabular-nums;
-    font-feature-settings: 'tnum';
   }
 
-  /* Small uppercase mono label (section eyebrows, keys). Muted by default. */
-  .label-mono {
-    font-family: var(--font-mono);
+  /* A section's small label (a list's heading, a field's term, a key). 12 px, medium, muted, sentence case. */
+  .section-label {
+    font-family: var(--ff-label);
     font-size: var(--text-label);
     line-height: var(--text-label--line-height);
     letter-spacing: var(--text-label--letter-spacing);
     font-weight: 500;
-    text-transform: uppercase;
     color: var(--muted-foreground);
   }
 
   /*
-   * Long-form reading: the vEIR's answers, digests and doctrine. Serif, 1.65 leading and a 60–75
-   * character measure.
+   * Long-form reading: the vEIR's answers, digests and doctrine. The platform face at 16 px, 1.6 leading and a
+   * 60–75 character measure.
    */
   .prose-reading {
-    font-family: var(--font-serif);
-    font-size: 1.0625rem;
-    line-height: 1.65;
+    font-family: var(--ff-sans);
+    font-size: var(--text-reading);
+    line-height: var(--text-reading--line-height);
     max-width: 68ch;
-    font-variation-settings: 'opsz' 18;
   }
 
   .text-balance {
     text-wrap: balance;
   }
 
-  /* Translucent, blurred surface (see --glass-*). Solid where blur is missing or transparency is reduced. */
+  /* The platform's type inside a landing-styled region (the sign-in page's art panel): every role back to Inter. */
+  .type-platform {
+    --ff-sans: var(--ff-ui);
+    --ff-display: var(--ff-ui);
+    --ff-label: var(--ff-ui);
+    --ff-mono: var(--ff-code);
+    font-family: var(--ff-ui);
+  }
+
+  /*
+   * Frosted glass (see --glass-*): a thin tinted face, the blur, a lit edge. Secondary text and row fills inside
+   * take their on-glass values, so labels keep 4.5:1 over what passes beneath. `.glass-bar` is the dense bar
+   * (no credit for the blur), canvas-coloured.
+   */
+  .glass,
+  .glass-strong,
+  .glass-float {
+    --muted-foreground: var(--glass-muted);
+    --subtle-foreground: var(--glass-muted);
+    --sidebar-muted: var(--glass-muted);
+    --accent: var(--glass-row);
+    --sidebar-hover: var(--glass-row);
+    --sidebar-accent: var(--glass-row-selected);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate))
+      brightness(var(--glass-brightness));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate))
+      brightness(var(--glass-brightness));
+  }
+  /* Its border is the element's own (the composer's field edge, a chip's hairline). */
   .glass {
     background-color: var(--glass-bg);
+    box-shadow: var(--shadow-glass);
+  }
+  .glass-strong {
+    background-color: var(--glass-bg-strong);
     border-color: var(--glass-border);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-    backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   }
   .glass-bar {
     background-color: var(--glass-bg-bar);
@@ -575,76 +661,85 @@
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
     backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   }
-  .glass-strong {
-    background-color: var(--glass-bg-strong);
-    border-color: var(--glass-border);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-    backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  /*
+   * The floating frosted panel (spec §8). Solid (`--sidebar`, the same face minus translucency) in the fallbacks
+   * below; system colours in forced-colours mode.
+   */
+  .glass-float {
+    background-color: var(--glass-float-face, var(--glass-float-bg));
+    border: 1px solid var(--glass-float-border);
+    box-shadow: var(--shadow-glass);
   }
-  /* Toasts paint their own background from --normal-bg (components/ui/toast.tsx). */
+
+  /*
+   * Solid faces, the same look minus translucency: where blur is unsupported, where transparency is reduced, and on
+   * a slow device (`data-perf="low"`, lib/perf.ts). Toasts paint their own background from --normal-bg
+   * (components/ui/toast.tsx).
+   */
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .glass,
+    .glass {
+      background-color: var(--card);
+    }
     .glass-bar {
       background-color: var(--background);
     }
     .glass-strong {
       background-color: var(--popover);
+    }
+    .glass-float {
+      background-color: var(--sidebar);
     }
     [data-sonner-toast] {
       --normal-bg: var(--popover);
     }
   }
   @media (prefers-reduced-transparency: reduce) {
-    .glass,
+    .glass {
+      background-color: var(--card);
+    }
     .glass-bar {
       background-color: var(--background);
     }
     .glass-strong {
       background-color: var(--popover);
+    }
+    .glass-float {
+      background-color: var(--sidebar);
     }
     [data-sonner-toast] {
       --normal-bg: var(--popover);
     }
     .glass,
     .glass-bar,
+    .glass-strong,
+    .glass-float {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+  :root[data-perf='low'] {
+    .glass {
+      background-color: var(--card);
+    }
     .glass-strong {
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
+      background-color: var(--popover);
     }
-  }
-
-  /*
-   * The floating frosted panel (spec §5.4). Never stacked on other glass; at most two glass surfaces on
-   * screen. Solid (`--sidebar`, the same face minus translucency) where blur is missing, transparency is
-   * reduced, or the device is slow (`data-perf="low"`, lib/perf.ts); system colours in forced-colours mode.
-   */
-  .glass-float {
-    background-color: var(--glass-float-face, var(--glass-float-bg));
-    border: 1px solid var(--glass-float-border);
-    box-shadow: var(--shadow-float);
-    -webkit-backdrop-filter: blur(var(--glass-float-blur)) saturate(160%);
-    backdrop-filter: blur(var(--glass-float-blur)) saturate(160%);
-  }
-  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .glass-float {
       background-color: var(--sidebar);
     }
-  }
-  @media (prefers-reduced-transparency: reduce) {
+    [data-sonner-toast] {
+      --normal-bg: var(--popover);
+    }
+    .glass,
+    .glass-strong,
     .glass-float {
-      background-color: var(--sidebar);
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
     }
-  }
-  :root[data-perf='low'] .glass-float {
-    background-color: var(--sidebar);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
   }
   /*
    * Over the call screen, popovers (call settings, the vEIR badge's explanation) are solid: beneath them are the
-   * sphere's bright clouds and 22 px captions, and text over text through glass fails 4.5:1 (tokens.test.ts).
+   * sphere's bright clouds and 22 px captions, larger than any blur averages away (tokens.test.ts).
    */
   :root:has([data-slot='call-screen']) [data-slot='popover-content'] {
     background-color: var(--popover);
@@ -660,6 +755,73 @@
   .surface-raised {
     background-color: var(--card);
     box-shadow: var(--shadow-sm);
+  }
+
+  /*
+   * The conversation's composer area: no band of its own. The transcript scrolls beneath the glass composer and its
+   * chips; behind them, a scroll edge frosts it (a blur that fades in from the area's top, so there is no hard
+   * line), and the strip below the composer (and the safe area) fades to the ground, so no text shows sharp
+   * between them. The blur is its own layer: a mask on the area itself would make it the chips' and composer's
+   * backdrop root and leave their glass unblurred.
+   */
+  .composer-dock {
+    isolation: isolate;
+    background-image: linear-gradient(to top, var(--background) 0.75rem, transparent 2.5rem);
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+  .composer-dock::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    -webkit-backdrop-filter: blur(var(--glass-blur)) brightness(var(--glass-brightness));
+    backdrop-filter: blur(var(--glass-blur)) brightness(var(--glass-brightness));
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 2.5rem);
+    mask-image: linear-gradient(to bottom, transparent, #000 2.5rem);
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .composer-dock::before {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      background-color: var(--background);
+    }
+  }
+  :root[data-perf='low'] .composer-dock::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background-color: var(--background);
+  }
+
+  /*
+   * The platform's ground (the app shell, sign-in): the canvas with its atmosphere fixed behind everything, so the
+   * glass above it has something to frost. Static: painted once, never animated, not even on scroll.
+   */
+  .app-ground {
+    isolation: isolate;
+    background-color: var(--background);
+  }
+  /*
+   * Placed where the glass is (the side panel on the left, the lower right where the composer and the call's End
+   * sit) and away from the top, where the page's header bar spans the content column.
+   */
+  .app-ground::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(30rem 52rem at 0% 55%, var(--atmosphere-1), transparent 72%),
+      radial-gradient(48rem 34rem at 100% 100%, var(--atmosphere-2), transparent 72%);
+  }
+  /* Phones: smaller and low, behind the composer and the navigation sheet's foot, so black still holds the page. */
+  @media (width < 48rem) {
+    .app-ground::before {
+      background:
+        radial-gradient(22rem 26rem at 0% 100%, var(--atmosphere-1), transparent 72%),
+        radial-gradient(22rem 18rem at 100% 100%, var(--atmosphere-2), transparent 72%);
+    }
   }
 
   .skeleton-shimmer {
@@ -687,7 +849,7 @@
   gap: 1rem;
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans);
+  font-family: var(--ff-ui);
 }
 .boot-brand {
   display: flex;
@@ -729,12 +891,17 @@
   :focus-visible {
     outline: 2px solid CanvasText;
   }
+  .glass,
+  .glass-strong,
   .glass-float {
     background: Canvas;
     border-color: CanvasText;
     box-shadow: none;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+  }
+  .app-ground::before {
+    display: none;
   }
   /* The selected row's fill disappears in forced colours: mark it with the system highlight instead. */
   [data-slot='sidebar-row'][data-status='active'],
@@ -750,7 +917,9 @@
   body {
     background: #fff;
     color: #000;
-    font-family: var(--font-serif);
+  }
+  .app-ground::before {
+    display: none;
   }
   [data-print='hide'] {
     display: none !important;

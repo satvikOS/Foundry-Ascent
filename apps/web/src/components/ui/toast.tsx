@@ -38,7 +38,7 @@ export function Toaster() {
       }
       toastOptions={{
         classNames: {
-          toast: 'glass-strong font-sans shadow-lg',
+          toast: 'glass-strong font-sans shadow-glass',
           title: 'text-small font-medium',
           description: '!text-muted-foreground text-small',
           actionButton: '!bg-primary !text-primary-foreground !font-medium',

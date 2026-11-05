@@ -165,8 +165,10 @@ test.describe('conversation composer', () => {
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await askFirstQuestion(page);
-    // The composer area is glass over the transcript; the header, which prose scrolls under, the denser bar glass.
-    await expect(page.locator('[data-slot="composer-dock"]')).toHaveClass(/(^|\s)glass(\s|$)/);
+    // The composer is glass over the transcript (its area has no band of its own); the header, which prose scrolls
+    // under, the denser bar glass.
+    await expect(page.locator('[data-slot="composer-dock"]')).not.toHaveClass(/(^|\s)glass(\s|$)/);
+    await expect(page.locator('[data-slot="composer"]')).toHaveClass(/(^|\s)glass(\s|$)/);
     await expect(page.getByRole('main').locator('header').first()).toHaveClass(/(^|\s)glass-bar(\s|$)/);
     // The first answer fit until it finished: the page keeps its end in view, actions and chips together.
     await expectActionsClearOfChips(page, 'the first answer as it finished, 1440×900');

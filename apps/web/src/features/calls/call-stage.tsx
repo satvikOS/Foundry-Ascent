@@ -193,7 +193,7 @@ export function CallStage({
               // The character is a drawn stand-in, never a likeness: it always says what it is.
               <p
                 data-slot="ai-avatar-label"
-                className="absolute top-3 left-3 rounded-full border border-border-strong bg-background/85 px-2 py-0.5 font-mono text-[0.625rem] font-medium tracking-[0.08em] text-muted-foreground"
+                className="absolute top-3 left-3 rounded-full border border-border-strong bg-background/85 px-2 py-0.5 text-[0.6875rem] font-medium text-muted-foreground"
               >
                 AI avatar
               </p>

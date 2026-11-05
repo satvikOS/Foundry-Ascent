@@ -19,7 +19,7 @@ export const overlayClasses =
 export const modalPanelClasses =
   'rounded-xl border border-border bg-popover text-popover-foreground shadow-xl outline-none';
 /** A floating glass panel (the command palette): blur and translucency from `.glass-strong`. */
-const glassPanelClasses = 'glass-strong rounded-xl border text-popover-foreground shadow-xl outline-none';
+const glassPanelClasses = 'glass-strong rounded-xl border text-popover-foreground shadow-glass outline-none';
 
 function DialogOverlay({ className, ...props }: ComponentProps<typeof DialogPrimitive.Overlay>) {
   return (

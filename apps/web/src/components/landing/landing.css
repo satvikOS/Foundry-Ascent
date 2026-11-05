@@ -6,6 +6,22 @@
  */
 @layer components {
   .landing {
+    /*
+     * The landing page's own type, unlike the platform's Inter: Newsreader for display, Geist for text, Geist Mono
+     * for eyebrows (the family roles of globals.css, reassigned here; fonts imported by routes/index.tsx).
+     */
+    --ff-sans:
+      'Geist Variable', 'Geist Fallback', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+      'Helvetica Neue', Arial, sans-serif;
+    --ff-display:
+      'Newsreader Variable', 'Newsreader Fallback', ui-serif, Georgia, Cambria, 'Times New Roman', Times,
+      serif;
+    --ff-label:
+      'Geist Mono Variable', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
+      monospace;
+    --ff-mono: var(--ff-label);
+    font-family: var(--ff-sans);
+
     /* Rhythm: 16 / 24 / 40 px gutters, sections clamp(64px, 10vw, 144px), content at most 1360 px. */
     --gutter: 1rem;
     --section-y: clamp(4rem, 10vw, 9rem);
@@ -78,7 +94,7 @@
 
   /* --- Type (Newsreader display, Geist text, Geist Mono eyebrows; headings never bold) -------------------- */
   .l-hero {
-    font-family: var(--font-serif);
+    font-family: var(--ff-display);
     font-size: clamp(3.5rem, 1.9rem + 4.4vw, 6rem);
     line-height: 1;
     letter-spacing: -0.025em;
@@ -86,7 +102,7 @@
   }
 
   .l-cta-display {
-    font-family: var(--font-serif);
+    font-family: var(--ff-display);
     font-size: clamp(2.25rem, 1.4rem + 3.4vw, 4rem);
     line-height: 1;
     letter-spacing: -0.02em;
@@ -119,7 +135,7 @@
   }
 
   .l-eyebrow {
-    font-family: var(--font-mono);
+    font-family: var(--ff-label);
     font-size: 0.75rem;
     line-height: 1.33;
     letter-spacing: 0.04em;
@@ -416,8 +432,13 @@
     border-color: #dedbd4;
   }
 
-  /* A product fragment floating in a card: a panel in the card's own scheme. */
+  /* A product fragment floating in a card: a panel in the card's own scheme, in the platform's type. */
   .l-fragment {
+    --ff-sans: var(--ff-ui);
+    --ff-display: var(--ff-ui);
+    --ff-label: var(--ff-ui);
+    --ff-mono: var(--ff-code);
+    font-family: var(--ff-ui);
     border-radius: 1rem;
     border: 1px solid var(--border);
     background: var(--card);

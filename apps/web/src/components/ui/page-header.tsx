@@ -40,11 +40,7 @@ export function PageHeader({
         <div className="min-w-0 space-y-2">
           {eyebrow ? <div className="text-small font-medium text-muted-foreground">{eyebrow}</div> : null}
           <div className="flex items-center gap-1.5">
-            <h1
-              data-page-title
-              tabIndex={-1}
-              className="font-serif text-heading font-normal text-balance outline-none"
-            >
+            <h1 data-page-title tabIndex={-1} className="text-title font-semibold text-balance outline-none">
               {title}
             </h1>
             {info ? <InfoTip label={typeof title === 'string' ? title : 'this page'}>{info}</InfoTip> : null}

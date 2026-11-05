@@ -12,7 +12,7 @@ export function VeirBadge({ kind, className }: { kind: PersonaSummary['kind']; c
     <span
       data-slot="veir-badge"
       className={cn(
-        'inline-flex h-5 shrink-0 items-center rounded-full border border-border-strong px-2 font-mono text-[0.625rem] leading-none font-medium tracking-[0.08em] whitespace-nowrap text-muted-foreground',
+        'inline-flex h-5 shrink-0 items-center rounded-full border border-border-strong px-2 text-[0.6875rem] leading-none font-medium whitespace-nowrap text-muted-foreground',
         className,
       )}
     >

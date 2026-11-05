@@ -48,7 +48,7 @@ export function MetricTile({
         <Skeleton className="h-8 w-20" />
       ) : (
         <div className="flex items-baseline gap-2">
-          <span className="tabular text-[28px] leading-8 font-medium tracking-tight">
+          <span className="tabular text-2xl leading-8 font-semibold tracking-[-0.01em]">
             {value === null ? (
               <>
                 <span aria-hidden>—</span>

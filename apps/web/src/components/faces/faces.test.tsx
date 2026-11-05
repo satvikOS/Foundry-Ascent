@@ -6,7 +6,7 @@ import { UserAvatar, VentureMark } from './user-avatar';
 import { VeirBadge } from './veir-badge';
 
 describe('PersonaAvatar', () => {
-  it('shows a serif monogram named after the vEIR when there is no portrait', () => {
+  it('shows a monogram named after the vEIR when there is no portrait', () => {
     render(<PersonaAvatar name="Corin" size="xl" />);
     const face = screen.getByRole('img', { name: 'Corin' });
     expect(face).toHaveTextContent('C');

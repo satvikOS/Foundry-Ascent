@@ -183,7 +183,7 @@ export function CallLobby({
           state={busy ? 'connecting' : failure ? 'disconnected' : 'idle'}
         />
         <div className="-mt-2 flex max-w-md flex-col items-center gap-1.5">
-          {problem ? <h2 className="font-serif text-heading font-normal">{problem.title}</h2> : null}
+          {problem ? <h2 className="text-heading font-semibold">{problem.title}</h2> : null}
           <p
             role="status"
             className={cn('text-pretty text-muted-foreground', problem ? 'text-body' : 'text-small')}

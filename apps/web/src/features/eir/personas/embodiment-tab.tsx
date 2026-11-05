@@ -63,7 +63,7 @@ export function EmbodimentTab({
   return (
     <div className="grid max-w-2xl gap-10">
       <section aria-labelledby="face-heading" className="grid gap-4">
-        <h2 id="face-heading" className="font-serif text-subheading font-normal">
+        <h2 id="face-heading" className="text-subheading font-semibold">
           Face
         </h2>
         <div className="flex items-center gap-4">
@@ -75,7 +75,7 @@ export function EmbodimentTab({
       </section>
 
       <section aria-labelledby="voice-heading" className="grid gap-4">
-        <h2 id="voice-heading" className="font-serif text-subheading font-normal">
+        <h2 id="voice-heading" className="text-subheading font-semibold">
           Voice
         </h2>
         <SelectField

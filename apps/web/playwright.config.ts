@@ -198,7 +198,7 @@ export default defineConfig({
     {
       name: 'desktop',
       testMatch:
-        /(journey|documents|knowledge|safety|a11y|calls|face|studio|chat|theme|words|upgrade|landing)\.spec\.ts$/,
+        /(journey|documents|knowledge|safety|a11y|calls|face|studio|chat|theme|glass|words|upgrade|landing)\.spec\.ts$/,
       dependencies: ['setup'],
       use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } },
     },

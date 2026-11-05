@@ -29,9 +29,11 @@ export function FollowUps({
   onPick: (question: string) => void;
 }) {
   return (
+    // No fading mask on the row: a mask makes it a backdrop root, and the chips' frosted glass would then show the
+    // transcript beneath them sharp instead of blurred. The row is cut at the column's edge instead.
     <ul
       aria-label="Follow-up questions"
-      className="-mx-4 flex gap-2 overflow-x-auto overscroll-x-contain px-4 pb-0.5 [mask-image:linear-gradient(to_right,transparent,black_1rem,black_calc(100%-2rem),transparent)] [scrollbar-width:none] sm:-mx-6 sm:px-6 pointer-fine:[scrollbar-width:thin]"
+      className="-mx-4 flex gap-2 overflow-x-auto overscroll-x-contain px-4 pb-0.5 [scrollbar-width:none] sm:-mx-6 sm:px-6 pointer-fine:[scrollbar-width:thin]"
     >
       {questions.map((question) => (
         <li key={question} className="shrink-0">
@@ -47,7 +49,7 @@ export function FollowUps({
                 showStart(chip);
               });
             }}
-            className="block rounded-full whitespace-nowrap border border-border bg-background px-3.5 py-1.5 text-left text-small text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
+            className="glass block rounded-full border border-border px-3.5 whitespace-nowrap py-1.5 text-left text-small text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
           >
             {question}
           </button>

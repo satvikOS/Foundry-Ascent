@@ -354,16 +354,26 @@ description + error wired to the control) · `badge` · `status-badge` · `stage
 
 ### Typography, motion and faces
 
-- Families (self-hosted, `@fontsource-variable`): **Geist** (`font-sans`, the interface), **Newsreader**
-  (`font-serif`: display headings, page titles and the vEIR's own words), **Geist Mono** (`font-mono`,
-  `label-mono` labels, keys and data).
-- Type scale utilities, each with its own leading and tracking: `text-display` · `text-title` ·
-  `text-heading` · `text-subheading` · `text-body` · `text-small` · `text-caption` · `text-label`.
-  `cn()` knows them as sizes (tailwind-merge), so they combine safely with colour classes.
-- `prose-reading` (serif, 1.65 leading, 68ch measure) for long-form vEIR text; `tabular` for numbers.
+- Families (self-hosted, `@fontsource-variable`): the platform (sign-in and every signed-in page) is set in
+  **Inter** alone (`styles/inter.css`; the Latin file is preloaded by `vite-plugins/font-preload.ts`), with no
+  serif anywhere; `font-mono` is the system monospace, for code and identifiers only. The public landing page
+  keeps **Newsreader**, **Geist** and **Geist Mono**, assigned in its own scope through the `--ff-*` family
+  roles (`components/landing/landing.css`); its pictures of the platform (the device ad, the fragments) use
+  the platform's Inter. `font-serif` does not exist.
+- Type scale utilities (12 · 13 · 15 · 16 · 20 · 24 px, weights 400/500/600), each with its own leading and
+  tracking: `text-title` · `text-heading` · `text-subheading` · `text-reading` · `text-body` · `text-small` ·
+  `text-caption` · `text-label`. Headings are 600 with -0.01em tracking. `cn()` knows them as sizes
+  (tailwind-merge), so they combine safely with colour classes.
+- `prose-reading` (16 px, 1.6 leading, 68ch measure) for long-form vEIR text; `section-label` for a section's
+  small label; `tabular` for numbers (tables, times, `kbd` and `output` are tabular by default).
+- Glass: `.glass` (the composer, its chips, the call's pills), `.glass-strong` (menus, popovers, selects,
+  tooltips, the palette, toasts), `.glass-float` (the side panel) are translucent frosted layers over the
+  ground's static atmosphere (`.app-ground`); secondary text on them takes `--glass-muted`. Solid where blur
+  is missing, transparency is reduced, the device is slow (`data-perf="low"`) or colours are forced.
+  `tokens.test.ts` models the contrast; `e2e/glass.spec.ts` measures it from the rendered pixels.
 - Motion: 150 ms hover/press, `animate-rise` (360 ms out-expo, 8 px) for entrances below the fold only —
   never fade first-paint content in from opacity 0. Reduced motion collapses everything.
-- Faces (`components/faces`): `PersonaAvatar` (the consented portrait when one exists, else a serif
+- Faces (`components/faces`): `PersonaAvatar` (the consented portrait when one exists, else a
   monogram in a hairline ring; `xs`–`xl`; `speaking` ring for calls), `UserAvatar` (people: initials
   only), `VentureMark`, and `VeirBadge` ("vEIR · AI" / "AI"). `veirDisplay(venture)` and `veirName()` in
   `lib/veir.ts` give the one name the AI goes by everywhere ("Corin's vEIR"; a neutral guide keeps its own

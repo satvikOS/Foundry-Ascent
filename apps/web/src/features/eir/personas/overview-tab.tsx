@@ -31,7 +31,7 @@ function PoolTile({
       className="group grid content-start gap-1.5 border-t border-border pt-4 text-left transition-colors hover:border-foreground/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       <span className="flex items-center justify-between gap-2">
-        <span className="label-mono">{label}</span>
+        <span className="section-label">{label}</span>
         <ArrowRight
           aria-hidden
           className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none"
@@ -82,7 +82,7 @@ export function OverviewTab({
       )}
 
       <section aria-labelledby="pool-heading" className="grid gap-4">
-        <h2 id="pool-heading" className="font-serif text-subheading font-normal">
+        <h2 id="pool-heading" className="text-subheading font-semibold">
           Common pool
         </h2>
         <div className="grid gap-x-6 gap-y-6 sm:grid-cols-3">
@@ -123,7 +123,7 @@ export function OverviewTab({
       </section>
 
       <section aria-labelledby="facts-heading" className="grid gap-2">
-        <h2 id="facts-heading" className="font-serif text-subheading font-normal">
+        <h2 id="facts-heading" className="text-subheading font-semibold">
           Details
         </h2>
         <dl className="divide-y divide-border border-y border-border">

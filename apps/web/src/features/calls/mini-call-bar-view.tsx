@@ -92,7 +92,7 @@ export function MiniCallBarView() {
             <span className="text-muted-foreground">On hold</span>
           ) : (
             <>
-              <span className="font-mono tabular text-muted-foreground" aria-hidden>
+              <span className="tabular text-muted-foreground" aria-hidden>
                 {formatClock(duration)}
               </span>
               <span className="sr-only">{spokenDuration(duration)}</span>

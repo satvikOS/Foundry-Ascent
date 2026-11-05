@@ -204,6 +204,16 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
             page.getByRole('article', { name: 'Exchange 1' }).getByRole('button', { name: 'Copy answer' }),
           ).toBeVisible({ timeout: 30_000 });
           await shoot(page, 'conversation', device, scheme);
+          // A menu open over the conversation (glass over the transcript), on every size.
+          await page.getByRole('button', { name: 'Conversation options' }).click();
+          const options = page.getByRole('menu');
+          await expect(options).toBeVisible();
+          await options.evaluate((element) =>
+            Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+          );
+          await shoot(page, 'conversation-menu', device, scheme);
+          await page.keyboard.press('Escape');
+          await expect(options).toBeHidden();
           await page.goto(`${page.url()}?call=1`);
           const call = page.getByRole('dialog', { name: /^Call with / });
           const start = call.getByRole('button', { name: 'Start call' });

@@ -130,7 +130,7 @@ export function Composer({
       <div
         data-slot="composer"
         className={cn(
-          'rounded-[1.25rem] border bg-card transition-colors duration-150',
+          'glass rounded-[1.25rem] border transition-colors duration-150',
           'focus-within:border-input',
           tooLong ? 'border-destructive' : 'border-border-strong',
           disabled && 'bg-muted/40',

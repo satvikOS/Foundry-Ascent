@@ -108,7 +108,7 @@ export function NotebookEditor({ tenant, ventureId, veirName, canEdit }: Noteboo
         <PersonaAvatar name={veirName} size="lg" decorative className="mt-1 hidden sm:inline-flex" />
         <div className="grid min-w-0 flex-1 gap-1.5">
           <div className="flex items-center gap-1">
-            <h2 className="font-serif text-subheading font-normal">What {veirName} knows</h2>
+            <h2 className="text-subheading font-semibold">What {veirName} knows</h2>
             <InfoTip label="these notes">
               {`Notes ${author} keeps from your conversations. Your team can correct them. They’re never treated as facts.`}
             </InfoTip>
@@ -291,7 +291,7 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} className="grid gap-1">
-      <h3 id={headingId} className="label-mono">
+      <h3 id={headingId} className="section-label">
         {title}
       </h3>
       {children}

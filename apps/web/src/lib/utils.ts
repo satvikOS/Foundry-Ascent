@@ -6,10 +6,10 @@ import { extendTailwindMerge } from 'tailwind-merge';
  * otherwise `text-small` reads as a colour and is dropped when merged with `text-muted-foreground`.
  */
 export const TYPE_SCALE = [
-  'display',
   'title',
   'heading',
   'subheading',
+  'reading',
   'body',
   'small',
   'caption',
@@ -17,7 +17,7 @@ export const TYPE_SCALE = [
 ] as const;
 
 const twMerge = extendTailwindMerge({
-  extend: { theme: { text: [...TYPE_SCALE] } },
+  extend: { theme: { text: [...TYPE_SCALE], font: ['display', 'label'] } },
 });
 
 /** Merge class names, resolving Tailwind conflicts (last one wins). */

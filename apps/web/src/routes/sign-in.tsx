@@ -39,11 +39,11 @@ function SignInPage() {
   const search = Route.useSearch();
 
   return (
-    <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+    <div className="app-ground grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       {/* The landing page's art field (grain over the voice palette), inset like its hero media card. */}
       <aside
         aria-label="About Foundry Ascent"
-        className="landing art art--hero grain m-3 hidden rounded-xl lg:flex lg:flex-col"
+        className="landing type-platform art art--hero grain m-3 hidden rounded-xl lg:flex lg:flex-col"
       >
         <div className="relative flex flex-1 flex-col justify-between p-10 xl:p-14">
           <Link
@@ -53,9 +53,7 @@ function SignInPage() {
             <BrandWordmark />
           </Link>
           <div className="max-w-md">
-            <p className="font-serif text-title font-normal text-balance">
-              Pick up where you <em className="italic">left off</em>.
-            </p>
+            <p className="text-title font-semibold text-balance">Pick up where you left off.</p>
             <p className="mt-6 text-body text-muted-foreground">
               Your vEIR remembers your decisions, tests and promises. You can read and correct all of it.
             </p>
@@ -81,7 +79,7 @@ function SignInPage() {
         >
           <div className="w-full max-w-[26rem]">
             <div className="mb-8 space-y-3">
-              <h1 data-page-title tabIndex={-1} className="font-serif text-heading font-normal outline-none">
+              <h1 data-page-title tabIndex={-1} className="text-title font-semibold outline-none">
                 Sign in to Foundry Ascent
               </h1>
               <p className="text-small text-muted-foreground">Use the code from your program lead.</p>

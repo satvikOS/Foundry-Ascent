@@ -110,7 +110,8 @@ test.describe('OLED dark and glass', () => {
     if (slow) {
       expect(await style(panel, 'backgroundColor')).toBe('rgb(18, 18, 18)');
     } else {
-      expect(await style(panel, 'backgroundColor')).toBe('rgba(20, 20, 20, 0.64)');
+      // Translucent (owner, 2026-11-05): the ground's atmosphere shows through it.
+      expect(await style(panel, 'backgroundColor')).toBe('rgba(22, 22, 24, 0.45)');
       expect(await style(panel, 'backdropFilter')).toContain('blur(');
     }
     await expectReadable(page, 'side panel (dark)');

@@ -434,7 +434,7 @@ function Conversation() {
         <div
           ref={dockRef}
           data-slot="composer-dock"
-          className="glass sticky bottom-0 z-10 pt-3 pb-3"
+          className="composer-dock sticky bottom-0 z-10 pt-3"
           data-print="hide"
         >
           <div className="mx-auto grid w-full max-w-(--content-width) gap-2.5 px-4 sm:px-6">

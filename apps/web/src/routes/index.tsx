@@ -1,3 +1,9 @@
+// The landing page's own faces (its type differs from the platform's Inter on purpose): Newsreader for the display
+// headings, Geist for its text, Geist Mono for its eyebrows. Declared here, they download only where it draws them.
+import '@fontsource-variable/geist/wght.css';
+import '@fontsource-variable/geist-mono/wght.css';
+import '@fontsource-variable/newsreader/wght.css';
+import '@fontsource-variable/newsreader/wght-italic.css';
 import '@/components/landing/landing.css';
 
 import { useQuery } from '@tanstack/react-query';

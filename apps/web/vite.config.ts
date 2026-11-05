@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
 import { pdfjsAssets } from './src/features/documents/viewer/pdfjs-assets.plugin.ts';
+import { fontPreload } from './vite-plugins/font-preload.js';
 import { FRAMEWORK_CHUNK, firstLoadBudget } from './vite-plugins/page-speed.js';
 
 /**
@@ -57,6 +58,8 @@ export default defineConfig({
     // Page speed (docs/runbooks/latency.md): the script a first page load fetches (the entry and its static
     // imports) stays within its budget; the build fails otherwise.
     firstLoadBudget(),
+    // The platform's face (Inter, Latin) is preloaded by index.html: vite-plugins/font-preload.ts.
+    fontPreload(),
   ],
   resolve: { tsconfigPaths: true },
   server: {

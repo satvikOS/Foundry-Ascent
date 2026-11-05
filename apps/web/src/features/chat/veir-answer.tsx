@@ -21,8 +21,8 @@ import { MessageActions } from './message-actions';
 import { NextStepList, type NextActionControls } from './next-steps';
 import { ReasoningDisclosure } from './reasoning';
 
-/** The vEIR's own words: serif reading face, generous leading, a 60–75 character measure. */
-export const ANSWER_PROSE = 'max-w-[68ch] font-serif text-[1.0625rem] leading-[1.7]';
+/** The vEIR's own words: the reading size (16 px, 1.6 leading), a 60–75 character measure. */
+export const ANSWER_PROSE = 'max-w-[68ch] text-reading';
 
 export interface EscalationControls {
   /** A handoff already created from this answer. */
@@ -147,7 +147,7 @@ function NextSteps({
 }) {
   return (
     <section aria-label="Suggested next steps" className="mt-5">
-      <h4 className="label-mono mb-2">Next steps</h4>
+      <h4 className="section-label mb-2">Next steps</h4>
       <NextStepList actions={actions} controls={controls} />
     </section>
   );
@@ -167,9 +167,7 @@ function Rehearsal({
         <figcaption className="text-caption text-muted-foreground">
           {rehearsal.counterpart} <span className="text-subtle-foreground">(played by {personaName})</span>
         </figcaption>
-        <blockquote className="mt-1 font-serif text-[1.0625rem] leading-7 italic">
-          {rehearsal.line}
-        </blockquote>
+        <blockquote className="mt-1 text-reading italic">{rehearsal.line}</blockquote>
       </figure>
       {rehearsal.scores.length > 0 ? (
         <ul className="divide-y divide-border border-y border-border" aria-label="Rubric scores">
@@ -203,7 +201,7 @@ function Rehearsal({
       ) : null}
       {rehearsal.critique ? (
         <div>
-          <h4 className="label-mono mb-1.5">Critique</h4>
+          <h4 className="section-label mb-1.5">Critique</h4>
           <Markdown size="sm">{rehearsal.critique}</Markdown>
         </div>
       ) : null}

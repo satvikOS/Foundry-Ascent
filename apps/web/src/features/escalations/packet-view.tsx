@@ -27,7 +27,7 @@ const LABELS: Record<PacketAudience, { question: string; decision: string; facts
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid gap-1">
-      <dt className="label-mono">{label}</dt>
+      <dt className="section-label">{label}</dt>
       <dd className="text-sm leading-6 whitespace-pre-wrap [overflow-wrap:anywhere]">{children}</dd>
     </div>
   );

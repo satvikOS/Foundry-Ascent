@@ -40,9 +40,7 @@ export function VeirWelcomeDialog({
         className="max-w-sm justify-items-center gap-0 px-6 pt-8 pb-6 text-center"
       >
         <PersonaAvatar name={veir.name} portraitUrl={veir.portraitUrl} size="xl" decorative />
-        <DialogTitle className="mt-5 font-serif text-heading font-normal text-balance">
-          {welcome.title}
-        </DialogTitle>
+        <DialogTitle className="mt-5 text-heading font-semibold text-balance">{welcome.title}</DialogTitle>
         <DialogDescription asChild>
           <div className="mt-3 grid gap-1.5 text-body text-pretty text-muted-foreground">
             {welcome.lines.map((line) => (

@@ -39,12 +39,12 @@ export function PageSection({
     >
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
         <div className="grid min-w-0 gap-1.5">
-          {label ? <p className="label-mono">{label}</p> : null}
+          {label ? <p className="section-label">{label}</p> : null}
           <Heading
             id={headingId}
             className={cn(
-              'font-serif font-normal text-balance',
-              headingLevel === 2 ? 'text-subheading' : 'text-[1.0625rem] leading-snug',
+              'font-semibold text-balance',
+              headingLevel === 2 ? 'text-heading' : 'text-subheading',
             )}
           >
             {title}

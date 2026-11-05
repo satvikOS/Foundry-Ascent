@@ -240,7 +240,7 @@ function LessonBody({
           <dl className="grid gap-5">
             {LESSON_FIELDS.filter((f) => f.name !== 'title').map((f) => (
               <div key={f.name} className="grid gap-1">
-                <dt className="label-mono">{f.label}</dt>
+                <dt className="section-label">{f.label}</dt>
                 <dd className="text-body whitespace-pre-wrap">{lesson[f.name]}</dd>
               </div>
             ))}

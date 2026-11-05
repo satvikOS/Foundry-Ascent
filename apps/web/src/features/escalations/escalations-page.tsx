@@ -315,11 +315,11 @@ function HelpRequestDetail({
       <div className="grid gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="grid gap-1.5">
-            <p className="label-mono">
+            <p className="section-label">
               Requested{' '}
               <time dateTime={isoString(escalation.createdAt)}>{formatDateTime(escalation.createdAt)}</time>
             </p>
-            <h2 id={headingId} className="font-serif text-subheading font-normal">
+            <h2 id={headingId} className="text-subheading font-semibold">
               {ESCALATION_CATEGORY_LABELS[escalation.category]}
             </h2>
           </div>

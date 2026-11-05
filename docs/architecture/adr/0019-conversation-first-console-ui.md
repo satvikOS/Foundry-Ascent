@@ -93,7 +93,8 @@ use tables with row menus or detail drawers and one primary action per page; per
 - Colour tokens in `apps/web/src/styles/globals.css` keep their values.
 - Fonts are self-hosted with `@fontsource-variable` (the CSP has `font-src 'self' data:`): Geist for the
   interface, Newsreader for display headings and vEIR prose, Geist Mono for labels and data. Inter is
-  removed.
+  removed. _Superseded 2026-11-05 (owner): the platform, sign-in included, is set in Inter alone with no
+  serif; Newsreader, Geist and Geist Mono stay on the public landing page only._
 - A type scale with a large display-to-body ratio, 1.6–1.7 line height and a 60–75 character measure for
   prose, tabular numerals for figures and dates.
 - `PersonaAvatar` (portrait with `likeness` consent, otherwise a serif monogram) and `UserAvatar` wherever

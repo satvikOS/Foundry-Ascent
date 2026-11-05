@@ -23,7 +23,7 @@ interface DisclosureBannerProps {
   veirName?: string | null | undefined;
   /**
    * "line" (one quiet line: the EIR studio's test bench, beside a release its author is trying), "inline" (a
-   * callout on public pages and reviews), "print" (exports; serif, always visible). Founder conversations and
+   * callout on public pages and reviews), "print" (exports; always visible). Founder conversations and
    * calls carry no line (ADR-0020): the vEIR's one-time welcome and its badge disclose it.
    */
   variant?: 'line' | 'inline' | 'print';
@@ -62,7 +62,7 @@ export function DisclosureBanner({ text, veirName, variant = 'line', className }
         role="note"
         aria-label="AI disclosure"
         data-slot="disclosure"
-        className={cn('border-y border-black/30 py-2 font-serif text-[11pt] leading-snug', className)}
+        className={cn('border-y border-black/30 py-2 text-[11pt] leading-snug', className)}
       >
         <strong>AI disclosure. </strong>
         {message}
@@ -119,7 +119,7 @@ function DisclosureLine({
         className,
       )}
     >
-      <span className="shrink-0 rounded-[0.25rem] border border-border-strong px-1 font-mono text-[0.625rem] leading-[1.125rem] font-medium tracking-[0.08em] text-foreground uppercase">
+      <span className="shrink-0 rounded-[0.25rem] border border-border-strong px-1 font-label text-[0.625rem] leading-[1.125rem] font-medium tracking-[0.08em] text-foreground uppercase">
         AI
       </span>
       {expanded || !expandable ? (

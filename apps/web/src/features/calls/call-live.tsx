@@ -495,7 +495,7 @@ function EndUndo({ undoRef, onUndo }: { undoRef: RefObject<HTMLButtonElement | n
       role="group"
       aria-label="Call ended"
       data-slot="end-undo"
-      className="flex h-11 items-center gap-3 rounded-full border bg-popover pr-1.5 pl-4 text-small text-popover-foreground shadow-float"
+      className="glass flex h-11 items-center gap-3 rounded-full border border-(--glass-border) pr-1.5 pl-4 text-small text-popover-foreground"
     >
       <span aria-hidden>Call ended</span>
       <span aria-hidden className="text-muted-foreground">
@@ -520,10 +520,10 @@ function TurnReview({ turn, name, onBack }: { turn: TimelineTurn; name: string; 
       aria-label="Earlier in the call"
       className="mx-auto grid w-full max-w-2xl justify-items-center gap-2 px-2 text-center"
     >
-      <p className="font-mono text-caption text-muted-foreground">
+      <p className="tabular text-caption text-muted-foreground">
         {clockLabel(turn.startMs)} · {name}
       </p>
-      <p className="line-clamp-4 font-serif text-[1.25rem] leading-[1.5] text-pretty text-foreground sm:line-clamp-5 sm:text-[1.375rem]">
+      <p className="line-clamp-4 text-xl leading-[1.5] text-pretty text-foreground sm:line-clamp-5">
         {turn.text || 'Nothing transcribed.'}
       </p>
       <button
@@ -639,7 +639,7 @@ function TypeLine({ inputRef, name, hint, queued, disabled, onSend, onReconnectM
           ) : null}
         </div>
       ) : null}
-      <div className="flex items-center gap-2 rounded-full border border-border-strong bg-card py-1.5 pr-1.5 pl-4 shadow-xs transition-[border-color,box-shadow] duration-150 focus-within:border-ring/60 focus-within:shadow-md">
+      <div className="glass flex items-center gap-2 rounded-full border border-border-strong py-1.5 pr-1.5 pl-4 transition-[border-color] duration-150 focus-within:border-ring/60">
         <input
           ref={inputRef}
           value={text}

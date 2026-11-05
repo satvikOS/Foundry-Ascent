@@ -207,7 +207,7 @@ function NotebookList({ title, entries }: { title: string; entries: readonly Not
   if (entries.length === 0) return null;
   return (
     <section className="grid gap-1.5">
-      <h3 className="label-mono">{title}</h3>
+      <h3 className="section-label">{title}</h3>
       <ul className="grid gap-1.5 text-small leading-6">
         {entries.map((entry) => (
           <li key={entry.id}>{entry.text}</li>
@@ -243,19 +243,17 @@ function NotebookTab({
   return (
     <PanelBody>
       <div className="grid gap-1">
-        <h2 className="font-serif text-subheading">What {personaName} knows</h2>
+        <h2 className="text-subheading font-semibold">What {personaName} knows</h2>
         <p className="text-caption text-muted-foreground">Notes from past conversations, not facts.</p>
       </div>
       {empty ? (
         <Quiet>No notes yet.</Quiet>
       ) : (
         <>
-          {data.summary.trim() ? (
-            <p className="font-serif text-[0.9375rem] leading-7">{data.summary}</p>
-          ) : null}
+          {data.summary.trim() ? <p className="text-body">{data.summary}</p> : null}
           {commitments.length > 0 ? (
             <section className="grid gap-1.5">
-              <h3 className="label-mono">Commitments</h3>
+              <h3 className="section-label">Commitments</h3>
               <ul className="grid gap-1.5 text-small leading-6">
                 {commitments.map((commitment) => (
                   <li key={commitment.id}>
@@ -353,7 +351,7 @@ function HelpTab({
       ) : null}
       {otherOpen.length > 0 ? (
         <section className="grid gap-1.5">
-          <h3 className="label-mono">Other open requests</h3>
+          <h3 className="section-label">Other open requests</h3>
           <ul className="divide-y divide-border border-y border-border">
             {otherOpen.map((e) => (
               <EscalationRow key={e.id} escalation={e} tenant={tenant} ventureId={ventureId} />
