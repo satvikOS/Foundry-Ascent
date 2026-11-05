@@ -65,7 +65,7 @@ Contracts in `packages/contracts/src/calls.ts`; errors are problem+json.
 | `POST /calls/notice/acknowledge`                             | anyone signed in, for themselves | `{acknowledgedAt}`. The first-call privacy notice was read; stored with the person (migration 0010), idempotent, audited once. `GET /ventures/:id/call-config` reports it as `callNoticeAcknowledgedAt`, and the call screen shows the notice until it is set. |
 | `POST /calls/avatar-session` `{ventureId, callId}`           | founder/team                     | The face of the live call (§4.3): a room token for a vendor face, or the presence (no token).                                                                                                                                                                  |
 | `POST /calls/:id/face/speak`                                 | the caller                       | 204. Hands the face a unit's exact PCM with its `x-face-manifest` (§4.2); 422 otherwise.                                                                                                                                                                       |
-| `POST /calls/:id/face/interrupt`, `/face/end`                | the caller                       | 204. Barge-in on the face; the face is no longer shown (its vendor session ends; `/face/end` may say why, `{reason?, vendorReason?}`, audited).                                                                                                                |
+| `POST /calls/:id/face/interrupt`, `/face/end`                | the caller                       | 204. Barge-in on the face; the face is no longer shown (its vendor session ends; `/face/end` may say why, `{reason?, vendorReason?, stage?, detail?}`, audited and logged).                                                                                    |
 
 Someone else's call or turn is 404, as is a conversation the caller cannot see. Refusals:
 
@@ -592,8 +592,11 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
    a face that drops, the stage giving it up, or a call left on hold (page hidden) for over a minute (the vendor
    bills an idle face) tells the server (`POST /calls/:id/face/end`), with which trigger fired (`reason`: the
    vendor's video track ended or was unpublished, its room dropped, it stopped the session, with its own
-   `vendorReason`, no first frame, a slow or failed join, no adapter, a crisis turn, the hold), recorded in the
-   face's `call.face_ended` audit (`metadata.clientReason`), so a face that left early can be explained.
+   `vendorReason`, no first frame, a slow or failed join, no adapter, a crisis turn, the hold), and for a face that
+   never showed the join stage it stopped at (`stage`: session, adapter, room, video, a LITE stock face's speak
+   channel `control`) and a plain code (`detail`), recorded in the face's `call.face_ended` audit
+   (`metadata.clientReason`, `clientStage`, `clientDetail`) and logged by the API (`call.face_failed` for a
+   failure), so a face that left early, or never came, can be explained.
 5. Heartbeats report whether the face is shown and answer `face: stop` (and the server ends the vendor session,
    asking twice if the first stop fails) when faces are switched off, likeness consent is withdrawn, the call's
    video limit or the month's video minutes are used up, the month's minutes cannot be read (the face never goes

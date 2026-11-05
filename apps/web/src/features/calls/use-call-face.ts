@@ -1,4 +1,9 @@
-import type { AvatarSessionResponse, AvatarVoicing, EmbodimentProviderId } from '@foundry/contracts';
+import type {
+  AvatarSessionResponse,
+  AvatarVoicing,
+  EmbodimentProviderId,
+  FaceJoinStage,
+} from '@foundry/contracts';
 import { useSyncExternalStore } from 'react';
 
 import {
@@ -98,12 +103,33 @@ type FaceEngine = Pick<
 
 const PRESENCE: CallFace = { status: 'presence' };
 
-/** Why joining the face failed, from what the join threw. */
-function joinFailure(err: unknown): FaceLoss['reason'] {
+/** A plain code of what a join threw: the page's own code (`face_no_video`), else the error's own name. */
+function failureCode(err: unknown): string | undefined {
+  if (!(err instanceof Error)) return undefined;
+  if (/^[a-z][a-z0-9_]{0,63}$/.test(err.message)) return err.message;
+  // A library's error (LiveKit's ConnectionError and its reason), never its message, which may hold a URL.
+  const reasonName = (err as { reasonName?: unknown }).reasonName;
+  const named =
+    typeof reasonName === 'string' && /^[A-Za-z]{1,32}$/.test(reasonName)
+      ? `${err.name}.${reasonName}`
+      : err.name;
+  return /^[A-Za-z][A-Za-z0-9_.:-]{0,63}$/.test(named) && named !== 'Error' ? named : undefined;
+}
+
+/**
+ * Why joining the face failed, from what the join threw, with the stage it stopped at (the adapter's own account
+ * when it has one) and a plain code: what the page sends with the face's end, so the server logs and audits it.
+ */
+function joinFailure(err: unknown, stage: FaceJoinStage): FaceLoss {
   const message = err instanceof Error ? err.message : '';
-  if (message === 'face_timeout') return 'connect_timeout';
-  if (message === 'face_no_video') return 'no_video';
-  return 'connect_failed';
+  const reason: FaceLoss['reason'] =
+    message === 'face_timeout'
+      ? 'connect_timeout'
+      : message === 'face_no_video'
+        ? 'no_video'
+        : 'connect_failed';
+  const detail = failureCode(err);
+  return { reason, stage, ...(detail === undefined ? {} : { detail }) };
 }
 
 function timeout(ms: number, signal: AbortSignal): Promise<never> {
@@ -173,10 +199,13 @@ export class CallFaceController {
     };
     this.current = attempt;
     this.set({ status: 'connecting' });
+    /** Where the join is (the adapter's own stage once it is connecting). */
+    let stage: FaceJoinStage = 'session';
     void (async () => {
       try {
         const session = await this.deps.startSession(ventureId, callId, signal);
         if (stopped()) return;
+        stage = 'adapter';
         if (session.token === null || session.provider === 'builtin') {
           this.close(false);
           return;
@@ -189,10 +218,11 @@ export class CallFaceController {
           return;
         }
         if (loaded?.connect === undefined) {
-          this.close(true, { reason: 'no_adapter' });
+          this.close(true, { reason: 'no_adapter', stage });
           return;
         }
         attempt.adapter = loaded;
+        stage = 'room';
         loaded.mount(document.createElement('div'), { reducedMotion });
         await Promise.race([
           loaded.connect(session, signal, this.deps.relayFor(callId)),
@@ -216,7 +246,8 @@ export class CallFaceController {
           stock: session.stockFace,
         });
       } catch (err) {
-        if (!stopped()) this.close(true, { reason: joinFailure(err) });
+        // Read before the close unmounts the adapter: how far its join got.
+        if (!stopped()) this.close(true, joinFailure(err, attempt.adapter?.joinStage?.() ?? stage));
       }
     })();
   }

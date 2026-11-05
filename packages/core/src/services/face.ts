@@ -1,6 +1,7 @@
 import {
   AvatarSessionRequest,
   type AvatarSessionResponse,
+  type FaceEndReason,
   type FaceEndRequest,
   type PlatformRole,
   type PlatformSettingsView,
@@ -104,6 +105,22 @@ export interface FaceService {
 export const MIN_FACE_SECONDS = 15;
 /** Hand-overs of one unit to the face (a unit is heard once). */
 export const FACE_UNIT_PLAYS = 1;
+/**
+ * The page's reasons for a face's end that are failures (it never joined, or the vendor's side dropped), logged as a
+ * warning; the rest (a crisis turn, a call left on hold, a stock face handing over before its time limit) are not.
+ */
+export const FACE_FAILURE_REASONS: ReadonlySet<FaceEndReason> = new Set<FaceEndReason>([
+  'video_ended',
+  'video_unsubscribed',
+  'room_disconnected',
+  'vendor_stopped',
+  'no_video',
+  'connect_timeout',
+  'connect_failed',
+  'no_adapter',
+  'control_lost',
+  'speech_stalled',
+]);
 
 export type FaceSettings = Required<
   Pick<PlatformSettingsView, 'facesEnabled' | 'faceMinutesPerPrincipalMonth' | 'faceMinutesPerCall'>
@@ -714,6 +731,9 @@ export function createFaceHooks(kit: Kit): FaceHooks {
               ...(decision.client?.vendorReason === undefined
                 ? {}
                 : { vendorReason: decision.client.vendorReason }),
+              // A face that never showed: the join stage it stopped at, and the page's plain code of what failed.
+              ...(decision.client?.stage === undefined ? {} : { clientStage: decision.client.stage }),
+              ...(decision.client?.detail === undefined ? {} : { clientDetail: decision.client.detail }),
             },
           });
         }
@@ -1055,6 +1075,12 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
       const controlUrl = route === 'browser' ? (started.browser.controlUrl ?? null) : null;
       if (route === 'browser' && controlUrl === null) {
         // A browser-fed face without its speak channel could never speak: nothing runs unseen.
+        logger.warn('call.avatar_session_failed', {
+          requestId: ctx.requestId,
+          callId: face.callId,
+          provider: provider.id,
+          error: 'no_control_channel',
+        });
         await provider
           .end({ sessionRef: started.sessionRef, control: null, requestId: ctx.requestId }, 'face_stopped')
           .catch(() => undefined);
@@ -1195,6 +1221,21 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
         if (found?.startedBy !== ctx.principalId) throw fail.notFound('Call');
         return found;
       });
+      // The page's own account, logged as well as audited: a face that failed (never joined, or dropped) says where
+      // and why in the service's logs (plain tokens only: the contract allows nothing else).
+      const fields = {
+        requestId: ctx.requestId,
+        callId: call.id,
+        reason: client?.reason ?? null,
+        stage: client?.stage ?? null,
+        detail: client?.detail ?? null,
+        vendorReason: client?.vendorReason ?? null,
+      };
+      if (client?.reason !== undefined && FACE_FAILURE_REASONS.has(client.reason)) {
+        logger.warn('call.face_failed', fields);
+      } else {
+        logger.info('call.face_dropped', fields);
+      }
       // Idempotent: a face already gone (or none) is fine.
       await hooks.heartbeat(
         ctx,

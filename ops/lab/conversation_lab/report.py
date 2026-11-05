@@ -464,6 +464,18 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
             f"published {lite.get('audio_senders')}"
             + (f"; error {lite['error']}" if lite.get("error") else "")
         )
+        failure = lite.get("failure") or {}
+        if failure:
+            end = failure.get("face_end") or {}
+            socket = failure.get("lite_socket") or {}
+            out.append(
+                f"- Failed at step {failure.get('step')} ({failure.get('error')}); session handed over token "
+                f"{session.get('token')}, speak channel {session.get('control_url')} (HTTP {session.get('status')}); "
+                f"the page ended the face: {end.get('reason')} at stage {end.get('stage')} "
+                f"(code {end.get('detail')}; face/end requests {failure.get('face_ends')}); speak channel sockets "
+                f"attempted {socket.get('attempts')}, opened {socket.get('opened')}, close codes "
+                f"{socket.get('close_codes')}; page errors {failure.get('page_errors') or 'none'}"
+            )
         out.append("")
     injection = face.get("injection") or {}
     if injection:

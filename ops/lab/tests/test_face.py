@@ -206,6 +206,8 @@ def measured(private: Path) -> None:
             "livekit": True,
             "meter": True,
             "appMeter": True,
+            "socketTap": True,
+            "livekitSignal": True,
         },
     )
     write(
@@ -578,11 +580,12 @@ def test_e5_never_substitutes_the_vendor_event_for_the_sound(tmp_path: Path) -> 
     assert result["checks"]["e5_first_audio_under_target"] is None
 
 
-def test_the_instruments_include_both_level_meters(tmp_path: Path) -> None:
+def test_the_instruments_include_both_level_meters_and_the_socket_tap(tmp_path: Path) -> None:
     private = tmp_path / "private"
     measured(private)
     assert graded(private)["instruments"]["ok"] is True
-    for flag in ("meter", "appMeter"):
+    # The socket tap and LiveKit's signalling under it: run 42112455038's tap broke every WebSocket in the page.
+    for flag in ("meter", "appMeter", "socketTap", "livekitSignal"):
         raw = json.loads((private / "face" / "instruments.json").read_text(encoding="utf-8"))
         write(private, "instruments", {**raw, flag: False})
         assert graded(private)["checks"]["instruments_ok"] is False
@@ -1005,7 +1008,16 @@ def test_nothing_but_numbers_survives_from_the_lite_file(tmp_path: Path) -> None
     assert SAID not in json.dumps(result)
     lite = result["call_lite"]
     assert lite["face_shown"] is None
-    assert lite["session"] == {"provider": None, "voicing": None, "stock_face": None, "livekit_host": None}
+    assert lite["session"] == {
+        "provider": None,
+        "voicing": None,
+        "stock_face": None,
+        "livekit_host": None,
+        "status": None,
+        "token": None,
+        "control_url": None,
+    }
+    assert lite["failure"] is None
     assert lite["first_hand_over_ms"] is None
     assert lite["first_face_audio_ms"] == {"p50": 900, "p95": 900, "n": 1}
     assert lite["hand_over_to_audio_ms"] == {"p50": 1, "p95": 1, "n": 1}
@@ -1014,6 +1026,86 @@ def test_nothing_but_numbers_survives_from_the_lite_file(tmp_path: Path) -> None
     assert lite["error"] is None
     assert result["face_mode"] is None
     assert result["lite_face_reference"] is None
+
+
+def test_a_failed_lite_arm_says_where_it_stopped_in_tokens_only(tmp_path: Path) -> None:
+    # Run 42112455038 reported only "error Error": the arm now records its step, the page's own account of the face
+    # it gave up (face/end), the speak channel's sockets and page error names; nothing but tokens reaches the summary.
+    private = tmp_path / "private"
+    write(
+        private,
+        "call-lite",
+        {
+            "face_shown": False,
+            "error": "Error",
+            "session": {
+                "status": 200,
+                "token": True,
+                "controlUrl": True,
+                "provider": "heygen",
+                "voicing": "audio",
+            },
+            "failure": {
+                "step": "face_join",
+                "error": "Error",
+                "message": "expect(locator).toBeVisible() failed " + SAID,
+                "face_end": {"reason": "connect_timeout", "stage": "room", "detail": "face_timeout"},
+                "face_ends": 1,
+                "lite_socket": {"attempts": 0, "opened": 0, "close_codes": [], "carried_frames": 0},
+                "page_errors": [{"name": "ReferenceError", "message": SAID}, {"name": SAID, "message": "x"}],
+            },
+        },
+    )
+    result = face.public_result(
+        private,
+        playwright_exit=1,
+        credits_before=None,
+        credits_after=None,
+        vendor_calls=[],
+        vendor="heygen-sandbox",
+        admin_grant="granted",
+        face_mode="lite",
+        twin="ready",
+    )
+    assert SAID not in json.dumps(result)
+    lite = result["call_lite"]
+    assert lite["session"]["token"] is True
+    assert lite["session"]["control_url"] is True
+    assert lite["failure"] == {
+        "step": "face_join",
+        "error": "Error",
+        "face_end": {"reason": "connect_timeout", "stage": "room", "detail": "face_timeout"},
+        "face_ends": 1,
+        "lite_socket": {"attempts": 0, "opened": 0, "close_codes": [], "carried_frames": 0},
+        "page_errors": ["ReferenceError"],
+    }
+    text = render({"suite": "face", "result": {"face": result, "passed": 0, "run": 1}, "spend": {}})
+    assert "Failed at step face_join (Error)" in text
+    assert "connect_timeout at stage room (code face_timeout" in text
+    # Anything not a known token is dropped, never echoed.
+    write(
+        private,
+        "call-lite",
+        {
+            "failure": {
+                "step": SAID,
+                "face_end": {"reason": SAID, "stage": "wss://x", "detail": "wss://host/path?token=abc"},
+            }
+        },
+    )
+    tampered = face.public_result(
+        private,
+        playwright_exit=1,
+        credits_before=None,
+        credits_after=None,
+        vendor_calls=[],
+        vendor="heygen-sandbox",
+        admin_grant="granted",
+        face_mode="lite",
+        twin="ready",
+    )["call_lite"]["failure"]
+    assert tampered["step"] is None
+    assert tampered["face_end"] == {"reason": None, "stage": None, "detail": None}
 
 
 def test_the_twin_script_line_is_parsed_strictly() -> None:

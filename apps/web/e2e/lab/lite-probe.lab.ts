@@ -11,6 +11,7 @@ import type * as LiveKit from 'livekit-client';
 
 import { test } from '../support/fixtures';
 import { REPO, errorName, writePrivate } from './lab-support';
+import { pageScript } from './page-script';
 
 /*
  * LITE protocol probe of the conversation lab's face suite (face_mode=lite-probe; spec lite-elevenlabs-design §8,
@@ -1077,7 +1078,7 @@ async function browserAttempt(
 ): Promise<OriginAttempt> {
   const page = await context.newPage();
   try {
-    await page.addInitScript(liteLabInit);
+    await page.addInitScript(pageScript(liteLabInit));
     const origins = await watchHandshakeOrigins(context, page);
     await openPageAt(page, origin, false);
     const pageOrigin = await page.evaluate(() => location.origin);
@@ -1430,7 +1431,7 @@ test.describe('Conversation lab · LITE protocol probe (HeyGen LiveAvatar sandbo
   }) => {
     test.skip(!RUN, 'face_mode lite-probe only');
     const result: Record<string, unknown> = {};
-    await page.addInitScript(liteLabInit);
+    await page.addInitScript(pageScript(liteLabInit));
     try {
       await openPageAt(page, API, false);
       Object.assign(
@@ -1548,7 +1549,7 @@ test.describe('Conversation lab · LITE protocol probe (HeyGen LiveAvatar sandbo
       error: null,
     };
     const sessions = result.sessions as SessionRecord[];
-    await page.addInitScript(liteLabInit);
+    await page.addInitScript(pageScript(liteLabInit));
     try {
       sessions.push(
         await runSession(page, api, 's1', (session, record) => sessionOne(page, session, record)),

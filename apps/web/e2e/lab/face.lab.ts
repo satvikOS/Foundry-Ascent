@@ -16,6 +16,8 @@ import {
   typeOnCall,
   writePrivate,
 } from './lab-support';
+import { faceLabInit, type FaceLab, type LabEvent, type LabFetch } from './face-lab-page';
+import { pageScript } from './page-script';
 
 /*
  * Face suite of the conversation lab (docs/runbooks/conversation-lab.md, plan E "sandbox" checks): the HeyGen
@@ -88,66 +90,7 @@ const PROBE_TEXT = {
   response: 'What is your name, and what do you do?',
 };
 
-// ---- page instruments --------------------------------------------------------------------------------------
-
-interface LabEvent {
-  at: number;
-  dir: 'in' | 'out';
-  type: string;
-  text: string | null;
-  reason: string | null;
-}
-interface LabFetch {
-  at: number;
-  path: string;
-  method: string;
-  /** The request's `x-request-id` (the app sends one with each API request): joins a turn to the server's timing. */
-  requestId: string | null;
-  part: string | null;
-  doneAt: number | null;
-  status: number | null;
-}
-interface FaceLab {
-  events: LabEvent[];
-  /** Sound onsets / offsets on the avatar's remote WebRTC audio (the face's voice). */
-  onsets: number[];
-  offsets: number[];
-  /** Sound onsets / offsets on what the app sends to its speakers (Polly), by the same meter and rule. */
-  appOnsets: number[];
-  appOffsets: number[];
-  mic: number[];
-  audioSenders: number;
-  /**
-   * The page's fetches: path, method, LITE's face hand-over part (`x-face-part`, null otherwise), and when the
-   * response arrived (with its status), so a LITE hand-over's relay by the server can be timed.
-   */
-  fetches: LabFetch[];
-  /**
-   * When each spoken unit (`turn.speech`) of a turn's stream reached the page, and whether the server pre-approved
-   * it for the FULL face as it signed it (`face: true`): times and flags only, never its words.
-   */
-  units: { at: number; face: boolean }[];
-  plays: number[];
-  injected: { at: number; text: string }[];
-  injectNext: boolean;
-  level: number;
-  /**
-   * A LITE stock face's speak channel as the page used it (window.WebSocket, tapped): the JSON frames it sent (type,
-   * the `event_id`, the decoded size of `audio`) and got (type, `source_event_id`), and how many such sockets the
-   * page opened. Never the URL, never the audio.
-   */
-  lite: {
-    sockets: number;
-    out: { at: number; type: string; id: string | null; bytes: number }[];
-    in: { at: number; type: string; source: string | null }[];
-  };
-  /**
-   * Each remote track the page received and the id of the remote stream it came in (the RTCTrackEvent's
-   * `streams[0]`, LiveKit's `participantSid|streamName`): WebRTC keeps an audio and a video track in step only when
-   * they share one. Ids stay in the page; the result carries only whether they matched.
-   */
-  remoteTracks: { kind: string; stream: string | null }[];
-}
+// ---- page instruments (face-lab-page.ts) ---------------------------------------------------------------------
 
 /**
  * Whether the page's remote audio and video arrived in one remote stream: true when an audio and a video track share
@@ -160,357 +103,6 @@ function sameStream(tracks: readonly { kind: string; stream: string | null }[]):
   const video = ids('video');
   if (audio.size === 0 || video.size === 0) return null;
   return [...audio].some((id) => video.has(id));
-}
-
-/**
- * Runs in the page before anything else. Taps every RTCPeerConnection: data channels (both directions; the JSON in
- * each packet's payload is read, an outgoing `avatar.speak_text` can be rewritten once with words of the same
- * length when `injectNext` is set, as a tampered page would), remote audio tracks (a level meter on the lab's own
- * AudioContext: onsets and offsets of the avatar's voice), and senders of audio (the face must publish none). Also
- * counts microphone requests, the app's Web Audio playback (Polly: when each buffer is scheduled, and the sound on
- * the app's output by the same level meter as the avatar's track) and its fetches (paths and times only).
- */
-function faceLabInit(): void {
-  const now = (): number => performance.timeOrigin + performance.now();
-  const lab: FaceLab = {
-    events: [],
-    onsets: [],
-    offsets: [],
-    appOnsets: [],
-    appOffsets: [],
-    mic: [],
-    audioSenders: 0,
-    fetches: [],
-    units: [],
-    plays: [],
-    injected: [],
-    injectNext: false,
-    level: 0,
-    remoteTracks: [],
-    lite: { sockets: 0, out: [], in: [] },
-  };
-  (window as unknown as { __faceLab: FaceLab }).__faceLab = lab;
-  // The LITE speak channel: JSON text frames whose type is an agent.* or session.* event (Transcribe's socket sends
-  // binary frames and is never counted). Types, ids and sizes only.
-  const NativeSocket = window.WebSocket;
-  const liteFrame = (data: unknown): Record<string, unknown> | null => {
-    if (typeof data !== 'string' || !data.startsWith('{')) return null;
-    try {
-      const parsed = JSON.parse(data) as Record<string, unknown>;
-      return typeof parsed.type === 'string' && /^(agent|session)\./.test(parsed.type) ? parsed : null;
-    } catch {
-      return null;
-    }
-  };
-  class TappedSocket extends NativeSocket {
-    #counted = false;
-    constructor(url: string | URL, protocols?: string | string[]) {
-      super(url, protocols);
-      this.addEventListener('message', (message: MessageEvent) => {
-        const frame = liteFrame(message.data);
-        if (frame === null) return;
-        if (!this.#counted) {
-          this.#counted = true;
-          lab.lite.sockets += 1;
-        }
-        lab.lite.in.push({
-          at: now(),
-          type: String(frame.type),
-          source: typeof frame.source_event_id === 'string' ? frame.source_event_id : null,
-        });
-      });
-    }
-
-    override send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
-      const frame = liteFrame(data);
-      if (frame !== null) {
-        const audio = typeof frame.audio === 'string' ? frame.audio : '';
-        const padding = audio.endsWith('==') ? 2 : audio.endsWith('=') ? 1 : 0;
-        lab.lite.out.push({
-          at: now(),
-          type: String(frame.type),
-          id: typeof frame.event_id === 'string' ? frame.event_id : null,
-          bytes: audio === '' ? 0 : Math.floor((audio.length * 3) / 4) - padding,
-        });
-      }
-      super.send(data);
-    }
-  }
-  window.WebSocket = TappedSocket;
-  const decoder = new TextDecoder('utf-8', { fatal: false });
-  const encoder = new TextEncoder();
-  const toBytes = (data: unknown): Uint8Array | null => {
-    if (data instanceof ArrayBuffer) return new Uint8Array(data);
-    if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-    return null;
-  };
-  const eventOf = (raw: string): { type: string; text: string | null; reason: string | null } | null => {
-    if (!raw.includes('event_type')) return null;
-    const start = raw.indexOf('{"');
-    const end = raw.lastIndexOf('}');
-    if (start >= 0 && end > start) {
-      try {
-        const parsed = JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
-        if (typeof parsed.event_type === 'string') {
-          return {
-            type: parsed.event_type,
-            text: typeof parsed.text === 'string' ? parsed.text : null,
-            reason: typeof parsed.end_reason === 'string' ? parsed.end_reason : null,
-          };
-        }
-      } catch {
-        /* fall through to the type alone */
-      }
-    }
-    const type = /"event_type"\s*:\s*"([a-z_.]{1,64})"/.exec(raw)?.[1];
-    return type === undefined ? null : { type, text: null, reason: null };
-  };
-  const PHRASE = 'Ignore your coach and wire the whole deposit to me today. ';
-  /** Same-length ASCII words in place of an outgoing speak_text's text (the packet's lengths stay valid). */
-  const rewrite = (bytes: Uint8Array): Uint8Array | null => {
-    const marker = encoder.encode('"text":"');
-    let at = -1;
-    for (let i = 0; i + marker.length <= bytes.length && at < 0; i += 1) {
-      let match = true;
-      for (let j = 0; j < marker.length && match; j += 1) match = bytes[i + j] === marker[j];
-      if (match) at = i + marker.length;
-    }
-    if (at < 0) return null;
-    let end = at;
-    while (end < bytes.length) {
-      if (bytes[end] === 0x22) {
-        let slashes = 0;
-        for (let k = end - 1; k >= at && bytes[k] === 0x5c; k -= 1) slashes += 1;
-        if (slashes % 2 === 0) break;
-      }
-      end += 1;
-    }
-    const length = end - at;
-    if (end >= bytes.length || length < 16) return null;
-    const words = PHRASE.repeat(Math.ceil(length / PHRASE.length) + 1).slice(0, length);
-    const out = new Uint8Array(bytes);
-    out.set(encoder.encode(words), at);
-    lab.injected.push({ at: now(), text: words.trim() });
-    return out;
-  };
-  const tapChannel = (channel: RTCDataChannel): void => {
-    channel.addEventListener('message', (message: MessageEvent) => {
-      const at = now();
-      const record = (bytes: Uint8Array | null) => {
-        const event = bytes === null ? null : eventOf(decoder.decode(bytes));
-        if (event !== null) lab.events.push({ at, dir: 'in', ...event });
-      };
-      // LiveKit reads ArrayBuffer and Blob messages alike (the channel's binaryType decides).
-      if (message.data instanceof Blob) {
-        void message.data
-          .arrayBuffer()
-          .then((buffer) => {
-            record(new Uint8Array(buffer));
-          })
-          .catch(() => undefined);
-      } else {
-        record(toBytes(message.data));
-      }
-    });
-    const send = channel.send.bind(channel) as (data: unknown) => void;
-    channel.send = (data: unknown) => {
-      let outgoing = data;
-      const bytes = toBytes(data);
-      const event = bytes === null ? null : eventOf(decoder.decode(bytes));
-      if (event !== null) {
-        if (lab.injectNext && event.type === 'avatar.speak_text' && bytes !== null) {
-          const changed = rewrite(bytes);
-          if (changed !== null) {
-            lab.injectNext = false;
-            outgoing = changed;
-            event.text = lab.injected.at(-1)?.text ?? null;
-          }
-        }
-        lab.events.push({ at: now(), dir: 'out', ...event });
-      }
-      send(outgoing);
-    };
-  };
-  /**
-   * The one level meter both arms of E5 use: an analyser polled every 20 ms; an onset when the RMS level rises above
-   * 0.01, an offset after 250 ms at or below 0.004.
-   */
-  const meterOn = (analyser: AnalyserNode, onsets: number[], offsets: number[]): void => {
-    analyser.fftSize = 512;
-    const samples = new Float32Array(analyser.fftSize);
-    let loud = false;
-    let quietSince = 0;
-    window.setInterval(() => {
-      analyser.getFloatTimeDomainData(samples);
-      let sum = 0;
-      for (const s of samples) sum += s * s;
-      const level = Math.sqrt(sum / samples.length);
-      if (onsets === lab.onsets) lab.level = Math.max(lab.level * 0.9, level);
-      const t = now();
-      if (!loud && level > 0.01) {
-        loud = true;
-        onsets.push(t);
-      } else if (loud && level <= 0.004) {
-        if (quietSince === 0) quietSince = t;
-        if (t - quietSince >= 250) {
-          loud = false;
-          offsets.push(quietSince);
-          quietSince = 0;
-        }
-      } else {
-        quietSince = 0;
-      }
-    }, 20);
-  };
-  let meter: AudioContext | null = null;
-  const tapAudio = (track: MediaStreamTrack): void => {
-    const stream = new MediaStream([track]);
-    // Chromium feeds a remote WebRTC track into Web Audio only while a media element holds it (kept muted).
-    const holder = new Audio();
-    holder.muted = true;
-    holder.srcObject = stream;
-    void holder.play().catch(() => undefined);
-    meter ??= new AudioContext();
-    void meter.resume().catch(() => undefined);
-    const analyser = meter.createAnalyser();
-    meter.createMediaStreamSource(stream).connect(analyser);
-    meterOn(analyser, lab.onsets, lab.offsets);
-  };
-  // The app's output: whatever a page AudioContext sends to its speakers (the call's gain, for Polly) is also fed
-  // to one analyser per context (an analyser is processed without being connected onwards), metered as above.
-  const outputMeters = new WeakMap<BaseAudioContext, AnalyserNode>();
-  type Connect = (this: AudioNode, ...args: unknown[]) => unknown;
-  const nativeConnect: Connect = Reflect.get<AudioNode, 'connect'>(AudioNode.prototype, 'connect') as Connect;
-  AudioNode.prototype.connect = function (this: AudioNode, ...args: unknown[]) {
-    const result = nativeConnect.apply(this, args);
-    const target = args[0];
-    if (target instanceof AudioDestinationNode && target.context === this.context) {
-      try {
-        let analyser = outputMeters.get(this.context);
-        if (analyser === undefined) {
-          analyser = this.context.createAnalyser();
-          outputMeters.set(this.context, analyser);
-          meterOn(analyser, lab.appOnsets, lab.appOffsets);
-        }
-        nativeConnect.call(this, analyser);
-      } catch {
-        /* never in the way of the app */
-      }
-    }
-    return result;
-  } as AudioNode['connect'];
-  const Native = window.RTCPeerConnection;
-  class Tapped extends Native {
-    constructor(configuration?: RTCConfiguration) {
-      super(configuration);
-      this.addEventListener('datachannel', (event: RTCDataChannelEvent) => {
-        tapChannel(event.channel);
-      });
-      this.addEventListener('track', (event: RTCTrackEvent) => {
-        lab.remoteTracks.push({ kind: event.track.kind, stream: event.streams[0]?.id ?? null });
-        if (event.track.kind === 'audio') tapAudio(event.track);
-      });
-    }
-
-    override createDataChannel(label: string, init?: RTCDataChannelInit): RTCDataChannel {
-      const channel = super.createDataChannel(label, init);
-      tapChannel(channel);
-      return channel;
-    }
-
-    override addTrack(track: MediaStreamTrack, ...streams: MediaStream[]): RTCRtpSender {
-      if (track.kind === 'audio') lab.audioSenders += 1;
-      return super.addTrack(track, ...streams);
-    }
-
-    override addTransceiver(
-      trackOrKind: MediaStreamTrack | string,
-      init?: RTCRtpTransceiverInit,
-    ): RTCRtpTransceiver {
-      const kind = typeof trackOrKind === 'string' ? trackOrKind : trackOrKind.kind;
-      const sends =
-        init?.direction === undefined || init.direction === 'sendrecv' || init.direction === 'sendonly';
-      if (kind === 'audio' && sends && typeof trackOrKind !== 'string') lab.audioSenders += 1;
-      return super.addTransceiver(trackOrKind, init);
-    }
-  }
-  window.RTCPeerConnection = Tapped;
-  const devices = navigator.mediaDevices as MediaDevices | undefined;
-  if (devices?.getUserMedia) {
-    const getUserMedia = devices.getUserMedia.bind(devices);
-    devices.getUserMedia = (constraints?: MediaStreamConstraints) => {
-      if (constraints?.audio) lab.mic.push(now());
-      return getUserMedia(constraints);
-    };
-  }
-  const nativeFetch = window.fetch.bind(window);
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    let entry: LabFetch | null = null;
-    try {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
-      const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
-      entry = {
-        at: now(),
-        path: new URL(url, location.href).pathname,
-        method,
-        requestId: headers.get('x-request-id'),
-        part: headers.get('x-face-part'),
-        doneAt: null,
-        status: null,
-      };
-      lab.fetches.push(entry);
-    } catch {
-      /* never in the way of the app */
-    }
-    const pending = nativeFetch(input, init);
-    if (entry !== null) {
-      const seen = entry;
-      pending.then(
-        (response) => {
-          seen.doneAt = now();
-          seen.status = response.status;
-          seen.requestId ??= response.headers.get('x-request-id');
-          // A turn's stream: the moment each spoken unit arrives (read from a copy, never in the app's way).
-          if (seen.method === 'POST' && seen.path.endsWith('/turns') && response.body !== null) {
-            void (async () => {
-              try {
-                const reader = response.clone().body?.getReader();
-                if (!reader) return;
-                const decoder = new TextDecoder();
-                let buffered = '';
-                for (;;) {
-                  const { done, value } = await reader.read();
-                  if (done) return;
-                  buffered += decoder.decode(value, { stream: true });
-                  const frames = buffered.split('\n\n');
-                  buffered = frames.pop() ?? '';
-                  for (const frame of frames) {
-                    if (frame.includes('"event":"turn.speech"')) {
-                      lab.units.push({ at: now(), face: frame.includes('"face":true') });
-                    }
-                  }
-                }
-              } catch {
-                /* never in the way of the app */
-              }
-            })();
-          }
-        },
-        () => {
-          seen.doneAt = now();
-        },
-      );
-    }
-    return pending;
-  };
-  type Play = (this: AudioBufferSourceNode, ...args: number[]) => void;
-  const proto = AudioBufferSourceNode.prototype;
-  const start: Play = Reflect.get<AudioBufferSourceNode, 'start'>(proto, 'start');
-  proto.start = function (this: AudioBufferSourceNode, ...args: number[]) {
-    lab.plays.push(now());
-    start.apply(this, args);
-  };
 }
 
 function readLab(page: Page): Promise<FaceLab> {
@@ -762,10 +354,15 @@ async function faceSettings(baseURL: string, on: boolean): Promise<void> {
 }
 
 interface FaceSessionSeen {
+  /** The avatar-session response's HTTP status (a refused one is recorded too). */
+  status: number;
   provider: string | null;
   voicing: string | null;
   stockFace: boolean | null;
   livekitHost: string | null;
+  /** Whether the page was handed a room token and a LITE speak channel (presence only: never the values). */
+  token: boolean | null;
+  controlUrl: boolean | null;
 }
 
 function hostOf(url: string | null): string | null {
@@ -780,18 +377,42 @@ function hostOf(url: string | null): string | null {
 function watchAvatarSession(page: Page): FaceSessionSeen[] {
   const seen: FaceSessionSeen[] = [];
   page.on('response', (response) => {
-    if (!response.url().endsWith('/api/v1/calls/avatar-session') || !response.ok()) return;
+    if (!response.url().endsWith('/api/v1/calls/avatar-session')) return;
+    const status = response.status();
+    if (!response.ok()) {
+      seen.push({
+        status,
+        provider: null,
+        voicing: null,
+        stockFace: null,
+        livekitHost: null,
+        token: null,
+        controlUrl: null,
+      });
+      return;
+    }
     void response
       .json()
-      .then((body: { provider?: string; voicing?: string; stockFace?: boolean; url?: string | null }) => {
-        const host = hostOf(body.url ?? null);
-        seen.push({
-          provider: body.provider ?? null,
-          voicing: body.voicing ?? null,
-          stockFace: body.stockFace ?? null,
-          livekitHost: host,
-        });
-      })
+      .then(
+        (body: {
+          provider?: string;
+          voicing?: string;
+          stockFace?: boolean;
+          url?: string | null;
+          token?: string | null;
+          controlUrl?: string | null;
+        }) => {
+          seen.push({
+            status,
+            provider: body.provider ?? null,
+            voicing: body.voicing ?? null,
+            stockFace: body.stockFace ?? null,
+            livekitHost: hostOf(body.url ?? null),
+            token: typeof body.token === 'string' && body.token !== '',
+            controlUrl: typeof body.controlUrl === 'string' && body.controlUrl !== '',
+          });
+        },
+      )
       .catch(() => undefined);
   });
   return seen;
@@ -991,6 +612,62 @@ function liteBrowserSummary(lab: FaceLab, live: number, turnsSentAt: readonly nu
   };
 }
 
+/** The LITE arm's steps, in order: a failure records the one it stopped at. */
+type LiteStep = 'start_call' | 'face_join' | 'greeting' | 'turns' | 'barge_in';
+
+/** A message's first line with colours, URLs and long id-like runs removed (private files only, still never a URL). */
+function scrubbed(message: string): string {
+  return (
+    (message.split('\n').find((line) => line.trim() !== '') ?? '')
+      // eslint-disable-next-line no-control-regex -- terminal colours in Playwright's messages
+      .replace(/\u001b\[[0-9;]*m/g, '')
+      .replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<url>')
+      .replace(/[A-Za-z0-9_-]{24,}/g, '<id>')
+      .trim()
+      .slice(0, 160)
+  );
+}
+
+/** The page's uncaught errors while the arm runs: name and scrubbed first line (at most 20). */
+function watchPageErrors(page: Page): { name: string; message: string }[] {
+  const seen: { name: string; message: string }[] = [];
+  page.on('pageerror', (error) => {
+    if (seen.length < 20) seen.push({ name: error.name, message: scrubbed(error.message) });
+  });
+  return seen;
+}
+
+/**
+ * Why the LITE arm failed, for the private result and (as tokens) the summary: the step it stopped at, the error's
+ * name and scrubbed first line, the page's own account of the face it gave up (`face/end`: reason, join stage, code),
+ * the vendor speak channel as the page used it (sockets attempted, opened, close codes), and uncaught page errors.
+ */
+async function liteFailure(
+  page: Page,
+  step: LiteStep,
+  err: unknown,
+  pageErrors: readonly { name: string; message: string }[],
+): Promise<Record<string, unknown>> {
+  const lab = await readLab(page).catch(() => null);
+  return {
+    step,
+    error: errorName(err),
+    message: err instanceof Error ? scrubbed(err.message) : null,
+    face_end: lab?.faceEnds[0] ?? null,
+    face_ends: lab?.faceEnds.length ?? null,
+    lite_socket:
+      lab === null
+        ? null
+        : {
+            attempts: lab.lite.attempts,
+            opened: lab.lite.opened,
+            close_codes: lab.lite.closeCodes.slice(0, 10),
+            carried_frames: lab.lite.sockets,
+          },
+    page_errors: [...pageErrors],
+  };
+}
+
 /**
  * Barge-in on a LITE stock face the page feeds: a line is typed, and once the avatar started saying the reply the
  * founder interrupts (the call's Interrupt button). From the page's `agent.interrupt` to the vendor's
@@ -1044,7 +721,7 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
     page,
   }) => {
     const result: Record<string, unknown> = {};
-    await page.addInitScript(faceLabInit);
+    await page.addInitScript(pageScript(faceLabInit));
     try {
       await openBlankPage(page);
       const loop = await page.evaluate(async () => {
@@ -1199,6 +876,45 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
         };
       });
       Object.assign(result, meters);
+      // The WebSocket tap (the LITE speak channel's) and LiveKit's signalling, which is a WebSocket too: a socket must
+      // construct under the tap and reach the network (a refused local port closes within seconds), and a room
+      // joining a refused address must fail as fast, never wait out its signal timeout. Run 42112455038's tap threw
+      // on every construction, so the LITE face's room never joined (face-lab-page.ts).
+      const sockets = await page.evaluate(async () => {
+        const lab = (window as unknown as { __faceLab: FaceLab }).__faceLab;
+        let constructs: boolean;
+        try {
+          const socket = new WebSocket('ws://127.0.0.1:9/lab/interactive-avatar/session/lab');
+          constructs = socket instanceof WebSocket;
+          await new Promise<void>((resolve) => {
+            socket.addEventListener('close', () => {
+              resolve();
+            });
+            setTimeout(resolve, 5000);
+          });
+        } catch {
+          constructs = false;
+        }
+        const LK = (window as unknown as { LivekitClient?: typeof LiveKit }).LivekitClient;
+        let signalMs: number | null = null;
+        if (LK?.Room !== undefined) {
+          const room = new LK.Room({ adaptiveStream: false, dynacast: false });
+          const begun = performance.now();
+          try {
+            await room.connect('ws://127.0.0.1:9', 'lab-instruments', { autoSubscribe: false });
+          } catch {
+            /* refused, as it must be */
+          }
+          signalMs = Math.round(performance.now() - begun);
+          await room.disconnect().catch(() => undefined);
+        }
+        return {
+          socketTap: constructs && lab.lite.attempts === 1 && lab.lite.closeCodes.length === 1,
+          livekitSignal: signalMs !== null && signalMs < 5000,
+          livekitSignalMs: signalMs,
+        };
+      });
+      Object.assign(result, sockets);
     } catch (err) {
       result.error = errorName(err);
     } finally {
@@ -1216,6 +932,8 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
       livekit: true,
       meter: true,
       appMeter: true,
+      socketTap: true,
+      livekitSignal: true,
     });
   });
 
@@ -1226,7 +944,7 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
     const api = await probeApi();
     const result: Record<string, unknown> = {};
     const texts: Record<string, unknown> = {};
-    await page.addInitScript(faceLabInit);
+    await page.addInitScript(pageScript(faceLabInit));
     try {
       await openBlankPage(page);
       // Session A: exact words, back-to-back texts, the transcript endpoint, then idle until the vendor ends it.
@@ -1394,7 +1112,7 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
     test.setTimeout(3 * 60_000);
     test.skip(!(await appWithinBudget(baseURL, 0.1)), 'the app reached its share of the budget');
     const result: Record<string, unknown> = {};
-    await page.addInitScript(faceLabInit);
+    await page.addInitScript(pageScript(faceLabInit));
     await setFacesEnabled(baseURL, false);
     let started = false;
     try {
@@ -1423,7 +1141,7 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
     test.setTimeout(6 * 60_000);
     test.skip(!(await appWithinBudget(baseURL, 0.1)), 'the app reached its share of the budget');
     const result: Record<string, unknown> = { vendor: FACE };
-    await page.addInitScript(faceLabInit);
+    await page.addInitScript(pageScript(faceLabInit));
     const sessions = watchAvatarSession(page);
     await faceSettings(baseURL, true);
     let started = false;
@@ -1512,7 +1230,7 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
     test.setTimeout(5 * 60_000);
     test.skip(!(await appWithinBudget(baseURL, 0.1)), 'the app reached its share of the budget');
     const result: Record<string, unknown> = {};
-    await page.addInitScript(faceLabInit);
+    await page.addInitScript(pageScript(faceLabInit));
     await faceSettings(baseURL, true);
     const auditsBefore = new Set((await auditIds(baseURL, 'call.face_injection')) ?? []);
     let started = false;
@@ -1572,7 +1290,7 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
     test.setTimeout(4 * 60_000);
     test.skip(!(await appWithinBudget(baseURL, 0.1)), 'the app reached its share of the budget');
     const result: Record<string, unknown> = {};
-    await page.addInitScript(faceLabInit);
+    await page.addInitScript(pageScript(faceLabInit));
     await setFacesEnabled(baseURL, false);
     let started = false;
     try {
@@ -1606,22 +1324,28 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
     test.setTimeout(6 * 60_000);
     test.skip(!(await appWithinBudget(baseURL, 0.1)), 'the app reached its share of the budget');
     const result: Record<string, unknown> = { vendor: FACE, mode: 'lite' };
-    await page.addInitScript(faceLabInit);
+    await page.addInitScript(pageScript(faceLabInit));
     const sessions = watchAvatarSession(page);
+    const pageErrors = watchPageErrors(page);
     await faceSettings(baseURL, true);
     let started = false;
+    // Where the arm is, so a failure says which step it stopped at (and, for the face's join, the page's own account).
+    let step: LiteStep = 'start_call';
     try {
       await acknowledgeNotices(page);
       const call = await startCall(page);
       started = true;
       result.input_mode = call.inputMode;
+      step = 'face_join';
       await expect(videoTile(page)).toBeVisible({ timeout: 30_000 });
       result.face_shown = true;
       const live = await pageNow(page);
       const micAtLive = (await readLab(page)).mic.length;
       // The greeting (the call's intro), when there is one, is said first.
+      step = 'greeting';
       await waitForFaceQuiet(page, { timeoutMs: 20_000, pairedEvents: false });
       const turns: TurnTiming[] = [];
+      step = 'turns';
       for (const line of LINES) turns.push(await measuredTurn(page, line, { pairedEvents: false }));
       const measuredEnd = await pageNow(page);
       const lab = await readLab(page);
@@ -1635,6 +1359,7 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
         turns.map((t) => t.sentAt),
         measuredEnd,
       );
+      step = 'barge_in';
       result.barge_in = await liteBargeIn(page, BARGE_IN_LINE).catch((err: unknown) => ({
         measured: false,
         error: errorName(err),
@@ -1648,6 +1373,8 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
     } catch (err) {
       result.face_shown ??= false;
       result.error = errorName(err);
+      result.session ??= sessions[0] ?? null;
+      result.failure = await liteFailure(page, step, err, pageErrors);
     } finally {
       if (started) await hangUp(page).catch(() => undefined);
       writePrivate('face/call-lite.json', result);

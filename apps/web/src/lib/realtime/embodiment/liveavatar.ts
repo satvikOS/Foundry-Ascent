@@ -1,4 +1,4 @@
-import type { AvatarSessionResponse } from '@foundry/contracts';
+import type { AvatarSessionResponse, FaceJoinStage } from '@foundry/contracts';
 
 import type {
   AudioLevels,
@@ -287,6 +287,8 @@ export class LiveAvatarFace implements AvatarProvider {
   /** A LITE stock face the page feeds: its speak channel, and what is said on it. */
   private control: LiteControl | null = null;
   private speaker: LiteSpeaker | null = null;
+  /** While `connect` runs: the join stage it is at (what a join given up from outside reports). */
+  private joining: FaceJoinStage | null = null;
 
   constructor(
     private readonly deps: LiveAvatarDeps,
@@ -363,6 +365,9 @@ export class LiveAvatarFace implements AvatarProvider {
     this.relay = relay;
     const room = this.deps.createRoom();
     this.room = room;
+    // The join's stage: the room, then the avatar's first frame (the two run together), then a stock face's channel.
+    this.joining = 'room';
+    let videoSeen = false;
     const firstFrame = new Promise<void>((resolve, reject) => {
       const timer = this.deps.setTimeout(() => {
         reject(new Error('face_no_video'));
@@ -385,6 +390,7 @@ export class LiveAvatarFace implements AvatarProvider {
           this.showMedia();
           return;
         }
+        videoSeen = true;
         this.videoTrack = track.mediaStreamTrack;
         this.stream = this.deps.createStream([track.mediaStreamTrack]);
         track.mediaStreamTrack.addEventListener('ended', () => {
@@ -418,22 +424,34 @@ export class LiveAvatarFace implements AvatarProvider {
         this.lose({ reason: 'vendor_stopped', ...(detail === undefined ? {} : { vendorReason: detail }) });
       }
     });
+    const joined = room.connect(session.url ?? '', session.token).then(() => {
+      if (!videoSeen && this.joining === 'room') this.joining = 'video';
+    });
     try {
-      await Promise.all([room.connect(session.url ?? '', session.token), firstFrame]);
+      await Promise.all([joined, firstFrame]);
       // A stock face the page feeds: its speak channel opens once the room joined, and the face is live only once
       // the vendor said `connected` on it.
       if (this.voicing === 'audio' && session.controlUrl !== null) {
+        this.joining = 'control';
         await this.openLite(session.controlUrl, session.expiresAt, signal);
       }
     } catch (err) {
+      // The stage stays readable for the caller's report until the face is unmounted.
+      const stage = this.joining;
       this.release();
+      this.joining = stage;
       throw err;
     }
     if (stopped()) {
       this.release();
       throw abortError();
     }
+    this.joining = null;
     this.live = true;
+  }
+
+  joinStage(): FaceJoinStage | null {
+    return this.joining;
   }
 
   /** What the LITE speaker did in this call (counts only), or null for any other face. */
@@ -965,6 +983,7 @@ export class LiveAvatarFace implements AvatarProvider {
 
   private release(): void {
     this.live = false;
+    this.joining = null;
     this.speaker?.lost();
     this.speaker?.dispose();
     this.speaker = null;

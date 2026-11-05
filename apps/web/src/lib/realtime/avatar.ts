@@ -3,6 +3,7 @@ import type {
   AvatarVoicing,
   EmbodimentProviderId,
   FaceEndReason,
+  FaceJoinStage,
 } from '@foundry/contracts';
 
 import type { FaceMediaElement } from './embodiment/face-media';
@@ -33,6 +34,10 @@ export interface FaceLoss {
   readonly reason: FaceEndReason;
   /** The vendor's own `end_reason` of a stopped session, when it gave a plain one. */
   readonly vendorReason?: string;
+  /** A face that never showed: the join stage it stopped at. */
+  readonly stage?: FaceJoinStage;
+  /** A short plain code of what failed (the page's own code or an error's name; never a message or a URL). */
+  readonly detail?: string;
 }
 
 export interface FaceRelay {
@@ -90,6 +95,11 @@ export interface AvatarProvider {
    * frame arrived, rejects when it cannot (the call keeps the presence). Audio for the face goes through `relay`.
    */
   connect?(session: AvatarSessionResponse, signal: AbortSignal, relay: FaceRelay): Promise<void>;
+  /**
+   * While `connect` runs: the join stage it is at (`room`, `video`, `control`), so a join given up from outside (the
+   * call's own time limit) still says where it stopped; null once live or before it began.
+   */
+  joinStage?(): FaceJoinStage | null;
   /** The face's live video alone (a vendor's WebRTC stream, the stand-in's canvas): thumbnails, muted. */
   video?(): MediaStream | null;
   /**

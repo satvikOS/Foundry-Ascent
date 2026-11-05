@@ -298,11 +298,30 @@ export const FaceEndReason = z.enum([
 ]);
 export type FaceEndReason = z.infer<typeof FaceEndReason>;
 
-/** `POST /calls/:id/face/end` — the browser stopped showing the face. Both fields optional (an empty body is fine). */
+/**
+ * How far a face that never showed got (`POST /calls/:id/face/end` with a join failure): asking the API for its
+ * session (`session`), loading the vendor's adapter (`adapter`), joining the vendor's room (`room`), waiting for the
+ * avatar's first video frame (`video`), or opening a LITE stock face's speak channel and waiting for the vendor's
+ * `connected` (`control`).
+ */
+export const FaceJoinStage = z.enum(['session', 'adapter', 'room', 'video', 'control']);
+export type FaceJoinStage = z.infer<typeof FaceJoinStage>;
+
+/** `POST /calls/:id/face/end` — the browser stopped showing the face. Every field optional (an empty body is fine). */
 export const FaceEndRequest = z.object({
   reason: FaceEndReason.optional(),
   /** The vendor's own `end_reason` of a stopped session, a short plain token. */
   vendorReason: z
+    .string()
+    .regex(/^[A-Za-z0-9_.:-]{1,64}$/)
+    .optional(),
+  /** A face that never showed: the join stage it stopped at. */
+  stage: FaceJoinStage.optional(),
+  /**
+   * A short plain code of what failed (the page's own code, such as `face_control_timeout`, or an error's name, such
+   * as `ConnectionError`): never a message, a URL or anything the vendor said in words.
+   */
+  detail: z
     .string()
     .regex(/^[A-Za-z0-9_.:-]{1,64}$/)
     .optional(),

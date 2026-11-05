@@ -544,6 +544,60 @@ describe('the face of a call: off by default, then the stand-in', () => {
     }
   });
 
+  it('logs and audits a face that never joined with where it stopped and why (plain tokens only)', async () => {
+    // Lab run 42112455038: the page gave its LITE face up at the join's 8 s limit, and the server logged nothing but
+    // the request line. Now the page's reason, join stage and code reach the service's log and the face's audit.
+    const started = await startCall(local);
+    const callId = started.call.id;
+    try {
+      await faceSession(local, callId);
+      const before = h.logger.records.length;
+      await local.face.drop(ctx.maya, callId, {
+        reason: 'connect_timeout',
+        stage: 'room',
+        detail: 'face_timeout',
+      });
+      const logged = h.logger.records.slice(before).filter((r) => r.event === 'call.face_failed');
+      expect(logged).toHaveLength(1);
+      expect(logged[0]).toMatchObject({
+        level: 'warn',
+        fields: { callId, reason: 'connect_timeout', stage: 'room', detail: 'face_timeout' },
+      });
+      const rows = await h.t.db.system((sx) =>
+        sx.query(
+          `SELECT metadata::text AS metadata FROM audit_events
+            WHERE action = 'call.face_ended' AND object_id = :id`,
+          { id: p.text(callId) },
+        ),
+      );
+      const ended = rows.rows as { metadata: string }[];
+      expect(JSON.parse(ended[0]?.metadata ?? '{}')).toMatchObject({
+        clientReason: 'connect_timeout',
+        clientStage: 'room',
+        clientDetail: 'face_timeout',
+      });
+    } finally {
+      await local.calls.end(ctx.maya, callId, { reason: 'user' }).catch(() => undefined);
+    }
+  });
+
+  it('logs a face the page ended for an ordinary reason as information, not a failure', async () => {
+    const started = await startCall(local);
+    const callId = started.call.id;
+    try {
+      await faceSession(local, callId);
+      const before = h.logger.records.length;
+      await local.face.drop(ctx.maya, callId, { reason: 'on_hold' });
+      const lines = h.logger.records.slice(before);
+      expect(lines.filter((r) => r.event === 'call.face_failed')).toEqual([]);
+      expect(lines.filter((r) => r.event === 'call.face_dropped')).toMatchObject([
+        { level: 'info', fields: { callId, reason: 'on_hold', stage: null, detail: null } },
+      ]);
+    } finally {
+      await local.calls.end(ctx.maya, callId, { reason: 'user' }).catch(() => undefined);
+    }
+  });
+
   it('takes each part of a unit once, in order, one unit at a time, and nothing of it after barge-in', async () => {
     const started = await startCall(local);
     const callId = started.call.id;

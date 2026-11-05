@@ -1,4 +1,4 @@
-import type { AvatarSessionResponse } from '@foundry/contracts';
+import type { AvatarSessionResponse, FaceJoinStage } from '@foundry/contracts';
 import { act, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -56,7 +56,7 @@ function veir(provider: CallVeir['provider']): CallVeir {
 }
 
 /** A vendor face whose connection the test controls (`media`: it brings its own element, video and voice). */
-function vendorFace(options: { media?: HTMLVideoElement } = {}) {
+function vendorFace(options: { media?: HTMLVideoElement; joinStage?: FaceJoinStage } = {}) {
   let connected: (() => void) | null = null;
   let failed: ((error: Error) => void) | null = null;
   let lost: ((loss: FaceLoss) => void) | null = null;
@@ -81,6 +81,7 @@ function vendorFace(options: { media?: HTMLVideoElement } = {}) {
     video: () => stream,
     media: () => options.media ?? null,
     renderer: () => renderer,
+    joinStage: (): FaceJoinStage | null => options.joinStage ?? null,
     onLost: (listener: (loss: FaceLoss) => void) => {
       lost = listener;
       return () => {
@@ -95,8 +96,8 @@ function vendorFace(options: { media?: HTMLVideoElement } = {}) {
     connect: () => {
       connected?.();
     },
-    fail: () => {
-      failed?.(new Error('refused'));
+    fail: (error: Error = new Error('refused')) => {
+      failed?.(error);
     },
     lose: (loss: FaceLoss = { reason: 'video_ended' }) => {
       lost?.(loss);
@@ -423,11 +424,47 @@ describe('CallStage: the face of a call', () => {
       expect(refused.provider.unmount).toHaveBeenCalled();
     });
     expect(screen.queryByRole('figure')).not.toBeInTheDocument();
-    expect(b.faceDeps.endFace).toHaveBeenCalledWith(CALL, { reason: 'connect_failed' });
+    // Where the join stopped (the adapter gave no stage: the room, the controller's own) and the page's plain code.
+    expect(b.faceDeps.endFace).toHaveBeenCalledWith(CALL, {
+      reason: 'connect_failed',
+      stage: 'room',
+      detail: 'refused',
+    });
+  });
+
+  it('sends a library error as its name and reason only, never its message (which may hold a URL)', async () => {
+    const refused = vendorFace({ joinStage: 'room' });
+    const b = controllerWith(refused);
+    renderWithRouter(stage({ controller: b.controller, engine: b.asEngine }));
+    await waitFor(() => {
+      expect(refused.provider.connect).toHaveBeenCalled();
+    });
+    // As LiveKit's ConnectionError: a name, a reason name, and a message that names the server.
+    const error = Object.assign(
+      new Error('could not connect to wss://room.example.test/rtc?access_token=abc'),
+      {
+        name: 'ConnectionError',
+        reasonName: 'ServerUnreachable',
+      },
+    );
+    act(() => {
+      refused.fail(error);
+    });
+    await waitFor(() => {
+      expect(b.faceDeps.endFace).toHaveBeenCalled();
+    });
+    expect(b.faceDeps.endFace).toHaveBeenCalledWith(CALL, {
+      reason: 'connect_failed',
+      stage: 'room',
+      detail: 'ConnectionError.ServerUnreachable',
+    });
+    expect(JSON.stringify(vi.mocked(b.faceDeps.endFace).mock.calls)).not.toMatch(/wss:|access_token/);
   });
 
   it('gives up on a face that shows no frame in time, cancelling its join', async () => {
-    const slow = vendorFace();
+    // The adapter's own stage at the give-up (lab run 42112455038 could not tell a room that never joined from a
+    // speak channel that never connected).
+    const slow = vendorFace({ joinStage: 'control' });
     const fake = fakeEngine(LIVE_CALL);
     const faceDeps = { ...deps(slow), connectTimeoutMs: 30 };
     const controller = new CallFaceController(fake.asEngine, faceDeps);
@@ -443,7 +480,11 @@ describe('CallStage: the face of a call', () => {
     await presenceShown();
     expect(screen.queryByRole('figure')).not.toBeInTheDocument();
     expect(fake.engine.attachFace).not.toHaveBeenCalledWith(slow.renderer);
-    expect(faceDeps.endFace).toHaveBeenCalledWith(CALL, { reason: 'connect_timeout' });
+    expect(faceDeps.endFace).toHaveBeenCalledWith(CALL, {
+      reason: 'connect_timeout',
+      stage: 'control',
+      detail: 'face_timeout',
+    });
   });
 
   it('asks for no face before the call is live, and closes the face when the call ends', async () => {

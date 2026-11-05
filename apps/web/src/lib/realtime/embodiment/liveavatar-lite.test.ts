@@ -154,6 +154,53 @@ describe('LiveAvatarFace: a LITE stock face the page feeds', () => {
     await failed;
     expect(s.disconnect).toHaveBeenCalled();
     expect(s.sockets[0]?.readyState).toBe(3);
+    // The page says where the join stopped: at the speak channel, not the room or the video.
+    expect(s.face.joinStage()).toBe('control');
+  });
+
+  it('reports the join stage it is at, so a join given up from outside says where it stopped', async () => {
+    // Lab run 42112455038: the room's signalling never connected and the call gave up at its own 8 s limit, which
+    // the page reported only as `connect_timeout`. Now the stage says it was the room.
+    const s = setup();
+    let joinRoom: () => void = () => undefined;
+    s.room.connect = () =>
+      new Promise<void>((resolve) => {
+        joinRoom = resolve;
+      });
+    const controller = new AbortController();
+    const connecting = s.face.connect(SESSION, controller.signal, s.relay);
+    const settled = connecting.catch((err: unknown) => err);
+    await Promise.resolve();
+    expect(s.face.joinStage()).toBe('room');
+    joinRoom();
+    await flush();
+    // The room joined; the avatar's first frame has not come.
+    expect(s.face.joinStage()).toBe('video');
+    s.track('audio');
+    s.track('video');
+    await flush();
+    // The frame came: now the stock face's speak channel (not connected yet).
+    expect(s.face.joinStage()).toBe('control');
+    await vi.advanceTimersByTimeAsync(10);
+    await connecting;
+    expect(await settled).toBeUndefined();
+    // Live: no join stage any more.
+    expect(s.face.joinStage()).toBeNull();
+    s.face.unmount();
+    expect(s.face.joinStage()).toBeNull();
+  });
+
+  it('keeps the stage it stopped at readable after a refused room join, until the face is unmounted', async () => {
+    const s = setup();
+    s.room.connect = () => Promise.reject(new Error('could not establish signal'));
+    await expect(s.face.connect(SESSION, new AbortController().signal, s.relay)).rejects.toThrow(
+      'could not establish signal',
+    );
+    expect(s.face.joinStage()).toBe('room');
+    // Nothing was opened past the room.
+    expect(s.opened).toEqual([]);
+    s.face.unmount();
+    expect(s.face.joinStage()).toBeNull();
   });
 
   it('says the call’s units in its own element only, and silences it at once on barge-in until the next turn', async () => {

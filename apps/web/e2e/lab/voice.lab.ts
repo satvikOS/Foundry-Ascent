@@ -13,6 +13,7 @@ import {
   startCall,
   writePrivate,
 } from './lab-support';
+import { pageScript } from './page-script';
 
 /*
  * Voice suite of the conversation lab: a true voice call, headless. Chromium's fake microphone device plays the
@@ -325,7 +326,7 @@ test.describe('conversation lab: voice', () => {
     const manifestFile = process.env.LAB_VOICE_MANIFEST;
     test.skip(!manifestFile, 'LAB_VOICE_MANIFEST is not set (the lab prepares it)');
     const manifest = JSON.parse(readFileSync(manifestFile ?? '', 'utf8')) as { lines: ManifestLine[] };
-    await page.addInitScript(labAudioInit);
+    await page.addInitScript(pageScript(labAudioInit));
     await acknowledgeNotices(page);
 
     const log: CallLog = { turnPosts: [], interrupts: [], clientStats: [], consoleErrors: [] };

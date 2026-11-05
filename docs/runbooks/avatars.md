@@ -268,7 +268,12 @@ DevTools open, faces and voices on.
      `face_injection` or `face_check_failed` from the transcript check, `face_limit`, `face_minutes`, `spend_cap`,
      ...) and, when the page ended it, which trigger fired (`metadata.clientReason`: `video_ended`,
      `video_unsubscribed`, `room_disconnected`, `vendor_stopped` with the vendor's `vendorReason`, `no_video`,
-     `connect_timeout`, `connect_failed`, `crisis`, `on_hold`).
+     `connect_timeout`, `connect_failed`, `crisis`, `on_hold`). A face that never showed also says how far its join
+     got (`metadata.clientStage`: `session`, `adapter`, `room`, `video` or `control`, a LITE stock face's speak
+     channel) and a plain code of what failed (`metadata.clientDetail`: the page's own code such as `face_timeout` or
+     `face_control_timeout`, or a library error's name such as `ConnectionError.ServerUnreachable`; never a message
+     or a URL). The API logs the same tokens: `call.face_failed` (warning) for a failure, `call.face_dropped` (info)
+     for anything else, so a failing face is in the logs even before anyone reads the audit.
 6. **The session limit, the envelope and the commands.** The token request carries `max_session_duration` (a 422
    means it is above the plan's session length: lower **per call**); the session must end by itself at the per-call
    limit. Responses must carry `code: 1000` on success (the vendor's SDK checks 1000; its API reference shows a

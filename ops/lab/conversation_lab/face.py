@@ -200,9 +200,36 @@ INSTRUMENT_FLAGS = (
     # meter an onset, and a tone the page plays to its speakers must give the app-output meter one.
     "meter",
     "appMeter",
+    # The WebSocket tap (the LITE speak channel's) and LiveKit's signalling, itself a WebSocket: a socket constructs
+    # under the tap and a refused room join fails at once. Run 42112455038's tap threw on every construction (a
+    # `#private` field compiled to a helper the page lacks), so the LITE face's room never joined.
+    "socketTap",
+    "livekitSignal",
 )
 
 _REASON = re.compile(r"^[A-Z][A-Z_]{0,39}$")
+#: The LITE arm's steps (face.lab.ts LiteStep), the page's face-end reasons and join stages (contracts FaceEndReason,
+#: FaceJoinStage), and the page's plain failure code (FaceEndRequest.detail: never a URL or words).
+_LITE_STEPS = frozenset({"start_call", "face_join", "greeting", "turns", "barge_in"})
+_FACE_END_REASONS = frozenset(
+    {
+        "video_ended",
+        "video_unsubscribed",
+        "room_disconnected",
+        "vendor_stopped",
+        "no_video",
+        "connect_timeout",
+        "connect_failed",
+        "no_adapter",
+        "crisis",
+        "on_hold",
+        "control_lost",
+        "speech_stalled",
+        "time_limit",
+    }
+)
+_JOIN_STAGES = frozenset({"session", "adapter", "room", "video", "control"})
+_DETAIL = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,63}$")
 _ERROR = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,59}$")
 _HOST = re.compile(r"^[a-z0-9][a-z0-9.-]{0,120}$")
 _GRANT = re.compile(r"^(granted|already|not_found|skipped \(mock\))$|^failed \(exit -?\d{1,3}\)$")
@@ -721,6 +748,47 @@ def _barge_in(raw: Any) -> dict[str, Any] | None:
     }
 
 
+def _one_of(value: Any, allowed: frozenset[str]) -> str | None:
+    return value if isinstance(value, str) and value in allowed else None
+
+
+def _lite_failure(raw: Any) -> dict[str, Any] | None:
+    """Where and why the LITE arm stopped, as tokens: the step, the error's name, the page's own account of the face
+    it gave up (face/end: reason, join stage, plain code), the vendor speak channel as the page used it (counts and
+    close codes), and the names of uncaught page errors. The scrubbed message stays in the private file."""
+    if not isinstance(raw, dict):
+        return None
+    end = raw.get("face_end") if isinstance(raw.get("face_end"), dict) else {}
+    socket = raw.get("lite_socket") if isinstance(raw.get("lite_socket"), dict) else {}
+    errors = raw.get("page_errors") if isinstance(raw.get("page_errors"), list) else []
+    detail = end.get("detail")
+    return {
+        "step": _one_of(raw.get("step"), _LITE_STEPS),
+        "error": _error(raw.get("error")),
+        "face_end": {
+            "reason": _one_of(end.get("reason"), _FACE_END_REASONS),
+            "stage": _one_of(end.get("stage"), _JOIN_STAGES),
+            "detail": detail if isinstance(detail, str) and _DETAIL.match(detail) else None,
+        }
+        if end
+        else None,
+        "face_ends": _int(raw.get("face_ends")),
+        "lite_socket": {
+            "attempts": _int(socket.get("attempts")),
+            "opened": _int(socket.get("opened")),
+            "close_codes": _ints(socket.get("close_codes"))[:10],
+            "carried_frames": _int(socket.get("carried_frames")),
+        }
+        if socket
+        else None,
+        "page_errors": [
+            name
+            for name in (_error(e.get("name")) for e in errors[:20] if isinstance(e, dict))
+            if name is not None
+        ],
+    }
+
+
 def public_call_lite(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
     """The call arm with the face in LITE mode: the same turns and meters as :func:`public_call`. A stock face the page
     feeds (``lite_browser``): its own speak channel's utterances, chunks, acknowledgements and timings, the fallbacks
@@ -739,6 +807,10 @@ def public_call_lite(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
             "voicing": voicing if voicing in ("text", "audio", "engine") else None,
             "stock_face": _bool(session.get("stockFace")),
             "livekit_host": _host(session.get("livekitHost")),
+            # Whether the session handed the page a room token and a speak channel (presence only).
+            "status": _int(session.get("status")),
+            "token": _bool(session.get("token")),
+            "control_url": _bool(session.get("controlUrl")),
         },
         "face_shown": _bool(raw.get("face_shown")),
         "turns": turns,
@@ -760,6 +832,7 @@ def public_call_lite(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
         "lite_browser": _lite_browser(raw.get("lite_browser")),
         "barge_in": _barge_in(raw.get("barge_in")),
         "error": _error(raw.get("error")),
+        "failure": _lite_failure(raw.get("failure")),
     }
 
 
