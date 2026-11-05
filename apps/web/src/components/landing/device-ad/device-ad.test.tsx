@@ -65,6 +65,13 @@ describe('DeviceAd', () => {
     expect(screen.getByText(AD_SESSION.call.veirLine)).toBeInTheDocument();
     expect(screen.getByText(AD_SESSION.call.studentLine)).toBeInTheDocument();
     expect(screen.getByText('Thinking')).toBeInTheDocument();
+    // The call's own voice sphere (no monogram inside it) and its own conversation timeline, both turns drawn.
+    const sphere = document.querySelector('[data-slot="ad-sphere"] .fa-sphere');
+    expect(sphere).toHaveAttribute('data-state', 'thinking');
+    expect(sphere).toHaveAttribute('data-motion', 'reduced');
+    expect(document.querySelector('[data-slot="ad-sphere"] [data-slot="persona-avatar"]')).toBeNull();
+    const timeline = document.querySelector('.ad-call [role="group"][aria-label="Conversation timeline"]');
+    expect(timeline?.querySelectorAll('[data-turn]')).toHaveLength(2);
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 300));
     });

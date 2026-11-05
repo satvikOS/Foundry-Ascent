@@ -4,26 +4,17 @@
  * `levelsAt(t)` every animation frame outside React. Every voice level comes from recorded audio
  * (envelopes.json, 10 Hz RMS of the spoken lines), so nothing on screen moves without sound behind it.
  */
+import type { Speaker, TimelineTurn } from '@/features/calls/timeline/timeline-model';
 import type { AvatarState } from '@/lib/realtime/avatar';
 
 import envelopes from './envelopes.json';
 import { AD_SESSION } from './fixtures';
 
-export type Speaker = 'veir' | 'student';
-
-/** One turn on the call's timeline: the same shape the call's own timeline keeps (100 ms RMS bins). */
-export interface TimelineTurn {
-  id: string;
-  speaker: Speaker;
-  startMs: number;
-  /** Null while the turn is still being spoken. */
-  endMs: number | null;
-  bins: Float32Array;
-}
+export type { Speaker, TimelineTurn } from '@/features/calls/timeline/timeline-model';
 
 const BIN_MS = 1000 / envelopes.hz;
-const VEIR_BINS = Float32Array.from(envelopes.veir);
-const STUDENT_BINS = Float32Array.from(envelopes.student);
+const VEIR_BINS: readonly number[] = envelopes.veir;
+const STUDENT_BINS: readonly number[] = envelopes.student;
 
 /** Milliseconds per typed character and streamed word (30 tokens a second). */
 const TYPE_MS = 28;
@@ -85,16 +76,21 @@ export interface Frame {
   /** The vEIR's caption and the student's, as the call shows them. */
   veirCaption: string | null;
   studentCaption: string | null;
-  turns: TimelineTurn[];
+  turns: readonly TimelineTurn[];
   /** Call time shown on the phone, in whole seconds. */
   callSeconds: number;
 }
 
+/**
+ * One turn on the phone's call timeline (the call's own turn shape: 100 ms RMS bins, times from the call's start),
+ * as heard `t` ms into the loop.
+ */
 function turn(
   id: string,
   speaker: Speaker,
   startMs: number,
-  all: Float32Array,
+  all: readonly number[],
+  text: string,
   t: number,
 ): TimelineTurn | null {
   if (t < startMs) return null;
@@ -105,7 +101,8 @@ function turn(
     speaker,
     startMs: startMs - BEATS.phoneAt,
     endMs: done ? startMs - BEATS.phoneAt + all.length * BIN_MS : null,
-    bins: all.subarray(0, heard),
+    bins: all.slice(0, heard),
+    text,
   };
 }
 
@@ -126,8 +123,8 @@ export function frameAt(time: number): Frame {
           ? 'listening'
           : 'thinking';
   const turns = [
-    turn('veir-1', 'veir', BEATS.veirAt, VEIR_BINS, t),
-    turn('student-1', 'student', BEATS.studentAt, STUDENT_BINS, t),
+    turn('veir-1', 'veir', BEATS.veirAt, VEIR_BINS, AD_SESSION.call.veirLine, t),
+    turn('student-1', 'student', BEATS.studentAt, STUDENT_BINS, AD_SESSION.call.studentLine, t),
   ].filter((value): value is TimelineTurn => value !== null);
   return {
     t,
@@ -147,7 +144,7 @@ export function frameAt(time: number): Frame {
 /** The final frame: what reduced motion, a slow device and the end of the loop show. */
 export const FINAL_FRAME = frameAt(BEATS.end);
 
-function sample(bins: Float32Array, offsetMs: number): number {
+function sample(bins: readonly number[], offsetMs: number): number {
   if (offsetMs < 0) return 0;
   const position = offsetMs / BIN_MS;
   const index = Math.floor(position);

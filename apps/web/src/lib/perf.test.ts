@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { initPerfClass, lowFromHints, medianFrame } from './perf';
+import { initPerfClass, isLowPerf, lowFromHints, medianFrame } from './perf';
 import { safeStorage, STORAGE_KEYS } from './storage';
 
 describe('device class', () => {
@@ -30,5 +30,12 @@ describe('device class', () => {
     safeStorage.set(STORAGE_KEYS.perf, 'ok');
     initPerfClass();
     expect(document.documentElement.dataset.perf).toBeUndefined();
+  });
+
+  it('reports the applied verdict to effects that hold still on a slow device', () => {
+    expect(isLowPerf()).toBe(false);
+    safeStorage.set(STORAGE_KEYS.perf, 'low');
+    initPerfClass();
+    expect(isLowPerf()).toBe(true);
   });
 });

@@ -1,15 +1,16 @@
 import { ChevronDown, Mic, SlidersHorizontal, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, type ComponentType, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { VeirName } from '@/components/faces/veir-name';
 import { CallCaptions } from '@/features/calls/call-captions';
-import type { AvatarProvider, AvatarState } from '@/lib/realtime/avatar';
+import type { AvatarState } from '@/lib/realtime/avatar';
+import { SphereAvatar } from '@/lib/realtime/sphere';
 import { veirFromIdentity } from '@/lib/veir';
 
 import { AD_CALL_CONFIG, AD_SESSION } from './fixtures';
 import { BEATS, type Frame } from './script';
-import type { TimelineSlotProps } from './timeline';
+import { AdTimeline } from './timeline';
 
 const VEIR = veirFromIdentity(AD_CALL_CONFIG.veir);
 
@@ -24,46 +25,35 @@ const STATUS: Record<AvatarState, string> = {
 
 export interface PhoneScreenProps {
   frame: Frame;
-  /** Makes the vEIR's presence (the call's own provider): mounted once, driven by the ad. */
-  createPresence: () => AvatarProvider;
-  /** The vEIR's monogram sits inside the presence (the ring presence) rather than as a badge under it. */
-  monogramInside: boolean;
-  Timeline: ComponentType<TimelineSlotProps>;
-  /** Receives the mounted presence, so the player can give it the voices' levels every frame. */
-  presenceRef: RefObject<AvatarProvider | null>;
+  /** Receives the mounted sphere, so the player can give it both voices' recorded levels every frame. */
+  sphereRef: RefObject<SphereAvatar | null>;
   reducedMotion: boolean;
 }
 
 /**
- * The phone's screen: the live call, with the vEIR's presence centred on black, its name and state, the
- * captions, the conversation timeline and the two controls. The presence is the call's own provider, given the
- * call's state and both voices' recorded levels exactly as a call gives them.
+ * The phone's screen: the live call as the app draws it. The call's voice sphere centred on black, the vEIR's badge
+ * and name under it with its state, the captions, the call's conversation timeline and the two controls. The
+ * sphere is the call's own presence, given the call's state and both voices' recorded levels exactly as a call
+ * gives them; the timeline is the call's own, reading the same turns.
  */
-export function PhoneScreen({
-  frame,
-  createPresence,
-  monogramInside,
-  Timeline,
-  presenceRef,
-  reducedMotion,
-}: PhoneScreenProps) {
+export function PhoneScreen({ frame, sphereRef, reducedMotion }: PhoneScreenProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
-  const presence = useMemo(createPresence, [createPresence]);
+  const [sphere] = useState(() => new SphereAvatar());
 
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return undefined;
-    presence.mount(stage, { reducedMotion });
-    presenceRef.current = presence;
+    sphere.mount(stage, { reducedMotion });
+    sphereRef.current = sphere;
     return () => {
-      presenceRef.current = null;
-      presence.unmount();
+      sphereRef.current = null;
+      sphere.unmount();
     };
-  }, [presence, presenceRef, reducedMotion]);
+  }, [sphere, sphereRef, reducedMotion]);
 
   useEffect(() => {
-    presence.setState(frame.voice);
-  }, [presence, frame.voice]);
+    sphere.setState(frame.voice);
+  }, [sphere, frame.voice]);
 
   const clock = `0:${String(frame.callSeconds).padStart(2, '0')}`;
   return (
@@ -74,13 +64,12 @@ export function PhoneScreen({
         <SlidersHorizontal aria-hidden className="size-5" />
       </div>
       <div className="grid content-center justify-items-center gap-5">
-        <div ref={stageRef} className="ad-call__stage">
-          {monogramInside ? (
-            <PersonaAvatar name={VEIR.name} size="2xl" decorative className="relative" />
-          ) : null}
-        </div>
+        <div ref={stageRef} data-slot="ad-sphere" data-state={frame.voice} className="ad-call__stage" />
         <div className="grid justify-items-center gap-1 text-small">
-          <VeirName veir={VEIR} interactive={false} className="font-medium" />
+          <span className="flex items-center gap-2">
+            <PersonaAvatar name={VEIR.name} size="md" decorative />
+            <VeirName veir={VEIR} interactive={false} className="font-medium" />
+          </span>
           <span className="text-muted-foreground">{STATUS[frame.voice]}</span>
         </div>
         <CallCaptions
@@ -92,10 +81,11 @@ export function PhoneScreen({
           readAloud={false}
         />
       </div>
-      <Timeline
+      <AdTimeline
         turns={frame.turns}
         elapsedMs={frame.t - BEATS.phoneAt}
         spanMs={BEATS.end - BEATS.phoneAt}
+        veirName={VEIR.name}
         className="mb-6"
       />
       <div className="flex items-center justify-between">

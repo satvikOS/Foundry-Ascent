@@ -53,6 +53,15 @@ describe('layoutTimeline', () => {
     expect(whole.segments).toHaveLength(2);
   });
 
+  it('lets a short call fill the bar when given a shorter minimum span', () => {
+    const layout = layoutTimeline([turn('veir', 0, 6_000), turn('student', 6_000, 10_000)], 10_000, 600, {
+      minSpanMs: 10_000,
+    });
+    expect(layout.segments[0]?.width).toBeCloseTo(360, 5);
+    expect(layout.segments[1]?.x).toBeCloseTo(360, 5);
+    expect(layout.segments[1]?.width).toBeCloseTo(240, 5);
+  });
+
   it('draws a turn still going up to its latest bin', () => {
     const layout = layoutTimeline([turn('student', 0, null, [0.1, 0.1, 0.1])], 300, 600);
     expect(layout.segments[0]?.width).toBe(SEGMENT_MIN_PX);

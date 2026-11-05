@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { PersonaAvatar } from '@/components/faces/persona-avatar';
-import type { AvatarState } from '@/lib/realtime/avatar';
 import { useMediaQuery } from '@/lib/hooks/use-media-query';
+import { isLowPerf } from '@/lib/perf';
+import type { AvatarState } from '@/lib/realtime/avatar';
+import { SphereAvatar } from '@/lib/realtime/sphere';
 
 import envelopes from './envelopes.json';
-import { AD_SESSION } from './fixtures';
-import { DEFAULT_VOICE_SLOTS, slowDevice, type VoiceSlots } from './slots';
 
 const BIN_MS = 1000 / envelopes.hz;
 const GAP_MS = 900;
@@ -31,16 +30,15 @@ export function voiceAt(t: number): { state: AvatarState; veir: number; founder:
 }
 
 /**
- * The call's presence on its own, voiced by the two recorded lines: speaking with the vEIR's audio, listening to
- * the student's, then thinking. It plays three times while on screen in a visible tab and then rests; under
+ * The call's voice sphere on its own, voiced by the two recorded lines: speaking with the vEIR's audio, listening
+ * to the student's, then thinking. It plays three times while on screen in a visible tab and then rests; under
  * reduced motion or on a slow device it is still. Decorative (the band's heading says what it is).
  */
-export function VoiceDemo({ slots }: { slots?: Partial<VoiceSlots> }) {
-  const { createPresence, monogramInside } = { ...DEFAULT_VOICE_SLOTS, ...slots };
+export function VoiceDemo() {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
-  const still = reducedMotion || slowDevice();
-  const presence = useMemo(createPresence, [createPresence]);
+  const still = reducedMotion || isLowPerf();
+  const [presence] = useState(() => new SphereAvatar());
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -97,16 +95,8 @@ export function VoiceDemo({ slots }: { slots?: Partial<VoiceSlots> }) {
     <div
       ref={stageRef}
       aria-hidden
-      className="relative grid aspect-square w-[min(72%,20rem)] place-items-center"
-    >
-      {monogramInside ? (
-        <PersonaAvatar
-          name={`${AD_SESSION.eir.firstName} · vEIR`}
-          size="2xl"
-          decorative
-          className="relative"
-        />
-      ) : null}
-    </div>
+      data-slot="voice-demo"
+      className="relative grid aspect-square w-[min(72%,20rem)] place-items-center [--fa-sphere-size:100%]"
+    />
   );
 }

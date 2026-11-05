@@ -59,6 +59,8 @@ export interface ConversationTimelineProps {
   onSelectTurn?: (turn: TimelineTurn) => void;
   /** Show the two-item legend under the bar. */
   legend?: boolean;
+  /** The shortest span the bar's width stands for (default a minute); a short scripted call fills the bar. */
+  minSpanMs?: number;
   className?: string;
 }
 
@@ -74,6 +76,7 @@ export function ConversationTimeline({
   names,
   onSelectTurn,
   legend = false,
+  minSpanMs,
   className,
 }: ConversationTimelineProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
@@ -107,6 +110,7 @@ export function ConversationTimeline({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const layout: TimelineLayout = layoutTimeline(source.turns(), source.elapsedMs(), width, {
       whole: wholeRef.current,
+      ...(minSpanMs === undefined ? {} : { minSpanMs }),
     });
     drawTimeline(ctx, layout, { width, height }, activePalette(canvas), source.measured);
     // The overlay buttons follow the segments without a React render.
@@ -126,7 +130,7 @@ export function ConversationTimeline({
     }
     frame.dataset.scrolling = String(layout.scrolling);
     setScrolling((current) => (current === layout.scrolling ? current : layout.scrolling));
-  }, [source]);
+  }, [source, minSpanMs]);
 
   // Redraw when a bin lands (the source notifies at 10 Hz at most) and whenever the turns re-render.
   useEffect(() => source.subscribe(draw), [source, draw]);

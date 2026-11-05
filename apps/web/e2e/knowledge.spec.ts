@@ -343,7 +343,8 @@ test.describe('memory', () => {
       if (href.includes('m=')) await saved.getByRole('link').click();
       else await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?m=${memoryId}`);
       const panel = page.getByRole('complementary', { name: 'Memory inspector' });
-      await expect(panel.getByText(/^Learned from /)).toBeVisible();
+      // Its provenance link (a memory with history also lists "Learned from a conversation" in its timeline).
+      await expect(panel.getByRole('link', { name: /^Learned from / })).toBeVisible();
       const corrected = page.waitForResponse(
         (response) =>
           response.url().endsWith(`/memory/${memoryId}`) && response.request().method() === 'PATCH',

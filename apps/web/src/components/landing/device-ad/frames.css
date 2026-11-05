@@ -188,10 +188,12 @@
     color: var(--foreground);
   }
 
+  /* The call's sphere at the size a 390 px phone gives it, filling its stage. */
   .ad-call__stage {
+    --fa-sphere-size: 100%;
     position: relative;
     display: grid;
-    width: 236px;
+    width: 200px;
     aspect-ratio: 1;
     place-items: center;
   }
@@ -219,12 +221,9 @@
     opacity: 0;
   }
 
-  /* The call's timeline (the same tokens as the app's): 48 px on the phone, the vEIR blue and the student green. */
-  .ad-timeline {
+  /* The call's own timeline at its phone height (the page around the ad may be wide). */
+  .ad-call .fa-timeline__frame {
     height: 48px;
-    border-radius: 10px;
-    background: var(--tl-ground);
-    border: 1px solid light-dark(transparent, rgb(255 255 255 / 0.06));
   }
 
   @media (prefers-reduced-motion: reduce) {

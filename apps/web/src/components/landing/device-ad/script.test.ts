@@ -59,7 +59,7 @@ describe('the device ad sequence', () => {
     const mid = frameAt(BEATS.veirAt + 1_050);
     expect(mid.turns).toHaveLength(1);
     expect(mid.turns[0]).toMatchObject({ speaker: 'veir', endMs: null });
-    expect([...(mid.turns[0]?.bins ?? [])]).toEqual(envelopes.veir.slice(0, 11).map(Math.fround));
+    expect(mid.turns[0]?.bins).toEqual(envelopes.veir.slice(0, 11));
     const end = FINAL_FRAME;
     expect(end.turns.map((turn) => turn.speaker)).toEqual(['veir', 'student']);
     expect(end.turns.every((turn) => turn.endMs !== null)).toBe(true);

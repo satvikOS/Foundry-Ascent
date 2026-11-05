@@ -33,6 +33,11 @@ export function medianFrame(intervals: readonly number[]): number | null {
   return sorted.length % 2 ? (sorted[mid] ?? null) : ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
 }
 
+/** The verdict as applied: true once this browser is marked slow (`<html data-perf="low">`). */
+export function isLowPerf(): boolean {
+  return typeof document !== 'undefined' && document.documentElement.dataset.perf === 'low';
+}
+
 function apply(perf: PerfClass): void {
   if (perf === 'low') document.documentElement.dataset.perf = 'low';
   else delete document.documentElement.dataset.perf;

@@ -318,7 +318,7 @@ function TrustBand() {
               key={item.label}
               data-reveal
               style={{ '--stagger': index } as CSSProperties}
-              className="grid justify-items-center gap-3"
+              className="grid content-start justify-items-center gap-3"
             >
               <item.icon aria-hidden className="size-6 opacity-80" strokeWidth={1.5} />
               <span className="max-w-[18ch] text-[0.9375rem]">{item.label}</span>

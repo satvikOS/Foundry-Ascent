@@ -104,9 +104,7 @@ export function CallSummaryPanel({
           {formatClock(ended.durationSeconds)}
         </span>
         <span className="sr-only">{spokenDuration(ended.durationSeconds)}</span>
-        {exchanges > 0
-          ? ` · ${String(exchanges)} exchange${exchanges === 1 ? '' : 's'}`
-          : ' · Nothing was said.'}
+        {exchanges > 0 ? ` · ${String(exchanges)} exchange${exchanges === 1 ? '' : 's'}` : ' · No exchanges.'}
       </p>
       {endLine ? (
         <p role="status" className="mt-1 max-w-md text-small text-pretty text-muted-foreground">

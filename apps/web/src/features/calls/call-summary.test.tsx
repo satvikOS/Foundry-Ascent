@@ -295,7 +295,8 @@ describe('CallSummaryPanel', () => {
     stubFetch().mockResolvedValue(json({ items: [] }));
     renderSummary(ended({ turnCount: 0 }, { turnCount: 0 }));
     expect(await screen.findByRole('heading', { name: 'Call ended' })).toBeInTheDocument();
-    expect(screen.getByText(/Nothing was said\./)).toBeInTheDocument();
+    // The vEIR may have greeted the founder: the line counts exchanges, never claims silence.
+    expect(screen.getByText(/No exchanges\./)).toBeInTheDocument();
     expect(screen.queryByTestId('call-remembered')).toBeNull();
   });
 

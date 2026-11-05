@@ -45,6 +45,37 @@ async function signInWith(page: Page, code: string): Promise<void> {
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 }
 
+/**
+ * A few seconds of a speech-shaped test signal as 16-bit mono WAV: a voiced tone (130 Hz and its harmonics) under
+ * a syllable envelope with pauses. Deterministic; no recording of anyone.
+ */
+function speechShapedWav(seconds = 5, rate = 24_000): Buffer {
+  const samples = Math.round(seconds * rate);
+  const data = Buffer.alloc(44 + samples * 2);
+  data.write('RIFF', 0);
+  data.writeUInt32LE(36 + samples * 2, 4);
+  data.write('WAVEfmt ', 8);
+  data.writeUInt32LE(16, 16);
+  data.writeUInt16LE(1, 20);
+  data.writeUInt16LE(1, 22);
+  data.writeUInt32LE(rate, 24);
+  data.writeUInt32LE(rate * 2, 28);
+  data.writeUInt16LE(2, 32);
+  data.writeUInt16LE(16, 34);
+  data.write('data', 36);
+  data.writeUInt32LE(samples * 2, 40);
+  for (let i = 0; i < samples; i++) {
+    const t = i / rate;
+    const syllable = Math.max(0, Math.sin(2 * Math.PI * 3.6 * t)) ** 0.7;
+    const phrase = t % 1.6 < 1.25 ? 1 : 0;
+    let voiced = 0;
+    for (let h = 1; h <= 6; h++) voiced += Math.sin(2 * Math.PI * 130 * h * t) / h;
+    const value = 0.35 * syllable * phrase * voiced;
+    data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, value)) * 32_767), 44 + i * 2);
+  }
+  return data;
+}
+
 async function settle(page: Page): Promise<void> {
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
@@ -152,6 +183,20 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
             headers: WRITE_HEADERS,
           });
           expect(notice.status(), 'POST /calls/notice/acknowledge').toBe(200);
+          // The sphere's live look (the other shots hold still).
+          await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'no-preference' });
+          // A tab that has seen no click: the call waits on its start screen (the sphere idle).
+          await page.addInitScript(() => {
+            Object.defineProperty(navigator, 'userActivation', {
+              configurable: true,
+              value: { hasBeenActive: false, isActive: false },
+            });
+          });
+          // This server has no synthesis (501): the vEIR's lines play a speech-shaped test signal instead, through
+          // the browser's fake audio output (silent), so the sphere shows speaking from real played audio.
+          await page.route('**/api/v1/speech', (route) =>
+            route.fulfill({ status: 200, contentType: 'audio/wav', body: speechShapedWav() }),
+          );
           await openVenture(page);
           await useTheme(page, scheme);
           await startConversation(page, 'What should our two-library pilot prove first?');
@@ -159,14 +204,33 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
             page.getByRole('article', { name: 'Exchange 1' }).getByRole('button', { name: 'Copy answer' }),
           ).toBeVisible({ timeout: 30_000 });
           await shoot(page, 'conversation', device, scheme);
-          await page
-            .getByRole('main')
-            .getByRole('link', { name: /^Call / })
-            .first()
-            .click();
+          await page.goto(`${page.url()}?call=1`);
           const call = page.getByRole('dialog', { name: /^Call with / });
+          const start = call.getByRole('button', { name: 'Start call' });
+          await expect(start).toBeVisible();
+          await shoot(page, 'call-idle', device, scheme);
+          await start.click();
+          const status = call.getByRole('status').filter({ hasText: /^(Speaking|Your turn|Listening)$/ });
+          await expect(status).toBeVisible({ timeout: 20_000 });
+          if ((await status.textContent()) !== 'Speaking') {
+            const reply = call.getByRole('textbox', { name: /^Reply to / });
+            await reply.fill('Which library should go first?');
+            await reply.press('Enter');
+          }
+          await expect(status).toHaveText('Speaking', { timeout: 30_000 });
+          await shoot(page, 'call-speaking', device, scheme);
+          await expect(status).toHaveText(/^(Your turn|Listening)$/, { timeout: 30_000 });
           await expect(call.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
-          await shoot(page, 'call', device, scheme);
+          await shoot(page, 'call-listening', device, scheme);
+          await call.getByRole('button', { name: 'Call settings' }).click();
+          const settings = page.getByRole('dialog', { name: 'Call settings' });
+          await expect(settings).toBeVisible();
+          // Once it has finished opening (it fades in).
+          await settings.evaluate((element) =>
+            Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+          );
+          await shoot(page, 'call-settings', device, scheme);
+          await page.keyboard.press('Escape');
           await call.getByRole('button', { name: 'End call' }).click();
           await expect(call.getByRole('button', { name: 'Back to conversation' })).toBeVisible();
           await shoot(page, 'call-ended', device, scheme);

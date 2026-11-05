@@ -320,13 +320,19 @@ test.describe('tables keep focus rings whole', () => {
 });
 
 test.describe('public pages', () => {
-  test('the sign-in brand panel is true black in OLED dark', async ({ page }) => {
+  test('sign-in is true black in OLED dark, its brand panel the landing page’s near-black art', async ({
+    page,
+  }) => {
     await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
     await page.goto('/sign-in');
     await useTheme(page, 'dark');
+    expect(await style(page.locator('body'), 'backgroundColor')).toBe(BLACK);
+    // The panel is an art field framed on the black canvas, as on the landing page: its ground stays near black.
     const panel = page.getByRole('complementary', { name: 'About Foundry Ascent' });
     await expect(panel).toBeVisible();
-    expect(await style(panel, 'backgroundColor')).toBe(BLACK);
-    expect(await style(page.locator('body'), 'backgroundColor')).toBe(BLACK);
+    await expect(panel).toHaveClass(/\bart\b/);
+    const channels = (await style(panel, 'backgroundColor')).match(/\d+/g)?.slice(0, 3).map(Number) ?? [];
+    expect(channels).toHaveLength(3);
+    for (const channel of channels) expect(channel).toBeLessThanOrEqual(8);
   });
 });

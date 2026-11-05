@@ -56,17 +56,18 @@ export interface TimelineLayout {
 }
 
 /**
- * Places each turn: width proportional to its duration over the call so far (at least a minute), or, once that
- * would be slower than 4 px/s, a window of the latest seconds unless `whole` asks for the whole call compressed.
+ * Places each turn: width proportional to its duration over the call so far (at least `minSpanMs`, a minute by
+ * default), or, once that would be slower than 4 px/s, a window of the latest seconds unless `whole` asks for the
+ * whole call compressed.
  */
 export function layoutTimeline(
   turns: readonly TimelineTurn[],
   elapsedMs: number,
   width: number,
-  options: { readonly whole?: boolean; readonly binMs?: number } = {},
+  options: { readonly whole?: boolean; readonly binMs?: number; readonly minSpanMs?: number } = {},
 ): TimelineLayout {
   const binMs = options.binMs ?? BIN_MS;
-  const span = Math.max(elapsedMs, MIN_SPAN_MS);
+  const span = Math.max(elapsedMs, options.minSpanMs ?? MIN_SPAN_MS);
   let pxPerMs = width / span;
   let windowStart = 0;
   const scrolling = !options.whole && pxPerMs * 1000 < MIN_PX_PER_SECOND;
