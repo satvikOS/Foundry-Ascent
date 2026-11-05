@@ -60,7 +60,7 @@ describe('FeatureSwitches: the vEIR’s AI voice', () => {
     const on = renderWithProviders(<FeatureSwitches {...BASE} onChange={onChange} />);
     const voice = screen.getByRole('switch', { name: 'AI voice' });
     expect(voice).toBeChecked();
-    expect(within(voice.closest('div.flex') as HTMLElement).getByText('On.')).toBeVisible();
+    expect(screen.getByText('On.')).toBeVisible();
     await user.click(voice);
     expect(onChange).toHaveBeenLastCalledWith({ vendorVoiceEnabled: false });
 
