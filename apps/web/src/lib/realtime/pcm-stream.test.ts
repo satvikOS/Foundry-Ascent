@@ -144,6 +144,47 @@ describe('PcmStream: a unit played as its PCM arrives', () => {
     expect(events).toEqual(['start', 'end true']);
   });
 
+  it('skips the start a face already made heard: what arrived and what is still to come, never more', async () => {
+    const context = audioContext();
+    const b = body();
+    const stream = new PcmStream(b.stream, RATE);
+    // 30 ms arrived (in two pieces), 50 ms more to come; the first 40 ms were heard elsewhere.
+    b.push(pcm(10, 1));
+    b.push(pcm(20, 2));
+    await flush(10);
+    stream.skip(40);
+    b.push(pcm(50, 3));
+    b.end();
+    await flush(10);
+    const events: string[] = [];
+    stream.play(sink(context).sink, {
+      onStart: () => events.push('start'),
+      onEnd: (heard) => events.push(`end ${String(heard)}`),
+    });
+    const samples = context.sources.flatMap((source) => [...(source.buffer?.getChannelData(0) ?? [])]);
+    // 80 ms in all, 40 ms skipped: the last 40 ms, every one from the third piece.
+    expect(samples).toHaveLength(0.04 * RATE);
+    expect(samples.every((v) => Math.abs(v - 3 / 32_768) < 1e-9)).toBe(true);
+    expect(stream.received).toBe(0.08 * RATE);
+  });
+
+  it('a skip past everything plays nothing and ends unheard', async () => {
+    const context = audioContext();
+    const b = body();
+    const stream = new PcmStream(b.stream, RATE);
+    b.push(pcm(30));
+    b.end();
+    await flush(10);
+    stream.skip(500);
+    const events: string[] = [];
+    stream.play(sink(context).sink, {
+      onStart: () => events.push('start'),
+      onEnd: (heard) => events.push(`end ${String(heard)}`),
+    });
+    expect(context.sources).toHaveLength(0);
+    expect(events).toEqual(['end false']);
+  });
+
   it('joins a sample split across two chunks', async () => {
     const context = audioContext();
     const b = body();

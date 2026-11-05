@@ -278,7 +278,8 @@ export type FaceSayRequest = z.infer<typeof FaceSayRequest>;
  * `end_reason` as `vendorReason`), the face showed no first frame (`no_video`) or did not join in time
  * (`connect_timeout`) or failed to join (`connect_failed`), the page has no adapter for it (`no_adapter`), a crisis
  * turn (`crisis`), or the call stayed on hold too long (`on_hold`). A LITE stock face the browser feeds: its speak
- * channel closed or failed (`control_lost`), or it twice did not start saying a unit in time (`speech_stalled`).
+ * channel closed or failed (`control_lost`), it twice did not start saying a unit in time (`speech_stalled`), or
+ * the session's time left was too short for the next turn and the call took over between turns (`time_limit`).
  */
 export const FaceEndReason = z.enum([
   'video_ended',
@@ -293,6 +294,7 @@ export const FaceEndReason = z.enum([
   'on_hold',
   'control_lost',
   'speech_stalled',
+  'time_limit',
 ]);
 export type FaceEndReason = z.infer<typeof FaceEndReason>;
 

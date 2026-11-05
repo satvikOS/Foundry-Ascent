@@ -64,9 +64,10 @@ export type { FaceAudioTap, FaceMediaElement, FaceTapMode } from './face-media';
  * `connected`; from then on the call hands the face a copy of each signed unit's ElevenLabs PCM as it arrives
  * (voicing `stream`), and `lite-speaker.ts` forwards the units the server admitted, one utterance per turn. The
  * founder hears only the avatar's own audio track, in this element with its video; the call keeps its own copy and
- * plays it only for a unit the face gives back before it was heard. Barge-in silences the element and interrupts
- * the vendor at once. A channel that closes, or a face that twice does not start in time, ends the face
- * (`control_lost`, `speech_stalled`): the call goes on with the presence and its own speakers.
+ * plays it only for a unit the face gives back before it was heard, or the rest of one it gave back partway. Barge-in
+ * silences the element and interrupts the vendor at once. A channel that closes, a face that twice does not start
+ * in time, or a session too close to its time limit for the next turn ends the face (`control_lost`,
+ * `speech_stalled`, `time_limit`): the call goes on with the presence and its own speakers.
  *
  * **LITE, the EIR's likeness** (no `controlUrl`):
  * The browser only **watches**: it joins the vendor's LiveKit room with the room token the API minted
@@ -137,6 +138,8 @@ export interface LiveAvatarDeps {
   openLiteSocket?(url: string): LiteSocket;
   /** A monotonic clock in ms (default `performance.now`). */
   now?(): number;
+  /** The wall clock in ms, read against the session's `expiresAt` (default `Date.now`). */
+  wallNow?(): number;
 }
 
 /** The browser's room (livekit-client, loaded with this chunk). */
@@ -420,7 +423,7 @@ export class LiveAvatarFace implements AvatarProvider {
       // A stock face the page feeds: its speak channel opens once the room joined, and the face is live only once
       // the vendor said `connected` on it.
       if (this.voicing === 'audio' && session.controlUrl !== null) {
-        await this.openLite(session.controlUrl, signal);
+        await this.openLite(session.controlUrl, session.expiresAt, signal);
       }
     } catch (err) {
       this.release();
@@ -466,11 +469,16 @@ export class LiveAvatarFace implements AvatarProvider {
   // Internals -----------------------------------------------------------------------------------------
 
   /** Opens a stock face's speak channel and waits for the vendor's `connected` (bounded); then feeds it. */
-  private async openLite(url: string, signal: AbortSignal): Promise<void> {
+  private async openLite(url: string, expiresAt: string | null, signal: AbortSignal): Promise<void> {
     const deps = this.deps;
     if (deps.openLiteSocket === undefined) throw new Error('face_control_unavailable');
     const now = () => deps.now?.() ?? performance.now();
     const ids = () => deps.eventId?.() ?? crypto.randomUUID();
+    const wallNow = () => deps.wallNow?.() ?? Date.now();
+    // A session the server just started cannot be over yet: an end already past is this device's clock running
+    // ahead, so the limit is left to the vendor (whose close gives the rest back to the call).
+    const parsed = expiresAt === null ? NaN : Date.parse(expiresAt);
+    const end = Number.isFinite(parsed) && parsed > wallNow() ? parsed : null;
     const control = new LiteControl(deps.openLiteSocket(url), { ids, now });
     this.control = control;
     let timer: unknown = null;
@@ -512,6 +520,8 @@ export class LiveAvatarFace implements AvatarProvider {
         this.unsilence();
       },
       level: () => this.tap?.level() ?? 0,
+      // The session's time left (the vendor's limit): the face hands over between turns before it.
+      remainingMs: () => (end === null ? Infinity : end - wallNow()),
       onBroken: (reason) => {
         this.lose({ reason });
       },

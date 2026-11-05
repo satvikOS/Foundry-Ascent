@@ -137,9 +137,11 @@ export interface FaceRenderHandlers {
   onStart(): void;
   /**
    * Heard to its end (`ended`), or the face could not make it heard (`failed`). A unit that failed before its
-   * start is played by the call itself, so the founder never loses a sentence to the face.
+   * start is played by the call itself, so the founder never loses a sentence to the face. `cut` (a `stream` face
+   * only): the face stopped partway through (its channel dropped, its session ended) after `heardMs` of the unit
+   * were heard; the call plays the rest from its own copy, never what was already heard.
    */
-  onEnd(outcome: 'ended' | 'failed'): void;
+  onEnd(outcome: 'ended' | 'failed' | 'cut', heardMs?: number): void;
 }
 
 /**
@@ -680,6 +682,33 @@ export class SpeechPlayer {
     };
   }
 
+  /**
+   * The rest of a unit a face began and stopped partway (`local` already skips what was heard): its start was
+   * announced already, and it counts as heard to its end even when nothing of it was left.
+   */
+  private playRest(local: PcmStream, settle: (completed: boolean) => void): () => void {
+    const stop = local.play(
+      {
+        context: this.audio.context,
+        destination: this.gain,
+        setTimeout: (callback, ms) => this.audio.setTimeout(callback, ms),
+        clearTimeout: (handle) => {
+          this.audio.clearTimeout(handle);
+        },
+      },
+      {
+        onStart: () => undefined,
+        onEnd: () => {
+          settle(true);
+        },
+      },
+    );
+    return () => {
+      stop();
+      settle(false);
+    };
+  }
+
   /** Plays decoded audio through the call's own path (gain → analyser → speakers). */
   private playBuffer(buffer: AudioBuffer, settle: (completed: boolean) => void): () => void {
     const source = this.audio.context.createBufferSource();
@@ -757,11 +786,18 @@ export class SpeechPlayer {
           began = true;
           started();
         },
-        onEnd: (outcome) => {
+        onEnd: (outcome, heardMs) => {
           if (finished) return;
           finished = true;
           done();
           this.audio.clearTimeout(guard);
+          if (outcome === 'cut' && local !== null) {
+            // The face stopped partway: the rest of the unit from the call's own copy, from where it was heard.
+            if (!began) started();
+            local.skip(heardMs ?? 0);
+            fallback = this.playRest(local, settle);
+            return;
+          }
           if (outcome === 'failed' && !began) {
             // The face has gone quiet first (a text face interrupts the vendor before it reports the failure),
             // so two voices never overlap: the call speaks the unit itself (a streamed unit from its own copy,
@@ -778,7 +814,7 @@ export class SpeechPlayer {
           local?.stop();
           // A face that never reported the start still made the unit heard: announce it before its end.
           if (!began) started();
-          settle(outcome === 'ended');
+          settle(outcome !== 'failed');
         },
       },
       audio,

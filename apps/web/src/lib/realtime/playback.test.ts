@@ -791,6 +791,48 @@ describe('SpeechPlayer with a LITE stock face the page feeds (voicing stream)', 
     expect(Math.abs(played - Math.round(0.4 * context.sampleRate))).toBeLessThanOrEqual(2);
   });
 
+  it('plays only the rest of a unit the face gave back partway (cut), never what was heard there', async () => {
+    const { context, pending, player, log } = setup();
+    const face = new StreamFace();
+    player.setFace(face);
+    player.enqueue(unit(0));
+    const body = pcmBody();
+    pending[0]?.resolve({ kind: 'stream', body: body.body, sampleRate: 24_000 });
+    body.push(600);
+    await flush(10);
+    face.renders[0]?.handlers.onStart();
+    await flush();
+    expect(context.sources).toHaveLength(0);
+    // The channel dropped 250 ms into the unit: the call goes on from there, with no second start.
+    face.renders[0]?.handlers.onEnd('cut', 250);
+    body.push(400);
+    body.end();
+    await flush(10);
+    const played = context.sources.reduce((n, s) => n + (s.buffer?.length ?? 0), 0);
+    // 1,000 ms arrived, 250 of them heard on the face: 750 ms on the speakers.
+    expect(Math.abs(played - Math.round(0.75 * context.sampleRate))).toBeLessThanOrEqual(2);
+    for (const source of context.sources) source.finish();
+    await vi.advanceTimersByTimeAsync(20);
+    expect(log).toEqual(['start 0 server', 'end 0 done', 'idle']);
+  });
+
+  it('ends a unit cut at its very end as heard, playing nothing', async () => {
+    const { context, pending, player, log } = setup();
+    const face = new StreamFace();
+    player.setFace(face);
+    player.enqueue(unit(0));
+    const body = pcmBody();
+    pending[0]?.resolve({ kind: 'stream', body: body.body, sampleRate: 24_000 });
+    body.push(300);
+    body.end();
+    await flush(10);
+    face.renders[0]?.handlers.onStart();
+    face.renders[0]?.handlers.onEnd('cut', 300);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(context.sources).toHaveLength(0);
+    expect(log).toEqual(['start 0 server', 'end 0 done', 'idle']);
+  });
+
   it('never repeats a unit the face already made heard, whatever it reports after', async () => {
     const { context, pending, player, log } = setup();
     const face = new StreamFace();

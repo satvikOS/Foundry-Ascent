@@ -1,4 +1,4 @@
-import type { FaceRenderHandlers, SpeechUnitToPlay } from '../playback';
+import { speakingTimeMs, type FaceRenderHandlers, type SpeechUnitToPlay } from '../playback';
 import { LiteChunker, liteAudioMs, type LiteControl, type LiteCounts, type LiteEvent } from './lite-socket';
 
 /**
@@ -16,7 +16,9 @@ import { LiteChunker, liteAudioMs, type LiteControl, type LiteCounts, type LiteE
  *   ({@link IDLE_CLOSE_MS}). A new turn's utterance never opens while another is open: it waits for that one's
  *   `speak_ended` (or its interrupt). PCM is cut into ~1 s chunks, the utterance's first one 200 ms.
  * - **When a unit is heard.** The utterance's first unit starts at `agent.speak_started` (or the avatar track's
- *   level, whichever first); every later one where the audio sent before it ends, from the times each chunk was
+ *   level, whichever first; the level counts only once the track was quiet after the utterance's first chunk and
+ *   at least {@link ONSET_HOLD_MS} after a barge-in or a fallback, so the tail of the audio just interrupted, which
+ *   still sounds on the track for ~389 ms, is never taken for the new utterance's start); every later one where the audio sent before it ends, from the times each chunk was
  *   sent and the vendor's own lag; the turn's last one ends at `agent.speak_ended`. Captions and the call's "heard"
  *   bookkeeping follow these (`FaceRenderHandlers`).
  * - **Barge-in** (`halt`): the face's element goes silent at once, `agent.interrupt` goes out, everything not yet
@@ -25,8 +27,13 @@ import { LiteChunker, liteAudioMs, type LiteControl, type LiteCounts, type LiteE
  * - **Fallback, never both, never twice.** No `speak_started` within {@link LITE_STALL_MS} of the utterance's first
  *   chunk, a vendor error, or the channel closing: the element is silenced and the vendor interrupted first, then
  *   every unit not yet heard is given back to the call, which plays the PCM it holds from the unit's start (units
- *   already heard are never repeated). The rest of that turn stays with the call. A closed channel, or a second
- *   stall, ends the face's speaking for the call (`onBroken`): the call goes on with the presence.
+ *   already heard are never repeated). A unit the avatar was saying is given back `cut` at the point heard (from
+ *   where each chunk played), and the call plays only its rest from its own copy. The rest of that turn stays with
+ *   the call. A closed channel, or a second stall, ends the face's speaking for the call (`onBroken`): the call
+ *   goes on with the presence.
+ * - **Time limit.** A new turn's utterance never opens when the session's time left (`remainingMs`, the vendor's
+ *   `max_session_duration`; about a minute in the sandbox) is shorter than an estimate of that turn: the face hands
+ *   over to the call between turns (`onBroken('time_limit')`), instead of being cut off mid-sentence.
  * - **Keep-alive**: `session.keep_alive` once a minute while no utterance is open.
  */
 
@@ -50,6 +57,15 @@ const DEFAULT_LAG_MS = 450;
 const TICK_MS = 40;
 /** The avatar track's level above which it counts as sounding. */
 const ONSET_LEVEL = 0.01;
+/**
+ * After a barge-in or a fallback, how long the avatar track's level is not taken as a new utterance's start: the
+ * interrupted audio still sounds on the track for ~389 ms (lab), and the tap measures the track before the mute.
+ */
+export const ONSET_HOLD_MS = 700;
+/** The shortest turn assumed when deciding whether a new utterance still fits the session's time left. */
+export const LITE_HANDOVER_MIN_MS = 6_000;
+/** Added to a turn whose units have not all reached the call yet (more sentences may follow). */
+const TURN_TAIL_MS = 2_000;
 /** Turns whose utterance count is kept for the lab's report. */
 const TURNS_KEPT = 64;
 
@@ -68,11 +84,18 @@ export interface LiteSpeakerDeps {
   unsilence(): void;
   /** The avatar's audio track level now (RMS, 0–1). */
   level(): number;
-  /** The face can no longer be fed: the channel closed, or it stalled twice. */
-  onBroken(reason: 'control_lost' | 'speech_stalled'): void;
+  /**
+   * The face can no longer be fed: the channel closed, it stalled twice, or the session's time left is too short
+   * for the next turn (`time_limit`, handed over between turns).
+   */
+  onBroken(reason: LiteBrokenReason): void;
+  /** The session's time left (ms); unknown: Infinity. */
+  remainingMs?(): number;
   /** Barge-in reached the vendor (the server is told, for its bookkeeping). */
   onInterrupt?(): void;
 }
+
+export type LiteBrokenReason = 'control_lost' | 'speech_stalled' | 'time_limit';
 
 /** What the speaker did in this call (counts only; the lab reads it). */
 export interface LiteReport {
@@ -82,6 +105,8 @@ export interface LiteReport {
   readonly unitsForwarded: number;
   /** Units given back to the call (stall, error, a closed channel, refused admission). */
   readonly fallbacks: number;
+  /** Units given back partway through (the call played only the rest). */
+  readonly cuts: number;
   readonly stalls: number;
   readonly interrupts: number;
   /** First chunk sent → `speak_started`, per utterance that started (ms). */
@@ -95,6 +120,8 @@ interface Utterance {
   /** Each chunk sent: when, and how long its audio is. */
   readonly chunks: { readonly sentAt: number; readonly ms: number }[];
   startedAt: number | null;
+  /** The avatar track was seen quiet since the first chunk (outside the hold after a cut): its level may start it. */
+  quietSeen: boolean;
   /** `agent.speak_end` was sent. */
   sealed: boolean;
   endedAt: number | null;
@@ -141,7 +168,10 @@ export class LiteSpeaker {
   private broken = false;
   private stalls = 0;
   private fallbacks = 0;
+  private cuts = 0;
   private interrupts = 0;
+  /** Until when the avatar track's level is not taken as an utterance's start (after a barge-in or a fallback). */
+  private onsetHoldUntil = -Infinity;
   private forwarded = 0;
   private opened = 0;
   private readonly byTurn = new Map<string, number>();
@@ -171,6 +201,7 @@ export class LiteSpeaker {
       utterancesByTurn: Object.fromEntries(this.byTurn),
       unitsForwarded: this.forwarded,
       fallbacks: this.fallbacks,
+      cuts: this.cuts,
       stalls: this.stalls,
       interrupts: this.interrupts,
       startLagMs: [...this.startLags],
@@ -358,9 +389,25 @@ export class LiteSpeaker {
         this.tick();
         return;
       }
+      if (live === null && this.tooLate(fed.turn)) {
+        // The session ends before this turn would: the call says it, and the face hands over now, between turns.
+        this.giveBack();
+        this.breakDown('time_limit');
+        return;
+      }
       this.startForward(fed, live ?? this.open(fed.turn));
       return;
     }
+  }
+
+  /** Whether `turn` would outlast the session's time left (an estimate from its units' words). */
+  private tooLate(turn: string): boolean {
+    const remaining = this.deps.remainingMs?.() ?? Infinity;
+    if (!Number.isFinite(remaining)) return false;
+    let known = 0;
+    for (const fed of this.queue) if (fed.turn === turn) known += speakingTimeMs(fed.unit.text);
+    const estimate = Math.max(LITE_HANDOVER_MIN_MS, known + (this.turnEnds.has(turn) ? 0 : TURN_TAIL_MS));
+    return remaining < estimate;
   }
 
   private open(turn: string): Utterance {
@@ -369,6 +416,7 @@ export class LiteSpeaker {
       turn,
       chunks: [],
       startedAt: null,
+      quietSeen: false,
       sealed: false,
       endedAt: null,
       sealedAt: null,
@@ -497,6 +545,7 @@ export class LiteSpeaker {
     utterance.endedAt = this.deps.now();
     if (this.utterance === utterance) this.utterance = null;
     if (utterance.chunks.length === 0) return;
+    this.holdOnset();
     this.interrupts += 1;
     try {
       this.deps.control.interrupt();
@@ -540,6 +589,8 @@ export class LiteSpeaker {
    */
   private giveBack(): void {
     this.deps.silence();
+    this.holdOnset();
+    const now = this.deps.now();
     const live = this.utterance;
     if (live !== null) {
       this.degradedTurn = live.turn;
@@ -555,15 +606,39 @@ export class LiteSpeaker {
     for (const fed of units) {
       if (fed.finished) continue;
       if (fed.began) {
+        // Partway through: the call plays the rest from its own copy, from where the avatar had got to.
         fed.finished = true;
         fed.reader.cancel().catch(() => undefined);
-        fed.handlers?.onEnd('ended');
+        this.cuts += 1;
+        fed.handlers?.onEnd('cut', this.heardMs(fed, now));
         continue;
       }
       this.fail(fed);
       fed.finished = true;
     }
     this.stopTicking();
+  }
+
+  /** The avatar track's sound is not taken as a start for a while (the cut audio's tail is still on it). */
+  private holdOnset(): void {
+    this.onsetHoldUntil = this.deps.now() + ONSET_HOLD_MS;
+  }
+
+  /** How much of `fed` the avatar had played by `now` (ms), from where each of its chunks played. */
+  private heardMs(fed: Fed, now: number): number {
+    const utterance = fed.utterance;
+    if (utterance === null || fed.firstChunk < 0) return 0;
+    const positions = this.positions(utterance);
+    if (positions === null) return 0;
+    const last = fed.lastChunk >= 0 ? fed.lastChunk : utterance.chunks.length - 1;
+    let heard = 0;
+    for (let i = fed.firstChunk; i <= last; i += 1) {
+      const at = positions[i];
+      const chunk = utterance.chunks[i];
+      if (at === undefined || chunk === undefined) break;
+      heard += Math.max(0, Math.min(chunk.ms, now - at.start));
+    }
+    return Math.round(heard);
   }
 
   private stall(utterance: Utterance): void {
@@ -579,7 +654,7 @@ export class LiteSpeaker {
     this.breakDown('control_lost');
   }
 
-  private breakDown(reason: 'control_lost' | 'speech_stalled'): void {
+  private breakDown(reason: LiteBrokenReason): void {
     if (this.broken) return;
     this.broken = true;
     this.deps.onBroken(reason);
@@ -655,15 +730,15 @@ export class LiteSpeaker {
     }
     const now = this.deps.now();
     const live = this.utterance;
-    // The track sounding counts as started (its event may come late).
-    if (
-      live !== null &&
-      live.startedAt === null &&
-      live.chunks.length > 0 &&
-      this.deps.level() > ONSET_LEVEL
-    ) {
-      this.started(live);
-      return;
+    // The track sounding counts as started (its event may come late), once it was quiet after the first chunk
+    // and outside the hold after a cut: before that, what sounds is the audio just interrupted, not this utterance.
+    if (live !== null && live.startedAt === null && live.chunks.length > 0 && now >= this.onsetHoldUntil) {
+      const sounding = this.deps.level() > ONSET_LEVEL;
+      if (!sounding) live.quietSeen = true;
+      else if (live.quietSeen) {
+        this.started(live);
+        return;
+      }
     }
     for (const fed of this.queue) {
       if (!fed.rendered || fed.finished || fed.utterance === null) continue;

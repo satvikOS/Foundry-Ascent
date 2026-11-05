@@ -130,6 +130,8 @@ export class PcmStream {
   /** Where the newest piece's provisional fade-out starts (context time), or null when there is none. */
   private fadeOutAt: number | null = null;
   private guard: unknown = null;
+  /** Samples still to drop from the unit's start ({@link skip}). */
+  private skipping = 0;
   /** Samples received in all (tests and timing). */
   received = 0;
 
@@ -137,6 +139,29 @@ export class PcmStream {
     this.sampleRate = sampleRate;
     this.reader = body.getReader();
     void this.pump();
+  }
+
+  /**
+   * Drops the unit's first `ms` of audio (call before `play`): the part a face already made heard, so the rest
+   * plays from there and nothing is heard twice. Audio not arrived yet is dropped as it comes.
+   */
+  skip(ms: number): void {
+    let drop = Math.max(0, Math.round((ms / 1000) * this.sampleRate));
+    if (drop === 0) return;
+    while (drop > 0 && this.pending.length > 0) {
+      const head = this.pending[0];
+      if (head === undefined) break;
+      if (head.length <= drop) {
+        this.pending.shift();
+        this.pendingSamples -= head.length;
+        drop -= head.length;
+      } else {
+        this.pending[0] = head.subarray(drop);
+        this.pendingSamples -= drop;
+        drop = 0;
+      }
+    }
+    this.skipping += drop;
   }
 
   /** Starts making the unit heard into `sink`; returns the function that stops it at once. */
@@ -227,11 +252,17 @@ export class PcmStream {
     const count = whole / 2;
     if (count === 0) return;
     const view = new DataView(data.buffer, data.byteOffset, whole);
-    const samples = new Float32Array(count);
+    let samples = new Float32Array(count);
     for (let i = 0; i < count; i += 1) samples[i] = view.getInt16(i * 2, true) / 32_768;
-    this.pending.push(samples);
-    this.pendingSamples += count;
     this.received += count;
+    if (this.skipping > 0) {
+      const drop = Math.min(this.skipping, count);
+      this.skipping -= drop;
+      samples = samples.subarray(drop);
+      if (samples.length === 0) return;
+    }
+    this.pending.push(samples);
+    this.pendingSamples += samples.length;
   }
 
   /** Schedules what is in hand once enough of it is (all of it once the stream ended). */

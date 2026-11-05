@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FaceRenderHandlers, SpeechUnitToPlay } from '../playback';
 import { FakeLiteSocket } from './fake-lite-socket';
 import { LiteControl } from './lite-socket';
-import { LITE_KEEPALIVE_MS, LITE_STALL_MS, LiteSpeaker } from './lite-speaker';
+import { LITE_KEEPALIVE_MS, LITE_STALL_MS, LiteSpeaker, ONSET_HOLD_MS } from './lite-speaker';
 
 const A = '1a1a1a1a-1a1a-4a1a-8a1a-1a1a1a1a1a1a';
 const B = '2b2b2b2b-2b2b-4b2b-8b2b-2b2b2b2b2b2b';
@@ -46,7 +46,7 @@ function body(rate = 24_000) {
   };
 }
 
-function rig(options: { behaviour?: 'normal' | 'stall' } = {}) {
+function rig(options: { behaviour?: 'normal' | 'stall'; startDelayMs?: number } = {}) {
   /** One timeline of what happened, in order: the page's actions, the commands sent, the units heard. */
   const order: string[] = [];
   const socket = new FakeLiteSocket({
@@ -55,7 +55,7 @@ function rig(options: { behaviour?: 'normal' | 'stall' } = {}) {
       clearTimeout(h as ReturnType<typeof setTimeout>);
     },
     now: () => Date.now(),
-    startDelayMs: 300,
+    startDelayMs: options.startDelayMs ?? 300,
     ...(options.behaviour === undefined ? {} : { behaviour: options.behaviour }),
     onCommand: (c) => {
       if (c.type !== 'agent.speak') order.push(`cmd ${c.type}`);
@@ -72,6 +72,8 @@ function rig(options: { behaviour?: 'normal' | 'stall' } = {}) {
   let u = 0;
   const broken: string[] = [];
   const admit = vi.fn((_unit: SpeechUnitToPlay, _signal: AbortSignal) => Promise.resolve());
+  /** The avatar track's level, as the tap measures it (before the element's mute). */
+  const track = { level: 0, remainingMs: Infinity };
   const speaker = new LiteSpeaker({
     control,
     setTimeout: (cb, ms) => setTimeout(cb, ms),
@@ -86,13 +88,15 @@ function rig(options: { behaviour?: 'normal' | 'stall' } = {}) {
     admit,
     silence: () => order.push('silence'),
     unsilence: () => order.push('unsilence'),
-    level: () => 0,
+    level: () => track.level,
+    remainingMs: () => track.remainingMs,
     onBroken: (reason) => broken.push(reason),
     onInterrupt: () => order.push('server interrupt'),
   });
   const handlers = (name: string): FaceRenderHandlers => ({
     onStart: () => order.push(`start ${name}`),
-    onEnd: (outcome) => order.push(`end ${name} ${outcome}`),
+    onEnd: (outcome, heardMs) =>
+      order.push(`end ${name} ${outcome}${heardMs === undefined ? '' : ` ${String(heardMs)}`}`),
   });
   /** Plays units one after another the way the call's player does: the next is rendered at the last one's end. */
   const play = (units: readonly { unit: SpeechUnitToPlay; name: string }[]) => {
@@ -106,8 +110,8 @@ function rig(options: { behaviour?: 'normal' | 'stall' } = {}) {
           onStart: () => {
             h.onStart();
           },
-          onEnd: (outcome) => {
-            h.onEnd(outcome);
+          onEnd: (outcome, heardMs) => {
+            h.onEnd(outcome, heardMs);
             next(i + 1);
           },
         }),
@@ -119,7 +123,7 @@ function rig(options: { behaviour?: 'normal' | 'stall' } = {}) {
     };
   };
   const speaks = (id: string) => socket.commands.filter((c) => c.type === 'agent.speak' && c.eventId === id);
-  return { socket, control, speaker, order, broken, admit, handlers, play, speaks };
+  return { socket, control, speaker, order, broken, admit, handlers, play, speaks, track };
 }
 
 async function connected(r: ReturnType<typeof rig>) {
@@ -306,7 +310,7 @@ describe('LiteSpeaker: fallback, never both, never twice', () => {
     expect(r.speaker.report()).toMatchObject({ stalls: 2, fallbacks: 2 });
   });
 
-  it('when the channel drops mid-turn, a unit already heard ends as heard and only the rest goes back', async () => {
+  it('when the channel drops mid-turn, the unit being said goes back cut where it was heard, the rest whole', async () => {
     const r = rig();
     await connected(r);
     const a0 = body();
@@ -325,12 +329,14 @@ describe('LiteSpeaker: fallback, never both, never twice', () => {
     expect(r.order).toContain('start a0');
     r.socket.drop();
     await vi.advanceTimersByTimeAsync(0);
-    // a0 was being heard: never repeated. a1 was not: the call plays it.
+    // a0 was being heard: given back cut where the avatar had got to (started at 300 ms: its 200 ms first chunk and
+    // 200 ms of the next were heard), so the call plays only its rest. a1 was not heard: the call plays it whole.
     expect(r.order.filter((e) => e.startsWith('start') || e.startsWith('end'))).toEqual([
       'start a0',
-      'end a0 ended',
+      'end a0 cut 400',
       'end a1 failed',
     ]);
+    expect(r.speaker.report()).toMatchObject({ cuts: 1, fallbacks: 1 });
     expect(r.order).toContain('silence');
     expect(r.socket.count('agent.interrupt')).toBe(0);
     expect(r.broken).toEqual(['control_lost']);
@@ -382,5 +388,105 @@ describe('LiteSpeaker: fallback, never both, never twice', () => {
     await vi.advanceTimersByTimeAsync(0);
     const total = r.speaks('utt-1').reduce((n, c) => n + c.bytes, 0);
     expect(Math.abs(total - 48_000)).toBeLessThanOrEqual(4);
+  });
+});
+
+describe('LiteSpeaker: the avatar track level after a barge-in', () => {
+  it('never takes the interrupted audio still on the track for the next utterance’s start', async () => {
+    // The vendor's speak_started comes late here (1.5 s), so only the level could start the new utterance early.
+    const r = rig({ startDelayMs: 1_500 });
+    await connected(r);
+    const a = body();
+    r.speaker.feed(unit(A, 0), a.stream, 24_000);
+    a.push(3_000);
+    a.end();
+    const stop = r.play([{ unit: unit(A, 0), name: 'a0' }]);
+    await vi.advanceTimersByTimeAsync(1_600);
+    expect(r.order).toContain('start a0');
+    // The avatar is sounding; barge-in. The tap measures the track before the element's mute: still 0.3.
+    r.track.level = 0.3;
+    stop();
+    const b = body();
+    r.speaker.feed(unit(B, 0), b.stream, 24_000);
+    b.push(2_000);
+    b.end();
+    r.play([{ unit: unit(B, 0), name: 'b0' }]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(r.speaks('utt-2').length).toBeGreaterThan(0);
+    const since = () => r.order.slice(r.order.indexOf('server interrupt') + 1);
+    // The interrupted tail sounds for ~389 ms: not a start, and the element stays silent.
+    await vi.advanceTimersByTimeAsync(380);
+    expect(since()).toEqual([]);
+    // The tail is gone, then the new utterance sounds, still inside the hold: not yet taken as its start.
+    r.track.level = 0;
+    await vi.advanceTimersByTimeAsync(120);
+    r.track.level = 0.3;
+    await vi.advanceTimersByTimeAsync(ONSET_HOLD_MS - 560);
+    expect(since()).toEqual([]);
+    // Past the hold, quiet then sounding: that is the new utterance, before its late speak_started.
+    r.track.level = 0;
+    await vi.advanceTimersByTimeAsync(100);
+    r.track.level = 0.3;
+    await vi.advanceTimersByTimeAsync(80);
+    expect(since()).toEqual(['unsilence', 'start b0']);
+    expect(r.socket.count('agent.speak_started')).toBe(0);
+  });
+
+  it('takes the level as a start only once the track was quiet after the first chunk', async () => {
+    const r = rig({ startDelayMs: 1_500 });
+    await connected(r);
+    // Something already sounds on the track (an utterance closed without its end): not this one's start.
+    r.track.level = 0.2;
+    const a = body();
+    r.speaker.feed(unit(A, 0), a.stream, 24_000);
+    a.push(1_000);
+    a.end();
+    r.play([{ unit: unit(A, 0), name: 'a0' }]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(r.order).toEqual([]);
+    r.track.level = 0;
+    await vi.advanceTimersByTimeAsync(80);
+    r.track.level = 0.2;
+    await vi.advanceTimersByTimeAsync(80);
+    expect(r.order).toEqual(['unsilence', 'start a0']);
+  });
+});
+
+describe('LiteSpeaker: the session’s time limit', () => {
+  it('hands over between turns when the next turn would outlast the session, never cutting one off', async () => {
+    const r = rig();
+    await connected(r);
+    r.track.remainingMs = 60_000;
+    const a0 = body();
+    const a1 = body();
+    r.speaker.feed(unit(A, 0), a0.stream, 24_000);
+    r.speaker.feed(unit(A, 1), a1.stream, 24_000);
+    a0.push(1_000);
+    a0.end();
+    r.play([
+      { unit: unit(A, 0), name: 'a0' },
+      { unit: unit(A, 1), name: 'a1' },
+    ]);
+    await vi.advanceTimersByTimeAsync(400);
+    // Time runs short inside a turn: the open utterance still takes the turn's next sentence.
+    r.track.remainingMs = 4_000;
+    a1.push(1_000);
+    a1.end();
+    r.speaker.endTurn(A, 1);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(r.order.filter((e) => e.startsWith('end'))).toEqual(['end a0 ended', 'end a1 ended']);
+    expect(r.speaks('utt-1').length).toBeGreaterThan(2);
+    // The next turn would not fit: the call says it from its start, and the face hands over now.
+    const b = body();
+    r.speaker.feed(unit(B, 0), b.stream, 24_000);
+    b.push(1_000);
+    b.end();
+    r.play([{ unit: unit(B, 0), name: 'b0' }]);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(r.order.at(-1)).toBe('end b0 failed');
+    expect(r.speaks('utt-2')).toEqual([]);
+    expect(r.broken).toEqual(['time_limit']);
+    expect(r.socket.count('agent.interrupt')).toBe(0);
+    expect(r.speaker.ready).toBe(false);
   });
 });

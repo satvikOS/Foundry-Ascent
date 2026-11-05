@@ -666,15 +666,24 @@ replaces the first), cuts an utterance with the next one (no queue), and sounds 
   then ~1 s chunks of 24 kHz 16-bit mono, base64, the utterance's id on every chunk; Polly's 16 kHz resampled), and
   `agent.speak_end` after the turn's last unit. A new utterance never opens while another is open: the next turn
   waits for `speak_ended` (or its interrupt). The founder hears only the avatar's audio track, in the face's one
-  element; the call's own copy is played only for a unit the face gives back before it was heard. A unit is heard
-  from `agent.speak_started` (or the track's level), later units of the utterance where the audio before them ends,
+  element; the call's own copy is played only for a unit the face gives back before it was heard (or the rest of one
+  it gives back partway). A unit is heard from `agent.speak_started` (or the track's level, once it was quiet after
+  the first chunk and 700 ms after a barge-in or fallback: the interrupted audio still sounds on the track ~389 ms
+  and the level is measured before the element's mute), later units of the utterance where the audio before them ends,
   the last at `agent.speak_ended`; captions and the heard bookkeeping follow. Barge-in silences the element at once,
   sends `agent.interrupt`, drops everything not forwarded and tells the server; the `speak_ended` that still follows
   an interrupt is ignored. `session.keep_alive` once a minute while idle.
 - **Fallback, never both, never twice.** No `speak_started` within 2 s of the first chunk, a vendor error, or the
   socket closing: the element is silenced and the vendor interrupted first, then every unit not yet heard is played
-  by the call from its own copy (units already heard are not repeated). A closed socket or a second stall ends the
-  face (`control_lost`, `speech_stalled`): the presence and the speakers carry on, as at the sandbox's one-minute end.
+  by the call from its own copy (units already heard are not repeated); the unit being said goes back `cut` at the
+  point heard (from where each chunk played) and the call plays only its rest from its copy (`PcmStream.skip`). A
+  closed socket or a second stall ends the face (`control_lost`, `speech_stalled`): the presence and the speakers
+  carry on.
+- **Time limit.** A new turn's utterance never opens when the session's `expiresAt` (the vendor's
+  `max_session_duration`; about a minute in the sandbox) is closer than an estimate of that turn (its units' words,
+  at least 6 s): the face hands over between turns (`time_limit`) and the call says the turn from its start, so the
+  sandbox's end does not cut a sentence. An `expiresAt` already past on this device's clock (skew) leaves the limit
+  to the vendor's close, which the `cut` hand-over covers.
 
 ## 5. Privacy, consent and safety
 

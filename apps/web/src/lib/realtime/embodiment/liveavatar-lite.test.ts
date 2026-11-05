@@ -116,6 +116,8 @@ function pcm(ms: number): ReadableStream<Uint8Array> {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // 20 minutes before the session's end.
+  vi.setSystemTime(new Date('2026-11-05T12:00:00.000Z'));
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -217,5 +219,53 @@ describe('LiveAvatarFace: a LITE stock face the page feeds', () => {
     expect(log).toEqual(['end failed']);
     expect(s.losses).toEqual([{ reason: 'control_lost' }]);
     expect(renderer.ready()).toBe(false);
+  });
+
+  it('hands over between turns once the session’s expiresAt is too close for the next turn (time_limit)', async () => {
+    const s = setup();
+    await joined(s);
+    // Five seconds before the session's end (expiresAt 12:20): the next turn would outlast it.
+    vi.setSystemTime(new Date('2026-11-05T12:19:55.000Z'));
+    const renderer = s.face.renderer();
+    const unit: SpeechUnitToPlay = {
+      turnId: TURN,
+      seq: 0,
+      text: 'Hello.',
+      sig: 'sig-0-0123456789abcdef',
+      faceApproved: true,
+    };
+    expect(renderer.feed?.(unit, pcm(1_000), 24_000)).toBe(true);
+    const log: string[] = [];
+    renderer.render(
+      null,
+      s.output,
+      { onStart: () => log.push('start'), onEnd: (outcome) => log.push(`end ${outcome}`) },
+      null,
+      unit,
+    );
+    await vi.advanceTimersByTimeAsync(10);
+    // The call says the turn from its start; nothing went to the vendor.
+    expect(log).toEqual(['end failed']);
+    expect(s.sockets[0]?.utterances).toHaveLength(0);
+    expect(s.losses).toEqual([{ reason: 'time_limit' }]);
+  });
+
+  it('leaves the limit to the vendor when this device’s clock is already past expiresAt (skew)', async () => {
+    vi.setSystemTime(new Date('2026-11-05T13:00:00.000Z'));
+    const s = setup();
+    await joined(s);
+    const renderer = s.face.renderer();
+    const unit: SpeechUnitToPlay = {
+      turnId: TURN,
+      seq: 0,
+      text: 'Hello.',
+      sig: 'sig-0-0123456789abcdef',
+      faceApproved: true,
+    };
+    renderer.feed?.(unit, pcm(1_000), 24_000);
+    renderer.render(null, s.output, { onStart: () => undefined, onEnd: () => undefined }, null, unit);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(s.sockets[0]?.utterances).toHaveLength(1);
+    expect(s.losses).toEqual([]);
   });
 });
