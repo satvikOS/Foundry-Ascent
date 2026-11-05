@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   initPerfClass,
@@ -20,7 +20,13 @@ function frames(ms: number, jitter = 0): number[] {
 }
 
 describe('device class', () => {
+  // The test machine's own core count would otherwise decide the class: CI runners have 4 cores, which the hints
+  // read as a slow device before any stored verdict is consulted.
+  beforeEach(() => {
+    vi.spyOn(navigator, 'hardwareConcurrency', 'get').mockReturnValue(8);
+  });
   afterEach(() => {
+    vi.restoreAllMocks();
     safeStorage.remove(STORAGE_KEYS.perf);
     delete document.documentElement.dataset.perf;
   });
