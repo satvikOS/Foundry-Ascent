@@ -248,9 +248,9 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
           const ventureUrl = new URL(page.url()).pathname.replace(/\/c\/[^/]+$/, '');
           await page.goto(`${ventureUrl}?call=1`);
           const fresh = page.getByRole('dialog', { name: /^Call with / });
-          await expect(fresh.getByRole('button', { name: /^Memory for this call/ })).toBeVisible();
+          await expect(fresh.getByRole('button', { name: /: change memory for this call$/ })).toBeVisible();
           await shoot(page, 'call-idle-new', device, scheme);
-          await fresh.getByRole('button', { name: /^Memory for this call/ }).click();
+          await fresh.getByRole('button', { name: /: change memory for this call$/ }).click();
           const lobbySettings = page.getByRole('dialog', { name: 'Call settings' });
           await expect(lobbySettings).toBeVisible();
           await lobbySettings.evaluate((element) =>

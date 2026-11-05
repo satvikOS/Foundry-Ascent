@@ -298,7 +298,7 @@ function createdSession(): unknown {
 
 /** Opens Remember or Private (in the call settings) from the start screen's memory line. */
 async function memoryChoice(): Promise<HTMLElement> {
-  await userEvent.click(screen.getByRole('button', { name: /^Memory for this call/ }));
+  await userEvent.click(screen.getByRole('button', { name: /: change memory for this call$/ }));
   const settings = await screen.findByRole('dialog', { name: 'Call settings' });
   return within(settings).getByRole('group', { name: 'Memory for this call' });
 }
@@ -459,7 +459,9 @@ describe('Remember or Private for a call from New chat', () => {
     await waitFor(() => {
       expect(start).toBeEnabled();
     });
-    expect(screen.getByRole('button', { name: /^Memory for this call/ })).toHaveTextContent('Remembered');
+    expect(screen.getByRole('button', { name: /: change memory for this call$/ })).toHaveTextContent(
+      'Remembered',
+    );
     const group = await memoryChoice();
     expect(within(group).getByRole('radio', { name: 'Remember this call' })).toBeChecked();
     expect(group).toHaveAccessibleDescription('Conversation saved. Memory needs approval.');
@@ -483,7 +485,9 @@ describe('Remember or Private for a call from New chat', () => {
     });
     await userEvent.click(within(await memoryChoice()).getByRole('radio', { name: 'Private, a one-off' }));
     await userEvent.keyboard('{Escape}');
-    expect(screen.getByRole('button', { name: /^Memory for this call/ })).toHaveTextContent('Private');
+    expect(screen.getByRole('button', { name: /: change memory for this call$/ })).toHaveTextContent(
+      'Private',
+    );
     await userEvent.click(start);
     await waitFor(() => {
       expect(createdSession()).toMatchObject({ privacy: 'ephemeral' });

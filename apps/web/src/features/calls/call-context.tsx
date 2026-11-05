@@ -104,18 +104,22 @@ export function useOptionalCall(): CallContextValue | null {
 
 /*
  * A call the founder ended from its screen hands focus to its review in the conversation (the screen closes as
- * it ends); one that ended out of view does not move focus. Set by the call screen, taken once by the review.
+ * it ends); one that ended out of view does not move focus. Set by the call screen when it closes, read by the
+ * review when it mounts (a render React discards does not use it up) and cleared once the review has focus.
  */
-let reviewFocus = false;
+const REVIEW_FOCUS_MS = 5000;
+let reviewFocusAt = 0;
 
 export function focusReviewNext(): void {
-  reviewFocus = true;
+  reviewFocusAt = Date.now();
 }
 
-export function takeReviewFocus(): boolean {
-  const take = reviewFocus;
-  reviewFocus = false;
-  return take;
+export function wantsReviewFocus(): boolean {
+  return Date.now() - reviewFocusAt < REVIEW_FOCUS_MS;
+}
+
+export function reviewFocused(): void {
+  reviewFocusAt = 0;
 }
 
 /** For the call screen, which renders only once the engine has loaded. */

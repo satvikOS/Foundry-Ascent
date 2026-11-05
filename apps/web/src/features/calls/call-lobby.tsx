@@ -196,7 +196,8 @@ export function CallLobby({
               type="button"
               aria-haspopup="dialog"
               aria-expanded={settingsOpen}
-              aria-label={`Memory for this call: ${isPrivate ? 'Private, a one-off' : 'Remember this call'}. Change`}
+              // The visible word first (WCAG 2.5.3), then what pressing it does.
+              aria-label={`${isPrivate ? 'Private' : 'Remembered'}: change memory for this call`}
               disabled={busy}
               onClick={() => {
                 setFromMemory(true);

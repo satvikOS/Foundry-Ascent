@@ -20,7 +20,7 @@ import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
 
 import { MemorySaved, savedByIds } from '../chat/memory-saved';
 
-import { takeReviewFocus, useCall } from './call-context';
+import { reviewFocused, useCall, wantsReviewFocus } from './call-context';
 import { callTimeline } from './timeline/call-timeline';
 import { ConversationTimeline } from './timeline/ConversationTimeline';
 import type { TimelineSource } from './timeline/timeline-model';
@@ -36,7 +36,10 @@ import { VoiceSphere } from './voice-sphere';
 export function CallReviewView() {
   const { me, engine, snapshot } = useCall();
   const navigate = useNavigate();
-  const [focusOnMount] = useState(takeReviewFocus);
+  const [focusOnMount] = useState(wantsReviewFocus);
+  useEffect(() => {
+    if (focusOnMount) reviewFocused();
+  }, [focusOnMount]);
   const { ventureId, sessionId, ended } = snapshot;
   const veir = useCallVeir(ventureId);
   // The conversation under the review is loaded already: nothing is requested for its privacy.

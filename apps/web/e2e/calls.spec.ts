@@ -159,7 +159,7 @@ async function endFromScreen(page: Page): Promise<Locator> {
 /** Remember or Private, in the start screen's call settings (opened from the memory line under the status). */
 async function memoryChoice(page: Page): Promise<Locator> {
   await callScreen(page)
-    .getByRole('button', { name: /^Memory for this call/ })
+    .getByRole('button', { name: /: change memory for this call$/ })
     .click();
   return page
     .getByRole('dialog', { name: 'Call settings' })
@@ -349,7 +349,9 @@ test.describe('vEIR calls', () => {
       const start = screen.getByRole('button', { name: 'Start call' });
       await expect(start).toBeEnabled();
       await expect(start).toBeFocused();
-      await expect(screen.getByRole('button', { name: /^Memory for this call/ })).toContainText('Remembered');
+      await expect(screen.getByRole('button', { name: /: change memory for this call$/ })).toContainText(
+        'Remembered',
+      );
       const memory = await memoryChoice(page);
       await expect(memory.getByRole('radio', { name: 'Remember this call' })).toBeChecked();
       await expect(memory.getByRole('radio', { name: 'Private, a one-off' })).not.toBeChecked();
@@ -584,7 +586,9 @@ test.describe('vEIR calls', () => {
       );
       await startCallFromPalette(page);
       const screen = callScreen(page);
-      await expect(screen.getByRole('button', { name: /^Memory for this call/ })).toContainText('Remembered');
+      await expect(screen.getByRole('button', { name: /: change memory for this call$/ })).toContainText(
+        'Remembered',
+      );
       await screen.getByRole('button', { name: 'Start call' }).click();
       await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=1$/);
       const sessionId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';

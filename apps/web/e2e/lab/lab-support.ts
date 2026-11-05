@@ -199,7 +199,7 @@ export async function startCall(
     .getByRole('option', { name: /^Start a call/ })
     .click();
   const screen = callScreen(page);
-  const memory = screen.getByRole('button', { name: /^Memory for this call/ });
+  const memory = screen.getByRole('button', { name: /: change memory for this call$/ });
   if ((await memory.count()) > 0) await expect(memory).toContainText('Remembered');
   await screen.getByRole('button', { name: 'Start call' }).click();
   await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=1$/);

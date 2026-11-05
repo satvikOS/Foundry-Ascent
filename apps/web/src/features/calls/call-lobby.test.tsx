@@ -172,7 +172,7 @@ describe('CallLobby', () => {
       />,
     );
     const memory = await screen.findByRole('button', {
-      name: 'Memory for this call: Remember this call. Change',
+      name: 'Remembered: change memory for this call',
     });
     expect(memory).toHaveTextContent('Remembered');
     await userEvent.click(memory);
@@ -209,7 +209,7 @@ describe('CallLobby', () => {
       />,
     );
     expect(await screen.findByRole('button', { name: 'Start call' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Memory for this call/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /: change memory for this call$/ })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Call settings' }));
     const settings = await screen.findByRole('dialog', { name: 'Call settings' });
     expect(within(settings).queryByRole('radio')).toBeNull();
