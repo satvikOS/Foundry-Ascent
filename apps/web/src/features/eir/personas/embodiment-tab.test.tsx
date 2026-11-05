@@ -67,7 +67,7 @@ describe('EmbodimentTab (voice & face)', () => {
     );
     const voice = await screen.findByRole('combobox', { name: 'Voice on calls' });
     expect(voice).toBeDisabled();
-    expect(voice).toHaveTextContent('Platform default (Danielle)');
+    expect(voice).toHaveTextContent('Platform default (Stephen)');
     expect(screen.getByText(/consent doesn’t cover voice/)).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Save voice' })).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Update consent' }));

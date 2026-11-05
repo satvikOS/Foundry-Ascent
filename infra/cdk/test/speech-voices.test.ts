@@ -55,7 +55,7 @@ describe('speech voices (packages/core/speech-voices.json, shared with the API)'
     // Derived from the file: a cheaper catalog lowers the price the alarms use.
     const neuralOnly = parseSpeechVoices({
       ...raw(),
-      voices: { Danielle: ['neural', 'generative'], Gregory: ['neural'] },
+      voices: { Stephen: ['neural', 'generative'], Gregory: ['neural'] },
       usdPerMillionCharacters: { neural: 16, generative: 12, standard: 4 },
     });
     expect(neuralOnly.costliest).toEqual({ engine: 'neural', usdPerMillionCharacters: 16 });
@@ -69,7 +69,7 @@ describe('speech voices (packages/core/speech-voices.json, shared with the API)'
     [{ voices: { 'en-US-Danielle': ['neural'] } }, /is not a Polly voice id/],
     [
       {
-        voices: { Danielle: ['neural', 'generative'], Kevin: ['standard'] },
+        voices: { Stephen: ['neural', 'generative'], Kevin: ['standard'] },
         usdPerMillionCharacters: { neural: 16, generative: 30 },
       },
       /usdPerMillionCharacters.standard must be a positive number \(a voice uses the engine\)/,
