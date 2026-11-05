@@ -18,7 +18,7 @@ const SURFACES: Record<string, string> = {
   landing: 'src/routes/index.tsx',
   'sign-in': 'src/routes/sign-in.tsx',
   'page description': 'index.html',
-  'product preview': 'src/components/landing/product-preview.tsx',
+  'landing sections': 'src/components/landing/sections.tsx',
   'Data use & privacy dialog': 'src/components/shell/account-dialogs.tsx',
 };
 

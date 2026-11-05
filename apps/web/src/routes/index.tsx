@@ -1,262 +1,86 @@
+import '@/components/landing/landing.css';
+
 import { useQuery } from '@tanstack/react-query';
-import { createFileRoute, Link } from '@tanstack/react-router';
-import { ArrowRight } from 'lucide-react';
+import { createFileRoute } from '@tanstack/react-router';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 
 import { DisclosureBanner, PUBLIC_DISCLOSURE } from '@/components/disclosure-banner';
-import { ProductPreview } from '@/components/landing/product-preview';
-import { BrandWordmark } from '@/components/shell/brand';
-import { ThemeToggle } from '@/components/shell/theme-toggle';
-import { Button } from '@/components/ui/button';
+import { HeroMedia } from '@/components/landing/hero-media';
+import { AccountPill, LandingNav } from '@/components/landing/landing-nav';
+import { useNearViewport } from '@/components/landing/use-near-viewport';
 import { meQueryOptions } from '@/lib/api/hooks/auth';
 import { sessionHint } from '@/lib/storage';
 
 export const Route = createFileRoute('/')({
-  head: () => ({ meta: [{ title: 'A venture coach that remembers' }] }),
+  head: () => ({ meta: [{ title: 'Foundry Ascent: think it through with your vEIR' }] }),
   component: LandingPage,
 });
 
-const PILLARS: { title: string; body: string }[] = [
-  {
-    title: 'It remembers you',
-    body: 'It picks up where you left off: your decisions, experiments and promises. You can read, correct or delete any of it.',
-  },
-  {
-    title: 'Evidence before eloquence',
-    body: 'Answers cite your documents and memory, and say what is fact, inference or hunch. Thin grounding is flagged.',
-  },
-  {
-    title: 'People when it matters',
-    body: 'Legal, IP, investment, clinical and wellbeing questions go to people, shared only with your consent.',
-  },
-];
+// Everything under the hero is its own chunk: first paint carries the bar, the heading and the device frames.
+const LandingSections = lazy(() => import('@/components/landing/sections'));
 
-const STEPS: { title: string; body: string }[] = [
-  {
-    title: 'Bring your context',
-    body: 'Upload notes, interviews and plans, kept private to your venture.',
-  },
-  {
-    title: 'Talk it through',
-    body: 'Type or call. One sharp question at a time.',
-  },
-  {
-    title: 'Check what it remembers',
-    body: 'Read, correct or delete anything it keeps.',
-  },
-  {
-    title: 'Bring in a human',
-    body: 'Hand off to the right person, with the context.',
-  },
-];
-
-const PRINCIPLES: { title: string; body: string }[] = [
-  {
-    title: 'Amplify, never impersonate',
-    body: 'A vEIR speaks in an EIR’s approved style, with consent. It never claims to be them, to be live, or to have their endorsement.',
-  },
-  {
-    title: 'Venture-private by default',
-    body: 'Each venture is isolated. Program views use aggregates only.',
-  },
-  {
-    title: 'Human authority',
-    body: 'Staff can pause a vEIR for one venture, or everywhere, at once.',
-  },
-  {
-    title: 'Accessible by design',
-    body: 'WCAG 2.2 AA: keyboard, screen readers, visible focus, reduced motion.',
-  },
-];
-
-function SectionIntro({ label, title, id }: { label: string; title: string; id: string }) {
-  return (
-    <div className="max-w-2xl">
-      <p className="label-mono">{label}</p>
-      <h2 id={id} className="mt-4 font-serif text-heading font-normal sm:text-[2.25rem] sm:leading-[1.1]">
-        {title}
-      </h2>
-    </div>
-  );
-}
-
+/**
+ * The public landing page, in the language of a calm editorial product page: a text-first hero (the heading is
+ * the largest paint), the live device ad, then the program, the session loop, ventures, principles, trust and a
+ * final call to sign in. The sections below the hero load when the page is idle or when they come near.
+ */
 function LandingPage() {
   const hasHint = sessionHint.get();
   const { data: me } = useQuery({ ...meQueryOptions(), enabled: hasHint });
-
-  const primaryCta = me ? (
-    <Button asChild size="lg">
-      <Link to="/$tenant/app" params={{ tenant: me.tenant.slug }}>
-        Open your workspace
-        <ArrowRight aria-hidden />
-      </Link>
-    </Button>
-  ) : (
-    <Button asChild size="lg">
-      <Link to="/sign-in">
-        Sign in
-        <ArrowRight aria-hidden />
-      </Link>
-    </Button>
-  );
+  const restRef = useRef<HTMLDivElement | null>(null);
+  const near = useNearViewport(restRef, { rootMargin: '600px', idleMs: 1500 });
+  // A link to a part of the page (in the bar, or arriving with one) loads the rest at once; it then scrolls there.
+  const [linked, setLinked] = useState(() => window.location.hash.length > 1);
+  useEffect(() => {
+    const onHash = () => {
+      setLinked(true);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => {
+      window.removeEventListener('hashchange', onHash);
+    };
+  }, []);
+  const rest = near || linked;
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="glass-bar sticky top-0 z-30 border-b">
-        <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
-          <Link
-            to="/"
-            className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+    <div className="landing flex min-h-dvh flex-col">
+      <LandingNav me={me} />
+      <main id="main-content" tabIndex={-1} className="flex-1 pt-(--nav-height) outline-none">
+        <section aria-labelledby="hero-title" className="l-wrap pt-24 pb-12 text-center sm:pt-32 sm:pb-14">
+          <h1
+            id="hero-title"
+            data-page-title
+            tabIndex={-1}
+            className="l-hero mx-auto max-w-[19ch] text-balance outline-none"
           >
-            <BrandWordmark />
-          </Link>
-          <nav aria-label="Page sections" className="ml-6 hidden items-center gap-1 text-small md:flex">
-            {[
-              ['#promise', 'Promise'],
-              ['#how-it-works', 'How it works'],
-              ['#principles', 'Trust & safety'],
-            ].map(([href, label]) => (
-              <a
-                key={href}
-                className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:text-foreground"
-                href={href}
-              >
-                {label}
-              </a>
-            ))}
-          </nav>
-          <div className="ml-auto flex items-center gap-2">
-            <ThemeToggle />
-            {me ? (
-              <Button asChild size="sm">
-                <Link to="/$tenant/app" params={{ tenant: me.tenant.slug }}>
-                  Open workspace
-                </Link>
-              </Button>
-            ) : (
-              <Button asChild size="sm" variant="secondary">
-                <Link to="/sign-in">Sign in</Link>
-              </Button>
-            )}
+            Think it through with someone who <em className="italic">remembers</em>.
+          </h1>
+          <p className="l-lead mx-auto mt-6 max-w-[40rem] text-pretty">
+            Your vEIR is the Ain Foundry entrepreneur-in-residence’s AI twin. It diagnoses before it advises,
+            tests your claims against evidence, and brings in a person when it matters.
+          </p>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <AccountPill me={me} size="lg" />
+            <a href="#see-a-session" className="pill pill--outline">
+              See a session
+            </a>
           </div>
+          <DisclosureBanner
+            variant="line"
+            veirName="Every vEIR"
+            text={PUBLIC_DISCLOSURE}
+            className="mx-auto mt-6 max-w-[34rem]"
+          />
+        </section>
+        <HeroMedia />
+        <div ref={restRef} className="min-h-px">
+          {rest ? (
+            <Suspense fallback={null}>
+              <LandingSections me={me} />
+            </Suspense>
+          ) : null}
         </div>
-      </header>
-
-      <main id="main-content" tabIndex={-1} className="flex-1 outline-none">
-        <section aria-labelledby="hero-title" className="relative overflow-hidden">
-          <div aria-hidden className="bg-grid mask-radial pointer-events-none absolute inset-0 opacity-70" />
-          <div className="relative mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)] items-center gap-16 px-4 pt-16 pb-24 sm:px-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:pt-28 lg:pb-32">
-            <div className="min-w-0">
-              <p className="label-mono">Venture coaching for student founders</p>
-              <h1
-                id="hero-title"
-                data-page-title
-                tabIndex={-1}
-                className="mt-6 font-serif text-display font-normal text-balance outline-none"
-              >
-                A venture coach that <em className="italic">remembers</em> you, cites its evidence, and knows
-                when to call a human.
-              </h1>
-              <p className="mt-8 max-w-[56ch] text-[1.0625rem] leading-relaxed text-muted-foreground">
-                Chat or call your <span className="text-foreground">vEIR</span>: an AI mentor built, with
-                consent, from an entrepreneur-in-residence’s approved doctrine and style.
-              </p>
-              <div className="mt-10 flex flex-wrap items-center gap-3">
-                {primaryCta}
-                <Button asChild size="lg" variant="ghost">
-                  <a href="#how-it-works">How it works</a>
-                </Button>
-              </div>
-              <DisclosureBanner variant="inline" className="mt-12 max-w-xl" text={PUBLIC_DISCLOSURE} />
-            </div>
-            <ProductPreview className="mx-auto w-full max-w-md lg:max-w-none" />
-          </div>
-        </section>
-
-        <section id="promise" aria-labelledby="promise-title" className="scroll-mt-20 border-t border-border">
-          <div className="mx-auto max-w-6xl px-4 py-24 sm:px-6 lg:py-32">
-            <SectionIntro
-              id="promise-title"
-              label="The promise"
-              title="Coaching that compounds, not chat that forgets."
-            />
-            <ul className="mt-16 grid gap-12 md:grid-cols-3 md:gap-10">
-              {PILLARS.map((pillar, index) => (
-                <li key={pillar.title} className="border-t border-border-strong pt-6">
-                  <p className="tabular font-mono text-caption text-muted-foreground">0{index + 1}</p>
-                  <h3 className="mt-3 text-subheading font-semibold">{pillar.title}</h3>
-                  <p className="mt-3 text-body text-muted-foreground">{pillar.body}</p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-
-        <section
-          id="how-it-works"
-          aria-labelledby="how-title"
-          className="scroll-mt-20 border-t border-border"
-        >
-          <div className="mx-auto max-w-6xl px-4 py-24 sm:px-6 lg:py-32">
-            <SectionIntro
-              id="how-title"
-              label="How it works"
-              title="From a question to a decision you can defend."
-            />
-            <ol className="mt-16 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
-              {STEPS.map((step, index) => (
-                <li key={step.title}>
-                  <span className="tabular font-serif text-[2.5rem] leading-none text-muted-foreground">
-                    {index + 1}
-                  </span>
-                  <h3 className="mt-4 font-semibold">{step.title}</h3>
-                  <p className="mt-2 text-small text-muted-foreground">{step.body}</p>
-                </li>
-              ))}
-            </ol>
-          </div>
-        </section>
-
-        <section
-          id="principles"
-          aria-labelledby="principles-title"
-          className="scroll-mt-20 border-t border-border"
-        >
-          <div className="mx-auto max-w-6xl px-4 py-24 sm:px-6 lg:py-32">
-            <SectionIntro
-              id="principles-title"
-              label="Trust & safety"
-              title="Principles we don’t trade away."
-            />
-            <ul className="mt-16 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
-              {PRINCIPLES.map((principle) => (
-                <li key={principle.title} className="border-t border-border pt-5">
-                  <h3 className="font-semibold">{principle.title}</h3>
-                  <p className="mt-2 text-small text-muted-foreground">{principle.body}</p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-
-        <section aria-labelledby="cta-title" className="border-t border-border">
-          <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-8 px-4 py-20 sm:px-6 md:flex-row md:items-end">
-            <div>
-              <h2 id="cta-title" className="font-serif text-heading font-normal">
-                Have an access code?
-              </h2>
-              <p className="mt-2 text-muted-foreground">Ask your program lead for one.</p>
-            </div>
-            {primaryCta}
-          </div>
-        </section>
       </main>
-
-      <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-8 text-small text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <BrandWordmark className="text-sm text-foreground" />
-          <p>All data here is synthetic.</p>
-        </div>
-      </footer>
     </div>
   );
 }

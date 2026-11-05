@@ -23,7 +23,7 @@ import { usePanelState } from './panel-state';
 import { ANSWER_PROSE, VeirAnswer } from './veir-answer';
 
 /** A founder's or teammate's message: a right-aligned bubble in the interface face. */
-function FounderMessage({
+export function FounderMessage({
   text,
   author,
   at,
@@ -56,7 +56,7 @@ function FounderMessage({
 }
 
 /** The vEIR's side of an exchange: its face sits in the left gutter on wide screens. */
-function VeirMessage({
+export function VeirMessage({
   personaName,
   portraitUrl,
   children,

@@ -406,7 +406,7 @@ function RowActions({
   );
 }
 
-function MemoryRow({
+export function MemoryRow({
   item,
   withCalls,
   selected,
