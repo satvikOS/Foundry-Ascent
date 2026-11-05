@@ -1,0 +1,3104 @@
+{
+  "metadata": {
+    "title": "Startup Frameworks and Scenario Knowledge Base",
+    "schema_version": "3.0.0",
+    "created_date": "2026-10-28",
+    "language": "en",
+    "framework_count": 9,
+    "scenario_count": 25,
+    "source_count": 39,
+    "scope": "Cross-industry founder education and decision support; not a ranking or exhaustive framework taxonomy.",
+    "methodology": "Framework definitions use academic/university sources. Real cases use publicly readable university reporting and teaching accounts, bounded by source date. Case facts and methodological analysis have separate references. Framework application and stage mapping are editorial, not claims of company adoption.",
+    "threshold_policy": "Proposed experiments, metrics and decision rules are editorial suggestions, not actions or thresholds attributed to the companies. Reported historical quantities are explicitly dated and qualified.",
+    "source_policy": "Only scholarly papers and official university materials. A-series references support methods; B-series references support real cases. Institutional news, founder recollections and teaching summaries are not independent audits or peer-reviewed effectiveness studies.",
+    "stages": {
+      "idea": "Problem and segment exploration",
+      "validation": "Testing demand, buyer and feasibility before a repeatable product",
+      "MVP": "Minimal usable offer under active testing",
+      "early_traction": "Initial users or paying customers; repeatability still uncertain",
+      "growth": "Scaling an emerging repeatable model",
+      "expansion": "New geography, segment, channel or business model"
+    },
+    "reviewed_date": "2026-11-02",
+    "lifecycle_stage_count": 6,
+    "rag_document_count": 5
+  },
+  "frameworks": [
+    {
+      "framework_id": "F01",
+      "name": "Lean Startup",
+      "category": "Experimentation",
+      "stages": [
+        "idea",
+        "validation",
+        "MVP",
+        "early_traction"
+      ],
+      "description": "An iterative approach to testing business assumptions through Build-Measure-Learn and validated learning.",
+      "when_to_use": "Use when demand, solution or growth assumptions remain uncertain.",
+      "how_to_use": [
+        "State one falsifiable hypothesis",
+        "Choose the smallest credible MVP or experiment",
+        "Define the metric and decision rule before testing",
+        "Measure behavior, then persevere, change the hypothesis or stop"
+      ],
+      "expected_output": "Experiment log connecting assumptions to evidence and decisions.",
+      "limitations": "An MVP must still be safe and credible. Shipping quickly or collecting signups alone does not validate demand.",
+      "source_ids": [
+        "A01"
+      ],
+      "evidence_note": "A01 is a peer-reviewed conceptual synthesis of Lean Startup. It supports the learning logic, not a guaranteed success rate or this project’s experiment thresholds."
+    },
+    {
+      "framework_id": "F02",
+      "name": "Business Model Canvas",
+      "category": "Business model design",
+      "stages": [
+        "idea",
+        "validation",
+        "early_traction",
+        "growth",
+        "expansion",
+        "MVP"
+      ],
+      "description": "A shared map of customers, value propositions, channels, relationships, revenue, resources, activities, partners and costs. Lean Canvas is a startup-focused variant that emphasizes problems, solutions, key metrics and competitive advantage.",
+      "when_to_use": "Use Business Model Canvas to compare business models and their operating dependencies. Use its Lean Canvas variant to map early startup assumptions and prioritize validation.",
+      "how_to_use": [
+        "Choose Business Model Canvas for the overall operating model or Lean Canvas for early problem, solution and business assumptions; create one canvas per model.",
+        "Map the nine blocks of the chosen canvas. In Lean Canvas, include problems, customer segments, unique value proposition, solution, channels, revenue, costs, key metrics and unfair advantage.",
+        "Mark untested assumptions and rank them by impact and uncertainty.",
+        "Test the assumptions most likely to invalidate the model using customer discovery and Lean Startup experiments; revise the canvas with evidence."
+      ],
+      "expected_output": "A versioned one-page business model or startup hypothesis map, with a prioritized validation backlog.",
+      "limitations": "A coherent canvas records hypotheses, not evidence. Choose the variant appropriate to the question; completing both is not required. Lean Canvas alternatives, early adopters and high-level concept are prompts within its nine main boxes. Separate models when customer groups have different economics.",
+      "source_ids": [
+        "A02",
+        "A11"
+      ],
+      "evidence_note": "Definition checked against the cited academic or university material. Usage steps, stage mapping and scenario applications are editorial synthesis; no universal effectiveness claim."
+    },
+    {
+      "framework_id": "F03",
+      "name": "Value Proposition Canvas",
+      "category": "Customer understanding",
+      "stages": [
+        "idea",
+        "validation",
+        "MVP",
+        "early_traction"
+      ],
+      "description": "Connects a specific customer segment’s jobs, pains and gains with an offer’s products, pain relievers and gain creators.",
+      "when_to_use": "Use when the offer is vague, feature requests conflict or buyers do not see a reason to switch.",
+      "how_to_use": [
+        "Select one customer segment",
+        "Rank jobs, pains and gains using customer evidence",
+        "Map the offer to the highest priorities",
+        "Test whether customers recognize and act on that value"
+      ],
+      "expected_output": "Prioritized customer profile and testable value proposition.",
+      "limitations": "Do not fill customer needs from founder intuition alone or assume every feature creates value.",
+      "source_ids": [
+        "A03"
+      ],
+      "evidence_note": "Definition checked against the cited academic or university material. Usage steps, stage mapping and scenario applications are editorial synthesis; no universal effectiveness claim."
+    },
+    {
+      "framework_id": "F04",
+      "name": "Customer Discovery and Customer Development",
+      "category": "Customer understanding",
+      "stages": [
+        "idea",
+        "validation",
+        "MVP",
+        "early_traction"
+      ],
+      "description": "Tests hypotheses about customers, problems and a repeatable business model through interviews and subsequent validation of a sales process.",
+      "when_to_use": "Use before committing to a product or scaling sales; revisit when the buyer, user or buying process is unclear.",
+      "how_to_use": [
+        "Record customer, problem and purchasing hypotheses",
+        "Interview and observe relevant users and buyers about actual behavior",
+        "Test willingness to commit time, access or money",
+        "Validate a repeatable sales path before scaling"
+      ],
+      "expected_output": "Evidence-backed segment, problem definition and initial sales process.",
+      "limitations": "Interviews reveal patterns but compliments and nonbinding interest do not establish purchasing demand. Discovery is one phase of Customer Development.",
+      "source_ids": [
+        "A04",
+        "A16"
+      ],
+      "evidence_note": "Definition checked against the cited academic or university material. Usage steps, stage mapping and scenario applications are editorial synthesis; no universal effectiveness claim."
+    },
+    {
+      "framework_id": "F05",
+      "name": "Design Thinking",
+      "category": "Solution design",
+      "stages": [
+        "idea",
+        "validation",
+        "MVP"
+      ],
+      "description": "A human-centered approach that iterates through understanding people, defining problems, generating ideas, prototyping and testing.",
+      "when_to_use": "Use when workflows are poorly understood or usability and service experience are major adoption barriers.",
+      "how_to_use": [
+        "Observe real tasks and constraints",
+        "Frame a specific user problem",
+        "Generate alternative approaches",
+        "Test inexpensive prototypes with users and revise"
+      ],
+      "expected_output": "Problem statement, prototype and observed usability findings.",
+      "limitations": "The modes are iterative rather than mandatory sequential gates. A usable prototype does not prove commercial viability.",
+      "source_ids": [
+        "A05"
+      ],
+      "evidence_note": "Definition checked against the cited academic or university material. Usage steps, stage mapping and scenario applications are editorial synthesis; no universal effectiveness claim."
+    },
+    {
+      "framework_id": "F06",
+      "name": "Jobs to Be Done (JTBD)",
+      "category": "Customer understanding",
+      "stages": [
+        "idea",
+        "validation",
+        "early_traction",
+        "expansion"
+      ],
+      "description": "Explains choices through the progress people seek in particular circumstances, including functional, social and emotional forces.",
+      "when_to_use": "Use when demographic segments fail to explain adoption, switching or churn.",
+      "how_to_use": [
+        "Reconstruct a recent purchase or switching event",
+        "Identify triggering circumstances and competing alternatives",
+        "Describe the desired progress",
+        "Test positioning or an offer around that job"
+      ],
+      "expected_output": "Job statements, switching triggers and meaningful alternatives.",
+      "limitations": "Avoid turning a job into a generic feature wish list; interviews must establish circumstances rather than invite abstract opinions.",
+      "source_ids": [
+        "A06",
+        "A15"
+      ],
+      "evidence_note": "Definition checked against the cited academic or university material. Usage steps, stage mapping and scenario applications are editorial synthesis; no universal effectiveness claim."
+    },
+    {
+      "framework_id": "F07",
+      "name": "Market Sizing: TAM / SAM / SOM",
+      "category": "Market strategy",
+      "stages": [
+        "idea",
+        "validation",
+        "growth",
+        "expansion"
+      ],
+      "description": "TAM estimates total demand in a defined market; SAM restricts it to what the offer can serve; SOM estimates what can realistically be won in a stated period.",
+      "when_to_use": "Use to choose a beachhead, test commercial scope or plan expansion.",
+      "how_to_use": [
+        "Specify geography, buyer, product and revenue unit",
+        "Build bottom-up customer counts times annual revenue per customer",
+        "Filter for serviceable constraints",
+        "Estimate obtainable demand from sales capacity, competition and timing",
+        "Compare low, base and high cases"
+      ],
+      "expected_output": "Assumption-linked market model with a time-bounded obtainable segment.",
+      "limitations": "Market size is not a sales forecast. Avoid arbitrary market-share percentages, double counting and confusing transaction volume with platform revenue. Beachhead TAM is narrower than company-wide TAM.",
+      "source_ids": [
+        "A07",
+        "A08"
+      ],
+      "evidence_note": "Definition checked against the cited academic or university material. Usage steps, stage mapping and scenario applications are editorial synthesis; no universal effectiveness claim."
+    },
+    {
+      "framework_id": "F08",
+      "name": "AARRR / Pirate Metrics",
+      "category": "Growth diagnostics",
+      "stages": [
+        "MVP",
+        "early_traction",
+        "growth"
+      ],
+      "description": "Groups customer behavior into acquisition, activation, retention, revenue and referral to guide growth diagnosis and metric selection.",
+      "when_to_use": "Use once real users generate enough behavioral data to inspect conversion and repeat use.",
+      "how_to_use": [
+        "Define a value-producing activation event",
+        "Instrument events with explicit denominators and time windows",
+        "Segment funnels and retention by cohort and channel",
+        "Test improvements to the current bottleneck"
+      ],
+      "expected_output": "Cohort dashboard and a prioritized growth experiment.",
+      "limitations": "AARRR is not a mandatory sequence or a fit for every business. A09 questions its usefulness for the thesis’s business-to-government case. Define events and observation windows for the actual buying cycle; small samples may be inconclusive.",
+      "source_ids": [
+        "A09"
+      ],
+      "evidence_note": "A09 is an examined university master’s thesis, not a peer-reviewed journal article. Its secondary discussion supports the categories and cohort logic while showing a context-specific limitation."
+    },
+    {
+      "framework_id": "F09",
+      "name": "Unit Economics: Contribution, CAC, LTV and Payback",
+      "category": "Economic viability",
+      "stages": [
+        "validation",
+        "early_traction",
+        "growth",
+        "expansion"
+      ],
+      "description": "Compares customer acquisition investment with contribution generated over time, accounting for retention and, when valuing future flows, discounting.",
+      "when_to_use": "Use before expanding acquisition spend, changing price or committing to costly delivery.",
+      "how_to_use": [
+        "Define the customer or transaction unit and relevant variable costs",
+        "Allocate acquisition spending consistently to newly acquired customers",
+        "Measure observed contribution and retention by cohort",
+        "Compare expected future contribution with acquisition cost and test sensitivity to retention, delivery cost and timing"
+      ],
+      "expected_output": "Cohort economics and a constrained growth or pricing decision.",
+      "limitations": "Short cohorts make lifetime value speculative. Keep contribution, gross margin and cash flow distinct; SaaS formulas do not transfer unchanged to hardware or marketplaces.",
+      "source_ids": [
+        "A10"
+      ],
+      "evidence_note": "A10 is a Yale teaching case linking contribution margin, retention and acquisition cost to discounted CLV. Cost allocation and contribution-payback decisions are editorial applications, not empirically validated rules."
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "SC01",
+      "title": "NONA Technologies: Choosing a viable initial market",
+      "company": "NONA Technologies",
+      "industry": "Water technology",
+      "stage": "validation",
+      "category": "Market selection",
+      "scenario_type": "documented_real_case",
+      "case_period": "Early commercialization, reported in 2024",
+      "evidence_as_of": "2024-10-02",
+      "context": "NONA was commercializing portable desalination developed at MIT.",
+      "problem": "The first two markets the team considered were not viable in the near term, according to co-founder Bruce Crawford.",
+      "actual_actions": [
+        "Completed I-Corps Spark and Fusion customer-discovery programs."
+      ],
+      "reported_outcome": "Crawford reported that the first 24 interviews ruled out those markets and helped identify a beachhead.",
+      "outcome_limitations": "The article does not name that beachhead or disclose interview-to-sale conversion.",
+      "analysis": "Technical feasibility and a reachable initial customer segment are separate questions.",
+      "possible_solutions": [
+        "Compare candidate buyers and purchase constraints.",
+        "Prioritize a narrow use case with practical deployment access."
+      ],
+      "proposed_experiment": "Interview users and budget owners in candidate segments; document disconfirming evidence.",
+      "primary_metric": "Purchase-process clarity and feasible pilot commitments",
+      "decision_rule": "Advance only with evidence of need, budget and deployability; do not treat interview count as demand.",
+      "risks_and_constraints": "Editorial considerations: The article does not name that beachhead or disclose interview-to-sale conversion.",
+      "framework_ids": [
+        "F04",
+        "F07"
+      ],
+      "case_source_ids": [
+        "B01"
+      ],
+      "method_source_ids": [
+        "A04",
+        "A07",
+        "A08",
+        "A16"
+      ],
+      "source_ids": [
+        "B01",
+        "A04",
+        "A07",
+        "A08",
+        "A16"
+      ],
+      "evidence_locator": "Economic and societal benefits; NONA paragraphs and Bruce Crawford interview",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC02",
+      "title": "PillPack: Redesigning medication management",
+      "company": "PillPack",
+      "industry": "Pharmacy services",
+      "stage": "early_traction",
+      "category": "Service experience",
+      "scenario_type": "documented_real_case",
+      "case_period": "2012–2015",
+      "evidence_as_of": "2015-08-07",
+      "context": "Patients faced repeated work sorting, scheduling and refilling prescriptions.",
+      "problem": "A better online ordering interface alone would not remove the full workflow burden.",
+      "actual_actions": [
+        "Delivered presorted medication packets with timing instructions and supporting pharmacy services."
+      ],
+      "reported_outcome": "MIT Sloan reported more than one million packets shipped since the February 2014 launch.",
+      "outcome_limitations": "Packets are not unique patients; shipment volume does not establish adherence improvement or profitability.",
+      "analysis": "Map the whole customer task rather than one transaction.",
+      "possible_solutions": [
+        "Coordinate refills and packaging around the patient routine.",
+        "Make instructions and support easy to use."
+      ],
+      "proposed_experiment": "Observe medication-management tasks and evaluate service usability with appropriate clinical oversight.",
+      "primary_metric": "Task completion, support burden and service contribution",
+      "decision_rule": "Require safe operation and verified workflow improvement before expanding.",
+      "risks_and_constraints": "Editorial considerations: Packets are not unique patients; shipment volume does not establish adherence improvement or profitability.",
+      "framework_ids": [
+        "F05",
+        "F06"
+      ],
+      "case_source_ids": [
+        "B02"
+      ],
+      "method_source_ids": [
+        "A05",
+        "A06",
+        "A15"
+      ],
+      "source_ids": [
+        "B02",
+        "A05",
+        "A06",
+        "A15"
+      ],
+      "evidence_locator": "Opening paragraphs; customer touch points and shipment milestone",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC03",
+      "title": "Warby Parker: Making online eyewear easier to evaluate",
+      "company": "Warby Parker",
+      "industry": "Eyewear retail",
+      "stage": "growth",
+      "category": "Channel design",
+      "scenario_type": "documented_real_case",
+      "case_period": "2010–2013",
+      "evidence_as_of": "2013-05-08",
+      "context": "Early customers asked to see glasses in person even though the company sold online.",
+      "problem": "Customers needed a way to judge fit and appearance before purchasing.",
+      "actual_actions": [
+        "Hosted visits in the founders’ apartment, offered home try-on and developed physical retail."
+      ],
+      "reported_outcome": "The article records the opening of a standalone Soho store in April 2013.",
+      "outcome_limitations": "The source does not isolate the conversion or profit effect of any one channel.",
+      "analysis": "Physical experience can complement an online channel when product evaluation is difficult.",
+      "possible_solutions": [
+        "Test assisted appointments or home trials.",
+        "Compare channel costs and returns before adding stores."
+      ],
+      "proposed_experiment": "Compare purchase completion and returns across a small trial of service formats.",
+      "primary_metric": "Contribution after returns, shipping and channel costs",
+      "decision_rule": "Expand a channel only if customer value and contribution justify its fixed costs.",
+      "risks_and_constraints": "Editorial considerations: The source does not isolate the conversion or profit effect of any one channel.",
+      "framework_ids": [
+        "F02",
+        "F03"
+      ],
+      "case_source_ids": [
+        "B03"
+      ],
+      "method_source_ids": [
+        "A02",
+        "A03",
+        "A11"
+      ],
+      "source_ids": [
+        "B03",
+        "A02",
+        "A03",
+        "A11"
+      ],
+      "evidence_locator": "Opening customer visits; home try-on paragraphs; Eyes on Expansion",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC04",
+      "title": "Tulip: Replacing inflexible factory software",
+      "company": "Tulip",
+      "industry": "Manufacturing software",
+      "stage": "MVP",
+      "category": "Workflow adoption",
+      "scenario_type": "documented_real_case",
+      "case_period": "2012–2019",
+      "evidence_as_of": "2019-07-31",
+      "context": "Factory tours exposed software that did not keep pace with changing production processes.",
+      "problem": "Large software implementations were slow to adapt to shop-floor needs.",
+      "actual_actions": [
+        "Built an early prototype for New Balance and iterated closely with customers.",
+        "Enabled deployment at a single workstation before broader rollout."
+      ],
+      "reported_outcome": "MIT reported customers operating in 13 countries by July 2019.",
+      "outcome_limitations": "Geographic reach is not evidence that each deployment improved productivity.",
+      "analysis": "A small operational deployment can reveal integration problems before a factory-wide rollout.",
+      "possible_solutions": [
+        "Start with one workstation.",
+        "Give local process owners configurable tools."
+      ],
+      "proposed_experiment": "Pilot one workflow and compare errors and cycle time with its prior baseline.",
+      "primary_metric": "Operator adoption, error rate and deployment effort",
+      "decision_rule": "Scale only after operators can use the system reliably and the measured value exceeds integration cost.",
+      "risks_and_constraints": "Editorial considerations: Geographic reach is not evidence that each deployment improved productivity.",
+      "framework_ids": [
+        "F01",
+        "F04"
+      ],
+      "case_source_ids": [
+        "B04"
+      ],
+      "method_source_ids": [
+        "A01",
+        "A04",
+        "A16"
+      ],
+      "source_ids": [
+        "B04",
+        "A01",
+        "A04",
+        "A16"
+      ],
+      "evidence_locator": "A new approach to manufacturing software; An engine for manufacturing",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC05",
+      "title": "FarmWise: Turning robotics into usable farm capacity",
+      "company": "FarmWise",
+      "industry": "Agricultural robotics",
+      "stage": "growth",
+      "category": "Operational scaling",
+      "scenario_type": "documented_real_case",
+      "case_period": "Early discovery through 2023",
+      "evidence_as_of": "2023-03-09",
+      "context": "The founders visited farmers to understand labor and weed-control problems.",
+      "problem": "Growers faced labor shortages and less effective herbicides.",
+      "actual_actions": [
+        "Developed robotic weeding and offered it as a service."
+      ],
+      "reported_outcome": "MIT reported deployment on 30 large farms; the founder described robot production capacity as a growth constraint.",
+      "outcome_limitations": "Reported deployment is historical and does not disclose customer-level margins or later company performance.",
+      "analysis": "Scaling requires reliable service capacity, not just additional demand.",
+      "possible_solutions": [
+        "Prioritize crops with similar operational needs.",
+        "Match sales commitments to machine availability."
+      ],
+      "proposed_experiment": "Measure full-season service reliability and economics on a bounded farm cohort.",
+      "primary_metric": "Contribution per serviced acre and machine utilization",
+      "decision_rule": "Add capacity only when utilization and service quality support the investment.",
+      "risks_and_constraints": "Editorial considerations: Reported deployment is historical and does not disclose customer-level margins or later company performance.",
+      "framework_ids": [
+        "F04",
+        "F09"
+      ],
+      "case_source_ids": [
+        "B05"
+      ],
+      "method_source_ids": [
+        "A04",
+        "A10",
+        "A16"
+      ],
+      "source_ids": [
+        "B05",
+        "A04",
+        "A10",
+        "A16"
+      ],
+      "evidence_locator": "Finding a road to impact; Weeding out farming challenges",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC06",
+      "title": "OpenSpace: Removing friction from construction-site capture",
+      "company": "OpenSpace",
+      "industry": "Construction software",
+      "stage": "MVP",
+      "category": "Usability",
+      "scenario_type": "documented_real_case",
+      "case_period": "Early product iterations, reported in 2020",
+      "evidence_as_of": "2020-10-21",
+      "context": "Early versions required tripod setup throughout a construction site.",
+      "problem": "A project manager said the capture effort made the product impractical.",
+      "actual_actions": [
+        "Adapted the product to a hard-hat-mounted camera used during ordinary site walks."
+      ],
+      "reported_outcome": "The 2020 article reported more than 1.5 billion square feet mapped.",
+      "outcome_limitations": "Mapped area is not a controlled measure of time savings or profitability.",
+      "analysis": "A useful output can still fail if producing it adds too much work.",
+      "possible_solutions": [
+        "Integrate capture with an existing routine.",
+        "Minimize setup and training."
+      ],
+      "proposed_experiment": "Observe site walks and compare capture effort and usable coverage with the old process.",
+      "primary_metric": "Capture time and useful coverage per walk",
+      "decision_rule": "Keep the approach only if it fits the routine and produces dependable records.",
+      "risks_and_constraints": "Editorial considerations: Mapped area is not a controlled measure of time savings or profitability.",
+      "framework_ids": [
+        "F05",
+        "F06"
+      ],
+      "case_source_ids": [
+        "B06"
+      ],
+      "method_source_ids": [
+        "A05",
+        "A06",
+        "A15"
+      ],
+      "source_ids": [
+        "B06",
+        "A05",
+        "A06",
+        "A15"
+      ],
+      "evidence_locator": "Shining a light on construction sites; tripod feedback and redesign",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC07",
+      "title": "Wecyclers: Replacing inconvenient recycling drop-offs",
+      "company": "Wecyclers",
+      "industry": "Waste collection",
+      "stage": "early_traction",
+      "category": "Service model",
+      "scenario_type": "documented_real_case",
+      "case_period": "2010–2015",
+      "evidence_as_of": "2015-03-05",
+      "context": "The initial concept asked Lagos households to bring recyclables to kiosks.",
+      "problem": "Surveys indicated that travel to the kiosk was inconvenient.",
+      "actual_actions": [
+        "Changed to household collection using locally adapted cargo cycles and rewards."
+      ],
+      "reported_outcome": "MIT reported over 6,500 enrolled households and more than 600 tons collected by March 2015.",
+      "outcome_limitations": "Enrollment is not recurring participation; reported scale does not establish financial self-sufficiency.",
+      "analysis": "Reduce participation effort while designing a viable collection route.",
+      "possible_solutions": [
+        "Provide scheduled pickup.",
+        "Connect material sales and sponsorship to collection costs."
+      ],
+      "proposed_experiment": "Pilot a compact route and measure repeat participation, contamination and route costs.",
+      "primary_metric": "Contribution per route and repeat collection participation",
+      "decision_rule": "Expand only when route density and material revenue can support dependable service.",
+      "risks_and_constraints": "Editorial considerations: Enrollment is not recurring participation; reported scale does not establish financial self-sufficiency.",
+      "framework_ids": [
+        "F02",
+        "F05"
+      ],
+      "case_source_ids": [
+        "B07"
+      ],
+      "method_source_ids": [
+        "A02",
+        "A05",
+        "A11"
+      ],
+      "source_ids": [
+        "B07",
+        "A02",
+        "A05",
+        "A11"
+      ],
+      "evidence_locator": "Opening operational results; kiosk surveys and cargo vehicle redesign",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC08",
+      "title": "Fyto: Moving a biological process into farm operations",
+      "company": "Fyto",
+      "industry": "Agricultural inputs",
+      "stage": "validation",
+      "category": "Commercialization",
+      "scenario_type": "documented_real_case",
+      "case_period": "2019–2025",
+      "evidence_as_of": "2025-05-06",
+      "context": "Fyto grows aquatic plants using nutrient-rich farm wastewater.",
+      "problem": "Growing and harvesting the crop economically at scale required new equipment and processes.",
+      "actual_actions": [
+        "Developed automated cultivation and ran farm pilots for feed and fertilizer applications."
+      ],
+      "reported_outcome": "As of May 2025, the article reported a fertilizer license while California feed approval was still pending.",
+      "outcome_limitations": "Pending approval and planned product sales are not completed commercialization or proof of farm profitability.",
+      "analysis": "Test agronomy, equipment reliability and permission to sell as separate assumptions.",
+      "possible_solutions": [
+        "Validate a permitted initial application.",
+        "Pilot operational costs before direct equipment sales."
+      ],
+      "proposed_experiment": "Run a bounded farm trial with independent measures of input use, output quality and labor.",
+      "primary_metric": "Usable output cost and operational reliability",
+      "decision_rule": "Proceed only within applicable approvals and demonstrated customer economics.",
+      "risks_and_constraints": "Editorial considerations: Pending approval and planned product sales are not completed commercialization or proof of farm profitability.",
+      "framework_ids": [
+        "F01",
+        "F09"
+      ],
+      "case_source_ids": [
+        "B08"
+      ],
+      "method_source_ids": [
+        "A01",
+        "A10"
+      ],
+      "source_ids": [
+        "B08",
+        "A01",
+        "A10"
+      ],
+      "evidence_locator": "Backyard trials; final section on farm pilots and approvals",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC09",
+      "title": "Alchemista: Finding the buyer behind group meals",
+      "company": "Alchemista",
+      "industry": "Food hospitality",
+      "stage": "early_traction",
+      "category": "Customer discovery",
+      "scenario_type": "documented_real_case",
+      "case_period": "2011–2012, recounted in 2020",
+      "evidence_as_of": "2020-01-30",
+      "context": "Christine Marcus interviewed campus organizers who ordered food for large groups.",
+      "problem": "Organizers struggled with logistics while restaurants lacked access to those buyers.",
+      "actual_actions": [
+        "Built a service connecting restaurants with organizers and coordinating meals."
+      ],
+      "reported_outcome": "The article reports 40 recurring customers by her graduation.",
+      "outcome_limitations": "The article does not provide retention cohorts or account contribution.",
+      "analysis": "Identify the person responsible for coordinating the job, not just the people consuming the food.",
+      "possible_solutions": [
+        "Offer an accountable coordinator.",
+        "Design a repeat ordering process for organizations."
+      ],
+      "proposed_experiment": "Interview organizers and test a paid recurring meal service with explicit responsibilities.",
+      "primary_metric": "Repeat orders and contribution after coordination labor",
+      "decision_rule": "Continue only if buyers reorder and staffing costs leave a viable margin.",
+      "risks_and_constraints": "Editorial considerations: The article does not provide retention cohorts or account contribution.",
+      "framework_ids": [
+        "F04",
+        "F06"
+      ],
+      "case_source_ids": [
+        "B09"
+      ],
+      "method_source_ids": [
+        "A04",
+        "A06",
+        "A15",
+        "A16"
+      ],
+      "source_ids": [
+        "B09",
+        "A04",
+        "A06",
+        "A15",
+        "A16"
+      ],
+      "evidence_locator": "Finding inspiration, then confidence; opening graduation milestone",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC10",
+      "title": "Locu: Finding a business need behind a consumer app",
+      "company": "Locu",
+      "industry": "Business information software",
+      "stage": "early_traction",
+      "category": "Product focus",
+      "scenario_type": "documented_real_case",
+      "case_period": "2010–2013",
+      "evidence_as_of": "2013-10-02",
+      "context": "The team first developed Goodplates, an app for rating restaurant dishes.",
+      "problem": "Restaurants had difficulty keeping menus and business information consistent online.",
+      "actual_actions": [
+        "Developed a platform combining automated extraction with human data correction and distribution."
+      ],
+      "reported_outcome": "MIT reported 40,000 business users and an acquisition by GoDaddy in August 2013.",
+      "outcome_limitations": "Business-user counts are not paying-customer counts; acquisition does not establish the causal value of a pivot.",
+      "analysis": "A consumer discovery problem may reveal a different operational buyer.",
+      "possible_solutions": [
+        "Prioritize one costly information-maintenance workflow.",
+        "Combine automation with review where accuracy matters."
+      ],
+      "proposed_experiment": "Test the accuracy and labor cost of updating a small set of business listings.",
+      "primary_metric": "Correct updates, publishing delay and support cost",
+      "decision_rule": "Scale only if data quality and maintenance cost meet buyer requirements.",
+      "risks_and_constraints": "Editorial considerations: Business-user counts are not paying-customer counts; acquisition does not establish the causal value of a pivot.",
+      "framework_ids": [
+        "F01",
+        "F03"
+      ],
+      "case_source_ids": [
+        "B10"
+      ],
+      "method_source_ids": [
+        "A01",
+        "A03"
+      ],
+      "source_ids": [
+        "B10",
+        "A01",
+        "A03"
+      ],
+      "evidence_locator": "Opening Goodplates story; hybrid data structuring and acquisition paragraphs",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC11",
+      "title": "Grove: Learning from early users before a broader launch",
+      "company": "Grove",
+      "industry": "Consumer gardening hardware",
+      "stage": "MVP",
+      "category": "Product testing",
+      "scenario_type": "documented_real_case",
+      "case_period": "2013–2015",
+      "evidence_as_of": "2015-11-10",
+      "context": "Grove developed an indoor aquaponic growing appliance.",
+      "problem": "The product needed refinement for everyday home use.",
+      "actual_actions": [
+        "Placed systems with 50 early adopters in Boston and used their feedback to refine design and functionality."
+      ],
+      "reported_outcome": "MIT reported a national launch in November 2015.",
+      "outcome_limitations": "Early adopters may not represent mainstream buyers; the article does not establish later retention or business survival.",
+      "analysis": "A launch is a milestone, not proof of repeatable demand.",
+      "possible_solutions": [
+        "Test upkeep effort with less experienced users.",
+        "Make maintenance needs explicit before purchase."
+      ],
+      "proposed_experiment": "Observe a full maintenance cycle with users outside the initial enthusiast group.",
+      "primary_metric": "Sustained use, support time and return rate",
+      "decision_rule": "Broaden distribution only if ordinary buyers can maintain the product and accept its total cost.",
+      "risks_and_constraints": "Editorial considerations: Early adopters may not represent mainstream buyers; the article does not establish later retention or business survival.",
+      "framework_ids": [
+        "F05",
+        "F01"
+      ],
+      "case_source_ids": [
+        "B11"
+      ],
+      "method_source_ids": [
+        "A01",
+        "A05"
+      ],
+      "source_ids": [
+        "B11",
+        "A01",
+        "A05"
+      ],
+      "evidence_locator": "Company formation and paragraph on 50 early adopters",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC12",
+      "title": "Spyce: Making automation serve a repeat customer need",
+      "company": "Spyce",
+      "industry": "Restaurant robotics",
+      "stage": "early_traction",
+      "category": "Value proposition",
+      "scenario_type": "documented_real_case",
+      "case_period": "2015–2018",
+      "evidence_as_of": "2018-07-02",
+      "context": "The founders wanted filling meals at a lower price.",
+      "problem": "Robotics novelty alone would not make people return for food.",
+      "actual_actions": [
+        "Built a prototype, recruited culinary expertise and opened a Boston restaurant."
+      ],
+      "reported_outcome": "The 2018 article describes an operating restaurant with bowls starting at $7.50.",
+      "outcome_limitations": "Menu price is not unit profit; the article does not quantify repeat purchases.",
+      "analysis": "The customer buys a meal experience; automation must improve that experience and its economics.",
+      "possible_solutions": [
+        "Measure food quality alongside throughput.",
+        "Track repeat visits rather than novelty-driven traffic."
+      ],
+      "proposed_experiment": "Compare repeat ordering and full meal contribution across service periods.",
+      "primary_metric": "Repeat purchase and contribution per meal",
+      "decision_rule": "Retain automation only where quality, reliability and cost support a repeatable offer.",
+      "risks_and_constraints": "Editorial considerations: Menu price is not unit profit; the article does not quantify repeat purchases.",
+      "framework_ids": [
+        "F06",
+        "F08"
+      ],
+      "case_source_ids": [
+        "B12"
+      ],
+      "method_source_ids": [
+        "A06",
+        "A09",
+        "A15"
+      ],
+      "source_ids": [
+        "B12",
+        "A06",
+        "A09",
+        "A15"
+      ],
+      "evidence_locator": "Main article before Press Mentions; prototype, menu and opening",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC13",
+      "title": "SurgiBox: Preserving workflow in a portable medical device",
+      "company": "SurgiBox",
+      "industry": "Medical devices",
+      "stage": "early_traction",
+      "category": "Deployment usability",
+      "scenario_type": "documented_real_case",
+      "case_period": "2009–2023",
+      "evidence_as_of": "2023-05-22",
+      "context": "SurgiBox developed a portable protected surgical environment.",
+      "problem": "The team sought to avoid adding cognitive and workflow burden for surgeons.",
+      "actual_actions": [
+        "Designed a compact system around familiar surgical movements and trained users during deployment."
+      ],
+      "reported_outcome": "MIT described delivery of about 50 units on a March 2023 Ukraine mission.",
+      "outcome_limitations": "Donation and deployment are not commercial sales or comparative clinical-effectiveness evidence.",
+      "analysis": "User workflow and training requirements belong in the product design.",
+      "possible_solutions": [
+        "Evaluate setup and training in realistic settings.",
+        "Coordinate deployment with qualified clinical partners."
+      ],
+      "proposed_experiment": "Assess usability and logistics under appropriate clinical and regulatory supervision.",
+      "primary_metric": "Setup reliability, training needs and workflow compatibility",
+      "decision_rule": "Advance only with suitable evidence and authorization for the intended use.",
+      "risks_and_constraints": "Editorial considerations: Donation and deployment are not commercial sales or comparative clinical-effectiveness evidence.",
+      "framework_ids": [
+        "F05",
+        "F03"
+      ],
+      "case_source_ids": [
+        "B13"
+      ],
+      "method_source_ids": [
+        "A03",
+        "A05"
+      ],
+      "source_ids": [
+        "B13",
+        "A03",
+        "A05"
+      ],
+      "evidence_locator": "Opening Ukraine deployment; design discussion on surgeon workflow",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC14",
+      "title": "Formlabs: Making professional hardware more accessible",
+      "company": "Formlabs",
+      "industry": "3D printing",
+      "stage": "MVP",
+      "category": "Product affordability",
+      "scenario_type": "documented_real_case",
+      "case_period": "Founding and first funding round, recalled in 2026",
+      "evidence_as_of": "2026-07-09",
+      "context": "The founders targeted professional printing at a lower price and with easier operation.",
+      "problem": "Existing high-end equipment could be prohibitively expensive for smaller buyers.",
+      "actual_actions": [
+        "Used modern components and engineering changes to reduce product cost while seeking early investment."
+      ],
+      "reported_outcome": "The account contrasts a roughly $3,000 starting product price with machines costing $100,000 or more.",
+      "outcome_limitations": "This is a retrospective founder account; it provides no comparable margin or lifetime-cost study.",
+      "analysis": "Affordability must preserve the performance needed for the target job.",
+      "possible_solutions": [
+        "Choose a narrowly defined professional use case.",
+        "Validate output quality and total ownership cost."
+      ],
+      "proposed_experiment": "Compare prototype performance and operating costs on customer-relevant print tasks.",
+      "primary_metric": "Accepted output quality and customer total cost",
+      "decision_rule": "Proceed when performance meets the use case and sustainable pricing remains possible.",
+      "risks_and_constraints": "Editorial considerations: This is a retrospective founder account; it provides no comparable margin or lifetime-cost study.",
+      "framework_ids": [
+        "F03",
+        "F09"
+      ],
+      "case_source_ids": [
+        "B14"
+      ],
+      "method_source_ids": [
+        "A03",
+        "A10"
+      ],
+      "source_ids": [
+        "B14",
+        "A03",
+        "A10"
+      ],
+      "evidence_locator": "Maxim Lobovsky / Formlabs section",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC15",
+      "title": "Dropbox: Turning a personal frustration into a reliable service",
+      "company": "Dropbox",
+      "industry": "Cloud software",
+      "stage": "growth",
+      "category": "Customer value",
+      "scenario_type": "documented_real_case",
+      "case_period": "2007–2013",
+      "evidence_as_of": "2013-06-06",
+      "context": "Drew Houston developed file-storage software after repeatedly losing flash drives.",
+      "problem": "Existing file-hosting services were described as slow or unreliable.",
+      "actual_actions": [
+        "Built cross-device file access and recruited an early engineering team."
+      ],
+      "reported_outcome": "MIT reported more than 100 million users in June 2013.",
+      "outcome_limitations": "User count does not reveal active usage, paying conversion or cohort retention.",
+      "analysis": "Growth analysis must distinguish registrations from durable customer value.",
+      "possible_solutions": [
+        "Measure reliability and successful file retrieval.",
+        "Analyze active and paying cohorts separately."
+      ],
+      "proposed_experiment": "Track activation and repeat usage alongside reliability for a defined cohort.",
+      "primary_metric": "Successful synchronization, retained users and paying conversion",
+      "decision_rule": "Do not infer retention or profitability from total registrations.",
+      "risks_and_constraints": "Editorial considerations: User count does not reveal active usage, paying conversion or cohort retention.",
+      "framework_ids": [
+        "F06",
+        "F08"
+      ],
+      "case_source_ids": [
+        "B15"
+      ],
+      "method_source_ids": [
+        "A06",
+        "A09",
+        "A15"
+      ],
+      "source_ids": [
+        "B15",
+        "A06",
+        "A09",
+        "A15"
+      ],
+      "evidence_locator": "Opening company history; technology gap and early engineering team",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC16",
+      "title": "Station A: Moving from analysis to transaction completion",
+      "company": "Station A",
+      "industry": "Clean-energy marketplace",
+      "stage": "expansion",
+      "category": "Business model",
+      "scenario_type": "documented_real_case",
+      "case_period": "2018–2025",
+      "evidence_as_of": "2025-01-24",
+      "context": "Property owners faced a complex process for evaluating and purchasing clean-energy projects.",
+      "problem": "Analytics alone did not complete the procurement workflow.",
+      "actual_actions": [
+        "Shifted focus toward property owners and expanded into a competitive-bidding marketplace in 2020."
+      ],
+      "reported_outcome": "The 2025 article reported about 2,500 active clean-energy developers on the platform.",
+      "outcome_limitations": "Developer participation is not a count of completed or profitable projects.",
+      "analysis": "An analytical tool may need a transaction workflow to deliver the full customer job.",
+      "possible_solutions": [
+        "Support comparable bids and supplier selection.",
+        "Track completed projects rather than listings alone."
+      ],
+      "proposed_experiment": "Follow a cohort from property assessment through contracting and installation.",
+      "primary_metric": "Project completion, buyer effort and transaction contribution",
+      "decision_rule": "Expand services only where execution and economics are demonstrated.",
+      "risks_and_constraints": "Editorial considerations: Developer participation is not a count of completed or profitable projects.",
+      "framework_ids": [
+        "F02",
+        "F07"
+      ],
+      "case_source_ids": [
+        "B16"
+      ],
+      "method_source_ids": [
+        "A02",
+        "A07",
+        "A08",
+        "A11"
+      ],
+      "source_ids": [
+        "B16",
+        "A02",
+        "A07",
+        "A08",
+        "A11"
+      ],
+      "evidence_locator": "Company origins; 2020 marketplace shift; developer participation",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC17",
+      "title": "Quincy Apparel: Demand without delivery capability",
+      "company": "Quincy Apparel",
+      "industry": "Apparel",
+      "stage": "early_traction",
+      "category": "Operating resources",
+      "scenario_type": "documented_real_case",
+      "case_period": "Early venture, retrospective teaching account",
+      "evidence_as_of": "2021",
+      "context": "HBS describes promising demand for Quincy’s apparel.",
+      "problem": "The account identifies domain-expertise and stakeholder problems.",
+      "actual_actions": [
+        "Tested an MVP and launched."
+      ],
+      "reported_outcome": "HBS presents Quincy as a failure despite initial demand.",
+      "outcome_limitations": "The brief account does not establish a single cause or complete financial history.",
+      "analysis": "Demand evidence must be paired with a workable operating model.",
+      "possible_solutions": [
+        "Secure relevant production expertise.",
+        "Clarify responsibilities and supplier commitments."
+      ],
+      "proposed_experiment": "Review delivery capability and cash needs before accepting a larger order book.",
+      "primary_metric": "On-time delivery, returns and cash requirement",
+      "decision_rule": "Do not expand commitments beyond demonstrated production and financing capacity.",
+      "risks_and_constraints": "Editorial considerations: The brief account does not establish a single cause or complete financial history.",
+      "framework_ids": [
+        "F02",
+        "F09"
+      ],
+      "case_source_ids": [
+        "B17"
+      ],
+      "method_source_ids": [
+        "A02",
+        "A10",
+        "A11"
+      ],
+      "source_ids": [
+        "B17",
+        "A02",
+        "A10",
+        "A11"
+      ],
+      "evidence_locator": "PDF p. 1, Pattern #1: Quincy",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "year"
+    },
+    {
+      "scenario_id": "SC18",
+      "title": "Triangulate: Iteration without a validated opportunity",
+      "company": "Triangulate",
+      "industry": "Online dating",
+      "stage": "validation",
+      "category": "Demand validation",
+      "scenario_type": "documented_real_case",
+      "case_period": "Early venture, retrospective teaching account",
+      "evidence_as_of": "2021",
+      "context": "Triangulate developed data-based dating services.",
+      "problem": "HBS describes insufficient customer understanding before building.",
+      "actual_actions": [
+        "Launched and made multiple pivots."
+      ],
+      "reported_outcome": "The account reports no workable value proposition, acquisition approach or profit model.",
+      "outcome_limitations": "The summary provides no experiment log or full financial history.",
+      "analysis": "Frequent changes are not equivalent to evidence-based learning.",
+      "possible_solutions": [
+        "Research the unmet customer job.",
+        "Test willingness to adopt before further development."
+      ],
+      "proposed_experiment": "Investigate actual dating-service choices and test a clearly scoped offer.",
+      "primary_metric": "Qualified demand and sustained engagement",
+      "decision_rule": "Continue only when customer evidence supports a specific offer and viable acquisition path.",
+      "risks_and_constraints": "Editorial considerations: The summary provides no experiment log or full financial history.",
+      "framework_ids": [
+        "F01",
+        "F04"
+      ],
+      "case_source_ids": [
+        "B17"
+      ],
+      "method_source_ids": [
+        "A01",
+        "A04",
+        "A16"
+      ],
+      "source_ids": [
+        "B17",
+        "A01",
+        "A04",
+        "A16"
+      ],
+      "evidence_locator": "PDF p. 1, Pattern #2: Triangulate",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "year"
+    },
+    {
+      "scenario_id": "SC19",
+      "title": "Baroo: Mistaking one building for a repeatable market",
+      "company": "Baroo",
+      "industry": "Pet services",
+      "stage": "growth",
+      "category": "Expansion risk",
+      "scenario_type": "documented_real_case",
+      "case_period": "Early rollout, retrospective teaching account",
+      "evidence_as_of": "2021",
+      "context": "Baroo offered pet care through apartment buildings.",
+      "problem": "The initial building did not represent later customers.",
+      "actual_actions": [
+        "Raised venture funding and expanded across cities."
+      ],
+      "reported_outcome": "HBS describes difficult acquisition and losses during expansion.",
+      "outcome_limitations": "The source gives a brief retrospective, not a full cohort dataset.",
+      "analysis": "A successful pilot location can be an unrepresentative sample.",
+      "possible_solutions": [
+        "Compare established and new buildings.",
+        "Validate local staffing economics before city expansion."
+      ],
+      "proposed_experiment": "Run pilots in distinct building types and compare recurring demand and staffing costs.",
+      "primary_metric": "Acquisition cost, repeat bookings and contribution by building",
+      "decision_rule": "Expand only when representative locations support viable economics.",
+      "risks_and_constraints": "Editorial considerations: The source gives a brief retrospective, not a full cohort dataset.",
+      "framework_ids": [
+        "F07",
+        "F09"
+      ],
+      "case_source_ids": [
+        "B17"
+      ],
+      "method_source_ids": [
+        "A07",
+        "A08",
+        "A10"
+      ],
+      "source_ids": [
+        "B17",
+        "A07",
+        "A08",
+        "A10"
+      ],
+      "evidence_locator": "PDF p. 2, Pattern #3: Baroo",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "year"
+    },
+    {
+      "scenario_id": "SC20",
+      "title": "ZwitterCo: Financing the move from university research to products",
+      "company": "ZwitterCo",
+      "industry": "Water filtration",
+      "stage": "growth",
+      "category": "Technology transfer",
+      "scenario_type": "documented_real_case",
+      "case_period": "Research commercialization through 2022",
+      "evidence_as_of": "2023-04-20",
+      "context": "ZwitterCo commercializes wastewater filtration technology developed at Tufts.",
+      "problem": "Moving research into scalable products required commercialization support and capital.",
+      "actual_actions": [
+        "Worked through the university technology-transfer ecosystem and raised scale-up funding."
+      ],
+      "reported_outcome": "Tufts reported a $33 million funding round in 2022.",
+      "outcome_limitations": "Funding is not revenue, deployment success or proof of profitability; the article gives limited operating detail.",
+      "analysis": "Technology rights, production and financing are distinct dependencies.",
+      "possible_solutions": [
+        "Map licensing and manufacturing requirements.",
+        "Tie financing milestones to customer-relevant deployment evidence."
+      ],
+      "proposed_experiment": "Prepare a commercialization readiness review covering rights, production and buyer requirements.",
+      "primary_metric": "Readiness of licenses, supply and customer pilots",
+      "decision_rule": "Treat financing as an input, not evidence of product-market fit.",
+      "risks_and_constraints": "Editorial considerations: Funding is not revenue, deployment success or proof of profitability; the article gives limited operating detail.",
+      "framework_ids": [
+        "F02",
+        "F01"
+      ],
+      "case_source_ids": [
+        "B18"
+      ],
+      "method_source_ids": [
+        "A01",
+        "A02",
+        "A11"
+      ],
+      "source_ids": [
+        "B18",
+        "A01",
+        "A02",
+        "A11"
+      ],
+      "evidence_locator": "Opening ZwitterCo paragraphs; technology-transfer explanation",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC21",
+      "title": "Active Surfaces: Scaling a promising material into manufacturing",
+      "company": "Active Surfaces",
+      "industry": "Solar manufacturing",
+      "stage": "MVP",
+      "category": "Production scale-up",
+      "scenario_type": "documented_real_case",
+      "case_period": "2022–2026",
+      "evidence_as_of": "2026-03-09",
+      "context": "Active Surfaces is developing lightweight flexible solar films.",
+      "problem": "Commercialization requires a manufacturable product, not only lab-scale material performance.",
+      "actual_actions": [
+        "Opened a manufacturing-development site in 2024 and tested roll-to-roll equipment."
+      ],
+      "reported_outcome": "The March 2026 account describes larger film formats while full commercial-scale manufacturing remained a development objective.",
+      "outcome_limitations": "Projected manufacturing economics and future capacity are not established production results.",
+      "analysis": "Manufacturing readiness and customer willingness to adopt must be tested separately.",
+      "possible_solutions": [
+        "Validate production yield and installation needs.",
+        "Select an initial application compatible with product readiness."
+      ],
+      "proposed_experiment": "Pilot a defined manufacturing run and evaluate output with prospective installers.",
+      "primary_metric": "Yield, installed cost and reliability evidence",
+      "decision_rule": "Scale only when repeatable quality and realistic installed economics are demonstrated.",
+      "risks_and_constraints": "Editorial considerations: Projected manufacturing economics and future capacity are not established production results.",
+      "framework_ids": [
+        "F01",
+        "F09"
+      ],
+      "case_source_ids": [
+        "B19"
+      ],
+      "method_source_ids": [
+        "A01",
+        "A10"
+      ],
+      "source_ids": [
+        "B19",
+        "A01",
+        "A10"
+      ],
+      "evidence_locator": "Manufacturing development facility; product dimensions and scale-up discussion",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC22",
+      "title": "Duolingo: Separating signups from recurring learning",
+      "company": "Duolingo",
+      "industry": "Education technology",
+      "stage": "early_traction",
+      "category": "Engagement and monetization",
+      "scenario_type": "documented_real_case",
+      "case_period": "2011–2012 launch",
+      "evidence_as_of": "2012-06-19",
+      "context": "Duolingo combined free lessons with translation of real-world text.",
+      "problem": "The launch-era model needed recurring participation and a sustainable commercial path.",
+      "actual_actions": [
+        "Ran a beta and planned commercial translation services."
+      ],
+      "reported_outcome": "CMU reported over 100,000 beta participants and about 30,000 regular users under its stated weekly-use definition.",
+      "outcome_limitations": "These are launch-era reported counts, not a modern retention cohort or evidence of translation revenue.",
+      "analysis": "Define engagement precisely before treating a large signup count as traction.",
+      "possible_solutions": [
+        "Track consistent learner cohorts.",
+        "Test buyer demand separately from learner participation."
+      ],
+      "proposed_experiment": "Measure weekly learning activity and test a paid buyer proposition independently.",
+      "primary_metric": "Cohort activity, learning progress and verified paid demand",
+      "decision_rule": "Avoid inferring monetization from free participation.",
+      "risks_and_constraints": "Editorial considerations: These are launch-era reported counts, not a modern retention cohort or evidence of translation revenue.",
+      "framework_ids": [
+        "F08",
+        "F02"
+      ],
+      "case_source_ids": [
+        "B20"
+      ],
+      "method_source_ids": [
+        "A02",
+        "A09",
+        "A11"
+      ],
+      "source_ids": [
+        "B20",
+        "A02",
+        "A09",
+        "A11"
+      ],
+      "evidence_locator": "Beta-user and regular-user paragraphs; planned translation service",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC23",
+      "title": "Embrace: Funding a social mission through an appropriate structure",
+      "company": "Embrace",
+      "industry": "Health social enterprise",
+      "stage": "early_traction",
+      "category": "Organizational design",
+      "scenario_type": "documented_real_case",
+      "case_period": "2007–2012",
+      "evidence_as_of": "2012",
+      "context": "Embrace developed a portable infant warmer and initially operated as a nonprofit.",
+      "problem": "The team found fundraising fragmented and time-consuming relative to product and distribution needs.",
+      "actual_actions": [
+        "Created a for-profit arm alongside the nonprofit, with differentiated roles and licensing arrangements."
+      ],
+      "reported_outcome": "The vignette reports Series A financing in early 2012 and continuing coordination and donor-communication challenges.",
+      "outcome_limitations": "The account does not establish long-term sustainability or make the structure a universal recommendation.",
+      "analysis": "Organizational design should fit capital needs, stakeholder relationships and mission.",
+      "possible_solutions": [
+        "Compare one-entity and hybrid operating models.",
+        "Make funding roles and responsibilities explicit."
+      ],
+      "proposed_experiment": "Review resource flows and stakeholder expectations with qualified governance advisers.",
+      "primary_metric": "Capital availability, coordination burden and mission alignment",
+      "decision_rule": "Choose a structure only after evaluating its operating and governance implications.",
+      "risks_and_constraints": "Editorial considerations: The account does not establish long-term sustainability or make the structure a universal recommendation.",
+      "framework_ids": [
+        "F02",
+        "F03"
+      ],
+      "case_source_ids": [
+        "B21"
+      ],
+      "method_source_ids": [
+        "A02",
+        "A03",
+        "A11"
+      ],
+      "source_ids": [
+        "B21",
+        "A02",
+        "A03",
+        "A11"
+      ],
+      "evidence_locator": "PDF pp. 3–5: funding challenge, hybrid structure and transition",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "year"
+    },
+    {
+      "scenario_id": "SC24",
+      "title": "EduFi: Making education finance accessible to families",
+      "company": "EduFi",
+      "industry": "Education finance",
+      "stage": "early_traction",
+      "category": "Buyer and distribution",
+      "scenario_type": "documented_real_case",
+      "case_period": "2021–2025",
+      "evidence_as_of": "2025-03-27",
+      "context": "Families in Pakistan faced barriers to financing college.",
+      "problem": "Traditional borrowing could require collateral and take too long for tuition deadlines.",
+      "actual_actions": [
+        "Developed borrower assessment, direct college payment and installment repayment; obtained a license in February 2024."
+      ],
+      "reported_outcome": "MIT reported more than $500,000 disbursed during the first six months.",
+      "outcome_limitations": "Disbursement is not profitability or long-run credit quality; no current lending terms are asserted.",
+      "analysis": "Separate student needs, parent borrowing and the institution receiving payment.",
+      "possible_solutions": [
+        "Map the complete payer workflow.",
+        "Validate servicing capacity and portfolio economics before expansion."
+      ],
+      "proposed_experiment": "Assess completion times and fully seasoned repayment cohorts under applicable requirements.",
+      "primary_metric": "Application completion, servicing cost and cohort losses",
+      "decision_rule": "Do not infer mature credit performance from an early lending cohort.",
+      "risks_and_constraints": "Editorial considerations: Disbursement is not profitability or long-run credit quality; no current lending terms are asserted.",
+      "framework_ids": [
+        "F04",
+        "F09"
+      ],
+      "case_source_ids": [
+        "B22"
+      ],
+      "method_source_ids": [
+        "A04",
+        "A10",
+        "A16"
+      ],
+      "source_ids": [
+        "B22",
+        "A04",
+        "A10",
+        "A16"
+      ],
+      "evidence_locator": "Opening disbursement milestone; borrower workflow and February 2024 license",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    },
+    {
+      "scenario_id": "SC25",
+      "title": "r2c / Semgrep: Fitting security tooling into development work",
+      "company": "r2c / Semgrep",
+      "industry": "Developer security tools",
+      "stage": "growth",
+      "category": "Workflow integration",
+      "scenario_type": "documented_real_case",
+      "case_period": "2016–2022",
+      "evidence_as_of": "2022-02-10",
+      "context": "Security review could delay software deployment and require specialist expertise.",
+      "problem": "The founders wanted code checking to fit existing development workflows.",
+      "actual_actions": [
+        "Revived an open-source project during a 2019 hackathon and expanded language support and integrations."
+      ],
+      "reported_outcome": "MIT reported use by organizations including Slack, Dropbox and Snowflake.",
+      "outcome_limitations": "Named adoption does not quantify security improvements, retention or revenue.",
+      "analysis": "Developer adoption depends on useful feedback without excessive interruption.",
+      "possible_solutions": [
+        "Integrate checks into existing review workflows.",
+        "Let teams tune rules and manage false positives."
+      ],
+      "proposed_experiment": "Pilot checks on a representative codebase and compare actionable findings with interruption costs.",
+      "primary_metric": "Actionable findings, false positives and repeat use",
+      "decision_rule": "Expand only if teams sustain use and can act on the findings.",
+      "risks_and_constraints": "Editorial considerations: Named adoption does not quantify security improvements, retention or revenue.",
+      "framework_ids": [
+        "F05",
+        "F03"
+      ],
+      "case_source_ids": [
+        "B23"
+      ],
+      "method_source_ids": [
+        "A03",
+        "A05"
+      ],
+      "source_ids": [
+        "B23",
+        "A03",
+        "A05"
+      ],
+      "evidence_locator": "2019 internal hackathon; workflow integration; customer examples",
+      "source_scope": "Case sources support the historical account only. Framework selection, stage classification, analysis, possible solutions, proposed experiments, metrics and decision rules are editorial teaching guidance; they are not attributed to the company or proof of causality.",
+      "evidence_date_precision": "day"
+    }
+  ],
+  "scenario_framework_links": [
+    {
+      "scenario_id": "SC01",
+      "framework_id": "F04",
+      "application": "Editorial application: Use customer discovery to challenge initial market assumptions."
+    },
+    {
+      "scenario_id": "SC01",
+      "framework_id": "F07",
+      "application": "Editorial application: Bound a reachable beachhead before estimating obtainable revenue."
+    },
+    {
+      "scenario_id": "SC02",
+      "framework_id": "F05",
+      "application": "Editorial application: Study touch points across the service experience."
+    },
+    {
+      "scenario_id": "SC02",
+      "framework_id": "F06",
+      "application": "Editorial application: Frame the job as managing a medication routine, not merely ordering pills."
+    },
+    {
+      "scenario_id": "SC03",
+      "framework_id": "F02",
+      "application": "Editorial application: Map how online and physical channels alter costs and relationships."
+    },
+    {
+      "scenario_id": "SC03",
+      "framework_id": "F03",
+      "application": "Editorial application: Connect fit reassurance to a concrete customer pain."
+    },
+    {
+      "scenario_id": "SC04",
+      "framework_id": "F01",
+      "application": "Editorial application: Use bounded deployments as learning experiments."
+    },
+    {
+      "scenario_id": "SC04",
+      "framework_id": "F04",
+      "application": "Editorial application: Observe operators and process owners before defining requirements."
+    },
+    {
+      "scenario_id": "SC05",
+      "framework_id": "F04",
+      "application": "Editorial application: Use farm visits to identify the operational purchase drivers."
+    },
+    {
+      "scenario_id": "SC05",
+      "framework_id": "F09",
+      "application": "Editorial application: Include maintenance, transport and utilization in service economics."
+    },
+    {
+      "scenario_id": "SC06",
+      "framework_id": "F05",
+      "application": "Editorial application: Use observed workflow and prototype feedback to change the design."
+    },
+    {
+      "scenario_id": "SC06",
+      "framework_id": "F06",
+      "application": "Editorial application: Focus on documenting progress without creating a separate job."
+    },
+    {
+      "scenario_id": "SC07",
+      "framework_id": "F02",
+      "application": "Editorial application: Map households, material buyers and sponsors as distinct participants."
+    },
+    {
+      "scenario_id": "SC07",
+      "framework_id": "F05",
+      "application": "Editorial application: Redesign participation around household constraints."
+    },
+    {
+      "scenario_id": "SC08",
+      "framework_id": "F01",
+      "application": "Editorial application: Separate technical and commercial learning milestones."
+    },
+    {
+      "scenario_id": "SC08",
+      "framework_id": "F09",
+      "application": "Editorial application: Include equipment, labor and harvest losses in output cost."
+    },
+    {
+      "scenario_id": "SC09",
+      "framework_id": "F04",
+      "application": "Editorial application: Identify the organizer and budget owner."
+    },
+    {
+      "scenario_id": "SC09",
+      "framework_id": "F06",
+      "application": "Editorial application: Understand the job of delivering a reliable group meal."
+    },
+    {
+      "scenario_id": "SC10",
+      "framework_id": "F01",
+      "application": "Editorial application: Revisit the initial product assumption when a different problem emerges."
+    },
+    {
+      "scenario_id": "SC10",
+      "framework_id": "F03",
+      "application": "Editorial application: Tie the value proposition to accurate, timely business information."
+    },
+    {
+      "scenario_id": "SC11",
+      "framework_id": "F05",
+      "application": "Editorial application: Use household experience to refine the product."
+    },
+    {
+      "scenario_id": "SC11",
+      "framework_id": "F01",
+      "application": "Editorial application: Test generalization beyond the initial adopter cohort."
+    },
+    {
+      "scenario_id": "SC12",
+      "framework_id": "F06",
+      "application": "Editorial application: Focus on the affordable-meal job."
+    },
+    {
+      "scenario_id": "SC12",
+      "framework_id": "F08",
+      "application": "Editorial application: Distinguish initial acquisition from retention and revenue."
+    },
+    {
+      "scenario_id": "SC13",
+      "framework_id": "F05",
+      "application": "Editorial application: Test workflow compatibility with professional users."
+    },
+    {
+      "scenario_id": "SC13",
+      "framework_id": "F03",
+      "application": "Editorial application: Separate portability benefits from the burden of adopting a new device."
+    },
+    {
+      "scenario_id": "SC14",
+      "framework_id": "F03",
+      "application": "Editorial application: Define the price-performance value proposition."
+    },
+    {
+      "scenario_id": "SC14",
+      "framework_id": "F09",
+      "application": "Editorial application: Separate selling price from production and service economics."
+    },
+    {
+      "scenario_id": "SC15",
+      "framework_id": "F06",
+      "application": "Editorial application: Frame the job as dependable access to files."
+    },
+    {
+      "scenario_id": "SC15",
+      "framework_id": "F08",
+      "application": "Editorial application: Separate acquisition, activation, retention and revenue metrics."
+    },
+    {
+      "scenario_id": "SC16",
+      "framework_id": "F02",
+      "application": "Editorial application: Map the shift from analytics access to transaction services."
+    },
+    {
+      "scenario_id": "SC16",
+      "framework_id": "F07",
+      "application": "Editorial application: Size the reachable property-owner segment rather than all energy spending."
+    },
+    {
+      "scenario_id": "SC17",
+      "framework_id": "F02",
+      "application": "Editorial application: Assess resources and partners alongside customer value."
+    },
+    {
+      "scenario_id": "SC17",
+      "framework_id": "F09",
+      "application": "Editorial application: Model returns and working-capital needs as well as acquisition costs."
+    },
+    {
+      "scenario_id": "SC18",
+      "framework_id": "F01",
+      "application": "Editorial application: Tie each iteration to a falsifiable assumption."
+    },
+    {
+      "scenario_id": "SC18",
+      "framework_id": "F04",
+      "application": "Editorial application: Investigate customer behavior before choosing a solution."
+    },
+    {
+      "scenario_id": "SC19",
+      "framework_id": "F07",
+      "application": "Editorial application: Distinguish the first niche from the obtainable wider market."
+    },
+    {
+      "scenario_id": "SC19",
+      "framework_id": "F09",
+      "application": "Editorial application: Evaluate economics by building cohort before adding cities."
+    },
+    {
+      "scenario_id": "SC20",
+      "framework_id": "F02",
+      "application": "Editorial application: Map key resources and partners in commercialization."
+    },
+    {
+      "scenario_id": "SC20",
+      "framework_id": "F01",
+      "application": "Editorial application: Separate technical milestones from commercial validation."
+    },
+    {
+      "scenario_id": "SC21",
+      "framework_id": "F01",
+      "application": "Editorial application: Use manufacturing trials to test scale-up assumptions."
+    },
+    {
+      "scenario_id": "SC21",
+      "framework_id": "F09",
+      "application": "Editorial application: Model yield losses and installation cost rather than material cost alone."
+    },
+    {
+      "scenario_id": "SC22",
+      "framework_id": "F08",
+      "application": "Editorial application: Separate acquisition and retained activity."
+    },
+    {
+      "scenario_id": "SC22",
+      "framework_id": "F02",
+      "application": "Editorial application: Distinguish learners from any paying customer segment."
+    },
+    {
+      "scenario_id": "SC23",
+      "framework_id": "F02",
+      "application": "Editorial application: Map funding, partners, activities and beneficiaries across the model."
+    },
+    {
+      "scenario_id": "SC23",
+      "framework_id": "F03",
+      "application": "Editorial application: Keep beneficiary needs visible when defining the offer and payer relationship."
+    },
+    {
+      "scenario_id": "SC24",
+      "framework_id": "F04",
+      "application": "Editorial application: Distinguish user, borrower and receiving institution."
+    },
+    {
+      "scenario_id": "SC24",
+      "framework_id": "F09",
+      "application": "Editorial application: Include funding, servicing and credit losses in economics."
+    },
+    {
+      "scenario_id": "SC25",
+      "framework_id": "F05",
+      "application": "Editorial application: Test the tool within real developer workflows."
+    },
+    {
+      "scenario_id": "SC25",
+      "framework_id": "F03",
+      "application": "Editorial application: Balance security benefits against review friction."
+    }
+  ],
+  "sources": [
+    {
+      "source_id": "A01",
+      "title": "The Lean Startup Framework: Closing the Academic–Practitioner Divide",
+      "publisher": "Entrepreneurship Theory and Practice",
+      "url": "https://doi.org/10.1177/1042258719899415",
+      "accessed_date": "2026-10-28",
+      "source_type": "peer_reviewed_article",
+      "supports": "Build-Measure-Learn, validated learning, MVP and pivot decisions",
+      "authors": "Dean A. Shepherd; Marc Gruber",
+      "publication_year": "2021 (online 2020)",
+      "publication": "45(5); DOI 10.1177/1042258719899415",
+      "peer_review_status": "peer_reviewed",
+      "eligibility_note": "Scholarly publication with venue identified."
+    },
+    {
+      "source_id": "A02",
+      "title": "Business models in strategic management: 4.1 Business model canvas",
+      "publisher": "The Open University / OpenLearn",
+      "url": "https://www.open.edu/openlearn/mod/oucontent/view.php?id=109250&section=4.1",
+      "accessed_date": "2026-10-28",
+      "source_type": "university_material",
+      "supports": "Nine business-model blocks and four business areas",
+      "authors": "The Open University",
+      "publication_year": "n.d.",
+      "publication": "OpenLearn course, section 4.1",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Material published by an identified university unit on its official website."
+    },
+    {
+      "source_id": "A03",
+      "title": "Value Proposition: Delivering Value to Customers",
+      "publisher": "University of Arizona / Tech Launch Arizona",
+      "url": "https://techlaunch.arizona.edu/sites/default/files/value-proposition-pains-and-gains-11-17.pdf",
+      "accessed_date": "2026-10-28",
+      "source_type": "university_material",
+      "supports": "Customer jobs, pains and gains; products, pain relievers and gain creators",
+      "authors": "Tech Launch Arizona",
+      "publication_year": "n.d.",
+      "publication": "Teaching slides, 8 pages",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Material published by an identified university unit on its official website."
+    },
+    {
+      "source_id": "A04",
+      "title": "The VentureLab Process",
+      "publisher": "Georgia Institute of Technology / VentureLab",
+      "url": "https://venturelab.gatech.edu/process",
+      "accessed_date": "2026-10-28",
+      "source_type": "university_material",
+      "supports": "Hypothesis-led customer interviews, business model updates and customer validation",
+      "authors": "Georgia Tech VentureLab",
+      "publication_year": "n.d.",
+      "publication": "Institutional process guide",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Material published by an identified university unit on its official website."
+    },
+    {
+      "source_id": "A05",
+      "title": "Design Thinking Bootleg",
+      "publisher": "Stanford University / d.school",
+      "url": "https://dschool.stanford.edu/tools/design-thinking-bootleg",
+      "accessed_date": "2026-10-28",
+      "source_type": "university_material",
+      "supports": "Empathize, define, ideate, prototype and test as flexible design modes",
+      "authors": "Scott Doorley; Sarah Holcomb; Perry Klebahn; Kathryn Segovia; Jeremy Utley",
+      "publication_year": "2018",
+      "publication": "Stanford d.school teaching resource",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Material published by an identified university unit on its official website."
+    },
+    {
+      "source_id": "A06",
+      "title": "The Jobs to Be Done Framework Explained & Real-World Examples",
+      "publisher": "Harvard Business School Online",
+      "url": "https://online.hbs.edu/blog/post/jobs-to-be-done-examples",
+      "accessed_date": "2026-10-28",
+      "source_type": "university_material",
+      "supports": "Customer circumstances and progress sought when choosing products",
+      "authors": "Kelsey Miller",
+      "publication_year": "2026",
+      "publication": "HBS Online educational article, May 19",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Material published by an identified university unit on its official website."
+    },
+    {
+      "source_id": "A07",
+      "title": "Applying to the Innovation Pathway Step 3: Opportunity Sizing",
+      "publisher": "Boston University / Innovate@BU",
+      "url": "https://www.bu.edu/innovate/programs-competitions/innovation-pathway/details/applying-to-the-innovation-pathway-step-3-opportunity-sizing/",
+      "accessed_date": "2026-10-28",
+      "source_type": "university_material",
+      "supports": "Opportunity scale, frequency, TAM/SAM/SOM and bottom-up reasoning",
+      "authors": "Innovate@BU",
+      "publication_year": "n.d.",
+      "publication": "Innovation Pathway guide, step 3",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Material published by an identified university unit on its official website."
+    },
+    {
+      "source_id": "A08",
+      "title": "Market Research Guide",
+      "publisher": "University of Utah / Technology Licensing Office",
+      "url": "https://technologylicensing.utah.edu/index.php?catid=2%3Ageneral&id=306%3Amarket-research&option=com_content&view=article",
+      "accessed_date": "2026-10-28",
+      "source_type": "university_material",
+      "supports": "Top-down and bottom-up sizing; TAM, SAM and expected obtainable share",
+      "authors": "University of Utah Technology Licensing Office",
+      "publication_year": "n.d.",
+      "publication": "Institutional market research guide",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Material published by an identified university unit on its official website."
+    },
+    {
+      "source_id": "A09",
+      "title": "Inspired by The Lean Startup – Introducing Experimentation to Improve the New Product Development Process of an IT Service Company in the Social and Healthcare Sector",
+      "publisher": "Aalto University, School of Science",
+      "url": "https://aaltodoc.aalto.fi/bitstream/handle/123456789/37140/master_Linkola_Emmi_2019.pdf?isAllowed=y&sequence=1",
+      "accessed_date": "2026-10-28",
+      "source_type": "university_thesis",
+      "supports": "AARRR categories, actionable metrics, cohort analysis and limitations in a business-to-government case",
+      "authors": "Emmi Linkola",
+      "publication_year": "2019",
+      "publication": "Master’s thesis, February 10",
+      "peer_review_status": "examined_thesis_not_journal_peer_review",
+      "eligibility_note": "Degree thesis in the university institutional repository."
+    },
+    {
+      "source_id": "A10",
+      "title": "On the Nature of Revenue: Not All Revenue Is Created Equally",
+      "publisher": "Yale School of Management",
+      "url": "https://som.yale.edu/sites/default/files/2025-04/On%20the%20Nature%20of%20Revenue.pdf",
+      "accessed_date": "2026-10-28",
+      "source_type": "university_material",
+      "supports": "Contribution margin, retention, acquisition cost and discounted customer lifetime value",
+      "authors": "Mark Agnew; Brian O’Connor; A.J. Wasserstein",
+      "publication_year": "2020",
+      "publication": "Yale case, April 4",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Material published by an identified university unit on its official website."
+    },
+    {
+      "source_id": "A11",
+      "title": "Startup Tools & Templates",
+      "publisher": "California State University, Sacramento / Carlsen Center",
+      "url": "https://www.csus.edu/center/carlsen/hornetcombs/startup-tools-templates.html",
+      "accessed_date": "2026-10-28",
+      "source_type": "university_material",
+      "supports": "Lean Canvas as a startup adaptation; problem, solution, metrics and advantage",
+      "authors": "Carlsen Center for Innovation & Entrepreneurship",
+      "publication_year": "n.d.",
+      "publication": "University entrepreneurship resource and linked Lean Canvas template",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Material published by an identified university unit on its official website."
+    },
+    {
+      "source_id": "A12",
+      "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      "publisher": "NeurIPS 2020; author manuscript on arXiv",
+      "url": "https://arxiv.org/abs/2005.11401",
+      "accessed_date": "2026-10-28",
+      "source_type": "peer_reviewed_paper",
+      "supports": "Retrieval plus generation with parametric and non-parametric memory",
+      "authors": "Patrick Lewis et al.",
+      "publication_year": "2020",
+      "publication": "NeurIPS 33; arXiv:2005.11401",
+      "peer_review_status": "peer_reviewed",
+      "eligibility_note": "Scholarly publication with venue identified."
+    },
+    {
+      "source_id": "A13",
+      "title": "Retrieval-Augmented Generation for Large Language Models: A Survey",
+      "publisher": "arXiv; Tongji University and Fudan University authors",
+      "url": "https://arxiv.org/html/2312.10997v5",
+      "accessed_date": "2026-10-28",
+      "source_type": "academic_preprint",
+      "supports": "Chunking, metadata, hybrid retrieval, reranking and RAG evaluation",
+      "authors": "Yunfan Gao et al.",
+      "publication_year": "2024",
+      "publication": "arXiv:2312.10997v5, March 27",
+      "peer_review_status": "preprint_not_verified_peer_review",
+      "eligibility_note": "Academic manuscript; preprint status explicitly disclosed."
+    },
+    {
+      "source_id": "A14",
+      "title": "Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods",
+      "publisher": "ACM SIGIR 2009; author copy at University of Waterloo",
+      "url": "https://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf",
+      "accessed_date": "2026-10-28",
+      "source_type": "peer_reviewed_paper",
+      "supports": "Combining document rankings through reciprocal rank fusion",
+      "authors": "Gordon V. Cormack; Charles L. A. Clarke; Stefan Büttcher",
+      "publication_year": "2009",
+      "publication": "SIGIR 2009, pp. 758–759; DOI 10.1145/1571941.1572114",
+      "peer_review_status": "peer_reviewed",
+      "eligibility_note": "Scholarly publication with venue identified."
+    },
+    {
+      "source_id": "A15",
+      "title": "Understanding 3 Common Types of Customer Needs",
+      "publisher": "Harvard Business School Online",
+      "url": "https://online.hbs.edu/blog/post/types-of-customer-needs",
+      "accessed_date": "2026-10-28",
+      "source_type": "university_material",
+      "supports": "Functional, social and emotional customer needs in JTBD",
+      "authors": "Tim Stobierski",
+      "publication_year": "2026",
+      "publication": "HBS Online educational article, May 12",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Material published by an identified university unit on its official website."
+    },
+    {
+      "source_id": "A16",
+      "title": "Venture Lab | Customer Discovery",
+      "publisher": "Yale University / Yale Ventures",
+      "url": "https://ventures.yale.edu/venture-lab/customer-discovery",
+      "accessed_date": "2026-10-28",
+      "source_type": "university_material",
+      "supports": "Mentorship around hypotheses, interview planning, value propositions and buyer ecosystems",
+      "authors": "Yale Ventures",
+      "publication_year": "2026",
+      "publication": "I-Corps program curriculum, Fall 2026",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Material published by an identified university unit on its official website."
+    },
+    {
+      "source_id": "B01",
+      "title": "Translating MIT research into real-world results",
+      "publisher": "MIT / J-WAFS",
+      "url": "https://news.mit.edu/2024/translating-mit-research-real-world-results-1002",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "NONA customer interviews and rejection of initial market assumptions.",
+      "authors": "Carolyn Blais Pinter",
+      "publication_year": "2024",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B02",
+      "title": "A redesigned pharmacy, PillPack gains traction",
+      "publisher": "MIT Sloan School of Management",
+      "url": "https://mitsloan.mit.edu/ideas-made-to-matter/a-redesigned-pharmacy-pillpack-gains-traction",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "PillPack service design and reported shipment milestone as of August 2015.",
+      "authors": "MIT Sloan editorial staff (individual byline not displayed)",
+      "publication_year": "2015",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B03",
+      "title": "What Eyewear Startup Warby Parker Sees That Others Don’t",
+      "publisher": "University of Pennsylvania / Wharton",
+      "url": "https://knowledge.wharton.upenn.edu/article/what-eyewear-startup-warby-parker-sees-that-others-dont/",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Warby Parker customer access, home try-on and physical retail development.",
+      "authors": "Knowledge at Wharton Staff",
+      "publication_year": "2013",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B04",
+      "title": "Software to empower workers on the factory floor",
+      "publisher": "MIT News",
+      "url": "https://news.mit.edu/2019/tulip-manufacturing-0801",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Tulip factory observation, initial prototype and incremental deployment.",
+      "authors": "Zach Winn",
+      "publication_year": "2019",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B05",
+      "title": "Titanic robots make farming more sustainable",
+      "publisher": "MIT News",
+      "url": "https://news.mit.edu/2023/titanic-robots-farming-more-sustainable-0309",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "FarmWise interviews, weeding service and production capacity constraint.",
+      "authors": "Zach Winn",
+      "publication_year": "2023",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B06",
+      "title": "Bringing construction projects to the digital world",
+      "publisher": "MIT News",
+      "url": "https://news.mit.edu/2020/openspace-construction-1021",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "OpenSpace workflow redesign prompted by early user feedback.",
+      "authors": "Zach Winn",
+      "publication_year": "2020",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B07",
+      "title": "Bringing “everyone wins” recycling to Nigeria",
+      "publisher": "MIT News",
+      "url": "https://news.mit.edu/2015/wecyclers-cargo-bike-recycling-nigeria-0305",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Wecyclers collection model, customer inconvenience and reported scale.",
+      "authors": "Rob Matheson",
+      "publication_year": "2015",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B08",
+      "title": "Startup helps farmers grow plant-based feed and fertilizer using wastewater",
+      "publisher": "MIT News",
+      "url": "https://news.mit.edu/2025/fyto-helps-farmers-grow-plant-based-feed-and-fertilizer-using-wastewater-0506",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Fyto pilot development and remaining commercialization constraints as of May 2025.",
+      "authors": "Zach Winn",
+      "publication_year": "2025",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B09",
+      "title": "MIT helps first-time entrepreneur build food hospitality company",
+      "publisher": "MIT News",
+      "url": "https://news.mit.edu/2020/alchemista-food-hospitality-christine-marcus-0131",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Alchemista discovery of event-organizer needs and early recurring demand.",
+      "authors": "Zach Winn",
+      "publication_year": "2020",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B10",
+      "title": "Keeping ‘digital storefronts’ fresh",
+      "publisher": "MIT News",
+      "url": "https://news.mit.edu/2013/locu-1002",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Locu shift toward business information management and reported acquisition.",
+      "authors": "Rob Matheson",
+      "publication_year": "2013",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B11",
+      "title": "MIT startup brings urban agriculture indoors",
+      "publisher": "MIT Innovation Initiative / MIT News",
+      "url": "https://news.mit.edu/2015/mit-startup-grove-labs-brings-urban-agriculture-indoors-1110",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Grove early-user feedback and national launch in November 2015.",
+      "authors": "Terri Park",
+      "publication_year": "2015",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B12",
+      "title": "Alumni-founded robotic kitchen cooks up tasty meals",
+      "publisher": "MIT Alumni Association / MIT News",
+      "url": "https://news.mit.edu/2018/mit-spinoff-spyce-robotic-kitchen-cooks-tasty-meals-0702",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Spyce prototype and restaurant launch; food quality versus novelty.",
+      "authors": "Julie Barr",
+      "publication_year": "2018",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B13",
+      "title": "Bringing safe surgery to patients everywhere",
+      "publisher": "MIT News",
+      "url": "https://news.mit.edu/2023/bringing-safe-surgery-patients-surgibox-0522",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "SurgiBox workflow-preserving design and reported humanitarian deployment.",
+      "authors": "Zach Winn",
+      "publication_year": "2023",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B14",
+      "title": "Beyond the pitch: The founder’s journey",
+      "publisher": "MIT Department of Mechanical Engineering / MIT News",
+      "url": "https://news.mit.edu/2026/beyond-pitch-founders-journey-0709",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Formlabs early product affordability and founder recollection of fundraising.",
+      "authors": "Anne Wilson",
+      "publication_year": "2026",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B15",
+      "title": "Opening Dropbox",
+      "publisher": "MIT News",
+      "url": "https://news.mit.edu/2013/commencement-speaker-drew-houston-dropbox-0606",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Dropbox initial file-access problem, product and reported user scale in 2013.",
+      "authors": "Rob Matheson",
+      "publication_year": "2013",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B16",
+      "title": "A platform to expedite clean energy projects",
+      "publisher": "MIT News",
+      "url": "https://news.mit.edu/2025/station-a-expedites-clean-energy-projects-0124",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Station A customer focus and transition from analytics access to transaction support.",
+      "authors": "Zach Winn",
+      "publication_year": "2025",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B17",
+      "title": "Lessons from Entrepreneurial Failure",
+      "publisher": "Harvard Business School / Rock Center",
+      "url": "https://entrepreneurship.hbs.edu/Documents/Session%20Summary/HBS%20Rock%2004_Lessons%20from%20Entrepreneurial%20Failure_v2.pdf",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Three brief retrospective failure accounts; not full company histories.",
+      "authors": "HBS Rock Center; summary prepared by BullsEye Resources of Tom Eisenmann’s teaching",
+      "publication_year": "2021",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "HBS-copyrighted teaching summary hosted by the HBS Rock Center. Production credited to BullsEye Resources; university teaching material, not an independent journal article."
+    },
+    {
+      "source_id": "B18",
+      "title": "Packing a Punch in Technology Transfer",
+      "publisher": "Tufts University / Tufts Now",
+      "url": "https://now.tufts.edu/2023/04/20/packing-punch-technology-transfer",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "ZwitterCo university commercialization support and 2022 funding milestone.",
+      "authors": "Kim Thurler",
+      "publication_year": "2023",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B19",
+      "title": "Active Surfaces aims to install peel-and-stick solar panels everywhere",
+      "publisher": "MIT Energy Initiative",
+      "url": "https://energy.mit.edu/news/active-surfaces-aims-to-install-peel-and-stick-solar-panels-everywhere/",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Active Surfaces manufacturing development, not proof of completed mass production.",
+      "authors": "Nancy W. Stauffer",
+      "publication_year": "2026",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B20",
+      "title": "Duolingo.com Users Will Translate Web As They Learn a New Language",
+      "publisher": "Carnegie Mellon University",
+      "url": "https://www.cmu.edu/news/stories/archives/2012/june/june19_duolingo.html",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Duolingo launch-era participation and proposed translation business model.",
+      "authors": "Carnegie Mellon University (press release; Byron Spice listed as contact)",
+      "publication_year": "2012",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B21",
+      "title": "Embrace: Deciding on a Hybrid Structure",
+      "publisher": "Stanford University / Global Health Innovation Insights",
+      "url": "https://med.stanford.edu/content/dam/sm/biodesign/documents/global-health-innovation/insight-series/Embrace.pdf",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "Embrace organizational design and early-2012 financing; retrospective teaching vignette.",
+      "authors": "Lyn Denend; Amy Lockwood; Stacey McCutcheon; with Stefanos Zenios",
+      "publication_year": "2012",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B22",
+      "title": "Making higher education more accessible to students in Pakistan",
+      "publisher": "MIT News",
+      "url": "https://news.mit.edu/index.php/2025/edufi-makes-higher-education-more-accessible-students-pakistan-0327",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "EduFi financing workflow and reported early launch milestones.",
+      "authors": "Zach Winn",
+      "publication_year": "2025",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    },
+    {
+      "source_id": "B23",
+      "title": "An open-source tool for software security",
+      "publisher": "MIT News",
+      "url": "https://news.mit.edu/2022/r2c-software-security-0210",
+      "accessed_date": "2026-11-02",
+      "source_type": "university_material",
+      "supports": "r2c development of Semgrep and reported organizational adoption.",
+      "authors": "Zach Winn",
+      "publication_year": "2022",
+      "publication": "Official university publication; publicly readable article or teaching summary",
+      "peer_review_status": "not_peer_reviewed",
+      "eligibility_note": "Published by a university unit on its official domain. Institutional reporting or teaching material, not a peer-reviewed evaluation."
+    }
+  ],
+  "source_audit": [
+    {
+      "source_id": "A01",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Building Blocks; Validated Learning; Building Minimum Viable Products",
+      "finding": "Build-Measure-Learn, validated learning, MVP and pivot decisions",
+      "limitation": "Conceptual research synthesis; not a randomized demonstration of startup success.",
+      "url": "https://doi.org/10.1177/1042258719899415"
+    },
+    {
+      "source_id": "A02",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Section 4.1 and Figure 2 description",
+      "finding": "Nine business-model blocks and four business areas",
+      "limitation": "University course explanation; practical experiment sequencing is editorial guidance.",
+      "url": "https://www.open.edu/openlearn/mod/oucontent/view.php?id=109250&section=4.1"
+    },
+    {
+      "source_id": "A03",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "PDF pp. 2–7, particularly p. 3 canvas",
+      "finding": "Customer jobs, pains and gains; products, pain relievers and gain creators",
+      "limitation": "University teaching material; does not establish product-market fit or outcomes.",
+      "url": "https://techlaunch.arizona.edu/sites/default/files/value-proposition-pains-and-gains-11-17.pdf"
+    },
+    {
+      "source_id": "A04",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Customer Discovery; Customer Validation",
+      "finding": "Hypothesis-led customer interviews, business model updates and customer validation",
+      "limitation": "University program method; recommendations must be adapted to the venture.",
+      "url": "https://venturelab.gatech.edu/process"
+    },
+    {
+      "source_id": "A05",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "How does it work?; Bootleg 2018 credits",
+      "finding": "Empathize, define, ideate, prototype and test as flexible design modes",
+      "limitation": "Teaching toolkit, not evidence that design thinking always improves commercial results.",
+      "url": "https://dschool.stanford.edu/tools/design-thinking-bootleg"
+    },
+    {
+      "source_id": "A06",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "What Is the Jobs to Be Done Theory?; What Are Jobs to Be Done?",
+      "finding": "Customer circumstances and progress sought when choosing products",
+      "limitation": "University educational article with course promotion; used only for concepts, not its unsupported success or failure-rate claims.",
+      "url": "https://online.hbs.edu/blog/post/jobs-to-be-done-examples"
+    },
+    {
+      "source_id": "A07",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "The Three-Circle Framework; The Bottom-Up Build",
+      "finding": "Opportunity scale, frequency, TAM/SAM/SOM and bottom-up reasoning",
+      "limitation": "Its SOM example describes a starting segment; this dataset distinguishes segment potential from obtainable sales and does not import its example market thresholds.",
+      "url": "https://www.bu.edu/innovate/programs-competitions/innovation-pathway/details/applying-to-the-innovation-pathway-step-3-opportunity-sizing/"
+    },
+    {
+      "source_id": "A08",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "3. Estimate Market Size",
+      "finding": "Top-down and bottom-up sizing; TAM, SAM and expected obtainable share",
+      "limitation": "The source describes SOM with a best-case framing; the dataset additionally requires explicit time and capacity assumptions as editorial guidance.",
+      "url": "https://technologylicensing.utah.edu/index.php?catid=2%3Ageneral&id=306%3Amarket-research&option=com_content&view=article"
+    },
+    {
+      "source_id": "A09",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "PDF pp. 34 and 48 (printed pp. 29 and 43)",
+      "finding": "AARRR categories, actionable metrics, cohort analysis and limitations in a business-to-government case",
+      "limitation": "Secondary discussion within one master’s thesis; explicitly finds AARRR poorly suited to its case. No general causal effectiveness claim.",
+      "url": "https://aaltodoc.aalto.fi/bitstream/handle/123456789/37140/master_Linkola_Emmi_2019.pdf?isAllowed=y&sequence=1"
+    },
+    {
+      "source_id": "A10",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Customer Lifetime Value, PDF p. 9",
+      "finding": "Contribution margin, retention, acquisition cost and discounted customer lifetime value",
+      "limitation": "Case teaching model with simplifying assumptions. Operational cost allocation and contribution-payback rules in this dataset are editorial conventions.",
+      "url": "https://som.yale.edu/sites/default/files/2025-04/On%20the%20Nature%20of%20Revenue.pdf"
+    },
+    {
+      "source_id": "A11",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Lean Canvas section and linked university-hosted template",
+      "finding": "Lean Canvas as a startup adaptation; problem, solution, metrics and advantage",
+      "limitation": "Use the conventional nine main boxes in the university template; no reliance on commercial-site variants.",
+      "url": "https://www.csus.edu/center/carlsen/hornetcombs/startup-tools-templates.html"
+    },
+    {
+      "source_id": "A12",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Abstract; model overview",
+      "finding": "Retrieval plus generation with parametric and non-parametric memory",
+      "limitation": "Conference paper; cited arXiv copy identifies NeurIPS acceptance. Findings do not establish quality for this project corpus.",
+      "url": "https://arxiv.org/abs/2005.11401"
+    },
+    {
+      "source_id": "A13",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "III-B1 Chunking; III-B2 Metadata; III-D1 Mix/hybrid Retrieval; IV-A; VI",
+      "finding": "Chunking, metadata, hybrid retrieval, reranking and RAG evaluation",
+      "limitation": "Academic preprint survey, not a verified peer-reviewed venue; implementation choices remain proposals to test.",
+      "url": "https://arxiv.org/html/2312.10997v5"
+    },
+    {
+      "source_id": "A14",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Section 1, PDF p. 1; Discussion, p. 2",
+      "finding": "Combining document rankings through reciprocal rank fusion",
+      "limitation": "Experiments on the paper’s retrieval datasets do not guarantee gains for this knowledge base.",
+      "url": "https://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf"
+    },
+    {
+      "source_id": "A15",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Customer Needs as Jobs to Be Done; 3 Main Types of Customer Needs",
+      "finding": "Functional, social and emotional customer needs in JTBD",
+      "limitation": "University educational explanation, not a peer-reviewed causal test; numerical product-failure claims are not used.",
+      "url": "https://online.hbs.edu/blog/post/types-of-customer-needs"
+    },
+    {
+      "source_id": "A16",
+      "checked_date": "2026-10-28",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Yale I-Corps Curriculum; Mentor Meetings 1–3",
+      "finding": "Mentorship around hypotheses, interview planning, value propositions and buyer ecosystems",
+      "limitation": "Program-specific mentorship example; its interview counts and schedule are not universal requirements.",
+      "url": "https://ventures.yale.edu/venture-lab/customer-discovery"
+    },
+    {
+      "source_id": "B01",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Economic and societal benefits; NONA paragraphs and Bruce Crawford interview",
+      "finding": "NONA customer interviews and rejection of initial market assumptions.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2024/translating-mit-research-real-world-results-1002"
+    },
+    {
+      "source_id": "B02",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Opening paragraphs; customer touch points and shipment milestone",
+      "finding": "PillPack service design and reported shipment milestone as of August 2015.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://mitsloan.mit.edu/ideas-made-to-matter/a-redesigned-pharmacy-pillpack-gains-traction"
+    },
+    {
+      "source_id": "B03",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Opening customer visits; home try-on paragraphs; Eyes on Expansion",
+      "finding": "Warby Parker customer access, home try-on and physical retail development.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://knowledge.wharton.upenn.edu/article/what-eyewear-startup-warby-parker-sees-that-others-dont/"
+    },
+    {
+      "source_id": "B04",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "A new approach to manufacturing software; An engine for manufacturing",
+      "finding": "Tulip factory observation, initial prototype and incremental deployment.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2019/tulip-manufacturing-0801"
+    },
+    {
+      "source_id": "B05",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Finding a road to impact; Weeding out farming challenges",
+      "finding": "FarmWise interviews, weeding service and production capacity constraint.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2023/titanic-robots-farming-more-sustainable-0309"
+    },
+    {
+      "source_id": "B06",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Shining a light on construction sites; tripod feedback and redesign",
+      "finding": "OpenSpace workflow redesign prompted by early user feedback.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2020/openspace-construction-1021"
+    },
+    {
+      "source_id": "B07",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Opening operational results; kiosk surveys and cargo vehicle redesign",
+      "finding": "Wecyclers collection model, customer inconvenience and reported scale.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2015/wecyclers-cargo-bike-recycling-nigeria-0305"
+    },
+    {
+      "source_id": "B08",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Backyard trials; final section on farm pilots and approvals",
+      "finding": "Fyto pilot development and remaining commercialization constraints as of May 2025.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2025/fyto-helps-farmers-grow-plant-based-feed-and-fertilizer-using-wastewater-0506"
+    },
+    {
+      "source_id": "B09",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Finding inspiration, then confidence; opening graduation milestone",
+      "finding": "Alchemista discovery of event-organizer needs and early recurring demand.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2020/alchemista-food-hospitality-christine-marcus-0131"
+    },
+    {
+      "source_id": "B10",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Opening Goodplates story; hybrid data structuring and acquisition paragraphs",
+      "finding": "Locu shift toward business information management and reported acquisition.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2013/locu-1002"
+    },
+    {
+      "source_id": "B11",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Company formation and paragraph on 50 early adopters",
+      "finding": "Grove early-user feedback and national launch in November 2015.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2015/mit-startup-grove-labs-brings-urban-agriculture-indoors-1110"
+    },
+    {
+      "source_id": "B12",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Main article before Press Mentions; prototype, menu and opening",
+      "finding": "Spyce prototype and restaurant launch; food quality versus novelty.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2018/mit-spinoff-spyce-robotic-kitchen-cooks-tasty-meals-0702"
+    },
+    {
+      "source_id": "B13",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Opening Ukraine deployment; design discussion on surgeon workflow",
+      "finding": "SurgiBox workflow-preserving design and reported humanitarian deployment.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2023/bringing-safe-surgery-patients-surgibox-0522"
+    },
+    {
+      "source_id": "B14",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Maxim Lobovsky / Formlabs section",
+      "finding": "Formlabs early product affordability and founder recollection of fundraising.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2026/beyond-pitch-founders-journey-0709"
+    },
+    {
+      "source_id": "B15",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Opening company history; technology gap and early engineering team",
+      "finding": "Dropbox initial file-access problem, product and reported user scale in 2013.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2013/commencement-speaker-drew-houston-dropbox-0606"
+    },
+    {
+      "source_id": "B16",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Company origins; 2020 marketplace shift; developer participation",
+      "finding": "Station A customer focus and transition from analytics access to transaction support.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2025/station-a-expedites-clean-energy-projects-0124"
+    },
+    {
+      "source_id": "B17",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "PDF p. 1: Quincy and Triangulate; p. 2: Baroo",
+      "finding": "Three brief retrospective failure accounts; not full company histories.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://entrepreneurship.hbs.edu/Documents/Session%20Summary/HBS%20Rock%2004_Lessons%20from%20Entrepreneurial%20Failure_v2.pdf"
+    },
+    {
+      "source_id": "B18",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Opening ZwitterCo paragraphs; technology-transfer explanation",
+      "finding": "ZwitterCo university commercialization support and 2022 funding milestone.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://now.tufts.edu/2023/04/20/packing-punch-technology-transfer"
+    },
+    {
+      "source_id": "B19",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Manufacturing development facility; product dimensions and scale-up discussion",
+      "finding": "Active Surfaces manufacturing development, not proof of completed mass production.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://energy.mit.edu/news/active-surfaces-aims-to-install-peel-and-stick-solar-panels-everywhere/"
+    },
+    {
+      "source_id": "B20",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Beta-user and regular-user paragraphs; planned translation service",
+      "finding": "Duolingo launch-era participation and proposed translation business model.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://www.cmu.edu/news/stories/archives/2012/june/june19_duolingo.html"
+    },
+    {
+      "source_id": "B21",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "PDF pp. 3–5: funding challenge, hybrid structure and transition",
+      "finding": "Embrace organizational design and early-2012 financing; retrospective teaching vignette.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://med.stanford.edu/content/dam/sm/biodesign/documents/global-health-innovation/insight-series/Embrace.pdf"
+    },
+    {
+      "source_id": "B22",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "Opening disbursement milestone; borrower workflow and February 2024 license",
+      "finding": "EduFi financing workflow and reported early launch milestones.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/index.php/2025/edufi-makes-higher-education-more-accessible-students-pakistan-0327"
+    },
+    {
+      "source_id": "B23",
+      "checked_date": "2026-11-02",
+      "access_status": "full_page_or_pdf_read",
+      "claim_status": "supported_with_scope_limits",
+      "locator": "2019 internal hackathon; workflow integration; customer examples",
+      "finding": "r2c development of Semgrep and reported organizational adoption.",
+      "limitation": "Historical account at publication. Founder statements and institutional reporting are not independently audited performance evidence; later outcomes and causal effectiveness are not established.",
+      "url": "https://news.mit.edu/2022/r2c-software-security-0210"
+    }
+  ],
+  "lifecycle_stages": [
+    {
+      "stage_id": "idea",
+      "name": "Idea and problem discovery",
+      "objective": "Identify a specific person, painful situation and existing workaround.",
+      "common_challenges": [
+        "Vague target customer",
+        "Founder assumptions mistaken for demand"
+      ],
+      "mentorship_needed": [
+        "Customer discovery mentor",
+        "Domain expert"
+      ],
+      "expected_outputs": "Interview notes, segment hypothesis and Lean Canvas.",
+      "progression_evidence": "Repeated evidence of a material problem and access to prospective customers.",
+      "framework_ids": [
+        "F04",
+        "F06",
+        "F02"
+      ],
+      "source_ids": [
+        "A02",
+        "A04",
+        "A06",
+        "A11",
+        "A15",
+        "A16"
+      ],
+      "evidence_note": "Editorial six-stage and mentorship map informed by academic/university methods. A16 provides an early-stage mentorship example, not evidence for a universal sequence or every proposed mentor role."
+    },
+    {
+      "stage_id": "validation",
+      "name": "Demand and feasibility validation",
+      "objective": "Test willingness to commit and whether the offer can be delivered.",
+      "common_challenges": [
+        "User differs from payer",
+        "Large market claims conceal a weak beachhead",
+        "Technical or operational feasibility unclear"
+      ],
+      "mentorship_needed": [
+        "Founder with early sales experience",
+        "Industry operator",
+        "Technical mentor"
+      ],
+      "expected_outputs": "Buying-process map, pilot commitments and bottom-up market assumptions.",
+      "progression_evidence": "Credible customer commitments plus a feasible, scoped experiment; interest alone is insufficient.",
+      "framework_ids": [
+        "F01",
+        "F04",
+        "F07"
+      ],
+      "source_ids": [
+        "A01",
+        "A04",
+        "A07",
+        "A08",
+        "A16"
+      ],
+      "evidence_note": "Editorial six-stage and mentorship map informed by academic/university methods. A16 provides an early-stage mentorship example, not evidence for a universal sequence or every proposed mentor role."
+    },
+    {
+      "stage_id": "MVP",
+      "name": "MVP and initial delivery",
+      "objective": "Deliver one useful outcome and observe behavior.",
+      "common_challenges": [
+        "Too many features",
+        "Onboarding friction",
+        "Unreliable delivery"
+      ],
+      "mentorship_needed": [
+        "Product mentor",
+        "UX researcher",
+        "Engineering or operations mentor"
+      ],
+      "expected_outputs": "Usable MVP, event definitions and experiment log.",
+      "progression_evidence": "Target users complete the core task with acceptable quality and return at the expected usage interval.",
+      "framework_ids": [
+        "F01",
+        "F05",
+        "F08"
+      ],
+      "source_ids": [
+        "A01",
+        "A05",
+        "A09"
+      ],
+      "evidence_note": "Editorial six-stage and mentorship map informed by academic/university methods. A16 provides an early-stage mentorship example, not evidence for a universal sequence or every proposed mentor role."
+    },
+    {
+      "stage_id": "early_traction",
+      "name": "Early traction and repeatability",
+      "objective": "Find repeatable use, purchases and a manageable sales process.",
+      "common_challenges": [
+        "Churn",
+        "Custom work obscures repeatability",
+        "Weak contribution economics"
+      ],
+      "mentorship_needed": [
+        "Go-to-market mentor",
+        "Customer success operator",
+        "Finance mentor"
+      ],
+      "expected_outputs": "Cohort retention, qualified pipeline and contribution model.",
+      "progression_evidence": "Repeated evidence of customer value and a plausible path to sustainable acquisition and delivery.",
+      "framework_ids": [
+        "F04",
+        "F08",
+        "F09"
+      ],
+      "source_ids": [
+        "A04",
+        "A09",
+        "A10",
+        "A16"
+      ],
+      "evidence_note": "Editorial six-stage and mentorship map informed by academic/university methods. A16 provides an early-stage mentorship example, not evidence for a universal sequence or every proposed mentor role."
+    },
+    {
+      "stage_id": "growth",
+      "name": "Growth and scaling",
+      "objective": "Increase volume while preserving service quality and economics.",
+      "common_challenges": [
+        "Acquisition costs rise",
+        "Founder bottlenecks",
+        "Capacity and cash constraints"
+      ],
+      "mentorship_needed": [
+        "Scaling operator",
+        "Sales leader",
+        "People and finance mentors"
+      ],
+      "expected_outputs": "Channel economics, operating capacity plan and management responsibilities.",
+      "progression_evidence": "Repeatable channels and sufficient capacity and cash under realistic downside assumptions.",
+      "framework_ids": [
+        "F02",
+        "F08",
+        "F09"
+      ],
+      "source_ids": [
+        "A02",
+        "A09",
+        "A10",
+        "A11"
+      ],
+      "evidence_note": "Editorial six-stage and mentorship map informed by academic/university methods. A16 provides an early-stage mentorship example, not evidence for a universal sequence or every proposed mentor role."
+    },
+    {
+      "stage_id": "expansion",
+      "name": "Expansion and renewed discovery",
+      "objective": "Validate an adjacent segment, geography or offer.",
+      "common_challenges": [
+        "Assuming prior fit transfers",
+        "Channel differences",
+        "Support complexity"
+      ],
+      "mentorship_needed": [
+        "Local market expert",
+        "Partnerships mentor",
+        "Experienced expansion operator"
+      ],
+      "expected_outputs": "Separate segment canvas, localized discovery and staged rollout plan.",
+      "progression_evidence": "New-segment evidence supports expansion without undermining the core operation.",
+      "framework_ids": [
+        "F02",
+        "F06",
+        "F07"
+      ],
+      "source_ids": [
+        "A02",
+        "A06",
+        "A07",
+        "A08",
+        "A11",
+        "A15"
+      ],
+      "evidence_note": "Editorial six-stage and mentorship map informed by academic/university methods. A16 provides an early-stage mentorship example, not evidence for a universal sequence or every proposed mentor role."
+    }
+  ],
+  "rag_documents": [
+    {
+      "doc_id": "DOC_F01",
+      "title": "Lean Startup",
+      "category": "Experimentation",
+      "stages": [
+        "idea",
+        "validation",
+        "MVP",
+        "early_traction"
+      ],
+      "framework_ids": [
+        "F01"
+      ],
+      "source_ids": [
+        "A01"
+      ],
+      "evidence_type": "framework_summary",
+      "language": "en",
+      "version": "3.0",
+      "updated_date": "2026-11-02",
+      "access_scope": "public_educational",
+      "path": "rag_samples/DOC_F01.md"
+    },
+    {
+      "doc_id": "DOC_F04",
+      "title": "Customer Discovery and Customer Development",
+      "category": "Customer understanding",
+      "stages": [
+        "idea",
+        "validation",
+        "MVP",
+        "early_traction"
+      ],
+      "framework_ids": [
+        "F04"
+      ],
+      "source_ids": [
+        "A04",
+        "A16"
+      ],
+      "evidence_type": "framework_summary",
+      "language": "en",
+      "version": "3.0",
+      "updated_date": "2026-11-02",
+      "access_scope": "public_educational",
+      "path": "rag_samples/DOC_F04.md"
+    },
+    {
+      "doc_id": "DOC_F07",
+      "title": "Market Sizing: TAM / SAM / SOM",
+      "category": "Market strategy",
+      "stages": [
+        "idea",
+        "validation",
+        "growth",
+        "expansion"
+      ],
+      "framework_ids": [
+        "F07"
+      ],
+      "source_ids": [
+        "A07",
+        "A08"
+      ],
+      "evidence_type": "framework_summary",
+      "language": "en",
+      "version": "3.0",
+      "updated_date": "2026-11-02",
+      "access_scope": "public_educational",
+      "path": "rag_samples/DOC_F07.md"
+    },
+    {
+      "doc_id": "DOC_SC01",
+      "title": "NONA Technologies: Choosing a viable initial market",
+      "category": "Market selection",
+      "stages": [
+        "validation"
+      ],
+      "framework_ids": [
+        "F04",
+        "F07"
+      ],
+      "source_ids": [
+        "B01",
+        "A04",
+        "A07",
+        "A08",
+        "A16"
+      ],
+      "evidence_type": "documented_real_case",
+      "language": "en",
+      "version": "3.0",
+      "updated_date": "2026-11-02",
+      "access_scope": "public_educational",
+      "path": "rag_samples/DOC_SC01.md"
+    },
+    {
+      "doc_id": "DOC_GROWTH",
+      "title": "Growth and scaling",
+      "category": "Lifecycle and mentorship",
+      "stages": [
+        "growth"
+      ],
+      "framework_ids": [
+        "F02",
+        "F08",
+        "F09"
+      ],
+      "source_ids": [
+        "A02",
+        "A09",
+        "A10",
+        "A11"
+      ],
+      "evidence_type": "editorial_synthesis",
+      "language": "en",
+      "version": "3.0",
+      "updated_date": "2026-11-02",
+      "access_scope": "public_educational",
+      "path": "rag_samples/DOC_GROWTH.md"
+    }
+  ],
+  "rag_chunks": [
+    {
+      "doc_id": "DOC_F01",
+      "title": "Lean Startup",
+      "category": "Experimentation",
+      "stages": [
+        "idea",
+        "validation",
+        "MVP",
+        "early_traction"
+      ],
+      "framework_ids": [
+        "F01"
+      ],
+      "source_ids": [
+        "A01"
+      ],
+      "evidence_type": "framework_summary",
+      "language": "en",
+      "version": "3.0",
+      "updated_date": "2026-11-02",
+      "access_scope": "public_educational",
+      "path": "rag_samples/DOC_F01.md",
+      "chunk_id": "DOC_F01_001",
+      "section": "complete_short_document",
+      "text": "# Lean Startup\n\nEvidence type: framework summary with editorial application guidance.\n\nAn iterative approach to testing business assumptions through Build-Measure-Learn and validated learning.\n\nWhen: Use when demand, solution or growth assumptions remain uncertain.\n\nSteps: State one falsifiable hypothesis; Choose the smallest credible MVP or experiment; Define the metric and decision rule before testing; Measure behavior, then persevere, change the hypothesis or stop.\n\nLimitations: An MVP must still be safe and credible. Shipping quickly or collecting signups alone does not validate demand.\n\nSources: [A01: The Lean Startup Framework: Closing the Academic–Practitioner Divide](https://doi.org/10.1177/1042258719899415)",
+      "content_sha256": "23da8f80a273b137f384251910d53a165e0f65c5fa398ce40845c0e91e2c7545",
+      "chunking_method": "one_complete_short_document",
+      "size_unit": "unicode_characters",
+      "size": 725
+    },
+    {
+      "doc_id": "DOC_F04",
+      "title": "Customer Discovery and Customer Development",
+      "category": "Customer understanding",
+      "stages": [
+        "idea",
+        "validation",
+        "MVP",
+        "early_traction"
+      ],
+      "framework_ids": [
+        "F04"
+      ],
+      "source_ids": [
+        "A04",
+        "A16"
+      ],
+      "evidence_type": "framework_summary",
+      "language": "en",
+      "version": "3.0",
+      "updated_date": "2026-11-02",
+      "access_scope": "public_educational",
+      "path": "rag_samples/DOC_F04.md",
+      "chunk_id": "DOC_F04_001",
+      "section": "complete_short_document",
+      "text": "# Customer Discovery and Customer Development\n\nEvidence type: framework summary with editorial application guidance.\n\nTests hypotheses about customers, problems and a repeatable business model through interviews and subsequent validation of a sales process.\n\nWhen: Use before committing to a product or scaling sales; revisit when the buyer, user or buying process is unclear.\n\nSteps: Record customer, problem and purchasing hypotheses; Interview and observe relevant users and buyers about actual behavior; Test willingness to commit time, access or money; Validate a repeatable sales path before scaling.\n\nLimitations: Interviews reveal patterns but compliments and nonbinding interest do not establish purchasing demand. Discovery is one phase of Customer Development.\n\nSources: [A04: The VentureLab Process](https://venturelab.gatech.edu/process); [A16: Venture Lab | Customer Discovery](https://ventures.yale.edu/venture-lab/customer-discovery)",
+      "content_sha256": "ef2a34e1840d0ebccaafe9b6aae0c77a75cf4498ad5619c42d5dfab41340d197",
+      "chunking_method": "one_complete_short_document",
+      "size_unit": "unicode_characters",
+      "size": 949
+    },
+    {
+      "doc_id": "DOC_F07",
+      "title": "Market Sizing: TAM / SAM / SOM",
+      "category": "Market strategy",
+      "stages": [
+        "idea",
+        "validation",
+        "growth",
+        "expansion"
+      ],
+      "framework_ids": [
+        "F07"
+      ],
+      "source_ids": [
+        "A07",
+        "A08"
+      ],
+      "evidence_type": "framework_summary",
+      "language": "en",
+      "version": "3.0",
+      "updated_date": "2026-11-02",
+      "access_scope": "public_educational",
+      "path": "rag_samples/DOC_F07.md",
+      "chunk_id": "DOC_F07_001",
+      "section": "complete_short_document",
+      "text": "# Market Sizing: TAM / SAM / SOM\n\nEvidence type: framework summary with editorial application guidance.\n\nTAM estimates total demand in a defined market; SAM restricts it to what the offer can serve; SOM estimates what can realistically be won in a stated period.\n\nWhen: Use to choose a beachhead, test commercial scope or plan expansion.\n\nSteps: Specify geography, buyer, product and revenue unit; Build bottom-up customer counts times annual revenue per customer; Filter for serviceable constraints; Estimate obtainable demand from sales capacity, competition and timing; Compare low, base and high cases.\n\nLimitations: Market size is not a sales forecast. Avoid arbitrary market-share percentages, double counting and confusing transaction volume with platform revenue. Beachhead TAM is narrower than company-wide TAM.\n\nSources: [A07: Applying to the Innovation Pathway Step 3: Opportunity Sizing](https://www.bu.edu/innovate/programs-competitions/innovation-pathway/details/applying-to-the-innovation-pathway-step-3-opportunity-sizing/); [A08: Market Research Guide](https://technologylicensing.utah.edu/index.php?catid=2%3Ageneral&id=306%3Amarket-research&option=com_content&view=article)",
+      "content_sha256": "5194752f7bc53eaa06ea1772f374674a59a7fb5a72d09cebc6a4069ac98f5e6c",
+      "chunking_method": "one_complete_short_document",
+      "size_unit": "unicode_characters",
+      "size": 1192
+    },
+    {
+      "doc_id": "DOC_SC01",
+      "title": "NONA Technologies: Choosing a viable initial market",
+      "category": "Market selection",
+      "stages": [
+        "validation"
+      ],
+      "framework_ids": [
+        "F04",
+        "F07"
+      ],
+      "source_ids": [
+        "B01",
+        "A04",
+        "A07",
+        "A08",
+        "A16"
+      ],
+      "evidence_type": "documented_real_case",
+      "language": "en",
+      "version": "3.0",
+      "updated_date": "2026-11-02",
+      "access_scope": "public_educational",
+      "path": "rag_samples/DOC_SC01.md",
+      "chunk_id": "DOC_SC01_001",
+      "section": "complete_short_document",
+      "text": "# NONA Technologies: Choosing a viable initial market\n\nEvidence type: documented real case with separately labeled editorial analysis. Evidence as of 2024-10-02; later results are not asserted.\n\n## Documented account\n\nNONA was commercializing portable desalination developed at MIT. The first two markets the team considered were not viable in the near term, according to co-founder Bruce Crawford.\n\nActual actions: Completed I-Corps Spark and Fusion customer-discovery programs..\n\nReported outcome: Crawford reported that the first 24 interviews ruled out those markets and helped identify a beachhead.\n\nEvidence limits: The article does not name that beachhead or disclose interview-to-sale conversion.\n\nCase sources: [B01: Translating MIT research into real-world results](https://news.mit.edu/2024/translating-mit-research-real-world-results-1002)\n\nSource location: Economic and societal benefits; NONA paragraphs and Bruce Crawford interview\n\n## Editorial guidance, not company actions\n\nTechnical feasibility and a reachable initial customer segment are separate questions.\n\nProposed experiment: Interview users and budget owners in candidate segments; document disconfirming evidence.\n\nSuggested metric: Purchase-process clarity and feasible pilot commitments\n\nSuggested decision rule: Advance only with evidence of need, budget and deployability; do not treat interview count as demand.\n\nFramework mapping is editorial; no claim that the company used each named framework. Method sources: [A04: The VentureLab Process](https://venturelab.gatech.edu/process); [A07: Applying to the Innovation Pathway Step 3: Opportunity Sizing](https://www.bu.edu/innovate/programs-competitions/innovation-pathway/details/applying-to-the-innovation-pathway-step-3-opportunity-sizing/); [A08: Market Research Guide](https://technologylicensing.utah.edu/index.php?catid=2%3Ageneral&id=306%3Amarket-research&option=com_content&view=article); [A16: Venture Lab | Customer Discovery](https://ventures.yale.edu/venture-lab/customer-discovery)",
+      "content_sha256": "51de1ef0219e732cb75b462a24eb27393ca9b80065062c5aab13094cf231c564",
+      "chunking_method": "one_complete_short_document",
+      "size_unit": "unicode_characters",
+      "size": 2026
+    },
+    {
+      "doc_id": "DOC_GROWTH",
+      "title": "Growth and scaling",
+      "category": "Lifecycle and mentorship",
+      "stages": [
+        "growth"
+      ],
+      "framework_ids": [
+        "F02",
+        "F08",
+        "F09"
+      ],
+      "source_ids": [
+        "A02",
+        "A09",
+        "A10",
+        "A11"
+      ],
+      "evidence_type": "editorial_synthesis",
+      "language": "en",
+      "version": "3.0",
+      "updated_date": "2026-11-02",
+      "access_scope": "public_educational",
+      "path": "rag_samples/DOC_GROWTH.md",
+      "chunk_id": "DOC_GROWTH_001",
+      "section": "complete_short_document",
+      "text": "# Growth and scaling\n\nEvidence type: editorial stage and mentorship recommendation, not a prescribed universal sequence.\n\nObjective: Increase volume while preserving service quality and economics.\n\nChallenges: Acquisition costs rise; Founder bottlenecks; Capacity and cash constraints.\n\nMentors: Scaling operator; Sales leader; People and finance mentors.\n\nOutputs: Channel economics, operating capacity plan and management responsibilities.\n\nReview before progressing: Repeatable channels and sufficient capacity and cash under realistic downside assumptions.\n\nMethod references: [A02: Business models in strategic management: 4.1 Business model canvas](https://www.open.edu/openlearn/mod/oucontent/view.php?id=109250&section=4.1); [A09: Inspired by The Lean Startup – Introducing Experimentation to Improve the New Product Development Process of an IT Service Company in the Social and Healthcare Sector](https://aaltodoc.aalto.fi/bitstream/handle/123456789/37140/master_Linkola_Emmi_2019.pdf?isAllowed=y&sequence=1); [A10: On the Nature of Revenue: Not All Revenue Is Created Equally](https://som.yale.edu/sites/default/files/2025-04/On%20the%20Nature%20of%20Revenue.pdf); [A11: Startup Tools & Templates](https://www.csus.edu/center/carlsen/hornetcombs/startup-tools-templates.html)",
+      "content_sha256": "f9dbe50a61c7db00138e11812d4ff8b4ff1a19bcfe74b25cdc34cffafa67ff8e",
+      "chunking_method": "one_complete_short_document",
+      "size_unit": "unicode_characters",
+      "size": 1286
+    }
+  ]
+}

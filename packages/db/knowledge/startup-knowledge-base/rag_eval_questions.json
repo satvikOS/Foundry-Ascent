@@ -1,0 +1,41 @@
+[
+  {
+    "question_id": "Q01",
+    "question": "What is Build-Measure-Learn?",
+    "expected_doc_ids": [
+      "DOC_F01"
+    ],
+    "expected_behavior": "Explain the learning cycle and avoid equating signups with validated demand."
+  },
+  {
+    "question_id": "Q02",
+    "question": "How did NONA use customer discovery interviews to choose a market?",
+    "expected_doc_ids": [
+      "DOC_SC01",
+      "DOC_F04"
+    ],
+    "expected_behavior": "Attribute the 24-interview account to the university report and founder; separate the real case from general customer-discovery guidance."
+  },
+  {
+    "question_id": "Q03",
+    "question": "How should a founder estimate a beachhead market?",
+    "expected_doc_ids": [
+      "DOC_F07"
+    ],
+    "expected_behavior": "Use scoped customer counts and annual revenue; distinguish TAM from obtainable demand."
+  },
+  {
+    "question_id": "Q04",
+    "question": "Who should mentor a startup that is scaling?",
+    "expected_doc_ids": [
+      "DOC_GROWTH"
+    ],
+    "expected_behavior": "Recommend operations, sales, people and finance support; label this editorial guidance."
+  },
+  {
+    "question_id": "Q05",
+    "question": "What percentage of NONA customer interviews converted into paid sales?",
+    "expected_doc_ids": [],
+    "expected_behavior": "Abstain: the source reports interviews and market learning, not interview-to-paid-sale conversion."
+  }
+]

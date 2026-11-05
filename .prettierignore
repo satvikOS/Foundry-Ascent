@@ -9,3 +9,6 @@ docs/blueprints
 
 # Raw reproducible upgrade reports and measurements retain their original serialization.
 docs/upgrade/evidence
+
+# The owner's startup knowledge base keeps its canonical serialization (validated as supplied).
+packages/db/knowledge

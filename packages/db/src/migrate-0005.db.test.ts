@@ -487,9 +487,11 @@ describe('migration 0005 on a database first seeded after 0004', () => {
         ),
       );
       expect(after.rows).toEqual(doctrine.map(() => ({ kind: 'note', body_is_chunks: true })));
+      // The reference library (scope `public`, the startup knowledge base) is documents by design: not a corpus.
       const documents = await fresh.db.system((sx) =>
         sx.query(
-          `SELECT count(*)::int AS n FROM knowledge_sources WHERE scope <> 'venture' AND kind = 'document'`,
+          `SELECT count(*)::int AS n FROM knowledge_sources
+           WHERE scope NOT IN ('venture', 'public') AND kind = 'document'`,
         ),
       );
       expect(documents.rows[0]).toEqual({ n: 0 });

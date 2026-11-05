@@ -14,7 +14,8 @@
     "db:reset": "tsx src/scripts/reset-local.ts",
     "owner-code": "tsx src/scripts/owner-code.ts",
     "gen:migrations": "tsx src/scripts/gen-migrations.ts",
-    "check:migrations": "tsx src/scripts/gen-migrations.ts --check"
+    "check:migrations": "tsx src/scripts/gen-migrations.ts --check",
+    "knowledge-pack": "tsx src/scripts/knowledge-pack.ts"
   },
   "dependencies": {
     "@aws-sdk/client-rds-data": "^3.1160.0",

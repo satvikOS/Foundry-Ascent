@@ -5,6 +5,7 @@ import {
   BookOpen,
   Brain,
   FileText,
+  GraduationCap,
   Library,
   ScrollText,
   Sparkles,
@@ -23,7 +24,7 @@ interface KindLabel {
 
 /**
  * What a cited item is, for the person reading it. A passage says where it comes from by its source's scope:
- * one of the venture's documents, the program's guidance, or the vEIR's own library.
+ * one of the venture's documents, the program's guidance, the shared reference library, or the vEIR's own library.
  */
 export function evidenceKindLabel(item: Pick<EvidenceItem, 'kind' | 'source'>, veirName?: string): KindLabel {
   switch (item.kind) {
@@ -40,7 +41,9 @@ export function evidenceKindLabel(item: Pick<EvidenceItem, 'kind' | 'source'>, v
       if (scope === 'persona') {
         return { label: veirName ? `${veirName}’s library` : 'vEIR library', icon: ScrollText };
       }
-      if (scope === 'program' || scope === 'public') return { label: 'Program guidance', icon: BookOpen };
+      if (scope === 'program') return { label: 'Program guidance', icon: BookOpen };
+      // The shared reference library (university and academic sources), not the program's own guidance.
+      if (scope === 'public') return { label: 'Reference library', icon: GraduationCap };
       return { label: 'Passage', icon: FileText };
     }
   }

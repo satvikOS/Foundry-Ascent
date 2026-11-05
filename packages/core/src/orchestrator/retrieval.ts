@@ -104,6 +104,10 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
   const base = { tenantId: args.tenantId, query: args.query };
   const { ventureId } = args;
   const budgets = retrievalBudgets(args.budgets, args.channel ?? 'text');
+  // The reference library gives a call's turn its single best passage, a typed turn at most two, in slots of
+  // their own and only when the founder's words name their subject (`retrievalRepo.REFERENCE_GATE`).
+  const referenceLimit =
+    budgets.doctrine > 0 ? ((args.channel ?? 'text') === 'text' ? retrievalRepo.REFERENCE_GATE.limit : 1) : 0;
   const classifications = classificationsFor(args.dataClassCeiling);
   const found = await retrievalRepo.searchEvidenceStores(tx, {
     ...(ventureId !== null && budgets.memory > 0
@@ -130,6 +134,7 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
             personaId: args.personaId,
             ...(classifications === null ? {} : { classifications }),
             limit: budgets.doctrine,
+            referenceLimit,
           },
         }
       : {}),
@@ -143,7 +148,7 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
     limits: {
       memory: budgets.memory,
       chunks: budgets.chunks,
-      shared: budgets.doctrine,
+      shared: budgets.doctrine + referenceLimit,
       resources: budgets.resources,
       patterns: budgets.patterns,
     },

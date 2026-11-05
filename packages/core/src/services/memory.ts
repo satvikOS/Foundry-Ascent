@@ -101,8 +101,19 @@ export const LEARNED_FROM_LABEL = 'Learned from the conversation';
 /** Evidence shown to the model, by key, used to turn candidate evidence ids into source refs. */
 export type EvidenceIndex = ReadonlyMap<
   string,
-  { readonly kind: string; readonly refId: string; readonly title: string }
+  {
+    readonly kind: string;
+    readonly refId: string;
+    readonly title: string;
+    /** A passage's knowledge source (`EvidenceItem.source`): scope `public` is the shared reference library. */
+    readonly source?: { readonly scope: string } | null;
+  }
 >;
+
+/** Whether an evidence item is a reference-library passage (general material, never a fact about a venture). */
+function isReference(item: { readonly source?: { readonly scope: string } | null } | undefined): boolean {
+  return item?.source?.scope === 'public';
+}
 
 /** Venture items a new AI candidate is compared against (most recent first, content cut to an excerpt). */
 const DEDUPE_SCAN_LIMIT = 200;
@@ -271,6 +282,19 @@ export async function proposeMemoryCandidates(
     if (title === '') continue;
     const keys = [...new Set(candidate.evidence_ids)].filter((k) => args.evidence.has(k));
     const embedding = args.embeddings?.[index] ?? null;
+    // The shared reference library (other companies' cases, general frameworks) is never venture memory: a
+    // candidate resting only on it is kept only when the founder said it themselves.
+    const fromReference = keys.length > 0 && keys.every((k) => isReference(args.evidence.get(k)));
+    if (
+      fromReference &&
+      !(
+        args.grounding !== undefined &&
+        founderSaid({ title, content }, args.grounding, args.conversation?.speakers ?? [])
+      )
+    ) {
+      dropped += 1;
+      continue;
+    }
     if (
       (args.grounding !== undefined &&
         isCoachEcho({ title, content }, args.grounding, {
@@ -291,7 +315,8 @@ export async function proposeMemoryCandidates(
       const item = args.evidence.get(key);
       if (!item) continue;
       if (item.kind === 'memory') refs.push({ kind: 'memory', id: item.refId, label: key });
-      else if (item.kind === 'chunk') refs.push({ kind: 'chunk', id: item.refId, label: key });
+      else if (item.kind === 'chunk' && !isReference(item))
+        refs.push({ kind: 'chunk', id: item.refId, label: key });
     }
     const confidence = Number.isFinite(candidate.confidence)
       ? Math.min(1, Math.max(0, candidate.confidence))

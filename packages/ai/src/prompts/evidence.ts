@@ -9,6 +9,26 @@ export interface EvidenceBlockOptions {
   maxTotalChars?: number;
 }
 
+/** A passage of the shared reference library (the startup knowledge base: scope `public`). */
+function isReference(item: EvidenceItem): boolean {
+  return item.source?.scope === 'public';
+}
+
+/**
+ * How to use reference-library items, said only when the pack has one. They are general background about other
+ * companies and methods, labelled in their own text: a documented account is a dated report with stated limits; a
+ * passage headed editorial is guidance, never a fact about a company.
+ */
+export const REFERENCE_RULES: readonly string[] = [
+  'Items with source="reference" come from a general startup reference library (university and academic sources),',
+  "not from this program's own guidance or this venture: prefer the program's guidance when both cover a question,",
+  'and use a reference item only where it helps with what the founder asked. Its title names its publisher: say',
+  'whose account it is in plain words ("MIT News reported…"). A "Documented account" is a dated historical report,',
+  'true only as of its date and within its stated limits; passages headed editorial are suggestions, never facts',
+  'about the company. If an item does not report what was asked (a figure, a rate, a result), say it is not',
+  'reported; never estimate it.',
+];
+
 /**
  * Renders the evidence pack as untrusted data. Every value is escaped so content cannot close the
  * `<evidence>` element or impersonate instructions; ids are the stable `E1…En` keys.
@@ -27,6 +47,7 @@ export function buildEvidenceBlock(
   if (items.length === 0) {
     lines.push('(no evidence items were retrieved for this turn — make no "fact" claims)');
   }
+  if (items.some(isReference)) lines.push(...REFERENCE_RULES);
   let used = 0;
   let omitted = 0;
   for (const item of items) {
@@ -40,6 +61,7 @@ export function buildEvidenceBlock(
     const attrs = [
       `id="${item.key}"`,
       `kind="${item.kind}"`,
+      ...(isReference(item) ? ['source="reference"'] : []),
       `status="${item.status === null ? 'n/a' : escapeInline(item.status, 32)}"`,
       `freshness="${item.freshnessAt === null ? 'unknown' : item.freshnessAt.slice(0, 10)}"`,
       `score="${item.score.toFixed(2)}"`,

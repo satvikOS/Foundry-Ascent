@@ -28,6 +28,7 @@ import { type SqlExecutor } from '../executor.js';
 import { p, type SqlParam, type SqlParams } from '../params.js';
 import { rewritePlaceholders } from '../sql-lexer.js';
 import { clampLimit, excerptSql, orTsQuerySql, queryRows } from './common.js';
+import { DOCUMENTED_ACCOUNT_HEADING, PACK_URI_PREFIX } from '../knowledge-pack/render.js';
 import { type KnowledgeClassification } from './knowledge.js';
 import { ACTIVE_MEMORY_STATUSES, type MemoryStatusValue, type MemoryTypeValue } from './memory.js';
 
@@ -278,13 +279,74 @@ export interface SharedChunkQuery extends BaseQuery {
   readonly classifications?: readonly KnowledgeClassification[];
   /** ANN / lexical candidate pool size (default 40 = HNSW ef_search default). */
   readonly candidates?: number;
+  /**
+   * Most reference-library passages (scope `public`) returned, among `limit` (default
+   * {@link REFERENCE_GATE}.limit). They are candidates only when they pass the relevance gate.
+   */
+  readonly referenceLimit?: number;
 }
+
+/**
+ * When a reference-library passage (scope `public`: the startup knowledge base, general material the program did
+ * not write) is relevant enough to be shown at all. Unlike the program's own corpus and the vEIR's library, it is
+ * never a candidate by vector proximity or by one shared word: the coaching diagnosis of 2026-11-05 traced
+ * fixation to library notes injected on almost every turn whatever was asked. A passage qualifies only when the
+ * founder's words name its subject:
+ *
+ * - the query's subject words are its English stems, without stopwords, the words of a request rather than a
+ *   subject ({@link REFERENCE_REQUEST_WORDS}: "help", "tips", "one"…), compounds' parts counted once, numbers and
+ *   two-letter stems; they are DISTINCTIVE when found in at most `maxShare` of the library's passages (at least
+ *   `minDf`), so "startup", "customer" or "framework" alone never select anything;
+ * - a passage (its heading, text and its source's title) must contain at least `minHits` distinctive words, or be
+ *   a documented case whose company the founder names as written ("Dropbox", "NONA": the first word of the case
+ *   title's company part, matched case-sensitively as a whole word, so "embrace change" is not "Embrace"), and in
+ *   either case at least `minCoverage` of all the distinctive words the query has. A case's company name counts as
+ *   a word only when it is named that way;
+ * - with a query embedding, a passage whose own embedding is less similar than `minVector` is vetoed (a lenient
+ *   floor: the words may coincide while the meaning differs). Similarity never admits a passage on its own;
+ * - a question about the program itself ({@link REFERENCE_PROGRAM_WORDS}: its curriculum, gates, EIRs) draws
+ *   on the program's own guidance only: the Ain curriculum is preferred, and the library stays out of it.
+ *
+ * One passage per library item (a documented account before the same case's editorial guidance on a tie) and at
+ * most `limit` per turn (voice: 1), in slots of their own beside the shared budget: passages that passed the gate
+ * are relevant by construction and never lose their place to the vEIR's doctrine, which is retrieved on almost
+ * every turn. They are ranked by the usual hybrid score, in which the library's authority (0.7; 0.63 for
+ * editorial guidance) stays below the program's own guidance (0.9) and the vEIR's library (1.0), so the
+ * program's curriculum comes first when both cover a question.
+ */
+export const REFERENCE_GATE = {
+  minHits: 2,
+  minCoverage: 0.34,
+  maxShare: 0.25,
+  minDf: 3,
+  minVector: 0.2,
+  limit: 2,
+} as const;
+
+/** Words of a request rather than of its subject; never subject words for the reference gate. */
+export const REFERENCE_REQUEST_WORDS =
+  'help helping need needs want wants tip tips think know idea ideas question questions thing things way ways ' +
+  'thanks thank please advice advise tell ask talk mean sure okay yes get make take say see let use using feel ' +
+  'try look like also really just one two three four five first second new good best better right time today ' +
+  'week day month year lot much many well still even now kind sort maybe something anything everything stuff';
+
+/**
+ * Words that only a question about the program itself uses (its name, cohort, curriculum, handbook, stage gates,
+ * EIRs): such a question is answered from the program's own guidance, so the general reference library is not
+ * searched at all. Words with everyday senses ("program", "session", "module") are left out on purpose.
+ */
+export const REFERENCE_PROGRAM_WORDS = 'Ain Foundry cohort curriculum handbook gate gates EIR EIRs';
+
+/** Documented cases of the startup knowledge base (`knowledge-pack/render.ts`), whose company a founder may name. */
+const REFERENCE_CASE_URI_PREFIX = `${PACK_URI_PREFIX}case/`;
 
 /**
  * Shared-corpus chunks: candidates from the HNSW index (`ORDER BY embedding <=> :q LIMIT n` on the
  * `venture_id IS NULL` partial index) ∪ lexical candidates, rescored with the hybrid formula. Persona
  * chunks are returned as kind `doctrine`, others as `chunk`. authority: persona 1.0, program 0.9,
- * public 0.7 (× 0.5 when the source is stale).
+ * public 0.7 (× 0.9 for a passage that is not a documented account; × 0.5 when the source is stale). Public
+ * (reference-library) chunks come only through the relevance gate ({@link REFERENCE_GATE}), never from the ANN or
+ * plain lexical candidates, and take up to `referenceLimit` rows beyond `limit`.
  */
 export function searchSharedChunks(ex: SqlExecutor, q: SharedChunkQuery): Promise<RetrievedItem[]> {
   return run(ex, sharedSearch(q));
@@ -293,46 +355,104 @@ export function searchSharedChunks(ex: SqlExecutor, q: SharedChunkQuery): Promis
 function sharedSearch(q: SharedChunkQuery): StoreSearch {
   const scopeFilter = `c.venture_id IS NULL AND c.tenant_id = :tenantId AND c.scope = ANY (:scopes)
     AND (c.scope <> 'persona' OR c.persona_id = :personaId)`;
+  // A reference passage's words: its text and its source's title (an item's subject: "NONA Technologies…"), not
+  // its heading, which names publishers ("Harvard Business School") rather than the subject.
+  const referenceTsv = "to_tsvector('english', c.content) || to_tsvector('english', s.title)";
+  const company = "split_part(split_part(s.title, ':', 1), ' ', 1)";
+  const score = SCORE_SQL;
   return {
     sql: `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      , ann AS (
        SELECT c.id FROM knowledge_chunks c
-       WHERE ${scopeFilter} AND :embedding IS NOT NULL
+       WHERE ${scopeFilter} AND c.scope <> 'public' AND :embedding IS NOT NULL
        ORDER BY c.embedding <=> :embedding
        LIMIT :candidates)
      , lexical AS (
        SELECT c.id FROM knowledge_chunks c CROSS JOIN q
-       WHERE ${scopeFilter} AND c.tsv @@ q.tsq
+       WHERE ${scopeFilter} AND c.scope <> 'public' AND c.tsv @@ q.tsq
        ORDER BY ts_rank_cd(c.tsv, q.tsq, 32) DESC, c.id
        LIMIT :candidates)
-     , cand AS (SELECT id FROM ann UNION SELECT id FROM lexical)
-     SELECT x.*, ${SCORE_SQL} AS score FROM (
-       SELECT c.id, NULL::uuid AS venture_id, c.source_id, c.scope AS source_scope, NULL::text AS memory_type,
-              NULL::text AS visibility,
-              CASE WHEN c.scope = 'persona' THEN 'doctrine' ELSE 'chunk' END AS kind,
-              CASE WHEN c.heading IS NULL OR c.heading = '' THEN s.title ELSE s.title || ' — ' || c.heading END AS title,
-              ${excerptSql('c.content')} AS excerpt, s.freshness_at, s.status,
-              ${vecSql('c.embedding')} AS vec,
-              ts_rank_cd(c.tsv, q.tsq, 32) AS lex,
-              ${recencySql('s.freshness_at')} AS recency,
-              (CASE c.scope WHEN 'persona' THEN 1.0 WHEN 'program' THEN 0.9 ELSE 0.7 END)
-                * (CASE s.status WHEN 'active' THEN 1.0 ELSE 0.5 END) AS authority
-       FROM cand
-       JOIN knowledge_chunks c ON c.id = cand.id
-       JOIN knowledge_sources s ON s.id = c.source_id
-       CROSS JOIN q
-       WHERE ${scopeFilter} AND s.status IN ('active', 'stale')
-         AND (:classifications IS NULL OR s.classification = ANY (:classifications))
-     ) x
-     WHERE ${SCORE_SQL} >= :minScore
-     ORDER BY score DESC, x.id
-     LIMIT :limit`,
+     , qwords AS (
+       SELECT DISTINCT w FROM unnest(tsvector_to_array(to_tsvector('english', :query))) AS w
+       WHERE w !~ '-' AND w !~ '^[0-9]+$' AND length(w) >= 3
+         AND w <> ALL (tsvector_to_array(to_tsvector('english', :refRequestWords))))
+     , program_asked AS (
+       SELECT EXISTS (
+         SELECT 1 FROM unnest(tsvector_to_array(to_tsvector('english', :query))) AS w
+         WHERE w = ANY (tsvector_to_array(to_tsvector('english', :refProgramWords)))) AS yes)
+     , ref AS (
+       SELECT c.id, tsvector_to_array(${referenceTsv}) AS words,
+              CASE WHEN starts_with(coalesce(s.uri, ''), :refCasePrefix)
+                   THEN tsvector_to_array(to_tsvector('english', ${company})) ELSE '{}'::text[] END AS company_words,
+              starts_with(coalesce(s.uri, ''), :refCasePrefix) AND length(${company}) >= 3
+                AND position(' ' || ${company} || ' ' IN :refQueryWords) > 0 AS named,
+              :embedding IS NULL OR c.embedding IS NULL OR 1 - (c.embedding <=> :embedding) >= :refMinVector
+                AS near
+       FROM knowledge_chunks c JOIN knowledge_sources s ON s.id = c.source_id
+       WHERE ${scopeFilter} AND c.scope = 'public' AND s.status IN ('active', 'stale')
+         AND (:classifications IS NULL OR s.classification = ANY (:classifications)))
+     , distinctive AS (
+       SELECT qw.w FROM qwords qw JOIN ref ON qw.w = ANY (ref.words)
+       GROUP BY qw.w
+       HAVING count(*) <= greatest(:refMinDf, :refMaxShare * (SELECT count(*) FROM ref)))
+     , reference AS (
+       SELECT ref.id FROM ref
+       LEFT JOIN distinctive d ON d.w = ANY (ref.words) AND (ref.named OR NOT (d.w = ANY (ref.company_words)))
+       WHERE ref.near AND NOT (SELECT yes FROM program_asked)
+       GROUP BY ref.id, ref.named
+       HAVING (count(d.w) >= :refMinHits OR ref.named)
+          AND count(d.w) >= :refMinCoverage * (SELECT count(*) FROM distinctive))
+     , cand AS (SELECT id FROM ann UNION SELECT id FROM lexical UNION SELECT id FROM reference)
+     SELECT z.* FROM (
+       SELECT y.*, row_number() OVER (PARTITION BY y.source_scope = 'public' ORDER BY y.score DESC, y.id) AS scope_rank
+       FROM (
+         SELECT x.*, ${score} AS score,
+                row_number() OVER (PARTITION BY x.source_id ORDER BY ${score} DESC, x.id) AS source_rank
+         FROM (
+           SELECT c.id, NULL::uuid AS venture_id, c.source_id, c.scope AS source_scope, NULL::text AS memory_type,
+                  NULL::text AS visibility,
+                  CASE WHEN c.scope = 'persona' THEN 'doctrine' ELSE 'chunk' END AS kind,
+                  CASE WHEN c.heading IS NULL OR c.heading = '' THEN s.title ELSE s.title || ' — ' || c.heading END AS title,
+                  ${excerptSql('c.content')} AS excerpt, s.freshness_at, s.status,
+                  ${vecSql('c.embedding')} AS vec,
+                  ts_rank_cd(CASE WHEN c.scope = 'public' THEN ${referenceTsv} ELSE c.tsv END, q.tsq, 32) AS lex,
+                  ${recencySql('s.freshness_at')} AS recency,
+                  (CASE c.scope WHEN 'persona' THEN 1.0 WHEN 'program' THEN 0.9
+                     ELSE 0.7 * (CASE WHEN starts_with(coalesce(c.heading, ''), :refDocumented) THEN 1.0 ELSE 0.9 END)
+                   END)
+                    * (CASE s.status WHEN 'active' THEN 1.0 ELSE 0.5 END) AS authority
+           FROM cand
+           JOIN knowledge_chunks c ON c.id = cand.id
+           JOIN knowledge_sources s ON s.id = c.source_id
+           CROSS JOIN q
+           WHERE ${scopeFilter} AND s.status IN ('active', 'stale')
+             AND (:classifications IS NULL OR s.classification = ANY (:classifications))
+         ) x
+         WHERE ${score} >= :minScore
+       ) y
+       WHERE y.source_scope <> 'public' OR y.source_rank = 1
+     ) z
+     WHERE z.scope_rank <= CASE WHEN z.source_scope = 'public' THEN :refLimit ELSE :limit END
+     ORDER BY z.score DESC, z.id
+     LIMIT :limit + :refLimit`,
     params: {
       ...baseParams(q, 4),
       scopes: p.textArray(q.scopes ?? ['program', 'public', 'persona']),
       personaId: p.nullable.uuid(q.personaId),
       classifications: p.nullable.textArray(q.classifications),
       candidates: p.int(clampLimit(q.candidates, 40, 400)),
+      refRequestWords: p.text(REFERENCE_REQUEST_WORDS),
+      refProgramWords: p.text(REFERENCE_PROGRAM_WORDS),
+      refCasePrefix: p.text(REFERENCE_CASE_URI_PREFIX),
+      refDocumented: p.text(DOCUMENTED_ACCOUNT_HEADING),
+      // The query's words, space-separated with a space at each end, case kept (company names).
+      refQueryWords: p.text(` ${q.query.replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `),
+      refMinHits: p.int(REFERENCE_GATE.minHits),
+      refMinCoverage: p.num(REFERENCE_GATE.minCoverage),
+      refMaxShare: p.num(REFERENCE_GATE.maxShare),
+      refMinDf: p.int(REFERENCE_GATE.minDf),
+      refMinVector: p.num(REFERENCE_GATE.minVector),
+      refLimit: p.int(Math.max(0, Math.min(q.referenceLimit ?? REFERENCE_GATE.limit, 10))),
     },
     decode: (r) => decodeItem('from_row', r),
   };

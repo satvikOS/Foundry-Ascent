@@ -6,7 +6,7 @@ export type {
   SystemPromptInput,
   SystemPromptParts,
 } from './system.js';
-export { buildEvidenceBlock, evidenceIdsInBlock } from './evidence.js';
+export { buildEvidenceBlock, evidenceIdsInBlock, REFERENCE_RULES } from './evidence.js';
 export type { EvidenceBlockOptions } from './evidence.js';
 export { bringsOwnSubject, buildMessages } from './messages.js';
 export type { BuildMessagesOptions, HistoryTurn } from './messages.js';

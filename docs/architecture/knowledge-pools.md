@@ -108,6 +108,50 @@ caps; the kill switch; suspension; a consent covering doctrine), crisis support 
 model call is metered once under purpose `test_bench`. The checks come back with the answer, without anything
 that says which names the cross-venture guard knows.
 
+### 3.5 Reference library: the startup knowledge base
+
+General entrepreneurship knowledge beyond the program's own curriculum: the owner's startup knowledge base
+(schema 3.0.0, `packages/db/knowledge/startup-knowledge-base/startup_knowledge_base.json`, kept byte for byte as
+supplied): 9 frameworks, 25 documented real startup cases, 6 lifecycle stages and 39 academic and university
+sources with their audit. The program's curriculum (scope `program`) and the vEIR's library (`persona`) stay
+separate; this is the common pool's `public` scope.
+
+- **Storage.** One knowledge source per framework, case and stage (`scope = 'public'`, kind `document`,
+  classification `public`, no venture or persona, `uri` `urn:foundry:startup-knowledge-base:<kind>/<id>`,
+  `checksum` `skb@3.0.0:sha256:…`), with its Markdown as `body` (the document viewer shows it, every reference
+  linked) and its passages as chunks. A case is a dated **documented account** (what the cited report says, what it
+  does not establish) and separate **editorial** passages (analysis, proposed experiment, metric, decision rule,
+  options, framework mapping), each headed as such; frameworks are method summaries; stages are editorial
+  recommendations. A passage's heading names the publisher of its references and, for an account, the date its
+  evidence is as of, so the evidence title carries the citation (title + publisher); the References section lists
+  title, authors, publisher, year, URL, review date and the audit's limitation. The pack's five RAG documents are
+  exactly the rendering of five items (`ragTemplate`, SHA-256 checked), so they are ingested once, not as
+  near-duplicates.
+- **Validation.** `validateKnowledgePack` has the semantics of the pack's `validate_kb.py` (fields, types, dates,
+  URLs, source eligibility, references, case/method separation and unions, coverage, RAG hashes, counts) and its
+  seventeen self-test corruptions; `pnpm --filter @foundry/db knowledge-pack validate` prints the report.
+- **How production gets it.** The seed runs on every deploy (migrate custom resource) and syncs the home tenant
+  (`syncKnowledgePack`), and the deploy's embedding backfill embeds new passages. The sync is idempotent: absent items
+  are inserted, an item whose text changed is re-ingested (only its passages are replaced), an item the JSON drops is
+  withdrawn (and returns if a later JSON has it), a person's withdrawal is never undone. No migration:
+  `knowledge-pack sync [--tenant <slug>]` does the same for any tenant.
+- **Retrieval** (`searchSharedChunks`, `REFERENCE_GATE`). A reference passage is never a candidate by vector
+  proximity or one shared word: the founder's words must name its subject (at least two words that are distinctive
+  in the library, or a case's company named as written, covering at least a third of the query's distinctive
+  words); a distant embedding vetoes it; a question about the program itself (its stage gates, cohort, curriculum)
+  draws on the program’s guidance only. One passage per item, a documented account before editorial guidance, at
+  most two per typed turn and one per call, in slots of their own beside the shared budget. Authority 0.7 keeps
+  them below the program's guidance (0.9) and the vEIR's library (1.0). An unrelated turn retrieves none.
+- **Citing.** The evidence block marks them `source="reference"` and tells the coach to prefer the program's
+  guidance, name whose account it is, keep a documented account to its date and limits, never present editorial
+  guidance as fact, and say when something is not reported instead of estimating it. The app labels them
+  "Reference library" and opens them in the viewer.
+- **Never venture memory.** A memory candidate resting only on reference passages is dropped unless the founder said
+  it, and no memory item links a reference passage.
+- **Evaluation.** `knowledge-pack.db.test.ts` runs the pack's `rag_eval_questions.json` through the real retrieval:
+  Recall@3 1.00 on Q01–Q04, and Q05 (an interview-to-sale conversion rate the source does not report) retrieves no
+  figure and the account that states the gap.
+
 ## 4. Specific pool
 
 ### 4.1 Conversation digests
