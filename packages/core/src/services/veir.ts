@@ -158,8 +158,8 @@ export function createVeirService(kit: Kit, face: FaceService): VeirService {
           callsEnabled: settings.callsEnabled,
           // The caller's own acknowledgement of the first-call privacy notice (per person, not per browser).
           callNoticeAcknowledgedAt: await principalsRepo.callNoticeAcknowledgedAt(scope.tx),
-          // The stock vendor voice is disclosed as what it is: an AI voice, no one's.
-          ...(kit.deps.stockVoice === undefined
+          // The stock vendor voice is disclosed as what it is: an AI voice, no one's (while it is switched on).
+          ...(kit.deps.stockVoice === undefined || !settings.vendorVoiceEnabled
             ? {}
             : { voice: { vendor: kit.deps.stockVoice.provider.id, label: STOCK_VOICE_LABEL } }),
         };

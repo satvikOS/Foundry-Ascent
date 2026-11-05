@@ -18,7 +18,7 @@ receives only the vEIR's validated words (and, as prosody context, the validated
 | Adapter | `POST /v1/text-to-speech/{voiceId}/stream`, one request per validated unit, `pcm_24000` (or `mp3_44100_64` for an older page), `previous_text` / `next_text`, `language_code: "en"`, a 2 s first-audio deadline, a prewarm (`GET /v1/models`) at call start | `apps/api/src/adapters/elevenlabs-voice.ts`              |
 | Core    | Chooses the voice (crisis line: always Polly; a ready clone; else the stock voice), writes numbers, symbols and addresses out as words (`speechText`), meters, falls back, rests a failing vendor 60 s                                                      | `packages/core/src/services/speech.ts`, `speech-text.ts` |
 | Route   | `POST /speech` answers raw `audio/pcm` (rate in `x-speech-sample-rate`) when the page's `accept` names it                                                                                                                                                   | `apps/api/src/routes/veir.ts`                            |
-| Browser | Plays the PCM as it arrives (100 ms jitter buffer, then 40 ms pieces back to back); barge-in stops every scheduled piece and cancels every fetch at once                                                                                                    | `apps/web/src/lib/realtime/pcm-stream.ts`, `playback.ts` |
+| Browser | Plays the PCM as it arrives (100 ms jitter buffer, then 40 ms pieces), resampled once to the AudioContext's rate and joined on whole frames; 4 ms fades at an underrun, 5 ms on stop; barge-in stops every piece and cancels every fetch at once            | `apps/web/src/lib/realtime/pcm-stream.ts`, `playback.ts` |
 
 The FULL HeyGen stock face (admins, sandbox) is unchanged: HeyGen voices admitted text in its own voice; a unit the face
 cannot say falls back to our speakers in the ElevenLabs voice. A LITE face would be handed ElevenLabs' own 24 kHz PCM
@@ -71,8 +71,11 @@ for this HTTP path).
 
 - **Only validated words.** Each request carries a signed unit (or matches a completed reply's stored spoken words);
   neighbours used as context are checked against their own signatures, and a neighbour that does not verify is dropped.
-- **Never read aloud:** web and email addresses ("the link on screen"), Markdown, citation keys, table pipes. Numbers,
-  money, percentages, ranges, ordinals, dates, times and phone-like digits are written out as words (`speechText`).
+- **Never read aloud:** web and email addresses ("the link on screen"), with or without `https://` or `www.`
+  (`ycombinator.com/apply`, `foundry.ai`), Markdown, citation keys, table pipes. Numbers, money, percentages, ranges
+  (`3-5x` → "three to five times", `$500k-$1M` → "five hundred thousand to one million dollars"), ordinals, dates,
+  times, versions, `24/7` and phone numbers (`555-1234`, digit by digit) are written out as words (`speechText`).
+  Model names such as `GPT-4o` are left for the voice to read as names.
 - **Caps and kill switches:** the AI and calls switches, the platform's daily spend cap, the call's and the person's
   speech budget (15 characters per second of call) all apply before the vendor is called. The crisis support line is
   always Polly.
@@ -84,8 +87,11 @@ for this HTTP path).
   said twice), and the vendor rests for 60 s in that container (its next units go straight to Polly). A stream that
   breaks after its first audio cannot be spliced: the unit ends where the audio stopped, and the vendor rests the same
   way. The audit marks a fallen-back unit `fallback: true`; `speech.timing` logs `voice`, `fallback` and `pcm`.
-- **Turning it off:** `media.voice.provider: "polly"` and a deploy (every call then speaks Polly). The AI and calls
-  kill switches stop all speech at once, as before.
+- **Turning it off (no deploy):** Admin › Settings › **AI voice** off (platform setting `vendor_voice_enabled`,
+  migration 0025, on by default). From the next unit on, every call speaks Polly, the call config stops naming an AI
+  voice and nothing more is sent to ElevenLabs; on again (it asks first), the next unit is ElevenLabs'. Audited like
+  every setting. To remove it from the deployment instead: `media.voice.provider: "polly"` and a deploy. The AI and
+  calls kill switches stop all speech at once, as before.
 
 ## 5. What to check live after the first deploy
 
@@ -96,7 +102,13 @@ for this HTTP path).
    `synthesizedMs` minus `reservedMs` is the vendor's time to first audio. No `speech.vendor_failed`. A few units
    with `fallback: true` right after a cold start are acceptable; many mean the 2 s deadline is too short for the
    region or the plan's concurrency is exhausted (`429`).
-4. Barge in mid-sentence: the voice stops at once and nothing of the cut reply plays afterwards.
+4. Barge in mid-sentence: the voice stops at once (a 5 ms fade, no click) and nothing of the cut reply plays
+   afterwards.
+   4a. Listen with headphones on **Safari macOS** (its AudioContext runs at 44.1 kHz) and **iOS Safari**, and on Chrome:
+   no clicks or crackle inside sentences (where 40 ms pieces join), the first sound starts cleanly, and a call
+   resumed after the tab was in the background plays again. The joins are tested sample for sample against a
+   one-pass resample in `pcm-stream.test.ts`, but no automated test listens through a real audio device.
+   4b. Admin › Settings › AI voice off during a call: the next sentence is Polly; on again: ElevenLabs.
 5. Admin › Usage: an "ElevenLabs · eleven_flash_v2_5" row priced per character.
 6. Listen for numbers, money and a URL in a reply: they are said as words, and the URL as "the link on screen".
 7. Whether a client abort through CloudFront cancels the Lambda's vendor request (`c.req.raw.signal`) is not verified;

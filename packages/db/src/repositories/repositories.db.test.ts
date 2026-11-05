@@ -307,6 +307,8 @@ describe('usage, idempotency, settings (system executor)', () => {
       // Seeded by migration 0017 (the digital twin: off, 60 video minutes a month, 20 a call).
       facesEnabled: false,
       clonedVoiceEnabled: false,
+      // Seeded by migration 0025 (the stock vendor voice's runtime switch: on).
+      vendorVoiceEnabled: true,
       faceMinutesPerPrincipalMonth: 60,
       faceMinutesPerCall: 20,
     });

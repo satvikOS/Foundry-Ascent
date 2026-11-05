@@ -10,10 +10,12 @@
  * - a vendor failure before the first audio is said by Amazon Polly in the same response and reservation (one ledger
  *   row, the Polly one; never both), and the vendor rests for 60 s; a stream that breaks after its first audio ends
  *   the unit there and rests the vendor too;
- * - the crisis line is never the vendor's.
+ * - the crisis line is never the vendor's;
+ * - the platform setting `vendor_voice_enabled` (migration 0025) switches it off at runtime: Polly says the next unit,
+ *   the call config stops naming it, and nothing is asked of the vendor; on again, the vendor says the next unit.
  */
 import { CallConfigResponse, StartCallResponse, TurnStreamEvent } from '@foundry/contracts';
-import { p } from '@foundry/db';
+import { p, settingsRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { PlatformKeyCache } from '../auth/keys.js';
@@ -285,6 +287,44 @@ describe('the stock vendor voice (an "AI voice")', () => {
     await speak({ sessionId, turnId, text: spoken });
     expect(eleven.calls.length).toBe(calls + 1);
     expect(eleven.calls.at(-1)?.unit).toBeNull();
+  });
+
+  it('is switched off and on at runtime by vendor_voice_enabled, with no deploy', async () => {
+    const setVendorVoice = (vendorVoiceEnabled: boolean) =>
+      h.t.db.system((sx) => settingsRepo.updatePlatformSettings(sx, { vendorVoiceEnabled }, h.people.owner));
+    expect((await h.t.db.system((sx) => settingsRepo.getPlatformSettings(sx))).vendorVoiceEnabled).toBe(true);
+    const { sessionId, started } = await startCall();
+    const [a] = await signedTurn(sessionId, started.call.id, ['Said by Polly now.']);
+    if (a === undefined) throw new Error('unit');
+    await setVendorVoice(false);
+    try {
+      const vendorCalls = eleven.calls.length;
+      const pollyCalls = polly.calls.length;
+      const off = await speak({ sessionId, ...a }, true);
+      expect(eleven.calls.length).toBe(vendorCalls);
+      expect(polly.calls.length).toBe(pollyCalls + 1);
+      expect(off).toMatchObject({ contentType: 'audio/pcm', sampleRateHertz: 16_000 });
+      expect(await lastAudit('speech.synthesized')).not.toMatchObject({ engine: 'vendor' });
+      // The call config no longer names an AI vendor voice, and a new call does not warm it.
+      expect(CallConfigResponse.parse(await core.veir.callConfig(maya, quietquad())).voice).toBeUndefined();
+      const prewarms = eleven.prewarms;
+      await startCall();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(eleven.prewarms).toBe(prewarms);
+    } finally {
+      await setVendorVoice(true);
+    }
+    // On again: the next unit is the vendor's.
+    const again = await startCall();
+    const [c] = await signedTurn(again.sessionId, again.started.call.id, ['Said by the vendor again.']);
+    if (c === undefined) throw new Error('unit');
+    const vendorCalls = eleven.calls.length;
+    await speak({ sessionId: again.sessionId, ...c }, true);
+    expect(eleven.calls.length).toBe(vendorCalls + 1);
+    expect(CallConfigResponse.parse(await core.veir.callConfig(maya, quietquad())).voice).toEqual({
+      vendor: 'elevenlabs',
+      label: 'AI voice',
+    });
   });
 
   it('never gives the crisis line or a clone’s place to the stock voice', () => {

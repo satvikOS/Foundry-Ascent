@@ -478,7 +478,8 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
   signature (`sessionId|turnId|seq|text`, after the identity guard, meta-narration gate and sentence gate) verifies
   in that request. Passages of a stored reply (unsigned) and the crisis line use a stock voice. It speaks only in a
   call that started with it (`calls.voice_vendor`), while `cloned_voice_enabled` is on and the persona's voice is
-  ready under `voice` consent; otherwise the next unit is the call's stock voice, or the platform voice when that
+  ready under `voice` consent; otherwise the next unit is the call's stock voice (the deployment's ElevenLabs "AI
+  voice" while `vendor_voice_enabled` is on, else Polly), or the platform voice when that
   call's clone was withdrawn (the call goes on). A clone that fails (vendor error, timeout, missing key) costs the
   unit nothing: the same verified words are spoken in that stock voice within the same reservation (billed as the
   stock voice), and that clone rests for a minute in that container, so its next units skip it instead of waiting

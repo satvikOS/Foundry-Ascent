@@ -6,12 +6,17 @@
  * normalise before the request. {@link speechText} takes text that {@link speakableText} already made plain (no
  * citation keys, emphasis, headings, bullets or link targets) and also:
  * - never reads a web address or an email address: it says "the link on screen" / "the email address on screen"
- *   (the caption shows the address itself);
+ *   (the caption shows the address itself), with or without `https://` or `www.` ("ycombinator.com/apply",
+ *   "foundry.ai": a name ending in a common top-level domain, written in lower case so "ASP.NET" stays a word);
  * - drops what is left of Markdown tables and code (`|`, `#`, backticks) and says a few symbols and abbreviations
  *   as words (`&`, `e.g.`, `vs.`, `→`);
- * - writes numbers as words: money ("$1.5M" → "one point five million dollars"), percentages, multipliers ("10x"),
- *   ranges ("3-5"), ordinals, times, ISO dates, years after "in", "since", "by" and the like, fractions, phone-like
- *   digit groups (digit by digit) and plain numbers with thousands separators and decimals.
+ * - writes numbers as words: ranges first, with what either end carries said once ("3-5x" → "three to five times",
+ *   "3-5%" → "three to five percent", "$500k-$1M" → "five hundred thousand to one million dollars"), then money
+ *   ("$1.5M" → "one point five million dollars"), percentages, multipliers ("10x"), ordinals, times, ISO dates,
+ *   versions ("2.0.1" → "two point zero point one"), "24/7", years after "in", "since", "by" and the like,
+ *   fractions, phone numbers (digit by digit: "555-123-4567", and "555-1234" unless it is a round range such as
+ *   "100-1000" with no "call" or "phone" before it) and plain numbers with thousands separators and decimals;
+ * - leaves a number written into a word as it is ("GPT-4o", "Q3", "v2", "B2B"): the voice reads those as names.
  *
  * Amazon Polly normalises text itself, so Polly's own units are left as they were; a Polly unit that stands in for a
  * vendor unit says these same words.
@@ -184,6 +189,85 @@ const FRACTIONS: Record<string, string> = {
   '3/4': 'three quarters',
 };
 
+/** Top-level domains a bare web address ends with (lower case; never one that is also a common word). */
+const TLDS =
+  'com|org|net|edu|gov|io|ai|co|app|dev|xyz|info|biz|tech|gg|tv|fm|sh|vc|ly|eu|uk|ca|de|fr|au|jp|nl|ch|es|se|dk|fi|ie|nz|sg|hk|kr|br|mx|health|bio|ventures|capital|fund|academy|school';
+/** A web address without its scheme ("ycombinator.com/apply", "foundry.ai"), up to the punctuation after it. */
+const BARE_ADDRESS = new RegExp(
+  `(?<![\\w@./-])(?:[A-Za-z0-9][A-Za-z0-9-]*\\.)+(?:${TLDS})(?![\\w-])(?:[/?#][^\\s<>"']*?)?(?=[.,;:!?)\\]'"]*(?:\\s|$))`,
+  'g',
+);
+
+/** The scales a range end may carry; a lone `m`, `b` or `t` only after a currency sign ("$3-5m", never "3-5m"). */
+const RANGE_SCALE = '(?:k|mm|mn|m|bn|b|tn|t|thousand|million|billion|trillion)';
+const RANGE_NUMBER = '(\\d[\\d,]*(?:\\.\\d+)?)';
+/** "3-5", "3-5x", "3%-5%", "$500k-$1M", "$1-2 million": a range between two numbers, with what each end carries. */
+const RANGE = new RegExp(
+  `(?<![\\w.,])([$€£])?${RANGE_NUMBER}(?:\\s?(${RANGE_SCALE})\\b)?(\\s?%|[x×](?![\\p{L}\\d]))?\\s?[-–—]\\s?([$€£])?${RANGE_NUMBER}(?:\\s?(${RANGE_SCALE})\\b)?(\\s?%|[x×](?![\\p{L}\\d]))?(?![\\d\\p{L}])`,
+  'giu',
+);
+
+/** A range end's scale as a word, or undefined when the letter is a unit rather than a scale ("5m" with no "$"). */
+function rangeScale(scale: string | undefined, currency: boolean): string | undefined {
+  if (scale === undefined) return undefined;
+  if (!currency && /^[mbt]$/.test(scale)) return undefined;
+  if (!currency && /^[MB]$/.test(scale)) return scale === 'M' ? 'million' : 'billion';
+  return SCALE_WORDS[scale.toLowerCase()];
+}
+
+function isYear(n: string): boolean {
+  return /^(?:1[5-9]\d\d|20\d\d)$/.test(n);
+}
+
+/** A range said once: each end as a number with its scale, then the currency, percent or "times" they share. */
+function rangeWords(
+  whole: string,
+  c1: string | undefined,
+  n1: string,
+  s1: string | undefined,
+  u1: string | undefined,
+  c2: string | undefined,
+  n2: string,
+  s2: string | undefined,
+  u2: string | undefined,
+): string {
+  const symbol = c1 ?? c2;
+  const names = symbol === undefined ? undefined : CURRENCIES[symbol];
+  const currency = names !== undefined;
+  const scale1 = rangeScale(s1, currency);
+  const scale2 = rangeScale(s2, currency);
+  // A letter that is a unit ("3-5m"), not a scale: the range is still said, the letter is left as written.
+  if ((s1 !== undefined && scale1 === undefined) || (s2 !== undefined && scale2 === undefined)) {
+    return whole.replace(
+      /^.*?[-–—]\s?/,
+      `${numberWords(n1.replace(/,/g, ''))}${s1 === undefined ? '' : ` ${s1}`} to `,
+    );
+  }
+  const unit = (u1 ?? u2 ?? '').trim();
+  const a = n1.replace(/,/g, '');
+  const b = n2.replace(/,/g, '');
+  if (
+    symbol !== undefined &&
+    scale1 === undefined &&
+    scale2 === undefined &&
+    (/\.\d\d$/.test(a) || /\.\d\d$/.test(b))
+  ) {
+    // Prices with cents: each said whole ("$5.99-$9.99").
+    return `${money(symbol, a, undefined)} to ${money(symbol, b, undefined)}`;
+  }
+  if (!currency && unit === '' && scale1 === undefined && scale2 === undefined && isYear(a) && isYear(b)) {
+    return `${yearWords(a)} to ${yearWords(b)}`;
+  }
+  const end = (n: string, scale: string | undefined) =>
+    `${numberWords(n)}${scale === undefined ? '' : ` ${scale}`}`;
+  const tail = names !== undefined ? ` ${names[1]}` : unit === '%' ? ' percent' : unit === '' ? '' : ' times';
+  return `${end(a, scale1)} to ${end(b, scale2)}${tail}`;
+}
+
+/** Words before "555-1234" that make it a phone number even when it reads like a round range. */
+const PHONE_CUE =
+  /\b(?:call|calling|phone|tel|text|dial|fax|number|reach|ring|line|cell|mobile)\b[^.\d]{0,16}$/i;
+
 /** Words a year follows ("in 2026", "since 2019"), so "2,026 users" and "2026 users" stay counts. */
 const YEAR_CUE =
   /\b(?:in|since|by|from|until|till|through|of|during|before|after|around|early|late|mid|fall|spring|summer|winter|autumn|year|fiscal|class|January|February|March|April|May|June|July|August|September|October|November|December)\s+$/i;
@@ -198,6 +282,7 @@ export function speechText(plain: string): string {
   // Addresses are never read aloud: the caption shows them.
   text = text.replace(/\b(?:https?:\/\/|www\.)[^\s<>"']+?(?=[.,;:!?)\]]*(?:\s|$))/gi, 'the link on screen');
   text = text.replace(/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g, 'the email address on screen');
+  text = text.replace(BARE_ADDRESS, 'the link on screen');
   // What is left of tables, code and lists.
   text = text.replace(/\s*\|\s*/g, ', ').replace(/[`•▪◦]/g, ' ');
   text = text.replace(/(^|\s)#(\d+)/g, '$1number $2').replace(/#/g, ' ');
@@ -232,6 +317,40 @@ export function speechText(plain: string): string {
   // Phone-like digit groups, digit by digit.
   text = text.replace(/(?<![\d.,])(?:\+?1[\s.-])?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}(?![\d])/g, (phone) =>
     phone.replace(/\D+/g, ' ').trim().split(' ').map(digitsAsWords).join(', '),
+  );
+  // A seven-digit phone number ("555-1234"), unless it reads as a round range ("100-1000") with no cue before it.
+  text = text.replace(
+    /(?<![\w.,$€£-])(\d{3})-(\d{4})(?![\d-])/g,
+    (whole, a: string, b: string, offset: number, all: string) =>
+      PHONE_CUE.test(all.slice(Math.max(0, offset - 30), offset)) || !(a.endsWith('0') && b.endsWith('0'))
+        ? `${digitsAsWords(a)}, ${digitsAsWords(b)}`
+        : whole,
+  );
+  // Versions ("2.0.1", "v1.10.2") and "24/7".
+  text = text.replace(
+    /(?<![\w.])(v)?(\d+(?:\.\d+){2,})(?![\w]|\.\d)/gi,
+    (_w, v: string | undefined, version: string, offset: number, all: string) => {
+      const said = version.split('.').map(integerWords).join(' point ');
+      return v === undefined || /\bversion\s+$/i.test(all.slice(Math.max(0, offset - 10), offset))
+        ? said
+        : `version ${said}`;
+    },
+  );
+  text = text.replace(/(?<![\d/])24\s?\/\s?7(?![\d/])/g, 'twenty-four seven');
+  // Ranges, before money, percentages and multipliers, so what both ends share is said once.
+  text = text.replace(
+    RANGE,
+    (
+      whole: string,
+      c1: string | undefined,
+      n1: string,
+      s1: string | undefined,
+      u1: string | undefined,
+      c2: string | undefined,
+      n2: string,
+      s2: string | undefined,
+      u2: string | undefined,
+    ) => rangeWords(whole, c1, n1, s1, u1, c2, n2, s2, u2),
   );
   // Money, with a scale ("$1.5M", "$20k", "$3 million").
   text = text.replace(
@@ -269,7 +388,7 @@ export function speechText(plain: string): string {
       YEAR_CUE.test(all.slice(Math.max(0, offset - 12), offset)) ? yearWords(year) : year,
   );
   text = text.replace(
-    /(?<![\w.])-?\d{1,3}(?:,\d{3})+(?:\.\d+)?(?![\d,])|(?<![\w.])-?\d+(?:\.\d+)?(?![\d])/g,
+    /(?<![\w.])-?\d{1,3}(?:,\d{3})+(?:\.\d+)?(?![\d,\p{L}])|(?<![\w.])-?\d+(?:\.\d+)?(?![\d\p{L}])/gu,
     (n) =>
       n.startsWith('-')
         ? `minus ${numberWords(n.slice(1).replace(/,/g, ''))}`

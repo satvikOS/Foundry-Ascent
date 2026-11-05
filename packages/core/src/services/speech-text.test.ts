@@ -27,6 +27,29 @@ describe('speechText: the words a vendor voice is handed, as they are said', () 
     ['It was -5 degrees.', 'It was minus five degrees.'],
     ['Plain words only.', 'Plain words only.'],
     ['Version v2 of the Q3 plan.', 'Version v2 of the Q3 plan.'],
+    // A range says what both ends carry once, before the money, percent and multiplier rules see it.
+    ['Aim for 3-5x returns.', 'Aim for three to five times returns.'],
+    ['Grow 3-5% monthly.', 'Grow three to five percent monthly.'],
+    ['We had 3%-5% churn.', 'We had three to five percent churn.'],
+    ['Raise $500k-$1M.', 'Raise five hundred thousand to one million dollars.'],
+    ['Raise $1-2M.', 'Raise one to two million dollars.'],
+    ['Revenue grew 20-30k.', 'Revenue grew twenty to thirty thousand.'],
+    [
+      'Prices $5.99-$9.99.',
+      'Prices five dollars and ninety-nine cents to nine dollars and ninety-nine cents.',
+    ],
+    ['From 2020-2024 we grew.', 'From twenty twenty to twenty twenty-four we grew.'],
+    ['Talk to 100-1000 users.', 'Talk to one hundred to one thousand users.'],
+    ['It is 3 - 5 times.', 'It is three to five times.'],
+    // A seven-digit phone number is read digit by digit, never as a range.
+    ['Call 555-1234.', 'Call five five five, one two three four.'],
+    ['Call 555-1000.', 'Call five five five, one zero zero zero.'],
+    ['We run 24/7.', 'We run twenty-four seven.'],
+    ['Ship version 2.0.1 next.', 'Ship version two point zero point one next.'],
+    ['Use v1.10.2.', 'Use version one point ten point two.'],
+    // A number written into a word is a name the voice reads as one.
+    ['Try GPT-4o now.', 'Try GPT-4o now.'],
+    ['Q3-Q4 targets for B2B.', 'Q3-Q4 targets for B2B.'],
   ])('%s', (input, said) => {
     expect(speechText(input)).toBe(said);
     // Idempotent: written-out words are left alone.
@@ -40,6 +63,13 @@ describe('speechText: the words a vendor voice is handed, as they are said', () 
     expect(speechText('Email me at a.b@uni.edu today.')).toBe(
       'Email me at the email address on screen today.',
     );
+    // Without a scheme or "www.", a name ending in a top-level domain is an address too (path and query included).
+    expect(speechText('Visit ycombinator.com/apply today.')).toBe('Visit the link on screen today.');
+    expect(speechText('See foundry.ai for more.')).toBe('See the link on screen for more.');
+    expect(speechText('Or docs.google.com/x?y=1, then call.')).toBe('Or the link on screen, then call.');
+    expect(speechText('Ask at a.b@uni.edu.')).toBe('Ask at the email address on screen.');
+    // Words that only look like addresses stay words.
+    expect(speechText('Use ASP.NET and Node.js in the U.S.')).toBe('Use ASP.NET and Node.js in the U.S.');
     // A Markdown link reads its words only (speakableText), never its target.
     expect(speechText(speakableText('Read [the guide](https://example.com/guide) first.'))).toBe(
       'Read the guide first.',

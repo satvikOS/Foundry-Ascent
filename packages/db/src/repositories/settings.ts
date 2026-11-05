@@ -28,6 +28,7 @@ export const SETTING_KEYS = {
   callsEnabled: 'calls_enabled',
   facesEnabled: 'faces_enabled',
   clonedVoiceEnabled: 'cloned_voice_enabled',
+  vendorVoiceEnabled: 'vendor_voice_enabled',
   faceMinutesPerPrincipalMonth: 'face_minutes_per_principal_month',
   faceMinutesPerCall: 'face_minutes_per_call',
 } as const satisfies Record<keyof PlatformSettingsValue, string>;
@@ -41,7 +42,7 @@ export type ResolvedPlatformSettings = Required<PlatformSettingsValue>;
  * are 20 documents and 50 MB per person per UTC day; calls last at most 30 minutes and one person may talk 60
  * minutes per UTC day. Streaming and calls are on unless switched off (the AI kill switch still stops both).
  * The vEIR's video face and cloned voice (0017) are off until the program turns them on (fail closed), with 60
- * video minutes per person per month and 20 per call.
+ * video minutes per person per month and 20 per call. The stock vendor voice (0025) is on where one is configured.
  */
 export const DEFAULT_SETTINGS: ResolvedPlatformSettings = {
   aiEnabled: false,
@@ -58,6 +59,7 @@ export const DEFAULT_SETTINGS: ResolvedPlatformSettings = {
   callsEnabled: true,
   facesEnabled: false,
   clonedVoiceEnabled: false,
+  vendorVoiceEnabled: true,
   faceMinutesPerPrincipalMonth: 60,
   faceMinutesPerCall: 20,
 };
@@ -93,6 +95,7 @@ const Coerced = z.object({
   callsEnabled: z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]),
   facesEnabled: z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]),
   clonedVoiceEnabled: z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]),
+  vendorVoiceEnabled: z.union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')]),
   faceMinutesPerPrincipalMonth: z.coerce.number().int(),
   faceMinutesPerCall: z.coerce.number().int(),
 });

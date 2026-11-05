@@ -204,6 +204,7 @@ FULL mode (§9) costs twice as much per minute: **$0.19 a minute** of face (two 
 | ------------------------ | ------------------------------------------------------------------------------------------------------------- | --------------------------------- |
 | Every face               | Admin › Settings › **Video faces** off                                                                        | live faces end within 15 s        |
 | Every cloned voice       | Admin › Settings › **Cloned voices** off                                                                      | the next sentence, standard voice |
+| The stock AI voice       | Admin › Settings › **AI voice** off (`vendor_voice_enabled`; ElevenLabs stock voice → Polly)                  | the next sentence, standard voice |
 | One vEIR's face or voice | Studio › Consent › Digital twin: **Withdraw…** the scope (EIR), or clear the vendor ID (curator)              | at once                           |
 | All calls / all AI       | Admin › Settings › Voice calls off, or the AI kill switch ([runbook](kill-switch-and-persona-suspension.md))  | within 15 s                       |
 | The vendors entirely     | `media.face.provider: "none"`, `media.voice.provider: "polly"`, deploy (removes the grants and the CSP hosts) | after the deploy                  |

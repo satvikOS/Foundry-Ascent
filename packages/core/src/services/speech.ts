@@ -811,7 +811,9 @@ export function createSpeechService(
           twinVoice: side.twin.voice,
           verified: verified !== null,
           crisis: false,
-          stockVoice: kit.deps.stockVoice,
+          // The stock vendor voice only while the platform has it on (`vendor_voice_enabled`): off, Polly says the
+          // unit, from the next unit on, with no deploy.
+          stockVoice: settings.vendorVoiceEnabled ? kit.deps.stockVoice : undefined,
         });
         // A vendor voice is handed its words with numbers, symbols and addresses written out as said (Polly
         // normalises its own), and the verified words around them for its prosody.

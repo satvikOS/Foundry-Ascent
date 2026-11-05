@@ -607,7 +607,9 @@ describe('SpeechPlayer with PCM streamed as it is synthesized', () => {
     // Heard (captions follow) while the rest of the unit is still being synthesized.
     expect(log).toEqual(['start 0 server']);
     expect(context.sources).toHaveLength(1);
-    expect(context.sources[0]?.connections[0]).toBe(context.gains[0]);
+    // Through the unit's own gain (its fades) into the player's gain (ducking, the level meter).
+    expect(context.sources[0]?.connections[0]).toBe(context.gains[1]);
+    expect(context.gains[1]?.connections[0]).toBe(context.gains[0]);
     // The level meter reads what plays.
     const analyser = context.analysers[0];
     if (analyser) analyser.level = 0.3;

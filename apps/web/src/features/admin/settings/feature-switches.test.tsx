@@ -52,3 +52,24 @@ describe('FeatureSwitches: the video face’s mode and price', () => {
     expect(screen.queryByText(/Stock AI avatar/)).toBeNull();
   });
 });
+
+describe('FeatureSwitches: the vEIR’s AI voice', () => {
+  it('is on by default, turns off at once and asks before it is turned on again', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const on = renderWithProviders(<FeatureSwitches {...BASE} onChange={onChange} />);
+    const voice = screen.getByRole('switch', { name: 'AI voice' });
+    expect(voice).toBeChecked();
+    expect(within(voice.closest('div.flex') as HTMLElement).getByText('On.')).toBeVisible();
+    await user.click(voice);
+    expect(onChange).toHaveBeenLastCalledWith({ vendorVoiceEnabled: false });
+
+    on.unmount();
+    renderWithProviders(<FeatureSwitches {...BASE} vendorVoiceEnabled={false} onChange={onChange} />);
+    expect(screen.getByText('Off. Calls use the standard voice.')).toBeVisible();
+    await user.click(screen.getByRole('switch', { name: 'AI voice' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Turn on the AI voice?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Turn on voice' }));
+    expect(onChange).toHaveBeenLastCalledWith({ vendorVoiceEnabled: true });
+  });
+});

@@ -78,6 +78,7 @@ export interface PlayerAudio {
     | 'decodeAudioData'
     | 'destination'
     | 'currentTime'
+    | 'sampleRate'
   >;
   fetchSpeech(
     unit: SpeechUnitToPlay,
