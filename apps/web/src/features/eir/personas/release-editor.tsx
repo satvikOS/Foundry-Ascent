@@ -37,12 +37,8 @@ import {
 } from './release-form';
 
 const ONE_PER_LINE = 'One per line.';
-/**
- * Fields kept with the release for you and reviewers, not given to the vEIR word for word: quoted questions and terms
- * became a script it repeated (live pilot 42099643194). Its outlook, teaching principles and feedback order are given.
- */
-const REFERENCE_ONLY =
-  'One per line. For reference: your vEIR isn’t given these word for word, so they never become a script.';
+// Not given to the vEIR word for word: quoted questions and terms became a script (live pilot 42099643194).
+const REFERENCE_ONLY = 'One per line, never quoted.';
 
 function StyleDial({
   control,
@@ -288,11 +284,7 @@ export function ReleaseEditor({
             {textarea('feedbackStructure')}
           </Field>
           <div className="grid gap-5 md:grid-cols-2">
-            <Field
-              label="Vocabulary"
-              description="Preferred terms. One per line. For reference: your vEIR isn’t given these word for word, so they never become stock phrases."
-              error={e.vocabulary?.message}
-            >
+            <Field label="Vocabulary" description={REFERENCE_ONLY} error={e.vocabulary?.message}>
               {textarea('vocabulary')}
             </Field>
             <Field
