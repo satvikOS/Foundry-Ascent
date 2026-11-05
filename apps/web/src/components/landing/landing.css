@@ -1,0 +1,529 @@
+/*
+ * The public landing page (routes/index.tsx and components/landing): its own scale, rhythm and art, scoped to
+ * .landing so nothing here reaches the app. Colours are declared once with light-dark(), like globals.css, and
+ * follow the page's theme (OLED black / off-white). Grain is one 256 px noise tile (scripts/grain-tile.mjs) over
+ * art fields only, never behind body text or app UI, and never animated.
+ */
+@layer components {
+  .landing {
+    /* Grounds and lines (landing only). */
+    --band-warm: light-dark(#f3f2ef, #0b0b0a);
+    --band-ink: #0e0f12;
+    --border-card: light-dark(#dedbd4, rgb(255 255 255 / 0.1));
+    --surface-2: light-dark(#f4f4f2, #111111);
+    --accent-rule: linear-gradient(90deg, #5c79f5, #8fb3f2 55%, #7fa37a);
+
+    /* The voice palette (sampled from the owner's sphere) and the timeline's speaker colours. */
+    --orb-sky: #eaf7fd;
+    --orb-cream: #fdfef1;
+    --orb-mist: #abcff5;
+    --orb-deep: #5c79f5;
+    --moss: #344b2a;
+    --moss-light: #7fa37a;
+    --tl-ground: light-dark(#ededea, #1f1f1f);
+    --tl-dots: light-dark(#bdbdb8, #3d3d3d);
+    --tl-veir: light-dark(#d5dcf5, #303d71);
+    --tl-student: light-dark(#d8e6cf, #344b2a);
+    --tl-bar-veir: light-dark(#22306b, #ffffff);
+    --tl-bar-student: light-dark(#2c4520, #ffffff);
+
+    --shadow-float:
+      inset 0 1px 0 0 var(--highlight), 0 0 0 1px light-dark(rgb(17 17 16 / 0.06), rgb(255 255 255 / 0.06)),
+      0 16px 48px -12px light-dark(rgb(17 17 16 / 0.16), rgb(0 0 0 / 0.7));
+
+    /* Rhythm: 16 / 24 / 40 px gutters, sections clamp(64px, 10vw, 144px), content at most 1360 px. */
+    --gutter: 1rem;
+    --section-y: clamp(4rem, 10vw, 9rem);
+    --content-max: 85rem;
+    --nav-height: 4rem;
+    --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+    --dur-reveal: 560ms;
+
+    background: var(--background);
+    color: var(--foreground);
+  }
+
+  @media (min-width: 40rem) {
+    .landing {
+      --gutter: 1.5rem;
+    }
+  }
+
+  @media (min-width: 64rem) {
+    .landing {
+      --gutter: 2.5rem;
+    }
+  }
+
+  /*
+   * A part of the page in a fixed scheme (the dark bands, the session cards). The app's tokens are resolved
+   * where :root declares them, so they are declared again here, where this element's color-scheme applies.
+   */
+  .l-scheme-dark,
+  .l-scheme-light {
+    --background: light-dark(#fafaf9, #000000);
+    --foreground: light-dark(#111110, #f4f4f2);
+    --card: light-dark(#ffffff, #0a0a0a);
+    --popover: light-dark(#ffffff, #141414);
+    --muted: light-dark(#f2f2f0, #111111);
+    --muted-foreground: light-dark(#5c5c58, #a6a6a3);
+    --subtle-foreground: light-dark(#686863, #8f8f8b);
+    --primary: light-dark(#111110, #f4f4f2);
+    --primary-foreground: light-dark(#fafaf9, #000000);
+    --secondary: light-dark(#efefed, #1a1a1a);
+    --accent: light-dark(#ececea, #1f1f1f);
+    --border: light-dark(#e4e4e1, rgb(255 255 255 / 0.1));
+    --border-strong: light-dark(#cfcfcb, rgb(255 255 255 / 0.2));
+    --input: light-dark(#8d8d88, #6b6b67);
+    --ring: light-dark(#111110, #ffffff);
+    --highlight: light-dark(rgb(255 255 255 / 0), rgb(255 255 255 / 0.05));
+    --shadow-color: light-dark(rgb(17 17 16 / 0.08), rgb(0 0 0 / 0.6));
+    --border-card: light-dark(#dedbd4, rgb(255 255 255 / 0.1));
+    --surface-2: light-dark(#f4f4f2, #111111);
+    color: var(--foreground);
+  }
+
+  .l-scheme-dark {
+    color-scheme: dark;
+  }
+
+  .l-scheme-light {
+    color-scheme: light;
+  }
+
+  .l-wrap {
+    width: 100%;
+    max-width: calc(var(--content-max) + var(--gutter) * 2);
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+
+  .l-section {
+    padding-block: var(--section-y);
+    scroll-margin-top: var(--nav-height);
+  }
+
+  /* --- Type (Newsreader display, Geist text, Geist Mono eyebrows; headings never bold) -------------------- */
+  .l-hero {
+    font-family: var(--font-serif);
+    font-size: clamp(3.5rem, 1.9rem + 4.4vw, 6rem);
+    line-height: 1;
+    letter-spacing: -0.025em;
+    font-weight: 400;
+  }
+
+  .l-cta-display {
+    font-family: var(--font-serif);
+    font-size: clamp(2.25rem, 1.4rem + 3.4vw, 4rem);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-weight: 400;
+  }
+
+  .l-h2 {
+    font-size: clamp(1.875rem, 1.3rem + 2.2vw, 3rem);
+    line-height: 1.2;
+    letter-spacing: -0.015em;
+    font-weight: 400;
+  }
+
+  .l-h3 {
+    font-size: clamp(1.25rem, 1.1rem + 0.5vw, 1.5rem);
+    line-height: 1.3;
+    letter-spacing: -0.005em;
+    font-weight: 400;
+  }
+
+  .l-lead {
+    font-size: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
+    line-height: 1.42;
+    color: var(--muted-foreground);
+  }
+
+  .l-body {
+    font-size: 1rem;
+    line-height: 1.44;
+  }
+
+  .l-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.33;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  @media (min-width: 40rem) {
+    .l-eyebrow {
+      font-size: 0.8125rem;
+    }
+  }
+
+  /* --- Pills (CTAs): ink, white (on art and dark bands), outline; a text link with an arrow ---------------- */
+  .pill {
+    position: relative;
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 9999px;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 450;
+    line-height: 1.25;
+    white-space: nowrap;
+    transition:
+      background-color 150ms var(--ease-standard),
+      color 150ms var(--ease-standard),
+      border-color 150ms var(--ease-standard);
+  }
+
+  .pill--sm {
+    min-height: 2.25rem;
+    padding: 0 1rem;
+    font-size: 0.9375rem;
+  }
+
+  .pill--ink {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+
+  .pill--ink:hover {
+    background: color-mix(in oklab, var(--primary) 86%, var(--background));
+  }
+
+  .pill--white {
+    background: #ffffff;
+    color: #111110;
+  }
+
+  .pill--white:hover {
+    background: #e9e9e6;
+  }
+
+  .pill--outline {
+    border: 1px solid var(--foreground);
+    color: var(--foreground);
+  }
+
+  .pill--outline:hover {
+    background: color-mix(in oklab, var(--foreground) 8%, transparent);
+  }
+
+  .pill:focus-visible,
+  .l-link:focus-visible,
+  .l-focus:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px var(--background);
+  }
+
+  .l-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 0.25rem;
+    text-underline-offset: 0.25em;
+  }
+
+  .l-link:hover {
+    text-decoration: underline;
+  }
+
+  .l-link svg {
+    transition: transform 150ms var(--ease-standard);
+  }
+
+  .l-link:hover svg {
+    transform: translateX(2px);
+  }
+
+  /* --- Nav: solid at rest; landing-nav.tsx adds the bars' glass (.glass-bar) once the page scrolls ------------------------------------------------------ */
+  .l-nav {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 40;
+    height: var(--nav-height);
+    background: var(--background);
+    border-bottom: 1px solid transparent;
+    transition:
+      background-color 200ms var(--ease-standard),
+      border-color 200ms var(--ease-standard);
+  }
+
+  /* --- Art fields: layered gradients in the voice palette, then the grain tile ----------------------------- */
+  .art {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background-color: light-dark(#e9ecef, #050608);
+  }
+
+  .art::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  .art--hero::before {
+    background:
+      radial-gradient(
+        60% 70% at 12% 108%,
+        light-dark(rgb(92 121 245 / 0.32), rgb(92 121 245 / 0.42)),
+        transparent 70%
+      ),
+      radial-gradient(
+        48% 60% at 88% -8%,
+        light-dark(rgb(234 247 253 / 0.95), rgb(171 207 245 / 0.2)),
+        transparent 72%
+      ),
+      radial-gradient(
+        55% 65% at 100% 100%,
+        light-dark(rgb(127 163 122 / 0.34), rgb(52 75 42 / 0.55)),
+        transparent 70%
+      ),
+      radial-gradient(
+        40% 50% at 46% 40%,
+        light-dark(rgb(171 207 245 / 0.35), rgb(48 61 113 / 0.28)),
+        transparent 75%
+      );
+  }
+
+  .art--voice::before {
+    background:
+      radial-gradient(
+        70% 60% at 50% 120%,
+        light-dark(rgb(92 121 245 / 0.28), rgb(92 121 245 / 0.34)),
+        transparent 70%
+      ),
+      radial-gradient(
+        50% 50% at 0% 0%,
+        light-dark(rgb(234 247 253 / 0.9), rgb(171 207 245 / 0.14)),
+        transparent 70%
+      );
+  }
+
+  .art--moss::before {
+    background:
+      radial-gradient(
+        80% 70% at 0% 100%,
+        light-dark(rgb(127 163 122 / 0.42), rgb(52 75 42 / 0.75)),
+        transparent 72%
+      ),
+      radial-gradient(
+        60% 60% at 100% 0%,
+        light-dark(rgb(171 207 245 / 0.5), rgb(48 61 113 / 0.45)),
+        transparent 70%
+      );
+  }
+
+  .art--cta::before {
+    background:
+      radial-gradient(
+        55% 75% at 50% 115%,
+        light-dark(rgb(92 121 245 / 0.34), rgb(92 121 245 / 0.46)),
+        transparent 72%
+      ),
+      radial-gradient(
+        45% 60% at 8% 10%,
+        light-dark(rgb(127 163 122 / 0.32), rgb(52 75 42 / 0.6)),
+        transparent 70%
+      ),
+      radial-gradient(
+        45% 60% at 94% 6%,
+        light-dark(rgb(234 247 253 / 0.9), rgb(171 207 245 / 0.18)),
+        transparent 70%
+      );
+  }
+
+  /* A hairline grid over art (12 % of the ink, in the theme's own colour): an empty child of the art field. */
+  .art-grid {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      linear-gradient(to right, color-mix(in oklab, var(--foreground) 12%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 12%, transparent) 1px, transparent 1px);
+    background-size: 88px 88px;
+  }
+
+  .grain::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: url('/textures/grain-256.png') repeat;
+    background-size: 128px;
+    mix-blend-mode: soft-light;
+    opacity: 0.18;
+  }
+
+  /* Light theme (forced, or the OS's while no theme is forced): an overlay at a lighter strength. */
+  :root.light .landing .grain::after {
+    mix-blend-mode: overlay;
+    opacity: 0.1;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not(.dark) .landing .grain::after {
+      mix-blend-mode: overlay;
+      opacity: 0.1;
+    }
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .grain::after {
+      display: none;
+    }
+  }
+
+  /* --- Hero media card (the device ad) ---------------------------------------------------------------------- */
+  .l-media {
+    height: clamp(32.5rem, 140vw, 40rem);
+    border-radius: 0.75rem;
+  }
+
+  @media (min-width: 48rem) {
+    .l-media {
+      height: clamp(26.25rem, 46vw, 40rem);
+    }
+  }
+
+  /* --- Program strip ---------------------------------------------------------------------------------------- */
+  .l-strip > li + li {
+    border-top: 1px solid var(--border);
+  }
+
+  @media (min-width: 48rem) {
+    .l-strip > li + li {
+      border-top: 0;
+      border-left: 1px solid var(--border);
+    }
+  }
+
+  /* --- Session loop: sticky stacked cards (plain stack on phones) -------------------------------------------- */
+  .l-stack-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 1.25rem;
+    border: 1px solid var(--border-card);
+  }
+
+  @media (min-width: 48rem) {
+    .l-stack-card {
+      position: sticky;
+      top: calc(6rem + var(--i, 0) * 3.5rem);
+      min-height: 36rem;
+    }
+  }
+
+  .l-card--ink {
+    color-scheme: dark;
+    background: linear-gradient(160deg, #101a33 0%, var(--band-ink) 62%);
+    color: #f4f4f2;
+    border-color: rgb(255 255 255 / 0.1);
+  }
+
+  .l-card--black {
+    color-scheme: dark;
+    background: #000;
+    color: #f4f4f2;
+    border-color: rgb(255 255 255 / 0.12);
+  }
+
+  .l-card--light {
+    color-scheme: light;
+    background: linear-gradient(160deg, #ffffff 0%, #eef1f5 100%);
+    color: #111110;
+    border-color: #dedbd4;
+  }
+
+  /* A product fragment floating in a card: a panel in the card's own scheme. */
+  .l-fragment {
+    border-radius: 1rem;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--foreground);
+    box-shadow: var(--shadow-float);
+  }
+
+  /* --- Venture accordion ------------------------------------------------------------------------------------ */
+  .l-acc-item {
+    position: relative;
+    border-top: 1px solid var(--border-strong);
+  }
+
+  .l-acc-item[data-open='true']::before {
+    content: '';
+    position: absolute;
+    inset: -1px 0 auto;
+    height: 2px;
+    background: var(--accent-rule);
+  }
+
+  .l-acc-panel {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 280ms var(--ease-out-expo);
+  }
+
+  .l-acc-item[data-open='true'] .l-acc-panel {
+    grid-template-rows: 1fr;
+  }
+
+  .l-acc-panel > div {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .l-venture-card {
+    border-radius: 1.25rem;
+    --from: light-dark(#dcdff2, #12162b);
+    --to: light-dark(#e4eef7, #0a0c12);
+    background: linear-gradient(165deg, var(--from) 0%, var(--to) 100%);
+  }
+
+  /* --- Principles: cards whose bottom-right corner is notched for the arrow ------------------------------- */
+  .l-notch {
+    clip-path: polygon(
+      0 0,
+      100% 0,
+      100% calc(100% - 4.5rem),
+      calc(100% - 4.5rem) calc(100% - 4.5rem),
+      calc(100% - 6rem) 100%,
+      0 100%
+    );
+  }
+
+  /* --- Reveals: once, 16 px, 560 ms, staggered; never above the fold; final state under reduced motion -------- */
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal-ready [data-reveal] {
+      opacity: 0;
+      transform: translateY(16px);
+      transition:
+        opacity var(--dur-reveal) var(--ease-out-expo),
+        transform var(--dur-reveal) var(--ease-out-expo);
+      transition-delay: calc(var(--stagger, 0) * 60ms);
+    }
+    .reveal-ready [data-reveal].is-in {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .art::before,
+    .art-grid,
+    .grain::after {
+      display: none;
+    }
+    .l-acc-item[data-open='true']::before {
+      background: CanvasText;
+    }
+  }
+}

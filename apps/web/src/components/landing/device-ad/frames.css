@@ -1,0 +1,241 @@
+/*
+ * The device ad's frames (landing page): a laptop and a phone in CSS only. Sizes come from the stage's own box
+ * (a size container), so the devices fit any card without script; the screens' contents are scaled from their
+ * design sizes by --s (set by one ResizeObserver). Frame colours are physical and do not follow the theme.
+ */
+@layer components {
+  .ad-box {
+    container-type: size;
+    position: relative;
+    height: 100%;
+    width: 100%;
+  }
+
+  .ad-stage {
+    --bezel: #0b0b0c;
+    --bezel-edge: #26262a;
+    --laptop-w: min(66cqw, calc((100cqh - 6rem) * 1.52));
+    --phone-h: calc(var(--laptop-w) * 0.56);
+    --phone-w: calc(var(--phone-h) * 9 / 19.5);
+    position: relative;
+    display: flex;
+    height: 100%;
+    width: 100%;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 2.25rem;
+  }
+
+  .ad-laptop {
+    position: relative;
+    width: var(--laptop-w);
+    flex: none;
+  }
+
+  .ad-laptop__lid {
+    position: relative;
+    padding: 10px 10px 12px;
+    border-radius: 14px 14px 4px 4px;
+    background: var(--bezel);
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.16),
+      0 0 0 1px var(--bezel-edge),
+      0 24px 64px -20px rgb(0 0 0 / 0.55);
+  }
+
+  .ad-laptop__base {
+    position: relative;
+    height: 6px;
+    margin: 0 -7%;
+    border-radius: 0 0 10px 10px;
+    background: linear-gradient(#3a3a3f, #1b1b1e);
+    clip-path: polygon(0 0, 100% 0, 98.6% 100%, 1.4% 100%);
+  }
+
+  /* The notch where the lid opens. */
+  .ad-laptop__base::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 14%;
+    height: 3px;
+    transform: translateX(-50%);
+    border-radius: 0 0 6px 6px;
+    background: #121214;
+  }
+
+  .ad-phone {
+    position: relative;
+    z-index: 1;
+    flex: none;
+    width: var(--phone-w);
+    height: var(--phone-h);
+    margin-left: calc(var(--phone-w) * -0.18);
+    margin-bottom: -0.75rem;
+    padding: 8px;
+    border-radius: 44px;
+    background: var(--bezel);
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.18),
+      0 0 0 1px var(--bezel-edge),
+      0 28px 64px -18px rgb(0 0 0 / 0.6);
+  }
+
+  .ad-phone__island {
+    position: absolute;
+    top: calc(8px + var(--phone-h) * 0.018);
+    left: 50%;
+    width: 30%;
+    height: calc(var(--phone-h) * 0.034);
+    transform: translateX(-50%);
+    border-radius: 9999px;
+    background: #000;
+  }
+
+  .ad-screen {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 16 / 10;
+    border-radius: 4px;
+    background: var(--background);
+    color: var(--foreground);
+  }
+
+  .ad-screen--phone {
+    aspect-ratio: auto;
+    height: 100%;
+    border-radius: 36px;
+  }
+
+  .ad-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: scale(var(--s, 0.5));
+    transform-origin: 0 0;
+    font-family: var(--font-sans);
+  }
+
+  .ad-canvas--laptop {
+    width: 1280px;
+    height: 800px;
+  }
+
+  .ad-canvas--phone {
+    width: 390px;
+    height: 844px;
+  }
+
+  /* Phones and small tablets: the phone alone, centred (PHONE_ONLY in frames.tsx). */
+  @media (max-width: 47.99rem) {
+    .ad-stage {
+      --phone-h: calc(100cqh - 4rem);
+      padding-bottom: 0;
+      align-items: center;
+    }
+    .ad-laptop {
+      display: none;
+    }
+    .ad-phone {
+      margin: 0;
+    }
+  }
+
+  /* --- What the screens show ------------------------------------------------------------------------------- */
+
+  /* The app inside the laptop: the floating side panel and the conversation. */
+  .ad-app {
+    position: relative;
+    display: flex;
+    height: 100%;
+    background: var(--background);
+  }
+
+  .ad-panel {
+    position: absolute;
+    top: 12px;
+    bottom: 12px;
+    left: 12px;
+    display: flex;
+    width: 264px;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 22px;
+    border: 1px solid light-dark(rgb(17 17 16 / 0.08), rgb(255 255 255 / 0.1));
+    background: light-dark(#ffffff, #0e0e0e);
+    box-shadow:
+      inset 0 1px 0 0 var(--highlight),
+      0 16px 48px -12px light-dark(rgb(17 17 16 / 0.16), rgb(0 0 0 / 0.7));
+  }
+
+  .ad-main {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    padding-left: 288px;
+  }
+
+  /* The phone's call: black like the owner's reference in dark, the canvas in light. */
+  .ad-call {
+    position: relative;
+    display: grid;
+    height: 100%;
+    grid-template-rows: auto 1fr auto auto;
+    padding: 62px 24px 34px;
+    background: light-dark(var(--fa-canvas), #000);
+    color: var(--foreground);
+  }
+
+  .ad-call__stage {
+    position: relative;
+    display: grid;
+    width: 236px;
+    aspect-ratio: 1;
+    place-items: center;
+  }
+
+  .ad-call__control {
+    display: grid;
+    width: 56px;
+    height: 56px;
+    place-items: center;
+    border-radius: 9999px;
+    background: light-dark(#ededeb, #1f1f1f);
+    color: var(--foreground);
+  }
+
+  .ad-call__off {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background: #000;
+    opacity: 1;
+    transition: opacity 600ms var(--ease-out-expo);
+  }
+
+  .ad-call[data-screen='call'] .ad-call__off {
+    opacity: 0;
+  }
+
+  /* The call's timeline (the same tokens as the app's): 48 px on the phone, the vEIR blue and the student green. */
+  .ad-timeline {
+    height: 48px;
+    border-radius: 10px;
+    background: var(--tl-ground);
+    border: 1px solid light-dark(transparent, rgb(255 255 255 / 0.06));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ad-call__off {
+      transition: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .ad-box {
+      display: none;
+    }
+  }
+}

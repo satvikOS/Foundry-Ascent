@@ -100,7 +100,7 @@ test.describe('founder journey', () => {
 
     await test.step('landing → sign in as the owner, who lands in their workspace', async () => {
       await page.goto('/');
-      await expect(page.getByRole('heading', { level: 1 })).toContainText('venture coach');
+      await expect(page.getByRole('heading', { level: 1 })).toContainText('someone who remembers');
       await expect(page.getByRole('note', { name: 'AI disclosure' })).toBeVisible();
       await page.getByRole('main').getByRole('link', { name: 'Sign in' }).first().click();
       await expect(page).toHaveURL(/\/sign-in$/);

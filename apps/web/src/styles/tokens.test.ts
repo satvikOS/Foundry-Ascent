@@ -449,12 +449,12 @@ describe('colour tokens (globals.css)', () => {
     };
     walk(root);
     expect(offenders).toEqual([]);
-    // The conversation header, the phone bar, the mini call bar and the landing page's header.
+    // The conversation header, the phone bar and the mini call bar (the landing page's bar is fixed, not sticky:
+    // it takes the same glass once the page scrolls, components/landing/landing-nav.tsx).
     expect(bars.sort()).toEqual([
       'components/shell/app-shell.tsx',
       'features/calls/mini-call-bar-view.tsx',
       'features/chat/conversation-header.tsx',
-      'routes/index.tsx',
     ]);
   });
 
@@ -462,10 +462,10 @@ describe('colour tokens (globals.css)', () => {
     const sources = barSources();
     // The conversation header, the phone bar, the mini call bar and the landing page's header.
     expect(sources.map((s) => s.where).sort()).toEqual([
+      'components/landing/landing-nav.tsx',
       'components/shell/app-shell.tsx',
       'features/calls/mini-call-bar-view.tsx',
       'features/chat/conversation-header.tsx',
-      'routes/index.tsx',
     ]);
     const measured = new Set<string>(BAR_TEXT);
     const unmeasured = sources.flatMap(({ where, textTokens }) =>

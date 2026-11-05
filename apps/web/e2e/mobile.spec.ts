@@ -18,7 +18,7 @@ test.describe('mobile 390×844', () => {
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     await expectNoHorizontalScroll(page);
     await expectReachable(page, page.getByRole('main').getByRole('link', { name: 'Sign in' }).first());
-    await expectReachable(page, page.getByRole('link', { name: 'How it works' }));
+    await expectReachable(page, page.getByRole('main').getByRole('link', { name: 'See a session' }));
   });
 
   test('sign-in', async ({ page }) => {

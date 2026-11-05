@@ -1,0 +1,73 @@
+{
+  "$comment": "The synthetic session the landing page shows (device ad and session cards). Invented names; no real student, venture or conversation. The call lines' audio envelopes are generated from it (scripts/landing-envelopes.mjs).",
+  "eir": {
+    "firstName": "Corin",
+    "fullName": "Corin Halvorsen"
+  },
+  "founder": "Amara Osei",
+  "venture": {
+    "name": "Helio Grid",
+    "oneLiner": "Battery health checks for campus e-bike fleets."
+  },
+  "recent": ["Pilot pricing for two sites", "Customer or user: who pays?", "Designing the pilot"],
+  "opener": "Last time you had two sites ready to pilot. How did the first week go?",
+  "question": "Should we raise now or finish the paid pilot?",
+  "answer": "Finish the pilot first. Two sites signed letters of intent last month [E1], and one converting to paid use changes the conversation with investors [E2].\n\nOne question before you decide: what would a site have to see by week six to pay?",
+  "evidence": [
+    {
+      "key": "E1",
+      "kind": "memory",
+      "title": "Letters of intent from two campus sites",
+      "excerpt": "Both facilities teams signed in October, pending a six-week trial."
+    },
+    {
+      "key": "E2",
+      "kind": "chunk",
+      "title": "Office hours notes: what angels asked",
+      "excerpt": "Every question came back to whether anyone had paid yet."
+    }
+  ],
+  "nextStep": {
+    "action": "Ask both sites what week six must show",
+    "due": "2026-11-20"
+  },
+  "call": {
+    "veirLine": "Finish the pilot first. What would a site need to see to pay?",
+    "studentLine": "Fair. We finish the pilot, then we raise."
+  },
+  "diagnose": {
+    "opener": "Before we talk about the round: who signs the purchase order at a campus site?",
+    "followUp": "And is that the same person who rides the bikes?"
+  },
+  "coach": {
+    "answer": "Two letters of intent are a start [E1], not a signal of willingness to pay. The angels you met asked about paid use every time [E2].",
+    "challenge": "What would a buyer have to see to pay?"
+  },
+  "record": [
+    {
+      "type": "decision",
+      "title": "Finish the pilot before the round",
+      "content": "Raise after one site converts to paid use.",
+      "decided": "2026-11-05"
+    },
+    {
+      "type": "experiment",
+      "title": "Six-week paid trial at two sites",
+      "content": "Pass if one site renews at the quoted price.",
+      "status": "running"
+    },
+    {
+      "type": "action",
+      "title": "Ask both sites what week six must show",
+      "content": "Bring their answers to the next session.",
+      "due": "2026-11-20"
+    }
+  ],
+  "ventures": {
+    "software": "Two pilot users want different features. Which one do we build first?",
+    "services": "A client asked for a discount before the second project. Do we take it?",
+    "marketplaces": "We have forty tutors and six students. Where do we spend this month?",
+    "spinouts": "The lab wants to license the patent to us. What should I ask first?",
+    "regulated": "Can we tell clinics our sensor reduces falls?"
+  }
+}
