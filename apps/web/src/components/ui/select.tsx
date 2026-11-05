@@ -16,7 +16,7 @@ export function SelectTrigger({
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       className={cn(
-        'flex w-fit items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 text-sm whitespace-nowrap shadow-xs',
+        'flex w-fit items-center justify-between gap-2 rounded-md border border-input bg-surface-1 px-3 text-sm whitespace-nowrap shadow-xs',
         'transition-[border-color,box-shadow] outline-none hover:border-foreground/45',
         'focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring',
         'disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive',
@@ -57,7 +57,7 @@ export function SelectContent({
         data-slot="select-content"
         position={position}
         className={cn(
-          'glass-strong relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-xl border text-popover-foreground shadow-lg',
+          'glass-strong relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-lg border text-popover-foreground shadow-float',
           'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.97]',
           position === 'popper' &&
             'w-full min-w-(--radix-select-trigger-width) data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1',

@@ -40,7 +40,7 @@ export function AssignmentsPage({ tenant }: { tenant: string }) {
       <PageHeader title="vEIRs & assignments" info="Who coaches each venture, and who reviews it." />
       {loading ? (
         <LoadingRegion label="Loading assignments">
-          <Skeleton className="h-64 rounded-xl" />
+          <Skeleton className="h-64 rounded-lg" />
         </LoadingRegion>
       ) : error || !ventures.data || !personas.data ? (
         <ErrorState

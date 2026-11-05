@@ -41,6 +41,17 @@ describe('validateKnowledgeSearch', () => {
     expect(validateKnowledgeSearch({ view: 'all' }).view).toBeUndefined();
     expect(validateKnowledgeSearch({ view: 'notebook' }).view).toBe('notebook');
   });
+
+  it('opens the memory list for the conversations tab that is gone, and knows the You view', () => {
+    expect(validateKnowledgeSearch({ view: 'conversations' }).view).toBeUndefined();
+    expect(validateKnowledgeSearch({ view: 'you' }).view).toBe('you');
+  });
+
+  it('reads the palette’s "Add a memory" flag, and nothing else as it', () => {
+    expect(validateKnowledgeSearch({ add: true }).add).toBe(true);
+    expect(validateKnowledgeSearch({ add: '1' }).add).toBe(true);
+    expect(validateKnowledgeSearch({ add: 'yes' }).add).toBeUndefined();
+  });
 });
 
 describe('memory list filters', () => {

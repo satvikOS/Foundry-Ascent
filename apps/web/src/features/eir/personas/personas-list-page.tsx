@@ -41,7 +41,7 @@ export function PersonasListPage({ tenant, canCreate }: { tenant: string; canCre
       <PageHeader title="Personas" description="vEIRs and the program guide." actions={newVeir} />
       {personas.isPending ? (
         <LoadingRegion label="Loading personas">
-          <Skeleton className="h-56 rounded-xl" />
+          <Skeleton className="h-56 rounded-lg" />
         </LoadingRegion>
       ) : personas.isError ? (
         <ErrorState

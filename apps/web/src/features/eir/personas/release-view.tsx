@@ -14,7 +14,7 @@ function Section({ title, level, children }: { title: string; level: SubLevel; c
   const Heading = `h${level}` as const;
   return (
     <section className="grid content-start gap-2">
-      <Heading className="text-small font-semibold">{title}</Heading>
+      <Heading className="text-small font-medium">{title}</Heading>
       {children}
     </section>
   );

@@ -40,7 +40,7 @@ export function PortfolioDashboard({ summary, tenant }: { summary: PortfolioSumm
   return (
     <div className="grid gap-12">
       <section aria-labelledby="portfolio-30d" className="grid gap-4">
-        <h2 id="portfolio-30d" className="text-sm font-semibold tracking-tight">
+        <h2 id="portfolio-30d" className="text-sm font-medium tracking-tight">
           Last 30 days
         </h2>
         <div className="grid grid-cols-2 gap-x-6 gap-y-8 lg:grid-cols-5">
@@ -123,7 +123,7 @@ export function PortfolioDashboard({ summary, tenant }: { summary: PortfolioSumm
               <dt>
                 <StatusBadge kind="escalationPriority" status={priority} withTitle />
               </dt>
-              <dd className="text-2xl leading-8 font-semibold tracking-tight">
+              <dd className="text-2xl leading-8 font-medium tracking-tight">
                 {formatNumber(summary.openEscalationsByPriority[priority] ?? 0)}
                 <span className="sr-only"> open</span>
               </dd>

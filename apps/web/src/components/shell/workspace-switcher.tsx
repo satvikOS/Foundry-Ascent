@@ -1,6 +1,6 @@
 import type { Me, VentureSummary } from '@foundry/contracts';
 import { useNavigate } from '@tanstack/react-router';
-import { Check, ChevronsUpDown, Settings2 } from 'lucide-react';
+import { Check, ChevronsUpDown } from 'lucide-react';
 
 import { VentureMark } from '@/components/faces/user-avatar';
 import {
@@ -13,7 +13,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { SimpleTooltip } from '@/components/ui/tooltip';
-import { canWrite } from '@/lib/auth/roles';
 import { STAGE_LABELS } from '@/lib/labels';
 import { cn } from '@/lib/utils';
 
@@ -77,10 +76,10 @@ export function WorkspaceSwitcher({
     <DropdownMenuTrigger
       aria-label={`Switch venture or workspace. Current: ${label}, ${sublabel}`}
       className={cn(
-        'group flex min-w-0 items-center gap-2.5 rounded-lg text-left transition-colors',
-        'hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring',
-        'data-[state=open]:bg-sidebar-accent',
-        compact ? 'size-10 justify-center' : 'h-12 flex-1 px-2',
+        'group flex min-w-0 items-center gap-2.5 rounded-[10px] text-left transition-colors duration-(--dur-hover)',
+        'hover:bg-sidebar-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring',
+        'data-[state=open]:bg-sidebar-hover',
+        compact ? 'size-10 justify-center' : 'h-11 flex-1 px-2',
       )}
     >
       {mark}
@@ -88,7 +87,7 @@ export function WorkspaceSwitcher({
         <>
           {/* The space keeps the two lines two words of the visible label, which the name contains. */}
           <span className="min-w-0 flex-1 leading-tight">
-            <span className="block truncate text-sm font-semibold tracking-tight text-sidebar-foreground">
+            <span className="block truncate text-sm font-medium tracking-tight text-sidebar-foreground">
               {label}
             </span>{' '}
             <span className="block truncate text-caption text-sidebar-muted">{sublabel}</span>
@@ -143,22 +142,9 @@ export function WorkspaceSwitcher({
             </DropdownMenuGroup>
           </>
         ) : null}
-        {ventureId && canWrite(me, ventureId) ? (
-          <DropdownMenuGroup>
-            {ventures.length > 0 ? <DropdownMenuSeparator /> : null}
-            <DropdownMenuItem
-              onSelect={() => {
-                void navigate({ to: '/$tenant/app/v/$ventureId/settings', params: { tenant, ventureId } });
-              }}
-            >
-              <Settings2 aria-hidden />
-              Venture settings
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        ) : null}
         {workspaces.length > 0 ? (
           <>
-            {ventures.length > 0 || ventureId ? <DropdownMenuSeparator /> : null}
+            {ventures.length > 0 ? <DropdownMenuSeparator /> : null}
             <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
             <DropdownMenuGroup>
               {workspaces.map((item) => {

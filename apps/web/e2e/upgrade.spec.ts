@@ -43,7 +43,10 @@ for (const [device, width, height] of [
         await expect(page.getByRole('link', { name: 'Edit venture focus' })).toBeVisible();
         await page.screenshot({ path: `${root}/context-${device}-${theme}.png`, fullPage: true });
         await page.getByRole('link', { name: 'Edit venture focus' }).click();
-        await page.getByText('Coaching profile', { exact: true }).click();
+        await expect(page.getByRole('heading', { level: 1, name: 'Venture' })).toBeVisible();
+        // The student's own development lives under Knowledge → You, apart from the venture's profile.
+        await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=you`);
+        await expect(page.getByRole('heading', { level: 2, name: 'Coaching profile' })).toBeVisible();
         await page
           .getByLabel('Relevant experience', { exact: true })
           .fill('Synthetic researcher; first commercialization project');
@@ -64,7 +67,7 @@ for (const [device, width, height] of [
           await page.request.get(`/api/v1/ventures/${ventureId}/student-profile`)
         ).json()) as { profile: { masteredConcepts: string[] } };
         expect(approved.profile.masteredConcepts).toEqual(['Discovery interviews', 'contribution margin']);
-        await page.getByText('Learning log', { exact: true }).click();
+        await expect(page.getByRole('heading', { level: 2, name: 'Learning log' })).toBeVisible();
         const decision = `Pilot before building ${runToken()}`;
         await page.getByLabel('Decision you faced', { exact: true }).fill(decision);
         await page

@@ -2,7 +2,7 @@ import { OPEN_ESCALATION_STATUSES, type EscalationView } from '@foundry/contract
 import { useQuery } from '@tanstack/react-query';
 import { getRouteApi, Link } from '@tanstack/react-router';
 import { ArrowLeft, HandHelping, Inbox, LifeBuoy, Undo2 } from 'lucide-react';
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
 import { Alert } from '@/components/ui/alert';
@@ -77,6 +77,12 @@ export function EscalationsPage() {
   const [creating, setCreating] = useState(false);
 
   const select = (id: string | undefined) => void navigate({ search: { id }, replace: false });
+  // "Ask a person" from the command palette lands here with `ask`: open the request once, then drop the flag.
+  useEffect(() => {
+    if (!search.ask) return;
+    if (canEdit) setCreating(true);
+    void navigate({ search: (previous) => ({ ...previous, ask: undefined }), replace: true });
+  }, [search.ask, canEdit, navigate]);
 
   const rows = useMemo(
     () =>

@@ -1,8 +1,11 @@
 import { MemoryStatus, MemoryType } from '@foundry/contracts';
 import { z } from 'zod';
 
-/** Sections of the Knowledge page besides the memory list (which has no `view`). */
-export const KNOWLEDGE_VIEWS = ['notebook', 'conversations', 'evidence'] as const;
+/**
+ * Sections of the Knowledge page besides the memory list (which has no `view`): the vEIR's notebook, the
+ * evidence it can cite, and You (the student's own coaching profile and learning log).
+ */
+export const KNOWLEDGE_VIEWS = ['notebook', 'evidence', 'you'] as const;
 export type KnowledgeView = (typeof KNOWLEDGE_VIEWS)[number];
 
 /** URL state of the Knowledge page: shareable and back-button friendly. */
@@ -17,6 +20,8 @@ export interface KnowledgeSearch {
   m?: string | undefined;
   /** A cited source to show highlighted in Evidence (its knowledge source id). */
   source?: string | undefined;
+  /** Opens "Add memory" on arrival (the command palette's action); dropped from the URL once opened. */
+  add?: true | undefined;
 }
 
 function isView(value: unknown): value is KnowledgeView {
@@ -25,8 +30,9 @@ function isView(value: unknown): value is KnowledgeView {
 
 /**
  * Parses the Knowledge search params. Older links keep working: `view=all`, the review queue that is gone
- * (`view=proposed`) and a `status=proposed` filter all open the memory list, which shows everything the vEIR
- * knows.
+ * (`view=proposed`), a `status=proposed` filter and the conversations list that is gone
+ * (`view=conversations`: the side panel and ⌘K list them) all open the memory list, which shows everything
+ * the vEIR knows.
  */
 export function validateKnowledgeSearch(search: Record<string, unknown>): KnowledgeSearch {
   const type = MemoryType.safeParse(search.type);
@@ -42,5 +48,9 @@ export function validateKnowledgeSearch(search: Record<string, unknown>): Knowle
     q: typeof search.q === 'string' && search.q.trim() ? search.q.trim().slice(0, 200) : undefined,
     m: id.success ? id.data : undefined,
     source: source.success ? source.data : undefined,
+    add:
+      search.add === true || search.add === 'true' || search.add === 1 || search.add === '1'
+        ? true
+        : undefined,
   };
 }

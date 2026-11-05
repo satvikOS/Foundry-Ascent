@@ -75,7 +75,7 @@ export function MemoryDetail({
           ) : null}
           {memory.pinned ? <PinnedMark /> : null}
         </div>
-        <h3 className="mt-2.5 text-[15px] leading-snug font-semibold tracking-tight [overflow-wrap:anywhere]">
+        <h3 className="mt-2.5 text-[15px] leading-snug font-medium tracking-tight [overflow-wrap:anywhere]">
           {memory.title}
         </h3>
         <Markdown size="sm" className="mt-1.5">

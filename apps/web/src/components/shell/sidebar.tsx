@@ -1,31 +1,24 @@
 import type { Me } from '@foundry/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { createLink } from '@tanstack/react-router';
-import { Phone, Search, SquarePen, type LucideIcon } from 'lucide-react';
+import { Search, SquarePen, type LucideIcon } from 'lucide-react';
 import { useMemo, type ComponentProps, type ReactNode } from 'react';
 
 import { VentureMark } from '@/components/faces/user-avatar';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { SimpleTooltip } from '@/components/ui/tooltip';
-import { useCallsAvailable } from '@/features/calls/calls-available';
 import { useLessonsToReview } from '@/lib/api/hooks/eir';
 import { ventureQueryOptions, useVentures } from '@/lib/api/hooks/ventures';
 import { canAccessVenture, canWrite, writesAnyVenture } from '@/lib/auth/roles';
+import { formatHotkey } from '@/lib/hooks/use-hotkeys';
 import { cn, isMac } from '@/lib/utils';
-import { veirDisplay } from '@/lib/veir';
 
 import { AccountMenu } from './account-menu';
 import { staffSections, ventureDestinations, type Workspace } from './nav';
 import { RecentConversations } from './recent-conversations';
+import { sidebarGroupLabelClasses, sidebarRowClasses } from './sidebar-styles';
 import { useVentureName } from './venture-name';
 import { WorkspaceSwitcher } from './workspace-switcher';
-
-const itemClasses = cn(
-  'group flex h-8 w-full min-w-0 items-center gap-2.5 rounded-md px-2.5 text-small font-medium text-sidebar-muted transition-colors',
-  'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-  'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-ring',
-  'data-[status=active]:bg-sidebar-accent data-[status=active]:text-sidebar-foreground',
-);
 
 interface SidebarAnchorProps extends ComponentProps<'a'> {
   icon?: LucideIcon;
@@ -36,7 +29,6 @@ interface SidebarAnchorProps extends ComponentProps<'a'> {
   /** Count shown after the label (e.g. items to review). */
   count?: number;
   countLabel?: string;
-  emphasis?: boolean;
 }
 
 function SidebarAnchor({
@@ -46,24 +38,24 @@ function SidebarAnchor({
   collapsed = false,
   count,
   countLabel,
-  emphasis = false,
   className,
   ...props
 }: SidebarAnchorProps) {
   return (
     <a
+      data-slot="sidebar-row"
       {...props}
-      className={cn(
-        itemClasses,
-        emphasis && 'text-sidebar-foreground',
-        collapsed && 'justify-center px-0',
-        className,
-      )}
+      className={cn(sidebarRowClasses, collapsed && 'justify-center px-0', className)}
     >
-      {Icon ? <Icon aria-hidden className="size-4 shrink-0" /> : leading}
+      {Icon ? <Icon aria-hidden className="size-4 shrink-0 text-sidebar-muted" /> : leading}
       <span className={cn('min-w-0 flex-1 truncate', collapsed && 'sr-only')}>{label}</span>
       {count && count > 0 ? (
-        <span className={cn('tabular text-caption text-sidebar-muted', collapsed && 'sr-only')}>
+        <span
+          className={cn(
+            'tabular text-caption text-sidebar-muted',
+            collapsed && 'absolute top-1 right-1.5 text-[10px] leading-none text-sidebar-foreground',
+          )}
+        >
           {count}
           {countLabel ? <span className="sr-only"> {countLabel}</span> : null}
         </span>
@@ -75,9 +67,37 @@ function SidebarAnchor({
 /** Router-aware sidebar row (typed `to`/`params`, `data-status="active"` from the router). */
 const SidebarLink = createLink(SidebarAnchor);
 
-function Tip({ show, label, children }: { show: boolean; label: string; children: ReactNode }) {
+function Keys({ binding, className }: { binding: string; className?: string }) {
   return (
-    <SimpleTooltip content={label} side="right" disabled={!show}>
+    <KbdGroup aria-hidden className={className}>
+      {formatHotkey(binding).flatMap((chord, i) => chord.map((key, j) => <Kbd key={`${i}-${j}`}>{key}</Kbd>))}
+    </KbdGroup>
+  );
+}
+
+/** On the rail, the label (and its shortcut) as a tooltip; the row also carries the label as its name. */
+function Tip({
+  show,
+  label,
+  shortcut,
+  children,
+}: {
+  show: boolean;
+  label: string;
+  shortcut?: string | undefined;
+  children: ReactNode;
+}) {
+  return (
+    <SimpleTooltip
+      side="right"
+      disabled={!show}
+      content={
+        <span className="flex items-center gap-2">
+          {label}
+          {shortcut ? <Keys binding={shortcut} /> : null}
+        </span>
+      }
+    >
       {children}
     </SimpleTooltip>
   );
@@ -87,9 +107,11 @@ export interface SidebarContentProps {
   me: Me;
   workspace: Workspace;
   collapsed?: boolean;
-  /** Called after any navigation (closes the mobile sheet). */
+  /** Called after any navigation (closes the overlay panel). */
   onNavigate?: () => void;
   onOpenSearch: () => void;
+  /** "View all" under the conversations: the palette, filtered to conversations. */
+  onViewAllConversations?: () => void;
   onOpenShortcuts: () => void;
   onOpenDataUse: () => void;
   onOpenReportProblem: () => void;
@@ -97,13 +119,18 @@ export interface SidebarContentProps {
   headerAction?: ReactNode;
 }
 
-/** Sidebar contents, shared by the desktop sidebar (and its collapsed rail) and the mobile sheet. */
+/**
+ * The side panel's contents, shared by the docked panel (and its rail) and the overlay: the workspace
+ * switcher, New chat and Search, the conversations (or a staff workspace's sections), the venture's pages and
+ * the account. Calls start from the composer and from ⌘K, so the panel has no Call entry of its own.
+ */
 export function SidebarContent({
   me,
   workspace,
   collapsed = false,
   onNavigate,
   onOpenSearch,
+  onViewAllConversations,
   onOpenShortcuts,
   onOpenDataUse,
   onOpenReportProblem,
@@ -112,14 +139,12 @@ export function SidebarContent({
   const tenant = me.tenant.slug;
   const ventures = useVentures();
   const ventureId = workspace.kind === 'venture' ? workspace.ventureId : null;
-  // Program leads and platform admins may open a venture's Team without reading the venture: nothing else of it
-  // is requested or linked for them.
+  // Program leads and platform admins may open a venture's team without reading the venture: nothing else of
+  // it is requested or linked for them.
   const readable = ventureId !== null && canAccessVenture(me, ventureId);
   const venture = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: readable });
   const ventureName = useVentureName(me, ventureId);
-  const veir = veirDisplay(venture.data);
   const writable = ventureId !== null && canWrite(me, ventureId);
-  const callable = useCallsAvailable(ventureId, writable);
   // Only founders and team members hold conversations; read-only roles never request them.
   const hasConversations = writesAnyVenture(me);
   const ventureNames = useMemo(
@@ -133,31 +158,24 @@ export function SidebarContent({
     workspace.kind === 'eir' ? (ventures.data ?? []).filter((v) => me.assignedVentureIds.includes(v.id)) : [];
 
   const search = (
-    <Tip show={collapsed} label="Search">
+    <Tip show={collapsed} label="Search" shortcut="mod+k">
       <button
         type="button"
+        data-slot="sidebar-row"
         onClick={onOpenSearch}
         aria-keyshortcuts={isMac() ? 'Meta+K' : 'Control+K'}
-        className={cn(itemClasses, collapsed && 'justify-center px-0')}
+        className={cn(sidebarRowClasses, collapsed && 'justify-center px-0')}
       >
-        <Search aria-hidden className="size-4 shrink-0" />
+        <Search aria-hidden className="size-4 shrink-0 text-sidebar-muted" />
         <span className={cn('min-w-0 flex-1 truncate text-left', collapsed && 'sr-only')}>Search</span>
-        {collapsed ? null : (
-          <KbdGroup
-            aria-hidden
-            className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-          >
-            <Kbd>{isMac() ? '⌘' : 'Ctrl'}</Kbd>
-            <Kbd>K</Kbd>
-          </KbdGroup>
-        )}
+        {collapsed ? null : <Keys binding="mod+k" className="pointer-coarse:hidden" />}
       </button>
     </Tip>
   );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className={cn('flex shrink-0 items-center gap-1 pt-2', collapsed ? 'flex-col px-2' : 'px-2')}>
+      <div className={cn('flex shrink-0 items-center gap-1 p-2', collapsed && 'flex-col')}>
         {collapsed ? headerAction : null}
         <WorkspaceSwitcher
           me={me}
@@ -169,32 +187,16 @@ export function SidebarContent({
         {collapsed ? null : headerAction}
       </div>
 
-      <div className={cn('grid shrink-0 gap-px pt-2', collapsed ? 'px-2' : 'px-2')}>
+      <div className="grid shrink-0 gap-px px-2">
         {ventureId && writable ? (
-          <Tip show={collapsed} label="New chat">
+          <Tip show={collapsed} label="New chat" shortcut="g n">
             <SidebarLink
               to="/$tenant/app/v/$ventureId"
               params={{ tenant, ventureId }}
-              activeOptions={{ exact: true }}
+              activeOptions={{ exact: true, includeSearch: false }}
               onClick={onNavigate}
               icon={SquarePen}
               label="New chat"
-              emphasis
-              collapsed={collapsed}
-            />
-          </Tip>
-        ) : null}
-        {ventureId && callable && veir ? (
-          <Tip show={collapsed} label={`Call ${veir.name}`}>
-            <SidebarLink
-              to="/$tenant/app/v/$ventureId"
-              params={{ tenant, ventureId }}
-              search={{ call: 1 }}
-              activeOptions={{ exact: true }}
-              onClick={onNavigate}
-              icon={Phone}
-              label={`Call ${veir.name}`}
-              emphasis
               collapsed={collapsed}
             />
           </Tip>
@@ -203,7 +205,7 @@ export function SidebarContent({
       </div>
 
       {staff ? (
-        <div className="grid shrink-0 gap-px px-2 pt-6">
+        <div className="grid shrink-0 gap-px px-2 pt-4">
           {staffSections(me, workspace.kind).map((section) => (
             <Tip key={section.id} show={collapsed} label={section.label}>
               <SidebarLink
@@ -221,16 +223,18 @@ export function SidebarContent({
         </div>
       ) : null}
 
-      <div className={cn('min-h-0 flex-1 overflow-y-auto pb-2', collapsed ? 'px-2' : 'px-2')}>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2">
         {hasConversations && !collapsed ? (
-          <RecentConversations tenant={tenant} ventureNames={ventureNames} onNavigate={onNavigate} />
+          <RecentConversations
+            tenant={tenant}
+            ventureNames={ventureNames}
+            onNavigate={onNavigate}
+            onViewAll={onViewAllConversations}
+          />
         ) : null}
         {assigned.length > 0 && !collapsed ? (
-          <div role="group" aria-labelledby="sidebar-assigned" className="pt-2">
-            <h2
-              id="sidebar-assigned"
-              className="px-2.5 pt-4 pb-1 text-caption font-medium text-sidebar-muted"
-            >
+          <div role="group" aria-labelledby="sidebar-assigned">
+            <h2 id="sidebar-assigned" className={sidebarGroupLabelClasses}>
               Assigned ventures
             </h2>
             <ul className="grid gap-px">
@@ -251,13 +255,19 @@ export function SidebarContent({
       </div>
 
       {ventureId ? (
-        <div className="grid shrink-0 gap-px border-t border-sidebar-border px-2 py-2">
+        <div className="grid shrink-0 gap-px px-2 pt-2 pb-1">
+          <div aria-hidden className="mx-2.5 mb-2 border-t border-sidebar-border" />
           {ventureDestinations(me, ventureId).map((destination) => {
             // Counts are things to act on (open requests for help), which only the venture team can open;
             // read-only roles see the pages without them. Memory is never one: it is kept automatically.
             const count = writable && destination.id === 'help' ? venture.data?.openEscalations : undefined;
             return (
-              <Tip key={destination.id} show={collapsed} label={destination.label}>
+              <Tip
+                key={destination.id}
+                show={collapsed}
+                label={destination.label}
+                shortcut={destination.shortcut}
+              >
                 <SidebarLink
                   to={destination.to}
                   params={{ tenant, ventureId }}

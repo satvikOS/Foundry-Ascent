@@ -36,6 +36,8 @@ export const STORAGE_KEYS = {
   lastVenture: 'fa.last-venture',
   /** Right-hand panel left open on desktop ("1") or closed (default). */
   inspectorOpen: 'fa.inspector.open',
+  /** Device class for costly effects ("low" swaps glass for solid surfaces): lib/perf.ts. */
+  perf: 'fa.perf',
 } as const;
 
 /**

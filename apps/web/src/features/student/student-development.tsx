@@ -1,37 +1,43 @@
 import {
-  LearningLogResponse,
   LearningReflection,
   LearningReflectionInput,
   StudentProfileData,
   StudentProfileResponse,
 } from '@foundry/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Download } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/error-state';
+import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { PageSection } from '@/components/ui/page-section';
+import { SelectField } from '@/components/ui/select-field';
 import { Textarea } from '@/components/ui/textarea';
 import { api, createIdempotencyKey, path } from '@/lib/api/client';
 import { errorMessage } from '@/lib/api/errors';
 import { queryKeys } from '@/lib/api/query-keys';
 
-/** Separate student profile and reflection log; only explicit student submissions persist. */
+import { downloadLearning, learningLogQueryOptions, studentProfileQueryOptions } from './learning';
+
+const DEPTH_OPTIONS = [
+  { value: 'concise', label: 'Concise' },
+  { value: 'balanced', label: 'Balanced' },
+  { value: 'detailed', label: 'Detailed' },
+] as const satisfies readonly { value: StudentProfileData['depth']; label: string }[];
+
+/**
+ * The student's own development in this venture (Knowledge → You): the coaching profile and the learning log,
+ * kept apart from the venture's facts. Only explicit student submissions persist.
+ */
 export function StudentDevelopment({ ventureId }: { ventureId: string }) {
   const id = useId();
   const client = useQueryClient();
   const profileKey = queryKeys.venture.studentProfile(ventureId);
   const logKey = queryKeys.venture.learningLog(ventureId);
-  const profile = useQuery({
-    queryKey: profileKey,
-    queryFn: ({ signal }) =>
-      api.get(path`/ventures/${ventureId}/student-profile`, StudentProfileResponse, { signal }),
-  });
-  const log = useQuery({
-    queryKey: logKey,
-    queryFn: ({ signal }) =>
-      api.get(path`/ventures/${ventureId}/learning-log`, LearningLogResponse, { signal }),
-  });
+  const profile = useQuery(studentProfileQueryOptions(ventureId));
+  const log = useQuery(learningLogQueryOptions(ventureId));
   const [draft, setDraft] = useState(() => StudentProfileData.parse({}));
   const [dirty, setDirty] = useState(false);
   const [baseVersion, setBaseVersion] = useState(0);
@@ -107,47 +113,37 @@ export function StudentDevelopment({ ventureId }: { ventureId: string }) {
     },
   });
   const exportData = () => {
-    const blob = new Blob(
-      [
-        JSON.stringify(
-          {
-            profile: profile.data?.profile ?? null,
-            learningLog: log.data?.items ?? [],
-            exportedAt: new Date().toISOString(),
-          },
-          null,
-          2,
-        ),
-      ],
-      { type: 'application/json' },
-    );
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'foundry-learning.json';
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadLearning(profile.data?.profile ?? null, log.data?.items ?? []);
   };
   const error = save.error ?? clear.error ?? record.error ?? remove.error;
+  const exportButton = (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={exportData}
+      disabled={profile.isPending || log.isPending || profile.isError || log.isError}
+    >
+      <Download aria-hidden />
+      Export learning
+    </Button>
+  );
   return (
-    <section className="grid gap-4 border-t pt-[var(--space-section)]" aria-labelledby={`${id}-heading`}>
-      <div>
-        <h2 id={`${id}-heading`} className="text-subheading font-medium">
-          Your development
-        </h2>
-        <p className="mt-1 text-small text-muted-foreground">
-          Your coaching profile and learning log belong to you in this venture.
-        </p>
-      </div>
-      {profile.isError ? (
-        <ErrorState error={profile.error} onRetry={() => void profile.refetch()} size="sm" headingLevel={3} />
-      ) : null}
-      <details className="rounded-xl border bg-card px-4">
-        <summary className="min-h-[var(--touch-target)] cursor-pointer py-3 text-small font-medium">
-          Coaching profile
-        </summary>
+    <div className="grid gap-10">
+      <PageSection
+        title="Coaching profile"
+        description="Only what you approve here shapes your coach’s explanations. Replies in shared venture conversations can reflect it. No personal or sensitive details are needed."
+        actions={exportButton}
+      >
+        {profile.isError ? (
+          <ErrorState
+            error={profile.error}
+            onRetry={() => void profile.refetch()}
+            size="sm"
+            headingLevel={3}
+          />
+        ) : null}
         <form
-          className="grid gap-4 pb-4"
+          className="grid gap-5"
           onSubmit={(event) => {
             event.preventDefault();
             save.mutate();
@@ -157,74 +153,69 @@ export function StudentDevelopment({ ventureId }: { ventureId: string }) {
             className="contents"
             disabled={save.isPending || clear.isPending || profile.isPending || profile.isError}
           >
-            <p className="text-caption text-muted-foreground">
-              Only what you approve here shapes your coach’s explanations. Replies in shared venture
-              conversations can reflect this context. No personal or sensitive details are needed.
-            </p>
-            {(['background', 'learningGoal', 'constraints'] as const).map((field) => (
-              <label key={field} className="grid gap-1.5 text-small" htmlFor={`${id}-${field}`}>
-                {field === 'background'
-                  ? 'Relevant experience'
-                  : field === 'learningGoal'
-                    ? 'What you want to learn'
-                    : 'Time, budget, or access constraints'}
-                <Input
+            <div className="grid gap-5 sm:grid-cols-2">
+              {(['background', 'learningGoal'] as const).map((field) => (
+                <Field
+                  key={field}
                   id={`${id}-${field}`}
-                  value={draft[field]}
-                  maxLength={field === 'background' ? 240 : 400}
-                  onChange={(event) => {
-                    setDirty(true);
-                    setDraft({ ...draft, [field]: event.target.value });
-                  }}
-                />
-              </label>
-            ))}
-            <label className="grid gap-1.5 text-small" htmlFor={`${id}-depth`}>
-              Explanation depth
-              <select
-                id={`${id}-depth`}
-                value={draft.depth}
-                className="min-h-[var(--touch-target)] rounded-md border border-input bg-background px-3"
-                onChange={(event) => {
-                  setDirty(true);
-                  setDraft({ ...draft, depth: event.target.value as StudentProfileData['depth'] });
-                }}
-              >
-                <option value="concise">Concise</option>
-                <option value="balanced">Balanced</option>
-                <option value="detailed">Detailed</option>
-              </select>
-            </label>
-            <label className="grid gap-1.5 text-small" htmlFor={`${id}-mastered`}>
-              Concepts you already understand
+                  label={field === 'background' ? 'Relevant experience' : 'What you want to learn'}
+                >
+                  <Input
+                    value={draft[field]}
+                    maxLength={field === 'background' ? 240 : 400}
+                    onChange={(event) => {
+                      setDirty(true);
+                      setDraft({ ...draft, [field]: event.target.value });
+                    }}
+                  />
+                </Field>
+              ))}
+            </div>
+            <Field id={`${id}-constraints`} label="Time, budget, or access constraints">
               <Input
-                id={`${id}-mastered`}
-                value={masteredText}
-                placeholder="For example: discovery interviews, contribution margin"
-                maxLength={600}
+                value={draft.constraints}
+                maxLength={400}
                 onChange={(event) => {
                   setDirty(true);
-                  setMasteredText(event.target.value);
-                  setDraft({
-                    ...draft,
-                    masteredConcepts: event.target.value
-                      .split(',')
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                      .slice(0, 12)
-                      .map((s) => s.slice(0, 80)),
-                  });
+                  setDraft({ ...draft, constraints: event.target.value });
                 }}
               />
-            </label>
-            <div className="flex flex-wrap gap-[var(--space-control)]">
-              <Button type="submit" size="sm" disabled={save.isPending || profile.isPending || !dirty}>
-                Approve profile
-              </Button>
-              {profile.data?.profile ? (
+            </Field>
+            <div className="grid gap-5 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
+              <SelectField
+                label="Explanation depth"
+                value={draft.depth}
+                options={DEPTH_OPTIONS}
+                onChange={(depth) => {
+                  setDirty(true);
+                  setDraft({ ...draft, depth });
+                }}
+              />
+              <Field id={`${id}-mastered`} label="Concepts you already understand">
+                <Input
+                  value={masteredText}
+                  placeholder="For example: discovery interviews, contribution margin"
+                  maxLength={600}
+                  onChange={(event) => {
+                    setDirty(true);
+                    setMasteredText(event.target.value);
+                    setDraft({
+                      ...draft,
+                      masteredConcepts: event.target.value
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                        .slice(0, 12)
+                        .map((s) => s.slice(0, 80)),
+                    });
+                  }}
+                />
+              </Field>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {profile.data?.profile && !confirmClear ? (
                 <Button
                   type="button"
-                  size="sm"
                   variant="ghost"
                   onClick={() => {
                     setConfirmClear(true);
@@ -233,64 +224,66 @@ export function StudentDevelopment({ ventureId }: { ventureId: string }) {
                   Clear profile
                 </Button>
               ) : null}
+              {confirmClear ? (
+                <>
+                  <p className="mr-auto text-small">Clear this venture’s coaching profile?</p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setConfirmClear(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={clear.isPending}
+                    onClick={() => {
+                      clear.mutate();
+                    }}
+                  >
+                    Confirm clear
+                  </Button>
+                </>
+              ) : null}
+              <Button type="submit" disabled={save.isPending || profile.isPending || !dirty}>
+                Approve profile
+              </Button>
             </div>
-            {confirmClear ? (
-              <div className="flex flex-wrap items-center gap-3 text-small">
-                <p>Clear this venture’s coaching profile?</p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="destructive"
-                  disabled={clear.isPending}
-                  onClick={() => {
-                    clear.mutate();
-                  }}
-                >
-                  Confirm clear
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setConfirmClear(false);
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            ) : null}
           </fieldset>
         </form>
-      </details>
-      <details className="rounded-xl border bg-card px-4">
-        <summary className="min-h-[var(--touch-target)] cursor-pointer py-3 text-small font-medium">
-          Learning log
-        </summary>
-        <div className="grid gap-5 pb-4">
-          <p className="text-caption text-muted-foreground">
-            Record how evidence changed your judgment. These are your reflections, separate from the venture’s
-            facts and session history.
-          </p>
-          <form
-            className="grid gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              record.mutate();
-            }}
-          >
-            <fieldset className="contents" disabled={record.isPending}>
+      </PageSection>
+
+      <PageSection
+        title="Learning log"
+        description="Record how evidence changed your judgment. These are your reflections, separate from the venture’s facts and session history."
+      >
+        <form
+          className="grid gap-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            record.mutate();
+          }}
+        >
+          <fieldset className="contents" disabled={record.isPending}>
+            <div className="grid gap-5 sm:grid-cols-2">
               {(['decision', 'evidence', 'changedThinking', 'nextTest'] as const).map((field) => (
-                <label key={field} className="grid gap-1.5 text-small" htmlFor={`${id}-reflection-${field}`}>
-                  {field === 'decision'
-                    ? 'Decision you faced'
-                    : field === 'evidence'
-                      ? 'Evidence you used'
-                      : field === 'changedThinking'
-                        ? 'What changed your thinking'
-                        : 'Your next test (optional)'}
+                <Field
+                  key={field}
+                  id={`${id}-reflection-${field}`}
+                  label={
+                    field === 'decision'
+                      ? 'Decision you faced'
+                      : field === 'evidence'
+                        ? 'Evidence you used'
+                        : field === 'changedThinking'
+                          ? 'What changed your thinking'
+                          : 'Your next test (optional)'
+                  }
+                >
                   <Textarea
-                    id={`${id}-reflection-${field}`}
                     required={field !== 'nextTest'}
                     minLength={field === 'nextTest' ? undefined : 3}
                     maxLength={field === 'evidence' || field === 'changedThinking' ? 1000 : 400}
@@ -301,50 +294,48 @@ export function StudentDevelopment({ ventureId }: { ventureId: string }) {
                       setReflection({ ...reflection, [field]: event.target.value });
                     }}
                   />
-                </label>
+                </Field>
               ))}
-              <Button size="sm" type="submit" className="justify-self-start" disabled={record.isPending}>
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={record.isPending}>
                 Record reflection
               </Button>
-            </fieldset>
-          </form>
-          {log.isError ? (
-            <ErrorState error={log.error} onRetry={() => void log.refetch()} size="sm" headingLevel={3} />
-          ) : (
-            <ul className="divide-y" aria-label="Your learning reflections">
-              {(log.data?.items ?? []).map((item) => (
-                <li key={item.id} className="py-3">
+            </div>
+          </fieldset>
+        </form>
+        {log.isError ? (
+          <ErrorState error={log.error} onRetry={() => void log.refetch()} size="sm" headingLevel={3} />
+        ) : (log.data?.items.length ?? 0) > 0 ? (
+          <ul
+            className="divide-y divide-border border-y border-border"
+            aria-label="Your learning reflections"
+          >
+            {(log.data?.items ?? []).map((item) => (
+              <li key={item.id} className="flex items-start gap-3 py-3">
+                <div className="grid min-w-0 flex-1 gap-0.5">
                   <p className="text-small font-medium">{item.decision}</p>
-                  <p className="mt-1 text-small text-muted-foreground">{item.changedThinking}</p>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    disabled={remove.isPending}
-                    onClick={() => {
-                      remove.mutate(item.id);
-                    }}
-                  >
-                    Delete reflection<span className="sr-only">: {item.decision}</span>
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </details>
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={exportData}
-          disabled={profile.isPending || log.isPending || profile.isError || log.isError}
-        >
-          Export learning
-        </Button>
-        <span role="status" className="text-small text-muted-foreground">
-          {notice}
-        </span>
-      </div>
+                  <p className="text-small text-muted-foreground">{item.changedThinking}</p>
+                </div>
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  disabled={remove.isPending}
+                  onClick={() => {
+                    remove.mutate(item.id);
+                  }}
+                >
+                  Delete reflection<span className="sr-only">: {item.decision}</span>
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </PageSection>
+
+      <p role="status" className="-mt-6 text-small text-muted-foreground">
+        {notice}
+      </p>
       {error ? (
         <p role="alert" className="text-small text-destructive">
           {errorMessage(error)} Your draft is preserved.
@@ -364,6 +355,6 @@ export function StudentDevelopment({ ventureId }: { ventureId: string }) {
           </Button>
         </p>
       ) : null}
-    </section>
+    </div>
   );
 }

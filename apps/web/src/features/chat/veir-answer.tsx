@@ -229,12 +229,12 @@ function Handoff({
     <section
       aria-labelledby={`handoff-${turnId}`}
       data-testid="escalation-suggestion"
-      className="mt-5 rounded-xl border border-border-strong p-4"
+      className="mt-5 rounded-lg border border-border-strong p-4"
     >
       <div className="flex items-start gap-3">
         <HandHelping aria-hidden className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <h4 id={`handoff-${turnId}`} className="text-[0.9375rem] font-semibold">
+          <h4 id={`handoff-${turnId}`} className="text-[0.9375rem] font-medium">
             A person should weigh in on this
           </h4>
           {proposal.reason ? (

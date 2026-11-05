@@ -20,9 +20,9 @@ import {
 } from '@/features/memory/memory-dialogs';
 import { MemoryDetail } from '@/features/memory/memory-detail';
 import { TypedMemoryDialog, type TypedKind } from '@/features/memory/typed/typed-memory-dialog';
+import { StudentDevelopment } from '@/features/student/student-development';
 import { useVeirName } from '@/features/venture/veir-name';
 
-import { DigestsSection } from './digests-section';
 import { EvidenceSection } from './evidence-section';
 import { MemorySection } from './memory-section';
 import { NotebookEditor } from './notebook-section';
@@ -41,8 +41,9 @@ function typedKind(type: KnowledgeSearch['type']): TypedKind | null {
 /**
  * Knowledge: the venture's specific pool in one place. Everything the vEIR learned (kept automatically from
  * every conversation that is not private) and what the team added, with type chips and search; the vEIR's
- * notebook, conversation digests and the evidence it can cite. A memory item opens in the side panel, where
- * it can be edited or forgotten. Nothing waits for review.
+ * notebook and the evidence it can cite; and You, the student's own development (coaching profile, learning
+ * log, export), kept apart from the venture's facts. A memory item opens in the side panel, where it can be
+ * edited or forgotten. Nothing waits for review.
  */
 export function KnowledgePage() {
   const me = useRequiredMe();
@@ -74,12 +75,19 @@ export function KnowledgePage() {
   useEffect(() => {
     if (search.m) setOpen(true);
   }, [search.m, setOpen]);
+  // "Add a memory" from the command palette lands here with `add`: open the form once, then drop the flag.
+  useEffect(() => {
+    if (!search.add) return;
+    if (team) setCreating(true);
+    setSearch({ add: undefined });
+  }, [search.add, team, setSearch]);
 
   const tabs: { value: Tab; label: string }[] = [
     { value: 'memory', label: 'Memory' },
     ...(notebookVisible ? [{ value: 'notebook' as const, label: 'Notebook' }] : []),
-    ...(team ? [{ value: 'conversations' as const, label: 'Conversations' }] : []),
     { value: 'evidence', label: 'Evidence' },
+    // The student's own development: only the venture's founders and team have one here.
+    ...(team ? [{ value: 'you' as const, label: 'You' }] : []),
   ];
   const requested: Tab = search.view ?? 'memory';
   const tab: Tab = tabs.some((t) => t.value === requested) ? requested : 'memory';
@@ -173,11 +181,6 @@ export function KnowledgePage() {
             <NotebookEditor tenant={tenant} ventureId={ventureId} veirName={veirName} canEdit={team} />
           </TabsContent>
         ) : null}
-        {team ? (
-          <TabsContent value="conversations">
-            <DigestsSection ventureId={ventureId} tenant={tenant} canEdit={team} />
-          </TabsContent>
-        ) : null}
         <TabsContent value="evidence">
           <EvidenceSection
             ventureId={ventureId}
@@ -187,6 +190,11 @@ export function KnowledgePage() {
             highlight={search.source}
           />
         </TabsContent>
+        {team ? (
+          <TabsContent value="you">
+            <StudentDevelopment key={ventureId} ventureId={ventureId} />
+          </TabsContent>
+        ) : null}
       </Tabs>
 
       {search.m ? (

@@ -187,7 +187,7 @@ export function DigitalTwinSection({ persona }: { persona: PersonaView }) {
   if (twin.isPending) {
     return (
       <LoadingRegion label="Loading the digital twin">
-        <Skeleton className="h-40 rounded-xl" />
+        <Skeleton className="h-40 rounded-lg" />
       </LoadingRegion>
     );
   }

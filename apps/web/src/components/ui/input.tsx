@@ -3,7 +3,7 @@ import type { ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
 
 export const inputClasses = cn(
-  'flex h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-sm text-foreground shadow-xs',
+  'flex h-9 w-full min-w-0 rounded-md border border-input bg-surface-1 px-3 py-1 text-sm text-foreground shadow-xs',
   'transition-[border-color,box-shadow] duration-150 outline-none',
   'placeholder:text-subtle-foreground',
   'hover:border-foreground/45',

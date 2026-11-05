@@ -294,7 +294,7 @@ function HeldBack({ result }: { result: TestTurnResponse }) {
     <section
       aria-labelledby={titleId}
       data-testid="bench-held-back"
-      className="rounded-xl border border-border-strong bg-card p-4"
+      className="rounded-lg border border-border-strong bg-card p-4"
     >
       <div className="flex items-start gap-3">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-muted">

@@ -17,9 +17,9 @@ export const overlayClasses =
 
 /** The modal panel surface shared by dialogs and alert dialogs: solid, with a hairline edge. */
 export const modalPanelClasses =
-  'rounded-2xl border border-border bg-popover text-popover-foreground shadow-xl outline-none';
+  'rounded-xl border border-border bg-popover text-popover-foreground shadow-xl outline-none';
 /** A floating glass panel (the command palette): blur and translucency from `.glass-strong`. */
-const glassPanelClasses = 'glass-strong rounded-2xl border text-popover-foreground shadow-xl outline-none';
+const glassPanelClasses = 'glass-strong rounded-xl border text-popover-foreground shadow-xl outline-none';
 
 function DialogOverlay({ className, ...props }: ComponentProps<typeof DialogPrimitive.Overlay>) {
   return (
@@ -101,7 +101,7 @@ export function DialogTitle({ className, ...props }: ComponentProps<typeof Dialo
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn('text-base leading-tight font-semibold tracking-tight', className)}
+      className={cn('text-base leading-tight font-medium tracking-tight', className)}
       {...props}
     />
   );

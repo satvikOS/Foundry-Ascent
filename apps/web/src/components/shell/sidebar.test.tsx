@@ -1,11 +1,12 @@
 import type { Me } from '@foundry/contracts';
 import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from '@tanstack/react-router';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { jsonResponse, renderWithProviders, stubFetch } from '@/features/admin/shared/test-utils';
 import { lesson } from '@/features/eir/personas/test-fixtures';
-import { IDS, makeVenture } from '@/features/knowledge/testing';
+import { IDS, makeSession, makeVenture } from '@/features/knowledge/testing';
 
 import type { Workspace } from './nav';
 import { SidebarContent } from './sidebar';
@@ -184,6 +185,74 @@ describe('SidebarContent: venture destinations', () => {
     // Loaded, not failed: the empty list itself says nothing.
     expect(screen.queryByText(/couldn’t load/)).toBeNull();
     expect(screen.queryByText(/conversations yet/i)).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Recent conversations' })).toBeNull();
+  });
+});
+
+describe('SidebarContent: the floating panel', () => {
+  function renderFounderPanel(props: { collapsed?: boolean; onViewAll?: () => void } = {}) {
+    const fetchMock = stubFetch();
+    fetchMock.mockImplementation((input) => {
+      const url = urlOf(input);
+      if (url === `/api/v1/ventures/${IDS.venture}`) return Promise.resolve(jsonResponse(makeVenture()));
+      if (url.startsWith('/api/v1/sessions?'))
+        return Promise.resolve(jsonResponse({ items: [makeSession()], nextCursor: null }));
+      // Calls are on: still, the panel carries no Call entry (the composer and ⌘K start calls).
+      if (url.includes('/call-config') || url.includes('/calls/config'))
+        return Promise.resolve(jsonResponse({ aiEnabled: true, callsEnabled: true }));
+      return Promise.resolve(jsonResponse({ items: [] }));
+    });
+    const founder: Me = {
+      ...me([]),
+      memberships: [{ ventureId: IDS.venture, ventureName: 'QuietQuad', role: 'founder' }],
+    };
+    const noop = () => undefined;
+    const rootRoute = createRootRoute({
+      component: () => (
+        <nav aria-label="Main">
+          <SidebarContent
+            me={founder}
+            workspace={{ kind: 'venture', ventureId: IDS.venture }}
+            collapsed={props.collapsed}
+            onOpenSearch={noop}
+            onViewAllConversations={props.onViewAll}
+            onOpenShortcuts={noop}
+            onOpenDataUse={noop}
+            onOpenReportProblem={noop}
+          />
+        </nav>
+      ),
+    });
+    const router = createRouter({
+      routeTree: rootRoute,
+      history: createMemoryHistory({ initialEntries: ['/'] }),
+    });
+    renderWithProviders(<RouterProvider router={router} />);
+  }
+
+  it('orders New chat, Search, the conversations, then the venture’s pages, with one entry per action', async () => {
+    const viewAll = vi.fn();
+    renderFounderPanel({ onViewAll: viewAll });
+    const recents = await screen.findByRole('navigation', { name: 'Recent conversations' });
+    expect(within(recents).getByRole('heading', { name: 'Older' })).toBeInTheDocument();
+    const names = screen.getAllByRole('link').map((link) => link.textContent);
+    expect(names[0]).toBe('New chat');
+    expect(names.slice(-4)).toEqual(['Knowledge', 'Documents', 'Human help', 'Venture']);
+    expect(screen.queryByRole('link', { name: /^Call / })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Team' })).toBeNull();
+
+    const user = userEvent.setup();
+    await user.click(within(recents).getByRole('button', { name: 'View all' }));
+    expect(viewAll).toHaveBeenCalledOnce();
+  });
+
+  it('as a rail, keeps every row named (the label is hidden, not dropped) and hides the conversations', async () => {
+    renderFounderPanel({ collapsed: true });
+    for (const name of ['New chat', 'Knowledge', 'Documents', 'Human help', 'Venture']) {
+      expect(await screen.findByRole('link', { name })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument();
+    expect(screen.getByText('Knowledge')).toHaveClass('sr-only');
     expect(screen.queryByRole('navigation', { name: 'Recent conversations' })).toBeNull();
   });
 });

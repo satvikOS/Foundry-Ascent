@@ -41,7 +41,7 @@ export function EmbodimentTab({
   if (embodiment.isPending) {
     return (
       <LoadingRegion label="Loading voice and face">
-        <Skeleton className="h-48 rounded-xl" />
+        <Skeleton className="h-48 rounded-lg" />
       </LoadingRegion>
     );
   }

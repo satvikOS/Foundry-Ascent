@@ -357,7 +357,7 @@ export function DocumentsPage() {
       {dragging ? (
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-foreground/50 bg-background/85"
+          className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-foreground/50 bg-background/85"
         >
           <p className="flex items-center gap-2 text-sm font-medium">
             <Upload className="size-4" />

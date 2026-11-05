@@ -2,14 +2,15 @@
 @import 'tw-animate-css';
 
 /*
- * Foundry Ascent design tokens.
+ * Foundry Ascent design tokens (design spec §5).
  *
- * Dark-first, muted black and grey (system-design §9). Every token is declared once with
- * light-dark(<light>, <dark>), so the active palette follows `color-scheme`:
+ * OLED black and near-black steps in dark; a clean, neutral off-white with crisp hairlines in light. Every
+ * token is declared once with light-dark(<light>, <dark>), so the active palette follows `color-scheme`:
  *   - no class on <html>  → follows the OS (works before JavaScript runs, so there is no flash)
  *   - <html class="dark"> → forced dark;  <html class="light"> → forced light (set by ThemeProvider)
- * Dark is OLED: a true-black canvas and sidebar, raised surfaces as near-black steps, borders as
- * low-alpha white hairlines.
+ * Grounds: canvas → surface-1 (cards, inputs) → surface-2 (wells, hover) → surface-3 (selected, pressed),
+ * plus the solid overlay (menus, dialogs) and the round call controls. Borders are hairlines (low-alpha
+ * white in dark). One glass recipe floats (`.glass-float`: the side panel); it has solid fallbacks.
  * Contrast (checked from this file by tokens.test.ts): every text token meets WCAG 2.2 AA (≥ 4.5:1)
  * on every surface, glass included; `--input` and `--ring` meet 3:1 for boundaries and focus.
  */
@@ -46,11 +47,25 @@
 :root {
   color-scheme: dark light;
 
-  /* Brand primitives (spec) */
+  /* Grounds (spec §5.1) */
   --fa-canvas: light-dark(#fafaf9, #000000);
-  --fa-raised: light-dark(#ffffff, #0a0a0a);
-  --fa-overlay: light-dark(#ffffff, #141414);
-  --fa-border: light-dark(#e4e4e1, rgb(255 255 255 / 0.1));
+  --surface-1: light-dark(#ffffff, #0a0a0a);
+  --surface-2: light-dark(#f4f4f2, #111111);
+  --surface-3: light-dark(#ecece9, #1a1a1a);
+  --surface-overlay: light-dark(#ffffff, #141414);
+  /* Round call buttons (the owner's voice reference: #1f1f1f). */
+  --surface-control: light-dark(#ededeb, #1f1f1f);
+  --fa-raised: var(--surface-1);
+  --fa-overlay: var(--surface-overlay);
+  /* Landing only, never in the app. */
+  --band-warm: light-dark(#f3f2ef, #0b0b0a);
+  --band-ink: #0e0f12;
+
+  /* Lines */
+  --fa-border: light-dark(#e4e4e1, rgb(255 255 255 / 0.08));
+  --border-card: light-dark(#dedbd4, rgb(255 255 255 / 0.1));
+
+  /* Text */
   --fa-text: light-dark(#111110, #f4f4f2);
   --fa-text-secondary: light-dark(#5c5c58, #a6a6a3);
   --fa-focus: light-dark(#111110, #ffffff);
@@ -58,21 +73,21 @@
   /* Semantic surface tokens */
   --background: var(--fa-canvas);
   --foreground: var(--fa-text);
-  --card: var(--fa-raised);
+  --card: var(--surface-1);
   --card-foreground: var(--fa-text);
-  --popover: var(--fa-overlay);
+  --popover: var(--surface-overlay);
   --popover-foreground: var(--fa-text);
-  --muted: light-dark(#f2f2f0, #111111);
+  --muted: var(--surface-2);
   --muted-foreground: var(--fa-text-secondary);
   --subtle-foreground: light-dark(#686863, #8f8f8b);
   --primary: light-dark(#111110, #f4f4f2);
   --primary-foreground: light-dark(#fafaf9, #000000);
-  --secondary: light-dark(#efefed, #1a1a1a);
+  --secondary: var(--surface-3);
   --secondary-foreground: var(--fa-text);
-  --accent: light-dark(#ececea, #1f1f1f);
+  --accent: light-dark(#e8e8e5, #1f1f1f);
   --accent-foreground: var(--fa-text);
   --border: var(--fa-border);
-  --border-strong: light-dark(#cfcfcb, rgb(255 255 255 / 0.2));
+  --border-strong: light-dark(#cfcfcb, rgb(255 255 255 / 0.16));
   --input: light-dark(#8d8d88, #6b6b67);
   --ring: var(--fa-focus);
   /*
@@ -105,17 +120,45 @@
   --presence-seam: light-dark(#879d95, #a2b5a9);
   --voice-accent-start: light-dark(#597b9d, #8bb5d9);
   --voice-accent-end: light-dark(#6d8475, #9dbba9);
+  /* The voice palette (sampled from the owner's sphere reference): the sphere only. */
+  --orb-sky: #eaf7fd;
+  --orb-cream: #fdfef1;
+  --orb-mist: #abcff5;
+  --orb-deep: #5c79f5;
+  /* Conversation timeline (the owner's waveform reference): vEIR blue, student green. */
+  --tl-ground: light-dark(#ededea, #1f1f1f);
+  --tl-dots: light-dark(#bdbdb8, #3d3d3d);
+  --tl-veir: light-dark(#d5dcf5, #303d71);
+  --tl-student: light-dark(#d8e6cf, #344b2a);
+  --tl-bar-veir: light-dark(#22306b, #ffffff);
+  --tl-bar-student: light-dark(#2c4520, #ffffff);
+  /* The single accent rule: a 2 px line on an active landing item or the sphere settings' focus. Never a fill. */
+  --accent-rule: linear-gradient(90deg, #5c79f5, #8fb3f2 55%, #7fa37a);
+
   --space-control: 0.5rem;
   --space-section: 1.5rem;
   --touch-target: 2.75rem;
-  --motion-feedback: 120ms;
+
+  /* Motion (spec §5.5): travel 8 px in the app; reduced motion collapses all of it (end of file). */
+  --dur-press: 120ms;
+  --dur-hover: 150ms;
+  --dur-ui: 200ms;
+  --dur-enter: 360ms;
+  --dur-reveal: 560ms;
+  --dur-panel: 280ms;
+  --motion-feedback: var(--dur-press);
   --motion-presence: 7s;
 
-  /* App chrome */
-  --sidebar: light-dark(#f5f5f3, #000000);
+  /*
+   * App chrome: the floating side panel. `--sidebar` is its solid face (no blur, reduced transparency, a
+   * low-end device, the phone sheet's fallback); `--glass-float-bg` is the same face, translucent.
+   * Rows: hover `--sidebar-hover`, selected `--sidebar-accent` plus the `--selected-cue` bar.
+   */
+  --sidebar: light-dark(#ffffff, #121212);
   --sidebar-foreground: var(--fa-text);
   --sidebar-muted: var(--fa-text-secondary);
-  --sidebar-accent: light-dark(#e9e9e6, #1a1a1a);
+  --sidebar-hover: light-dark(var(--surface-2), rgb(255 255 255 / 0.05));
+  --sidebar-accent: light-dark(var(--surface-3), rgb(255 255 255 / 0.09));
   --sidebar-accent-foreground: var(--fa-text);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
@@ -150,6 +193,16 @@
   --glass-bg-strong: light-dark(rgb(255 255 255 / 0.86), rgb(22 22 22 / 0.8));
   --glass-border: light-dark(rgb(17 17 16 / 0.08), rgb(255 255 255 / 0.08));
   --glass-blur: 20px;
+  /*
+   * `.glass-float`: the one floating recipe (the side panel). Docked on desktop, only the canvas is under it.
+   * Where content passes beneath (the tablet overlay, the phone sheet) a soft scrim sits between and the face
+   * is a little denser (`--glass-float-bg-over`), so its text keeps 4.5:1 over the worst content under that
+   * scrim with no credit for the blur (tokens.test.ts).
+   */
+  --glass-float-bg: light-dark(rgb(255 255 255 / 0.84), rgb(20 20 20 / 0.64));
+  --glass-float-bg-over: light-dark(rgb(255 255 255 / 0.84), rgb(20 20 20 / 0.82));
+  --glass-float-border: light-dark(rgb(17 17 16 / 0.08), rgb(255 255 255 / 0.1));
+  --glass-float-blur: 24px;
   /* The scrim behind modals (dims and lightly blurs the page), and the lighter one under a glass panel. */
   --scrim: light-dark(rgb(17 17 16 / 0.32), rgb(0 0 0 / 0.72));
   --scrim-soft: light-dark(rgb(17 17 16 / 0.12), rgb(0 0 0 / 0.5));
@@ -170,8 +223,10 @@
   --mini-call-height: 0px;
   /* The measured height of content docked to the bottom (the conversation's composer), 0 when there is none. */
   --docked-bottom-height: 0px;
+  /* The floating panel (spec §8): 264 px, a 56 px rail, inset 12 px from the viewport on desktop. */
   --sidebar-width: 16.5rem;
   --sidebar-width-collapsed: 3.5rem;
+  --panel-inset: 0.75rem;
   --inspector-width: 24rem;
   /* Reading column for conversations and prose. */
   --content-width: 48rem;
@@ -269,6 +324,12 @@
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-muted: var(--sidebar-muted);
   --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-surface-control: var(--surface-control);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
@@ -280,18 +341,27 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
-  --radius-xs: calc(var(--radius) - 6px);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
+  /* Radii (spec §5.2): chips 4 · controls 6 · buttons and inputs 8 · cards 12 · dialogs 16 · large 20 · panel 22. */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-rail: 18px;
+  --radius-panel: 22px;
+  --radius-sheet: 24px;
+  --radius-pill: 9999px;
 
   --shadow-xs: 0 1px 2px 0 var(--shadow-color);
   --shadow-sm: inset 0 1px 0 0 var(--highlight), 0 1px 2px 0 var(--shadow-color);
   --shadow-md: inset 0 1px 0 0 var(--highlight), 0 4px 12px -2px var(--shadow-color);
   --shadow-lg: inset 0 1px 0 0 var(--highlight), 0 12px 32px -8px var(--shadow-color);
   --shadow-xl: inset 0 1px 0 0 var(--highlight), 0 24px 64px -16px var(--shadow-color);
+  /* Floating layers only: the side panel, the call's floating timeline, popovers. */
+  --shadow-float:
+    inset 0 1px 0 0 var(--highlight), 0 0 0 1px light-dark(rgb(17 17 16 / 0.06), rgb(255 255 255 / 0.06)),
+    0 16px 48px -12px light-dark(rgb(17 17 16 / 0.16), rgb(0 0 0 / 0.7));
 
   /*
    * Motion grammar: 150 ms for hover and press (ease-out), 300–400 ms for entrances (out-expo),
@@ -300,8 +370,9 @@
    */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
-  --duration-hover: 150ms;
-  --duration-enter: 360ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-hover: var(--dur-hover);
+  --duration-enter: var(--dur-enter);
   --animate-shimmer: fa-shimmer 1.6s ease-in-out infinite;
   --animate-fade-in: fa-fade-in 200ms var(--ease-out-expo) both;
   --animate-rise: fa-rise var(--duration-enter) var(--ease-out-expo) both;
@@ -542,6 +613,41 @@
     }
   }
 
+  /*
+   * The floating frosted panel (spec §5.4). Never stacked on other glass; at most two glass surfaces on
+   * screen. Solid (`--sidebar`, the same face minus translucency) where blur is missing, transparency is
+   * reduced, or the device is slow (`data-perf="low"`, lib/perf.ts); system colours in forced-colours mode.
+   */
+  .glass-float {
+    background-color: var(--glass-float-face, var(--glass-float-bg));
+    border: 1px solid var(--glass-float-border);
+    box-shadow: var(--shadow-float);
+    -webkit-backdrop-filter: blur(var(--glass-float-blur)) saturate(160%);
+    backdrop-filter: blur(var(--glass-float-blur)) saturate(160%);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass-float {
+      background-color: var(--sidebar);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .glass-float {
+      background-color: var(--sidebar);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+  :root[data-perf='low'] .glass-float {
+    background-color: var(--sidebar);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  /* On glass (or art, or the call's black) a focus ring needs its own backdrop to hold: two tones. */
+  .glass-float :focus-visible,
+  .focus-two-tone:focus-visible {
+    box-shadow: 0 0 0 4px var(--fa-canvas);
+  }
+
   .surface-raised {
     background-color: var(--card);
     box-shadow: var(--shadow-sm);
@@ -629,6 +735,18 @@
 @media (forced-colors: active) {
   :focus-visible {
     outline: 2px solid CanvasText;
+  }
+  .glass-float {
+    background: Canvas;
+    border-color: CanvasText;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  /* The selected row's fill disappears in forced colours: mark it with the system highlight instead. */
+  [data-slot='sidebar-row'][data-status='active'],
+  [data-slot='sidebar-row'][aria-current='page'] {
+    outline: 1px solid Highlight;
   }
   [data-slot='status-badge'] {
     border: 1px solid CanvasText;

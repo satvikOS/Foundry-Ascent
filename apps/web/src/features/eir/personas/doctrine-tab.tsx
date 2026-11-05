@@ -39,7 +39,7 @@ export function DoctrineTab({
     if (draft && draftRelease.isPending) {
       return (
         <LoadingRegion label="Loading the draft">
-          <Skeleton className="h-96 rounded-xl" />
+          <Skeleton className="h-96 rounded-lg" />
         </LoadingRegion>
       );
     }

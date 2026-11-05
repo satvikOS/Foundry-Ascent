@@ -1,12 +1,11 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 
-import { TeamPage } from '@/features/venture/team-page';
-import { teamQueryOptions } from '@/lib/api/hooks/team';
+import { TEAM_ANCHOR } from '@/features/venture/anchors';
 
+/** Team is a section of the Venture page now: links and bookmarks land on it there. */
 export const Route = createFileRoute('/$tenant/app/v/$ventureId/team')({
-  loader: ({ context, params }) => {
-    context.queryClient.query(teamQueryOptions(params.ventureId)).catch(() => undefined);
+  beforeLoad: ({ params }) => {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- TanStack Router redirects are thrown
+    throw redirect({ to: '/$tenant/app/v/$ventureId/settings', params, hash: TEAM_ANCHOR, replace: true });
   },
-  head: () => ({ meta: [{ title: 'Team' }] }),
-  component: TeamPage,
 });

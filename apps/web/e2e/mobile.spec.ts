@@ -40,10 +40,16 @@ test.describe('mobile 390×844', () => {
       await expectReachable(page, page.getByRole('link', { name: 'New chat' }));
       await page.getByRole('button', { name: 'Open navigation' }).click();
       const sheet = page.getByRole('dialog', { name: 'Navigation' });
-      for (const name of ['Knowledge', 'Documents', 'Human help', 'Team']) {
+      for (const name of ['Knowledge', 'Documents', 'Human help', 'Venture']) {
         await expectReachable(page, sheet.getByRole('link', { name: new RegExp(`^${name}`) }));
       }
-      await expectReachable(page, sheet.getByRole('link', { name: /^Call / }));
+      // One entry per action: calls start from the composer and ⌘K, not from the navigation.
+      await expect(sheet.getByRole('link', { name: /^Call / })).toHaveCount(0);
+      // The sheet floats: inset from the screen's edges, with curved corners, over a dimming scrim.
+      const box = await sheet.boundingBox();
+      expect(box?.x).toBeGreaterThanOrEqual(8);
+      expect(box?.y).toBeGreaterThanOrEqual(8);
+      expect(await sheet.evaluate((el) => getComputedStyle(el).borderTopLeftRadius)).toBe('24px');
       await expectReachable(page, sheet.getByRole('button', { name: /^Account menu for / }));
       await sheet.getByRole('link', { name: /^Knowledge/ }).click();
       await expect(sheet).toBeHidden();

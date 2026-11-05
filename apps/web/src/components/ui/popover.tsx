@@ -24,7 +24,7 @@ export function PopoverContent({
         align={align}
         collisionPadding={16}
         className={cn(
-          'glass-strong z-50 w-[min(20rem,calc(100vw-2rem))] rounded-xl border p-4 text-small text-popover-foreground shadow-lg outline-none',
+          'glass-strong z-50 w-[min(20rem,calc(100vw-2rem))] rounded-lg border p-4 text-small text-popover-foreground shadow-float outline-none',
           'animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
           className,
         )}

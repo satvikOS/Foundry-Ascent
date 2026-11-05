@@ -452,9 +452,15 @@ for (const scheme of ['dark', 'light'] as const) {
     await expect(page.getByRole('tab', { name: /^To review/ })).toHaveCount(0);
     await expectNoSeriousA11yViolations(page, `knowledge memory (${scheme})`);
     await expectNoBareEirName(page, 'Knowledge memory');
+    // The conversations tab is gone (the side panel and ⌘K list conversations): old links open the memory.
     await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=conversations`);
-    await expect(page.getByRole('tab', { name: /^Conversations/ })).toHaveAttribute('aria-selected', 'true');
-    await expectNoBareEirName(page, 'Knowledge conversations');
+    await expect(page.getByRole('tab', { name: 'Memory' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: /^Conversations/ })).toHaveCount(0);
+
+    await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=you`);
+    await expect(page.getByRole('heading', { level: 2, name: 'Coaching profile' })).toBeVisible();
+    await expectNoSeriousA11yViolations(page, `knowledge you (${scheme})`);
+    await expectNoBareEirName(page, 'Knowledge you');
 
     await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=evidence`);
     await expect(page.getByRole('list', { name: 'Sources' })).toBeVisible();
@@ -467,9 +473,12 @@ for (const scheme of ['dark', 'light'] as const) {
     await expectNoSeriousA11yViolations(page, `human help (${scheme})`);
     await expectNoBareEirName(page, 'Human help');
 
+    // Team is a section of the Venture page; old Team links land on it there.
     await page.goto(`/${TENANT}/app/v/${ventureId}/team`);
+    await expect(page).toHaveURL(new RegExp(`/v/${ventureId}/settings#team$`));
+    await expect(page.getByRole('heading', { level: 1, name: 'Venture' })).toBeVisible();
     await expect(page.getByRole('list', { name: 'Team members' })).toBeVisible();
-    await expectNoSeriousA11yViolations(page, `team (${scheme})`);
-    await expectNoBareEirName(page, 'Team');
+    await expectNoSeriousA11yViolations(page, `venture (${scheme})`);
+    await expectNoBareEirName(page, 'Venture');
   });
 }

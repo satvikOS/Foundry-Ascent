@@ -293,7 +293,7 @@ export function ConsentTab({ persona }: { persona: PersonaView }) {
   if (consents.isPending) {
     return (
       <LoadingRegion label="Loading consent">
-        <Skeleton className="h-48 rounded-xl" />
+        <Skeleton className="h-48 rounded-lg" />
       </LoadingRegion>
     );
   }

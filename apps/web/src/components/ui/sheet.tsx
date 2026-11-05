@@ -74,7 +74,7 @@ export function SheetFooter({ className, ...props }: ComponentProps<'div'>) {
 
 export function SheetTitle({ className, ...props }: ComponentProps<typeof SheetPrimitive.Title>) {
   return (
-    <SheetPrimitive.Title className={cn('text-body font-semibold tracking-tight', className)} {...props} />
+    <SheetPrimitive.Title className={cn('text-body font-medium tracking-tight', className)} {...props} />
   );
 }
 

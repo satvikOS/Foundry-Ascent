@@ -78,7 +78,7 @@ export function ErrorState({
         strokeWidth={1.5}
         className={cn('mb-1 size-6', definitive ? 'text-subtle-foreground' : 'text-destructive')}
       />
-      <Heading className="text-base font-semibold tracking-tight">{title ?? defaultTitle}</Heading>
+      <Heading className="text-base font-medium tracking-tight">{title ?? defaultTitle}</Heading>
       <p className="max-w-md text-sm text-muted-foreground">{errorMessage(error)}</p>
       {retry || action ? (
         <div className="mt-1 flex flex-wrap items-center justify-center gap-2">

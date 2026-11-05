@@ -18,11 +18,13 @@ import { createQueryClient, setUnauthenticatedHandler } from '@/lib/api/query-cl
 import { wakeDatabase } from '@/lib/api/wake';
 import { safeRedirectPath } from '@/lib/auth/guards';
 import { displayFacesReady } from '@/lib/display-faces';
+import { initPerfClass } from '@/lib/perf';
 import { initTheme } from '@/lib/theme';
 
 import { createAppRouter } from './router';
 
 initTheme();
+initPerfClass();
 // A paused database starts resuming now, while this page renders and the person reads or signs in (not awaited).
 wakeDatabase();
 
