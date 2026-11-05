@@ -254,7 +254,7 @@ describe('CallLobby', () => {
         kind="voice"
         onSwitchKind={onSwitchKind}
         videoBlocked="Video isn’t available for you yet. Voice works."
-        note="Video isn’t available for you yet, so this is a voice call."
+        note="Video isn’t available, so this is a voice call."
         welcome={null}
         privacy={null}
         onStart={vi.fn()}
@@ -269,8 +269,6 @@ describe('CallLobby', () => {
     expect(blocked).toHaveAttribute('aria-disabled', 'true');
     await userEvent.click(blocked);
     expect(onSwitchKind).toHaveBeenCalledTimes(1);
-    expect(
-      screen.getByText('Video isn’t available for you yet, so this is a voice call.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Video isn’t available, so this is a voice call.')).toBeInTheDocument();
   });
 });

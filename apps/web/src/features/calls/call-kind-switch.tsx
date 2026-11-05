@@ -22,7 +22,7 @@ export function CallKindSwitch({
 }) {
   const toVideo = kind === 'voice';
   const label = toVideo ? 'Switch to video' : 'Switch to voice';
-  const tip = blockedReason ?? (toVideo ? label : 'Switch to voice (video ends for this call)');
+  const tip = blockedReason ?? label;
   const Icon = toVideo ? Video : VideoOff;
   return (
     <SimpleTooltip content={tip} side="bottom">

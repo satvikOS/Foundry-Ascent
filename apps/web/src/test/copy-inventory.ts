@@ -416,7 +416,11 @@ export function extractCopy(source: string, file: string): CopyString[] {
 export function screenOf(file: string): string {
   const rules: [RegExp, string][] = [
     // The vEIR's name, badge, welcome and AI disclosure: their words are w6-presence's to set, not held here.
-    [/^components\/(?:disclosure|faces\/veir-)|^features\/veir\/|^lib\/veir\.ts$/, 'vEIR identity'],
+    // The call's disclosure (read before the first voice and video call) is that AI disclosure too.
+    [
+      /^components\/(?:disclosure|faces\/veir-)|^features\/veir\/|^lib\/veir\.ts$|^features\/calls\/call-disclosure\.tsx$/,
+      'vEIR identity',
+    ],
     [/^routes\/index\.tsx$|^components\/landing\//, 'Landing'],
     [/^routes\/sign-in\.tsx$|^components\/auth\//, 'Sign-in'],
     [/^features\/chat\/context-brief\./, 'Context review'],

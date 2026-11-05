@@ -452,9 +452,7 @@ describe('voice and video calls, and the disclosure before the first of each', (
   it('a video link asks for video; without a face offered it says so and the call is a voice call', async () => {
     const { url } = renderApp([`${BASE}/c/${SESSION}?call=video`]);
     expect(await screen.findByRole('dialog', { name: /^Voice call with / })).toBeInTheDocument();
-    expect(
-      await screen.findByText('Video isn’t available for you yet, so this is a voice call.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Video isn’t available, so this is a voice call.')).toBeInTheDocument();
     expect(
       screen.getByRole('button', {
         name: 'Switch to video: Video isn’t available for you yet. Voice works.',

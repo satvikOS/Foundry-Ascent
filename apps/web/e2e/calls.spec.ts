@@ -12,7 +12,6 @@ import {
   setCallsEnabled,
   signIn,
   startConversation,
-  TENANT,
   test,
   useTheme,
   expectNoBareEirName,
@@ -753,7 +752,7 @@ test.describe('vEIR calls', () => {
       await expect(screen.getByRole('button', { name: 'Start call' })).toBeVisible();
       await expect(page.getByRole('alertdialog')).toHaveCount(0);
       await screen.getByRole('button', { name: 'Call settings' }).click();
-      await page.getByRole('button', { name: /^About calls with / }).click();
+      await page.getByRole('button', { name: 'About calls' }).click();
       const about = page.getByRole('alertdialog', { name: /^About calls with / });
       await expect(about).toContainText('On video, the face you see is an AI avatar');
       await about.getByRole('button', { name: 'Close' }).click();

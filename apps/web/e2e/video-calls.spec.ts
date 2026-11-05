@@ -149,7 +149,7 @@ test.describe('vEIR calls · a video face', () => {
         await expect(tile).toHaveCount(0);
         await expect(screen.locator('[data-slot="call-tile"][data-face="presence"]')).toBeVisible();
         await expect(screen.locator('[data-slot="call-stage"]')).toBeVisible();
-        await expect(screen.locator('[data-slot="video-lost"]')).toContainText('goes on as a voice call');
+        await expect(screen.locator('[data-slot="video-lost"]')).toContainText('The call goes on as voice');
         await expect(page.getByRole('dialog', { name: /^Voice call with / })).toBeVisible();
         await expect(screen.locator('[data-slot="call-kind"]')).toContainText('Voice call');
         // One face per call: video cannot come back in this call, and says why.

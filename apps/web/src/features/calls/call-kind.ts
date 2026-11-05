@@ -7,8 +7,6 @@ import type { CallConfigResponse } from '@foundry/contracts';
  */
 export type CallKind = 'voice' | 'video';
 
-export const CALL_KINDS: readonly CallKind[] = ['voice', 'video'];
-
 export const CALL_KIND_LABEL: Record<CallKind, string> = { voice: 'Voice call', video: 'Video call' };
 
 /**

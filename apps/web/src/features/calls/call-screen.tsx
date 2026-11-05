@@ -99,9 +99,9 @@ function useLiveCallPage(engine: CallEngine, live: boolean): void {
 }
 
 /** Said under the status when a video call was asked for but only voice is offered to this person. */
-const VOICE_INSTEAD = 'Video isn’t available for you yet, so this is a voice call.';
+const VOICE_INSTEAD = 'Video isn’t available, so this is a voice call.';
 /** Why a voice call cannot turn video on once it had a face (one face per call). */
-const VIDEO_USED = 'Video can’t restart in this call. Start a new video call for it.';
+const VIDEO_USED = 'Video can’t restart in this call.';
 
 /**
  * The call screen: one surface over the conversation, open while the URL carries `?call=voice` or `?call=video`

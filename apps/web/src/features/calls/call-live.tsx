@@ -410,7 +410,7 @@ export function CallLive({
       <div className="flex shrink-0 flex-col items-center gap-4 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:pb-5">
         {videoLost && !ending.pending ? (
           <p role="status" data-slot="video-lost" className="text-small text-muted-foreground">
-            Video isn’t available right now. The call goes on as a voice call.
+            Video stopped. The call goes on as voice.
           </p>
         ) : null}
         {live && snapshot.voice === 'captions' ? (

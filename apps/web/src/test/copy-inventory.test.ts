@@ -113,6 +113,7 @@ describe('copy inventory', () => {
       'components/disclosure-banner.tsx',
       'features/veir/veir-welcome.tsx',
       'features/veir/welcome.ts',
+      'features/calls/call-disclosure.tsx',
     ]) {
       expect(screenOf(file), file).toBe('vEIR identity');
     }

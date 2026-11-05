@@ -137,7 +137,7 @@ function Section({ children }: { children: ReactNode }) {
  * The call settings (the sliders glyph, top right, on the start screen and during the call): presentation (the
  * sphere by default, or the character, always labelled "AI avatar"), captions and their size, screen-reader
  * captions, push to talk; before a call into a new conversation, Remember or Private; during the call, typing,
- * switching to chat and the timeline's legend; always, the call's disclosure to read again ("About calls with
+ * switching to chat and the timeline's legend; always, the call's disclosure to read again ("About calls
  * Thomas"). The face is solid over the call (globals.css), never glass over the captions. Choices are remembered in
  * this browser; none changes the voice, identity or session.
  */
@@ -291,7 +291,7 @@ export function CallSettings({
               className="fa-call-focus flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-left text-small text-foreground transition-colors duration-150 hover:bg-accent"
             >
               <Info aria-hidden className="size-4 text-muted-foreground" />
-              About calls with {name}
+              About calls
             </button>
           </Section>
         </PopoverContent>

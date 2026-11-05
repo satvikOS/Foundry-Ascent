@@ -118,7 +118,7 @@ export function CallMenu({
             }}
           >
             <Info aria-hidden />
-            About calls with {name}
+            About calls
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
