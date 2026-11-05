@@ -23,7 +23,8 @@ import { REPO, errorName, writePrivate } from './lab-support';
  *   s1  L1 start fields and ws_url host, L2 open -> session.state_updated, L3 agent.speak acks (one id for every chunk,
  *       or one id per chunk), L4 speak_started / speak_ended and the sound on the avatar's track against the send time
  *       (first chunks of 1000, 400 and 200 ms), L5 two utterances back to back and a turn sent as one utterance with a
- *       pause inside it, L8 agent.interrupt.
+ *       pause inside it, L8 agent.interrupt; last, the room taps' positive control (a second participant, on the
+ *       room's agent token, publishes one `lab.control` marker that the viewer's taps must carry).
  *   s2  L1 again, L6 a second socket while an utterance is open (replacement), reopening after a close, L7 closing
  *       right after speak_end, and closing with an uncommitted buffer.
  *   s3  L1 again; L9 the viewer token publishing agent.speak-shaped and avatar.speak_text data on `agent-control`,
@@ -56,17 +57,24 @@ const LIVEKIT_UMD = join(
 /** The sandbox's longest session (the vendor refuses more). */
 const SESSION_SECONDS = 60;
 /**
- * The production site's origin (the repository variable FA_SITE_URL, handed over by the workflow as
- * LAB_PRODUCTION_ORIGIN), else a production-shaped CloudFront origin (AWS's documentation example), and which one.
+ * The production site's origin (the workflow's `production_origin` input, else the repository variable FA_SITE_URL,
+ * handed over as LAB_PRODUCTION_ORIGIN with LAB_PRODUCTION_ORIGIN_SOURCE `input` or `repository`), else a
+ * production-shaped CloudFront origin (AWS's documentation example, `stand-in`: L10's hypothesis is then not graded).
  */
-const PRODUCTION = productionOrigin(process.env.LAB_PRODUCTION_ORIGIN);
+const PRODUCTION = productionOrigin(
+  process.env.LAB_PRODUCTION_ORIGIN,
+  process.env.LAB_PRODUCTION_ORIGIN_SOURCE,
+);
 /** An origin nobody serves (`.invalid`), for whether the vendor checks Origin at all. */
 const FOREIGN_ORIGIN = 'https://lab-foreign-origin.invalid';
 
-function productionOrigin(raw: string | undefined): { origin: string; source: 'repository' | 'stand-in' } {
+function productionOrigin(
+  raw: string | undefined,
+  given: string | undefined,
+): { origin: string; source: 'input' | 'repository' | 'stand-in' } {
   const value = (raw ?? '').trim().replace(/\/+$/, '');
   if (/^https:\/\/[a-z0-9.-]{1,200}(:\d{1,5})?$/i.test(value)) {
-    return { origin: new URL(value).origin, source: 'repository' };
+    return { origin: new URL(value).origin, source: given === 'input' ? 'input' : 'repository' };
   }
   return { origin: 'https://d111111abcdef8.cloudfront.net', source: 'stand-in' };
 }
@@ -122,7 +130,10 @@ interface LiteLab {
   sockets: LiteSocket[];
   sent: LiteSent[];
   utterances: Record<string, LiteUtterance>;
+  /** Room data the page's peer connections carried (raw data-channel tap: every channel, either side opened). */
   roomEvents: { at: number; type: string }[];
+  /** Room data the viewer's Room delivered (`RoomEvent.DataReceived`): the viewer's room only. */
+  roomData: { at: number; type: string }[];
   motion: { at: number; d: number }[];
   videoFrames: number;
   /** Remote audio tracks the meter listens to (0: nothing could be heard, so no sound measure counts). */
@@ -167,6 +178,7 @@ function liteLabInit(): void {
     sent: [],
     utterances: {},
     roomEvents: [],
+    roomData: [],
     motion: [],
     videoFrames: 0,
     audioTracks: 0,
@@ -260,12 +272,15 @@ function liteLabInit(): void {
   };
 
   const decoder = new TextDecoder('utf-8', { fatal: false });
+  const tapped = new WeakSet<RTCDataChannel>();
   const tapChannel = (channel: RTCDataChannel): void => {
+    if (tapped.has(channel)) return;
+    tapped.add(channel);
     channel.addEventListener('message', (message: MessageEvent) => {
       const at = now();
       const record = (bytes: Uint8Array): void => {
         const type = /"(?:event_type|type)"\s*:\s*"([a-z_.]{1,64})"/.exec(decoder.decode(bytes))?.[1];
-        if (type !== undefined) lab.roomEvents.push({ at, type });
+        lab.roomEvents.push({ at, type: type ?? 'undecoded' });
       };
       const data: unknown = message.data;
       if (data instanceof Blob) {
@@ -279,6 +294,8 @@ function liteLabInit(): void {
         record(new Uint8Array(data));
       } else if (ArrayBuffer.isView(data)) {
         record(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+      } else if (typeof data === 'string') {
+        record(new TextEncoder().encode(data));
       }
     });
   };
@@ -293,6 +310,15 @@ function liteLabInit(): void {
         if (event.track.kind === 'audio') tapAudio(event.track);
         if (event.track.kind === 'video') watchVideo(event.track);
       });
+    }
+
+    // livekit-client 2.x opens its own data channels (`_reliable`, `_lossy`; one peer connection by default) and
+    // receives the room's data on them, so no 'datachannel' event fires: the channels it creates are tapped here
+    // (as face.lab.ts does). The tap only listens; it never sends.
+    override createDataChannel(label: string, init?: RTCDataChannelInit): RTCDataChannel {
+      const channel = super.createDataChannel(label, init);
+      tapChannel(channel);
+      return channel;
     }
   }
   window.RTCPeerConnection = Tapped;
@@ -689,6 +715,8 @@ interface LiteSession {
   url: string;
   token: string;
   controlUrl: string;
+  /** The room's agent token (the room-tap control's second participant), when the vendor gave one. */
+  agentToken: string | null;
   shape: unknown;
 }
 
@@ -721,6 +749,7 @@ async function openLiteSession(
       url: body.url,
       token: body.token,
       controlUrl: body.controlUrl,
+      agentToken: typeof body.agentToken === 'string' && body.agentToken !== '' ? body.agentToken : null,
       shape: body.shape ?? null,
     },
     status: 201,
@@ -793,6 +822,12 @@ function joinRoom(page: Page, session: LiteSession): Promise<RoomSeen> {
       w.__liteRoom = room;
       const begun = now();
       const seen: { firstVideo: number | null } = { firstVideo: null };
+      const decoder = new TextDecoder('utf-8', { fatal: false });
+      // The viewer room's own data (whatever packet the vendor might send), beside the raw data-channel tap.
+      room.on(LK.RoomEvent.DataReceived, (payload: Uint8Array) => {
+        const type = /"(?:event_type|type)"\s*:\s*"([a-z_.]{1,64})"/.exec(decoder.decode(payload))?.[1];
+        w.__lite.roomData.push({ at: now(), type: type ?? 'undecoded' });
+      });
       const video = new Promise<void>((resolve) => {
         room.on(LK.RoomEvent.TrackSubscribed, (track) => {
           if (track.kind === LK.Track.Kind.Video && seen.firstVideo === null) {
@@ -826,6 +861,94 @@ function joinRoom(page: Page, session: LiteSession): Promise<RoomSeen> {
       }
     },
     { url: session.url, token: session.token },
+  );
+}
+
+/** What the room-tap control saw (all private; lite_probe.py grades room-data claims only when it was seen). */
+interface RoomControl {
+  /** When the marker was published (page clock): room data after it is the control's, not the vendor's. */
+  at: number | null;
+  joined: boolean;
+  published: boolean;
+  /** The viewer's raw data-channel tap carried the marker. */
+  seenRaw: boolean;
+  /** The viewer's Room delivered the marker (`RoomEvent.DataReceived`). */
+  seenData: boolean;
+  error: string | null;
+}
+
+/**
+ * The room taps' positive control: a second participant (the room's agent token, in this page) publishes one marker
+ * (`lab.control`, no speech) to the room, and the viewer's taps must carry it. Without it an empty room-event list
+ * proves nothing (a deaf tap reads the same). Run last in its session, so nothing measured comes after it.
+ */
+function roomTapControl(page: Page, session: LiteSession): Promise<RoomControl> {
+  if (session.agentToken === null) {
+    return Promise.resolve({
+      at: null,
+      joined: false,
+      published: false,
+      seenRaw: false,
+      seenData: false,
+      error: 'no_agent_token',
+    });
+  }
+  return page.evaluate(
+    async ({ url, token }) => {
+      const LK = (window as unknown as { LivekitClient: typeof LiveKit }).LivekitClient;
+      const lab = (window as unknown as LiteWindow).__lite;
+      const now = (): number => performance.timeOrigin + performance.now();
+      const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+      const bounded = <T>(work: Promise<T>, ms: number, what: string): Promise<T> =>
+        Promise.race([
+          work,
+          new Promise<T>((_, reject) =>
+            setTimeout(() => {
+              reject(new DOMException(`${what} did not finish`, 'TimeoutError'));
+            }, ms),
+          ),
+        ]);
+      const out = {
+        at: null as number | null,
+        joined: false,
+        published: false,
+        seenRaw: false,
+        seenData: false,
+        error: null as string | null,
+      };
+      const second = new LK.Room({ adaptiveStream: false, dynacast: false });
+      // From here on the second participant's own channels are tapped too, so room data from now is not the viewer's.
+      const at = now();
+      out.at = at;
+      try {
+        await bounded(second.connect(url, token, { autoSubscribe: false }), 8000, 'connect');
+        out.joined = true;
+        await bounded(
+          second.localParticipant.publishData(
+            new TextEncoder().encode(JSON.stringify({ type: 'lab.control' })),
+            {
+              reliable: true,
+              topic: 'lab-control',
+            },
+          ),
+          3000,
+          'publishData',
+        );
+        out.published = true;
+        const until = now() + 4000;
+        while (now() < until && !(out.seenRaw && out.seenData)) {
+          await wait(100);
+          out.seenRaw = lab.roomEvents.some((e) => e.type === 'lab.control' && e.at >= at);
+          out.seenData = lab.roomData.some((e) => e.type === 'lab.control' && e.at >= at);
+        }
+      } catch (err) {
+        out.error = err instanceof Error ? err.name : 'error';
+      } finally {
+        await second.disconnect().catch(() => undefined);
+      }
+      return out;
+    },
+    { url: session.url, token: session.agentToken },
   );
 }
 
@@ -995,6 +1118,7 @@ interface SessionRecord {
   marks: Record<string, number | null>;
   origins: OriginAttempt[];
   publish: Record<string, unknown>;
+  roomControl: RoomControl | null;
   lab: LiteLab | null;
   error: string | null;
 }
@@ -1014,6 +1138,7 @@ async function runSession(
     marks: {},
     origins: [],
     publish: {},
+    roomControl: null,
     lab: null,
     error: null,
   };
@@ -1108,6 +1233,8 @@ async function sessionOne(page: Page, session: LiteSession, record: SessionRecor
   marks.I1 = await page.evaluate(() => (window as unknown as LiteWindow).__liteOps.interrupt('A', 'I1'));
   await page.waitForTimeout(3000);
   marks.end = await pageNow(page);
+  // Last: the room taps' positive control (L4's "no speak events in the room" counts only when it was seen).
+  record.roomControl = await roomTapControl(page, session);
 }
 
 /** s2: L6 replacement and reopening, L7 early close (committed and not). */
@@ -1115,8 +1242,9 @@ async function sessionTwo(page: Page, session: LiteSession, record: SessionRecor
   const { marks } = record;
   if (!(await openSocket(page, 'A', session.controlUrl, 'page-local'))) return;
   await page.waitForTimeout(800);
-  // L6: an open (uncommitted) utterance on A; B opens; B commits it with the utterance's own id.
-  marks.U1 = await speak(page, 'A', plan('U1', 2000, { end: false }));
+  // L6: an open (uncommitted) utterance on A; B opens; B commits it with the utterance's own id. Three seconds of
+  // audio, so A is replaced while the utterance can still be playing (lite_probe.py grades survival only then).
+  marks.U1 = await speak(page, 'A', plan('U1', 3000, { end: false }));
   await startedOr(page, 'U1', marks.U1 ?? (await pageNow(page)), 600);
   marks.B_open = await pageNow(page);
   const b = await openSocket(page, 'B', session.controlUrl, 'page-local');
@@ -1353,6 +1481,10 @@ test.describe('Conversation lab · LITE protocol probe (HeyGen LiveAvatar sandbo
           const video = canvas.captureStream(25).getVideoTracks()[0];
           if (audio !== undefined) a.addTrack(audio, destination.stream);
           if (video !== undefined) a.addTrack(video);
+          // The room tap: channels both sides create themselves (negotiated, as livekit-client's own), no
+          // 'datachannel' event; the receiving side's tap must carry the sender's marker.
+          const sender = a.createDataChannel('_reliable', { negotiated: true, id: 7 });
+          b.createDataChannel('_reliable', { negotiated: true, id: 7 });
           const offer = await a.createOffer();
           await a.setLocalDescription(offer);
           await b.setRemoteDescription(offer);
@@ -1360,6 +1492,12 @@ test.describe('Conversation lab · LITE protocol probe (HeyGen LiveAvatar sandbo
           await b.setLocalDescription(answer);
           await a.setRemoteDescription(answer);
           await wait(1500);
+          const tapFrom = performance.timeOrigin + performance.now();
+          for (let i = 0; i < 20 && sender.readyState !== 'open'; i += 1) await wait(100);
+          // Binary, as livekit-client sends its data packets.
+          if (sender.readyState === 'open') {
+            sender.send(new TextEncoder().encode(JSON.stringify({ type: 'lab.control' })));
+          }
           const movingFrom = performance.timeOrigin + performance.now();
           player.start();
           await wait(1800);
@@ -1379,6 +1517,7 @@ test.describe('Conversation lab · LITE protocol probe (HeyGen LiveAvatar sandbo
             videoFrames: lab.videoFrames,
             motionMoving: mean(movingFrom, movingFrom + 1800),
             motionStill: mean(stillFrom, stillFrom + 1500),
+            roomTap: lab.roomEvents.some((e) => e.type === 'lab.control' && e.at >= tapFrom),
           };
           a.close();
           b.close();
@@ -1392,7 +1531,7 @@ test.describe('Conversation lab · LITE protocol probe (HeyGen LiveAvatar sandbo
       writePrivate('face/lite-probe-instruments.json', result);
     }
     expect(result.error ?? null).toBeNull();
-    expect(result).toMatchObject({ meterOnset: true, base64Bytes: 48_000 });
+    expect(result).toMatchObject({ meterOnset: true, base64Bytes: 48_000, roomTap: true });
     expect(Number(result.synthRms)).toBeGreaterThan(0.05);
     expect(Number(result.motionMoving)).toBeGreaterThan(Number(result.motionStill ?? 0));
   });

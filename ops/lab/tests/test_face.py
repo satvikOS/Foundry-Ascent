@@ -1182,6 +1182,7 @@ def test_the_lite_probe_pass_runs_only_the_probe_with_the_production_origin(
     assert only["ctx_env"]["MEDIA_FACE_MODE"] == "full"
     assert only["extra_env"]["LAB_FACE_APP_MODE"] == "lite-probe"
     assert only["extra_env"][face.PRODUCTION_ORIGIN_ENV] == "https://d111111abcdef8.cloudfront.net"
+    assert only["extra_env"][face.PRODUCTION_ORIGIN_SOURCE_ENV] == "repository"
     assert KEY not in json.dumps({k: v for k, v in only.items() if k != "report"}, default=str)
     result = out["face"]
     assert result["face_mode"] == "lite-probe"
@@ -1196,8 +1197,17 @@ def test_the_lite_probe_pass_runs_only_the_probe_with_the_production_origin(
         "",
     ):
         monkeypatch.setenv(face.PRODUCTION_ORIGIN_ENV, bad)
+        monkeypatch.setenv(face.PRODUCTION_ORIGIN_SOURCE_ENV, "input")
         _, passes, *_ = run_suite_face(monkeypatch, tmp_path / "bad", "lite-probe")
         assert face.PRODUCTION_ORIGIN_ENV not in passes[0]["extra_env"], bad
+        # Without an origin there is no source either: the spec's stand-in is never called the production origin.
+        assert face.PRODUCTION_ORIGIN_SOURCE_ENV not in passes[0]["extra_env"], bad
+    # The dispatch input is named as such; any other source reads as the repository variable.
+    for given, expected in (("input", "input"), ("repository", "repository"), ("forged", "repository")):
+        monkeypatch.setenv(face.PRODUCTION_ORIGIN_ENV, "https://app.example.com")
+        monkeypatch.setenv(face.PRODUCTION_ORIGIN_SOURCE_ENV, given)
+        _, passes, *_ = run_suite_face(monkeypatch, tmp_path / given, "lite-probe")
+        assert passes[0]["extra_env"][face.PRODUCTION_ORIGIN_SOURCE_ENV] == expected, given
 
 
 def test_production_origin_is_a_bare_https_origin() -> None:

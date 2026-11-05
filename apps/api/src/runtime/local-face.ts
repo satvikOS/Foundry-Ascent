@@ -188,9 +188,10 @@ interface ProbeSession {
  *   POST lite-sessions             a raw LITE SANDBOX session ({maxSeconds}) for the lab's LITE protocol probe
  *                                  (apps/web/e2e/lab/lite-probe.lab.ts), which drives the vendor's `ws_url` itself: the
  *                                  LiveKit URL and client token, `controlUrl` (that `ws_url`, a ~1-minute free sandbox
- *                                  session's socket, which the probe keeps in memory and never writes), and the
- *                                  token and start responses' shape: status, envelope code, and each `data` field's
- *                                  NAME and JSON type (never a value)
+ *                                  session's socket, which the probe keeps in memory and never writes), the room's
+ *                                  agent token (the probe's room-tap control, also never written), and the token
+ *                                  and start responses' shape: status, envelope code, and each `data` field's NAME
+ *                                  and JSON type (never a value)
  *   GET  sessions/:id/transcript   the vendor's transcript of a probe session (synthetic text the lab sent)
  *   POST sessions/:id/stop         stops a probe session
  *
@@ -409,6 +410,9 @@ export class LabFaceProbe {
       url,
       token: clientToken,
       controlUrl,
+      // The room's agent token (null when the vendor gave none), for the probe's positive control only: a second
+      // participant that publishes one marker data message, so the viewer's room tap is shown to hear room data.
+      agentToken: stringField(start.data, 'livekit_agent_token'),
       shape: { token: tokenShape, start: startShape },
     });
   }

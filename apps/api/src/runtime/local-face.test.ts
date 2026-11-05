@@ -71,6 +71,7 @@ const sandboxRoutes = {
         session_id: 's-1',
         livekit_url: 'wss://heygen-feapbkvq.livekit.cloud',
         livekit_client_token: 'client-token',
+        livekit_agent_token: 'agent-token',
         ws_url: 'wss://control.example/should-stay-on-the-server',
         max_session_duration: 60,
       },
@@ -287,6 +288,7 @@ describe('the LITE protocol probe (lite-sessions: the lab drives ws_url itself)'
       url: 'wss://heygen-feapbkvq.livekit.cloud',
       token: 'client-token',
       controlUrl: 'wss://control.example/should-stay-on-the-server',
+      agentToken: 'agent-token',
       shape: {
         token: { status: 200, code: 1000, fields: { session_id: 'string', session_token: 'string' } },
         start: {
@@ -306,6 +308,7 @@ describe('the LITE protocol probe (lite-sessions: the lab drives ws_url itself)'
     // The shape never carries a value: not the session token, which only the probe itself uses.
     expect(JSON.stringify(session.shape)).not.toContain('session-token');
     expect(JSON.stringify(session.shape)).not.toContain('control.example');
+    expect(JSON.stringify(session.shape)).not.toContain('agent-token');
     expect(seen[0]?.url.endsWith('/v1/sessions/token')).toBe(true);
     expect(seen[0]).toMatchObject({
       headers: { 'x-api-key': KEY },
@@ -363,6 +366,21 @@ describe('the LITE protocol probe (lite-sessions: the lab drives ws_url itself)'
     expect(Object.keys(answer.shape)).toEqual(['token']);
     expect(answer.shape.token).toMatchObject({ status: 404, code: null, fields: {} });
     expect(typeof answer.shape.token.ms).toBe('number');
+  });
+
+  it('hands over a null agent token when the vendor gave none', async () => {
+    const start = sandboxRoutes['/v1/sessions/start'];
+    const withoutAgent = {
+      ...sandboxRoutes,
+      '/v1/sessions/start': {
+        status: 201,
+        body: { ...start.body, data: { ...start.body.data, livekit_agent_token: undefined } },
+      },
+    };
+    const wired = face({ ...lab, [LAB_FACE_PROBE_TOKEN]: TOKEN }, vendor(withoutAgent).fetch);
+    const opened = await probe(wired, 'POST', 'lite-sessions', { body: { maxSeconds: 60 } });
+    expect(opened.status).toBe(201);
+    expect(((await opened.json()) as { agentToken: unknown }).agentToken).toBeNull();
   });
 
   it('reduces a response to field names and JSON types', () => {

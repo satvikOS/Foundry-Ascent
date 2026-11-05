@@ -877,6 +877,7 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
     from conversation_lab.face import (
         PROBE_TOKEN_ENV,
         PRODUCTION_ORIGIN_ENV,
+        PRODUCTION_ORIGIN_SOURCE_ENV,
         Probe,
         api_process_env,
         injection_audits,
@@ -895,12 +896,16 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
     extra = {**browser, "LAB_FACE_VENDOR": "heygen" if probe else "stand-in"}
     if token:
         extra[PROBE_TOKEN_ENV] = token
-    # The production site's origin for the lite probe's L10 (the workflow's FA_SITE_URL); the spec falls back to a
-    # production-shaped origin without it. Only a bare https origin is passed on.
+    # The production site's origin for the lite probe's L10 (the workflow's production_origin input, else its
+    # FA_SITE_URL) and where it came from; the spec falls back to a production-shaped stand-in without it, which it
+    # reports but never grades as production. Only a bare https origin is passed on.
     extra.pop(PRODUCTION_ORIGIN_ENV, None)
+    extra.pop(PRODUCTION_ORIGIN_SOURCE_ENV, None)
     origin = production_origin(os.environ.get(PRODUCTION_ORIGIN_ENV, ""))
     if origin:
         extra[PRODUCTION_ORIGIN_ENV] = origin
+        given = os.environ.get(PRODUCTION_ORIGIN_SOURCE_ENV, "")
+        extra[PRODUCTION_ORIGIN_SOURCE_ENV] = "input" if given == "input" else "repository"
     passes = face_passes(ctx.face_mode)
     # Each pass's own credits and vendor calls, read at its end: the probe remembers the calls of its own API
     # process, and E1 and E2 grade the first pass alone (a later LITE pass is reported beside it, never graded).

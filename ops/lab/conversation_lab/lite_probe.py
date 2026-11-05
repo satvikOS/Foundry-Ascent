@@ -44,6 +44,10 @@ PLAYED_OUT_SHARE = 0.8
 ONSET_WINDOW_MS = 5000
 #: Video motion: a window "moves" when its mean frame difference is this many times the idle baseline's.
 MOTION_RATIO = 1.2
+#: The room taps' positive control: the marker a second participant publishes (never the vendor's).
+ROOM_CONTROL_TYPE = "lab.control"
+#: Where L10's production origin came from: only these are the production origin (a stand-in is reported, not graded).
+PRODUCTION_ORIGIN_SOURCES = ("input", "repository")
 
 #: The design's hypotheses, in probe order: (key, statement).
 HYPOTHESES: tuple[tuple[str, str], ...] = (
@@ -77,7 +81,10 @@ HYPOTHESES: tuple[tuple[str, str], ...] = (
         f"L4: first chunk sent -> speak_started p50 <= {FIRST_CHUNK_TO_STARTED_TARGET_MS} ms",
     ),
     ("l4_sound_on_avatar_track", "L4: the avatar's returned audio track carries each utterance's sound"),
-    ("l4_no_speak_events_in_room", "L4: LITE speak events go to the socket holder only (none in the room)"),
+    (
+        "l4_no_speak_events_in_room",
+        "L4: LITE speak events go to the socket holder only (none reach the room's viewer)",
+    ),
     ("l5_utterances_queue", "L5: a second utterance queues behind the first (no cut, no overlap)"),
     ("l5_queue_gap_target", f"L5: speak_ended -> the next speak_started <= {QUEUE_GAP_TARGET_MS} ms"),
     ("l6_new_socket_replaces_old", "L6: opening a second socket closes the first"),
@@ -333,6 +340,51 @@ def heard(lab: Mapping[str, Any]) -> bool:
 
 def _room_connected(session: Mapping[str, Any]) -> bool:
     return _int(_dict(session.get("room")).get("connectedMs")) is not None
+
+
+def public_room_control(raw: Any) -> dict[str, Any] | None:
+    """The room taps' positive control as public flags (None when it did not run)."""
+    if not isinstance(raw, dict):
+        return None
+    return {
+        "joined": _bool(raw.get("joined")),
+        "published": _bool(raw.get("published")),
+        "seen_raw": _bool(raw.get("seenRaw")),
+        "seen_data": _bool(raw.get("seenData")),
+        "error": _match(raw.get("error"), _ERROR),
+    }
+
+
+def room_types(values: Any, before: float | None) -> list[str]:
+    """Room data types a tap carried, the control's marker left out, and only before ``before`` when it is set
+    (from the control on, the second participant's own channels are tapped too)."""
+    out: list[str] = []
+    for event in (_dict(x) for x in _list(values)):
+        type_ = _match(event.get("type"), _TYPE)
+        at = _num(event.get("at"))
+        if type_ is None or type_ == ROOM_CONTROL_TYPE:
+            continue
+        if before is not None and (at is None or at >= before):
+            continue
+        out.append(type_)
+    return out
+
+
+def room_speak_events(session: Mapping[str, Any], lab: Mapping[str, Any]) -> int | None:
+    """LITE speak events the viewer's room carried, by the taps the positive control proved live (the most any of
+    them saw), or None: a room the page was not in, or no tap shown to hear room data, shows nothing either way."""
+    control = _dict(session.get("roomControl"))
+    at = _num(control.get("at"))
+    if not _room_connected(session) or at is None:
+        return None
+    taps = [
+        room_types(lab.get(key), at)
+        for key, seen in (("roomEvents", "seenRaw"), ("roomData", "seenData"))
+        if control.get(seen) is True
+    ]
+    if not taps:
+        return None
+    return max(sum(1 for t in tap if "speak" in t) for tap in taps)
 
 
 def _session(raw: Mapping[str, Any], name: str) -> dict[str, Any] | None:
@@ -599,11 +651,8 @@ def public_s1(session: Mapping[str, Any] | None) -> dict[str, Any] | None:
     rows = {label: utterance_row(lab, frames, label, u) for label, u in utterances.items()}
     sealed = [rows[k] for k in ("U1", "U2", "U3", "U4", "U5", "U6") if k in rows and utterances[k]["end"]]
     speakers = [rows[k] for k in ("U1", "U2", "U3") if k in rows]
-    room_events = [
-        str(e.get("type"))
-        for e in (_dict(x) for x in _list(lab.get("roomEvents")))
-        if _match(e.get("type"), _TYPE)
-    ]
+    control_at = _num(_dict(session.get("roomControl")).get("at"))
+    room_events = room_types(lab.get("roomEvents"), control_at) + room_types(lab.get("roomData"), control_at)
 
     # L5: U4, then U5 sent while U4 plays.
     u4_start = first_frame(frames, "agent.speak_started", source="U4")
@@ -613,18 +662,32 @@ def public_s1(session: Mapping[str, Any] | None) -> dict[str, Any] | None:
     sent5 = _first_send(lab, "U5")
     behaviour: str | None
     gap: int | None = None
+    sent4 = _first_send(lab, "U4")
+    # U4 played out only when its speak_started -> speak_ended lasted most of its audio: an early speak_ended (not
+    # speak_interrupted) after U5 was sent is the second utterance cutting the first short all the same.
+    u4_audio = (utterances.get("U4") or {}).get("audio_ms")
+    u4_played_ms = _ms(u4_start["at"] if u4_start else None, u4_end["at"] if u4_end else None)
+    u4_played_out = (
+        None if u4_played_ms is None or not u4_audio else u4_played_ms >= PLAYED_OUT_SHARE * u4_audio
+    )
     if u4_cut is not None:
         behaviour = "cut"
     elif u4_end is not None and u5_start is not None:
-        if u5_start["at"] >= u4_end["at"] - 50:
-            behaviour, gap = "queued", round(u5_start["at"] - u4_end["at"])
-        else:
+        if u5_start["at"] < u4_end["at"] - 50:
             behaviour = "overlap"
+        elif u4_played_out is True:
+            behaviour, gap = "queued", round(u5_start["at"] - u4_end["at"])
+        elif u4_played_out is False and sent5 is not None and sent5 <= u4_end["at"]:
+            behaviour = "cut"
+        elif u4_played_out is False:
+            behaviour = "other"
+        else:
+            behaviour = None
     elif u4_start is None and u5_start is None:
         behaviour = None
     else:
         behaviour = "other"
-    sent4 = _first_send(lab, "U4")
+
     u5_done = first_frame(frames, "agent.speak_ended", source="U5")
     # One utterance per turn: U6 opened with 1 s, the next 1 s appended 1.3 s later, then speak_end.
     sent6 = _first_send(lab, "U6")
@@ -694,14 +757,15 @@ def public_s1(session: Mapping[str, Any] | None) -> dict[str, Any] | None:
                 all(r["to_audio_ms"] is not None for r in speakers) if speakers and can_hear else None
             ),
             "room_event_types": sorted(set(room_events)),
-            # Only a room the page was in can show that it carried none.
-            "room_speak_events": sum(1 for t in room_events if "speak" in t)
-            if _room_connected(session)
-            else None,
+            # Only a room the page was in, through a tap the control showed to hear room data, can show it carried none.
+            "room_tap_control": public_room_control(session.get("roomControl")),
+            "room_speak_events": room_speak_events(session, lab),
         },
         "l5": {
             "behaviour": behaviour,
             "gap_ms": gap,
+            "first_played_ms": u4_played_ms,
+            "first_audio_ms": u4_audio,
             "second_sent_after_first_started_ms": _ms(u4_start["at"] if u4_start else None, sent5),
             "track_onsets": (
                 _count_in(onsets, sent4, (u5_done["at"] + 600) if u5_done else None) if can_hear else None
@@ -770,6 +834,14 @@ def public_s2(session: Mapping[str, Any] | None) -> dict[str, Any] | None:
         if a is None or b is None
         else (a["closed"] is not None and b["created"] - 50 <= a["closed"] <= b["created"] + 5000)
     )
+    a_closed = None if a is None else a["closed"]
+    # The utterance was still open when A went: closed before its sound began, or before that sound could have ended.
+    # A replacement after U1 had played out shows nothing about an open utterance.
+    open_when_replaced = (
+        None
+        if a_closed is None or audio1 is None
+        else (first_onset1 is None or a_closed < first_onset1 + audio1)
+    )
     sent2 = _first_send(lab, "U2")
     to_audio2, len2 = track_audio(onsets, offsets, sent2)
     audio2 = (utterances.get("U2") or {}).get("audio_ms")
@@ -805,6 +877,13 @@ def public_s2(session: Mapping[str, Any] | None) -> dict[str, Any] | None:
             "audio_ms": audio1,
             "track_audio_ms": len1,
             "uncommitted_played_out": played(len1, audio1) if sent1 is not None else None,
+            "replaced_after_onset_ms": _ms(first_onset1, a_closed),
+            "open_when_replaced": open_when_replaced,
+            "open_utterance_survived": (
+                played(len1, audio1)
+                if sent1 is not None and replaced is True and open_when_replaced is True
+                else None
+            ),
             "reopened_after_close": None if c is None else c["connected"] is not None,
             "second_close_code": None if b is None else b["close_code"],
             "disconnected_states": sum(
@@ -905,11 +984,39 @@ def public_s3(session: Mapping[str, Any] | None, production_origin_source: Any) 
     control_motion = _mean_motion(motion, control_from, control_to)
     track_motion = _mean_motion(motion, track_from, track_to)
     published = sum(1 for d in data if d.get("ok") is True)
+    control_heard = _count_in(onsets, control_from, control_to) not in (None, 0) if can_hear else None
+    # The positive control: the same kind of speech over the socket was heard on the avatar's track and announced by
+    # speak_started and speak_ended. Without it, silence in a window shows a deaf meter or a dead session as well.
+    control_ok = control_heard is True and control_start is not None and control_end is not None
     data_onsets = _count_in(onsets, data_from, data_to)
     data_events = speak_events(data_from, data_to)
     track_onsets = _count_in(onsets, track_from, track_to)
     track_events = speak_events(track_from, track_to)
     moved = lip_sync(idle, control_motion, track_motion)
+    data_reacted = (data_events or 0) > 0 or (can_hear and (data_onsets or 0) > 0)
+    data_ignored = (
+        None
+        if not published
+        else False
+        if data_reacted
+        else True
+        if control_ok and data_onsets is not None and data_events is not None
+        else None
+    )
+    track_sounded = (track_events or 0) > 0 or (can_hear and (track_onsets or 0) > 0)
+    track_quiet = control_ok and track_onsets is not None and track_events is not None
+    # Sound and speak events alone (no lip-sync judgement), reported for when motion told nothing.
+    track_silent = None if not track_ok else False if track_sounded else True if track_quiet else None
+    # Ignored needs all three: no sound, no speak events, and a lip-sync judgement that saw no motion.
+    track_ignored = (
+        None
+        if not track_ok
+        else False
+        if track_sounded or moved is True
+        else True
+        if track_quiet and moved is False
+        else None
+    )
     sources = room.get("canPublishSources")
     origins = public_origins(session)
     by_where = {o["where"]: o for o in origins}
@@ -951,9 +1058,7 @@ def public_s3(session: Mapping[str, Any] | None, production_origin_source: Any) 
                 ),
                 "track_sounds": data_onsets,
                 "speak_events": data_events,
-                "ignored": (data_onsets == 0 and data_events == 0)
-                if published and data_onsets is not None and can_hear
-                else None,
+                "ignored": data_ignored,
             },
             "track": {
                 "published": track_ok,
@@ -961,11 +1066,9 @@ def public_s3(session: Mapping[str, Any] | None, production_origin_source: Any) 
                 "track_sounds": track_onsets if track_ok else None,
                 "speak_events": track_events if track_ok else None,
                 "lip_sync": moved if track_ok else None,
-                "ignored": (
-                    (track_onsets == 0 and track_events == 0 and moved is not True)
-                    if track_ok and track_onsets is not None and can_hear
-                    else None
-                ),
+                # Sound and speak events alone (no lip-sync judgement), for when motion told nothing.
+                "silent_and_unannounced": track_silent,
+                "ignored": track_ignored,
             },
             "motion": {
                 "video_frames": _int(lab.get("videoFrames")),
@@ -980,13 +1083,15 @@ def public_s3(session: Mapping[str, Any] | None, production_origin_source: Any) 
                 if not idle or track_motion is None
                 else round(track_motion / idle, 2),
             },
-            "control_heard": (
-                _count_in(onsets, control_from, control_to) not in (None, 0) if can_hear else None
-            ),
+            "control_heard": control_heard,
+            "control_speak_events": control_start is not None and control_end is not None,
+            "control_ok": control_ok,
         },
         "l10": {
             "production_origin_source": (
-                production_origin_source if production_origin_source in ("repository", "stand-in") else None
+                production_origin_source
+                if production_origin_source in (*PRODUCTION_ORIGIN_SOURCES, "stand-in")
+                else None
             ),
             "attempts": origins,
             "browser_local_accepted": accepted("browser-local-origin"),
@@ -1025,10 +1130,6 @@ def hypotheses(result: Mapping[str, Any]) -> dict[str, bool | None]:
     cleared = l8.get("to_cleared_ms")
     connected_counts = l2.get("connected_events_per_socket") or []
 
-    def all_of(values: Sequence[bool | None]) -> bool | None:
-        known = [v for v in values if v is not None]
-        return None if not known else all(known)
-
     return {
         "l1_start_fields_as_documented": (
             not start.get("documented_missing") if start.get("fields") else None
@@ -1064,7 +1165,7 @@ def hypotheses(result: Mapping[str, Any]) -> dict[str, bool | None]:
         "l5_utterances_queue": None if l5.get("behaviour") is None else l5.get("behaviour") == "queued",
         "l5_queue_gap_target": None if gap is None else gap <= QUEUE_GAP_TARGET_MS,
         "l6_new_socket_replaces_old": l6.get("first_socket_closed"),
-        "l6_open_utterance_survives_replacement": l6.get("uncommitted_played_out"),
+        "l6_open_utterance_survives_replacement": l6.get("open_utterance_survived"),
         "l6_ws_url_reopens_after_close": l6.get("reopened_after_close"),
         "l7_committed_audio_survives_close": (l7.get("committed_then_closed") or {}).get("played_out"),
         "l8_interrupt_events_as_documented": (
@@ -1079,7 +1180,12 @@ def hypotheses(result: Mapping[str, Any]) -> dict[str, bool | None]:
         "l8_cleared_target": None if cleared is None else cleared <= CLEARED_TARGET_MS,
         "l9_room_data_ignored": (l9.get("data") or {}).get("ignored"),
         "l9_room_audio_track_ignored": (l9.get("track") or {}).get("ignored"),
-        "l10_browser_production_origin_accepted": all_of([l10.get("browser_production_accepted")]),
+        # Graded at the production origin only: a stand-in's answer is reported, never taken for production's.
+        "l10_browser_production_origin_accepted": (
+            l10.get("browser_production_accepted")
+            if l10.get("production_origin_source") in PRODUCTION_ORIGIN_SOURCES
+            else None
+        ),
     }
 
 
@@ -1095,6 +1201,7 @@ def public_instruments(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
         "video_frames": _int(raw.get("videoFrames")),
         "motion_moving": _num(raw.get("motionMoving")),
         "motion_still": _num(raw.get("motionStill")),
+        "room_tap": _bool(raw.get("roomTap")),
         "error": _match(raw.get("error"), _ERROR),
     }
     moving, still = out["motion_moving"], out["motion_still"]
@@ -1104,6 +1211,7 @@ def public_instruments(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
         and (out["synth_rms"] or 0) > 0.05
         and moving is not None
         and moving > (still or 0)
+        and out["room_tap"] is True
     )
     return out
 

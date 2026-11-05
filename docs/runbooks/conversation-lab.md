@@ -467,8 +467,10 @@ session's room as the viewer, hearing the avatar's audio track (the face suite's
 | s2      | L1 again; L6 a second socket while an utterance is open (the second commits it), and reopening after a close; L7 closing right after `speak_end`, and closing with an uncommitted buffer                                                                                                                                                                                                                                                                                             |
 | s3      | L1 again; L9 the viewer token publishing `agent.speak`-shaped and `avatar.speak_text` data on `agent-control`, then a synthetic speech **audio track** into the room, against an idle baseline and a socket utterance as the positive control (sound, speak events, lip motion); L10 the socket from this localhost page, from Node with no Origin, the production Origin and a foreign one, and from a browser page at the production origin                                        |
 
-L10's production origin is the repository variable `FA_SITE_URL` (`LAB_PRODUCTION_ORIGIN`; a production-shaped
-CloudFront origin when unset, reported as `stand-in`). Playwright fulfils the navigation to it itself (nothing is
+L10's production origin is the dispatch input `production_origin`, else the repository variable `FA_SITE_URL`
+(`LAB_PRODUCTION_ORIGIN`, its source `input` or `repository`). Without either, a production-shaped CloudFront origin
+stands in: its answer is reported (`stand-in`) but the go / no-go hypothesis stays "not measured", since an origin
+allowlist would answer differently for the real one. Playwright fulfils the navigation to it itself (nothing is
 requested from production), so the page's WebSocket handshake carries that Origin exactly as a browser on the site
 would (checked through the DevTools protocol); the vendor's socket is real. Node sets the header explicitly instead:
 that shows whether the vendor checks Origin at all (a foreign Origin refused while the production one is taken), but a
@@ -478,7 +480,14 @@ The summary keeps numbers, codes, field and event type names, the `ws_url` host 
 exact CSP origin is called confirmed only when every one of at least three sessions agreed), and the design's
 hypotheses as confirmed, refuted or not measured (`lite_probe.hypotheses`; conversation_lab/lite_probe.py
 `HYPOTHESES`). Sound measures read "not measured" when the page never had the avatar's audio track, and lip-sync when
-the socket utterance itself did not move the face more than idle. The sealed folder holds the frames (types, states,
+the socket utterance itself did not move the face more than idle. Each "nothing happened" verdict needs a positive
+control that something could have been seen: L4's "no speak events in the room" counts only through a room tap that
+carried a marker a second participant (the room's agent token, at the end of s1) published; L9's "ignored" needs the
+socket utterance heard on the avatar's track and announced by `speak_started` / `speak_ended`, and for the audio track
+also a lip-sync judgement (`silent_and_unannounced` reports sound and events alone). L5 calls back-to-back utterances
+queued only when the first played at least 80% of its audio (an early `speak_ended` once the second was sent is a
+cut), and L6's "open utterance survives" counts only when the first socket went before that utterance's sound could
+have ended. The sealed folder holds the frames (types, states,
 and which of the lab's ids a source named, as labels such as `U1`), what was sent and when, onsets, motion samples and
 room event types.
 

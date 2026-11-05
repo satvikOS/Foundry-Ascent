@@ -54,9 +54,11 @@ API_KEY_ENV = "LOCAL_MEDIA_FACE_API_KEY"
 #: the platform; the API, the spec and this module share it.
 PROBE_TOKEN_ENV = "LAB_FACE_PROBE_TOKEN"  # noqa: S105 - a variable name, not a value
 PROBE_HEADER = "x-lab-probe-token"
-#: The production site's origin for the lite probe's L10 (the workflow sets it from the repository variable
-#: FA_SITE_URL): a bare https origin only (:func:`production_origin`).
+#: The production site's origin for the lite probe's L10 (the workflow sets it from its ``production_origin`` input,
+#: else the repository variable FA_SITE_URL): a bare https origin only (:func:`production_origin`).
 PRODUCTION_ORIGIN_ENV = "LAB_PRODUCTION_ORIGIN"
+#: Where that origin came from (``input``: the dispatch input; ``repository``: FA_SITE_URL), for the report.
+PRODUCTION_ORIGIN_SOURCE_ENV = "LAB_PRODUCTION_ORIGIN_SOURCE"
 _ORIGIN = re.compile(r"^https://[a-z0-9](?:[a-z0-9-]{0,62}\.)+[a-z0-9-]{1,62}(?::\d{1,5})?$")
 #: The vendor sandbox's only avatar (docs.liveavatar.com, "Developing in Sandbox Mode").
 SANDBOX_AVATAR = "dd73ea75-1218-4ef3-92ce-606d5f7fbc0a"

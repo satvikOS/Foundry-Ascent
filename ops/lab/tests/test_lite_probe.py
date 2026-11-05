@@ -191,6 +191,15 @@ def session_one() -> dict[str, Any]:
         "marks": {"I1": T0 + 21350},
         "origins": [],
         "publish": {},
+        # The room taps' positive control, last in the session: both taps carried the second participant's marker.
+        "roomControl": {
+            "at": T0 + 25000,
+            "joined": True,
+            "published": True,
+            "seenRaw": True,
+            "seenData": True,
+            "error": None,
+        },
         "lab": {
             "audioTracks": 1,
             "onsets": [T0 + t for t in (1500, 5450, 8950, 12450, 17500, 20450)],
@@ -207,7 +216,11 @@ def session_one() -> dict[str, Any]:
                 "U6": utterance("A", 2000, 2),
                 "U7": utterance("A", 4000, 4),
             },
-            "roomEvents": [],
+            "roomEvents": [
+                {"at": T0 + 200, "type": "avatar.state_updated"},
+                {"at": T0 + 25100, "type": "lab.control"},
+            ],
+            "roomData": [{"at": T0 + 25100, "type": "lab.control"}],
             "motion": [],
             "videoFrames": 300,
         },
@@ -355,6 +368,7 @@ INSTRUMENTS = {
     "videoFrames": 83,
     "motionMoving": 74.7,
     "motionStill": 0,
+    "roomTap": True,
 }
 
 
@@ -460,6 +474,10 @@ def test_missing_acks_and_speak_events_are_refuted_not_skipped() -> None:
         (14350, 14700, False, "queued", 350),
         (14350, 13000, False, "overlap", None),
         (None, 13100, True, "cut", None),
+        # U4 (2000 ms of audio) ended after 600 ms, once U5 was sent: cut short with speak_ended, not queued.
+        (12950, 13000, False, "cut", None),
+        # U4 ended after 350 ms before U5 was even sent: short, but not U5's doing.
+        (12700, 12900, False, "other", None),
     ],
 )
 def test_back_to_back_utterances_are_classified(
@@ -483,6 +501,8 @@ def test_back_to_back_utterances_are_classified(
     assert result["s1"]["l5"]["gap_ms"] == gap
     assert result["hypotheses"]["l5_utterances_queue"] is (expected == "queued")
     assert result["hypotheses"]["l5_queue_gap_target"] is (None if gap is None else gap <= 150)
+    assert result["s1"]["l5"]["first_audio_ms"] == 2000
+    assert result["s1"]["l5"]["first_played_ms"] == (None if u4_end is None else round(u4_end - 12350))
 
 
 def test_an_interrupt_that_still_ends_the_utterance_is_refuted() -> None:
@@ -507,19 +527,48 @@ def test_an_interrupt_that_still_ends_the_utterance_is_refuted() -> None:
 def test_replacement_close_and_reopen_outcomes() -> None:
     raw = documented()
     lab = raw["sessions"][1]["lab"]
-    # The first socket stays open, the open utterance never plays out, the reopen fails, and the early close drops
-    # the committed buffer.
-    lab["sockets"][0]["closed"] = None
+    # The first socket is replaced while the utterance is open, which then never plays out; the reopen fails, and
+    # the early close drops the committed buffer.
     lab["sockets"][2]["connected"] = None
     lab["offsets"] = [T0 + 1900, T0 + 6900]
     result = lite_probe.public_lite_probe(raw)
     assert result is not None
     graded = result["hypotheses"]
-    assert graded["l6_new_socket_replaces_old"] is False
+    assert graded["l6_new_socket_replaces_old"] is True
     assert graded["l6_open_utterance_survives_replacement"] is False
     assert graded["l6_ws_url_reopens_after_close"] is False
     assert graded["l7_committed_audio_survives_close"] is False
     assert result["s2"]["l6"]["track_audio_ms"] == 400
+    # A first socket that stays open replaced nothing: whether an open utterance survives is not measured.
+    lab["sockets"][0]["closed"] = None
+    result = lite_probe.public_lite_probe(raw)
+    assert result is not None
+    assert result["hypotheses"]["l6_new_socket_replaces_old"] is False
+    assert result["hypotheses"]["l6_open_utterance_survives_replacement"] is None
+
+
+def test_a_replacement_after_the_utterance_played_out_shows_nothing_about_an_open_one() -> None:
+    raw = documented()
+    lab = raw["sessions"][1]["lab"]
+    # U1's sound runs 1500-3520 (2000 ms of audio); A is replaced at 3600, after that sound could have ended.
+    lab["sockets"][0]["closed"] = T0 + 3600
+    result = lite_probe.public_lite_probe(raw)
+    assert result is not None
+    l6 = result["s2"]["l6"]
+    assert l6["first_socket_closed"] is True
+    assert l6["uncommitted_played_out"] is True
+    assert l6["replaced_after_onset_ms"] == 2100
+    assert l6["open_when_replaced"] is False
+    assert l6["open_utterance_survived"] is None
+    assert result["hypotheses"]["l6_open_utterance_survives_replacement"] is None
+    # Replaced before the first sound (all of it still buffered) is a replacement of an open utterance too.
+    lab["sockets"][0]["closed"] = T0 + 1200
+    lab["sockets"][1]["created"] = T0 + 1150
+    result = lite_probe.public_lite_probe(raw)
+    assert result is not None
+    assert result["s2"]["l6"]["replaced_after_onset_ms"] == -300
+    assert result["s2"]["l6"]["open_when_replaced"] is True
+    assert result["hypotheses"]["l6_open_utterance_survives_replacement"] is True
 
 
 def test_without_the_avatar_s_audio_track_sound_is_not_measured() -> None:
@@ -629,6 +678,7 @@ def test_a_viewer_token_that_cannot_publish_leaves_l9_unmeasured() -> None:
         "track_sounds": None,
         "speak_events": None,
         "lip_sync": None,
+        "silent_and_unannounced": None,
         "ignored": None,
     }
     assert result["s3"]["room"]["can_publish"] is False
@@ -688,6 +738,142 @@ def test_l10_counts_a_browser_attempt_only_at_the_origin_it_claims() -> None:
     assert {a["where"] for a in result["s3"]["l10"]["attempts"]} <= set(lite_probe._ORIGIN_ATTEMPTS)
 
 
+def test_a_stand_in_origin_is_reported_but_never_graded_as_production() -> None:
+    raw = documented()
+    raw["production_origin_source"] = "stand-in"
+    result = lite_probe.public_lite_probe(raw)
+    assert result is not None
+    l10 = result["s3"]["l10"]
+    assert l10["production_origin_source"] == "stand-in"
+    assert l10["browser_production_accepted"] is True
+    assert result["hypotheses"]["l10_browser_production_origin_accepted"] is None
+    raw["sessions"][2]["origins"][4] = attempt("browser-production-origin", False, closeCode=4003)
+    result = lite_probe.public_lite_probe(raw)
+    assert result is not None
+    assert result["s3"]["l10"]["browser_production_accepted"] is False
+    assert result["hypotheses"]["l10_browser_production_origin_accepted"] is None
+    # The dispatch input is the production origin as much as the repository variable is.
+    raw["production_origin_source"] = "input"
+    result = lite_probe.public_lite_probe(raw)
+    assert result is not None
+    assert result["hypotheses"]["l10_browser_production_origin_accepted"] is False
+    raw["production_origin_source"] = None
+    result = lite_probe.public_lite_probe(raw)
+    assert result is not None
+    assert result["hypotheses"]["l10_browser_production_origin_accepted"] is None
+
+
+def test_an_empty_room_without_the_tap_control_is_not_measured() -> None:
+    raw = documented()
+    s1 = raw["sessions"][0]
+    s1["lab"]["roomEvents"] = []
+    s1["lab"]["roomData"] = []
+    # No control at all (an older record, or the session ended first): an empty list proves nothing.
+    del s1["roomControl"]
+    result = lite_probe.public_lite_probe(raw)
+    assert result is not None
+    assert result["s1"]["l4"]["room_speak_events"] is None
+    assert result["s1"]["l4"]["room_tap_control"] is None
+    assert result["hypotheses"]["l4_no_speak_events_in_room"] is None
+    # The control ran but neither tap carried its marker: a deaf tap.
+    s1["roomControl"] = {
+        "at": T0 + 25000,
+        "joined": True,
+        "published": True,
+        "seenRaw": False,
+        "seenData": False,
+        "error": None,
+    }
+    result = lite_probe.public_lite_probe(raw)
+    assert result is not None
+    assert result["s1"]["l4"]["room_speak_events"] is None
+    assert result["hypotheses"]["l4_no_speak_events_in_room"] is None
+    # No agent token: the control could not run.
+    s1["roomControl"] = {
+        "at": None,
+        "joined": False,
+        "published": False,
+        "seenRaw": False,
+        "seenData": False,
+        "error": "no_agent_token",
+    }
+    result = lite_probe.public_lite_probe(raw)
+    assert result is not None
+    assert result["s1"]["l4"]["room_tap_control"]["error"] == "no_agent_token"
+    assert result["hypotheses"]["l4_no_speak_events_in_room"] is None
+
+
+def test_room_speak_events_count_only_through_a_tap_the_control_proved() -> None:
+    raw = documented()
+    s1 = raw["sessions"][0]
+    # Only the Room's DataReceived carried the marker; it also carried a speak event before the control.
+    s1["roomControl"]["seenRaw"] = False
+    s1["lab"]["roomData"].append({"at": T0 + 1450, "type": "agent.speak_started"})
+    # After the control, the second participant's own channels are tapped too: not the viewer's room.
+    s1["lab"]["roomEvents"].append({"at": T0 + 25200, "type": "agent.speak_ended"})
+    result = lite_probe.public_lite_probe(raw)
+    assert result is not None
+    l4 = result["s1"]["l4"]
+    assert l4["room_speak_events"] == 1
+    assert "agent.speak_ended" not in l4["room_event_types"]
+    assert "lab.control" not in l4["room_event_types"]
+    assert l4["room_tap_control"] == {
+        "joined": True,
+        "published": True,
+        "seen_raw": False,
+        "seen_data": True,
+        "error": None,
+    }
+    assert result["hypotheses"]["l4_no_speak_events_in_room"] is False
+
+
+def test_l9_ignored_needs_the_positive_control() -> None:
+    # The meter heard nothing at all (a deaf meter, a suspended AudioContext, or a session that died): silence in the
+    # data and track windows proves nothing.
+    raw = documented()
+    lab = raw["sessions"][2]["lab"]
+    lab["onsets"] = []
+    lab["offsets"] = []
+    result = lite_probe.public_lite_probe(raw)
+    assert result is not None
+    l9 = result["s3"]["l9"]
+    assert l9["control_heard"] is False
+    assert l9["control_ok"] is False
+    assert l9["data"]["ignored"] is None
+    assert l9["track"]["ignored"] is None
+    assert l9["track"]["silent_and_unannounced"] is None
+    assert result["hypotheses"]["l9_room_data_ignored"] is None
+    assert result["hypotheses"]["l9_room_audio_track_ignored"] is None
+    # Heard, but the socket never announced the control (no speak_started / speak_ended for U1).
+    raw = documented()
+    lab = raw["sessions"][2]["lab"]
+    lab["frames"] = [f for f in lab["frames"] if not f["type"].startswith("agent.speak_")]
+    result = lite_probe.public_lite_probe(raw)
+    assert result is not None
+    assert result["s3"]["l9"]["control_heard"] is True
+    assert result["s3"]["l9"]["control_ok"] is False
+    assert result["hypotheses"]["l9_room_data_ignored"] is None
+    assert result["hypotheses"]["l9_room_audio_track_ignored"] is None
+
+
+def test_a_silent_room_track_without_a_lip_sync_judgement_is_not_ignored_yet() -> None:
+    raw = documented()
+    lab = raw["sessions"][2]["lab"]
+    # The socket utterance did not move the face more than idle: motion tells nothing about lip-sync.
+    lab["motion"] = [m for m in lab["motion"] if not T0 + 14350 <= m["at"] < T0 + 17350] + motion(
+        14350, 17350, 1.1
+    )
+    result = lite_probe.public_lite_probe(raw)
+    assert result is not None
+    track = result["s3"]["l9"]["track"]
+    assert track["lip_sync"] is None
+    assert track["silent_and_unannounced"] is True
+    assert track["ignored"] is None
+    assert result["hypotheses"]["l9_room_audio_track_ignored"] is None
+    # The data case needs no motion.
+    assert result["hypotheses"]["l9_room_data_ignored"] is True
+
+
 def test_nothing_but_numbers_codes_and_names_survives() -> None:
     raw = documented()
     s1 = raw["sessions"][0]
@@ -732,6 +918,7 @@ def test_garbage_is_not_measured_rather_than_a_crash() -> None:
     assert lite_probe.public_lite_probe(None) is None
     assert lite_probe.public_instruments(None) is None
     assert lite_probe.public_instruments({**INSTRUMENTS, "base64Bytes": 64000})["ok"] is False
+    assert lite_probe.public_instruments({**INSTRUMENTS, "roomTap": False})["ok"] is False
 
 
 def test_mask_host_and_percentiles() -> None:

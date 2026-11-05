@@ -498,7 +498,8 @@ def _lite_probe_tables(probe: Mapping[str, Any]) -> list[str]:
     out.append(
         f"- Instruments ok {instruments.get('ok')} (synthetic speech RMS {instruments.get('synth_rms')}, 1 s chunk "
         f"{instruments.get('chunk_bytes_1s')} bytes, meter onset {instruments.get('meter_onset')}, motion moving "
-        f"{instruments.get('motion_moving')} vs still {instruments.get('motion_still')})"
+        f"{instruments.get('motion_moving')} vs still {instruments.get('motion_still')}, room data tap "
+        f"{instruments.get('room_tap')})"
     )
     out.append(
         f"- L1: sessions started {l1.get('sessions_started')} of {l1.get('sessions_requested')}; token status "
@@ -528,12 +529,14 @@ def _lite_probe_tables(probe: Mapping[str, Any]) -> list[str]:
     out.append(
         f"- L4: first chunk → speak_started {_p(l4.get('to_started_ms'))}; → sound on the avatar's track "
         f"{_p(l4.get('to_audio_ms'))}; speak_started → sound {_p(l4.get('started_to_audio_ms'))}; → speak_ended "
-        f"{_p(l4.get('to_ended_ms'))}; by first chunk (ms) {l4.get('by_first_chunk_ms')}; speak events in the room "
-        f"{l4.get('room_speak_events')} (room event types {l4.get('room_event_types')})"
+        f"{_p(l4.get('to_ended_ms'))}; by first chunk (ms) {l4.get('by_first_chunk_ms')}; speak events reaching "
+        f"the room's viewer {l4.get('room_speak_events')} (room event types {l4.get('room_event_types')}; room tap "
+        f"control {l4.get('room_tap_control')})"
     )
     out.append(
         f"- L5: back to back {l5.get('behaviour')}, gap {l5.get('gap_ms')} ms (second sent "
-        f"{l5.get('second_sent_after_first_started_ms')} ms after the first started); a turn as one utterance with a "
+        f"{l5.get('second_sent_after_first_started_ms')} ms after the first started; the first played "
+        f"{l5.get('first_played_ms')} of {l5.get('first_audio_ms')} ms, speak_started → speak_ended); a turn as one utterance with a "
         f"1.3 s pause: speak_started {turn.get('speak_started')}, speak_ended {turn.get('speak_ended')}, starvation "
         f"{turn.get('starvation')}, errors {turn.get('errors')}, sounds on the track {turn.get('track_sounds')}"
     )
@@ -542,7 +545,9 @@ def _lite_probe_tables(probe: Mapping[str, Any]) -> list[str]:
         f"{l6.get('first_closed_after_second_opened_ms')} ms after it opened); second connected "
         f"{l6.get('second_connected')}; committed on the second {l6.get('committed_on_second')}; speak_started on "
         f"{l6.get('speak_started_socket')}, speak_ended on {l6.get('speak_ended_socket')}; sound before the commit "
-        f"{l6.get('sound_before_commit')}; played {l6.get('track_audio_ms')} of {l6.get('audio_ms')} ms; reopened "
+        f"{l6.get('sound_before_commit')}; played {l6.get('track_audio_ms')} of {l6.get('audio_ms')} ms; first socket "
+        f"closed {l6.get('replaced_after_onset_ms')} ms after the utterance's first sound (still open "
+        f"{l6.get('open_when_replaced')}); reopened "
         f"after a close {l6.get('reopened_after_close')}; disconnected states {l6.get('disconnected_states')}"
     )
     out.append(
@@ -565,7 +570,9 @@ def _lite_probe_tables(probe: Mapping[str, Any]) -> list[str]:
         f"{track.get('track_sounds')}, speak events {track.get('speak_events')}, lip-sync {track.get('lip_sync')}; "
         f"motion (mean frame difference) idle {motion.get('idle')}, socket utterance {motion.get('socket_utterance')} "
         f"(x{motion.get('socket_utterance_ratio')}), room track {motion.get('room_track')} "
-        f"(x{motion.get('room_track_ratio')}), {motion.get('video_frames')} video frames"
+        f"(x{motion.get('room_track_ratio')}), {motion.get('video_frames')} video frames; positive control (the "
+        f"socket utterance) heard {l9.get('control_heard')}, speak events {l9.get('control_speak_events')}, ok "
+        f"{l9.get('control_ok')}; room track silent and unannounced {track.get('silent_and_unannounced')}"
     )
     attempts = "; ".join(
         f"{a.get('where')} connected {a.get('connected')} (close {a.get('close_code')}, header ok "
