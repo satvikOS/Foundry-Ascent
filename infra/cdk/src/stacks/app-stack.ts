@@ -165,6 +165,7 @@ export class AppStack extends Stack {
       MEDIA_VOICE_PROVIDER: config.media.voice.provider,
       MEDIA_VOICE_MODEL: config.media.voice.model,
       MEDIA_VOICE_ZERO_RETENTION: String(config.media.voice.zeroRetention),
+      MEDIA_VOICE_ID: config.media.voice.voiceId ?? '',
     };
     // A value no function receives is a variable dropped on the way: refused unless the API assumes that same value
     // when the variable is absent (the face's LITE defaults, until the contract lists MEDIA_FACE_*).
@@ -359,7 +360,8 @@ export class AppStack extends Stack {
     const mediaSecrets = loadMediaVendorSecrets();
     const mediaSecretArns = [
       ...(config.media.face.provider === 'heygen-liveavatar' ? [mediaSecrets.face] : []),
-      ...(config.media.voice.provider === 'elevenlabs' ? [mediaSecrets.voice] : []),
+      // The clones (`elevenlabs`) and the stock voice (`elevenlabs-stock`) use the same ElevenLabs key.
+      ...(config.media.voice.provider === 'polly' ? [] : [mediaSecrets.voice]),
     ].map((name) => secretArnPattern(Aws.PARTITION, config.region, Aws.ACCOUNT_ID, name));
     if (mediaSecretArns.length > 0) {
       this.api.role.addToPolicy(

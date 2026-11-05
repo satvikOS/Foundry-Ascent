@@ -58,6 +58,11 @@ describe('usage model', () => {
       role: 'Call speech (generative)',
     });
     expect(isSpeechModel('polly:neural:Ruth')).toBe(true);
+    expect(describeModel('elevenlabs:eleven_flash_v2_5')).toEqual({
+      name: 'ElevenLabs · eleven_flash_v2_5',
+      role: 'AI voice',
+    });
+    expect(isSpeechModel('elevenlabs:eleven_flash_v2_5')).toBe(true);
     expect(isSpeechModel('us.amazon.nova-2-lite-v1:0')).toBe(false);
     expect(purposeLabel('speech')).toBe('Call speech');
     expect(purposeLabel('distill')).toBe('Distillation');

@@ -31,9 +31,10 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
   `FoundryAscent-*` and `CDKToolkit`, `logs:FilterLogEvents`/`GetLogEvents` on `/aws/lambda/FoundryAscent*`,
   `ce:GetCostAndUsage`. Everything else happens through the CDK bootstrap roles. Its one write outside
   CloudFormation is a policy of its own, `GitHubDeployMediaKeyPolicy`: `secretsmanager:PutSecretValue` on
-  `foundry-ascent/media/heygen-??????`, and `CreateSecret` only for that exact name
-  (`secretsmanager:Name`), for **Ops - sync HeyGen key** (`.github/workflows/ops-heygen-key.yml`, which copies the
-  repository secret `HEYGEN_LIVEAVATAR_API` into it). Never `GetSecretValue`: it cannot read the key back
+  `foundry-ascent/media/heygen-??????` and `foundry-ascent/media/elevenlabs-??????`, and `CreateSecret` only for those
+  exact names (`secretsmanager:Name`), for **Ops - sync HeyGen key** (`.github/workflows/ops-heygen-key.yml`, which
+  copies the repository secret `HEYGEN_LIVEAVATAR_API`) and **Ops - sync ElevenLabs key**
+  (`.github/workflows/ops-elevenlabs-key.yml`, `ELEVENLABS_API`). Never `GetSecretValue`: it cannot read a key back
   ([avatars runbook §2](../../docs/runbooks/avatars.md#2-keys-into-aws-secrets-manager-owner-us-east-1)).
 - Role `FoundryAscent-OpsInsights` (1 h sessions), trusted only by the `ops-insights` GitHub environment
   (`…:environment:ops-insights`): `lambda:InvokeFunction` on `FoundryAscent-Insights` and `logs:FilterLogEvents`
@@ -219,20 +220,23 @@ are the infrastructure-level off switches (no permission, no schedule).
 
 ### The vEIR's digital twin
 
-`config/production.json` → `media` (the face and cloned voice,
-[docs/runbooks/avatars.md](../../docs/runbooks/avatars.md)). Optional; absent means off, and it ships off.
+`config/production.json` → `media` (the face and the voices,
+[docs/runbooks/avatars.md](../../docs/runbooks/avatars.md), [elevenlabs-voice.md](../../docs/runbooks/elevenlabs-voice.md)).
+Optional; absent means off. Production ships the HeyGen sandbox stock face (admins) and the ElevenLabs stock voice.
 
-| Key                         | Production               | Effect                                                                                                                                         |
-| --------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `media.face.provider`       | `none`                   | `MEDIA_FACE_PROVIDER`; `heygen-liveavatar` wires the vendor face and lets the API role read `foundry-ascent/media/heygen` (only that secret)   |
-| `media.face.sandbox`        | `false`                  | `MEDIA_FACE_SANDBOX`: LiveAvatar sandbox sessions (free, about a minute, the sandbox avatar) for the first live test                           |
-| `media.face.csp`            | `connect: [], media: []` | exact `wss://`/`https://` origins added to the CSP while a face is wired (no wildcard; empty with `none`; both schemes required when wired)    |
-| `media.face.mode`           | absent (`lite`)          | `MEDIA_FACE_MODE`: `lite` lip-syncs our audio; `full` lets a stock avatar say admitted text in its stock voice (requires `stock`, admins only) |
-| `media.face.stock`          | absent                   | `MEDIA_FACE_AVATAR_ID`, `MEDIA_FACE_VOICE_ID` (empty when absent): `{avatarId, voiceId?}` LiveAvatar UUIDs; FULL only (refused with `lite`)    |
-| `media.face.audience`       | absent (`everyone`)      | `MEDIA_FACE_AUDIENCE`: `admins` or `everyone`; default `admins` with `full`, which accepts nothing else                                        |
-| `media.voice.provider`      | `polly`                  | `MEDIA_VOICE_PROVIDER`; `elevenlabs` wires the cloned voices and lets the API role read `foundry-ascent/media/elevenlabs` (only that secret)   |
-| `media.voice.model`         | `eleven_flash_v2_5`      | `MEDIA_VOICE_MODEL`                                                                                                                            |
-| `media.voice.zeroRetention` | `false`                  | `MEDIA_VOICE_ZERO_RETENTION`: asks ElevenLabs to keep nothing (Enterprise accounts only)                                                       |
+| Key                         | Production               | Effect                                                                                                                                                                                                                                                                |
+| --------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `media.face.provider`       | `none`                   | `MEDIA_FACE_PROVIDER`; `heygen-liveavatar` wires the vendor face and lets the API role read `foundry-ascent/media/heygen` (only that secret)                                                                                                                          |
+| `media.face.sandbox`        | `false`                  | `MEDIA_FACE_SANDBOX`: LiveAvatar sandbox sessions (free, about a minute, the sandbox avatar) for the first live test                                                                                                                                                  |
+| `media.face.csp`            | `connect: [], media: []` | exact `wss://`/`https://` origins added to the CSP while a face is wired (no wildcard; empty with `none`; both schemes required when wired)                                                                                                                           |
+| `media.face.mode`           | absent (`lite`)          | `MEDIA_FACE_MODE`: `lite` lip-syncs our audio; `full` lets a stock avatar say admitted text in its stock voice (requires `stock`, admins only)                                                                                                                        |
+| `media.face.stock`          | absent                   | `MEDIA_FACE_AVATAR_ID`, `MEDIA_FACE_VOICE_ID` (empty when absent): `{avatarId, voiceId?}` LiveAvatar UUIDs; FULL only (refused with `lite`)                                                                                                                           |
+| `media.face.audience`       | absent (`everyone`)      | `MEDIA_FACE_AUDIENCE`: `admins` or `everyone`; default `admins` with `full`, which accepts nothing else                                                                                                                                                               |
+| `media.voice.provider`      | `elevenlabs-stock`       | `MEDIA_VOICE_PROVIDER`; `elevenlabs` wires the cloned voices, `elevenlabs-stock` also the stock "AI voice" every call speaks with (needs `speech.enabled`: Polly is its fallback); either lets the API role read `foundry-ascent/media/elevenlabs` (only that secret) |
+| `media.voice.voiceId`       | `OZ0L6eISlOejga3XjDFt`   | `MEDIA_VOICE_ID`: the ElevenLabs stock voice (`elevenlabs-stock` only, where it is required; [why this one](../../docs/runbooks/elevenlabs-voice.md#3-the-voice-and-how-to-change-it))                                                                                |
+| `media.voice.model`         | `eleven_flash_v2_5`      | `MEDIA_VOICE_MODEL`                                                                                                                                                                                                                                                   |
+| `media.voice.fallback`      | `polly`                  | who says a unit ElevenLabs fails on (Amazon Polly, the only value)                                                                                                                                                                                                    |
+| `media.voice.zeroRetention` | `false`                  | `MEDIA_VOICE_ZERO_RETENTION`: asks ElevenLabs to keep nothing (Enterprise accounts only)                                                                                                                                                                              |
 
 The secret names come from `packages/core/media-vendors.json` (`src/lib/media-vendors.ts`), the file the API
 reads them from. Wiring a vendor is a config change plus a normal deploy; using it still needs Admin › Settings

@@ -70,8 +70,23 @@ const EnvSchema = z.object({
   MEDIA_FACE_VOICE_ID: z.preprocess(emptyToUndefined, z.uuid().optional()),
   /** infra `media.face.audience`: who sees the face (default: admins for `full`, everyone for `lite`). */
   MEDIA_FACE_AUDIENCE: z.preprocess(emptyToUndefined, z.enum(['admins', 'everyone']).optional()),
-  /** infra `media.voice.provider`: the EIRs' cloned voices. Off: `polly` (stock voices only). */
-  MEDIA_VOICE_PROVIDER: z.preprocess(emptyToUndefined, z.enum(['polly', 'elevenlabs']).default('polly')),
+  /**
+   * infra `media.voice.provider`: `polly` (Amazon Polly's stock voices), `elevenlabs` (Polly, and the EIRs' cloned
+   * voices at ElevenLabs) or `elevenlabs-stock` (the ElevenLabs stock voice `MEDIA_VOICE_ID` speaks every call, an "AI
+   * voice"; the clones as with `elevenlabs`; Polly says any unit ElevenLabs fails on).
+   */
+  MEDIA_VOICE_PROVIDER: z.preprocess(
+    emptyToUndefined,
+    z.enum(['polly', 'elevenlabs', 'elevenlabs-stock']).default('polly'),
+  ),
+  /** infra `media.voice.voiceId`: the ElevenLabs stock voice (`elevenlabs-stock` only; a vendor voice id). */
+  MEDIA_VOICE_ID: z.preprocess(
+    emptyToUndefined,
+    z
+      .string()
+      .regex(/^[A-Za-z0-9]{8,64}$/)
+      .optional(),
+  ),
   /** infra `media.voice.model`: the ElevenLabs model. */
   MEDIA_VOICE_MODEL: z.preprocess(
     emptyToUndefined,
@@ -110,7 +125,9 @@ export interface ApiConfig {
     readonly faceStock: { readonly avatarId: string | null; readonly voiceId: string | null } | null;
     /** Who is offered the face: platform admins only, or everyone the face may serve. */
     readonly faceAudience: 'admins' | 'everyone';
-    readonly voice: 'polly' | 'elevenlabs';
+    readonly voice: 'polly' | 'elevenlabs' | 'elevenlabs-stock';
+    /** The ElevenLabs stock voice (`elevenlabs-stock`); null otherwise. */
+    readonly voiceId: string | null;
     readonly voiceModel: string;
     readonly voiceZeroRetention: boolean;
   };
@@ -145,6 +162,10 @@ export function loadApiConfig(env: EnvLike, role: ApiRole): ApiConfig {
   ) {
     throw new ConfigError('Missing required environment: MEDIA_FACE_AVATAR_ID');
   }
+  // The stock voice is named: there is no vendor default to fall back on (ElevenLabs' default voices end 2026-12-31).
+  if (e.MEDIA_VOICE_PROVIDER === 'elevenlabs-stock' && e.MEDIA_VOICE_ID === undefined) {
+    throw new ConfigError('Missing required environment: MEDIA_VOICE_ID');
+  }
   // The local dev server's vendor-face key (runtime/local-face.ts, the conversation lab): never a deployed API's.
   if (e.APP_ENV !== 'development' && emptyToUndefined(env.LOCAL_MEDIA_FACE_API_KEY) !== undefined) {
     throw new ConfigError('LOCAL_MEDIA_FACE_API_KEY is for the local development server only');
@@ -169,6 +190,7 @@ export function loadApiConfig(env: EnvLike, role: ApiRole): ApiConfig {
         : null,
       faceAudience: e.MEDIA_FACE_AUDIENCE ?? (full ? 'admins' : 'everyone'),
       voice: e.MEDIA_VOICE_PROVIDER,
+      voiceId: e.MEDIA_VOICE_PROVIDER === 'elevenlabs-stock' ? (e.MEDIA_VOICE_ID ?? null) : null,
       voiceModel: e.MEDIA_VOICE_MODEL,
       voiceZeroRetention: e.MEDIA_VOICE_ZERO_RETENTION === 'true',
     },

@@ -122,11 +122,16 @@ describe('the latency harness', () => {
       'principal',
       'code',
       'component',
+      // speech.timing: which kind of voice said the unit (a fixed word, checked below; turn.timing's is a boolean).
+      'voice',
     ]);
     for (const line of timing) {
       for (const [key, value] of Object.entries(line)) {
         if (typeof value === 'string') expect(allowedText, `${String(line.event)}.${key}`).toContain(key);
         else expect(['number', 'boolean'].includes(typeof value) || value === null, key).toBe(true);
+        if (line.event === 'speech.timing' && key === 'voice') {
+          expect(['polly', 'vendor', 'clone']).toContain(value);
+        }
       }
     }
     const joined = rig.logs.join('\n');

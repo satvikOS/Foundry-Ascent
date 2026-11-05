@@ -138,6 +138,9 @@ the EIR ([avatars runbook §9](avatars.md#9-full-mode-a-stock-avatar-with-its-st
 The video face (HeyGen) and cloned voice (ElevenLabs) also need the vendors' own consent steps and the keys in
 Secrets Manager; each can be withdrawn on its own without suspending the vEIR: [the vEIR's face and
 voice](avatars.md).
+The everyday ElevenLabs **stock** voice (labelled "AI voice", no one's likeness) needs no consent either; it needs
+only the key: after the deploy that ships it, run **Actions › Ops - sync ElevenLabs key** (mode `sync`, then `check`
+to see the plan and characters left), [the live voice runbook](elevenlabs-voice.md).
 
 **Verify:** the persona's consent lists each asset in use, and its release approval succeeds.
 

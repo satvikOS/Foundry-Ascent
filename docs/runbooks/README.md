@@ -16,6 +16,7 @@ verify and reverse them. Decisions behind them are in the [ADRs](../architecture
 | [Conversation lab](conversation-lab.md)                                     | Real conversations with the real models, headless: recall, voice, the conversation matrix, the UI suite                   |
 | [Latency](latency.md)                                                       | Where a turn's time goes, measuring it locally and in production, and what was done to make it faster                     |
 | [The vEIR's face and voice](avatars.md)                                     | Turning on the video face (HeyGen) and cloned voice (ElevenLabs): accounts, keys, recordings, consent, costs, stopping it |
+| [The vEIR's live voice](elevenlabs-voice.md)                                | The ElevenLabs stock voice ("AI voice"): key sync and plan check, the chosen voice, fallback to Polly, live checks        |
 | [Local development](local-development.md)                                   | Running and testing everything on one machine                                                                             |
 
 Archived: [legacy AWS cleanup](legacy-aws-cleanup.md) (one-time removal of pre-existing resources, closed

@@ -72,7 +72,8 @@ describe('config', () => {
 
   it('ships the vendor sandbox stock face for platform admins only, and reads the digital twin when configured', () => {
     // 2026-10-31 (owner): HeyGen's stock avatar in its stock voice, in the vendor sandbox (free), platform admins only,
-    // until the mid-December presentation; no cloned voice.
+    // until the mid-December presentation. 2026-11-05 (owner): the vEIR's live voice is ElevenLabs (a stock library
+    // voice, an "AI voice"), with Amazon Polly saying any unit it fails on.
     expect(loadConfig().media).toEqual({
       face: {
         provider: 'heygen-liveavatar',
@@ -85,9 +86,22 @@ describe('config', () => {
         stock: { avatarId: 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a', voiceId: null },
         audience: 'admins',
       },
-      voice: { provider: 'polly', model: 'eleven_flash_v2_5', zeroRetention: false },
+      voice: {
+        provider: 'elevenlabs-stock',
+        voiceId: 'OZ0L6eISlOejga3XjDFt',
+        model: 'eleven_flash_v2_5',
+        fallback: 'polly',
+        zeroRetention: false,
+      },
     });
     // Absent: off as well.
+    expect(parseConfig(valid()).media.voice).toEqual({
+      provider: 'polly',
+      model: 'eleven_flash_v2_5',
+      zeroRetention: false,
+      voiceId: null,
+      fallback: 'polly',
+    });
     expect(parseConfig(valid()).media.face.provider).toBe('none');
     const on = parseConfig({
       ...valid(),
@@ -117,8 +131,47 @@ describe('config', () => {
         stock: null,
         audience: 'everyone',
       },
-      voice: { provider: 'elevenlabs', model: 'eleven_turbo_v2_5', zeroRetention: true },
+      voice: {
+        provider: 'elevenlabs',
+        model: 'eleven_turbo_v2_5',
+        zeroRetention: true,
+        voiceId: null,
+        fallback: 'polly',
+      },
     });
+  });
+
+  it('reads the ElevenLabs stock voice: a named voice, Polly as its fallback, speech on', () => {
+    const voice = (v: Record<string, unknown>, speech: Record<string, unknown> = {}) =>
+      parseConfig({
+        ...valid(),
+        ...(Object.keys(speech).length === 0
+          ? {}
+          : { speech: { ...(valid() as { speech: Record<string, unknown> }).speech, ...speech } }),
+        media: {
+          face: { provider: 'none', sandbox: false, csp: { connect: [], media: [] } },
+          voice: { provider: 'elevenlabs-stock', model: 'eleven_flash_v2_5', zeroRetention: false, ...v },
+        },
+      }).media.voice;
+    expect(voice({ voiceId: 'OZ0L6eISlOejga3XjDFt' })).toEqual({
+      provider: 'elevenlabs-stock',
+      model: 'eleven_flash_v2_5',
+      zeroRetention: false,
+      voiceId: 'OZ0L6eISlOejga3XjDFt',
+      fallback: 'polly',
+    });
+    expect(voice({ voiceId: 'OZ0L6eISlOejga3XjDFt', fallback: 'polly' }).fallback).toBe('polly');
+    expect(() => voice({})).toThrow(/media\.voice\.voiceId.*must name the ElevenLabs stock voice/);
+    expect(() => voice({ voiceId: 'not a voice' })).toThrow(/media\.voice\.voiceId/);
+    expect(() => voice({ voiceId: 'OZ0L6eISlOejga3XjDFt', fallback: 'none' })).toThrow(
+      /media\.voice\.fallback/,
+    );
+    expect(() => voice({ provider: 'polly', voiceId: 'OZ0L6eISlOejga3XjDFt' })).toThrow(
+      /voiceId is read only when provider is elevenlabs-stock/,
+    );
+    expect(() => voice({ voiceId: 'OZ0L6eISlOejga3XjDFt' }, { enabled: false })).toThrow(
+      /elevenlabs-stock needs speech.enabled/,
+    );
   });
 
   describe('the face’s voicing (mode, stock, audience)', () => {

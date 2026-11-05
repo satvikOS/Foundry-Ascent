@@ -275,14 +275,38 @@ describe('FoundryAscent-App', () => {
       expect(pollyActions.sort()).toEqual(['polly:DescribeVoices', 'polly:SynthesizeSpeech']);
     });
 
-    it('lets only the API read only the face vendor’s key as shipped (production.json: the sandbox stock face)', () => {
+    it('lets only the API read the face and voice vendors’ keys as shipped (the sandbox stock face, the ElevenLabs stock voice)', () => {
       const secrets = (name: string): Props[] =>
         rolePolicyStatements(name).filter((s) => actionsOf(s).some((a) => a.startsWith('secretsmanager:')));
       const api = secrets('FoundryAscent-Api');
       expect(api.flatMap(actionsOf)).toEqual(['secretsmanager:GetSecretValue']);
-      expect(JSON.stringify(api)).toContain('foundry-ascent/media/heygen');
-      expect(JSON.stringify(api)).not.toContain('elevenlabs');
+      expect(JSON.stringify(api)).toContain('foundry-ascent/media/heygen-??????');
+      expect(JSON.stringify(api)).toContain('foundry-ascent/media/elevenlabs-??????');
+      // Read only: never a write to either key.
+      expect(JSON.stringify(api)).not.toMatch(/PutSecretValue|CreateSecret/);
       expect(secrets('FoundryAscent-Worker')).toEqual([]);
+      expect(secrets('FoundryAscent-Migrate')).toEqual([]);
+    });
+
+    it('hands the API the ElevenLabs stock voice as shipped, with Polly (speech) on as its fallback', () => {
+      const config = loadConfig();
+      expect(config.media.voice).toEqual({
+        provider: 'elevenlabs-stock',
+        voiceId: 'OZ0L6eISlOejga3XjDFt',
+        model: 'eleven_flash_v2_5',
+        fallback: 'polly',
+        zeroRetention: false,
+      });
+      expect(config.speech.enabled).toBe(true);
+      const api = resourcesOfType(template, 'AWS::Lambda::Function').find(
+        ([, p]) => p.FunctionName === 'FoundryAscent-Api',
+      )?.[1];
+      expect((api?.Environment as { Variables: Record<string, unknown> }).Variables).toMatchObject({
+        MEDIA_VOICE_PROVIDER: 'elevenlabs-stock',
+        MEDIA_VOICE_ID: 'OZ0L6eISlOejga3XjDFt',
+        MEDIA_VOICE_MODEL: 'eleven_flash_v2_5',
+        SPEECH_ENABLED: 'true',
+      });
     });
 
     it('lets only the API read exactly the key of each digital-twin vendor it wires, and the CSP name the face’s room', () => {
@@ -301,7 +325,13 @@ describe('FoundryAscent-App', () => {
               stock: null,
               audience: 'everyone',
             },
-            voice: { provider: 'elevenlabs', model: 'eleven_flash_v2_5', zeroRetention: false },
+            voice: {
+              provider: 'elevenlabs',
+              model: 'eleven_flash_v2_5',
+              zeroRetention: false,
+              voiceId: null,
+              fallback: 'polly',
+            },
           },
         },
       );

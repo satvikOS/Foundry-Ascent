@@ -3,8 +3,12 @@
  *
  * Each unit's audio comes from `POST /speech` (signed `turn.speech` units, the signed call intro, or a
  * passage of a completed turn's stored reply). Fetching is pipelined: while one unit plays, the next is
- * already being fetched and decoded. Playback runs source → gain (ducking on barge-in) → analyser (the
- * presence reacts to it) → speakers, so `stop()` silences at once.
+ * already being fetched. Without a face, the server streams raw PCM (ElevenLabs' stock voice, or Amazon Polly) and
+ * each unit plays as its audio arrives, after a small jitter buffer (`pcm-stream.ts`), instead of after its whole
+ * audio was downloaded and decoded; MP3 and a face's WAV are still decoded whole. Each request names the signed units
+ * around it, which the server hands the voice as context so sentences join up. Playback runs source → gain (ducking
+ * on barge-in) → analyser (the presence reacts to it) → speakers, so `stop()` silences at once: it stops every piece
+ * already scheduled and cancels every fetch, so nothing stale is heard after it.
  *
  * Calls speak only validated text. When the server cannot synthesise in this environment (`501
  * speech_unavailable`, local development), a development build may let the browser read the same validated
@@ -14,6 +18,7 @@
  * that unit alone when the failure may pass (a dropped connection, a busy synthesiser, audio that would not
  * decode), and for the rest of the call when the server refused the call's speech (kill switch, caps).
  */
+import { PcmStream } from './pcm-stream';
 
 export interface SpeechUnitToPlay {
   /** Null for the call intro. */
@@ -32,7 +37,21 @@ export interface SpeechUnitToPlay {
 /** How a unit is heard. */
 export type VoiceRoute = 'server' | 'browser' | 'captions';
 
+/** The signed units around one asked for (`POST /speech` `context`): prosody context for the voice, never spoken. */
+export interface SpeechNeighbours {
+  readonly previous?: { readonly seq: number; readonly text: string; readonly sig: string };
+  readonly next?: { readonly seq: number; readonly text: string; readonly sig: string };
+}
+
+export interface SpeechFetchOptions {
+  /** Ask for raw PCM streamed as it is synthesized (no face: the call's speakers play it as it arrives). */
+  readonly stream?: boolean;
+  readonly context?: SpeechNeighbours;
+}
+
 export type SpeechFetchResult =
+  /** Raw 16-bit mono PCM at `sampleRate`, still arriving (asked for with `stream`). */
+  | { readonly kind: 'stream'; readonly body: ReadableStream<Uint8Array>; readonly sampleRate: number }
   /**
    * The unit's audio. For a call with a live face the server sends PCM in a WAV with its face-audio manifest:
    * the face may render exactly those bytes (docs/architecture/calls.md §4).
@@ -52,9 +71,19 @@ export type SpeechFetchResult =
 export interface PlayerAudio {
   readonly context: Pick<
     AudioContext,
-    'createGain' | 'createAnalyser' | 'createBufferSource' | 'decodeAudioData' | 'destination' | 'currentTime'
+    | 'createGain'
+    | 'createAnalyser'
+    | 'createBufferSource'
+    | 'createBuffer'
+    | 'decodeAudioData'
+    | 'destination'
+    | 'currentTime'
   >;
-  fetchSpeech(unit: SpeechUnitToPlay, signal: AbortSignal): Promise<SpeechFetchResult>;
+  fetchSpeech(
+    unit: SpeechUnitToPlay,
+    signal: AbortSignal,
+    options?: SpeechFetchOptions,
+  ): Promise<SpeechFetchResult>;
   /** The browser's speech synthesis, or null where there is none. */
   readonly synthesis: Pick<SpeechSynthesis, 'speak' | 'cancel' | 'getVoices'> | null;
   createUtterance(text: string): SpeechSynthesisUtterance;
@@ -163,6 +192,8 @@ export interface PlayerEvents {
 
 type Prepared = (
   | { readonly kind: 'buffer'; readonly buffer: AudioBuffer; readonly face?: FaceUnitAudio }
+  /** Raw PCM still arriving: played as it comes. */
+  | { readonly kind: 'stream'; readonly stream: PcmStream }
   /** A text face voices it: no audio fetched (unless the face cannot say it). */
   | { readonly kind: 'text' }
   | { readonly kind: 'browser' }
@@ -184,6 +215,8 @@ interface Entry {
 
 /** Units being fetched ahead of the one playing. */
 const PREFETCH = 2;
+/** Units remembered after they were enqueued, to name a unit's neighbours (`SpeechNeighbours`). */
+const RECENT_UNITS = 8;
 /** Beyond a unit's own length, how long a face may take before the call counts the unit as heard. */
 const FACE_GUARD_MS = 4_000;
 /** Duck level while the founder may be barging in. */
@@ -215,6 +248,8 @@ export function speakingTimeMs(text: string): number {
 
 export class SpeechPlayer {
   private readonly queue: Entry[] = [];
+  /** The last units enqueued, in order (the neighbours of a unit asked for). */
+  private readonly recent: SpeechUnitToPlay[] = [];
   private playing: { entry: Entry; stop: () => void } | null = null;
   private route: VoiceRoute = 'server';
   private readonly gain: GainNode;
@@ -260,6 +295,8 @@ export class SpeechPlayer {
 
   enqueue(unit: SpeechUnitToPlay): void {
     if (this.disposed) return;
+    this.recent.push(unit);
+    if (this.recent.length > RECENT_UNITS) this.recent.shift();
     this.queue.push({ unit, controller: new AbortController(), prepared: null });
     this.prefetch();
     if (this.playing === null) void this.playNext();
@@ -337,11 +374,18 @@ export class SpeechPlayer {
     if (this.route === 'captions') return { kind: 'captions' };
     let result: SpeechFetchResult;
     try {
-      result = await this.audio.fetchSpeech(entry.unit, entry.controller.signal);
+      const context = this.neighbours(entry.unit);
+      // With a face set, the unit is fetched whole as before (a face renders whole units, with their manifest).
+      result = await this.audio.fetchSpeech(entry.unit, entry.controller.signal, {
+        stream: face === null,
+        ...(context === null ? {} : { context }),
+      });
     } catch {
       result = { kind: 'failed' };
     }
     switch (result.kind) {
+      case 'stream':
+        return { kind: 'stream', stream: new PcmStream(result.body, result.sampleRate) };
       case 'unavailable': {
         const route = localEnglishVoice(this.audio.synthesis) ? 'browser' : 'captions';
         return { kind: route, sticky: route };
@@ -371,6 +415,19 @@ export class SpeechPlayer {
     }
   }
 
+  /** The signed units just before and after `unit` in the same reply, as far as this player has them. */
+  private neighbours(unit: SpeechUnitToPlay): SpeechNeighbours | null {
+    if (unit.sig === undefined || unit.turnId === null) return null;
+    const near = (seq: number) => {
+      const found = this.recent.find((u) => u.turnId === unit.turnId && u.seq === seq && u.sig !== undefined);
+      return found?.sig === undefined ? undefined : { seq: found.seq, text: found.text, sig: found.sig };
+    };
+    const previous = near(unit.seq - 1);
+    const next = near(unit.seq + 1);
+    if (previous === undefined && next === undefined) return null;
+    return { ...(previous ? { previous } : {}), ...(next ? { next } : {}) };
+  }
+
   private setRoute(route: Exclude<VoiceRoute, 'server'>): void {
     if (route === this.route) return;
     this.route = route;
@@ -396,7 +453,7 @@ export class SpeechPlayer {
     this.prefetch();
 
     const route: VoiceRoute =
-      prepared.kind === 'buffer' || prepared.kind === 'text'
+      prepared.kind === 'buffer' || prepared.kind === 'text' || prepared.kind === 'stream'
         ? 'server'
         : prepared.quiet === true
           ? this.route
@@ -456,6 +513,9 @@ export class SpeechPlayer {
       }
       return { stop: this.playBuffer(prepared.buffer, settle), deferred: false };
     }
+    if (prepared.kind === 'stream') {
+      return { stop: this.playStream(prepared.stream, unit, settle, started), deferred: true };
+    }
     if (prepared.kind === 'text') {
       const face = this.face;
       if (face?.ready() === true && face.voicing === 'text') {
@@ -500,6 +560,45 @@ export class SpeechPlayer {
     })();
     return () => {
       controller.abort();
+      if (inner) inner();
+      else settle(false);
+    };
+  }
+
+  /**
+   * Plays a unit's PCM as it arrives through the call's own path (gain → analyser → speakers), announcing it at its
+   * first scheduled sound. A stream that brings no audio at all shows the unit as words, like a failed fetch.
+   */
+  private playStream(
+    stream: PcmStream,
+    unit: SpeechUnitToPlay,
+    settle: (completed: boolean) => void,
+    started: () => void,
+  ): () => void {
+    let inner: (() => void) | null = null;
+    const stop = stream.play(
+      {
+        context: this.audio.context,
+        destination: this.gain,
+        setTimeout: (callback, ms) => this.audio.setTimeout(callback, ms),
+        clearTimeout: (handle) => {
+          this.audio.clearTimeout(handle);
+        },
+      },
+      {
+        onStart: started,
+        onEnd: (heard) => {
+          if (heard) {
+            settle(true);
+            return;
+          }
+          started();
+          inner = this.startWithoutAudio({ kind: 'captions' }, unit, settle);
+        },
+      },
+    );
+    return () => {
+      stop();
       if (inner) inner();
       else settle(false);
     };

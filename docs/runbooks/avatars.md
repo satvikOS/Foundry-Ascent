@@ -4,7 +4,8 @@ The vEIR can appear on calls as a video of its EIR (HeyGen LiveAvatar, LITE mode
 cloned voice (ElevenLabs). Until the EIR's own avatar exists, a HeyGen **stock avatar speaking in its own stock
 voice** (LiveAvatar FULL mode, platform admins and the people they choose, labelled "AI avatar") can stand in for
 presentations: §9; giving the demo account the face: §9.8.
-Everything ships **off**. This runbook is what the owner does to turn it on, what it costs, how to stop it, and
+The vEIR's everyday live voice is an ElevenLabs **stock** voice labelled "AI voice", with Amazon Polly as its
+fallback: [the live voice runbook](elevenlabs-voice.md). Faces and clones ship **off**. This runbook is what the owner does to turn them on, what it costs, how to stop it, and
 what the first live session must check. How it works:
 [docs/architecture/calls.md §4](../architecture/calls.md#4-the-face-and-the-voice-of-a-call-the-digital-twin).
 
@@ -76,8 +77,11 @@ metadata) back
 adds nothing it could not already reach: it deploys the code that reads the key. A key that leaked or was abused is
 revoked at HeyGen first (§7), then replaced the same way.
 
-**The ElevenLabs key** (or the HeyGen key without GitHub), in AWS CloudShell (us-east-1), without the key in your
-shell history:
+**The ElevenLabs key, from GitHub:** the repository secret `ELEVENLABS_API` and **Actions › Ops - sync ElevenLabs
+key** (mode `sync`), exactly as for HeyGen above; its `check` mode reports the plan and the characters left
+([live voice runbook §2](elevenlabs-voice.md#2-the-key-owner-once-and-after-each-rotation)).
+
+**Either key without GitHub**, in AWS CloudShell (us-east-1), without the key in your shell history:
 
 ```bash
 read -rs KEY && printf '{"apiKey":"%s"}' "$KEY" > /tmp/k.json && unset KEY

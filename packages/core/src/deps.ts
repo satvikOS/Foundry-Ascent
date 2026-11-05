@@ -15,6 +15,7 @@ import {
   type JobQueue,
   type ObjectStore,
   type SpeechSynthesizer,
+  type StockVoice,
   type SttGrantIssuer,
   type TextExtractor,
   type VoiceProvider,
@@ -38,6 +39,11 @@ export interface CoreDeps {
   readonly embodiment?: EmbodimentProvider;
   /** The EIRs' cloned voices for calls (API only). Absent: calls speak with stock voices (Amazon Polly). */
   readonly clonedVoice?: VoiceProvider;
+  /**
+   * The platform's stock voice at a vendor (an "AI voice"; infra `media.voice.provider: elevenlabs-stock`), which
+   * calls speak with instead of Amazon Polly; Polly says any unit it fails on (API only). Absent: Amazon Polly.
+   */
+  readonly stockVoice?: StockVoice;
   readonly clock?: Clock;
   readonly ids?: IdGenerator;
   readonly logger?: CoreLogger;

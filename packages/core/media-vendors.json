@@ -1,5 +1,5 @@
 {
-  "$comment": "The vEIR's digital-twin vendors (docs/runbooks/avatars.md): the one source for packages/core (metering prices), apps/api (vendor endpoints and the Secrets Manager names the adapters read) and infra/cdk (the API role may read exactly these secrets, and the CSP may name these hosts). Prices are list prices checked 2026-10-17: HeyGen LiveAvatar LITE on the Essential plan ($99 for 1,100 credits, then $0.095 per credit, 1 credit per minute: about $0.093 a minute at 3,000 minutes) and FULL (2 credits per minute: $0.19 a minute over the plan, checked 2026-10-31), ElevenLabs Flash v2.5 / Turbo at $0.04 per 1,000 characters on every plan. Each secret is JSON {\"apiKey\": \"...\"}.",
+  "$comment": "The vEIR's digital-twin vendors (docs/runbooks/avatars.md): the one source for packages/core (metering prices), apps/api (vendor endpoints and the Secrets Manager names the adapters read) and infra/cdk (the API role may read exactly these secrets, and the CSP may name these hosts). Prices are list prices checked 2026-10-17: HeyGen LiveAvatar LITE on the Essential plan ($99 for 1,100 credits, then $0.095 per credit, 1 credit per minute: about $0.093 a minute at 3,000 minutes) and FULL (2 credits per minute: $0.19 a minute over the plan, checked 2026-10-31), ElevenLabs Flash v2.5 / Turbo at $0.04 per 1,000 characters on every plan (API pricing page, re-checked 2026-11-05). Each secret is JSON {\"apiKey\": \"...\"}.",
   "face": {
     "heygen": {
       "product": "HeyGen LiveAvatar (LITE mode)",
@@ -14,7 +14,7 @@
   },
   "voice": {
     "elevenlabs": {
-      "product": "ElevenLabs professional voice clone",
+      "product": "ElevenLabs text to speech: the stock AI voice of every call, and EIRs' professional voice clones",
       "usdPer1kCharacters": 0.04,
       "defaultModel": "eleven_flash_v2_5",
       "secretName": "foundry-ascent/media/elevenlabs",

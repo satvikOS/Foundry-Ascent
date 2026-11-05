@@ -83,13 +83,16 @@ export function describeModel(modelId: string): { name: string; role: string } {
   // Speech is recorded as `polly:<engine>:<voice>`.
   const polly = /^polly:(\w+):(\w+)$/i.exec(modelId);
   if (polly) return { name: `Amazon Polly · ${polly[2] ?? ''}`, role: `Call speech (${polly[1] ?? ''})` };
+  // The ElevenLabs voices, recorded as `elevenlabs:<model>`: the stock "AI voice" (or an EIR's consented clone).
+  const eleven = /^elevenlabs:([\w.-]+)$/i.exec(modelId);
+  if (eleven) return { name: `ElevenLabs · ${eleven[1] ?? ''}`, role: 'AI voice' };
   const match = MODEL_NAMES.find(([pattern]) => pattern.test(modelId));
   return match ? { name: match[1], role: match[2] } : { name: modelId, role: 'Other' };
 }
 
-/** Speech rows count characters synthesized in `inputTokens`, not tokens. */
+/** Speech rows (Amazon Polly, ElevenLabs) count characters synthesized in `inputTokens`, not tokens. */
 export function isSpeechModel(modelId: string): boolean {
-  return /^polly:/i.test(modelId);
+  return /^(?:polly|elevenlabs):/i.test(modelId);
 }
 
 /** What each usage-ledger purpose pays for (packages/db usage repository). */

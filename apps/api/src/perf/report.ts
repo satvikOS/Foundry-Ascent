@@ -37,6 +37,8 @@ function turnRows(group: string, turns: readonly TurnSample[]): ReportRow[] {
     ['client: first sentence (turn.delta)', turns.map((t) => t.firstDeltaMs)],
     ['client: first spoken unit (turn.speech)', turns.map((t) => t.firstSpeechMs)],
     ['client: first audio bytes', turns.map((t) => t.firstAudioMs)],
+    ['client: first unit, whole audio arrived', turns.map((t) => t.firstUnitWholeMs)],
+    ['client: first unit playable (player can start)', turns.map((t) => t.firstPlayableMs)],
     ['client: last spoken unit', turns.map((t) => t.lastSpeechMs)],
     ['client: completed', turns.map((t) => t.completedMs)],
     ['client: stream end', turns.map((t) => t.streamEndMs)],

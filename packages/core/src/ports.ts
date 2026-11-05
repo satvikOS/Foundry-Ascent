@@ -156,8 +156,11 @@ export interface SynthesizedSpeech {
   readonly contentType: 'audio/mpeg' | 'audio/wav' | 'audio/pcm';
   /** Characters billed (the input length). */
   readonly characters: number;
-  /** The Polly engine, or `clone` for the EIR's cloned voice at a vendor. */
-  readonly engine: SpeechEngine | 'clone';
+  /**
+   * The Polly engine, `clone` for the EIR's cloned voice at a vendor, or `vendor` for the platform's stock voice at a
+   * vendor (an "AI voice": no one's likeness).
+   */
+  readonly engine: SpeechEngine | 'clone' | 'vendor';
   readonly voiceId: string;
   /** Raw PCM's sample rate (`audio/pcm` only). */
   readonly sampleRateHertz?: number;
@@ -246,9 +249,10 @@ export interface VerifiedSpeechUnit {
 declare const verifiedUnitBrand: unique symbol;
 
 /**
- * A synthesized voice for calls other than Amazon Polly: the EIR's cloned voice at a vendor (ElevenLabs, or the
- * development stand-in `fake`). It synthesizes only {@link VerifiedSpeechUnit}s, on the server, with the vendor key
- * the API holds: no voice credential ever reaches the browser.
+ * A synthesized voice for calls other than Amazon Polly, at a vendor (ElevenLabs, or the development stand-in `fake`):
+ * the EIR's cloned voice, which is handed only {@link VerifiedSpeechUnit}s, or the platform's stock voice there (an
+ * "AI voice", no one's likeness: {@link StockVoice}), which also says passages of a stored validated reply. Either way
+ * it runs on the server, with the vendor key the API holds: no voice credential ever reaches the browser.
  */
 export interface VoiceProvider {
   readonly id: 'elevenlabs' | 'fake';
@@ -257,14 +261,42 @@ export interface VoiceProvider {
   /** Price per 1,000 characters (packages/core/media-vendors.json). */
   readonly usdPer1kCharacters: number;
   synthesize(input: VoiceSynthesisInput): Promise<SynthesizedSpeech>;
+  /**
+   * Opens (or keeps warm) the connection to the vendor and reads its key, with a free request, so a call's first
+   * spoken unit does not pay for them. Never rejects; optional.
+   */
+  prewarm?(): Promise<void>;
+}
+
+/**
+ * The platform's stock voice at a vendor (infra `media.voice.provider: elevenlabs-stock`): what calls speak with
+ * instead of Amazon Polly, labelled "AI voice" wherever the voice is named. Never the EIR's voice and never the crisis
+ * line; Amazon Polly says a unit whenever it fails (core speech service).
+ */
+export interface StockVoice {
+  readonly provider: VoiceProvider;
+  /** The vendor's id of the stock voice (`media.voice.voiceId`). */
+  readonly voiceRef: string;
 }
 
 export interface VoiceSynthesisInput {
-  readonly unit: VerifiedSpeechUnit;
-  /** The persona's voice at the vendor (`persona_media.vendor_ref`). */
+  /** The words to say, in their spoken form (core `speechText`). Content: never log them. */
+  readonly text: string;
+  /**
+   * The verified unit the words are of (a clone is handed nothing else); null for a stock voice saying a passage of
+   * a completed reply's stored, validated words.
+   */
+  readonly unit: VerifiedSpeechUnit | null;
+  /** The voice at the vendor: the persona's clone (`persona_media.vendor_ref`) or the stock voice. */
   readonly voiceRef: string;
-  /** `mp3` for the call's speakers, `pcm_24000` for a face. */
+  /** `mp3` for the call's speakers, `pcm_24000` for a face or a browser that plays raw PCM as it arrives. */
   readonly format: 'mp3' | 'pcm_24000';
+  /**
+   * The validated words said just before and just after these in the same reply (spoken form), so the voice joins
+   * sentence to sentence: context for the vendor's prosody, never spoken or billed.
+   */
+  readonly previousText?: string;
+  readonly nextText?: string;
   readonly requestId: string;
   readonly signal?: AbortSignal;
 }

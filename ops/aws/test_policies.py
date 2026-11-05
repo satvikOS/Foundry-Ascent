@@ -367,7 +367,7 @@ def test_every_aws_cli_call_in_the_workflows_is_in_the_manifest_and_allowed() ->
     for workflow, action in calls:
         if workflow in OWN_ROLE_WORKFLOWS:
             continue  # checked against its own role below
-        if workflow == MEDIA_KEY_WORKFLOW:
+        if workflow in (MEDIA_KEY_WORKFLOW, VOICE_KEY_WORKFLOW):
             continue  # deploy role only, through its own policy: checked below (and denied to stage 0)
         relevant = [e for e in entries if action in {a.lower() for a in e.actions}]
         if not relevant:
@@ -472,6 +472,10 @@ MEDIA_KEY_CLI: dict[str, str | None] = {
     "secretsmanager:putsecretvalue": "secretsmanager:PutSecretValue",
 }
 MEDIA_KEY_SECRET_ENV = "HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API }}"
+# The ElevenLabs key sync (docs/runbooks/elevenlabs-voice.md): the same calls on its own secret, through the same
+# policy; its `check` mode calls no AWS at all.
+VOICE_KEY_WORKFLOW = "ops-elevenlabs-key.yml"
+VOICE_KEY_SECRET_ENV = "ELEVENLABS_KEY: ${{ secrets.ELEVENLABS_API }}"
 
 
 def media_key_secret_name() -> str:
@@ -551,6 +555,86 @@ def test_the_heygen_key_workflow_never_exposes_the_key() -> None:
     for step in aws_steps:
         assert "if: steps.key.outputs.present == 'true'" in step, step.splitlines()[0]
     assert 'echo "present=false" >> "${GITHUB_OUTPUT}"' in code
+
+
+def voice_key_secret_name() -> str:
+    vendors = json.loads((REPO / "packages" / "core" / "media-vendors.json").read_text(encoding="utf-8"))
+    return vendors["voice"]["elevenlabs"]["secretName"]
+
+
+def test_the_elevenlabs_key_workflow_runs_as_the_deploy_role_and_calls_exactly_what_its_policy_grants() -> None:
+    text = (WORKFLOWS / VOICE_KEY_WORKFLOW).read_text(encoding="utf-8")
+    assert "role/FoundryAscent-GitHubDeploy" in text
+    assert STAGE0_SECRET not in text and "AWS_SECRET_ACCESS_KEY" not in text
+    assert "id-token: write" in text and "environment: production" in text
+    assert "mask-aws-account-id: true" in text and "::add-mask::" in text
+    made = {action for name, action in workflow_aws_calls() if name == VOICE_KEY_WORKFLOW}
+    assert made == set(MEDIA_KEY_CLI), sorted(made ^ set(MEDIA_KEY_CLI))
+    granted = role_policy_actions("GitHubDeployMediaKeyPolicy")
+    assert granted == {"secretsmanager:CreateSecret", "secretsmanager:PutSecretValue"}, sorted(granted)
+    foundation = (REPO / "infra" / "cdk" / "src" / "stacks" / "foundation-stack.ts").read_text(encoding="utf-8")
+    assert "secretsmanager:GetSecretValue" not in foundation
+    # The policy names the voice vendor's secret (from media-vendors.json), and the workflow writes exactly it.
+    assert "vendorSecrets.voice" in foundation
+    assert f"SECRET_NAME: {voice_key_secret_name()}" in text
+    # Both modes run on main only; only `sync` holds AWS credentials.
+    jobs = text.split("\njobs:\n", 1)[1]
+    sync, check = jobs.split("\n  check:\n", 1)
+    assert "if: github.ref == 'refs/heads/main' && (inputs.mode || 'sync') == 'sync'" in sync
+    assert "if: github.ref == 'refs/heads/main' && inputs.mode == 'check'" in check
+    assert "id-token" not in check and "configure-aws-credentials" not in check and "aws " not in check
+    assert "permissions: {}" in check
+
+
+def test_the_elevenlabs_key_workflow_never_exposes_the_key() -> None:
+    text = (WORKFLOWS / VOICE_KEY_WORKFLOW).read_text(encoding="utf-8")
+    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    on = re.search(r"^on:\n((?:[ ].*\n|\n)*)", text, re.MULTILINE)
+    assert on is not None and on.group(1).lstrip().startswith("workflow_dispatch:"), on and on.group(1)
+    assert not re.search(r"^\s+(push|pull_request|pull_request_target|schedule|workflow_run):", on.group(1), re.MULTILINE)
+    assert "permissions: {}" in text
+    for absent in ("actions/checkout", "pnpm", "npm ", "pip ", "setup-node", "setup-python", "actions/cache"):
+        assert absent not in code, absent
+    # The secret reaches only the four steps that need it (sync: check, store; check: check, read), by environment.
+    assert code.count("secrets.ELEVENLABS_API") == 4
+    assert code.count(VOICE_KEY_SECRET_ENV) == 4
+    for line in code.splitlines():
+        if re.search(r"\bELEVENLABS_KEY\b|\$\{key\}", line):
+            assert not re.search(r"\b(echo|cat|tee)\b|GITHUB_(OUTPUT|ENV|STEP_SUMMARY)", line), line.strip()
+    masks = re.findall(r'echo "::add-mask::\$\{(\w+)\}"', code)
+    assert sorted(masks) == ["account", "account", "deploy_role", "line", "line", "trimmed", "trimmed"], masks
+    assert code.count("umask 077") == 2
+    assert code.count("trap 'rm -rf \"${dir}\"' EXIT") == 2
+    # sync: the AWS CLI reads a 0600 file, never an argument; no AWS output reaches the log.
+    assert code.count('--secret-string "file://${secret}"') == 2
+    assert not re.search(r'--secret-string\s+(?!"file://\$\{secret\}")', code)
+    for command in ("create-secret", "put-secret-value"):
+        call = code[code.index(f"aws secretsmanager {command}") :]
+        call = call[: call.index("; then")]
+        assert '> /dev/null 2>"${err}"' in call, command
+    # check: curl reads the key from a 0600 header file; the answer goes to a file, never to the log.
+    assert "printf 'xi-api-key: %s\\n' \"${key}\" > \"${dir}/headers\"" in code
+    assert '-H "@${dir}/headers"' in code
+    assert code.count("xi-api-key") == 1
+    curl = code[code.index("curl ") :]
+    curl = curl[: curl.index("; then")]
+    assert '-o "${dir}/body"' in curl and "2>/dev/null" in curl and "--proto '=https'" in curl
+    for line in code.splitlines():
+        if "${dir}/body" in line and "curl" not in line and "-o " not in line:
+            assert re.search(r"\bjq\b", line), line.strip()
+            assert not re.search(r"\b(echo|cat|tee|head|tail|base64)\b", line.split("|")[0]), line.strip()
+    # Only the tier (letters, digits, _) and a whole number reach the output, the log and the summary.
+    assert "tr -cd 'A-Za-z0-9_' | head -c 40" in code
+    assert '[[ ! "${left}" =~ ^[0-9]{1,15}$ ]]' in code
+    # An empty repository secret skips cleanly in both modes.
+    assert code.count('echo "present=false" >> "${GITHUB_OUTPUT}"') == 2
+
+
+def test_the_stage0_identity_cannot_write_or_read_the_elevenlabs_key() -> None:
+    arn = f"arn:aws:secretsmanager:{REGION}:{ACCOUNT}:secret:{voice_key_secret_name()}-AbCdEf"
+    for action in ("secretsmanager:CreateSecret", "secretsmanager:PutSecretValue", "secretsmanager:GetSecretValue"):
+        for docs in ([operator(), self_retirement()], [operator(), legacy(), self_retirement()]):
+            assert decide(docs, action, arn) != "allowed", (action, docs)
 
 
 def test_the_stage0_identity_cannot_write_or_read_the_heygen_key() -> None:

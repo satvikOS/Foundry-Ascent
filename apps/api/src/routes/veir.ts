@@ -15,6 +15,17 @@ import { type RouteBuilder } from '../http/router.js';
 export const FACE_MANIFEST_HEADER = 'x-face-manifest';
 /** The first one-second chunk a face hand-over carries. */
 export const FACE_PART_HEADER = 'x-face-part';
+/** The sample rate of raw PCM speech (`POST /speech` answering `audio/pcm`). */
+export const SPEECH_SAMPLE_RATE_HEADER = 'x-speech-sample-rate';
+
+/** Whether a `POST /speech` request plays raw PCM as it arrives (`accept` names `audio/pcm`, not refused with q=0). */
+export function acceptsPcm(accept: string | undefined): boolean {
+  if (accept === undefined) return false;
+  return accept.split(',').some((part) => {
+    const [type = '', ...params] = part.split(';').map((p) => p.trim().toLowerCase());
+    return type === 'audio/pcm' && !params.some((p) => /^q=0(?:\.0*)?$/.test(p));
+  });
+}
 
 /** The venture's vEIR: its notebook (specific pool), identity, calls and speech (knowledge pools, §3.4). */
 export function registerVeirRoutes(r: RouteBuilder, core: Core): void {
@@ -36,19 +47,24 @@ export function registerVeirRoutes(r: RouteBuilder, core: Core): void {
     async (c, ctx) => c.json(await core.veir.avatarSession(ctx, jsonBody(c, AvatarSessionRequest))),
     { idempotency: 'none' },
   );
-  // Audio of a validated reply (audio/mpeg, streamed as it is synthesized; audio/wav with its face-audio manifest
-  // when the call's face may show it). Not replayable: a retry synthesizes again (and is metered again), so
-  // clients cache the audio they received.
+  // Audio of a validated reply, streamed as it is synthesized: raw 16-bit PCM (`audio/pcm`, its rate in
+  // `x-speech-sample-rate`) for a page that plays it as it arrives (it says so in `accept`), else audio/mpeg; audio/wav
+  // with its face-audio manifest when the call's face may show it. Not replayable: a retry synthesizes again (and is
+  // metered again), so clients cache the audio they received.
   r.post(
     '/speech',
     async (c, ctx) => {
       const speech = await core.speech.synthesize(ctx, jsonBody(c, SpeechRequest), {
         signal: c.req.raw.signal,
+        pcm: acceptsPcm(c.req.header('accept')),
       });
       return new Response(speech.audio, {
         status: 200,
         headers: {
           'content-type': speech.contentType,
+          ...(speech.contentType === 'audio/pcm' && speech.sampleRateHertz !== undefined
+            ? { [SPEECH_SAMPLE_RATE_HEADER]: String(speech.sampleRateHertz) }
+            : {}),
           'x-speech-characters': String(speech.characters),
           ...(speech.faceManifest === undefined ? {} : { [FACE_MANIFEST_HEADER]: speech.faceManifest }),
         },

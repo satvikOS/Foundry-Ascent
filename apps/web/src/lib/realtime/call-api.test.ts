@@ -45,6 +45,61 @@ afterEach(() => {
 });
 
 describe('fetchSpeech: what each answer of POST /speech means for the call', () => {
+  it('asks for raw PCM when it streams, and hands the body over unread with its rate', async () => {
+    const fetchMock = vi.fn((_url: string, _init: RequestInit) =>
+      Promise.resolve(
+        new Response(new Uint8Array([1, 2, 3, 4]), {
+          status: 200,
+          headers: { 'content-type': 'audio/pcm', 'x-speech-sample-rate': '16000' },
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const neighbours = { previous: { seq: 1, text: 'Before.', sig: 'sig-1-0123456789abcdef' } };
+    const result = await fetchSpeech(
+      SESSION,
+      { turnId: TURN, seq: 2, text: 'Twelve is a good start.', sig: 'sig-2-0123456789abcdef' },
+      new AbortController().signal,
+      { stream: true, context: neighbours },
+    );
+    expect(result.kind).toBe('stream');
+    if (result.kind !== 'stream') throw new Error('expected a stream');
+    expect(result.sampleRate).toBe(16_000);
+    expect(new Uint8Array(await new Response(result.body).arrayBuffer())).toEqual(
+      new Uint8Array([1, 2, 3, 4]),
+    );
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(new Headers(init?.headers).get('accept')).toMatch(/^audio\/pcm, /);
+    const sent = init?.body;
+    const text = typeof sent === 'string' ? sent : new TextDecoder().decode(sent as Uint8Array);
+    expect(JSON.parse(text)).toMatchObject({ seq: 2, context: neighbours });
+  });
+
+  it('keeps asking for whole MP3 (no PCM in accept) when it does not stream; a PCM answer without a rate is 24 kHz', async () => {
+    const fetchMock = vi.fn((_url: string, _init: RequestInit) =>
+      Promise.resolve(
+        new Response(new Uint8Array([9]), { status: 200, headers: { 'content-type': 'audio/mpeg' } }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const unitToPlay = {
+      turnId: TURN,
+      seq: 2,
+      text: 'Twelve is a good start.',
+      sig: 'sig-2-0123456789abcdef',
+    };
+    const whole = await fetchSpeech(SESSION, unitToPlay, new AbortController().signal);
+    expect(whole.kind).toBe('audio');
+    expect(new Headers(fetchMock.mock.calls[0]?.[1].headers).get('accept')).not.toContain('audio/pcm');
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(
+        new Response(new Uint8Array([0, 0]), { status: 200, headers: { 'content-type': 'audio/pcm' } }),
+      ),
+    );
+    const streamed = await fetchSpeech(SESSION, unitToPlay, new AbortController().signal, { stream: true });
+    expect(streamed).toMatchObject({ kind: 'stream', sampleRate: 24_000 });
+  });
+
   it('skips a unit already voiced for this call (409 conflict, reason speech_already_played)', async () => {
     expect(await speechOutcome(problem(409, 'conflict', 'speech_already_played'))).toEqual({
       kind: 'played',

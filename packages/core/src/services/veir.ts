@@ -47,6 +47,9 @@ export interface VeirService {
   ): Promise<AvatarSessionResponse>;
 }
 
+/** How the platform's stock vendor voice is named to the people who hear it. */
+export const STOCK_VOICE_LABEL = 'AI voice';
+
 /** The persona's embodiment as clients see it: a voice or portrait only where consent covers it. */
 export function embodimentView(
   persona: Pick<personasRepo.PersonaRecord, 'kind' | 'embodiment'>,
@@ -155,6 +158,10 @@ export function createVeirService(kit: Kit, face: FaceService): VeirService {
           callsEnabled: settings.callsEnabled,
           // The caller's own acknowledgement of the first-call privacy notice (per person, not per browser).
           callNoticeAcknowledgedAt: await principalsRepo.callNoticeAcknowledgedAt(scope.tx),
+          // The stock vendor voice is disclosed as what it is: an AI voice, no one's.
+          ...(kit.deps.stockVoice === undefined
+            ? {}
+            : { voice: { vendor: kit.deps.stockVoice.provider.id, label: STOCK_VOICE_LABEL } }),
         };
         return { response, faceOn, monthMinutes: settings.faceMinutesPerPrincipalMonth };
       });

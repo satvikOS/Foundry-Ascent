@@ -38,6 +38,7 @@ export {
   type FaceTranscript,
   type FaceTranscriptLine,
   type VerifiedSpeechUnit,
+  type StockVoice,
   type VoiceProvider,
   type VoiceSynthesisInput,
   type SpeechFormat,

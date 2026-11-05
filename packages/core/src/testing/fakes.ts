@@ -319,13 +319,16 @@ export class FakeEmbodimentProvider implements EmbodimentProvider {
 }
 
 /**
- * Test cloned voice (the `VoiceProvider` port): records every unit it was handed; MP3 is the text prefixed with
- * `CLONE:`, PCM is {@link fakePcm} at 24 kHz. `failNext` makes the next call fail like a vendor outage.
+ * Test vendor voice (the `VoiceProvider` port: a cloned or the stock vendor voice): records every request it was
+ * handed; MP3 is the text prefixed with `CLONE:`, PCM is {@link fakePcm} at 24 kHz. `failNext` makes the next call
+ * fail like a vendor outage; `breakAfterFirstChunk` makes the next one's audio break after its first bytes.
  */
 export class FakeVoiceProvider implements VoiceProvider {
   readonly calls: VoiceSynthesisInput[] = [];
   readonly model = 'test_model';
   failNext = false;
+  breakAfterFirstChunk = false;
+  prewarms = 0;
 
   constructor(
     readonly id: VoiceProvider['id'] = 'elevenlabs',
@@ -338,7 +341,30 @@ export class FakeVoiceProvider implements VoiceProvider {
       this.failNext = false;
       return Promise.reject(new SpeechSynthesisError('voice vendor unavailable'));
     }
-    const text = input.unit.text;
+    const text = input.text;
+    if (this.breakAfterFirstChunk) {
+      this.breakAfterFirstChunk = false;
+      const bytes =
+        input.format === 'pcm_24000' ? fakePcm(text, 24_000) : new TextEncoder().encode(`CLONE:${text}`);
+      let sent = false;
+      return Promise.resolve({
+        audio: new ReadableStream<Uint8Array>({
+          pull(controller) {
+            if (sent) {
+              controller.error(new SpeechSynthesisError('voice vendor stream broke'));
+              return;
+            }
+            sent = true;
+            controller.enqueue(bytes.slice(0, Math.max(2, Math.floor(bytes.length / 2) & ~1)));
+          },
+        }),
+        contentType: input.format === 'pcm_24000' ? 'audio/pcm' : 'audio/mpeg',
+        ...(input.format === 'pcm_24000' ? { sampleRateHertz: 24_000 } : {}),
+        characters: text.length,
+        engine: 'clone',
+        voiceId: input.voiceRef,
+      });
+    }
     return Promise.resolve(
       input.format === 'pcm_24000'
         ? {
@@ -357,6 +383,11 @@ export class FakeVoiceProvider implements VoiceProvider {
             voiceId: input.voiceRef,
           },
     );
+  }
+
+  prewarm(): Promise<void> {
+    this.prewarms += 1;
+    return Promise.resolve();
   }
 }
 

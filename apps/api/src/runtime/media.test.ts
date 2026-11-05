@@ -48,6 +48,25 @@ describe('digital-twin wiring', () => {
     expect(reads()).toBe(0);
   });
 
+  it('wires the ElevenLabs stock voice and the clones on one adapter, reading no key until one is needed', () => {
+    const { secrets, reads } = counting();
+    const media = mediaFor(
+      loadApiConfig(
+        { ...prod, MEDIA_VOICE_PROVIDER: 'elevenlabs-stock', MEDIA_VOICE_ID: 'OZ0L6eISlOejga3XjDFt' },
+        'api',
+      ),
+      secrets,
+    );
+    expect(media.stockVoice?.provider).toBeInstanceOf(ElevenLabsVoice);
+    expect(media.stockVoice).toMatchObject({
+      voiceRef: 'OZ0L6eISlOejga3XjDFt',
+      provider: { id: 'elevenlabs', model: 'eleven_flash_v2_5', usdPer1kCharacters: 0.04 },
+    });
+    expect(media.clonedVoice).toBe(media.stockVoice?.provider);
+    expect(media.embodiment).toBeUndefined();
+    expect(reads()).toBe(0);
+  });
+
   it('wires a FULL stock face at its own price, admins only by default, with the LITE path unchanged', () => {
     const { secrets, reads } = counting();
     const media = mediaFor(

@@ -2,6 +2,8 @@
  *   pnpm --filter @foundry/api latency [--profile production|local] [--text N] [--voice N] [--json file]
  *                                      [--duplicate-memory N] [--gap-ms N] [--set dbRoundTripMs=45 …] [--cold]
  *                                      [--queries] [--skip-init-warm-up] [--face]
+ *                                      [--voice-vendor polly|elevenlabs-stub] [--stub-ttfb 100-250] [--stub-speed 4]
+ *                                      [--pcm]
  *
  * The local latency harness (docs/runbooks/latency.md): the whole API in one process over a fresh seeded
  * database on the local cluster, with production-like latency added at the far ends (database round trips,
@@ -18,6 +20,10 @@
  * run of the same turns with the model's and the embedding's time set to zero (`perf/critical-path.ts`).
  * `--skip-init-warm-up` measures a process that did not warm the turn engine when it started (runtime/warm-up.ts).
  * `--face` gives calls a FULL face (a fake vendor): each spoken unit is admitted to it as it is signed.
+ * `--voice-vendor elevenlabs-stub` makes calls speak with the ElevenLabs stock voice through the real adapter, against a
+ * local stand-in for the vendor (`perf/elevenlabs-stub.ts`: time to first byte uniform in `--stub-ttfb`, audio streamed
+ * `--stub-speed` times faster than real time). `--pcm` makes the call screen ask for raw PCM and count a unit playable
+ * once its jitter buffer is in hand (as the browser's streaming player does), instead of once the whole unit arrived.
  */
 import { writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
@@ -46,6 +52,13 @@ async function main(): Promise<void> {
       'skip-init-warm-up': { type: 'boolean', default: false },
       // Calls get a FULL face (a fake vendor that voices the admitted text).
       face: { type: 'boolean', default: false },
+      // Calls speak with the ElevenLabs stock voice, against a local stand-in for the vendor.
+      'voice-vendor': { type: 'string', default: 'polly' },
+      // The stand-in's time to first byte (ms, uniform low-high) and streaming speed (times real time).
+      'stub-ttfb': { type: 'string', default: '100-250' },
+      'stub-speed': { type: 'string', default: '4' },
+      // The call screen asks for raw PCM and plays it as it arrives (the player's jitter buffer, then streaming).
+      pcm: { type: 'boolean', default: false },
       // One simulated latency changed from the profile's (calibration): `--set modelFirstTokenMs=1800`.
       set: { type: 'string', multiple: true, default: [] },
     },
@@ -65,6 +78,8 @@ async function main(): Promise<void> {
     traceQueries: values.queries,
     skipInitWarmUp: values['skip-init-warm-up'],
     face: values.face,
+    pcm: values.pcm,
+    ...elevenLabsOptions(values['voice-vendor'], values['stub-ttfb'], values['stub-speed']),
   });
   try {
     // A warm-up conversation first: caches (keys, directory, sessions) fill as they do on a warm Lambda.
@@ -88,6 +103,19 @@ async function main(): Promise<void> {
   } finally {
     await rig.cleanup();
   }
+}
+
+/** `--voice-vendor elevenlabs-stub` (with `--stub-ttfb low-high` and `--stub-speed n`), or Polly (the fake). */
+function elevenLabsOptions(
+  vendor: string,
+  ttfb: string,
+  speed: string,
+): { elevenLabs?: { ttfbMs: [number, number]; speed: number } } {
+  if (vendor === 'polly') return {};
+  if (vendor !== 'elevenlabs-stub') throw new Error(`--voice-vendor ${vendor}: polly or elevenlabs-stub`);
+  const range = /^(\d+)-(\d+)$/.exec(ttfb);
+  if (range === null || !/^\d+(\.\d+)?$/.test(speed)) throw new Error('--stub-ttfb low-high, --stub-speed n');
+  return { elevenLabs: { ttfbMs: [Number(range[1]), Number(range[2])], speed: Number(speed) } };
 }
 
 /**

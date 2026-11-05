@@ -22,6 +22,7 @@ import { createTestDatabase, type TestDatabase } from '@foundry/db/testing';
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 
+import { ElevenLabsVoice } from '../adapters/elevenlabs-voice.js';
 import { type ApiApp, createApp } from '../app.js';
 import { createJsonLogger, type Logger } from '../logging.js';
 import { InflightTracker } from '../runtime/inflight.js';
@@ -29,6 +30,7 @@ import { observeGateway } from '../runtime/observed-gateway.js';
 import { currentRequestMetrics, recordDbCall, type RequestMetrics } from '../runtime/request-metrics.js';
 import { warmApiProcess } from '../runtime/warm-up.js';
 import { buildRequest, nextViewerIp, type RequestOptions, sessionTokenFrom } from '../testing/api-harness.js';
+import { type ElevenLabsStub, type ElevenLabsStubOptions, startElevenLabsStub } from './elevenlabs-stub.js';
 import { type SimulatedLatency, simulatedGateway } from './simulation.js';
 
 /**
@@ -52,6 +54,10 @@ export interface LatencyRig {
   readonly queries: TracedRoundTrip[];
   /** Whether calls get a FULL face (`LatencyRigOptions.face`). */
   readonly face: boolean;
+  /** Whether the call screen asks for raw PCM (`LatencyRigOptions.pcm`). */
+  readonly pcm: boolean;
+  /** The ElevenLabs stand-in, when calls speak with it (`LatencyRigOptions.elevenLabs`). */
+  readonly elevenLabs: ElevenLabsStub | null;
   readonly ventureId: string;
   readonly founderId: string;
   request(path: string, options?: RequestOptions): Promise<Response>;
@@ -123,6 +129,14 @@ export interface LatencyRigOptions {
    * admitted to the face as it is signed (`latency --face`).
    */
   readonly face?: boolean;
+  /**
+   * Calls speak with the ElevenLabs stock voice (the real `ElevenLabsVoice` adapter) against a local stand-in for the
+   * vendor (`elevenlabs-stub.ts`: its time to first byte and its streaming speed simulated), Polly (the fake) as its
+   * fallback (`latency --voice-vendor elevenlabs-stub`).
+   */
+  readonly elevenLabs?: ElevenLabsStubOptions;
+  /** The call screen asks `POST /speech` for raw PCM and plays it as it arrives (`latency --pcm`). */
+  readonly pcm?: boolean;
 }
 
 /** What the rig labels a request with, for the round trips it makes. */
@@ -246,6 +260,20 @@ export async function createLatencyRig(
   );
   const speech = new FakeSpeechSynthesizer();
   speech.delayMs = latency.speechFirstByteMs;
+  const elevenLabs = options.elevenLabs === undefined ? null : await startElevenLabsStub(options.elevenLabs);
+  const stockVoice =
+    elevenLabs === null
+      ? null
+      : {
+          provider: new ElevenLabsVoice({
+            apiKey: () => Promise.resolve('stub-key-not-a-secret'),
+            apiOrigin: elevenLabs.origin,
+            model: 'eleven_flash_v2_5',
+            usdPer1kCharacters: 0.04,
+            zeroRetention: false,
+          }),
+          voiceRef: 'StubVoice0000000001',
+        };
   const face = options.face === true;
   if (face) {
     await t.db.system((sx) =>
@@ -268,6 +296,7 @@ export async function createLatencyRig(
     textExtractor: new Utf8TextExtractor(),
     logger: logger.child({ component: 'core' }),
     speech,
+    ...(stockVoice === null ? {} : { stockVoice }),
     sttGrants: new FakeSttGrantIssuer(),
     // A FULL face: the vendor voices the text the turn engine admits to it (faces switched on above).
     ...(face ? { embodiment: new FakeEmbodimentProvider('heygen', false, 0.19, 'full') } : {}),
@@ -298,6 +327,8 @@ export async function createLatencyRig(
     latency: live,
     queries,
     face,
+    pcm: options.pcm === true,
+    elevenLabs,
     ventureId: venture.id,
     founderId,
     request,
@@ -325,6 +356,7 @@ export async function createLatencyRig(
     },
     async cleanup() {
       await inflight.drain(10_000);
+      await elevenLabs?.close();
       await db.close();
       await t.cleanup();
     },

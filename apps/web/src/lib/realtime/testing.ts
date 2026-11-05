@@ -232,8 +232,11 @@ export class FakeBufferSource extends FakeNode {
   onended: (() => void) | null = null;
   started = false;
   stopped = false;
-  start(): void {
+  /** The context time it was scheduled at (`start(when)`). */
+  startAt: number | null = null;
+  start(when?: number): void {
     this.started = true;
+    this.startAt = when ?? null;
   }
   stop(): void {
     if (this.stopped) return;
@@ -298,6 +301,19 @@ export class FakeAudioContext {
     const node = new FakeNode();
     this.streamSources.push({ node, stream });
     return node;
+  }
+  /** Every `createBuffer` (raw PCM played as it arrives), with its samples. */
+  readonly buffers: { sampleRate: number; samples: Float32Array }[] = [];
+  createBuffer(_channels: number, length: number, sampleRate: number): AudioBuffer {
+    const samples = new Float32Array(length);
+    this.buffers.push({ sampleRate, samples });
+    return {
+      length,
+      sampleRate,
+      duration: length / sampleRate,
+      numberOfChannels: 1,
+      getChannelData: () => samples,
+    } as unknown as AudioBuffer;
   }
   decodeAudioData(data: ArrayBuffer): Promise<AudioBuffer> {
     if (this.decodeFails) return Promise.reject(new Error('decode failed'));

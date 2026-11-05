@@ -31,6 +31,7 @@ describe('loadApiConfig', () => {
       faceStock: null,
       faceAudience: 'everyone',
       voice: 'elevenlabs',
+      voiceId: null,
       voiceModel: 'eleven_turbo_v2_5',
       voiceZeroRetention: true,
     });
@@ -40,6 +41,23 @@ describe('loadApiConfig', () => {
     expect(() => loadApiConfig({ ...prod, MEDIA_VOICE_MODEL: 'Bad Model!' }, 'api')).toThrow(
       /MEDIA_VOICE_MODEL/,
     );
+  });
+
+  it('reads the ElevenLabs stock voice: a named voice id is required, and it is ignored for other providers', () => {
+    const stock = { ...prod, MEDIA_VOICE_PROVIDER: 'elevenlabs-stock' };
+    expect(loadApiConfig({ ...stock, MEDIA_VOICE_ID: 'OZ0L6eISlOejga3XjDFt' }, 'api').media).toMatchObject({
+      voice: 'elevenlabs-stock',
+      voiceId: 'OZ0L6eISlOejga3XjDFt',
+      voiceModel: 'eleven_flash_v2_5',
+    });
+    expect(() => loadApiConfig(stock, 'api')).toThrow(/MEDIA_VOICE_ID/);
+    expect(() => loadApiConfig({ ...stock, MEDIA_VOICE_ID: 'not a voice!' }, 'api')).toThrow(
+      /MEDIA_VOICE_ID/,
+    );
+    expect(
+      loadApiConfig({ ...prod, MEDIA_VOICE_PROVIDER: 'polly', MEDIA_VOICE_ID: 'OZ0L6eISlOejga3XjDFt' }, 'api')
+        .media.voiceId,
+    ).toBeNull();
   });
 
   it('reads a FULL stock face: its avatar, its optional voice, admins only unless told otherwise', () => {
@@ -103,6 +121,7 @@ describe('loadApiConfig', () => {
         faceStock: null,
         faceAudience: 'everyone',
         voice: 'polly',
+        voiceId: null,
         voiceModel: 'eleven_flash_v2_5',
         voiceZeroRetention: false,
       },

@@ -80,12 +80,24 @@ describe('the development stand-in voice', () => {
     const voice = new DevelopmentVoice();
     expect(voice).toMatchObject({ id: 'fake', usdPer1kCharacters: 0 });
     const unit = { text: 'Hello there.', sig: 'x', seq: 0, turnId: null, sessionId: 's' } as never;
-    const pcm = await voice.synthesize({ unit, voiceRef: 'v', format: 'pcm_24000', requestId: 'r' });
+    const pcm = await voice.synthesize({
+      text: 'Hello there.',
+      unit,
+      voiceRef: 'v',
+      format: 'pcm_24000',
+      requestId: 'r',
+    });
     expect(pcm).toMatchObject({ contentType: 'audio/pcm', sampleRateHertz: 24_000, characters: 12 });
     const bytes = new Uint8Array(await new Response(pcm.audio).arrayBuffer());
     expect(bytes).toEqual(standInPcm(12));
     expect(new TextDecoder().decode(bytes)).not.toContain('Hello');
-    const wav = await voice.synthesize({ unit, voiceRef: 'v', format: 'mp3', requestId: 'r' });
+    const wav = await voice.synthesize({
+      text: 'Hello there.',
+      unit,
+      voiceRef: 'v',
+      format: 'mp3',
+      requestId: 'r',
+    });
     expect(wav.contentType).toBe('audio/wav');
   });
 });

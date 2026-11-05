@@ -270,8 +270,9 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "MEDIA_FACE_PROVIDER": "heygen-liveavatar",
             "MEDIA_FACE_SANDBOX": "true",
             "MEDIA_FACE_VOICE_ID": "",
+            "MEDIA_VOICE_ID": "OZ0L6eISlOejga3XjDFt",
             "MEDIA_VOICE_MODEL": "eleven_flash_v2_5",
-            "MEDIA_VOICE_PROVIDER": "polly",
+            "MEDIA_VOICE_PROVIDER": "elevenlabs-stock",
             "MEDIA_VOICE_ZERO_RETENTION": "false",
             "MODEL_EMBEDDINGS_ID": "amazon.titan-embed-text-v2:0",
             "MODEL_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
@@ -545,22 +546,40 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             {
               "Action": "secretsmanager:GetSecretValue",
               "Effect": "Allow",
-              "Resource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":secretsmanager:us-east-1:",
-                    {
-                      "Ref": "AWS::AccountId",
-                    },
-                    ":secret:foundry-ascent/media/heygen-??????",
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":secretsmanager:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":secret:foundry-ascent/media/elevenlabs-??????",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":secretsmanager:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":secret:foundry-ascent/media/heygen-??????",
+                    ],
+                  ],
+                },
+              ],
               "Sid": "MediaVendorKeys",
             },
           ],
@@ -3897,6 +3916,45 @@ exports[`template snapshots > FoundryAscent-Foundation 1`] = `
                 ],
               },
               "Sid": "WriteFaceVendorKey",
+            },
+            {
+              "Action": "secretsmanager:CreateSecret",
+              "Condition": {
+                "StringEquals": {
+                  "secretsmanager:Name": "foundry-ascent/media/elevenlabs",
+                },
+              },
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:aws:secretsmanager:us-east-1:",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":secret:foundry-ascent/media/elevenlabs*",
+                  ],
+                ],
+              },
+              "Sid": "CreateVoiceVendorKey",
+            },
+            {
+              "Action": "secretsmanager:PutSecretValue",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:aws:secretsmanager:us-east-1:",
+                    {
+                      "Ref": "AWS::AccountId",
+                    },
+                    ":secret:foundry-ascent/media/elevenlabs-??????",
+                  ],
+                ],
+              },
+              "Sid": "WriteVoiceVendorKey",
             },
           ],
           "Version": "2012-10-17",
