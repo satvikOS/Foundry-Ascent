@@ -64,9 +64,11 @@ async function startCall(page: Page) {
   const started = page.waitForResponse(
     (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
   );
+  // ⌘K → Start a call (the side panel has no Call entry: one entry per action).
+  await page.keyboard.press('ControlOrMeta+k');
   await page
-    .getByRole('navigation', { name: 'Main' })
-    .getByRole('link', { name: /^Call / })
+    .getByRole('dialog')
+    .getByRole('option', { name: /^Start a call/ })
     .click();
   const screen = page.getByRole('dialog', { name: /^Call with / });
   await screen.getByRole('button', { name: 'Start call' }).click();
@@ -298,7 +300,7 @@ test.describe('vEIR calls · a LITE stock face the page feeds (the ElevenLabs vo
       await test.step('the speak channel drops: the face ends, the presence is back and the call speaks itself', async () => {
         await page.evaluate(() => window.dispatchEvent(new Event('foundry:face-lite-drop')));
         await expect(tile).toHaveCount(0);
-        await expect(screen.locator('[data-slot="call-tile"][data-face="character"]')).toBeVisible();
+        await expect(screen.locator('[data-slot="call-tile"][data-face="presence"]')).toBeVisible();
         await expect.poll(() => faceEnds.length).toBe(1);
         expect(faceEnds[0]?.status).toBe(204);
         expect(JSON.parse(faceEnds[0]?.body ?? '{}')).toEqual({ reason: 'control_lost' });
