@@ -183,7 +183,7 @@ export const SPEECH_VOICE_IDS = [
   'Tiffany',
 ] as const;
 /** The platform voice, for personas without a consented voice of their own. */
-export const DEFAULT_SPEECH_VOICE_ID = 'Danielle' satisfies (typeof SPEECH_VOICE_IDS)[number];
+export const DEFAULT_SPEECH_VOICE_ID = 'Stephen' satisfies (typeof SPEECH_VOICE_IDS)[number];
 
 export const PersonaEmbodiment = z.object({
   provider: AvatarProviderId,

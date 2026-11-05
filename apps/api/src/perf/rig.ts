@@ -273,6 +273,7 @@ export async function createLatencyRig(
             zeroRetention: false,
           }),
           voiceRef: 'StubVoice0000000001',
+          fallbackVoiceId: 'Matthew',
         };
   const face = options.face === true;
   if (face) {

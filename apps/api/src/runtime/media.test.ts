@@ -52,14 +52,20 @@ describe('digital-twin wiring', () => {
     const { secrets, reads } = counting();
     const media = mediaFor(
       loadApiConfig(
-        { ...prod, MEDIA_VOICE_PROVIDER: 'elevenlabs-stock', MEDIA_VOICE_ID: 'OZ0L6eISlOejga3XjDFt' },
+        {
+          ...prod,
+          MEDIA_VOICE_PROVIDER: 'elevenlabs-stock',
+          MEDIA_VOICE_ID: 'AaOhDHYJ1XLZk74lXhdE',
+          MEDIA_VOICE_FALLBACK_VOICE_ID: 'Matthew',
+        },
         'api',
       ),
       secrets,
     );
     expect(media.stockVoice?.provider).toBeInstanceOf(ElevenLabsVoice);
     expect(media.stockVoice).toMatchObject({
-      voiceRef: 'OZ0L6eISlOejga3XjDFt',
+      voiceRef: 'AaOhDHYJ1XLZk74lXhdE',
+      fallbackVoiceId: 'Matthew',
       provider: { id: 'elevenlabs', model: 'eleven_flash_v2_5', usdPer1kCharacters: 0.04 },
     });
     expect(media.clonedVoice).toBe(media.stockVoice?.provider);

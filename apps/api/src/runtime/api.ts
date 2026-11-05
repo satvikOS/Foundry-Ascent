@@ -122,8 +122,17 @@ function elevenLabsFor(
 ): { clonedVoice?: VoiceProvider; stockVoice?: StockVoice } {
   if (config.media.voice === 'polly') return {};
   const provider = make();
-  if (config.media.voice === 'elevenlabs' || config.media.voiceId === null) return { clonedVoice: provider };
-  return { clonedVoice: provider, stockVoice: { provider, voiceRef: config.media.voiceId } };
+  if (
+    config.media.voice === 'elevenlabs' ||
+    config.media.voiceId === null ||
+    config.media.voiceFallbackId === null
+  ) {
+    return { clonedVoice: provider };
+  }
+  return {
+    clonedVoice: provider,
+    stockVoice: { provider, voiceRef: config.media.voiceId, fallbackVoiceId: config.media.voiceFallbackId },
+  };
 }
 
 /**

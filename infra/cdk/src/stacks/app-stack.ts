@@ -166,6 +166,7 @@ export class AppStack extends Stack {
       MEDIA_VOICE_MODEL: config.media.voice.model,
       MEDIA_VOICE_ZERO_RETENTION: String(config.media.voice.zeroRetention),
       MEDIA_VOICE_ID: config.media.voice.voiceId ?? '',
+      MEDIA_VOICE_FALLBACK_VOICE_ID: config.media.voice.fallbackVoiceId ?? '',
     };
     // A value no function receives is a variable dropped on the way: refused unless the API assumes that same value
     // when the variable is absent (the face's LITE defaults, until the contract lists MEDIA_FACE_*).

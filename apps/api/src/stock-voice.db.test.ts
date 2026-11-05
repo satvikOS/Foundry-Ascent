@@ -18,7 +18,7 @@ let maya: string;
 beforeAll(async () => {
   api = await createApiHarness({
     speech: polly,
-    stockVoice: { provider: eleven, voiceRef: 'OZ0L6eISlOejga3XjDFt' },
+    stockVoice: { provider: eleven, voiceRef: 'AaOhDHYJ1XLZk74lXhdE', fallbackVoiceId: 'Matthew' },
   });
   maya = await api.signInAs(api.h.people.maya);
 });
@@ -65,7 +65,7 @@ describe('the stock ElevenLabs voice over HTTP', () => {
     expect(res.headers.get(SPEECH_SAMPLE_RATE_HEADER)).toBe('24000');
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(0);
-    expect(eleven.calls.at(-1)).toMatchObject({ format: 'pcm_24000', voiceRef: 'OZ0L6eISlOejga3XjDFt' });
+    expect(eleven.calls.at(-1)).toMatchObject({ format: 'pcm_24000', voiceRef: 'AaOhDHYJ1XLZk74lXhdE' });
 
     const older = await introOfNewCall();
     const mp3 = await api.request('/speech', {

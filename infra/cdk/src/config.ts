@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { API_DB_RESUME_BUDGET_SECONDS, API_TIMING_MARGIN_SECONDS } from './lib/constants.js';
-import { SPEECH_ENGINES, type SpeechEngine } from './lib/speech-voices.js';
+import { SPEECH_ENGINES, SPEECH_VOICES, type SpeechEngine } from './lib/speech-voices.js';
 import { INFRA_ROOT } from './paths.js';
 
 export interface PlatformConfig {
@@ -141,6 +141,12 @@ export interface PlatformConfig {
       readonly voiceId: string | null;
       /** Who says a unit ElevenLabs fails on: Amazon Polly (the only one). */
       readonly fallback: 'polly';
+      /**
+       * The Polly voice that says it (`elevenlabs-stock` only, where it is required): a voice of
+       * `packages/core/speech-voices.json` of the stock voice's gender, so a vendor failure never changes who seems to
+       * speak (the call's own Polly voice could be of another gender).
+       */
+      readonly fallbackVoiceId: string | null;
     };
   };
   readonly logRetentionDays: number;
@@ -172,6 +178,7 @@ const MEDIA_OFF: PlatformConfig['media'] = {
     zeroRetention: false,
     voiceId: null,
     fallback: 'polly',
+    fallbackVoiceId: null,
   },
 };
 
@@ -434,6 +441,27 @@ function parseMedia(raw: unknown): PlatformConfig['media'] {
     throw new ConfigError('$.media.voice.voiceId', 'is read only when provider is elevenlabs-stock');
   }
   const fallback = oneOf(voice, 'fallback', '$.media.voice', ['polly'] as const) ?? 'polly';
+  const fallbackVoiceId =
+    voice.fallbackVoiceId === undefined || voice.fallbackVoiceId === null
+      ? null
+      : str(voice, 'fallbackVoiceId', '$.media.voice');
+  if (fallbackVoiceId !== null && !Object.hasOwn(SPEECH_VOICES.voices, fallbackVoiceId)) {
+    throw new ConfigError(
+      '$.media.voice.fallbackVoiceId',
+      'must be a voice of packages/core/speech-voices.json (an adult US-English Amazon Polly voice)',
+    );
+  }
+  // The stock voice's Polly stand-in is named with it, for the same reason as the stock voice: nothing else would
+  // keep a failed unit in the same gender.
+  if (voiceProvider === 'elevenlabs-stock' && fallbackVoiceId === null) {
+    throw new ConfigError(
+      '$.media.voice.fallbackVoiceId',
+      'must name the Amazon Polly voice (the stock voice’s gender) that says a unit ElevenLabs fails on (docs/runbooks/elevenlabs-voice.md)',
+    );
+  }
+  if (voiceProvider !== 'elevenlabs-stock' && fallbackVoiceId !== null) {
+    throw new ConfigError('$.media.voice.fallbackVoiceId', 'is read only when provider is elevenlabs-stock');
+  }
   const csp = obj(face.csp, '$.media.face.csp');
   const connect = origins(csp, 'connect', '$.media.face.csp');
   const mediaOrigins = origins(csp, 'media', '$.media.face.csp');
@@ -465,6 +493,7 @@ function parseMedia(raw: unknown): PlatformConfig['media'] {
       zeroRetention: bool(voice, 'zeroRetention', '$.media.voice'),
       voiceId,
       fallback,
+      fallbackVoiceId,
     },
   };
 }

@@ -423,6 +423,32 @@ has the presence. The same works by API: `PATCH /api/v1/admin/principals/<id>` w
 (platform admin only). A face that does not appear for that account: check the switch, then Settings, then the
 `call.avatar_session` audit (`admins_only` / `sandbox_only` means the account has no Video face).
 
+## 10. The chosen stock avatar: Thomas (Friendly)
+
+**Owner choice, 2026-11-05.** Outside the sandbox, the stock face the vEIR shows (the LITE face that lip-syncs our
+own audio, until an EIR's own avatar exists) is the HeyGen LiveAvatar stock avatar **"Thomas (Friendly)"**, avatar id
+**`6c2017bc-1eef-4071-ba70-0e9d5bcbf00f`**, 1080p.
+
+| What   | Value                                                                                                                                                                                                         |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Avatar | Thomas (Friendly), `6c2017bc-1eef-4071-ba70-0e9d5bcbf00f`, LiveAvatar stock (no one's likeness)                                                                                                               |
+| Looks  | a man in his mid-30s to 40s, light-blond hair, beige crew-neck sweater, seated at a desk, bright office                                                                                                       |
+| Manner | warm, relaxed, approachable                                                                                                                                                                                   |
+| Label  | **"AI avatar"**, as every stock face (it is not the EIR's digital twin; no likeness consent is involved)                                                                                                      |
+| Voice  | the ElevenLabs stock voice, now the male "Caleb – Trusted Guide" `AaOhDHYJ1XLZk74lXhdE`, with Polly `Matthew` as its fallback ([live voice runbook §3](elevenlabs-voice.md#3-the-voice-and-how-to-change-it)) |
+
+Why Thomas: a one-to-one call with a mentor is the vEIR's register, and Thomas reads as a peer a founder talks to
+across a desk: friendly and calm, neither a presenter nor a salesperson, at 1080p. **"Dexter"** was considered first
+and then cancelled by the owner; nothing of it is configured or kept.
+
+The voice was changed to match him: the stock voice had been "Talia" (female), and a man's face speaking in a
+woman's voice (or switching to one when ElevenLabs fails) would break the call. Both the ElevenLabs voice and its
+Polly fallback are now male.
+
+This section records the choice only. The face's configuration (`media.face` in `infra/cdk/config/production.json`:
+mode, the avatar, the audience, sandbox off) is owned by the face workstream and changes with it, not here; until
+then production still shows the sandbox avatar (§9.4) to admins.
+
 ## What still needs real keys or a decision
 
 - Every point of §8 (nothing here has run against the vendors).

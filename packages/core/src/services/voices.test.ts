@@ -24,7 +24,7 @@ describe('speech voices (speech-voices.json, shared with infra/cdk)', () => {
   });
 
   it('gives the platform voice, and every seeded persona voice, both engines', () => {
-    expect(DEFAULT_SPEECH_VOICE).toBe('Danielle');
+    expect(DEFAULT_SPEECH_VOICE).toBe('Stephen');
     expect(speechEngines(DEFAULT_SPEECH_VOICE)).toEqual(['neural', 'generative']);
     expect(speechEngines('Unknown')).toEqual(speechEngines(DEFAULT_SPEECH_VOICE));
     expect(isSpeechVoice('Unknown')).toBe(false);

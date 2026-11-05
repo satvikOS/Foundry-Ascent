@@ -292,9 +292,10 @@ describe('FoundryAscent-App', () => {
       const config = loadConfig();
       expect(config.media.voice).toEqual({
         provider: 'elevenlabs-stock',
-        voiceId: 'OZ0L6eISlOejga3XjDFt',
+        voiceId: 'AaOhDHYJ1XLZk74lXhdE',
         model: 'eleven_flash_v2_5',
         fallback: 'polly',
+        fallbackVoiceId: 'Matthew',
         zeroRetention: false,
       });
       expect(config.speech.enabled).toBe(true);
@@ -303,7 +304,8 @@ describe('FoundryAscent-App', () => {
       )?.[1];
       expect((api?.Environment as { Variables: Record<string, unknown> }).Variables).toMatchObject({
         MEDIA_VOICE_PROVIDER: 'elevenlabs-stock',
-        MEDIA_VOICE_ID: 'OZ0L6eISlOejga3XjDFt',
+        MEDIA_VOICE_ID: 'AaOhDHYJ1XLZk74lXhdE',
+        MEDIA_VOICE_FALLBACK_VOICE_ID: 'Matthew',
         MEDIA_VOICE_MODEL: 'eleven_flash_v2_5',
         SPEECH_ENABLED: 'true',
       });
@@ -331,6 +333,7 @@ describe('FoundryAscent-App', () => {
               zeroRetention: false,
               voiceId: null,
               fallback: 'polly',
+              fallbackVoiceId: null,
             },
           },
         },

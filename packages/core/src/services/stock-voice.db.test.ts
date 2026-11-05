@@ -30,7 +30,9 @@ import { type CoreHarness, createCoreHarness } from '../testing/harness.js';
 import { CLONE_REST_MS, chooseVoice } from './speech.js';
 import { STOCK_VOICE_LABEL } from './veir.js';
 
-const STOCK_ID = 'OZ0L6eISlOejga3XjDFt';
+const STOCK_ID = 'AaOhDHYJ1XLZk74lXhdE';
+/** The stock voice's Polly stand-in: none of the seeded personas' voices, so the test tells the two apart. */
+const STOCK_FALLBACK = 'Stephen';
 let h: CoreHarness;
 let keys: PlatformKeyCache;
 let core: Core;
@@ -104,7 +106,10 @@ async function signedTurn(sessionId: string, callId: string, texts: readonly str
 beforeAll(async () => {
   clock.set(new Date());
   h = await createCoreHarness({ speech: polly, clock });
-  core = h.withPorts({ speech: polly, stockVoice: { provider: eleven, voiceRef: STOCK_ID } });
+  core = h.withPorts({
+    speech: polly,
+    stockVoice: { provider: eleven, voiceRef: STOCK_ID, fallbackVoiceId: STOCK_FALLBACK },
+  });
   keys = new PlatformKeyCache(
     new Kit(
       resolveDeps({
@@ -227,9 +232,14 @@ describe('the stock vendor voice (an "AI voice")', () => {
     const vendorCalls = eleven.calls.length;
     eleven.failNext = true;
     const saved = await speak({ sessionId, ...a }, true);
-    // The vendor was asked once, Polly said the same words in the same response (16 kHz PCM for the streaming page).
+    // The vendor was asked once, Polly said the same words in the same response (16 kHz PCM for the streaming page),
+    // in the stock voice's own stand-in (same gender), not the call's Polly voice.
     expect(eleven.calls.length).toBe(vendorCalls + 1);
-    expect(polly.calls.at(-1)).toMatchObject({ text: 'First sentence here.', format: 'pcm_16000' });
+    expect(polly.calls.at(-1)).toMatchObject({
+      text: 'First sentence here.',
+      format: 'pcm_16000',
+      voiceId: STOCK_FALLBACK,
+    });
     expect(saved).toMatchObject({ contentType: 'audio/pcm', sampleRateHertz: 16_000 });
     expect(saved.bytes.byteLength).toBeGreaterThan(0);
     expect((await usage('elevenlabs:')).n).toBe(elevenBefore.n);
@@ -239,9 +249,10 @@ describe('the stock vendor voice (an "AI voice")', () => {
     // The unit was played once: asking again is refused like any replay.
     await expect(speak({ sessionId, ...a }, true)).rejects.toMatchObject({ reason: 'speech_already_played' });
 
-    // Resting: the next unit goes straight to Polly without asking the vendor.
+    // Resting: the next unit goes straight to Polly (the same stand-in) without asking the vendor.
     await speak({ sessionId, ...b }, true);
     expect(eleven.calls.length).toBe(vendorCalls + 1);
+    expect(polly.calls.at(-1)?.voiceId).toBe(STOCK_FALLBACK);
     // After the rest, the vendor again.
     clock.advance(CLONE_REST_MS + 1_000);
     await speak({ sessionId, ...c }, true);
@@ -304,6 +315,8 @@ describe('the stock vendor voice (an "AI voice")', () => {
       expect(eleven.calls.length).toBe(vendorCalls);
       expect(polly.calls.length).toBe(pollyCalls + 1);
       expect(off).toMatchObject({ contentType: 'audio/pcm', sampleRateHertz: 16_000 });
+      // Switched off, the call speaks its own Polly voice, not the vendor's stand-in.
+      expect(polly.calls.at(-1)?.voiceId).not.toBe(STOCK_FALLBACK);
       expect(await lastAudit('speech.synthesized')).not.toMatchObject({ engine: 'vendor' });
       // The call config no longer names an AI vendor voice, and a new call does not warm it.
       expect(CallConfigResponse.parse(await core.veir.callConfig(maya, quietquad())).voice).toBeUndefined();
@@ -336,7 +349,7 @@ describe('the stock vendor voice (an "AI voice")', () => {
       provider: eleven,
       twinVoice: null,
       verified: true,
-      stockVoice: { provider: eleven, voiceRef: STOCK_ID },
+      stockVoice: { provider: eleven, voiceRef: STOCK_ID, fallbackVoiceId: STOCK_FALLBACK },
     };
     expect(chooseVoice({ ...base, crisis: true })).toEqual({ kind: 'polly', voiceId: 'Danielle' });
     expect(chooseVoice({ ...base, crisis: false })).toMatchObject({ kind: 'vendor', ref: STOCK_ID });

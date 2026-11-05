@@ -63,12 +63,13 @@
     },
     "voice": {
       "provider": "elevenlabs-stock",
-      "voiceId": "OZ0L6eISlOejga3XjDFt",
+      "voiceId": "AaOhDHYJ1XLZk74lXhdE",
       "model": "eleven_flash_v2_5",
       "fallback": "polly",
+      "fallbackVoiceId": "Matthew",
       "zeroRetention": false
     },
-    "note": "The vEIR's face and voice. Face: HeyGen's stock avatar in its stock voice (FULL), in the vendor sandbox, platform admins only (docs/runbooks/avatars.md section 9). Voice: every call speaks with the ElevenLabs stock voice voiceId (a library voice, labelled AI voice; docs/runbooks/elevenlabs-voice.md says why this one and how to change it), model eleven_flash_v2_5, and Amazon Polly says any unit ElevenLabs fails on (fallback polly; speech.enabled must stay true). The key is the GitHub secret ELEVENLABS_API, copied to foundry-ascent/media/elevenlabs by the Ops - sync ElevenLabs key workflow after the first deploy of this setting (until then every unit is Polly). provider elevenlabs-stock also voices an EIR's consented clone once cloned voices are on in Admin > Settings; provider polly turns ElevenLabs off. To give an EIR their own face (LITE): face.mode lite, face.audience everyone, no face.stock, then switch faces on in Admin > Settings and mark the EIR's face ready in the studio. The API role can read only the secrets of the vendors set here."
+    "note": "The vEIR's face and voice. Face: HeyGen's stock avatar in its stock voice (FULL), in the vendor sandbox, platform admins only (docs/runbooks/avatars.md section 9). Voice: every call speaks with the ElevenLabs stock voice voiceId (Caleb, an ElevenLabs-made male library voice to match the male stock avatar, labelled AI voice; docs/runbooks/elevenlabs-voice.md says why this one and how to change it), model eleven_flash_v2_5, and Amazon Polly says any unit ElevenLabs fails on in fallbackVoiceId, a male Polly voice so a failure never switches gender (fallback polly; speech.enabled must stay true). The key is the GitHub secret ELEVENLABS_API, copied to foundry-ascent/media/elevenlabs by the Ops - sync ElevenLabs key workflow after the first deploy of this setting (until then every unit is Polly). provider elevenlabs-stock also voices an EIR's consented clone once cloned voices are on in Admin > Settings; provider polly turns ElevenLabs off. To give an EIR their own face (LITE): face.mode lite, face.audience everyone, no face.stock, then switch faces on in Admin > Settings and mark the EIR's face ready in the studio. The API role can read only the secrets of the vendors set here."
   },
   "logRetentionDays": 30
 }

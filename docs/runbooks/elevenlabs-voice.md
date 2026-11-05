@@ -6,14 +6,14 @@ voice"}`; the admin usage page lists it as "ElevenLabs · eleven_flash_v2_5", ro
 presented as the EIR's own voice. An EIR's consented clone (see [the face and voice runbook](avatars.md)) still
 replaces it on calls where cloned voices are on and the EIR's voice is ready under voice consent.
 
-Amazon Polly stays wired as the **fallback**. The founder's voice still goes only to Amazon Transcribe; ElevenLabs
+Amazon Polly stays wired as the **fallback**, in a voice of the stock voice's gender (`Matthew`). The founder's voice still goes only to Amazon Transcribe; ElevenLabs
 receives only the vEIR's validated words (and, as prosody context, the validated words of the units around them).
 
 ## 1. What runs where
 
 | Piece   | What it does                                                                                                                                                                                                                                                | Code                                                     |
 | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Config  | `media.voice.provider: "elevenlabs-stock"`, `voiceId`, `model: "eleven_flash_v2_5"`, `fallback: "polly"`                                                                                                                                                    | `infra/cdk/config/production.json`                       |
+| Config  | `media.voice.provider: "elevenlabs-stock"`, `voiceId`, `model: "eleven_flash_v2_5"`, `fallback: "polly"`, `fallbackVoiceId: "Matthew"`                                                                                                                      | `infra/cdk/config/production.json`                       |
 | Key     | Secrets Manager `foundry-ascent/media/elevenlabs` (`{"apiKey": "…"}`), read by the API on first use, cached 5 min                                                                                                                                           | `apps/api/src/adapters/media-secrets.ts`                 |
 | Adapter | `POST /v1/text-to-speech/{voiceId}/stream`, one request per validated unit, `pcm_24000` (or `mp3_44100_64` for an older page), `previous_text` / `next_text`, `language_code: "en"`, a 2 s first-audio deadline, a prewarm (`GET /v1/models`) at call start | `apps/api/src/adapters/elevenlabs-voice.ts`              |
 | Core    | Chooses the voice (crisis line: always Polly; a ready clone; else the stock voice), writes numbers, symbols and addresses out as words (`speechText`), meters, falls back, rests a failing vendor 60 s                                                      | `packages/core/src/services/speech.ts`, `speech-text.ts` |
@@ -44,26 +44,53 @@ scoped to "Text to Speech" (plus "User: read" for **check**) is enough; it does 
 
 ## 3. The voice, and how to change it
 
-**Chosen: "Talia – soft, warm guide", voice id `OZ0L6eISlOejga3XjDFt`.** Why:
+**Chosen (2026-11-05): "Caleb – Trusted Guide", voice id `AaOhDHYJ1XLZk74lXhdE`**, with Amazon Polly **`Matthew`**
+(neural) as its fallback (`media.voice.fallbackVoiceId`). It replaced "Talia – Warm Soft Guide"
+(`OZ0L6eISlOejga3XjDFt`, female) when the owner chose a male stock avatar for the live face, HeyGen LiveAvatar
+"Thomas (Friendly)" ([the face and voice runbook §10](avatars.md#10-the-chosen-stock-avatar-thomas-friendly)): a
+man in his mid-30s to 40s, warm, relaxed and approachable. The voice has to match that face. Why Caleb:
 
-- ElevenLabs' old _default_ (formerly premade) voices stop working on **2026-12-31** and do not exist on accounts made
-  after March 2026, so none of them can be pinned. ElevenLabs publishes a table of current Voice Library voices that
-  replace them ("What are default voices?", help center, read 2026-11-05); Talia is the listed replacement for Sarah.
-  A voice from that table is current, maintained by ElevenLabs as a default substitute, and usable over the API on
-  any paid plan.
-- A warm, unhurried guide's register suits a coach, and it is a female voice like the platform's Polly voice
-  (`Danielle`), so a unit that falls back to Polly does not switch the vEIR's gender mid-sentence.
-- It was chosen from the published description, not auditioned with our text (the key cannot be used locally).
-  Listen to it in the first live call (section 5); the other listed candidates that fit a coach are "Caleb – trusted
-  guide" `AaOhDHYJ1XLZk74lXhdE`, "Eddie – natural, helpful" `l7kNoIfnJKPg7779LI2t` and "Elara – crisp, professional
-  narrator" `WQP7cQUF5aAS6Axh5yaa`.
+- **Current, and not retiring.** ElevenLabs' old _default_ (formerly premade) voices stop working on **2026-12-31**
+  and do not exist on accounts made after March 2026, so none of them can be pinned. ElevenLabs' help centre lists
+  the Voice Library voices that replace them ("What are Default voices?",
+  https://elevenlabs.io/docs/help-center/product/voices/my-voices/what-are-default-voices, read 2026-11-05: "new
+  voices that you will be able to use forever"). Caleb is the listed replacement for Chris.
+- **Made by ElevenLabs.** Its preview audio is published from the same ElevenLabs workspace as every voice in that
+  replacement table (Talia's included), not by a community voice owner who could stop sharing it (the notice-period
+  risk of a community voice); still check `disable_at_unix` below. Custom rates (credit multipliers) are a legacy feature that newly shared
+  voices cannot have ("What are custom rates and credit multipliers?", help centre, read 2026-11-05).
+- **The register.** The name ElevenLabs gives it, "Trusted Guide", is the role the vEIR plays in a one-to-one call.
+  The voice's own description is shown only to signed-in Voice Library users; third-party API voice lists reproduce it
+  (WaveSpeed's ElevenLabs voice list, https://wavespeed.ai/docs/docs-api/elevenlabs/elevenlabs-voice-id, read
+  2026-11-05) as "Down-to-earth with a slight smile in the tone. It's a grounded, mid-range voice" for "slice of
+  life" stories and relatable messaging. That is warm, calm and conversational: a mentor talking, not a narrator, an
+  announcer or an ad read. American English: Chris, the default it replaces, is listed as a middle-aged, casual American male voice for
+  conversation.
+- **The others considered** (all from the same table, male): "Darian – Warm Grounded Storyteller"
+  `gOupLcAkjEnguROwi4oS` (a baritone for storytelling and brand reads: a narrator), "Wyatt – Seasoned Mentor"
+  `FrS6cKLB1wg4WYgPa9GW` (middle-aged, deep, for long-form documentaries: older and a narrator), "Eddie – Natural and
+  Helpful" `l7kNoIfnJKPg7779LI2t` (a young tenor for IVR and tutorials: too young, an assistant rather than a
+  mentor) and "Warren – Effortless and Cool" `7QN34D2r3hCNwbOYIeK0` (young, laid back). Darian is the first to try if
+  Caleb does not suit.
+- **Plan and model.** Library voices work over the API on any paid plan; **Starter** or above also gives the
+  commercial licence (the free plan has neither: Voice Library,
+  https://elevenlabs.io/docs/eleven-creative/voices/voice-library, and "Can I publish the content I generate on the
+  platform?", help centre, both read 2026-11-05). The voice is used with `eleven_flash_v2_5`, like Talia: the same
+  kind of voice on the same model.
+- **The fallback is male too.** A unit ElevenLabs fails on (or any unit while it rests) is said by Polly `Matthew`,
+  whatever the call's own Polly voice, so a failure never switches the vEIR to a woman's voice mid-reply. Polly's
+  `Stephen` (neural and generative) is the other adult US-English male voice with both engines.
+- It was chosen from ElevenLabs' published name and description, not auditioned with our text (the key is only in
+  GitHub). Listen to it in the first live call (section 5).
 
 Before keeping (or changing to) a library voice, check it at ElevenLabs (Voice Library, or `GET /v1/voices/{id}` with
 the key): it is shared for API use, `disable_at_unix` is empty (no notice period running), and it carries no credit
 multiplier. A voice made with Voice Design in the account itself has none of these risks.
 
 To change it: edit `media.voice.voiceId` in `infra/cdk/config/production.json` (letters and digits, as ElevenLabs shows
-the id), open a PR, merge, let Deploy finish. No code changes. To change the model, edit `media.voice.model`
+the id) and, if the new voice is of the other gender, `media.voice.fallbackVoiceId` (a voice of
+`packages/core/speech-voices.json`: `Matthew` or `Stephen` for a male voice, `Danielle` or `Ruth` for a female one),
+open a PR, merge, let Deploy finish. No code changes. To change the model, edit `media.voice.model`
 (`eleven_flash_v2_5` is the lowest-latency multilingual model; `eleven_flash_v2` is English-only; v3/v4 models are not
 for this HTTP path).
 
@@ -83,7 +110,7 @@ for this HTTP path).
   (`packages/core/media-vendors.json`), billed when the synthesis started, whether or not playback finished (as for
   Polly). Reconcile monthly with ElevenLabs' usage page; more than 10% apart needs a look.
 - **Fallback (60 s rest):** a vendor error, a missing key or no first audio within 2 s is not the end of the unit:
-  Polly says the same words in the same response and the same reservation (one ledger row, Polly's; the unit is never
+  Polly (`fallbackVoiceId`, `Matthew`) says the same words in the same response and the same reservation (one ledger row, Polly's; the unit is never
   said twice), and the vendor rests for 60 s in that container (its next units go straight to Polly). A stream that
   breaks after its first audio cannot be spliced: the unit ends where the audio stopped, and the vendor rests the same
   way. The audit marks a fallen-back unit `fallback: true`; `speech.timing` logs `voice`, `fallback` and `pcm`.

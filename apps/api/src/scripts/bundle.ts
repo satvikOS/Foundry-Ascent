@@ -108,7 +108,8 @@ export const FAKE_ENV_VALUES: Readonly<Record<string, string>> = {
   MEDIA_VOICE_PROVIDER: 'elevenlabs-stock',
   MEDIA_VOICE_MODEL: 'eleven_flash_v2_5',
   MEDIA_VOICE_ZERO_RETENTION: 'false',
-  MEDIA_VOICE_ID: 'OZ0L6eISlOejga3XjDFt',
+  MEDIA_VOICE_ID: 'AaOhDHYJ1XLZk74lXhdE',
+  MEDIA_VOICE_FALLBACK_VOICE_ID: 'Matthew',
 };
 
 /**
