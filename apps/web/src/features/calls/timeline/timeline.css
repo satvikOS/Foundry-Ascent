@@ -1,13 +1,9 @@
 /*
  * The conversation timeline (ConversationTimeline.tsx). Sizes from the owner's reference (design-spec §2.2, §10.2):
  * a 56 px bar (48 px on phones) with 4 px padding and a 10 px radius; the segments and bars are drawn on the canvas.
+ * Colours are the `--tl-*` tokens of globals.css only (the canvas resolves them at draw time).
  */
 .fa-timeline {
-  --tl-ground: light-dark(#ededea, #1f1f1f);
-  --tl-veir: light-dark(#d5dcf5, #303d71);
-  --tl-student: light-dark(#d8e6cf, #344b2a);
-  --tl-veir-ink: light-dark(#22306b, #ffffff);
-  --tl-student-ink: light-dark(#2c4520, #ffffff);
   display: grid;
   gap: 0.5rem;
   width: 100%;
@@ -38,8 +34,8 @@
   display: block;
   width: 100%;
   height: 100%;
-  /* Read by the draw pass to pick the palette: white in dark, black in light. */
-  color: light-dark(rgb(0 0 0), rgb(255 255 255));
+  /* The draw pass reads the tokens through this element's colour: keep them as declared in forced colours too. */
+  forced-color-adjust: none;
 }
 
 .fa-timeline__overlay {
@@ -98,12 +94,12 @@
 
 .fa-timeline__legend span[data-speaker='veir'] {
   background: var(--tl-veir);
-  box-shadow: inset 0 0 0 1px var(--tl-veir-ink);
+  box-shadow: inset 0 0 0 1px var(--tl-bar-veir);
 }
 
 .fa-timeline__legend span[data-speaker='student'] {
   background: var(--tl-student);
-  box-shadow: inset 0 0 0 1px var(--tl-student-ink);
+  box-shadow: inset 0 0 0 1px var(--tl-bar-student);
 }
 
 .fa-timeline__whole {

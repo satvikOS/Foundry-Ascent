@@ -361,6 +361,26 @@ describe('colour tokens (globals.css)', () => {
         expect(worst).toBeLessThan(4.5);
       });
 
+      it('popovers over the call screen are solid: their text holds 4.5:1 over the captions beneath', () => {
+        // The call settings open over the sphere and the 22 px captions (call-settings-*-mobile-*.png). A caption
+        // line passes beneath as a solid block of --foreground, so no credit is given for the blur.
+        expect(css).toMatch(
+          /:root:has\(\[data-slot='call-screen'\]\) \[data-slot='popover-content'\] \{\s*background-color: var\(--popover\);\s*-webkit-backdrop-filter: none;\s*backdrop-filter: none;/,
+        );
+        const face = resolve('--popover', scheme);
+        const pairs = TEXT_TOKENS.map((text) => ({
+          label: `${text} on the solid call popover (--popover)`,
+          fg: resolve(text, scheme),
+          bg: face,
+        }));
+        expect(failures(pairs, 4.5)).toEqual([]);
+        // The ordinary popover glass would not hold over a caption in dark: that is why the call's are solid.
+        if (scheme === 'dark') {
+          const glass = over(resolve('--glass-bg-strong', scheme), resolve('--foreground', scheme));
+          expect(contrast(resolve('--muted-foreground', scheme), glass)).toBeLessThan(4.5);
+        }
+      });
+
       it('text on filled controls reaches 4.5:1', () => {
         const pairs = FILLED_PAIRS.map(([text, fill]) => ({
           label: `${text} on ${fill}`,

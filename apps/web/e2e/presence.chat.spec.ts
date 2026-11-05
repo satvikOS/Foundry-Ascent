@@ -154,7 +154,8 @@ test.describe('meeting the vEIR', () => {
       );
       await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeVisible({ timeout: 20_000 });
       await screen.getByRole('button', { name: 'End call' }).click();
-      await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
+      // After its Undo window the call ends, and its review closes the conversation.
+      await expect(page.getByRole('region', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
       expect(await welcomeAcknowledgedAt(page)).not.toBeNull();
     } finally {
       for (const id of calls) {

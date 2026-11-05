@@ -1,7 +1,7 @@
 import type { SessionView } from '@foundry/contracts';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { ChevronDown, EyeOff, X } from 'lucide-react';
+import { ChevronDown, EyeOff } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -19,12 +19,10 @@ import { cn } from '@/lib/utils';
 
 import { newConversationRequest } from '../chat/first-message';
 import { startPrivacy, takeChoiceInView, useStartPrivacy } from '../chat/privacy-choice';
-import { useLoadedCall } from './call-context';
+import { focusReviewNext, useLoadedCall } from './call-context';
 import { CallLive } from './call-live';
 import { callBlocker, CallLobby } from './call-lobby';
-import { CallSummaryPanel } from './call-summary';
 import { useCallNotice } from './call-notice';
-import { callTimeline } from './timeline/call-timeline';
 import { inlineWelcome, useVeirWelcome } from '../veir/welcome';
 import { storedTalkMode } from './preferences';
 import { formatClock, spokenDuration, useCallClock } from './use-call-clock';
@@ -94,9 +92,10 @@ function useLiveCallPage(engine: CallEngine, live: boolean): void {
 }
 
 /**
- * The call screen: a focused, full-height surface over the conversation, open while the URL carries
- * `?call=1`. It starts the call (creating the conversation first on New chat), shows it live, and ends
- * with the summary. Closing it keeps a live call going in the mini call bar.
+ * The call screen: one voice surface over the conversation, open while the URL carries `?call=1` (design-spec
+ * §11). Before the call it is the sphere idle with Start call in the microphone's place (creating the conversation
+ * first on New chat); then the call itself. When the call ends the screen closes onto the conversation, where its
+ * review closes the transcript. Minimizing keeps a live call going in the mini call bar.
  */
 export function CallScreen() {
   const { me, engine, face, snapshot, route, hideCall, switchToChat, arrivedByHistory } = useLoadedCall();
@@ -310,14 +309,26 @@ export function CallScreen() {
     welcomeHere,
   ]);
 
-  const live = snapshot.phase === 'starting' || snapshot.phase === 'live' || snapshot.phase === 'ending';
-  const ended = snapshot.phase === 'ended' ? snapshot.ended : null;
+  // A call that ends on this screen returns to its conversation, where the review is (focus moves to it). Opened
+  // over a call that ended earlier (Call again, the composer's Call), that call is forgotten and a new one starts.
+  const lastPhase = useRef(snapshot.phase);
+  /** The screen closed because the call ended on it: focus goes to the review, not back to the Call button. */
+  const endedHere = useRef(false);
+  useEffect(() => {
+    const was = lastPhase.current;
+    lastPhase.current = snapshot.phase;
+    if (!open || snapshot.phase !== 'ended') return;
+    if (was === 'ending' || was === 'live' || was === 'starting') {
+      endedHere.current = true;
+      focusReviewNext();
+      hideCall({ replace: true });
+    } else {
+      engine.reset();
+    }
+  }, [engine, hideCall, open, snapshot.phase]);
 
-  /** Leaves a call screen that has no live call; its `?call=1` entry is replaced, so Back never returns to it. */
-  const backToConversation = () => {
-    hideCall({ replace: true });
-    engine.reset();
-  };
+  const live = snapshot.phase === 'starting' || snapshot.phase === 'live' || snapshot.phase === 'ending';
+  const ended = snapshot.phase === 'ended';
 
   return (
     <DialogPrimitive.Root
@@ -331,14 +342,19 @@ export function CallScreen() {
           data-slot="call-screen"
           aria-describedby={undefined}
           onOpenAutoFocus={(event) => {
-            // Each state focuses its own primary control (Mute, Start call, the summary heading).
+            // Each state focuses its own primary control (the vEIR's name, Start call).
+            event.preventDefault();
+          }}
+          onCloseAutoFocus={(event) => {
+            if (!endedHere.current) return;
+            // The review in the conversation has taken focus.
+            endedHere.current = false;
             event.preventDefault();
           }}
           onEscapeKeyDown={(event) => {
             event.preventDefault();
             if (snapshot.phase === 'live' && snapshot.activity === 'speaking') engine.interrupt();
-            else if (ended) backToConversation();
-            else hideCall();
+            else hideCall({ replace: !live });
           }}
           className={cn(
             'fixed inset-0 z-50 flex flex-col overflow-y-auto bg-background text-foreground outline-none',
@@ -350,39 +366,17 @@ export function CallScreen() {
             live={live}
             snapshot={snapshot}
             isPrivate={privacy === 'ephemeral'}
-            onClose={
-              live
-                ? () => {
-                    // Minimized: the call goes on in the mini bar, and Back returns to it.
-                    hideCall();
-                  }
-                : ended
-                  ? backToConversation
-                  : () => {
-                      hideCall({ replace: true });
-                    }
-            }
+            onClose={() => {
+              // Live: minimized, the call goes on in the mini bar and Back returns to it. Before the call: closed,
+              // and its `?call=1` entry is replaced so Back never returns to it.
+              if (live) hideCall();
+              else {
+                if (snapshot.phase === 'failed') engine.reset();
+                hideCall({ replace: true });
+              }
+            }}
           />
-          {ended && ventureId ? (
-            <div className="flex flex-1 flex-col">
-              <CallSummaryPanel
-                tenant={tenant}
-                ventureId={ventureId}
-                veir={veir}
-                ended={ended}
-                canWrite={writable}
-                privacy={privacy}
-                onBackToConversation={backToConversation}
-                onCallAgain={() => {
-                  begin();
-                }}
-                onLeave={() => {
-                  engine.reset();
-                }}
-                timeline={callTimeline(engine).recorder}
-              />
-            </div>
-          ) : live ? (
+          {ended ? null : live ? (
             <CallLive
               tenant={tenant}
               engine={engine}
@@ -443,15 +437,16 @@ function CallHeader({
   const clock = useCallClock(snapshot);
   return (
     <header className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-3 sm:px-5">
+      {/* Always a chevron back to the conversation: X on this screen only ever means End (bottom right). */}
       <SimpleTooltip content={live ? 'Minimize — the call keeps going' : 'Close'} side="bottom">
         <Button
           variant="ghost"
           size="icon"
           onClick={onClose}
           aria-label={live ? 'Minimize call' : 'Close'}
-          className="justify-self-start text-muted-foreground hover:text-foreground"
+          className="fa-call-focus justify-self-start text-muted-foreground hover:text-foreground"
         >
-          {live ? <ChevronDown aria-hidden className="size-5" /> : <X aria-hidden className="size-5" />}
+          <ChevronDown aria-hidden className="size-5" />
         </Button>
       </SimpleTooltip>
       {live && snapshot.liveAt !== null ? (

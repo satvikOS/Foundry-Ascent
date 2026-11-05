@@ -80,6 +80,8 @@ interface CallLiveProps {
 
 /** How long a turn picked on the timeline stays in place of the live captions. */
 const REVIEW_MS = 8_000;
+/** How long "Call ended · Undo" waits before the call really ends (design-spec §10.1: no confirm dialog). */
+export const END_UNDO_MS = 3_000;
 
 /**
  * The call in progress, laid out like the owner's reference: the vEIR's presence (the voice sphere by default)
@@ -102,6 +104,9 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
   const pushToTalk = snapshot.talkMode === 'push_to_talk';
   const typeRef = useRef<HTMLInputElement | null>(null);
   const nameRef = useRef<HTMLHeadingElement | null>(null);
+  const endRef = useRef<HTMLButtonElement | null>(null);
+  const undoRef = useRef<HTMLButtonElement | null>(null);
+  const ending = useEndWithUndo(engine, snapshot);
   const timeline = callTimeline(engine).recorder;
   const hasTurns = useSyncExternalStore(
     timeline.subscribe,
@@ -162,13 +167,13 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
         else typeRef.current?.focus();
       },
     },
-    live,
+    live && !ending.pending,
   );
 
   // Hold Space anywhere on the call screen to talk (push-to-talk), unless a control has focus. Space released
   // in another app or tab never reaches the page, so leaving the window or hiding the page lets go too.
   useEffect(() => {
-    if (!live || !pushToTalk || !voice) return undefined;
+    if (!live || !pushToTalk || !voice || ending.pending) return undefined;
     const down = (event: KeyboardEvent) => {
       if (event.code !== 'Space' || event.repeat || isInteractive(event.target)) return;
       event.preventDefault();
@@ -195,10 +200,16 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
       window.removeEventListener('blur', letGo);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [engine, live, pushToTalk, voice]);
+  }, [engine, live, pushToTalk, voice, ending.pending]);
 
-  const status = callStatusLabel(snapshot);
+  // "Call ended · Undo": Undo takes focus while it is offered, and gives it back to End once used.
+  useEffect(() => {
+    if (ending.pending) undoRef.current?.focus();
+  }, [ending.pending]);
+
+  const status = ending.pending ? 'Call ended' : callStatusLabel(snapshot);
   const speaking =
+    !ending.pending &&
     live &&
     snapshot.activity === 'speaking' &&
     snapshot.voice !== 'captions' &&
@@ -219,18 +230,20 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
       <div className="absolute top-1.5 right-2 z-10 sm:right-4">
         <CallSettings
           name={veir.name}
-          voice={voice}
           captions={captions}
-          pushToTalk={pushToTalk}
-          typing={typingOpen}
-          disabled={!live}
-          video={video}
           onCaptions={() => {
             setCaptions(!captions);
           }}
+          pushToTalk={pushToTalk}
           onPushToTalk={toggleTalkMode}
-          onTyping={toggleTyping}
-          onSwitchToChat={onSwitchToChat}
+          live={{
+            voice,
+            typing: typingOpen,
+            disabled: !live || ending.pending,
+            video,
+            onTyping: toggleTyping,
+            onSwitchToChat,
+          }}
         />
       </div>
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-4 sm:gap-5">
@@ -240,7 +253,7 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
           <CallStage
             veir={veir}
             engine={engine}
-            state={sphereState(snapshot, engine.avatarState())}
+            state={ending.pending ? 'ended' : sphereState(snapshot, engine.avatarState())}
             nameTag={<CallNameTag veir={veir} speaking={speaking} headingRef={nameRef} />}
             ventureId={snapshot.ventureId}
             callId={live ? (snapshot.call?.id ?? null) : null}
@@ -274,7 +287,7 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
             ) : null}
           </p>
         </div>
-        {live && snapshot.audioBlocked ? (
+        {ending.pending ? null : live && snapshot.audioBlocked ? (
           // Beside "Sound is off": short on screen, the whole action in its name.
           <Button
             size="lg"
@@ -360,7 +373,7 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
             name={veir.name}
             hint={snapshot.typedReason ? TYPED_REASONS[snapshot.typedReason] : null}
             queued={snapshot.queued}
-            disabled={!live}
+            disabled={!live || ending.pending}
             onSend={(text) => {
               engine.sendText(text);
             }}
@@ -373,7 +386,7 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
             }
           />
         ) : null}
-        {voice && pushToTalk && live ? (
+        {voice && pushToTalk && live && !ending.pending ? (
           <HoldToTalk
             talking={snapshot.talking}
             onChange={(pressed) => {
@@ -389,17 +402,113 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
             className="max-w-[45rem]"
           />
         ) : null}
+        {ending.pending ? (
+          <EndUndo
+            undoRef={undoRef}
+            onUndo={() => {
+              ending.undo();
+              endRef.current?.focus();
+            }}
+          />
+        ) : null}
         <CallDock
           name={veir.name}
           voice={voice}
           muted={snapshot.muted}
-          disabled={!live}
+          disabled={!live || ending.pending}
+          endRef={endRef}
           onMute={toggleMute}
-          onEnd={() => {
-            void engine.end('user');
-          }}
+          onEnd={ending.request}
         />
       </div>
+    </div>
+  );
+}
+
+/**
+ * End with a short undo (design-spec §10.1): a single press of End silences the call at once (the microphone is
+ * muted and a reply in progress stops) and ends it after `END_UNDO_MS` unless Undo is pressed; a second press ends
+ * it now. Leaving the screen meanwhile (minimizing, Escape) ends it at once: the founder asked to end. A call that
+ * is still connecting ends at once (there is nothing to undo).
+ */
+export function useEndWithUndo(
+  engine: CallEngine,
+  snapshot: CallSnapshot,
+  delayMs: number = END_UNDO_MS,
+): { pending: boolean; request: () => void; undo: () => void } {
+  const [pending, setPending] = useState<{ wasMuted: boolean } | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clear = () => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  const commit = useCallback(() => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+    setPending(null);
+    void engine.end('user');
+  }, [engine]);
+
+  // Unmounted while ending (minimized, closed): end now.
+  useEffect(
+    () => () => {
+      if (timer.current === null) return;
+      clearTimeout(timer.current);
+      timer.current = null;
+      void engine.end('user');
+    },
+    [engine],
+  );
+  // Ended some other way meanwhile (its time ran out, the program paused calls): nothing left to undo.
+  useEffect(() => {
+    if (snapshot.phase === 'live' || timer.current === null) return;
+    clearTimeout(timer.current);
+    timer.current = null;
+    setPending(null);
+  }, [snapshot.phase]);
+
+  const request = () => {
+    if (snapshot.phase !== 'live' || pending) {
+      commit();
+      return;
+    }
+    const wasMuted = snapshot.muted;
+    if (snapshot.activity === 'speaking') engine.interrupt();
+    if (snapshot.input === 'voice' && !wasMuted) engine.setMuted(true);
+    setPending({ wasMuted });
+    clear();
+    timer.current = setTimeout(commit, delayMs);
+  };
+  const undo = () => {
+    if (!pending) return;
+    clear();
+    if (snapshot.input === 'voice' && !pending.wasMuted) engine.setMuted(false);
+    setPending(null);
+  };
+  return { pending: pending !== null, request, undo };
+}
+
+/** "Call ended · Undo": the short window in which End can be taken back, in the call screen itself. */
+function EndUndo({ undoRef, onUndo }: { undoRef: RefObject<HTMLButtonElement | null>; onUndo: () => void }) {
+  return (
+    <div
+      role="group"
+      aria-label="Call ended"
+      data-slot="end-undo"
+      className="flex h-11 items-center gap-3 rounded-full border bg-popover pr-1.5 pl-4 text-small text-popover-foreground shadow-float"
+    >
+      <span aria-hidden>Call ended</span>
+      <span aria-hidden className="text-muted-foreground">
+        ·
+      </span>
+      <button
+        ref={undoRef}
+        type="button"
+        onClick={onUndo}
+        className="fa-call-focus inline-flex min-h-8 items-center rounded-full px-3 font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
+      >
+        Undo
+      </button>
     </div>
   );
 }

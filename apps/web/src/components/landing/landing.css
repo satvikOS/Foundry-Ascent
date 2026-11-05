@@ -1,43 +1,16 @@
 /*
  * The public landing page (routes/index.tsx and components/landing): its own scale, rhythm and art, scoped to
- * .landing so nothing here reaches the app. Colours are declared once with light-dark(), like globals.css, and
- * follow the page's theme (OLED black / off-white). Grain is one 256 px noise tile (scripts/grain-tile.mjs) over
- * art fields only, never behind body text or app UI, and never animated.
+ * .landing so nothing here reaches the app. Colours are the app's tokens (globals.css, declared once with
+ * light-dark()) and follow the page's theme (OLED black / off-white). Grain is one 256 px noise tile
+ * (scripts/grain-tile.mjs) over art fields only, never behind body text or app UI, and never animated.
  */
 @layer components {
   .landing {
-    /* Grounds and lines (landing only). */
-    --band-warm: light-dark(#f3f2ef, #0b0b0a);
-    --band-ink: #0e0f12;
-    --border-card: light-dark(#dedbd4, rgb(255 255 255 / 0.1));
-    --surface-2: light-dark(#f4f4f2, #111111);
-    --accent-rule: linear-gradient(90deg, #5c79f5, #8fb3f2 55%, #7fa37a);
-
-    /* The voice palette (sampled from the owner's sphere) and the timeline's speaker colours. */
-    --orb-sky: #eaf7fd;
-    --orb-cream: #fdfef1;
-    --orb-mist: #abcff5;
-    --orb-deep: #5c79f5;
-    --moss: #344b2a;
-    --moss-light: #7fa37a;
-    --tl-ground: light-dark(#ededea, #1f1f1f);
-    --tl-dots: light-dark(#bdbdb8, #3d3d3d);
-    --tl-veir: light-dark(#d5dcf5, #303d71);
-    --tl-student: light-dark(#d8e6cf, #344b2a);
-    --tl-bar-veir: light-dark(#22306b, #ffffff);
-    --tl-bar-student: light-dark(#2c4520, #ffffff);
-
-    --shadow-float:
-      inset 0 1px 0 0 var(--highlight), 0 0 0 1px light-dark(rgb(17 17 16 / 0.06), rgb(255 255 255 / 0.06)),
-      0 16px 48px -12px light-dark(rgb(17 17 16 / 0.16), rgb(0 0 0 / 0.7));
-
     /* Rhythm: 16 / 24 / 40 px gutters, sections clamp(64px, 10vw, 144px), content at most 1360 px. */
     --gutter: 1rem;
     --section-y: clamp(4rem, 10vw, 9rem);
     --content-max: 85rem;
     --nav-height: 4rem;
-    --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
-    --dur-reveal: 560ms;
 
     background: var(--background);
     color: var(--foreground);
@@ -486,18 +459,6 @@
     --from: light-dark(#dcdff2, #12162b);
     --to: light-dark(#e4eef7, #0a0c12);
     background: linear-gradient(165deg, var(--from) 0%, var(--to) 100%);
-  }
-
-  /* --- Principles: cards whose bottom-right corner is notched for the arrow ------------------------------- */
-  .l-notch {
-    clip-path: polygon(
-      0 0,
-      100% 0,
-      100% calc(100% - 4.5rem),
-      calc(100% - 4.5rem) calc(100% - 4.5rem),
-      calc(100% - 6rem) 100%,
-      0 100%
-    );
   }
 
   /* --- Reveals: once, 16 px, 560 ms, staggered; never above the fold; final state under reduced motion -------- */

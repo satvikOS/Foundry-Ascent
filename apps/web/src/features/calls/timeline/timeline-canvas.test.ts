@@ -1,14 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import envelopes from '@/components/landing/device-ad/envelopes.json';
+
 import {
+  BAR_CAP,
+  BAR_FLOOR,
   barHeight,
+  barReference,
   barsFor,
   drawTimeline,
   layoutTimeline,
+  MIN_REFERENCE,
+  resolveTimelinePalette,
   SEGMENT_MIN_PX,
-  TIMELINE_PALETTES,
+  type TimelinePalette,
 } from './timeline-canvas';
 import type { TimelineTurn } from './timeline-model';
+
+const PALETTE: TimelinePalette = {
+  dots: 'rgb(61, 61, 61)',
+  segment: { veir: 'rgb(48, 61, 113)', student: 'rgb(52, 75, 42)' },
+  bar: { veir: 'rgb(255, 255, 255)', student: 'rgb(255, 255, 255)' },
+};
 
 function turn(
   speaker: 'veir' | 'student',
@@ -17,19 +30,6 @@ function turn(
   bins: number[] = [],
 ): TimelineTurn {
   return { id: `${speaker}-${String(startMs)}`, speaker, startMs, endMs, bins, text: '' };
-}
-
-/** WCAG relative luminance contrast of two #rrggbb colours. */
-function contrast(a: string, b: string): number {
-  const luminance = (hex: string) => {
-    const [r, g, bl] = [1, 3, 5].map((i) => {
-      const c = Number.parseInt(hex.slice(i, i + 2), 16) / 255;
-      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-    });
-    return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (bl ?? 0);
-  };
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-  return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05);
 }
 
 describe('layoutTimeline', () => {
@@ -77,19 +77,60 @@ describe('bars', () => {
     expect(barsFor([], 100)).toEqual([]);
   });
 
-  it('uses the sphere’s perceptual curve, capped at 62 % of the segment and never under 2 px', () => {
-    expect(barHeight(0, 48)).toBe(2);
-    expect(barHeight(1, 48)).toBeCloseTo(48 * 0.62, 5);
-    expect(barHeight(0.01, 48)).toBeCloseTo(Math.sqrt(0.06) * 48, 5);
+  it('scales a turn to its own loud syllables: silence is a dot, sound runs from 12 % to the 58 % cap', () => {
+    const reference = 0.2;
+    expect(barHeight(0, 48, reference)).toBe(2);
+    expect(barHeight(0.002, 48, reference)).toBe(2);
+    expect(barHeight(0.1, 48, reference)).toBeCloseTo((BAR_FLOOR + (BAR_CAP - BAR_FLOOR) * 0.5) * 48, 5);
+    expect(barHeight(0.2, 48, reference)).toBeCloseTo(BAR_CAP * 48, 5);
+    expect(barHeight(0.9, 48, reference)).toBeCloseTo(BAR_CAP * 48, 5);
+    expect(barHeight(Number.NaN, 48, reference)).toBe(2);
+  });
+
+  it('takes the reference from the turn’s 90th percentile, never under the quiet floor', () => {
+    const loud = Array.from({ length: 10 }, (_, i) => (i + 1) / 10);
+    expect(barReference(loud)).toBeCloseTo(0.9, 5);
+    expect(barReference([0.004, 0.005, 0.006])).toBe(MIN_REFERENCE);
+    expect(barReference([0, 0.001])).toBe(MIN_REFERENCE);
+  });
+
+  it('keeps real speech readable: the committed vEIR envelope rises and falls instead of pinning at the cap', () => {
+    // The device ad's vEIR line (10 Hz RMS of a synthetic voice), on phone- to desktop-width segments.
+    for (const width of [140, 280, 500]) {
+      const bars = barsFor(envelopes.veir, width);
+      const reference = barReference(bars);
+      const heights = bars.map((value) => barHeight(value, 48, reference));
+      const capped = heights.filter((h) => h >= BAR_CAP * 48 - 0.01).length;
+      const distinct = new Set(heights.map((h) => Math.round(h))).size;
+      expect(distinct, `distinct heights at ${String(width)} px`).toBeGreaterThanOrEqual(4);
+      expect(capped / heights.length, `share at the cap at ${String(width)} px`).toBeLessThan(0.3);
+      expect(Math.min(...heights)).toBeLessThan(0.3 * 48);
+    }
   });
 });
 
-describe('palettes', () => {
-  it('keeps every bar at least 3:1 against its segment in both themes', () => {
-    for (const palette of Object.values(TIMELINE_PALETTES)) {
-      for (const speaker of ['veir', 'student'] as const) {
-        expect(contrast(palette.bar[speaker], palette.segment[speaker])).toBeGreaterThanOrEqual(3);
-      }
+describe('resolveTimelinePalette', () => {
+  it('reads each --tl-* token through the probe’s computed colour, then clears it', () => {
+    const probe = document.createElement('span');
+    const seen: string[] = [];
+    const spy = vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => {
+      const { color, transitionProperty } = (element as HTMLElement).style;
+      // Read with transitions off: a colour mid-transition would read back as the old one.
+      expect(transitionProperty).toBe('none');
+      seen.push(color);
+      return { color: `resolved ${color}` } as CSSStyleDeclaration;
+    });
+    try {
+      expect(resolveTimelinePalette(probe)).toEqual({
+        dots: 'resolved var(--tl-dots)',
+        segment: { veir: 'resolved var(--tl-veir)', student: 'resolved var(--tl-student)' },
+        bar: { veir: 'resolved var(--tl-bar-veir)', student: 'resolved var(--tl-bar-student)' },
+      });
+      expect(seen).toHaveLength(5);
+      expect(probe.style.color).toBe('');
+      expect(probe.style.transitionProperty).toBe('');
+    } finally {
+      spy.mockRestore();
     }
   });
 });
@@ -128,7 +169,7 @@ describe('drawTimeline', () => {
       3_000,
       300,
     );
-    drawTimeline(ctx, layout, { width: 300, height: 48 }, TIMELINE_PALETTES.dark, true);
+    drawTimeline(ctx, layout, { width: 300, height: 48 }, PALETTE, true);
     // 50 dots at a 6 px pitch across 300 px.
     expect(raw.fillRect).toHaveBeenCalledTimes(50);
     // One segment (3 s of a 60 s span is 15 px, widened to the 20 px minimum) and its two bars.
@@ -138,7 +179,7 @@ describe('drawTimeline', () => {
   it('draws a flat midline instead of bars where no amplitude was measured', () => {
     const { ctx, raw } = context();
     const layout = layoutTimeline([turn('student', 0, 30_000)], 60_000, 300);
-    drawTimeline(ctx, layout, { width: 300, height: 48 }, TIMELINE_PALETTES.light, false);
+    drawTimeline(ctx, layout, { width: 300, height: 48 }, PALETTE, false);
     expect(raw.fill).toHaveBeenCalledTimes(1);
     expect(raw.fillRect).toHaveBeenLastCalledWith(5, 23, 140, 2);
   });

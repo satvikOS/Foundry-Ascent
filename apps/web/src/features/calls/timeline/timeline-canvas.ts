@@ -2,7 +2,7 @@ import { BIN_MS, turnEnd, type Speaker, type TimelineTurn } from './timeline-mod
 
 /**
  * Geometry and drawing of the conversation timeline (design-spec §10.2, measured from the owner's reference): rounded
- * speaker segments on a dotted midline, white bars on an 8 px pitch whose heights come from real amplitude.
+ * speaker segments on a dotted midline, bars on an 8 px pitch whose heights come from real amplitude, scaled per turn.
  */
 
 export const SEGMENT_MIN_PX = 20;
@@ -19,28 +19,53 @@ export const MIN_SPAN_MS = 60_000;
 /** A turn whose bins never reach this RMS had no audible sound: it draws as a midline, not bars. */
 export const AUDIBLE_BIN = 0.003;
 
+/** A bar never falls under this share of the segment while it is audible, nor rises above the cap. */
+export const BAR_FLOOR = 0.12;
+export const BAR_CAP = 0.58;
+/** Bars are scaled to this quantile of the turn's own audible bars (its loud syllables reach the cap). */
+export const BAR_REFERENCE_QUANTILE = 0.9;
+/** The smallest reference: a turn that stays this quiet draws short bars instead of being scaled up to full. */
+export const MIN_REFERENCE = 0.02;
+
+/**
+ * The colours the canvas draws with (the frame's ground is CSS). They are the `--tl-*` tokens of globals.css, resolved for the element's own
+ * colour scheme (`resolveTimelinePalette`), so the canvas, the legend and the contrast test share one source.
+ */
 export interface TimelinePalette {
-  readonly ground: string;
   readonly dots: string;
   readonly segment: Record<Speaker, string>;
   readonly bar: Record<Speaker, string>;
 }
 
-/** The speaker colours: green for the student, blue for the vEIR (matches the sphere). */
-export const TIMELINE_PALETTES: Record<'dark' | 'light', TimelinePalette> = {
-  dark: {
-    ground: '#1f1f1f',
-    dots: '#3d3d3d',
-    segment: { veir: '#303d71', student: '#344b2a' },
-    bar: { veir: '#ffffff', student: '#ffffff' },
-  },
-  light: {
-    ground: '#ededea',
-    dots: '#bdbdb8',
-    segment: { veir: '#d5dcf5', student: '#d8e6cf' },
-    bar: { veir: '#22306b', student: '#2c4520' },
-  },
-};
+/** The token behind each colour of the palette. */
+export const TIMELINE_TOKENS = {
+  dots: '--tl-dots',
+  segment: { veir: '--tl-veir', student: '--tl-student' },
+  bar: { veir: '--tl-bar-veir', student: '--tl-bar-student' },
+} as const;
+
+/**
+ * Resolves the palette at `probe` (an element inside the timeline): each token is set as the probe's colour and
+ * read back computed, which settles `light-dark()` for the probe's colour scheme (a fixed-scheme part of the page
+ * included). Call it when the theme may have changed, not per frame.
+ */
+export function resolveTimelinePalette(probe: HTMLElement): TimelinePalette {
+  // No transition on the probe: under reduced motion every element transitions (0.01 ms, globals.css), and a
+  // transitioning colour reads back as its old value.
+  probe.style.transitionProperty = 'none';
+  const read = (token: string) => {
+    probe.style.color = `var(${token})`;
+    return getComputedStyle(probe).color;
+  };
+  const palette = {
+    dots: read(TIMELINE_TOKENS.dots),
+    segment: { veir: read(TIMELINE_TOKENS.segment.veir), student: read(TIMELINE_TOKENS.segment.student) },
+    bar: { veir: read(TIMELINE_TOKENS.bar.veir), student: read(TIMELINE_TOKENS.bar.student) },
+  };
+  probe.style.removeProperty('color');
+  probe.style.removeProperty('transition-property');
+  return palette;
+}
 
 export interface SegmentBox {
   readonly turn: TimelineTurn;
@@ -86,10 +111,28 @@ export function layoutTimeline(
   return { segments, scrolling, pxPerMs };
 }
 
-/** A bar's height for a bin: the same perceptual curve as the sphere, at most 62 % of the segment. */
-export function barHeight(rms: number, segmentHeight: number): number {
-  const level = Number.isFinite(rms) && rms > 0 ? Math.min(0.62, Math.sqrt(rms * 6)) : 0;
-  return Math.max(2, level * segmentHeight);
+/**
+ * The level the bars of one turn are scaled to: the 90th percentile of its audible bars, so ordinary speech spreads
+ * over the bar's range instead of pinning at the cap (typical speech RMS is 0.05 to 0.2, which an absolute curve
+ * saturates), and only the loudest tenth reaches it. Never under `MIN_REFERENCE`: a quiet turn stays short.
+ */
+export function barReference(bars: readonly number[]): number {
+  const audible = bars
+    .filter((value) => Number.isFinite(value) && value >= AUDIBLE_BIN)
+    .sort((a, b) => a - b);
+  if (audible.length === 0) return MIN_REFERENCE;
+  const at = Math.min(audible.length - 1, Math.round(BAR_REFERENCE_QUANTILE * (audible.length - 1)));
+  return Math.max(MIN_REFERENCE, audible[at] ?? MIN_REFERENCE);
+}
+
+/**
+ * A bar's height: silence (under `AUDIBLE_BIN`) is a 2 px dot; sound rises linearly from 12 % of the segment to
+ * the 58 % cap at the turn's reference level (the owner's reference spans about 12 % to 58 %).
+ */
+export function barHeight(rms: number, segmentHeight: number, reference: number): number {
+  if (!Number.isFinite(rms) || rms < AUDIBLE_BIN) return 2;
+  const share = Math.min(1, rms / Math.max(reference, MIN_REFERENCE));
+  return Math.max(2, (BAR_FLOOR + (BAR_CAP - BAR_FLOOR) * share) * segmentHeight);
 }
 
 /**
@@ -156,10 +199,11 @@ export function drawTimeline(
       continue;
     }
     const bars = barsFor(turn.bins, w);
+    const reference = barReference(bars);
     const used = (bars.length - 1) * BAR_PITCH + BAR_WIDTH;
     let bx = x + Math.max(BAR_INSET, (w - used) / 2);
     for (const value of bars) {
-      const h = barHeight(value, height);
+      const h = barHeight(value, height, reference);
       roundedRect(ctx, bx, (height - h) / 2, BAR_WIDTH, h, BAR_WIDTH / 2);
       ctx.fill();
       bx += BAR_PITCH;

@@ -232,8 +232,24 @@
     }
   }
 
+  /*
+   * Forced colours drop the bezels' fills and shadows: the frames become CanvasText outlines and the screens
+   * keep the product UI in system colours (only the landing's art is hidden, landing.css).
+   */
   @media (forced-colors: active) {
-    .ad-box {
+    .ad-laptop__lid,
+    .ad-phone,
+    .ad-screen {
+      border: 1px solid CanvasText;
+    }
+
+    .ad-laptop__base,
+    .ad-phone__island {
+      forced-color-adjust: none;
+      background: CanvasText;
+    }
+
+    .ad-laptop__base::after {
       display: none;
     }
   }

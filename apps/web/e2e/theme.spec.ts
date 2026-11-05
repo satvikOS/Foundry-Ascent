@@ -101,7 +101,7 @@ test.describe('OLED dark and glass', () => {
 
     expect(await style(page.locator('body'), 'backgroundColor')).toBe(BLACK);
     // The side panel floats 12 px in from the edges with 22 px corners: frosted glass, or its solid face on a
-    // device judged too slow for the blur (`data-perf="low"`, decided once per browser).
+    // device judged too slow for the blur (`data-perf="low"`, sampled on a quiet page and kept for a week).
     const panel = page.getByRole('complementary', { name: 'Sidebar' });
     const box = await panel.boundingBox();
     expect([box?.x, box?.y]).toEqual([12, 12]);

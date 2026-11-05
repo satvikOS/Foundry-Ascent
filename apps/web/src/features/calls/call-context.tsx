@@ -74,7 +74,7 @@ interface CallContextValue {
   readonly face: CallFaceController | null;
   readonly snapshot: CallSnapshot;
   readonly route: CallRoute | null;
-  /** Opens the call screen of the live (or just ended) call. */
+  /** Opens the call screen of the live call (or the conversation of an ended one, where its review is). */
   readonly showCall: () => void;
   /** Closes the call screen; a live call continues in the mini bar. */
   readonly hideCall: (options?: { replace?: boolean }) => void;
@@ -95,6 +95,27 @@ export function useCall(): CallContextValue {
   const value = useContext(CallContext);
   if (!value) throw new Error('useCall must be used inside <CallProvider>');
   return value;
+}
+
+/** The call context where there is one (a page rendered outside the app shell has none). */
+export function useOptionalCall(): CallContextValue | null {
+  return useContext(CallContext);
+}
+
+/*
+ * A call the founder ended from its screen hands focus to its review in the conversation (the screen closes as
+ * it ends); one that ended out of view does not move focus. Set by the call screen, taken once by the review.
+ */
+let reviewFocus = false;
+
+export function focusReviewNext(): void {
+  reviewFocus = true;
+}
+
+export function takeReviewFocus(): boolean {
+  const take = reviewFocus;
+  reviewFocus = false;
+  return take;
 }
 
 /** For the call screen, which renders only once the engine has loaded. */
@@ -210,12 +231,13 @@ export function CallProvider({ me, children }: { me: Me; children: ReactNode }) 
   }, [engine]);
 
   const showCall = useCallback(() => {
-    const { ventureId, sessionId } = engine?.getSnapshot() ?? IDLE_CALL;
+    const { ventureId, sessionId, phase } = engine?.getSnapshot() ?? IDLE_CALL;
     if (!ventureId || !sessionId) return;
     void navigate({
       to: '/$tenant/app/v/$ventureId/c/$sessionId',
       params: { tenant, ventureId, sessionId },
-      search: { call: 1 },
+      // An ended call's review is in its conversation, not on the call screen.
+      search: phase === 'ended' ? {} : { call: 1 },
     });
   }, [engine, navigate, tenant]);
 

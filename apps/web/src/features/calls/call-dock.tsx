@@ -1,5 +1,5 @@
 import { Mic, MicOff, X } from 'lucide-react';
-import type { KeyboardEvent, PointerEvent } from 'react';
+import type { KeyboardEvent, PointerEvent, RefObject } from 'react';
 
 import { Kbd } from '@/components/ui/kbd';
 import { SimpleTooltip } from '@/components/ui/tooltip';
@@ -18,6 +18,8 @@ interface CallDockProps {
   voice: boolean;
   muted: boolean;
   disabled: boolean;
+  /** End: a single press ends the call after a short Undo window (CallLive). */
+  endRef?: RefObject<HTMLButtonElement | null>;
   onMute: () => void;
   onEnd: () => void;
 }
@@ -28,7 +30,7 @@ interface CallDockProps {
  * the call settings; their shortcuts work without opening it. Each is a 56 px target with a name, a pressed state
  * where it toggles, and its shortcut.
  */
-export function CallDock({ name, voice, muted, disabled, onMute, onEnd }: CallDockProps) {
+export function CallDock({ name, voice, muted, disabled, endRef, onMute, onEnd }: CallDockProps) {
   return (
     <div role="toolbar" aria-label="Call controls" className="flex w-full items-center justify-between gap-3">
       {voice ? (
@@ -56,7 +58,7 @@ export function CallDock({ name, voice, muted, disabled, onMute, onEnd }: CallDo
         <span aria-hidden className="size-14" />
       )}
       <SimpleTooltip content={`End call with ${name}`}>
-        <button type="button" onClick={onEnd} aria-label="End call" className={callControl}>
+        <button ref={endRef} type="button" onClick={onEnd} aria-label="End call" className={callControl}>
           <X aria-hidden />
         </button>
       </SimpleTooltip>

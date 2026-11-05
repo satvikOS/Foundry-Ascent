@@ -72,4 +72,23 @@ describe('LandingSections', () => {
     const links = screen.getAllByRole('link', { name: 'Sign in' });
     expect(links.every((link) => link.getAttribute('href') === '/sign-in')).toBe(true);
   });
+
+  it('promises only what is true and on the page: no dead “read more” links, the sharing policy as it is', async () => {
+    renderSections();
+    const principles = await screen.findByRole('region', { name: 'Principles we don’t trade away' });
+    expect(within(principles).queryAllByRole('link')).toEqual([]);
+    const trust = screen.getByRole('region', { name: 'Built to be trusted with early ideas' });
+    // As the in-app Data use & privacy says: staff see totals, and nothing else without the founder's approval.
+    expect(trust).toHaveTextContent('Program staff see totals; more needs consent.');
+    expect(trust).not.toHaveTextContent(/aggregates only/);
+    expect(trust).toHaveTextContent('Designed to WCAG 2.2 AA');
+    // Every in-page link in the footer lands on a section that exists (the hero's media is the route's own).
+    const footer = screen.getByRole('navigation', { name: 'Footer' });
+    for (const link of within(footer).getAllByRole('link')) {
+      const href = link.getAttribute('href') ?? '';
+      if (!href.startsWith('#') || href === '#see-a-session') continue;
+      expect(document.getElementById(href.slice(1)), href).not.toBeNull();
+    }
+    expect(within(footer).queryByRole('link', { name: 'Privacy' })).toBeNull();
+  });
 });

@@ -283,9 +283,12 @@ async function oneCall(
     step = 'end call';
     await waitForReplyToFinish(page, previousTurnAt);
     await callScreen(page).getByRole('button', { name: 'End call' }).click();
-    await expect(callScreen(page).getByRole('heading', { name: 'Call ended' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
     await expect.poll(() => log.clientStats.length, { timeout: 15_000 }).toBeGreaterThan(stats);
-    await callScreen(page).getByRole('button', { name: 'Back to conversation' }).click();
+    await page
+      .getByRole('region', { name: 'Call ended' })
+      .getByRole('button', { name: 'Dismiss call review' })
+      .click();
   } catch (error) {
     result.error = error instanceof TypedCallError ? 'typed' : errorName(error);
     result.failedAt = step;

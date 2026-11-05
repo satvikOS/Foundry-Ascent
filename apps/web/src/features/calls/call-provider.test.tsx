@@ -8,6 +8,7 @@ import {
   Link,
   Outlet,
   RouterProvider,
+  useParams,
 } from '@tanstack/react-router';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -23,6 +24,7 @@ import { IDS } from '@/lib/realtime/testing';
 
 import { markChoiceInView, setStartPrivacy, takeChoiceInView } from '../chat/privacy-choice';
 import { CallProvider } from './call-context';
+import { CallReviewSlot } from './call-review-slot';
 import { MiniCallBar } from './mini-call-bar';
 import { json, stubFetch, urlOf } from './testing';
 
@@ -166,41 +168,46 @@ let signOutNow: (() => void) | null = null;
 /** The page under the provider: the Call entry, a way elsewhere, and the account menu's sign-out. */
 function Page() {
   const { signOut } = useSignOutAndRedirect();
+  const { sessionId } = useParams({ strict: false });
   useEffect(() => {
     signOutNow = signOut;
   }, [signOut]);
   return (
-    <nav>
-      <Link
-        to="/$tenant/app/v/$ventureId/c/$sessionId"
-        params={{ tenant: 'ain', ventureId: VENTURE, sessionId: SESSION }}
-        search={{ call: 1 }}
-      >
-        Call
-      </Link>
-      {/* New chat's own Call button, beside Remember or Private. */}
-      <Link
-        to="/$tenant/app/v/$ventureId"
-        params={{ tenant: 'ain', ventureId: VENTURE }}
-        search={{ call: 1 }}
-        onClick={() => {
-          markChoiceInView(VENTURE);
-        }}
-      >
-        Call from New chat
-      </Link>
-      {/* The sidebar's (or ⌘K's) Call: a new conversation, away from New chat's choice. */}
-      <Link
-        to="/$tenant/app/v/$ventureId"
-        params={{ tenant: 'ain', ventureId: VENTURE }}
-        search={{ call: 1 }}
-      >
-        Call from the sidebar
-      </Link>
-      <Link to="/$tenant/app/v/$ventureId/knowledge" params={{ tenant: 'ain', ventureId: VENTURE }}>
-        Knowledge
-      </Link>
-    </nav>
+    <>
+      {/* A conversation ends with the review of a call that just ended in it. */}
+      {sessionId ? <CallReviewSlot sessionId={sessionId} /> : null}
+      <nav>
+        <Link
+          to="/$tenant/app/v/$ventureId/c/$sessionId"
+          params={{ tenant: 'ain', ventureId: VENTURE, sessionId: SESSION }}
+          search={{ call: 1 }}
+        >
+          Call
+        </Link>
+        {/* New chat's own Call button, beside Remember or Private. */}
+        <Link
+          to="/$tenant/app/v/$ventureId"
+          params={{ tenant: 'ain', ventureId: VENTURE }}
+          search={{ call: 1 }}
+          onClick={() => {
+            markChoiceInView(VENTURE);
+          }}
+        >
+          Call from New chat
+        </Link>
+        {/* The sidebar's (or ⌘K's) Call: a new conversation, away from New chat's choice. */}
+        <Link
+          to="/$tenant/app/v/$ventureId"
+          params={{ tenant: 'ain', ventureId: VENTURE }}
+          search={{ call: 1 }}
+        >
+          Call from the sidebar
+        </Link>
+        <Link to="/$tenant/app/v/$ventureId/knowledge" params={{ tenant: 'ain', ventureId: VENTURE }}>
+          Knowledge
+        </Link>
+      </nav>
+    </>
   );
 }
 
@@ -254,7 +261,7 @@ let fetchMock: ReturnType<typeof stubFetch>;
 // The call screen and the mini bar are lazy chunks: loaded once here, so no test pays their first transform inside a
 // one-second wait (CI, 2026-10-22: the first test to open the call screen timed out on a cold runner; 5 of 5 locally).
 beforeAll(async () => {
-  await Promise.all([import('./call-screen'), import('./mini-call-bar-view')]);
+  await Promise.all([import('./call-screen'), import('./mini-call-bar-view'), import('./call-review')]);
 });
 
 beforeEach(() => {
@@ -287,6 +294,13 @@ function createdSession(): unknown {
   const body = call?.[1]?.body;
   if (body && ArrayBuffer.isView(body)) return JSON.parse(new TextDecoder().decode(body)) as unknown;
   return typeof body === 'string' ? (JSON.parse(body) as unknown) : undefined;
+}
+
+/** Opens Remember or Private (in the call settings) from the start screen's memory line. */
+async function memoryChoice(): Promise<HTMLElement> {
+  await userEvent.click(screen.getByRole('button', { name: /^Memory for this call/ }));
+  const settings = await screen.findByRole('dialog', { name: 'Call settings' });
+  return within(settings).getByRole('group', { name: 'Memory for this call' });
 }
 
 describe('starting a call', () => {
@@ -339,7 +353,7 @@ describe('starting a call', () => {
     await waitFor(() => {
       expect(engine.start).toHaveBeenCalledTimes(1);
     });
-    await userEvent.click(await screen.findByRole('button', { name: 'Not now' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Close' }));
     await waitFor(() => {
       expect(url()).toBe(`${BASE}/c/${SESSION}`);
     });
@@ -428,9 +442,10 @@ describe('Remember or Private for a call from New chat', () => {
     await waitFor(() => {
       expect(start).toBeEnabled();
     });
-    const group = screen.getByRole('group', { name: 'Memory for this call' });
+    const group = await memoryChoice();
     expect(within(group).getByRole('radio', { name: 'Remember this call' })).toBeChecked();
     await userEvent.click(within(group).getByRole('radio', { name: 'Private, a one-off' }));
+    await userEvent.keyboard('{Escape}');
     await userEvent.click(start);
     await waitFor(() => {
       expect(createdSession()).toMatchObject({ privacy: 'ephemeral' });
@@ -444,9 +459,11 @@ describe('Remember or Private for a call from New chat', () => {
     await waitFor(() => {
       expect(start).toBeEnabled();
     });
-    const group = screen.getByRole('group', { name: 'Memory for this call' });
+    expect(screen.getByRole('button', { name: /^Memory for this call/ })).toHaveTextContent('Remembered');
+    const group = await memoryChoice();
     expect(within(group).getByRole('radio', { name: 'Remember this call' })).toBeChecked();
     expect(group).toHaveAccessibleDescription('Conversation saved. Memory needs approval.');
+    await userEvent.keyboard('{Escape}');
     // Nothing is created or started before the founder chooses.
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(sessionCreated()).toBe(false);
@@ -464,7 +481,9 @@ describe('Remember or Private for a call from New chat', () => {
     await waitFor(() => {
       expect(start).toBeEnabled();
     });
-    await userEvent.click(screen.getByRole('radio', { name: 'Private, a one-off' }));
+    await userEvent.click(within(await memoryChoice()).getByRole('radio', { name: 'Private, a one-off' }));
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('button', { name: /^Memory for this call/ })).toHaveTextContent('Private');
     await userEvent.click(start);
     await waitFor(() => {
       expect(createdSession()).toMatchObject({ privacy: 'ephemeral' });
@@ -485,7 +504,7 @@ describe('Remember or Private for a call from New chat', () => {
     await waitFor(() => {
       expect(sessionCreated()).toBe(true);
     });
-    await userEvent.click(await screen.findByRole('button', { name: 'Not now' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Close' }));
     await waitFor(() => {
       expect(url()).toBe(BASE);
     });
@@ -591,7 +610,7 @@ describe('the mini call bar', () => {
   });
 
   it('warns when the time is nearly up, and says when the call ended out of view', async () => {
-    const { engine, bar } = await minimized();
+    const { engine, bar, url } = await minimized();
     // The bar sits at the top of the page, over whatever scrolls under it: the bars' dense glass.
     expect(bar).toHaveClass('glass-bar');
     const status = within(bar).getByRole('status');
@@ -618,9 +637,57 @@ describe('the mini call bar', () => {
         },
       });
     });
-    expect(bar).toHaveTextContent('Call ended');
-    expect(status).toHaveTextContent('Call ended. The call reached its time limit.');
-    expect(within(bar).getByRole('button', { name: 'Summary' })).toBeInTheDocument();
+    // In the call's own conversation the review closes the transcript, so the bar goes.
+    expect(screen.getByRole('region', { name: 'Call ended' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: "Call with Corin's vEIR" })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Call ended' })).not.toHaveFocus();
+    // Elsewhere, the bar says it ended and why, and Review returns to that conversation (not the call screen).
+    await userEvent.click(screen.getByRole('link', { name: 'Knowledge' }));
+    const after = await screen.findByRole('region', { name: "Call with Corin's vEIR" });
+    expect(after).toHaveTextContent('Call ended');
+    expect(within(after).getByRole('status')).toHaveTextContent(
+      'Call ended. The call reached its time limit.',
+    );
+    await userEvent.click(within(after).getByRole('button', { name: 'Review the call' }));
+    await waitFor(() => {
+      expect(url()).toBe(`${BASE}/c/${SESSION}`);
+    });
+    expect(await screen.findByRole('region', { name: 'Call ended' })).toBeInTheDocument();
+  });
+
+  it('a call ended on its screen returns to the conversation, whose review takes focus; Call again starts anew', async () => {
+    const { engine, url } = renderApp([`${BASE}/c/${SESSION}?call=1`], {
+      phase: 'live',
+      ventureId: VENTURE,
+      sessionId: SESSION,
+      call: { ...liveCall(SESSION), inputMode: 'transcribe' },
+      input: 'voice',
+      activity: 'listening',
+      liveAt: Date.now(),
+      remaining: { seconds: 600, at: Date.now() },
+    });
+    const end = await screen.findByRole('button', { name: 'End call' });
+    // One press offers Undo; a second ends it now.
+    await userEvent.click(end);
+    expect(engine.end).not.toHaveBeenCalled();
+    await userEvent.click(end);
+    expect(engine.end).toHaveBeenCalledWith('user');
+    await waitFor(() => {
+      expect(url()).toBe(`${BASE}/c/${SESSION}`);
+    });
+    expect(screen.queryByRole('dialog', { name: /^Call with/ })).toBeNull();
+    const heading = await screen.findByRole('heading', { name: 'Call ended' });
+    await waitFor(() => {
+      expect(heading).toHaveFocus();
+    });
+    // No bar beside the review, and no separate "Call ended" page.
+    expect(screen.queryByRole('region', { name: "Call with Corin's vEIR" })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Call again' }));
+    await waitFor(() => {
+      expect(engine.start).toHaveBeenCalledTimes(1);
+    });
+    expect(engine.reset).toHaveBeenCalled();
+    expect(url()).toBe(`${BASE}/c/${SESSION}?call=1`);
   });
 
   it('offers Turn on sound when the browser stopped the call’s sound, keeping the AI marker', async () => {

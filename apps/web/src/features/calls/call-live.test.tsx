@@ -1,13 +1,13 @@
 import type { CallView } from '@foundry/contracts';
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CallSnapshot } from '@/lib/realtime/call-engine';
 
 import { IDS } from '@/lib/realtime/testing';
 
-import { callStatusLabel, CallLive } from './call-live';
+import { callStatusLabel, CallLive, END_UNDO_MS } from './call-live';
 import { fakeEngine, LIVE, renderWithRouter } from './testing';
 import type { CallVeir } from './use-call-veir';
 
@@ -116,7 +116,66 @@ describe('CallLive', () => {
 
     await userEvent.click(within(controls).getByRole('button', { name: 'Mute' }));
     expect(engine.setMuted).toHaveBeenCalledWith(true);
+    // End silences the call at once and offers Undo; a second press ends it now.
     await userEvent.click(within(controls).getByRole('button', { name: 'End call' }));
+    expect(engine.end).not.toHaveBeenCalled();
+    expect(screen.getByRole('group', { name: 'Call ended' })).toBeInTheDocument();
+    await userEvent.click(within(controls).getByRole('button', { name: 'End call' }));
+    expect(engine.end).toHaveBeenCalledWith('user');
+  });
+
+  it('ends a few seconds after End unless Undo is pressed, and Undo gives the call back as it was', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
+      const { engine } = renderLive({ activity: 'speaking' });
+      const end = await screen.findByRole('button', { name: 'End call' });
+      await user.click(end);
+      // Silent at once: the reply stops and the microphone mutes; the status says it ended.
+      expect(engine.interrupt).toHaveBeenCalled();
+      expect(engine.setMuted).toHaveBeenLastCalledWith(true);
+      expect(screen.getAllByRole('status')[0]).toHaveTextContent('Call ended');
+      const undo = within(screen.getByRole('group', { name: 'Call ended' })).getByRole('button', {
+        name: 'Undo',
+      });
+      expect(undo).toHaveFocus();
+      await user.click(undo);
+      expect(engine.setMuted).toHaveBeenLastCalledWith(false);
+      expect(screen.queryByRole('group', { name: 'Call ended' })).toBeNull();
+      expect(end).toHaveFocus();
+      act(() => {
+        vi.advanceTimersByTime(END_UNDO_MS + 100);
+      });
+      expect(engine.end).not.toHaveBeenCalled();
+
+      await user.click(end);
+      act(() => {
+        vi.advanceTimersByTime(END_UNDO_MS - 100);
+      });
+      expect(engine.end).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(engine.end).toHaveBeenCalledWith('user');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ends at once when the screen goes while Undo is offered (minimized, closed)', async () => {
+    const { engine, asEngine } = fakeEngine();
+    const view = renderWithRouter(
+      <CallLive
+        tenant="ain"
+        engine={asEngine}
+        snapshot={LIVE}
+        veir={VEIR}
+        onSwitchToChat={() => undefined}
+      />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'End call' }));
+    expect(engine.end).not.toHaveBeenCalled();
+    view.unmount();
     expect(engine.end).toHaveBeenCalledWith('user');
   });
 

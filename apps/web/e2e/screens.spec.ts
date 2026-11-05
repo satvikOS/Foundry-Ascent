@@ -230,12 +230,37 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
             Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)),
           );
           await shoot(page, 'call-settings', device, scheme);
+          // Off the trigger first, so its tooltip is not the layer Escape closes.
+          await page.mouse.move(8, 450);
           await page.keyboard.press('Escape');
+          await expect(settings).toBeHidden();
+          // End: "Call ended · Undo" for a few seconds, then back in the conversation with the call's review.
           await call.getByRole('button', { name: 'End call' }).click();
-          await expect(call.getByRole('button', { name: 'Back to conversation' })).toBeVisible();
-          await shoot(page, 'call-ended', device, scheme);
-          await call.getByRole('button', { name: 'Back to conversation' }).click();
+          await expect(call.getByRole('group', { name: 'Call ended' })).toBeVisible();
+          await shoot(page, 'call-end-undo', device, scheme);
+          const review = page.getByRole('region', { name: 'Call ended' });
+          await expect(review).toBeVisible({ timeout: 20_000 });
           await expect(call).toBeHidden();
+          await review.scrollIntoViewIfNeeded();
+          await shoot(page, 'call-review', device, scheme);
+          await review.getByRole('button', { name: 'Dismiss call review' }).click();
+          // A call into a new conversation from elsewhere waits on the start screen with Remember or Private.
+          const ventureUrl = new URL(page.url()).pathname.replace(/\/c\/[^/]+$/, '');
+          await page.goto(`${ventureUrl}?call=1`);
+          const fresh = page.getByRole('dialog', { name: /^Call with / });
+          await expect(fresh.getByRole('button', { name: /^Memory for this call/ })).toBeVisible();
+          await shoot(page, 'call-idle-new', device, scheme);
+          await fresh.getByRole('button', { name: /^Memory for this call/ }).click();
+          const lobbySettings = page.getByRole('dialog', { name: 'Call settings' });
+          await expect(lobbySettings).toBeVisible();
+          await lobbySettings.evaluate((element) =>
+            Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+          );
+          await shoot(page, 'call-idle-settings', device, scheme);
+          await page.keyboard.press('Escape');
+          await expect(lobbySettings).toBeHidden();
+          await fresh.getByRole('button', { name: 'Close' }).click();
+          await expect(fresh).toBeHidden();
         });
       });
 
@@ -289,7 +314,7 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
             });
           await shoot(page, 'mini-call-bar-over-prose', device, scheme);
           await bar.getByRole('button', { name: 'End call' }).click();
-          await expect(bar).toContainText('Call ended');
+          await expect(page.getByRole('region', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
         });
       });
 

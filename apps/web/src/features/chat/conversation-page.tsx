@@ -28,6 +28,7 @@ import { useMemory } from '@/lib/api/hooks/memory';
 import { useEndSession, useSession } from '@/lib/api/hooks/sessions';
 import { useTurnStream } from '@/lib/api/hooks/turn-stream';
 import { useVenture } from '@/lib/api/hooks/ventures';
+import { CallReviewSlot } from '@/features/calls/call-review-slot';
 import { useCallsAvailable } from '@/features/calls/calls-available';
 import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
@@ -414,6 +415,7 @@ function Conversation() {
               />
             </div>
           ) : null}
+          <CallReviewSlot sessionId={sessionId} />
           {ended ? (
             <DigestView
               session={session}

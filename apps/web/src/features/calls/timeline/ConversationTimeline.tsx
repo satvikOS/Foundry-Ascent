@@ -13,7 +13,13 @@ import {
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-import { drawTimeline, layoutTimeline, TIMELINE_PALETTES, type TimelineLayout } from './timeline-canvas';
+import {
+  drawTimeline,
+  layoutTimeline,
+  resolveTimelinePalette,
+  type TimelineLayout,
+  type TimelinePalette,
+} from './timeline-canvas';
 import { turnEnd, type Speaker, type TimelineSource, type TimelineTurn } from './timeline-model';
 
 const MAX_DPR = 2;
@@ -43,12 +49,6 @@ export function turnLabel(turn: TimelineTurn, names: Record<Speaker, string>): s
 
 function excerpt(text: string): string {
   return text.length > 140 ? `${text.slice(0, 139).trimEnd()}…` : text;
-}
-
-/** Which palette the page is using: the canvas's own `color` resolves `light-dark()` (see timeline.css). */
-function activePalette(canvas: HTMLCanvasElement) {
-  const color = getComputedStyle(canvas).color;
-  return color.startsWith('rgb(255') ? TIMELINE_PALETTES.dark : TIMELINE_PALETTES.light;
 }
 
 export interface ConversationTimelineProps {
@@ -82,6 +82,8 @@ export function ConversationTimeline({
   const frameRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
+  /** The `--tl-*` tokens as this timeline's colour scheme resolves them; cleared when the theme may change. */
+  const paletteRef = useRef<TimelinePalette | null>(null);
   const [whole, setWhole] = useState(false);
   const [scrolling, setScrolling] = useState(false);
   const [focused, setFocused] = useState<string | null>(null);
@@ -112,7 +114,8 @@ export function ConversationTimeline({
       whole: wholeRef.current,
       ...(minSpanMs === undefined ? {} : { minSpanMs }),
     });
-    drawTimeline(ctx, layout, { width, height }, activePalette(canvas), source.measured);
+    paletteRef.current ??= resolveTimelinePalette(canvas);
+    drawTimeline(ctx, layout, { width, height }, paletteRef.current, source.measured);
     // The overlay buttons follow the segments without a React render.
     const overlay = overlayRef.current;
     if (overlay) {
@@ -145,18 +148,26 @@ export function ConversationTimeline({
     const redraw = () => {
       draw();
     };
+    const rethemed = () => {
+      paletteRef.current = null;
+      draw();
+    };
     const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(redraw) : null;
     resize?.observe(canvas);
-    const themes = new MutationObserver(redraw);
+    const themes = new MutationObserver(rethemed);
     themes.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     // jsdom and old engines may lack matchMedia (same guard as useMediaQuery).
     const scheme =
       typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null;
-    scheme?.addEventListener('change', redraw);
+    scheme?.addEventListener('change', rethemed);
+    const contrast =
+      typeof window.matchMedia === 'function' ? window.matchMedia('(forced-colors: active)') : null;
+    contrast?.addEventListener('change', rethemed);
     return () => {
       resize?.disconnect();
       themes.disconnect();
-      scheme?.removeEventListener('change', redraw);
+      scheme?.removeEventListener('change', rethemed);
+      contrast?.removeEventListener('change', rethemed);
     };
   }, [draw]);
 

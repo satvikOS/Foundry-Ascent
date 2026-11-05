@@ -3,7 +3,7 @@
  * #1F1F1F on black), and a two-tone focus ring that holds on the black canvas, the sphere and glass.
  */
 .fa-call-control {
-  background-color: light-dark(#ededeb, #1f1f1f);
+  background-color: var(--surface-control);
   color: var(--foreground);
 }
 

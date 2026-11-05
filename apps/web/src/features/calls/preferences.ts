@@ -49,6 +49,12 @@ export function storeTalkMode(mode: TalkMode): void {
   write(KEYS.talkMode, mode);
 }
 
+/** The talk mode the next call starts in (chosen on the start screen, or during a call). */
+export function useTalkModePreference(): [TalkMode, (mode: TalkMode) => void] {
+  const mode = useStored(KEYS.talkMode) === 'push_to_talk' ? 'push_to_talk' : 'hands_free';
+  return [mode, storeTalkMode];
+}
+
 /** Captions are on unless the person turned them off (the choice sticks across calls). */
 export function useCaptionsPreference(): [boolean, (on: boolean) => void] {
   const on = useStored(KEYS.captions) !== '0';

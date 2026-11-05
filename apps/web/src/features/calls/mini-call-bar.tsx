@@ -8,7 +8,8 @@ const MiniCallBarView = lazy(() =>
 
 /**
  * The mini call bar's place in the app shell. The bar itself loads with the call (most visits never make
- * one), and shows while a call goes on out of view, or ended out of view with its summary waiting.
+ * one), and shows while a call goes on out of view, or ended out of view with its review waiting in its
+ * conversation (not in that conversation itself, where the review is on the page).
  */
 export function MiniCallBar() {
   const { engine, snapshot, route, quietEnd } = useCall();
@@ -16,7 +17,7 @@ export function MiniCallBar() {
     snapshot.phase === 'starting' ||
     snapshot.phase === 'live' ||
     snapshot.phase === 'ending' ||
-    snapshot.phase === 'ended';
+    (snapshot.phase === 'ended' && route?.sessionId !== snapshot.sessionId);
   if (!engine || route?.open === true || quietEnd || !shown) return null;
   return (
     <Suspense fallback={null}>

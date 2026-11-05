@@ -47,6 +47,31 @@ test.describe('landing page device ad', () => {
     const final = await adTime(page);
     await page.waitForTimeout(800);
     expect(await adTime(page)).toBe(final);
+    // The phone's timeline draws each turn in its speaker's token colour (resolved under reduced motion too).
+    const drawn = await ad(page)
+      .locator('.fa-timeline')
+      .evaluate((timeline) => {
+        const canvas = timeline.querySelector('canvas');
+        const ctx = canvas?.getContext('2d');
+        if (!canvas || !ctx) return null;
+        const ratio = canvas.width / canvas.clientWidth;
+        const probe = document.createElement('span');
+        probe.style.transitionProperty = 'none';
+        timeline.append(probe);
+        const results = [...timeline.querySelectorAll<HTMLElement>('[data-turn]')].map((turn) => {
+          const x = Math.round((parseFloat(turn.style.left) + parseFloat(turn.style.width) / 2) * ratio);
+          const [r, g, b] = ctx.getImageData(x, Math.round(2 * ratio), 1, 1).data;
+          probe.style.color = `var(--tl-${turn.dataset.speaker ?? ''})`;
+          return {
+            pixel: `rgb(${String(r)}, ${String(g)}, ${String(b)})`,
+            token: getComputedStyle(probe).color,
+          };
+        });
+        probe.remove();
+        return results;
+      });
+    expect(drawn?.length).toBeGreaterThanOrEqual(2);
+    for (const { pixel, token } of drawn ?? []) expect(pixel).toBe(token);
   });
 
   test('keeps the keyboard on the page: nothing inside the ad takes focus', async ({ page }) => {
@@ -59,6 +84,25 @@ test.describe('landing page device ad', () => {
       );
       expect(inAd, `tab stop ${String(i + 1)} is outside the ad`).toBe(false);
     }
+  });
+
+  test('keeps the devices and their screens in forced colours, as outlines in system colours', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
+    await page.goto('/');
+    await expect(ad(page).getByText('Fair. We finish the pilot, then we raise.')).toBeAttached();
+    for (const frame of ['.ad-laptop__lid', '.ad-phone']) {
+      const box = page.locator(`[data-slot="device-ad"] ${frame}`).first();
+      await expect(box).toBeVisible();
+      const border = await box.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { width: style.borderTopWidth, style: style.borderTopStyle };
+      });
+      expect(border, `${frame} has a visible outline`).toEqual({ width: '1px', style: 'solid' });
+    }
+    // The product UI is still there: the answer's text renders inside the laptop's screen.
+    await expect(page.locator('[data-slot="device-ad"] .ad-screen').first()).toBeVisible();
   });
 
   test('follows a section link from the bar, and nothing scrolls sideways', async ({ page }) => {

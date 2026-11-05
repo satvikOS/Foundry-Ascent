@@ -1,12 +1,14 @@
 import type { CallConfigResponse } from '@foundry/contracts';
-import { AudioLines, Phone } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { AudioLines, ChevronDown, EyeOff, History, Phone } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
 import type { CallEngine, CallFailure } from '@/lib/realtime/call-engine';
+import { cn } from '@/lib/utils';
 
-import { PrivacyChoice, type ConversationPrivacy } from '../chat/privacy-choice';
+import type { ConversationPrivacy } from '../chat/privacy-choice';
+import { CallSettings } from './call-settings';
 import { CallStage } from './call-stage';
+import { useCaptionsPreference, useTalkModePreference } from './preferences';
 import type { CallVeir } from './use-call-veir';
 
 /** Why a call cannot start right now, or null when it can. */
@@ -85,13 +87,20 @@ interface CallLobbyProps {
   onClose: () => void;
 }
 
+/** The primary control in the microphone's place: a 56 px pill, the call screen's two-tone focus ring. */
+const startControl = cn(
+  'fa-call-focus inline-flex h-14 shrink-0 items-center justify-center gap-2 rounded-full px-6 text-body font-medium transition-colors duration-150',
+  'disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-5',
+);
+
 /**
- * Before the call: start it (a click is what lets the browser play audio), or learn why it can't start.
- * When the person arrived by clicking Call, the call starts on its own and this shows only "Connecting";
- * the first call ever waits here so the founder reads how their voice is handled (and, on a first meeting,
- * what a vEIR is: the welcome, said here instead of over the page). A call that starts a new
- * conversation offers Remember (the default) or Private here, and waits for Start call unless it came from
- * New chat's Call button, beside the same choice.
+ * Before the call, on the same surface as the call itself (design-spec §11): the sphere idle on the canvas with
+ * the vEIR's name tag, what the call allows as one status line, and Start call in the microphone's place
+ * (bottom left). The settings (top right) hold the presentation, captions and talk mode and, for a call that
+ * starts a new conversation, Remember (the default) or Private, whose current choice also shows under the status
+ * and opens them. The first call ever waits here so the founder reads how their voice is handled (and, on a first
+ * meeting, what a vEIR is); otherwise a call opened by a click starts at once and this shows "Connecting". When a
+ * call cannot start, the title says why and the same place offers Try again, Move here or Back.
  */
 export function CallLobby({
   engine,
@@ -109,6 +118,12 @@ export function CallLobby({
   onClose,
 }: CallLobbyProps) {
   const primaryRef = useRef<HTMLButtonElement | null>(null);
+  const memoryRef = useRef<HTMLButtonElement | null>(null);
+  const [captions, setCaptions] = useCaptionsPreference();
+  const [talkMode, setTalkMode] = useTalkModePreference();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The settings were opened from the memory line: focus returns there. */
+  const [fromMemory, setFromMemory] = useState(false);
   const loaded = config !== undefined;
   // Focus the primary control once it can be used (Start call waits for the call settings to load).
   useEffect(() => {
@@ -133,32 +148,73 @@ export function CallLobby({
     config && !problem
       ? `Up to ${String(config.maxMinutes)} min · ${String(Math.floor(config.remainingMinutesToday))} left today`
       : null;
+  const isPrivate = privacy?.value === 'ephemeral';
 
   return (
-    <div className="flex flex-1 flex-col">
-      <div className="flex flex-1 flex-col items-center justify-center gap-6 px-4 py-6 text-center">
+    <div data-slot="call-lobby" className="flex flex-1 flex-col">
+      {problem ? null : (
+        <div className="absolute top-1.5 right-2 z-10 sm:right-4">
+          <CallSettings
+            name={veir.name}
+            captions={captions}
+            onCaptions={() => {
+              setCaptions(!captions);
+            }}
+            pushToTalk={talkMode === 'push_to_talk'}
+            onPushToTalk={() => {
+              setTalkMode(talkMode === 'push_to_talk' ? 'hands_free' : 'push_to_talk');
+            }}
+            live={null}
+            memory={privacy ? { ...privacy, disabled: busy } : null}
+            open={settingsOpen}
+            onOpenChange={(open) => {
+              setSettingsOpen(open);
+              // Opened from its own glyph: focus returns there.
+              if (open) setFromMemory(false);
+            }}
+            returnFocusRef={fromMemory ? memoryRef : undefined}
+          />
+        </div>
+      )}
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-4 text-center sm:gap-5">
         <CallStage
           veir={veir}
           engine={engine}
           state={busy ? 'connecting' : failure ? 'disconnected' : 'idle'}
         />
-        <div className="flex max-w-md flex-col items-center gap-2">
-          <h2 className="font-serif text-heading font-normal">
-            {problem ? problem.title : `Call ${veir.name}`}
-          </h2>
-          <p role="status" className="text-body text-pretty text-muted-foreground">
+        <div className="-mt-2 flex max-w-md flex-col items-center gap-1.5">
+          {problem ? <h2 className="font-serif text-heading font-normal">{problem.title}</h2> : null}
+          <p
+            role="status"
+            className={cn('text-pretty text-muted-foreground', problem ? 'text-body' : 'text-small')}
+          >
             {busy ? 'Connecting…' : problem ? problem.message : (minutes ?? 'Getting ready…')}
           </p>
+          {privacy && !problem ? (
+            <button
+              ref={memoryRef}
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={settingsOpen}
+              aria-label={`Memory for this call: ${isPrivate ? 'Private, a one-off' : 'Remember this call'}. Change`}
+              disabled={busy}
+              onClick={() => {
+                setFromMemory(true);
+                setSettingsOpen(true);
+              }}
+              data-slot="call-memory"
+              className="fa-call-focus inline-flex min-h-8 items-center gap-1.5 rounded-full px-2.5 text-small text-muted-foreground transition-colors duration-150 hover:text-foreground disabled:opacity-50"
+            >
+              {isPrivate ? (
+                <EyeOff aria-hidden className="size-3.5" />
+              ) : (
+                <History aria-hidden className="size-3.5" />
+              )}
+              {isPrivate ? 'Private' : 'Remembered'}
+              <ChevronDown aria-hidden className="size-3.5" />
+            </button>
+          ) : null}
         </div>
-        {privacy && !problem ? (
-          <PrivacyChoice
-            value={privacy.value}
-            onChange={privacy.onChange}
-            what="call"
-            disabled={busy}
-            className="max-w-md sm:flex-col"
-          />
-        ) : null}
         {welcome && !problem ? (
           <div
             data-testid="veir-welcome-inline"
@@ -173,7 +229,7 @@ export function CallLobby({
         {voiceNotice && !problem ? (
           <p
             data-testid="voice-notice"
-            className="flex max-w-md items-start gap-3 rounded-xl border border-border bg-card/70 px-4 py-3 text-left text-small text-muted-foreground"
+            className="flex max-w-md items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left text-small text-muted-foreground"
           >
             <AudioLines aria-hidden className="mt-0.5 size-4 shrink-0 text-foreground" />
             <span>
@@ -182,40 +238,57 @@ export function CallLobby({
             </span>
           </p>
         ) : null}
-        <div className="flex w-full max-w-xs flex-col gap-2 sm:max-w-none sm:flex-row sm:justify-center">
-          {problem ? (
-            moveHere ? (
-              <Button
-                ref={primaryRef}
-                size="lg"
-                onClick={onMoveHere}
-                loading={busy}
-                aria-label="Move here, ending the other call"
-              >
-                <Phone aria-hidden />
-                Move here
-              </Button>
-            ) : problem.retry ? (
-              <Button ref={primaryRef} size="lg" onClick={onRetry}>
-                Try again
-              </Button>
-            ) : null
-          ) : (
-            <Button ref={primaryRef} size="lg" onClick={onStart} loading={busy} disabled={!config}>
+      </div>
+
+      {/* The microphone's place (bottom left) holds what starts the call; End's place stays empty until then. */}
+      <div className="flex shrink-0 items-center justify-between gap-3 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:pb-5">
+        {problem ? (
+          moveHere ? (
+            <button
+              ref={primaryRef}
+              type="button"
+              onClick={onMoveHere}
+              disabled={busy}
+              aria-label="Move here, ending the other call"
+              className={cn(startControl, 'bg-primary text-primary-foreground hover:bg-primary/90')}
+            >
               <Phone aria-hidden />
-              Start call
-            </Button>
-          )}
-          <Button
-            ref={problem && !problem.retry && !moveHere ? primaryRef : undefined}
-            size="lg"
-            variant="secondary"
-            onClick={onClose}
-            aria-label={problem && !moveHere ? 'Back to chat' : undefined}
+              Move here
+            </button>
+          ) : problem.retry ? (
+            <button
+              ref={primaryRef}
+              type="button"
+              onClick={onRetry}
+              className={cn(startControl, 'bg-primary text-primary-foreground hover:bg-primary/90')}
+            >
+              Try again
+            </button>
+          ) : (
+            <button
+              ref={primaryRef}
+              type="button"
+              onClick={onClose}
+              aria-label="Back to chat"
+              className={cn(startControl, 'fa-call-control')}
+            >
+              Back
+            </button>
+          )
+        ) : (
+          <button
+            ref={primaryRef}
+            type="button"
+            onClick={onStart}
+            disabled={!config || busy}
+            aria-busy={busy || undefined}
+            className={cn(startControl, 'bg-primary text-primary-foreground hover:bg-primary/90')}
           >
-            {problem && !moveHere ? 'Back' : 'Not now'}
-          </Button>
-        </div>
+            <Phone aria-hidden />
+            Start call
+          </button>
+        )}
+        <span aria-hidden className="size-14" />
       </div>
     </div>
   );

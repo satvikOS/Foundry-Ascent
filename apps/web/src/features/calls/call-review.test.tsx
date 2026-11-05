@@ -4,11 +4,15 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CallEnded } from '@/lib/realtime/call-engine';
+import { announce } from '@/components/a11y/live-announcer';
 import { IDS } from '@/lib/realtime/testing';
 
-import { CallSummaryPanel } from './call-summary';
+import { CallReviewCard, exchangesLine } from './call-review';
 import { json, renderWithRouter, stubFetch, urlOf } from './testing';
+import type { TimelineSource, TimelineTurn } from './timeline/timeline-model';
 import type { CallVeir } from './use-call-veir';
+
+vi.mock('@/components/a11y/live-announcer', () => ({ announce: vi.fn() }));
 
 const VEIR: CallVeir = {
   name: 'Corin · vEIR',
@@ -98,29 +102,51 @@ function renderSummary(
   value: CallEnded,
   canWrite = true,
   privacy: 'standard' | 'ephemeral' | null = 'standard',
+  options: { focusOnMount?: boolean; timeline?: TimelineSource | null } = {},
 ) {
-  const callbacks = { back: vi.fn(), again: vi.fn(), leave: vi.fn() };
+  const callbacks = { dismiss: vi.fn(), again: vi.fn(), leave: vi.fn() };
   renderWithRouter(
-    <CallSummaryPanel
+    <CallReviewCard
       tenant="ain"
       ventureId={IDS.venture}
       veir={VEIR}
       ended={value}
       canWrite={canWrite}
       privacy={privacy}
-      onBackToConversation={callbacks.back}
+      onDismiss={callbacks.dismiss}
       onCallAgain={callbacks.again}
       onLeave={callbacks.leave}
+      focusOnMount={options.focusOnMount ?? true}
+      timeline={options.timeline ?? null}
     />,
   );
   return callbacks;
+}
+
+/** A finished call's timeline with the given turns (no amplitude needed here). */
+function timelineOf(speakers: readonly ('veir' | 'student')[]): TimelineSource {
+  const turns: TimelineTurn[] = speakers.map((speaker, index) => ({
+    id: `${speaker}-${String(index)}`,
+    speaker,
+    startMs: index * 2_000,
+    endMs: index * 2_000 + 1_500,
+    bins: [0.1, 0.12, 0.08],
+    text: '',
+  }));
+  return {
+    measured: true,
+    turns: () => turns,
+    elapsedMs: () => speakers.length * 2_000,
+    structure: () => 1,
+    subscribe: () => () => undefined,
+  };
 }
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('CallSummaryPanel', () => {
+describe('CallReviewCard', () => {
   it('shows the call and says quietly what was saved to Knowledge, with nothing to keep or decline', async () => {
     const fetchMock = stubFetch();
     const second = memory({ id: IDS.turn, title: 'Pilot with one library', status: 'confirmed' });
@@ -166,8 +192,10 @@ describe('CallSummaryPanel', () => {
       `/ain/app/v/${IDS.venture}/help`,
     );
 
-    await userEvent.click(screen.getByRole('button', { name: 'Back to conversation' }));
-    expect(callbacks.back).toHaveBeenCalled();
+    // It is the review in the conversation: a card named by its heading, dismissed in place.
+    expect(screen.getByRole('region', { name: 'Call ended' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss call review' }));
+    expect(callbacks.dismiss).toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Call again' }));
     expect(callbacks.again).toHaveBeenCalled();
   });
@@ -295,9 +323,27 @@ describe('CallSummaryPanel', () => {
     stubFetch().mockResolvedValue(json({ items: [] }));
     renderSummary(ended({ turnCount: 0 }, { turnCount: 0 }));
     expect(await screen.findByRole('heading', { name: 'Call ended' })).toBeInTheDocument();
-    // The vEIR may have greeted the founder: the line counts exchanges, never claims silence.
-    expect(screen.getByText(/No exchanges\./)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing was said/)).toBeInTheDocument();
     expect(screen.queryByTestId('call-remembered')).toBeNull();
+  });
+
+  it('never says nothing was said beside a timeline where the vEIR spoke', async () => {
+    stubFetch().mockResolvedValue(json({ items: [] }));
+    renderSummary(ended({ turnCount: 0 }, { turnCount: 0, durationSeconds: 5 }), true, 'standard', {
+      timeline: timelineOf(['veir']),
+    });
+    expect(await screen.findByRole('group', { name: 'Conversation timeline' })).toBeInTheDocument();
+    expect(screen.getByText(/Only Corin spoke/)).toHaveTextContent(/^0:055 seconds · Only Corin spoke$/);
+    expect(screen.queryByText(/No exchanges|Nothing was said/)).toBeNull();
+  });
+
+  it('takes focus only when the founder ended the call on its screen; otherwise it announces the end', async () => {
+    stubFetch().mockResolvedValue(json({ items: [] }));
+    vi.mocked(announce).mockClear();
+    renderSummary(ended({}, { reason: 'timeout' }), true, 'standard', { focusOnMount: false });
+    const heading = await screen.findByRole('heading', { name: 'Call ended' });
+    expect(heading).not.toHaveFocus();
+    expect(announce).toHaveBeenCalledWith('Call ended. The call reached its time limit.');
   });
 
   it('keeps the call over when its summary could not load', async () => {
@@ -346,6 +392,17 @@ describe('CallSummaryPanel', () => {
     expect(screen.queryByTestId('call-remembered')).toBeNull();
     expect(fetchMock.mock.calls.some(([input]) => urlOf(input).includes('/memory/'))).toBe(false);
     expect(screen.getByRole('button', { name: 'Call again' })).toBeDisabled();
+  });
+});
+
+describe('exchangesLine', () => {
+  it('counts exchanges, and otherwise says who spoke, never contradicting the timeline', () => {
+    expect(exchangesLine(1, { veir: true, student: true }, 'Corin')).toBe('1 exchange');
+    expect(exchangesLine(3, { veir: true, student: true }, 'Corin')).toBe('3 exchanges');
+    expect(exchangesLine(0, { veir: true, student: false }, 'Corin')).toBe('Only Corin spoke');
+    expect(exchangesLine(0, { veir: false, student: true }, 'Corin')).toBeNull();
+    expect(exchangesLine(0, { veir: true, student: true }, 'Corin')).toBeNull();
+    expect(exchangesLine(0, { veir: false, student: false }, 'Corin')).toBe('Nothing was said');
   });
 });
 

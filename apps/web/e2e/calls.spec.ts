@@ -138,6 +138,44 @@ function callScreen(page: Page): Locator {
   return page.getByRole('dialog', { name: /^Call with / });
 }
 
+/** The review of a call that ended, closing its conversation's transcript (the call screen has closed). */
+function callReview(page: Page): Locator {
+  return page.getByRole('region', { name: 'Call ended' });
+}
+
+/**
+ * Ends the call from its screen: one press of End silences it and offers Undo for a few seconds, then it ends and
+ * the screen closes onto the conversation, where its review is. Returns the review.
+ */
+async function endFromScreen(page: Page): Promise<Locator> {
+  await callScreen(page).getByRole('button', { name: 'End call' }).click();
+  await expect(callScreen(page).getByRole('group', { name: 'Call ended' })).toBeVisible();
+  const review = callReview(page);
+  await expect(review).toBeVisible({ timeout: 20_000 });
+  await expect(callScreen(page)).toHaveCount(0);
+  return review;
+}
+
+/** Remember or Private, in the start screen's call settings (opened from the memory line under the status). */
+async function memoryChoice(page: Page): Promise<Locator> {
+  await callScreen(page)
+    .getByRole('button', { name: /^Memory for this call/ })
+    .click();
+  return page
+    .getByRole('dialog', { name: 'Call settings' })
+    .getByRole('group', { name: 'Memory for this call' });
+}
+
+/** A call ended from the mini bar while on its conversation: the bar gives way to the review, dismissed here. */
+async function dismissReviewAfterBarEnd(page: Page, bar: Locator): Promise<void> {
+  await bar.getByRole('button', { name: 'End call' }).click();
+  const review = callReview(page);
+  await expect(review).toBeVisible({ timeout: 20_000 });
+  await expect(bar).toHaveCount(0);
+  await review.getByRole('button', { name: 'Dismiss call review' }).click();
+  await expect(review).toHaveCount(0);
+}
+
 /** The reply's sentences as the call speaks them (its short spoken form, else the answer as plain text). */
 function spokenSentences(reply: { answer: string; spoken?: string | null }): string[] {
   const plain = (reply.spoken ?? reply.answer)
@@ -306,13 +344,17 @@ test.describe('vEIR calls', () => {
       await startCallFromPalette(page);
       const screen = callScreen(page);
       await expect(screen).toBeVisible();
-      // Away from New chat's choice, the call waits on its start screen: Remember is chosen, Private a click away.
-      const memory = screen.getByRole('group', { name: 'Memory for this call' });
-      await expect(memory.getByRole('radio', { name: 'Remember this call' })).toBeChecked();
-      await expect(memory.getByRole('radio', { name: 'Private, a one-off' })).not.toBeChecked();
+      // Away from New chat's choice, the call waits on its start screen (the sphere idle, Start call in the
+      // microphone's place): Remember is chosen, Private a click away in the call settings.
       const start = screen.getByRole('button', { name: 'Start call' });
       await expect(start).toBeEnabled();
       await expect(start).toBeFocused();
+      await expect(screen.getByRole('button', { name: /^Memory for this call/ })).toContainText('Remembered');
+      const memory = await memoryChoice(page);
+      await expect(memory.getByRole('radio', { name: 'Remember this call' })).toBeChecked();
+      await expect(memory.getByRole('radio', { name: 'Private, a one-off' })).not.toBeChecked();
+      await page.keyboard.press('Escape');
+      await expect(memory).toHaveCount(0);
       expect(created, 'nothing is created before Start call').toBe(0);
       await start.click();
       await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=1$/);
@@ -404,8 +446,8 @@ test.describe('vEIR calls', () => {
         (response) =>
           response.url().endsWith(`/calls/${callId}/end`) && response.request().method() === 'POST',
       );
-      await callScreen(page).getByRole('button', { name: 'End call' }).click();
-      const screen = callScreen(page);
+      // Ended on its screen: back in the conversation, whose review takes focus.
+      const screen = await endFromScreen(page);
       await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeFocused();
       const response = await ended;
       expect(response.request().postDataJSON()).toMatchObject({ reason: 'user' });
@@ -450,10 +492,11 @@ test.describe('vEIR calls', () => {
         expect(m).toMatchObject({ origin: 'ai', status: 'proposed', keptAutomatically: false });
       // Leave the venture's memory as it was.
       for (const { id } of learned) await deleteMemory(page.request, id);
-      await screen.getByRole('button', { name: 'Back to conversation' }).click();
       await expect(callScreen(page)).toBeHidden();
       await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
       await expect(page.getByRole('region', { name: /^Call with / })).toHaveCount(0);
+      await screen.getByRole('button', { name: 'Dismiss call review' }).click();
+      await expect(screen).toHaveCount(0);
     });
   });
 
@@ -496,16 +539,15 @@ test.describe('vEIR calls', () => {
         (response) =>
           /\/calls\/[0-9a-f-]{36}\/end$/.test(response.url()) && response.request().method() === 'POST',
       );
-      await screen.getByRole('button', { name: 'End call' }).click();
-      await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
+      const review = await endFromScreen(page);
       const { summary } = (await (await endResponse).json()) as {
         summary: { memoryProposalIds: string[]; memoryKeptIds?: string[] };
       };
       expect(summary.memoryProposalIds, 'a private call proposes nothing').toEqual([]);
       expect(summary.memoryKeptIds ?? [], 'a private call keeps nothing').toEqual([]);
-      await expect(screen.getByTestId('call-private')).toHaveText('Private: nothing is remembered.');
-      await expect(screen.getByTestId('memory-saved')).toHaveCount(0);
-      await expect(screen.getByTestId('call-remembered')).toHaveCount(0);
+      await expect(review.getByTestId('call-private')).toHaveText('Private: nothing is remembered.');
+      await expect(review.getByTestId('memory-saved')).toHaveCount(0);
+      await expect(review.getByTestId('call-remembered')).toHaveCount(0);
       // Nothing in the venture's memory names it, and no summary of it is written.
       const memory = await page.request.get(`/api/v1/ventures/${ventureId}/memory?limit=100`);
       expect(memory.status(), 'GET /ventures/:id/memory').toBe(200);
@@ -515,7 +557,6 @@ test.describe('vEIR calls', () => {
         session: { digest: unknown };
       };
       expect(detail.session.digest ?? null).toBeNull();
-      await screen.getByRole('button', { name: 'Back to conversation' }).click();
       await expect(
         page.getByRole('main').locator('header').getByText('Private', { exact: true }),
       ).toBeVisible();
@@ -543,11 +584,7 @@ test.describe('vEIR calls', () => {
       );
       await startCallFromPalette(page);
       const screen = callScreen(page);
-      await expect(
-        screen
-          .getByRole('group', { name: 'Memory for this call' })
-          .getByRole('radio', { name: 'Remember this call' }),
-      ).toBeChecked();
+      await expect(screen.getByRole('button', { name: /^Memory for this call/ })).toContainText('Remembered');
       await screen.getByRole('button', { name: 'Start call' }).click();
       await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=1$/);
       const sessionId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
@@ -576,11 +613,9 @@ test.describe('vEIR calls', () => {
       return response;
     };
     const hangUp = async (): Promise<void> => {
-      const screen = callScreen(page);
-      await screen.getByRole('button', { name: 'End call' }).click();
-      await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible();
-      await screen.getByRole('button', { name: 'Back to conversation' }).click();
-      await expect(screen).toBeHidden();
+      const review = await endFromScreen(page);
+      await review.getByRole('button', { name: 'Dismiss call review' }).click();
+      await expect(review).toHaveCount(0);
     };
     try {
       let first = '';
@@ -695,8 +730,7 @@ test.describe('vEIR calls', () => {
       await screen.getByRole('button', { name: 'Start call' }).click();
       await acknowledged;
       await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeVisible({ timeout: 20_000 });
-      await screen.getByRole('button', { name: 'End call' }).click();
-      await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
+      await endFromScreen(page);
       expect(await callNoticeAcknowledgedAt(page.request, emberloop.id)).not.toBeNull();
     });
 
@@ -717,7 +751,8 @@ test.describe('vEIR calls', () => {
           Object.keys(window.localStorage).some((k) => k.startsWith('fa.call.notice.')),
         ),
       ).toBe(true);
-      await screen.getByRole('button', { name: 'Not now' }).click();
+      await screen.getByRole('button', { name: 'Close' }).click();
+      await expect(screen).toHaveCount(0);
       await second.close();
     });
   });
@@ -747,8 +782,7 @@ test.describe('vEIR calls', () => {
     await started;
     await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeFocused();
     await expect(tab).toHaveURL(new RegExp(`/c/${sessionId}\\?call=1$`));
-    await screen.getByRole('button', { name: 'End call' }).click();
-    await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible();
+    await endFromScreen(tab);
     await tab.close();
   });
 
@@ -786,8 +820,7 @@ test.describe('vEIR calls', () => {
     await screen.getByRole('button', { name: 'Move here, ending the other call' }).click();
     expect((await moved).postDataJSON()).toMatchObject({ replace: true });
     await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeFocused();
-    await screen.getByRole('button', { name: 'End call' }).click();
-    await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible();
+    await endFromScreen(tab);
     await tab.close();
   });
 
@@ -958,11 +991,8 @@ test.describe('vEIR calls', () => {
     try {
       const { sessionId, bar } = await minimizedCall(page);
       expect(calls.starts()).toBe(1);
-      // Ended from the mini bar and dismissed; then the founder goes elsewhere.
-      await bar.getByRole('button', { name: 'End call' }).click();
-      await expect(bar).toContainText('Call ended');
-      await bar.getByRole('button', { name: 'Dismiss' }).click();
-      await expect(bar).toHaveCount(0);
+      // Ended from the mini bar (its review takes the bar's place) and dismissed; then the founder goes elsewhere.
+      await dismissReviewAfterBarEnd(page, bar);
       await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'New chat' }).click();
       await expect(page).not.toHaveURL(/\/c\//);
 
@@ -982,13 +1012,11 @@ test.describe('vEIR calls', () => {
       await page.waitForLoadState('networkidle');
       expect(calls.starts(), 'no call started by Forward and Back').toBe(1);
 
-      // The founder's click starts it. Leaving its summary replaces the call's entry: Back does not reopen it.
+      // The founder's click starts it. Ending it replaces the call's entry: Back does not reopen it.
       await start.click();
       await expect.poll(calls.starts).toBe(2);
-      const screen = callScreen(page);
-      await screen.getByRole('button', { name: 'End call' }).click();
-      await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeFocused();
-      await screen.getByRole('button', { name: 'Back to conversation' }).click();
+      const review = await endFromScreen(page);
+      await expect(review.getByRole('heading', { name: 'Call ended' })).toBeFocused();
       await expect(page).toHaveURL(new RegExp(`/c/${sessionId}$`));
       await page.goBack();
       await expect(page).not.toHaveURL(/call=1/);
@@ -1005,9 +1033,7 @@ test.describe('vEIR calls', () => {
     try {
       const { bar } = await minimizedCall(page);
       await expectBarAndHeaderApart(page, bar);
-      await bar.getByRole('button', { name: 'End call' }).click();
-      await expect(bar).toContainText('Call ended');
-      await bar.getByRole('button', { name: 'Dismiss' }).click();
+      await dismissReviewAfterBarEnd(page, bar);
     } finally {
       await endCalls(page, calls.ids);
     }
@@ -1031,9 +1057,7 @@ test.describe('vEIR calls', () => {
       await turnOn.click();
       await expect(turnOn).toHaveCount(0);
       await expect(bar).not.toContainText('Sound is off');
-      await bar.getByRole('button', { name: 'End call' }).click();
-      await expect(bar).toContainText('Call ended');
-      await bar.getByRole('button', { name: 'Dismiss' }).click();
+      await dismissReviewAfterBarEnd(page, bar);
     } finally {
       await endCalls(page, calls.ids);
     }
@@ -1045,14 +1069,25 @@ test.describe('vEIR calls', () => {
       const { bar } = await minimizedCall(page);
       const status = bar.getByRole('status');
       await expect(status).toHaveText('');
-      // The program pauses calls: the next heartbeat (every 15 s) ends the call while the founder reads.
+      // The program pauses calls: the next heartbeat (every 15 s) ends the call while the founder reads. In its
+      // own conversation the review says so (and why), in place of the bar.
       await withCallsOff(baseURL, async () => {
-        await expect(bar).toContainText('Call ended', { timeout: 25_000 });
-        await expect(status).toHaveText('Call ended. Calls were paused by the program.');
-        await expectNoBareEirName(page, 'the mini call bar after the call ended');
+        const review = callReview(page);
+        await expect(review).toBeVisible({ timeout: 25_000 });
+        await expect(review.getByRole('status').first()).toHaveText('Calls were paused by the program.');
+        await expect(review.getByRole('heading', { name: 'Call ended' })).not.toBeFocused();
+        await expect(bar).toHaveCount(0);
       });
-      await bar.getByRole('button', { name: 'Dismiss' }).click();
+      // Anywhere else, the bar says it ended and why, and offers the review.
+      await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'New chat' }).click();
+      await expect(bar).toContainText('Call ended');
+      await expect(status).toHaveText('Call ended. Calls were paused by the program.');
+      await expectNoBareEirName(page, 'the mini call bar after the call ended');
+      await bar.getByRole('button', { name: 'Review the call' }).click();
+      await expect(callReview(page)).toBeVisible();
       await expect(bar).toHaveCount(0);
+      await callReview(page).getByRole('button', { name: 'Dismiss call review' }).click();
+      await expect(callReview(page)).toHaveCount(0);
     } finally {
       await endCalls(page, calls.ids);
     }
@@ -1074,11 +1109,10 @@ test.describe('vEIR calls', () => {
       for (const name of ['Call settings', 'End call']) {
         await expectReachable(page, screen.getByRole('button', { name }));
       }
-      await screen.getByRole('button', { name: 'End call' }).click();
-      await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible();
+      const review = await endFromScreen(page);
       await expectNoHorizontalScroll(page);
-      await screen.getByRole('button', { name: 'Back to conversation' }).click();
-      await expect(screen).toBeHidden();
+      await review.getByRole('button', { name: 'Dismiss call review' }).click();
+      await expect(review).toHaveCount(0);
     });
 
     test('the mini bar and the conversation header never cover each other', async ({ page }) => {
@@ -1087,9 +1121,7 @@ test.describe('vEIR calls', () => {
         const { bar } = await minimizedCall(page);
         await expectBarAndHeaderApart(page, bar);
         await expectNoHorizontalScroll(page);
-        await bar.getByRole('button', { name: 'End call' }).click();
-        await expect(bar).toContainText('Call ended');
-        await bar.getByRole('button', { name: 'Dismiss' }).click();
+        await dismissReviewAfterBarEnd(page, bar);
       } finally {
         await endCalls(page, calls.ids);
       }
@@ -1110,9 +1142,7 @@ test.describe('vEIR calls', () => {
         }
         await turnOn.click();
         await expect(turnOn).toHaveCount(0);
-        await bar.getByRole('button', { name: 'End call' }).click();
-        await expect(bar).toContainText('Call ended');
-        await bar.getByRole('button', { name: 'Dismiss' }).click();
+        await dismissReviewAfterBarEnd(page, bar);
       } finally {
         await endCalls(page, calls.ids);
       }

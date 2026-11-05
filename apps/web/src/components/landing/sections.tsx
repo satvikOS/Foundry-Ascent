@@ -1,5 +1,5 @@
 import type { Me } from '@foundry/contracts';
-import { ArrowRight, Bot, Check, Lock, PauseCircle, ShieldCheck } from 'lucide-react';
+import { Bot, Check, Lock, PauseCircle, ShieldCheck } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { BrandMark } from '@/components/shell/brand';
@@ -10,10 +10,6 @@ import { VoiceDemo } from './device-ad/voice-demo';
 import { CoachFragment, DiagnoseFragment, RecordFragment, VentureFragment } from './fragments';
 import { AccountPill } from './landing-nav';
 import { useReveals } from './use-reveals';
-
-function Arrow() {
-  return <ArrowRight aria-hidden className="size-4" />;
-}
 
 /** The program its students are on (the Ain Foundry roadmap): three modules, with EIR sessions in each. */
 const PROGRAM = [
@@ -240,21 +236,9 @@ function Ventures() {
 }
 
 const PRINCIPLES = [
-  {
-    title: 'Memory you can read, correct and delete',
-    body: 'Nothing it keeps is hidden from you.',
-    href: '#how-it-works',
-  },
-  {
-    title: 'Evidence before eloquence',
-    body: 'Thin grounding is flagged, not dressed up.',
-    href: '#how-it-works',
-  },
-  {
-    title: 'People when it matters',
-    body: 'Handoffs carry your context, with your consent.',
-    href: '#trust',
-  },
+  { title: 'Memory you can read, correct and delete', body: 'Nothing it keeps is hidden from you.' },
+  { title: 'Evidence before eloquence', body: 'Thin grounding is flagged, not dressed up.' },
+  { title: 'People when it matters', body: 'Handoffs carry your context, with your consent.' },
 ] as const;
 
 function Principles() {
@@ -270,19 +254,10 @@ function Principles() {
               key={item.title}
               data-reveal
               style={{ '--stagger': index } as CSSProperties}
-              className="relative"
+              className="grid content-start gap-4 rounded-[1.25rem] bg-(--surface-2) p-7 pb-10"
             >
-              <div className="l-notch grid min-h-[17rem] content-start gap-4 rounded-[1.25rem] bg-(--surface-2) p-7 pb-24">
-                <h3 className="l-h3">{item.title}</h3>
-                <p className="l-body text-muted-foreground">{item.body}</p>
-              </div>
-              <a
-                href={item.href}
-                aria-label={`${item.title}: read more`}
-                className="pill pill--outline absolute right-0 bottom-0 size-14 p-0"
-              >
-                <Arrow />
-              </a>
+              <h3 className="l-h3">{item.title}</h3>
+              <p className="l-body text-muted-foreground">{item.body}</p>
             </li>
           ))}
         </ul>
@@ -295,7 +270,7 @@ const TRUST = [
   { icon: Lock, label: 'Private to your venture' },
   { icon: Bot, label: 'AI, and says so when asked' },
   { icon: PauseCircle, label: 'Staff can pause a vEIR at once' },
-  { icon: ShieldCheck, label: 'Built to WCAG 2.2 AA' },
+  { icon: ShieldCheck, label: 'Designed to WCAG 2.2 AA' },
 ] as const;
 
 function TrustBand() {
@@ -310,7 +285,7 @@ function TrustBand() {
           Built to be trusted with early ideas
         </h2>
         <p data-reveal className="l-lead mx-auto mt-5 max-w-[40rem]">
-          Each venture is isolated. Program views use aggregates only.
+          Ventures are isolated. Program staff see totals; more needs consent.
         </p>
         <ul className="mx-auto mt-14 grid max-w-5xl gap-8 sm:grid-cols-2 lg:grid-cols-4">
           {TRUST.map((item, index) => (
@@ -321,7 +296,7 @@ function TrustBand() {
               className="grid content-start justify-items-center gap-3"
             >
               <item.icon aria-hidden className="size-6 opacity-80" strokeWidth={1.5} />
-              <span className="max-w-[18ch] text-[0.9375rem]">{item.label}</span>
+              <span className="max-w-[18ch] text-[0.9375rem] text-balance">{item.label}</span>
             </li>
           ))}
         </ul>
@@ -371,7 +346,7 @@ const FOOTER = [
     label: 'Trust',
     links: [
       { href: '#principles', text: 'Principles' },
-      { href: '#trust', text: 'Privacy' },
+      { href: '#trust', text: 'Sharing' },
     ],
   },
 ] as const;

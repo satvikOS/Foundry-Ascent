@@ -642,6 +642,15 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
+  /*
+   * Over the call screen, popovers (call settings, the vEIR badge's explanation) are solid: beneath them are the
+   * sphere's bright clouds and 22 px captions, and text over text through glass fails 4.5:1 (tokens.test.ts).
+   */
+  :root:has([data-slot='call-screen']) [data-slot='popover-content'] {
+    background-color: var(--popover);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
   /* On glass (or art, or the call's black) a focus ring needs its own backdrop to hold: two tones. */
   .glass-float :focus-visible,
   .focus-two-tone:focus-visible {

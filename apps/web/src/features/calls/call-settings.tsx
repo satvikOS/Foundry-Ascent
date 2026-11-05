@@ -1,27 +1,45 @@
 import { SlidersHorizontal } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 
 import { Kbd } from '@/components/ui/kbd';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
+import { PrivacyChoice, type ConversationPrivacy } from '../chat/privacy-choice';
 import { CAPTION_SIZES, useAnnounceCaptions, useCaptionSize, usePresentationPreference } from './preferences';
 
-interface CallSettingsProps {
-  /** The vEIR's name in the legend ("Corin · vEIR"). */
-  name: string;
+/** The controls that exist only once the call is live. */
+export interface LiveCallSettings {
   voice: boolean;
-  captions: boolean;
-  pushToTalk: boolean;
   typing: boolean;
   disabled: boolean;
   /** A vendor face is on screen: the presentation choice does not apply. */
   video: boolean;
-  onCaptions: () => void;
-  onPushToTalk: () => void;
   onTyping: () => void;
   onSwitchToChat: () => void;
+}
+
+interface CallSettingsProps {
+  /** The vEIR's name in the legend ("Corin · vEIR"). */
+  name: string;
+  captions: boolean;
+  onCaptions: () => void;
+  pushToTalk: boolean;
+  onPushToTalk: () => void;
+  /** The live call's own controls; null on the start screen. */
+  live: LiveCallSettings | null;
+  /** A call that starts a new conversation: remembered (the default) or private, chosen before it starts. */
+  memory?: {
+    value: ConversationPrivacy;
+    onChange: (privacy: ConversationPrivacy) => void;
+    disabled: boolean;
+  } | null;
+  /** Controlled opening (the start screen's memory line opens the settings too). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Where focus goes when the settings close, instead of their glyph (the control that opened them). */
+  returnFocusRef?: RefObject<HTMLElement | null>;
 }
 
 /** One segmented choice: buttons with a pressed state, named by their group. */
@@ -115,28 +133,30 @@ function Section({ children }: { children: ReactNode }) {
 }
 
 /**
- * The call settings (the sliders glyph, top right): presentation (the sphere by default, or the character, always
- * labelled "AI avatar"), captions and their size, screen-reader captions, push to talk, typing, switching to chat,
- * and the timeline's legend. Choices are remembered in this browser; none changes the voice, identity or session.
+ * The call settings (the sliders glyph, top right, on the start screen and during the call): presentation (the
+ * sphere by default, or the character, always labelled "AI avatar"), captions and their size, screen-reader
+ * captions, push to talk; before a call into a new conversation, Remember or Private; during the call, typing,
+ * switching to chat and the timeline's legend. The face is solid over the call (globals.css), never glass over the
+ * captions. Choices are remembered in this browser; none changes the voice, identity or session.
  */
 export function CallSettings({
   name,
-  voice,
   captions,
-  pushToTalk,
-  typing,
-  disabled,
-  video,
   onCaptions,
+  pushToTalk,
   onPushToTalk,
-  onTyping,
-  onSwitchToChat,
+  live,
+  memory = null,
+  open,
+  onOpenChange,
+  returnFocusRef,
 }: CallSettingsProps) {
   const [presentation, setPresentation] = usePresentationPreference();
   const [size, setSize] = useCaptionSize();
   const [announce, setAnnounce] = useAnnounceCaptions();
+  const voice = live?.voice ?? true;
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={onOpenChange}>
       <SimpleTooltip content="Call settings" side="bottom">
         <PopoverTrigger
           aria-label="Call settings"
@@ -148,9 +168,26 @@ export function CallSettings({
       <PopoverContent
         align="end"
         aria-label="Call settings"
-        className="grid w-[min(20rem,calc(100vw-2rem))] gap-3"
+        className="grid max-h-[calc(100dvh-5rem)] w-[min(20rem,calc(100vw-2rem))] gap-3 overflow-y-auto"
+        onCloseAutoFocus={(event) => {
+          const target = returnFocusRef?.current;
+          if (!target) return;
+          event.preventDefault();
+          target.focus();
+        }}
       >
-        {!video ? (
+        {memory ? (
+          <Section>
+            <PrivacyChoice
+              value={memory.value}
+              onChange={memory.onChange}
+              what="call"
+              disabled={memory.disabled}
+              className="items-start text-left sm:flex-col sm:items-start sm:justify-start"
+            />
+          </Section>
+        ) : null}
+        {!live?.video ? (
           <Section>
             <Segmented
               label="Presentation"
@@ -164,7 +201,12 @@ export function CallSettings({
           </Section>
         ) : null}
         <Section>
-          <Toggle label="Captions" pressed={captions} shortcut="C" onClick={onCaptions} />
+          <Toggle
+            label="Captions"
+            pressed={captions}
+            shortcut={live ? 'C' : undefined}
+            onClick={onCaptions}
+          />
           <Segmented label="Caption size" value={size} options={CAPTION_SIZES} onChange={setSize} />
           <Toggle
             label="Read captions with my screen reader"
@@ -179,43 +221,55 @@ export function CallSettings({
             <Toggle
               label="Push to talk"
               pressed={pushToTalk}
-              shortcut="P"
-              disabled={disabled}
+              shortcut={live ? 'P' : undefined}
+              disabled={live?.disabled}
               onClick={onPushToTalk}
             />
-            <Toggle
-              label="Type instead"
-              pressed={typing}
-              shortcut="T"
-              disabled={disabled}
-              onClick={onTyping}
-            />
+            {live ? (
+              <Toggle
+                label="Type instead"
+                pressed={live.typing}
+                shortcut="T"
+                disabled={live.disabled}
+                onClick={live.onTyping}
+              />
+            ) : null}
           </Section>
         ) : null}
-        <Section>
-          <button
-            type="button"
-            onClick={onSwitchToChat}
-            className="fa-call-focus flex min-h-11 w-full items-center rounded-lg px-2 text-left text-small text-foreground transition-colors duration-150 hover:bg-accent"
-          >
-            Switch to chat
-          </button>
-        </Section>
-        <Section>
-          <ul
-            aria-label="Timeline colours"
-            className="flex flex-wrap gap-x-4 gap-y-1 px-2 text-caption text-muted-foreground"
-          >
-            <li className="flex items-center gap-1.5">
-              <span aria-hidden className="size-3 rounded-[3px] bg-[light-dark(#d8e6cf,#344b2a)]" />
-              You
-            </li>
-            <li className="flex items-center gap-1.5">
-              <span aria-hidden className="size-3 rounded-[3px] bg-[light-dark(#d5dcf5,#303d71)]" />
-              {name}
-            </li>
-          </ul>
-        </Section>
+        {live ? (
+          <>
+            <Section>
+              <button
+                type="button"
+                onClick={live.onSwitchToChat}
+                className="fa-call-focus flex min-h-11 w-full items-center rounded-lg px-2 text-left text-small text-foreground transition-colors duration-150 hover:bg-accent"
+              >
+                Switch to chat
+              </button>
+            </Section>
+            <Section>
+              <ul
+                aria-label="Timeline colours"
+                className="flex flex-wrap gap-x-4 gap-y-1 px-2 text-caption text-muted-foreground"
+              >
+                <li className="flex items-center gap-1.5">
+                  <span
+                    aria-hidden
+                    className="size-3 rounded-[3px] bg-(--tl-student) shadow-[inset_0_0_0_1px_var(--tl-bar-student)]"
+                  />
+                  You
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span
+                    aria-hidden
+                    className="size-3 rounded-[3px] bg-(--tl-veir) shadow-[inset_0_0_0_1px_var(--tl-bar-veir)]"
+                  />
+                  {name}
+                </li>
+              </ul>
+            </Section>
+          </>
+        ) : null}
       </PopoverContent>
     </Popover>
   );

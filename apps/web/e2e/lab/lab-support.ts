@@ -199,8 +199,8 @@ export async function startCall(
     .getByRole('option', { name: /^Start a call/ })
     .click();
   const screen = callScreen(page);
-  const remember = screen.getByRole('radio', { name: /^Remember/ });
-  if ((await remember.count()) > 0) await expect(remember).toBeChecked();
+  const memory = screen.getByRole('button', { name: /^Memory for this call/ });
+  if ((await memory.count()) > 0) await expect(memory).toContainText('Remembered');
   await screen.getByRole('button', { name: 'Start call' }).click();
   await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=1$/);
   const sessionId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
@@ -218,12 +218,14 @@ export async function typeOnCall(page: Page, text: string): Promise<void> {
   await reply.press('Enter');
 }
 
+/** Ends the call (after End's short Undo window it closes onto the conversation) and dismisses its review. */
 export async function hangUp(page: Page): Promise<void> {
   const screen = callScreen(page);
   await screen.getByRole('button', { name: 'End call' }).click();
-  await expect(screen.getByRole('heading', { name: 'Call ended' })).toBeVisible();
-  await screen.getByRole('button', { name: 'Back to conversation' }).click();
+  const review = page.getByRole('region', { name: 'Call ended' });
+  await expect(review).toBeVisible({ timeout: 20_000 });
   await expect(screen).toBeHidden();
+  await review.getByRole('button', { name: 'Dismiss call review' }).click();
 }
 
 export interface Captured {
