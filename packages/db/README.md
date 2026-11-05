@@ -277,8 +277,10 @@ sourceId, memoryType, components}`; core assigns `E1…En`.
 
 - `searchVentureMemory({tenantId, ventureId, query, embedding, statuses?, types?, privateOwnerId?, limit=8})`
   — filters tenant + venture first, exact scan; statuses default proposed/confirmed/disputed (disputed =
-  contradiction signal); authority = 1 if pinned else status weight (confirmed 1, disputed .5, proposed .4)
-  × (0.5 + 0.5·confidence). `founder_private` items are excluded unless `privateOwnerId` is their author;
+  contradiction signal), but an AI suggestion still `proposed` is never returned (under automatic memory only
+  leftovers the daily maintenance has not checked are proposed; they wait for it); memory kept automatically
+  (no approver) is returned like any confirmed item; authority = 1 if pinned else status weight (confirmed 1,
+  disputed .5, proposed .4: an EIR's proposal) × (0.5 + 0.5·confidence). `founder_private` items are excluded unless `privateOwnerId` is their author;
   core never passes it (`privateRetrievalOwner` returns null: turns, their evidence and their derived
   memory are read by the team and sampled for EIR review, so private items stay out of coaching).
 - Lists stay well under the Data API's 1 MB response limit: memory lists return a 400-character excerpt
@@ -307,8 +309,10 @@ sourceId, memoryType, components}`; core assigns `E1…En`.
 
 `openOnly` excludes `attributes.status` in `CLOSED_ITEM_STATUSES`; `dueBefore`/`dueOnOrAfter` use `due` or
 `target_date`. Lifecycle: `proposed → confirmed` (approve) / `rejected`; `confirmed → disputed`;
-any active → `superseded` by a correction (new version, `supersedes_id`); delete erases all versions.
-AI-origin items can never be confirmed without `approved_by` (DB check constraint).
+any active → `superseded` by a correction (new version, `supersedes_id`, always `confirmed` with the corrector
+as approver: correcting a pending suggestion keeps it in the corrector's words); delete erases all versions.
+AI-origin items can never be confirmed without `approved_by` or `auto_kept_at` (DB check constraint).
+`listPendingAiProposals` / `settlePendingAiProposal` (maintenance) never take up a correction.
 
 ## 9. Seed (synthetic only)
 

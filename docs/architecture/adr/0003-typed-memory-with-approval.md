@@ -119,8 +119,16 @@ student must work through.
   or disputed) and pin, with a history event marked `system` and `0026_automatic_memory_restored`. An item whose
   conversation had something forgotten since 0021 is left to the daily maintenance, which applies the same checks
   as new memory. The migration documents an exact undo.
+- A student's correction is their consent: correcting any item, a pending suggestion included, writes the new
+  version `confirmed` with the student as approver. While approval was required a correction of a `proposed` item
+  stayed `proposed`, and the daily maintenance could retire it as "forgotten" or "the coach's advice" (it matches
+  the print of the words it corrected away from). Migration 0026 keeps each such correction as the student's
+  (`approved_by` = the corrector), also one the maintenance had retired, with an `approved` event
+  `corrected_by_person`; the maintenance never takes up a correction again.
 - The daily maintenance again keeps (or retires) every pending AI proposal, including those written while approval
   was required, and walks them with a cursor, a page per transaction, so a backlog never starves newer proposals.
+  Until it has checked one, retrieval never gives an AI suggestion that is still `proposed` to the coach; once it
+  keeps it, it is retrieved like all memory kept automatically.
 - An EIR's suggestions stay proposals for the founder to accept, as in the 2026-10-16 amendment.
 
 `student_profiles` and `learning_log` (migration 0022) are separate, explicitly submitted student records,

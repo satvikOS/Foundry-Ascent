@@ -63,7 +63,8 @@ export interface MemoryService {
     input: z.input<typeof CreateMemoryRequest>,
   ): Promise<MemoryObjectView>;
   /**
-   * approve / reject / correct (new superseding version, history kept) / dispute / pin / unpin /
+   * approve / reject / correct (new superseding version, history kept; the correction is confirmed by the
+   * person correcting, a pending suggestion too: correcting it is keeping it) / dispute / pin / unpin /
    * delete (soft: content erased for every version). Founder or team only. Returns the resulting item
    * (the new version for `correct`) or null after `delete`.
    */
@@ -483,7 +484,9 @@ const PENDING_SETTLE_MAX_PAGES = 50;
  * first, so of two that say the same the older is kept.
  *
  * It walks every pending proposal in (created_at, id) order with a cursor, one transaction per page of `limit`
- * (at most `maxPages` pages per run), so a proposal that stays pending never hides the newer ones behind it.
+ * (at most `maxPages` pages per run), so a proposal that stays pending never hides the newer ones behind it. A
+ * person's correction is never among them (it is theirs, kept as they wrote it; migration 0026 keeps the ones
+ * written while approval was required).
  */
 export async function settlePendingAiProposals(
   kit: Kit,

@@ -828,6 +828,52 @@ describe('what the vEIR keeps', () => {
       notTheFounders: 0,
     });
   });
+
+  it('a person’s correction of a suggestion left pending is theirs: maintenance never retires it (review)', async () => {
+    const session = await scripted.sessions.create(maya, quietquad(), {});
+    await say(maya, session.id, 'Meanwhile the pilot launch is set for November, before exams.');
+    // A suggestion left waiting from the approval period, drawn from that conversation.
+    const pending = await h.t.db.system(async (sx) =>
+      memoryRepo.createMemory(sx, {
+        tenantId: h.seed.tenantId,
+        ventureId: quietquad(),
+        type: 'decision',
+        title: 'Pilot launch month',
+        content: 'The pilot launch is set for November, before exams.',
+        status: 'proposed',
+        visibility: 'team',
+        origin: 'ai',
+        createdBy: maya.principalId,
+        sourceRefs: [{ kind: 'session', id: session.id, label: 'Learned from the conversation' }],
+      }),
+    );
+    // Maya corrects it through the API (no approve first): correcting it is keeping it, in her words.
+    const corrected = await scripted.memory.act(maya, pending.id, {
+      action: 'correct',
+      patch: { content: 'The pilot launch is set for December, after exams.' },
+    });
+    expect(corrected).toMatchObject({
+      status: 'confirmed',
+      supersedesId: pending.id,
+      approvedBy: { id: maya.principalId },
+    });
+    // The daily maintenance never takes her correction for the coach's advice or for what she made it forget
+    // (it matches the forgetting print of the version she corrected away from).
+    await scripted.maintenance.runDaily({ requestId: 'maintenance-correction' });
+    expect(await statusOf(corrected?.id ?? '')).toBe('confirmed');
+    expect(await statusOf(pending.id)).toBe('superseded');
+    expect((await liveTitled('Pilot launch month')).map((m) => m.content)).toEqual([
+      'The pilot launch is set for December, after exams.',
+    ]);
+    const events = await h.t.db.system((sx) =>
+      sx.query('SELECT action FROM memory_events WHERE memory_id = :id ORDER BY id', {
+        id: p.uuid(corrected?.id ?? ''),
+      }),
+    );
+    expect(events.rows.map((r) => String(r.action))).toEqual(['corrected']);
+    await scripted.sessions.remove(maya, session.id);
+    expect(await statusOf(corrected?.id ?? '')).toBe('confirmed');
+  });
 });
 
 describe('how a new conversation opens', () => {

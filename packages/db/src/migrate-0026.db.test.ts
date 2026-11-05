@@ -6,14 +6,16 @@
  * AI item, a founder's own item, AI proposals left pending before and written after 0021). 0026 puts back exactly
  * the items 0021 demoted that nobody acted on since, with their old status and pin and a history event marked
  * `system`; it never brings back anything a student rejected, corrected or deleted; it leaves an item whose
- * conversation had something forgotten since to the daily maintenance; it re-runs without changes; and the
- * documented undo puts the restored items (and only those) back to `proposed`.
+ * conversation had something forgotten since to the daily maintenance (and retrieval keeps such an AI suggestion
+ * from the coach until maintenance keeps it); it keeps a student's correction from the approval period as theirs,
+ * also one the maintenance of the time retired; it re-runs without changes; and the documented undo puts the
+ * restored items (and only those) back to where they were.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { MIGRATIONS, migrate } from './migrate.js';
 import { p } from './params.js';
-import { assignmentsRepo, memoryRepo, sessionsRepo } from './repositories/index.js';
+import { assignmentsRepo, memoryRepo, retrievalRepo, sessionsRepo } from './repositories/index.js';
 import { seedDatabase, type SeedConfig, type SeedResult } from './seed/seed.js';
 import { splitStatements } from './sql-lexer.js';
 import { createTestDatabase, makeContext, type TestDatabase } from './testing/test-database.js';
@@ -119,6 +121,70 @@ function remember(
   );
 }
 
+/**
+ * A correction as the code of 2026-11-03 to 0026 wrote it (as Maya, under RLS): correcting a `proposed` AI item
+ * wrote the new version as `proposed` too, with no approver (correctMemory now confirms every correction).
+ */
+async function correctAsDuringApproval(memoryId: string, content: string): Promise<string> {
+  return t.db.withContext(maya(), async (tx) => {
+    const rows = await tx.query(
+      `WITH old AS (SELECT * FROM memory_objects WHERE id = :id AND status = 'proposed' FOR UPDATE)
+       , ins AS (
+         INSERT INTO memory_objects (tenant_id, venture_id, type, title, content, attributes, status, visibility,
+                                     confidence, source_refs, origin, created_by, version, supersedes_id, pinned)
+         SELECT tenant_id, venture_id, type, title, :content, attributes, 'proposed', visibility, confidence,
+                source_refs, origin, :actor, version + 1, id, pinned
+           FROM old
+         RETURNING id, venture_id, supersedes_id, version)
+       , upd AS (
+         UPDATE memory_objects SET status = 'superseded', pinned = false, updated_at = now()
+          WHERE id IN (SELECT id FROM old) RETURNING id)
+       , ev AS (
+         INSERT INTO memory_events (memory_id, venture_id, actor_id, action, diff)
+         SELECT ins.supersedes_id, ins.venture_id, :actor, 'superseded', jsonb_build_object('by', ins.id) FROM ins
+         UNION ALL
+         SELECT ins.id, ins.venture_id, :actor, 'corrected',
+                jsonb_build_object('fields', '["content"]'::jsonb, 'reason', NULL, 'supersedes', ins.supersedes_id,
+                                   'version', ins.version)
+           FROM ins)
+       SELECT ins.id FROM ins, (SELECT count(*) FROM upd) AS u`,
+      { id: p.uuid(memoryId), actor: p.uuid(maya().principalId), content: p.text(content) },
+    );
+    return String(must(rows.rows[0]).id);
+  });
+}
+
+/** What the maintenance of the time did to such a correction: retired it as not the founder's (system). */
+async function retireAsDuringApproval(memoryId: string, reason: string): Promise<void> {
+  await t.db.system((sx) =>
+    sx.query(
+      `WITH upd AS (
+         UPDATE memory_objects SET status = 'expired', pinned = false, updated_at = now()
+          WHERE id = :id AND status = 'proposed' RETURNING id, venture_id, created_by)
+       INSERT INTO memory_events (memory_id, venture_id, actor_id, action, diff)
+       SELECT id, venture_id, created_by, 'expired',
+              jsonb_build_object('to', 'expired', 'system', true, 'reason', CAST(:reason AS text))
+         FROM upd`,
+      { id: p.uuid(memoryId), reason: p.text(reason) },
+    ),
+  );
+}
+
+/** Venture memory the coach's retrieval returns for `query` (as Maya). */
+async function retrieved(query: string): Promise<string[]> {
+  const hits = await t.db.withContext(maya(), (tx) =>
+    retrievalRepo.searchVentureMemory(tx, {
+      tenantId: seed.tenantId,
+      ventureId: venture().id,
+      query,
+      embedding: null,
+      limit: 100,
+      minScore: 0,
+    }),
+  );
+  return hits.map((h) => h.refId);
+}
+
 const ids: Record<string, string> = {};
 
 beforeAll(async () => {
@@ -142,6 +208,8 @@ beforeAll(async () => {
   await kept('rejectedSince', [{ kind: 'session', id: a.sessionId }]);
   await kept('deletedSince', [{ kind: 'session', id: a.sessionId }]);
   await kept('correctedSince', [{ kind: 'session', id: a.sessionId }]);
+  await kept('correctedThenRetired', [{ kind: 'session', id: a.sessionId }]);
+  await kept('correctedThenRejected', [{ kind: 'session', id: a.sessionId }]);
   await kept('retiredSince', [{ kind: 'session', id: a.sessionId }]);
   await kept('repeatedSince', [{ kind: 'session', id: a.sessionId }]);
   await kept('forgottenNearby', [{ kind: 'session', id: b.sessionId }]);
@@ -184,14 +252,6 @@ beforeAll(async () => {
     must(await memoryRepo.approveMemory(tx, { memoryId: ids.approvedSince ?? '', actorId: actor }));
     must(await memoryRepo.rejectMemory(tx, { memoryId: ids.rejectedSince ?? '', actorId: actor }));
     expect(await memoryRepo.deleteMemory(tx, ids.deletedSince ?? '')).toBeGreaterThan(0);
-    ids.correction = must(
-      await memoryRepo.correctMemory(tx, {
-        memoryId: ids.correctedSince ?? '',
-        actorId: actor,
-        patch: { content: 'What the founder actually said.' },
-        reason: null,
-      }),
-    ).id;
     must(
       await memoryRepo.repeatProposal(tx, {
         memoryId: ids.repeatedSince ?? '',
@@ -200,6 +260,21 @@ beforeAll(async () => {
         confidence: 0.9,
       }),
     );
+  });
+  // Corrections of demoted items, written `proposed` as the code of the time did: one left pending, one the
+  // maintenance of the time retired (it matched the print of the words it corrected), one the student rejected.
+  ids.correction = await correctAsDuringApproval(ids.correctedSince ?? '', 'What the founder actually said.');
+  ids.correctionRetired = await correctAsDuringApproval(
+    ids.correctedThenRetired ?? '',
+    'The pilot moved to December, after exams.',
+  );
+  await retireAsDuringApproval(ids.correctionRetired, 'forgotten');
+  ids.correctionRejected = await correctAsDuringApproval(
+    ids.correctedThenRejected ?? '',
+    'A correction the student then threw away.',
+  );
+  await t.db.withContext(maya(), async (tx) => {
+    must(await memoryRepo.rejectMemory(tx, { memoryId: ids.correctionRejected ?? '', actorId: actor }));
   });
   await t.db.system(async (sx) => {
     expect(
@@ -271,17 +346,50 @@ describe('migration 0026_automatic_memory_restored', () => {
     expect(await row(ids.deletedSince ?? '')).toMatchObject({ status: 'deleted' });
     expect(await row(ids.correctedSince ?? '')).toMatchObject({ status: 'superseded' });
     expect(await row(ids.retiredSince ?? '')).toMatchObject({ status: 'expired' });
-    // The student's corrected version is theirs: 0026 does not touch it (the daily maintenance settles it).
-    expect(await row(ids.correction ?? '')).toMatchObject({ status: 'proposed' });
+    expect(await row(ids.correctedThenRetired ?? '')).toMatchObject({ status: 'superseded' });
+    expect(await row(ids.correctedThenRejected ?? '')).toMatchObject({ status: 'superseded' });
+    // A correction the student rejected stays rejected.
+    expect(await row(ids.correctionRejected ?? '')).toMatchObject({ status: 'rejected', approved_by: null });
     for (const key of [
       'approvedSince',
       'rejectedSince',
       'deletedSince',
       'correctedSince',
       'retiredSince',
-      'correction',
+      'correctedThenRetired',
+      'correctedThenRejected',
+      'correctionRejected',
     ])
       expect(await restoredBy0026(ids[key] ?? '')).toEqual([]);
+  });
+
+  it('keeps a student’s correction from the approval period as theirs, also one maintenance retired (review)', async () => {
+    for (const key of ['correction', 'correctionRetired'])
+      expect(await row(ids[key] ?? '')).toEqual({
+        status: 'confirmed',
+        pinned: false,
+        approved_by: maya().principalId,
+        kept: false,
+      });
+    expect((await restoredBy0026(ids.correction ?? '')).map((e) => e.diff)).toEqual([
+      { to: 'confirmed', from: 'proposed', reason: 'corrected_by_person', migration: MARK },
+    ]);
+    expect((await restoredBy0026(ids.correctionRetired ?? '')).map((e) => e.diff)).toEqual([
+      { to: 'confirmed', from: 'expired', reason: 'corrected_by_person', migration: MARK },
+    ]);
+    // The coach reads the student's words, never the words they corrected away from.
+    const hits = await retrieved('December exams founder actually said');
+    expect(hits).toEqual(expect.arrayContaining([ids.correction, ids.correctionRetired]));
+    for (const key of [
+      'correctedSince',
+      'correctedThenRetired',
+      'correctedThenRejected',
+      'correctionRejected',
+    ])
+      expect(hits).not.toContain(ids[key]);
+    // The daily maintenance never takes a correction up again.
+    const pending = await t.db.system((sx) => memoryRepo.listPendingAiProposals(sx, { limit: 1000 }));
+    expect(pending.some((x) => x.id === ids.correction || x.id === ids.correctionRetired)).toBe(false);
   });
 
   it('leaves to maintenance an item whose conversation had something forgotten since 0021', async () => {
@@ -301,6 +409,30 @@ describe('migration 0026_automatic_memory_restored', () => {
     expect(await row(ids.pendingSince ?? '')).toMatchObject({ status: 'proposed', kept: false });
     for (const key of ['eir', 'founder', 'approvedBefore', 'pendingBefore', 'pendingSince'])
       expect(await restoredBy0026(ids[key] ?? '')).toEqual([]);
+  });
+
+  it('never gives the coach an AI suggestion maintenance has not checked; once it keeps one, it does (review)', async () => {
+    const query = 'Kept Pending forgottenNearby forgottenOther plain since';
+    const before = await retrieved(query);
+    expect(before).toContain(ids.plain);
+    for (const key of ['forgottenNearby', 'forgottenOther', 'pendingSince', 'pendingBefore'])
+      expect(before).not.toContain(ids[key]);
+    // The daily maintenance keeps them (here: its repository step; core tests run the whole maintenance).
+    await t.db.system(async (sx) => {
+      for (const key of ['forgottenNearby', 'pendingSince'])
+        expect(
+          await memoryRepo.settlePendingAiProposal(sx, {
+            memoryId: ids[key] ?? '',
+            outcome: 'keep',
+            reason: memoryRepo.KEPT_AUTOMATICALLY,
+          }),
+        ).toBe(true);
+    });
+    const after = await retrieved(query);
+    expect(after).toEqual(expect.arrayContaining([ids.plain, ids.forgottenNearby, ids.pendingSince]));
+    expect(after).not.toContain(ids.forgottenOther);
+    // An EIR's proposal is still offered at its lower authority (it is a person's, not the vEIR's).
+    expect(await retrieved('EIR suggestion')).toContain(ids.eir);
   });
 
   it('is idempotent: re-running its statements, then the runner, changes nothing', async () => {
@@ -334,6 +466,11 @@ describe('migration 0026_automatic_memory_restored', () => {
     await t.db.system((sx) => sx.query(undo));
     for (const key of ['plain', 'fromTurn', 'disputed', 'pinned', 'repeatedSince', 'otherConversation'])
       expect(await row(ids[key] ?? '')).toMatchObject({ status: 'proposed', pinned: false });
+    expect(await row(ids.correction ?? '')).toMatchObject({ status: 'proposed', approved_by: null });
+    expect(await row(ids.correctionRetired ?? '')).toMatchObject({ status: 'expired', approved_by: null });
+    // What maintenance kept after 0026 (no 0026 event) and what a student did stay as they are.
+    expect(await row(ids.pendingSince ?? '')).toMatchObject({ status: 'confirmed' });
+    expect(await row(ids.correctionRejected ?? '')).toMatchObject({ status: 'rejected' });
     expect(await row(ids.approvedSince ?? '')).toMatchObject({ status: 'confirmed' });
     expect(await row(ids.founder ?? '')).toMatchObject({ status: 'confirmed' });
     expect(await row(ids.rejectedSince ?? '')).toMatchObject({ status: 'rejected' });

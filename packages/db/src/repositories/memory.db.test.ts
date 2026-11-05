@@ -323,4 +323,61 @@ describe('pending AI proposals for maintenance (cursor)', () => {
       }),
     );
   });
+
+  it('a correction of a pending suggestion is the corrector’s: confirmed, and never pending for maintenance (review)', async () => {
+    const { proposal, correction } = await t.db.withContext(maya, async (tx) => {
+      const proposal = await memoryRepo.createMemory(tx, {
+        tenantId: seed.tenantId,
+        ventureId,
+        type: 'decision',
+        title: 'Launch month',
+        content: 'The launch is in November, before exams.',
+        origin: 'ai',
+        createdBy: maya.principalId,
+      });
+      expect(proposal.status).toBe('proposed');
+      const correction = await memoryRepo.correctMemory(tx, {
+        memoryId: proposal.id,
+        actorId: maya.principalId,
+        patch: { content: 'The launch is in December, after exams.' },
+      });
+      return { proposal, correction };
+    });
+    expect(correction).toMatchObject({
+      status: 'confirmed',
+      origin: 'ai',
+      supersedesId: proposal.id,
+      approvedBy: { id: maya.principalId },
+      keptAutomatically: false,
+    });
+    const pending = await t.db.system((sx) => memoryRepo.listPendingAiProposals(sx, { limit: 1000 }));
+    expect(pending.map((x) => x.id)).not.toContain(proposal.id);
+    expect(pending.map((x) => x.id)).not.toContain(correction?.id);
+    // Even a correction left `proposed` by the code of the approval period is never settled by maintenance.
+    await t.db.system((sx) =>
+      sx.query(
+        `UPDATE memory_objects SET status = 'proposed', approved_by = NULL, approved_at = NULL WHERE id = :id`,
+        {
+          id: p.uuid(correction?.id ?? ''),
+        },
+      ),
+    );
+    expect(
+      (await t.db.system((sx) => memoryRepo.listPendingAiProposals(sx, { limit: 1000 }))).map((x) => x.id),
+    ).not.toContain(correction?.id);
+    expect(
+      await t.db.system((sx) =>
+        memoryRepo.settlePendingAiProposal(sx, {
+          memoryId: correction?.id ?? '',
+          outcome: 'expire',
+          reason: 'forgotten',
+        }),
+      ),
+    ).toBe(false);
+    await t.db.system((sx) =>
+      sx.query(`UPDATE memory_objects SET status = 'expired' WHERE id = :id`, {
+        id: p.uuid(correction?.id ?? ''),
+      }),
+    );
+  });
 });

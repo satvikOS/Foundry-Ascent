@@ -153,7 +153,8 @@ stop keeping new memory and stop retrieving what 0026 restored: do not deploy it
 must be undone (only on an explicit owner decision), pause AI with the
 [global kill switch](kill-switch-and-persona-suspension.md) and run the exact undo documented in the header of
 `packages/db/migrations/0026_automatic_memory_restored.sql`: it returns only the items 0026 restored (marked
-by their `0026_automatic_memory_restored` event) to `proposed`. Never clear digest-deletion fences as a rollback
+by their `0026_automatic_memory_restored` event) to `proposed`, and a student's correction from the approval period
+that 0026 kept back to where it was (`proposed`, or `expired` when the maintenance of the time had retired it). Never clear digest-deletion fences as a rollback
 step: they record a student's rejection, correction or deletion (migration 0024).
 
 **Database:** migrations are forward-only and run before code goes live. A rollback deploy runs the
