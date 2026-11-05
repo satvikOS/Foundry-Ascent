@@ -210,6 +210,7 @@ export {
 export {
   DISCLAIMER_FALLBACK,
   IDENTITY_MARGIN_CHARS,
+  identityQuestionOf,
   identityReplacement,
   isStyleFinding,
   rewriteIdentity,
@@ -254,6 +255,11 @@ export {
   spokenHandBackFor,
   withinSocialBudget,
   withoutRepeats,
+  withoutUnits,
+  announcedCountGap,
+  isProtectedLine,
+  type WithoutRepeats,
+  type WithoutRepeatsOptions,
 } from './validators/social.js';
 export {
   SentenceGate,

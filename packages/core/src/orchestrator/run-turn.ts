@@ -1013,6 +1013,10 @@ export function createOrchestrator(
         // Always null today: no session is readable by its author alone (see privateRetrievalOwner).
         privateOwnerId: privateRetrievalOwner(pre.session, ctx.principalId),
         sessionId: pre.session.id,
+        // A full history window: memory from turns that fell out of it is evidence again (a 27-turn conversation
+        // keeps its early facts); only what the turns in view taught is left out.
+        historySince:
+          coach.history.length >= cfg.turns.historyTurns ? (coach.history[0]?.createdAt ?? null) : null,
       });
       return { evidencePack, lexicalOnly: vector === null };
     });

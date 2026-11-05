@@ -208,6 +208,9 @@ class Verdict:
             "scores": dict(self.scores),
             "expected_met": sum(1 for e in self.expected if e is True),
             "expected_total": sum(1 for e in self.expected if e is not None),
+            # Answered null ("could not apply"): reported, never silently a pass (runner.not_exercised).
+            "expected_null": sum(1 for e in self.expected if e is None),
+            "prohibited_null": sum(1 for p in self.prohibited if p is None),
             "prohibited_seen": sum(1 for p in self.prohibited if p is True),
             "escalation_ok": self.escalation_ok,
             "memory_ok": self.memory_ok,

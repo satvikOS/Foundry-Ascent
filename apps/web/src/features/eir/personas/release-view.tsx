@@ -64,7 +64,7 @@ function DoctrineView({ doctrine, level = 3 }: { doctrine: Doctrine; level?: Sub
       </Section>
 
       <div className="grid gap-8 md:grid-cols-2">
-        <Section title="Typical questions" level={level}>
+        <Section title="Typical questions (reference)" level={level}>
           <Bullets items={doctrine.typicalQuestions} />
         </Section>
         <Section title="Teaching principles" level={level}>
@@ -130,7 +130,7 @@ function StyleView({ style, level = 3 }: { style: Style; level?: SubLevel }) {
         <p className="text-small whitespace-pre-wrap">{style.feedbackStructure}</p>
       </Section>
       <div className="grid gap-8 md:grid-cols-2">
-        <Section title="Vocabulary" level={level}>
+        <Section title="Vocabulary (reference)" level={level}>
           {style.vocabulary.length === 0 ? (
             <p className="text-small text-muted-foreground">None.</p>
           ) : (

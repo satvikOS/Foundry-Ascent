@@ -96,11 +96,11 @@ describe('never the previous reply again (repeated_reply, LAB-M3, LAB-M10)', () 
 
   it('leaves out the sentences that repeat the previous reply, keeps the new ones', () => {
     const again = `Ask three students what they'd give up to skip the group chat and the walking. With five yeses, run the two-library pilot in November.`;
-    expect(withoutRepeats(again, previous)).toEqual({
+    expect(withoutRepeats(again, previous)).toMatchObject({
       text: 'With five yeses, run the two-library pilot in November.',
       dropped: 1,
     });
-    expect(withoutRepeats(previous, previous)).toEqual({ text: '', dropped: 2 });
+    expect(withoutRepeats(previous, previous)).toMatchObject({ text: '', dropped: 2 });
     // A short acknowledgement repeats safely.
     expect(withoutRepeats('Got it. Fair point.', 'Got it. Fair point.').dropped).toBe(0);
   });
@@ -228,7 +228,7 @@ describe('a question is never asked again in the next reply, in other words (ite
   it('leaves the re-asked question out of a reply to the founder’s worry, and keeps the rest', () => {
     const reply =
       "That's a real risk: SSO can stall a library pilot for months. Is there a written success agreement, and what happens if the pilot misses? Ask their IT lead now what SSO they need.";
-    expect(withoutRepeats(reply, previous)).toEqual({
+    expect(withoutRepeats(reply, previous)).toMatchObject({
       text: "That's a real risk: SSO can stall a library pilot for months. Ask their IT lead now what SSO they need.",
       dropped: 1,
     });

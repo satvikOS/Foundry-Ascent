@@ -166,6 +166,13 @@ export interface VentureMemoryQuery extends BaseQuery {
    * this one repeated them.
    */
   readonly excludeSessionId?: string | null;
+  /**
+   * With {@link excludeSessionId}: only items of that conversation created at or after this instant are left out (the
+   * oldest turn still in the history window). Items learned from turns that fell out of the window come back as
+   * evidence, so a long conversation keeps its early facts. Null or absent: every item of the conversation is left out
+   * (the whole conversation is in view).
+   */
+  readonly excludeSessionSince?: string | null;
 }
 
 /**
@@ -198,7 +205,8 @@ function memorySearch(q: VentureMemoryQuery): StoreSearch {
          AND (:types IS NULL OR m.type = ANY (:types))
          AND (m.visibility <> 'founder_private' OR (:privateOwner IS NOT NULL AND m.created_by = :privateOwner))
          AND NOT (:excludeSession IS NOT NULL AND m.origin = 'ai' AND jsonb_typeof(m.source_refs) = 'array'
-                  AND m.source_refs -> 0 ->> 'kind' = 'session' AND m.source_refs -> 0 ->> 'id' = :excludeSession)
+                  AND m.source_refs -> 0 ->> 'kind' = 'session' AND m.source_refs -> 0 ->> 'id' = :excludeSession
+                  AND (CAST(:excludeSince AS timestamptz) IS NULL OR m.created_at >= CAST(:excludeSince AS timestamptz)))
          AND (m.tsv @@ q.tsq OR m.pinned OR (:embedding IS NOT NULL AND m.embedding IS NOT NULL))
      ) x
      WHERE ${SCORE_SQL} >= :minScore
@@ -211,6 +219,7 @@ function memorySearch(q: VentureMemoryQuery): StoreSearch {
       types: p.nullable.textArray(q.types),
       privateOwner: p.nullable.uuid(q.privateOwnerId),
       excludeSession: p.nullable.text(q.excludeSessionId),
+      excludeSince: p.nullable.ts(q.excludeSessionId == null ? null : (q.excludeSessionSince ?? null)),
     },
     decode: (r) => decodeItem('memory', r),
   };

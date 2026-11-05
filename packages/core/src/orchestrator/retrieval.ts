@@ -36,6 +36,12 @@ export interface RetrievalArgs {
    * `VentureMemoryQuery.excludeSessionId`). Null or absent: none is left out (a test conversation).
    */
   readonly sessionId?: string | null;
+  /**
+   * When the history window is full: the oldest turn still in view (its `createdAt`). Only memory learned from turns
+   * in view is left out; what earlier turns of a long conversation taught comes back. Null: the whole conversation is
+   * in view.
+   */
+  readonly historySince?: string | null;
 }
 
 /**
@@ -109,6 +115,7 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
             limit: budgets.memory + MEMORY_SPARE,
             privateOwnerId: args.privateOwnerId,
             excludeSessionId: args.sessionId ?? null,
+            excludeSessionSince: args.historySince ?? null,
           },
         }
       : {}),

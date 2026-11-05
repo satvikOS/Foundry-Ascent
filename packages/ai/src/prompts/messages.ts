@@ -15,6 +15,11 @@ export interface HistoryTurn {
   founderText: string;
   /** The validated `CoachResponse.answer`, or null if the turn produced none. */
   answer: string | null;
+  /**
+   * The escalation category the turn's reply escalated to (`CoachResponse.escalation`, when required), or null/absent:
+   * the conversation state says what was already referred, so the referral is made once and the vEIR then helps.
+   */
+  escalated?: string | null;
 }
 
 export interface BuildMessagesOptions {

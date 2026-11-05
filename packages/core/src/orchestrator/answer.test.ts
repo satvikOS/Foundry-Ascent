@@ -850,7 +850,7 @@ describe('live pilot 42099643194: the whole conversation is guarded, and a repea
     { founderText: 'I already went to the office last week.', answer: B },
   ];
 
-  it('never says the reply from two turns back again: it stops there and goes on with something new', async () => {
+  it('never says the reply from two turns back again, and keeps what follows the repeat (no truncation)', async () => {
     for (const channel of ['text', 'voice'] as const) {
       const { gateway, continued } = scripted(
         () => `Your dates are covered then. ${A} Ask about the filing budget too.`,
@@ -861,14 +861,63 @@ describe('live pilot 42099643194: the whole conversation is guarded, and a repea
         channel,
         history,
       });
-      expect(continued, channel).toHaveLength(1);
+      expect(continued, channel).toHaveLength(0);
       expect(turn.answer, channel).not.toContain('Bring the commit logs');
       expect(turn.answer, channel).toContain('Your dates are covered then.');
-      expect(turn.answer, channel).toContain('who pays for the provisional filing');
-      // Nothing after the repeat is shown from the first draft: the reply never has a hole in it.
-      expect(turn.shown, channel).not.toContain('Ask about the filing budget too.');
-      expect(turn.notes, channel).toContain('stream_repeat_cut');
+      expect(turn.shown, channel).toContain('Ask about the filing budget too.');
+      expect(turn.answer, channel).toContain('Ask about the filing budget too.');
+      // The stored answer is what was shown, never re-judged after it was shown or said.
+      if (channel === 'text') expect(turn.answer, channel).toBe(turn.shown.trim());
+      expect(
+        turn.notes.some((n) => n.startsWith('repeated_sentences_removed')),
+        channel,
+      ).toBe(false);
     }
+  });
+
+  it('stores a streamed reply exactly as shown, typed and on a call, when a unit spans several sentences', async () => {
+    // The gate judges "…, e.g. bring the commit logs…" as one unit (mostly new); sentence by sentence, its second half
+    // is the reply from two turns back. Re-judged after it was shown and said, the stored answer lost it.
+    const reply =
+      'Keep a dated record of every change you made this spring, e.g. bring the commit logs to the tech-transfer ' +
+      'office and ask them to confirm the ownership dates in writing. After that, price the filing.';
+    for (const channel of ['text', 'voice'] as const) {
+      const { gateway } = scripted(
+        () => reply,
+        () => '',
+      );
+      const turn = await answer(gateway, { text: 'And after the logs?', channel, history });
+      expect(turn.shown, channel).toContain('e.g. bring the commit logs');
+      expect(turn.answer, channel).toBe(turn.shown.trim());
+    }
+  });
+
+  it('writes a whole reply again once with what was already said, instead of leaving a hole (repeat_regenerated)', async () => {
+    const asked: string[] = [];
+    const gateway = new MockModelGateway({
+      streamDelayMs: 0,
+      fixtures: {
+        [COACH_RESPONSE_SCHEMA_NAME]: (context) => {
+          const last = context.messages.at(-1)?.content ?? '';
+          asked.push(last);
+          const again = last.includes('said again what you already said');
+          return {
+            ...mockCoachResponse(context),
+            answer: again
+              ? 'Your dates are covered. The open piece is who pays for the provisional filing.'
+              : `Three steps:\n\n1. ${B}\n2. Ask who pays for the filing.\n3. Book the office.`,
+            spoken: null,
+          };
+        },
+      },
+    });
+    const turn = await answer(gateway, { text: 'What next?', history, streaming: false });
+    expect(asked).toHaveLength(2);
+    expect(asked[1]).toContain('Write down which parts of the code');
+    expect(turn.answer).toBe(
+      'Your dates are covered. The open piece is who pays for the provisional filing.',
+    );
+    expect(turn.notes).toContain('repeat_regenerated');
   });
 
   it('answers "got it, I will do X" with a short sign-off, not new homework (35 of 47 such turns)', async () => {
@@ -886,6 +935,24 @@ describe('live pilot 42099643194: the whole conversation is guarded, and a repea
     });
     expect(turn.answer.split(/(?<=[.!?])\s+/).length).toBeLessThanOrEqual(3);
     expect(turn.answer).not.toContain('book a meeting');
+  });
+
+  it('never gives a flagged "got it, I will do X" the sign-off budget: it needs the escalation (reviewer probes)', async () => {
+    const full =
+      'Before you sign, have a lawyer read the vesting and IP assignment clauses. ' +
+      'Ask the program staff for the legal clinic contact today. ' +
+      'Bring the two questions you most need answered: who owns the code, and what happens if one of you leaves.';
+    for (const text of [
+      "Got it, I'll sign the cofounder agreement tonight then. Thanks!",
+      "Thanks, I'll tell my cofounder I'm taking 70% of the equity.",
+    ]) {
+      const { gateway } = scripted(
+        () => full,
+        () => '',
+      );
+      const turn = await answer(gateway, { text, history: [PRICING] });
+      expect(turn.answer, text).toContain('who owns the code');
+    }
   });
 
   it('replays an earlier reply without the structured blocks a model wrote after it (C4)', async () => {

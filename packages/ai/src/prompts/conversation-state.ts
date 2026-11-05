@@ -1,3 +1,4 @@
+import { classifyRisk } from '../risk/classifier.js';
 import { CONVERSATION_STATE_TAG, OVERUSED_PHRASES } from './craft.js';
 import { escapeData, truncate } from './escape.js';
 
@@ -35,6 +36,8 @@ export type FounderMove =
 export interface StateTurn {
   readonly founderText: string;
   readonly answer: string | null;
+  /** The escalation category the turn's reply escalated to, or null/absent (`HistoryTurn.escalated`). */
+  readonly escalated?: string | null;
 }
 
 export interface ConversationThread {
@@ -96,6 +99,12 @@ export interface ConversationState {
   readonly wrapUp?: boolean;
   /** The message reads as being about another venture or team, or asks for a message to be passed on. */
   readonly aboutOthers?: boolean;
+  /**
+   * Escalation categories already referred in this conversation's turns (deterministic, from the turn records, oldest
+   * first, distinct): the referral is not said again, and the vEIR helps them prepare. `safety_wellbeing` is never
+   * listed: wellbeing support is offered whenever it is needed (diagnosis fix 4, "escalate once, then help").
+   */
+  readonly escalatedEarlier?: readonly string[];
   /**
    * Whether the question the vEIR's last reply asked (the first of `askedQuestions`) is still open: the new message
    * neither answers it nor takes it up (it asks something else, or changes the topic).
@@ -605,9 +614,20 @@ const RESERVATION =
   /\b(?:but|though|although|however|unless|except|worried|not sure|no idea|can't|cannot|won't)\b/;
 
 /**
+ * A plan that touches the founder's wellbeing, or reads as crisis-adjacent however casually it is put ("I'll just stop
+ * eating until the launch", "I'm going to end it after the demo"): never signed off on as a wrap-up. Recall over
+ * precision: a false positive only means the message is answered in full.
+ */
+const WELLBEING_CUE =
+  /\b(?:end (?:it|it all|everything|my life)|ending (?:it|it all|everything)|(?:stop|quit|skip(?:ping)?|not) (?:eating|sleeping|meals|food)|starv\w*|no (?:food|sleep|meals)|all[- ]nighters?|(?:hurt|harm|kill)\w* (?:myself|me)|die|dying|dead|disappear\w*|give up on (?:everything|life|myself)|done with (?:everything|life|it all)|(?:can't|cannot) (?:go on|do this anymore|take (?:it|this) anymore)|no point|pills|overdose|self[- ]harm|nobody (?:cares|would notice)|burn(?:ed|t)? out|breakdown|panic attacks?)\b/;
+
+/**
  * Whether the message takes the advice on board and says what they will do, asking nothing ("Got it, I'll call the
  * three stores by Friday. Thanks!"). Live pilot 42099643194: 35 of 47 such turns got more than 40 words of new homework.
- * A message that is only social ({@link socialTurnOf}) is not one: it is answered as that.
+ * A message that is only social ({@link socialTurnOf}) is not one: it is answered as that. Never a plan the risk
+ * classifier flags (signing an agreement tonight, taking 70% of the equity, filing a patent alone, testing a supplement
+ * on friends) or one that touches their wellbeing ({@link WELLBEING_CUE}): that moment needs the escalation or a
+ * check-in, not a warm sign-off.
  */
 export function wrapUpOf(text: string, moves: readonly FounderMove[] = founderMoves(text)): boolean {
   if (asksSomething(text, moves)) return false;
@@ -619,7 +639,10 @@ export function wrapUpOf(text: string, moves: readonly FounderMove[] = founderMo
   const t = normalize(text);
   // A reservation is something to answer ("I'll call them, but the owner never picks up").
   if (RESERVATION.test(t)) return false;
-  return ON_BOARD.test(t) && WILL_DO.test(t) && socialTurnOf(text) === null;
+  if (!(ON_BOARD.test(t) && WILL_DO.test(t) && socialTurnOf(text) === null)) return false;
+  if (WELLBEING_CUE.test(t)) return false;
+  const risk = classifyRisk(text);
+  return !risk.crisis && risk.categories.length === 0;
 }
 
 /**
@@ -631,9 +654,17 @@ export function wrapUpOf(text: string, moves: readonly FounderMove[] = founderMo
 const ABOUT_OTHERS = new RegExp(
   [
     String.raw`\b(?:another|other|the other|that other|a different|some other) (?:team|venture|startup|founder|company|cohort team|group)s?\b(?! (?:members?|mates?|meetings?|leads?|roles?|sizes?|names?|ideas?|structures?))`,
-    String.raw`\b(?:their|the other team's|the other founder's) (?:deal|discount|terms|pricing|price|contract|numbers|rate)\b`,
-    String.raw`\b(?:pass (?:it|this|that|a message|my message|the message|this message|that message|word|my number|my details) (?:on|along)|put me in touch|(?:can|could|would) you (?:tell|ask|message|contact|reach out to|introduce me to|connect me (?:with|to))\b)`,
-    String.raw`\b(?:rumou?r(?:s|ed)?|heard (?:that )?(?:they|the other))\b`,
+    String.raw`\b(?:the other team's|the other founder's|the other company's) (?:deal|discount|terms|pricing|price|contract|numbers|rate|rent)\b`,
+    // What a deal of someone else's came to: "what kind of discount did they end up getting on their rent?".
+    String.raw`\b(?:what|how much|which)(?: kind of| sort of| size of)? (?:deal|discount|terms|price|rate|rent|percentage|cut)s? (?:did|do|does|has|have|had|could|would) (?:they|he|she|their \w+|the (?:\w+ )?(?:company|startup|team|studio|firm|venture|business|founder|shop|brand)) (?:end up |actually |manage to |finally )?(?:get|getting|got|negotiate|negotiated|pay|paid|land|landed|sign|signed|secure|secured)\b`,
+    String.raw`\b(?:same|similar) (?:kind of )?(?:deal|discount|terms|rate|rent) (?:as|to) (?:the|that|their) (?!last\b|first\b|previous\b|one\b)\w+`,
+    // Recalling a deal by name: "remind me the scale of the X deal", "remind me of their deal with the hotel".
+    String.raw`\bremind me(?: again)?(?: of| about| what| how big)? (?:the |their )?(?:(?:scale|size|terms|details|numbers|value|amount) of (?:the |their )?)?(?:\w+ ){0,2}deal\b`,
+    // A relay: "pass on a message to their founder", "can you pass this on", "put me in touch".
+    String.raw`\bpass (?:on |along )?(?:a |my |the |this |that |our )?(?:message|note|word|it|this|that|my number|my details|my info)(?: on| along)?(?: to\b| for\b|$|[,.!?])`,
+    String.raw`\b(?:put me in touch|introduce me to|connect me (?:with|to)|get me in touch)\b`,
+    String.raw`\b(?:can|could|would|will) you (?:please |just )?(?:tell|ask|let|message|contact|reach out to|email|ping) (?:him|her|them|their (?:founder|team|ceo|cofounder|co-?founder|people)|the other (?:founder|team)|the founder of)\b`,
+    String.raw`\b(?:rumou?r(?:s|ed)?|heard (?:that )?the other)\b`,
   ].join('|'),
 );
 
@@ -925,6 +956,13 @@ export function deriveConversationState(
       if (!told.includes(line)) told.push(line);
     }
   }
+  const escalatedEarlier: string[] = [];
+  for (const t of turns) {
+    const category = t.escalated ?? null;
+    if (category !== null && category !== 'safety_wellbeing' && !escalatedEarlier.includes(category)) {
+      escalatedEarlier.push(category);
+    }
+  }
   const preferences: string[] = [];
   for (const text of [founderText, ...turns.map((t) => t.founderText).reverse()]) {
     for (const p of preferencesOf(text)) if (!preferences.includes(p)) preferences.push(p);
@@ -956,6 +994,7 @@ export function deriveConversationState(
     preferences,
     wrapUp: wrapUpOf(founderText, moves),
     aboutOthers: aboutOthersOf(founderText),
+    escalatedEarlier,
     usedPhrases,
     openerGreeted: afterOpener && /^(?:hi|hello|hey|hiya)\b/i.test(opener),
     words: wordCount(founderText),
@@ -1025,6 +1064,7 @@ export function renderConversationState(state: ConversationState): string {
     state.reportsDone === true ||
     state.wrapUp === true ||
     state.aboutOthers === true ||
+    (state.escalatedEarlier ?? []).length > 0 ||
     (state.preferences ?? []).length > 0;
   if (state.earlierTurns === 0 && !notable && !state.afterOpener) return '';
   const what = state.moves.map((m) => MOVE_LABELS[m]);
@@ -1061,6 +1101,12 @@ export function renderConversationState(state: ConversationState): string {
       '- If they ask about another venture, team or founder, or for a message to be passed on: you know nothing about',
       '  other ventures and discuss no rumours or deals, and you cannot pass messages. Say so in one line, then help',
       '  with their own case (a draft they could send is fine).',
+    );
+  }
+  if ((state.escalatedEarlier ?? []).length > 0) {
+    lines.push(
+      `- Already referred earlier in this conversation (${(state.escalatedEarlier ?? []).join(', ')}): do not say the`,
+      '  referral again; help them prepare for it (what that person will decide, what to bring, what not to do meanwhile).',
     );
   }
   if ((state.preferences ?? []).length > 0) {

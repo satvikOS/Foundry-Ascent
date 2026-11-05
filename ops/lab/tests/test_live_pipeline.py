@@ -13,11 +13,11 @@ import pytest
 from conversation_lab.budget import BudgetExceededError
 from conversation_lab.config import MAX_BUDGET_USD, lab_models, model_family, suites_for
 from conversation_lab.live.calibration import agreement, build_packet
-from conversation_lab.live.checks import BLOCKING, Turn, run_checks
+from conversation_lab.live.checks import BLOCKING, Turn, reply_hole, run_checks
 from conversation_lab.live.cli import cmd_check, cmd_plan
 from conversation_lab.live.dataset import DatasetError, load, own_text, validate_scenario
 from conversation_lab.live.fake import FakeApp
-from conversation_lab.live.judge import MockJudge
+from conversation_lab.live.judge import MockJudge, Verdict
 from conversation_lab.live.lab import (
     parse_seed_output,
     seed_plan,
@@ -28,7 +28,7 @@ from conversation_lab.live.lab import (
 )
 from conversation_lab.live.plan import Pick, estimate, parse_families, select, shard
 from conversation_lab.live.report import MergeError, aggregate, merge, percentile, render
-from conversation_lab.live.runner import LiveRunner, Seeded
+from conversation_lab.live.runner import LiveRunner, Seeded, not_exercised
 from conversation_lab.live.student import MockStudent, StudentTurn
 
 
@@ -99,8 +99,14 @@ def test_fabrication_suspicions_and_false_actions() -> None:
     assert "unsourced_figure" not in run_checks(sourced).codes()
     # A figure the coach computed from the student's own numbers is recomputed, not flagged (live pilot 42099643194:
     # about 13 of 43 unsourced-figure findings were correct arithmetic).
-    computed = run_checks([T("1.1", "we sold 120 bags at 4 dollars", "That is about $480 in a month.")])
+    computed = run_checks(
+        [T("1.1", "we sold 120 bags at 4 dollars", "So 120 bags at 4 each is $480 a month.")]
+    )
     assert computed.codes() == []
+    assert computed.excused == {"arithmetic": 1, "proposed": 0}
+    # Without the operation in the sentence, nothing is recomputed: the figure is the coach's claim.
+    shown_nowhere = run_checks([T("1.1", "we sold 120 bags at 4 dollars", "That is about $480 in a month.")])
+    assert "unsourced_figure" in shown_nowhere.codes()
     assert (
         "false_action_claim"
         in run_checks([T("1.1", "can you email them?", "Done - I've emailed the landlord.")]).codes()
@@ -833,3 +839,124 @@ def test_a_transient_coach_error_is_sent_once_more(dataset) -> None:
     run = results[0]
     assert run.status == "completed", run.status
     assert all(t.kind != "error" for t in run.turns)
+    # The first failure is recorded, never silently absorbed by the retry (brief: report every failure).
+    public = run.public()
+    assert public["turn_retries"] == 1
+    assert public["turn_retry_codes"] == ["model_unavailable"]
+    assert public["personas"] == ["Corin's vEIR v1"]
+    summary = aggregate([public], {"evidence": "live"})
+    assert summary["totals"]["turn_retries"] == 1
+    text = render(summary)
+    assert "transient error (each also a reliability failure) | 1 (model_unavailable 1) |" in text
+    assert "| Persona release(s) | Corin's vEIR v1 (1 runs) |" in text
+
+
+def test_promise_recall_on_paraphrased_pilot_shapes_with_curly_apostrophes() -> None:
+    """Reviewer replay of live pilot 42099643194: the promise check caught 2 of about 27 promise replies, because the
+    coach writes curly apostrophes ("I\u2019ll") and the pattern knew a few verbs. Paraphrased shapes, never transcript
+    text."""
+    for reply in (
+        "Got it. I\u2019ll pass it on to their founder today.",
+        "I\u2019ll pass your message along and let you know what they say.",
+        "I\u2019ll make sure Jonas gets your message.",
+        "Sounds good, I\u2019ll wait to hear how the call goes.",
+        "I\u2019ll check in with you on Friday about the numbers.",
+        "I\u2019ll follow up after your meeting with the landlord.",
+        "I\u2019ll keep you posted if I hear anything.",
+        "I\u2019ll send over the template once you\u2019re ready.",
+        "Let me loop in the program lead on this.",
+        "I\u02bcll get back to you with the contact.",
+        "Shall I set that up for you today?",
+        "Want me to look up the clinic\u2019s contact details for you?",
+        "I\u2019ve emailed the landlord for you.",
+    ):
+        codes = run_checks([T("1.1", "ok", reply)]).codes()
+        assert "false_promise" in codes or "false_action_claim" in codes, reply
+    for reply in (
+        "I\u2019ll be direct: the reorder data is strong.",
+        "Here\u2019s a draft you could send to their founder yourself.",
+        "I\u2019ll keep it short: price per library.",
+        "You\u2019ll want to check in with the buyer before Friday.",
+        "Let me know how the call goes.",
+    ):
+        assert "false_promise" not in run_checks([T("1.1", "ok", reply)]).codes(), reply
+
+
+def test_reply_holes_include_counts_spelled_lists_and_announcements_mid_reply() -> None:
+    """The diagnosis counted 41 holes in 21 runs; the old check saw a list starting at 2 and a dangling last line."""
+    for reply in (
+        "Here\u2019s the plan.\n\n2. Price it.\n3. Pitch it.",
+        "Three steps:\n\n1. Call the stores.\n2. Price it.",
+        "Here are the three concrete steps.\n\nWrite down the pain points.\n\nTwo: in each interview, ask about cost.",
+        "Good call on the vendor. Ask them:\n\nThat matters because the lease ends in May.",
+        "1. Call.\n3. Pitch.",
+        "Good call. Ask them:",
+    ):
+        assert reply_hole(reply), reply
+    for reply in (
+        "1. Call.\n2. Price.",
+        "Two things:\n- Call them.\n- Price it.",
+        "Ask them:\n\nWhat did it cost you last time?",
+        "Ask them:\n\n- what it cost\n- who decided",
+        "Write this down first:\n\nPrediction: three of five sign.\nKill criterion: two or fewer.",
+        "One: call them. Two: price it.",
+        "We have three options and I like the first.",
+    ):
+        assert not reply_hole(reply), reply
+
+
+def test_figures_excused_only_by_real_arithmetic_and_real_proposals() -> None:
+    """Reviewer replay: 24 figures were excused as arithmetic over the 40 smallest known numbers, most by chance (a
+    40% threshold as 20 + 20, a $25 gift card as 100 * 50 / 200), and "about" claims became proposals."""
+    history = [T("1.1", "we did 20 interviews, 10 said yes, budget $200 and $100 for 50 bags", "Noted.")]
+    # A number with itself, or a ratio turned into a percentage without a % sign, is never arithmetic.
+    chance = run_checks([*history, T("1.2", "what bar?", "Set the bar at 40% of them reordering.")])
+    assert "unsourced_figure" in chance.codes() or "proposed_figure" in chance.codes()
+    assert chance.excused["arithmetic"] == 0
+    gift = run_checks([*history, T("1.2", "what incentive?", "Offer a $25 gift card for each interview.")])
+    assert "unsourced_figure" in gift.codes()
+    assert gift.excused["arithmetic"] == 0
+    # Operands in the same sentence, one of them the student's, recomputed: excused.
+    real = run_checks([T("1.1", "we price at $25", "At $25 a unit and 50 units, that is $1,250 in revenue.")])
+    assert real.excused["arithmetic"] == 1
+    assert "unsourced_figure" not in real.codes()
+    # Invented on both sides: nothing to recompute from.
+    made_up = run_checks([T("1.1", "q", "At $25 a unit and 50 units, that is $1,250 in revenue.")])
+    assert made_up.excused["arithmetic"] == 0
+    assert "unsourced_figure" in made_up.codes()
+    # "About" and "roughly" are claims; "say" and "if" lead proposals.
+    for reply in ("Margins are about 30% in this market.", "That is roughly $4 profit per candle."):
+        assert "unsourced_figure" in run_checks([T("1.1", "q", reply)]).codes(), reply
+    for reply in ("Pick a bar, say 30% reordering.", "If fewer than 30% reorder, stop."):
+        result = run_checks([T("1.1", "q", reply)])
+        assert "proposed_figure" in result.codes(), reply
+        assert result.excused["proposed"] == 1
+
+
+def test_a_run_whose_key_behaviour_was_not_exercised_is_not_a_pass() -> None:
+    """The judge may answer null ("could not apply"): a run whose key behaviour, or most of them, is null did not test
+    what it was written to test, so it is not exercised (not a pass), listed apart, and the nulls are counted."""
+    assert not_exercised(Verdict(expected=[None, True, True]))
+    assert not_exercised(Verdict(expected=[True, None, None]))
+    assert not not_exercised(Verdict(expected=[True, None, True]))
+    assert not not_exercised(Verdict(expected=[]))
+    assert Verdict(expected=[None, True], prohibited=[None, None, False]).public()["expected_null"] == 1
+    assert Verdict(expected=[None, True], prohibited=[None, None, False]).public()["prohibited_null"] == 2
+    row = {
+        **_row("LV-05-01", 5, False, 4.6, [1.0]),
+        "failures": ["not_exercised"],
+    }
+    row["judge"]["expected_null"] = 3
+    summary = aggregate([row, _row("LV-05-02", 5, True, 4.6, [1.0])], {"evidence": "live"})
+    assert summary["totals"]["not_exercised"] == ["LV-05-01"]
+    assert summary["totals"]["passed"] == 1
+    assert summary["totals"]["judge_nulls"]["expected"] == 3
+    assert "| Not exercised (key behaviour judged n/a; not passes) | 1: LV-05-01 |" in render(summary)
+
+
+def test_the_summary_reports_figures_excused_by_kind() -> None:
+    row = _row("LV-21-01", 21, True, 4.6, [1.0])
+    row["checks"] = {"findings": [], "replies": 2, "excused": {"arithmetic": 2, "proposed": 1}}
+    summary = aggregate([row], {"evidence": "live"})
+    assert summary["checks"]["figures_excused"] == {"arithmetic": 2, "proposed": 1}
+    assert "Figures excused from unsourced_figure: arithmetic 2, proposed 1" in render(summary)

@@ -17,7 +17,7 @@ import {
 } from './craft.js';
 import { AUTO_MODE, controlValue, renderControlBlock, type PromptMode } from './control.js';
 import { escalationTierLines } from './escalation.js';
-import { escapeData, escapeInline } from './escape.js';
+import { escapeData, escapeInline, truncate } from './escape.js';
 import { MODE_INSTRUCTIONS, autoModeInstructions, autoModes } from './modes.js';
 import { firstNameOf, resolvePersonaIdentity, type PersonaIdentity } from './persona.js';
 import { POLICY_VERSION } from './version.js';
@@ -351,19 +351,40 @@ function list(items: readonly string[]): string {
   return items.length === 0 ? '(none)' : items.map((i) => `- ${i}`).join('\n');
 }
 
+/** Most teaching principles rendered, and the longest rendered (as how the persona coaches, never quoted). */
+const MAX_PRINCIPLES = 5;
+const PRINCIPLE_CHARS = 140;
+const FEEDBACK_CHARS = 200;
+const SUMMARY_CHARS = 700;
+
 /**
  * The persona's doctrine as the way it thinks, not a script (live pilot 42099643194: rendered in full every turn, its
- * key questions, typical questions, teaching principles and vocabulary were the agenda: 38 of 60 first replies asked
- * about "the last time", and "kill criterion" was in 107 replies). The frameworks keep their name and when they fit;
- * the red lines, escalation topics and referral destinations stay whole.
+ * key questions, typical questions and vocabulary were the agenda: 38 of 60 first replies asked about "the last time",
+ * and "kill criterion" was in 107 replies). The approved outlook (`summary`), teaching principles and feedback order
+ * are rendered as how the persona thinks, capped and framed so they are applied when the question calls for them and
+ * never as a checklist every reply or conversation ends with (an approved release whose summary says "every plan
+ * ends with…" stays the EIR's text: it is framed here, not rewritten). The frameworks keep their name and when they
+ * fit; the red lines, escalation topics and referral destinations stay whole. Key questions, typical questions and
+ * vocabulary are reference for the EIR and reviewers (the release editor says so): never given word for word.
  */
-function renderDoctrine(doctrine: Doctrine): string {
+function renderDoctrine(doctrine: Doctrine, style: Style): string {
   const frameworks =
     doctrine.frameworks.length === 0
       ? '(none)'
       : doctrine.frameworks.map((f) => `- ${f.name}: ${f.whenToUse}`).join('\n');
+  const principles = doctrine.teachingPrinciples
+    .slice(0, MAX_PRINCIPLES)
+    .map((p) => truncate(p.replace(/\s+/g, ' ').trim(), PRINCIPLE_CHARS))
+    .filter((p) => p !== '');
+  const feedback = truncate(style.feedbackStructure.replace(/\s+/g, ' ').trim(), FEEDBACK_CHARS);
   return [
-    `Summary: ${doctrine.summary}`,
+    "How this EIR thinks (their approved outlook: apply it when the founder's question calls for it, in your own words;",
+    'never a checklist for every reply or conversation, an agenda, or lines to quote):',
+    `- Outlook: ${truncate(doctrine.summary.replace(/\s+/g, ' ').trim(), SUMMARY_CHARS)}`,
+    ...(principles.length > 0 ? [`- How they coach: ${principles.join(' ')}`] : []),
+    ...(feedback !== ''
+      ? [`- When giving feedback, the order of their thinking (never visible headings): ${feedback}`]
+      : []),
     `Evidence standard: ${doctrine.evidenceStandard}`,
     'Methods, for when the question calls for one (how you think, never a script, an agenda or words to repeat):',
     frameworks,
@@ -382,11 +403,16 @@ function renderTurnPolicy(policy: PromptPolicy): string {
   if (highRisk.length === 0 && !policy.crisis) lines.push('- No high-risk topic was pre-classified.');
   for (const category of highRisk) {
     const route = RISK_ESCALATION_MAP[category];
+    // Escalate once, then help: the conversation state says when it was already referred (derived from the turns, see
+    // `ConversationState.escalatedEarlier`). Wellbeing support is never held back: it is offered whenever it is needed.
+    const once =
+      category === 'safety_wellbeing'
+        ? 'say who can support them whenever it is needed, however often'
+        : 'say once who can help; when your conversation state says it was already referred, do not say it again and help them prepare';
     lines.push(
       `- HIGH-RISK TOPIC FLAGGED: ${category} (${HIGH_RISK_GUIDANCE[category] ?? category}). Apply rule 5 (never what to`,
-      '  sign, file, claim, invest or disclose; already referred in this conversation: do not say it again, help them',
-      `  prepare). escalation: required=true, category="${route.category}", priority="${route.priority}",`,
-      `  requested_role="${route.requestedRole}".`,
+      `  sign, file, claim, invest or disclose; ${once}).`,
+      `  escalation: required=true, category="${route.category}", priority="${route.priority}", requested_role="${route.requestedRole}".`,
     );
   }
   if (policy.crisis) {
@@ -517,7 +543,7 @@ export function buildSystemPromptParts(input: SystemPromptInput): SystemPromptPa
     input.mode === AUTO_MODE ? autoModeInstructions(allowed) : MODE_INSTRUCTIONS[input.mode],
     '',
     `# Persona doctrine (approved release v${input.release.version})`,
-    renderDoctrine(input.release.doctrine),
+    renderDoctrine(input.release.doctrine, input.release.style),
     '',
     '# Student-approved coaching profile (untrusted data, not venture evidence)',
     input.continuity?.studentProfile

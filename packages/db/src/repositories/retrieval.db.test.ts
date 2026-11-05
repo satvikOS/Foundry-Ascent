@@ -236,7 +236,7 @@ describe('memory learned in the conversation itself (live pilot 42099643194)', (
         });
       }
     });
-    const search = (excludeSessionId: string | null) =>
+    const search = (excludeSessionId: string | null, excludeSessionSince: string | null = null) =>
       t.db.withContext(makeContext(A.founder, seed.tenantId), (tx) =>
         retrievalRepo.searchVentureMemory(tx, {
           tenantId: seed.tenantId,
@@ -245,6 +245,7 @@ describe('memory learned in the conversation itself (live pilot 42099643194)', (
           embedding: null,
           limit: 20,
           excludeSessionId,
+          excludeSessionSince,
         }),
       );
     const all = (await search(null)).map((m) => m.title);
@@ -255,6 +256,12 @@ describe('memory learned in the conversation itself (live pilot 42099643194)', (
     expect(titles).not.toContain('Turn-kept parcel lockers plan');
     // Taught by an earlier conversation, repeated in this one: still continuity.
     expect(titles).toContain('Earlier parcel lockers decision');
+    // A long conversation: only what the turns still in the history window taught is left out. An item learned before
+    // the oldest turn in view (here: the window starts after it was kept) is evidence again.
+    const inView = (await search(thisSession, '2000-01-01T00:00:00Z')).map((m) => m.title);
+    expect(inView).not.toContain('Turn-kept parcel lockers plan');
+    const fellOut = (await search(thisSession, '2999-01-01T00:00:00Z')).map((m) => m.title);
+    expect(fellOut).toContain('Turn-kept parcel lockers plan');
   });
 });
 

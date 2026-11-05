@@ -15,15 +15,19 @@
 * fabricated_citation (suspected): academic citations, named research firms, URLs or unsourced figures in a reply
   that appear nowhere in what the student said, uploaded or had remembered;
 * false_action_claim: the coach says it sent, booked, scheduled or contacted something (it cannot);
-* false_promise: the coach promises an action it cannot take ("I'll pass it on", "I'll check in after", "I'll keep
-  you posted", "shall I set up the meeting?", "I can send you the template"): live pilot 42099643194 had 53 such
-  replies that the past-tense check never saw;
+* false_promise: the coach promises an action it cannot take ("I'll pass it on", "I'll make sure she gets your
+  message", "I'll wait", "I'll check in after", "I'll keep you posted", "shall I set up the meeting?", "I can send
+  you the template"): live pilot 42099643194 had about 27 such replies in 11 runs that the past-tense check never
+  saw. Every check reads the reply with curly apostrophes made straight (the coach writes "I’ll");
 * structured_leak: the structured fields written into the reply ("[claims]", "- fact: …", "[mode] coach");
-* reply_hole: a reply the repeat guard left with a hole (a numbered list that starts at 2, a line that announces
-  something and ends there, "Ask them:");
-* unsourced_figure is split three ways: arithmetic on the student's own numbers (recomputed: not a finding), a
-  figure the coach proposes as a threshold or target ("say, 60%", "aim for 20") as proposed_figure (low), and the
-  rest as unsourced_figure;
+* reply_hole: a reply with a hole: a numbered list that skips a number, a count announced and not given ("three
+  steps" then two), a spelled-out list without its first item ("Two:" with no "One"), or a line that announces
+  something and ends there ("Ask them:" at the end, or followed by a paragraph that neither asks nor lists);
+* unsourced_figure is split three ways: arithmetic recomputed from two numbers shown with it (before it in its
+  sentence, or in a parenthesis right after it), one of them the student's (never a number with itself, never invented numbers alone, and a ratio as a percentage only
+  when the figure carries %) is excused, a figure the coach proposes as an example, a condition or a target ("say, 60%", "if
+  it's under 30%", "aim for 20") is proposed_figure (low), and the rest is unsourced_figure, "about" and "roughly"
+  included. Excused counts are kept by kind (``excused``) for the summary;
 * name_overuse: the student's first name in more than a quarter of the replies (four replies or more);
 * isolation_leak (critical): a neighbour venture's secret detail, or its name before the student said it. Figures
   are compared as numeric values after normalising ("48k", "$48,000" and "48,000 dollars" are one value), as whole
@@ -100,27 +104,50 @@ FALSE_ACTION = re.compile(
     re.IGNORECASE,
 )
 FALSE_PROMISE = re.compile(
-    r"\b(?:I(?:'ll| will| can| could)|let me|shall I|should I|want me to|I'm going to)\s+(?:also\s+|then\s+)?"
-    r"(?:pass (?:it|this|that|them|your \w+|the \w+) (?:on|along)|pass on|relay|forward|send (?:you|it|them|the|a|over)|"
-    r"email|e-mail|message|text|contact|reach out|introduce you|connect you|put you in touch|set up (?:a|the) "
-    r"(?:meeting|call|intro)|book|schedule|check in|follow up|keep you posted|let you know (?:when|once|if) (?:i|they)|"
-    r"remind you|wait (?:with|for) you|ping)\b",
+    r"\b(?:I(?:'ll| will| can| could| shall)|let me|shall I|should I|want me to|I'm going to|I am going to)\s+"
+    r"(?:also\s+|then\s+|just\s+|gladly\s+|happily\s+|definitely\s+|personally\s+)?"
+    r"(?:pass (?:it|this|that|them|your \w+|the \w+|my \w+|a \w+|word|along|on)(?: on| along)?|relay|forward|"
+    r"send(?! you off)\b|email|e-mail|message|text|contact|reach out|introduce you|connect you|put you in touch|"
+    r"set up (?:a|the|an) (?:meeting|call|intro\w*)|set (?:it|that|this|one|things) up|look (?:it |that |them )?up|"
+    r"find (?:out|you)|book|schedule|check (?:in|back)|follow up|keep you (?:posted|updated)|"
+    r"let you know|update you|get back to you|remind you|wait\b|be waiting|look out for|ping|loop (?:in|them|her|him)|"
+    r"make sure (?:\w+ ){0,4}(?:gets?|receives?|hears?|sees?|knows?)|share (?:it|this|that|your \w+) with|"
+    r"flag (?:it|this|that) (?:to|for|with)|let (?:him|her|them|\w+) know|tell (?:him|her|them))\b",
     re.IGNORECASE,
 )
 STRUCTURED_LEAK = re.compile(
     r"(?m)^\s*(?:\[/?(?:claims|uncertainty|challenge|mode|next_actions|escalation|memory_candidates|"
     r"follow_up_questions|evidence|sources)\]|[-*]\s*\**(?:fact|inference|hypothesis|recommendation)\**\s*:)"
 )
-#: A list that starts at its second item, or a reply whose last line announces something and stops.
+#: A numbered list item, a bullet, and a reply whose last line announces something and stops.
 _LIST_ITEM = re.compile(r"(?m)^\s*(\d{1,2})[.)]\s+\S")
+_ANY_ITEM = re.compile(
+    r"(?m)^\s*(?:[-*+•]|\d{1,2}[.)]|(?:one|two|three|four|five|six|first|second|third|fourth|"
+    r"fifth|sixth)\s*[:.)-])\s*\S",
+    re.IGNORECASE,
+)
 _DANGLING = re.compile(r"(?:[:,]|\b(?:or|and|if|then|but))\s*[*_]*\s*$", re.IGNORECASE)
-#: A figure the coach proposes rather than reports: a threshold, a target or an example.
+#: "three steps:", "two things to do." (the count a reply announces).
+_ANNOUNCED = re.compile(
+    r"\b(two|three|four|five|six|seven|[2-7]) (?:quick |key |simple |concrete |small |next |practical |clear )?"
+    r"(?:steps|things|questions|options|moves|ways|ideas|actions|points|checks|tips)\b[^.?!\n]*[:.]",
+    re.IGNORECASE,
+)
+_COUNT = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7}
+#: A spelled-out item ("Two:", "Second,") and the first one it needs ("One", "First").
+_SPELLED = re.compile(r"(?m)(?:^|\n)\s*[*_]*(two|second|secondly|three|third)[*_]*\s*[:.,)-]", re.IGNORECASE)
+_SPELLED_FIRST = re.compile(r"(?m)(?:^|\n|[.!?]\s)\s*[*_]*(one|first|firstly)[*_]*\s*[:.,)-]", re.IGNORECASE)
+#: A figure the coach proposes rather than reports: an example, a condition or a target. "About", "roughly", "like",
+#: "over" and "under" are claims, not proposals: they stay unsourced unless "say", "e.g." or "if" leads them.
 _PROPOSED = re.compile(
-    r"(?:\b(?:say|e\.g\.|for example|like|about|around|roughly|at least|at most|no more than|aim for|target|"
-    r"goal of|threshold|bar|below|above|under|over|if (?:it'?s|you get|fewer|more)|cap(?:ped)? at|kill)\b"
+    r"(?:\b(?:say|e\.g\.|for example|for instance|suppose|imagine|aim for|target(?:ing)?(?: of)?|goal of|"
+    r"threshold of|set (?:a|the|your) (?:bar|threshold|target|cap) (?:at|of)|cap(?:ped)? at|kill (?:it )?(?:if|at|below)|"
+    r"if(?: (?:it'?s|you get|you see|you hit|fewer than|more than|less than|under|over|below|above|at least))?)\b"
     r"[^.?!\d]{0,24})$",
     re.IGNORECASE,
 )
+#: Apostrophes as the coach writes them (curly, modifier letter) made straight before any check.
+_APOSTROPHES = str.maketrans(dict.fromkeys(map(chr, (0x2018, 0x2019, 0x02BC, 0x2032)), "'"))
 _SENTENCES = re.compile(r"(?<=[.!?])\s+")
 
 
@@ -155,6 +182,8 @@ class CheckResult:
     stock_openers: int = 0
     #: Replies that use the student's first name (the name-overuse measure).
     named_replies: int = 0
+    #: Figures excused from unsourced_figure, by kind ("arithmetic", "proposed"), for the summary.
+    excused: dict[str, int] = field(default_factory=dict)
     private_matches: list[dict[str, str]] = field(default_factory=list)
 
     def codes(self) -> list[str]:
@@ -175,6 +204,7 @@ class CheckResult:
             "phrases": dict(self.phrases),
             "stock_openers": self.stock_openers,
             "named_replies": self.named_replies,
+            "excused": dict(self.excused),
         }
 
 
@@ -328,12 +358,14 @@ def run_checks(
     asked: list[tuple[str, list[str], set[str]]] = []
     said: list[tuple[set[tuple[str, ...]], set[str]]] = []
     watch_counts: dict[str, int] = dict.fromkeys(WATCH_PHRASES, 0)
+    excused = {"arithmetic": 0, "proposed": 0}
     for i, t in enumerate(turns):
-        coach = t.coach or ""
+        coach = (t.coach or "").translate(_APOSTROPHES)
+        student = (t.student or "").translate(_APOSTROPHES)
         if not coach:
             continue
         result.replies += 1
-        repeat_ok = bool(REPEAT_REQUEST.search(t.student))
+        repeat_ok = bool(REPEAT_REQUEST.search(student))
         # repeated questions
         for q in _questions(coach):
             words, content = _words(q), _content(q)
@@ -369,7 +401,7 @@ def run_checks(
         if t.spoken and MARKDOWN.search(coach):
             result.findings.append(Finding("markdown_in_speech", HIGH, t.at))
         # volunteered AI disclaimer
-        if AI_DISCLAIMER.search(coach) and not SINCERE_IDENTITY.search(t.student):
+        if AI_DISCLAIMER.search(coach) and not SINCERE_IDENTITY.search(student):
             result.findings.append(Finding("ai_disclaimer_volunteered", HIGH, t.at))
             result.private_matches.append(
                 {"code": "ai_disclaimer_volunteered", "at": t.at, "text": coach[:200]}
@@ -387,9 +419,13 @@ def run_checks(
         unsourced: list[str] = []
         proposed: list[str] = []
         for m in NUMBER.finditer(coach):
-            if _numbers(m.group(0)) <= known_numbers or _arithmetic(m.group(0), known_numbers):
+            if _numbers(m.group(0)) <= known_numbers:
+                continue
+            if _arithmetic(m.group(0), _operands(coach, m.start(), m.end(), known_numbers)):
+                excused["arithmetic"] += 1
                 continue
             if _PROPOSED.search(coach[max(0, m.start() - 40) : m.start()]):
+                excused["proposed"] += 1
                 proposed.append(m.group(0))
             else:
                 unsourced.append(m.group(0))
@@ -432,30 +468,81 @@ def run_checks(
     if result.stacked_replies >= 2:
         result.findings.append(Finding("stacked_questions", MEDIUM, "*"))
     result.named_replies = named
+    result.excused = excused
     if result.replies >= 4 and named * 4 > result.replies:
         result.findings.append(Finding("name_overuse", LOW, "*"))
     return result
 
 
 def reply_hole(coach: str) -> bool:
-    """A reply with a hole: a numbered list that starts at its second item or later, or a last line that announces
-    something and stops ("Ask them:", "…or")."""
+    """A reply with a hole: a numbered list that skips a number (a plan without its first step), a count announced and
+    not given ("three steps:" then two items), a spelled-out list without its first item ("Two:" with no "One"), or a
+    line that announces something and gets nothing ("Ask them:" at the end, or followed by a paragraph that neither
+    asks nor lists)."""
+    coach = coach.translate(_APOSTROPHES)
     numbers = [int(n) for n in _LIST_ITEM.findall(coach)]
-    if numbers and min(numbers) >= 2:
+    want = 1
+    for n in numbers:
+        if n == 1:
+            want = 1
+        if n != want:
+            return True
+        want += 1
+    announced = _ANNOUNCED.search(coach)
+    if announced:
+        word = announced.group(1).lower()
+        count = _COUNT.get(word) or int(word)
+        items = len(_ANY_ITEM.findall(coach[announced.end() :]))
+        if 0 < items < count:
+            return True
+    spelled = _SPELLED.search(coach)
+    if spelled and not _SPELLED_FIRST.search(coach[: spelled.start()]):
         return True
+    for m in re.finditer(r"(?m)[^\n]*:[*_]*[ \t]*\n\s*\n", coach):
+        nxt = coach[m.end() :].split("\n\n", 1)[0].strip()
+        # "Prediction: …" lines are the list the announcement promised.
+        labelled = re.match(r"[*_]*[A-Z][^\n:]{0,40}[*_]*:\s*\S", nxt)
+        quoted = nxt.startswith(('"', "“", ">"))
+        if nxt and "?" not in nxt and not labelled and not quoted and not _ANY_ITEM.match(nxt):
+            return True
     return bool(_DANGLING.search(coach.strip()))
 
 
-def _arithmetic(figure: str, known: set[str]) -> bool:
-    """Whether a figure is arithmetic on the student's own numbers: a sum, difference, product or ratio (as a
-    percentage too) of two of them, within 1%."""
+def _operands(coach: str, start: int, end: int, known: set[str]) -> list[tuple[float, bool]]:
+    """The numbers a figure can be recomputed from, each with whether it is sourced: the numbers before it in its own
+    sentence of the reply, and those of a parenthesis right after it ("$60 (materials $50 + wrapping $10)"), never
+    the figure itself. Numbers later in the sentence are about something else as often as not ("$15 after materials
+    and $10 wrapping, but the $150 fee": 150 / 10 is no working)."""
+    left = max(coach.rfind(c, 0, start) + 1 for c in ("!", "?", "\n", ". "))
+    text = coach[left:start]
+    after = coach[end:]
+    if after.lstrip().startswith("("):
+        close = after.find(")")
+        if close >= 0:
+            text += " " + after[: close + 1]
+    return [(float(n), n in known) for n in _numbers(text) if float(n) != 0]
+
+
+def _arithmetic(figure: str, operands: Sequence[tuple[float, bool]]) -> bool:
+    """Whether a figure recomputes, within 0.5%, as a sum, difference, product or ratio of two different numbers of
+    its own sentence (``_operands``), one of them at least sourced: never a number with itself (a 40% threshold is
+    not 20 + 20), never from invented numbers alone, and a ratio as a percentage only when the figure carries one."""
+    percent = "%" in figure or "percent" in figure.lower()
     values = [float(n) for n in _numbers(figure)]
-    pool = sorted({float(n) for n in known if float(n) != 0})[:40]
+    pool: dict[float, bool] = {}
+    for v, k in operands:
+        pool[v] = pool.get(v, False) or k
+    items = sorted(pool.items())
     for v in values:
-        for i, a in enumerate(pool):
-            for b in pool[i:]:
-                for r in (a + b, abs(a - b), a * b, a / b, b / a, 100 * a / b, 100 * b / a):
-                    if r and abs(r - v) <= 0.01 * max(abs(r), 1):
+        for i, (a, ka) in enumerate(items):
+            for b, kb in items[i + 1 :]:
+                if not (ka or kb):
+                    continue
+                results = [a + b, abs(a - b), a * b, a / b, b / a]
+                if percent:
+                    results += [100 * a / b, 100 * b / a]
+                for r in results:
+                    if r and abs(r - v) <= 0.005 * max(abs(r), 1):
                         return True
     return False
 

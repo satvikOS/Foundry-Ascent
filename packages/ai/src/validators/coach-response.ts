@@ -40,6 +40,7 @@ import {
   withinSocialBudget,
   withoutAgendaPush,
   withoutRepeats,
+  announcedCountGap,
 } from './social.js';
 import { SPOKEN_MAX_CHARS, SPOKEN_MAX_WORDS, clampWords, deriveSpoken, toSpeakable } from './speech.js';
 
@@ -131,6 +132,13 @@ export interface ValidateCoachResponseOptions {
    * `SentenceGateOptions.earlierReplies`).
    */
   earlierReplies?: readonly (string | null | undefined)[];
+  /**
+   * The answer is text the sentence gate already released, unit by unit, as it was shown or said (a streamed reply that
+   * was not written whole after all): its repeats were judged there, so it is never edited for repeats again here (the
+   * gate judges whole units, this check sentences: the stored answer would lose part of what the founder read or
+   * heard, against the transcript reconciliation of calls and FULL face). Default false.
+   */
+  released?: boolean;
   /**
    * A call's turn: the hand-back said after a spoken reply that ends on a statement (`spoken_hand_back_added`), or
    * null for none (a typed turn, or the founder wrapping up). The turn engine picks it (`spokenHandBackFor`).
@@ -480,6 +488,7 @@ export function validateCoachResponse(
   );
   const previous =
     earlier.length === 0 ||
+    options.released === true ||
     identityAsked ||
     (options.founderText !== undefined && asksToRepeat(options.founderText))
       ? null
@@ -496,7 +505,10 @@ export function validateCoachResponse(
       }
     }
     if (previous !== null) {
-      const unrepeated = withoutRepeats(out, previous);
+      // A flagged turn keeps its referral, however often it was said (validators/social.ts `isProtectedLine`).
+      const unrepeated = withoutRepeats(out, previous, {
+        keepReferrals: forcedEscalationFor(options.preRisk) !== null,
+      });
       if (unrepeated.dropped > 0) {
         if (note) notes.push(`repeated_sentences_removed:${unrepeated.dropped}`);
         out = unrepeated.text === '' ? REPEAT_FALLBACK : unrepeated.text;
@@ -510,6 +522,8 @@ export function validateCoachResponse(
     return out;
   };
   r.answer = crafted(r.answer, true);
+  // A reply that announces more steps than it gives, or skips a number (counted, for the turn record and the lab).
+  if (announcedCountGap(r.answer) !== null) notes.push('announced_count_gap');
   if (md.htmlRemoved > 0) notes.push(`html_removed:${md.htmlRemoved}`);
   if (md.unsafeLinksRemoved > 0) notes.push(`unsafe_links_removed:${md.unsafeLinksRemoved}`);
   if (md.imagesRemoved > 0) notes.push(`images_removed:${md.imagesRemoved}`);
@@ -833,6 +847,14 @@ export function validateCoachResponse(
 
   // 8. Escalation -----------------------------------------------------------------------------------
   r.escalation = normalizeEscalation(r.escalation, notes);
+  // Where the escalation came from (diagnosis fix 4: every pilot escalation coincided with a classifier hit, and
+  // whether the model's own judgement ever counts could not be measured): the classifier, the model, or both.
+  const modelEscalated = r.escalation.required;
+  if (forced !== null || modelEscalated) {
+    notes.push(
+      `escalation_source:${forced !== null && modelEscalated ? 'both' : forced !== null ? 'classifier' : 'model'}`,
+    );
+  }
   if (forced !== null) {
     const current = r.escalation;
     const keepModelChoice =

@@ -120,7 +120,9 @@ class FakeClient:
     # sessions and calls
     def create_session(self, venture_id: str, *, mode: str, privacy: str = "ephemeral") -> Any:
         opener = "Good to see you again. Where would you like to start?" if self.turns else None
-        return SimpleNamespace(id=self.app.next_id("ses"), opener=opener)
+        return SimpleNamespace(
+            id=self.app.next_id("ses"), opener=opener, persona_name="Corin's vEIR", persona_version=1
+        )
 
     def end_session(self, session_id: str) -> None:
         return None

@@ -92,7 +92,8 @@ function clauseBefore(text: string, index: number): string {
 
 /** Whether `rule` has at least one positive match in `text` not fully covered by an exclusion. */
 function ruleMatches(rule: RiskRule, text: string): boolean {
-  const excluded = rule.exclude?.flatMap((pattern) => spans(pattern, text)) ?? [];
+  const voided = rule.excludeUnless?.some((pattern) => spans(pattern, text).length > 0) === true;
+  const excluded = voided ? [] : (rule.exclude?.flatMap((pattern) => spans(pattern, text)) ?? []);
   for (const pattern of rule.patterns) {
     for (const hit of spans(pattern, text)) {
       const covered = excluded.some((x) => x.start <= hit.start && x.end >= hit.end);

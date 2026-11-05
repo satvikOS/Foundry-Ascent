@@ -25,7 +25,7 @@ import {
   asksToRepeat,
   fourGramsOf,
   isListItem,
-  isOnlyLeadIn,
+  isProtectedLine,
   parksTheirNews,
   questionsOf,
   reasksQuestion,
@@ -87,9 +87,6 @@ import { clampWords, toSpeakable } from './speech.js';
  * passes the Markdown subset unchanged.
  */
 
-/** A unit that asks: its last sentence ends in a question mark. */
-const ASKS = /\?["'”’)\]*_]*$/;
-
 /** Most words of a lead-in released as soon as its sentence ends (see the module comment). */
 export const LEAD_IN_MAX_WORDS = 4;
 
@@ -103,11 +100,11 @@ export type GateBlockReason = 'cross_venture' | 'identity';
 export type GateFallbackReason = 'structured_output' | 'meta_narration';
 
 /**
- * Why the reply ends early: what was released stands, and nothing more is. `repeat`: a unit said again what an earlier
- * reply of the conversation said, after the reply had already said something of substance, or as an item of a list:
- * left out in the middle, it would leave a hole (live pilot 42099643194: 41 replies in 21 runs showed a numbered plan
- * without its first step, "Ask them:" followed by nothing, three steps announced and two given). The caller goes on
- * from what was said with something new instead.
+ * Why the reply ends early: what was released stands, and nothing more is. `repeat`: an item of a list said again what
+ * an earlier reply of the conversation said: left out, its list would have a hole (live pilot 42099643194: 41 replies in
+ * 21 runs showed a numbered plan without its first step, "Ask them:" followed by nothing, three steps announced and two
+ * given). The caller goes on from what was said with something new instead. Any other repeat is only left out, and a
+ * flagged turn is never cut for one.
  */
 export type GateCutReason = 'meta_narration' | 'repeat';
 
@@ -166,6 +163,11 @@ export interface SentenceGateOptions {
    * reply two or more turns back.
    */
   earlierReplies?: readonly (string | null | undefined)[];
+  /**
+   * The turn is flagged for a consequential matter (the risk classifier): a referral sentence is never left out as a
+   * repeat, and a repeated list item never ends the reply early (validators/social.ts `isProtectedLine`). Default false.
+   */
+  keepReferrals?: boolean;
   /**
    * The founder's message this reply answers. When it sincerely asks who or what the coach is ("are you real?"),
    * the reply's honest answer stands as written: no disclaimer is rewritten out of it.
@@ -450,8 +452,8 @@ export class SentenceGate {
   #agendaDropped = 0;
   /** Units and words released (the reply budget). */
   #released = { units: 0, words: 0 };
-  /** Everything released so far (shown, or said when withheld): whether the reply already said something of substance. */
-  #releasedText = '';
+  /** The turn is flagged for a consequential matter: a referral is never left out as a repeat. */
+  readonly #keepReferrals: boolean;
   /** The reply budget is used up: nothing more is released. */
   #full = false;
   /**
@@ -499,6 +501,7 @@ export class SentenceGate {
       options.founderText === undefined ? null : identityQuestionOf(options.founderText, this.#identity);
     this.#news = founderMoves(options.founderText ?? '').includes('news');
     this.#life = options.founderText === undefined ? null : askedLifeFor(options.founderText, this.#identity);
+    this.#keepReferrals = options.keepReferrals === true;
     const said = [options.previousReply, ...(options.earlierReplies ?? [])].filter(
       (t): t is string => typeof t === 'string' && t.trim() !== '',
     );
@@ -697,21 +700,20 @@ export class SentenceGate {
       }
       const repeat = this.#repeatOf(rawUnit);
       if (repeat !== null) {
-        // An earlier reply again: never said twice. Before anything of substance it is only left out; a statement after
-        // it, or an item of a list, ends the reply here rather than leave a hole in it (see `GateCutReason`).
+        // An earlier reply again: never said twice. Only the unit is left out, never what follows it (a reply cut at
+        // its first repeat lost new content and safety lines). An item of a list is the exception: left out, its list
+        // would have a hole, so the reply ends there and the caller goes on with something new (`GateCutReason`),
+        // unless the turn is flagged, when nothing that may carry its escalation is ever left unsaid.
         this.#cursor = end;
         this.#repeatsDropped += 1;
         if (repeat === 'reask') this.#reasksDropped += 1;
         this.#keepDropped(repeat, rawUnit);
-        // A question asked again is only left out: the sentences around it never lean on it.
-        const statement = repeat === 'repeat' && !ASKS.test(rawUnit.trim());
-        if (isListItem(rawUnit) || (statement && !isOnlyLeadIn(this.#releasedText))) {
-          return this.#cutForRepeat(units);
-        }
+        if (isListItem(rawUnit) && !this.#keepReferrals) return this.#cutForRepeat(units);
         continue;
       }
       if (this.#previousGrams !== null && /:[*_\s]*$/.test(rawUnit)) {
-        // "Ask them:" announces what follows: when what follows was said before, the announcement goes with it.
+        // "Ask them:" announces what follows: when what follows was said before, the announcement goes with it (and
+        // what follows goes on the next pass).
         const next =
           findUnitEnd(this.#raw, end, this.#maxUnitChars) ?? (this.#ended ? this.#raw.length : null);
         if (next === null || (!this.#ended && stable.length < next + this.#holdBack)) break;
@@ -720,7 +722,7 @@ export class SentenceGate {
           this.#cursor = end;
           this.#repeatsDropped += 1;
           this.#keepDropped('repeat', rawUnit);
-          return this.#cutForRepeat(units);
+          continue;
         }
       }
       if (this.#news && parksTheirNews(rawUnit.trim())) {
@@ -775,9 +777,13 @@ export class SentenceGate {
     return { units, blocked: null, fallback: null, cut: null };
   }
 
-  /** Whether a unit says an earlier reply again (`repeat`), asks one of its questions again (`reask`), or neither. */
+  /**
+   * Whether a unit says an earlier reply again (`repeat`), asks one of its questions again (`reask`), or neither. A
+   * safety line, and on a flagged turn a referral, is never a repeat (`isProtectedLine`).
+   */
   #repeatOf(unit: string): 'repeat' | 'reask' | null {
     if (this.#previousGrams === null) return null;
+    if (isProtectedLine(unit, this.#keepReferrals)) return null;
     if (repeatsPrevious(unit, this.#previousGrams)) return 'repeat';
     return reasksQuestion(unit.trim(), this.#previousQuestions) ? 'reask' : null;
   }
@@ -790,7 +796,6 @@ export class SentenceGate {
 
   /** Shows a checked unit, or withholds it from the preview (still said on a call). */
   #show(unit: GateUnit, units: GateUnit[]): void {
-    this.#releasedText += unit.text === '' ? ` ${unit.spoken}` : unit.text;
     if (!this.#withholding && this.#formsRemovedMarkdown(unit.text)) this.#withholding = true;
     if (this.#withholding) {
       this.#stats.withheld += 1;

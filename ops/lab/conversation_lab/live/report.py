@@ -206,6 +206,17 @@ def aggregate(rows: Sequence[Mapping[str, Any]], meta: Mapping[str, Any]) -> dic
             "student_turns": sum(r.get("turns", 0) for r in rows),
             "planned_student_turns": sum(r.get("planned_turns", 0) for r in rows),
             "turn_timeouts": sum(r.get("timeouts", 0) for r in rows),
+            "turn_retries": sum(r.get("turn_retries", 0) for r in rows),
+            "turn_retry_codes": dict(Counter(c for r in rows for c in r.get("turn_retry_codes", []) or [])),
+            # Runs whose key behaviour (or most of them) the judge answered null: not passes, listed separately.
+            "not_exercised": sorted(
+                r["run_id"] for r in rows if "not_exercised" in (r.get("failures") or [])
+            ),
+            "judge_nulls": {
+                "expected": sum((r.get("judge") or {}).get("expected_null", 0) or 0 for r in judged),
+                "prohibited": sum((r.get("judge") or {}).get("prohibited_null", 0) or 0 for r in judged),
+            },
+            "personas": dict(Counter(p for r in rows for p in r.get("personas", []) or [])),
             "speech_units": sum(r.get("speech_units", 0) for r in rows),
             "approved_proposals": sum(r.get("approved_proposals", 0) for r in rows),
             "failure_conditions_described_only": sum(
@@ -224,6 +235,13 @@ def aggregate(rows: Sequence[Mapping[str, Any]], meta: Mapping[str, Any]) -> dic
             "findings": dict(sorted(findings.items())),
             "stacked_reply_rate": round(stacked / replies, 3) if replies else None,
             "replies": replies,
+            # Figures not counted as unsourced, by why (recomputed arithmetic, a proposed example or threshold).
+            "figures_excused": dict(
+                sum(
+                    (Counter((r.get("checks") or {}).get("excused") or {}) for r in executed),
+                    Counter(),
+                )
+            ),
             "phrase_rate_per_100_replies": phrase_rates,
             "phrase_rate_threshold": PHRASE_RATE_THRESHOLD,
             "phrases_over_threshold": sorted(k for k, v in phrase_rates.items() if v > PHRASE_RATE_THRESHOLD),
@@ -308,6 +326,19 @@ def render(summary: Mapping[str, Any]) -> str:
         f"| Naturalness / usefulness (1-5) | {_fmt(summary['scores']['naturalness'])} / {_fmt(summary['scores']['usefulness'])} |",
         f"| Coach turn latency (errors and timeouts at elapsed time) | p50 {_fmt(lat['p50'])} s, p95 "
         f"{_fmt(lat['p95'])} s (n={lat['n']}, timeouts {t['turn_timeouts']}) |",
+        f"| Coach turns retried after a transient error (each also a reliability failure) | {t['turn_retries']}"
+        + (
+            f" ({', '.join(f'{k} {v}' for k, v in sorted(t['turn_retry_codes'].items()))})"
+            if t["turn_retry_codes"]
+            else ""
+        )
+        + " |",
+        f"| Not exercised (key behaviour judged n/a; not passes) | {len(t['not_exercised'])}"
+        + (f": {', '.join(t['not_exercised'][:20])}" if t["not_exercised"] else "")
+        + " |",
+        f"| Judge n/a answers (expected / prohibited behaviours) | {t['judge_nulls']['expected']} / "
+        f"{t['judge_nulls']['prohibited']} |",
+        f"| Persona release(s) | {', '.join(f'{k} ({v} runs)' for k, v in sorted(t['personas'].items())) or '-'} |",
         f"| Stacked-question reply rate | {_fmt(summary['checks']['stacked_reply_rate'], True)} |",
         f"| Spend | USD {summary.get('spend', {}).get('total_usd', 0):.2f} |",
         "",
@@ -334,6 +365,11 @@ def render(summary: Mapping[str, Any]) -> str:
         "",
         "Deterministic findings: "
         + (", ".join(f"{k} {v}" for k, v in summary["checks"]["findings"].items()) or "none"),
+        "Figures excused from unsourced_figure: "
+        + (
+            ", ".join(f"{k} {v}" for k, v in sorted((summary["checks"].get("figures_excused") or {}).items()))
+            or "none"
+        ),
         "Watch phrases per 100 replies (cluster above "
         + _fmt(summary["checks"]["phrase_rate_threshold"])
         + "): "

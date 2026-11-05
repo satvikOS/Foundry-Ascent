@@ -1,10 +1,13 @@
 import {
   AUTO_MODE,
   CROSS_VENTURE_BLOCK_ANSWER,
+  asksToRepeat,
   INVALID_RESPONSE_ANSWER,
   buildSystemPromptParts,
   deriveSpoken,
+  forcedEscalationFor,
   founderMoves,
+  identityQuestionOf,
   isModelGatewayError,
   openerSaidHello,
   SOCIAL_BUDGETS,
@@ -279,6 +282,23 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
       : null;
 
   const introduced = alreadyIntroduced(spec);
+  // A whole reply that says the conversation again is written once more with what was said (generateWhole), unless
+  // the founder asked to hear it again or sincerely asks who or what the coach is (its honest answer always stands).
+  const saidBefore = [previousReply, ...earlierReplies].filter(
+    (t): t is string => typeof t === 'string' && t.trim() !== '',
+  );
+  const alreadySaid =
+    saidBefore.length === 0 ||
+    asksToRepeat(spec.founderText) ||
+    identityQuestionOf(spec.founderText, {
+      personaName: spec.personaName,
+      eirNames: guards.eirNames,
+      personaEirName: spec.personaEirName,
+      addressees: guards.addressees,
+    }) !== null
+      ? null
+      : { text: saidBefore.join('\n\n'), keepReferrals: forcedEscalationFor(risk) !== null };
+  const wrapUp = risk.categories.length === 0 && !risk.crisis && wrapUpOf(spec.founderText);
 
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
   await emit({ event: 'turn.status', phase: 'reasoning', detail: null, evidenceCount: shown.length });
@@ -302,6 +322,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     startedAt: spec.startedAt,
     narration: { founder: spec.continuity.founderFirstName ?? null, people: guards.addressees },
     handBack,
+    alreadySaid,
   };
   let generation: Generation;
   try {
@@ -318,15 +339,13 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
             addressees: guards.addressees,
             founderName: spec.continuity.founderFirstName ?? null,
             greeted,
-            // A wrap-up ("got it, I'll send it Friday") is answered as briefly as a goodbye: no new homework.
-            replyBudget:
-              social !== null
-                ? SOCIAL_BUDGETS[social]
-                : wrapUpOf(spec.founderText)
-                  ? SOCIAL_BUDGETS.closing
-                  : null,
+            // A wrap-up ("got it, I'll send it Friday") is answered as briefly as a goodbye: no new homework. Never a
+            // turn with any risk flag (the classifier's or the safety screen's): it needs the escalation, not a sign-off.
+            replyBudget: social !== null ? SOCIAL_BUDGETS[social] : wrapUp ? SOCIAL_BUDGETS.closing : null,
             previousReply,
             earlierReplies,
+            // A flagged turn never loses its referral as a repeat, and is never cut short for one.
+            keepReferrals: forcedEscalationFor(risk) !== null,
             founderText: spec.founderText,
             introduced,
             otherVentureNames: guards.others.names,
@@ -362,6 +381,8 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     greeted,
     previousReply,
     earlierReplies,
+    // What the gate released was shown or said as it stands: never edited for repeats again.
+    released: generation.stream !== null && generation.stream.fallback === null,
     // A streamed reply handed the turn back as it was said (generate.ts); a reply written whole gets it here.
     handBack: generation.stream?.fallback === null ? null : handBack,
     social,

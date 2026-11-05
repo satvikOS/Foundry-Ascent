@@ -132,9 +132,13 @@ export function historyAsHeard(
 ): HistoryTurn[] {
   return turns.map((turn) => {
     const cut = interruptions.get(turn.id);
+    // The escalation the reply made, for the conversation state's "already referred" (escalate once, then help).
+    const escalation = turn.response?.escalation;
+    const escalated = escalation?.required === true ? (escalation.category ?? null) : null;
     return {
       founderText: turn.founderText,
       answer: cut === undefined ? (turn.response?.answer ?? null) : cut.heardText,
+      ...(escalated === null ? {} : { escalated }),
     };
   });
 }

@@ -153,40 +153,95 @@ export function isListItem(text: string): boolean {
 export const REPEAT_FALLBACK = 'That still stands from a moment ago. Which part do you want to dig into?';
 
 /**
+ * A safety line: crisis support, a hotline, being unsafe. Never left out as a repeat, however often it was said (the
+ * presence policy and the escalation invariant: a wellbeing referral is said as often as it is needed).
+ */
+const SAFETY_LINE =
+  /\b(?:988|911|999|112|crisis|helpline|hotline|lifeline|samaritans|text line|emergency|unsafe|in danger|self[- ]harm|suicid\w*|hurt(?:ing)? yourself|counsell?ors?|therapists?|mental health|support line|wellbeing|well-being)\b/i;
+
+/**
+ * A referral to a person who can act on a consequential matter (a lawyer, an IRB, the tech-transfer office, a doctor,
+ * the program's staff). Kept on a turn whose message is flagged for that kind of matter (`keepReferrals`): the guard
+ * never takes the escalation out of the reply that needs it.
+ */
+const REFERRAL_LINE =
+  /\b(?:lawyers?|attorneys?|legal (?:advice|counsel|clinic|review|help)|counsel|irb|ethics (?:board|committee|review)|tech[- ]?transfer|patent (?:attorney|agent)|accountants?|tax (?:advisers?|advisors?)|doctors?|clinicians?|physicians?|pharmacists?|regulatory (?:advice|expert|consultant|counsel)|fda|program(?:me)? (?:staff|team|lead|director)|human eir|your eir|escalat\w*|flag(?:ged|ging)? (?:this|it) (?:to|for))\b/i;
+
+/** Whether `sentence` is a safety line ({@link SAFETY_LINE}), or a referral when `keepReferrals` ({@link REFERRAL_LINE}). */
+export function isProtectedLine(sentence: string, keepReferrals = false): boolean {
+  return SAFETY_LINE.test(sentence) || (keepReferrals && REFERRAL_LINE.test(sentence));
+}
+
+export interface WithoutRepeatsOptions {
+  /** The turn is flagged for a consequential matter: a referral sentence is never left out ({@link REFERRAL_LINE}). */
+  readonly keepReferrals?: boolean;
+}
+
+export interface WithoutRepeats {
+  readonly text: string;
+  /** Sentences left out (a lead-in left with nothing after it is not counted). */
+  readonly dropped: number;
+  /** The sentences left out, as written (for the "already said" brief of a reply written again). */
+  readonly removed: readonly string[];
+}
+
+/**
  * `text` without the sentences that mostly repeat `previous` (the vEIR's earlier replies; see the module comment), or
  * ask one of their questions again in other words ({@link reasksQuestion}). `dropped` counts them; `text` is '' when
- * every sentence was a repeat. A repeat before anything of substance, or a question asked again, is left out; a repeated
- * statement after it, or an item of a list, ends the reply there, with everything after it counted as dropped: left out in the middle, it would leave a hole
- * (as the sentence gate does, `GateCutReason`).
+ * every sentence was a repeat. Only the repeated sentence goes, never what follows it (a reply cut at its first repeat
+ * lost new content and its safety lines: 57 of 521 pilot replies lost 25 words or more). A lead-in left announcing
+ * nothing ("Ask them:") goes with it. A safety line, and on a flagged turn a referral, is never left out
+ * ({@link isProtectedLine}). A reply written whole that lost a sentence here is written again once with what was
+ * already said (`generateWhole`), so what is left never leans on a hole.
  */
 export function withoutRepeats(
   text: string,
   previous: string,
-): { readonly text: string; readonly dropped: number } {
+  options: WithoutRepeatsOptions = {},
+): WithoutRepeats {
   const said = fourGramsOf(previous);
-  if (said.size === 0) return { text, dropped: 0 };
+  if (said.size === 0) return { text, dropped: 0, removed: [] };
   const asked = questionsOf(previous);
   const spans = sentenceSpans(text);
   const repeated: { start: number; end: number }[] = [];
-  let kept = '';
-  for (const [i, s] of spans.entries()) {
+  const removed: string[] = [];
+  let lastKept: { start: number; end: number } | null = null;
+  for (const s of spans) {
     const sentence = text.slice(s.start, s.end);
-    const repeat = repeatsPrevious(sentence, said);
-    if (!repeat && !reasksQuestion(sentence, asked)) {
-      kept += ` ${sentence}`;
+    const repeat = repeatsPrevious(sentence, said) || reasksQuestion(sentence, asked);
+    if (!repeat || isProtectedLine(sentence, options.keepReferrals === true)) {
+      lastKept = s;
       continue;
     }
-    // A question asked again is only left out: the sentences around it never lean on it.
-    const statement = repeat && !/\?["'”’)\]*_]*\s*$/.test(sentence);
-    if (isListItem(sentence) || (statement && !isOnlyLeadIn(kept))) {
-      // The rest goes: the reply ends before this sentence.
-      repeated.push({ start: s.start, end: text.length });
-      return tidied(text, repeated, spans.length - i);
+    // "Ask them:" announced this sentence: with it gone, the announcement goes too.
+    if (lastKept !== null && /:[*_\s]*$/.test(text.slice(lastKept.start, lastKept.end))) {
+      repeated.push(lastKept);
+      lastKept = null;
     }
     repeated.push(s);
+    removed.push(sentence.trim());
   }
-  if (repeated.length === 0) return { text, dropped: 0 };
-  return tidied(text, repeated, repeated.length);
+  if (repeated.length === 0) return { text, dropped: 0, removed: [] };
+  return { ...tidied(text, repeated, removed.length), removed };
+}
+
+/**
+ * `text` without `units` (text the sentence gate left out of it, in order), tidied as {@link withoutRepeats} tidies: a
+ * streamed reply's stored answer is then exactly what the gate released, unit by unit, never re-judged sentence by
+ * sentence after it was shown or said.
+ */
+export function withoutUnits(text: string, units: readonly string[]): string {
+  const spans: { start: number; end: number }[] = [];
+  let from = 0;
+  for (const unit of units) {
+    const needle = unit.trim();
+    if (needle === '') continue;
+    const at = text.indexOf(needle, from);
+    if (at < 0) continue;
+    spans.push({ start: at, end: at + needle.length });
+    from = at + needle.length;
+  }
+  return spans.length === 0 ? text : tidied(text, spans, spans.length).text;
 }
 
 /** `text` without `spans`, tidied (no empty list markers or runs of blank lines). */
@@ -209,11 +264,48 @@ function tidied(
     .join('\n')
     .replace(/^[ \t]*(?:[-*+]|\d{1,3}[.)])[ \t]*$/gm, '')
     .replace(/\n{3,}/g, '\n\n')
-    .trim()
-    // "Ask them:" left with nothing after it goes too.
-    .replace(/\s*[^.!?\n]*:[*_\s]*$/, (m) => (spans.at(-1)?.end === text.length ? '' : m))
     .trim();
   return { text: tidy, dropped };
+}
+
+const COUNT_WORDS: Readonly<Record<string, number>> = {
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+};
+
+/**
+ * A reply that announces a count of steps and gives fewer ("three steps:" then two items), or a numbered list that
+ * skips a number (a plan without its first step): the count it announced and the items it gave, or null when it is
+ * whole. Live pilot 42099643194: holes of this kind in 41 replies of 21 runs.
+ */
+export function announcedCountGap(
+  text: string,
+): { readonly announced: number; readonly given: number } | null {
+  const numbered = [...text.matchAll(/^\s*(\d{1,2})[.)]\s+\S/gm)].map((m) => Number(m[1]));
+  if (numbered.length > 0) {
+    // One list counts up from 1; a reply with two lists restarts at 1.
+    let want = 1;
+    for (const n of numbered) {
+      if (n === 1) want = 1;
+      if (n !== want) return { announced: Math.max(...numbered), given: numbered.length };
+      want += 1;
+    }
+  }
+  const announce =
+    /\b(two|three|four|five|six|seven|[2-7]) (?:quick |key |simple |concrete |small |next |practical )?(?:steps|things|questions|options|moves|ways|ideas|actions|points|checks|tips)\b[^.?!\n]*[:.]/i.exec(
+      text,
+    );
+  if (announce === null) return null;
+  const word = (announce[1] ?? '').toLowerCase();
+  const announced = COUNT_WORDS[word] ?? Number(word);
+  const after = text.slice(announce.index + announce[0].length);
+  const items = after.match(/^\s*(?:[-*+•]|\d{1,2}[.)])\s+\S/gm)?.length ?? 0;
+  if (items === 0) return null;
+  return items < announced ? { announced, given: items } : null;
 }
 
 /**

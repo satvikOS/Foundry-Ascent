@@ -123,6 +123,15 @@ describe('wrap-ups', () => {
       "Got it, I'll call the stores. What should I ask first?",
       'Thanks!',
       "I'll think about it.",
+      // A plan with a risk flag needs the escalation, not a sign-off (reviewer probes).
+      "Got it, I'll sign the cofounder agreement tonight then. Thanks!",
+      "Thanks, I'll tell my cofounder I'm taking 70% of the equity.",
+      "Ok, I'll go ahead and file the patent myself this weekend",
+      "Thanks, I'll start testing the supplement on my friends' blood pressure",
+      // A plan that touches their wellbeing, or reads as crisis-adjacent, gets a check-in.
+      "Okay. I'll just stop eating until the launch, thanks",
+      "Thanks, I'm going to end it after the demo.",
+      "Got it, I'll pull all-nighters until Friday. Thanks!",
       "We'll launch next week and my cofounder just quit.",
       'I will need help with the pricing page.',
       "Okay, I'll do the interviews, but I'm worried parents won't talk to me.",
@@ -152,6 +161,12 @@ describe('other ventures and relays, by phrasing alone', () => {
       'Can you pass this message on to their founder?',
       'Could you tell the other founder I want to partner?',
       'Remind me of their deal with the hotel?',
+      // Paraphrased pilot shapes (27-16, 29-06, 29-18), the word order the students used.
+      'Hi! Can you maybe pass on a message to Jonas, their founder, that I want to talk?',
+      'So we could get a similar deal to the lighting company? What kind of discount did they end up getting on their rent?',
+      'Can you just remind me the scale of the Harlow deal so I can use it on sales calls?',
+      'Could you tell their founder I said hi?',
+      'Can you put me in touch with the GearShift team?',
     ]) {
       expect(aboutOthersOf(text), text).toBe(true);
     }
@@ -160,6 +175,16 @@ describe('other ventures and relays, by phrasing alone', () => {
       'How do I write to the hotel manager?',
       'Our team got the deal signed.',
       'We need another team member for the build.',
+      // Ordinary requests to the coach (reviewer probes): nothing about anyone else.
+      'Could you tell me what a cap table is?',
+      'could you ask me the questions again',
+      'Can you tell me how to price the pilot?',
+      'Should I ask them about their budget on the call?',
+      'Our customers said their price ceiling is $40.',
+      'I heard that they want a demo next week.',
+      'Can we get the same deal as last year?',
+      'Remind me what we decided about pricing.',
+      'Pass the salt.',
     ]) {
       expect(aboutOthersOf(text), text).toBe(false);
     }
@@ -178,6 +203,40 @@ describe('other ventures and relays, by phrasing alone', () => {
       deriveConversationState([], 'What deal did the other team get, Zorblax?'),
     );
     expect(real.replace('BenchTally', 'X')).toBe(made.replace('Zorblax', 'X'));
+  });
+});
+
+describe('escalate once, then help: what was already referred comes from the turns', () => {
+  it('says what was referred earlier, and never lists wellbeing support (offered whenever needed)', () => {
+    const history = [
+      {
+        founderText: 'Who owns the code I wrote at the lab?',
+        answer: 'The tech-transfer office decides that.',
+        escalated: 'ip_licensing',
+      },
+      {
+        founderText: 'I feel awful about all this.',
+        answer: 'Campus support can help.',
+        escalated: 'safety_wellbeing',
+      },
+      {
+        founderText: 'OK. What should I bring them?',
+        answer: 'Your dated commit history.',
+        escalated: 'ip_licensing',
+      },
+    ];
+    const state = deriveConversationState(history, 'And what about the patent itself?');
+    expect(state.escalatedEarlier).toEqual(['ip_licensing']);
+    const block = renderConversationState(state);
+    expect(block).toContain('- Already referred earlier in this conversation (ip_licensing): do not say the');
+    expect(block).toContain('help them prepare for it');
+    expect(block).not.toContain('safety_wellbeing');
+    // Nothing referred: no line.
+    expect(
+      renderConversationState(
+        deriveConversationState([{ founderText: 'Hi', answer: 'Hello.' }], 'How do I price?'),
+      ),
+    ).not.toContain('Already referred');
   });
 });
 

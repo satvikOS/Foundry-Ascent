@@ -10,6 +10,8 @@ import {
   endsWithHandBack,
   isOnlyLeadIn,
   isModelGatewayError,
+  withoutRepeats,
+  withoutUnits,
   type ChatMessage,
   type GateBlockReason,
   type GateResult,
@@ -276,6 +278,13 @@ export interface GenerateArgs {
    * knows it is their turn without waiting for the annotations; null for none.
    */
   readonly handBack?: string | null;
+  /**
+   * The conversation's earlier replies (and opener) a reply never says again, or null when it may (the founder asked to
+   * hear it again, or sincerely asked who or what the coach is). A whole reply that says one again is written once more
+   * with what was already said (`repeat_regenerated`): left out by the validator alone, the sentences around it would
+   * lean on a hole. `keepReferrals`: a flagged turn keeps its referral (validators/social.ts `isProtectedLine`).
+   */
+  readonly alreadySaid?: { readonly text: string; readonly keepReferrals: boolean } | null;
 }
 
 export interface StreamArgs extends GenerateArgs {
@@ -334,6 +343,22 @@ function attemptsOf(err: unknown): readonly ModelAttempt[] {
 export const META_NARRATION_RETRY =
   '[Your previous reply described your reasoning, the rules or the founder in the third person instead of talking to the founder. Write only what you say to them, as "you".]';
 
+/**
+ * Asked again once when a whole reply says again what this conversation already said (`repeat_regenerated`): the
+ * sentences are named so the new reply builds on them instead. Server-written, appended to the founder's message.
+ */
+export function repeatRetryBrief(removed: readonly string[]): string {
+  const quoted = removed
+    .slice(0, 4)
+    .map((sentence) => `"${sentence.replace(/\s+/g, ' ').slice(0, 200)}"`)
+    .join(' ');
+  return (
+    '[Your previous reply said again what you already said or already answered earlier in this conversation: ' +
+    `${quoted}. Write the reply again: keep what is new, leave those out (they still stand, and the founder has them), ` +
+    'and build on them with the next thing that helps. If a list or a count of steps lost an item, renumber it.]'
+  );
+}
+
 /** Whether a whole reply has no reply in it: its answer (or, on a call, its spoken form) opens with narration. */
 function opensWithNarration(value: CoachResponse, channel: TurnChannel, names?: NarrationNames): boolean {
   if (cutMetaNarration(value.answer, names).at === 'opening') return true;
@@ -352,12 +377,14 @@ export async function generateWhole(
   const attempts: ModelAttempt[] = [...earlier];
   const notes: string[] = [];
   let latencyMs = 0;
+  // What the one retry asks for (null on the first round).
+  let retry: string | null = null;
   for (let round = 0; ; round += 1) {
     try {
       const result = await a.kit.deps.gateway.generateStructured({
         purpose: a.meter.purpose,
         system: a.system,
-        messages: round === 0 ? a.messages : [...a.messages, { role: 'user', content: META_NARRATION_RETRY }],
+        messages: retry === null ? a.messages : [...a.messages, { role: 'user', content: retry }],
         schemaName: COACH_RESPONSE_SCHEMA_NAME,
         zodSchema: CoachResponse,
         requestId: a.ctx.requestId,
@@ -374,7 +401,18 @@ export async function generateWhole(
         a.signal?.aborted !== true
       ) {
         notes.push('meta_narration_retried');
+        retry = META_NARRATION_RETRY;
         continue;
+      }
+      if (round === 0 && a.alreadySaid && a.signal?.aborted !== true) {
+        const repeated = withoutRepeats(result.value.answer, a.alreadySaid.text, {
+          keepReferrals: a.alreadySaid.keepReferrals,
+        });
+        if (repeated.dropped > 0) {
+          notes.push('repeat_regenerated');
+          retry = repeatRetryBrief(repeated.removed);
+          continue;
+        }
       }
       return {
         raw: result.value,
@@ -824,8 +862,16 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   // How the streamed reply ended and what the gate left out (2026-10-22 lab: call replies of 19 to 90 streamed tokens
   // were said as "Got it." or a sentence and a question, and nothing recorded why). Counts only, except in the lab.
   const trace = gate.trace;
-  // Cut, or continued: the reply is what was shown.
-  let replyText = said.cut || early.went !== null ? said.shown.trim() : reply.text;
+  // Cut, or continued: the reply is what was shown. Otherwise it is the reply without the units the gate left out as
+  // repeats, exactly as it released it: the final validation never judges released text for repeats again
+  // (`ValidateCoachResponseOptions.released`), so the stored answer is what was shown and said.
+  let replyText =
+    said.cut || early.went !== null
+      ? said.shown.trim()
+      : withoutUnits(
+          reply.text,
+          gate.trace.dropped.filter((d) => d.reason === 'repeat' || d.reason === 'reask').map((d) => d.text),
+        );
   logger.info('turn.phase_a', {
     requestId: a.ctx.requestId,
     turnId: a.turnId,

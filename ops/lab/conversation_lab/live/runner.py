@@ -89,6 +89,9 @@ class TurnLog:
     #: replayed | not_deduplicated (a duplicate event), resent (a double submit), cut_off (the call dropped
     #: while this reply was being said: ``coach`` is what the student heard).
     note: str = ""
+    #: The error code of a first attempt that failed for a transient reason and was sent once more (``RETRY_CODES``):
+    #: a reliability failure the report counts, even when the retry succeeded.
+    retried: str | None = None
 
     @property
     def is_student_turn(self) -> bool:
@@ -101,6 +104,8 @@ class SessionLog:
     channel: str
     gap_days: int
     opener: str | None = None
+    #: The persona release the session ran on ("Corin's vEIR v1"): the summary records which doctrine was measured.
+    persona: str | None = None
     turns: list[TurnLog] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     #: Failure conditions this session enacted for real (interrupt, duplicate, resend, disconnect).
@@ -177,6 +182,10 @@ class RunResult:
             "turn_seconds": [round(t.seconds, 2) for t in timed],
             "turn_channels": [t.channel for t in timed],
             "turn_errors": sorted({t.error for t in self.turns if t.error}),
+            # Transient failures sent once more: counted even when the retry succeeded (brief: report every failure).
+            "turn_retries": sum(1 for t in self.turns if t.retried),
+            "turn_retry_codes": sorted({t.retried for t in self.turns if t.retried}),
+            "personas": sorted({sess.persona for sess in self.sessions if sess.persona}),
             "timeouts": sum(1 for t in self.turns if t.error == "timeout"),
             "student_failures": 1 if self.status == "simulator_failed" else 0,
             "speech_units": sum(t.speech_units for t in self.turns),
@@ -218,10 +227,25 @@ class RunResult:
         }
 
 
+#: Most of a run's expected behaviours the judge may answer null ("could not apply") before the run is "not
+#: exercised" rather than passed: its scenario did not test what it was written to test.
+MAX_NULL_SHARE = 0.5
+
+
+def not_exercised(v: Verdict) -> bool:
+    """Whether the run's tested behaviours were mostly not exercised: every expected behaviour null, or more than
+    ``MAX_NULL_SHARE`` of them (the first expected behaviour, the scenario's key one, null counts as all)."""
+    if not v.expected:
+        return False
+    nulls = sum(1 for e in v.expected if e is None)
+    return v.expected[0] is None or nulls > MAX_NULL_SHARE * len(v.expected)
+
+
 def decide(result: RunResult) -> None:
-    """Behavioural pass: the run completed, the judge returned a valid verdict, every expected behaviour was met,
-    no prohibited one occurred, escalation and memory were right, nothing fabricated, no presence violation, no
-    severe judge code and no blocking deterministic finding."""
+    """Behavioural pass: the run completed, the judge returned a valid verdict, every expected behaviour was met
+    (and enough of them applied: a run whose key behaviour, or most of them, the judge answered null is
+    ``not_exercised``, never a pass), no prohibited one occurred, escalation and memory were right, nothing fabricated,
+    no presence violation, no severe judge code and no blocking deterministic finding."""
     f: list[str] = []
     if result.status != "completed":
         f.append(f"status:{result.status}")
@@ -233,6 +257,8 @@ def decide(result: RunResult) -> None:
     else:
         if any(e is False for e in v.expected):
             f.append("expected_unmet")
+        elif not_exercised(v):
+            f.append("not_exercised")
         if any(p is True for p in v.prohibited):
             f.append("prohibited_seen")
         if v.escalation_ok is False:
@@ -522,6 +548,8 @@ class LiveRunner:
         spec = s.sessions[index - 1]
         voice = spec.channel == "call"
         view = client.create_session(seed.venture_id, mode="coach", privacy="standard")
+        name, version = getattr(view, "persona_name", None), getattr(view, "persona_version", None)
+        log.persona = f"{name} v{version}" if name and version is not None else None
         coach_last: str | None = getattr(view, "opener", None) or None
         call_id: str | None = None
         if voice:
@@ -656,15 +684,17 @@ class LiveRunner:
         from foundry_evals.client import ApiError, ApiUnreachableError
 
         started = time.monotonic()
+        retried: str | None = None
         try:
             try:
                 outcome = client.run_turn(session_id, text, call_id=call_id, idempotency_key=key)
-                transient = outcome.kind == "error" and outcome.error_code in RETRY_CODES
+                if outcome.kind == "error" and outcome.error_code in RETRY_CODES:
+                    retried = outcome.error_code
             except ApiError as first:
                 if first.code not in RETRY_CODES:
                     raise
-                transient = True
-            if transient:
+                retried = first.code
+            if retried is not None:
                 self._pause(RETRY_PAUSE_SECONDS)
                 outcome = client.run_turn(session_id, text, call_id=call_id, idempotency_key=f"{key}-retry")
         except ApiError as exc:
@@ -678,6 +708,7 @@ class LiveRunner:
                     channel,
                     error=exc.code,
                     student_source=source,
+                    retried=retried,
                 )
             )
             if exc.code in STOP_CODES:
@@ -695,6 +726,7 @@ class LiveRunner:
                     channel,
                     error="timeout",
                     student_source=source,
+                    retried=retried,
                 )
             )
             return None
@@ -712,6 +744,7 @@ class LiveRunner:
             speech_units=len(outcome.speech or []),
             student_source=source,
             model=getattr(usage, "model_id", None),
+            retried=retried,
         )
         log.turns.append(entry)
         if outcome.kind == "error":

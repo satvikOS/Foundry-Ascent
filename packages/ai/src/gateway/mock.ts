@@ -1123,7 +1123,7 @@ function firstSentence(text: string): string {
 
 /** The first sentence of the persona doctrine summary in the system prompt (at most 160 characters). */
 function doctrineSummaryIn(system: string): string | null {
-  const summary = /^Summary: (.+)$/m.exec(system)?.[1]?.trim();
+  const summary = /^- Outlook: (.+)$/m.exec(system)?.[1]?.trim();
   if (!summary) return null;
   const sentence = firstSentence(summary).trim();
   if (sentence.length > 160) return null;

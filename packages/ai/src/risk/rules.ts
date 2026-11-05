@@ -30,6 +30,12 @@ export interface RiskRule {
   readonly patterns: readonly RegExp[];
   /** Exclusions: a positive match fully covered by an exclusion match is ignored. */
   readonly exclude?: readonly RegExp[];
+  /**
+   * Cues that the excluded phrase is used in its consequential sense somewhere in the message (a clause, ownership,
+   * exclusivity or signing next to "pilot agreement"; a drug, patient or allergy next to "dosage"): when any matches,
+   * the exclusions do not apply and every positive match counts.
+   */
+  readonly excludeUnless?: readonly RegExp[];
   /** Sets `crisis` (immediate human-support response, no model call). */
   readonly crisis?: boolean;
   /**
@@ -235,6 +241,54 @@ const IP_RULES: readonly RiskRule[] = [
 // --------------------------------------------------------------------------------------------------
 // legal
 // --------------------------------------------------------------------------------------------------
+/** Routine paperwork about a pilot, an evaluation or a beta: what it measures, how long it runs, a letter of intent. */
+const PILOT_ROUTINE =
+  '(?:success criteria|success metrics?|kpis?|metrics|goals|loi|letter of intent|(?:start|end) dates?|duration|timeline|schedule|(?:two|three|four|five|six|eight|ten|twelve|\\d+)[- ]weeks?|(?:one|two|three|six|\\d+)[- ]months?|weeks or|run (?:for )?(?:two|three|four|five|six|eight|\\d+))';
+/** `noun` ("agreements?") of a pilot, an evaluation or a beta, with routine paperwork in the same sentence. */
+const PILOT_PAPERWORK = (noun: string): string[] => [
+  `(?:pilot|trial|evaluation|beta|paid pilot) ${noun}${GAP(80)}${WORD_START}${PILOT_ROUTINE}`,
+  `${PILOT_ROUTINE}${GAP(80)}${WORD_START}(?:pilot|trial|evaluation|beta|paid pilot) ${noun}`,
+  `${noun} (?:for|with|on) (?:the |a |our |this )?(?:pilot|trial)${GAP(80)}${WORD_START}${PILOT_ROUTINE}`,
+];
+/**
+ * The pilot paperwork is consequential after all: a clause, ownership of what is built, exclusivity, liability or
+ * indemnity, confidentiality, termination, or the founder about to sign it (reviewer probes: "Should I sign the pilot
+ * agreement? It gives them exclusivity", "the beta agreement says the hospital owns any improvements").
+ */
+const PILOT_PAPERWORK_KEEP: readonly RegExp[] = [
+  w([
+    'clauses?',
+    'terms? (?:say|says|state|states|gives?|require)',
+    'owns?',
+    'owned',
+    'ownership',
+    'own any',
+    'ip',
+    'intellectual property',
+    'improvements',
+    'exclusiv\\w*',
+    'liabilit\\w*',
+    'liable',
+    'indemn\\w*',
+    'warrant\\w*',
+    'confidential\\w*',
+    'nda',
+    'terminat\\w*',
+    'non-?compete',
+    'royalt\\w*',
+    'penalt\\w*',
+    'sign',
+    'signs',
+    'signing',
+    'signed',
+    'countersign\\w*',
+    'lawyer',
+    'legal',
+    'enforceable',
+    'binding',
+  ]),
+];
+
 const LEGAL_RULES: readonly RiskRule[] = [
   rule('legal', 'contract', [w(['contracts?', 'contractual(?:ly)?'])], {
     exclude: [
@@ -242,20 +296,32 @@ const LEGAL_RULES: readonly RiskRule[] = [
         'contract (?:manufactur\\w*|research organi[sz]ations?|cro|cm|engineering firm)',
         'smart contracts?',
         '(?:market|economy|demand|margins?|budgets?|muscles?) (?:will |would |may |might |could |to |is going to )?contracts?',
-        // Live pilot 42099643194: routine pilot paperwork escalated as legal on every turn (5 runs).
-        '(?:pilot|trial|evaluation|paid pilot) contracts?',
-        'contracts? (?:for|with|on) (?:the |a |our |this )?(?:pilot|trial)',
+        // Live pilot 42099643194: routine pilot paperwork escalated as legal on every turn (5 runs). Only routine
+        // paperwork (success criteria, a letter of intent, the length or start of the pilot) in the same sentence, and
+        // never with a clause, ownership, exclusivity, liability or signing cue in the message (PILOT_PAPERWORK_KEEP).
+        ...PILOT_PAPERWORK('contracts?'),
       ]),
     ],
+    excludeUnless: PILOT_PAPERWORK_KEEP,
   }),
-  rule('legal', 'agreement', [
-    w([
-      `(?:shareholders?'?|stockholders?'?|operating|partnership|founders?'?|co-?founders?'?|employment|consulting|contractor|services?|master services|vendor|supplier|distribution|reseller|joint venture|data processing|non-?compete|non-?solicitation|indemnity|settlement|separation|severance|purchase|lease|loan|advisor|advisory|teaming|data[- ]use|data[- ]sharing|collaboration|sponsorship|customer|subscription|sales|supply|manufacturing|participation|release|waiver) agreements?`,
-      'msas?',
-      'non-?competes?',
-      'conflicts? of interest',
-    ]),
-  ]),
+  rule(
+    'legal',
+    'agreement',
+    [
+      w([
+        `(?:shareholders?'?|stockholders?'?|operating|partnership|founders?'?|co-?founders?'?|employment|consulting|contractor|services?|master services|vendor|supplier|distribution|reseller|joint venture|data processing|non-?compete|non-?solicitation|indemnity|settlement|separation|severance|purchase|lease|loan|advisor|advisory|teaming|pilot|data[- ]use|data[- ]sharing|collaboration|sponsorship|evaluation|beta|customer|subscription|sales|supply|manufacturing|participation|release|waiver) agreements?`,
+        'msas?',
+        'non-?competes?',
+        'conflicts? of interest',
+      ]),
+    ],
+    {
+      // A pilot, evaluation or beta agreement stays a legal flag; only routine paperwork about one is left out (see the
+      // contract rule).
+      exclude: [w(PILOT_PAPERWORK('agreements?'))],
+      excludeUnless: PILOT_PAPERWORK_KEEP,
+    },
+  ),
   rule('legal', 'incorporation', [
     w([
       'incorporation',
@@ -732,10 +798,44 @@ const MEDICAL_RULES: readonly RiskRule[] = [
     {
       exclude: [
         // Live pilot 42099643194: "tutoring dosage" in a maths-tutoring venture escalated on 13 turns. Dose of teaching is
-        // an education term, not a clinical one.
+        // an education term, not a clinical one. Only teaching words: exposure, intervention, exercise, training and
+        // study are clinical as often as not, and any clinical word in the message voids this (excludeUnless).
         w([
-          '(?:tutoring|tutor|practice|instruction(?:al)?|learning|lesson|session|intervention|exercise|training|homework|reading|math|maths|study|coaching|content|exposure) (?:dosages?|dosing)',
-          '(?:dosages?|dosing) (?:of|for) (?:the )?(?:tutoring|practice|instruction|sessions?|lessons?|homework|reading|math|maths|coaching|content|exposure|training)',
+          '(?:tutoring|tutor|practice|instruction(?:al)?|learning|lesson|homework|reading|math|maths|coaching) (?:dosages?|dosing)',
+          '(?:dosages?|dosing) (?:of|for) (?:the )?(?:tutoring|practice|instruction|tutoring sessions?|lessons?|homework|reading|math|maths|coaching)',
+        ]),
+      ],
+      excludeUnless: [
+        w([
+          'drugs?',
+          'medic\\w*',
+          'patients?',
+          'allerg\\w*',
+          'mg',
+          'mcg',
+          'milligrams?',
+          'ml',
+          'pills?',
+          'tablets?',
+          'supplements?',
+          'vaccines?',
+          'clinical\\w*',
+          'study',
+          'studies',
+          'trials?',
+          'therap\\w*',
+          'treatments?',
+          'depress\\w*',
+          'anxiety',
+          'symptoms?',
+          'side effects?',
+          'placebo',
+          'health',
+          'blood',
+          'safe',
+          'safety',
+          'toxic\\w*',
+          'overdose',
         ]),
       ],
     },

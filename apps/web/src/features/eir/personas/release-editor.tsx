@@ -37,6 +37,12 @@ import {
 } from './release-form';
 
 const ONE_PER_LINE = 'One per line.';
+/**
+ * Fields kept with the release for you and reviewers, not given to the vEIR word for word: quoted questions and terms
+ * became a script it repeated (live pilot 42099643194). Its outlook, teaching principles and feedback order are given.
+ */
+const REFERENCE_ONLY =
+  'One per line. For reference: your vEIR isn’t given these word for word, so they never become a script.';
 
 function StyleDial({
   control,
@@ -211,7 +217,7 @@ export function ReleaseEditor({
                   <Field
                     label="Key questions"
                     required
-                    description={ONE_PER_LINE}
+                    description={REFERENCE_ONLY}
                     error={e.frameworks?.[index]?.keyQuestions?.message}
                   >
                     {textarea(`frameworks.${index}.keyQuestions`)}
@@ -230,7 +236,7 @@ export function ReleaseEditor({
             {textarea('evidenceStandard')}
           </Field>
           <div className="grid gap-5 md:grid-cols-2">
-            <Field label="Typical questions" description={ONE_PER_LINE} error={e.typicalQuestions?.message}>
+            <Field label="Typical questions" description={REFERENCE_ONLY} error={e.typicalQuestions?.message}>
               {textarea('typicalQuestions', 4)}
             </Field>
             <Field
@@ -284,7 +290,7 @@ export function ReleaseEditor({
           <div className="grid gap-5 md:grid-cols-2">
             <Field
               label="Vocabulary"
-              description="Preferred terms. One per line."
+              description="Preferred terms. One per line. For reference: your vEIR isn’t given these word for word, so they never become stock phrases."
               error={e.vocabulary?.message}
             >
               {textarea('vocabulary')}

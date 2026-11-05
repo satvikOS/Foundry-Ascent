@@ -160,16 +160,38 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('Be direct: say plainly what you think and why');
     expect(prompt).toContain('- Avoid: jargon.');
     // Live pilot 42099643194: the doctrine's scripts were the agenda (38 of 60 first replies asked about "the last
-    // time"). Its key and typical questions, teaching principles, vocabulary and feedback structure are not rendered.
-    for (const script of [
-      'What happened last time?',
-      'Who pays?',
-      'Ask before telling.',
-      'Strength, gap, next step.',
-      'Preferred vocabulary',
-    ]) {
+    // time"). Its key and typical questions and vocabulary are reference only (the release editor says so).
+    for (const script of ['What happened last time?', 'Who pays?', 'Preferred vocabulary']) {
       expect(prompt).not.toContain(script);
     }
+  });
+
+  it('renders the approved outlook, principles and feedback order as how the EIR thinks, never as a checklist', () => {
+    expect(prompt).toContain('How this EIR thinks (their approved outlook');
+    expect(prompt).toContain(
+      'never a checklist for every reply or conversation, an agenda, or lines to quote',
+    );
+    expect(prompt).toContain('- How they coach: Ask before telling.');
+    expect(prompt).toContain(
+      '- When giving feedback, the order of their thinking (never visible headings): Strength, gap, next step.',
+    );
+    // Capped: an approved release with long principles cannot crowd the prompt.
+    const long = buildSystemPrompt({
+      ...INPUT,
+      release: {
+        ...INPUT.release,
+        doctrine: {
+          ...INPUT.release.doctrine,
+          teachingPrinciples: Array.from(
+            { length: 9 },
+            (_, i) => `Principle ${String(i)} ${'x'.repeat(300)}`,
+          ),
+        },
+      },
+    });
+    expect(long).toContain('Principle 4');
+    expect(long).not.toContain('Principle 5');
+    expect(long).not.toContain('x'.repeat(200));
   });
 
   it.each(CoachMode.options)('includes the %s mode instructions', (mode) => {
@@ -449,7 +471,16 @@ describe('live pilot 42099643194 prompt regressions', () => {
       ...INPUT,
       policy: { riskCategories: ['ip_licensing'], groundingThreshold: 0.6 },
     });
-    expect(flagged).toContain('already referred in this conversation: do not say it again, help them');
+    expect(flagged).toContain(
+      'when your conversation state says it was already referred, do not say it again and help them prepare',
+    );
+    // Wellbeing support is never held back as distress grows: it is offered whenever it is needed.
+    const wellbeing = buildSystemPrompt({
+      ...INPUT,
+      policy: { riskCategories: ['safety_wellbeing'], groundingThreshold: 0.6 },
+    });
+    expect(wellbeing).toContain('say who can support them whenever it is needed, however often');
+    expect(wellbeing).not.toContain('do not say it again');
   });
 
   it('keeps the streamed reply’s rules shorter than the annotation call’s: the claims contract is in the output only', () => {
