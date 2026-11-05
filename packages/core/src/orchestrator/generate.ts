@@ -807,7 +807,10 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   }
   // Cut before narration with no reply shown before it (nothing, units withheld from the preview, or a lead-in of a few
   // words such as "Okay, here goes."): the reply is written whole, as the final validation would hold it back.
-  if (gate.cut !== null && (said.shown.match(/\p{L}[\p{L}'’-]*/gu) ?? []).length < MIN_KEPT_WORDS) {
+  if (
+    gate.cut === 'meta_narration' &&
+    (said.shown.match(/\p{L}[\p{L}'’-]*/gu) ?? []).length < MIN_KEPT_WORDS
+  ) {
     return wholeInstead(gate.cut, phaseAMs, null);
   }
   if (streamed.stopReason === 'max_tokens') notes.push('answer_truncated');
@@ -860,7 +863,9 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     went === null &&
     open() &&
     repeatedAway &&
-    (isOnlyLeadIn(said.shown) || (shownWords < 20 && shownWords * 4 < wordCount(reply.text)))
+    (gate.cut === 'repeat' ||
+      isOnlyLeadIn(said.shown) ||
+      (shownWords < 20 && shownWords * 4 < wordCount(reply.text)))
   ) {
     went = await goOn(
       said.shown.trim(),

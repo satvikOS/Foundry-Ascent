@@ -57,6 +57,12 @@ const FIELD_LABELS: ReadonlySet<string> = new Set([
  */
 const PROSE_FIELD_LINE =
   /^[ \t]*[*_]{0,2}"?(?:mode|claims|next_actions|uncertainty|escalation|memory_candidates|follow_up_questions|rehearsal|evidence_ids)"?[*_]{0,2}[ \t]*:/;
+/**
+ * The same fields written as bracketed blocks or claim lines (live pilot 42099643194: 39 replies in 5 runs went on with
+ * "[claims]", "- fact: …", "- inference: …", "[uncertainty]", "[challenge]" and "[mode]" lines, which the founder saw).
+ */
+const PROSE_BLOCK_LINE =
+  /^[ \t]*(?:\[\/?(?:claims|uncertainty|challenge|mode|next_actions|escalation|memory_candidates|follow_up_questions|evidence|sources)\]|[-*][ \t]*[*_]{0,2}(?:fact|inference|hypothesis|recommendation)[*_]{0,2}[ \t]*:)/;
 const PROSE_MODE_LINE = new RegExp(`^[ \\t]*(?:${CoachMode.options.join('|')})[ \\t]*[:.]?[ \\t]*$`);
 /** Characters of a new line needed to tell whether it starts the response's other fields. */
 const LINE_LOOKAHEAD = 24;
@@ -74,6 +80,19 @@ const JSON_ESCAPES: Readonly<Record<string, string>> = {
 
 type State =
   'opening' | 'prose' | 'json-seek' | 'json-string' | 'labelled-seek' | 'label-value' | 'labelled' | 'done';
+
+/**
+ * A stored reply without the structured blocks a model wrote after it ({@link PROSE_BLOCK_LINE}, a field line or a bare
+ * mode name on its own line): replayed as history, they taught the next replies the format for the rest of the session.
+ */
+export function withoutTrailingFields(reply: string): string {
+  const lines = reply.split('\n');
+  const at = lines.findIndex(
+    (line, i) =>
+      i > 0 && (PROSE_BLOCK_LINE.test(line) || PROSE_FIELD_LINE.test(line) || PROSE_MODE_LINE.test(line)),
+  );
+  return at < 0 ? reply : lines.slice(0, at).join('\n').trimEnd();
+}
 
 export class ReplyExtractor {
   #state: State = 'opening';
@@ -203,7 +222,7 @@ export class ReplyExtractor {
         if (newline < 0 && line.length < LINE_LOOKAHEAD && !this.#ended) return out;
         const ends = labelled
           ? FIELD_LABELS.has((LABEL.exec(line)?.[1] ?? '').toLowerCase())
-          : PROSE_FIELD_LINE.test(line) || PROSE_MODE_LINE.test(line);
+          : PROSE_FIELD_LINE.test(line) || PROSE_BLOCK_LINE.test(line) || PROSE_MODE_LINE.test(line);
         if (ends) {
           this.#state = 'done';
           return out;

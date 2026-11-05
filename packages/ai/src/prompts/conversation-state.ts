@@ -83,6 +83,20 @@ export interface ConversationState {
   /** Questions the vEIR asked in this conversation (one line each, unescaped, newest first, distinct). */
   readonly askedQuestions: readonly string[];
   /**
+   * What the founder already told in the turns in view: something done, a constraint, or their own numbers (one line
+   * each, unescaped, newest first): never asked for again, and never a step they said is done or ruled out.
+   */
+  readonly told?: readonly string[];
+  /** How the founder asked to be answered ("yes/no answers", "short answers"), newest first: kept to until changed. */
+  readonly preferences?: readonly string[];
+  /**
+   * The message takes the advice on board and says what they will do, asking nothing ("Got it, I'll send it Friday"):
+   * a short confirmation and sign-off, no new homework ({@link wrapUpOf}).
+   */
+  readonly wrapUp?: boolean;
+  /** The message reads as being about another venture or team, or asks for a message to be passed on. */
+  readonly aboutOthers?: boolean;
+  /**
    * Whether the question the vEIR's last reply asked (the first of `askedQuestions`) is still open: the new message
    * neither answers it nor takes it up (it asks something else, or changes the topic).
    */
@@ -102,8 +116,13 @@ export const GIST_CHARS = 90;
 export const MAX_PARKED = 3;
 /** Most recent openings reported. */
 export const MAX_OPENINGS = 3;
-/** Most questions the vEIR already asked that are reported (so it never asks one again). */
-export const MAX_ASKED = 2;
+/**
+ * Most questions the vEIR already asked that are reported (so it never asks one again). Live pilot 42099643194: with
+ * the last two only, 83 of 122 repeated sentences repeated the reply two turns back.
+ */
+export const MAX_ASKED = 6;
+/** Most things the founder already told that are reported. */
+export const MAX_TOLD = 4;
 /** Longest question reported. */
 export const QUESTION_CHARS = 110;
 const OPENING_WORDS = 6;
@@ -536,6 +555,82 @@ export function directChoiceOf(text: string): boolean {
     : false;
 }
 
+// What the founder already told, and how they want answers ---------------------------------------------------
+
+/**
+ * A sentence telling something done, a constraint or a number of their own (live pilot 42099643194, paraphrased: "I
+ * already went to the tech-transfer office", "we can't afford a second batch", "70% of 200 sales were two sizes":
+ * the advice to do it, or the question for it, came back in five of seven replies).
+ */
+const TOLD = new RegExp(
+  [
+    String.raw`\balready\b`,
+    String.raw`\b(?:i|we)(?:'ve| have)? (?:just )?(?:done|did|tried|talked|spoke|spoken|met|sent|asked|interviewed|called|emailed|went|gone|checked|filed|submitted|built|sold|signed|ran|run|booked|launched|shipped)\b`,
+    String.raw`\b(?:i|we)(?:'ve| have| got| already have) (?:got )?(?:the|a|an|our|my|some|all|both)\b`,
+    String.raw`\b(?:can't|cannot|can not|couldn't|don't have|do not have|doesn't work|won't work|isn't possible|is not possible|not allowed|too expensive|no (?:budget|money|time|access|way))\b`,
+    String.raw`\p{N}`,
+  ].join('|'),
+  'u',
+);
+
+/** How a founder asks to be answered, and the label it is kept under. */
+const PREFERENCES: readonly (readonly [string, RegExp])[] = [
+  ['yes/no answers', /\b(?:yes(?: or |\/)no(?: answers?| only)|(?:just|only) (?:a )?yes(?: or |\/)no)\b/],
+  [
+    'short answers',
+    /\b(?:keep (?:it|them|answers?) (?:short|brief)|short answers?|be (?:brief|quick)|no essays?|(?:one|a) (?:line|sentence) (?:answers?|only)|tl;?dr)\b/,
+  ],
+  [
+    'just the steps',
+    /\b(?:just|only) (?:give|tell|list) (?:me|us) the (?:\w+ )?(?:steps|answer|bottom line)\b/,
+  ],
+  ['no frameworks', /\bno (?:more )?(?:frameworks?|theory|lectures?|jargon)\b/],
+];
+
+/** The preferences a message states ({@link PREFERENCES}). */
+export function preferencesOf(text: string): string[] {
+  const t = normalize(text);
+  return PREFERENCES.filter(([, cue]) => cue.test(t)).map(([label]) => label);
+}
+
+/** A first-person plan of their own: what they will do next. */
+const WILL_DO =
+  /(?:\b(?:i'll|i will|we'll|we will|i'm going to|we're going to|i'm gonna|we're gonna|gonna|i plan to|we plan to)|(?:^|[.!,;]\s*)going to)\s+(?!think about\b|see\b|need\b|have to\b)[\p{L}]/u;
+/** Taking advice on board: thanks or an assent. */
+const ON_BOARD =
+  /^(?:(?:ok|okay|alright|right|great|perfect|cool|thanks|thank you|thx|cheers|got it|makes sense|sounds good|will do|understood|noted|fair enough|yes|yeah|yep)\b|.*\b(?:thanks|thank you|that helps|super helpful|very helpful|that's helpful)\b)/u;
+
+/**
+ * Whether the message takes the advice on board and says what they will do, asking nothing ("Got it, I'll call the
+ * three stores by Friday. Thanks!"). Live pilot 42099643194: 35 of 47 such turns got more than 40 words of new homework.
+ * A message that is only social ({@link socialTurnOf}) is not one: it is answered as that.
+ */
+export function wrapUpOf(text: string, moves: readonly FounderMove[] = founderMoves(text)): boolean {
+  if (asksSomething(text, moves) || moves.includes('help') || moves.includes('news')) return false;
+  const t = normalize(text);
+  return ON_BOARD.test(t) && WILL_DO.test(t) && socialTurnOf(text) === null;
+}
+
+/**
+ * The message reads as being about another venture or team on the platform, or asks for a message to be passed on
+ * (live pilot 42099643194: "what discount did they get?", "can you pass this to their founder?"). By phrasing alone,
+ * never by whether a name is a real venture's: the turn-level cue then cannot tell anyone which ventures exist (the
+ * classifier's own flag stays out of the prompt for that reason, `answer.ts`).
+ */
+const ABOUT_OTHERS = new RegExp(
+  [
+    String.raw`\b(?:another|other|the other|that other|a different|some other) (?:team|venture|startup|founder|company|cohort team|group)s?\b`,
+    String.raw`\b(?:their|the other team's|the other founder's) (?:deal|discount|terms|pricing|price|contract|numbers|rate)\b`,
+    String.raw`\b(?:pass (?:it|this|that|a message|my message|the message|this message|that message|word|my number|my details) (?:on|along)|put me in touch|(?:can|could|would) you (?:tell|ask|message|contact|reach out to|introduce me to|connect me (?:with|to))\b)`,
+    String.raw`\b(?:rumou?r(?:s|ed)?|heard (?:that )?(?:they|the other))\b`,
+  ].join('|'),
+);
+
+/** Whether the message reads as being about another venture or team, or asks for a relay ({@link ABOUT_OTHERS}). */
+export function aboutOthersOf(text: string): boolean {
+  return ABOUT_OTHERS.test(normalize(text));
+}
+
 // Content words ------------------------------------------------------------------------------------------
 
 const STOPWORDS = new Set(
@@ -808,6 +903,21 @@ export function deriveConversationState(
     const question = lastQuestionOf(turns[i]?.answer ?? '');
     if (question !== null && !asked.includes(question)) asked.push(question);
   }
+  // What they already told (earlier messages only: the new one is right there), and how they want answers.
+  const told: string[] = [];
+  for (let i = turns.length - 1; i >= 0 && told.length < MAX_TOLD; i -= 1) {
+    const sentences = plain(turns[i]?.founderText ?? '').split(/(?<=[.!?])\s+/);
+    for (let j = sentences.length - 1; j >= 0 && told.length < MAX_TOLD; j -= 1) {
+      const sentence = (sentences[j] ?? '').trim();
+      if (wordCount(sentence) < 4 || !TOLD.test(normalize(sentence))) continue;
+      const line = truncate(sentence, GIST_CHARS);
+      if (!told.includes(line)) told.push(line);
+    }
+  }
+  const preferences: string[] = [];
+  for (const text of [founderText, ...turns.map((t) => t.founderText).reverse()]) {
+    for (const p of preferencesOf(text)) if (!preferences.includes(p)) preferences.push(p);
+  }
   // The founder's first message answers the opener: it is the vEIR's last reply so far.
   const opener = options.opener?.trim() ?? '';
   const afterOpener = turns.length === 0 && opener !== '';
@@ -831,6 +941,10 @@ export function deriveConversationState(
     directChoice: directChoiceOf(founderText),
     asksForNumber: asksForNumber(founderText),
     reportsDone: reportsCommitmentDone(founderText),
+    told,
+    preferences,
+    wrapUp: wrapUpOf(founderText, moves),
+    aboutOthers: aboutOthersOf(founderText),
     usedPhrases,
     openerGreeted: afterOpener && /^(?:hi|hello|hey|hiya)\b/i.test(opener),
     words: wordCount(founderText),
@@ -897,7 +1011,10 @@ export function renderConversationState(state: ConversationState): string {
     state.moves.some((m) => NOTABLE.has(m)) ||
     state.directChoice === true ||
     state.asksForNumber === true ||
-    state.reportsDone === true;
+    state.reportsDone === true ||
+    state.wrapUp === true ||
+    state.aboutOthers === true ||
+    (state.preferences ?? []).length > 0;
   if (state.earlierTurns === 0 && !notable && !state.afterOpener) return '';
   const what = state.moves.map((m) => MOVE_LABELS[m]);
   const length =
@@ -922,6 +1039,23 @@ export function renderConversationState(state: ConversationState): string {
     );
   } else if (state.social === 'greeting' && state.earlierTurns > 0) {
     lines.push('- A hello and nothing more: a few warm words, no advice.');
+  } else if (state.wrapUp === true) {
+    lines.push(
+      '- They took it on board and said what they will do: confirm it in a line and sign off warmly. No new advice,',
+      '  homework or question.',
+    );
+  }
+  if (state.aboutOthers === true) {
+    lines.push(
+      '- If they ask about another venture, team or founder, or for a message to be passed on: you know nothing about',
+      '  other ventures and discuss no rumours or deals, and you cannot pass messages. Say so in one line, then help',
+      '  with their own case (a draft they could send is fine).',
+    );
+  }
+  if ((state.preferences ?? []).length > 0) {
+    lines.push(
+      `- They asked for ${(state.preferences ?? []).join(' and ')}: keep to it until they say otherwise.`,
+    );
   }
   if (state.moves.includes('news')) {
     lines.push(
@@ -960,7 +1094,7 @@ export function renderConversationState(state: ConversationState): string {
   if ((state.social ?? null) === null && asks && !aboutNotes) {
     lines.push(
       '- Make this reply about what they just said. Bring nothing up from your notes (commitments, open questions,',
-      '  earlier advice) unless it serves that.',
+      '  earlier advice) unless it bears on it (their plan repeats a recorded pattern or breaks a commitment).',
     );
   }
   if (state.moves.includes('sarcasm')) {
@@ -976,8 +1110,10 @@ export function renderConversationState(state: ConversationState): string {
   }
   if (state.asksForNumber === true) {
     lines.push(
+      // Live pilot 42099643194: pressed for a number after a correct referral, the coach gave a device class, a timeline
+      // and a cost range. Rule 5 holds for legal, regulatory, medical, equity and investment questions.
       '- They asked for a number: give a reasoned range and the one assumption behind it, before anything else; never',
-      '  withhold it for want of evidence.',
+      '  withhold it for want of evidence. Not for a legal, regulatory, medical, equity or investment question (rule 5).',
     );
   }
   if (state.previous !== null) lines.push(`- You were on: ${quoted(state.previous.gist)}.`);
@@ -994,6 +1130,12 @@ export function renderConversationState(state: ConversationState): string {
   }
   if (state.askedQuestions.length > 0) {
     lines.push(`- You already asked: ${state.askedQuestions.map(quoted).join(' | ')}`);
+  }
+  if ((state.told ?? []).length > 0) {
+    lines.push(
+      `- They already told you: ${(state.told ?? []).map(quoted).join(' | ')}. Build on it; never ask for it again or`,
+      '  suggest what they said is done or ruled out.',
+    );
   }
   if (state.openQuestion) {
     lines.push('- They did not take up your last question: answer what they said, and do not ask it again.');

@@ -1,4 +1,10 @@
-import { contentWords, founderMoves, socialTurnOf, type SocialTurn } from '../prompts/conversation-state.js';
+import {
+  contentWords,
+  founderMoves,
+  socialTurnOf,
+  wrapUpOf,
+  type SocialTurn,
+} from '../prompts/conversation-state.js';
 import { sentenceSpans } from './meta-narration.js';
 
 /**
@@ -62,9 +68,13 @@ export function withinSocialBudget(text: string, social: SocialTurn): string {
   return same ? text : out;
 }
 
-/** The founder asks to hear something again: then a reply may repeat it. */
+/**
+ * The founder asks to hear something again, or to run a rehearsal or a drill again ("ok stop, run it again from the
+ * top", "same questions again"): then a reply may repeat it (diff3-A3; the brief: repetition the student asked for is
+ * not a fault).
+ */
 const REPEAT_REQUEST =
-  /\b(?:repeat (?:that|it|this|yourself|what you said)|say (?:that|it|this) again|one more time|come again|(?:what|which) was (?:that|it|the (?:first|second|last|next) (?:step|one|thing|point))|remind me what you (?:said|suggested)|go over (?:that|it) again|(?:can|could) you (?:say|explain) (?:that|it) again|(?:sorry|pardon),? what\?)/i;
+  /\b(?:from the top|(?:run|do|go through|ask|start) (?:(?:it|that|this|them|those|the (?:\w+ )?(?:questions|pitch|run|round|drill|rehearsal|role-?play)) )?(?:again|over)|again,? (?:the )?same (?:questions|run|round|drill)|same questions again|(?:another|one more) (?:round|run|pass)|repeat (?:that|it|this|yourself|what you said)|say (?:that|it|this) again|one more time|come again|(?:what|which) was (?:that|it|the (?:first|second|last|next) (?:step|one|thing|point))|remind me what you (?:said|suggested)|go over (?:that|it) again|(?:can|could) you (?:say|explain) (?:that|it) again|(?:sorry|pardon),? what\?)/i;
 
 /**
  * Whether the founder asks to hear the last reply (or part of it) again: in so many words, or by asking what the
@@ -131,13 +141,23 @@ export function reasksQuestion(sentence: string, asked: readonly ReadonlySet<str
   });
 }
 
+/** A line that is an item of a list ("1. …", "- …"). */
+const LIST_ITEM = /^\s*(?:[-*+•]|\d{1,3}[.)])\s+/;
+
+/** Whether `text` (a sentence or unit) is an item of a list: left out, its list would have a hole. */
+export function isListItem(text: string): boolean {
+  return LIST_ITEM.test(text.replace(/^\s*\n/, ''));
+}
+
 /** What a reply says when every sentence of it was the previous reply again. */
 export const REPEAT_FALLBACK = 'That still stands from a moment ago. Which part do you want to dig into?';
 
 /**
- * `text` without the sentences that mostly repeat `previous` (the vEIR's previous reply; see the module comment), or
- * ask one of its questions again in other words ({@link reasksQuestion}). `dropped` counts them; `text` is '' when
- * every sentence was a repeat.
+ * `text` without the sentences that mostly repeat `previous` (the vEIR's earlier replies; see the module comment), or
+ * ask one of their questions again in other words ({@link reasksQuestion}). `dropped` counts them; `text` is '' when
+ * every sentence was a repeat. A repeat before anything of substance, or a question asked again, is left out; a repeated
+ * statement after it, or an item of a list, ends the reply there, with everything after it counted as dropped: left out in the middle, it would leave a hole
+ * (as the sentence gate does, `GateCutReason`).
  */
 export function withoutRepeats(
   text: string,
@@ -147,14 +167,37 @@ export function withoutRepeats(
   if (said.size === 0) return { text, dropped: 0 };
   const asked = questionsOf(previous);
   const spans = sentenceSpans(text);
-  const repeated = spans.filter((s) => {
+  const repeated: { start: number; end: number }[] = [];
+  let kept = '';
+  for (const [i, s] of spans.entries()) {
     const sentence = text.slice(s.start, s.end);
-    return repeatsPrevious(sentence, said) || reasksQuestion(sentence, asked);
-  });
+    const repeat = repeatsPrevious(sentence, said);
+    if (!repeat && !reasksQuestion(sentence, asked)) {
+      kept += ` ${sentence}`;
+      continue;
+    }
+    // A question asked again is only left out: the sentences around it never lean on it.
+    const statement = repeat && !/\?["'”’)\]*_]*\s*$/.test(sentence);
+    if (isListItem(sentence) || (statement && !isOnlyLeadIn(kept))) {
+      // The rest goes: the reply ends before this sentence.
+      repeated.push({ start: s.start, end: text.length });
+      return tidied(text, repeated, spans.length - i);
+    }
+    repeated.push(s);
+  }
   if (repeated.length === 0) return { text, dropped: 0 };
+  return tidied(text, repeated, repeated.length);
+}
+
+/** `text` without `spans`, tidied (no empty list markers or runs of blank lines). */
+function tidied(
+  text: string,
+  spans: readonly { readonly start: number; readonly end: number }[],
+  dropped: number,
+): { readonly text: string; readonly dropped: number } {
   let out = '';
   let from = 0;
-  for (const span of repeated) {
+  for (const span of spans) {
     out += text.slice(from, span.start);
     from = span.end;
   }
@@ -166,8 +209,11 @@ export function withoutRepeats(
     .join('\n')
     .replace(/^[ \t]*(?:[-*+]|\d{1,3}[.)])[ \t]*$/gm, '')
     .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    // "Ask them:" left with nothing after it goes too.
+    .replace(/\s*[^.!?\n]*:[*_\s]*$/, (m) => (spans.at(-1)?.end === text.length ? '' : m))
     .trim();
-  return { text: tidy, dropped: repeated.length };
+  return { text: tidy, dropped };
 }
 
 /**
@@ -240,15 +286,14 @@ export function endsWithHandBack(spoken: string): boolean {
  * replies).
  */
 export const SPOKEN_HAND_BACKS = [
+  // "How does that sound?" and "Sound right to you?" are gone: the brief names repeated "How does that sound?" endings.
   'What do you think?',
-  'How does that sound?',
   'Does that fit?',
   'Want to try that?',
   "Anything you'd change?",
   "What's your gut?",
   'Does that feel doable?',
   'Where would you start?',
-  'Sound right to you?',
   'Which part first?',
   'Does that match?',
   'Shall we try it?',
@@ -279,10 +324,11 @@ export function spokenHandBackFor(
   seed: string,
   earlier: readonly (string | null | undefined)[] = [],
 ): string | null {
-  if (socialTurnOf(founderText) !== null) return null;
-  const pool: readonly string[] = founderMoves(founderText).includes('stress')
-    ? STRESSED_HAND_BACKS
-    : SPOKEN_HAND_BACKS;
+  const moves = founderMoves(founderText);
+  // Live pilot 42099643194 (calls): a hand-back followed a goodbye, and every "got it, I'll do X" got one.
+  if (socialTurnOf(founderText) !== null || moves.includes('closing') || wrapUpOf(founderText, moves))
+    return null;
+  const pool: readonly string[] = moves.includes('stress') ? STRESSED_HAND_BACKS : SPOKEN_HAND_BACKS;
   const heard = earlier.map((text) => plainLine(text ?? '')).join('\n');
   const fresh = pool.filter((line) => !heard.includes(plainLine(line)));
   if (fresh.length === 0) return null;

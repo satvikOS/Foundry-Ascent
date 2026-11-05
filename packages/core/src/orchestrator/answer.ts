@@ -11,6 +11,7 @@ import {
   socialTurnOf,
   spokenHandBackFor,
   validateCoachResponse,
+  wrapUpOf,
   type CoachResponseValidation,
   type GateBlockReason,
   type HistoryTurn,
@@ -44,6 +45,7 @@ import {
   type Generation,
   type GenerationMeter,
 } from './generate.js';
+import { withoutTrailingFields } from './reply-extract.js';
 
 /**
  * Steps 4–6 of a turn (system design §7), shared by founder turns (`runTurn`) and the EIR studio's test bench
@@ -190,7 +192,15 @@ export function generationError(cause: unknown): DomainError {
 }
 
 /** Steps 4–6 (see {@link AnswerSpec}). Emits the `reasoning` and `validating` status events. */
-export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
+export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
+  // Earlier replies as the founder read them: structured blocks a model once wrote after a reply never return as history
+  // (where they taught the format to every later reply of the session).
+  const spec: AnswerSpec = {
+    ...raw,
+    history: raw.history.map((t) =>
+      t.answer === null ? t : { ...t, answer: withoutTrailingFields(t.answer) },
+    ),
+  };
   const { kit, risk, settings, guards, emit } = spec;
   const cfg = kit.config;
 
@@ -250,6 +260,12 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
   const lastAnswer = spec.history.at(-1)?.answer ?? null;
   const previousReply =
     spec.history.length > 0 ? lastAnswer : context.openerReplayed ? (spec.opener ?? null) : null;
+  // Every earlier reply in view, and the opener, is never said again either (live pilot 42099643194: with the previous
+  // reply alone checked, replies alternated A, B, A, B).
+  const earlierReplies =
+    spec.history.length > 0
+      ? [...spec.history.slice(0, -1).map((t) => t.answer), context.openerReplayed ? spec.opener : null]
+      : [];
   // A hello that opens the conversation (nothing said before it) is answered with the pick-up of last time.
   const read = socialTurnOf(spec.founderText);
   const social = read === 'greeting' && previousReply === null ? null : read;
@@ -302,8 +318,15 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
             addressees: guards.addressees,
             founderName: spec.continuity.founderFirstName ?? null,
             greeted,
-            replyBudget: social === null ? null : SOCIAL_BUDGETS[social],
+            // A wrap-up ("got it, I'll send it Friday") is answered as briefly as a goodbye: no new homework.
+            replyBudget:
+              social !== null
+                ? SOCIAL_BUDGETS[social]
+                : wrapUpOf(spec.founderText)
+                  ? SOCIAL_BUDGETS.closing
+                  : null,
             previousReply,
+            earlierReplies,
             founderText: spec.founderText,
             introduced,
             otherVentureNames: guards.others.names,
@@ -338,6 +361,7 @@ export async function answerTurn(spec: AnswerSpec): Promise<AnswerOutcome> {
     founderName: spec.continuity.founderFirstName ?? null,
     greeted,
     previousReply,
+    earlierReplies,
     // A streamed reply handed the turn back as it was said (generate.ts); a reply written whole gets it here.
     handBack: generation.stream?.fallback === null ? null : handBack,
     social,

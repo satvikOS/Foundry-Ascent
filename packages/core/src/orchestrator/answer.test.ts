@@ -835,3 +835,79 @@ describe('diff4-A4 (medium): news parked again by the continuation still gets th
     }
   });
 });
+
+/**
+ * Live pilot 42099643194 (paraphrased patterns, never transcript text): the coach alternated two replies (A, B, A),
+ * because only the previous reply was guarded; when the guard fired mid-reply it left holes; a "got it, I'll do X" got
+ * new homework; and structured blocks once written after a reply were replayed as history and taught the format on.
+ */
+describe('live pilot 42099643194: the whole conversation is guarded, and a repeat never leaves a hole', () => {
+  const A =
+    'Bring the commit logs to the tech-transfer office and ask them to confirm the ownership dates in writing.';
+  const B = 'Write down which parts of the code you wrote before the lab job started, with the dates.';
+  const history: HistoryTurn[] = [
+    { founderText: 'The lab might claim my code. What do I do?', answer: A },
+    { founderText: 'I already went to the office last week.', answer: B },
+  ];
+
+  it('never says the reply from two turns back again: it stops there and goes on with something new', async () => {
+    for (const channel of ['text', 'voice'] as const) {
+      const { gateway, continued } = scripted(
+        () => `Your dates are covered then. ${A} Ask about the filing budget too.`,
+        () => 'The open piece is who pays for the provisional filing, so ask the office that directly.',
+      );
+      const turn = await answer(gateway, {
+        text: 'I already have the commit logs too. What next?',
+        channel,
+        history,
+      });
+      expect(continued, channel).toHaveLength(1);
+      expect(turn.answer, channel).not.toContain('Bring the commit logs');
+      expect(turn.answer, channel).toContain('Your dates are covered then.');
+      expect(turn.answer, channel).toContain('who pays for the provisional filing');
+      // Nothing after the repeat is shown from the first draft: the reply never has a hole in it.
+      expect(turn.shown, channel).not.toContain('Ask about the filing budget too.');
+      expect(turn.notes, channel).toContain('stream_repeat_cut');
+    }
+  });
+
+  it('answers "got it, I will do X" with a short sign-off, not new homework (35 of 47 such turns)', async () => {
+    const homework =
+      'Great plan. Call the three stores on Friday. Then write down what each one says about reorders. ' +
+      'After that, draft a one-page pitch with the numbers. Next week, book a meeting with the grocery buyer. ' +
+      'And think about a pilot price too.';
+    const { gateway } = scripted(
+      () => homework,
+      () => 'Talk soon.',
+    );
+    const turn = await answer(gateway, {
+      text: "Got it, I'll call the three stores by Friday.",
+      history: [PRICING],
+    });
+    expect(turn.answer.split(/(?<=[.!?])\s+/).length).toBeLessThanOrEqual(3);
+    expect(turn.answer).not.toContain('book a meeting');
+  });
+
+  it('replays an earlier reply without the structured blocks a model wrote after it (C4)', async () => {
+    const seen: string[] = [];
+    const gateway = new MockModelGateway({
+      streamDelayMs: 0,
+      streamFixture: (context) => {
+        seen.push(context.messages.map((m) => m.content).join('\n'));
+        return 'Lead the grocery pitch with the reorder data.';
+      },
+    });
+    await answer(gateway, {
+      text: 'How do I open the pitch?',
+      history: [
+        {
+          founderText: 'We sold 500 units with monthly reorders.',
+          answer: 'That is strong evidence.\n\n[claims]\n- fact: 500 units sold\n[/claims]\n[mode] coach',
+        },
+      ],
+    });
+    expect(seen[0]).toContain('That is strong evidence.');
+    expect(seen[0]).not.toContain('[claims]');
+    expect(seen[0]).not.toContain('[mode]');
+  });
+});

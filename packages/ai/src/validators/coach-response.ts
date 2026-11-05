@@ -127,6 +127,11 @@ export interface ValidateCoachResponseOptions {
    */
   previousReply?: string | null;
   /**
+   * The vEIR's other earlier replies in view in this conversation (and its opener): never said again either (see
+   * `SentenceGateOptions.earlierReplies`).
+   */
+  earlierReplies?: readonly (string | null | undefined)[];
+  /**
    * A call's turn: the hand-back said after a spoken reply that ends on a statement (`spoken_hand_back_added`), or
    * null for none (a typed turn, or the founder wrapping up). The turn engine picks it (`spokenHandBackFor`).
    */
@@ -470,13 +475,15 @@ export function validateCoachResponse(
   const identityAsked = question !== null;
   // A social turn gets a short reply; a reply never says the previous one again (unless asked to, or the founder
   // sincerely asks who or what the coach is: its honest answer is never dropped, however recently it was said).
+  const earlier = [options.previousReply, ...(options.earlierReplies ?? [])].filter(
+    (t): t is string => typeof t === 'string' && t.trim() !== '',
+  );
   const previous =
-    options.previousReply === undefined ||
-    options.previousReply === null ||
+    earlier.length === 0 ||
     identityAsked ||
     (options.founderText !== undefined && asksToRepeat(options.founderText))
       ? null
-      : options.previousReply;
+      : earlier.join('\n\n');
   // Their news comes first: a sentence that parks it for the vEIR's own agenda is left out (LAB-R8).
   const news = options.founderText !== undefined && founderMoves(options.founderText).includes('news');
   const crafted = (text: string, note: boolean): string => {

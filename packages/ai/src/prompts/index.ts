@@ -42,6 +42,7 @@ export {
   conversationCraftRules,
 } from './craft.js';
 export {
+  aboutOthersOf,
   asksSomething,
   contentWords,
   deriveConversationState,
@@ -50,8 +51,10 @@ export {
   founderMoves,
   gistOf,
   openingOf,
+  preferencesOf,
   renderConversationState,
   socialTurnOf,
+  wrapUpOf,
 } from './conversation-state.js';
 export type {
   ConversationState,

@@ -24,6 +24,8 @@ import {
   REPEAT_FALLBACK,
   asksToRepeat,
   fourGramsOf,
+  isListItem,
+  isOnlyLeadIn,
   parksTheirNews,
   questionsOf,
   reasksQuestion,
@@ -85,6 +87,9 @@ import { clampWords, toSpeakable } from './speech.js';
  * passes the Markdown subset unchanged.
  */
 
+/** A unit that asks: its last sentence ends in a question mark. */
+const ASKS = /\?["'”’)\]*_]*$/;
+
 /** Most words of a lead-in released as soon as its sentence ends (see the module comment). */
 export const LEAD_IN_MAX_WORDS = 4;
 
@@ -97,8 +102,14 @@ export type GateBlockReason = 'cross_venture' | 'identity';
 /** Why the stream cannot be shown at all and the reply must be written whole instead. */
 export type GateFallbackReason = 'structured_output' | 'meta_narration';
 
-/** Why the reply ends early: what was released stands, and nothing more is. */
-export type GateCutReason = 'meta_narration';
+/**
+ * Why the reply ends early: what was released stands, and nothing more is. `repeat`: a unit said again what an earlier
+ * reply of the conversation said, after the reply had already said something of substance, or as an item of a list:
+ * left out in the middle, it would leave a hole (live pilot 42099643194: 41 replies in 21 runs showed a numbered plan
+ * without its first step, "Ask them:" followed by nothing, three steps announced and two given). The caller goes on
+ * from what was said with something new instead.
+ */
+export type GateCutReason = 'meta_narration' | 'repeat';
 
 export interface SentenceGateOptions {
   /** Persona display name ("Corin's vEIR"). */
@@ -148,6 +159,13 @@ export interface SentenceGateOptions {
    * A reply that was nothing but repeats becomes a short line instead.
    */
   previousReply?: string | null;
+  /**
+   * The vEIR's other earlier replies in view in this conversation (and its opener): a unit that says one of them again,
+   * or asks one of their questions again, is never released either, as for {@link previousReply}. Live pilot
+   * 42099643194: with the previous reply alone checked, replies alternated, and 113 of 122 repeated sentences repeated a
+   * reply two or more turns back.
+   */
+  earlierReplies?: readonly (string | null | undefined)[];
   /**
    * The founder's message this reply answers. When it sincerely asks who or what the coach is ("are you real?"),
    * the reply's honest answer stands as written: no disclaimer is rewritten out of it.
@@ -432,6 +450,8 @@ export class SentenceGate {
   #agendaDropped = 0;
   /** Units and words released (the reply budget). */
   #released = { units: 0, words: 0 };
+  /** Everything released so far (shown, or said when withheld): whether the reply already said something of substance. */
+  #releasedText = '';
   /** The reply budget is used up: nothing more is released. */
   #full = false;
   /**
@@ -479,17 +499,20 @@ export class SentenceGate {
       options.founderText === undefined ? null : identityQuestionOf(options.founderText, this.#identity);
     this.#news = founderMoves(options.founderText ?? '').includes('news');
     this.#life = options.founderText === undefined ? null : askedLifeFor(options.founderText, this.#identity);
-    const previous = options.previousReply ?? null;
+    const said = [options.previousReply, ...(options.earlierReplies ?? [])].filter(
+      (t): t is string => typeof t === 'string' && t.trim() !== '',
+    );
     // No repeat check for a sincere question about the coach: its honest answer is said however recently it was
     // said (the intro of a first meeting, or the last reply when they ask again; the presence policy).
-    this.#previousGrams =
-      previous === null ||
-      previous.trim() === '' ||
-      asksToRepeat(options.founderText ?? '') ||
-      this.#question !== null
-        ? null
-        : fourGramsOf(previous);
-    this.#previousQuestions = this.#previousGrams === null || previous === null ? [] : questionsOf(previous);
+    if (said.length === 0 || asksToRepeat(options.founderText ?? '') || this.#question !== null) {
+      this.#previousGrams = null;
+      this.#previousQuestions = [];
+    } else {
+      const grams = new Set<string>();
+      for (const text of said) for (const g of fourGramsOf(text)) grams.add(g);
+      this.#previousGrams = grams;
+      this.#previousQuestions = said.flatMap((text) => questionsOf(text));
+    }
   }
 
   /** Everything received so far (unvalidated). */
@@ -672,15 +695,32 @@ export class SentenceGate {
         this.#cut = 'meta_narration';
         return { units, blocked: null, fallback: null, cut: this.#cut };
       }
-      if (this.#previousGrams !== null) {
-        const repeat = repeatsPrevious(rawUnit, this.#previousGrams);
-        if (repeat || reasksQuestion(rawUnit.trim(), this.#previousQuestions)) {
-          // The previous reply again: never said twice.
+      const repeat = this.#repeatOf(rawUnit);
+      if (repeat !== null) {
+        // An earlier reply again: never said twice. Before anything of substance it is only left out; a statement after
+        // it, or an item of a list, ends the reply here rather than leave a hole in it (see `GateCutReason`).
+        this.#cursor = end;
+        this.#repeatsDropped += 1;
+        if (repeat === 'reask') this.#reasksDropped += 1;
+        this.#keepDropped(repeat, rawUnit);
+        // A question asked again is only left out: the sentences around it never lean on it.
+        const statement = repeat === 'repeat' && !ASKS.test(rawUnit.trim());
+        if (isListItem(rawUnit) || (statement && !isOnlyLeadIn(this.#releasedText))) {
+          return this.#cutForRepeat(units);
+        }
+        continue;
+      }
+      if (this.#previousGrams !== null && /:[*_\s]*$/.test(rawUnit)) {
+        // "Ask them:" announces what follows: when what follows was said before, the announcement goes with it.
+        const next =
+          findUnitEnd(this.#raw, end, this.#maxUnitChars) ?? (this.#ended ? this.#raw.length : null);
+        if (next === null || (!this.#ended && stable.length < next + this.#holdBack)) break;
+        const following = this.#raw.slice(end, next);
+        if (following.trim() !== '' && this.#repeatOf(following) !== null) {
           this.#cursor = end;
           this.#repeatsDropped += 1;
-          if (!repeat) this.#reasksDropped += 1;
-          this.#keepDropped(repeat ? 'repeat' : 'reask', rawUnit);
-          continue;
+          this.#keepDropped('repeat', rawUnit);
+          return this.#cutForRepeat(units);
         }
       }
       if (this.#news && parksTheirNews(rawUnit.trim())) {
@@ -735,8 +775,22 @@ export class SentenceGate {
     return { units, blocked: null, fallback: null, cut: null };
   }
 
+  /** Whether a unit says an earlier reply again (`repeat`), asks one of its questions again (`reask`), or neither. */
+  #repeatOf(unit: string): 'repeat' | 'reask' | null {
+    if (this.#previousGrams === null) return null;
+    if (repeatsPrevious(unit, this.#previousGrams)) return 'repeat';
+    return reasksQuestion(unit.trim(), this.#previousQuestions) ? 'reask' : null;
+  }
+
+  /** Ends the reply where an earlier reply would have been said again (`GateCutReason` `repeat`). */
+  #cutForRepeat(units: GateUnit[]): GateResult {
+    this.#cut = 'repeat';
+    return { units, blocked: null, fallback: null, cut: this.#cut };
+  }
+
   /** Shows a checked unit, or withholds it from the preview (still said on a call). */
   #show(unit: GateUnit, units: GateUnit[]): void {
+    this.#releasedText += unit.text === '' ? ` ${unit.spoken}` : unit.text;
     if (!this.#withholding && this.#formsRemovedMarkdown(unit.text)) this.#withholding = true;
     if (this.#withholding) {
       this.#stats.withheld += 1;

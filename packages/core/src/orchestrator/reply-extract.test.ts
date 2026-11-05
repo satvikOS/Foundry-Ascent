@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ReplyExtractor } from './reply-extract.js';
+import { ReplyExtractor, withoutTrailingFields } from './reply-extract.js';
 
 /** The stream cut into chunks of `size` characters (0: one chunk). */
 function chunked(text: string, size: number): string[] {
@@ -80,6 +80,32 @@ describe('ReplyExtractor', () => {
     // The extractor says `done` as soon as it can tell, so the caller stops the model before the rest.
     const leak = `${reply}coach\n${'The founder has a memory item. '.repeat(20)}`;
     expect(read(leak, 4).pushedBeforeDone).toBeLessThan(chunked(leak, 4).length / 2);
+  });
+
+  it('ends prose at bracketed claim, uncertainty, challenge and mode blocks (live pilot 42099643194: 39 replies)', () => {
+    // Paraphrased shapes of the leak: the reply, then the structured fields as bracketed blocks and claim lines.
+    const reply = 'Your reorder data is strong evidence for the grocery buyer. Lead the pitch with it.\n\n';
+    for (const rest of [
+      '[claims]\n- fact: 500 units sold [E1]\n- inference: reorders show demand\n[/claims]',
+      '- fact: the founder sold 500 units\n- inference: demand is real',
+      '* inference: demand is real',
+      '[uncertainty]\n- medium: buyer margins unknown\n[/uncertainty]',
+      '[challenge] Will the buyer accept the margin? [/challenge]',
+      '[mode] coach',
+    ]) {
+      expect(readAll(reply + rest), rest).toMatchObject({ text: reply, shape: 'prose', done: true });
+    }
+    // Prose of its own that merely mentions facts or lists is untouched.
+    const own = 'Two facts matter:\n- Fact one: they reorder monthly.\n- The margin is thin.';
+    expect(readAll(own)).toMatchObject({ text: own, done: false });
+  });
+
+  it('cleans structured blocks out of an earlier reply replayed as history, so the format is not taught on', () => {
+    const stored =
+      'Lead the pitch with the reorder data.\n\n[claims]\n- fact: 500 units [E1]\n[/claims]\n[mode] coach';
+    expect(withoutTrailingFields(stored)).toBe('Lead the pitch with the reorder data.');
+    expect(withoutTrailingFields('Plain reply.\n- Fact one: kept.')).toBe('Plain reply.\n- Fact one: kept.');
+    expect(withoutTrailingFields('One line only.')).toBe('One line only.');
   });
 
   it('streams the answer field of a reply written as JSON and is done when the field ends', () => {
