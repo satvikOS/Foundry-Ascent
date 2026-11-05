@@ -1012,6 +1012,7 @@ export function createOrchestrator(
         channel: pre.channel,
         // Always null today: no session is readable by its author alone (see privateRetrievalOwner).
         privateOwnerId: privateRetrievalOwner(pre.session, ctx.principalId),
+        sessionId: pre.session.id,
       });
       return { evidencePack, lexicalOnly: vector === null };
     });

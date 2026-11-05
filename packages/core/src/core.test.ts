@@ -20,7 +20,7 @@ describe('config', () => {
     expect(DEFAULT_CORE_CONFIG.retrieval).toEqual({
       memory: 8,
       chunks: 6,
-      doctrine: 4,
+      doctrine: 2,
       resources: 4,
       patterns: 2,
     });

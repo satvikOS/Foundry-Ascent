@@ -31,6 +31,11 @@ export interface RetrievalArgs {
    * to that principal (see {@link privateRetrievalOwner}); null excludes founder_private items entirely.
    */
   readonly privateOwnerId: string | null;
+  /**
+   * The turn's conversation: AI memory first learned in it is not retrieved (the history already holds it; see
+   * `VentureMemoryQuery.excludeSessionId`). Null or absent: none is left out (a test conversation).
+   */
+  readonly sessionId?: string | null;
 }
 
 /**
@@ -103,6 +108,7 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
             embedding: args.embedding,
             limit: budgets.memory + MEMORY_SPARE,
             privateOwnerId: args.privateOwnerId,
+            excludeSessionId: args.sessionId ?? null,
           },
         }
       : {}),

@@ -209,6 +209,55 @@ describe('venture-scoped retrieval', () => {
   });
 });
 
+describe('memory learned in the conversation itself (live pilot 42099643194)', () => {
+  it('leaves out AI memory first learned in this conversation, and keeps what earlier ones taught', async () => {
+    // The coach's own plan, kept from a turn, came back as evidence [E1] on the next turn and was cited as a fact.
+    const thisSession = '0b1d2c3e-4f50-4a61-8b72-9c83d4e5f601';
+    const earlier = '0b1d2c3e-4f50-4a61-8b72-9c83d4e5f602';
+    await t.db.system(async (sx) => {
+      for (const [title, session, also] of [
+        ['Turn-kept parcel lockers plan', thisSession, null],
+        ['Earlier parcel lockers decision', earlier, thisSession],
+      ] as const) {
+        await memoryRepo.createMemory(sx, {
+          tenantId: seed.tenantId,
+          ventureId: A.id,
+          type: 'decision',
+          title,
+          content: 'Parcel lockers at the east library entrance for the exam-month pilot.',
+          origin: 'ai',
+          createdBy: A.founder,
+          status: 'confirmed',
+          keptAutomatically: true,
+          sourceRefs: [
+            { kind: 'session', id: session, label: 'Learned from' },
+            ...(also === null ? [] : [{ kind: 'session' as const, id: also, label: 'Learned from' }]),
+          ],
+        });
+      }
+    });
+    const search = (excludeSessionId: string | null) =>
+      t.db.withContext(makeContext(A.founder, seed.tenantId), (tx) =>
+        retrievalRepo.searchVentureMemory(tx, {
+          tenantId: seed.tenantId,
+          ventureId: A.id,
+          query: 'parcel lockers east library entrance',
+          embedding: null,
+          limit: 20,
+          excludeSessionId,
+        }),
+      );
+    const all = (await search(null)).map((m) => m.title);
+    expect(all).toEqual(
+      expect.arrayContaining(['Turn-kept parcel lockers plan', 'Earlier parcel lockers decision']),
+    );
+    const titles = (await search(thisSession)).map((m) => m.title);
+    expect(titles).not.toContain('Turn-kept parcel lockers plan');
+    // Taught by an earlier conversation, repeated in this one: still continuity.
+    expect(titles).toContain('Earlier parcel lockers decision');
+  });
+});
+
 describe('shared corpora', () => {
   it('returns program chunks and persona doctrine only for the assigned persona', async () => {
     const founderCtx = makeContext(A.founder, seed.tenantId);

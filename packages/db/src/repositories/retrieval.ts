@@ -159,6 +159,13 @@ export interface VentureMemoryQuery extends BaseQuery {
    * content is readable by that principal alone; default none: founder_private items are excluded.
    */
   readonly privateOwnerId?: string | null;
+  /**
+   * The conversation the turn belongs to: AI memory first learned in it is left out (the history already has what was
+   * said; live pilot 42099643194: a turn's own kept items came back as evidence on the next one, and the coach cited
+   * its own plan, or the founder's words of a minute ago, as a fact). Items from earlier conversations stay, even when
+   * this one repeated them.
+   */
+  readonly excludeSessionId?: string | null;
 }
 
 /**
@@ -190,6 +197,8 @@ function memorySearch(q: VentureMemoryQuery): StoreSearch {
          AND NOT (m.origin = 'ai' AND m.status = 'proposed')
          AND (:types IS NULL OR m.type = ANY (:types))
          AND (m.visibility <> 'founder_private' OR (:privateOwner IS NOT NULL AND m.created_by = :privateOwner))
+         AND NOT (:excludeSession IS NOT NULL AND m.origin = 'ai' AND jsonb_typeof(m.source_refs) = 'array'
+                  AND m.source_refs -> 0 ->> 'kind' = 'session' AND m.source_refs -> 0 ->> 'id' = :excludeSession)
          AND (m.tsv @@ q.tsq OR m.pinned OR (:embedding IS NOT NULL AND m.embedding IS NOT NULL))
      ) x
      WHERE ${SCORE_SQL} >= :minScore
@@ -201,6 +210,7 @@ function memorySearch(q: VentureMemoryQuery): StoreSearch {
       statuses: p.textArray(statuses),
       types: p.nullable.textArray(q.types),
       privateOwner: p.nullable.uuid(q.privateOwnerId),
+      excludeSession: p.nullable.text(q.excludeSessionId),
     },
     decode: (r) => decodeItem('memory', r),
   };

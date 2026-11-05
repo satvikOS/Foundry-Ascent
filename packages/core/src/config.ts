@@ -161,12 +161,15 @@ export const DEFAULT_CORE_CONFIG: CoreConfig = {
     inFlightWindowSeconds: 120,
     reviewSampleRate: 0.3,
     maxInputTokens: 16_000,
-    historyTurns: 8,
+    // Live pilot 42099643194: sessions ran to 27 turns, and with 8 in view the coach re-asked what was answered before.
+    historyTurns: 12,
     modelTimeoutMs: 25_000,
     traceStreamText: false,
     safetyScreen: false,
   },
-  retrieval: { memory: 8, chunks: 6, doctrine: 4, resources: 4, patterns: 2 },
+  // The persona's library gives two items, not four (live pilot 42099643194: its method notes were injected on almost
+  // every turn, whatever the topic, and replies on grants, leases and tutoring cited the interview guide).
+  retrieval: { memory: 8, chunks: 6, doctrine: 2, resources: 4, patterns: 2 },
   ingestion: { chunkTokens: 800, overlapRatio: 0.15, embedBatchSize: 16, maxChunks: 2_000 },
   uploads: { presignTtlSeconds: 5 * 60 },
   escalations: { businessTimeZone: 'America/New_York' },
