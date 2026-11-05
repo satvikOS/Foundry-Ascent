@@ -110,10 +110,11 @@ describe('the face’s FULL voicing on the API function (contract listing MEDIA_
       MEDIA_FACE_VOICE_ID: '',
       MEDIA_FACE_AUDIENCE: 'everyone',
     });
-    // The shipped face: the sandbox's stock avatar in LITE, fed by the caller's page.
+    // The shipped face: the stock avatar Thomas (Friendly) in LITE, fed by the caller's page, off the sandbox.
     expect(variablesOf(synthesize({}, config).templates, 'FoundryAscent-Api')).toMatchObject({
+      MEDIA_FACE_SANDBOX: 'false',
       MEDIA_FACE_MODE: 'lite',
-      MEDIA_FACE_AVATAR_ID: WAYNE,
+      MEDIA_FACE_AVATAR_ID: '6c2017bc-1eef-4071-ba70-0e9d5bcbf00f',
       MEDIA_FACE_VOICE_ID: '',
       MEDIA_FACE_AUDIENCE: 'admins',
       MEDIA_FACE_LITE_ROUTE: 'browser',

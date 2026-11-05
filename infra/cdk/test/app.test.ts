@@ -383,10 +383,10 @@ describe('FoundryAscent-App', () => {
       const VOICE = '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0';
       const room = ['wss://heygen-feapbkvq.livekit.cloud', 'https://heygen-feapbkvq.livekit.cloud'];
       const config = loadConfig();
-      // Shipped: the vendor sandbox's stock avatar in LITE, fed by the caller's page, platform admins only.
+      // Shipped: the stock avatar Thomas (Friendly) in LITE, fed by the caller's page, platform admins only.
       expect(mediaFaceEnvironment(config.media.face)).toEqual({
         MEDIA_FACE_MODE: 'lite',
-        MEDIA_FACE_AVATAR_ID: WAYNE,
+        MEDIA_FACE_AVATAR_ID: '6c2017bc-1eef-4071-ba70-0e9d5bcbf00f',
         MEDIA_FACE_VOICE_ID: '',
         MEDIA_FACE_AUDIENCE: 'admins',
         MEDIA_FACE_LITE_ROUTE: 'browser',

@@ -75,10 +75,11 @@ describe('config', () => {
     // until the mid-December presentation. 2026-11-05 (owner): the vEIR's live voice is ElevenLabs (a stock library
     // voice, an "AI voice"), with Amazon Polly saying any unit it fails on. 2026-11-05: the stock avatar speaks that
     // ElevenLabs voice in LITE, its speak channel held by the caller's page (exactly that origin in connect-src).
+    // 2026-11-05 (owner): the chosen stock avatar Thomas (Friendly) live, on the HeyGen account's own credits.
     expect(loadConfig().media).toEqual({
       face: {
         provider: 'heygen-liveavatar',
-        sandbox: true,
+        sandbox: false,
         csp: {
           connect: [
             'wss://heygen-feapbkvq.livekit.cloud',
@@ -88,7 +89,7 @@ describe('config', () => {
           media: [],
         },
         mode: 'lite',
-        stock: { avatarId: 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a', voiceId: null },
+        stock: { avatarId: '6c2017bc-1eef-4071-ba70-0e9d5bcbf00f', voiceId: null },
         audience: 'admins',
         liteRoute: 'browser',
       },
