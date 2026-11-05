@@ -47,7 +47,8 @@
       "MEDIA_VOICE_PROVIDER",
       "MEDIA_VOICE_MODEL",
       "MEDIA_VOICE_ZERO_RETENTION",
-      "MEDIA_VOICE_ID"
+      "MEDIA_VOICE_ID",
+      "MEDIA_VOICE_FALLBACK_VOICE_ID"
     ],
     "worker": ["DOCUMENTS_BUCKET", "JOBS_MAX_RECEIVE_COUNT"],
     "migrate": [

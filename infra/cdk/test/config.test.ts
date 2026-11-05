@@ -88,9 +88,10 @@ describe('config', () => {
       },
       voice: {
         provider: 'elevenlabs-stock',
-        voiceId: 'OZ0L6eISlOejga3XjDFt',
+        voiceId: 'AaOhDHYJ1XLZk74lXhdE',
         model: 'eleven_flash_v2_5',
         fallback: 'polly',
+        fallbackVoiceId: 'Matthew',
         zeroRetention: false,
       },
     });
@@ -101,6 +102,7 @@ describe('config', () => {
       zeroRetention: false,
       voiceId: null,
       fallback: 'polly',
+      fallbackVoiceId: null,
     });
     expect(parseConfig(valid()).media.face.provider).toBe('none');
     const on = parseConfig({
@@ -137,11 +139,12 @@ describe('config', () => {
         zeroRetention: true,
         voiceId: null,
         fallback: 'polly',
+        fallbackVoiceId: null,
       },
     });
   });
 
-  it('reads the ElevenLabs stock voice: a named voice, Polly as its fallback, speech on', () => {
+  it('reads the ElevenLabs stock voice: a named voice, a named Polly voice as its fallback, speech on', () => {
     const voice = (v: Record<string, unknown>, speech: Record<string, unknown> = {}) =>
       parseConfig({
         ...valid(),
@@ -153,25 +156,35 @@ describe('config', () => {
           voice: { provider: 'elevenlabs-stock', model: 'eleven_flash_v2_5', zeroRetention: false, ...v },
         },
       }).media.voice;
-    expect(voice({ voiceId: 'OZ0L6eISlOejga3XjDFt' })).toEqual({
+    const named = { voiceId: 'AaOhDHYJ1XLZk74lXhdE', fallbackVoiceId: 'Matthew' };
+    expect(voice(named)).toEqual({
       provider: 'elevenlabs-stock',
       model: 'eleven_flash_v2_5',
       zeroRetention: false,
-      voiceId: 'OZ0L6eISlOejga3XjDFt',
+      voiceId: 'AaOhDHYJ1XLZk74lXhdE',
       fallback: 'polly',
+      fallbackVoiceId: 'Matthew',
     });
-    expect(voice({ voiceId: 'OZ0L6eISlOejga3XjDFt', fallback: 'polly' }).fallback).toBe('polly');
-    expect(() => voice({})).toThrow(/media\.voice\.voiceId.*must name the ElevenLabs stock voice/);
-    expect(() => voice({ voiceId: 'not a voice' })).toThrow(/media\.voice\.voiceId/);
-    expect(() => voice({ voiceId: 'OZ0L6eISlOejga3XjDFt', fallback: 'none' })).toThrow(
-      /media\.voice\.fallback/,
+    expect(voice({ ...named, fallback: 'polly' }).fallback).toBe('polly');
+    expect(() => voice({ fallbackVoiceId: 'Matthew' })).toThrow(
+      /media\.voice\.voiceId.*must name the ElevenLabs stock voice/,
     );
-    expect(() => voice({ provider: 'polly', voiceId: 'OZ0L6eISlOejga3XjDFt' })).toThrow(
+    expect(() => voice({ ...named, voiceId: 'not a voice' })).toThrow(/media\.voice\.voiceId/);
+    expect(() => voice({ ...named, fallback: 'none' })).toThrow(/media\.voice\.fallback /);
+    // The Polly voice that says a failed unit is named with the stock voice, and is one calls can speak with.
+    expect(() => voice({ voiceId: 'AaOhDHYJ1XLZk74lXhdE' })).toThrow(
+      /media\.voice\.fallbackVoiceId.*must name the Amazon Polly voice/,
+    );
+    expect(() => voice({ ...named, fallbackVoiceId: 'Brian' })).toThrow(
+      /media\.voice\.fallbackVoiceId.*must be a voice of packages\/core\/speech-voices\.json/,
+    );
+    expect(() => voice({ provider: 'polly', voiceId: 'AaOhDHYJ1XLZk74lXhdE' })).toThrow(
       /voiceId is read only when provider is elevenlabs-stock/,
     );
-    expect(() => voice({ voiceId: 'OZ0L6eISlOejga3XjDFt' }, { enabled: false })).toThrow(
-      /elevenlabs-stock needs speech.enabled/,
+    expect(() => voice({ provider: 'polly', fallbackVoiceId: 'Matthew' })).toThrow(
+      /fallbackVoiceId is read only when provider is elevenlabs-stock/,
     );
+    expect(() => voice(named, { enabled: false })).toThrow(/elevenlabs-stock needs speech.enabled/);
   });
 
   describe('the face’s voicing (mode, stock, audience)', () => {

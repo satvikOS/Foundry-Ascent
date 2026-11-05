@@ -277,6 +277,12 @@ export interface StockVoice {
   readonly provider: VoiceProvider;
   /** The vendor's id of the stock voice (`media.voice.voiceId`). */
   readonly voiceRef: string;
+  /**
+   * The Amazon Polly voice that says a unit in its place when the vendor fails or rests (`media.voice.fallbackVoiceId`,
+   * a voice of `speech-voices.json` of the same gender), whatever the call's own Polly voice: a vendor failure never
+   * switches the vEIR's voice to someone of another gender mid-reply.
+   */
+  readonly fallbackVoiceId: string;
 }
 
 export interface VoiceSynthesisInput {

@@ -1,4 +1,4 @@
-import { CoreConfig, MEDIA_VENDORS, loadConfig, type EnvLike } from '@foundry/core';
+import { CoreConfig, MEDIA_VENDORS, isSpeechVoice, loadConfig, type EnvLike } from '@foundry/core';
 import { z } from 'zod';
 
 /**
@@ -87,6 +87,17 @@ const EnvSchema = z.object({
       .regex(/^[A-Za-z0-9]{8,64}$/)
       .optional(),
   ),
+  /**
+   * infra `media.voice.fallbackVoiceId`: the Amazon Polly voice (of `packages/core/speech-voices.json`, the stock voice's
+   * gender) that says a unit the stock voice fails on (`elevenlabs-stock` only, where it is required).
+   */
+  MEDIA_VOICE_FALLBACK_VOICE_ID: z.preprocess(
+    emptyToUndefined,
+    z
+      .string()
+      .refine((voice) => isSpeechVoice(voice))
+      .optional(),
+  ),
   /** infra `media.voice.model`: the ElevenLabs model. */
   MEDIA_VOICE_MODEL: z.preprocess(
     emptyToUndefined,
@@ -128,6 +139,8 @@ export interface ApiConfig {
     readonly voice: 'polly' | 'elevenlabs' | 'elevenlabs-stock';
     /** The ElevenLabs stock voice (`elevenlabs-stock`); null otherwise. */
     readonly voiceId: string | null;
+    /** The Polly voice that stands in for the stock voice when it fails (`elevenlabs-stock`); null otherwise. */
+    readonly voiceFallbackId: string | null;
     readonly voiceModel: string;
     readonly voiceZeroRetention: boolean;
   };
@@ -166,6 +179,10 @@ export function loadApiConfig(env: EnvLike, role: ApiRole): ApiConfig {
   if (e.MEDIA_VOICE_PROVIDER === 'elevenlabs-stock' && e.MEDIA_VOICE_ID === undefined) {
     throw new ConfigError('Missing required environment: MEDIA_VOICE_ID');
   }
+  // Its Polly stand-in is named with it: the call's own Polly voice could be of another gender.
+  if (e.MEDIA_VOICE_PROVIDER === 'elevenlabs-stock' && e.MEDIA_VOICE_FALLBACK_VOICE_ID === undefined) {
+    throw new ConfigError('Missing required environment: MEDIA_VOICE_FALLBACK_VOICE_ID');
+  }
   // The local dev server's vendor-face key (runtime/local-face.ts, the conversation lab): never a deployed API's.
   if (e.APP_ENV !== 'development' && emptyToUndefined(env.LOCAL_MEDIA_FACE_API_KEY) !== undefined) {
     throw new ConfigError('LOCAL_MEDIA_FACE_API_KEY is for the local development server only');
@@ -191,6 +208,8 @@ export function loadApiConfig(env: EnvLike, role: ApiRole): ApiConfig {
       faceAudience: e.MEDIA_FACE_AUDIENCE ?? (full ? 'admins' : 'everyone'),
       voice: e.MEDIA_VOICE_PROVIDER,
       voiceId: e.MEDIA_VOICE_PROVIDER === 'elevenlabs-stock' ? (e.MEDIA_VOICE_ID ?? null) : null,
+      voiceFallbackId:
+        e.MEDIA_VOICE_PROVIDER === 'elevenlabs-stock' ? (e.MEDIA_VOICE_FALLBACK_VOICE_ID ?? null) : null,
       voiceModel: e.MEDIA_VOICE_MODEL,
       voiceZeroRetention: e.MEDIA_VOICE_ZERO_RETENTION === 'true',
     },

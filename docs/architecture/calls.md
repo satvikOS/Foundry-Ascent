@@ -461,7 +461,8 @@ Configuration: `MEDIA_FACE_PROVIDER` (`none` | `heygen-liveavatar`), `MEDIA_FACE
 (`lite` | `full`), `MEDIA_FACE_AVATAR_ID` and `MEDIA_FACE_VOICE_ID` (FULL only: the stock avatar and, optionally,
 its voice; empty in LITE, where the face is always the persona's own), `MEDIA_FACE_AUDIENCE` (`admins` |
 `everyone`), `MEDIA_VOICE_PROVIDER` (`polly` | `elevenlabs` | `elevenlabs-stock`), `MEDIA_VOICE_ID` (the stock
-voice, `elevenlabs-stock` only), `MEDIA_VOICE_MODEL`, `MEDIA_VOICE_ZERO_RETENTION` (infra `media`; production.json
+voice, `elevenlabs-stock` only), `MEDIA_VOICE_FALLBACK_VOICE_ID` (the Polly voice of the stock voice's gender that
+says a unit it fails on, `elevenlabs-stock` only), `MEDIA_VOICE_MODEL`, `MEDIA_VOICE_ZERO_RETENTION` (infra `media`; production.json
 ships the HeyGen sandbox stock face for admins and the ElevenLabs stock voice for everyone,
 [docs/runbooks/elevenlabs-voice.md](../runbooks/elevenlabs-voice.md); infra refuses `full` without a stock avatar or with an audience other than
 `admins`, and a stock avatar or voice with `lite`). Each reaches the API only when `apps/api/lambda-contract.json`
@@ -613,6 +614,8 @@ units around it, verified, go along as `previous_text`/`next_text`. A page that 
 `audio/pcm` and gets the vendor's 24 kHz PCM streamed (Polly's 16 kHz on fallback), played after a 100 ms jitter buffer
 (`apps/web/src/lib/realtime/pcm-stream.ts`); faces keep whole WAV units with their manifest. A vendor failure before
 the first audio (2 s deadline) is said by Polly in the same response and reservation, and the vendor rests 60 s.
+That Polly voice is the stock voice's own stand-in (`MEDIA_VOICE_FALLBACK_VOICE_ID`, the same gender), not the call's
+Polly voice, so a failure never changes who seems to be speaking.
 
 **Built-in presence** (`presence.ts`, `presence.css`): concentric hairlines and a soft halo drawn only from the
 colour tokens, so it follows the theme. The outer ring and halo follow the vEIR's voice (the playback

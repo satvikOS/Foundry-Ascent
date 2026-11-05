@@ -32,6 +32,7 @@ describe('loadApiConfig', () => {
       faceAudience: 'everyone',
       voice: 'elevenlabs',
       voiceId: null,
+      voiceFallbackId: null,
       voiceModel: 'eleven_turbo_v2_5',
       voiceZeroRetention: true,
     });
@@ -43,21 +44,45 @@ describe('loadApiConfig', () => {
     );
   });
 
-  it('reads the ElevenLabs stock voice: a named voice id is required, and it is ignored for other providers', () => {
-    const stock = { ...prod, MEDIA_VOICE_PROVIDER: 'elevenlabs-stock' };
-    expect(loadApiConfig({ ...stock, MEDIA_VOICE_ID: 'OZ0L6eISlOejga3XjDFt' }, 'api').media).toMatchObject({
+  it('reads the ElevenLabs stock voice and its Polly stand-in: both required, both ignored for other providers', () => {
+    const stock = {
+      ...prod,
+      MEDIA_VOICE_PROVIDER: 'elevenlabs-stock',
+      MEDIA_VOICE_FALLBACK_VOICE_ID: 'Matthew',
+    };
+    expect(loadApiConfig({ ...stock, MEDIA_VOICE_ID: 'AaOhDHYJ1XLZk74lXhdE' }, 'api').media).toMatchObject({
       voice: 'elevenlabs-stock',
-      voiceId: 'OZ0L6eISlOejga3XjDFt',
+      voiceId: 'AaOhDHYJ1XLZk74lXhdE',
+      voiceFallbackId: 'Matthew',
       voiceModel: 'eleven_flash_v2_5',
     });
     expect(() => loadApiConfig(stock, 'api')).toThrow(/MEDIA_VOICE_ID/);
     expect(() => loadApiConfig({ ...stock, MEDIA_VOICE_ID: 'not a voice!' }, 'api')).toThrow(
       /MEDIA_VOICE_ID/,
     );
+    // The stand-in is named with the stock voice (the call's own Polly voice could be of another gender), and it is
+    // one of the Polly voices calls speak with.
+    const { MEDIA_VOICE_FALLBACK_VOICE_ID: _named, ...unnamed } = stock;
+    expect(() => loadApiConfig({ ...unnamed, MEDIA_VOICE_ID: 'AaOhDHYJ1XLZk74lXhdE' }, 'api')).toThrow(
+      /MEDIA_VOICE_FALLBACK_VOICE_ID/,
+    );
+    expect(() =>
+      loadApiConfig(
+        { ...stock, MEDIA_VOICE_ID: 'AaOhDHYJ1XLZk74lXhdE', MEDIA_VOICE_FALLBACK_VOICE_ID: 'Brian' },
+        'api',
+      ),
+    ).toThrow(/MEDIA_VOICE_FALLBACK_VOICE_ID/);
     expect(
-      loadApiConfig({ ...prod, MEDIA_VOICE_PROVIDER: 'polly', MEDIA_VOICE_ID: 'OZ0L6eISlOejga3XjDFt' }, 'api')
-        .media.voiceId,
-    ).toBeNull();
+      loadApiConfig(
+        {
+          ...prod,
+          MEDIA_VOICE_PROVIDER: 'polly',
+          MEDIA_VOICE_ID: 'AaOhDHYJ1XLZk74lXhdE',
+          MEDIA_VOICE_FALLBACK_VOICE_ID: 'Matthew',
+        },
+        'api',
+      ).media,
+    ).toMatchObject({ voiceId: null, voiceFallbackId: null });
   });
 
   it('reads a FULL stock face: its avatar, its optional voice, admins only unless told otherwise', () => {
@@ -122,6 +147,7 @@ describe('loadApiConfig', () => {
         faceAudience: 'everyone',
         voice: 'polly',
         voiceId: null,
+        voiceFallbackId: null,
         voiceModel: 'eleven_flash_v2_5',
         voiceZeroRetention: false,
       },

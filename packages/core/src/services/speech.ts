@@ -276,8 +276,10 @@ interface SpeechPlan {
   /** How it is voiced (crisis support: always a Polly voice). */
   readonly voice: SpokenVoice;
   /**
-   * The stock voice that speaks instead when the cloned voice fails or is resting: the call's own while its voice
-   * is approved, else the platform voice (never someone else's).
+   * The Polly voice that speaks instead when a vendor voice fails or is resting. For the platform's stock vendor voice:
+   * its own Polly stand-in (`StockVoice.fallbackVoiceId`, the same gender), so a failure never changes who seems to
+   * speak. For a cloned voice: the call's own while its voice is approved, else the platform voice (never someone
+   * else's).
    */
   readonly stockVoiceId: string;
   /** The signed unit (or intro) whose signature verified; null for stored-reply runs and crisis support. */
@@ -833,7 +835,12 @@ export function createSpeechService(
           objectId: turnId ?? call.id,
           crisis: false,
           voice,
-          stockVoiceId: voiceApproved(call.voiceId, persona, assets) ? call.voiceId : DEFAULT_SPEECH_VOICE,
+          stockVoiceId:
+            voice.kind === 'vendor' && kit.deps.stockVoice !== undefined
+              ? kit.deps.stockVoice.fallbackVoiceId
+              : voiceApproved(call.voiceId, persona, assets)
+                ? call.voiceId
+                : DEFAULT_SPEECH_VOICE,
           verified,
           face:
             verified === null
