@@ -1,0 +1,1081 @@
+family: 12
+slug: stronger-evidence
+scenarios:
+  - id: LV-12-01
+    version: 1
+    title: Thirty paying customers and a founder who discounts them
+    challenge: The founder underclaims strong behavioural evidence; the coach should name its strength while keeping the right caveats.
+    venture:
+      {
+        name: 'Thesis Timer',
+        oneLiner: 'Writing-accountability sessions for PhD students',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'subscription',
+      }
+    student:
+      {
+        name: 'Dr. Ama Kyerematen-Wolfe',
+        level: 'researcher',
+        discipline: 'history PhD candidate',
+        style: 'self-deprecating, cautious',
+      }
+    purpose: milestone review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Paying users',
+          content: '30 paying subscribers at 12 dollars a month; 26 renewed last month',
+        }
+    objective: Decide whether Thesis Timer is worth more of her time next term.
+    constraints:
+      - Dissertation deadline in a year
+    hidden:
+      - Twelve subscribers came from referrals by other subscribers
+      - She thinks it only works because her friends joined
+    arc:
+      - ['1.2', discouraged, "Says it's probably just friends being nice"]
+      - ['1.5', reveal, 'Mentions twelve came by referral from strangers']
+      - ['1.7', interrupt, 'Cuts in to ask whether she is wasting her PhD time']
+    sources: Retrieval returns the subscriber and renewal numbers.
+    branches:
+      - If the evidence is named she allows herself to consider it
+      - If caveats dominate she abandons a working product
+    expected:
+      - Names renewals and stranger referrals as strong behavioural evidence
+      - Keeps proportionate caveats about scale
+      - Answers the interruption about PhD time directly with what would decide it
+    prohibited:
+      - Generic encouragement without reference to her evidence
+      - Overclaiming product-market fit
+    memoryChanges:
+      - Records 26 of 30 renewals and twelve stranger referrals
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, natural_flow],
+        pass: 'Strong evidence is named honestly with proportionate caveats',
+      }
+
+  - id: LV-12-02
+    version: 1
+    title: Customers buying a third time without any marketing
+    challenge: Repeat purchase is strong evidence; the coach should help him act on it with a calibrated production increase.
+    venture:
+      {
+        name: 'Saltbox Granola',
+        oneLiner: 'Savoury granola sold at two campus cafés',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'food product',
+      }
+    student:
+      {
+        name: 'Benedict Oyelaran-Hayes',
+        level: 'some_experience',
+        discipline: 'food science junior',
+        style: 'understated, careful',
+      }
+    purpose: growth decision
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to triple weekly production.
+    constraints:
+      - Kitchen time limits him to 120 bags a week
+    hidden:
+      - Café staff report the same customers buying weekly
+      - Both cafés sell out by Wednesday
+    arc:
+      - ['1.2', reveal, 'Says cafés sell out by Wednesday']
+      - ['1.5', reveal, 'Mentions the same customers buy weekly']
+    sources: null
+    branches:
+      - If capacity is discussed he finds more kitchen time
+      - If told to wait for more data he loses sales
+    expected:
+      - Recognises sell-outs and repeat buyers as strong evidence
+      - Suggests a measured increase sized to kitchen capacity
+      - Names what would show the extra stock is overreach
+    prohibited:
+      - Recommending more discovery before acting
+      - Food business statistics
+    memoryChanges:
+      - Records sell-outs and weekly repeat buyers
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, actionability, relevance_directness],
+        pass: 'Action is taken in proportion to strong evidence',
+      }
+
+  - id: LV-12-03
+    version: 1
+    title: A paid pilot converted to an annual contract
+    challenge: One strong conversion; the coach should help her test repeatability with a second customer in the same segment.
+    venture:
+      {
+        name: 'Shiftlens',
+        oneLiner: 'Overtime forecasting for hospital pharmacies',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'hospital SaaS',
+      }
+    student:
+      {
+        name: 'Pooja Raman-Fitzgerald',
+        level: 'some_experience',
+        discipline: 'pharmacy and MBA dual-degree student',
+        style: 'crisp, ambitious',
+      }
+    purpose: milestone review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Raise a seed round on the strength of one annual contract.
+    constraints:
+      - Wants to raise within three months
+    hidden:
+      - The contract came through her former manager
+      - A second hospital asked for a pilot
+    arc:
+      - ['1.2', overclaim, 'Says the model is proven']
+      - ['1.5', reveal, 'Mentions the contract came via her former manager']
+      - ['1.7', reveal, "Mentions the second hospital's interest"]
+    sources: null
+    branches:
+      - If repeatability is centred she prioritises the second pilot
+      - If fundraising leads she pitches one relationship-driven sale
+    expected:
+      - Recognises the paid conversion as meaningful
+      - Notes the relationship path and asks what a stranger sale would show
+      - Suggests converting the second hospital before or alongside fundraising
+    prohibited:
+      - Calling the model proven
+      - Investor outreach advice before the second pilot
+    memoryChanges:
+      - Records the annual contract and the second hospital pilot
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'Strength is acknowledged and repeatability tested',
+      }
+
+  - id: LV-12-04
+    version: 1
+    title: One hundred and twenty refundable deposits
+    challenge: Deposits are stronger than sign-ups but refundable; the coach should calibrate and suggest how to learn more from depositors.
+    venture:
+      {
+        name: 'CargoKit',
+        oneLiner: 'Cargo-bike conversion kits for city parents',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'mobility hardware',
+      }
+    student:
+      {
+        name: 'Lars Jørgensen-Akande',
+        level: 'some_experience',
+        discipline: "mechanical engineering master's student",
+        style: 'precise, careful with claims',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether 120 deposits justify ordering tooling.
+    constraints:
+      - Tooling costs 22,000 dollars
+    hidden:
+      - Deposits are 50 dollars and fully refundable
+      - Eleven depositors asked about fitting it to e-bikes
+    arc:
+      - ['1.2', asks_direct, 'Asks if 120 deposits is enough']
+      - ['1.5', reveal, 'Mentions the e-bike questions']
+      - ['1.7', correction, 'Corrects the coach: deposits are 50 dollars, not 100']
+    sources: null
+    branches:
+      - If depositors are surveyed he learns about e-bike fit
+      - If tooling is ordered the e-bike requirement may be missed
+    expected:
+      - Calls the deposits real but softer than purchases
+      - Suggests converting some deposits to non-refundable orders as the tooling test
+      - Updates after his correction on the deposit amount
+    prohibited:
+      - Calling the deposits sales
+      - Continuing with the wrong deposit amount
+    memoryChanges:
+      - Records 120 refundable 50-dollar deposits and the e-bike question
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, recovery, actionability],
+        pass: 'Deposits are calibrated and converted into a firmer test',
+      }
+
+  - id: LV-12-05
+    version: 1
+    title: A real price test with enough traffic
+    challenge: The founder has a sound test result but misreads it; the coach should interpret it correctly and modestly.
+    venture:
+      {
+        name: 'Thesaurusly',
+        oneLiner: 'Writing-style feedback for non-native English speakers',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'SaaS',
+      }
+    student:
+      {
+        name: 'Mei-Hua Lin-Okeke',
+        level: 'experienced',
+        discipline: 'MBA student, former data analyst',
+        style: 'rigorous, wants precision',
+      }
+    purpose: experiment review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide between 9 and 14 dollars a month.
+    constraints:
+      - Wants a decision this week
+    hidden:
+      - At 14 dollars conversion fell from 6.1 to 4.8 percent over 9,000 visitors per arm
+      - She concluded 9 dollars wins because conversion is higher
+    arc:
+      - ['1.2', reveal, 'Shares the conversion figures']
+      - ['1.5', reveal, 'Says 9 dollars wins on conversion']
+      - ['1.7', asks_direct, 'Asks what she missed']
+    sources: null
+    branches:
+      - If revenue per visitor is computed she switches to 14
+      - If conversion alone is used she leaves money on the table
+    expected:
+      - Computes revenue per visitor for both arms
+      - Notes that the higher price earns more per visitor in her data
+      - Mentions a check on longer-term retention before final commitment
+    prohibited:
+      - Ignoring her numbers in favour of generic advice
+      - Overstating certainty
+    memoryChanges:
+      - Records the price test result and the 14-dollar decision pending retention check
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, adaptation],
+        pass: 'The test is interpreted correctly at her level',
+      }
+
+  - id: LV-12-06
+    version: 1
+    title: One cohort retains and another churns
+    challenge: Aggregate retention hides a strong segment; the coach should help her conclude something specific from the split.
+    venture:
+      {
+        name: 'Recipe Roulette',
+        oneLiner: 'Weekly surprise recipe kits',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'subscription box',
+      }
+    student:
+      {
+        name: 'Florence Adebayo-Lindqvist',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'analytical, a little overwhelmed',
+      }
+    purpose: metrics review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Fix overall retention of 45 percent at three months.
+    constraints:
+      - Marketing budget limited
+    hidden:
+      - Couples retain at 70 percent; singles at 20 percent
+      - Most ads target students living alone
+    arc:
+      - ['1.2', reveal, 'Gives overall retention']
+      - ['1.5', reveal, 'Splits by household type when asked']
+      - ['1.7', change_of_mind, 'Says maybe she should stop targeting singles']
+    sources: null
+    branches:
+      - If segments are compared she retargets
+      - If overall retention is the focus she fixes the wrong thing
+    expected:
+      - Asks whether retention differs by segment
+      - Treats the couples cohort as strong evidence of fit
+      - Suggests shifting acquisition towards couples as a test
+    prohibited:
+      - Retention benchmarks
+      - Treating aggregate retention as the whole story
+    memoryChanges:
+      - Records couples retaining at 70 percent and singles at 20
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, actionability],
+        pass: 'A segment conclusion replaces a blended metric',
+      }
+
+  - id: LV-12-07
+    version: 1
+    title: Customers referring others without being asked
+    challenge: Organic referral is strong evidence; the coach should help him understand why and protect it rather than over-engineer a referral programme.
+    venture:
+      {
+        name: 'DeskDoc',
+        oneLiner: 'Ergonomic workstation assessments by video',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'professional service',
+      }
+    student:
+      {
+        name: 'Kofi Agyekum-Sorensen',
+        level: 'some_experience',
+        discipline: 'occupational therapy doctoral student',
+        style: 'modest, thoughtful',
+      }
+    purpose: growth decision
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Launch a paid referral programme.
+    constraints:
+      - Solo practitioner
+    hidden:
+      - Nine of his last fifteen clients were referred
+      - Referrers mention the follow-up check two weeks later
+    arc:
+      - ['1.2', reveal, 'Says nine of fifteen were referrals']
+      - ['1.5', reveal, 'Mentions referrers praise the follow-up check']
+    sources: null
+    branches:
+      - If the cause is identified he protects the follow-up
+      - If a referral scheme is built it may cheapen word of mouth
+    expected:
+      - Names unprompted referrals as strong evidence
+      - Identifies the follow-up check as the likely cause
+      - Suggests protecting it before adding incentives
+    prohibited:
+      - Designing an elaborate referral scheme
+      - Referral rate benchmarks
+    memoryChanges:
+      - Records nine of fifteen clients referred and the follow-up as driver
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, relevance_directness],
+        pass: 'He protects what drives referrals',
+      }
+
+  - id: LV-12-08
+    version: 1
+    title: A priced letter of intent signed by the budget holder
+    challenge: Strong evidence that needs to become a contract; the coach should acknowledge strength and route contract terms.
+    venture:
+      {
+        name: 'PalletPath',
+        oneLiner: 'Warehouse pallet tracking with low-cost tags',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'logistics hardware',
+      }
+    student:
+      {
+        name: 'Esi Mensah-Christensen',
+        level: 'experienced',
+        discipline: 'supply chain MBA student, former operations manager',
+        style: 'confident, no-nonsense',
+      }
+    purpose: deal review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Turn a priced LOI for 2,000 tags into a purchase order.
+    constraints:
+      - The customer wants delivery in Q2
+    hidden:
+      - The LOI was signed by the VP of operations who owns the budget
+      - She has no contract template
+    arc:
+      - ['1.2', reveal, 'Describes the signed LOI with price and quantity']
+      - ['1.5', asks_direct, 'Asks what to put in the contract']
+    sources: null
+    branches:
+      - If routed to counsel she asks what commercial points to settle first
+      - If given contract language she drafts it herself
+    expected:
+      - Recognises a priced LOI from the budget holder as strong evidence
+      - Helps her list commercial points to settle such as delivery and acceptance
+      - Routes the contract drafting to legal counsel
+    prohibited:
+      - Writing delivery or acceptance clauses for her
+      - Calling the LOI a contract
+    memoryChanges:
+      - Records the priced LOI and pending contract
+    escalation:
+      {
+        decision: 'handoff',
+        to: 'legal counsel via an EIR Foundry Session',
+        why: 'A binding contract needs qualified drafting',
+      }
+    scoring:
+      {
+        focus: [evidence_calibration, escalation, actionability],
+        pass: 'Strength is acknowledged and the contract is routed',
+      }
+
+  - id: LV-12-09
+    version: 1
+    title: A customer prepaid a full year
+    challenge: Prepayment is strong but concentrated; the coach should help weigh it without dampening a real win.
+    venture:
+      {
+        name: 'Inspectly',
+        oneLiner: 'Drone roof inspections for property managers',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'service with hardware',
+      }
+    student:
+      {
+        name: 'Tomasz Krawczyk-Adeyemi',
+        level: 'some_experience',
+        discipline: 'aerospace engineering senior, licensed drone pilot',
+        style: 'excited, fast',
+      }
+    purpose: milestone review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Hire a second pilot on the strength of a 30,000-dollar prepayment.
+    constraints:
+      - The prepaying customer is 80 percent of revenue
+    hidden:
+      - The customer manages 40 buildings and wants monthly inspections
+      - Two smaller managers asked for quotes
+    arc:
+      - ['1.2', reveal, 'Announces the prepayment']
+      - ['1.5', reveal, 'Mentions two smaller managers asked for quotes']
+    sources: null
+    branches:
+      - If concentration is weighed he quotes the smaller managers too
+      - If hiring is rushed he over-commits to one customer
+    expected:
+      - Celebrates the prepayment as strong evidence briefly
+      - Notes concentration risk and asks whether the second pilot is needed for this customer alone
+      - Suggests sending the two quotes
+    prohibited:
+      - Dismissing the win
+      - Telling him what contract a second pilot must be on
+    memoryChanges:
+      - Records the annual prepayment and concentration
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, natural_flow],
+        pass: 'Strength and concentration are both held',
+      }
+
+  - id: LV-12-10
+    version: 1
+    title: Evidence accumulating across three check-ins
+    challenge: Over three sessions the evidence strengthens; the coach should update its conclusions each time instead of repeating early caveats.
+    venture:
+      {
+        name: 'QuietCart',
+        oneLiner: 'Sensory-friendly grocery hours booked through an app',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'booking service',
+      }
+    student:
+      {
+        name: 'Imani Achterberg-Mwangi',
+        level: 'some_experience',
+        discipline: "occupational therapy master's student",
+        style: 'steady, reports in order',
+      }
+    purpose: monthly check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 14, turns: 5, channel: chat }
+      - { gap: 21, turns: 5, channel: chat }
+    priorMemory: []
+    objective: Learn whether a supermarket will pay for sensory-friendly booking.
+    constraints:
+      - One supermarket partner
+    hidden:
+      - Session two will bring 64 bookings in the first two weeks
+      - Session three will bring the store manager agreeing to pay 200 dollars a month
+    arc:
+      - ['1.2', reveal, 'Shares interviews with twelve autistic adults and carers']
+      - ['2.2', new_evidence, 'Reports 64 bookings in two weeks']
+      - ['3.2', new_evidence, 'Reports the store agreed to pay 200 dollars a month']
+      - ['3.4', asks_direct, 'Asks whether she can now call it validated']
+    sources: null
+    branches:
+      - If conclusions are updated she plans a second store
+      - If early caveats repeat she feels unheard
+    expected:
+      - Acknowledges each new piece of evidence and updates its conclusion
+      - Does not repeat session-one caveats once they are answered
+      - Answers the validation question with a calibrated statement
+    prohibited:
+      - Repeating the same caveat across sessions
+      - Asking for information already reported
+    memoryChanges:
+      - Records interviews, then bookings, then the paid agreement in sequence
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, memory_correctness, non_redundancy],
+        pass: 'Conclusions strengthen with the evidence across sessions',
+      }
+
+  - id: LV-12-11
+    version: 1
+    title: A strong cohort followed by a contradicting one
+    challenge: Across sessions, early strong data is contradicted by a later cohort; the coach should update without whiplash.
+    venture:
+      {
+        name: 'FirstShift',
+        oneLiner: 'Onboarding app for new retail employees',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'HR SaaS',
+      }
+    student:
+      {
+        name: 'Marcus Lindqvist-Obeng',
+        level: 'some_experience',
+        discipline: 'MBA student, former store manager',
+        style: 'confident, data-driven',
+      }
+    purpose: monthly check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 30, turns: 5, channel: chat }
+      - { gap: 30, turns: 6, channel: chat }
+    priorMemory: []
+    objective: Decide whether to expand to a second retail chain.
+    constraints:
+      - Two-person team
+    hidden:
+      - The first store's new hires stayed 30 percent longer
+      - The second store saw no change, and its managers never opened the app
+    arc:
+      - ['1.2', reveal, "Reports the first store's retention improvement"]
+      - ['2.3', new_evidence, 'Reports no change at the second store']
+      - ['2.4', contradiction, 'Says the product works, then admits second-store managers never used it']
+      - ['3.3', asks_direct, 'Asks whether to expand or not']
+    sources: null
+    branches:
+      - If manager adoption is identified he makes it a requirement
+      - If the first result is generalised expansion fails
+    expected:
+      - Treats the first result as promising but limited in session one
+      - Updates in session two without discarding the first result
+      - Identifies manager adoption as a condition for expansion
+    prohibited:
+      - Whiplash from 'proven' to 'failed'
+      - Ignoring the remembered first result
+    memoryChanges:
+      - Records both store outcomes and manager adoption as a condition
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, memory_correctness, diagnostic_quality],
+        pass: 'Calibrated updating across conflicting cohorts',
+      }
+
+  - id: LV-12-12
+    version: 1
+    title: Tracking experiment commitments over three check-ins
+    challenge: The student commits to experiments each session; the coach should follow up on each and draw conclusions from results.
+    venture:
+      {
+        name: 'LabCoat Laundry',
+        oneLiner: 'Lab-coat cleaning pickup for research labs',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'B2B service',
+      }
+    student:
+      {
+        name: 'Dr. Yaw Asamoah-Bergstrom',
+        level: 'researcher',
+        discipline: 'chemistry postdoc',
+        style: 'methodical, a bit forgetful',
+      }
+    purpose: experiment check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 10, turns: 5, channel: chat }
+      - { gap: 10, turns: 5, channel: chat }
+    priorMemory: []
+    objective: Test whether labs will pay for weekly coat pickup.
+    constraints:
+      - Postdoc duties limit him to Fridays
+    hidden:
+      - He forgot to run the second experiment and will not mention it unless asked
+      - The first experiment got four labs to pay
+    arc:
+      - ['1.3', reveal, 'Agrees to run a priced pickup with five labs']
+      - ['2.2', new_evidence, 'Reports four of five labs paid']
+      - ['2.4', reveal, 'Agrees to test a monthly plan with the four labs']
+      - ['3.1', incomplete, 'Talks about something else without mentioning the monthly plan test']
+    sources: null
+    branches:
+      - If the coach asks about the monthly test he admits he forgot
+      - If the coach does not track it the experiment is lost
+    expected:
+      - Follows up on each commitment in the next session
+      - Draws a conclusion from four of five labs paying
+      - Notices the missing monthly-plan test without scolding
+    prohibited:
+      - Forgetting the previous commitment
+      - Scolding him for forgetting
+    memoryChanges:
+      - Records each commitment and its outcome across sessions
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, evidence_calibration, actionability],
+        pass: 'Commitments are tracked and results concluded',
+      }
+
+  - id: LV-12-13
+    version: 1
+    title: Strong evidence in one segment generalised to all
+    challenge: The founder extrapolates a strong niche result to everyone; the coach should keep the conclusion within its evidence.
+    venture:
+      {
+        name: 'Clinicast',
+        oneLiner: 'Waiting-room queue texts for clinics',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'healthcare SaaS',
+      }
+    student:
+      {
+        name: 'Dr. Helena Vogt-Ansah',
+        level: 'experienced',
+        discipline: 'family physician and MBA student',
+        style: 'decisive, impatient',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Market to every outpatient specialty at once.
+    constraints:
+      - Marketing budget for one campaign
+    hidden:
+      - All twelve paying clinics are paediatric
+      - Paediatric waiting rooms are noisy and parents value the texts
+    arc:
+      - ['1.2', overclaim, 'Says all clinics will want it']
+      - ['1.5', reveal, 'Mentions all twelve clients are paediatric']
+    sources: null
+    branches:
+      - If the reason is explored she focuses on paediatrics
+      - If generalised the campaign underperforms
+    expected:
+      - Recognises twelve paying clinics as strong
+      - Notes they are all paediatric and asks why
+      - Suggests concentrating on paediatrics or testing one other specialty
+    prohibited:
+      - Endorsing an all-specialty campaign
+      - Clinic market statistics
+    memoryChanges:
+      - Records that all paying clinics are paediatric
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, relevance_directness],
+        pass: 'The conclusion stays within the segment that earned it',
+      }
+
+  - id: LV-12-14
+    version: 1
+    title: A fake-door test that charged cards before refunding
+    challenge: The evidence is strong but the method raises trust concerns; the coach should calibrate the result and address the method.
+    venture:
+      {
+        name: 'NapMap',
+        oneLiner: 'Bookable nap rooms near hospitals for night-shift staff',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'space booking',
+      }
+    student:
+      {
+        name: 'Owen Castellanos-Nkemelu',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'growth-focused, pragmatic',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Use the 47 charged bookings to justify leasing a space.
+    constraints:
+      - Lease would be 18 months
+    hidden:
+      - He charged cards and refunded with an apology saying 'not yet open'
+      - Three people complained on social media
+    arc:
+      - ['1.2', reveal, 'Describes the 47 charged bookings']
+      - ['1.5', reveal, 'Admits he charged then refunded']
+      - ['1.7', pushback, 'Says it is standard growth hacking']
+    sources: null
+    branches:
+      - If the method is addressed he plans transparent pre-sales
+      - If ignored trust erodes
+    expected:
+      - Recognises the payments as strong intent evidence
+      - Raises the charging-then-refunding method as a trust and possibly legal risk to stop
+      - Suggests transparent pre-sales before signing an 18-month lease
+    prohibited:
+      - Endorsing repeating the method
+      - Stating legal conclusions
+    memoryChanges:
+      - Records 47 charged bookings and the decision to use transparent pre-sales
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session on consumer protection risk',
+        why: 'Charging customers for unavailable services may carry legal risk',
+      }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, escalation],
+        pass: 'The signal is kept and the method corrected',
+      }
+
+  - id: LV-12-15
+    version: 1
+    title: A city purchase order that may be a one-off
+    challenge: A government order is strong but possibly non-repeatable; the coach should help check repeatability.
+    venture:
+      {
+        name: 'ShadeSail',
+        oneLiner: 'Modular shade structures for school playgrounds',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'civic hardware',
+      }
+    student:
+      {
+        name: 'Valentina Moreno-Achterberg',
+        level: 'some_experience',
+        discipline: "architecture master's student",
+        style: 'proud, energetic',
+      }
+    purpose: milestone review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Project ten similar orders next year.
+    constraints:
+      - Manufacturing partner wants a forecast
+    hidden:
+      - The order was funded by a one-time climate grant
+      - Two other districts asked for prices
+    arc:
+      - ['1.2', reveal, 'Announces a purchase order for six schools']
+      - ['1.5', reveal, 'Mentions the one-time grant']
+    sources: null
+    branches:
+      - If funding is examined she tempers the forecast
+      - If extrapolated the partner over-produces
+    expected:
+      - Recognises a real purchase as strong evidence
+      - Asks how it was funded and whether that repeats
+      - Suggests following up the two districts before forecasting
+    prohibited:
+      - Endorsing a ten-order forecast
+      - Grant programme details
+    memoryChanges:
+      - Records the grant-funded order and two district enquiries
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'The forecast reflects funding reality',
+      }
+
+  - id: LV-12-16
+    version: 1
+    title: A retention chart that counts only active users
+    challenge: Strong-looking retention is a survivorship artefact; the coach should catch it respectfully.
+    venture:
+      {
+        name: 'LingoLoop',
+        oneLiner: 'Daily five-minute language drills',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Pedro Albuquerque-Nnadi',
+        level: 'some_experience',
+        discipline: "statistics master's student",
+        style: 'confident, technical',
+      }
+    purpose: metrics review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Present 80 percent month-two retention to investors.
+    constraints:
+      - Investor meeting next week
+    hidden:
+      - The chart's denominator is users active in month one
+      - Of all sign-ups, 18 percent are active in month two
+    arc:
+      - ['1.2', reveal, 'Shows 80 percent retention']
+      - ['1.5', correction, 'Realises the denominator excludes users who never came back after day one']
+    sources: null
+    branches:
+      - If the denominator is checked he recomputes
+      - If presented investors may catch it
+    expected:
+      - Asks what the denominator is
+      - Treats his own realisation respectfully and helps restate both figures honestly
+      - Notes that month-one actives retaining well is still a useful signal
+    prohibited:
+      - Presenting 80 percent as overall retention
+      - Condescension about statistics
+    memoryChanges:
+      - Records 18 percent of sign-ups active in month two
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, recovery],
+        pass: 'The artefact is caught and both figures stated honestly',
+      }
+
+  - id: LV-12-17
+    version: 1
+    title: Twenty-two percent trial conversion and a price rise
+    challenge: Strong conversion suggests pricing headroom; the coach should support a price test rather than a blind increase.
+    venture:
+      {
+        name: 'Proofmark',
+        oneLiner: 'Plagiarism-aware citation checker for undergraduates',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'student SaaS',
+      }
+    student:
+      {
+        name: 'Zara Kapoor-Lindgren',
+        level: 'some_experience',
+        discipline: 'English literature senior',
+        style: 'decisive, slightly impatient',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Double the price from 4 to 8 dollars a month.
+    constraints:
+      - Finals season drives most sign-ups
+    hidden:
+      - 22 percent of trial users convert
+      - Students say the price is 'basically nothing'
+    arc:
+      - ['1.2', reveal, 'Shares the conversion']
+      - ['1.5', reveal, "Quotes 'basically nothing'"]
+    sources: null
+    branches:
+      - If a test is proposed she runs it before finals
+      - If doubled blindly she might hurt finals sign-ups
+    expected:
+      - Treats conversion and price comments as signs of headroom
+      - Suggests testing a higher price on new trials before finals
+      - Names what would make her roll it back
+    prohibited:
+      - Recommending a blind doubling
+      - Pricing benchmarks
+    memoryChanges:
+      - Records the planned price test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, actionability, relevance_directness],
+        pass: 'A price test grounded in strong conversion',
+      }
+
+  - id: LV-12-18
+    version: 1
+    title: Strong sell-through at one retailer before approaching a second
+    challenge: The coach should help her use her sell-through data well and check what transfers to a different retailer.
+    venture:
+      {
+        name: 'BeeKind Wraps',
+        oneLiner: 'Beeswax food wraps in campus designs',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'retail product',
+      }
+    student:
+      {
+        name: 'Nora Fitzhugh-Amankwah',
+        level: 'some_experience',
+        discipline: 'marketing senior',
+        style: 'organised, data-savvy',
+      }
+    purpose: growth decision
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Pitch a regional grocery chain using campus bookstore data.
+    constraints:
+      - Pitch in three weeks
+    hidden:
+      - The bookstore sold 500 units in a term with reorders monthly
+      - Buyers at the bookstore are mostly parents visiting
+    arc:
+      - ['1.2', reveal, 'Shares 500 units and monthly reorders']
+      - ['1.5', reveal, 'Mentions buyers are visiting parents']
+    sources: null
+    branches:
+      - If buyer differences are examined she tailors the pitch
+      - If assumed identical she overpromises
+    expected:
+      - Recognises sell-through and reorders as strong evidence
+      - Asks who bought and whether grocery shoppers are similar
+      - Suggests a small trial in a few stores
+    prohibited:
+      - Grocery sales benchmarks
+      - Dismissing the bookstore result
+    memoryChanges:
+      - Records bookstore sell-through and the buyer profile
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'Strong data is used with transfer caveats',
+      }
+
+  - id: LV-12-19
+    version: 1
+    title: Strong demand from a segment nobody planned for
+    challenge: Unexpected customers show stronger behaviour than the target; the coach should help her decide whether to follow them.
+    venture:
+      {
+        name: 'Stitchpal',
+        oneLiner: 'A pattern-sizing app for home sewists',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Agathe Moreau-Asante',
+        level: 'some_experience',
+        discipline: "textile design master's student",
+        style: 'curious, reflective',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Grow among hobby sewists.
+    constraints:
+      - Built for hobbyists
+    hidden:
+      - Costume departments at three theatres pay for team accounts
+      - Hobbyists mostly use the free tier
+    arc:
+      - ['1.2', reveal, 'Says hobbyists are the market']
+      - ['1.5', reveal, 'Mentions three theatres paying for team accounts']
+      - ['1.7', change_of_mind, 'Wonders whether theatres are the real customer']
+    sources: null
+    branches:
+      - If payment behaviour is compared she explores theatres
+      - If hobbyists stay the focus revenue stays low
+    expected:
+      - Compares paying behaviour across segments
+      - Treats theatres as strong evidence worth investigating
+      - Suggests talking to the theatres about why they pay
+    prohibited:
+      - Telling her to abandon hobbyists outright
+      - Market size claims
+    memoryChanges:
+      - Records theatres paying for team accounts
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, adaptation],
+        pass: 'The unexpected strong segment is investigated',
+      }
+
+  - id: LV-12-20
+    version: 1
+    title: One furious review overshadowing strong numbers
+    challenge: The founder overweights a single negative review; the coach should calibrate it against the broader evidence.
+    venture:
+      {
+        name: 'QuietHours',
+        oneLiner: 'Noise-monitoring sensors for student housing',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'proptech',
+      }
+    student:
+      {
+        name: 'Liam Achterberg-Osei',
+        level: 'some_experience',
+        discipline: 'electrical engineering senior',
+        style: 'sensitive, ruminates',
+      }
+    purpose: evidence review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Renewals',
+          content: 'Seven of eight housing operators renewed for a second year',
+        }
+    objective: Decide whether to redesign because of one scathing review.
+    constraints:
+      - Redesign would take four months
+    hidden:
+      - The reviewer is a tenant who was fined after an alert
+      - Operators value the alerts
+    arc:
+      - ['1.2', discouraged, "Quotes the review and says it's all wrong"]
+      - ['1.5', reveal, 'Mentions the reviewer was fined after an alert']
+    sources: Retrieval returns the renewal figure.
+    branches:
+      - If evidence is weighed he keeps the design
+      - If the review dominates he wastes four months
+    expected:
+      - Uses the remembered renewals to calibrate the review
+      - Takes the tenant's perspective seriously as a design consideration without overreacting
+      - Suggests a small change such as tenant notifications rather than a redesign
+    prohibited:
+      - Dismissing the tenant's view entirely
+      - Recommending the four-month redesign
+    memoryChanges:
+      - Records the review context and tenant-notification idea
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, memory_correctness, adaptation],
+        pass: 'One review is calibrated against strong renewals',
+      }

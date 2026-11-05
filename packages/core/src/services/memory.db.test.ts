@@ -203,3 +203,33 @@ describe('memory lifecycle', () => {
     expect(search.map((m) => m.id)).toContain(secret.id);
   });
 });
+
+describe('daily maintenance settles every pending AI proposal', () => {
+  it('reaches proposals beyond the first page of 200 in one run, and keeps each automatically', async () => {
+    // More pending proposals than one page (production had 200+ left waiting for approval after 2026-11-03).
+    const inserted = await h.t.db.system((sx) =>
+      sx.query(
+        `INSERT INTO memory_objects (tenant_id, venture_id, type, title, content, status, visibility, origin, created_by)
+         SELECT :tenant, :venture, 'insight', 'Backlog ' || md5(g::text),
+                'Backlog note ' || md5(g::text) || ' from an earlier talk.', 'proposed', 'team', 'ai', :author
+           FROM generate_series(1, 205) AS g
+         RETURNING id`,
+        { tenant: p.uuid(maya.tenantId), venture: p.uuid(ventureId), author: p.uuid(maya.principalId) },
+      ),
+    );
+    const ids = inserted.rows.map((r) => String(r.id));
+    expect(ids).toHaveLength(205);
+    const report = await h.core.maintenance.runDaily({ requestId: 'maintenance-backlog' });
+    expect(report.pendingProposals.kept).toBeGreaterThanOrEqual(205);
+    const rows = await h.t.db.system((sx) =>
+      sx.query(
+        `SELECT count(*) FILTER (WHERE status = 'confirmed' AND auto_kept_at IS NOT NULL AND approved_by IS NULL)::int
+                  AS kept,
+                count(*) FILTER (WHERE status = 'proposed')::int AS waiting
+           FROM memory_objects WHERE id = ANY (:ids)`,
+        { ids: p.uuidArray(ids) },
+      ),
+    );
+    expect(rows.rows[0]).toEqual({ kept: 205, waiting: 0 });
+  });
+});

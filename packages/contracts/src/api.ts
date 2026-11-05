@@ -800,6 +800,11 @@ export const PlatformSettingsView = z.object({
    * Additive (absent: off).
    */
   clonedVoiceEnabled: z.boolean().optional(),
+  /**
+   * The deployment's stock vendor voice on calls (an "AI voice", no one's likeness). Off: units the cloned voice
+   * does not take are said by Amazon Polly from the next unit on. Additive (absent: on).
+   */
+  vendorVoiceEnabled: z.boolean().optional(),
   /** Video minutes (a face on calls) one person may use per calendar month (UTC). Additive. */
   faceMinutesPerPrincipalMonth: z.number().int().min(0).max(10_000).optional(),
   /** Video minutes one call may use (the vendor session's own limit). Additive. */

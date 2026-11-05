@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from conversation_lab.config import REPO
+from conversation_lab.lite_probe import public_lite_probe
 
 #: The variable the workflow puts the vendor key in, for this process to hand to the local API only.
 KEY_ENV = "LAB_HEYGEN_API_KEY"
@@ -53,6 +54,12 @@ API_KEY_ENV = "LOCAL_MEDIA_FACE_API_KEY"
 #: the platform; the API, the spec and this module share it.
 PROBE_TOKEN_ENV = "LAB_FACE_PROBE_TOKEN"  # noqa: S105 - a variable name, not a value
 PROBE_HEADER = "x-lab-probe-token"
+#: The production site's origin for the lite probe's L10 (the workflow sets it from its ``production_origin`` input,
+#: else the repository variable FA_SITE_URL): a bare https origin only (:func:`production_origin`).
+PRODUCTION_ORIGIN_ENV = "LAB_PRODUCTION_ORIGIN"
+#: Where that origin came from (``input``: the dispatch input; ``repository``: FA_SITE_URL), for the report.
+PRODUCTION_ORIGIN_SOURCE_ENV = "LAB_PRODUCTION_ORIGIN_SOURCE"
+_ORIGIN = re.compile(r"^https://[a-z0-9](?:[a-z0-9-]{0,62}\.)+[a-z0-9-]{1,62}(?::\d{1,5})?$")
 #: The vendor sandbox's only avatar (docs.liveavatar.com, "Developing in Sandbox Mode").
 SANDBOX_AVATAR = "dd73ea75-1218-4ef3-92ce-606d5f7fbc0a"
 #: The LiveKit host the vendor's rooms were documented on (the CSP origins planned for the face).
@@ -81,7 +88,17 @@ VENDOR_PATHS = (
     "/v1/users/credits",
 )
 #: The private files the spec writes (numbers and codes; the words are in separate ``*-texts.json`` files).
-RESULT_FILES = ("instruments", "probe", "warmup", "call", "call-lite", "injection", "polly")
+RESULT_FILES = (
+    "instruments",
+    "probe",
+    "warmup",
+    "call",
+    "call-lite",
+    "injection",
+    "polly",
+    "lite-probe",
+    "lite-probe-instruments",
+)
 #: The arms whose measured turns carry their request ids, and the private file of each (``warm_up`` is the unmeasured
 #: turn the spec sends before every measured arm, so none of them meets a cold API: reported apart, never compared).
 SERVER_ARMS = {"call": "call", "call_lite": "call-lite", "polly": "polly", "warm_up": "warmup"}
@@ -196,12 +213,20 @@ def new_probe_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def api_face_mode(mode: str) -> str:
+    """The app's own face mode in a pass: the pass's mode, except the ``lite-probe`` pass, whose LITE sessions the lab
+    probe mints itself while the app keeps the FULL sandbox configuration (it runs no call)."""
+    if mode not in ("full", "lite", "lite-probe"):
+        raise ValueError("mode must be full, lite or lite-probe")
+    return "full" if mode == "lite-probe" else mode
+
+
 def face_env(*, mock: bool, probe_token: str | None, mode: str = "full") -> dict[str, str]:
     """The local API's face configuration (no secret in it): the vendor's sandbox for admins, in FULL mode with the
     sandbox's stock avatar or in LITE mode (the persona's face reference, which the sandbox replaces with its own
-    avatar), or the development stand-in in the dry run."""
-    if mode not in ("full", "lite"):
-        raise ValueError("mode must be full or lite")
+    avatar), or the development stand-in in the dry run. ``lite-probe`` configures the app as FULL
+    (:func:`api_face_mode`)."""
+    mode = api_face_mode(mode)
     common = {"MEDIA_FACE_MODE": mode, "MEDIA_FACE_AUDIENCE": "admins"}
     if mock:
         return {**common, "EMBODIMENT_PROVIDER": "fake"}
@@ -236,6 +261,12 @@ _FACE_KEYS = frozenset(
         PROBE_TOKEN_ENV,
     }
 )
+
+
+def production_origin(value: str) -> str | None:
+    """``value`` as a bare https origin (lower case, no path, no trailing slash), or None."""
+    origin = value.strip().rstrip("/").lower()
+    return origin if _ORIGIN.match(origin) else None
 
 
 def api_process_env(env: Mapping[str, str], key: str) -> dict[str, str]:
@@ -980,7 +1011,7 @@ def public_result(
     calls = summarize_vendor_calls(vendor_calls)
     result: dict[str, Any] = {
         "vendor": vendor if vendor in ("heygen-sandbox", "stand-in") else None,
-        "face_mode": face_mode if face_mode in ("full", "lite", "both") else None,
+        "face_mode": face_mode if face_mode in ("full", "lite", "both", "lite-probe") else None,
         "admin_grant": admin_grant if _GRANT.match(admin_grant) else None,
         "lite_face_reference": twin if _TWIN.match(twin) else None,
         "playwright_exit": playwright_exit,
@@ -998,6 +1029,10 @@ def public_result(
         "injection": public_injection(_load(private, "injection"), injection_audits),
         "polly": public_polly(_load(private, "polly")),
         "call_lite": public_call_lite(_load(private, "call-lite")),
+        # The lite-probe pass (face_mode lite-probe): LITE's protocol, L1-L10, and the design's hypotheses.
+        "lite_probe": public_lite_probe(
+            _load(private, "lite-probe"), _load(private, "lite-probe-instruments")
+        ),
     }
     for arm in ("call", "call_lite", "polly"):
         if result[arm] is not None:

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import math
+import threading
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -63,14 +64,17 @@ class Ledger:
     def __init__(self, path: Path | None = None) -> None:
         self._path = path
         self._charges: list[Charge] = []
+        # The live suite meters from several threads at once (conversation_lab/live/runner.py).
+        self._lock = threading.Lock()
         if path is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
 
     def add(self, charge: Charge) -> None:
-        self._charges.append(charge)
-        if self._path is not None:
-            with self._path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(asdict(charge)) + "\n")
+        with self._lock:
+            self._charges.append(charge)
+            if self._path is not None:
+                with self._path.open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(asdict(charge)) + "\n")
 
     @property
     def charges(self) -> list[Charge]:

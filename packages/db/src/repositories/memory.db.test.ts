@@ -279,3 +279,105 @@ describe('memory lifecycle', () => {
     });
   });
 });
+
+describe('pending AI proposals for maintenance (cursor)', () => {
+  it('walks every pending proposal once with a cursor, even when none of them leaves the queue', async () => {
+    // Five proposals written in one statement share created_at: the cursor must break the tie by id, from the
+    // database's own timestamp (JavaScript only keeps milliseconds).
+    const inserted = await t.db.system((sx) =>
+      sx.query(
+        `INSERT INTO memory_objects (tenant_id, venture_id, type, title, content, status, visibility, origin, created_by)
+         SELECT :tenant, :venture, 'insight', 'Queued ' || g, 'Queued proposal number ' || g || '.', 'proposed',
+                'team', 'ai', :author
+           FROM generate_series(1, 5) AS g
+         RETURNING id`,
+        { tenant: p.uuid(seed.tenantId), venture: p.uuid(ventureId), author: p.uuid(maya.principalId) },
+      ),
+    );
+    const mine = new Set(inserted.rows.map((r) => String(r.id)));
+    const all = await t.db.system((sx) => memoryRepo.listPendingAiProposals(sx, { limit: 1000 }));
+    // Without a cursor the same first page comes back each time: the proposals behind it are never reached.
+    const walked: string[] = [];
+    let after: string | null = null;
+    for (let page = 0; page < 1000; page += 1) {
+      const cursor: string | null = after;
+      const rows: memoryRepo.PendingAiProposal[] = await t.db.system((sx) =>
+        memoryRepo.listPendingAiProposals(sx, { limit: 2, after: cursor }),
+      );
+      walked.push(...rows.map((r) => r.id));
+      if (rows.length < 2) break;
+      after = rows.at(-1)?.id ?? null;
+    }
+    expect(walked).toEqual(all.map((r) => r.id));
+    expect(new Set(walked).size).toBe(walked.length);
+    expect(walked.filter((id) => mine.has(id))).toHaveLength(5);
+    // An `after` that does not exist ends the walk.
+    expect(
+      await t.db.system((sx) =>
+        memoryRepo.listPendingAiProposals(sx, { limit: 2, after: '00000000-0000-4000-8000-0000000000ff' }),
+      ),
+    ).toEqual([]);
+    await t.db.system((sx) =>
+      sx.query(`UPDATE memory_objects SET status = 'expired' WHERE id = ANY (:ids)`, {
+        ids: p.uuidArray([...mine]),
+      }),
+    );
+  });
+
+  it('a correction of a pending suggestion is the corrector’s: confirmed, and never pending for maintenance (review)', async () => {
+    const { proposal, correction } = await t.db.withContext(maya, async (tx) => {
+      const proposal = await memoryRepo.createMemory(tx, {
+        tenantId: seed.tenantId,
+        ventureId,
+        type: 'decision',
+        title: 'Launch month',
+        content: 'The launch is in November, before exams.',
+        origin: 'ai',
+        createdBy: maya.principalId,
+      });
+      expect(proposal.status).toBe('proposed');
+      const correction = await memoryRepo.correctMemory(tx, {
+        memoryId: proposal.id,
+        actorId: maya.principalId,
+        patch: { content: 'The launch is in December, after exams.' },
+      });
+      return { proposal, correction };
+    });
+    expect(correction).toMatchObject({
+      status: 'confirmed',
+      origin: 'ai',
+      supersedesId: proposal.id,
+      approvedBy: { id: maya.principalId },
+      keptAutomatically: false,
+    });
+    const pending = await t.db.system((sx) => memoryRepo.listPendingAiProposals(sx, { limit: 1000 }));
+    expect(pending.map((x) => x.id)).not.toContain(proposal.id);
+    expect(pending.map((x) => x.id)).not.toContain(correction?.id);
+    // Even a correction left `proposed` by the code of the approval period is never settled by maintenance.
+    await t.db.system((sx) =>
+      sx.query(
+        `UPDATE memory_objects SET status = 'proposed', approved_by = NULL, approved_at = NULL WHERE id = :id`,
+        {
+          id: p.uuid(correction?.id ?? ''),
+        },
+      ),
+    );
+    expect(
+      (await t.db.system((sx) => memoryRepo.listPendingAiProposals(sx, { limit: 1000 }))).map((x) => x.id),
+    ).not.toContain(correction?.id);
+    expect(
+      await t.db.system((sx) =>
+        memoryRepo.settlePendingAiProposal(sx, {
+          memoryId: correction?.id ?? '',
+          outcome: 'expire',
+          reason: 'forgotten',
+        }),
+      ),
+    ).toBe(false);
+    await t.db.system((sx) =>
+      sx.query(`UPDATE memory_objects SET status = 'expired' WHERE id = :id`, {
+        id: p.uuid(correction?.id ?? ''),
+      }),
+    );
+  });
+});

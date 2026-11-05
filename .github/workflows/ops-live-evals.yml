@@ -1,0 +1,377 @@
+name: Ops - live conversation evals
+
+# The live conversation evaluation (brief sections 16, 17 and 19; ops/lab/scenarios/live, conversation_lab/live):
+# 600 authored scenarios in 30 families, each run against the real orchestration (the API dev server with
+# MODEL_PROVIDER=bedrock and the production model configuration, local PostgreSQL + pgvector, in-process jobs), one
+# synthetic venture and founder per scenario run, real sessions with real memory between them, voice families on
+# typed-input calls (signed speech units, barge-in). An LLM-simulated student (ops/lab/models.json "live.simulator",
+# another model family than the coach where the account offers one) answers what the coach actually said; an
+# independent LLM judge ("live.judge") scores the brief's twelve dimensions, and deterministic checks run beside it.
+#
+# It is a separate workflow from ops-conversation-lab.yml because it needs more inputs than that one has left and
+# it runs in shards: the plan job estimates the cost (no model is called), refuses when the estimate exceeds
+# budget_usd, and splits the selection so each shard fits one job (the conversation-lab role's one-hour session) and
+# the per-run cap. dry_run (the default) stops after the plan: the estimate is the whole output.
+#
+# Same environment, role and rules as the conversation lab (docs/runbooks/conversation-lab.md): runs only from main
+# in the `conversation-lab` GitHub environment; the role may invoke the app's and the lab's Bedrock models and
+# nothing of the platform. THE REPOSITORY IS PUBLIC: logs, the job summary and public artifacts hold numbers, ids,
+# codes and fixed labels only. Transcripts, judge rationales and server logs are written to a private folder that is
+# sealed to `public_key` (RSA-OAEP-256 + AES-256-GCM) and kept for one day, or deleted when no key is given. Open:
+#   pnpm --filter @foundry/api exec tsx src/scripts/lab-seal.ts open <private.pem> <dir> <out-dir>
+# The blinded human-calibration packet is built locally from the opened outputs:
+#   cd ops/lab && python -m conversation_lab live-calibration packet --private <opened dirs> --out <private dir>
+#
+# Spend: budget_usd is a hard cap for the whole run, split across shards by estimated cost; within a shard the
+# app's share is enforced by the app itself (its daily platform cap) and the simulator and judge are metered and
+# refused before they could go over.
+on:
+  workflow_dispatch:
+    inputs:
+      families:
+        description: Scenario families - all, or numbers and ranges like 1,5,9-12
+        type: string
+        default: 'all'
+      sample:
+        description: Stratified sample size across the chosen families (0 = every scenario in them)
+        type: string
+        default: '60'
+      repeats:
+        description: Run each chosen scenario this many times (1 to 5; 2+ reports run-to-run stability)
+        type: string
+        default: '1'
+      seed:
+        description: Sampling seed (the same seed gives the same scenarios)
+        type: string
+        default: '1'
+      budget_usd:
+        description: Hard cap in USD for the whole run (0.5 to 200), split across shards; the plan refuses an estimate above it
+        type: string
+        default: '7'
+      dry_run:
+        description: Plan only - print the selection, the cost estimate and the shards; call no model
+        type: boolean
+        default: true
+      concurrency:
+        description: Scenario runs in parallel within a shard (1 to 6)
+        type: string
+        default: '4'
+      approve_memory:
+        description: Between sessions the student approves every pending AI memory proposal (off = the product's default behaviour)
+        type: boolean
+        default: false
+      public_key:
+        description: RSA public key (3072+ bits) as the base64 of its DER SubjectPublicKeyInfo, one line; empty = numbers only, nothing sealed
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-conversation-lab
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  plan:
+    name: Plan and estimate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - name: Validate inputs
+        env:
+          FAMILIES: ${{ inputs.families }}
+          SAMPLE: ${{ inputs.sample }}
+          REPEATS: ${{ inputs.repeats }}
+          SEED: ${{ inputs.seed }}
+          BUDGET: ${{ inputs.budget_usd }}
+          CONCURRENCY: ${{ inputs.concurrency }}
+          PUBLIC_KEY: ${{ inputs.public_key }}
+        run: |
+          # Values are checked, never echoed beyond the numbers.
+          if [[ ! "${FAMILIES}" =~ ^(all|[0-9]{1,2}(-[0-9]{1,2})?(,[0-9]{1,2}(-[0-9]{1,2})?){0,29})$ ]]; then
+            echo "::error::families must be all or numbers and ranges like 1,5,9-12."; exit 1
+          fi
+          if [[ ! "${SAMPLE}" =~ ^[0-9]{1,3}$ ]] || (( 10#${SAMPLE} > 600 )); then
+            echo "::error::sample must be 0 to 600."; exit 1
+          fi
+          if [[ ! "${REPEATS}" =~ ^[1-5]$ ]]; then echo "::error::repeats must be 1 to 5."; exit 1; fi
+          if [[ ! "${SEED}" =~ ^[0-9]{1,6}$ ]]; then echo "::error::seed must be a whole number."; exit 1; fi
+          if [[ ! "${CONCURRENCY}" =~ ^[1-6]$ ]]; then echo "::error::concurrency must be 1 to 6."; exit 1; fi
+          if [[ ! "${BUDGET}" =~ ^[0-9]{1,3}(\.[0-9]{1,2})?$ ]] || ! awk -v b="${BUDGET}" 'BEGIN { exit !(b >= 0.5 && b <= 200) }'; then
+            echo "::error::budget_usd must be a number from 0.5 to 200."; exit 1
+          fi
+          key="$(printf '%s' "${PUBLIC_KEY}" | tr -d '[:space:]')"
+          if [ -n "${key}" ] && [[ ! "${key}" =~ ^[A-Za-z0-9+/]{500,1400}={0,2}$ ]]; then
+            echo "::error::public_key must be empty or the base64 of an RSA public key's DER SubjectPublicKeyInfo, on one line."; exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      # The dataset is YAML; nothing else is needed to plan (no credentials exist in this job).
+      - name: Install the dataset reader
+        run: python -m pip install PyYAML==6.0.3
+
+      - name: Check the dataset (schema, distinctness, overlap)
+        working-directory: ops/lab
+        run: python -m conversation_lab live-check
+
+      - id: plan
+        name: Selection, cost estimate and shards
+        working-directory: ops/lab
+        env:
+          FAMILIES: ${{ inputs.families }}
+          SAMPLE: ${{ inputs.sample }}
+          REPEATS: ${{ inputs.repeats }}
+          SEED: ${{ inputs.seed }}
+          BUDGET: ${{ inputs.budget_usd }}
+          CONCURRENCY: ${{ inputs.concurrency }}
+        run: |
+          set -o pipefail
+          python -m conversation_lab live-plan --families "${FAMILIES}" --sample "${SAMPLE}" --repeats "${REPEATS}" \
+            --seed "${SEED}" --budget-usd "${BUDGET}" --concurrency "${CONCURRENCY}" \
+            --github-output "${GITHUB_OUTPUT}" | tee "${RUNNER_TEMP}/plan.json"
+          {
+            echo "## Live evaluation plan (dry-run estimate; no model called)"
+            echo '```json'
+            cat "${RUNNER_TEMP}/plan.json"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  run:
+    name: Shard ${{ matrix.shard.index }}/${{ matrix.shard.of }}
+    needs: plan
+    if: github.ref == 'refs/heads/main' && !inputs.dry_run
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    environment: conversation-lab
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      TEST_DATABASE_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      HOME_TENANT_SLUG: ain
+      LIVE_FAMILIES: ${{ inputs.families }}
+      LIVE_SAMPLE: ${{ inputs.sample }}
+      LIVE_REPEATS: ${{ inputs.repeats }}
+      LIVE_SEED: ${{ inputs.seed }}
+      LIVE_TOTAL_BUDGET: ${{ inputs.budget_usd }}
+      LIVE_CONCURRENCY: ${{ inputs.concurrency }}
+      LIVE_APPROVE_MEMORY: ${{ inputs.approve_memory }}
+      LIVE_SHARD: ${{ matrix.shard.index }}/${{ matrix.shard.of }}
+      LIVE_SHARD_BUDGET: ${{ matrix.shard.budget }}
+    steps:
+      - name: Validate the sealing key, set the output folder
+        env:
+          PUBLIC_KEY: ${{ inputs.public_key }}
+        run: |
+          echo "LAB_OUT=${RUNNER_TEMP}/lab" >> "${GITHUB_ENV}"
+          key="$(printf '%s' "${PUBLIC_KEY}" | tr -d '[:space:]')"
+          if [ -n "${key}" ]; then
+            if [[ ! "${key}" =~ ^[A-Za-z0-9+/]{500,1400}={0,2}$ ]]; then
+              echo "::error::public_key is not a base64 DER public key."; exit 1
+            fi
+            echo "LAB_PUBLIC_KEY=${key}" >> "${GITHUB_ENV}"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # No dependency cache in a job that holds cloud credentials; everything is installed before they exist.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Install the lab harness
+        run: python -m pip install -r ops/lab/requirements.txt
+
+      # Creates database "foundry", migrates it and seeds the synthetic tenant with a fresh owner access code
+      # (masked; handed to the harness, never printed).
+      - name: Reset and seed the lab database
+        run: |
+          out="$(mktemp)"
+          if ! pnpm db:reset > "${out}"; then
+            sed '/access code/d' "${out}"
+            exit 1
+          fi
+          url="$(sed -n 's/^DATABASE_URL=//p' "${out}" | head -n 1)"
+          code="$(grep -oE 'FA-[0-9A-Z]{5}(-[0-9A-Z]{5}){3}' "${out}" | head -n 1 || true)"
+          rm -f "${out}"
+          if [ -z "${url}" ] || [ -z "${code}" ]; then
+            echo "::error::db:reset did not print DATABASE_URL and an owner access code"; exit 1
+          fi
+          echo "::add-mask::${code}"
+          {
+            echo "DATABASE_URL=${url}"
+            echo "E2E_OWNER_ACCESS_CODE=${code}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Resolve the conversation-lab role
+        env:
+          RAW_DEPLOY_ROLE: ${{ secrets.AWS_DEPLOY_ROLE_ARN || vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          role="$(printf '%s' "${RAW_DEPLOY_ROLE}" | tr -d "[:space:]\"'")"
+          if [[ "${role}" =~ ^([0-9]{12})$ ]] || [[ "${role}" =~ ^arn:aws:iam::([0-9]{12}):role/ ]]; then
+            account="${BASH_REMATCH[1]}"
+          else
+            echo "::error::AWS_DEPLOY_ROLE_ARN is not set to a role ARN or a 12-digit account id."; exit 1
+          fi
+          echo "::add-mask::${account}"
+          lab_role="arn:aws:iam::${account}:role/FoundryAscent-ConversationLab"
+          echo "::add-mask::${lab_role}"
+          echo "LAB_ROLE_ARN=${lab_role}" >> "${GITHUB_ENV}"
+
+      - name: AWS credentials (GitHub OIDC, conversation-lab)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.LAB_ROLE_ARN }}
+          role-session-name: foundry-ascent-live-${{ github.run_id }}-${{ matrix.shard.index }}
+          role-duration-seconds: 3600
+          aws-region: us-east-1
+          mask-aws-account-id: true
+
+      - name: Mask account id
+        run: |
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          if [[ ! "${account}" =~ ^[0-9]{12}$ ]]; then
+            echo "::error::sts:GetCallerIdentity did not return a 12-digit account id"; exit 1
+          fi
+          echo "::add-mask::${account}"
+
+      - name: Run the shard
+        working-directory: ops/lab
+        env:
+          PYTHONPATH: ${{ github.workspace }}/evals
+        run: |
+          memory=()
+          if [ "${LIVE_APPROVE_MEMORY}" = "true" ]; then memory=(--live-approve-memory); fi
+          python -m conversation_lab run --suite live --budget-usd "${LIVE_SHARD_BUDGET}" --out "${LAB_OUT}" \
+            --live-families "${LIVE_FAMILIES}" --live-sample "${LIVE_SAMPLE}" --live-seed "${LIVE_SEED}" \
+            --repeat "${LIVE_REPEATS}" --live-shard "${LIVE_SHARD}" --live-total-budget "${LIVE_TOTAL_BUDGET}" \
+            --concurrency "${LIVE_CONCURRENCY}" "${memory[@]}"
+
+      - name: Seal the private outputs
+        if: always() && env.LAB_PUBLIC_KEY != ''
+        run: |
+          set -euo pipefail
+          sealed="${RUNNER_TEMP}/lab-sealed"
+          if [ -d "${LAB_OUT}/private" ]; then
+            pnpm --filter @foundry/api exec tsx src/scripts/lab-seal.ts seal live "${LAB_OUT}/private" "${sealed}"
+          fi
+          rm -rf "${LAB_OUT}/private"
+          for file in "${sealed}"/*.json; do
+            [ -e "${file}" ] || continue
+            if ! jq -e '(keys == ["envelope","kind"]) and .kind == "conversation-lab" and (.envelope | keys) == ["alg","data","iv","key","kid","tag","v"] and .envelope.alg == "RSA-OAEP-256+A256GCM+gzip"' "${file}" > /dev/null; then
+              echo "::error::$(basename "${file}") is not a sealed envelope; nothing is uploaded."
+              rm -rf "${sealed}"
+              exit 1
+            fi
+          done
+
+      - name: Remove the private outputs
+        if: always()
+        run: rm -rf "${LAB_OUT}/private"
+
+      - name: Upload the sealed outputs (1 day)
+        if: always() && env.LAB_PUBLIC_KEY != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: live-evals-sealed-${{ matrix.shard.index }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/lab-sealed
+          retention-days: 1
+          if-no-files-found: ignore
+
+      # Numbers, ids, codes and fixed labels only (conversation_lab/live/report.py).
+      - name: Upload the public summary
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: live-evals-summary-${{ matrix.shard.index }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/lab/public
+          retention-days: 7
+          if-no-files-found: ignore
+
+  summary:
+    name: Merge shard summaries
+    needs: run
+    if: always() && github.ref == 'refs/heads/main' && !inputs.dry_run
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Only to download this run's public summary artifacts.
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - run: python -m pip install PyYAML==6.0.3
+
+      # The shards' public summaries from this run (numbers only), with the run's own token.
+      - name: Download the shard summaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "${GITHUB_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --pattern "live-evals-summary-*-${GITHUB_RUN_ID}" -D "${RUNNER_TEMP}/summaries"
+
+      - name: Merge (numbers only)
+        working-directory: ops/lab
+        run: |
+          shopt -s nullglob globstar
+          files=("${RUNNER_TEMP}"/summaries/**/live-summary.json)
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::no shard produced a summary"; exit 1; fi
+          python -m conversation_lab live-merge --out "${RUNNER_TEMP}/merged" "${files[@]}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: live-evals-merged-${{ github.run_id }}
+          path: ${{ runner.temp }}/merged
+          retention-days: 30

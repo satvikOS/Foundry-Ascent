@@ -456,6 +456,44 @@ sentence still writes its usage row before its only unit (1 round trip, `generat
 refreshed in the background (up to 6 round trips on a turn that meets an expired one); preflight and admission are
 still two transactions (3 round trips of begin, context and commit).
 
+### The ElevenLabs voice, streamed PCM against whole units (2026-11-05)
+
+What changed: calls speak with the ElevenLabs stock voice ([live voice runbook](elevenlabs-voice.md)), and the call
+screen asks `POST /speech` for raw PCM and plays it as it arrives (100 ms jitter buffer, `pcm-stream.ts`) instead of
+waiting for a unit's whole audio and decoding it. Measured with the harness, profile `production` recalibrated as in the
+baseline (database round trip 65 ms, model first token 700 ms, embedding 155 ms, Polly first byte 100 ms), 10 voice
+turns per arm, warm, one process, Apple M4 Max, Node 24, no browser (the client edge of the API; decoding and device
+output excluded). ElevenLabs is a local stand-in (`perf/elevenlabs-stub.ts`) behind the real adapter: time to first byte
+uniform 100–250 ms, audio streamed 4 or 10 times faster than real time (ElevenLabs publishes no streaming-speed figure).
+"Playable" is when the player can start the first unit: once the whole unit arrived for MP3, once 100 ms of PCM is in
+hand for the stream.
+
+```
+pnpm --filter @foundry/api latency --profile production --set dbRoundTripMs=65 --set modelFirstTokenMs=700 \
+  --set embedMs=155 --set speechFirstByteMs=100 --text 0 --voice 10 \
+  [--voice-vendor elevenlabs-stub [--stub-speed 4|10]] [--pcm]
+```
+
+| Arm (first unit of a voice turn, ms from sending the turn) | first audio bytes p50 / p95 | whole unit arrived p50 / p95 | **playable p50 / p95** |
+| ---------------------------------------------------------- | --------------------------- | ---------------------------- | ---------------------- |
+| A. Polly, whole MP3 (main before this change)              | 2,509 / 2,699               | 2,576 / 2,766                | **2,576 / 2,766**      |
+| B. ElevenLabs stand-in, whole MP3, 4x                      | 2,570 / 2,759               | 3,226 / 4,290                | **3,226 / 4,290**      |
+| C. ElevenLabs stand-in, streamed PCM, 4x                   | 2,577 / 2,799               | 3,277 / 4,290                | **2,577 / 2,799**      |
+| B10. ElevenLabs stand-in, whole MP3, 10x                   | 2,572 / 2,767               | 2,958 / 3,287                | **2,958 / 3,287**      |
+| C10. ElevenLabs stand-in, streamed PCM, 10x                | 2,583 / 2,760               | 2,955 / 3,304                | **2,583 / 2,760**      |
+| D. Polly, streamed PCM (the fallback path)                 | 2,516 / 2,671               | 2,582 / 2,738                | **2,516 / 2,671**      |
+
+- Streaming cuts the whole-unit wait: with ElevenLabs it saves **649 ms p50 and 1,491 ms p95** at 4x (B → C) and
+  **375 / 527 ms** at 10x (B10 → C10). Without it, ElevenLabs would be slower to first sound than Polly today, because
+  a sentence's audio takes longer to arrive than its first byte.
+- With streaming, ElevenLabs reaches first sound at the same point as Polly did (C 2,577 against A 2,576 p50): the
+  first audio is now bound by the stand-in's first byte, and everything before it (the `/speech` checks, about 600 ms
+  of database round trips at 65 ms, and the turn itself) is unchanged.
+- The first PCM piece (100 ms of audio) fills the jitter buffer, so "playable" equals "first audio bytes" in C.
+- Not measured: the real vendor's time to first byte and speed from AWS, CloudFront's streaming of `audio/pcm`, and
+  the browser's audible output. These are the first things to read in production (`speech.timing` with `voice: vendor`;
+  the lab's end of speech → first audio).
+
 ## 6. Measured and not kept
 
 | Tried                                                                                                                 | Result                                                                                                                                                                                                                                                                                                                                                                                         |

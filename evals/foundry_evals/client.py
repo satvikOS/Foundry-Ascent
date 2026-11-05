@@ -625,9 +625,12 @@ class FoundryClient:
         mode: str | None = None,
         rehearsal_counterpart: str | None = None,
         call_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> TurnOutcome:
         """Sends one founder message and consumes the SSE stream to the terminal event. With ``call_id`` the
         message is spoken during that call (``channel: voice``) and the outcome carries its speech units.
+        ``idempotency_key`` (default: a fresh one) lets a caller deliver the same request again on purpose, as a
+        duplicate event; the server then replays the accepted turn (``outcome.replayed``).
 
         Raises ApiError when the turn is refused before streaming (problem+json: rate limit, spend cap,
         kill switch, …) and ApiUnreachableError when the stream cannot be completed within the retry budget.
@@ -642,7 +645,7 @@ class FoundryClient:
             payload["callId"] = call_id
         body = encode_json(payload)
         path = f"/sessions/{session_id}/turns"
-        key = str(uuid.uuid4())
+        key = idempotency_key or str(uuid.uuid4())
         attempt = 0
         waited = 0.0
         started = time.monotonic()

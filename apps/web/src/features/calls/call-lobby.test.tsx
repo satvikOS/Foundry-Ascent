@@ -180,7 +180,7 @@ describe('CallLobby', () => {
     const group = within(settings).getByRole('group', { name: 'Memory for this call' });
     const remember = within(group).getByRole('radio', { name: 'Remember this call' });
     expect(remember).toBeChecked();
-    expect(group).toHaveAccessibleDescription('Conversation saved. Memory needs approval.');
+    expect(group).toHaveAccessibleDescription('Remembered for next time.');
     await userEvent.click(within(group).getByRole('radio', { name: 'Private, a one-off' }));
     expect(onChange).toHaveBeenCalledWith('ephemeral');
     // Closing the settings returns to the line that opened them.

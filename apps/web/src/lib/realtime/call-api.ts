@@ -20,7 +20,7 @@ import { encodeBody } from '../api/body';
 import { api, apiSend, createIdempotencyKey, path, prepareRequest, sendRequest } from '../api/client';
 import { errorMessage, isAbortError, isApiError, type ClientErrorCode } from '../api/errors';
 import type { CallFailure } from './call-state';
-import type { SpeechFetchResult, SpeechUnitToPlay } from './playback';
+import type { SpeechFetchOptions, SpeechFetchResult, SpeechUnitToPlay } from './playback';
 
 /**
  * The calls API (`packages/contracts/src/calls.ts`, docs/architecture/calls.md §2) as plain functions, so
@@ -186,30 +186,52 @@ export function endFace(callId: string, loss?: FaceEndRequest): Promise<void> {
   });
 }
 
+/** The sample rate of raw PCM speech (`POST /speech` answering `audio/pcm`). */
+const SPEECH_SAMPLE_RATE_HEADER = 'x-speech-sample-rate';
+/** ElevenLabs' `pcm_24000`, when a response does not say. */
+const DEFAULT_PCM_RATE = 24_000;
+
 /**
- * Audio for one validated unit (`POST /speech`, `audio/mpeg`). Signed units and the intro carry `seq` and
- * `sig`; a passage of a stored reply carries neither. 501 `speech_unavailable` means this server has no
- * synthesis (local development), which lets the browser read the validated text itself.
+ * Audio for one validated unit (`POST /speech`). Signed units and the intro carry `seq` and `sig`; a passage of a
+ * stored reply carries neither. With `stream`, the request accepts raw PCM (`audio/pcm`), which the server streams as
+ * it is synthesized and the player plays as it arrives (the body is handed over unread); otherwise `audio/mpeg` (or a
+ * face's `audio/wav`), read whole. `context` names the signed units around this one (prosody context for the voice).
+ * 501 `speech_unavailable` means this server has no synthesis (local development), which lets the browser read the
+ * validated text itself.
  */
 export async function fetchSpeech(
   sessionId: string,
   unit: SpeechUnitToPlay,
   signal: AbortSignal,
+  options: SpeechFetchOptions = {},
 ): Promise<SpeechFetchResult> {
   const body = encodeBody(SpeechRequest, {
     sessionId,
     turnId: unit.turnId,
     text: unit.text,
     ...(unit.sig === undefined ? {} : { seq: unit.seq, sig: unit.sig }),
+    ...(unit.sig === undefined || options.context === undefined ? {} : { context: options.context }),
   });
   try {
     const response = await sendRequest('/speech', {
       method: 'POST',
       body,
       signal,
-      accept: 'audio/mpeg, audio/wav, application/problem+json',
+      accept:
+        options.stream === true
+          ? 'audio/pcm, audio/mpeg, audio/wav, application/problem+json'
+          : 'audio/mpeg, audio/wav, application/problem+json',
       waitForResume: false,
     });
+    const type = response.headers.get('content-type')?.toLowerCase() ?? '';
+    if (type.startsWith('audio/pcm') && response.body !== null) {
+      const rate = Number(response.headers.get(SPEECH_SAMPLE_RATE_HEADER));
+      return {
+        kind: 'stream',
+        body: response.body,
+        sampleRate: Number.isInteger(rate) && rate >= 8_000 && rate <= 48_000 ? rate : DEFAULT_PCM_RATE,
+      };
+    }
     const faceManifest = response.headers.get(FACE_MANIFEST_HEADER);
     const data = await response.arrayBuffer();
     return faceManifest ? { kind: 'audio', data, faceManifest } : { kind: 'audio', data };

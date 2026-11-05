@@ -17,6 +17,7 @@ import {
   type Clock,
   type EmbodimentProvider,
   type SpeechSynthesizer,
+  type StockVoice,
   type SttGrantIssuer,
   type VoiceProvider,
 } from '../ports.js';
@@ -37,6 +38,8 @@ export interface CoreHarnessOptions {
   readonly embodiment?: EmbodimentProvider;
   /** The EIRs' cloned voices (absent: calls speak with stock voices). */
   readonly clonedVoice?: VoiceProvider;
+  /** The platform's stock vendor voice (absent: calls speak with Amazon Polly). */
+  readonly stockVoice?: StockVoice;
 }
 
 /**
@@ -137,7 +140,7 @@ export interface CoreHarness {
    * database it uses (e.g. to make one query fail).
    */
   withPorts(
-    ports: Pick<CoreHarnessOptions, 'speech' | 'sttGrants' | 'embodiment' | 'clonedVoice'>,
+    ports: Pick<CoreHarnessOptions, 'speech' | 'sttGrants' | 'embodiment' | 'clonedVoice' | 'stockVoice'>,
     options?: { readonly db?: (db: Db) => Db },
   ): Core;
   cleanup(): Promise<void>;
@@ -176,6 +179,7 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
       ...(ports.sttGrants ? { sttGrants: ports.sttGrants } : {}),
       ...(ports.embodiment ? { embodiment: ports.embodiment } : {}),
       ...(ports.clonedVoice ? { clonedVoice: ports.clonedVoice } : {}),
+      ...(ports.stockVoice ? { stockVoice: ports.stockVoice } : {}),
     });
   const core = build(config);
   const venture = (key: string): SeededVenture =>

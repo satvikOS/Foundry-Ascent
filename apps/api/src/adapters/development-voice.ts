@@ -47,21 +47,21 @@ export class DevelopmentVoice implements VoiceProvider {
   readonly usdPer1kCharacters = 0;
 
   synthesize(input: VoiceSynthesisInput): Promise<SynthesizedSpeech> {
-    const pcm = standInPcm(input.unit.text.length);
+    const pcm = standInPcm(input.text.length);
     return Promise.resolve(
       input.format === 'pcm_24000'
         ? {
             audio: streamOf(pcm),
             contentType: 'audio/pcm',
             sampleRateHertz: FACE_SAMPLE_RATE,
-            characters: input.unit.text.length,
+            characters: input.text.length,
             engine: 'clone',
             voiceId: input.voiceRef,
           }
         : {
             audio: streamOf(pcmToWav(pcm, FACE_SAMPLE_RATE)),
             contentType: 'audio/wav',
-            characters: input.unit.text.length,
+            characters: input.text.length,
             engine: 'clone',
             voiceId: input.voiceRef,
           },

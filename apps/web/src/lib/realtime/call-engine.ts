@@ -27,6 +27,7 @@ import {
   SpeechPlayer,
   type FaceRenderer,
   type PlayerAudio,
+  type SpeechFetchOptions,
   type SpeechFetchResult,
   type SpeechUnitToPlay,
 } from './playback';
@@ -80,7 +81,12 @@ export interface CallEngineApi {
     body: CreateTurnBody,
     options: StreamTurnOptions,
   ): AsyncIterable<TurnStreamEventT>;
-  fetchSpeech(sessionId: string, unit: SpeechUnitToPlay, signal: AbortSignal): Promise<SpeechFetchResult>;
+  fetchSpeech(
+    sessionId: string,
+    unit: SpeechUnitToPlay,
+    signal: AbortSignal,
+    options?: SpeechFetchOptions,
+  ): Promise<SpeechFetchResult>;
   prepareEndBeacon(callId: string, reason: CallEndReason): Promise<PreparedBeacon>;
 }
 
@@ -1242,7 +1248,7 @@ export class CallEngine {
     const player: SpeechPlayer = new SpeechPlayer(
       {
         context,
-        fetchSpeech: (unit, signal) => api.fetchSpeech(sessionId, unit, signal),
+        fetchSpeech: (unit, signal, options) => api.fetchSpeech(sessionId, unit, signal, options),
         synthesis: media.synthesis,
         createUtterance: (text) => media.createUtterance(text),
         setTimeout: (callback, ms) => clock.setTimeout(callback, ms),

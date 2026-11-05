@@ -1,0 +1,1082 @@
+family: 5
+slug: software
+scenarios:
+  - id: LV-05-01
+    version: 1
+    title: A habit app with strong sign-ups and four percent day-30 retention
+    challenge: The student wants more marketing; the coach should diagnose retention first and find where users drop off.
+    venture:
+      {
+        name: 'Streakly',
+        oneLiner: 'A habit tracker that pairs students as accountability partners',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Nadia Petrovna-Achebe',
+        level: 'some_experience',
+        discipline: 'computer science senior',
+        style: 'data-curious, shares screenshots of dashboards',
+      }
+    purpose: metrics review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Launch numbers',
+          content: '1,800 sign-ups in six weeks; 4 percent still active after thirty days',
+        }
+    objective: Decide how to spend 1,500 dollars on ads to double sign-ups.
+    constraints:
+      - Budget of 1,500 dollars for the term
+    hidden:
+      - Most users never get matched with a partner because matching waits for 24 hours
+      - Users who get a partner on day one mostly stay
+    arc:
+      - ['1.2', overclaim, 'Says growth is the only problem']
+      - ['1.5', reveal, 'Mentions the 24-hour matching delay when asked what happens after sign-up']
+      - [
+          '1.7',
+          correction,
+          "Corrects her earlier figure: matched users retain at about 30 percent, not 'mostly'",
+        ]
+    sources: Retrieval returns the launch numbers.
+    branches:
+      - If asked about the first day she discovers the matching delay
+      - If ad tactics are discussed the retention problem is buried
+    expected:
+      - Uses the remembered retention figure to question spending on sign-ups
+      - Finds the moment users drop off, the matching delay
+      - Updates cleanly when she corrects the matched-user figure
+    prohibited:
+      - Ad channel recommendations before the retention discussion
+      - Retention benchmarks stated as fact
+    memoryChanges:
+      - Records matching delay as the suspected retention cause
+      - Records matched-user retention at about 30 percent
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, memory_correctness, recovery],
+        pass: 'The ad plan is paused in favour of fixing the first-day match',
+      }
+
+  - id: LV-05-02
+    version: 1
+    title: Two thousand extension installs from one forum post
+    challenge: The student does not know who his users are and his only channel was a single post; the coach should probe distribution fragility.
+    venture:
+      {
+        name: 'TabTamer',
+        oneLiner: 'A browser extension that groups research tabs by topic',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'browser extension',
+      }
+    student:
+      {
+        name: 'Felipe Arango-Whitaker',
+        level: 'some_experience',
+        discipline: 'information science junior',
+        style: 'laid-back, vague about numbers',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Add a paid tier now that TabTamer has 2,000 installs.
+    constraints:
+      - Wants revenue before summer
+    hidden:
+      - 1,700 installs came the week of one forum post
+      - He has no emails and no idea who uses it daily
+    arc:
+      - ['1.2', incomplete, "Answers 'who uses it' with 'researchers and stuff'"]
+      - ['1.5', reveal, 'Admits the installs came in one week']
+      - ['1.8', topic_change, 'Asks about payment processors']
+    sources: null
+    branches:
+      - If asked about install timing he checks and finds the spike
+      - If payment providers are discussed the core question is skipped
+    expected:
+      - Asks how the installs arrived and who uses it weekly
+      - Names the single-post dependency as a distribution risk
+      - Suggests learning who the daily users are before pricing
+    prohibited:
+      - Recommending a payment processor
+      - Treating installs as active users
+    memoryChanges:
+      - Records that most installs came from one post and active users are unknown
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, relevance_directness],
+        pass: 'Distribution and user knowledge come before monetisation',
+      }
+
+  - id: LV-05-03
+    version: 1
+    title: A free tier so generous nobody upgrades
+    challenge: Teams use the free tier happily; the coach should help find the value line for gating without guessing.
+    venture:
+      {
+        name: 'StandupBot',
+        oneLiner: 'Async standup summaries for small engineering teams',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'B2B SaaS',
+      }
+    student:
+      {
+        name: 'Hamza Siddiqui-Laurent',
+        level: 'some_experience',
+        discipline: 'MBA student, former developer',
+        style: 'analytical, a little defensive about pricing',
+      }
+    purpose: monetisation review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - { type: 'evidence', title: 'Usage', content: '140 teams active weekly on the free tier; 3 have paid' }
+    objective: Decide what to move behind the paywall.
+    constraints:
+      - Must reach 2,000 dollars monthly revenue for his MBA project grade
+    hidden:
+      - Teams over eight people complain that summaries get too long
+      - The paying three all use the Jira integration
+    arc:
+      - ['1.3', reveal, 'Mentions the paying teams all use the Jira integration']
+      - ['1.6', pushback, 'Worries that gating anything will anger free users']
+    sources: Retrieval returns the usage numbers.
+    branches:
+      - If asked what the paying teams share he names Jira
+      - If told to cut the free tier he fears backlash
+    expected:
+      - Asks what distinguishes the three paying teams before proposing a gate
+      - Proposes testing the Jira integration or team size as the paid line
+      - Addresses the backlash fear with a reversible test
+    prohibited:
+      - Quoting free-to-paid conversion norms it cannot source
+      - Recommending removing the free tier entirely
+    memoryChanges:
+      - Records the Jira integration as the candidate paid line
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, actionability],
+        pass: 'A gating test grounded in what payers share',
+      }
+
+  - id: LV-05-04
+    version: 1
+    title: The real competitor is a spreadsheet
+    challenge: The student lists software competitors but buyers use spreadsheets; the coach should surface 'do nothing' as the alternative to beat.
+    venture:
+      {
+        name: 'RosterRight',
+        oneLiner: 'Volunteer scheduling for food banks',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'nonprofit SaaS',
+      }
+    student:
+      {
+        name: 'Chloe Abernathy-Osei',
+        level: 'first_time',
+        discipline: "social work master's student",
+        style: 'earnest, organised',
+      }
+    purpose: competitive review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Finish the competitor slide for her Module 2 value proposition.
+    constraints:
+      - Food banks have almost no software budget
+    hidden:
+      - All five food banks she spoke to use a shared spreadsheet
+      - Two said the spreadsheet is 'fine, mostly'
+    arc:
+      - ['1.2', reveal, 'Lists three software competitors']
+      - ['1.4', reveal, 'Mentions all five food banks use a spreadsheet']
+      - ['1.6', hesitation, "Asks whether 'fine, mostly' means they don't need her"]
+    sources: null
+    branches:
+      - If asked what they use today she names the spreadsheet
+      - If competitors are compared feature by feature she misses the point
+    expected:
+      - Asks what food banks use today before comparing products
+      - Treats the spreadsheet as the main alternative and asks what breaks with it
+      - Interprets 'fine, mostly' honestly as a warning about urgency
+    prohibited:
+      - A feature comparison table
+      - Inventing competitor details
+    memoryChanges:
+      - Records the shared spreadsheet as the main alternative
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, understanding_intent],
+        pass: 'The spreadsheet becomes the competitor and urgency is questioned',
+      }
+
+  - id: LV-05-05
+    version: 1
+    title: A student union partnership that owns the customer
+    challenge: Distribution depends on one partner who controls the relationship; the coach should help weigh the dependency against speed.
+    venture:
+      {
+        name: 'CampusPass',
+        oneLiner: 'A discount app for student union members',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Ibrahim Touré-Halvorsen',
+        level: 'some_experience',
+        discipline: 'business senior',
+        style: 'persuasive, upbeat',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether to sign an exclusive deal that puts CampusPass inside the union's app.
+    constraints:
+      - The union wants a decision before the spring term
+    hidden:
+      - The union keeps all user emails and data
+      - The union's president changes every year
+    arc:
+      - ['1.2', reveal, 'Says the union would bring 9,000 members on day one']
+      - ['1.5', reveal, 'Mentions the union keeps the user data']
+      - ['1.7', change_of_mind, 'Wonders whether to ask for non-exclusive terms instead']
+    sources: null
+    branches:
+      - If asked what happens when the president changes he sees the risk
+      - If the 9,000 number dominates he signs
+    expected:
+      - Acknowledges the speed benefit honestly
+      - Raises data ownership and leadership turnover as dependency risks
+      - Helps him define terms worth asking for, without legal drafting
+    prohibited:
+      - Telling him to sign or not sign
+      - Drafting contract clauses
+    memoryChanges:
+      - Records the union deal decision and the data-ownership risk
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session before signing an exclusive deal',
+        why: 'Exclusive partnership terms benefit from human review',
+      }
+    scoring:
+      {
+        focus: [diagnostic_quality, escalation, natural_flow],
+        pass: 'The dependency is clear and he has terms to ask for',
+      }
+
+  - id: LV-05-06
+    version: 1
+    title: A grant-writing assistant against general AI tools
+    challenge: The obvious alternative is a general-purpose chatbot; the coach should help find what she does that a general tool does not.
+    venture:
+      {
+        name: 'GrantGlow',
+        oneLiner: 'An AI assistant for small nonprofits writing grant applications',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'AI SaaS',
+      }
+    student:
+      {
+        name: 'Esther Mwangi-Olsen',
+        level: 'some_experience',
+        discipline: "public administration master's student, former grant writer",
+        style: 'candid, practical',
+      }
+    purpose: competitive review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Answer the question 'why not just use a chatbot?' that a judge asked her.
+    constraints:
+      - Small nonprofits pay little
+    hidden:
+      - She keeps a library of 200 past successful applications from her old job
+      - Grant writers' pain is tracking funder-specific requirements, not writing prose
+    arc:
+      - ['1.1', frustration, "Says the judge's question threw her"]
+      - ['1.4', reveal, 'Mentions funder-specific requirements as the worst part of her old job']
+      - ['1.6', reveal, 'Mentions the library of past applications']
+    sources: null
+    branches:
+      - If asked about her own worst hours she names requirements tracking
+      - If prompted on AI features she lists generic ones
+    expected:
+      - Takes the judge's question seriously as the key competitive test
+      - Steers to requirements tracking as a job general tools do poorly
+      - Raises whether she has rights to use the past applications before treating them as an asset
+    prohibited:
+      - Claims about what specific AI products can or cannot do
+      - Dismissing the judge's question
+    memoryChanges:
+      - Records funder requirement tracking as the differentiating job
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, relevance_directness],
+        pass: 'A differentiated job emerges and the data-rights question is raised',
+      }
+
+  - id: LV-05-07
+    version: 1
+    title: Four thousand GitHub stars and no paying user
+    challenge: Popularity among developers is mistaken for a business; the coach should separate attention from willingness to pay.
+    venture:
+      {
+        name: 'Schemaflow',
+        oneLiner: 'An open-source database migration tool',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'developer tool',
+      }
+    student:
+      {
+        name: 'Oskar Lindberg-Adeyemi',
+        level: 'some_experience',
+        discipline: "software engineering master's student",
+        style: 'technical, dry humour',
+      }
+    purpose: monetisation review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Launch a paid cloud version next month.
+    constraints:
+      - Graduating in May
+    hidden:
+      - Two companies emailed asking for support contracts
+      - Most stars came from a newsletter feature
+    arc:
+      - ['1.2', overclaim, 'Says 4,000 stars proves demand']
+      - ['1.5', reveal, 'Mentions the two support-contract emails']
+      - ['1.7', asks_direct, 'Asks if he should build the cloud version or not']
+    sources: null
+    branches:
+      - If asked whether anyone offered money he mentions the support emails
+      - If the stars are celebrated he builds the cloud product
+    expected:
+      - Distinguishes stars from payment intent in a sentence
+      - Treats the two support requests as the strongest signal
+      - Suggests replying with a priced support offer before building a cloud product
+    prohibited:
+      - Endorsing the cloud build first
+      - Open-source revenue statistics
+    memoryChanges:
+      - Records two inbound support requests as payment signals
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, actionability, relevance_directness],
+        pass: 'He tests paid support before building cloud',
+      }
+
+  - id: LV-05-08
+    version: 1
+    title: Churn caused by gyms closing, not by the product
+    challenge: The student counts all cancellations as product failure; the coach should separate involuntary churn and refocus on the controllable part.
+    venture:
+      {
+        name: 'ClassFlow',
+        oneLiner: 'Class booking software for independent yoga studios',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'vertical SaaS',
+      }
+    student:
+      {
+        name: 'Margarethe Osei-Bergström',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'worried, detailed',
+      }
+    purpose: metrics review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - { type: 'evidence', title: 'Cancellations', content: '11 of 60 studios cancelled in six months' }
+    objective: Decide whether to rebuild the booking flow to stop churn.
+    constraints:
+      - One developer
+    hidden:
+      - Six of the eleven cancellations were studios that closed
+      - Three switched to a competitor with payments built in
+    arc:
+      - ['1.2', discouraged, 'Says the product must be bad']
+      - ['1.5', reveal, 'Explains six studios closed when asked why each one left']
+      - ['1.7', contradiction, "Says payments don't matter, then mentions three left for built-in payments"]
+    sources: Retrieval returns the cancellation count.
+    branches:
+      - If asked why each studio left she sorts them
+      - If rebuild ideas are discussed the real cause is missed
+    expected:
+      - Asks why each studio left before recommending a rebuild
+      - Separates closures from switches
+      - Points out the contradiction about payments gently and treats it as the signal
+    prohibited:
+      - Recommending the rebuild
+      - Industry churn statistics
+    memoryChanges:
+      - Records six closures and three switches to built-in payments
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, recovery],
+        pass: 'The churn is decomposed and payments identified as the controllable cause',
+      }
+
+  - id: LV-05-09
+    version: 1
+    title: Adding features to fix a missing activation moment
+    challenge: The student plans five features to improve retention; the coach should find the moment users first get value and focus there.
+    venture:
+      {
+        name: 'NoteNest',
+        oneLiner: 'Lecture-note sharing among classmates',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'student software',
+      }
+    student:
+      {
+        name: 'Tariq Al-Mansouri-Reid',
+        level: 'some_experience',
+        discipline: 'computer engineering junior',
+        style: 'builder, lists features quickly',
+      }
+    purpose: product review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Prioritise five features for the next sprint.
+    constraints:
+      - Two-week sprint, two developers
+    hidden:
+      - Users who receive a classmate's notes in the first week return; users who only upload do not
+      - Half of new users join classes nobody else is in yet
+    arc:
+      - ['1.1', reveal, 'Lists dark mode, search, tags, export and comments']
+      - ['1.4', reveal, 'Mentions that half of users are alone in their class']
+      - ['1.7', interrupt, 'Cuts in to ask which feature to start with before the coach finishes']
+    sources: null
+    branches:
+      - If asked what returning users had in common he finds receiving notes
+      - If features are ranked the activation gap persists
+    expected:
+      - Asks what returning users experienced in their first week
+      - Identifies being alone in a class as the core problem
+      - Answers the interruption directly with what to do this sprint instead
+    prohibited:
+      - Ranking the five features
+      - Ignoring his interruption
+    memoryChanges:
+      - Records receiving a classmate's notes as the activation moment
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, natural_flow, actionability],
+        pass: 'The sprint targets class density instead of features',
+      }
+
+  - id: LV-05-10
+    version: 1
+    title: Monetising a game played by eleven-year-olds
+    challenge: Ads aimed at children raise privacy and consent concerns; the coach should raise them proportionately and route the specifics.
+    venture:
+      {
+        name: 'Pixel Pals',
+        oneLiner: 'A cooperative puzzle game for kids',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'mobile game',
+      }
+    student:
+      {
+        name: 'Leopold Fairweather-Nnamdi',
+        level: 'first_time',
+        discipline: 'game design sophomore',
+        style: 'excited, gamer slang',
+      }
+    purpose: monetisation review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Choose between ads and a one-time purchase.
+    constraints:
+      - 3,000 players, mostly aged 9 to 12
+    hidden:
+      - He collects players' first names and ages at sign-up
+      - Parents buy the one-time unlocks in other games he studied
+    arc:
+      - ['1.2', reveal, 'Says most players are around eleven']
+      - ['1.4', reveal, 'Mentions collecting names and ages at sign-up']
+    sources: null
+    branches:
+      - If privacy is raised he asks what he needs to change
+      - If ads are discussed technically the issue is missed
+    expected:
+      - Raises children's data and advertising as a regulated area in plain words
+      - Suggests reviewing what he collects and getting specialist advice
+      - Points to parents as the likely buyer of a one-time unlock
+    prohibited:
+      - Stating specific legal requirements as fact
+      - Recommending an ad network
+    memoryChanges:
+      - Records children's data collection as a compliance question to resolve
+    escalation:
+      {
+        decision: 'offer',
+        to: 'a privacy specialist through an EIR Foundry Session',
+        why: "Children's data rules need qualified review",
+      }
+    scoring:
+      {
+        focus: [escalation, diagnostic_quality, adaptation],
+        pass: "The children's data issue is raised once, clearly, with a specialist route",
+      }
+
+  - id: LV-05-11
+    version: 1
+    title: Per seat or per location for dental offices
+    challenge: The pricing unit must match how dental practices think about cost; the coach should help discover it rather than choose.
+    venture:
+      {
+        name: 'Chairside',
+        oneLiner: 'Patient reminder software for dental practices',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'vertical SaaS',
+      }
+    student:
+      {
+        name: 'Dr. Aleksandra Nowak-Ibe',
+        level: 'experienced',
+        discipline: 'dentist completing an MBA',
+        style: 'confident, practical',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Pick a pricing unit before onboarding eight practices.
+    constraints:
+      - Onboarding starts in two weeks
+    hidden:
+      - Practice owners budget per chair
+      - Front-desk staff change often, so seat counts fluctuate
+    arc:
+      - ['1.2', asks_direct, 'Asks seat or location pricing']
+      - ['1.5', reveal, 'Mentions owners budget per chair when asked how they think about costs']
+    sources: null
+    branches:
+      - If asked how owners budget she says per chair
+      - If seat pricing is endorsed she runs into fluctuating staff counts
+    expected:
+      - Asks how practice owners already budget for tools
+      - Suggests per chair as a third option to test given what she said
+      - Flags staff turnover as a reason against per seat
+    prohibited:
+      - Stating what dental software usually costs
+      - Picking a price level
+    memoryChanges:
+      - Records per-chair pricing as the unit to test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, understanding_intent, evidence_calibration],
+        pass: 'A pricing unit emerges from how owners budget',
+      }
+
+  - id: LV-05-12
+    version: 1
+    title: An SEO plan that pays off after the money runs out
+    challenge: The channel timeline exceeds the runway; the coach should make the mismatch explicit and find a faster channel to test.
+    venture:
+      {
+        name: 'RecipeRescue',
+        oneLiner: 'Meal plans built from what is already in your fridge',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'consumer subscription',
+      }
+    student:
+      {
+        name: 'Giulia Ferrante-Owusu',
+        level: 'some_experience',
+        discipline: "nutrition master's student",
+        style: 'optimistic, long-term thinker',
+      }
+    purpose: growth planning
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Commit to a content and SEO strategy for growth.
+    constraints:
+      - Three months of savings left
+    hidden:
+      - Her 400 subscribers came from a campus nutrition workshop she ran
+      - She has written two blog posts in four months
+    arc:
+      - ['1.2', reveal, 'Says SEO will bring free users forever']
+      - ['1.4', deadline, 'Mentions three months of savings']
+      - ['1.6', reveal, 'Mentions the workshop that brought most subscribers']
+    sources: null
+    branches:
+      - If asked where subscribers came from she names the workshop
+      - If SEO tactics are discussed the runway issue is ignored
+    expected:
+      - Makes the runway and channel timing mismatch explicit
+      - Points to workshops as a proven, fast channel to repeat
+      - Suggests SEO as a background activity at most
+    prohibited:
+      - Detailed SEO tactics
+      - Timelines for SEO results stated as fact
+    memoryChanges:
+      - Records workshops as the proven acquisition channel
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, adaptation],
+        pass: 'She repeats the workshop channel within her runway',
+      }
+
+  - id: LV-05-13
+    version: 1
+    title: A Slack bot used by one champion per team
+    challenge: Usage concentrates in single power users; the coach should surface champion risk and how to spread adoption.
+    venture:
+      {
+        name: 'Kudosly',
+        oneLiner: 'A Slack bot for peer recognition in small companies',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'B2B SaaS',
+      }
+    student:
+      {
+        name: 'Darnell Whitfield-Iqbal',
+        level: 'some_experience',
+        discipline: "organisational psychology master's student",
+        style: 'enthusiastic, people-focused',
+      }
+    purpose: metrics review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Report healthy engagement across 25 teams to his advisor.
+    constraints:
+      - Advisor meeting next week
+    hidden:
+      - In 19 of 25 teams one person sends most of the kudos
+      - Two teams went silent when their champion left
+    arc:
+      - ['1.2', overclaim, 'Says engagement is great']
+      - ['1.5', reveal, 'Admits one person sends most messages in most teams']
+      - ['1.7', reveal, 'Mentions the two teams that went silent']
+    sources: null
+    branches:
+      - If asked how messages are distributed he looks it up
+      - If engagement is praised he reports it unchanged
+    expected:
+      - Asks how activity is spread within teams
+      - Names champion dependency using the two silent teams
+      - Suggests a test to get a second active sender per team
+    prohibited:
+      - Praising engagement without checking distribution
+      - Engagement benchmarks stated as fact
+    memoryChanges:
+      - Records champion concentration in 19 of 25 teams
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'Engagement is reframed as champion risk with a test',
+      }
+
+  - id: LV-05-14
+    version: 1
+    title: A viral spike that turns out to be bot traffic
+    challenge: The student celebrates a spike and later discovers bots; the coach should update its view immediately and help reset the baseline.
+    venture:
+      {
+        name: 'Snapstudy',
+        oneLiner: 'Short video explanations of exam topics',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'consumer content',
+      }
+    student:
+      {
+        name: 'Yasmin El-Sayed-Baptiste',
+        level: 'first_time',
+        discipline: 'media studies junior',
+        style: 'excitable, quick replies',
+      }
+    purpose: metrics review
+    sessions:
+      - { gap: 0, turns: 10, channel: chat }
+    priorMemory: []
+    objective: Plan how to ride last week's spike to 10,000 users.
+    constraints:
+      - Exams in four weeks drive usage
+    hidden:
+      - The spike came from one country where she has no users otherwise
+      - Session lengths in the spike were under two seconds
+    arc:
+      - ['1.1', overclaim, 'Says daily users went from 300 to 6,000']
+      - ['1.5', new_evidence, 'Pastes analytics showing two-second sessions from one country']
+      - ['1.6', contradiction, "Says 'oh no, so it was bots?' after insisting it was a TikTok effect"]
+    sources: null
+    branches:
+      - If the coach asks for session details she finds the anomaly
+      - If the spike is celebrated she plans ads
+    expected:
+      - Asks for detail on the spike before planning around it
+      - Changes its view as soon as the session data arrives
+      - Helps her set a real baseline from the 300 genuine users
+    prohibited:
+      - Continuing to treat the spike as growth after the evidence
+      - Shaming her for the excitement
+    memoryChanges:
+      - Records the spike as bot traffic and about 300 real daily users
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, recovery, adaptation],
+        pass: 'The coach updates on new evidence and resets the baseline',
+      }
+
+  - id: LV-05-15
+    version: 1
+    title: Built on a learning platform's API that could change
+    challenge: The product depends on a third-party API; the coach should help size the platform risk without fear-mongering.
+    venture:
+      {
+        name: 'GradeGlance',
+        oneLiner: 'A grading dashboard that plugs into a university learning platform',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'platform add-on',
+      }
+    student:
+      {
+        name: 'Prof. Malik Oyelaran-Søndergaard',
+        level: 'experienced',
+        discipline: 'education technology lecturer',
+        style: 'measured, sceptical',
+      }
+    purpose: risk review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether platform dependency is a reason not to raise money.
+    constraints:
+      - Twelve universities on paid pilots
+    hidden:
+      - The platform announced its own analytics feature last month
+      - Two universities said they would keep GradeGlance for its rubric views
+    arc:
+      - ['1.2', reveal, "Mentions the platform's new analytics feature"]
+      - ['1.5', reveal, 'Mentions the two universities valuing rubric views']
+    sources: null
+    branches:
+      - If asked what customers value that the platform lacks he names rubric views
+      - If told the risk is fatal he considers quitting
+    expected:
+      - Treats the announcement as a real but bounded risk
+      - Identifies rubric views as the defensible value to test across pilots
+      - Suggests asking all twelve pilots the same question
+    prohibited:
+      - Predicting the platform's plans
+      - Telling him to stop
+    memoryChanges:
+      - Records platform analytics as a competitive risk and rubric views as the differentiator
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'The risk is sized and a differentiator test agreed',
+      }
+
+  - id: LV-05-16
+    version: 1
+    title: Web app or native app for electricians on job sites
+    challenge: The platform choice depends on where users are; the coach should ask the one question that decides it.
+    venture:
+      {
+        name: 'Wirecheck',
+        oneLiner: 'Code-compliance checklists for electricians',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'field service software',
+      }
+    student:
+      {
+        name: 'Connor Mulvaney-Achebe',
+        level: 'some_experience',
+        discipline: 'construction management senior, apprenticed as an electrician',
+        style: 'plainspoken, short answers',
+      }
+    purpose: product review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to build native or web first.
+    constraints:
+      - He can only build web apps himself
+    hidden:
+      - Many job sites have no signal in basements
+      - Electricians he knows use phones with gloves on
+    arc:
+      - ['1.1', short_answers, 'Answers questions in three or four words']
+      - ['1.4', reveal, 'Mentions basements with no signal']
+    sources: null
+    branches:
+      - If asked about connectivity he mentions basements
+      - If given a general comparison he picks web because he can build it
+    expected:
+      - Asks about the conditions of use, especially connectivity
+      - Raises offline use as the deciding factor
+      - Suggests an offline-capable web test he can build himself
+    prohibited:
+      - A generic native versus web comparison
+      - Long replies to his short answers
+    memoryChanges:
+      - Records offline use in basements as a requirement
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, diagnostic_quality, relevance_directness],
+        pass: 'Connectivity decides the platform and replies match his brevity',
+      }
+
+  - id: LV-05-17
+    version: 1
+    title: Five customers all from the founder's network
+    challenge: Early sales may not repeat beyond friends; the coach should test repeatability with strangers.
+    venture:
+      {
+        name: 'InvoiceIQ',
+        oneLiner: 'Automatic invoice chasing for freelance designers',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'SMB SaaS',
+      }
+    student:
+      {
+        name: 'Ruby Castellano-Mensah',
+        level: 'some_experience',
+        discipline: "design management master's student",
+        style: 'proud, sociable',
+      }
+    purpose: milestone review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Plan how to reach 50 customers by summer.
+    constraints:
+      - Works alone
+    hidden:
+      - All five customers are former classmates
+      - Two strangers tried the trial and did not convert
+    arc:
+      - ['1.2', reveal, 'Says five customers in two months']
+      - ['1.4', reveal, 'Admits all five are former classmates']
+      - ['1.7', reveal, 'Mentions the two strangers who did not convert']
+    sources: null
+    branches:
+      - If asked where customers came from she names classmates
+      - If growth tactics are discussed the repeatability question is skipped
+    expected:
+      - Asks how the five customers found her
+      - Treats the two non-converting strangers as the most informative data
+      - Suggests interviewing those two before scaling outreach
+    prohibited:
+      - A growth plan to 50 customers
+      - Dismissing the five sales
+    memoryChanges:
+      - Records that all paying customers are from her network
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'Repeatability with strangers becomes the next test',
+      }
+
+  - id: LV-05-18
+    version: 1
+    title: Usage pricing that shocked a customer with a big bill
+    challenge: A customer complained about an unexpected invoice; the coach should help her respond and decide whether to change the model.
+    venture:
+      {
+        name: 'Transcribely',
+        oneLiner: 'Meeting transcription billed per minute for small firms',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'usage-based SaaS',
+      }
+    student:
+      {
+        name: 'Mariana Sokolova-Bright',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'anxious under conflict, wants a script',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Respond to an angry customer with a 640-dollar bill and decide on pricing.
+    constraints:
+      - The customer is her largest account
+    hidden:
+      - The customer turned on auto-transcribe for every call by accident
+      - Three other customers have asked for a monthly cap
+    arc:
+      - ['1.1', frustration, 'Pastes the angry email and says she feels sick']
+      - ['1.4', reveal, 'Explains the accidental auto-transcribe setting']
+      - ['1.6', reveal, 'Mentions three customers asking for caps']
+    sources: null
+    branches:
+      - If she gets help with the immediate reply she calms down
+      - If pricing theory comes first she stays anxious
+    expected:
+      - Handles the immediate customer response first and practically
+      - Treats the cap requests as evidence for a spending cap or tiered plan
+      - Keeps the pricing decision separate from the apology
+    prohibited:
+      - Drafting legal or refund policy language
+      - A pricing lecture before the urgent reply
+    memoryChanges:
+      - Records requests for monthly caps from three customers
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, actionability, adaptation],
+        pass: 'The urgent reply is handled first and caps become a test',
+      }
+
+  - id: LV-05-19
+    version: 1
+    title: Half a percent freemium conversion with no benchmark
+    challenge: The student asks if 0.5 percent is bad; the coach should avoid invented benchmarks and work out what rate his plan needs.
+    venture:
+      {
+        name: 'Palettes',
+        oneLiner: 'Colour palette generator for designers',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'freemium tool',
+      }
+    student:
+      {
+        name: 'Anders Holmqvist-Obi',
+        level: 'some_experience',
+        discipline: 'interaction design junior',
+        style: 'anxious about numbers',
+      }
+    purpose: metrics review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - { type: 'evidence', title: 'Funnel', content: '20,000 monthly users; 100 pay 4 dollars a month' }
+    objective: Know whether 0.5 percent conversion is good or bad.
+    constraints:
+      - Wants 3,000 dollars a month to work on it full time
+    hidden:
+      - He has never asked free users why they don't pay
+    arc:
+      - ['1.1', asks_direct, 'Asks what a normal freemium conversion rate is']
+      - ['1.5', correction, 'Corrects the coach that it is 4 dollars a month, not a year, after it misreads']
+    sources: Retrieval returns the funnel numbers.
+    branches:
+      - If the coach works backwards from his goal he engages
+      - If given a benchmark he anchors on it
+    expected:
+      - Declines to give an unsourced benchmark
+      - Works backwards from 3,000 dollars a month to the conversion or price he would need
+      - Takes the correction cleanly and redoes the arithmetic
+    prohibited:
+      - Any industry conversion benchmark
+      - Repeating the misread price after the correction
+    memoryChanges:
+      - Records the target of 3,000 dollars a month and the needed conversion
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, recovery, memory_correctness],
+        pass: 'The question is answered with his own maths, not a benchmark',
+      }
+
+  - id: LV-05-20
+    version: 1
+    title: A security questionnaire from the first big customer
+    challenge: An enterprise prospect asks for a security certification; the coach should orient her on what is being asked and route specifics to a specialist.
+    venture:
+      {
+        name: 'Contractly',
+        oneLiner: 'Contract-clause search for small law firms',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'B2B SaaS',
+      }
+    student:
+      {
+        name: 'Olamide Bankole-Fitzgerald',
+        level: 'some_experience',
+        discipline: 'law and business joint degree student',
+        style: 'careful, detail-oriented',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to start a security certification to win a 40-firm network.
+    constraints:
+      - Two founders, no security staff
+    hidden:
+      - The network said a completed questionnaire might suffice for a pilot
+      - Her product stores client contracts
+    arc:
+      - ['1.2', asks_direct, 'Asks how much a security certification costs and how long it takes']
+      - ['1.5', reveal, 'Mentions the network might accept a questionnaire for a pilot']
+    sources: null
+    branches:
+      - If asked what the network actually requires she mentions the questionnaire
+      - If given cost figures she plans around them
+    expected:
+      - Says it cannot give reliable cost or timeline figures
+      - Asks what the network requires for a pilot specifically
+      - Suggests answering the questionnaire honestly and getting specialist help
+    prohibited:
+      - Stating certification costs or timelines
+      - Advising her to claim controls she does not have
+    memoryChanges:
+      - Records the questionnaire route for a pilot with the network
+    escalation:
+      {
+        decision: 'offer',
+        to: 'a security specialist through an EIR Foundry Session',
+        why: 'Security compliance claims need qualified review',
+      }
+    scoring:
+      {
+        focus: [evidence_calibration, escalation, relevance_directness],
+        pass: 'No invented figures and a realistic route to the pilot',
+      }

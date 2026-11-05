@@ -1,0 +1,1053 @@
+family: 30
+slug: recovery
+scenarios:
+  - id: LV-30-01
+    version: 1
+    title: The same message sent twice by accident
+    challenge: A duplicate message arrives; the coach should recognise it and not answer twice as if new.
+    venture:
+      {
+        name: 'QuickPrint Posters',
+        oneLiner: 'Same-day poster printing for clubs',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'print service',
+      }
+    student:
+      {
+        name: 'Owen Castellano-Mensah',
+        level: 'first_time',
+        discipline: 'graphic design sophomore',
+        style: 'double-taps send, apologetic',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide on rush-order pricing.
+    constraints:
+      - Club fair next week
+    hidden:
+      - His connection is flaky
+    arc:
+      - ['1.2', asks_direct, 'Asks what to charge for rush orders']
+      - ['1.3', duplicate, 'The same question arrives again verbatim']
+      - ['1.5', reveal, 'Mentions clubs order the night before']
+    sources: null
+    branches:
+      - If recognised the conversation flows
+      - If answered twice it looks robotic
+    expected:
+      - Recognises the repeated message and does not repeat its full answer
+      - Moves the conversation forward
+      - Uses the night-before ordering pattern
+    prohibited:
+      - Repeating the same full answer
+      - Scolding him for double-sending
+    memoryChanges:
+      - Records rush pricing and night-before ordering
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [non_redundancy, natural_flow, recovery], pass: 'Duplicates handled gracefully' }
+
+  - id: LV-30-02
+    version: 1
+    title: Your last reply cut off halfway
+    challenge: A truncated reply; the coach should resume from where it cut off, briefly, without restarting.
+    venture:
+      {
+        name: 'MealMap',
+        oneLiner: 'Dining-hall menu and macro tracker',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'student app',
+      }
+    student:
+      {
+        name: 'Grace Achebe-Fitzpatrick',
+        level: 'first_time',
+        discipline: 'nutrition sophomore',
+        style: 'notices glitches, polite',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Plan a launch with dining services.
+    constraints:
+      - Dining services meeting Friday
+    hidden:
+      - She will report a cut-off reply
+    arc:
+      - ['1.2', asks_direct, 'Asks how to pitch dining services']
+      - ['1.3', retry, "Says 'your message cut off after the second point'"]
+      - ['1.6', asks_direct, "Asks what to bring to Friday's meeting"]
+    sources: null
+    branches:
+      - If resumed briefly she proceeds
+      - If restarted she rereads everything
+    expected:
+      - Resumes or summarises the missing part briefly
+      - Avoids repeating the whole earlier reply
+      - Helps prepare for Friday
+    prohibited:
+      - Restarting the full answer
+      - Blaming her connection
+    memoryChanges:
+      - Records the dining services meeting prep
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [recovery, non_redundancy, natural_flow], pass: 'Clean recovery from truncation' }
+
+  - id: LV-30-03
+    version: 1
+    title: A call that drops twice in one session
+    challenge: Repeated disconnects on a call; each reconnection should pick up briefly without re-introductions.
+    venture:
+      {
+        name: 'TrailMates',
+        oneLiner: 'Hiking group matching',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'community app',
+      }
+    student:
+      {
+        name: 'Jonas Lindgren-Okeke',
+        level: 'first_time',
+        discipline: 'outdoor recreation junior',
+        style: 'patient, calling from a car park',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 4, channel: call }
+      - { gap: 1, turns: 4, channel: call }
+      - { gap: 1, turns: 4, channel: call }
+    priorMemory: []
+    objective: Plan the first group hike.
+    constraints:
+      - Poor signal
+    hidden:
+      - The call keeps dropping
+    arc:
+      - ['1.2', asks_direct, 'Asks how many people to cap the first hike at']
+      - ['1.4', disconnect, 'Call drops']
+      - ['2.1', resume, "Says 'lost you again, where were we?'"]
+      - ['2.4', disconnect, 'Call drops again']
+      - ['3.1', resume, "Says 'third time lucky, so the cap?'"]
+    sources: null
+    branches:
+      - If the coach picks up the cap question he settles on a number
+      - If re-introduced each time it's tedious
+    expected:
+      - Resumes each call briefly from the last point
+      - Never re-introduces itself
+      - Answers in a breath or two given the weak signal
+    prohibited:
+      - Re-introductions or full recaps after drops
+      - Lists in speech
+    memoryChanges:
+      - Records the group cap decision
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [voice_turn_taking, recovery, non_redundancy], pass: 'Smooth recovery across drops' }
+
+  - id: LV-30-04
+    version: 1
+    title: Switching to chat because voice stopped working
+    challenge: A degraded voice path forces a channel switch; the coach should continue in chat without losing the thread.
+    venture:
+      {
+        name: 'CampusThreads',
+        oneLiner: 'Custom club apparel',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'custom goods',
+      }
+    student:
+      {
+        name: 'Aisha Bello-Hartmann',
+        level: 'some_experience',
+        discipline: 'marketing senior',
+        style: 'adaptable, quick',
+      }
+    purpose: call then chat
+    sessions:
+      - { gap: 0, turns: 4, channel: call }
+      - { gap: 1, turns: 5, channel: chat }
+      - { gap: 3, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Finalise a bulk order quote.
+    constraints:
+      - The club treasurer needs the quote by tomorrow noon
+    hidden:
+      - The voice call fails mid-discussion
+    arc:
+      - ['1.2', reveal, 'On the call, explains a 200-shirt club order']
+      - ['1.4', disconnect, 'Voice fails']
+      - ['2.1', resume, "Types 'voice died, continuing here - the 200 shirts'"]
+      - ['3.2', asks_direct, 'Asks for the final quote structure']
+    sources: null
+    branches:
+      - If context carries she finishes the quote
+      - If lost she repeats the order details
+    expected:
+      - Continues the 200-shirt quote in chat without asking her to repeat
+      - Switches to written style in chat
+      - Gives the quote structure in session three
+    prohibited:
+      - Asking her to repeat the order details
+      - Spoken-style artefacts in chat
+    memoryChanges:
+      - Records the bulk order quote
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [recovery, memory_correctness, adaptation], pass: 'The channel switch keeps the thread' }
+
+  - id: LV-30-05
+    version: 1
+    title: A slow reply and an impatient follow-up
+    challenge: A delayed response prompts a follow-up; the coach should answer the latest message and not both separately.
+    venture:
+      {
+        name: 'FixItFast Bikes',
+        oneLiner: 'Mobile bike repair',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'repair service',
+      }
+    student:
+      {
+        name: 'Diego Ramírez-Holm',
+        level: 'some_experience',
+        discipline: 'mechanical engineering senior',
+        style: 'impatient, sends follow-ups',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to buy a second van.
+    constraints:
+      - Van costs 9,000 dollars
+    hidden:
+      - He is booked three weeks out
+    arc:
+      - ['1.2', asks_direct, 'Asks whether to buy a second van']
+      - ['1.3', retry, "Sends '??? hello?' after a delay"]
+      - ['1.5', reveal, "Mentions he's booked three weeks out"]
+    sources: null
+    branches:
+      - If one coherent reply comes he decides
+      - If two disjoint replies come it's confusing
+    expected:
+      - Gives one coherent reply covering his question after the nudge
+      - Uses the three-week backlog as evidence
+      - Doesn't apologise at length for the delay
+    prohibited:
+      - Long apologies
+      - Answering the nudge as a separate topic
+    memoryChanges:
+      - Records the van decision factors
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [recovery, natural_flow, relevance_directness], pass: 'One coherent reply after a delay' }
+
+  - id: LV-30-06
+    version: 2
+    title: A two-hour working session with many threads
+    challenge: A long session; the coach must keep track of decisions and threads without repeating itself.
+    venture:
+      {
+        name: 'ShelfLife Books',
+        oneLiner: 'Used textbook buyback and resale',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'resale',
+      }
+    student:
+      {
+        name: 'Hannah Fischer-Adebayo',
+        level: 'some_experience',
+        discipline: 'business senior',
+        style: 'methodical, long working sessions',
+      }
+    purpose: long working session
+    sessions:
+      - { gap: 0, turns: 30, channel: chat }
+    priorMemory: []
+    objective: Plan buyback week, pricing, staffing and marketing in one sitting.
+    constraints:
+      - Buyback week in a month
+    hidden:
+      - Early in the session she sets a 40 percent buyback rate
+    arc:
+      - ['1.3', reveal, 'Sets a 40 percent buyback rate']
+      - ['1.8', topic_change, 'Moves to staffing']
+      - ['1.12', interrupt, 'Interrupts to ask about storage']
+      - ['1.16', return, 'Returns to pricing and asks to confirm the buyback rate']
+      - ['1.20', resend, 'Sends the previous message again by accident (a double submit)']
+      - ['1.24', topic_change, 'Moves to marketing']
+      - ['1.28', asks_direct, 'Asks for a final checklist of decisions']
+    sources: null
+    branches:
+      - If tracked she leaves with a coherent plan
+      - If lost decisions contradict
+    expected:
+      - Recalls the 40 percent rate when she returns to pricing
+      - Handles the accidental repeat gracefully
+      - Produces an accurate final list of decisions
+    prohibited:
+      - Contradicting earlier decisions
+      - Re-answering the repeated question at full length
+    memoryChanges:
+      - Records the buyback week plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [memory_correctness, non_redundancy, natural_flow], pass: 'A long session stays coherent' }
+
+  - id: LV-30-07
+    version: 1
+    title: A long voice session with a mid-call reconnection
+    challenge: Long spoken session including a reconnection; the coach should keep spoken turns short and resume accurately.
+    venture:
+      {
+        name: 'HarvestHub',
+        oneLiner: 'Farm-to-campus produce stand',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'food retail',
+      }
+    student:
+      {
+        name: 'Malik Okafor-Lindqvist',
+        level: 'some_experience',
+        discipline: 'agricultural business senior',
+        style: 'talkative, enjoys calls',
+      }
+    purpose: long voice call
+    sessions:
+      - { gap: 0, turns: 14, channel: call }
+      - { gap: 1, turns: 13, channel: call }
+    priorMemory: []
+    objective: Plan the spring season with three farms.
+    constraints:
+      - Stand open three days a week
+    hidden:
+      - The call drops at the end of the first part
+    arc:
+      - ['1.3', reveal, 'Describes the three partner farms']
+      - ['1.7', interrupt, 'Interrupts with a pricing idea']
+      - ['1.11', backchannel, "Says 'yeah, yeah' while listening"]
+      - ['1.14', disconnect, 'Call drops']
+      - ['2.1', resume, "Calls back: 'where were we with the farms?'"]
+      - ['2.6', self_correction, 'Corrects which farm supplies eggs']
+      - ['2.11', asks_direct, 'Asks for the season plan in a couple of sentences']
+    sources: null
+    branches:
+      - If resumed accurately he finishes the plan
+      - If restarted it drags
+    expected:
+      - Resumes after the drop with a one-line recap
+      - Uses his corrected egg supplier
+      - Gives a short spoken plan at the end
+    prohibited:
+      - Lists in speech
+      - Using the farm before his correction
+    memoryChanges:
+      - Records the season plan and corrected supplier
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [voice_turn_taking, memory_correctness, recovery],
+        pass: 'Long spoken continuity through a drop',
+      }
+
+  - id: LV-30-08
+    version: 1
+    title: A marathon pitch-polishing session
+    challenge: A long session iterating on many slides; the coach must remember earlier slide decisions and avoid repeating feedback.
+    venture:
+      {
+        name: 'AquaPure Filters',
+        oneLiner: 'Shower filters for hard water',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'consumer hardware',
+      }
+    student:
+      {
+        name: 'Leila Ahmadi-Bergqvist',
+        level: 'some_experience',
+        discipline: 'chemical engineering senior',
+        style: 'perfectionist, long sessions',
+      }
+    purpose: long working session
+    sessions:
+      - { gap: 0, turns: 28, channel: chat }
+    priorMemory: []
+    objective: Polish a ten-slide deck.
+    constraints:
+      - Demo day in three days
+    hidden:
+      - Slide 4 market numbers are unsourced
+    arc:
+      - ['1.2', reveal, 'Shares slide 1 and 2 text']
+      - ['1.6', reveal, 'Shares slide 4 with a market figure']
+      - ['1.10', pushback, 'Defends the market figure']
+      - ['1.14', topic_change, 'Jumps to the closing slide']
+      - ['1.18', return, 'Returns to slide 4']
+      - ['1.22', interrupt, 'Interrupts to ask about fonts']
+      - ['1.26', asks_direct, 'Asks which three changes matter most']
+    sources: null
+    branches:
+      - If tracked she prioritises well
+      - If feedback repeats she wastes time
+    expected:
+      - Flags the unsourced market figure once and tracks it
+      - Avoids repeating feedback on slides already fixed
+      - Gives a ranked top three at the end
+    prohibited:
+      - Inventing a market figure
+      - Repeating the same note on multiple slides
+    memoryChanges:
+      - Records the three slide changes she chose for demo day
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [non_redundancy, evidence_calibration, memory_correctness],
+        pass: 'A long session with progressive feedback',
+      }
+
+  - id: LV-30-09
+    version: 1
+    title: A student who resends after an error message
+    challenge: The student saw an error and resent; the coach should handle the repeated intent once.
+    venture:
+      {
+        name: 'CleanSweep Dorms',
+        oneLiner: 'Move-out cleaning',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'local service',
+      }
+    student:
+      {
+        name: 'Tyrone Abernathy-Mbeki',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'confused by errors',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Plan move-out week staffing.
+    constraints:
+      - Move-out in three weeks
+    hidden:
+      - He saw an error and resent
+    arc:
+      - ['1.2', asks_direct, 'Asks how many cleaners to hire']
+      - ['1.3', retry, "Says 'got an error, sending again' and repeats the question"]
+      - ['1.5', reveal, 'Mentions 150 rooms booked']
+    sources: null
+    branches:
+      - If handled once he proceeds
+      - If answered twice it's confusing
+    expected:
+      - Answers the question once, acknowledging the resend lightly
+      - Uses 150 rooms to estimate staffing
+      - Keeps it practical
+    prohibited:
+      - Two separate full answers
+      - Technical explanations of the error
+    memoryChanges:
+      - Records the staffing plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [recovery, non_redundancy, relevance_directness], pass: 'Resends handled once' }
+
+  - id: LV-30-10
+    version: 1
+    title: Resuming after the coach said something wrong last time
+    challenge: In the next session the student points out an error; the coach should correct it plainly and carry the correction forward.
+    venture:
+      {
+        name: 'SproutSmart',
+        oneLiner: 'Smart seed trays for classrooms',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'edtech hardware',
+      }
+    student:
+      {
+        name: 'Olivia Mensah-Sundberg',
+        level: 'some_experience',
+        discipline: "science education master's student",
+        style: 'careful, fair',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 7, turns: 5, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Plan a pilot with three schools.
+    constraints:
+      - Schools need devices before March
+    hidden:
+      - In session two she notes the coach miscalculated cost per school last time
+    arc:
+      - ['1.3', asks_direct, 'Asks the cost for three schools at 12 trays each']
+      - ['2.1', correction, "Says 'last time you said 600 per school but 12 trays at 35 is 420'"]
+      - ['2.4', asks_direct, 'Asks for the corrected total']
+      - ['3.2', asks_direct, 'Asks for the per-school cost again to put in the proposal']
+    sources: null
+    branches:
+      - If corrected plainly she trusts it
+      - If defended she doubts everything
+    expected:
+      - Acknowledges the arithmetic error plainly
+      - Gives the corrected 420 per school and 1,260 total
+      - Uses the corrected figure in session three
+    prohibited:
+      - Defending the wrong number
+      - Repeating 600
+    memoryChanges:
+      - Records the corrected cost figures
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [recovery, memory_correctness, evidence_calibration],
+        pass: 'The error is corrected and remembered',
+      }
+
+  - id: LV-30-11
+    version: 1
+    title: A long check-in series with an interrupted session
+    challenge: Across four sessions one is cut short; the coach should resume the unfinished part next time.
+    venture:
+      {
+        name: 'BrightBox Tutoring',
+        oneLiner: 'Exam tutoring boxes with videos and worksheets',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'education product',
+      }
+    student:
+      {
+        name: 'Samuel Kwarteng-Lindahl',
+        level: 'some_experience',
+        discipline: 'education senior',
+        style: 'steady, reliable',
+      }
+    purpose: long check-ins
+    sessions:
+      - { gap: 0, turns: 7, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+      - { gap: 3, turns: 8, channel: chat }
+      - { gap: 7, turns: 7, channel: chat }
+    priorMemory: []
+    objective: Launch boxes for spring exams.
+    constraints:
+      - Production of 200 boxes
+    hidden:
+      - Session two is cut short before pricing is settled
+    arc:
+      - ['1.3', reveal, 'Plans content for three subjects']
+      - ['2.2', asks_direct, 'Starts on pricing']
+      - ['2.4', stop, 'Has to leave mid-pricing']
+      - ['3.1', resume, "Says 'let's finish pricing'"]
+      - ['3.6', topic_change, 'Asks about school partnerships']
+      - ['4.2', asks_direct, 'Asks for launch readiness']
+    sources: null
+    branches:
+      - If resumed he finishes pricing
+      - If forgotten pricing stays open
+    expected:
+      - Resumes pricing at the start of session three without a full recap
+      - Tracks the content and pricing decisions
+      - Gives an accurate readiness check in session four
+    prohibited:
+      - Restarting pricing from scratch
+      - Forgetting the unfinished topic
+    memoryChanges:
+      - Records pricing and readiness
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [memory_correctness, non_redundancy, natural_flow], pass: 'Unfinished work resumes correctly' }
+
+  - id: LV-30-12
+    version: 1
+    title: A long session where the student loses focus and returns
+    challenge: The student wanders and returns repeatedly over a long session; the coach should keep the core decision in view without nagging.
+    venture:
+      {
+        name: 'PawsPlay Toys',
+        oneLiner: 'Enrichment toys for shelter dogs',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'pet product',
+      }
+    student:
+      {
+        name: 'Ingrid Solberg-Achebe',
+        level: 'first_time',
+        discipline: 'animal behaviour sophomore',
+        style: 'distractible, enthusiastic',
+      }
+    purpose: long working session
+    sessions:
+      - { gap: 0, turns: 27, channel: chat }
+    priorMemory: []
+    objective: Decide whether shelters or pet owners are the first customer.
+    constraints:
+      - Shelters have tiny budgets
+    hidden:
+      - Owners who adopted from shelters asked to buy toys
+    arc:
+      - ['1.2', asks_direct, 'Asks shelters or owners']
+      - ['1.5', digression, 'Talks about a dog she fostered']
+      - ['1.9', return, 'Comes back to the customer question']
+      - ['1.13', digression, 'Talks about toy designs']
+      - ['1.17', reveal, 'Mentions adopters asked to buy toys']
+      - ['1.21', digression, 'Talks about a shelter fundraiser']
+      - ['1.25', asks_direct, 'Asks for a decision']
+    sources: null
+    branches:
+      - If the core question is held she decides
+      - If each tangent is chased nothing resolves
+    expected:
+      - Follows tangents briefly and keeps the customer question available
+      - Uses the adopter signal when it appears
+      - Helps her reach a decision at the end
+    prohibited:
+      - Nagging her back after every tangent
+      - Forgetting the core question
+    memoryChanges:
+      - Records the customer decision and adopter signal
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [natural_flow, understanding_intent, memory_correctness],
+        pass: 'A decision emerges from a wandering session',
+      }
+
+  - id: LV-30-13
+    version: 1
+    title: A degraded experience the student notices
+    challenge: The student says replies seem generic and slow today; the coach should acknowledge without technical excuses and refocus.
+    venture:
+      {
+        name: 'CampusCart Grocery',
+        oneLiner: 'Grocery runs for students without cars',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'delivery',
+      }
+    student:
+      {
+        name: 'Andre Johnson-Lindqvist',
+        level: 'some_experience',
+        discipline: 'supply chain junior',
+        style: 'observant, direct',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Fix delivery batching.
+    constraints:
+      - Two drivers
+    hidden:
+      - Orders cluster on Sunday evenings
+    arc:
+      - ['1.2', frustration, "Says 'you seem slow and kind of generic today'"]
+      - ['1.4', reveal, 'Mentions Sunday evening clustering']
+    sources: null
+    branches:
+      - If refocused he gets specific help
+      - If excuses are made he disengages
+    expected:
+      - Acknowledges briefly without technical excuses
+      - Gives specific help on Sunday batching
+      - Keeps replies tight
+    prohibited:
+      - Blaming technical systems at length
+      - Generic advice
+    memoryChanges:
+      - Records Sunday clustering and batching plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [recovery, relevance_directness, adaptation],
+        pass: 'Specific help after a degraded impression',
+      }
+
+  - id: LV-30-14
+    version: 1
+    title: A message arriving out of order
+    challenge: A later message arrives before an earlier one is answered; the coach should reconcile the order sensibly.
+    venture:
+      {
+        name: 'StudyGrid',
+        oneLiner: 'Shared revision timetables',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'student software',
+      }
+    student:
+      {
+        name: 'Mei Ling Osei-Fairbanks',
+        level: 'first_time',
+        discipline: 'computer science sophomore',
+        style: 'sends messages in bursts',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide on a launch date.
+    constraints:
+      - Exams start in four weeks
+    hidden:
+      - Her second message answers a question the coach hasn't asked yet
+    arc:
+      - ['1.2', asks_direct, 'Asks about launch timing']
+      - ['1.3', incomplete, "Sends 'and yes it works on phones' before being asked"]
+      - ['1.5', reveal, 'Says testers want it two weeks before exams']
+    sources: null
+    branches:
+      - If reconciled the conversation flows
+      - If confused it asks redundant questions
+    expected:
+      - Connects the early phone answer instead of asking it again
+      - Recommends launch two weeks before exams
+      - Keeps the flow natural
+    prohibited:
+      - Asking whether it works on phones
+      - Confusion about message order
+    memoryChanges:
+      - Records the launch date decision
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [understanding_intent, non_redundancy, natural_flow], pass: 'Out-of-order input reconciled' }
+
+  - id: LV-30-15
+    version: 1
+    title: A three-session series interrupted by an outage week
+    challenge: After a gap caused by an outage the coach should pick up accurately and help the student re-plan timelines.
+    venture:
+      {
+        name: 'BlueBin Recycling',
+        oneLiner: 'Recycling pickup for small offices',
+        stage: 'commercialization',
+        domain: 'energy',
+        archetype: 'green service',
+      }
+    student:
+      {
+        name: 'Henrik Mwangi-Strand',
+        level: 'some_experience',
+        discipline: 'environmental engineering senior',
+        style: 'steady, slightly frustrated',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 14, turns: 5, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Sign five office clients this month.
+    constraints:
+      - Lost a week when the app was unavailable
+    hidden:
+      - Session one sets the five-client target and outreach list
+    arc:
+      - ['1.3', reveal, 'Sets the target and outreach list']
+      - ['2.1', frustration, "Says 'the app was down last week, I lost my notes'"]
+      - ['2.3', asks_direct, 'Asks to reconstruct the outreach list']
+      - ['3.2', new_evidence, 'Reports two signed clients']
+    sources: null
+    branches:
+      - If the plan is recalled he recovers quickly
+      - If not he starts over
+    expected:
+      - Acknowledges the lost week briefly
+      - Recalls the target and outreach list from session one
+      - Helps re-plan the timeline with two signed
+    prohibited:
+      - Inventing outreach names not discussed
+      - Long apologies about the outage
+    memoryChanges:
+      - Records progress and the revised timeline
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [memory_correctness, recovery, actionability], pass: 'Accurate recall after an outage' }
+
+  - id: LV-30-16
+    version: 1
+    title: A student who keeps restarting the same session
+    challenge: The student opens new conversations repeatedly about the same thing; the coach should notice and help him settle.
+    venture:
+      {
+        name: 'PrintPal 3D',
+        oneLiner: '3D printing service for students',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'maker service',
+      }
+    student:
+      {
+        name: 'Callum Fraser-Adeyemi',
+        level: 'first_time',
+        discipline: 'product design sophomore',
+        style: 'anxious, restarts often',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 4, channel: chat }
+      - { gap: 1, turns: 4, channel: chat }
+      - { gap: 1, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Decide on a print price.
+    constraints:
+      - Filament costs known
+    hidden:
+      - He asks the same question each time hoping for a different answer
+    arc:
+      - ['1.2', asks_direct, 'Asks what to charge per gram']
+      - ['2.1', repeat_request, 'Asks the same question again in a new session']
+      - ['3.1', repeat_request, 'Asks again in a third session']
+      - ['3.3', hesitation, "Admits he's scared to pick wrong"]
+    sources: null
+    branches:
+      - If the pattern is named he commits to a test
+      - If answered fresh each time he stays stuck
+    expected:
+      - Recalls the earlier answer instead of re-deriving it
+      - Names the repetition kindly by session three
+      - Suggests a reversible two-week price test
+    prohibited:
+      - Answering as if the question were new each time
+      - Impatience
+    memoryChanges:
+      - Records the price test plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, non_redundancy, adaptation],
+        pass: 'Repetition is recognised and resolved',
+      }
+
+  - id: LV-30-17
+    version: 1
+    title: A very long session drifting into repetition risk
+    challenge: Late in a long session the coach must avoid repeating earlier advice and stock phrases.
+    venture:
+      {
+        name: 'GreenGrocer Lockers',
+        oneLiner: 'Refrigerated grocery lockers at train stations',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'retail hardware',
+      }
+    student:
+      {
+        name: 'Natasha Ivanova-Holm',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'thorough, asks many follow-ups',
+      }
+    purpose: long working session
+    sessions:
+      - { gap: 0, turns: 30, channel: chat }
+    priorMemory: []
+    objective: Build an operating plan for a two-station pilot.
+    constraints:
+      - Pilot in two stations
+    hidden:
+      - She asks similar questions late in the session
+    arc:
+      - ['1.4', asks_direct, 'Asks about restocking schedules']
+      - ['1.9', asks_direct, 'Asks about power costs']
+      - ['1.14', interrupt, 'Interrupts to ask about theft']
+      - ['1.19', asks_direct, 'Asks a question similar to the restocking one']
+      - ['1.24', topic_change, 'Switches to who will refill lockers at night']
+      - ['1.29', asks_direct, 'Asks for the operating plan summary']
+    sources: null
+    branches:
+      - If the coach references earlier answers it stays fresh
+      - If it repeats it sounds canned
+    expected:
+      - References earlier answers rather than repeating them
+      - Varies phrasing naturally without stock phrases
+      - Gives an accurate summary at the end
+    prohibited:
+      - Repeating the same advice verbatim
+      - Stock coaching phrases on repeat
+    memoryChanges:
+      - Records the operating plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [non_redundancy, natural_flow, memory_correctness],
+        pass: 'No repetition late in a long session',
+      }
+
+  - id: LV-30-18
+    version: 1
+    title: A long call where the student keeps reconnecting
+    challenge: Very long spoken interaction across reconnects; the coach should maintain context and short turns throughout.
+    venture:
+      {
+        name: 'Riverside Rentals',
+        oneLiner: 'Canoe rentals for students',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'rental',
+      }
+    student:
+      {
+        name: 'Owen Kariuki-Bergman',
+        level: 'some_experience',
+        discipline: 'recreation senior',
+        style: 'relaxed, on the move',
+      }
+    purpose: long voice calls
+    sessions:
+      - { gap: 0, turns: 10, channel: call }
+      - { gap: 1, turns: 10, channel: call }
+      - { gap: 1, turns: 10, channel: call }
+    priorMemory: []
+    objective: Plan the summer rental season.
+    constraints:
+      - Calls from the river with weak signal
+    hidden:
+      - Calls drop at the end of each part
+    arc:
+      - ['1.3', reveal, 'Describes 15 canoes and two launch points']
+      - ['1.10', disconnect, 'Call drops']
+      - ['2.1', resume, 'Calls back to continue on pricing']
+      - ['2.5', interrupt, 'Interrupts with a safety question']
+      - ['2.10', disconnect, 'Call drops']
+      - ['3.1', resume, 'Calls back for staffing']
+      - ['3.8', asks_direct, 'Asks for the season plan in brief']
+    sources: null
+    branches:
+      - If context holds across reconnects he finishes the plan
+      - If lost he repeats details
+    expected:
+      - Resumes each call from the right topic with a one-line recap
+      - Routes the safety question proportionately
+      - Says only a sentence or two per turn while he paddles
+    prohibited:
+      - Full recaps after each reconnect
+      - Lists in speech
+    memoryChanges:
+      - Records the season plan
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session on water-safety requirements',
+        why: 'Water safety rules need qualified guidance',
+      }
+    scoring:
+      {
+        focus: [voice_turn_taking, memory_correctness, recovery],
+        pass: 'Long spoken continuity across reconnects',
+      }
+
+  - id: LV-30-19
+    version: 1
+    title: A reply that failed, then the student moved on
+    challenge: After an error the student changes topic; the coach should not insist on answering the lost question first.
+    venture:
+      {
+        name: 'SoundWave Lessons',
+        oneLiner: 'Guitar lessons by students',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Jasmine Achterberg-Ofori',
+        level: 'first_time',
+        discipline: 'music sophomore',
+        style: 'easy-going, moves on quickly',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Plan teacher recruitment.
+    constraints:
+      - Five teachers
+    hidden:
+      - She doesn't care about the lost answer
+    arc:
+      - ['1.2', asks_direct, 'Asks about lesson pricing']
+      - ['1.3', retry, "Says 'that didn't load, never mind, recruitment question instead'"]
+      - ['1.5', asks_direct, 'Asks how to recruit more teachers']
+    sources: null
+    branches:
+      - If the coach follows she gets recruitment help
+      - If it insists on pricing she is annoyed
+    expected:
+      - Follows her to recruitment
+      - Offers pricing later at most once
+      - Keeps replies focused
+    prohibited:
+      - Forcing the pricing answer first
+      - Technical explanations of the failure
+    memoryChanges:
+      - Records the recruitment plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [understanding_intent, natural_flow, recovery], pass: "The student's new direction leads" }
+
+  - id: LV-30-20
+    version: 1
+    title: A partial reply on a call that the student heard only half of
+    challenge: The spoken reply was interrupted by a dropout; the coach should restate only what was missed.
+    venture:
+      {
+        name: 'FreshFold Linens',
+        oneLiner: 'Linen rental for short-term rentals',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'B2B service',
+      }
+    student:
+      {
+        name: 'Abigail Oyelaran-Holm',
+        level: 'some_experience',
+        discipline: 'hospitality senior',
+        style: 'attentive, precise',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 8, channel: call }
+    priorMemory: []
+    objective: Decide whether to offer same-day turnaround.
+    constraints:
+      - One van
+    hidden:
+      - She heard the first half of the answer only
+    arc:
+      - ['1.2', asks_direct, 'Asks about same-day turnaround']
+      - ['1.3', repeat_request, "Says 'I lost you after you mentioned the van'"]
+      - ['1.6', asks_direct, 'Asks what to charge for same-day']
+    sources: null
+    branches:
+      - If only the missing part is restated she follows
+      - If everything is repeated it drags
+    expected:
+      - Restates only what came after the van point
+      - Keeps the spoken turn short
+      - Puts a same-day surcharge on the table in a sentence
+    prohibited:
+      - Repeating the whole answer
+      - Lists in speech
+    memoryChanges:
+      - Records the same-day decision
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [voice_turn_taking, recovery, non_redundancy], pass: 'Only the missed part is restated' }

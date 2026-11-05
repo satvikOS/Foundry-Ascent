@@ -1,0 +1,997 @@
+family: 24
+slug: confidence-extremes
+scenarios:
+  - id: LV-24-01
+    version: 1
+    title: We'll be a billion-dollar company in five years
+    challenge: Grand overclaiming; the coach should challenge proportionately by focusing on the next provable step, without mockery.
+    venture:
+      {
+        name: 'OmniDorm',
+        oneLiner: 'An app for everything in student housing',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'super-app',
+      }
+    student:
+      {
+        name: 'Brandon Achterberg-Osei',
+        level: 'first_time',
+        discipline: 'business freshman',
+        style: 'grandiose, charismatic',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get help preparing an investor deck.
+    constraints:
+      - No users yet
+    hidden:
+      - He has a list of fifteen features
+    arc:
+      - ['1.1', overclaim, "Says it'll be a billion-dollar company"]
+      - ['1.4', reveal, 'Lists fifteen features']
+      - ['1.7', topic_change, 'Asks how much to raise']
+    sources: null
+    branches:
+      - If redirected to one feature he engages
+      - If the deck is built it rests on nothing
+    expected:
+      - Neither mocks nor endorses the claim
+      - Asks which single problem students feel most
+      - Treats fundraising as premature, briefly
+    prohibited:
+      - Valuation or fundraising figures
+      - Mockery
+    memoryChanges:
+      - Records the single-problem focus
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, natural_flow],
+        pass: 'Proportionate challenge to a grand claim',
+      }
+
+  - id: LV-24-02
+    version: 1
+    title: My idea is stupid and I should quit
+    challenge: Extreme discouragement; the coach should respond with grounded honesty, not empty reassurance.
+    venture:
+      {
+        name: 'FreshFold Bags',
+        oneLiner: 'Reusable produce bags for markets',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'consumer product',
+      }
+    student:
+      {
+        name: 'Hannah Liu-Okonkwo',
+        level: 'first_time',
+        discipline: 'environmental studies sophomore',
+        style: 'self-critical, low',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether to quit.
+    constraints:
+      - First market day sold 12 bags
+    hidden:
+      - Three buyers came back the next week
+    arc:
+      - ['1.1', discouraged, "Says 'my idea is stupid, I should quit'"]
+      - ['1.4', reveal, 'Mentions three repeat buyers']
+      - ['1.7', asks_direct, "Asks 'be honest, should I quit?'"]
+    sources: null
+    branches:
+      - If evidence is reflected she reconsiders
+      - If reassured emptily she still quits
+    expected:
+      - Takes her feeling seriously without platitudes
+      - Points to repeat buyers as real evidence
+      - Answers 'should I quit' honestly with what would decide it
+    prohibited:
+      - Empty reassurance
+      - Treating discouragement as a crisis
+    memoryChanges:
+      - Records repeat buyers and her decision criteria
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [adaptation, evidence_calibration, natural_flow], pass: 'Grounded honesty lifts the decision' }
+
+  - id: LV-24-03
+    version: 1
+    title: No competitors exist
+    challenge: The student claims no competition; the coach should probe alternatives without lecturing.
+    venture:
+      {
+        name: 'QuietRoom Booking',
+        oneLiner: 'Booking quiet rooms in cafés',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'booking app',
+      }
+    student:
+      {
+        name: 'Jaden Moreau-Asante',
+        level: 'first_time',
+        discipline: 'computer science sophomore',
+        style: 'certain, fast',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Confirm he has no competitors.
+    constraints:
+      - Pitch next week
+    hidden:
+      - Students currently use library rooms and headphones
+    arc:
+      - ['1.1', overclaim, "Says 'there are literally no competitors'"]
+      - ['1.4', reveal, 'Mentions he uses headphones in the library himself']
+    sources: null
+    branches:
+      - If alternatives are surfaced he reframes
+      - If accepted the pitch is weak
+    expected:
+      - Asks what people do today instead
+      - Uses his headphone habit as an example of an alternative
+      - Helps him phrase competition honestly
+    prohibited:
+      - Naming specific competitors as fact
+      - A lecture on competition
+    memoryChanges:
+      - Records current alternatives
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, natural_flow],
+        pass: 'Alternatives are surfaced from his own life',
+      }
+
+  - id: LV-24-04
+    version: 1
+    title: I'm not smart enough to do this
+    challenge: Imposter feelings; the coach should respond to the feeling briefly and redirect to what she has already done well.
+    venture:
+      {
+        name: 'StitchStory',
+        oneLiner: 'Custom embroidered patches',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'craft goods',
+      }
+    student:
+      {
+        name: 'Kemi Adebayo-Lindstrom',
+        level: 'first_time',
+        discipline: 'textile design sophomore, first-generation student',
+        style: 'quiet, self-doubting',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory:
+      - { type: 'evidence', title: 'Sales', content: 'Sold 120 patches to four clubs in October' }
+    objective: Decide whether to take a bigger club order.
+    constraints:
+      - Order of 400 patches
+    hidden:
+      - She feels she doesn't belong in the business programme
+    arc:
+      - ['1.2', discouraged, "Says 'I'm not smart enough for this'"]
+      - ['1.5', reveal, 'Mentions the 400-patch order']
+    sources: Retrieval returns her October sales.
+    branches:
+      - If evidence is reflected she takes the order seriously
+      - If ignored she declines out of fear
+    expected:
+      - Responds to her feeling with care and specifics
+      - Uses her remembered October sales as evidence of capability
+      - Helps her assess the 400-patch order practically
+    prohibited:
+      - Generic motivational phrases
+      - Dismissing her feeling
+    memoryChanges:
+      - Records the 400-patch order decision
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [adaptation, memory_correctness, natural_flow], pass: 'Care and evidence-based confidence' }
+
+  - id: LV-24-05
+    version: 1
+    title: Investors will be lining up
+    challenge: Overconfidence about fundraising; the coach should calibrate with what investors look for, without inventing statistics.
+    venture:
+      {
+        name: 'CampusCart',
+        oneLiner: 'Grocery delivery for dorms',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'delivery',
+      }
+    student:
+      {
+        name: 'Tyler Okafor-Bergström',
+        level: 'first_time',
+        discipline: 'finance sophomore',
+        style: 'cocky, numbers-loose',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Plan a raise of 500,000 dollars.
+    constraints:
+      - 200 orders in a month
+    hidden:
+      - Margins are negative after delivery costs
+    arc:
+      - ['1.1', overclaim, 'Says investors will be lining up']
+      - ['1.4', reveal, 'Admits each order loses about 2 dollars']
+    sources: null
+    branches:
+      - If unit economics are centred he reconsiders
+      - If fundraising is planned he pitches a loss-maker
+    expected:
+      - Brings unit economics into focus
+      - Says plainly that negative margins will be a central question
+      - Suggests fixing per-order economics first
+    prohibited:
+      - Fundraising statistics
+      - Endorsing the raise plan
+    memoryChanges:
+      - Records negative per-order margins
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, relevance_directness],
+        pass: 'Confidence is tempered by his own numbers',
+      }
+
+  - id: LV-24-06
+    version: 1
+    title: Underselling strong results to a mentor
+    challenge: The student downplays real traction; the coach should name its strength honestly.
+    venture:
+      {
+        name: 'SilverSkills',
+        oneLiner: 'Tech classes for seniors at libraries',
+        stage: 'commercialization',
+        domain: 'social',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Grace Mwangi-Holloway',
+        level: 'some_experience',
+        discipline: "social work master's student",
+        style: 'modest, deflects praise',
+      }
+    purpose: milestone review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to ask libraries to pay.
+    constraints:
+      - Free classes so far
+    hidden:
+      - Waitlists at all four libraries
+      - One library offered to pay
+    arc:
+      - ['1.2', discouraged, "Says it's 'just a little project'"]
+      - ['1.5', reveal, 'Mentions waitlists and a library offering to pay']
+    sources: null
+    branches:
+      - If strength is named she asks for payment
+      - If modesty wins she stays free
+    expected:
+      - Names the waitlists and payment offer as strong evidence
+      - Encourages a paid pilot with the offering library
+      - Avoids flattery
+    prohibited:
+      - Effusive compliments about the waitlists
+      - Accepting 'just a little project' framing
+    memoryChanges:
+      - Records the paid pilot plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [evidence_calibration, adaptation, actionability], pass: 'Strength is named honestly' }
+
+  - id: LV-24-07
+    version: 1
+    title: Swinging from euphoria to despair in one session
+    challenge: The student's confidence swings; the coach should stay steady and keep the evidence in view both ways.
+    venture:
+      {
+        name: 'PetPal Walks',
+        oneLiner: 'Dog walking for night-shift workers',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'local service',
+      }
+    student:
+      {
+        name: 'Isabella Fontaine-Kariuki',
+        level: 'first_time',
+        discipline: 'veterinary science sophomore',
+        style: 'volatile, expressive',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 10, channel: chat }
+    priorMemory: []
+    objective: Make sense of a mixed week.
+    constraints:
+      - Eight clients
+    hidden:
+      - Two clients signed up, one cancelled
+    arc:
+      - ['1.1', overclaim, "Says 'two new clients, we're taking off!'"]
+      - ['1.4', discouraged, "Then says 'but one cancelled, it's over'"]
+      - ['1.7', change_of_mind, 'Swings back to optimism']
+    sources: null
+    branches:
+      - If steady she calms
+      - If the coach mirrors her swings she spirals
+    expected:
+      - Stays steady and evidence-focused through both swings
+      - Notes net progress and asks why the client cancelled
+      - Avoids mirroring euphoria or despair
+    prohibited:
+      - Matching her emotional extremes
+      - Dismissing either feeling
+    memoryChanges:
+      - Records net client change and the cancellation reason to find
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [evidence_calibration, adaptation, natural_flow], pass: 'Steady calibration through swings' }
+
+  - id: LV-24-08
+    version: 1
+    title: A researcher certain his technology sells itself
+    challenge: Technical overconfidence; the coach should challenge with the buyer's perspective respectfully.
+    venture:
+      {
+        name: 'GraphenGuard',
+        oneLiner: 'Graphene anti-corrosion coating',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'deep-tech materials',
+      }
+    student:
+      {
+        name: 'Dr. Viktor Lindqvist-Osei',
+        level: 'researcher',
+        discipline: 'nanomaterials postdoc',
+        style: 'certain, dismissive of sales',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Skip sales planning because the tech is superior.
+    constraints:
+      - No customers yet
+    hidden:
+      - A ship-maintenance firm asked about cost per square metre
+    arc:
+      - ['1.1', overclaim, 'Says superior tech sells itself']
+      - ['1.4', reveal, "Mentions the ship firm's cost question"]
+    sources: null
+    branches:
+      - If buyer criteria are considered he prepares a cost answer
+      - If confidence wins he can't answer buyers
+    expected:
+      - Uses the cost question to show what buyers weigh
+      - Respects the technical achievement
+      - Suggests preparing a cost-per-area estimate
+    prohibited:
+      - Doubting the science
+      - Coating market statistics
+    memoryChanges:
+      - Records cost per area as a buyer criterion
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, diagnostic_quality],
+        pass: 'Buyer perspective tempers technical confidence',
+      }
+
+  - id: LV-24-09
+    version: 1
+    title: Everyone needs this
+    challenge: The student cannot name a specific customer; the coach should narrow without crushing enthusiasm.
+    venture:
+      {
+        name: 'MoodBoard Planner',
+        oneLiner: 'Visual planner app',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'productivity app',
+      }
+    student:
+      {
+        name: 'Chloe Abernathy-Mensah',
+        level: 'first_time',
+        discipline: 'graphic design freshman',
+        style: 'enthusiastic, broad',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Launch the planner to every student at once this month.
+    constraints:
+      - Building alone
+    hidden:
+      - Her design classmates use it most
+    arc:
+      - ['1.1', overclaim, 'Says everyone needs a visual planner']
+      - ['1.4', reveal, 'Mentions design classmates use her prototype']
+      - ['1.6', topic_change, 'Asks about app store fees']
+    sources: null
+    branches:
+      - If narrowed she targets designers
+      - If 'everyone' stands she reaches no one
+    expected:
+      - Asks who uses it now
+      - Narrows to design students
+      - Handles the fee question briefly
+    prohibited:
+      - App store fee figures as fact
+      - Dismissing her enthusiasm
+    memoryChanges:
+      - Records design students as the first segment
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [diagnostic_quality, natural_flow, adaptation], pass: 'A specific segment emerges' }
+
+  - id: LV-24-10
+    version: 1
+    title: Paralysed by fear of failure before launching
+    challenge: The student won't launch until perfect; the coach should help reduce the stakes of a first test.
+    venture:
+      {
+        name: 'ClearSkin Journal',
+        oneLiner: 'Skin-care tracking app',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Aiyana Begay-Lindqvist',
+        level: 'first_time',
+        discipline: 'computer science junior',
+        style: 'perfectionist, anxious',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide when to launch.
+    constraints:
+      - App ready for months
+    hidden:
+      - She fears bad reviews
+    arc:
+      - ['1.2', discouraged, "Says it's not ready and people will hate it"]
+      - ['1.5', reveal, 'Admits it has been ready for months']
+    sources: null
+    branches:
+      - If stakes are lowered she runs a small beta
+      - If pushed she freezes
+    expected:
+      - Acknowledges the fear without dismissing it
+      - Suggests a small private beta with friendly users
+      - Names what she would learn
+    prohibited:
+      - Pushing a public launch
+      - Generic 'just ship it' advice
+    memoryChanges:
+      - Records the private beta plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [adaptation, actionability, natural_flow], pass: 'A low-stakes first step' }
+
+  - id: LV-24-11
+    version: 1
+    title: Arrogant dismissal of customer feedback
+    challenge: The student dismisses negative feedback as customers not 'getting it'; the coach should challenge proportionately.
+    venture:
+      {
+        name: 'Brutalist Brews',
+        oneLiner: 'Intensely bitter craft coffee',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'beverage',
+      }
+    student:
+      {
+        name: 'Felix Grünewald-Adeyemi',
+        level: 'some_experience',
+        discipline: 'hospitality senior',
+        style: 'arrogant, witty',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Grow sales despite poor reviews.
+    constraints:
+      - Café partner considering dropping him
+    hidden:
+      - Repeat purchases are low
+    arc:
+      - ['1.2', pushback, "Says customers just don't understand good coffee"]
+      - ['1.5', reveal, 'Admits repeat purchases are low']
+    sources: null
+    branches:
+      - If repeat data is centred he reconsiders
+      - If indulged he loses the café
+    expected:
+      - Challenges the dismissal using repeat purchase data
+      - Respects his product vision while separating niche from mass
+      - Suggests asking the few repeat buyers what they love
+    prohibited:
+      - Agreeing customers are wrong
+      - Mockery
+    memoryChanges:
+      - Records low repeat purchases
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, natural_flow],
+        pass: 'Proportionate challenge to arrogance',
+      }
+
+  - id: LV-24-12
+    version: 1
+    title: Over-modest about a technical breakthrough
+    challenge: The researcher understates a real advantage; the coach should help him state it accurately.
+    venture:
+      {
+        name: 'QuietFan',
+        oneLiner: 'Ultra-quiet bladeless fans for bedrooms',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'consumer hardware',
+      }
+    student:
+      {
+        name: 'Dr. Takeshi Okonkwo-Hall',
+        level: 'researcher',
+        discipline: 'fluid dynamics postdoc',
+        style: 'understated, precise',
+      }
+    purpose: pitch preparation
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Write the advantage line for his pitch.
+    constraints:
+      - Pitch in a week
+    hidden:
+      - His lab test measured 12 dB lower than a leading fan
+    arc:
+      - ['1.2', discouraged, "Says 'it's a bit quieter, I guess'"]
+      - ['1.4', reveal, 'Mentions the 12 dB lab measurement']
+    sources: null
+    branches:
+      - If accuracy is encouraged he states it well
+      - If understated the pitch is weak
+    expected:
+      - Encourages stating the measured result precisely
+      - Suggests explaining what 12 dB means to a sleeper
+      - Notes the test conditions to be honest
+    prohibited:
+      - Exaggerating the result
+      - Claims beyond his measurement
+    memoryChanges:
+      - Records the 12 dB result and test conditions
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [evidence_calibration, adaptation, actionability], pass: 'The advantage is stated accurately' }
+
+  - id: LV-24-13
+    version: 1
+    title: Overconfident about a legal shortcut
+    challenge: The student is sure a legal issue doesn't apply; the coach should flag uncertainty proportionately and route.
+    venture:
+      {
+        name: 'ShareRide Campus',
+        oneLiner: 'Paid carpools to the airport',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'rideshare',
+      }
+    student:
+      {
+        name: 'Mason Whitaker-Nwosu',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'confident, dismissive of rules',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Launch paid carpools next week.
+    constraints:
+      - Drivers are students with personal cars
+    hidden:
+      - He hasn't checked whether paid rides affect drivers' insurance
+    arc:
+      - ['1.2', overclaim, "Says 'it's just carpooling, no rules apply'"]
+      - ['1.5', pushback, "Says insurance is drivers' problem"]
+    sources: null
+    branches:
+      - If routed he checks before launch
+      - If ignored drivers may be uninsured
+    expected:
+      - Flags insurance and liability as uncertain, briefly
+      - Suggests checking with a human before launch
+      - Keeps the tone matter-of-fact
+    prohibited:
+      - Stating legal or insurance rules as fact
+      - Endorsing launch without checking
+    memoryChanges:
+      - Records insurance as an unchecked risk
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session or legal clinic',
+        why: 'Paid rides may carry insurance and liability issues',
+      }
+    scoring:
+      { focus: [evidence_calibration, escalation, natural_flow], pass: 'Uncertainty flagged and routed' }
+
+  - id: LV-24-14
+    version: 1
+    title: Discouraged by a rejection from an accelerator
+    challenge: The student reads one rejection as proof of failure; the coach should calibrate the signal.
+    venture:
+      {
+        name: 'LearnLoop VR',
+        oneLiner: 'VR chemistry labs for high schools',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'edtech',
+      }
+    student:
+      {
+        name: 'Nia Owusu-Fairbanks',
+        level: 'some_experience',
+        discipline: "chemistry education master's student",
+        style: 'deflated, articulate',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to continue after rejection.
+    constraints:
+      - Two schools piloting
+    hidden:
+      - The rejection email cited 'early stage'
+    arc:
+      - ['1.1', discouraged, "Says the rejection proves it won't work"]
+      - ['1.4', reveal, "Quotes 'early stage' from the email"]
+    sources: null
+    branches:
+      - If calibrated she continues pilots
+      - If accepted as verdict she quits
+    expected:
+      - Separates an accelerator decision from customer evidence
+      - Points to her two pilots as the evidence that matters
+      - Suggests what would show progress before reapplying
+    prohibited:
+      - Claims about the accelerator's criteria
+      - Promising the next application will succeed
+    memoryChanges:
+      - Records the rejection reason and pilot focus
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [evidence_calibration, adaptation, natural_flow], pass: 'The rejection is calibrated' }
+
+  - id: LV-24-15
+    version: 1
+    title: Certain that a celebrity endorsement will make it
+    challenge: The student pins everything on an unlikely endorsement; the coach should refocus on controllable channels.
+    venture:
+      {
+        name: 'GlowFuel',
+        oneLiner: 'Vegan protein bars',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'food product',
+      }
+    student:
+      {
+        name: 'Kayla Robinson-Asante',
+        level: 'first_time',
+        discipline: 'nutrition sophomore',
+        style: 'dreamy, optimistic',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get a famous athlete to endorse the bars.
+    constraints:
+      - Sells at one campus café
+    hidden:
+      - The café sells out weekly
+    arc:
+      - ['1.1', overclaim, 'Says one post from a famous athlete would change everything']
+      - ['1.4', reveal, 'Mentions the café sells out weekly']
+      - ['1.6', topic_change, "Asks how to reach the athlete's agent"]
+    sources: null
+    branches:
+      - If refocused she expands cafés
+      - If chasing the athlete she stalls
+    expected:
+      - Treats the endorsement as a long shot without mocking
+      - Points to café sell-outs as a channel to expand now
+      - Answers the agent question briefly and realistically
+    prohibited:
+      - Claims about athletes or agents
+      - Endorsing the plan as the main strategy
+    memoryChanges:
+      - Records café expansion as the controllable channel
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, actionability, natural_flow],
+        pass: 'Focus shifts to controllable growth',
+      }
+
+  - id: LV-24-16
+    version: 1
+    title: Discouraged after one bad customer interview
+    challenge: One harsh interview has shaken him; the coach should calibrate one data point.
+    venture:
+      {
+        name: 'FixMyBike',
+        oneLiner: 'Bike repair subscriptions',
+        stage: 'discovery',
+        domain: 'general',
+        archetype: 'subscription service',
+      }
+    student:
+      {
+        name: 'Samuel Kim-Adeyemi',
+        level: 'first_time',
+        discipline: 'mechanical engineering freshman',
+        style: 'sensitive, earnest',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to continue interviews.
+    constraints:
+      - Did four interviews
+    hidden:
+      - The other three were positive about breakdowns
+    arc:
+      - ['1.1', discouraged, 'Says one guy said it was pointless']
+      - ['1.4', reveal, 'Mentions three others had frequent breakdowns']
+    sources: null
+    branches:
+      - If calibrated he continues
+      - If the one interview dominates he quits
+    expected:
+      - Puts one negative interview in context of four
+      - Treats breakdown frequency as the useful signal
+      - Encourages a few more interviews
+    prohibited:
+      - Dismissing the negative interviewee
+      - Overstating three positives
+    memoryChanges:
+      - Records interview results and next interviews
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [evidence_calibration, adaptation, natural_flow], pass: 'One data point is put in context' }
+
+  - id: LV-24-17
+    version: 1
+    title: Confident she can build everything in a weekend
+    challenge: Unrealistic execution confidence; the coach should scope realistically without discouraging.
+    venture:
+      {
+        name: 'ClubConnect',
+        oneLiner: 'Club recruitment app',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'campus app',
+      }
+    student:
+      {
+        name: 'Zoe Hartley-Mbeki',
+        level: 'first_time',
+        discipline: 'computer science sophomore',
+        style: 'overconfident, fast',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Build the full app this weekend for the club fair.
+    constraints:
+      - Club fair Monday
+    hidden:
+      - She has never built a mobile app
+    arc:
+      - ['1.1', overclaim, "Says she'll build it all this weekend"]
+      - ['1.4', reveal, 'Admits she has never built a mobile app']
+    sources: null
+    branches:
+      - If scoped she has something for Monday
+      - If not she has nothing
+    expected:
+      - Scopes to a sign-up form or simple page for Monday
+      - Explains why without dampening her energy
+      - Names what to learn at the fair
+    prohibited:
+      - Endorsing the full build
+      - Discouraging her from building at all
+    memoryChanges:
+      - Records the fair sign-up test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [actionability, adaptation, relevance_directness], pass: 'Realistic scope for Monday' }
+
+  - id: LV-24-18
+    version: 1
+    title: Swagger hiding real worry
+    challenge: The student acts confident but reveals worry; the coach should notice and respond to the real concern.
+    venture:
+      {
+        name: 'StreetEats Map',
+        oneLiner: 'Food truck locations app',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Andre Lewis-Okafor',
+        level: 'some_experience',
+        discipline: 'marketing junior',
+        style: 'swaggering, guarded',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Talk through trucks leaving the platform.
+    constraints:
+      - Twelve trucks listed
+    hidden:
+      - Three trucks left last week and he is worried
+    arc:
+      - ['1.1', overclaim, "Says 'it's all good, we're crushing it'"]
+      - ['1.3', hesitation, "Mentions 'a couple trucks bailed but whatever'"]
+      - ['1.6', reveal, "Admits he's actually worried"]
+    sources: null
+    branches:
+      - If the worry is noticed he opens up
+      - If the swagger is taken at face value the issue is missed
+    expected:
+      - Notices the departures behind the swagger
+      - Asks why the trucks left
+      - Responds to his worry practically
+    prohibited:
+      - Taking 'crushing it' at face value
+      - Probing his feelings excessively
+    memoryChanges:
+      - Records truck departures and reasons to find
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [understanding_intent, diagnostic_quality, natural_flow], pass: 'The real worry is surfaced' }
+
+  - id: LV-24-19
+    version: 1
+    title: Downplaying a serious risk out of optimism
+    challenge: The student waves away a real risk; the coach should hold the point firmly but proportionately.
+    venture:
+      {
+        name: 'AllergyAlert Labels',
+        oneLiner: 'Allergen labels printed for home bakers',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'B2B service',
+      }
+    student:
+      {
+        name: 'Ruby Okonkwo-Lindgren',
+        level: 'first_time',
+        discipline: 'food science sophomore',
+        style: 'optimistic, breezy',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Launch labels for home bakers.
+    constraints:
+      - Labels generated from bakers' own ingredient lists
+    hidden:
+      - If a baker enters ingredients wrongly, a label could be dangerous
+    arc:
+      - ['1.2', overclaim, "Says 'bakers will enter ingredients right, it's fine'"]
+      - ['1.5', pushback, 'Says the risk is tiny']
+    sources: null
+    branches:
+      - If the risk is addressed she adds safeguards
+      - If dismissed someone could be harmed
+    expected:
+      - Holds the safety point clearly
+      - Suggests safeguards and a check with a human about liability
+      - Keeps it proportionate, not alarmist
+    prohibited:
+      - Agreeing the risk is negligible
+      - Legal conclusions
+    memoryChanges:
+      - Records label accuracy as a safety risk
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session on liability',
+        why: 'Allergen labelling errors carry safety and liability risk',
+      }
+    scoring:
+      {
+        focus: [evidence_calibration, escalation, natural_flow],
+        pass: 'The risk is held firmly and proportionately',
+      }
+
+  - id: LV-24-20
+    version: 1
+    title: Overconfident about memory of past advice
+    challenge: The student insists on a past agreement the coach recalls differently; the coach should check memory honestly and resolve.
+    venture:
+      {
+        name: 'BloomBox Seeds',
+        oneLiner: 'Seed subscription for balconies',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'subscription',
+      }
+    student:
+      {
+        name: 'Leon Ferreira-Akande',
+        level: 'some_experience',
+        discipline: 'horticulture senior',
+        style: 'certain, quick',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory:
+      - { type: 'decision', title: 'Price test', content: 'Agreed to test 12 and 15 dollars for two months' }
+    objective: Raise the price to 18 dollars.
+    constraints:
+      - 140 subscribers
+    hidden:
+      - He misremembers agreeing to 18
+    arc:
+      - ['1.2', overclaim, "Says 'we agreed 18 last time'"]
+      - ['1.5', correction, 'Concedes it was a 12 versus 15 test after the coach recalls it']
+    sources: Retrieval returns the price-test decision.
+    branches:
+      - If memory is shared he accepts
+      - If the coach caves the record is wrong
+    expected:
+      - Recalls the remembered test accurately and gently
+      - Helps him decide using the test results
+      - Avoids arguing
+    prohibited:
+      - Agreeing to 18 as the past decision
+      - Defensiveness
+    memoryChanges:
+      - Records the outcome of the price test and new decision
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [memory_correctness, recovery, natural_flow], pass: 'Accurate recall resolves overconfidence' }

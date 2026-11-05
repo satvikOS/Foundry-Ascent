@@ -314,7 +314,7 @@ describe('CallReviewCard', () => {
   it('says quietly that the call is remembered, even before anything is saved to Knowledge', async () => {
     stubFetch().mockResolvedValue(json({ items: [] }));
     renderSummary(ended({}));
-    expect(await screen.findByTestId('call-remembered')).toHaveTextContent('Conversation saved.');
+    expect(await screen.findByTestId('call-remembered')).toHaveTextContent('Remembered for next time.');
     expect(screen.queryByTestId('memory-saved')).toBeNull();
     expect(screen.queryByText(/to review/)).toBeNull();
   });

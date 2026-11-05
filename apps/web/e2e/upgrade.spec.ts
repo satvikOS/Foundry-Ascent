@@ -24,7 +24,7 @@ for (const [device, width, height] of [
   for (const theme of ['dark', 'light'] as const) {
     test.describe(`${device}, ${theme}: upgraded student journey`, () => {
       test.use({ storageState: FOUNDER_STATE, viewport: { width, height } });
-      test('context, student profile, reflection, memory approval, and free avatar share one venture', async ({
+      test('context, student profile, reflection, automatic memory, and free avatar share one venture', async ({
         page,
       }) => {
         test.setTimeout(120_000);
@@ -33,13 +33,14 @@ for (const [device, width, height] of [
         const briefQueries: string[] = [];
         page.on('request', (request) => {
           const u = new URL(request.url());
-          if (u.pathname.endsWith('/memory') && ['1', '3'].includes(u.searchParams.get('limit') ?? ''))
+          if (u.pathname.endsWith('/memory') && u.searchParams.get('limit') === '3')
             briefQueries.push(u.searchParams.get('limit') ?? '');
         });
         expect(briefQueries).toEqual([]);
         await page.locator('[data-slot="context-brief"] summary').click();
-        await expect.poll(() => briefQueries.length).toBe(2);
-        expect(briefQueries.sort()).toEqual(['1', '3']);
+        // One read of what the vEIR remembered: no separate check for anything awaiting approval.
+        await expect.poll(() => briefQueries.length).toBe(1);
+        expect(briefQueries).toEqual(['3']);
         await expect(page.getByRole('link', { name: 'Edit venture focus' })).toBeVisible();
         await page.screenshot({ path: `${root}/context-${device}-${theme}.png`, fullPage: true });
         await page.getByRole('link', { name: 'Edit venture focus' }).click();
@@ -106,28 +107,34 @@ for (const [device, width, height] of [
         await expect(
           page.getByRole('article', { name: 'Exchange 1' }).getByRole('button', { name: 'Copy answer' }),
         ).toBeVisible({ timeout: 30_000 });
+        // Memory is automatic: what the turn taught is kept at once, with no approval step.
         const memory = (await (
+          await page.request.get(`/api/v1/ventures/${ventureId}/memory?status=confirmed&limit=100`)
+        ).json()) as {
+          items: { id: string; origin: string; keptAutomatically?: boolean; sourceRefs: { id: string }[] }[];
+        };
+        const kept = memory.items.find(
+          (m) => m.origin === 'ai' && m.sourceRefs.some((ref) => ref.id === sessionId),
+        );
+        expect(kept, 'The actual turn kept a memory by itself').toBeTruthy();
+        if (!kept) throw new Error('No kept memory');
+        expect(kept.keptAutomatically).toBe(true);
+        const pending = (await (
           await page.request.get(`/api/v1/ventures/${ventureId}/memory?status=proposed&limit=100`)
-        ).json()) as { items: { id: string; sourceRefs: { id: string }[] }[] };
-        const proposal = memory.items.find((m) => m.sourceRefs.some((ref) => ref.id === sessionId));
-        expect(proposal, 'The actual turn proposed a memory for review').toBeTruthy();
-        if (!proposal) throw new Error('No pending memory');
-        await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?m=${proposal.id}`);
-        await expect(page.getByRole('button', { name: 'Approve memory', exact: true })).toBeVisible();
-        await page.screenshot({ path: `${root}/memory-review-${device}-${theme}.png`, fullPage: true });
+        ).json()) as { items: { origin: string; sourceRefs: { id: string }[] }[] };
+        expect(
+          pending.items.filter((m) => m.origin === 'ai' && m.sourceRefs.some((ref) => ref.id === sessionId)),
+        ).toEqual([]);
+        await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?m=${kept.id}`);
+        // The student can correct or forget it; nothing asks them to approve it.
+        await expect(page.getByRole('button', { name: 'Forget', exact: true }).first()).toBeVisible();
+        await expect(page.getByRole('button', { name: /Approve|Reject/ })).toHaveCount(0);
+        await page.screenshot({ path: `${root}/memory-kept-${device}-${theme}.png`, fullPage: true });
         expect(
           (
             await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze()
           ).violations.map((v) => v.id),
         ).toEqual([]);
-        await page.getByRole('button', { name: 'Approve memory', exact: true }).click();
-        await expect
-          .poll(
-            async () =>
-              ((await (await page.request.get(`/api/v1/memory/${proposal.id}`)).json()) as { status: string })
-                .status,
-          )
-          .toBe('confirmed');
         await page.request.post('/api/v1/calls/notice/acknowledge', { headers });
         await page.goto(`/${TENANT}/app/v/${ventureId}/c/${sessionId}?call=1`);
         const call = page.getByRole('dialog', { name: /^Call with / });

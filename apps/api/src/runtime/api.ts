@@ -4,6 +4,7 @@ import {
   type EmbodimentProvider,
   type EnvLike,
   type SpeechSynthesizer,
+  type StockVoice,
   type SttGrantIssuer,
   type VoiceProvider,
 } from '@foundry/core';
@@ -65,7 +66,8 @@ export function sttGrantsFor(env: EnvLike, config: ApiConfig): { sttGrants?: Stt
 
 /**
  * The vEIR's digital twin (docs/runbooks/avatars.md): the vendor face (`MEDIA_FACE_PROVIDER=heygen-liveavatar`) and
- * the EIRs' cloned voices (`MEDIA_VOICE_PROVIDER=elevenlabs`), each only when configured (infra `media`, off in
+ * the EIRs' cloned voices (`MEDIA_VOICE_PROVIDER=elevenlabs`) and the ElevenLabs stock voice every call speaks with
+ * (`elevenlabs-stock`, which also voices the clones; the same adapter and key), each only when configured (infra `media`, off in
  * production.json). Their API keys come from Secrets Manager on first use (the names are
  * packages/core/media-vendors.json), never at construction and never to the browser. Even wired, a face or a
  * clone is used only once the platform settings turn it on (`faces_enabled`, `cloned_voice_enabled`) and the
@@ -74,7 +76,7 @@ export function sttGrantsFor(env: EnvLike, config: ApiConfig): { sttGrants?: Stt
 export function mediaFor(
   config: ApiConfig,
   secrets: MediaSecrets = new MediaSecrets({ region: config.awsRegion }),
-): { embodiment?: EmbodimentProvider; clonedVoice?: VoiceProvider } {
+): { embodiment?: EmbodimentProvider; clonedVoice?: VoiceProvider; stockVoice?: StockVoice } {
   const face = MEDIA_VENDORS.face.heygen;
   const voice = MEDIA_VENDORS.voice.elevenlabs;
   const full = config.media.faceMode === 'full';
@@ -96,18 +98,32 @@ export function mediaFor(
           }),
         }
       : {}),
-    ...(config.media.voice === 'elevenlabs'
-      ? {
-          clonedVoice: new ElevenLabsVoice({
-            apiKey: secrets.apiKey(voice.secretName),
-            apiOrigin: voice.apiOrigin,
-            model: config.media.voiceModel,
-            usdPer1kCharacters: voice.usdPer1kCharacters,
-            zeroRetention: config.media.voiceZeroRetention,
-          }),
-        }
-      : {}),
+    ...elevenLabsFor(
+      config,
+      () =>
+        new ElevenLabsVoice({
+          apiKey: secrets.apiKey(voice.secretName),
+          apiOrigin: voice.apiOrigin,
+          model: config.media.voiceModel,
+          usdPer1kCharacters: voice.usdPer1kCharacters,
+          zeroRetention: config.media.voiceZeroRetention,
+        }),
+    ),
   };
+}
+
+/**
+ * The ElevenLabs voices of `config.media.voice`: none for `polly`; the EIRs' clones for `elevenlabs`; the clones and
+ * the stock voice every call speaks with (one adapter, one key, one connection) for `elevenlabs-stock`.
+ */
+function elevenLabsFor(
+  config: ApiConfig,
+  make: () => VoiceProvider,
+): { clonedVoice?: VoiceProvider; stockVoice?: StockVoice } {
+  if (config.media.voice === 'polly') return {};
+  const provider = make();
+  if (config.media.voice === 'elevenlabs' || config.media.voiceId === null) return { clonedVoice: provider };
+  return { clonedVoice: provider, stockVoice: { provider, voiceRef: config.media.voiceId } };
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   HeygenLiveAvatarFace,
   LIVEAVATAR_FULL_MAX_SECONDS,
   LIVEAVATAR_SANDBOX_AVATAR,
+  LIVEAVATAR_SANDBOX_MAX_SECONDS,
 } from '../adapters/heygen-liveavatar.js';
 import { type ApiConfig } from '../config.js';
 
@@ -184,6 +185,13 @@ interface ProbeSession {
  *   GET  credits                   `GET /v1/users/credits`: the vendor's status and code and `credits_left`
  *   POST sessions                  a raw SANDBOX session ({mode: full|lite, maxSeconds}) for the lab's own page to
  *                                  command: the LiveKit URL and client token (never the LITE control channel)
+ *   POST lite-sessions             a raw LITE SANDBOX session ({maxSeconds}) for the lab's LITE protocol probe
+ *                                  (apps/web/e2e/lab/lite-probe.lab.ts), which drives the vendor's `ws_url` itself: the
+ *                                  LiveKit URL and client token, `controlUrl` (that `ws_url`, a ~1-minute free sandbox
+ *                                  session's socket, which the probe keeps in memory and never writes), the room's
+ *                                  agent token (the probe's room-tap control, also never written), and the token
+ *                                  and start responses' shape: status, envelope code, and each `data` field's NAME
+ *                                  and JSON type (never a value)
  *   GET  sessions/:id/transcript   the vendor's transcript of a probe session (synthetic text the lab sent)
  *   POST sessions/:id/stop         stops a probe session
  *
@@ -233,6 +241,7 @@ export class LabFaceProbe {
     if (method === 'GET' && route === 'vendor-calls') return json(200, { items: [...this.#calls] });
     if (method === 'GET' && route === 'credits') return this.#credits();
     if (method === 'POST' && route === 'sessions') return this.#open(request);
+    if (method === 'POST' && route === 'lite-sessions') return this.#openLite(request);
     const match = /^sessions\/([A-Za-z0-9_-]{1,200})\/(transcript|stop)$/.exec(route);
     const session = match?.[1] === undefined ? undefined : this.#sessions.get(match[1]);
     if (match === null || session === undefined) return notFound();
@@ -319,6 +328,160 @@ export class LabFaceProbe {
       expiresAt: started.browser.expiresAt,
     });
   }
+
+  /**
+   * A raw LITE sandbox session for the LITE protocol probe: the same token request as the app's LITE face (the
+   * adapter's own `tokenBody`, sandbox avatar, sandbox length) and the start, made here so the probe can report the
+   * responses' shape (L1) and hand the page the control socket (`ws_url`) it drives. A started session that cannot be
+   * used is stopped at once.
+   */
+  async #openLite(request: Request): Promise<Response> {
+    let body: { maxSeconds?: unknown };
+    try {
+      body = (await request.json()) as typeof body;
+    } catch {
+      return json(400, { error: 'invalid_body' });
+    }
+    const maxSeconds = typeof body.maxSeconds === 'number' ? Math.floor(body.maxSeconds) : NaN;
+    if (!(maxSeconds >= 10 && maxSeconds <= LIVEAVATAR_SANDBOX_MAX_SECONDS)) {
+      return json(400, { error: 'invalid_body' });
+    }
+    if (this.#sessions.size >= PROBE_SESSIONS_MAX) return json(429, { error: 'too_many_sessions' });
+    const face = new HeygenLiveAvatarFace({
+      apiKey: this.#apiKey,
+      apiOrigin: this.#apiOrigin,
+      sandbox: true,
+      mode: 'lite',
+      adminsOnly: true,
+      usdPerMinute: 0,
+      fetch: this.#fetch,
+    });
+    const tokenBody = face.tokenBody({
+      callId: randomUUID(),
+      personaId: randomUUID(),
+      avatarRef: LIVEAVATAR_SANDBOX_AVATAR,
+      maxSeconds,
+      requestId: `lab-${randomUUID()}`,
+    });
+    const apiKey = await this.#apiKey();
+    const token = await this.#vendorPost('/v1/sessions/token', tokenBody, { 'x-api-key': apiKey });
+    const tokenShape = {
+      status: token.status,
+      code: token.code,
+      ms: token.ms,
+      fields: fieldShape(token.data),
+    };
+    const sessionToken = stringField(token.data, 'session_token');
+    if ((token.status ?? 599) >= 300 || !SUCCESS.has(token.code ?? -1) || sessionToken === null) {
+      return json(502, { error: 'token', shape: { token: tokenShape } });
+    }
+    const start = await this.#vendorPost('/v1/sessions/start', undefined, {
+      authorization: `Bearer ${sessionToken}`,
+    });
+    const startShape = {
+      status: start.status,
+      code: start.code,
+      ms: start.ms,
+      fields: fieldShape(start.data),
+      maxSessionDuration: numberField(start.data, 'max_session_duration'),
+    };
+    const sessionId = stringField(start.data, 'session_id');
+    const url = stringField(start.data, 'livekit_url');
+    const clientToken = stringField(start.data, 'livekit_client_token');
+    const controlUrl = stringField(start.data, 'ws_url');
+    if (
+      (start.status ?? 599) >= 300 ||
+      !SUCCESS.has(start.code ?? -1) ||
+      sessionId === null ||
+      url === null ||
+      clientToken === null ||
+      controlUrl === null
+    ) {
+      if (sessionId !== null) {
+        await face
+          .end({ sessionRef: sessionId, control: null, requestId: `lab-${randomUUID()}` })
+          .catch(() => undefined);
+      }
+      return json(502, { error: 'start', shape: { token: tokenShape, start: startShape } });
+    }
+    this.#sessions.set(sessionId, { face, ref: sessionId, control: controlUrl });
+    return json(201, {
+      sessionId,
+      url,
+      token: clientToken,
+      controlUrl,
+      // The room's agent token (null when the vendor gave none), for the probe's positive control only: a second
+      // participant that publishes one marker data message, so the viewer's room tap is shown to hear room data.
+      agentToken: stringField(start.data, 'livekit_agent_token'),
+      shape: { token: tokenShape, start: startShape },
+    });
+  }
+
+  /** One POST to the vendor: its status, envelope code and `data` (for the caller to reduce), and how long it took. */
+  async #vendorPost(
+    path: string,
+    body: unknown,
+    headers: Record<string, string>,
+  ): Promise<{ status: number | null; code: number | null; data: unknown; ms: number }> {
+    const started = Date.now();
+    let response: Response;
+    try {
+      response = await this.#fetch(`${this.#apiOrigin}${path}`, {
+        method: 'POST',
+        headers: { accept: 'application/json', 'content-type': 'application/json', ...headers },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+      });
+    } catch {
+      return { status: null, code: null, data: null, ms: Date.now() - started };
+    }
+    let envelope: { code?: unknown; data?: unknown } | null;
+    try {
+      envelope = (await response.json()) as typeof envelope;
+    } catch {
+      envelope = null;
+    }
+    const code = envelope?.code;
+    return {
+      status: response.status,
+      code: typeof code === 'number' && Number.isInteger(code) ? code : null,
+      data: envelope?.data ?? null,
+      ms: Date.now() - started,
+    };
+  }
+}
+
+/** The vendor's success codes (the adapter accepts the same two). */
+const SUCCESS = new Set([100, 1000]);
+/** A field name the probe may report: a plain identifier (anything else is counted, never named). */
+const FIELD_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+const FIELDS_KEPT = 40;
+
+/**
+ * The shape of a vendor response's `data`: each field's name and JSON type (`string`, `number`, `boolean`, `null`,
+ * `array`, `object`), never a value. A name that is not a plain identifier is left out; so is anything past the
+ * first {@link FIELDS_KEPT} fields.
+ */
+export function fieldShape(data: unknown): Record<string, string> {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) return {};
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(data as Record<string, unknown>).slice(0, FIELDS_KEPT)) {
+    if (!FIELD_NAME.test(name)) continue;
+    out[name] = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+  }
+  return out;
+}
+
+function stringField(data: unknown, name: string): string | null {
+  const value =
+    data !== null && typeof data === 'object' ? (data as Record<string, unknown>)[name] : undefined;
+  return typeof value === 'string' && value !== '' ? value : null;
+}
+
+function numberField(data: unknown, name: string): number | null {
+  const value =
+    data !== null && typeof data === 'object' ? (data as Record<string, unknown>)[name] : undefined;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function json(status: number, body: unknown): Response {

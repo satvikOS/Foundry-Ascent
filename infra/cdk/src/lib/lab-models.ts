@@ -23,6 +23,11 @@ export const LAB_MODELS_FILE = join(REPO_ROOT, 'ops', 'lab', 'models.json');
 export interface LabModels {
   readonly simulator: readonly string[];
   readonly judge: readonly string[];
+  /**
+   * The live evaluation's own candidates (`live` in models.json): a student simulator and a judge from model
+   * families other than the app's, falling back to Nova. Empty when the file has no `live` section.
+   */
+  readonly live: { readonly simulator: readonly string[]; readonly judge: readonly string[] };
   /** Foundation-model id → USD per million input / output tokens (what the lab meters its own calls at). */
   readonly usdPerMillionTokens: Readonly<Record<string, { readonly input: number; readonly output: number }>>;
 }
@@ -51,6 +56,16 @@ export function parseLabModels(raw: unknown): LabModels {
   const root = raw as Record<string, unknown>;
   const simulator = modelList(root.simulator, '$.simulator');
   const judge = modelList(root.judge, '$.judge');
+  let live: LabModels['live'] = { simulator: [], judge: [] };
+  if (root.live !== undefined) {
+    if (typeof root.live !== 'object' || root.live === null || Array.isArray(root.live))
+      fail('$.live', 'must be an object');
+    const l = root.live as Record<string, unknown>;
+    live = {
+      simulator: modelList(l.simulator, '$.live.simulator'),
+      judge: modelList(l.judge, '$.live.judge'),
+    };
+  }
   const prices = root.usdPerMillionTokens;
   if (typeof prices !== 'object' || prices === null || Array.isArray(prices))
     fail('$.usdPerMillionTokens', 'must be an object');
@@ -69,11 +84,11 @@ export function parseLabModels(raw: unknown): LabModels {
     }
     usdPerMillionTokens[id] = { input: p.input, output: p.output };
   }
-  for (const id of [...simulator, ...judge]) {
+  for (const id of [...simulator, ...judge, ...live.simulator, ...live.judge]) {
     if (!Object.hasOwn(usdPerMillionTokens, foundationModelId(id)))
       fail('$.usdPerMillionTokens', `has no price for ${foundationModelId(id)}`);
   }
-  return { simulator, judge, usdPerMillionTokens };
+  return { simulator, judge, live, usdPerMillionTokens };
 }
 
 export const LAB_MODELS: LabModels = parseLabModels(
@@ -82,10 +97,10 @@ export const LAB_MODELS: LabModels = parseLabModels(
 
 /**
  * Every Bedrock resource the lab invokes: the app's effective reasoning and embeddings models (it runs the app
- * with the production model configuration) and the lab's simulator and judge models.
+ * with the production model configuration) and the lab's simulator and judge models, the live evaluation's included.
  */
 export function conversationLabAccess(app: EffectiveModels, lab: LabModels): BedrockRuntimeAccess {
-  const own = [...lab.simulator, ...lab.judge];
+  const own = [...new Set([...lab.simulator, ...lab.judge, ...lab.live.simulator, ...lab.live.judge])];
   const parts = [reasoningAccess(app), embeddingsAccess(app)];
   const ownAccess: BedrockRuntimeAccess = {
     foundationModels: own.map(foundationModelId),

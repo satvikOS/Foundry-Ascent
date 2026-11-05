@@ -450,6 +450,142 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
             + (f"; error {injection['error']}" if injection.get("error") else "")
         )
         out.append("")
+    out.extend(_lite_probe_tables(face.get("lite_probe") or {}))
+    return out
+
+
+def _yes(value: Any) -> str:
+    return "confirmed" if value is True else "REFUTED" if value is False else "not measured"
+
+
+def _lite_probe_tables(probe: Mapping[str, Any]) -> list[str]:
+    """The lite-probe arm (conversation_lab/lite_probe.py public_lite_probe): the design's hypotheses, then L1-L10."""
+    if not probe:
+        return []
+    from conversation_lab.lite_probe import HYPOTHESES
+
+    out = [
+        "LITE protocol probe (raw LITE sandbox sessions, ws_url driven by the lab's page with synthetic speech): "
+        f"{probe.get('confirmed')} hypotheses confirmed, {probe.get('refuted')} refuted, "
+        f"{probe.get('not_measured')} not measured"
+        + (f"; error {probe['error']}" if probe.get("error") else "")
+        + ".",
+        "",
+        "| Hypothesis | Result |",
+        "| --- | --- |",
+    ]
+    graded = probe.get("hypotheses") or {}
+    for key, text in HYPOTHESES:
+        out.append(f"| {text} | {_yes(graded.get(key))} |")
+    out.append("")
+    instruments = probe.get("instruments") or {}
+    l1 = probe.get("l1") or {}
+    start = l1.get("start") or {}
+    token = l1.get("token") or {}
+    ws = l1.get("ws_url") or {}
+    l2 = probe.get("l2") or {}
+    s1 = probe.get("s1") or {}
+    s2 = probe.get("s2") or {}
+    s3 = probe.get("s3") or {}
+    l3, l4, l5, l8 = (s1.get(k) or {} for k in ("l3", "l4", "l5", "l8"))
+    l6, l7 = (s2.get(k) or {} for k in ("l6", "l7"))
+    l9, l10 = (s3.get(k) or {} for k in ("l9", "l10"))
+    turn = l5.get("turn_as_one_utterance") or {}
+    data, track, motion = (l9.get(k) or {} for k in ("data", "track", "motion"))
+    committed = l7.get("committed_then_closed") or {}
+    uncommitted = l7.get("uncommitted_then_closed") or {}
+    room = s3.get("room") or {}
+    out.append(
+        f"- Instruments ok {instruments.get('ok')} (synthetic speech RMS {instruments.get('synth_rms')}, 1 s chunk "
+        f"{instruments.get('chunk_bytes_1s')} bytes, meter onset {instruments.get('meter_onset')}, motion moving "
+        f"{instruments.get('motion_moving')} vs still {instruments.get('motion_still')}, room data tap "
+        f"{instruments.get('room_tap')})"
+    )
+    out.append(
+        f"- L1: sessions started {l1.get('sessions_started')} of {l1.get('sessions_requested')}; token status "
+        f"{token.get('status')} codes {token.get('codes')} fields {sorted((token.get('fields') or {}).keys())}; start "
+        f"status {start.get('status')} codes {start.get('codes')} fields {sorted((start.get('fields') or {}).keys())} "
+        f"(documented but missing {start.get('documented_missing')}, undocumented {start.get('undocumented')}); "
+        f"max_session_duration {start.get('max_session_duration')}; token {_p(token.get('ms'))}, start {_p(start.get('ms'))}"
+    )
+    out.append(
+        f"- L1 ws_url: hosts {ws.get('hosts')} over {ws.get('sessions_with_host')} sessions (id-like labels masked: "
+        f"{ws.get('host_has_id_label')}), the same in every session {ws.get('same_host_all_sessions')}, vendor "
+        f"domain {ws.get('vendor_domain')}; schemes {ws.get('schemes')}, ports {ws.get('ports') or '-'}, paths "
+        f"{ws.get('path_shapes')}, query keys {ws.get('query_keys')}"
+    )
+    out.append(
+        f"- L2: socket open {_p(l2.get('open_ms'))}; open → session.state_updated connected "
+        f"{_p(l2.get('open_to_connected_ms'))}; connected events per socket {l2.get('connected_events_per_socket')}; "
+        f"text frames {l2.get('text_frames')}, binary {l2.get('binary_frames')}, untyped {l2.get('untyped_frames')}; "
+        f"states {l2.get('session_states')}; event types {l2.get('event_types')}"
+    )
+    out.append(
+        f"- L3: acks complete {l3.get('acks_complete')}; appended sources {l3.get('appended_sources')}, committed "
+        f"sources {l3.get('committed_sources')}; by ids {l3.get('by_ids')}; first chunk → appended "
+        f"{_p(l3.get('first_chunk_to_appended_ms'))}; speak_end → committed {_p(l3.get('end_to_committed_ms'))}; "
+        f"unattributed {l3.get('unattributed') or '-'}"
+    )
+    out.append(
+        f"- L4: first chunk → speak_started {_p(l4.get('to_started_ms'))}; → sound on the avatar's track "
+        f"{_p(l4.get('to_audio_ms'))}; speak_started → sound {_p(l4.get('started_to_audio_ms'))}; → speak_ended "
+        f"{_p(l4.get('to_ended_ms'))}; by first chunk (ms) {l4.get('by_first_chunk_ms')}; speak events reaching "
+        f"the room's viewer {l4.get('room_speak_events')} (room event types {l4.get('room_event_types')}; room tap "
+        f"control {l4.get('room_tap_control')})"
+    )
+    out.append(
+        f"- L5: back to back {l5.get('behaviour')}, gap {l5.get('gap_ms')} ms (second sent "
+        f"{l5.get('second_sent_after_first_started_ms')} ms after the first started; the first played "
+        f"{l5.get('first_played_ms')} of {l5.get('first_audio_ms')} ms, speak_started → speak_ended); a turn as one utterance with a "
+        f"1.3 s pause: speak_started {turn.get('speak_started')}, speak_ended {turn.get('speak_ended')}, starvation "
+        f"{turn.get('starvation')}, errors {turn.get('errors')}, sounds on the track {turn.get('track_sounds')}"
+    )
+    out.append(
+        f"- L6: second socket closed the first {l6.get('first_socket_closed')} (code {l6.get('first_close_code')}, "
+        f"{l6.get('first_closed_after_second_opened_ms')} ms after it opened); second connected "
+        f"{l6.get('second_connected')}; committed on the second {l6.get('committed_on_second')}; speak_started on "
+        f"{l6.get('speak_started_socket')}, speak_ended on {l6.get('speak_ended_socket')}; sound before the commit "
+        f"{l6.get('sound_before_commit')}; played {l6.get('track_audio_ms')} of {l6.get('audio_ms')} ms; first socket "
+        f"closed {l6.get('replaced_after_onset_ms')} ms after the utterance's first sound (still open "
+        f"{l6.get('open_when_replaced')}); reopened "
+        f"after a close {l6.get('reopened_after_close')}; disconnected states {l6.get('disconnected_states')}"
+    )
+    out.append(
+        f"- L7: closed right after speak_end: played {committed.get('track_audio_ms')} of "
+        f"{committed.get('audio_ms')} ms (played out {committed.get('played_out')}), events on the next socket "
+        f"{committed.get('events_on_next_socket')}; closed uncommitted: played {uncommitted.get('played')} "
+        f"({uncommitted.get('track_audio_ms')} of {uncommitted.get('audio_ms')} ms)"
+    )
+    out.append(
+        f"- L8: started before {l8.get('started_before')}; speak_interrupted {l8.get('interrupted_event')} "
+        f"(source {l8.get('interrupted_source')}) after {l8.get('to_interrupted_ms')} ms; audio_buffer_cleared "
+        f"{l8.get('cleared_event')} (source {l8.get('cleared_source')}) after {l8.get('to_cleared_ms')} ms; "
+        f"speak_ended after {l8.get('speak_ended_after')}; silence on the track after {l8.get('to_silence_ms')} ms"
+    )
+    out.append(
+        f"- L9: viewer token can publish {room.get('can_publish')} (data {room.get('can_publish_data')}, sources "
+        f"{room.get('can_publish_sources')}); data published {data.get('published')} (refused {data.get('refused')}): "
+        f"sounds {data.get('track_sounds')}, speak events {data.get('speak_events')}; audio track published "
+        f"{track.get('published')}{' (' + str(track.get('error')) + ')' if track.get('error') else ''}: sounds "
+        f"{track.get('track_sounds')}, speak events {track.get('speak_events')}, lip-sync {track.get('lip_sync')}; "
+        f"motion (mean frame difference) idle {motion.get('idle')}, socket utterance {motion.get('socket_utterance')} "
+        f"(x{motion.get('socket_utterance_ratio')}), room track {motion.get('room_track')} "
+        f"(x{motion.get('room_track_ratio')}), {motion.get('video_frames')} video frames; positive control (the "
+        f"socket utterance) heard {l9.get('control_heard')}, speak events {l9.get('control_speak_events')}, ok "
+        f"{l9.get('control_ok')}; room track silent and unannounced {track.get('silent_and_unannounced')}"
+    )
+    attempts = "; ".join(
+        f"{a.get('where')} connected {a.get('connected')} (close {a.get('close_code')}, header ok "
+        f"{a.get('origin_header_ok')})"
+        for a in l10.get("attempts") or []
+    )
+    out.append(
+        f"- L10 ({l10.get('production_origin_source')} production origin): browser at the production origin "
+        f"accepted {l10.get('browser_production_accepted')}, at localhost {l10.get('browser_local_accepted')}; Node "
+        f"without Origin {l10.get('node_no_origin_accepted')}, production {l10.get('node_production_accepted')}, "
+        f"foreign {l10.get('node_foreign_accepted')}; Origin checked {l10.get('origin_checked')}. {attempts or '-'}"
+    )
+    out.append("")
     return out
 
 

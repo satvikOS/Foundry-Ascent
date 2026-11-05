@@ -1,0 +1,1015 @@
+family: 26
+slug: voice
+scenarios:
+  - id: LV-26-01
+    version: 1
+    title: Barging in while the coach is mid-sentence
+    challenge: On a call the student interrupts; the coach should stop, address the interruption, and not resume the stale answer.
+    venture:
+      {
+        name: 'SoundSleep Pods',
+        oneLiner: 'Nap pods for hospital staff rooms',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'workplace hardware',
+      }
+    student:
+      {
+        name: 'Imani Odhiambo-Hart',
+        level: 'some_experience',
+        discipline: 'nursing MBA student',
+        style: 'quick speaker, interrupts when she gets it',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 9, channel: call }
+    priorMemory: []
+    objective: Decide which hospital unit to pilot with.
+    constraints:
+      - Two units interested
+    hidden:
+      - The ICU unit has a champion; the ER does not
+    arc:
+      - ['1.2', asks_direct, 'Asks which unit to start with']
+      - ['1.3', interrupt, "Interrupts mid-answer: 'oh wait, the ICU has a champion'"]
+      - ['1.6', backchannel, "Says 'mm-hm, right' while the coach speaks"]
+    sources: null
+    branches:
+      - If the coach yields it answers the new point
+      - If it continues the stale answer she repeats herself
+    expected:
+      - Yields to the interruption and responds to the ICU champion point
+      - Does not resume the cut-off answer verbatim
+      - Treats the backchannel as listening, not a new question
+    prohibited:
+      - Resuming the stale reply after the interruption
+      - Spoken replies formatted with bullets or headings
+    memoryChanges:
+      - Records the ICU champion and pilot choice
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [voice_turn_taking, natural_flow, understanding_intent], pass: 'Clean yielding to barge-in' }
+
+  - id: LV-26-02
+    version: 1
+    title: Long pauses while thinking aloud
+    challenge: The student pauses mid-thought; the coach should wait and respond to the complete thought.
+    venture:
+      {
+        name: 'TrailBlaze Maps',
+        oneLiner: 'Offline trail maps for hikers',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Ezra Whitehorse-Lindqvist',
+        level: 'first_time',
+        discipline: 'geography junior',
+        style: 'slow speaker, long pauses',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 9, channel: call }
+    priorMemory: []
+    objective: Talk through who would pay for offline maps.
+    constraints:
+      - Free alternatives exist
+    hidden:
+      - Search-and-rescue volunteers asked for his maps
+    arc:
+      - ['1.2', pause, "Says 'so the thing is... um...' and pauses"]
+      - ['1.3', reveal, "Continues: 'search and rescue folks asked for them'"]
+      - ['1.6', pause, 'Pauses again before a question']
+    sources: null
+    branches:
+      - If the coach waits he finishes his thought
+      - If it jumps in he loses his train of thought
+    expected:
+      - Responds to the completed thought about search-and-rescue
+      - Keeps spoken turns short
+      - Avoids filling pauses with long monologues
+    prohibited:
+      - Responding to the fragment as if complete
+      - Lists in spoken replies
+    memoryChanges:
+      - Records search-and-rescue interest
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [voice_turn_taking, understanding_intent, natural_flow], pass: 'Patience with pauses' }
+
+  - id: LV-26-03
+    version: 1
+    title: Self-corrections mid-sentence
+    challenge: The student corrects herself while speaking; the coach should use the corrected version.
+    venture:
+      {
+        name: 'Petal Press',
+        oneLiner: 'Pressed-flower phone cases',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'craft goods',
+      }
+    student:
+      {
+        name: 'Chloe Nakamura-Okafor',
+        level: 'first_time',
+        discipline: 'art sophomore',
+        style: 'fast speaker, self-corrects often',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 8, channel: call }
+    priorMemory: []
+    objective: Work out her margin per phone case by voice.
+    constraints:
+      - Sells online and at markets
+    hidden:
+      - Price is 28 dollars, not 38
+    arc:
+      - ['1.2', self_correction, "Says 'we sell them for thirty-eight, no sorry, twenty-eight'"]
+      - ['1.5', self_correction, "Says 'cost is about ten, well, twelve with shipping'"]
+    sources: null
+    branches:
+      - If corrections are used the maths is right
+      - If the first figures are used it's wrong
+    expected:
+      - Uses 28 and 12 as the corrected figures
+      - Gives the margin in a short spoken sentence
+      - Avoids reading out a table
+    prohibited:
+      - Using 38 or 10
+      - Lists or markdown
+    memoryChanges:
+      - Records price 28 and cost 12
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [understanding_intent, voice_turn_taking, recovery], pass: 'Self-corrections are honoured' }
+
+  - id: LV-26-04
+    version: 1
+    title: Backchannels mistaken for answers
+    challenge: The student's 'yeah' and 'uh-huh' are listening noises; the coach should not treat them as agreement to a question it asked.
+    venture:
+      {
+        name: 'HomeHelp Hub',
+        oneLiner: 'Handyman booking for seniors',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'services marketplace',
+      }
+    student:
+      {
+        name: 'Raymond Achterberg-Osei',
+        level: 'some_experience',
+        discipline: "gerontology master's student",
+        style: "says 'yeah yeah' a lot while listening",
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 9, channel: call }
+    priorMemory: []
+    objective: Decide whether to require background checks for handymen.
+    constraints:
+      - Costs money per check
+    hidden:
+      - He hasn't actually decided
+    arc:
+      - ['1.3', backchannel, "Says 'yeah, yeah' while the coach is explaining"]
+      - ['1.5', reveal, "Says 'wait, I haven't decided on checks yet'"]
+    sources: null
+    branches:
+      - If backchannels are read correctly the coach asks for his decision
+      - If taken as agreement it assumes a decision
+    expected:
+      - Treats backchannels as listening
+      - Checks his actual decision on background checks
+      - Keeps spoken replies concise
+    prohibited:
+      - Assuming agreement from 'yeah'
+      - Legal requirements for background checks
+    memoryChanges:
+      - Records the open background-check decision
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [voice_turn_taking, understanding_intent, natural_flow],
+        pass: 'Backchannels are read correctly',
+      }
+
+  - id: LV-26-05
+    version: 1
+    title: A noisy line with a misheard number
+    challenge: Transcription garbles a number; the coach should confirm the critical number before relying on it.
+    venture:
+      {
+        name: 'CampusCrate Storage',
+        oneLiner: 'Summer storage pickup',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'logistics service',
+      }
+    student:
+      {
+        name: 'Diego Fuentes-Mbeki',
+        level: 'first_time',
+        discipline: 'business sophomore, calling from a bus',
+        style: 'loud background, cut-off words',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 8, channel: call }
+    priorMemory: []
+    objective: Price storage per box.
+    constraints:
+      - Storage unit rent fixed
+    hidden:
+      - He said fifty boxes; the transcript says fifteen
+    arc:
+      - ['1.2', incomplete, "Says 'we have fif... boxes booked' with noise"]
+      - ['1.4', correction, "Clarifies 'fifty, five-zero'"]
+    sources: null
+    branches:
+      - If confirmed pricing is right
+      - If fifteen is assumed his storage price is far too high
+    expected:
+      - Confirms the number briefly before calculating
+      - Uses fifty once clarified
+      - Keeps replies short for a noisy call
+    prohibited:
+      - Long confirmations of every detail
+      - Calculating on an unconfirmed number
+    memoryChanges:
+      - Records fifty boxes booked
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [understanding_intent, voice_turn_taking, recovery], pass: 'The critical number is confirmed' }
+
+  - id: LV-26-06
+    version: 1
+    title: Rapid consecutive interruptions
+    challenge: The student interrupts several times in a row; the coach should keep each reply short and follow the latest point.
+    venture:
+      {
+        name: 'FlashFit',
+        oneLiner: 'Ten-minute workouts in office lobbies',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'corporate wellness',
+      }
+    student:
+      {
+        name: 'Jasmine Kariuki-Lindgren',
+        level: 'some_experience',
+        discipline: 'kinesiology senior',
+        style: 'energetic, interrupts repeatedly',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 10, channel: call }
+    priorMemory: []
+    objective: Plan a pilot with one office.
+    constraints:
+      - Office manager wants a proposal
+    hidden:
+      - The manager cares most about no sweating in work clothes
+    arc:
+      - ['1.2', interrupt, 'Interrupts to add that the manager is busy']
+      - ['1.3', interrupt, "Interrupts again: 'oh and no sweating, that's key'"]
+      - ['1.4', interrupt, "Interrupts: 'so what should the proposal say?'"]
+    sources: null
+    branches:
+      - If replies stay short she gets an answer
+      - If replies run long she keeps cutting in
+    expected:
+      - Keeps each reply short
+      - Follows the latest point each time
+      - Answers the proposal question with the no-sweat angle
+    prohibited:
+      - Long replies that invite more interruptions
+      - Continuing earlier answers after interruptions
+    memoryChanges:
+      - Records the no-sweat requirement
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [voice_turn_taking, natural_flow, relevance_directness],
+        pass: 'Short turns that track rapid interruptions',
+      }
+
+  - id: LV-26-07
+    version: 1
+    title: Interrupting right as the coach starts speaking
+    challenge: The interruption lands at the very start of a reply; the coach should drop that reply and respond to the new content.
+    venture:
+      {
+        name: 'QuietCommute Audio',
+        oneLiner: 'Noise-cancelling earbuds for commuters',
+        stage: 'idea',
+        domain: 'hardware',
+        archetype: 'consumer electronics',
+      }
+    student:
+      {
+        name: 'Tomas Bergstrom-Adeyemi',
+        level: 'first_time',
+        discipline: 'electrical engineering sophomore',
+        style: 'eager, jumps in early',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 8, channel: call }
+    priorMemory: []
+    objective: Decide whether to compete with big brands.
+    constraints:
+      - No manufacturing partner
+    hidden:
+      - His real angle is earbuds for small ears
+    arc:
+      - ['1.2', asks_direct, 'Asks how to compete with big brands']
+      - ['1.3', interrupt, "Jumps in as the coach starts: 'actually it's for small ears'"]
+    sources: null
+    branches:
+      - If the coach pivots to small ears it helps
+      - If it continues the brand answer he repeats
+    expected:
+      - Drops the started reply and engages the small-ears angle
+      - Keeps spoken turns brief
+      - Asks one question about who has small ears
+    prohibited:
+      - Finishing the original answer
+      - Asking about ear size, price and battery all at once
+    memoryChanges:
+      - Records the small-ears niche
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [voice_turn_taking, understanding_intent, natural_flow], pass: 'Early interruption handled' }
+
+  - id: LV-26-08
+    version: 1
+    title: A call that should sound like a person, not a report
+    challenge: The coach's spoken reply should be conversational with no headings, lists, or written-style structure.
+    venture:
+      {
+        name: 'StoryTime Radio',
+        oneLiner: 'Bedtime story podcast for kids',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'media',
+      }
+    student:
+      {
+        name: 'Grace Okonkwo-Fairweather',
+        level: 'first_time',
+        discipline: 'media studies junior',
+        style: 'warm, conversational',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 9, channel: call }
+    priorMemory: []
+    objective: Decide how to monetise the podcast.
+    constraints:
+      - 2,000 weekly listens
+    hidden:
+      - Parents email asking for printed books
+    arc:
+      - ['1.2', asks_direct, "Asks for 'all the ways to make money'"]
+      - ['1.5', reveal, 'Mentions parents asking for printed books']
+    sources: null
+    branches:
+      - If spoken naturally she engages
+      - If read like a list it sounds robotic
+    expected:
+      - Speaks naturally without enumerated lists
+      - Focuses on the printed-book signal
+      - Keeps it to a few sentences
+    prohibited:
+      - Reading out a numbered list of monetisation options
+      - Markdown
+    memoryChanges:
+      - Records printed-book requests
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [voice_turn_taking, natural_flow, relevance_directness],
+        pass: 'Spoken, human-sounding replies',
+      }
+
+  - id: LV-26-09
+    version: 1
+    title: Switching from typing to a call mid-topic
+    challenge: The student moves from chat to a call; the coach should continue the topic naturally in spoken form.
+    venture:
+      {
+        name: 'SnapTutor',
+        oneLiner: 'Homework help via photos',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'edtech',
+      }
+    student:
+      {
+        name: 'Ahmed Siddiqui-Holm',
+        level: 'some_experience',
+        discipline: "education technology master's student",
+        style: 'prefers talking for complex topics',
+      }
+    purpose: chat then call
+    sessions:
+      - { gap: 0, turns: 4, channel: chat }
+      - { gap: 1, turns: 6, channel: call }
+      - { gap: 3, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Decide on a school pilot structure.
+    constraints:
+      - Two schools interested
+    hidden:
+      - Teachers worry about cheating
+    arc:
+      - ['1.2', reveal, 'Types that teachers worry about cheating']
+      - ['2.1', resume, "On the call says 'so, the cheating thing'"]
+      - ['2.4', interrupt, 'Interrupts with a pilot idea']
+      - ['3.1', asks_direct, 'Types asking for the pilot plan in writing']
+    sources: null
+    branches:
+      - If context flows the call is productive
+      - If the call restarts he repeats himself
+    expected:
+      - Continues the cheating topic on the call without recap
+      - Uses spoken style on the call and written style in chat
+      - Provides the pilot plan in chat afterward
+    prohibited:
+      - Asking him to repeat the cheating concern on the call
+      - Lists in the spoken replies
+    memoryChanges:
+      - Records the pilot structure
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [voice_turn_taking, memory_correctness, adaptation], pass: 'Channel switch with continuity' }
+
+  - id: LV-26-10
+    version: 1
+    title: Talking over the coach to say she agrees already
+    challenge: The student cuts in to signal agreement; the coach should stop explaining and move on.
+    venture:
+      {
+        name: 'LeafLoop Compost',
+        oneLiner: 'Compost pickup for apartments',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'green service',
+      }
+    student:
+      {
+        name: 'Mia Oyelaran-Christiansen',
+        level: 'some_experience',
+        discipline: 'environmental studies senior',
+        style: 'impatient with explanations',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 8, channel: call }
+    priorMemory: []
+    objective: Get to the pricing decision fast.
+    constraints:
+      - 60 households signed up
+    hidden:
+      - She already understands the economics
+    arc:
+      - ['1.3', interrupt, "Cuts in: 'yep, got it, I agree, next?'"]
+      - ['1.5', asks_direct, 'Asks what to charge']
+    sources: null
+    branches:
+      - If the coach moves on she gets to pricing
+      - If it keeps explaining she gets annoyed
+    expected:
+      - Stops explaining and moves on immediately
+      - Answers the pricing question concisely
+      - Avoids re-explaining
+    prohibited:
+      - Finishing the explanation after she agrees
+      - Long spoken turns
+    memoryChanges:
+      - Records the pricing decision
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [voice_turn_taking, non_redundancy, natural_flow],
+        pass: 'The coach moves on when she signals agreement',
+      }
+
+  - id: LV-26-11
+    version: 1
+    title: Asking the coach to slow down
+    challenge: The student finds the speech too fast or dense; the coach should shorten sentences and check in.
+    venture:
+      {
+        name: 'FarmFresh Lockers',
+        oneLiner: 'Farm produce lockers at train stations',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'retail hardware',
+      }
+    student:
+      {
+        name: 'Josef Nowak-Mensah',
+        level: 'first_time',
+        discipline: 'agricultural economics sophomore, English is his third language',
+        style: 'careful listener',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 8, channel: call }
+    priorMemory: []
+    objective: Understand locker economics.
+    constraints:
+      - One station interested
+    hidden:
+      - He needs shorter sentences
+    arc:
+      - ['1.2', asks_direct, "Says 'please, slower, shorter'"]
+      - ['1.5', asks_direct, 'Asks to repeat the main point']
+    sources: null
+    branches:
+      - If sentences shorten he follows
+      - If not he gets lost
+    expected:
+      - Uses shorter sentences for the rest of the call
+      - Repeats the main point simply when asked
+      - Avoids idioms
+    prohibited:
+      - Long dense sentences after his request
+      - Condescension
+    memoryChanges:
+      - Records his preference for shorter spoken sentences
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [adaptation, voice_turn_taking, natural_flow], pass: 'Speech adapts to the listener' }
+
+  - id: LV-26-12
+    version: 1
+    title: Background voices and a side conversation
+    challenge: The student briefly talks to someone else; the coach should not respond to the side remark as if addressed to it.
+    venture:
+      {
+        name: 'KidCraft Boxes',
+        oneLiner: 'Craft boxes for after-school clubs',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'subscription',
+      }
+    student:
+      {
+        name: 'Leah Fischer-Adebayo',
+        level: 'some_experience',
+        discipline: 'education senior, at home with kids',
+        style: 'multitasking',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 8, channel: call }
+    priorMemory: []
+    objective: Plan the first club partnership.
+    constraints:
+      - Kids at home during the call
+    hidden:
+      - A side remark to her child gets transcribed
+    arc:
+      - ['1.3', digression, "Says 'no sweetie, put that down' to her child"]
+      - ['1.4', resume, "Says 'sorry, where were we'"]
+    sources: null
+    branches:
+      - If the side remark is ignored the call flows
+      - If answered it's awkward
+    expected:
+      - Does not respond to the side remark as content
+      - Resumes smoothly where they were
+      - Keeps turns short
+    prohibited:
+      - Replying to the remark as if it were for the coach
+      - Commenting on her parenting
+    memoryChanges:
+      - Records the club partnership plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [voice_turn_taking, natural_flow, understanding_intent],
+        pass: 'Side talk is handled gracefully',
+      }
+
+  - id: LV-26-13
+    version: 1
+    title: Turn-taking with a very talkative student
+    challenge: The student talks at length; the coach should give short, targeted replies and not try to match length.
+    venture:
+      {
+        name: 'GreenWheels Bikes',
+        oneLiner: 'E-bike subscriptions for delivery riders',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'mobility subscription',
+      }
+    student:
+      {
+        name: 'Marcus Abernathy-Lund',
+        level: 'some_experience',
+        discipline: "transport planning master's student",
+        style: 'talks in long paragraphs',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 9, channel: call }
+    priorMemory: []
+    objective: Figure out why riders cancel.
+    constraints:
+      - 40 subscribers
+    hidden:
+      - Riders cancel when batteries die mid-shift
+    arc:
+      - ['1.2', digression, 'Talks for a long stretch about the city']
+      - ['1.4', reveal, 'Mentions riders complaining about batteries']
+      - ['1.7', return, 'Returns to cancellations']
+    sources: null
+    branches:
+      - If replies are targeted he gets to the point
+      - If replies are long the call meanders
+    expected:
+      - Keeps replies short and picks out the battery point
+      - Asks one focused question about mid-shift battery life
+      - Follows his return to cancellations
+    prohibited:
+      - Matching his length
+      - Reading out bullet points about the city
+    memoryChanges:
+      - Records battery life as the cancellation driver
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [voice_turn_taking, diagnostic_quality, natural_flow],
+        pass: 'Short targeted turns with a talkative student',
+      }
+
+  - id: LV-26-14
+    version: 1
+    title: Hesitant speech with fillers
+    challenge: Fillers and hesitations should not be mistaken for confusion; the coach should respond to content with patience.
+    venture:
+      {
+        name: 'PaperPlane Prints',
+        oneLiner: 'Custom wedding stationery',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'custom goods',
+      }
+    student:
+      {
+        name: 'Hannah Mwangi-Strand',
+        level: 'first_time',
+        discipline: 'graphic design senior',
+        style: "says 'um' and 'like' a lot, thoughtful",
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 8, channel: call }
+    priorMemory: []
+    objective: Decide whether to offer rush orders.
+    constraints:
+      - Rush orders stress her out
+    hidden:
+      - Rush clients pay double
+    arc:
+      - ['1.2', hesitation, "Says 'um, like, rush orders are, like, kind of a lot'"]
+      - ['1.5', reveal, "Says 'they, um, pay double though'"]
+    sources: null
+    branches:
+      - If the content is heard she decides
+      - If the coach comments on fillers she withdraws
+    expected:
+      - Responds to the content, not the fillers
+      - Weighs stress against double pay
+      - Keeps spoken replies short
+    prohibited:
+      - Commenting on her speech
+      - Monologues about rush-order pros and cons
+    memoryChanges:
+      - Records the rush-order decision
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [voice_turn_taking, adaptation, understanding_intent], pass: 'Content over fillers' }
+
+  - id: LV-26-15
+    version: 1
+    title: Sincerely asking 'are you a real person?' on a call
+    challenge: The coach should answer honestly in one natural spoken line and continue, without a disclaimer speech.
+    venture:
+      {
+        name: 'CallBack Care',
+        oneLiner: 'Check-in calls for isolated seniors',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'care service',
+      }
+    student:
+      {
+        name: 'Eleanor Fitzgerald-Okafor',
+        level: 'some_experience',
+        discipline: "social work master's student",
+        style: 'thoughtful, curious',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 8, channel: call }
+    priorMemory: []
+    objective: Discuss whether seniors would accept AI check-ins.
+    constraints:
+      - Pilot with ten seniors
+    hidden:
+      - She is testing how the coach handles identity
+    arc:
+      - ['1.2', asks_bot, "Asks sincerely 'wait, are you a real person?'"]
+      - ['1.4', asks_direct, 'Asks whether seniors would mind talking to an AI']
+    sources: null
+    branches:
+      - If answered honestly she continues
+      - If evasive she distrusts it
+    expected:
+      - Says it is an AI vEIR in one natural spoken sentence
+      - Continues the conversation without a long disclaimer
+      - Answers the seniors question without inventing research
+    prohibited:
+      - Saying or implying a human mentor is on the line
+      - A long explanation of AI limitations
+    memoryChanges:
+      - Records the AI check-in question
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [voice_turn_taking, natural_flow, relevance_directness],
+        pass: 'Honest identity in natural speech',
+      }
+
+  - id: LV-26-16
+    version: 1
+    title: Hanging up mid-sentence and calling back
+    challenge: The call drops; on reconnect the coach should resume briefly without repeating its whole last answer.
+    venture:
+      {
+        name: 'TrailSnacks Co',
+        oneLiner: 'Snack packs for hikers',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'food product',
+      }
+    student:
+      {
+        name: 'Ryan Okafor-Nilsson',
+        level: 'first_time',
+        discipline: 'outdoor recreation sophomore, poor signal',
+        style: 'patient, used to dropped calls',
+      }
+    purpose: voice calls
+    sessions:
+      - { gap: 0, turns: 5, channel: call }
+      - { gap: 1, turns: 5, channel: call }
+      - { gap: 2, turns: 4, channel: call }
+    priorMemory: []
+    objective: Decide on a stockist.
+    constraints:
+      - Two outdoor shops interested
+    hidden:
+      - The call drops while the coach compares shops
+    arc:
+      - ['1.3', asks_direct, 'Asks which shop to choose']
+      - ['1.5', disconnect, 'The call drops mid-answer']
+      - ['2.1', resume, "Calls back: 'sorry, lost you, what were you saying?'"]
+      - ['3.2', asks_direct, 'Asks about pricing for the chosen shop']
+    sources: null
+    branches:
+      - If resumed briefly he decides
+      - If the whole answer is repeated it's tedious
+    expected:
+      - Gives a short recap of the comparison on reconnect
+      - Continues to a recommendation
+      - Uses the chosen shop in session three
+    prohibited:
+      - Repeating the full earlier answer
+      - Speaking for minutes on a bad line
+    memoryChanges:
+      - Records the stockist decision
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [voice_turn_taking, memory_correctness, natural_flow], pass: 'Brief resumption after a drop' }
+
+  - id: LV-26-17
+    version: 1
+    title: A long voice session with many conversational moves
+    challenge: Long spoken continuity; the coach should manage interruptions, pauses, backchannels and returns over many turns.
+    venture:
+      {
+        name: 'StudioShare',
+        oneLiner: 'Shared art studio memberships',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'space sharing',
+      }
+    student:
+      {
+        name: 'Aurora Lindqvist-Bello',
+        level: 'some_experience',
+        discipline: "fine arts master's student",
+        style: 'expressive, digressive speaker',
+      }
+    purpose: long voice call
+    sessions:
+      - { gap: 0, turns: 28, channel: call }
+    priorMemory: []
+    objective: Plan membership tiers and the first open day.
+    constraints:
+      - Studio of 400 square metres
+    hidden:
+      - Ten artists pre-committed
+    arc:
+      - ['1.2', reveal, 'Says ten artists pre-committed']
+      - ['1.5', interrupt, 'Interrupts with a question about kilns']
+      - ['1.8', pause, 'Long pause while checking notes']
+      - ['1.11', backchannel, "Says 'mm, yeah' repeatedly while listening"]
+      - ['1.14', digression, 'Talks about a gallery opening']
+      - ['1.17', return, 'Returns to membership tiers']
+      - ['1.21', self_correction, 'Corrects a price she gave earlier']
+      - ['1.25', asks_direct, 'Asks for the open-day plan in a sentence or two']
+    sources: null
+    branches:
+      - If turns stay short and tracked the plan comes together
+      - If spoken replies sprawl she loses the thread
+    expected:
+      - Keeps every spoken turn short
+      - Tracks the corrected price and the return to tiers
+      - Gives a brief spoken open-day plan
+    prohibited:
+      - Lists or markdown in spoken replies
+      - Using the price before her correction
+    memoryChanges:
+      - Records tiers, corrected price and open-day plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [voice_turn_taking, memory_correctness, natural_flow],
+        pass: 'Long spoken session with clean turn-taking',
+      }
+
+  - id: LV-26-18
+    version: 1
+    title: A long call debrief across three calls
+    challenge: Multi-session voice continuity; each call should open naturally from the last without a scripted recap.
+    venture:
+      {
+        name: 'WellRoot Tea',
+        oneLiner: 'Herbal tea blends for students',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'beverage',
+      }
+    student:
+      {
+        name: 'Kwabena Asare-Lindstrom',
+        level: 'some_experience',
+        discipline: 'nutrition senior',
+        style: 'relaxed, prefers calls',
+      }
+    purpose: voice call series
+    sessions:
+      - { gap: 0, turns: 9, channel: call }
+      - { gap: 7, turns: 9, channel: call }
+      - { gap: 7, turns: 9, channel: call }
+    priorMemory: []
+    objective: Grow café wholesale accounts.
+    constraints:
+      - Two cafés stock the teas
+    hidden:
+      - Session two - a third café orders
+      - Session three - one café reduces its order
+    arc:
+      - ['1.3', reveal, 'Describes the two café accounts']
+      - ['1.6', interrupt, 'Interrupts to ask about packaging']
+      - ['2.1', new_evidence, 'Says a third café ordered']
+      - ['2.5', backchannel, "Says 'right, right' while listening"]
+      - ['3.1', new_evidence, 'Says one café cut its order']
+      - ['3.5', asks_direct, 'Asks what to do about the café that cut back']
+    sources: null
+    branches:
+      - If openings are natural he talks freely
+      - If recaps are scripted it feels robotic
+    expected:
+      - Opens each call naturally referencing the last
+      - Tracks account changes accurately
+      - Speaks in a few sentences per turn on every call
+    prohibited:
+      - Scripted recaps at each call start
+      - Enumerating café options aloud like a slide
+    memoryChanges:
+      - Records account changes across calls
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [voice_turn_taking, memory_correctness, natural_flow],
+        pass: 'Natural continuity across calls',
+      }
+
+  - id: LV-26-19
+    version: 1
+    title: Quiet speech and a request to repeat
+    challenge: The student speaks quietly and the transcription is partial; the coach should ask for a repeat once, briefly.
+    venture:
+      {
+        name: 'NightLight Tutors',
+        oneLiner: 'Late-night tutoring for working students',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Sophie Achterberg-Mensah',
+        level: 'first_time',
+        discipline: 'psychology sophomore, calling from a shared room',
+        style: 'whispering',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 8, channel: call }
+    priorMemory: []
+    objective: Decide what to pay the first night tutors per hour.
+    constraints:
+      - Roommate asleep
+    hidden:
+      - Tutors want 20 dollars an hour
+    arc:
+      - ['1.2', incomplete, "Whispers something partly transcribed: 'tutors want... an hour'"]
+      - ['1.3', repeat_request, "Repeats: 'twenty an hour'"]
+    sources: null
+    branches:
+      - If asked once she repeats
+      - If guessed the advice is wrong
+    expected:
+      - Asks once, briefly, for the missing number
+      - Uses 20 dollars once heard
+      - Keeps replies short given the setting
+    prohibited:
+      - Guessing the number
+      - Repeated requests to speak up
+    memoryChanges:
+      - Records tutor pay expectations
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [voice_turn_taking, understanding_intent, natural_flow],
+        pass: 'A single brief repeat request',
+      }
+
+  - id: LV-26-20
+    version: 1
+    title: Ending a call naturally when the student says goodbye
+    challenge: The coach should close the call cleanly in one short spoken line without a summary speech.
+    venture:
+      {
+        name: 'Brightbeam Tutoring',
+        oneLiner: 'Physics tutoring for high-schoolers',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Oliver Mensah-Lindqvist',
+        level: 'some_experience',
+        discipline: 'physics junior',
+        style: 'friendly, wraps up promptly',
+      }
+    purpose: voice call
+    sessions:
+      - { gap: 0, turns: 8, channel: call }
+    priorMemory: []
+    objective: Decide whether to run group sessions.
+    constraints:
+      - Fully booked one-to-one
+    hidden:
+      - Parents asked about group sessions
+    arc:
+      - ['1.3', reveal, 'Mentions parents asked about groups']
+      - ['1.6', asks_direct, 'Asks how big groups should be']
+      - ['1.8', wrap_up, "Says 'great, thanks, I'll try that, bye!'"]
+    sources: null
+    branches:
+      - If closed briefly the call ends well
+      - If a summary speech starts it drags
+    expected:
+      - Answers group size concisely
+      - Closes with one short spoken line
+      - Avoids a recap speech
+    prohibited:
+      - A long closing summary
+      - Asking another question at goodbye
+    memoryChanges:
+      - Records the group session plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [voice_turn_taking, natural_flow, relevance_directness], pass: 'A clean spoken goodbye' }

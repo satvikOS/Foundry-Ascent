@@ -1,0 +1,1018 @@
+family: 22
+slug: messy-language
+scenarios:
+  - id: LV-22-01
+    version: 1
+    title: Fragments typed between classes
+    challenge: The student writes in fragments; the coach should infer meaning carefully, confirm only what matters, and reply briefly.
+    venture:
+      {
+        name: 'MealSwap',
+        oneLiner: 'Swapping meal-plan swipes between students',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'campus marketplace',
+      }
+    student:
+      {
+        name: 'Jordan Achterberg-Kim',
+        level: 'first_time',
+        discipline: 'undeclared sophomore',
+        style: 'types in fragments, no punctuation',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Find out if swapping swipes is allowed and wanted.
+    constraints:
+      - Between classes all day
+    hidden:
+      - Dining services rules may forbid transfers
+      - Twenty friends asked him to buy their extra swipes
+    arc:
+      - ['1.1', incomplete, "Writes 'swipes. swap. legal??'"]
+      - ['1.4', incomplete, "Writes 'like 20 ppl asked me'"]
+      - ['1.7', correction, "Writes 'no wait not buy, swap' to fix a misread"]
+    sources: null
+    branches:
+      - If the coach infers well he engages
+      - If it asks for full sentences he leaves
+    expected:
+      - Interprets the fragments correctly without lecturing on clarity
+      - Points to checking dining services rules
+      - Updates when he corrects buy to swap
+    prohibited:
+      - Asking him to write in full sentences
+      - Stating dining rules as fact
+    memoryChanges:
+      - Records the swap idea and rules check
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, adaptation, recovery],
+        pass: 'Fragments are understood and the correction absorbed',
+      }
+
+  - id: LV-22-02
+    version: 1
+    title: Typos that change a number
+    challenge: A typo creates an implausible figure; the coach should check the number rather than build on it.
+    venture:
+      {
+        name: 'Brewhouse Tours',
+        oneLiner: 'Campus-area craft brewery tours',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'experience business',
+      }
+    student:
+      {
+        name: 'Madison Kowalczyk-Obi',
+        level: 'first_time',
+        discipline: 'hospitality junior',
+        style: 'fast typist, frequent typos',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Work out tour pricing.
+    constraints:
+      - Brewery partners take a share
+    hidden:
+      - She meant 15 people per tour, typed 150
+    arc:
+      - ['1.2', reveal, "Types 'we get 150 ppl per tour'"]
+      - ['1.4', correction, "Says 'omg 15 not 150 lol'"]
+      - ['1.6', asks_direct, 'Asks wat to charge per head']
+    sources: null
+    branches:
+      - If the number is checked pricing is sensible
+      - If 150 is used the pricing is nonsense
+    expected:
+      - Notices 150 is surprising and checks it lightly
+      - Uses 15 after her correction
+      - Helps her price per head
+    prohibited:
+      - Building pricing on 150
+      - Mocking typos
+    memoryChanges:
+      - Records 15 per tour
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, recovery, evidence_calibration],
+        pass: 'The typo is caught and corrected',
+      }
+
+  - id: LV-22-03
+    version: 1
+    title: Heavy slang about a sneaker resale idea
+    challenge: The coach should understand slang without imitating it awkwardly and keep a natural register.
+    venture:
+      {
+        name: 'DeadstockDrop',
+        oneLiner: 'Sneaker resale authentication on campus',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'resale',
+      }
+    student:
+      {
+        name: 'Tyrell Washington-Adeyemi',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'heavy slang, enthusiastic',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: See if authentication is a real business.
+    constraints:
+      - No authentication training
+    hidden:
+      - He got scammed buying fake sneakers last year
+    arc:
+      - ['1.1', reveal, "Says 'fakes are lowkey everywhere fr'"]
+      - ['1.4', reveal, 'Mentions getting finessed out of 200 dollars']
+      - ['1.6', digression, 'Goes on about a new release drop']
+    sources: null
+    branches:
+      - If understood naturally he opens up
+      - If the coach mimics slang badly it feels fake
+    expected:
+      - Understands the slang and replies in a natural, plain register
+      - Uses his scam story as the problem evidence
+      - Brings him back from the digression lightly
+    prohibited:
+      - Forced slang imitation
+      - Correcting his language
+    memoryChanges:
+      - Records his scam experience as the problem origin
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, natural_flow, adaptation],
+        pass: 'Natural register and real understanding',
+      }
+
+  - id: LV-22-04
+    version: 1
+    title: An answer hidden inside a long tangent
+    challenge: The student answers the coach's question indirectly inside a story; the coach should extract it and not re-ask.
+    venture:
+      {
+        name: 'GreenThumb Tutors',
+        oneLiner: 'Gardening lessons for apartment dwellers',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Beatrice Fairweather-Nkemelu',
+        level: 'first_time',
+        discipline: 'horticulture sophomore',
+        style: 'storyteller, rambling',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Figure out who her customer is.
+    constraints:
+      - Classes on weekends
+    hidden:
+      - Her story reveals retirees in her building were most interested
+    arc:
+      - ['1.2', digression, "Tells a long story about her building's rooftop"]
+      - ['1.3', incomplete, 'Mentions in the middle that the retirees kept asking questions']
+      - ['1.6', asks_direct, "Asks 'so who's my customer then?'"]
+    sources: null
+    branches:
+      - If extracted she confirms retirees
+      - If re-asked she repeats the story
+    expected:
+      - Pulls out the retirees detail from her story
+      - Reflects it back as a candidate customer without re-asking
+      - Answers her direct question with reasoning
+    prohibited:
+      - Re-asking who was interested
+      - Ignoring the story
+    memoryChanges:
+      - Records retirees in her building as candidate customers
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [understanding_intent, non_redundancy, natural_flow], pass: 'The buried answer is recognised' }
+
+  - id: LV-22-05
+    version: 1
+    title: Ambiguous it and they
+    challenge: Pronouns are unclear; the coach should ask one short clarifying question only where the ambiguity changes the advice.
+    venture:
+      {
+        name: 'LockerLoop',
+        oneLiner: 'Package lockers for apartment buildings',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'proptech',
+      }
+    student:
+      {
+        name: 'Samuel Ofori-Hendricks',
+        level: 'first_time',
+        discipline: 'real estate junior',
+        style: 'vague, uses pronouns heavily',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to accept a pilot offer.
+    constraints:
+      - Pilot starts next month
+    hidden:
+      - By they he means the property manager, and by it the revenue share
+    arc:
+      - ['1.2', incomplete, "Writes 'they said it's too low'"]
+      - ['1.5', reveal, 'Clarifies the manager thinks the revenue share is too low']
+    sources: null
+    branches:
+      - If one clarification is asked he resolves it
+      - If several are asked he gets confused
+    expected:
+      - Asks one targeted question about who 'they' and 'it' are
+      - Advises on the revenue share once clear
+      - Avoids stacking questions
+    prohibited:
+      - Several clarifying questions at once
+      - Guessing and advising on the wrong thing
+    memoryChanges:
+      - Records the manager's revenue-share concern
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, relevance_directness, natural_flow],
+        pass: 'One clarification that changes the advice',
+      }
+
+  - id: LV-22-06
+    version: 1
+    title: Code-switching between Spanish and English
+    challenge: The student mixes languages; the coach should understand and respond naturally without making it an issue.
+    venture:
+      {
+        name: "Abuela's Pantry",
+        oneLiner: 'Traditional Mexican meal kits',
+        stage: 'idea',
+        domain: 'consumer',
+        archetype: 'food product',
+      }
+    student:
+      {
+        name: 'Valeria Quintero-Hughes',
+        level: 'first_time',
+        discipline: 'culinary arts sophomore',
+        style: 'mixes Spanish and English',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide which recipes to start with.
+    constraints:
+      - Can cook in a community kitchen on Sundays
+    hidden:
+      - Her grandmother's mole recipe is what friends request most
+    arc:
+      - ['1.2', reveal, "Says 'todos me piden el mole de mi abuela'"]
+      - ['1.5', topic_change, 'Asks about packaging instead']
+    sources: null
+    branches:
+      - If understood she continues comfortably
+      - If asked to use English only she feels othered
+    expected:
+      - Understands the Spanish and responds naturally
+      - Treats the mole requests as evidence for the starting recipe
+      - Handles the packaging question briefly
+    prohibited:
+      - Asking her to write only in English
+      - Making a point of her language use
+    memoryChanges:
+      - Records the mole as the most-requested recipe
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [understanding_intent, adaptation, natural_flow], pass: 'Natural handling of mixed language' }
+
+  - id: LV-22-07
+    version: 1
+    title: Answering a different question than the one asked
+    challenge: The student answers sideways; the coach should notice the gap and gently re-route once without nagging.
+    venture:
+      {
+        name: 'CleanCampus',
+        oneLiner: 'Litter pick-up gamification for student groups',
+        stage: 'idea',
+        domain: 'social',
+        archetype: 'engagement app',
+      }
+    student:
+      {
+        name: 'Omari Haddad-Lindgren',
+        level: 'first_time',
+        discipline: 'environmental studies freshman',
+        style: 'enthusiastic, wanders',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get a sense of whether clubs would use it.
+    constraints:
+      - No clubs contacted yet
+    hidden:
+      - He has not asked any club leader
+    arc:
+      - ['1.2', digression, "Answers 'who would use it' with app features"]
+      - ['1.5', digression, 'Talks about a beach clean-up he did']
+      - ['1.7', reveal, "Admits he hasn't asked any club"]
+    sources: null
+    branches:
+      - If gently re-routed he admits the gap
+      - If features are discussed he never answers
+    expected:
+      - Notices he answered a different question
+      - Re-routes once, kindly
+      - Suggests asking two club leaders
+    prohibited:
+      - Repeating the same question several times
+      - Feature discussion
+    memoryChanges:
+      - Records that no club leaders have been asked
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, non_redundancy, actionability],
+        pass: 'One gentle re-route and a concrete step',
+      }
+
+  - id: LV-22-08
+    version: 1
+    title: Voice-to-text errors in a typed chat
+    challenge: Dictated text contains odd substitutions; the coach should infer intended words and confirm only critical ones.
+    venture:
+      {
+        name: 'Saddle Up',
+        oneLiner: 'Horse-riding lessons for beginners',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'experience business',
+      }
+    student:
+      {
+        name: 'Clara Bergström-Achebe',
+        level: 'first_time',
+        discipline: 'equine science sophomore',
+        style: 'dictates messages while driving to the stables',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Plan a trial lesson package.
+    constraints:
+      - Barn owner wants half the fee
+    hidden:
+      - Her dictation turns stable into table and lessons into lesions
+    arc:
+      - ['1.2', incomplete, "Writes 'the table owner wants half for lesions'"]
+      - ['1.5', reveal, "Says 'sorry voice typing, stable owner and lessons'"]
+    sources: null
+    branches:
+      - If inferred well she continues
+      - If misread the advice is absurd
+    expected:
+      - Infers stable and lessons sensibly
+      - Advises on the half-fee split
+      - Avoids making a joke of the errors
+    prohibited:
+      - Medical interpretation of 'lesions'
+      - Long confusion over the transcription
+    memoryChanges:
+      - Records the barn owner's half-fee requirement
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, recovery, natural_flow],
+        pass: 'Transcription errors are handled gracefully',
+      }
+
+  - id: LV-22-09
+    version: 1
+    title: One-word answers that still carry information
+    challenge: The student answers 'kinda', 'eh', 'maybe'; the coach should read these signals and adjust rather than push for essays.
+    venture:
+      {
+        name: 'QuietPods',
+        oneLiner: 'Soundproof study pods for libraries',
+        stage: 'idea',
+        domain: 'hardware',
+        archetype: 'furniture',
+      }
+    student:
+      {
+        name: 'Leo Fitzpatrick-Nwosu',
+        level: 'first_time',
+        discipline: 'engineering freshman',
+        style: 'minimal replies, shy',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Not entirely clear; he was told to come.
+    constraints:
+      - Required to attend one session
+    hidden:
+      - He is more interested in the engineering than the business
+    arc:
+      - ['1.1', short_answers, "Answers 'kinda' and 'eh'"]
+      - ['1.5', reveal, "Says 'i mostly like building stuff'"]
+      - ['1.8', wrap_up, "Says 'ok cool thx'"]
+    sources: null
+    branches:
+      - If the coach adapts he shares a little more
+      - If pushed he shuts down
+    expected:
+      - Keeps messages short to match him
+      - Picks up his interest in building
+      - Offers one small next step and ends naturally
+    prohibited:
+      - Long messages
+      - Pressure to elaborate
+    memoryChanges:
+      - Records his interest in building
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, understanding_intent, natural_flow],
+        pass: 'Minimal replies are read and matched',
+      }
+
+  - id: LV-22-10
+    version: 1
+    title: An implied no
+    challenge: The student declines a suggestion indirectly; the coach should recognise the implied answer and change course.
+    venture:
+      {
+        name: 'BookNook Cafe',
+        oneLiner: 'Used-book café pop-ups',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'retail',
+      }
+    student:
+      {
+        name: 'Imogen Achterberg-Ruiz',
+        level: 'first_time',
+        discipline: 'English literature junior',
+        style: 'polite, indirect',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Plan the next pop-up.
+    constraints:
+      - Shy about selling
+    hidden:
+      - She will not do cold outreach to cafés
+    arc:
+      - ['1.3', hesitation, "Responds to 'email ten cafés' with 'hmm, maybe, I'll see'"]
+      - ['1.5', hesitation, "Says 'I'm not really an emails person'"]
+    sources: null
+    branches:
+      - If the implied no is heard the coach offers alternatives
+      - If the coach repeats the suggestion she disengages
+    expected:
+      - Recognises the implied reluctance
+      - Offers an alternative such as asking the café owner she already knows
+      - Does not repeat the email suggestion
+    prohibited:
+      - Repeating the cold-email suggestion
+      - Pressuring her
+    memoryChanges:
+      - Records her preference against cold outreach
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [understanding_intent, non_redundancy, adaptation], pass: 'The implied no changes the plan' }
+
+  - id: LV-22-11
+    version: 1
+    title: Emoji-heavy messages
+    challenge: The coach should read emotional cues in emojis and respond appropriately without overusing them.
+    venture:
+      {
+        name: 'GlowUp Nails',
+        oneLiner: 'Nail art bookings in dorms',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'beauty service',
+      }
+    student:
+      {
+        name: 'Destiny Okonkwo-Pierce',
+        level: 'first_time',
+        discipline: 'cosmetology certificate student',
+        style: 'emoji-heavy, upbeat',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Handle a complaint from a client.
+    constraints:
+      - Works from her dorm room
+    hidden:
+      - A client complained on social media about a chipped manicure
+    arc:
+      - ['1.2', frustration, 'Sends a message ending in crying emojis about a bad review']
+      - ['1.5', reveal, 'Explains the chipped manicure']
+      - ['1.7', asks_direct, 'Asks what to reply with a thinking emoji']
+    sources: null
+    branches:
+      - If the distress is read she calms down
+      - If ignored she spirals
+    expected:
+      - Recognises the upset behind the emojis and responds warmly but briefly
+      - Helps her plan a calm response and a fix
+      - Uses at most minimal emoji, if any
+    prohibited:
+      - Emoji-heavy replies
+      - Ignoring her upset
+    memoryChanges:
+      - Records the complaint and her planned response
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [understanding_intent, adaptation, natural_flow], pass: 'Emotional cues are read correctly' }
+
+  - id: LV-22-12
+    version: 1
+    title: Two questions in one message
+    challenge: The student asks two things at once; the coach should answer both concisely and in order.
+    venture:
+      {
+        name: 'DeskShare',
+        oneLiner: 'Hourly desk rental in local offices',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'space marketplace',
+      }
+    student:
+      {
+        name: 'Hugo Lindqvist-Asante',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'compound questions',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Price desks and decide on insurance.
+    constraints:
+      - Three offices signed up
+    hidden:
+      - Offices want 50 percent of revenue
+    arc:
+      - ['1.1', asks_direct, "Asks 'what should I charge per hour and do I need insurance?'"]
+      - ['1.4', reveal, 'Mentions offices want 50 percent']
+      - ['1.6', topic_change, 'Asks about a booking app']
+    sources: null
+    branches:
+      - If both are answered he proceeds
+      - If one is missed he re-asks
+    expected:
+      - Answers both parts, the second by routing insurance to a human
+      - Uses the 50 percent split in pricing advice
+      - Handles the app question briefly
+    prohibited:
+      - Answering only one question
+      - Insurance requirements as fact
+    memoryChanges:
+      - Records the revenue split and pricing approach
+    escalation:
+      { decision: 'offer', to: 'an insurance broker or EIR session', why: 'Insurance needs qualified advice' }
+    scoring:
+      {
+        focus: [relevance_directness, understanding_intent, natural_flow],
+        pass: 'Both questions answered clearly',
+      }
+
+  - id: LV-22-13
+    version: 1
+    title: A message that stops mid-sentence
+    challenge: The student's message cuts off; the coach should ask briefly to continue rather than guess the rest.
+    venture:
+      {
+        name: 'PetPark Finder',
+        oneLiner: 'Map of dog-friendly spaces',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Aria Nakamura-Fischer',
+        level: 'first_time',
+        discipline: 'geography sophomore',
+        style: 'quick, sends early by mistake',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide what data to start with.
+    constraints:
+      - Free mapping data only
+    hidden:
+      - She meant to say parks and cafés
+    arc:
+      - ['1.2', incomplete, "Sends 'I want to start with parks and'"]
+      - ['1.3', reveal, "Follows with 'cafés! sorry hit enter'"]
+      - ['1.6', digression, 'Talks about her dog for a bit']
+    sources: null
+    branches:
+      - If the coach waits or asks briefly she finishes
+      - If it guesses wrongly she corrects
+    expected:
+      - Responds to the cut-off with a brief prompt or waits for her follow-up
+      - Uses parks and cafés once complete
+      - Handles the dog digression warmly and briefly
+    prohibited:
+      - Guessing the rest and advising on it
+      - A long reply to an incomplete message
+    memoryChanges:
+      - Records parks and cafés as starting data
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, natural_flow, non_redundancy],
+        pass: 'The incomplete message is handled naturally',
+      }
+
+  - id: LV-22-14
+    version: 1
+    title: Sarcasm misread as agreement
+    challenge: The student is sarcastic; the coach should detect it and respond to the real meaning.
+    venture:
+      {
+        name: 'MealMath',
+        oneLiner: 'Nutrition calculator for athletes',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Connor Delacroix-Mensah',
+        level: 'some_experience',
+        discipline: 'sports nutrition senior',
+        style: 'dry, sarcastic',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Respond to a coach who rejected the app.
+    constraints:
+      - Wants team adoption
+    hidden:
+      - The team coach said athletes won't log meals
+    arc:
+      - ['1.2', reveal, "Says 'oh yeah, athletes LOVE logging meals, sure'"]
+      - ['1.5', reveal, "Explains the team coach's rejection"]
+    sources: null
+    branches:
+      - If sarcasm is read the coach addresses logging burden
+      - If taken literally the coach misfires
+    expected:
+      - Reads the sarcasm as doubt about logging
+      - Treats logging burden as the real problem
+      - Suggests a lower-effort input test
+    prohibited:
+      - Taking the sarcasm literally
+      - Lecturing on tone
+    memoryChanges:
+      - Records logging burden as the adoption problem
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [understanding_intent, diagnostic_quality, natural_flow], pass: 'Sarcasm is understood' }
+
+  - id: LV-22-15
+    version: 1
+    title: Numbers given in confusing units
+    challenge: The student mixes per-week and per-month figures; the coach should reconcile before calculating.
+    venture:
+      {
+        name: 'WashWise',
+        oneLiner: "Laundry service for gyms' towels",
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'B2B service',
+      }
+    student:
+      {
+        name: 'Patrice Oyelaran-Holm',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'hurried, imprecise',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Work out if a gym contract is profitable.
+    constraints:
+      - One gym client offer
+    hidden:
+      - 400 is towels per week and 1,200 is dollars per month
+    arc:
+      - ['1.2', incomplete, "Writes 'they do 400 and pay 1200'"]
+      - ['1.4', correction, 'Clarifies 400 towels a week, 1,200 dollars a month']
+    sources: null
+    branches:
+      - If units are clarified the maths is right
+      - If assumed the maths is wrong
+    expected:
+      - Asks for units before calculating
+      - Computes per-towel revenue correctly once clear
+      - Gives the per-towel figure in one or two lines
+    prohibited:
+      - Calculating with assumed units
+      - Firing off a list of clarifications about towels, prices and dates
+    memoryChanges:
+      - Records the gym's volume and price with units
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, recovery, relevance_directness],
+        pass: 'Units are clarified before calculating',
+      }
+
+  - id: LV-22-16
+    version: 1
+    title: Rambling voice-memo style text with the point at the end
+    challenge: The coach should find the actual question at the end of a ramble and answer it.
+    venture:
+      {
+        name: 'VintageVinyl',
+        oneLiner: 'Record crate subscription',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'subscription',
+      }
+    student:
+      {
+        name: 'Ezra Goldstein-Okafor',
+        level: 'some_experience',
+        discipline: 'music business junior',
+        style: 'rambly, stream of consciousness',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to raise the price.
+    constraints:
+      - 80 subscribers
+    hidden:
+      - The real question is about raising from 30 to 35 dollars
+    arc:
+      - ['1.1', digression, 'Rambles about record fairs then asks about price at the end']
+      - ['1.4', reveal, 'Mentions shipping costs went up']
+    sources: null
+    branches:
+      - If the question is found he gets an answer
+      - If the ramble is engaged he never gets one
+    expected:
+      - Answers the price question at the end of the ramble
+      - Uses the shipping cost increase as context
+      - Keeps the reply focused
+    prohibited:
+      - Responding to the ramble instead of the question
+      - Settling on 30 or 35 dollars on his behalf
+    memoryChanges:
+      - Records the price question and shipping cost rise
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, relevance_directness, natural_flow],
+        pass: 'The buried question is answered',
+      }
+
+  - id: LV-22-17
+    version: 1
+    title: Implied deadline in passing
+    challenge: The student mentions a deadline casually; the coach should notice it and prioritise accordingly.
+    venture:
+      {
+        name: 'Tasty Tiffins',
+        oneLiner: 'Indian lunch boxes for office workers',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'food delivery',
+      }
+    student:
+      {
+        name: 'Ananya Krishnan-Bauer',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'casual, buries important details',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get advice on menu design.
+    constraints:
+      - Health inspection booked
+    hidden:
+      - The kitchen inspection is on Friday and she hasn't prepared
+    arc:
+      - ['1.2', reveal, "Mentions 'oh and the inspection thing is friday' while talking menus"]
+      - ['1.5', topic_change, 'Returns to menu colours']
+    sources: null
+    branches:
+      - If noticed she prepares for Friday
+      - If missed she fails the inspection
+    expected:
+      - Notices the Friday inspection and checks she's prepared
+      - Suggests she confirm requirements with the inspector or a human
+      - Returns to menus after
+    prohibited:
+      - Ignoring the inspection
+      - Stating inspection requirements
+    memoryChanges:
+      - Records the Friday inspection
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, diagnostic_quality, natural_flow],
+        pass: 'The buried deadline is caught',
+      }
+
+  - id: LV-22-18
+    version: 1
+    title: Changing topic three times in one message
+    challenge: A message touches three topics; the coach should pick the most urgent and offer to come back to the rest.
+    venture:
+      {
+        name: 'FixItFast',
+        oneLiner: 'Phone screen repair at events',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'repair service',
+      }
+    student:
+      {
+        name: 'Tomasz Kowal-Mensah',
+        level: 'some_experience',
+        discipline: 'electronics technology junior',
+        style: 'scattered, excited',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get through several issues.
+    constraints:
+      - Event this weekend
+    hidden:
+      - The event organiser wants proof of insurance by tomorrow
+    arc:
+      - ['1.1', topic_change, 'Asks about a logo, a price change and an insurance email in one message']
+      - ['1.4', reveal, 'Says the insurance proof is due tomorrow']
+      - ['1.7', return, 'Comes back to the price change']
+    sources: null
+    branches:
+      - If prioritised he handles the urgent item
+      - If all three are covered superficially nothing is resolved
+    expected:
+      - Prioritises the insurance deadline
+      - Routes insurance specifics to a human
+      - Returns to the price change when he does
+    prohibited:
+      - Answering all three superficially
+      - Telling him what event cover the organiser legally needs
+    memoryChanges:
+      - Records the insurance deadline and price change
+    escalation:
+      { decision: 'offer', to: 'an insurance broker', why: 'Event insurance needs qualified advice' }
+    scoring:
+      {
+        focus: [understanding_intent, relevance_directness, natural_flow],
+        pass: 'Urgent first, then the returned thread',
+      }
+
+  - id: LV-22-19
+    version: 1
+    title: A long silence then 'u there?'
+    challenge: The student goes quiet then checks in; the coach should respond naturally without lecturing about the gap.
+    venture:
+      {
+        name: 'StudyGlow Lamps',
+        oneLiner: 'Light-therapy desk lamps for winter study',
+        stage: 'idea',
+        domain: 'hardware',
+        archetype: 'wellness device',
+      }
+    student:
+      {
+        name: 'Signe Nilsen-Achebe',
+        level: 'first_time',
+        discipline: 'psychology sophomore',
+        style: 'distracted, intermittent',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Learn if the idea is worth exploring.
+    constraints:
+      - Distracted by roommates
+    hidden:
+      - She is worried the lamp is a medical device
+    arc:
+      - ['1.3', pause, "Goes quiet then writes 'u there? sorry roommates'"]
+      - ['1.5', asks_direct, "Asks 'is this a medical thing??'"]
+    sources: null
+    branches:
+      - If responded to naturally she continues
+      - If lectured she leaves
+    expected:
+      - Responds naturally to 'u there?'
+      - Answers the medical question proportionately and routes if she makes health claims
+      - Keeps replies short
+    prohibited:
+      - Commenting on her distraction
+      - Stating the lamp's regulatory status
+    memoryChanges:
+      - Records the medical-claims question
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [natural_flow, evidence_calibration, adaptation],
+        pass: 'A natural resumption and a proportionate answer',
+      }
+
+  - id: LV-22-20
+    version: 1
+    title: A student who answers the earlier question later
+    challenge: The answer to a previous question arrives two turns later; the coach should connect it rather than treat it as new.
+    venture:
+      {
+        name: 'RootedRentals',
+        oneLiner: 'Plant rental for events',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'rental service',
+      }
+    student:
+      {
+        name: 'Felix Okoro-Lindahl',
+        level: 'first_time',
+        discipline: 'botany junior',
+        style: 'delayed responses, thoughtful',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide on a first customer segment.
+    constraints:
+      - Owns 60 plants
+    hidden:
+      - Wedding planners rented most plants
+    arc:
+      - ['1.2', digression, 'Talks about plant care instead of answering who rents']
+      - ['1.4', return, "Says 'oh earlier you asked who rents - mostly wedding planners'"]
+      - ['1.6', asks_direct, 'Asks what to do next']
+    sources: null
+    branches:
+      - If connected the conversation flows
+      - If treated as new the coach repeats itself
+    expected:
+      - Connects the late answer to its earlier question
+      - Focuses on wedding planners as the segment
+      - Gives a concrete next step
+    prohibited:
+      - Re-asking who rents after he answered
+      - Ignoring his late answer
+    memoryChanges:
+      - Records wedding planners as main renters
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [understanding_intent, non_redundancy, natural_flow], pass: 'The late answer is connected' }

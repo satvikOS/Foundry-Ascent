@@ -437,11 +437,15 @@ describe('migration 0013_automatic_memory', () => {
 
   it('is idempotent: re-running every statement, then the runner, changes nothing', async () => {
     if (!KEEP) throw new Error('0013 missing');
+    // 0021 (memory back to approval) and 0026 (memory automatic again) are one-shot data changes: replaying 0021
+    // after 0026 would demote kept memory again, which the runner never does (0026 proves its own re-run).
+    const oneShot = new Set(['0021_memory_review', '0026_automatic_memory_restored']);
     const replay = () =>
       t.db.system(async (sx) => {
-        // Normalize fixtures written with 0013's former policy, then check the ordered suffix is idempotent.
-        // Later migrations intentionally amend its function, constraint and approval policy.
-        for (const migration of MIGRATIONS.filter((m) => m.version >= KEEP.version))
+        // Re-run 0013 and the schema migrations after it in order (later ones amend its function and constraint).
+        for (const migration of MIGRATIONS.filter(
+          (m) => m.version >= KEEP.version && !oneShot.has(m.version),
+        ))
           for (const statement of splitStatements(migration.sql)) await sx.query(statement);
       });
     await replay();

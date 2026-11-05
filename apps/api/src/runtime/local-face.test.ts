@@ -6,6 +6,7 @@ import {
   LAB_FACE_PROBE_TOKEN,
   LOCAL_FACE_KEY,
   PROBE_HEADER,
+  fieldShape,
   localFaceFor,
   recordingFetch,
   vendorPath,
@@ -70,6 +71,7 @@ const sandboxRoutes = {
         session_id: 's-1',
         livekit_url: 'wss://heygen-feapbkvq.livekit.cloud',
         livekit_client_token: 'client-token',
+        livekit_agent_token: 'agent-token',
         ws_url: 'wss://control.example/should-stay-on-the-server',
         max_session_duration: 60,
       },
@@ -271,6 +273,126 @@ describe('the lab probe (vendor checks with the key kept in the dev server)', ()
     const failed = await probe(wired, 'POST', 'sessions', { body: { mode: 'full', maxSeconds: 30 } });
     expect(failed.status).toBe(502);
     expect(await failed.json()).toEqual({ error: 'EmbodimentSessionError' });
+  });
+});
+
+describe('the LITE protocol probe (lite-sessions: the lab drives ws_url itself)', () => {
+  it('opens a LITE sandbox session with the control socket and the responses as field names and types only', async () => {
+    const { fetch, seen } = vendor(sandboxRoutes);
+    const wired = face({ ...lab, [LAB_FACE_PROBE_TOKEN]: TOKEN }, fetch);
+    const opened = await probe(wired, 'POST', 'lite-sessions', { body: { maxSeconds: 60 } });
+    expect(opened.status).toBe(201);
+    const session = (await opened.json()) as Record<string, unknown>;
+    expect(session).toMatchObject({
+      sessionId: 's-1',
+      url: 'wss://heygen-feapbkvq.livekit.cloud',
+      token: 'client-token',
+      controlUrl: 'wss://control.example/should-stay-on-the-server',
+      agentToken: 'agent-token',
+      shape: {
+        token: { status: 200, code: 1000, fields: { session_id: 'string', session_token: 'string' } },
+        start: {
+          status: 201,
+          code: 1000,
+          maxSessionDuration: 60,
+          fields: {
+            session_id: 'string',
+            livekit_url: 'string',
+            livekit_client_token: 'string',
+            ws_url: 'string',
+            max_session_duration: 'number',
+          },
+        },
+      },
+    });
+    // The shape never carries a value: not the session token, which only the probe itself uses.
+    expect(JSON.stringify(session.shape)).not.toContain('session-token');
+    expect(JSON.stringify(session.shape)).not.toContain('control.example');
+    expect(JSON.stringify(session.shape)).not.toContain('agent-token');
+    expect(seen[0]?.url.endsWith('/v1/sessions/token')).toBe(true);
+    expect(seen[0]).toMatchObject({
+      headers: { 'x-api-key': KEY },
+      body: {
+        mode: 'LITE',
+        is_sandbox: true,
+        avatar_id: LIVEAVATAR_SANDBOX_AVATAR,
+        max_session_duration: 60,
+      },
+    });
+    expect(seen[1]).toMatchObject({ headers: { authorization: 'Bearer session-token' } });
+    expect(seen[1]?.headers['x-api-key']).toBeUndefined();
+    // Stopped like any probe session.
+    expect((await probe(wired, 'POST', 'sessions/s-1/stop')).status).toBe(200);
+    expect(seen.at(-1)).toMatchObject({ body: { session_id: 's-1', reason: 'USER_CLOSED' } });
+  });
+
+  it('refuses a length outside the sandbox, and stops a started session that came back without ws_url', async () => {
+    const wired = face({ ...lab, [LAB_FACE_PROBE_TOKEN]: TOKEN }, vendor(sandboxRoutes).fetch);
+    for (const body of [{ maxSeconds: 5 }, { maxSeconds: 61 }, { maxSeconds: '30' }]) {
+      expect((await probe(wired, 'POST', 'lite-sessions', { body })).status).toBe(400);
+    }
+    const start = sandboxRoutes['/v1/sessions/start'];
+    const withoutWs = {
+      ...sandboxRoutes,
+      '/v1/sessions/start': {
+        status: 201,
+        body: { ...start.body, data: { ...start.body.data, ws_url: undefined } },
+      },
+    };
+    const { fetch, seen } = vendor(withoutWs);
+    const broken = face({ ...lab, [LAB_FACE_PROBE_TOKEN]: TOKEN }, fetch);
+    const failed = await probe(broken, 'POST', 'lite-sessions', { body: { maxSeconds: 30 } });
+    expect(failed.status).toBe(502);
+    expect(await failed.json()).toMatchObject({
+      error: 'start',
+      shape: { start: { status: 201, code: 1000 } },
+    });
+    expect(seen.map((s) => new URL(s.url).pathname)).toEqual([
+      '/v1/sessions/token',
+      '/v1/sessions/start',
+      '/v1/sessions/stop',
+    ]);
+    const refused = await probe(
+      face({ ...lab, [LAB_FACE_PROBE_TOKEN]: TOKEN }, vendor({}).fetch),
+      'POST',
+      'lite-sessions',
+      {
+        body: { maxSeconds: 30 },
+      },
+    );
+    expect(refused.status).toBe(502);
+    const answer = (await refused.json()) as { error: string; shape: { token: Record<string, unknown> } };
+    expect(answer.error).toBe('token');
+    expect(Object.keys(answer.shape)).toEqual(['token']);
+    expect(answer.shape.token).toMatchObject({ status: 404, code: null, fields: {} });
+    expect(typeof answer.shape.token.ms).toBe('number');
+  });
+
+  it('hands over a null agent token when the vendor gave none', async () => {
+    const start = sandboxRoutes['/v1/sessions/start'];
+    const withoutAgent = {
+      ...sandboxRoutes,
+      '/v1/sessions/start': {
+        status: 201,
+        body: { ...start.body, data: { ...start.body.data, livekit_agent_token: undefined } },
+      },
+    };
+    const wired = face({ ...lab, [LAB_FACE_PROBE_TOKEN]: TOKEN }, vendor(withoutAgent).fetch);
+    const opened = await probe(wired, 'POST', 'lite-sessions', { body: { maxSeconds: 60 } });
+    expect(opened.status).toBe(201);
+    expect(((await opened.json()) as { agentToken: unknown }).agentToken).toBeNull();
+  });
+
+  it('reduces a response to field names and JSON types', () => {
+    expect(
+      fieldShape({ a: 'x', b: 1, c: null, d: [1], e: { f: 1 }, g: true, 'bad name': 'x', ünï: 1 }),
+    ).toEqual({ a: 'string', b: 'number', c: 'null', d: 'array', e: 'object', g: 'boolean' });
+    expect(fieldShape(null)).toEqual({});
+    expect(fieldShape(['a'])).toEqual({});
+    expect(fieldShape('text')).toEqual({});
+    expect(
+      Object.keys(fieldShape(Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`k${i}`, i])))),
+    ).toHaveLength(40);
   });
 });
 

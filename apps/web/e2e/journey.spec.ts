@@ -197,23 +197,25 @@ test.describe('founder journey', () => {
       ).toBeVisible();
     });
 
-    await test.step('the vEIR proposes memory in Knowledge for student approval', async () => {
+    await test.step('what the vEIR learned goes to Knowledge on its own: nothing to keep or approve', async () => {
       const answer = page.getByRole('article', { name: 'Exchange 1' });
       // One quiet line once the refreshed venture memory includes what the answer saved. No click needed.
       const saved = answer.getByTestId('memory-saved');
       await expect(saved).toBeVisible({ timeout: 30_000 });
-      await expect(saved).toContainText('Memory to review:');
+      await expect(saved).toContainText('Saved to Knowledge:');
       await expect(answer.getByRole('button', { name: /^(Keep|Not now)/ })).toHaveCount(0);
       await expect(answer.getByText(/would like to remember/)).toHaveCount(0);
       await expect(answer.getByRole('list', { name: 'Memory suggestions' })).toHaveCount(0);
-      const listed = await page.request.get(`/api/v1/ventures/${ventureId}/memory?status=proposed&limit=100`);
+      const listed = await page.request.get(
+        `/api/v1/ventures/${ventureId}/memory?status=confirmed&limit=100`,
+      );
       expect(listed.status()).toBe(200);
       const { items } = (await listed.json()) as {
         items: { id: string; keptAutomatically?: boolean; sourceRefs: { kind: string; id: string }[] }[];
       };
       const learned = items.filter(
         (m) =>
-          m.keptAutomatically === false &&
+          m.keptAutomatically === true &&
           m.sourceRefs.some((r) => r.kind === 'session' && r.id === conversationId),
       );
       // One item: the line names it and links it in Knowledge. Several (a real model may keep the decision and
@@ -231,10 +233,10 @@ test.describe('founder journey', () => {
       // from this conversation, and never a proposal waiting for anyone.
       const item = await page.request.get(`/api/v1/memory/${memoryId ?? ''}`);
       expect(item.status()).toBe(200);
-      expect(await item.json(), 'AI memory awaits student approval').toMatchObject({
+      expect(await item.json(), 'AI memory arrives already kept').toMatchObject({
         origin: 'ai',
-        status: 'proposed',
-        keptAutomatically: false,
+        status: 'confirmed',
+        keptAutomatically: true,
         sourceRefs: expect.arrayContaining([
           expect.objectContaining({ kind: 'session', id: conversationId }),
         ]),

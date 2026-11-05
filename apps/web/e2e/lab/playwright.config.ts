@@ -14,6 +14,8 @@ import { defineConfig, type PlaywrightTestConfig } from '@playwright/test';
  *                            rooms through the dev server's lab probe (LAB_FACE_PROBE_TOKEN), then calls with the
  *                            face (an admin of a synthetic venture), an injected `speak_text`, and Polly alone.
  *                            No fake microphone: the call is typed and the face must never ask for one.
+ *           (lite-probe.lab.ts) the face suite's `face_mode=lite-probe` arm instead: raw LITE sandbox sessions whose
+ *                            `ws_url` the page drives itself (synthetic speech), probes L1-L10 of the LITE design.
  *
  * In the lab (ops/lab, .github/workflows/ops-conversation-lab.yml) the app is already running with the real models
  * and both servers are reused; locally (the e2e script, mock model) Playwright starts them like the main suite.
@@ -110,7 +112,7 @@ export default defineConfig({
     },
     {
       name: 'face',
-      testMatch: /face\.lab\.ts$/,
+      testMatch: /(face|lite-probe)\.lab\.ts$/,
       dependencies: ['setup'],
       // Autoplay without a gesture: the suite's own level meter on the avatar's audio (an AudioContext) must run.
       use: {

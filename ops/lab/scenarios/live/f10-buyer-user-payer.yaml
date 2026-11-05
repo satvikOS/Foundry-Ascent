@@ -1,0 +1,1078 @@
+family: 10
+slug: buyer-user-payer
+scenarios:
+  - id: LV-10-01
+    version: 1
+    title: Teachers love the tool and the district buys software
+    challenge: The student has only talked to users; the coach should map who approves and pays in a school district.
+    venture:
+      {
+        name: 'QuizQuill',
+        oneLiner: 'Auto-generated reading quizzes for middle-school teachers',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'edtech',
+      }
+    student:
+      {
+        name: 'Hannah Okoro-Whitfield',
+        level: 'some_experience',
+        discipline: "education master's student, former teacher",
+        style: "warm, teacher's vocabulary",
+      }
+    purpose: sales planning
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Sell to 30 teachers at 8 dollars a month each.
+    constraints:
+      - Teachers rarely pay for tools personally
+    hidden:
+      - Her old district approves software through a curriculum committee
+      - Data privacy agreements are signed by district IT
+    arc:
+      - ['1.2', reveal, 'Says 30 teachers want it']
+      - ['1.5', reveal, 'Mentions the curriculum committee from her teaching days']
+      - [
+          '1.7',
+          correction,
+          "Corrects the coach that principals don't control software budgets in her old district",
+        ]
+    sources: null
+    branches:
+      - If asked how her old school bought tools she maps the committee
+      - If teacher pricing is pursued sales stall
+    expected:
+      - Asks who approved software when she was teaching
+      - Maps teacher, committee and IT roles
+      - Updates its view after her correction about principals
+    prohibited:
+      - Teacher-by-teacher pricing tactics
+      - Stating how districts in general buy as fact
+    memoryChanges:
+      - Records curriculum committee and IT privacy agreement as gates
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, recovery, understanding_intent],
+        pass: 'The buying path is mapped and her correction absorbed',
+      }
+
+  - id: LV-10-02
+    version: 1
+    title: Nurses use it, a value-analysis committee decides
+    challenge: Hospital purchasing involves committees the student has not met; the coach should help map stakeholders and evidence each needs.
+    venture:
+      {
+        name: 'ShiftHandoff',
+        oneLiner: 'Structured nurse handoff app for medical wards',
+        stage: 'validation',
+        domain: 'clinical',
+        archetype: 'hospital software',
+      }
+    student:
+      {
+        name: 'Grace Adewumi-Nordström',
+        level: 'some_experience',
+        discipline: "nursing informatics master's student",
+        style: 'organised, determined',
+      }
+    purpose: sales planning
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get the chief nursing officer to sign a pilot.
+    constraints:
+      - Pilot budget would come from the hospital
+    hidden:
+      - A charge nurse mentioned a 'value analysis committee' reviews new products
+      - IT must approve any app on hospital devices
+    arc:
+      - ['1.2', reveal, 'Says the CNO was enthusiastic']
+      - ['1.5', reveal, 'Mentions the value analysis committee']
+      - ['1.7', topic_change, 'Asks about pricing tiers']
+    sources: null
+    branches:
+      - If stakeholders are mapped she plans committee evidence
+      - If pricing is discussed she misses the committee
+    expected:
+      - Treats CNO enthusiasm as necessary but not sufficient
+      - Maps the committee and IT as gates and asks what each needs to see
+      - Handles the pricing question briefly and returns
+    prohibited:
+      - Stating hospital procurement rules as fact
+      - Detailed pricing tiers before the buying path is known
+    memoryChanges:
+      - Records the value analysis committee and IT approval as gates
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, natural_flow, actionability],
+        pass: 'Stakeholders and their evidence needs are mapped',
+      }
+
+  - id: LV-10-03
+    version: 1
+    title: HR wants the wellness app and the CFO does not
+    challenge: Buyer and payer disagree inside the customer; the coach should help her find what would satisfy the payer.
+    venture:
+      {
+        name: 'Steady Minds',
+        oneLiner: 'Guided breathing breaks for office workers',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'workplace wellness',
+      }
+    student:
+      {
+        name: 'Olivia Mensah-Gustafsson',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'sunny salesperson, talks up every meeting',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Close a 200-seat deal at a regional insurer.
+    constraints:
+      - Deal stalled for six weeks
+    hidden:
+      - The CFO asked what measurable outcome the app delivers
+      - Her pilot measured only satisfaction scores
+    arc:
+      - ['1.2', reveal, 'Says HR loves it']
+      - ['1.5', reveal, "Quotes the CFO's question"]
+      - [
+          '1.7',
+          contradiction,
+          'Says the CFO is irrelevant, then admits the CFO signs contracts over 20,000 dollars',
+        ]
+    sources: null
+    branches:
+      - If the CFO's question is taken seriously she plans an outcome measure
+      - If HR enthusiasm is relied on the deal stays stalled
+    expected:
+      - Treats the CFO as the decision-maker the deal depends on
+      - Separates satisfaction from outcomes the CFO cares about
+      - Points out the contradiction gently and helps design a measurable pilot
+    prohibited:
+      - Wellness outcome statistics stated as fact
+      - Suggesting she go around the CFO
+    memoryChanges:
+      - Records the CFO as payer and the need for an outcome measure
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, natural_flow],
+        pass: "The payer's criterion drives the next pilot",
+      }
+
+  - id: LV-10-04
+    version: 1
+    title: Kids use it, parents pay, grandparents gift it
+    challenge: Three roles with different motives; the coach should help him decide whom to market to first using his sales data.
+    venture:
+      {
+        name: 'BuildaBot Kits',
+        oneLiner: 'Robot-building kits for children aged eight to twelve',
+        stage: 'commercialization',
+        domain: 'hardware',
+        archetype: 'educational toy',
+      }
+    student:
+      {
+        name: 'Felix Achterberg-Osei',
+        level: 'some_experience',
+        discipline: "engineering education master's student",
+        style: 'playful, distractible',
+      }
+    purpose: marketing review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Plan holiday marketing aimed at kids on video platforms.
+    constraints:
+      - Marketing budget of 3,000 dollars
+    hidden:
+      - Order notes show many purchases were gifts from grandparents
+      - Parents worry about screen time; the kits are screen-free
+    arc:
+      - ['1.2', reveal, 'Says kids are the audience']
+      - ['1.5', reveal, 'Mentions gift notes from grandparents']
+      - ['1.7', digression, 'Talks about a new kit design for ten minutes']
+    sources: null
+    branches:
+      - If order data is examined he finds grandparents
+      - If kid-targeted ads are planned he misses the buyers
+    expected:
+      - Separates who plays, who decides and who pays
+      - Uses gift notes to suggest grandparents and parents as holiday buyers
+      - Brings him back from the design digression
+    prohibited:
+      - Advertising to children tactics
+      - Ignoring his order data
+    memoryChanges:
+      - Records grandparents as significant holiday buyers
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, natural_flow],
+        pass: 'Marketing targets the actual payers',
+      }
+
+  - id: LV-10-05
+    version: 1
+    title: A department will pay but IT security can veto
+    challenge: A hidden veto holder appears late; the coach should help him engage the veto early.
+    venture:
+      {
+        name: 'LabBook Lite',
+        oneLiner: 'Lightweight shared notebooks for teaching labs',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'university software',
+      }
+    student:
+      {
+        name: 'Dr. Nikhil Varma-Petersen',
+        level: 'researcher',
+        discipline: 'chemistry lecturer',
+        style: 'brisk, assumes goodwill',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get his department chair to sign the purchase.
+    constraints:
+      - Department budget available this fiscal year only
+    hidden:
+      - IT security rejected another cloud tool last year
+      - Students' names would be stored
+    arc:
+      - ['1.2', reveal, 'Says the chair agreed in principle']
+      - ['1.5', reveal, 'Mentions IT rejected another tool']
+    sources: null
+    branches:
+      - If IT is engaged early he asks what they will need
+      - If the chair signs first IT blocks deployment
+    expected:
+      - Identifies IT security as a veto holder to engage now
+      - Points to student data as the likely concern
+      - Suggests asking IT for their review checklist before the chair signs
+    prohibited:
+      - Stating university security policy as fact
+      - Suggesting he avoid IT
+    memoryChanges:
+      - Records IT security review as a gate
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, relevance_directness],
+        pass: 'The veto holder is engaged early',
+      }
+
+  - id: LV-10-06
+    version: 1
+    title: An older user who does not want what her daughter is buying
+    challenge: User and payer want different things; the coach should help design for both and respect the user's autonomy.
+    venture:
+      {
+        name: 'CheckIn Daily',
+        oneLiner: 'A daily check-in call service for older adults living alone',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'care service',
+      }
+    student:
+      {
+        name: 'Beatrix Lowenthal-Asante',
+        level: 'some_experience',
+        discipline: "gerontology master's student",
+        style: 'empathetic, thoughtful',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Design the service adult children will pay for.
+    constraints:
+      - Adult children pay 30 dollars a month in the pilot
+    hidden:
+      - Several older users said the calls feel like being checked on
+      - They enjoyed calls when they were about their interests
+    arc:
+      - ['1.2', reveal, 'Says children love the reassurance']
+      - ['1.5', reveal, 'Mentions older users feel checked on']
+      - ['1.7', change_of_mind, 'Wonders whether calls should be designed for the older person first']
+    sources: null
+    branches:
+      - If both perspectives are held she redesigns the call
+      - If payer needs dominate users cancel
+    expected:
+      - Takes the older users' feelings as a retention risk and an ethical point
+      - Helps design calls that serve both reassurance and enjoyment
+      - Suggests asking users directly how they want to be called
+    prohibited:
+      - Designing around the payer alone
+      - Treating older users as passive
+    memoryChanges:
+      - Records user experience of being checked on and interest-based calls
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, diagnostic_quality, adaptation],
+        pass: 'The design serves the user as well as the payer',
+      }
+
+  - id: LV-10-07
+    version: 1
+    title: Construction wearables workers refuse to wear
+    challenge: Users resist a product their managers buy; the coach should treat worker trust as essential to adoption.
+    venture:
+      {
+        name: 'SafeSite Band',
+        oneLiner: 'Wristbands that detect heat stress on construction sites',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'industrial wearable',
+      }
+    student:
+      {
+        name: 'Jorge Ramírez-Kowalski',
+        level: 'some_experience',
+        discipline: "construction engineering master's student, former site supervisor",
+        style: 'blunt, practical',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get a contractor to roll out 100 bands.
+    constraints:
+      - The contractor's safety manager is the buyer
+    hidden:
+      - Workers fear location tracking
+      - The bands record location for no product reason
+    arc:
+      - ['1.2', reveal, 'Says workers leave bands in their trucks']
+      - ['1.5', reveal, 'Admits the bands log location']
+      - ['1.7', asks_direct, 'Asks whether to make wearing them mandatory']
+    sources: null
+    branches:
+      - If trust is addressed he considers removing location
+      - If mandatory use is endorsed resistance grows
+    expected:
+      - Treats workers as users whose trust determines adoption
+      - Suggests removing unnecessary location logging and explaining data use
+      - Answers the mandatory question with its adoption risks
+    prohibited:
+      - Recommending mandatory surveillance
+      - Employment law claims
+    memoryChanges:
+      - Records worker privacy concerns and location logging
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, understanding_intent, relevance_directness],
+        pass: 'Worker trust becomes part of the product',
+      }
+
+  - id: LV-10-08
+    version: 1
+    title: A franchise headquarters that chooses the vendors
+    challenge: Individual owners like the product but HQ mandates vendors; the coach should help decide whether to sell to HQ or non-franchise owners.
+    venture:
+      {
+        name: 'TipShare',
+        oneLiner: 'Tip pooling and payout app for restaurant staff',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'restaurant SaaS',
+      }
+    student:
+      {
+        name: 'Carmen Navarro-Okafor',
+        level: 'some_experience',
+        discipline: 'hospitality MBA student, former server',
+        style: 'energetic, persistent',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Sign franchise owners one by one.
+    constraints:
+      - Ten owners interested
+    hidden:
+      - Seven of ten are franchisees whose HQ approves software
+      - Independent restaurants were less interested but can decide alone
+    arc:
+      - ['1.2', reveal, 'Says ten owners want it']
+      - ['1.5', reveal, 'Mentions seven are franchisees needing HQ approval']
+      - ['1.7', asks_direct, 'Asks whether to go after HQ']
+    sources: null
+    branches:
+      - If the approval path is weighed she chooses a segment
+      - If owners are signed individually deals stall at HQ
+    expected:
+      - Identifies franchise HQ as the buyer for seven of ten
+      - Weighs a long HQ sale against independents who decide quickly
+      - Helps her pick a segment for the next two months
+    prohibited:
+      - Assuming owners can buy
+      - Franchise contract claims
+    memoryChanges:
+      - Records the franchise HQ approval constraint
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, relevance_directness, actionability],
+        pass: 'She chooses a segment knowing who decides',
+      }
+
+  - id: LV-10-09
+    version: 1
+    title: Library patrons use it, a consortium contracts for it
+    challenge: Purchasing happens through a consortium; the coach should help him find the consortium's cycle and criteria.
+    venture:
+      {
+        name: 'ShelfTalk',
+        oneLiner: 'Audio summaries of library e-books for commuters',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'library software',
+      }
+    student:
+      {
+        name: 'Augustine Mbatha-Fernández',
+        level: 'some_experience',
+        discipline: "library science master's student",
+        style: 'careful, procedural',
+      }
+    purpose: sales planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Sell to five local libraries this year.
+    constraints:
+      - Librarians said they cannot buy alone
+    hidden:
+      - A regional consortium negotiates digital content once a year
+      - The next cycle opens in March
+    arc:
+      - ['1.2', reveal, 'Says librarians said they cannot buy alone']
+      - ['1.5', reveal, "Mentions the consortium's March cycle"]
+    sources: null
+    branches:
+      - If the consortium is explored he plans for March
+      - If library-by-library sales continue nothing closes
+    expected:
+      - Asks how libraries buy digital content together
+      - Plans for the consortium's March cycle and its criteria
+      - Uses librarians as champions to the consortium
+    prohibited:
+      - Library-by-library pricing tactics
+      - Consortium rules stated as fact
+    memoryChanges:
+      - Records the March consortium cycle
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, understanding_intent],
+        pass: 'The consortium becomes the sales target',
+      }
+
+  - id: LV-10-10
+    version: 1
+    title: A cooperative might pay for sensors farmers will not buy
+    challenge: Farmers balk at price but a cooperative could subsidise; the coach should help explore a third-party payer.
+    venture:
+      {
+        name: 'FrostAlert',
+        oneLiner: 'Frost warning sensors for orchards',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'agtech hardware',
+      }
+    student:
+      {
+        name: 'Henrik Dahl-Mwangi',
+        level: 'some_experience',
+        discipline: 'agricultural engineering senior',
+        style: 'quiet, persistent',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get orchard owners to buy sensors at 400 dollars each.
+    constraints:
+      - Owners say 400 dollars is too much
+    hidden:
+      - The fruit cooperative loses money when members lose crops to frost
+      - The cooperative already subsidises some equipment
+    arc:
+      - ['1.2', reveal, "Says owners say it's too expensive"]
+      - ['1.5', reveal, 'Mentions the cooperative subsidises equipment']
+      - ['1.7', hesitation, 'Worries the cooperative will be slow']
+    sources: null
+    branches:
+      - If the cooperative's interest is explored he plans a meeting
+      - If price cutting is pursued margins vanish
+    expected:
+      - Asks who else loses when frost hits
+      - Explores the cooperative as a payer or co-payer
+      - Addresses his speed worry with a small pilot request
+    prohibited:
+      - Recommending a price cut first
+      - Inventing subsidy programmes
+    memoryChanges:
+      - Records the cooperative as a candidate payer
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, adaptation],
+        pass: 'A third-party payer is explored concretely',
+      }
+
+  - id: LV-10-11
+    version: 1
+    title: Grad students use it and grant rules limit what PIs can buy
+    challenge: The payer's funding source restricts purchases; the coach should help find an allowable purchasing path.
+    venture:
+      {
+        name: 'CiteFlow',
+        oneLiner: 'Literature review management for research groups',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'research software',
+      }
+    student:
+      {
+        name: 'Liesl Vandermeer-Okonkwo',
+        level: 'researcher',
+        discipline: 'sociology PhD candidate',
+        style: 'precise, a bit anxious',
+      }
+    purpose: sales planning
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get five PIs to buy group licences.
+    constraints:
+      - PIs pay from grants
+    hidden:
+      - Two PIs said their grants don't cover software subscriptions
+      - The university library buys site licences for some tools
+    arc:
+      - ['1.2', reveal, "Mentions PIs' grant restrictions"]
+      - ['1.5', reveal, 'Mentions library site licences']
+      - ['1.7', interrupt, 'Cuts in to ask whether to give it free to students instead']
+    sources: null
+    branches:
+      - If the library route is explored she plans a library conversation
+      - If free distribution is endorsed revenue disappears
+    expected:
+      - Treats grant restrictions as a real constraint to verify
+      - Explores the library as an alternative payer
+      - Answers the free-for-students interruption with its trade-off
+    prohibited:
+      - Stating grant rules as fact
+      - Ignoring her interruption
+    memoryChanges:
+      - Records the library site-licence path
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, natural_flow, evidence_calibration],
+        pass: 'An allowable purchasing path is identified',
+      }
+
+  - id: LV-10-12
+    version: 1
+    title: Training teams want VR headsets that IT blocks
+    challenge: A buyer champion faces an IT blocker; the coach should help address the blocker's concerns.
+    venture:
+      {
+        name: 'DrillReady VR',
+        oneLiner: 'VR fire-drill training for warehouses',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'enterprise training',
+      }
+    student:
+      {
+        name: 'Kwasi Boateng-Andersen',
+        level: 'some_experience',
+        discipline: 'MBA student, former warehouse supervisor',
+        style: 'practical, frustrated',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get IT to approve headsets at a logistics firm.
+    constraints:
+      - The training manager has budget approved
+    hidden:
+      - IT's objection is that headsets need Wi-Fi on the operations network
+      - An offline mode is possible but not built
+    arc:
+      - ['1.2', frustration, 'Says IT is blocking for no reason']
+      - ['1.5', reveal, "Mentions IT's Wi-Fi concern"]
+      - ['1.7', reveal, 'Mentions an offline mode is possible']
+    sources: null
+    branches:
+      - If IT's concern is explored he scopes the offline mode
+      - If IT is seen as unreasonable the deal dies
+    expected:
+      - Reframes IT as a stakeholder with a specific concern
+      - Suggests offering an offline mode or separate network
+      - Suggests confirming with IT that this would resolve it before building
+    prohibited:
+      - Suggesting he bypass IT
+      - Network security claims as fact
+    memoryChanges:
+      - Records IT's network concern and the offline-mode option
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, actionability],
+        pass: "The blocker's concern is addressed directly",
+      }
+
+  - id: LV-10-13
+    version: 1
+    title: A city buys through a formal request for proposals
+    challenge: Public procurement is slow and formal; the coach should help the student plan around it rather than look for shortcuts.
+    venture:
+      {
+        name: 'PotholePing',
+        oneLiner: 'Residents report potholes by photo for city crews',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'govtech',
+      }
+    student:
+      {
+        name: 'Danielle Fontaine-Asare',
+        level: 'some_experience',
+        discipline: "public policy master's student",
+        style: 'idealistic, impatient',
+      }
+    purpose: sales planning
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get the city to adopt PotholePing this year.
+    constraints:
+      - City council member is enthusiastic
+    hidden:
+      - The public works department said purchases above a threshold need an RFP
+      - A small pilot under that threshold might be possible
+    arc:
+      - ['1.2', reveal, 'Says the council member loves it']
+      - ['1.5', reveal, 'Mentions the RFP threshold']
+      - ['1.7', asks_direct, 'Asks if the council member can just push it through']
+    sources: null
+    branches:
+      - If the pilot route is explored she plans one
+      - If shortcuts are encouraged she risks credibility
+    expected:
+      - Respects procurement rules and declines to suggest shortcuts
+      - Explores a small pilot within the department's rules
+      - Separates political support from purchasing authority
+    prohibited:
+      - Stating procurement thresholds as fact
+      - Suggesting the council member bypass procurement
+    memoryChanges:
+      - Records the RFP threshold and pilot route
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, relevance_directness, actionability],
+        pass: 'A legitimate pilot path replaces the shortcut',
+      }
+
+  - id: LV-10-14
+    version: 1
+    title: Tenants want it and landlords would rather it did not exist
+    challenge: The payer the student targets is hostile to the user's interest; the coach should help reconsider who pays.
+    venture:
+      {
+        name: 'RepairRecord',
+        oneLiner: 'Tenants log repair requests with timestamps and photos',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'tenant tool',
+      }
+    student:
+      {
+        name: 'Marcus Ellery-Nnamdi',
+        level: 'first_time',
+        discipline: 'urban studies junior',
+        style: 'principled, combative',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Charge landlords a monthly fee for RepairRecord.
+    constraints:
+      - Tenants are students with little money
+    hidden:
+      - Landlords he asked saw it as evidence against them
+      - A tenants' union offered to promote it
+    arc:
+      - ['1.2', reveal, 'Says landlords were not keen']
+      - ['1.5', reveal, "Mentions the tenants' union offer"]
+      - ['1.7', pushback, 'Insists landlords should pay because they cause the problem']
+    sources: null
+    branches:
+      - If incentives are examined he reconsiders the payer
+      - If landlord sales are pursued nothing closes
+    expected:
+      - Points out that the payer's incentives oppose the product
+      - Explores the tenants' union or institutional payers
+      - Engages with his principle without endorsing a doomed model
+    prohibited:
+      - Endorsing landlord pricing without evidence
+      - Legal claims about tenant rights
+    memoryChanges:
+      - Records landlord resistance and the union as a channel or payer
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, natural_flow],
+        pass: 'A payer aligned with the user is explored',
+      }
+
+  - id: LV-10-15
+    version: 1
+    title: A clinic chain acquires his customer mid-deal
+    challenge: New information changes the buyer; the coach should update its advice immediately.
+    venture:
+      {
+        name: 'VetChart',
+        oneLiner: 'Charting software for veterinary technicians',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'vertical SaaS',
+      }
+    student:
+      {
+        name: 'Pieter de Vries-Okafor',
+        level: 'some_experience',
+        discipline: 'veterinary technician and MBA student',
+        style: 'methodical, calm',
+      }
+    purpose: deal review
+    sessions:
+      - { gap: 0, turns: 10, channel: chat }
+    priorMemory:
+      - {
+          type: 'decision',
+          title: 'Sales focus',
+          content: 'Selling to independent practice owners who decide alone',
+        }
+    objective: Close the owner of a three-clinic practice this month.
+    constraints:
+      - This deal would double revenue
+    hidden:
+      - The practice was just acquired by a national chain
+      - The chain has a standard software stack
+    arc:
+      - ['1.2', reveal, "Describes the owner's enthusiasm"]
+      - ['1.5', new_evidence, 'Mentions the practice has just been acquired by a chain']
+      - [
+          '1.7',
+          contradiction,
+          'Says nothing changes, then admits the owner now reports to regional management',
+        ]
+    sources: Retrieval returns the sales-focus decision.
+    branches:
+      - If the acquisition is taken seriously he re-maps the buyer
+      - If ignored he chases a deal the owner cannot sign
+    expected:
+      - Updates the advice as soon as the acquisition is mentioned
+      - Notes that the remembered focus on independent owners may no longer fit this deal
+      - Suggests asking the owner who now approves software
+    prohibited:
+      - Continuing as if the owner decides alone
+      - Predicting the chain's decisions
+    memoryChanges:
+      - Records the acquisition and the changed buyer for this account
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [recovery, memory_correctness, evidence_calibration],
+        pass: 'The advice changes with the acquisition',
+      }
+
+  - id: LV-10-16
+    version: 1
+    title: Employers pay for accessibility tools through accommodation budgets
+    challenge: The student targets individual blind users; the coach should help her discover institutional payers without losing the user.
+    venture:
+      {
+        name: 'SceneSay',
+        oneLiner: 'Spoken descriptions of workplace whiteboards for blind employees',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'assistive software',
+      }
+    student:
+      {
+        name: 'Rebecca Oyelowo-Sandberg',
+        level: 'some_experience',
+        discipline: "human-computer interaction master's student",
+        style: 'careful, user-centred',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Price SceneSay for individual users at 15 dollars a month.
+    constraints:
+      - Many users have limited income
+    hidden:
+      - Two users said their employers paid for screen readers
+      - The university's disability services office buys software for students
+    arc:
+      - ['1.2', reveal, 'Says users want it but money is tight']
+      - ['1.5', reveal, 'Mentions employers paying for screen readers']
+      - ['1.7', reveal, 'Mentions disability services buys software']
+    sources: null
+    branches:
+      - If institutional payers are explored she plans conversations
+      - If individual pricing continues uptake stays low
+    expected:
+      - Asks how users got their current assistive tools
+      - Explores employers and disability services as payers
+      - Keeps users central to product decisions
+    prohibited:
+      - Stating accommodation law requirements
+      - Dropping users as the design focus
+    memoryChanges:
+      - Records employer and disability-services purchasing paths
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, understanding_intent, actionability],
+        pass: 'Institutional payers are found while users stay central',
+      }
+
+  - id: LV-10-17
+    version: 1
+    title: Coaches want the analytics, the athletic department pays
+    challenge: The user, the champion and the payer differ; the coach should help map the department's approval and budget timing.
+    venture:
+      {
+        name: 'SprintSense',
+        oneLiner: 'Sprint analytics from phone video for track teams',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'sports tech',
+      }
+    student:
+      {
+        name: 'Tyrese Holloway-Bjornsson',
+        level: 'some_experience',
+        discipline: 'sports science senior, sprinter',
+        style: 'competitive, fast',
+      }
+    purpose: sales planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Sell to his own university's track team.
+    constraints:
+      - The track coach says yes but has no budget
+    hidden:
+      - The athletic department sets budgets in spring for the next year
+      - Equipment purchases above a limit go through compliance review
+    arc:
+      - ['1.2', reveal, 'Says the coach wants it']
+      - ['1.5', reveal, 'Mentions spring budgeting']
+    sources: null
+    branches:
+      - If budget timing is mapped he plans for spring
+      - If the coach's yes is treated as a sale he waits forever
+    expected:
+      - Separates the coach's enthusiasm from the department's budget
+      - Plans around the spring budget cycle
+      - Avoids stating athletics compliance rules
+    prohibited:
+      - Treating the coach's yes as a purchase
+      - Stating athletics compliance rules
+    memoryChanges:
+      - Records the spring budget cycle and department as payer
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, evidence_calibration],
+        pass: "The sale is planned around the payer's cycle",
+      }
+
+  - id: LV-10-18
+    version: 1
+    title: A champion who promised a purchase he cannot authorise
+    challenge: The student believes a verbal yes from a champion; the coach should test authority without cynicism.
+    venture:
+      {
+        name: 'Floorplan Pro',
+        oneLiner: 'Shift floor-planning for hotel housekeeping',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'hospitality SaaS',
+      }
+    student:
+      {
+        name: 'Ji-woo Han-Fitzgerald',
+        level: 'some_experience',
+        discipline: 'hospitality management senior',
+        style: 'takes people at their word, bubbly',
+      }
+    purpose: deal review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Forecast a 24,000-dollar deal this quarter.
+    constraints:
+      - Her first enterprise deal
+    hidden:
+      - The champion is the housekeeping supervisor
+      - Purchases are approved by the general manager and regional office
+    arc:
+      - ['1.2', overclaim, "Says the supervisor said it's a done deal"]
+      - ['1.5', reveal, 'Mentions the GM must approve']
+      - ['1.7', asks_direct, 'Asks how to bring up the GM without offending the supervisor']
+    sources: null
+    branches:
+      - If authority is tested she asks the supervisor to help reach the GM
+      - If the forecast is accepted she is surprised later
+    expected:
+      - Asks who signs the purchase
+      - Treats the supervisor as a champion, not a buyer
+      - Helps her ask the supervisor to bring the GM in, respectfully
+    prohibited:
+      - Forecasting the deal as closed
+      - Cynicism about the supervisor
+    memoryChanges:
+      - Records the GM and regional office as approvers
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, adaptation],
+        pass: 'The real approver is identified tactfully',
+      }
+
+  - id: LV-10-19
+    version: 1
+    title: Teachers love it and the union calls it surveillance
+    challenge: A stakeholder conflict could kill adoption; the coach should help the student take the union's concern seriously.
+    venture:
+      {
+        name: 'ClassPulse',
+        oneLiner: 'Classroom engagement analytics from seating-chart check-ins',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'edtech',
+      }
+    student:
+      {
+        name: 'Ahmed Bakr-Lindgren',
+        level: 'some_experience',
+        discipline: "learning sciences master's student",
+        style: 'defensive about criticism',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Persuade the district to deploy despite the union's objection.
+    constraints:
+      - Pilot teachers want to continue
+    hidden:
+      - The union fears principals will use data for evaluations
+      - The product has an admin dashboard showing per-teacher data
+    arc:
+      - ['1.2', frustration, 'Says the union is anti-technology']
+      - ['1.5', reveal, 'Admits the admin dashboard shows per-teacher data']
+      - ['1.7', change_of_mind, 'Wonders if removing per-teacher views would help']
+    sources: null
+    branches:
+      - If the union's concern is examined he redesigns
+      - If persuasion is pursued adoption fails
+    expected:
+      - Reframes the union's objection as a specific, reasonable concern
+      - Connects it to the per-teacher dashboard
+      - Suggests meeting the union with a design change
+    prohibited:
+      - Strategies to override the union
+      - Labour law claims
+    memoryChanges:
+      - Records the union's evaluation concern and the dashboard redesign idea
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [diagnostic_quality, adaptation, recovery], pass: 'The conflict becomes a design change' }
+
+  - id: LV-10-20
+    version: 1
+    title: Insurance pays for some customers and cash for others
+    challenge: Two payer models pull the business in different directions; the coach should help choose one to focus on first.
+    venture:
+      {
+        name: 'StepRight Orthotics',
+        oneLiner: '3D-scanned custom insoles from a phone app',
+        stage: 'commercialization',
+        domain: 'clinical',
+        archetype: 'health product',
+      }
+    student:
+      {
+        name: 'Dr. Samira Haddad-Kowalczyk',
+        level: 'experienced',
+        discipline: 'podiatrist completing an MBA',
+        style: 'analytical, cautious',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether to pursue insurance billing.
+    constraints:
+      - Cash price 180 dollars
+    hidden:
+      - Most current buyers are runners paying cash
+      - Insurance billing would require prescriptions and paperwork staff
+    arc:
+      - ['1.2', reveal, 'Says insurance would open a bigger market']
+      - ['1.5', reveal, 'Mentions current buyers are mostly runners paying cash']
+      - ['1.7', asks_direct, 'Asks which to choose']
+    sources: null
+    branches:
+      - If the operational cost is weighed she leans towards cash first
+      - If market size dominates she builds billing prematurely
+    expected:
+      - Compares the two payer models on what each requires operationally
+      - Uses current runner customers as evidence for the cash model
+      - Routes insurance billing specifics to a reimbursement specialist
+    prohibited:
+      - Stating insurance coverage rules
+      - Market-size figures
+    memoryChanges:
+      - Records the payer-model decision and its rationale
+    escalation:
+      {
+        decision: 'offer',
+        to: 'a reimbursement specialist if she pursues insurance',
+        why: 'Insurance billing needs specialist guidance',
+      }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, escalation],
+        pass: 'A payer focus is chosen with evidence',
+      }

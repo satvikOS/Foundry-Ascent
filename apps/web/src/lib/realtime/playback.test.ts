@@ -9,6 +9,7 @@ import {
   type FaceRenderHandlers,
   type FaceUnitAudio,
   type PlayerAudio,
+  type SpeechFetchOptions,
   type SpeechFetchResult,
   type SpeechUnitToPlay,
   wavPayload,
@@ -32,7 +33,7 @@ function setup(options: { synthesis?: boolean } = {}) {
   const synthesis = new FakeSpeechSynthesis();
   const pending: Pending[] = [];
   const fetchSpeech = vi.fn(
-    (u: SpeechUnitToPlay, signal: AbortSignal) =>
+    (u: SpeechUnitToPlay, signal: AbortSignal, _options?: SpeechFetchOptions) =>
       new Promise<SpeechFetchResult>((resolve) => {
         pending.push({ unit: u, signal, resolve });
       }),
@@ -558,5 +559,124 @@ describe('SpeechPlayer with a FULL face: the server’s pre-approval of a failed
     // Another turn's unit keeps its approval; nothing was fetched as audio (the face says every unit).
     expect(face.said[3]?.unit).toEqual(approved(3, OTHER));
     expect(fetchSpeech).not.toHaveBeenCalled();
+  });
+});
+
+/** A PCM response body the test feeds as the server would stream it. */
+function pcmBody() {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      controller = c;
+    },
+  });
+  return {
+    body,
+    /** `ms` of 24 kHz audio. */
+    push(ms: number) {
+      try {
+        controller.enqueue(new Uint8Array(Math.round((ms / 1000) * 24_000) * 2).fill(8));
+      } catch {
+        /* cancelled */
+      }
+    },
+    end() {
+      controller.close();
+    },
+  };
+}
+
+describe('SpeechPlayer with PCM streamed as it is synthesized', () => {
+  it('asks for a stream (no face) naming the unit’s signed neighbours, and plays before the unit has arrived', async () => {
+    const { context, pending, fetchSpeech, player, log } = setup();
+    player.enqueue(unit(0));
+    player.enqueue(unit(1));
+    // Unit 0 was asked for before unit 1 arrived: no neighbour yet. Unit 1 names unit 0.
+    expect(fetchSpeech.mock.calls[0]?.[2]).toEqual({ stream: true });
+    expect(fetchSpeech.mock.calls[1]?.[2]).toEqual({
+      stream: true,
+      context: { previous: { seq: 0, text: 'Sentence 0.', sig: unit(0).sig } },
+    });
+    const first = pcmBody();
+    pending[0]?.resolve({ kind: 'stream', body: first.body, sampleRate: 24_000 });
+    await flush();
+    // The response is open but too little audio is in hand: not yet announced.
+    expect(log).toEqual([]);
+    first.push(150);
+    await flush(10);
+    // Heard (captions follow) while the rest of the unit is still being synthesized.
+    expect(log).toEqual(['start 0 server']);
+    expect(context.sources).toHaveLength(1);
+    // Through the unit's own gain (its fades) into the player's gain (ducking, the level meter).
+    expect(context.sources[0]?.connections[0]).toBe(context.gains[1]);
+    expect(context.gains[1]?.connections[0]).toBe(context.gains[0]);
+    // The level meter reads what plays.
+    const analyser = context.analysers[0];
+    if (analyser) analyser.level = 0.3;
+    expect(player.level()).toBeCloseTo(0.3);
+    first.push(60);
+    first.end();
+    await flush(10);
+    for (const source of context.sources) source.finish();
+    await flush(10);
+    expect(log).toEqual(['start 0 server', 'end 0 done']);
+  });
+
+  it('barge-in flushes everything: the playing stream stops, prefetched streams are aborted, no stale audio after', async () => {
+    const { context, pending, player, log } = setup();
+    player.enqueue(unit(0));
+    player.enqueue(unit(1));
+    const first = pcmBody();
+    const second = pcmBody();
+    pending[0]?.resolve({ kind: 'stream', body: first.body, sampleRate: 24_000 });
+    pending[1]?.resolve({ kind: 'stream', body: second.body, sampleRate: 24_000 });
+    first.push(200);
+    second.push(200);
+    await flush(10);
+    // Only the playing unit is scheduled; the prefetched one is held until its turn.
+    expect(context.sources).toHaveLength(1);
+    const scheduled = context.sources.length;
+
+    player.stop();
+    expect(context.sources.every((s) => s.stopped)).toBe(true);
+    expect(pending[1]?.signal.aborted).toBe(true);
+    expect(pending[0]?.signal.aborted).toBe(true);
+    await flush(10);
+    expect(log).toEqual(['start 0 server', 'end 0 cut']);
+    // Audio still arriving for either unit is never scheduled.
+    first.push(500);
+    second.push(500);
+    await flush(20);
+    expect(context.sources).toHaveLength(scheduled);
+    expect(player.busy).toBe(false);
+
+    // The next reply plays normally.
+    player.enqueue(unit(5));
+    const next = pcmBody();
+    pending[2]?.resolve({ kind: 'stream', body: next.body, sampleRate: 24_000 });
+    next.push(120);
+    next.end();
+    await flush(10);
+    expect(log.at(-1)).toBe('start 5 server');
+  });
+
+  it('shows the words of a unit whose stream brought no audio, and goes on', async () => {
+    const { pending, player, log } = setup();
+    player.enqueue(unit(0));
+    const empty = pcmBody();
+    pending[0]?.resolve({ kind: 'stream', body: empty.body, sampleRate: 24_000 });
+    empty.end();
+    await flush(10);
+    expect(log).toEqual(['start 0 server']);
+    vi.advanceTimersByTime(readingTimeMs('Sentence 0.'));
+    await flush(10);
+    expect(log).toEqual(['start 0 server', 'end 0 done', 'idle']);
+  });
+
+  it('keeps fetching whole units (and their manifest) while a face renders the call’s audio', () => {
+    const { fetchSpeech, player } = setup();
+    player.setFace(new ScriptedFace());
+    player.enqueue(unit(0));
+    expect(fetchSpeech.mock.calls[0]?.[2]).toMatchObject({ stream: false });
   });
 });

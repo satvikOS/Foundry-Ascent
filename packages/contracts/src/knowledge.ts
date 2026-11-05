@@ -245,6 +245,12 @@ export const CallConfigResponse = z.object({
    * on for this vEIR). Additive.
    */
   faceMinutesLeft: z.number().min(0).optional(),
+  /**
+   * The voice the vEIR speaks with on calls here, when it is the platform's stock voice at a vendor (ElevenLabs): a
+   * synthetic voice that is no one's, shown as `label` ("AI voice") wherever the call names its voice, never as the
+   * EIR's. Absent: Amazon Polly's stock voices (or the EIR's consented clone). Additive.
+   */
+  voice: z.object({ vendor: z.string().max(40), label: z.literal('AI voice') }).optional(),
 });
 export type CallConfigResponse = z.infer<typeof CallConfigResponse>;
 
@@ -298,7 +304,18 @@ export const FaceEndRequest = z.object({
 });
 export type FaceEndRequest = z.infer<typeof FaceEndRequest>;
 
-/** `POST /speech` — synthesize validated vEIR text; responds with `audio/mpeg`. */
+/** A signed unit beside the one asked for (`SpeechRequest.context`). */
+export const SpeechNeighbour = z.object({
+  seq: z.number().int().min(0),
+  text: z.string().trim().min(1).max(1500),
+  sig: z.string().min(16).max(200),
+});
+export type SpeechNeighbour = z.infer<typeof SpeechNeighbour>;
+
+/**
+ * `POST /speech` — synthesize validated vEIR text; responds with `audio/mpeg`, or raw `audio/pcm` (16-bit mono
+ * little-endian, its rate in `x-speech-sample-rate`) streamed as it is synthesized when the request accepts it.
+ */
 export const SpeechRequest = z.object({
   sessionId: Id,
   /** Null only for a call's signed intro. */
@@ -310,6 +327,12 @@ export const SpeechRequest = z.object({
    */
   seq: z.number().int().min(0).optional(),
   sig: z.string().min(16).max(200).optional(),
+  /**
+   * The signed units just before and after this one in the same reply, as the browser has them: the server checks
+   * their signatures and hands their words to a vendor voice as prosody context only (never spoken, never billed).
+   * Optional and additive; a neighbour whose signature does not verify is ignored.
+   */
+  context: z.object({ previous: SpeechNeighbour.optional(), next: SpeechNeighbour.optional() }).optional(),
 });
 export type SpeechRequest = z.infer<typeof SpeechRequest>;
 

@@ -110,7 +110,7 @@ export function exchangesLine(
 /**
  * The session review (design-spec §11): after a call (`POST /calls/:id/end`) the founder is back in the
  * conversation, and this card closes its transcript. It holds any support the call was showing, how long the call
- * was and why it ended, the call's timeline, a quiet "Conversation saved" with what the vEIR saved to Knowledge (a
+ * was and why it ended, the call's timeline, a quiet "Remembered for next time" with what the vEIR saved to Knowledge (a
  * private call says it keeps nothing), the next actions it suggested and any request for a person it drafted, and
  * Call again. The transcript itself is already above it.
  */
@@ -278,7 +278,8 @@ function SummaryDetails({
   onLeave: () => void;
 }) {
   const remembered = !isPrivate && !supportShown && canWrite && summary.turnCount > 0;
-  // Show pending suggestions and previously approved items as they stand now.
+  // What the call saved to Knowledge, as it stands now (anything forgotten since is left out): kept by the vEIR
+  // by itself, or saved before memory was kept automatically.
   const savedIds = remembered ? [...(summary.memoryKeptIds ?? []), ...summary.memoryProposalIds] : [];
   const memories = useQueries({ queries: savedIds.map((id) => memoryItemQueryOptions(id)) });
   const saved = savedByIds(
@@ -300,14 +301,15 @@ function SummaryDetails({
           Private: nothing is remembered.
         </p>
       ) : remembered ? (
-        // Distinguish the saved session record from memory that still needs approval.
+        // A quiet "remembered" state: the call is kept with the conversation and the vEIR picks up from it
+        // next time, so the founder can trust the next call knows.
         <div className="grid justify-items-start gap-1">
           <p
             data-testid="call-remembered"
             className="flex items-center gap-1.5 text-small text-muted-foreground"
           >
             <Check aria-hidden className="size-4" />
-            Conversation saved.
+            Remembered for next time.
           </p>
           <MemorySaved
             tenant={tenant}

@@ -26,6 +26,13 @@ export interface TurnSample {
   readonly firstSpeechMs: number | null;
   /** Voice: first audio bytes of that unit, fetched from `POST /speech` as soon as it arrived. */
   readonly firstAudioMs: number | null;
+  /** Voice: the last audio byte of that unit (a player that decodes whole units can start only now). */
+  readonly firstUnitWholeMs: number | null;
+  /**
+   * Voice: when the call screen's player can start that unit: raw PCM once its jitter buffer
+   * ({@link PLAYER_JITTER_MS}) is in hand; MP3 or WAV once the whole unit arrived (decoding excluded).
+   */
+  readonly firstPlayableMs: number | null;
   /** Voice: the reply's last signed spoken unit. */
   readonly lastSpeechMs: number | null;
   /** Voice: signed spoken units of the reply. */
@@ -56,6 +63,14 @@ export interface RequestSample {
   /** The `http.request` log line of the request. */
   readonly server: Readonly<Record<string, unknown>> | null;
 }
+
+/**
+ * The call screen's jitter buffer before a streamed unit's first sound (apps/web/src/lib/realtime/pcm-stream.ts
+ * `JITTER_MS`).
+ */
+export const PLAYER_JITTER_MS = 100;
+const ACCEPT_PCM = 'audio/pcm, audio/mpeg, audio/wav, application/problem+json';
+const ACCEPT_WHOLE = 'audio/mpeg, audio/wav, application/problem+json';
 
 let counter = 0;
 function nextRequestId(prefix: string): string {
@@ -188,7 +203,8 @@ export async function turn(
     completed: null as number | null,
   };
   let finished: TurnView | null = null;
-  let firstAudio: Promise<{ ms: number; requestId: string } | null> = Promise.resolve(null);
+  let firstAudio: Promise<{ ms: number; whole: number; playable: number; requestId: string } | null> =
+    Promise.resolve(null);
   const speechFetches: Promise<unknown>[] = [];
   await readEvents(res, started, (event, at) => {
     switch (event.event) {
@@ -212,15 +228,33 @@ export async function turn(
               sig: event.sig,
             },
             cookie: args.cookie,
-            headers: { 'x-request-id': speechId },
+            // As the call screen asks: raw PCM played as it arrives (`--pcm`), or whole MP3 as before.
+            headers: { 'x-request-id': speechId, accept: rig.pcm ? ACCEPT_PCM : ACCEPT_WHOLE },
           })
           .then(async (audio) => {
             if (audio.status !== 200 || !audio.body) return null;
+            const pcm = audio.headers.get('content-type') === 'audio/pcm';
+            const rate = Number(audio.headers.get('x-speech-sample-rate')) || 24_000;
+            const jitterBytes = Math.round((PLAYER_JITTER_MS / 1000) * rate) * 2;
             const reader = audio.body.getReader();
-            await reader.read();
-            const ms = performance.now() - started;
-            for (;;) if ((await reader.read()).done) break;
-            return { ms, requestId: speechId };
+            let bytes = 0;
+            let first: number | null = null;
+            let playable: number | null = null;
+            for (;;) {
+              const next = await reader.read();
+              if (next.done) break;
+              const at = performance.now() - started;
+              first ??= at;
+              bytes += (next.value as Uint8Array).byteLength;
+              if (pcm && playable === null && bytes >= jitterBytes) playable = at;
+            }
+            const whole = performance.now() - started;
+            return {
+              ms: first ?? whole,
+              whole,
+              playable: pcm ? (playable ?? whole) : whole,
+              requestId: speechId,
+            };
           });
         speechFetches.push(fetched);
         if (marks.firstSpeech === null) {
@@ -255,6 +289,8 @@ export async function turn(
     firstDeltaMs: marks.firstDelta,
     firstSpeechMs: marks.firstSpeech,
     firstAudioMs: audio?.ms ?? null,
+    firstUnitWholeMs: audio?.whole ?? null,
+    firstPlayableMs: audio?.playable ?? null,
     lastSpeechMs: marks.lastSpeech,
     units: speechFetches.length,
     completedMs: marks.completed,

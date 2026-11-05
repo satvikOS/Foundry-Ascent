@@ -63,7 +63,8 @@ export interface MemoryService {
     input: z.input<typeof CreateMemoryRequest>,
   ): Promise<MemoryObjectView>;
   /**
-   * approve / reject / correct (new superseding version, history kept) / dispute / pin / unpin /
+   * approve / reject / correct (new superseding version, history kept; the correction is confirmed by the
+   * person correcting, a pending suggestion too: correcting it is keeping it) / dispute / pin / unpin /
    * delete (soft: content erased for every version). Founder or team only. Returns the resulting item
    * (the new version for `correct`) or null after `delete`.
    */
@@ -196,10 +197,9 @@ async function findDuplicate(
 }
 
 /**
- * Proposes AI memory candidates (the 2026-11-03 approval policy supersedes automatic confirmation).
- * Historical implementation note: owner decision 2026-10-16 kept conversation memory automatically,
+ * Keeps AI memory candidates (owner decision 2026-10-16: what a conversation teaches goes to memory by itself,
  * without an "add to memory" step). Each new candidate becomes an item of origin `ai` that is kept
- * as `proposed`, with no approver; it is excluded from coaching retrieval until a person approves it. The team
+ * automatically: `confirmed` with no approver and `auto_kept_at` (migration 0013), so the founder and their team
  * see it in Knowledge at once and can correct, dispute or delete it like any item. Its source refs name the
  * conversation it was learned from (and the turn, for a turn's candidates), so deleting that conversation
  * erases it. `visibility` is `team` normally, `founder_private` when it came from a turn or session that used
@@ -329,7 +329,7 @@ export async function proposeMemoryCandidates(
       type: candidate.type,
       title,
       content,
-      status: 'proposed',
+      keptAutomatically: true,
       visibility: args.visibility,
       confidence,
       origin: 'ai',
@@ -392,9 +392,7 @@ export async function settleKeptMemory(
   },
 ): Promise<SettleResult> {
   const none: SettleResult = { embedded: 0, merged: 0, forgotten: 0 };
-  const items = args.items.filter(
-    (m) => !m.hasEmbedding && (m.status === 'proposed' || (m.keptAutomatically && m.status === 'confirmed')),
-  );
+  const items = args.items.filter((m) => m.keptAutomatically && !m.hasEmbedding && m.status === 'confirmed');
   if (items.length === 0) return none;
   try {
     const settings = await kit.inRequest(ctx, ({ tx }) => settingsRepo.getPlatformSettings(tx));
@@ -471,116 +469,158 @@ export interface PendingSettleResult {
 /** Turns of a proposal's conversations read to judge where it came from. */
 const PENDING_GROUNDING_CONVERSATIONS = 3;
 
+/** Pending proposals settled per transaction, and the most pages one maintenance run walks. */
+const PENDING_SETTLE_PAGE = 200;
+const PENDING_SETTLE_MAX_PAGES = 50;
+
 /**
- * Settles the AI memory proposals left from before automatic memory (migration 0013 leaves them pending; owner
- * role, the daily maintenance): each, oldest first, goes through the checks new memory goes through. One that is
- * only the coach's advice ({@link isCoachEcho}, judged against the conversations it was drawn from) or something
- * the founder made the vEIR forget is retired; one that restates an item the venture has (lexically, or by its
- * stored embedding at {@link MEMORY_DUPLICATE_COSINE} with the same numbers) is retired and its conversations go to
- * that item when it is AI memory nobody reviewed; every other one remains pending student approval. Older
- * proposals are examined first, so of two that say the same the older remains pending. At most `limit` per run.
+ * Settles the AI memory proposals left pending (from before automatic memory, migration 0013, or written while
+ * memory waited for approval, 2026-11-03 to the restore in 0026; owner role, the daily maintenance): each, oldest
+ * first, goes through the checks new memory goes through. One that is only the coach's advice
+ * ({@link isCoachEcho}, judged against the conversations it was drawn from) or something the founder made the vEIR
+ * forget is retired; one that restates an item the venture has (lexically, or by its stored embedding at
+ * {@link MEMORY_DUPLICATE_COSINE} with the same numbers) is retired and its conversations go to that item when it is
+ * AI memory nobody reviewed; every other one is kept automatically, as new memory is. Older proposals are settled
+ * first, so of two that say the same the older is kept.
+ *
+ * It walks every pending proposal in (created_at, id) order with a cursor, one transaction per page of `limit`
+ * (at most `maxPages` pages per run), so a proposal that stays pending never hides the newer ones behind it. A
+ * person's correction is never among them (it is theirs, kept as they wrote it; migration 0026 keeps the ones
+ * written while approval was required).
  */
 export async function settlePendingAiProposals(
   kit: Kit,
-  args: { readonly limit?: number } = {},
+  args: { readonly limit?: number; readonly maxPages?: number } = {},
 ): Promise<PendingSettleResult> {
-  return kit.system(async (sx) => {
-    const pending = await memoryRepo.listPendingAiProposals(sx, { limit: args.limit ?? 200 });
-    const kept = 0;
-    let duplicates = 0;
-    let notTheFounders = 0;
-    const ventures = new Map<string, memoryRepo.PendingAiProposal[]>();
-    for (const item of pending) ventures.set(item.ventureId, [...(ventures.get(item.ventureId) ?? []), item]);
-    for (const [ventureId, items] of ventures) {
-      const known = await memoryRepo.listMemory(sx, {
-        ventureId,
-        statuses: ['confirmed', 'disputed', 'rejected', 'superseded'],
-        limit: DEDUPE_SCAN_LIMIT,
-        excerptChars: DEDUPE_EXCERPT_CHARS,
-      });
-      const forgotten = await memoryRepo.listForgottenMemory(sx, { ventureId, system: true });
-      const groundings = new Map<string, ConversationGrounding>();
-      const groundingOf = async (sessionId: string): Promise<ConversationGrounding> => {
-        const cached = groundings.get(sessionId);
-        if (cached !== undefined) return cached;
-        const turns = (await turnsRepo.listTurns(sx, sessionId)).filter(
-          (t) => t.status === 'completed' && t.riskLabel !== 'crisis',
-        );
-        const grounding = conversationGrounding(
-          turns.map((t) => ({ founder: t.founderText, answer: t.response?.answer ?? null })),
-        );
-        groundings.set(sessionId, grounding);
-        return grounding;
+  const limit = Math.max(1, Math.min(args.limit ?? PENDING_SETTLE_PAGE, 1000));
+  const maxPages = Math.max(1, args.maxPages ?? PENDING_SETTLE_MAX_PAGES);
+  const total = { kept: 0, duplicates: 0, notTheFounders: 0 };
+  let after: string | null = null;
+  for (let page = 0; page < maxPages; page += 1) {
+    const cursor = after;
+    const done = await kit.system(async (sx) => {
+      const pending = await memoryRepo.listPendingAiProposals(sx, { limit, after: cursor });
+      return {
+        ...(await settlePendingPage(sx, pending)),
+        seen: pending.length,
+        last: pending.at(-1)?.id ?? null,
       };
-      for (const item of items) {
-        const conversations = item.conversationIds.slice(0, PENDING_GROUNDING_CONVERSATIONS);
-        const parts = await Promise.all(conversations.map(groundingOf));
-        const grounding: ConversationGrounding = {
-          founder: parts.flatMap((g) => g.founder),
-          agreed: parts.flatMap((g) => g.agreed),
-        };
-        const embedding = item.hasEmbedding ? await memoryRepo.getMemoryEmbedding(sx, item.id) : null;
-        const echo = conversations.length > 0 && isCoachEcho(item, grounding);
-        const forgot = matchesForgotten(item, embedding, conversations[0] ?? '', forgotten, {
-          saidAgain: conversations.length > 0 && founderSaid(item, grounding),
-        });
-        if (echo || forgot) {
-          if (
-            await memoryRepo.settlePendingAiProposal(sx, {
-              memoryId: item.id,
-              outcome: 'expire',
-              reason: echo ? 'coach_advice' : 'forgotten',
-            })
-          )
-            notTheFounders += 1;
-          continue;
-        }
-        let duplicate =
-          known.find((e) => e.id !== item.id && sameMemoryContent(e.content, item.content)) ?? null;
-        if (duplicate === null && item.hasEmbedding) {
-          for (const hit of await memoryRepo.nearestToMemory(sx, {
+    });
+    total.kept += done.kept;
+    total.duplicates += done.duplicates;
+    total.notTheFounders += done.notTheFounders;
+    if (done.seen < limit || done.last === null) break;
+    after = done.last;
+  }
+  return total;
+}
+
+/** One page of {@link settlePendingAiProposals}, in its transaction. */
+async function settlePendingPage(
+  sx: SqlExecutor,
+  pending: readonly memoryRepo.PendingAiProposal[],
+): Promise<PendingSettleResult> {
+  let kept = 0;
+  let duplicates = 0;
+  let notTheFounders = 0;
+  const ventures = new Map<string, memoryRepo.PendingAiProposal[]>();
+  for (const item of pending) ventures.set(item.ventureId, [...(ventures.get(item.ventureId) ?? []), item]);
+  for (const [ventureId, items] of ventures) {
+    const known = await memoryRepo.listMemory(sx, {
+      ventureId,
+      statuses: ['confirmed', 'disputed', 'rejected', 'superseded'],
+      limit: DEDUPE_SCAN_LIMIT,
+      excerptChars: DEDUPE_EXCERPT_CHARS,
+    });
+    const forgotten = await memoryRepo.listForgottenMemory(sx, { ventureId, system: true });
+    const groundings = new Map<string, ConversationGrounding>();
+    const groundingOf = async (sessionId: string): Promise<ConversationGrounding> => {
+      const cached = groundings.get(sessionId);
+      if (cached !== undefined) return cached;
+      const turns = (await turnsRepo.listTurns(sx, sessionId)).filter(
+        (t) => t.status === 'completed' && t.riskLabel !== 'crisis',
+      );
+      const grounding = conversationGrounding(
+        turns.map((t) => ({ founder: t.founderText, answer: t.response?.answer ?? null })),
+      );
+      groundings.set(sessionId, grounding);
+      return grounding;
+    };
+    for (const item of items) {
+      const conversations = item.conversationIds.slice(0, PENDING_GROUNDING_CONVERSATIONS);
+      const parts = await Promise.all(conversations.map(groundingOf));
+      const grounding: ConversationGrounding = {
+        founder: parts.flatMap((g) => g.founder),
+        agreed: parts.flatMap((g) => g.agreed),
+      };
+      const embedding = item.hasEmbedding ? await memoryRepo.getMemoryEmbedding(sx, item.id) : null;
+      const echo = conversations.length > 0 && isCoachEcho(item, grounding);
+      const forgot = matchesForgotten(item, embedding, conversations[0] ?? '', forgotten, {
+        saidAgain: conversations.length > 0 && founderSaid(item, grounding),
+      });
+      if (echo || forgot) {
+        if (
+          await memoryRepo.settlePendingAiProposal(sx, {
             memoryId: item.id,
-            ventureId,
-            statuses: ['confirmed', 'disputed', 'rejected', 'superseded'],
-          })) {
-            if (hit.similarity < MEMORY_DUPLICATE_COSINE) break;
-            const other = known.find((e) => e.id === hit.id) ?? (await memoryRepo.getMemory(sx, hit.id));
-            if (
-              other !== null &&
-              sameNumbers(`${other.title} ${other.content}`, `${item.title} ${item.content}`)
-            ) {
-              duplicate = other;
-              break;
-            }
-          }
-        }
-        if (duplicate !== null) {
-          if (unreviewedAi(duplicate) && duplicate.visibility === item.visibility) {
-            await memoryRepo.repeatProposal(sx, {
-              memoryId: duplicate.id,
-              actorId: item.createdBy,
-              sourceRefs: item.sourceRefs.filter((r) => r.kind === 'session' || r.kind === 'turn'),
-              confidence: 0,
-            });
-          }
+            outcome: 'expire',
+            reason: echo ? 'coach_advice' : 'forgotten',
+          })
+        )
+          notTheFounders += 1;
+        continue;
+      }
+      let duplicate =
+        known.find((e) => e.id !== item.id && sameMemoryContent(e.content, item.content)) ?? null;
+      if (duplicate === null && item.hasEmbedding) {
+        for (const hit of await memoryRepo.nearestToMemory(sx, {
+          memoryId: item.id,
+          ventureId,
+          statuses: ['confirmed', 'disputed', 'rejected', 'superseded'],
+        })) {
+          if (hit.similarity < MEMORY_DUPLICATE_COSINE) break;
+          const other = known.find((e) => e.id === hit.id) ?? (await memoryRepo.getMemory(sx, hit.id));
           if (
-            await memoryRepo.settlePendingAiProposal(sx, {
-              memoryId: item.id,
-              outcome: 'expire',
-              reason: 'duplicate',
-            })
-          )
-            duplicates += 1;
-          continue;
+            other !== null &&
+            sameNumbers(`${other.title} ${other.content}`, `${item.title} ${item.content}`)
+          ) {
+            duplicate = other;
+            break;
+          }
         }
-        const stillPending = await memoryRepo.getMemory(sx, item.id);
-        if (stillPending) known.unshift(stillPending);
-        // A valid proposal stays pending. Neither maintenance nor a model may consent for a student.
-        // Approval through MemoryService.act/batch is the only path into durable coaching memory.
+      }
+      if (duplicate !== null) {
+        if (unreviewedAi(duplicate) && duplicate.visibility === item.visibility) {
+          await memoryRepo.repeatProposal(sx, {
+            memoryId: duplicate.id,
+            actorId: item.createdBy,
+            sourceRefs: item.sourceRefs.filter((r) => r.kind === 'session' || r.kind === 'turn'),
+            confidence: 0,
+          });
+        }
+        if (
+          await memoryRepo.settlePendingAiProposal(sx, {
+            memoryId: item.id,
+            outcome: 'expire',
+            reason: 'duplicate',
+          })
+        )
+          duplicates += 1;
+        continue;
+      }
+      if (
+        await memoryRepo.settlePendingAiProposal(sx, {
+          memoryId: item.id,
+          outcome: 'keep',
+          reason: memoryRepo.KEPT_AUTOMATICALLY,
+        })
+      ) {
+        kept += 1;
+        const now = await memoryRepo.getMemory(sx, item.id);
+        if (now !== null) known.unshift(now);
       }
     }
-    return { kept, duplicates, notTheFounders };
-  });
+  }
+  return { kept, duplicates, notTheFounders };
 }
 
 /**
@@ -596,6 +636,7 @@ async function rememberForgetting(
   if (!current.sourceRefs.some((r) => r.kind === 'session' || r.kind === 'turn')) return;
   const versions = await memoryRepo.listMemoryVersions(tx, current.id);
   const chosen = reason === 'deleted' ? versions : versions.filter((v) => v.id === current.id);
+  // Withdraw what was generated from its conversations (migration 0024): digests, openers, notebook lines.
   await tx.query('SELECT app.invalidate_memory_continuity(:memory)', { memory: p.uuid(current.id) });
   await memoryRepo.recordForgottenMemory(tx, {
     memoryId: current.id,
@@ -757,6 +798,7 @@ export function createMemoryService(kit: Kit): MemoryService {
             result = await memoryRepo.approveMemory(tx, { memoryId, actorId });
             break;
           case 'reject':
+            // Rejecting is forgetting too: never kept again, and its continuity is withdrawn.
             await rememberForgetting(tx, current, 'deleted');
             result = await memoryRepo.rejectMemory(tx, { memoryId, actorId, reason: action.reason ?? null });
             break;
@@ -848,6 +890,8 @@ export function createMemoryService(kit: Kit): MemoryService {
             skippedIds.push(memoryId);
             continue;
           }
+          // Rejecting several at once forgets each one exactly as rejecting one does.
+          if (input.action === 'reject') await rememberForgetting(tx, current, 'deleted');
           const result =
             input.action === 'approve'
               ? await memoryRepo.approveMemory(tx, { memoryId, actorId: ctx.principalId })

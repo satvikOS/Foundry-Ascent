@@ -213,49 +213,56 @@ export class FoundationStack extends Stack {
 
     // ---- The face vendor's key (Ops - sync HeyGen key) ------------------------------------------------------------
     // Its own policy on the deploy role, so GitHubDeployPolicy stays read-only. Exactly what
-    // .github/workflows/ops-heygen-key.yml calls: CreateSecret (which an existing secret answers
-    // ResourceExistsException), then PutSecretValue if it exists. No DescribeSecret: asking first fails on the first run
-    // (no suffixed ARN to match yet, so AccessDeniedException rather than ResourceNotFoundException). Never
-    // GetSecretValue (the workflow cannot read the key back), DeleteSecret, TagResource, PutResourcePolicy, replication or rotation. `-??????` is Secrets Manager's suffix of that one
+    // .github/workflows/ops-heygen-key.yml and ops-elevenlabs-key.yml call, each on its own vendor's key: CreateSecret
+    // (which an existing secret answers ResourceExistsException), then PutSecretValue if it exists. No DescribeSecret:
+    // asking first fails on the first run (no suffixed ARN to match yet, so AccessDeniedException rather than
+    // ResourceNotFoundException). Never GetSecretValue (the workflows cannot read a key back), DeleteSecret,
+    // TagResource, PutResourcePolicy, replication or rotation. `-??????` is Secrets Manager's suffix of that one
     // secret. CreateSecret is matched on the name in the request (secretsmanager:Name, exact) because the secret's
-    // ARN does not exist yet; its resource only pins the region, the account and the name prefix. The secret uses the
+    // ARN does not exist yet; its resource only pins the region, the account and the name prefix. The secrets use the
     // AWS managed key, so no KMS grant is needed (the key policy admits callers through Secrets Manager).
-    const faceKeyName = loadMediaVendorSecrets().face;
-    const faceKeyArn = secretArnPattern(this.partition, this.region, this.account, faceKeyName);
-    const faceKeyCreateArn = this.formatArn({
-      service: 'secretsmanager',
-      resource: 'secret',
-      resourceName: `${faceKeyName}*`,
-      arnFormat: ArnFormat.COLON_RESOURCE_NAME,
-    });
+    const vendorSecrets = loadMediaVendorSecrets();
+    const vendorKeys = [
+      { sid: 'FaceVendorKey', name: vendorSecrets.face, what: 'face vendor key' },
+      { sid: 'VoiceVendorKey', name: vendorSecrets.voice, what: 'voice vendor key' },
+    ].map((key) => ({
+      ...key,
+      arn: secretArnPattern(this.partition, this.region, this.account, key.name),
+      createArn: this.formatArn({
+        service: 'secretsmanager',
+        resource: 'secret',
+        resourceName: `${key.name}*`,
+        arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+      }),
+    }));
     const mediaKeyPolicy = new iam.Policy(this, 'GitHubDeployMediaKeyPolicy', {
-      statements: [
+      statements: vendorKeys.flatMap((key) => [
         new iam.PolicyStatement({
-          sid: 'CreateFaceVendorKey',
+          sid: `Create${key.sid}`,
           actions: ['secretsmanager:CreateSecret'],
-          resources: [faceKeyCreateArn],
-          conditions: { StringEquals: { 'secretsmanager:Name': faceKeyName } },
+          resources: [key.createArn],
+          conditions: { StringEquals: { 'secretsmanager:Name': key.name } },
         }),
         new iam.PolicyStatement({
-          sid: 'WriteFaceVendorKey',
+          sid: `Write${key.sid}`,
           actions: ['secretsmanager:PutSecretValue'],
-          resources: [faceKeyArn],
+          resources: [key.arn],
         }),
-      ],
+      ]),
     });
     mediaKeyPolicy.attachToRole(this.deployRole);
     acknowledge(
       mediaKeyPolicy,
-      {
-        id: wildcardResource(this, faceKeyArn),
-        reason:
-          'The six ? are the random suffix Secrets Manager appends to a secret name: the pattern matches exactly the one face vendor key, foundry-ascent/media/heygen.',
-      },
-      {
-        id: wildcardResource(this, faceKeyCreateArn),
-        reason:
-          'CreateSecret is authorized before the secret ARN exists; the statement is limited to the exact name foundry-ascent/media/heygen by the secretsmanager:Name condition.',
-      },
+      ...vendorKeys.flatMap((key) => [
+        {
+          id: wildcardResource(this, key.arn),
+          reason: `The six ? are the random suffix Secrets Manager appends to a secret name: the pattern matches exactly the one ${key.what}, ${key.name}.`,
+        },
+        {
+          id: wildcardResource(this, key.createArn),
+          reason: `CreateSecret is authorized before the secret ARN exists; the statement is limited to the exact name ${key.name} by the secretsmanager:Name condition.`,
+        },
+      ]),
     );
 
     // ---- Ops insights (read-only) ---------------------------------------------------------------------------

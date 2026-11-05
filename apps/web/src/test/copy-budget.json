@@ -16,13 +16,13 @@
   "screens": {
     "Admin": {
       "before": 1222,
-      "after": 1168,
-      "budget": 1275
+      "after": 1297,
+      "budget": 1336
     },
     "Call": {
       "before": 363,
-      "after": 275,
-      "budget": 300
+      "after": 302,
+      "budget": 305
     },
     "Conversation": {
       "before": 961,

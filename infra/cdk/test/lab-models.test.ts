@@ -45,6 +45,8 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       'amazon.nova-premier-v1:0',
       'amazon.nova-pro-v1:0',
       'amazon.titan-embed-text-v2:0',
+      'anthropic.claude-haiku-4-5-20251001-v1:0',
+      'meta.llama4-maverick-17b-instruct-v1:0',
     ]);
     expect(access.globalFoundationModels).toEqual(['amazon.nova-2-lite-v1:0']);
     expect(access.inferenceProfiles.slice().sort()).toEqual([
@@ -52,7 +54,24 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       'us.amazon.nova-2-lite-v1:0',
       'us.amazon.nova-premier-v1:0',
       'us.amazon.nova-pro-v1:0',
+      'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      'us.meta.llama4-maverick-17b-instruct-v1:0',
     ]);
+  });
+
+  it("lists the live evaluation's simulator and judge from other model families first, Nova as fallback", () => {
+    expect(LAB_MODELS.live.simulator).toEqual([
+      'us.meta.llama4-maverick-17b-instruct-v1:0',
+      'us.amazon.nova-pro-v1:0',
+    ]);
+    expect(LAB_MODELS.live.judge).toEqual([
+      'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      'us.meta.llama4-maverick-17b-instruct-v1:0',
+      'us.amazon.nova-premier-v1:0',
+    ]);
+    expect(() =>
+      parseLabModels({ ...raw(), live: { simulator: [], judge: ['us.amazon.nova-pro-v1:0'] } }),
+    ).toThrow(/1 to 3 model ids/);
   });
 
   it('follows the app when its models change (Luna enabled: Mantle stays out of the lab grant)', () => {

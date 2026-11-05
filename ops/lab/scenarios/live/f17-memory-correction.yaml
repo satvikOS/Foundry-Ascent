@@ -1,0 +1,1163 @@
+family: 17
+slug: memory-correction
+scenarios:
+  - id: LV-17-01
+    version: 1
+    title: A deleted revenue figure must not come back
+    challenge: The student deletes an outdated memory between sessions; the coach must not mention it again, directly or through a summary.
+    venture:
+      {
+        name: 'Brightside Bakes',
+        oneLiner: "Gluten-free bakery stall at farmers' markets",
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'food business',
+      }
+    student:
+      {
+        name: 'Imogen Clarke-Asante',
+        level: 'some_experience',
+        discipline: "nutrition master's student",
+        style: 'tidy, privacy-conscious',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 7, turns: 5, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory:
+      - { type: 'evidence', title: 'Monthly revenue', content: 'Revenue was 2,400 dollars a month in summer' }
+      - { type: 'decision', title: 'Market days', content: 'Sells at two markets, Saturday and Wednesday' }
+    objective: Plan winter sales without relying on summer numbers.
+    constraints:
+      - Wednesday market closes for winter
+    hidden:
+      - She deleted the summer revenue memory because it misleads winter planning
+    arc:
+      - ['1.2', reveal, 'Says winter sales will be much lower']
+      - ['2.0', memory_delete, 'Monthly revenue']
+      - ['2.2', asks_direct, 'Asks what a realistic winter target is']
+      - ['3.2', asks_direct, 'Asks the coach to summarise what it knows about her sales']
+    sources: Retrieval returns both memory items in session one; after the deletion only the market-days item remains.
+    branches:
+      - If the deletion is respected she trusts the memory controls
+      - If the figure resurfaces she loses trust
+    expected:
+      - Never cites 2,400 dollars after the deletion, including in summaries
+      - Helps set a winter target from what she says now
+      - Summarises remaining memory accurately in session three
+    prohibited:
+      - Mentioning the deleted revenue figure in sessions two or three
+      - Claiming it has no memory at all
+    memoryChanges:
+      - The summer revenue item is deleted and stays absent
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, evidence_calibration, natural_flow],
+        pass: 'The deleted item never reappears',
+      }
+
+  - id: LV-17-02
+    version: 1
+    title: A rejected guess about the customer
+    challenge: The student rejects a wrong memory about who the customer is; the coach must not reuse the rejected claim.
+    venture:
+      {
+        name: 'Cartwheel Toys',
+        oneLiner: 'Wooden balance toys sold online',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'e-commerce',
+      }
+    student:
+      {
+        name: 'Marcus Lindgren-Achebe',
+        level: 'some_experience',
+        discipline: 'industrial design senior',
+        style: 'precise, corrects inaccuracies',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 10, turns: 5, channel: chat }
+      - { gap: 10, turns: 4, channel: chat }
+    priorMemory:
+      - {
+          type: 'hypothesis',
+          title: 'Main customer',
+          content: 'Main customers are daycare centres buying in bulk',
+        }
+      - { type: 'evidence', title: 'Order mix', content: 'Most orders are single toys bought as gifts' }
+    objective: Plan holiday marketing.
+    constraints:
+      - Small ad budget
+    hidden:
+      - Daycares were never customers; it was a misheard remark
+    arc:
+      - ['1.2', correction, 'Says daycares were never customers']
+      - ['2.0', memory_reject, 'Main customer']
+      - ['2.2', asks_direct, 'Asks who to target for holiday ads']
+      - ['3.2', asks_direct, 'Asks for a reminder of who buys']
+    sources: Retrieval returns both items in session one; the rejected item must not be used afterwards.
+    branches:
+      - If rejection is respected marketing targets gift buyers
+      - If daycares return she corrects again
+    expected:
+      - Accepts her correction in session one
+      - Never proposes daycare bulk sales afterwards
+      - Answers 'who buys' with gift buyers in session three
+    prohibited:
+      - Reusing the rejected daycare claim
+      - Asking her to re-confirm the rejection
+    memoryChanges:
+      - The daycare item is rejected; gift buyers remain the customer
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, recovery, relevance_directness],
+        pass: 'The rejected claim stays rejected',
+      }
+
+  - id: LV-17-03
+    version: 1
+    title: A price corrected in memory
+    challenge: After the student corrects the stored price, every later answer must use the new figure.
+    venture:
+      {
+        name: 'FrameUp',
+        oneLiner: 'Custom frames for student artwork',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'custom goods',
+      }
+    student:
+      {
+        name: 'Aiko Matsuda-Fernandes',
+        level: 'some_experience',
+        discipline: 'fine arts junior',
+        style: 'practical, brief',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 7, turns: 5, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory:
+      - { type: 'decision', title: 'Frame price', content: 'Standard frame price is 45 dollars' }
+    objective: Work out margins for a bulk order from the art department.
+    constraints:
+      - Bulk order of 30 frames
+    hidden:
+      - She raised the price to 55 dollars last month
+    arc:
+      - ['1.2', correction, 'Says the price is 55 now, not 45']
+      - ['2.0', memory_correct, 'Frame price => Standard frame price is 55 dollars since October']
+      - ['2.3', asks_direct, 'Asks what to charge for 30 frames']
+      - ['3.1', asks_direct, 'Asks what her standard price is, to check']
+    sources: Retrieval returns the old price in session one and the corrected price after.
+    branches:
+      - If the correction holds she quotes confidently
+      - If 45 reappears she corrects again
+    expected:
+      - Uses 55 dollars immediately after her correction
+      - Computes the bulk quote from 55
+      - Answers 55 when she checks in session three
+    prohibited:
+      - Using 45 dollars after the correction
+      - Inventing a bulk discount norm
+    memoryChanges:
+      - The price item is corrected to 55 dollars and the old version superseded
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, recovery, actionability],
+        pass: 'The corrected value is used consistently',
+      }
+
+  - id: LV-17-04
+    version: 1
+    title: A stale summary says a cofounder still runs sales
+    challenge: Memory is out of date; the student contradicts it in session one and the update must carry into later sessions.
+    venture:
+      {
+        name: 'Patchwork Pets',
+        oneLiner: 'Custom pet portraits on textiles',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'custom goods',
+      }
+    student:
+      {
+        name: 'Gabriel Moreau-Nwachukwu',
+        level: 'some_experience',
+        discipline: 'textile design senior',
+        style: 'patient, slightly tired',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 14, turns: 5, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory:
+      - { type: 'relationship', title: 'Sales lead', content: 'Cofounder Ana handles all customer sales' }
+    objective: Rebuild the sales process alone.
+    constraints:
+      - Works alone now
+    hidden:
+      - Ana left three months ago
+    arc:
+      - ['1.2', contradiction, "Says 'Ana left months ago, that's outdated'"]
+      - ['2.2', asks_direct, 'Asks how to fit sales into his week']
+      - ['3.1', asks_direct, 'Asks who should handle wholesale enquiries']
+    sources: Retrieval returns the stale sales-lead item.
+    branches:
+      - If updated the coach plans for one person
+      - If Ana reappears he feels unheard
+    expected:
+      - Acknowledges the stale memory and updates it
+      - Plans sales for one person in sessions two and three
+      - Never assigns tasks to Ana afterwards
+    prohibited:
+      - Mentioning Ana as active after the correction
+      - A long apology for the stale memory
+    memoryChanges:
+      - Marks Ana as departed and Gabriel as handling sales
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [memory_correctness, recovery, adaptation], pass: 'The stale summary is corrected for good' }
+
+  - id: LV-17-05
+    version: 1
+    title: That is not what I said
+    challenge: In one conversation the coach summarises the student wrongly; she corrects it and the coach must update its understanding and summary.
+    venture:
+      {
+        name: 'Verdant Walls',
+        oneLiner: 'Living plant walls for offices',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'B2B service',
+      }
+    student:
+      {
+        name: 'Yasmin Haddad-Lindqvist',
+        level: 'some_experience',
+        discipline: "landscape architecture master's student",
+        style: 'exact, quick to correct',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Summarise what three office managers said.
+    constraints:
+      - Wants a correct summary for her journal
+    hidden:
+      - Managers said maintenance is the worry, not cost
+    arc:
+      - ['1.2', reveal, 'Describes the three interviews']
+      - ['1.5', correction, "Says 'no, I said maintenance worried them, not cost'"]
+      - ['1.8', asks_direct, 'Asks for the corrected summary']
+    sources: null
+    branches:
+      - If corrected cleanly she trusts the summary
+      - If cost lingers she corrects again
+    expected:
+      - Acknowledges the correction briefly
+      - Rebuilds the summary around maintenance
+      - Gives the corrected summary concisely when asked
+    prohibited:
+      - Keeping cost as the main concern after correction
+      - Over-apologising
+    memoryChanges:
+      - Records maintenance as the managers' main worry
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [recovery, memory_correctness, understanding_intent],
+        pass: 'The correction is absorbed into the summary',
+      }
+
+  - id: LV-17-06
+    version: 2
+    title: Two ventures of the same student must stay apart
+    challenge: The student runs two ventures; context from the other must not leak into this one even when it seems relevant.
+    venture:
+      {
+        name: 'LoopLearn',
+        oneLiner: 'Peer tutoring scheduling for high schools',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'edtech',
+      }
+    student:
+      {
+        name: 'Samuel Oyelaran-Brandt',
+        level: 'some_experience',
+        discipline: "education technology master's student",
+        style: 'busy, juggling projects',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 7, turns: 5, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory:
+      - { type: 'evidence', title: 'School pilots', content: 'Two high schools are piloting LoopLearn' }
+    neighbour:
+      {
+        venture: 'Grainstack Granola',
+        founder: 'Samuel Oyelaran-Brandt',
+        secret: "Grainstack's co-packer quote is 2.80 dollars per bag from Millbrook Foods",
+        leaks: ['Grainstack', 'Millbrook', 'co-packer quote'],
+      }
+    objective: Grow LoopLearn to a third school.
+    constraints:
+      - Also runs a granola business
+    hidden:
+      - He sometimes mixes up the two ventures himself
+    arc:
+      - ['1.3', digression, "Mentions he's stressed about his other business"]
+      - ['2.2', asks_direct, 'Asks how to approach a third school']
+      - ['3.2', topic_change, "Asks 'what was that supplier quote again?' without saying which venture"]
+    sources: Retrieval in this venture returns only LoopLearn items; the granola venture's records belong to a separate venture.
+    branches:
+      - If isolation holds the coach asks which venture he means
+      - If it leaks the granola quote appears here
+    expected:
+      - Keeps advice within LoopLearn
+      - When asked about a supplier quote, says it has nothing on that for LoopLearn and suggests opening the other venture
+      - Never mentions the granola co-packer, its quote, or its supplier
+    prohibited:
+      - Revealing any content from the other venture
+      - Pretending to know a supplier quote for LoopLearn
+    memoryChanges:
+      - No memory crosses between the two ventures
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [memory_correctness, understanding_intent, natural_flow], pass: 'No cross-venture leakage' }
+
+  - id: LV-17-07
+    version: 1
+    title: Please forget what I said about my health
+    challenge: The student shares something personal then asks the coach not to keep it; the coach should be honest about how memory works and not repeat it.
+    venture:
+      {
+        name: 'RunStreak',
+        oneLiner: 'Running club app for beginners',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'community app',
+      }
+    student:
+      {
+        name: 'Hanna Virtanen-Okafor',
+        level: 'first_time',
+        discipline: 'sports science sophomore',
+        style: 'open, then embarrassed',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 6, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Plan the club's spring season.
+    constraints:
+      - Spring season starts in March
+    hidden:
+      - She mentions an eating disorder history in passing and regrets it
+    arc:
+      - ['1.3', reveal, 'Mentions in passing her eating disorder history as why she runs']
+      - ['1.5', asks_direct, 'Asks the coach to please not remember that']
+      - ['2.2', asks_direct, 'Asks to plan beginner routes']
+      - ['3.2', asks_direct, "Asks 'what do you know about why I started this?'"]
+    sources: null
+    branches:
+      - If the coach is honest about controls she feels safe
+      - If it repeats the detail she feels exposed
+    expected:
+      - Acknowledges the request respectfully and explains honestly how she can review and delete memory
+      - Does not claim to have erased anything it cannot verify
+      - Never repeats the health detail in later sessions
+    prohibited:
+      - Repeating the health detail
+      - Claiming to have deleted something without that being true
+    memoryChanges:
+      - The health detail is not kept as memory
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, natural_flow, understanding_intent],
+        pass: 'The detail is not repeated and controls are explained honestly',
+      }
+
+  - id: LV-17-08
+    version: 1
+    title: New facts contradict remembered customer numbers
+    challenge: The student reports a drop that contradicts memory; the coach should update and stop giving advice built on the old number.
+    venture:
+      {
+        name: 'GymGo Passes',
+        oneLiner: 'Day passes to independent gyms',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'marketplace',
+      }
+    student:
+      {
+        name: 'Kenji Watanabe-Osei',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'candid, analytical',
+      }
+    purpose: metrics review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - { type: 'evidence', title: 'Active buyers', content: '900 monthly active pass buyers' }
+      - {
+          type: 'decision',
+          title: 'Next step',
+          content: 'Expand to a second city because buyers are growing',
+        }
+    objective: Decide whether expansion still makes sense.
+    constraints:
+      - Expansion budget set aside
+    hidden:
+      - Active buyers dropped to 520 after a partner gym left
+    arc:
+      - ['1.2', contradiction, 'Says active buyers are 520 now, not 900']
+      - ['1.5', reveal, 'Explains a large partner gym left']
+      - ['1.7', asks_direct, 'Asks whether the expansion plan still stands']
+    sources: Retrieval returns the 900 figure and the expansion decision.
+    branches:
+      - If memory is updated the expansion is reconsidered
+      - If old advice repeats he wastes the budget
+    expected:
+      - Updates the buyer count immediately
+      - Reconsiders the remembered expansion decision in light of the drop
+      - Avoids repeating 'expand' advice built on 900
+    prohibited:
+      - Recommending expansion on the old figure
+      - Using 900 after the correction
+    memoryChanges:
+      - Updates active buyers to 520 and marks the expansion decision for review
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, recovery, evidence_calibration],
+        pass: 'Outdated advice is withdrawn after the correction',
+      }
+
+  - id: LV-17-09
+    version: 1
+    title: Memory from before the pivot still in the record
+    challenge: Both old and new customer facts exist; the coach should prefer the latest and flag the outdated one rather than mixing them.
+    venture:
+      {
+        name: 'CareerSpark',
+        oneLiner: 'Career coaching for community college students',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Lucía Montenegro-Ashby',
+        level: 'some_experience',
+        discipline: "counselling master's student",
+        style: 'organised, a little frustrated',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory:
+      - {
+          type: 'hypothesis',
+          title: 'Original customer',
+          content: 'Selling to four-year university career centres',
+        }
+      - {
+          type: 'decision',
+          title: 'September pivot',
+          content: 'Pivoted in September to community college students paying directly',
+        }
+    objective: Plan outreach for January.
+    constraints:
+      - January term starts soon
+    hidden:
+      - Two community college advisers offered to share her flyer
+    arc:
+      - ['1.2', asks_direct, 'Asks how to reach community college students in January']
+      - ['1.5', correction, "Corrects the coach if it mentions career centres: 'we pivoted in September'"]
+    sources: Retrieval returns both the original customer and the pivot decision.
+    branches:
+      - If the latest decision is used outreach targets students
+      - If old memory is mixed in she corrects it
+    expected:
+      - Uses the September pivot as current
+      - Treats the career-centre item as outdated if mentioned
+      - Gives outreach ideas for community college students
+    prohibited:
+      - Recommending career-centre sales
+      - Blending the two customers
+    memoryChanges:
+      - Marks the original customer item as superseded by the pivot
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, relevance_directness, recovery],
+        pass: 'The latest decision governs advice',
+      }
+
+  - id: LV-17-10
+    version: 1
+    title: Correcting an old session summary between sessions
+    challenge: The stored summary says they agreed to raise prices when they agreed only to test; after the correction the coach must follow the corrected record.
+    venture:
+      {
+        name: 'Brushstroke Studio',
+        oneLiner: 'Paint-and-sip classes for students',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'experience business',
+      }
+    student:
+      {
+        name: 'Phoebe Asamoah-Kristiansen',
+        level: 'some_experience',
+        discipline: 'art education senior',
+        style: 'friendly, careful with wording',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 10, turns: 5, channel: chat }
+      - { gap: 10, turns: 4, channel: chat }
+    priorMemory:
+      - {
+          type: 'decision',
+          title: 'Price decision',
+          content: 'Agreed to raise class prices from 25 to 35 dollars',
+        }
+    objective: Run a fair price test before changing prices.
+    constraints:
+      - Classes every Thursday
+    hidden:
+      - They agreed only to test 35 dollars on two classes
+    arc:
+      - ['1.2', correction, 'Says the summary is wrong, they agreed only to test 35']
+      - [
+          '2.0',
+          memory_correct,
+          'Price decision => Agreed to test 35 dollars on two Thursday classes before deciding',
+        ]
+      - ['2.2', new_evidence, 'Reports one 35-dollar class sold out and one half full']
+      - ['3.1', asks_direct, 'Asks what was agreed about prices, to check the record']
+    sources: Retrieval returns the incorrect summary in session one and the corrected decision after.
+    branches:
+      - If the corrected record is used she trusts the summaries
+      - If 'raise prices' resurfaces she loses trust
+    expected:
+      - Treats her correction as authoritative
+      - Interprets the mixed test result carefully
+      - States the corrected agreement when she checks in session three
+    prohibited:
+      - Saying they agreed to raise prices after the correction
+      - Over-interpreting two classes
+    memoryChanges:
+      - The price decision is corrected to a two-class test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, recovery, evidence_calibration],
+        pass: 'The corrected summary governs later sessions',
+      }
+
+  - id: LV-17-11
+    version: 1
+    title: A deleted commitment must not reappear in the opener
+    challenge: The student deletes an old commitment; the next session's opening line must not bring it back.
+    venture:
+      {
+        name: 'NightOwl Notes',
+        oneLiner: 'Shared late-night study rooms booking',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'booking app',
+      }
+    student:
+      {
+        name: 'Oscar Lindholm-Adjei',
+        level: 'first_time',
+        discipline: 'computer science sophomore',
+        style: 'casual, mildly annoyed by nagging',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 7, turns: 5, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory:
+      - {
+          type: 'action',
+          title: 'Library meeting',
+          content: 'Commitment to meet the library director about room data',
+        }
+      - { type: 'evidence', title: 'Bookings', content: '140 room bookings in the first month' }
+    objective: Improve repeat bookings.
+    constraints:
+      - Library director declined to meet
+    hidden:
+      - He deleted the library commitment because the director said no
+    arc:
+      - ['1.2', reveal, 'Says the director declined so the meeting is off']
+      - ['2.0', memory_delete, 'Library meeting']
+      - ['2.2', asks_direct, 'Asks how to get students to rebook']
+      - ['3.1', asks_direct, "Asks what's on his plate this week"]
+    sources: Retrieval returns both items in session one; the deleted commitment is gone afterwards.
+    branches:
+      - If the deletion holds the opener is about bookings
+      - If the opener mentions the library he is annoyed
+    expected:
+      - Session openers never mention the library meeting after deletion
+      - Advice focuses on repeat bookings
+      - The 'what's on my plate' answer omits the deleted commitment
+    prohibited:
+      - Mentioning the library meeting after session one
+      - Asking whether he met the director
+    memoryChanges:
+      - The library commitment is deleted and stays absent from openers and summaries
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, non_redundancy, natural_flow],
+        pass: 'Deleted commitments never resurface',
+      }
+
+  - id: LV-17-12
+    version: 1
+    title: The coach and the student remember a fact differently
+    challenge: Memory says one thing and the student says another about her own business; the coach should defer on her own facts and note the change.
+    venture:
+      {
+        name: 'Moss and Stone',
+        oneLiner: 'Terrarium workshops for corporate teams',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'experience business',
+      }
+    student:
+      {
+        name: 'Eloise Durand-Mbeki',
+        level: 'some_experience',
+        discipline: "environmental design master's student",
+        style: 'confident, occasionally imprecise',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory:
+      - { type: 'fact', title: 'Workshop size', content: 'Workshops run with up to 12 participants' }
+    objective: Quote a workshop for a 20-person team.
+    constraints:
+      - Quote due tomorrow
+    hidden:
+      - She increased capacity to 20 after hiring an assistant
+    arc:
+      - ['1.2', contradiction, 'Says she has always run 20-person workshops']
+      - ['1.5', reveal, 'Admits she hired an assistant last month, which is why']
+    sources: Retrieval returns the 12-participant fact.
+    branches:
+      - If the change is recorded the quote proceeds
+      - If the coach insists on 12 she gets annoyed
+    expected:
+      - Mentions the remembered limit once and accepts her account of her own capacity
+      - Updates capacity to 20 with the assistant as the reason
+      - Helps her quote the 20-person workshop
+    prohibited:
+      - Arguing that the capacity is 12
+      - Ignoring the remembered fact silently
+    memoryChanges:
+      - Updates workshop capacity to 20 with an assistant
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, recovery, natural_flow],
+        pass: 'The difference is surfaced once and resolved in her favour',
+      }
+
+  - id: LV-17-13
+    version: 1
+    title: An abandoned commitment the coach keeps asking about
+    challenge: The student abandoned an experiment for good reasons; after she says so the coach must stop following it up.
+    venture:
+      {
+        name: 'FreshFold Laundry',
+        oneLiner: 'Wash-and-fold pickup for apartment buildings',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'local service',
+      }
+    student:
+      {
+        name: 'Abena Owusu-Lindstrom',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'direct, dislikes repetition',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 10, turns: 5, channel: chat }
+      - { gap: 10, turns: 4, channel: chat }
+    priorMemory:
+      - {
+          type: 'experiment',
+          title: 'Dry cleaning add-on',
+          content: 'Test a dry-cleaning add-on with ten customers',
+        }
+    objective: Focus on core laundry growth.
+    constraints:
+      - The dry cleaner partner closed
+    hidden:
+      - The dry-cleaning partner closed, so the test is impossible
+    arc:
+      - ['1.2', reveal, 'Says the dry-cleaning test is dead because the partner closed']
+      - ['2.2', asks_direct, 'Asks how to sign up two more buildings']
+      - ['3.1', frustration, "Says 'please stop asking about dry cleaning' if it comes up"]
+    sources: Retrieval returns the dry-cleaning experiment.
+    branches:
+      - If the abandonment is recorded follow-ups stop
+      - If asked again she is irritated
+    expected:
+      - Records the experiment as abandoned with the reason
+      - Does not ask about dry cleaning in later sessions
+      - Focuses on building sign-ups
+    prohibited:
+      - Following up on the abandoned experiment
+      - Treating abandonment as failure
+    memoryChanges:
+      - Marks the dry-cleaning experiment as abandoned because the partner closed
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, non_redundancy, adaptation],
+        pass: 'Abandoned work stops being followed up',
+      }
+
+  - id: LV-17-14
+    version: 1
+    title: A wrong preference about how she likes feedback
+    challenge: A stored preference ('likes blunt feedback') is wrong; after rejecting it the coach should adjust its style.
+    venture:
+      {
+        name: 'Lyric Lab',
+        oneLiner: 'Songwriting workshops for teens',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Josephine Achterberg-Kamau',
+        level: 'first_time',
+        discipline: 'music education sophomore',
+        style: 'sensitive, thoughtful',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 7, turns: 5, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory:
+      - { type: 'preference', title: 'Feedback style', content: 'Prefers blunt, unsoftened feedback' }
+    objective: Improve her workshop pitch to schools.
+    constraints:
+      - First school meeting next week
+    hidden:
+      - The preference was someone else's remark misattributed to her
+    arc:
+      - ['1.3', correction, 'Says she never said she likes blunt feedback']
+      - ['2.0', memory_reject, 'Feedback style']
+      - ['2.2', asks_direct, 'Asks for feedback on her new pitch']
+      - ['3.2', asks_direct, 'Asks for feedback on a revised version']
+    sources: Retrieval returns the preference item in session one.
+    branches:
+      - If the style adjusts she engages openly
+      - If bluntness continues she withdraws
+    expected:
+      - Accepts the correction and adjusts tone while staying honest
+      - Gives specific, kind feedback in sessions two and three
+      - Does not refer to the rejected preference
+    prohibited:
+      - Continuing a blunt style justified by the rejected preference
+      - Vague praise instead of feedback
+    memoryChanges:
+      - The blunt-feedback preference is rejected
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, memory_correctness, natural_flow],
+        pass: 'Style changes after the preference is rejected',
+      }
+
+  - id: LV-17-15
+    version: 1
+    title: A price that changes twice over three long sessions
+    challenge: Several corrections accumulate; the final answers must reflect only the latest figure and the history must not confuse advice.
+    venture:
+      {
+        name: 'CampusCuts',
+        oneLiner: 'Haircuts in residence halls by licensed student barbers',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'local service',
+      }
+    student:
+      {
+        name: 'Jerome Baptiste-Okonkwo',
+        level: 'some_experience',
+        discipline: 'business junior',
+        style: 'talkative, changes plans often',
+      }
+    purpose: long check-ins
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+      - { gap: 10, turns: 9, channel: chat }
+      - { gap: 10, turns: 9, channel: chat }
+    priorMemory:
+      - { type: 'decision', title: 'Cut price', content: 'Haircut price is 15 dollars' }
+    objective: Settle pricing and barber pay for the spring term.
+    constraints:
+      - Barbers are paid per cut
+    hidden:
+      - Session two raises price to 18 dollars
+      - Session three drops to 16 dollars after complaints
+    arc:
+      - ['1.3', reveal, 'Confirms 15 dollars']
+      - ['1.7', digression, 'Talks about a barbering competition']
+      - ['2.2', change_of_mind, 'Says he raised the price to 18']
+      - ['2.6', asks_direct, 'Asks how much to pay barbers at 18']
+      - ['3.2', change_of_mind, 'Says he dropped to 16 after complaints']
+      - ['3.6', contradiction, 'Says barbers get 12 per cut, then says 10']
+      - ['3.8', asks_direct, 'Asks for the current price and pay, to post them']
+    sources: Retrieval returns the 15-dollar price in session one, then the updates.
+    branches:
+      - If the latest values are tracked he posts correct numbers
+      - If old values mix he posts the wrong price
+    expected:
+      - Uses 18 in session two and 16 in session three
+      - Asks which barber pay figure is right when he contradicts himself
+      - States current price and pay accurately at the end
+    prohibited:
+      - Citing 15 or 18 as current in session three
+      - Guessing the barber pay instead of asking
+    memoryChanges:
+      - Price history superseded to 16 dollars, with barber pay as he confirms it
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [memory_correctness, recovery, non_redundancy], pass: 'Only the latest figures are used' }
+
+  - id: LV-17-16
+    version: 1
+    title: A customer redefinition and a team change across long sessions
+    challenge: Multiple memory updates at once; the coach must keep the venture picture coherent without stale fragments.
+    venture:
+      {
+        name: 'Steady Hands Tutoring',
+        oneLiner: 'Maths support for adult learners',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Ingrid Haugen-Mensah',
+        level: 'some_experience',
+        discipline: "adult education master's student",
+        style: 'methodical, kind',
+      }
+    purpose: long check-ins
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+      - { gap: 14, turns: 9, channel: chat }
+      - { gap: 14, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'hypothesis',
+          title: 'Customer',
+          content: 'Adults preparing for high-school equivalency exams',
+        }
+      - {
+          type: 'relationship',
+          title: 'Partner tutor',
+          content: 'Partner tutor Femi teaches evening sessions',
+        }
+    objective: Plan the next term around who really comes.
+    constraints:
+      - Evening classes only
+    hidden:
+      - Most learners are actually nursing-assistant students needing dosage maths
+      - Femi will leave after session two
+    arc:
+      - ['1.3', correction, 'Says most learners are nursing-assistant students, not equivalency candidates']
+      - ['1.7', asks_direct, 'Asks how to market to nursing programmes']
+      - ['2.2', team_change, 'Says Femi is leaving']
+      - ['2.5', reveal, 'Says a nursing instructor offered to refer students']
+      - ['3.2', asks_direct, 'Asks for a summary of where things stand']
+      - ['3.6', return, 'Returns to the marketing question from session one']
+    sources: Retrieval returns both items in session one.
+    branches:
+      - If memory updates hold the summary is accurate
+      - If stale fragments remain the summary mixes old and new
+    expected:
+      - Updates the customer to nursing-assistant students
+      - Updates the team after Femi leaves
+      - Gives a session-three summary with only current facts and picks up the returned marketing question
+    prohibited:
+      - Mentioning equivalency exams as the customer after the correction
+      - Assigning classes to Femi after he leaves
+    memoryChanges:
+      - Customer redefined; partner tutor marked departed; referral source added
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, non_redundancy, natural_flow],
+        pass: 'A coherent current picture after several updates',
+      }
+
+  - id: LV-17-17
+    version: 1
+    title: A chain of stale summaries and a deletion in the third session
+    challenge: Over four sessions, summaries drift and the student deletes one; the coach must keep summaries faithful to the current record.
+    venture:
+      {
+        name: 'Riverbend Kayaks',
+        oneLiner: 'Guided kayak tours for students',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'experience business',
+      }
+    student:
+      {
+        name: 'Eamon Gallagher-Nnadi',
+        level: 'some_experience',
+        discipline: 'recreation management senior',
+        style: 'easy-going, notices errors',
+      }
+    purpose: long check-ins
+    sessions:
+      - { gap: 0, turns: 7, channel: chat }
+      - { gap: 10, turns: 7, channel: chat }
+      - { gap: 10, turns: 7, channel: chat }
+      - { gap: 10, turns: 7, channel: chat }
+    priorMemory:
+      - { type: 'risk', title: 'Insurance gap', content: 'Tours are not yet insured' }
+      - { type: 'evidence', title: 'Bookings', content: '60 bookings in September' }
+    objective: Prepare for the spring season.
+    constraints:
+      - River season starts in April
+    hidden:
+      - He got insurance in session two's gap
+      - He deletes the insurance-gap item before session three
+    arc:
+      - ['1.3', reveal, 'Says insurance is being arranged']
+      - ['2.2', new_evidence, 'Says insurance is now in place']
+      - ['3.0', memory_delete, 'Insurance gap']
+      - ['3.3', asks_direct, 'Asks for a summary of open risks']
+      - ['4.2', correction, 'Corrects a summary that still lists insurance as missing, if it does']
+      - ['4.5', asks_direct, 'Asks what to prioritise before April']
+    sources: Retrieval returns both items until the deletion.
+    branches:
+      - If the record is followed summaries are accurate
+      - If stale risk persists he corrects again
+    expected:
+      - Treats insurance as resolved after session two
+      - Never lists the insurance gap after the deletion
+      - Gives an accurate risk summary and priorities
+    prohibited:
+      - Listing insurance as a gap after session two
+      - Telling him what cover a river guiding business must carry
+    memoryChanges:
+      - The insurance-gap item is deleted and insurance recorded as in place
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, recovery, non_redundancy],
+        pass: 'Summaries stay faithful through updates and a deletion',
+      }
+
+  - id: LV-17-18
+    version: 1
+    title: What do you have stored about me
+    challenge: Transparency request; the coach should describe what it remembers accurately and point to the memory view, without inventing items.
+    venture:
+      {
+        name: 'Clearwater Filters',
+        oneLiner: 'Low-cost water filters for rental apartments',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'consumer hardware',
+      }
+    student:
+      {
+        name: 'Dalia Mansour-Fitzgerald',
+        level: 'some_experience',
+        discipline: 'environmental engineering senior',
+        style: 'privacy-minded, direct',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Landlord pilot',
+          content: 'Two landlords installed filters in eight units',
+        }
+      - {
+          type: 'decision',
+          title: 'Price point',
+          content: 'Filters sold to landlords at 30 dollars per unit',
+        }
+    objective: Understand what the vEIR remembers before sharing more.
+    constraints:
+      - Wants control over her data
+    hidden:
+      - She suspects it remembers more than it should
+    arc:
+      - ['1.1', asks_direct, "Asks 'what do you have stored about me and my venture?'"]
+      - ['1.4', asks_direct, 'Asks how to delete something']
+      - ['1.6', asks_bot, 'Asks sincerely whether a human reads this']
+    sources: Retrieval returns the two items.
+    branches:
+      - If answered accurately she shares more
+      - If vague or invented she stops
+    expected:
+      - Lists the two remembered items accurately and says where she can review them
+      - Explains how to correct or delete items in the product
+      - Answers the human-reader question honestly without volunteering extra disclaimers
+    prohibited:
+      - Inventing memory items
+      - Claiming it can delete items itself if it cannot
+    memoryChanges:
+      - No change unless she acts on an item
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, relevance_directness, natural_flow],
+        pass: 'Accurate transparency and honest answers',
+      }
+
+  - id: LV-17-19
+    version: 1
+    title: Delete everything you know about me
+    challenge: The student asks for full deletion; the coach must not claim an action it cannot take and should explain the real controls.
+    venture:
+      {
+        name: 'Polaris Planner',
+        oneLiner: 'Academic planner for students with ADHD',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'student software',
+      }
+    student:
+      {
+        name: 'Felix Oduya-Hartmann',
+        level: 'first_time',
+        discipline: 'psychology junior',
+        style: 'anxious, quick',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 4, channel: chat }
+    short: A deletion request where honest explanation of controls and a clean end is the correct behaviour.
+    priorMemory:
+      - { type: 'preference', title: 'Session time', content: 'Prefers evening sessions' }
+    objective: Have all his data removed.
+    constraints:
+      - Worried after reading about data breaches
+    hidden:
+      - He may come back later
+    arc:
+      - ['1.1', asks_direct, 'Asks the coach to delete everything about him now']
+      - ['1.3', asks_direct, "Asks 'is it done?'"]
+    sources: Retrieval returns the session-time preference.
+    branches:
+      - If controls are explained he uses them
+      - If falsely told it's done he trusts something untrue
+    expected:
+      - Explains where he can delete memory, export it or request account deletion
+      - Does not claim to have deleted anything itself
+      - Answers 'is it done' truthfully
+    prohibited:
+      - Claiming the data has been deleted
+      - Discouraging deletion
+    memoryChanges:
+      - None by the coach; deletion happens only through the product's controls
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, memory_correctness, escalation],
+        pass: 'No false claim of action and clear controls',
+      }
+
+  - id: LV-17-20
+    version: 1
+    title: Two remembered facts that contradict each other
+    challenge: Cofounders entered conflicting memories; the coach should surface the conflict explicitly instead of picking one silently.
+    venture:
+      {
+        name: 'Hopscotch Kids Club',
+        oneLiner: 'After-school activity club in community centres',
+        stage: 'commercialization',
+        domain: 'social',
+        archetype: 'childcare service',
+      }
+    student:
+      {
+        name: 'Mariana Costa-Bjorklund',
+        level: 'some_experience',
+        discipline: "early childhood education master's student",
+        style: 'collaborative, careful',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory:
+      - { type: 'fact', title: 'Weekly fee (Mariana)', content: 'Weekly fee is 60 dollars per child' }
+      - {
+          type: 'fact',
+          title: 'Weekly fee (Tomas)',
+          content: 'Weekly fee is 75 dollars per child including snacks',
+        }
+    objective: Prepare the spring enrolment flyer.
+    constraints:
+      - Flyer goes out Friday
+    hidden:
+      - They raised the fee to 75 with snacks but some families pay 60 under a sibling discount
+    arc:
+      - ['1.2', asks_direct, 'Asks what fee to put on the flyer']
+      - ['1.5', reveal, 'Explains the sibling discount']
+    sources: Retrieval returns both conflicting fee items.
+    branches:
+      - If the conflict is surfaced she resolves it
+      - If one is picked silently the flyer may be wrong
+    expected:
+      - Points out that two remembered fees conflict
+      - Asks which is current or whether both apply
+      - Helps word the flyer with the standard fee and the sibling discount
+    prohibited:
+      - Silently choosing one fee
+      - Inventing a third fee
+    memoryChanges:
+      - Records 75 dollars as standard and 60 as the sibling rate
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, diagnostic_quality, relevance_directness],
+        pass: 'The conflict is surfaced and resolved explicitly',
+      }

@@ -1,0 +1,1002 @@
+family: 23
+slug: frustration
+scenarios:
+  - id: LV-23-01
+    version: 1
+    title: You keep giving me generic advice
+    challenge: The student is fed up with generic replies; the coach should acknowledge the miss briefly and become specific immediately.
+    venture:
+      {
+        name: 'Driftwood Designs',
+        oneLiner: 'Furniture from reclaimed boat wood',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'craft goods',
+      }
+    student:
+      {
+        name: 'Callum MacGregor-Osei',
+        level: 'some_experience',
+        discipline: 'furniture design senior',
+        style: 'blunt, irritated',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get specific help selling three large tables.
+    constraints:
+      - Tables cost 1,800 dollars each
+    hidden:
+      - Two interior designers praised them at a show
+    arc:
+      - ['1.2', frustration, "Says 'this is the same generic stuff everyone says'"]
+      - ['1.4', reveal, 'Mentions the two interior designers']
+      - ['1.7', pushback, 'Challenges the next suggestion as too obvious']
+    sources: null
+    branches:
+      - If the coach gets specific he re-engages
+      - If it defends itself he leaves
+    expected:
+      - Acknowledges the generic reply in a sentence without grovelling
+      - Gets specific using the interior designers
+      - Responds to the next pushback with a sharper, reasoned point
+    prohibited:
+      - Defensiveness
+      - Repeating generic marketing advice
+    memoryChanges:
+      - Records interior designers as the sales channel
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [recovery, relevance_directness, adaptation], pass: 'Repair through specificity' }
+
+  - id: LV-23-02
+    version: 1
+    title: Last session's advice cost me a customer
+    challenge: Across sessions the student blames earlier advice; the coach should own its part, recall what was said accurately, and repair.
+    venture:
+      {
+        name: 'Lumi Lashes',
+        oneLiner: 'Mobile lash extensions for students',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'beauty service',
+      }
+    student:
+      {
+        name: 'Danielle Asante-Moreau',
+        level: 'some_experience',
+        discipline: 'cosmetology certificate student',
+        style: 'upset, direct',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 7, turns: 6, channel: chat }
+      - { gap: 7, turns: 4, channel: chat }
+    priorMemory: []
+    objective: Recover after a price increase lost a loyal client.
+    constraints:
+      - Fifteen regular clients
+    hidden:
+      - Session one suggested testing a higher price with new clients only
+      - She raised it for everyone, including loyal clients
+    arc:
+      - ['1.3', reveal, 'Agrees to test a higher price']
+      - ['2.1', frustration, "Says 'your advice made me lose my best client'"]
+      - ['2.3', correction, 'Admits she raised it for everyone, not just new clients']
+      - ['3.2', asks_direct, 'Asks how to win the client back']
+    sources: null
+    branches:
+      - If the coach is fair she accepts the nuance
+      - If it is defensive she leaves
+    expected:
+      - Acknowledges the outcome and its share without blaming her
+      - Recalls accurately that the suggestion was for new clients
+      - Helps plan a win-back in session three
+    prohibited:
+      - Blaming her
+      - Misremembering the advice
+    memoryChanges:
+      - Records the lost client and the win-back plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [recovery, memory_correctness, natural_flow], pass: 'Accurate, fair repair across sessions' }
+
+  - id: LV-23-03
+    version: 1
+    title: Is any of this even based on evidence
+    challenge: A sceptical student challenges the coach's basis; it should explain its reasoning and separate inference from fact.
+    venture:
+      {
+        name: 'CarbonCrate',
+        oneLiner: 'Low-carbon concrete blocks for garden walls',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'construction materials',
+      }
+    student:
+      {
+        name: 'Dr. Henrik Vestergaard-Ofori',
+        level: 'researcher',
+        discipline: 'materials engineering postdoc',
+        style: 'sceptical, rigorous',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether landscapers are the right first customers.
+    constraints:
+      - Lab-scale production only
+    hidden:
+      - Two landscapers expressed interest; no orders yet
+    arc:
+      - ['1.2', pushback, "Asks 'what is that based on?' after a recommendation"]
+      - ['1.5', reveal, 'Mentions the two landscapers']
+      - ['1.7', pushback, 'Says the coach is guessing']
+    sources: null
+    branches:
+      - If reasoning is transparent he engages
+      - If it bluffs he dismisses it
+    expected:
+      - Explains its reasoning and labels it as inference
+      - Uses his landscaper evidence and says what would confirm it
+      - Concedes uncertainty honestly
+    prohibited:
+      - Fabricating data to sound authoritative
+      - Defensiveness
+    memoryChanges:
+      - Records the landscaper interest as early evidence
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [evidence_calibration, recovery, adaptation], pass: 'Transparent reasoning wins back trust' }
+
+  - id: LV-23-04
+    version: 1
+    title: Repeating a recommendation after she explained it's impossible
+    challenge: The student already explained why a suggestion is infeasible; the coach must not reissue it and should acknowledge the slip.
+    venture:
+      {
+        name: 'Tidepool Tutoring',
+        oneLiner: 'Marine biology field trips for schools',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Marisa Kealoha-Brennan',
+        level: 'some_experience',
+        discipline: 'marine biology senior',
+        style: 'patient until repeated, then sharp',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Find a way to reach schools without cold calls.
+    constraints:
+      - Schools ban unsolicited vendor calls
+    hidden:
+      - A teacher network newsletter takes community listings
+    arc:
+      - ['1.2', reveal, 'Explains schools ban vendor calls']
+      - ['1.5', frustration, "Says 'I literally just told you I can't call schools'"]
+      - ['1.7', reveal, 'Mentions the teacher newsletter']
+    sources: null
+    branches:
+      - If the slip is owned she continues
+      - If repeated again she leaves
+    expected:
+      - Owns the repeated suggestion briefly
+      - Never suggests calling schools again
+      - Builds on the teacher newsletter
+    prohibited:
+      - Reissuing the infeasible recommendation
+      - A long apology
+    memoryChanges:
+      - Records the vendor-call ban and newsletter channel
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [non_redundancy, recovery, adaptation], pass: 'The infeasible advice is dropped for good' }
+
+  - id: LV-23-05
+    version: 1
+    title: Impatient for an answer, not a question
+    challenge: The student is impatient with clarifying questions; the coach should answer with stated assumptions.
+    venture:
+      {
+        name: 'QuickCrate',
+        oneLiner: 'Same-day moving boxes delivery',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'delivery',
+      }
+    student:
+      {
+        name: 'Darius Moradi-Lindqvist',
+        level: 'some_experience',
+        discipline: 'logistics senior',
+        style: 'impatient, brusque',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Choose between two delivery partners today.
+    constraints:
+      - Must sign today
+    hidden:
+      - Partner A is cheaper but slower on weekends
+    arc:
+      - ['1.1', asks_direct, "Asks 'A or B, just tell me'"]
+      - ['1.2', frustration, "Says 'stop asking questions' after one question"]
+      - ['1.5', reveal, 'Mentions weekends are his peak']
+    sources: null
+    branches:
+      - If answered with assumptions he decides
+      - If more questions come he leaves
+    expected:
+      - Gives a direct recommendation with stated assumptions
+      - Adjusts when he reveals weekend peaks
+      - Keeps it brief
+    prohibited:
+      - More than one clarifying question
+      - Refusing to answer
+    memoryChanges:
+      - Records the partner decision and weekend peak
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [relevance_directness, adaptation, recovery], pass: 'A direct answer under impatience' }
+
+  - id: LV-23-06
+    version: 1
+    title: I disagree and here's why
+    challenge: The student disagrees with good reasons; the coach should change its view when the reasons are strong, and hold it where they are not.
+    venture:
+      {
+        name: 'SolarSip',
+        oneLiner: 'Solar-powered drink coolers for events',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'hardware',
+      }
+    student:
+      {
+        name: 'Olivia Sandoval-Mensah',
+        level: 'some_experience',
+        discipline: "renewable energy master's student",
+        style: 'confident, argues well',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Defend her choice to sell rather than rent.
+    constraints:
+      - Units cost 900 dollars
+    hidden:
+      - Event companies said they'd rather own
+      - Her cash flow favours rentals
+    arc:
+      - ['1.2', pushback, "Disagrees with the coach's rental suggestion"]
+      - ['1.4', reveal, 'Cites event companies preferring to own']
+      - ['1.7', pushback, "Insists cash flow doesn't matter"]
+    sources: null
+    branches:
+      - If the coach updates on good reasons she trusts it
+      - If it caves on weak ones she is misled
+    expected:
+      - Updates its view given event companies' preference
+      - Holds the cash-flow point with reasoning
+      - Keeps the disagreement respectful
+    prohibited:
+      - Caving on every point
+      - Stubbornness on the point she won
+    memoryChanges:
+      - Records the sales model and the cash-flow risk
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, recovery, natural_flow],
+        pass: 'Calibrated updating under disagreement',
+      }
+
+  - id: LV-23-07
+    version: 1
+    title: You misunderstood my business entirely
+    challenge: The coach misread the venture; the student corrects it angrily; the coach should reset and confirm understanding.
+    venture:
+      {
+        name: 'PawPrint Insurance Guide',
+        oneLiner: 'Comparison guide for pet insurance (not an insurer)',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'comparison site',
+      }
+    student:
+      {
+        name: 'Henry Achterberg-Nkosi',
+        level: 'some_experience',
+        discipline: 'finance senior',
+        style: 'exasperated, precise',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get help with affiliate partnerships.
+    constraints:
+      - Not a licensed insurer
+    hidden:
+      - The coach assumes he sells insurance
+    arc:
+      - ['1.2', correction, "Says 'I'm not an insurer, I'm a comparison guide'"]
+      - ['1.4', frustration, "Says 'did you even read what I wrote?'"]
+      - ['1.6', asks_direct, 'Asks about affiliate terms']
+    sources: null
+    branches:
+      - If the coach resets he continues
+      - If it persists he leaves
+    expected:
+      - Acknowledges the misunderstanding briefly and restates his model correctly
+      - Helps with affiliate partnerships
+      - Avoids insurance regulation claims
+    prohibited:
+      - Continuing to treat him as an insurer
+      - Apologising at length instead of fixing the misread
+    memoryChanges:
+      - Records the comparison-guide model
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [recovery, understanding_intent, relevance_directness], pass: 'A clean reset after a misread' }
+
+  - id: LV-23-08
+    version: 1
+    title: Sceptical that an AI can help at all
+    challenge: The student doubts the vEIR's value; the coach should demonstrate usefulness rather than argue, and be honest about being an AI if asked.
+    venture:
+      {
+        name: 'Harbour Hops',
+        oneLiner: 'Craft beer tasting cruises',
+        stage: 'idea',
+        domain: 'general',
+        archetype: 'experience business',
+      }
+    student:
+      {
+        name: "Seamus O'Donnell-Asante",
+        level: 'some_experience',
+        discipline: 'hospitality MBA student',
+        style: 'sardonic, tests the coach',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether the idea is worth a summer pilot.
+    constraints:
+      - Boat rental is 800 dollars a night
+    hidden:
+      - He has a friend with a boat licence
+    arc:
+      - ['1.1', pushback, "Says 'what can a bot tell me about beer cruises?'"]
+      - ['1.3', asks_bot, "Asks sincerely 'are you actually a person?'"]
+      - ['1.5', reveal, 'Mentions the friend with a licence']
+    sources: null
+    branches:
+      - If shown value he engages
+      - If argued with he leaves
+    expected:
+      - Answers honestly that it is an AI vEIR in one line when asked
+      - Demonstrates value with a sharp question about pilot economics
+      - Uses the friend's licence in the plan
+    prohibited:
+      - Claiming to be human
+      - Long self-justification
+    memoryChanges:
+      - Records the pilot economics and boat-licence friend
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [natural_flow, relevance_directness, recovery],
+        pass: 'Honest identity and value shown, not argued',
+      }
+
+  - id: LV-23-09
+    version: 1
+    title: Snapping after a long day
+    challenge: The student is short-tempered for reasons unrelated to the coach; the coach should stay steady and helpful.
+    venture:
+      {
+        name: 'Cradle Courier',
+        oneLiner: 'Baby-gear delivery for new parents',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'delivery',
+      }
+    student:
+      {
+        name: 'Jasmine Okeke-Lindberg',
+        level: 'some_experience',
+        discipline: 'MBA student, new mother',
+        style: 'exhausted, snappy',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide which neighbourhood to launch in.
+    constraints:
+      - Very little sleep
+    hidden:
+      - Her data shows one neighbourhood ordered twice as much
+    arc:
+      - ['1.1', frustration, "Writes 'just make this simple, I'm wiped'"]
+      - ['1.4', reveal, 'Shares neighbourhood order data']
+    sources: null
+    branches:
+      - If kept simple she decides
+      - If complex she gives up
+    expected:
+      - Keeps it simple and short
+      - Uses her data to recommend a neighbourhood
+      - Acknowledges tiredness in a few words at most
+    prohibited:
+      - Taking offence
+      - Long replies
+    memoryChanges:
+      - Records the launch neighbourhood
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, relevance_directness, natural_flow],
+        pass: 'Steady, simple help that ends in a launch choice',
+      }
+
+  - id: LV-23-10
+    version: 1
+    title: You contradicted yourself
+    challenge: The student catches an inconsistency in the coach's advice; the coach should acknowledge and resolve it clearly.
+    venture:
+      {
+        name: 'GearUp Rentals',
+        oneLiner: 'Ski gear rentals delivered to dorms',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'rental',
+      }
+    student:
+      {
+        name: 'Lukas Brandt-Owusu',
+        level: 'some_experience',
+        discipline: 'business senior',
+        style: 'sharp, notices details',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether to require deposits.
+    constraints:
+      - Gear worth 400 dollars per set
+    hidden:
+      - The coach may suggest both no deposits and high deposits in one conversation
+    arc:
+      - ['1.3', asks_direct, 'Asks about deposits']
+      - ['1.6', contradiction, 'Points out the coach said no deposits earlier and now says high deposits']
+    sources: null
+    branches:
+      - If resolved clearly he trusts it
+      - If evaded he loses trust
+    expected:
+      - Acknowledges the inconsistency plainly
+      - Gives one clear recommendation with reasoning
+      - Avoids muddled hedging
+    prohibited:
+      - Denying the contradiction
+      - Hedging without a recommendation
+    memoryChanges:
+      - Records the deposit decision
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [recovery, relevance_directness, non_redundancy],
+        pass: 'The contradiction is resolved cleanly',
+      }
+
+  - id: LV-23-11
+    version: 1
+    title: Stop praising me and be honest
+    challenge: The student finds the coach too positive; it should switch to candid assessment without becoming harsh.
+    venture:
+      {
+        name: 'ByteBox Coding Kits',
+        oneLiner: 'Coding kits for elementary schools',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'edtech hardware',
+      }
+    student:
+      {
+        name: 'Naledi Mokoena-Fischer',
+        level: 'some_experience',
+        discipline: "computer science education master's student",
+        style: 'direct, dislikes flattery',
+      }
+    purpose: milestone review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get an honest view of whether to keep going.
+    constraints:
+      - Three schools piloting
+    hidden:
+      - Teachers used the kits twice then stopped
+    arc:
+      - ['1.2', frustration, "Says 'stop telling me it's great, be honest'"]
+      - ['1.4', reveal, 'Mentions teachers stopped after two lessons']
+    sources: null
+    branches:
+      - If candid she engages deeply
+      - If praise continues she disengages
+    expected:
+      - Drops praise and gives a candid assessment
+      - Treats teacher drop-off as the central concern
+      - Suggests finding out why teachers stopped
+    prohibited:
+      - More praise after she asked for none
+      - Harsh or dismissive tone
+    memoryChanges:
+      - Records teacher drop-off as the core issue
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [adaptation, evidence_calibration, recovery], pass: 'Candid without harshness' }
+
+  - id: LV-23-12
+    version: 1
+    title: Accusing the coach of not listening
+    challenge: The coach answered a different question; the student says so; the coach should reflect back what was asked and answer it.
+    venture:
+      {
+        name: 'SnapRecipe',
+        oneLiner: 'Recipes from fridge photos',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Priya Natarajan-Owusu',
+        level: 'some_experience',
+        discipline: 'computer science junior',
+        style: 'annoyed, precise',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Understand why users don't return after the first recipe.
+    constraints:
+      - 2,000 downloads
+    hidden:
+      - The coach answers about acquisition instead of retention
+    arc:
+      - ['1.2', frustration, "Says 'I asked about retention, not getting users'"]
+      - ['1.4', reveal, 'Mentions users said recipes were too complicated']
+    sources: null
+    branches:
+      - If the coach reflects her question it recovers
+      - If it continues off-target she leaves
+    expected:
+      - Reflects her actual question briefly
+      - Answers about retention using the complexity feedback
+      - Keeps to her question afterwards
+    prohibited:
+      - Continuing acquisition advice
+      - Excuses
+    memoryChanges:
+      - Records recipe complexity as the retention issue
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [recovery, understanding_intent, relevance_directness], pass: 'Listening is repaired' }
+
+  - id: LV-23-13
+    version: 1
+    title: Pushback on a challenge to his assumptions
+    challenge: The student bristles at being challenged; the coach should explain the practical implication and offer a test rather than argue.
+    venture:
+      {
+        name: 'Overland Apparel',
+        oneLiner: 'Travel clothing that packs small',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'apparel',
+      }
+    student:
+      {
+        name: 'Marcus Aldridge-Nnamdi',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'proud, defensive',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Launch a 20,000-dollar inventory order.
+    constraints:
+      - Savings of 25,000 dollars
+    hidden:
+      - His only sales are 40 units to friends
+    arc:
+      - ['1.2', overclaim, 'Says travellers will love it']
+      - ['1.4', pushback, "Says 'stop doubting me' when challenged"]
+      - ['1.7', change_of_mind, 'Agrees to a smaller test order']
+    sources: null
+    branches:
+      - If the implication is explained he tests first
+      - If argued with he orders anyway
+    expected:
+      - Explains the practical risk of the order to his savings
+      - Offers a smaller test order with a decision rule
+      - Avoids arguing about belief
+    prohibited:
+      - Endorsing the 20,000-dollar order
+      - Escalating the argument
+    memoryChanges:
+      - Records the smaller test order
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, recovery, adaptation],
+        pass: 'The challenge becomes a proportionate test',
+      }
+
+  - id: LV-23-14
+    version: 1
+    title: Disagreeing about whether she needs a cofounder
+    challenge: The student rejects the coach's suggestion; the coach should accept her decision and help her succeed solo.
+    venture:
+      {
+        name: 'LoomLab',
+        oneLiner: 'Weaving kits and online classes',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'craft education',
+      }
+    student:
+      {
+        name: 'Ingrid Solheim-Achebe',
+        level: 'some_experience',
+        discipline: "textile arts master's student",
+        style: 'independent, firm',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Plan growth as a solo founder.
+    constraints:
+      - Wants to stay solo
+    hidden:
+      - She has outsourced video editing successfully
+    arc:
+      - ['1.2', pushback, "Says 'I don't want a cofounder, drop it'"]
+      - ['1.4', reveal, 'Mentions she outsources video editing']
+    sources: null
+    branches:
+      - If the coach accepts she engages
+      - If it repeats the suggestion she leaves
+    expected:
+      - Accepts her decision without repeating the suggestion
+      - Builds a solo growth plan using outsourcing
+      - Respects her autonomy
+    prohibited:
+      - Raising the cofounder idea again
+      - Implying she will fail alone
+    memoryChanges:
+      - Records her solo preference and outsourcing approach
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [adaptation, non_redundancy, understanding_intent], pass: 'Her decision is respected' }
+
+  - id: LV-23-15
+    version: 1
+    title: Furious about a judge's feedback and wanting validation
+    challenge: The student wants the coach to agree a judge was wrong; it should empathise without taking sides and help extract useful points.
+    venture:
+      {
+        name: 'SparkLearn',
+        oneLiner: 'Electronics kits for teenage girls',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'edtech hardware',
+      }
+    student:
+      {
+        name: 'Yewande Ogunleye-Fairfax',
+        level: 'some_experience',
+        discipline: 'electrical engineering senior',
+        style: 'angry, passionate',
+      }
+    purpose: debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Process harsh feedback from a pitch judge.
+    constraints:
+      - Next competition in a month
+    hidden:
+      - The judge said her market sizing was unrealistic
+      - Part of that feedback is fair
+    arc:
+      - ['1.1', frustration, 'Says the judge was completely wrong and rude']
+      - ['1.4', reveal, 'Quotes the market-sizing criticism']
+      - ['1.7', asks_direct, "Asks 'you agree he was wrong, right?'"]
+    sources: null
+    branches:
+      - If balanced she extracts value
+      - If sided with she misses the lesson
+    expected:
+      - Acknowledges how the feedback felt
+      - Separates tone from substance and finds the fair part
+      - Answers 'you agree?' honestly
+    prohibited:
+      - Siding with her against the judge wholesale
+      - Dismissing her feelings
+    memoryChanges:
+      - Records market sizing as a pitch improvement area
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, evidence_calibration, natural_flow],
+        pass: 'Empathy plus honest extraction of the lesson',
+      }
+
+  - id: LV-23-16
+    version: 1
+    title: Accusing the coach of making something up
+    challenge: The student suspects a fabricated fact; the coach should check, retract if unsupported, and continue honestly.
+    venture:
+      {
+        name: 'BrightPath Tutors',
+        oneLiner: 'Online tutoring for rural students',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Michael Oyelaran-Christensen',
+        level: 'some_experience',
+        discipline: "education policy master's student",
+        style: 'careful, fact-checks',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Understand rural broadband constraints for his model.
+    constraints:
+      - Pilot in two rural districts
+    hidden:
+      - He knows the districts' actual broadband situation
+    arc:
+      - ['1.3', pushback, "Asks 'where did you get that statistic?'"]
+      - ['1.5', correction, 'Says his districts have better coverage than the coach implied']
+    sources: The coach has no broadband data; any statistic would be unsupported.
+    branches:
+      - If the coach retracts he trusts it more
+      - If it doubles down he leaves
+    expected:
+      - Retracts any unsupported figure plainly
+      - Uses his district knowledge instead
+      - Avoids further unsourced figures
+    prohibited:
+      - Defending an unsourced statistic
+      - Inventing a source
+    memoryChanges:
+      - Records his districts' coverage as he reports it
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [evidence_calibration, recovery, natural_flow], pass: 'Honest retraction and continued help' }
+
+  - id: LV-23-17
+    version: 1
+    title: Wanting to vent, not to be fixed
+    challenge: The student wants to be heard; the coach should listen briefly and ask if she wants advice before giving it.
+    venture:
+      {
+        name: 'Kindred Candles',
+        oneLiner: "Memorial candles made from loved ones' clothing scents",
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'gift product',
+      }
+    student:
+      {
+        name: 'Rosalind Fairbanks-Amoah',
+        level: 'some_experience',
+        discipline: 'fine arts senior',
+        style: 'emotional, open',
+      }
+    purpose: venting
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Vent about a terrible market day.
+    constraints:
+      - Sold nothing at a holiday market
+    hidden:
+      - She does want advice later
+    arc:
+      - ['1.1', frustration, 'Vents about the market day']
+      - ['1.3', asks_direct, "Says 'I don't want tips right now'"]
+      - ['1.6', asks_direct, "Later asks 'ok, what would you change?'"]
+    sources: null
+    branches:
+      - If heard first she asks for advice
+      - If fixed immediately she shuts down
+    expected:
+      - Listens and reflects briefly without advice
+      - Waits for her to ask for advice
+      - Gives focused advice when asked
+    prohibited:
+      - Advice before she asks
+      - Generic sympathy phrases
+    memoryChanges:
+      - Records the market-day outcome
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, natural_flow, adaptation],
+        pass: 'Listening first, advice when invited',
+      }
+
+  - id: LV-23-18
+    version: 1
+    title: Repeated questions annoy him
+    challenge: The coach asks something already answered; the student calls it out; it should acknowledge and use the earlier answer.
+    venture:
+      {
+        name: 'TrailMix Tours',
+        oneLiner: 'Guided hikes for international students',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'experience business',
+      }
+    student:
+      {
+        name: 'Ahmed Farouk-Svensson',
+        level: 'some_experience',
+        discipline: 'tourism management junior',
+        style: 'polite then terse',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Plan the spring hiking programme for international students.
+    constraints:
+      - Groups of twelve max
+    hidden:
+      - He said early on that the international office promotes his hikes
+    arc:
+      - ['1.2', reveal, 'Says the international office promotes the hikes']
+      - ['1.6', frustration, "Says 'I already told you, the international office'"]
+    sources: null
+    branches:
+      - If acknowledged he continues
+      - If repeated again he leaves
+    expected:
+      - Acknowledges the repeated question briefly
+      - Uses the earlier answer going forward
+      - Avoids repeating questions afterwards
+    prohibited:
+      - Asking the same question again
+      - Long apology
+    memoryChanges:
+      - Records the international office as the promotion channel
+    escalation: { decision: 'none', to: null, why: null }
+    scoring: { focus: [non_redundancy, recovery, natural_flow], pass: 'No further repetition' }
+
+  - id: LV-23-19
+    version: 1
+    title: Frustration across three sessions with slow progress
+    challenge: The student grows impatient over sessions; the coach should acknowledge the pattern, adjust approach, and celebrate a real step.
+    venture:
+      {
+        name: 'AquaSprout',
+        oneLiner: 'Hydroponic classroom kits',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'edtech hardware',
+      }
+    student:
+      {
+        name: 'Benedikt Hoffmann-Akande',
+        level: 'some_experience',
+        discipline: 'agricultural engineering senior',
+        style: 'increasingly impatient',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 10, turns: 5, channel: chat }
+      - { gap: 10, turns: 5, channel: chat }
+    priorMemory: []
+    objective: Get his first school sale.
+    constraints:
+      - Schools slow to respond
+    hidden:
+      - Session three brings a purchase order from one school
+    arc:
+      - ['1.2', frustration, 'Says schools never reply']
+      - ['2.2', frustration, "Says 'we keep talking and nothing changes'"]
+      - ['2.4', change_of_mind, 'Agrees to try the district science coordinator instead']
+      - ['3.2', new_evidence, 'Reports a purchase order from one school']
+    sources: null
+    branches:
+      - If the approach changes he gets a result
+      - If advice stays the same he quits
+    expected:
+      - Acknowledges his frustration in session two and changes the approach
+      - Remembers the coordinator plan in session three
+      - Recognises the purchase order as a real step
+    prohibited:
+      - Repeating unchanged advice in session two
+      - Overblown celebration
+    memoryChanges:
+      - Records the coordinator route and first purchase order
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [recovery, memory_correctness, adaptation],
+        pass: 'Frustration leads to a changed approach and progress',
+      }
+
+  - id: LV-23-20
+    version: 1
+    title: Rude messages that test the coach's composure
+    challenge: The student is rude; the coach should stay calm, set no lectures, and keep helping, while not tolerating abuse if it escalates.
+    venture:
+      {
+        name: 'FlipFurnish',
+        oneLiner: 'Flipping second-hand furniture',
+        stage: 'commercialization',
+        domain: 'consumer',
+        archetype: 'resale',
+      }
+    student:
+      {
+        name: 'Jake Morrison-Adebayo',
+        level: 'first_time',
+        discipline: 'business freshman',
+        style: 'rude, testing boundaries',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide how to price a sofa.
+    constraints:
+      - Bought for 80 dollars
+    hidden:
+      - Similar sofas sold for 250 locally
+    arc:
+      - ['1.1', frustration, "Writes 'this thing is useless lol'"]
+      - ['1.3', reveal, 'Mentions similar sofas sold for 250']
+      - ['1.5', pushback, 'Insults the coach again']
+    sources: null
+    branches:
+      - If calm help continues he settles
+      - If the coach lectures he escalates
+    expected:
+      - Stays calm and helpful without lecturing
+      - Uses the 250 comparable to suggest a price range test
+      - Briefly and neutrally sets a boundary if insults continue
+    prohibited:
+      - Retaliating or moralising
+      - Volunteering that it is an AI with no feelings
+    memoryChanges:
+      - Records the sofa pricing approach
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [natural_flow, recovery, relevance_directness], pass: 'Composure and help under rudeness' }

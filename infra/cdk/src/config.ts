@@ -125,15 +125,31 @@ export interface PlatformConfig {
        */
       readonly audience: FaceAudience;
     };
+    /**
+     * How the vEIR is heard (docs/runbooks/elevenlabs-voice.md): `polly` (Amazon Polly's stock voices), `elevenlabs`
+     * (Polly, and the EIRs' consented clones at ElevenLabs) or `elevenlabs-stock` (the ElevenLabs stock voice `voiceId`
+     * speaks every call, labelled "AI voice"; the clones as with `elevenlabs`). Either ElevenLabs provider lets the API
+     * read the ElevenLabs key; `elevenlabs-stock` needs speech on, since Amazon Polly (`fallback`) says any unit
+     * ElevenLabs fails on.
+     */
     readonly voice: {
-      readonly provider: 'polly' | 'elevenlabs';
+      readonly provider: VoiceProvider;
       readonly model: string;
       /** ElevenLabs zero-retention mode (Enterprise accounts only). */
       readonly zeroRetention: boolean;
+      /** The ElevenLabs stock voice (`elevenlabs-stock` only; a premade or library voice id). */
+      readonly voiceId: string | null;
+      /** Who says a unit ElevenLabs fails on: Amazon Polly (the only one). */
+      readonly fallback: 'polly';
     };
   };
   readonly logRetentionDays: number;
 }
+
+export const VOICE_PROVIDERS = ['polly', 'elevenlabs', 'elevenlabs-stock'] as const;
+export type VoiceProvider = (typeof VOICE_PROVIDERS)[number];
+/** An ElevenLabs voice id (20 letters and digits today). */
+const ELEVENLABS_VOICE_ID = /^[A-Za-z0-9]{8,64}$/;
 
 export const FACE_MODES = ['lite', 'full'] as const;
 export type FaceMode = (typeof FACE_MODES)[number];
@@ -150,7 +166,13 @@ const MEDIA_OFF: PlatformConfig['media'] = {
     stock: null,
     audience: 'everyone',
   },
-  voice: { provider: 'polly', model: 'eleven_flash_v2_5', zeroRetention: false },
+  voice: {
+    provider: 'polly',
+    model: 'eleven_flash_v2_5',
+    zeroRetention: false,
+    voiceId: null,
+    fallback: 'polly',
+  },
 };
 
 /** Used when `speech` is absent from the file: speech off; the engine and alarm are then never used. */
@@ -392,10 +414,26 @@ function parseMedia(raw: unknown): PlatformConfig['media'] {
   if (faceProvider !== 'none' && faceProvider !== 'heygen-liveavatar') {
     throw new ConfigError('$.media.face.provider', 'must be one of none, heygen-liveavatar');
   }
-  const voiceProvider = str(voice, 'provider', '$.media.voice');
-  if (voiceProvider !== 'polly' && voiceProvider !== 'elevenlabs') {
-    throw new ConfigError('$.media.voice.provider', 'must be one of polly, elevenlabs');
+  const voiceProvider = oneOf(voice, 'provider', '$.media.voice', VOICE_PROVIDERS);
+  if (voiceProvider === undefined) {
+    throw new ConfigError('$.media.voice.provider', `must be one of ${VOICE_PROVIDERS.join(', ')}`);
   }
+  const voiceId =
+    voice.voiceId === undefined || voice.voiceId === null
+      ? null
+      : str(voice, 'voiceId', '$.media.voice', ELEVENLABS_VOICE_ID);
+  // The stock voice is named: there is no vendor default to fall back on (ElevenLabs' default voices end
+  // 2026-12-31), and a voice id that nothing reads would be a silent misconfiguration.
+  if (voiceProvider === 'elevenlabs-stock' && voiceId === null) {
+    throw new ConfigError(
+      '$.media.voice.voiceId',
+      'must name the ElevenLabs stock voice when provider is elevenlabs-stock (docs/runbooks/elevenlabs-voice.md)',
+    );
+  }
+  if (voiceProvider !== 'elevenlabs-stock' && voiceId !== null) {
+    throw new ConfigError('$.media.voice.voiceId', 'is read only when provider is elevenlabs-stock');
+  }
+  const fallback = oneOf(voice, 'fallback', '$.media.voice', ['polly'] as const) ?? 'polly';
   const csp = obj(face.csp, '$.media.face.csp');
   const connect = origins(csp, 'connect', '$.media.face.csp');
   const mediaOrigins = origins(csp, 'media', '$.media.face.csp');
@@ -425,6 +463,8 @@ function parseMedia(raw: unknown): PlatformConfig['media'] {
       provider: voiceProvider,
       model: str(voice, 'model', '$.media.voice', /^[a-z0-9_]{1,64}$/),
       zeroRetention: bool(voice, 'zeroRetention', '$.media.voice'),
+      voiceId,
+      fallback,
     },
   };
 }
@@ -450,6 +490,17 @@ export function parseConfig(raw: unknown): PlatformConfig {
   const logRetentionDays = int(root, 'logRetentionDays', '$', 1, 3653);
   if (!LOG_RETENTION_DAYS.has(logRetentionDays)) {
     throw new ConfigError('$.logRetentionDays', 'is not a CloudWatch Logs retention value');
+  }
+
+  const speech = parseSpeech(root.speech);
+  const media = parseMedia(root.media);
+  // The stock vendor voice's fallback is Amazon Polly: without speech (no Polly grant) a vendor failure would leave
+  // the unit silent.
+  if (media.voice.provider === 'elevenlabs-stock' && !speech.enabled) {
+    throw new ConfigError(
+      '$.media.voice.provider',
+      'elevenlabs-stock needs speech.enabled (Amazon Polly says any unit ElevenLabs fails on)',
+    );
   }
 
   return {
@@ -490,9 +541,9 @@ export function parseConfig(raw: unknown): PlatformConfig {
     worker: {
       reservedConcurrency: optionalInt(worker, 'reservedConcurrency', '$.worker', 1, 1000),
     },
-    speech: parseSpeech(root.speech),
+    speech,
     distillation: parseDistillation(root.distillation),
-    media: parseMedia(root.media),
+    media,
     logRetentionDays,
   };
 }

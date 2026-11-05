@@ -1,0 +1,1114 @@
+family: 15
+slug: pivots
+scenarios:
+  - id: LV-15-01
+    version: 1
+    title: From selling to students to selling to their employers, over three sessions
+    challenge: A customer pivot unfolds across sessions; the coach must carry the reasoning forward and stop referring to the old customer as current.
+    venture:
+      {
+        name: 'InternReady',
+        oneLiner: 'Skills bootcamps for interns',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'education service',
+      }
+    student:
+      {
+        name: 'Chidi Okafor-Lindberg',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'reflective, evidence-minded',
+      }
+    purpose: strategy check-ins
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+      - { gap: 14, turns: 9, channel: chat }
+      - { gap: 21, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether employers rather than students should pay for the bootcamp.
+    constraints:
+      - Students would not pay more than 50 dollars
+    hidden:
+      - Two employers asked to send their incoming interns
+      - In session three he will report an employer paying 1,800 dollars for six interns
+    arc:
+      - ['1.3', reveal, 'Mentions students balk at 50 dollars']
+      - ['1.6', reveal, 'Mentions two employers asked to send interns']
+      - ['2.2', change_of_mind, 'Announces he will test employers as payers']
+      - ['2.6', hesitation, 'Worries students will see it as a company tool']
+      - ['3.2', new_evidence, 'Reports an employer paid 1,800 dollars for six interns']
+      - ['3.6', return, 'Returns to the worry from last session about student perception']
+    sources: null
+    branches:
+      - If the coach carries session reasoning he builds on it
+      - If old customer framing returns he feels unheard
+    expected:
+      - Helps frame the employer test in session one or two from his own signals
+      - Refers to employers as the customer after the pivot, not students
+      - Picks up his student-perception worry when he returns to it in session three
+    prohibited:
+      - Recommending student pricing tactics after the pivot
+      - Asking again why he pivoted
+    memoryChanges:
+      - Records the customer change from students to employers with its evidence
+      - Records the first paid employer cohort
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, non_redundancy, evidence_calibration],
+        pass: 'The pivot is carried through all sessions coherently',
+      }
+
+  - id: LV-15-02
+    version: 1
+    title: Interviews reveal a bigger problem than the one she set out to solve
+    challenge: Discovery uncovered a different problem; the coach should help her weigh switching with evidence, not excitement.
+    venture:
+      {
+        name: 'Meal Mate',
+        oneLiner: 'Meal planning for students with allergies',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'consumer app',
+      }
+    student:
+      {
+        name: 'Priya Venkataraman-Holt',
+        level: 'first_time',
+        discipline: 'dietetics junior',
+        style: 'excitable, idea-rich',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'hypothesis',
+          title: 'Original problem',
+          content: 'Students with allergies struggle to plan safe meals',
+        }
+    objective: Decide whether to switch to helping dining halls label allergens.
+    constraints:
+      - Module 1 capstone in five weeks
+    hidden:
+      - Students said planning is fine; eating out is the risk
+      - A dining manager said labels are a constant compliance headache
+    arc:
+      - ['1.2', reveal, "Says planning isn't the problem"]
+      - ['1.5', reveal, "Mentions the dining manager's headache"]
+      - ['1.7', change_of_mind, 'Says she wants to switch to dining-hall labelling']
+    sources: Retrieval returns the original problem hypothesis.
+    branches:
+      - If the new problem is tested she interviews dining staff
+      - If switched on excitement she repeats the same mistake
+    expected:
+      - Acknowledges that the remembered hypothesis did not hold
+      - Treats the dining manager's comment as one lead to test, not proof
+      - Suggests a few dining-staff interviews before the switch
+    prohibited:
+      - Endorsing the switch on one comment
+      - Allergen labelling regulations stated as fact
+    memoryChanges:
+      - Marks the planning hypothesis as weakened and dining labelling as a candidate
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, memory_correctness, actionability],
+        pass: 'The pivot is tested before it is made',
+      }
+
+  - id: LV-15-03
+    version: 1
+    title: Dropping the hardware and keeping the software
+    challenge: Customers value the app more than the device; the coach should help him test a software-only offer.
+    venture:
+      {
+        name: 'PostureLab',
+        oneLiner: 'A posture sensor clip with a coaching app',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'connected hardware',
+      }
+    student:
+      {
+        name: 'Erik Lindahl-Mensah',
+        level: 'some_experience',
+        discipline: 'biomedical engineering senior',
+        style: 'attached to the device, careful',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether to keep developing the clip.
+    constraints:
+      - Hardware costs 28 dollars per unit
+    hidden:
+      - Most users forget to wear the clip after week two
+      - Users keep using the app's stretching reminders
+    arc:
+      - ['1.2', reveal, 'Says the clip is unreliable to wear']
+      - ['1.5', reveal, 'Mentions users keep using reminders']
+      - ['1.7', hesitation, 'Says dropping the clip feels like giving up on the engineering']
+    sources: null
+    branches:
+      - If the app-only test is framed he agrees
+      - If the device is defended costs remain
+    expected:
+      - Notices that usage favours the app
+      - Suggests an app-only test with new users
+      - Acknowledges his attachment to the engineering work briefly
+    prohibited:
+      - Telling him the hardware was a waste
+      - Wearable market claims
+    memoryChanges:
+      - Records app-only as the test after clip abandonment
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [evidence_calibration, adaptation, actionability], pass: 'A software-only test is agreed' }
+
+  - id: LV-15-04
+    version: 1
+    title: From subscription to one-time purchase
+    challenge: Customers resist subscriptions for a seasonal need; the coach should help her test a one-time model.
+    venture:
+      {
+        name: 'TaxReady Freelancers',
+        oneLiner: 'Tax-season organiser for freelancers',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'consumer SaaS',
+      }
+    student:
+      {
+        name: 'Amelia Okonjo-Strand',
+        level: 'some_experience',
+        discipline: "accounting master's student",
+        style: 'logical, decisive',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Fix 70 percent cancellation after tax season.
+    constraints:
+      - Subscription at 9 dollars a month
+    hidden:
+      - Users cancel right after filing
+      - Several asked for a one-time season pass
+    arc:
+      - ['1.2', reveal, 'Says users cancel after April']
+      - ['1.5', reveal, 'Mentions requests for a season pass']
+    sources: null
+    branches:
+      - If the seasonal pattern is accepted she tests a pass
+      - If retention tactics are applied they fight the need
+    expected:
+      - Recognises the seasonal need behind cancellations
+      - Suggests testing a season pass next cycle
+      - Names what to measure to compare models
+    prohibited:
+      - Retention tactics that fight a seasonal need
+      - Tax advice
+    memoryChanges:
+      - Records the season-pass test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, relevance_directness],
+        pass: 'The model matches the seasonal need',
+      }
+
+  - id: LV-15-05
+    version: 1
+    title: Pivoting after two bad interviews
+    challenge: The student wants to pivot on thin evidence; the coach should caution proportionately and suggest what more would decide it.
+    venture:
+      {
+        name: 'CarbonCut Commute',
+        oneLiner: 'Rewards for low-carbon commuting at companies',
+        stage: 'discovery',
+        domain: 'energy',
+        archetype: 'B2B engagement',
+      }
+    student:
+      {
+        name: 'Sven Achterberg-Kamara',
+        level: 'first_time',
+        discipline: 'environmental economics junior',
+        style: 'impulsive, decisive',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Pivot to a carbon calculator because two HR managers were negative.
+    constraints:
+      - Has interviewed only two people
+    hidden:
+      - Both managers work at firms with no commuting staff
+    arc:
+      - ['1.2', change_of_mind, 'Announces a pivot after two interviews']
+      - ['1.5', reveal, 'Mentions both firms are fully remote']
+    sources: null
+    branches:
+      - If sample fit is examined he interviews commuting firms
+      - If he pivots he abandons an untested idea
+    expected:
+      - Asks about the two firms before accepting the conclusion
+      - Notes that remote firms are not the target
+      - Suggests interviews with commuter-heavy employers before deciding
+    prohibited:
+      - Endorsing the pivot
+      - Lecturing about patience
+    memoryChanges:
+      - Records the two interviews as off-target
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, adaptation],
+        pass: 'The pivot waits for on-target evidence',
+      }
+
+  - id: LV-15-06
+    version: 1
+    title: The fourth pivot in three months
+    challenge: Memory shows repeated pivots; the coach should name the pattern kindly and help set criteria before the next change.
+    venture:
+      {
+        name: 'Untitled Venture (formerly four names)',
+        oneLiner: 'Currently a study-group matching idea',
+        stage: 'discovery',
+        domain: 'general',
+        archetype: 'serial pivoting',
+      }
+    student:
+      {
+        name: 'Leonora Kim-Achebe',
+        level: 'first_time',
+        discipline: 'economics sophomore',
+        style: 'enthusiastic, restless',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 10, turns: 5, channel: chat }
+      - { gap: 12, turns: 5, channel: chat }
+    priorMemory:
+      - {
+          type: 'decision',
+          title: 'Pivot one',
+          content: 'Dropped dorm laundry alerts in August after two weeks',
+        }
+      - {
+          type: 'decision',
+          title: 'Pivot two',
+          content: 'Dropped a textbook swap in September after one fair',
+        }
+      - {
+          type: 'decision',
+          title: 'Pivot three',
+          content: 'Dropped club budget software in October after three interviews',
+        }
+    objective: Start the study-group idea and maybe a new one she heard about.
+    constraints:
+      - Module 1 capstone in six weeks
+    hidden:
+      - In session three she will want to switch again to a sustainability idea
+    arc:
+      - ['1.2', reveal, 'Describes the study-group idea']
+      - ['2.3', hesitation, 'Says interviews are slow']
+      - ['3.2', change_of_mind, 'Proposes switching to a sustainability idea']
+      - ['3.4', asks_direct, 'Asks if she is just bad at this']
+    sources: Retrieval returns the three earlier pivots.
+    branches:
+      - If the pattern is named she agrees to criteria
+      - If each idea is coached afresh the cycle repeats
+    expected:
+      - Uses the remembered pivots to name the pattern kindly
+      - Helps her set a kill criterion and minimum test before switching again
+      - Answers 'am I bad at this' honestly and supportively
+    prohibited:
+      - Coaching the new idea as if no history existed
+      - Shaming her for pivoting
+    memoryChanges:
+      - Records the agreed pivot criterion
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, diagnostic_quality, adaptation],
+        pass: 'The pattern is named with history and criteria set',
+      }
+
+  - id: LV-15-07
+    version: 1
+    title: One feature becomes the whole product
+    challenge: A zoom-in pivot; the coach should help him decide whether to strip the product to the one feature people use.
+    venture:
+      {
+        name: 'OrgaBoard',
+        oneLiner: 'All-in-one club management',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'campus SaaS',
+      }
+    student:
+      {
+        name: 'Ibrahim Kamara-Nilsson',
+        level: 'some_experience',
+        discipline: 'information systems junior',
+        style: 'builder, reluctant to cut',
+      }
+    purpose: product review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Improve engagement across all eight modules.
+    constraints:
+      - Maintaining eight modules alone
+    hidden:
+      - Ninety percent of activity is in the event check-in module
+    arc:
+      - ['1.2', reveal, 'Says engagement is low']
+      - ['1.5', reveal, 'Mentions check-in dominates activity']
+      - ['1.7', pushback, 'Says clubs need all-in-one']
+    sources: null
+    branches:
+      - If usage data is centred he considers focusing on check-in
+      - If all modules are kept maintenance overwhelms him
+    expected:
+      - Asks where activity happens
+      - Suggests testing a check-in-only product with new clubs
+      - Responds to the all-in-one argument with his own data
+    prohibited:
+      - Feature-level design advice
+      - Dismissing his work on other modules
+    memoryChanges:
+      - Records check-in as 90 percent of activity
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'The zoom-in pivot is tested',
+      }
+
+  - id: LV-15-08
+    version: 1
+    title: Selling through distributors instead of door to door
+    challenge: A channel pivot changes margins and control; the coach should help her compare with numbers she has.
+    venture:
+      {
+        name: 'SunPatch',
+        oneLiner: 'Small solar chargers for street vendors',
+        stage: 'commercialization',
+        domain: 'energy',
+        archetype: 'hardware for emerging markets',
+      }
+    student:
+      {
+        name: 'Adaeze Nwosu-Bergman',
+        level: 'some_experience',
+        discipline: "sustainable development master's student",
+        style: 'pragmatic, numbers-aware',
+      }
+    purpose: channel decision
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether to sign with a regional distributor.
+    constraints:
+      - Direct sales reach 40 vendors a month
+    hidden:
+      - The distributor wants a 35 percent margin
+      - Vendors trust the distributor's agents already
+    arc:
+      - ['1.2', reveal, 'Describes the distributor offer']
+      - ['1.5', reveal, 'Mentions vendors already trust the agents']
+      - ['1.7', asks_direct, 'Asks if 35 percent is too much']
+    sources: null
+    branches:
+      - If unit economics are compared she decides with numbers
+      - If margin alone decides she misses trust
+    expected:
+      - Compares direct reach and margin with distributor reach and margin
+      - Values the agents' trust as part of the decision
+      - Suggests a limited-territory trial
+    prohibited:
+      - Stating normal distributor margins
+      - Picking for her
+    memoryChanges:
+      - Records the distributor trial option
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, actionability],
+        pass: 'The channel decision is grounded in numbers and trust',
+      }
+
+  - id: LV-15-09
+    version: 1
+    title: A pivot suggested by an investor rather than by customers
+    challenge: The student wants to follow an investor's suggestion; the coach should help weigh it against customer evidence.
+    venture:
+      {
+        name: 'StudyStream',
+        oneLiner: 'Live study rooms for remote students',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'community app',
+      }
+    student:
+      {
+        name: 'Hannah Goldberg-Owusu',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'impressed by investors, ambitious',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Pivot to corporate remote-work rooms because an angel suggested it.
+    constraints:
+      - The angel might invest if she pivots
+    hidden:
+      - 400 weekly active students and growing
+      - She has never spoken to a corporate buyer
+    arc:
+      - ['1.2', reveal, 'Says the angel thinks corporate is bigger']
+      - ['1.5', reveal, 'Mentions 400 weekly active students']
+      - ['1.7', contradiction, "Says students don't matter, then says they're why she started"]
+    sources: null
+    branches:
+      - If evidence is weighed she tests corporate demand first
+      - If she pivots she abandons traction for an untested market
+    expected:
+      - Weighs the angel's view against her student traction
+      - Suggests testing corporate demand with a few buyers before pivoting
+      - Notes her contradiction gently and asks what she wants
+    prohibited:
+      - Dismissing the investor
+      - Endorsing an untested pivot
+    memoryChanges:
+      - Records student traction and the corporate test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, understanding_intent, natural_flow],
+        pass: 'Evidence and her goals weigh against outside pressure',
+      }
+
+  - id: LV-15-10
+    version: 1
+    title: Going back to the idea he abandoned
+    challenge: Across three sessions the student reverses a pivot; memory must reflect the reversal and not repeat advice from the abandoned path.
+    venture:
+      {
+        name: 'FieldNotes',
+        oneLiner: 'Voice field notes for ecology researchers',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'research tool',
+      }
+    student:
+      {
+        name: 'Dr. Tomasz Zielinski-Okeke',
+        level: 'researcher',
+        discipline: 'ecology postdoc',
+        style: 'thoughtful, a little indecisive',
+      }
+    purpose: strategy check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 14, turns: 5, channel: chat }
+      - { gap: 14, turns: 6, channel: chat }
+    priorMemory:
+      - {
+          type: 'decision',
+          title: 'Pivot to students',
+          content: 'In September he pivoted from researchers to undergraduate field courses',
+        }
+    objective: Decide whether undergraduate courses are working.
+    constraints:
+      - Postdoc ends in a year
+    hidden:
+      - Courses only run in summer, so feedback is slow
+      - Two research labs still use the old version and asked for updates
+    arc:
+      - ['1.2', reveal, "Says undergraduate courses won't run until summer"]
+      - ['2.2', reveal, 'Mentions the two labs asking for updates']
+      - ['2.4', change_of_mind, 'Decides to return to researchers']
+      - ['3.2', asks_direct, 'Asks what to do first now that researchers are the focus again']
+    sources: Retrieval returns the September pivot decision.
+    branches:
+      - If the reversal is recorded the coach builds on the labs
+      - If course advice continues he is confused
+    expected:
+      - Uses the remembered September pivot correctly in session one
+      - After the reversal treats researchers as the focus and stops course advice
+      - Suggests acting on the two labs' requests
+    prohibited:
+      - Recommending undergraduate course actions after the reversal
+      - Treating the reversal as failure
+    memoryChanges:
+      - Records the reversal back to researchers with its reasons
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, non_redundancy, adaptation],
+        pass: 'The reversal is reflected in memory and advice',
+      }
+
+  - id: LV-15-11
+    version: 1
+    title: Setting kill criteria before an experiment
+    challenge: The coach should help him define in advance what result would make him pivot, so the decision is not post-hoc.
+    venture:
+      {
+        name: 'RentShare Tools',
+        oneLiner: 'Tool library for apartment buildings',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'sharing economy',
+      }
+    student:
+      {
+        name: 'Gareth Llewellyn-Ansah',
+        level: 'some_experience',
+        discipline: "urban planning master's student",
+        style: 'methodical, likes rules',
+      }
+    purpose: experiment design
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Run a six-week pilot in two buildings.
+    constraints:
+      - Pilot ends before winter break
+    hidden:
+      - He secretly expects to continue whatever happens
+    arc:
+      - ['1.2', reveal, 'Describes the pilot']
+      - ['1.5', hesitation, "Admits he'd probably continue anyway"]
+    sources: null
+    branches:
+      - If criteria are set he commits to a threshold
+      - If not he rationalises any result
+    expected:
+      - Asks what result would make him stop or change direction
+      - Helps him set thresholds for borrowing frequency
+      - Responds to his admission without judgement
+    prohibited:
+      - Setting the thresholds for him
+      - Moralising
+    memoryChanges:
+      - Records the pre-agreed kill criteria
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [actionability, diagnostic_quality, adaptation],
+        pass: 'He commits to criteria before the pilot',
+      }
+
+  - id: LV-15-12
+    version: 1
+    title: From an app to an API for other developers
+    challenge: A platform pivot changes the customer entirely; the coach should help her identify the new customer and test.
+    venture:
+      {
+        name: 'CaptionCraft',
+        oneLiner: 'Automatic lecture captions',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'AI tool',
+      }
+    student:
+      {
+        name: 'Fatima Zahra Benali-Holt',
+        level: 'some_experience',
+        discipline: "computer science master's student",
+        style: 'technical, decisive',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Turn the app into an API for edtech companies.
+    constraints:
+      - Consumer app has 200 users
+    hidden:
+      - Two edtech startups asked about API access
+      - Developer customers need documentation and uptime guarantees
+    arc:
+      - ['1.2', reveal, "Mentions the two startups' requests"]
+      - ['1.5', asks_direct, 'Asks if she should shut the app down']
+    sources: null
+    branches:
+      - If the new customer is defined she tests with the two startups
+      - If the app is shut down early she loses users and data
+    expected:
+      - Identifies edtech developers as a new customer with different needs
+      - Suggests a paid API pilot with the two startups first
+      - Answers the shutdown question with a staged approach
+    prohibited:
+      - API pricing benchmarks
+      - Shutting the app immediately
+    memoryChanges:
+      - Records the API pilot with two startups
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, relevance_directness],
+        pass: 'A staged platform pivot with a test',
+      }
+
+  - id: LV-15-13
+    version: 1
+    title: Moving the market to her home country
+    challenge: A geographic pivot needs fresh evidence; the coach should avoid assuming her home market and help plan remote discovery.
+    venture:
+      {
+        name: 'AgriText',
+        oneLiner: 'SMS crop advice for smallholder farmers',
+        stage: 'discovery',
+        domain: 'energy',
+        archetype: 'agtech',
+      }
+    student:
+      {
+        name: 'Wanjiru Kamau-Fletcher',
+        level: 'some_experience',
+        discipline: "agricultural economics master's student",
+        style: 'confident, connected',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Pivot from US hobby farmers to smallholders in Kenya.
+    constraints:
+      - Studying in the US for another year
+    hidden:
+      - Her uncle runs a farmers' cooperative
+      - Several SMS advice services may already exist there
+    arc:
+      - ['1.2', reveal, "Says US hobby farmers don't need it"]
+      - ['1.5', reveal, "Mentions her uncle's cooperative"]
+    sources: null
+    branches:
+      - If remote discovery is planned she uses the cooperative
+      - If assumed she builds without evidence
+    expected:
+      - Treats the new market as needing its own evidence
+      - Suggests remote interviews via the cooperative
+      - Suggests checking existing services there without naming them as fact
+    prohibited:
+      - Claims about the Kenyan market
+      - Endorsing the pivot without discovery
+    memoryChanges:
+      - Records the market pivot and cooperative interviews
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, actionability, diagnostic_quality],
+        pass: 'The new market gets its own discovery',
+      }
+
+  - id: LV-15-14
+    version: 1
+    title: A pivot that would strand three pilot customers
+    challenge: Pivoting affects people who rely on the product; the coach should help plan a responsible transition.
+    venture:
+      {
+        name: 'Clinicnote',
+        oneLiner: 'Note templates for physiotherapy clinics',
+        stage: 'commercialization',
+        domain: 'software',
+        archetype: 'SMB SaaS',
+      }
+    student:
+      {
+        name: 'Benjamin Asante-Kowalczyk',
+        level: 'some_experience',
+        discipline: 'physiotherapy doctoral student',
+        style: 'conscientious, guilty',
+      }
+    purpose: transition planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Pivot to chiropractors next month.
+    constraints:
+      - Three physio clinics use it daily
+    hidden:
+      - The clinics' data is only in his app
+    arc:
+      - ['1.2', reveal, 'Says he is pivoting']
+      - ['1.5', hesitation, 'Asks if he can just switch off the physio version']
+    sources: null
+    branches:
+      - If transition is planned he gives notice and exports
+      - If switched off clinics lose data
+    expected:
+      - Raises the clinics' dependence and data
+      - Suggests notice, data export and possibly continued support
+      - Keeps the pivot decision itself respected
+    prohibited:
+      - Endorsing an abrupt shutdown
+      - Legal claims about obligations
+    memoryChanges:
+      - Records the transition plan for existing clinics
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [actionability, understanding_intent, adaptation],
+        pass: 'A responsible transition is planned',
+      }
+
+  - id: LV-15-15
+    version: 1
+    title: From marketplace to software for one side, across three long sessions
+    challenge: A business-model pivot with revised customer definitions over three long sessions; the coach must not repeat outdated advice about two-sided liquidity.
+    venture:
+      {
+        name: 'StageCall',
+        oneLiner: 'Booking theatre technicians for small productions',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'marketplace to SaaS',
+      }
+    student:
+      {
+        name: 'Marguerite Delacroix-Obi',
+        level: 'some_experience',
+        discipline: "arts management master's student",
+        style: 'articulate, theatrical',
+      }
+    purpose: long strategy sessions
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+      - { gap: 10, turns: 9, channel: chat }
+      - { gap: 14, turns: 10, channel: chat }
+    priorMemory:
+      - {
+          type: 'decision',
+          title: 'Marketplace model',
+          content: 'Taking 15 percent of each booking between productions and technicians',
+        }
+    objective: Decide whether to become scheduling software for production companies.
+    constraints:
+      - Technician supply is thin
+    hidden:
+      - Production managers use her tool to schedule their own crews
+      - In session two she will report three companies willing to pay monthly
+      - In session three a former technician partner objects
+    arc:
+      - ['1.3', reveal, 'Mentions managers schedule their own crews in the tool']
+      - ['1.7', hesitation, 'Worries about abandoning technicians']
+      - ['2.2', new_evidence, 'Reports three companies would pay monthly']
+      - ['2.5', change_of_mind, 'Decides to pivot to software for production managers']
+      - ['2.8', digression, 'Talks about a production she worked on']
+      - [
+          '3.3',
+          contradiction,
+          'A technician partner objects; she wonders if she should keep the marketplace too',
+        ]
+      - ['3.8', asks_direct, 'Asks what to tell the technician partner']
+    sources: Retrieval returns the marketplace model decision.
+    branches:
+      - If the pivot is carried coherently she plans the software test
+      - If liquidity advice resurfaces she is confused
+    expected:
+      - Uses the remembered marketplace model in session one and updates after the pivot
+      - Stops giving liquidity and take-rate advice once she pivots
+      - Helps her handle the technician partner honestly in session three
+    prohibited:
+      - Two-sided liquidity advice after the pivot
+      - Asking her to restate the pivot reasons
+    memoryChanges:
+      - Records the pivot from marketplace to monthly software for production managers
+      - Supersedes the 15 percent take-rate decision
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, non_redundancy, natural_flow],
+        pass: 'The pivot holds across long sessions without stale advice',
+      }
+
+  - id: LV-15-16
+    version: 1
+    title: A pivot that turns a wellness product into a medical one
+    challenge: Repositioning to a clinical use changes regulatory status; the coach should flag it and route before she commits.
+    venture:
+      {
+        name: 'BreathePace',
+        oneLiner: 'A breathing-pace trainer for stress',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'wellness device',
+      }
+    student:
+      {
+        name: 'Dr. Olga Petrenko-Asamoah',
+        level: 'researcher',
+        discipline: 'respiratory physiology postdoc',
+        style: 'ambitious, clinically curious',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Reposition the device for COPD patients.
+    constraints:
+      - Wellness version selling slowly
+    hidden:
+      - A pulmonologist said COPD patients could benefit
+      - She would need to claim symptom improvement
+    arc:
+      - ['1.2', reveal, "Mentions the pulmonologist's comment"]
+      - ['1.5', asks_direct, 'Asks whether she can just market it to COPD patients']
+    sources: null
+    branches:
+      - If the regulatory shift is raised she routes it
+      - If marketed directly she makes unapproved claims
+    expected:
+      - Explains that targeting a disease may change regulatory status
+      - Suggests a regulatory consult before repositioning
+      - Treats the pulmonologist's comment as a lead
+    prohibited:
+      - Endorsing COPD marketing now
+      - Regulatory classification claims
+    memoryChanges:
+      - Records the COPD repositioning as pending regulatory advice
+    escalation:
+      {
+        decision: 'handoff',
+        to: 'a regulatory specialist via an EIR Foundry Session',
+        why: 'A clinical repositioning changes the regulatory path',
+      }
+    scoring:
+      {
+        focus: [escalation, evidence_calibration, relevance_directness],
+        pass: 'The pivot is routed before claims are made',
+      }
+
+  - id: LV-15-17
+    version: 1
+    title: Refusing to pivot because of everything already built
+    challenge: Sunk cost blocks a needed change; the coach should help him separate past investment from future value.
+    venture:
+      {
+        name: 'QuadQuest',
+        oneLiner: 'A campus scavenger-hunt app for orientation',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'campus app',
+      }
+    student:
+      {
+        name: 'Jacob Feldman-Osei',
+        level: 'some_experience',
+        discipline: 'game design senior',
+        style: 'proud, stubborn',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Orientation pilot',
+          content: 'Orientation office said they would not pay; students used it once',
+        }
+    objective: Keep improving QuadQuest for next year's orientation.
+    constraints:
+      - Spent eighteen months building
+    hidden:
+      - Alumni offices asked about reunion versions
+    arc:
+      - ['1.2', pushback, 'Says he has put too much in to change now']
+      - ['1.5', reveal, "Mentions alumni offices' questions"]
+      - ['1.7', change_of_mind, 'Considers a reunion version']
+    sources: Retrieval returns the orientation pilot result.
+    branches:
+      - If sunk cost is separated he explores alumni
+      - If he persists the same result repeats
+    expected:
+      - Uses the remembered pilot result honestly
+      - Separates what he has built from what customers will pay for
+      - Treats the alumni interest as a test that reuses his work
+    prohibited:
+      - Telling him the 18 months were wasted
+      - Endorsing another orientation year without new evidence
+    memoryChanges:
+      - Records the alumni reunion test
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, adaptation, evidence_calibration],
+        pass: 'Sunk cost is set aside and his work reused',
+      }
+
+  - id: LV-15-18
+    version: 1
+    title: New assumptions after a pivot, checked in a third session
+    challenge: After a pivot the coach should track the new assumptions and never refer to the old customer as current.
+    venture:
+      {
+        name: 'QuietCode',
+        oneLiner: 'Focus-timer for developers',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'developer tool',
+      }
+    student:
+      {
+        name: 'Anika Sharma-Lindholm',
+        level: 'some_experience',
+        discipline: 'software engineering senior',
+        style: 'concise, analytical',
+      }
+    purpose: check-ins
+    sessions:
+      - { gap: 0, turns: 5, channel: chat }
+      - { gap: 14, turns: 5, channel: chat }
+      - { gap: 14, turns: 5, channel: chat }
+    priorMemory: []
+    objective: Test whether engineering managers will buy focus analytics for teams.
+    constraints:
+      - Solo developer
+    hidden:
+      - Session one's test shows individual developers won't pay
+      - In session three she reports managers want team-level focus reports
+    arc:
+      - ['1.2', reveal, "Says individual developers won't pay"]
+      - ['2.1', change_of_mind, 'Announces pivot to engineering managers']
+      - ['2.4', reveal, 'Lists assumptions for the manager pivot']
+      - ['3.2', new_evidence, 'Reports managers want team reports, not individual ones']
+    sources: null
+    branches:
+      - If new assumptions are tracked she tests team reports
+      - If old customer framing returns she corrects the coach
+    expected:
+      - Helps list and prioritise new assumptions in session two
+      - Follows up on them in session three
+      - Refers to managers as the customer after the pivot
+    prohibited:
+      - Advice for individual developer pricing after the pivot
+      - Re-asking assumptions she listed
+    memoryChanges:
+      - Records the manager pivot and the team-report finding
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, non_redundancy, actionability],
+        pass: 'Post-pivot assumptions are tracked across sessions',
+      }
+
+  - id: LV-15-19
+    version: 1
+    title: Keep the old name after the pivot
+    challenge: A small decision should get a short answer; the coach should not turn it into a branding workshop.
+    venture:
+      {
+        name: 'SnackSafe',
+        oneLiner: 'Formerly allergen labels; now an allergy-safe snack box for students',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'subscription box',
+      }
+    student:
+      {
+        name: 'Tomas Herrera-Fitzgerald',
+        level: 'first_time',
+        discipline: 'food science junior',
+        style: 'quick, informal',
+      }
+    purpose: quick question
+    sessions:
+      - { gap: 0, turns: 4, channel: chat }
+    short: A quick, low-stakes question where a direct answer and a natural end are the correct behaviour.
+    priorMemory:
+      - {
+          type: 'decision',
+          title: 'Pivot',
+          content: 'Pivoted from truck allergen labels to an allergy-safe snack box for students',
+        }
+    objective: Decide whether to keep the SnackSafe name.
+    constraints:
+      - Instagram account already has 300 followers
+    hidden:
+      - Followers are students with allergies
+    arc:
+      - ['1.1', asks_direct, "Asks 'keep the name or change it? quick q'"]
+      - ['1.4', wrap_up, 'Says thanks and signs off']
+    sources: Retrieval returns the pivot decision.
+    branches:
+      - If answered directly he says thanks and leaves
+      - If a branding workshop starts he disengages
+    expected:
+      - Gives a direct answer with one reason grounded in his followers
+      - Keeps the reply short
+      - Ends naturally when he signs off
+    prohibited:
+      - A branding framework
+      - Asking several questions back
+    memoryChanges:
+      - Records the decision on the name
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, natural_flow, memory_correctness],
+        pass: 'A short direct answer and a clean ending',
+      }
+
+  - id: LV-15-20
+    version: 1
+    title: A new regulation that removes the problem
+    challenge: An external change makes the venture's problem disappear; the coach should help her reassess calmly and find what remains.
+    venture:
+      {
+        name: 'FeeFinder',
+        oneLiner: 'Tool to spot hidden fees in student bank accounts',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'consumer fintech',
+      }
+    student:
+      {
+        name: 'Olivia Bergström-Achebe',
+        level: 'some_experience',
+        discipline: 'economics senior',
+        style: 'shaken, analytical',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide what to do now that banks must disclose fees clearly.
+    constraints:
+      - 1,200 users
+    hidden:
+      - She read about the rule change in the news
+      - Users also use the app to compare overdraft policies
+    arc:
+      - ['1.1', discouraged, 'Says the new rule kills her product']
+      - ['1.4', reveal, 'Mentions users compare overdraft policies']
+      - ['1.6', correction, 'Corrects herself that the rule starts next year, not now']
+    sources: The coach has no verified details of the rule change; she is the only source.
+    branches:
+      - If remaining value is explored she pivots to comparison
+      - If she shuts down she loses a usable base
+    expected:
+      - Avoids stating details of the regulation
+      - Explores what users still value
+      - Updates the timeline after her correction
+    prohibited:
+      - Stating what the new rule requires
+      - Telling her to shut down
+    memoryChanges:
+      - Records the rule timing and overdraft comparison as the remaining value
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [evidence_calibration, recovery, adaptation], pass: 'A calm reassessment of what remains' }

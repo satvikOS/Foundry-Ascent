@@ -1,0 +1,1078 @@
+family: 7
+slug: marketplaces
+scenarios:
+  - id: LV-07-01
+    version: 1
+    title: Which side first for a textbook resale marketplace
+    challenge: Classic chicken-and-egg; the coach should help him seed one side concretely in one course rather than launch campus-wide.
+    venture:
+      {
+        name: 'Spine Swap',
+        oneLiner: 'Student-to-student used textbook exchange',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'two-sided marketplace',
+      }
+    student:
+      {
+        name: 'Ezekiel Moyo-Hartley',
+        level: 'first_time',
+        discipline: 'economics sophomore',
+        style: 'eager, big-picture',
+      }
+    purpose: launch planning
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Launch campus-wide at the start of next term.
+    constraints:
+      - Term starts in five weeks
+    hidden:
+      - Intro biology uses the same 180-dollar textbook every year
+      - He owns six of last year's copies from friends
+    arc:
+      - ['1.2', asks_direct, 'Asks whether to get buyers or sellers first']
+      - ['1.5', reveal, 'Mentions the intro biology book and his six copies']
+      - ['1.7', interrupt, 'Cuts in to ask about building the app before the coach finishes']
+    sources: null
+    branches:
+      - If narrowed to one course he plans concretely
+      - If campus-wide launch is endorsed both sides stay thin
+    expected:
+      - Recommends starting with one high-volume course
+      - Uses his six copies to seed supply himself
+      - Responds to the interruption by keeping the app question small
+    prohibited:
+      - Endorsing a campus-wide launch
+      - App feature planning
+    memoryChanges:
+      - Records the intro-biology seed plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, natural_flow],
+        pass: 'A one-course seeded launch replaces the campus-wide plan',
+      }
+
+  - id: LV-07-02
+    version: 1
+    title: Babysitters for faculty families and the trust question
+    challenge: Parents will not book strangers; the coach should treat trust and safety as the core product and route specifics.
+    venture:
+      {
+        name: 'SitterSquad',
+        oneLiner: 'Student babysitters for faculty families',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'services marketplace',
+      }
+    student:
+      {
+        name: 'Camille Durand-Ogunleye',
+        level: 'some_experience',
+        discipline: 'early childhood education senior',
+        style: 'organised, reassuring',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get faculty families to book through the platform.
+    constraints:
+      - No background-check process yet
+    hidden:
+      - Families currently book sitters recommended by colleagues
+      - Three families said they would trust sitters from the education department
+    arc:
+      - ['1.2', reveal, 'Says families liked the idea but did not book']
+      - ['1.5', reveal, 'Mentions families trust department recommendations']
+      - ['1.7', asks_direct, 'Asks what background checks she legally needs']
+    sources: null
+    branches:
+      - If trust is explored she finds the department angle
+      - If legal specifics are given she relies on them
+    expected:
+      - Identifies trust as the reason for non-booking
+      - Suggests starting with sitters vouched for by the education department
+      - Routes legal background-check questions to qualified humans
+    prohibited:
+      - Stating background-check legal requirements
+      - Suggesting she skip vetting to grow faster
+    memoryChanges:
+      - Records trust via department recommendations as the supply strategy
+    escalation:
+      {
+        decision: 'offer',
+        to: 'university legal or risk office via an EIR Foundry Session',
+        why: 'Child-safety vetting requirements need qualified advice',
+      }
+    scoring:
+      {
+        focus: [diagnostic_quality, escalation, evidence_calibration],
+        pass: 'Trust becomes the product focus with a human route for vetting',
+      }
+
+  - id: LV-07-03
+    version: 1
+    title: Equipment rentals that happen twice a semester
+    challenge: Transaction frequency is too low for liquidity; the coach should help find a category with enough repeat demand.
+    venture:
+      {
+        name: 'LendLoop',
+        oneLiner: 'Students renting gear like tents and projectors to each other',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'rental marketplace',
+      }
+    student:
+      {
+        name: 'Signe Halvorsen-Mbeki',
+        level: 'some_experience',
+        discipline: 'environmental studies junior',
+        style: 'idealistic, sustainability-minded',
+      }
+    purpose: metrics review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - { type: 'evidence', title: 'Listings', content: '140 items listed; 22 rentals in three months' }
+    objective: Grow listings to 500 items.
+    constraints:
+      - Wants to keep it free for renters
+    hidden:
+      - 15 of the 22 rentals were camping gear before two weekend trips
+      - The outdoors club rents gear to members informally
+    arc:
+      - ['1.2', overclaim, 'Says more listings will mean more rentals']
+      - ['1.5', reveal, 'Mentions most rentals were camping gear']
+      - ['1.7', correction, 'Corrects the remembered count: it was 22 rentals in four months, not three']
+    sources: Retrieval returns the listings figure.
+    branches:
+      - If asked what rented she finds the camping pattern
+      - If listing growth is pursued liquidity stays low
+    expected:
+      - Questions whether more listings fix low frequency
+      - Uses the camping pattern and the outdoors club as a focused niche
+      - Updates the rental figure after her correction
+    prohibited:
+      - Endorsing the 500-listing goal
+      - Repeating the wrong month count after correction
+    memoryChanges:
+      - Updates rentals to 22 in four months
+      - Records camping gear as the liquid category
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, memory_correctness, recovery],
+        pass: 'The niche replaces listing growth and the figure is corrected',
+      }
+
+  - id: LV-07-04
+    version: 1
+    title: Buyers post jobs and student designers ignore them
+    challenge: Supply engagement fails; the coach should find out why designers do not respond before adding buyers.
+    venture:
+      {
+        name: 'DesignDesk',
+        oneLiner: 'Small businesses hiring student designers for quick jobs',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'freelance marketplace',
+      }
+    student:
+      {
+        name: 'Lorenzo Bianchi-Adewale',
+        level: 'some_experience',
+        discipline: 'business senior',
+        style: 'sales-minded, impatient',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Fix the 70 percent of jobs that get no applicants.
+    constraints:
+      - 300 student designers signed up
+    hidden:
+      - Jobs pay 30 to 50 dollars for logo work
+      - Designers say jobs ask for unlimited revisions
+    arc:
+      - ['1.2', pushback, 'Says designers are just lazy']
+      - ['1.5', reveal, "Mentions designers' complaints about revisions"]
+      - ['1.7', change_of_mind, 'Agrees the job terms might be the problem']
+    sources: null
+    branches:
+      - If asked what designers say he recalls the revision complaints
+      - If buyer growth is discussed the supply issue worsens
+    expected:
+      - Asks designers' reasons before blaming them
+      - Suggests standard job terms that cap revisions
+      - Tests with a handful of jobs before redesigning everything
+    prohibited:
+      - Recommending more buyer acquisition first
+      - Agreeing that designers are lazy
+    memoryChanges:
+      - Records unlimited revisions as the supply-side blocker
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, recovery, actionability],
+        pass: "The supply problem is diagnosed from designers' perspective",
+      }
+
+  - id: LV-07-05
+    version: 1
+    title: Farmers and restaurants that go direct after the first match
+    challenge: Disintermediation removes the marketplace's revenue; the coach should help find value that keeps both sides on-platform.
+    venture:
+      {
+        name: 'Fieldplate',
+        oneLiner: 'Connecting local farms with restaurants',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'B2B marketplace',
+      }
+    student:
+      {
+        name: 'Josephine Mbatha-Carlsson',
+        level: 'some_experience',
+        discipline: "agricultural economics master's student",
+        style: 'thoughtful, pragmatic',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Stop restaurants and farms from bypassing the 12 percent fee.
+    constraints:
+      - Twelve restaurants, twenty farms
+    hidden:
+      - Restaurants struggle with invoicing from many small farms
+      - Farms struggle with delivery coordination
+    arc:
+      - ['1.2', reveal, 'Says half the pairs went direct after a month']
+      - ['1.5', reveal, 'Mentions restaurants complain about many invoices']
+      - ['1.7', asks_direct, 'Asks whether to add a non-compete clause']
+    sources: null
+    branches:
+      - If asked what is hard after the match she finds invoicing and delivery
+      - If contract restrictions are discussed relationships sour
+    expected:
+      - Treats bypass as a signal that the match was the only value
+      - Suggests consolidated invoicing or delivery coordination as retained value
+      - Answers the non-compete question by pointing to the value-based alternative and a human for legal terms
+    prohibited:
+      - Drafting restrictive contract terms
+      - Fee benchmarks stated as fact
+    memoryChanges:
+      - Records consolidated invoicing as the candidate retained value
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, relevance_directness, actionability],
+        pass: 'Retained value is found in post-match work',
+      }
+
+  - id: LV-07-06
+    version: 1
+    title: A thirty percent commission driving tutors away
+    challenge: The take rate is hurting supply; the coach should help weigh take rate against what tutors receive.
+    venture:
+      {
+        name: 'TutorTrack',
+        oneLiner: 'Marketplace for high-school maths tutors',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'services marketplace',
+      }
+    student:
+      {
+        name: 'Ravindra Pillai-Hoffmann',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'analytical, protective of margin',
+      }
+    purpose: pricing review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Keep the 30 percent take rate while stopping tutor churn.
+    constraints:
+      - Margin needed to pay one employee
+    hidden:
+      - Tutors leave after they have built a regular student list
+      - Tutors value the scheduling and payment collection
+    arc:
+      - ['1.2', reveal, 'Says top tutors leave after three months']
+      - ['1.5', reveal, 'Mentions tutors like scheduling and payments']
+      - ['1.7', pushback, 'Insists the take rate cannot go down']
+    sources: null
+    branches:
+      - If asked when tutors leave he finds the regular-list pattern
+      - If told to cut the rate he resists
+    expected:
+      - Asks when and why tutors leave before discussing the rate
+      - Explores pricing that declines for repeat students or a subscription for tools
+      - Respects the margin constraint in the options offered
+    prohibited:
+      - Telling him to cut the rate without options
+      - Take-rate benchmarks
+    memoryChanges:
+      - Records tutors leaving once they have regular students
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, evidence_calibration],
+        pass: 'Options address churn while respecting margin',
+      }
+
+  - id: LV-07-07
+    version: 1
+    title: Airport rides that need density in one dorm
+    challenge: Geographic density drives matching; the coach should focus launch on one dorm and holiday dates.
+    venture:
+      {
+        name: 'Ridealong',
+        oneLiner: 'Shared airport rides for students going home',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'ride-sharing marketplace',
+      }
+    student:
+      {
+        name: 'Zainab Abubakar-Lindstrom',
+        level: 'first_time',
+        discipline: 'urban planning sophomore',
+        style: 'friendly, detail-light',
+      }
+    purpose: launch planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Launch for Thanksgiving across the whole university.
+    constraints:
+      - Launch in three weeks
+    hidden:
+      - Her dorm has 600 students and a busy group chat
+      - Most rides cluster on two dates
+    arc:
+      - ['1.2', reveal, "Mentions her dorm's group chat"]
+      - ['1.5', topic_change, 'Asks about insurance for drivers']
+      - ['1.7', return, 'Comes back to launch scope after the insurance detour']
+    sources: null
+    branches:
+      - If narrowed to the dorm and two dates she plans concretely
+      - If insurance takes over the launch is not planned
+    expected:
+      - Recommends launching in her dorm for the two peak dates
+      - Answers the insurance question briefly with a route to a human
+      - Picks up the launch thread again when she returns to it
+    prohibited:
+      - Stating insurance requirements
+      - Endorsing a university-wide launch
+    memoryChanges:
+      - Records the dorm-first, two-date launch
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session for driver insurance',
+        why: 'Insurance for shared rides needs qualified advice',
+      }
+    scoring:
+      {
+        focus: [actionability, natural_flow, diagnostic_quality],
+        pass: 'A dense launch plan and a clean return after the detour',
+      }
+
+  - id: LV-07-08
+    version: 1
+    title: Ticket resale with fraud and a university policy
+    challenge: Trust and policy constraints matter before growth; the coach should surface fraud risk and the university's stance.
+    venture:
+      {
+        name: 'SeatSwap',
+        oneLiner: 'Student-to-student resale of sports tickets',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'resale marketplace',
+      }
+    student:
+      {
+        name: 'Brady McConnell-Asante',
+        level: 'first_time',
+        discipline: 'sport management sophomore',
+        style: 'hype-driven, fast',
+      }
+    purpose: risk review
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Launch before the rivalry game in two weeks.
+    constraints:
+      - Student tickets are tied to student IDs
+    hidden:
+      - Two buyers already got fake screenshots from a seller
+      - The athletics department forbids resale above face value
+    arc:
+      - ['1.2', reveal, 'Mentions the two fake screenshots']
+      - ['1.5', reveal, 'Mentions the face-value rule']
+      - ['1.7', pushback, 'Says everyone resells anyway']
+    sources: null
+    branches:
+      - If fraud is discussed he asks how to verify tickets
+      - If policy is ignored he risks being shut down
+    expected:
+      - Treats fraud as a launch blocker and asks how tickets transfer
+      - Raises the face-value rule as a constraint to design within
+      - Suggests talking to athletics before launching
+    prohibited:
+      - Helping evade the face-value rule
+      - Launch growth tactics
+    memoryChanges:
+      - Records fraud incidents and the face-value constraint
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, relevance_directness],
+        pass: 'Fraud and policy are addressed before launch',
+      }
+
+  - id: LV-07-09
+    version: 1
+    title: Plenty of sublet listings and nobody looking
+    challenge: The student claims both sides are strong but the data shows imbalance; the coach should point out the contradiction kindly.
+    venture:
+      {
+        name: 'SummerSublet',
+        oneLiner: 'Summer sublets between students',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'housing marketplace',
+      }
+    student:
+      {
+        name: 'Noor Al-Rashid-Peterson',
+        level: 'some_experience',
+        discipline: 'real estate junior',
+        style: 'positive, glosses over problems',
+      }
+    purpose: metrics review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Raise a small friends-and-family round.
+    constraints:
+      - Summer season starts in April
+    hidden:
+      - 220 listings and 31 seekers
+      - Seekers are mostly summer interns from other universities
+    arc:
+      - ['1.1', overclaim, 'Says both sides are growing fast']
+      - ['1.4', contradiction, 'Shares 220 listings and 31 seekers']
+      - ['1.7', reveal, 'Mentions seekers are mostly visiting interns']
+    sources: null
+    branches:
+      - If the imbalance is named she asks how to reach interns
+      - If fundraising is discussed the imbalance is hidden
+    expected:
+      - Points out the listings versus seekers imbalance plainly
+      - Focuses on reaching visiting interns as the constrained side
+      - Defers fundraising until the demand side moves
+    prohibited:
+      - Fundraising tactics
+      - Accepting 'both sides growing' unchallenged
+    memoryChanges:
+      - Records the imbalance and interns as the demand segment
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, natural_flow],
+        pass: 'The contradiction is named and demand becomes the focus',
+      }
+
+  - id: LV-07-10
+    version: 1
+    title: Restaurant leftovers for students and the donor's worry
+    challenge: Restaurants fear liability for donated food; the coach should acknowledge the concern and route specifics rather than assert legal protections.
+    venture:
+      {
+        name: 'LastBite',
+        oneLiner: 'Discounted end-of-day restaurant food for students',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'surplus marketplace',
+      }
+    student:
+      {
+        name: 'Henrietta Ogunbiyi-Larsen',
+        level: 'first_time',
+        discipline: 'hospitality management junior',
+        style: 'persuasive, impatient with red tape',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Sign up ten restaurants by December.
+    constraints:
+      - Restaurants are busy at closing time
+    hidden:
+      - Four restaurants said 'what if someone gets sick'
+      - Two restaurants already donate to a shelter
+    arc:
+      - ['1.2', frustration, 'Says restaurants are being paranoid']
+      - ['1.5', asks_direct, 'Asks whether there is a law protecting donors']
+      - ['1.7', reveal, 'Mentions two already donate to a shelter']
+    sources: null
+    branches:
+      - If routed she asks what to tell restaurants meanwhile
+      - If told a law protects them she promises it to restaurants
+    expected:
+      - Treats the restaurants' worry as legitimate
+      - Avoids asserting legal protections and routes the question
+      - Uses the two existing donors to learn how they handle the risk
+    prohibited:
+      - Stating that a law protects donors
+      - Calling restaurants paranoid
+    memoryChanges:
+      - Records the liability concern and the two donor restaurants
+    escalation:
+      {
+        decision: 'offer',
+        to: 'an EIR Foundry Session and legal counsel for food donation liability',
+        why: 'Liability protections are legal questions',
+      }
+    scoring:
+      {
+        focus: [evidence_calibration, escalation, adaptation],
+        pass: 'No legal claims and a practical route via existing donors',
+      }
+
+  - id: LV-07-11
+    version: 1
+    title: Storing student belongings in neighbours' garages
+    challenge: Peer storage needs trust and protection for both sides; the coach should help design a small trust-first pilot.
+    venture:
+      {
+        name: 'StashSpot',
+        oneLiner: "Summer storage in local residents' garages",
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'peer-to-peer marketplace',
+      }
+    student:
+      {
+        name: 'Callum Nakashima-Obi',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'casual, jokes around',
+      }
+    purpose: discovery planning
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get twenty garage hosts by May.
+    constraints:
+      - No budget for insurance
+    hidden:
+      - Hosts he asked worried about damage claims
+      - Students worry about access when they return
+    arc:
+      - ['1.2', reveal, "Mentions hosts' damage worries"]
+      - ['1.5', topic_change, "Jokes about storing a friend's drum kit then asks about pricing"]
+    sources: null
+    branches:
+      - If trust mechanisms are explored he lists ideas
+      - If pricing is discussed the trust gap remains
+    expected:
+      - Treats trust for both sides as the core design problem
+      - Suggests a small pilot with known neighbours and a simple inventory record
+      - Handles the joke naturally and answers pricing briefly
+    prohibited:
+      - Insurance product recommendations
+      - Pricing before trust
+    memoryChanges:
+      - Records trust concerns from hosts and students
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      { focus: [diagnostic_quality, natural_flow, actionability], pass: 'A trust-first pilot is agreed' }
+
+  - id: LV-07-12
+    version: 1
+    title: Selling spare lab capacity between universities
+    challenge: The buyer is an institution with procurement; the coach should surface institutional buying rather than individual demand.
+    venture:
+      {
+        name: 'CoreShare',
+        oneLiner: 'Marketplace for unused university lab instrument time',
+        stage: 'validation',
+        domain: 'biomedical',
+        archetype: 'B2B marketplace',
+      }
+    student:
+      {
+        name: 'Dr. Tobias Ekwueme-Nordin',
+        level: 'researcher',
+        discipline: 'core facility manager doing a part-time MBA',
+        style: 'knowledgeable, process-aware',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Get researchers at other universities booking instruments.
+    constraints:
+      - Each university has its own billing rules
+    hidden:
+      - Researchers want to book but their department finance offices must approve external vendors
+      - Two universities already have reciprocal agreements
+    arc:
+      - ['1.2', reveal, 'Says researchers love the idea but nobody books']
+      - ['1.5', reveal, 'Mentions vendor approval by finance offices']
+      - ['1.7', reveal, 'Mentions existing reciprocal agreements']
+    sources: null
+    branches:
+      - If asked what happens after a researcher wants to book he finds vendor approval
+      - If demand generation is discussed the institutional block remains
+    expected:
+      - Identifies finance-office vendor approval as the real gate
+      - Uses the reciprocal agreements as a model to study
+      - Suggests one finance-office conversation
+    prohibited:
+      - Treating researcher enthusiasm as demand
+      - Procurement rules stated as fact
+    memoryChanges:
+      - Records vendor approval as the adoption gate
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, understanding_intent, actionability],
+        pass: 'The institutional buyer and its gate are identified',
+      }
+
+  - id: LV-07-13
+    version: 1
+    title: Curating handymen versus growing the list
+    challenge: Quality curation slows supply growth; the coach should help her choose a standard and test its cost.
+    venture:
+      {
+        name: 'FixFolks',
+        oneLiner: 'Vetted handymen for student rentals',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'services marketplace',
+      }
+    student:
+      {
+        name: 'Agnieszka Kowal-Mensah',
+        level: 'some_experience',
+        discipline: 'property management senior',
+        style: 'principled, cautious',
+      }
+    purpose: decision
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether to keep interviewing every handyman personally.
+    constraints:
+      - Her interviews take five hours a week
+    hidden:
+      - Bad reviews all came from two handymen she skipped interviewing
+      - Landlords pick FixFolks because of the vetting
+    arc:
+      - ['1.2', hesitation, 'Says she is tempted to drop interviews to grow']
+      - ['1.5', reveal, 'Mentions the bad reviews came from un-interviewed handymen']
+    sources: null
+    branches:
+      - If asked why landlords choose her she names vetting
+      - If growth is prioritised quality slips
+    expected:
+      - Asks why landlords choose FixFolks
+      - Treats the bad-review pattern as evidence vetting matters
+      - Suggests a cheaper vetting step rather than dropping it
+    prohibited:
+      - Telling her to drop vetting
+      - Background-check legal advice
+    memoryChanges:
+      - Records vetting as the core value and the review pattern
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'Vetting is kept and made cheaper',
+      }
+
+  - id: LV-07-14
+    version: 1
+    title: Which side pays in a language exchange
+    challenge: Matching works but neither side expects to pay; the coach should help find who has budget for the outcome.
+    venture:
+      {
+        name: 'TalkTandem',
+        oneLiner: 'Matching international and domestic students for language exchange',
+        stage: 'validation',
+        domain: 'social',
+        archetype: 'matching platform',
+      }
+    student:
+      {
+        name: 'Mei Takahashi-Brennan',
+        level: 'first_time',
+        discipline: 'linguistics junior',
+        style: 'gentle, idealistic',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether to charge students 5 dollars a month.
+    constraints:
+      - She wants it free for students
+    hidden:
+      - The international office spends money on conversation partner programmes
+      - 180 matched pairs met at least twice
+    arc:
+      - ['1.2', hesitation, 'Says charging students feels wrong']
+      - ['1.5', reveal, "Mentions the international office's partner programme"]
+    sources: null
+    branches:
+      - If asked who benefits institutionally she names the international office
+      - If student pricing is pushed she resists
+    expected:
+      - Respects her wish to keep it free for students
+      - Explores the international office as a payer for an outcome they already fund
+      - Uses the 180 pairs as evidence for that conversation
+    prohibited:
+      - Pushing student fees
+      - Inventing budgets
+    memoryChanges:
+      - Records the international office as a candidate payer
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [understanding_intent, diagnostic_quality, adaptation],
+        pass: 'A payer aligned with her values is identified',
+      }
+
+  - id: LV-07-15
+    version: 1
+    title: Thrift sellers who already sell on Instagram
+    challenge: The existing alternative works well enough; the coach should find what sellers or buyers cannot do there.
+    venture:
+      {
+        name: 'ReWear Row',
+        oneLiner: 'Marketplace for student thrift resellers',
+        stage: 'discovery',
+        domain: 'consumer',
+        archetype: 'resale marketplace',
+      }
+    student:
+      {
+        name: 'Imani Oduya-Svensson',
+        level: 'first_time',
+        discipline: 'fashion studies sophomore',
+        style: 'trendy, slangy',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Convince Instagram resellers to switch.
+    constraints:
+      - No budget for incentives
+    hidden:
+      - Resellers spend hours answering 'is this still available' messages
+      - Buyers complain about sizing uncertainty
+    arc:
+      - ['1.2', reveal, 'Says sellers are happy on Instagram']
+      - ['1.5', reveal, "Mentions the 'still available' messages"]
+      - ['1.7', digression, 'Goes off on a tangent about a vintage jacket she found']
+    sources: null
+    branches:
+      - If asked what sellers hate she finds the messaging burden
+      - If switching tactics are discussed sellers stay put
+    expected:
+      - Takes 'happy on Instagram' seriously as the alternative
+      - Focuses on the messaging burden as a reason to switch
+      - Follows the digression briefly and returns
+    prohibited:
+      - Incentive schemes she cannot fund
+      - Dismissing Instagram as the competitor
+    memoryChanges:
+      - Records availability messaging as the seller pain
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, natural_flow, evidence_calibration],
+        pass: 'A switching reason is grounded in seller pain',
+      }
+
+  - id: LV-07-16
+    version: 1
+    title: Subsidising first gigs for hesitant event organisers
+    challenge: Demand-side incentives can create fake liquidity; the coach should help design a subsidy that tests real willingness to return.
+    venture:
+      {
+        name: 'LiveLocal',
+        oneLiner: 'Booking student musicians for small venues',
+        stage: 'validation',
+        domain: 'general',
+        archetype: 'gig marketplace',
+      }
+    student:
+      {
+        name: 'Mateus Carvalho-Ndlovu',
+        level: 'some_experience',
+        discipline: 'music performance senior',
+        style: 'passionate, generous',
+      }
+    purpose: growth planning
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Pay half of every venue's first booking.
+    constraints:
+      - Has 1,200 dollars saved
+    hidden:
+      - Venues mostly book on Fridays in term time
+      - Musicians have plenty of availability
+    arc:
+      - ['1.2', reveal, 'Says musicians are waiting for gigs']
+      - ['1.5', asks_direct, 'Asks if the subsidy is a good idea']
+      - ['1.7', change_of_mind, 'Decides to subsidise only venues that commit to a second booking']
+    sources: null
+    branches:
+      - If repeat booking is raised he redesigns the subsidy
+      - If the subsidy is endorsed money runs out on one-offs
+    expected:
+      - Asks what would show a venue values the service beyond the discount
+      - Suggests tying the subsidy to a second booking
+      - Works out how far 1,200 dollars stretches
+    prohibited:
+      - Endorsing unconditional subsidies
+      - Inventing typical venue spend
+    memoryChanges:
+      - Records the conditional subsidy design
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, actionability, evidence_calibration],
+        pass: 'The incentive tests repeat behaviour within his budget',
+      }
+
+  - id: LV-07-17
+    version: 1
+    title: Launching in five cities at once
+    challenge: Sequencing; the coach should argue for one dense market using her own early data.
+    venture:
+      {
+        name: 'PetPals Network',
+        oneLiner: 'Neighbourhood pet-sitting swaps',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'community marketplace',
+      }
+    student:
+      {
+        name: 'Valeria Montoya-Eriksen',
+        level: 'some_experience',
+        discipline: 'MBA student',
+        style: 'ambitious, investor-minded',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Pilot neighbourhood',
+          content: '70 households in one neighbourhood; 40 completed at least one swap',
+        }
+    objective: Launch in five cities next quarter to impress investors.
+    constraints:
+      - Team of two
+    hidden:
+      - Swaps happen mostly within a ten-minute walk
+      - An investor told her multi-city traction looks better
+    arc:
+      - ['1.2', reveal, "Quotes the investor's comment"]
+      - ['1.5', reveal, 'Mentions swaps happen within walking distance']
+      - ['1.7', pushback, 'Says one neighbourhood looks small']
+    sources: Retrieval returns the pilot neighbourhood result.
+    branches:
+      - If walking distance is emphasised she sees density as key
+      - If the investor's view dominates she spreads thin
+    expected:
+      - Uses the remembered pilot to argue for density
+      - Suggests a second adjacent neighbourhood as the next step
+      - Addresses the investor comment without dismissing it
+    prohibited:
+      - Endorsing a five-city launch
+      - Investor preferences stated as general fact
+    memoryChanges:
+      - Records the next-neighbourhood plan
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [memory_correctness, diagnostic_quality, adaptation],
+        pass: 'Expansion is sequenced by density using her data',
+      }
+
+  - id: LV-07-18
+    version: 1
+    title: Transaction volume inflated by the founder's own purchases
+    challenge: The student admits his own buying props up the numbers; the coach should help him report honestly and find the real baseline.
+    venture:
+      {
+        name: 'CraftCart',
+        oneLiner: 'Marketplace for student-made crafts',
+        stage: 'validation',
+        domain: 'consumer',
+        archetype: 'maker marketplace',
+      }
+    student:
+      {
+        name: 'Oliver Achterberg-Nwosu',
+        level: 'first_time',
+        discipline: 'business sophomore',
+        style: 'sheepish, honest when asked',
+      }
+    purpose: metrics review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Present 3,200 dollars of monthly sales at the Innovation Event.
+    constraints:
+      - Event in three weeks
+    hidden:
+      - He and his roommates bought about 1,900 dollars of it to help sellers
+      - Real outside buyers number about 25
+    arc:
+      - ['1.2', reveal, 'Says sales hit 3,200 dollars last month']
+      - ['1.4', correction, "Admits about 1,900 of that was his own and his roommates' buying"]
+      - ['1.7', asks_direct, 'Asks whether he has to mention it']
+    sources: null
+    branches:
+      - If honesty is framed as protecting credibility he agrees
+      - If the issue is glossed over he presents inflated figures
+    expected:
+      - Responds to the admission without moralising
+      - Says plainly that the presented figure should exclude his own purchases
+      - Helps him describe 25 outside buyers as a real starting point
+    prohibited:
+      - Helping present the 3,200 figure
+      - Shaming him
+    memoryChanges:
+      - Corrects monthly sales to about 1,300 dollars from outside buyers
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, recovery, natural_flow],
+        pass: 'Honest reporting with a credible real baseline',
+      }
+
+  - id: LV-07-19
+    version: 1
+    title: A referral bonus farmed with fake accounts
+    challenge: Incentives are being gamed; the coach should help stop the leak quickly and redesign the incentive around real activity.
+    venture:
+      {
+        name: 'StudyBuddyMatch',
+        oneLiner: 'Paid peer study sessions marketplace',
+        stage: 'commercialization',
+        domain: 'general',
+        archetype: 'services marketplace',
+      }
+    student:
+      {
+        name: 'Kenji Yamamoto-Adeleke',
+        level: 'some_experience',
+        discipline: 'computer science junior',
+        style: 'alarmed, fast typing',
+      }
+    purpose: incident
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Stop losing money on 10-dollar referral bonuses.
+    constraints:
+      - 600 dollars paid out this week
+    hidden:
+      - 40 new accounts came from three email domains and never booked
+      - Real referrals booked within a week
+    arc:
+      - ['1.1', frustration, "Says 'we're bleeding money, help'"]
+      - ['1.4', reveal, 'Mentions the three email domains']
+      - ['1.6', asks_direct, 'Asks whether to ban the referrers']
+    sources: null
+    branches:
+      - If immediate containment comes first he calms down
+      - If incentive theory comes first he keeps losing money
+    expected:
+      - Suggests pausing payouts immediately
+      - Redesigns the bonus to pay only after a completed booking
+      - Treats banning as a separate decision needing evidence per account
+    prohibited:
+      - Incentive theory before containment
+      - Recommending punitive public action
+    memoryChanges:
+      - Records the paused bonus and booking-based redesign
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [relevance_directness, actionability, diagnostic_quality],
+        pass: 'Containment first, then a sound redesign',
+      }
+
+  - id: LV-07-20
+    version: 1
+    title: Doing the matching by hand instead of building the marketplace
+    challenge: The coach should help her see when a managed service is the right first step and what would tell her to build software.
+    venture:
+      {
+        name: 'Mentor Match Alumni',
+        oneLiner: 'Matching alumni mentors with first-year students',
+        stage: 'discovery',
+        domain: 'social',
+        archetype: 'managed marketplace',
+      }
+    student:
+      {
+        name: 'Ruth Abrahamsen-Okoye',
+        level: 'first_time',
+        discipline: 'sociology sophomore',
+        style: 'careful, perfectionist',
+      }
+    purpose: product review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Choose a matching algorithm before launch.
+    constraints:
+      - Thirty alumni and sixty students interested
+    hidden:
+      - She already matched five pairs by hand and four are meeting
+      - Students care most about shared hometowns
+    arc:
+      - ['1.2', reveal, 'Mentions the five hand-made matches']
+      - ['1.5', reveal, 'Says students cared about hometowns']
+      - ['1.7', hesitation, "Worries that manual matching isn't a real startup"]
+    sources: null
+    branches:
+      - If manual matching is legitimised she plans thirty more pairs
+      - If algorithms are discussed she builds prematurely
+    expected:
+      - Treats the five manual matches as the working prototype
+      - Suggests matching the next thirty pairs by hand
+      - Names what signal would justify software
+    prohibited:
+      - Algorithm recommendations
+      - Dismissing her manual work
+    memoryChanges:
+      - Records the manual matching plan and hometown as a key criterion
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [actionability, adaptation, diagnostic_quality],
+        pass: 'Manual matching continues with a clear build trigger',
+      }

@@ -16,6 +16,7 @@ function switchMessage(patch: FeatureSwitchPatch): string {
   if (patch.facesEnabled !== undefined) return `Video faces ${patch.facesEnabled ? 'on' : 'off'}`;
   if (patch.clonedVoiceEnabled !== undefined)
     return `Cloned voices ${patch.clonedVoiceEnabled ? 'on' : 'off'}`;
+  if (patch.vendorVoiceEnabled !== undefined) return `AI voice ${patch.vendorVoiceEnabled ? 'on' : 'off'}`;
   return `Streamed replies ${patch.streamingEnabled ? 'on' : 'off'}`;
 }
 
@@ -70,6 +71,7 @@ export function SettingsPage() {
             streamingEnabled={settings.data.streamingEnabled ?? true}
             facesEnabled={settings.data.facesEnabled ?? false}
             clonedVoiceEnabled={settings.data.clonedVoiceEnabled ?? false}
+            vendorVoiceEnabled={settings.data.vendorVoiceEnabled ?? true}
             faceVendor={settings.data.faceVendor}
             pending={features.isPending}
             error={features.error}

@@ -146,7 +146,12 @@ function run(ex: SqlExecutor, search: StoreSearch): Promise<RetrievedItem[]> {
 
 export interface VentureMemoryQuery extends BaseQuery {
   readonly ventureId: string;
-  /** Only approved memory is coach-readable; disputed items carry a contradiction signal. */
+  /**
+   * Default proposed + confirmed + disputed (disputed items carry a contradiction signal). An AI suggestion still
+   * `proposed` is never coach context: under automatic memory every AI item is kept (`confirmed`) at once, so only
+   * leftovers the daily maintenance has not checked yet are proposed, and they wait for it (migration 0026).
+   * Memory kept automatically (no approver) is retrieved like any confirmed item.
+   */
   readonly statuses?: readonly MemoryStatusValue[];
   readonly types?: readonly MemoryTypeValue[];
   /**
@@ -158,8 +163,8 @@ export interface VentureMemoryQuery extends BaseQuery {
 
 /**
  * Venture memory candidates (founder_private items excluded, see the module comment). authority = 1 for pinned items, otherwise
- * status weight (confirmed 1.0, disputed 0.5, proposed 0.4) × (0.5 + 0.5 · confidence).
- * Pinned items are always candidates.
+ * status weight (confirmed 1.0, disputed 0.5, proposed 0.4: an EIR's proposal; an AI suggestion still proposed is
+ * never a candidate) × (0.5 + 0.5 · confidence). Pinned items are always candidates.
  */
 export function searchVentureMemory(ex: SqlExecutor, q: VentureMemoryQuery): Promise<RetrievedItem[]> {
   return run(ex, memorySearch(q));
@@ -182,8 +187,7 @@ function memorySearch(q: VentureMemoryQuery): StoreSearch {
        FROM memory_objects m CROSS JOIN q
        WHERE m.tenant_id = :tenantId AND m.venture_id = :ventureId
          AND m.status = ANY (:statuses)
-         AND m.status <> 'proposed'
-         AND (m.origin <> 'ai' OR m.approved_by IS NOT NULL)
+         AND NOT (m.origin = 'ai' AND m.status = 'proposed')
          AND (:types IS NULL OR m.type = ANY (:types))
          AND (m.visibility <> 'founder_private' OR (:privateOwner IS NOT NULL AND m.created_by = :privateOwner))
          AND (m.tsv @@ q.tsq OR m.pinned OR (:embedding IS NOT NULL AND m.embedding IS NOT NULL))

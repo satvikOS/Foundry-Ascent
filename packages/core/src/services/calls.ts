@@ -514,6 +514,8 @@ export function stopRefusal(cause: CallStopCause, now: Date): DomainError {
 
 interface Started {
   readonly call: callsRepo.CallRecord;
+  /** The stock vendor voice is switched on (`vendor_voice_enabled`): its connection is opened at call start. */
+  readonly vendorVoice: boolean;
   readonly ventureId: string;
   readonly personaId: string;
   /** Whether the conversation is standard (remembered); a temporary one opens with nothing picked up. */
@@ -1063,6 +1065,7 @@ export function createCallsService(
         const principal = await principalsRepo.getPrincipal(tx, ctx.principalId);
         return {
           call,
+          vendorVoice: settings.vendorVoiceEnabled,
           ventureId,
           personaId: persona.id,
           contextKeys: {
@@ -1098,8 +1101,8 @@ export function createCallsService(
       // The call's first turn reads the conversation's context beside its checks when it is served here (turn-context.ts).
       turnContexts?.remember(started.contextKeys);
 
-      // The connections the call's first turn and its first spoken reply use (the Bedrock runtime and Titan, Polly) are
-      // opened while the greeting is prepared, with free requests (LAB-P2: after idle gaps every AWS call paid a new
+      // The connections the call's first turn and its first spoken reply use (the Bedrock runtime and Titan, Polly, the
+      // stock vendor voice) are opened while the greeting is prepared, with free requests (LAB-P2: after idle gaps every AWS call paid a new
       // connection). Once the greeting is ready, the turn engine's own code is warmed for the first turn (warm-up.ts:
       // the first turn a process serves paid ~270 ms of first-run CPU before its model call). The host keeps the
       // process alive for both; neither holds the response or fails the call.
@@ -1110,6 +1113,7 @@ export function createCallsService(
       const warming = Promise.all([
         kit.deps.gateway.prewarm?.(),
         kit.deps.speech?.prewarm?.(),
+        started.vendorVoice ? kit.deps.stockVoice?.provider.prewarm?.() : undefined,
         greeted.then(() => warmTurnFor(ctx, started)),
       ]).then(
         () => undefined,

@@ -282,8 +282,17 @@ try {
       const memory = MemoryListResponse.parse(
         await (await api.request(`/ventures/${ventureId}/memory`, { cookie })).json(),
       );
-      if (memory.items.some((m) => m.origin === 'ai' && m.status === 'confirmed' && m.approvedBy === null))
-        failures.push('unapproved_durable_memory');
+      // Memory is automatic (owner decision 2026-10-16): what the vEIR learns is kept with no approval step, and
+      // durable AI memory with no approver is only ever memory it recorded as kept automatically.
+      if (memory.items.some((m) => m.origin === 'ai' && m.status === 'proposed'))
+        failures.push('memory_waits_for_approval');
+      if (
+        memory.items.some(
+          (m) =>
+            m.origin === 'ai' && m.status === 'confirmed' && m.approvedBy === null && !m.keptAutomatically,
+        )
+      )
+        failures.push('unrecorded_durable_memory');
       const outsider = await api.h.ctxFor(api.h.people.priya);
       try {
         await api.h.core.memory.list(outsider, ventureId);

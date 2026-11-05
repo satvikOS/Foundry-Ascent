@@ -19,7 +19,7 @@ import { MutationErrorAlert } from '../shared/form';
 
 export type FeatureSwitchPatch = Pick<
   UpdateSettingsInput,
-  'callsEnabled' | 'streamingEnabled' | 'facesEnabled' | 'clonedVoiceEnabled'
+  'callsEnabled' | 'streamingEnabled' | 'facesEnabled' | 'clonedVoiceEnabled' | 'vendorVoiceEnabled'
 >;
 
 interface FeatureSwitchesProps {
@@ -29,6 +29,8 @@ interface FeatureSwitchesProps {
   facesEnabled: boolean;
   /** The EIRs' cloned voices on calls (off by default). */
   clonedVoiceEnabled: boolean;
+  /** The vEIR's AI voice on calls, where the deployment has one (on by default; off: the standard voice). */
+  vendorVoiceEnabled?: boolean;
   /** The face this deployment wired: its mode, price and audience (null: none). */
   faceVendor?: FaceVendorView | null;
   /** Sends one switch change; the switches always show the server's value. */
@@ -88,7 +90,7 @@ export function faceSummary(vendor: FaceVendorView): string {
 
 /** What turning on the face or the cloned voice means, said before it happens (they cost money per use). */
 const TURN_ON: Record<
-  'facesEnabled' | 'clonedVoiceEnabled',
+  'facesEnabled' | 'clonedVoiceEnabled' | 'vendorVoiceEnabled',
   { title: string; description: string; action: string }
 > = {
   facesEnabled: {
@@ -101,25 +103,34 @@ const TURN_ON: Record<
     description: 'Cloned voices speak where ready. About $0.04 per 1,000 characters.',
     action: 'Turn on voices',
   },
+  vendorVoiceEnabled: {
+    title: 'Turn on the AI voice?',
+    description: 'About $0.04 per 1,000 characters.',
+    action: 'Turn on voice',
+  },
 };
 
 /**
  * Kill switches narrower than the AI switch: voice calls (new calls refused, live calls end at their next
  * heartbeat), streamed replies (off: replies appear whole, once validated), the vEIR's video face and the EIRs'
- * cloned voices (off by default; off again stops them on live calls within seconds). All apply platform-wide.
+ * cloned voices (off by default; off again stops them on live calls within seconds), and the vEIR's AI voice (on
+ * by default; off, calls use the standard voice from the next sentence on). All apply platform-wide.
  */
 export function FeatureSwitches({
   callsEnabled,
   streamingEnabled,
   facesEnabled,
   clonedVoiceEnabled,
+  vendorVoiceEnabled = true,
   faceVendor = null,
   onChange,
   pending = false,
   error,
 }: FeatureSwitchesProps) {
   const [confirmCallsOff, setConfirmCallsOff] = useState(false);
-  const [confirmOn, setConfirmOn] = useState<'facesEnabled' | 'clonedVoiceEnabled' | null>(null);
+  const [confirmOn, setConfirmOn] = useState<
+    'facesEnabled' | 'clonedVoiceEnabled' | 'vendorVoiceEnabled' | null
+  >(null);
   const turnOn =
     confirmOn === null
       ? null
@@ -180,6 +191,16 @@ export function FeatureSwitches({
             onCheckedChange={(next) => {
               if (next) setConfirmOn('clonedVoiceEnabled');
               else onChange({ clonedVoiceEnabled: false });
+            }}
+          />
+          <SwitchRow
+            label="AI voice"
+            description={vendorVoiceEnabled ? 'On.' : 'Off. Calls use the standard voice.'}
+            checked={vendorVoiceEnabled}
+            disabled={pending}
+            onCheckedChange={(next) => {
+              if (next) setConfirmOn('vendorVoiceEnabled');
+              else onChange({ vendorVoiceEnabled: false });
             }}
           />
         </div>

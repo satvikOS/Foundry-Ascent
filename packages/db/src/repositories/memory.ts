@@ -468,9 +468,11 @@ export interface MemoryCorrection {
 
 /**
  * Corrects an item by superseding it: a new version (version + 1, `supersedes_id` = old) carries the
- * patch, the old version becomes `superseded`. A proposed item stays proposed; a confirmed/disputed item's
- * correction is confirmed by the corrector. Events: `superseded` on the old version, `corrected` on the new
- * one (diff lists changed field names, never values). Returns the new version or null.
+ * patch, the old version becomes `superseded`. The correction is the corrector's own words, so it is always
+ * `confirmed` with the corrector as approver, whether it corrects a proposal (a suggestion left pending) or a
+ * confirmed/disputed item: correcting is consenting, as approving is (both need write access to the venture).
+ * Events: `superseded` on the old version, `corrected` on the new one (diff lists changed field names, never
+ * values). Returns the new version or null.
  */
 export async function correctMemory(
   ex: SqlExecutor,
@@ -490,10 +492,9 @@ export async function correctMemory(
                                    supersedes_id, pinned, expires_at)
        SELECT tenant_id, venture_id, type, coalesce(:title, title), coalesce(:content, content),
               coalesce(:attributes, attributes),
-              CASE WHEN status = 'proposed' THEN 'proposed' ELSE 'confirmed' END,
+              'confirmed',
               coalesce(:visibility, visibility), coalesce(:confidence, confidence), source_refs, origin, :actor,
-              CASE WHEN status = 'proposed' THEN NULL ELSE :actor END,
-              CASE WHEN status = 'proposed' THEN NULL ELSE now() END,
+              :actor, now(),
               version + 1, id, pinned, expires_at
        FROM old
        RETURNING id, venture_id, supersedes_id, version)
@@ -939,16 +940,25 @@ export interface PendingAiProposal {
   readonly conversationIds: string[];
 }
 
-/** Pending AI proposals (origin `ai`, status `proposed`), oldest first. Owner role. */
+/**
+ * Pending AI proposals (origin `ai`, status `proposed`, never a person's correction: a version that supersedes
+ * another is the corrector's own words, like `app.discard_kept_memory` never touches one), oldest first in
+ * (created_at, id) order, a page of
+ * `limit` after the proposal `after` (the last id of the previous page; null or omitted: from the oldest). The
+ * cursor compares the database's own timestamp of that row, never one read back into JavaScript (milliseconds), so
+ * no row is skipped or repeated. An `after` id that no longer exists ends the walk (an empty page). Owner role.
+ */
 export function listPendingAiProposals(
   sx: SqlExecutor,
-  args: { readonly limit?: number } = {},
+  args: { readonly limit?: number; readonly after?: string | null } = {},
 ): Promise<PendingAiProposal[]> {
   return queryRows(
     sx,
     `WITH pending AS (
        SELECT m.* FROM memory_objects m
-       WHERE m.origin = 'ai' AND m.status = 'proposed'
+       WHERE m.origin = 'ai' AND m.status = 'proposed' AND m.supersedes_id IS NULL
+         AND (CAST(:after AS uuid) IS NULL
+              OR (m.created_at, m.id) > (SELECT c.created_at, c.id FROM memory_objects c WHERE c.id = :after))
        ORDER BY m.created_at, m.id
        LIMIT :limit)
      SELECT m.id, m.tenant_id, m.venture_id, m.type, m.title, m.content, m.visibility, m.created_by, m.source_refs,
@@ -967,7 +977,7 @@ export function listPendingAiProposals(
               ORDER BY s.last_activity_at DESC) AS text[]) AS conversation_ids
      FROM pending m
      ORDER BY m.created_at, m.id`,
-    { limit: p.int(clampLimit(args.limit, 200, 1000)) },
+    { limit: p.int(clampLimit(args.limit, 200, 1000)), after: p.nullable.uuid(args.after ?? null) },
     (r) => ({
       id: col.uuid.decode(r.id, 'id'),
       tenantId: col.uuid.decode(r.tenant_id, 'tenant_id'),
@@ -988,7 +998,7 @@ export function listPendingAiProposals(
  * Settles a pending AI proposal from before automatic memory (owner role, maintenance): `keep` keeps it the way
  * the vEIR keeps what it learns now (`confirmed`, `auto_kept_at`, no approver, an `approved` event marked
  * `system`); `expire` retires it (`expired`, with the reason: it restated another item, or it was only the coach's
- * advice). Returns whether it was still pending.
+ * advice). Never a person's correction (a version with `supersedes_id`). Returns whether it was still pending.
  */
 export async function settlePendingAiProposal(
   sx: SqlExecutor,
@@ -1002,7 +1012,7 @@ export async function settlePendingAiProposal(
               auto_kept_at = CASE WHEN :keep THEN now() ELSE m.auto_kept_at END,
               pinned = CASE WHEN :keep THEN m.pinned ELSE false END,
               updated_at = now()
-        WHERE m.id = :id AND m.origin = 'ai' AND m.status = 'proposed'
+        WHERE m.id = :id AND m.origin = 'ai' AND m.status = 'proposed' AND m.supersedes_id IS NULL
         RETURNING m.id, m.venture_id, m.created_by)
      , ev AS (
        INSERT INTO memory_events (memory_id, venture_id, actor_id, action, diff)

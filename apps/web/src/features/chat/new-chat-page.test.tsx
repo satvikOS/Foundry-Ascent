@@ -403,7 +403,7 @@ describe('New chat', () => {
     await screen.findByText('What should we work on today?');
     const group = screen.getByRole('group', { name: 'Memory for this conversation' });
     expect(within(group).getByRole('radio', { name: 'Remember this conversation' })).toBeChecked();
-    expect(group).toHaveAccessibleDescription('Conversation saved. Memory needs approval.');
+    expect(group).toHaveAccessibleDescription('Remembered for next time.');
     await userEvent.setup().type(composer(), 'What should we test first?{Enter}');
     await screen.findByText('Conversation');
     const create = calls.find((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${A}/sessions`);

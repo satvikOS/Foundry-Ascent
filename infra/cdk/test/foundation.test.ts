@@ -105,7 +105,7 @@ describe('FoundryAscent-Foundation', () => {
     expect(statements).not.toMatch(/"(iam|s3|cloudfront):|cloudformation:(Create|Update|Delete|Execute)/);
   });
 
-  it('lets the deploy role write only the face vendor key, and never read it back', () => {
+  it('lets the deploy role write only the face and voice vendor keys, and never read either back', () => {
     const policies = resourcesOfType(template, 'AWS::IAM::Policy');
     const media = policies.filter(([id]) => id.startsWith('GitHubDeployMediaKeyPolicy'));
     expect(media).toHaveLength(1);
@@ -146,19 +146,58 @@ describe('FoundryAscent-Foundation', () => {
             ],
           },
         },
+        // .github/workflows/ops-elevenlabs-key.yml: the same two writes, on the ElevenLabs key only.
+        {
+          Sid: 'CreateVoiceVendorKey',
+          Effect: 'Allow',
+          Action: 'secretsmanager:CreateSecret',
+          Resource: {
+            'Fn::Join': [
+              '',
+              [
+                'arn:aws:secretsmanager:us-east-1:',
+                { Ref: 'AWS::AccountId' },
+                ':secret:foundry-ascent/media/elevenlabs*',
+              ],
+            ],
+          },
+          Condition: { StringEquals: { 'secretsmanager:Name': 'foundry-ascent/media/elevenlabs' } },
+        },
+        {
+          Sid: 'WriteVoiceVendorKey',
+          Effect: 'Allow',
+          Action: 'secretsmanager:PutSecretValue',
+          Resource: {
+            'Fn::Join': [
+              '',
+              [
+                'arn:aws:secretsmanager:us-east-1:',
+                { Ref: 'AWS::AccountId' },
+                ':secret:foundry-ascent/media/elevenlabs-??????',
+              ],
+            ],
+          },
+        },
       ],
     });
     // No other policy in the stack touches Secrets Manager, and none can read, delete, tag, share, replicate or
-    // rotate a secret, or reach the ElevenLabs key or the database secret.
+    // rotate a secret, or reach the database secret.
     const all = JSON.stringify(policies);
     expect(
       all
         .match(/"secretsmanager:[A-Za-z]+"/g)
         ?.map((a) => a.slice(1, -1))
         .sort(),
-    ).toEqual(['secretsmanager:CreateSecret', 'secretsmanager:Name', 'secretsmanager:PutSecretValue']);
-    expect(all).not.toContain('elevenlabs');
+    ).toEqual([
+      'secretsmanager:CreateSecret',
+      'secretsmanager:CreateSecret',
+      'secretsmanager:Name',
+      'secretsmanager:Name',
+      'secretsmanager:PutSecretValue',
+      'secretsmanager:PutSecretValue',
+    ]);
     expect(all).not.toContain('aurora');
+    expect(all).not.toContain('GetSecretValue');
     // The read-only deploy policy stays read-only.
     const deploy = policies.filter(([id]) => id.startsWith('GitHubDeployPolicy'));
     expect(JSON.stringify(deploy)).not.toContain('secretsmanager');
@@ -274,12 +313,17 @@ describe('FoundryAscent-Foundation', () => {
             'arn:aws:bedrock:*::foundation-model/amazon.nova-premier-v1:0',
             'arn:aws:bedrock:*::foundation-model/amazon.nova-pro-v1:0',
             'arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0',
+            // The live evaluation's simulator and judge from other model families (ops/lab/models.json "live").
+            'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+            'arn:aws:bedrock:*::foundation-model/meta.llama4-maverick-17b-instruct-v1:0',
             // The global. fallback profile is authorized against the region-less foundation-model ARN.
             'arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0',
             profile('global.amazon.nova-2-lite-v1:0'),
             profile('us.amazon.nova-2-lite-v1:0'),
             profile('us.amazon.nova-premier-v1:0'),
             profile('us.amazon.nova-pro-v1:0'),
+            profile('us.anthropic.claude-haiku-4-5-20251001-v1:0'),
+            profile('us.meta.llama4-maverick-17b-instruct-v1:0'),
           ],
         },
         {

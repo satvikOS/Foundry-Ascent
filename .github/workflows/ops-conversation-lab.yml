@@ -30,7 +30,17 @@ name: Ops - conversation lab
 #           face mode: full, lite (the avatar lip-syncs the call's Polly audio, relayed by the server over the speak
 #           socket; the lab gives the synthetic vEIR a face reference ready under likeness consent in its own database)
 #           or both (default: FULL with every check, then the API restarted in LITE for the same call arm), and the
-#           summary sets FULL, LITE and Polly alone side by side (p50/p95, n).
+#           summary sets FULL, LITE and Polly alone side by side (p50/p95, n). lite-probe runs no call: the LITE
+#           protocol probe (apps/web/e2e/lab/lite-probe.lab.ts, conversation_lab/lite_probe.py) opens three raw LITE
+#           sandbox sessions through the local API's lab probe and drives each session's ws_url from the lab's own page
+#           with synthetic speech (no one's voice), probes L1-L10 of the LITE + ElevenLabs design: start fields and the
+#           ws_url host, connect timing, chunk acks, speak events and the sound on the avatar's track, back-to-back
+#           utterances, socket replacement and early close, interrupt, whether the room's data or a published audio
+#           track drives the avatar, and whether ws_url accepts the production Origin (a browser page served at the
+#           production_origin input's, else the repository variable FA_SITE_URL's, origin by Playwright itself, and Node
+#           with an explicit Origin header; without either, a stand-in origin whose answer is reported, never graded).
+#           The summary keeps numbers, codes, field and event type names, the ws_url host (id-like labels masked) and
+#           the design's hypotheses confirmed / refuted; ws_url itself is never written.
 # The app runs with CORE_SAFETY_SCREEN=on in every suite (ops/lab conversation_lab/stack.py).
 #
 # Runs only from main, in the `conversation-lab` GitHub environment, whose OIDC subject is the only one the
@@ -85,10 +95,14 @@ on:
         type: string
         default: ''
       face_mode:
-        description: face only - the in-app call arm's face mode (both = FULL with every check, then LITE, side by side with Polly alone)
+        description: face only - the in-app call arm's face mode (both = FULL with every check, then LITE, side by side with Polly alone; lite-probe = the LITE protocol probe L1-L10 alone)
         type: choice
-        options: [both, full, lite]
+        options: [both, full, lite, lite-probe]
         default: both
+      production_origin:
+        description: face lite-probe only - the production site's origin for L10 (https://host, no path); empty = the repository variable FA_SITE_URL, else a stand-in (L10's go/no-go then not graded)
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -121,6 +135,7 @@ jobs:
           SCENARIO_IDS: ${{ inputs.scenario_ids }}
           REPEAT: ${{ inputs.repeat }}
           FACE_MODE: ${{ inputs.face_mode }}
+          PRODUCTION_ORIGIN: ${{ inputs.production_origin }}
         run: |
           # Values are checked, never echoed (except the suite and the numbers, which are public).
           case "${SUITE}" in recall|matrix|voice|ui|agenda|safety|face|all) ;; *) echo "::error::suite must be recall, matrix, voice, ui, agenda, safety, face or all."; exit 1;; esac
@@ -140,7 +155,11 @@ jobs:
             echo "::error::repeat must be a whole number from 1 to 10."
             exit 1
           fi
-          case "${FACE_MODE}" in both|full|lite) ;; *) echo "::error::face_mode must be both, full or lite."; exit 1;; esac
+          case "${FACE_MODE}" in both|full|lite|lite-probe) ;; *) echo "::error::face_mode must be both, full, lite or lite-probe."; exit 1;; esac
+          if [ -n "${PRODUCTION_ORIGIN}" ] && [[ ! "${PRODUCTION_ORIGIN}" =~ ^https://[a-z0-9]([a-z0-9-]{0,62}\.)+[a-z0-9-]{1,62}(:[0-9]{1,5})?/?$ ]]; then
+            echo "::error::production_origin must be empty or a bare https origin in lower case (https://host or https://host:port)."
+            exit 1
+          fi
           if [[ ! "${BASELINE_RUN_ID}" =~ ^[0-9]{0,20}$ ]]; then
             echo "::error::baseline_run_id must be empty or a run id (digits)."
             exit 1
@@ -343,6 +362,11 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/evals
           LAB_HEYGEN_API_KEY: ${{ matrix.suite == 'face' && secrets.HEYGEN_LIVEAVATAR_API || '' }}
+          # The production site's origin (the dispatch input, else the repository variable FA_SITE_URL; both public),
+          # for the lite probe's L10 only: Playwright serves a blank page at it itself, so nothing is requested from
+          # production. Unset: a production-shaped stand-in, reported but not graded as the production origin.
+          LAB_PRODUCTION_ORIGIN: ${{ matrix.suite == 'face' && (inputs.production_origin || vars.FA_SITE_URL) || '' }}
+          LAB_PRODUCTION_ORIGIN_SOURCE: ${{ matrix.suite == 'face' && (inputs.production_origin != '' && 'input' || (vars.FA_SITE_URL != '' && 'repository' || '')) || '' }}
         run: |
           python -m conversation_lab run --suite "${LAB_SUITE}" --budget-usd "${LAB_BUDGET_USD}" \
             --max-scenarios "${LAB_MAX_SCENARIOS}" --out "${LAB_OUT}" \

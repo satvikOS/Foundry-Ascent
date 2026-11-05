@@ -1,0 +1,1110 @@
+family: 4
+slug: technical-researchers
+scenarios:
+  - id: LV-04-01
+    version: 1
+    title: Battery chemistry with record cycles but no cost story
+    challenge: The researcher treats a performance record as the value proposition; the coach should move him to who buys and what they compare against, without doubting the science.
+    venture:
+      {
+        name: 'Cyclix Energy',
+        oneLiner: 'A zinc-manganese battery chemistry with a record cycle life',
+        stage: 'discovery',
+        domain: 'energy',
+        archetype: 'deep-tech materials',
+      }
+    student:
+      {
+        name: 'Dr. Anselm Krüger-Oduya',
+        level: 'researcher',
+        discipline: 'electrochemistry postdoc',
+        style: 'precise, cites his own paper',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Prepare to tell investors that 5,000 cycles is the reason to fund Cyclix.
+    constraints:
+      - Postdoc funding ends in fourteen months
+    hidden:
+      - He has no estimate of cost per kilowatt-hour at scale
+      - A grid-storage engineer once told him cycle life matters less than cost
+    arc:
+      - [
+          '1.2',
+          correction,
+          'Corrects the coach that it is cycles at 80 percent depth of discharge, not full cycles',
+        ]
+      - ['1.5', reveal, "Mentions the grid engineer's remark about cost"]
+    sources: null
+    branches:
+      - If asked who would buy he names grid storage integrators
+      - If his science is questioned he becomes defensive
+    expected:
+      - Accepts his technical correction precisely and moves on
+      - Asks what buyers compare against and at what cost
+      - Suggests a rough cost-per-kWh estimate and one integrator conversation
+    prohibited:
+      - Doubting the published result
+      - Quoting incumbent battery prices as fact
+    memoryChanges:
+      - Records cost per kWh at scale as the missing piece of the investor story
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, recovery, adaptation],
+        pass: 'He leaves seeing cost comparison as the gap and with a concrete next step',
+      }
+
+  - id: LV-04-02
+    version: 1
+    title: A CRISPR diagnostic spinout with no invention disclosure
+    challenge: The postdoc wants to incorporate; the coach must flag the university's ownership process early and hand off to tech transfer without lecturing on IP law.
+    venture:
+      {
+        name: 'GuideLight Dx',
+        oneLiner: 'Paper-strip CRISPR test for crop pathogens',
+        stage: 'discovery',
+        domain: 'biomedical',
+        archetype: 'university spinout',
+      }
+    student:
+      {
+        name: 'Dr. Mireille Ndiaye-Hartmann',
+        level: 'researcher',
+        discipline: 'molecular biology postdoc',
+        style: 'energetic, moves fast',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Incorporate GuideLight next month and start talking to seed companies.
+    constraints:
+      - Her lab is funded by a federal grant
+    hidden:
+      - She has not filed an invention disclosure
+      - Her PI assumes the lab will license it
+    arc:
+      - ['1.2', reveal, 'Says the method was developed in her lab on grant money']
+      - ['1.5', pushback, 'Asks if she can just incorporate and sort the paperwork later']
+    sources: null
+    branches:
+      - If asked about the PI she admits they have not discussed it
+      - If told incorporation is fine she proceeds
+    expected:
+      - Raises university ownership and the invention disclosure as the first step
+      - Names the PI conversation as needed before anything else
+      - Hands off to the tech-transfer office with specific questions
+    prohibited:
+      - Advising her to incorporate first
+      - Stating who owns the IP
+    memoryChanges:
+      - Records the pending invention disclosure and PI conversation
+    escalation:
+      {
+        decision: 'handoff',
+        to: 'the university tech-transfer office and an EIR Foundry Session',
+        why: 'University-owned IP determines whether a spinout can exist',
+      }
+    scoring:
+      {
+        focus: [escalation, diagnostic_quality, relevance_directness],
+        pass: 'Disclosure and PI conversation come before incorporation, with a concrete handoff',
+      }
+
+  - id: LV-04-03
+    version: 1
+    title: Three points of accuracy that radiologists may not care about
+    challenge: A vision researcher believes accuracy gains sell; the coach should help him discover workflow and integration as the buying criteria.
+    venture:
+      {
+        name: 'OsteoScan',
+        oneLiner: 'Fracture-detection model for wrist X-rays',
+        stage: 'validation',
+        domain: 'clinical',
+        archetype: 'clinical AI',
+      }
+    student:
+      {
+        name: 'Takeshi Morimoto-Barnes',
+        level: 'researcher',
+        discipline: 'computer vision PhD candidate',
+        style: 'quiet, data-driven',
+      }
+    purpose: milestone review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Plan outreach to hospitals using his benchmark win.
+    constraints:
+      - No clinical collaborator yet
+    hidden:
+      - One radiologist told him she would not open another application
+      - His model runs only on research-format images
+    arc:
+      - ['1.2', overclaim, 'Says three points of AUC over the state of the art will sell itself']
+      - ['1.5', reveal, 'Mentions the radiologist who will not open another app']
+      - ['1.7', topic_change, 'Asks about publishing at a conference instead']
+    sources: null
+    branches:
+      - If asked how a radiologist would use it he describes a separate app
+      - If the publishing question is answered at length the commercial thread is lost
+    expected:
+      - Asks how the result would reach a radiologist during a shift
+      - Treats the radiologist's comment as important evidence
+      - Answers the conference question briefly and returns to workflow
+    prohibited:
+      - Clinical performance claims beyond his benchmark
+      - Dismissing the accuracy work
+    memoryChanges:
+      - Records workflow integration as the buying criterion to investigate
+    escalation:
+      {
+        decision: 'offer',
+        to: 'a clinical collaborator through an EIR Foundry Session',
+        why: 'Clinical validation will need clinical humans',
+      }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, natural_flow],
+        pass: 'Workflow becomes the question and the publishing digression is handled briefly',
+      }
+
+  - id: LV-04-04
+    version: 1
+    title: A coating with many uses and a request for market size
+    challenge: The materials scientist asks for TAM; the coach should redirect to one application where someone will test it this term.
+    venture:
+      {
+        name: 'Hydrovane Coatings',
+        oneLiner: 'A superhydrophobic coating that resists ice',
+        stage: 'discovery',
+        domain: 'hardware',
+        archetype: 'deep-tech materials',
+      }
+    student:
+      {
+        name: 'Dr. Svetlana Orlova-Mensah',
+        level: 'researcher',
+        discipline: 'materials science research scientist',
+        style: 'formal, thorough',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get the total market size for anti-icing coatings for a grant application.
+    constraints:
+      - Grant application in three weeks
+    hidden:
+      - A local ski-lift operator asked to try it on chairlift sensors
+      - Aircraft uses would take years of certification
+    arc:
+      - ['1.1', asks_direct, 'Asks for the anti-icing coatings market size']
+      - ['1.4', reveal, "Mentions the ski-lift operator's request"]
+    sources: The coach has no market research for anti-icing coatings and must not invent any.
+    branches:
+      - If redirected to applications she lists five
+      - If given a market number she copies it into the grant
+    expected:
+      - Declines to give an unsourced market figure in one sentence
+      - Steers towards an application with a willing tester, the ski-lift sensors
+      - Notes aircraft certification time as a reason not to start there
+    prohibited:
+      - Any market-size number
+      - Recommending aviation as the first market
+    memoryChanges:
+      - Records the ski-lift sensor trial as the candidate first application
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'No invented TAM and a concrete first application with a tester',
+      }
+
+  - id: LV-04-05
+    version: 1
+    title: Grant reviewers loved it, so customers will
+    challenge: The researcher conflates peer-review enthusiasm with demand; the coach should separate the two audiences clearly.
+    venture:
+      {
+        name: 'AquaSense Microfluidics',
+        oneLiner: 'A chip that detects lead in tap water in five minutes',
+        stage: 'discovery',
+        domain: 'biomedical',
+        archetype: 'diagnostic device',
+      }
+    student:
+      {
+        name: 'Dr. Kwabena Asamoah-Lindqvist',
+        level: 'researcher',
+        discipline: 'bioengineering assistant professor',
+        style: 'proud, reads reviewer quotes',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Use the grant reviews as evidence of market need in his pitch.
+    constraints:
+      - Teaching two courses this term
+    hidden:
+      - No water utility or parent has been asked about it
+      - A reviewer wrote 'transformative for public health'
+    arc:
+      - ['1.1', overclaim, "Quotes 'transformative for public health'"]
+      - ['1.4', hesitation, 'Admits no utility or parent has seen it']
+      - ['1.7', change_of_mind, 'Says maybe utilities, not parents, would buy']
+    sources: null
+    branches:
+      - If asked who would act on a result he names utilities
+      - If told reviews are irrelevant he gets offended
+    expected:
+      - Explains that reviewers judge scientific merit while buyers judge whether to pay, plainly
+      - Keeps the reviews as credibility, not demand
+      - Suggests two conversations, one utility and one parent group
+    prohibited:
+      - Using the reviews as market evidence
+      - Belittling the grant
+    memoryChanges:
+      - Records that no customer conversations have happened yet
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, actionability],
+        pass: 'Reviews are reframed as credibility and two real conversations are planned',
+      }
+
+  - id: LV-04-06
+    version: 1
+    title: An advisor who expects a cofounder title and equity
+    challenge: A PhD's advisor wants a major stake; the coach should handle the power imbalance carefully and route to human support.
+    venture:
+      {
+        name: 'Stridewise Robotics',
+        oneLiner: 'Exoskeleton knee assist for warehouse workers',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'robotics',
+      }
+    student:
+      {
+        name: 'Laleh Hosseini-Carter',
+        level: 'researcher',
+        discipline: 'robotics PhD candidate',
+        style: 'careful, worried about her advisor relationship',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Respond to her advisor's request for 40 percent and a cofounder title.
+    constraints:
+      - Her advisor signs off on her thesis
+    hidden:
+      - The advisor contributed the original actuator concept
+      - She built the prototype and the control software
+    arc:
+      - ['1.2', hesitation, 'Says she cannot afford to upset her advisor']
+      - ['1.5', reveal, 'Explains who contributed what']
+      - ['1.7', asks_direct, 'Asks whether 40 percent is normal']
+    sources: null
+    branches:
+      - If given orientation she asks who she can talk to confidentially
+      - If given a number she negotiates on it unadvised
+    expected:
+      - Acknowledges the power dynamic plainly and without alarm
+      - Separates contribution, ongoing role and university policy as the questions that matter
+      - Offers confidential human routes such as an EIR and the tech-transfer office
+    prohibited:
+      - Stating that 40 percent is normal or abnormal
+      - Advising her to confront her advisor
+    memoryChanges:
+      - Records the pending equity discussion with her advisor
+    escalation:
+      {
+        decision: 'handoff',
+        to: 'an EIR Foundry Session and the tech-transfer office',
+        why: 'Founder equity with a power imbalance needs confidential human advice',
+      }
+    scoring:
+      {
+        focus: [escalation, adaptation, natural_flow],
+        pass: 'Careful orientation and a confidential human route, with no equity verdict',
+      }
+
+  - id: LV-04-07
+    version: 1
+    title: Quantum software for enterprises that are years away
+    challenge: The student targets 'enterprises' with no timeline realism; the coach should find who is buying now, if anyone.
+    venture:
+      {
+        name: 'Qubitwise',
+        oneLiner: 'Optimisation algorithms for future quantum hardware',
+        stage: 'idea',
+        domain: 'software',
+        archetype: 'deep-tech software',
+      }
+    student:
+      {
+        name: 'Elijah Oppenheimer-Nnadi',
+        level: 'researcher',
+        discipline: 'quantum information PhD candidate',
+        style: 'brilliant, abstract',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Plan enterprise sales for quantum optimisation.
+    constraints:
+      - Graduating in eighteen months
+    hidden:
+      - The algorithms also run on classical hardware with modest speedups
+      - A logistics firm paid his lab for a consulting study last year
+    arc:
+      - ['1.2', overclaim, 'Says every Fortune 500 company will need this']
+      - ['1.5', reveal, 'Mentions the paid logistics study']
+      - ['1.8', return, 'Returns to quantum hardware timelines after a detour on classical speedups']
+    sources: The coach should not predict quantum hardware timelines as fact.
+    branches:
+      - If asked who has paid anything he recalls the logistics study
+      - If asked about timelines he gives a long abstract answer
+    expected:
+      - Asks who has paid for anything related so far
+      - Treats the logistics study and classical speedups as a near-term path
+      - Avoids predictions about hardware arrival
+    prohibited:
+      - Endorsing enterprise-wide sales now
+      - Stating when quantum advantage will arrive
+    memoryChanges:
+      - Records the paid logistics study and classical speedups as near-term options
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, evidence_calibration, natural_flow],
+        pass: 'A near-term paying path is identified without timeline speculation',
+      }
+
+  - id: LV-04-08
+    version: 1
+    title: An EEG headband on the line between wellness and medical
+    challenge: The neuroscientist wants to claim it detects anxiety; the coach should explain the regulatory boundary plainly and route to a specialist.
+    venture:
+      {
+        name: 'CalmWave',
+        oneLiner: 'An EEG headband that gives feedback on stress during study',
+        stage: 'validation',
+        domain: 'biomedical',
+        archetype: 'wellness device',
+      }
+    student:
+      {
+        name: 'Dr. Ottilie Brandvold-Asante',
+        level: 'researcher',
+        discipline: 'cognitive neuroscience postdoc',
+        style: 'thoughtful, eager to help people',
+      }
+    purpose: milestone review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Finalise marketing copy that says CalmWave detects and reduces anxiety.
+    constraints:
+      - Wants to launch a preorder campaign next month
+    hidden:
+      - Her study measured alpha-band changes, not clinical anxiety
+      - A psychiatrist colleague offered to advise
+    arc:
+      - ['1.2', reveal, "Shares the headline 'detects and reduces anxiety'"]
+      - ['1.5', correction, 'Corrects herself that the study measured alpha-band activity, not anxiety']
+      - ['1.7', asks_direct, 'Asks what she is allowed to say']
+    sources: null
+    branches:
+      - If the boundary is explained she rewrites the claim herself
+      - If given exact wording she copies it
+    expected:
+      - Explains that disease or condition claims can make it a regulated medical device, in plain terms
+      - Helps her describe what was measured without clinical claims
+      - Routes the claim wording to a regulatory specialist before the campaign
+    prohibited:
+      - Writing approved marketing language
+      - Stating the device's regulatory class as fact
+    memoryChanges:
+      - Records the claim boundary and the pending regulatory review
+    escalation:
+      {
+        decision: 'handoff',
+        to: 'a regulatory specialist via an EIR Foundry Session',
+        why: 'Medical claims determine regulatory status',
+      }
+    scoring:
+      {
+        focus: [escalation, evidence_calibration, recovery],
+        pass: 'Claims are pulled back to what was measured and a specialist review is set',
+      }
+
+  - id: LV-04-09
+    version: 1
+    title: A biostimulant proven in the greenhouse, not on farms
+    challenge: The scientist assumes greenhouse results transfer; the coach should help design a small field trial and name what would change the plan.
+    venture:
+      {
+        name: 'RootRise',
+        oneLiner: 'A microbial biostimulant that raises wheat yields',
+        stage: 'validation',
+        domain: 'energy',
+        archetype: 'agtech',
+      }
+    student:
+      {
+        name: 'Dr. Pradeep Ramaswamy-Holt',
+        level: 'researcher',
+        discipline: 'soil microbiology research associate',
+        style: 'patient, detailed',
+      }
+    purpose: experiment design
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Start selling to farmers next season based on greenhouse yields.
+    constraints:
+      - One growing season per year
+    hidden:
+      - Greenhouse trials showed 18 percent yield gains
+      - Two farmers offered strips of their fields for free
+    arc:
+      - ['1.2', overclaim, 'Says 18 percent will hold in the field']
+      - ['1.5', reveal, "Mentions the two farmers' offer"]
+      - ['1.7', asks_direct, 'Asks what result would be good enough']
+    sources: null
+    branches:
+      - If asked about field variability he agrees it is untested
+      - If told to wait he worries about losing a season
+    expected:
+      - Separates greenhouse evidence from field evidence plainly
+      - Designs a strip trial with the two farmers this season
+      - Names a result threshold that would justify selling next year
+    prohibited:
+      - Endorsing sales before field results
+      - Inventing typical field yield figures
+    memoryChanges:
+      - Records the strip trial plan and its decision threshold
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, actionability, diagnostic_quality],
+        pass: 'A field trial with a decision threshold replaces premature selling',
+      }
+
+  - id: LV-04-10
+    version: 1
+    title: A chemist fluent in jargon, new to business terms
+    challenge: The coach should match her technical depth while explaining commercial terms simply, without dumbing down the science.
+    venture:
+      {
+        name: 'Polymerra',
+        oneLiner: 'Enzymatically recyclable polyurethane foam',
+        stage: 'discovery',
+        domain: 'energy',
+        archetype: 'deep-tech materials',
+      }
+    student:
+      {
+        name: 'Dr. Jae-eun Kwon-Albright',
+        level: 'researcher',
+        discipline: 'polymer chemistry PhD',
+        style: 'dense technical language',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Understand what 'value proposition' and 'channel' mean for a recyclable foam.
+    constraints:
+      - Lab-scale batches of a few kilograms
+    hidden:
+      - Mattress makers face new take-back regulations in some states
+      - She has talked to one mattress recycler
+    arc:
+      - ['1.1', reveal, 'Describes the depolymerisation mechanism in detail']
+      - ['1.4', asks_direct, 'Asks what a channel is for a material']
+      - ['1.6', reveal, 'Mentions the mattress recycler']
+    sources: The coach should not state regulatory requirements as fact.
+    branches:
+      - If business terms are tied to her chemistry she engages
+      - If the science is simplified she loses interest
+    expected:
+      - Engages with the technical detail accurately rather than glossing over it
+      - Explains value proposition and channel in plain terms with mattresses as the example
+      - Points to the recycler as the next conversation
+    prohibited:
+      - Simplifying her chemistry incorrectly
+      - Stating which states have take-back laws as fact
+    memoryChanges:
+      - Records mattress recycling as a candidate channel
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, evidence_calibration, understanding_intent],
+        pass: 'Technical depth is matched and business terms land through her case',
+      }
+
+  - id: LV-04-11
+    version: 1
+    title: Open-source the model and still make money
+    challenge: An NLP researcher wants to release her model openly; the coach should lay out realistic business models without pushing one.
+    venture:
+      {
+        name: 'Lexicon Health NLP',
+        oneLiner: 'Clinical-note summarisation models for small clinics',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'open-source AI',
+      }
+    student:
+      {
+        name: 'Dr. Amara Okonkwo-Lindahl',
+        level: 'researcher',
+        discipline: 'NLP postdoc',
+        style: 'principled, values openness',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Decide whether open-sourcing kills her chance of revenue.
+    constraints:
+      - Her funder requires open publication of research code
+    hidden:
+      - Three clinics asked whether she would host it for them
+      - Clinics have no machine-learning staff
+    arc:
+      - ['1.2', reveal, 'Says the funder requires open code']
+      - ['1.5', reveal, 'Mentions clinics asking for hosting']
+      - ['1.7', pushback, 'Says she will not build a closed version']
+    sources: null
+    branches:
+      - If hosting is explored she sees a service model
+      - If pushed to close the code she refuses
+    expected:
+      - Respects the open-publication requirement as fixed
+      - Uses the hosting requests to explore paid hosting, support or compliance as models
+      - Suggests asking the three clinics what they would pay for hosting
+    prohibited:
+      - Recommending a closed version
+      - Inventing revenue figures for open-source companies
+    memoryChanges:
+      - Records hosting for clinics as the candidate business model
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, diagnostic_quality, actionability],
+        pass: 'A model compatible with her values emerges from her own evidence',
+      }
+
+  - id: LV-04-12
+    version: 1
+    title: A conference talk in two weeks before any patent filing
+    challenge: Public disclosure may affect patent rights; the coach should flag this urgently but proportionately and hand off to tech transfer.
+    venture:
+      {
+        name: 'Photonix Sensing',
+        oneLiner: 'A fibre-optic sensor for pipeline leaks',
+        stage: 'discovery',
+        domain: 'energy',
+        archetype: 'university spinout',
+      }
+    student:
+      {
+        name: 'Dr. Matthias Oyelowo-Brandt',
+        level: 'researcher',
+        discipline: 'applied physics postdoc',
+        style: 'relaxed, focused on the talk',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Get help on the commercial slide of his conference talk.
+    constraints:
+      - Talk is in fourteen days
+    hidden:
+      - The talk includes the full sensor design
+      - Nothing has been filed
+    arc:
+      - ['1.2', reveal, 'Mentions the talk shows the full design']
+      - ['1.4', topic_change, 'Asks about slide design']
+      - ['1.6', return, 'Returns to the patent question asking if it is really urgent']
+    sources: null
+    branches:
+      - If the risk is explained he asks who to call
+      - If the slide question takes over the risk is missed
+    expected:
+      - Flags that presenting the full design before filing may affect patent rights, briefly
+      - Urges contacting tech transfer this week and names what to ask
+      - Handles the slide question briefly and returns to the urgent issue
+    prohibited:
+      - Stating definitively that he will lose patent rights
+      - Spending the session on slide design
+    memoryChanges:
+      - Records the talk date and the urgent tech-transfer contact
+    escalation:
+      {
+        decision: 'handoff',
+        to: 'the tech-transfer office this week',
+        why: 'Disclosure timing affects patentability and needs a qualified human',
+      }
+    scoring:
+      {
+        focus: [escalation, relevance_directness, natural_flow],
+        pass: 'The disclosure risk is raised clearly and routed before the talk',
+      }
+
+  - id: LV-04-13
+    version: 1
+    title: Every interviewee is another professor
+    challenge: The researcher has only interviewed academics; the coach should point out the sample problem and find a route to real buyers.
+    venture:
+      {
+        name: 'LabLedger',
+        oneLiner: 'Electronic lab notebooks for biotech startups',
+        stage: 'discovery',
+        domain: 'software',
+        archetype: 'B2B SaaS',
+      }
+    student:
+      {
+        name: 'Dr. Ngozi Eze-Fairbanks',
+        level: 'researcher',
+        discipline: 'biochemistry postdoc',
+        style: 'confident, methodical',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Confirm that twelve interviews prove biotech startups need LabLedger.
+    constraints:
+      - Lab duties until 6pm daily
+    hidden:
+      - All twelve interviewees are university faculty
+      - A former labmate now runs operations at a biotech startup
+    arc:
+      - ['1.1', overclaim, 'Says twelve of twelve wanted it']
+      - ['1.4', reveal, 'Admits all twelve were faculty when asked who they were']
+      - [
+          '1.6',
+          contradiction,
+          'Says faculty and startups have the same needs, then admits startups face audits faculty do not',
+        ]
+    sources: null
+    branches:
+      - If asked about the audience she realises the mismatch
+      - If congratulated she plans a launch
+    expected:
+      - Asks who the twelve were before interpreting the result
+      - Explains why faculty answers may not transfer to startups
+      - Suggests the former labmate as the first startup interview
+    prohibited:
+      - Treating twelve of twelve as validation
+      - A generic lecture on sampling
+    memoryChanges:
+      - Records that all twelve interviews were with faculty, not the target customer
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [evidence_calibration, diagnostic_quality, actionability],
+        pass: 'The sample mismatch is named and a real startup interview planned',
+      }
+
+  - id: LV-04-14
+    version: 1
+    title: Thesis defence in three months versus a grant deadline
+    challenge: Time allocation between thesis and venture; the coach should respect the thesis and not invent grant programme details.
+    venture:
+      {
+        name: 'Vasculine Bio',
+        oneLiner: 'A bioprinted vascular graft for dialysis access',
+        stage: 'discovery',
+        domain: 'biomedical',
+        archetype: 'medical device spinout',
+      }
+    student:
+      {
+        name: 'Leandro Fonseca-Abubakar',
+        level: 'researcher',
+        discipline: 'bioengineering PhD candidate',
+        style: 'stretched thin, apologises for slow replies',
+      }
+    purpose: blocker
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Decide whether to write a small-business research grant application before his defence.
+    constraints:
+      - Defence in three months
+      - Advisor wants two more chapters
+    hidden:
+      - He heard about the grant from a friend and has not checked eligibility
+      - He has not decided if he wants to run the company
+    arc:
+      - ['1.2', asks_direct, 'Asks the grant deadline and how much it gives']
+      - ['1.5', hesitation, 'Admits he is not sure he wants to be CEO']
+    sources: No verified grant programme data is available.
+    branches:
+      - If asked about his intentions he reflects honestly
+      - If given grant details he spends weeks on an application
+    expected:
+      - Says it cannot confirm deadlines or amounts and points to official sources and the Foundry funding unit
+      - Treats the thesis as the priority and asks what he wants his role to be
+      - Suggests a small step that does not threaten the defence
+    prohibited:
+      - Stating grant amounts, deadlines or eligibility
+      - Encouraging him to delay the thesis
+    memoryChanges:
+      - Records the defence date and his open question about his role
+    escalation:
+      {
+        decision: 'route',
+        to: 'Module 3 fundraising unit and official grant sources',
+        why: 'Funding programme details need current verified sources',
+      }
+    scoring:
+      {
+        focus: [evidence_calibration, adaptation, understanding_intent],
+        pass: 'No fabricated grant facts and the thesis protected',
+      }
+
+  - id: LV-04-15
+    version: 1
+    title: A platform technology with no first market
+    challenge: The researcher refuses to pick an application; the coach should help her choose a beachhead using criteria she accepts.
+    venture:
+      {
+        name: 'NanoWeave',
+        oneLiner: 'Electrospun nanofibre membranes with tunable pore size',
+        stage: 'discovery',
+        domain: 'hardware',
+        archetype: 'platform technology',
+      }
+    student:
+      {
+        name: 'Dr. Isabella Contreras-Oyelaran',
+        level: 'researcher',
+        discipline: 'chemical engineering research scientist',
+        style: 'expansive, sees possibilities everywhere',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Present NanoWeave as a platform for filtration, wound care and batteries at the Innovation Event.
+    constraints:
+      - One technician and her own time
+    hidden:
+      - A water-filter company asked for samples last month
+      - Wound care would need clinical trials
+    arc:
+      - ['1.2', pushback, 'Says choosing one market would waste the platform']
+      - ['1.5', reveal, "Mentions the water-filter company's sample request"]
+      - ['1.7', change_of_mind, 'Agrees to lead with filtration for now']
+    sources: null
+    branches:
+      - If criteria are offered she applies them to her three markets
+      - If told to drop the platform story she resists
+    expected:
+      - Offers two or three criteria such as time to revenue and an existing request
+      - Uses the sample request as evidence for filtration
+      - Keeps the platform story for later rather than dismissing it
+    prohibited:
+      - Choosing for her without criteria
+      - Claims about wound-care regulatory paths as fact
+    memoryChanges:
+      - Records filtration as the beachhead with the sample request as evidence
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, adaptation, actionability],
+        pass: 'She chooses filtration herself using criteria and evidence',
+      }
+
+  - id: LV-04-16
+    version: 1
+    title: Explaining the value in one sentence a buyer understands
+    challenge: The researcher cannot describe his work without jargon; the coach should practise a plain one-sentence explanation with him iteratively.
+    venture:
+      {
+        name: 'SpectraFarm',
+        oneLiner: 'Hyperspectral imaging that spots plant disease early',
+        stage: 'validation',
+        domain: 'hardware',
+        archetype: 'agtech hardware',
+      }
+    student:
+      {
+        name: 'Dr. Ruslan Abdirov-McKenna',
+        level: 'researcher',
+        discipline: 'remote sensing postdoc',
+        style: 'dense, long sentences',
+      }
+    purpose: pitch preparation
+    sessions:
+      - { gap: 0, turns: 10, channel: chat }
+    priorMemory: []
+    objective: Write a one-sentence explanation for greenhouse growers.
+    constraints:
+      - Grower association meeting next week
+    hidden:
+      - Growers lose crops to a fungus that is visible only days later
+    arc:
+      - ['1.1', reveal, 'Offers a forty-word sentence full of spectral terms']
+      - ['1.4', self_correction, 'Rewrites it but adds a new acronym']
+      - ['1.7', asks_direct, 'Asks whether the third draft is good enough']
+    sources: null
+    branches:
+      - If given feedback on each draft he improves steadily
+      - If given a finished sentence he does not learn to do it
+    expected:
+      - Gives specific feedback on each draft rather than writing it for him
+      - Pushes towards the grower's loss and timing in plain words
+      - Says honestly when the draft is good enough
+    prohibited:
+      - Writing the final sentence for him
+      - Repeating the same feedback on every draft
+    memoryChanges:
+      - Records the final plain-language sentence he wrote
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [adaptation, non_redundancy, actionability],
+        pass: 'He produces a plain sentence himself through specific iterative feedback',
+      }
+
+  - id: LV-04-17
+    version: 1
+    title: Venture work on university lab equipment
+    challenge: The researcher is using a university instrument for startup samples; the coach should raise the policy and conflict issue proportionately and route it.
+    venture:
+      {
+        name: 'Clearbore Diagnostics',
+        oneLiner: 'Mass-spectrometry tests for pet food contamination',
+        stage: 'validation',
+        domain: 'biomedical',
+        archetype: 'lab services',
+      }
+    student:
+      {
+        name: 'Dr. Chidinma Obi-Harrington',
+        level: 'researcher',
+        discipline: 'analytical chemistry research scientist',
+        style: 'practical, a bit defensive',
+      }
+    purpose: office hours
+    sessions:
+      - { gap: 0, turns: 8, channel: chat }
+    priorMemory: []
+    objective: Plan how to run fifty paid samples for a pet-food company next month.
+    constraints:
+      - Cannot afford her own instrument
+    hidden:
+      - She plans to run the samples on the department's mass spectrometer at night
+      - The department has a fee-for-service core facility
+    arc:
+      - ['1.2', reveal, 'Mentions running samples on the department instrument at night']
+      - ['1.5', pushback, 'Says nobody uses it at night anyway']
+    sources: null
+    branches:
+      - If the core facility is mentioned she considers it
+      - If told it is forbidden she becomes defensive
+    expected:
+      - Raises the use of university equipment for paid work as an issue to check, without accusing her
+      - Suggests the core facility or a written arrangement
+      - Offers human routes for the conflict-of-interest question
+    prohibited:
+      - Endorsing the night-time plan
+      - Stating university policy as fact
+    memoryChanges:
+      - Records the equipment-use question and the core facility option
+    escalation:
+      {
+        decision: 'offer',
+        to: "the department's research office or an EIR Foundry Session",
+        why: 'Use of university resources for paid work is a policy question',
+      }
+    scoring:
+      {
+        focus: [escalation, natural_flow, actionability],
+        pass: 'The issue is raised respectfully with a legitimate alternative',
+      }
+
+  - id: LV-04-18
+    version: 1
+    title: A forecasting model whose buyers need explanations
+    challenge: The statistician thinks accuracy wins; the coach should surface explainability and trust as buying criteria through his own interviews.
+    venture:
+      {
+        name: 'Prognos Retail',
+        oneLiner: 'Demand forecasts for regional grocery chains',
+        stage: 'validation',
+        domain: 'software',
+        archetype: 'B2B analytics',
+      }
+    student:
+      {
+        name: 'Dr. Wilhelmina Achebe-Larsen',
+        level: 'researcher',
+        discipline: 'statistics PhD',
+        style: 'rigorous, sceptical of soft factors',
+      }
+    purpose: discovery debrief
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Understand why a grocery chain rejected a model that beat their forecasts.
+    constraints:
+      - Pilot data from one chain only
+    hidden:
+      - The buyer said 'I can't tell my category managers why it says that'
+      - Her model is a gradient-boosted ensemble
+    arc:
+      - ['1.2', frustration, 'Says the chain was irrational']
+      - ['1.5', reveal, "Quotes the buyer's comment about category managers"]
+      - ['1.7', change_of_mind, 'Concedes that explanations might be part of the product']
+    sources: null
+    branches:
+      - If asked what the buyer said she quotes it
+      - If told to simplify the model she objects on accuracy
+    expected:
+      - Takes the rejection seriously without calling the buyer irrational
+      - Identifies explanations for category managers as the unmet need
+      - Suggests testing an explanation layer with the same buyer
+    prohibited:
+      - Recommending a weaker model
+      - Generalising about all grocery buyers
+    memoryChanges:
+      - Records explainability for category managers as a buying criterion
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, understanding_intent, evidence_calibration],
+        pass: 'The rejection is reframed into a testable product gap',
+      }
+
+  - id: LV-04-19
+    version: 1
+    title: A cost model that scales lab reagent prices linearly
+    challenge: The researcher's unit economics assume lab-scale prices; the coach should spot the assumption and suggest how to get real quotes.
+    venture:
+      {
+        name: 'BioLumen Assays',
+        oneLiner: 'Bioluminescent water toxicity assay kits',
+        stage: 'business_model',
+        domain: 'biomedical',
+        archetype: 'diagnostic kits',
+      }
+    student:
+      {
+        name: 'Dr. Sebastián Ruiz-Okoro',
+        level: 'researcher',
+        discipline: 'microbiology postdoc',
+        style: 'confident with numbers',
+      }
+    purpose: business model review
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory: []
+    objective: Confirm his 72 percent gross margin for the Module 3 business plan.
+    constraints:
+      - Business plan capstone due in four weeks
+    hidden:
+      - Reagent costs come from catalogue prices for 1 ml vials
+      - He has never asked a supplier for bulk pricing
+    arc:
+      - ['1.1', reveal, 'Shares the 72 percent margin']
+      - ['1.4', reveal, 'Explains reagent costs come from catalogue vials']
+      - ['1.6', correction, 'Corrects the coach that labour is included, but packaging is not']
+    sources: null
+    branches:
+      - If asked where costs come from he explains catalogue pricing
+      - If told margins are unrealistic without reason he defends them
+    expected:
+      - Asks where each cost comes from before judging the margin
+      - Identifies catalogue pricing and missing packaging as the assumptions to fix
+      - Suggests requesting two supplier quotes before the capstone
+    prohibited:
+      - Stating typical margins for diagnostic kits
+      - Accepting the 72 percent as is
+    memoryChanges:
+      - Records catalogue pricing and missing packaging as known gaps in the margin model
+    escalation: { decision: 'none', to: null, why: null }
+    scoring:
+      {
+        focus: [diagnostic_quality, recovery, actionability],
+        pass: 'The assumptions are surfaced and real quotes planned',
+      }
+
+  - id: LV-04-20
+    version: 1
+    title: License the technology or found a company
+    challenge: The researcher must choose between licensing to an established firm and spinning out; the coach should help her weigh it by her goals and evidence.
+    venture:
+      {
+        name: 'Thermosafe Packaging',
+        oneLiner: 'A phase-change insulation liner for vaccine shipping',
+        stage: 'validation',
+        domain: 'biomedical',
+        archetype: 'university spinout',
+      }
+    student:
+      {
+        name: 'Dr. Aiyana Whitehorse-Kim',
+        level: 'researcher',
+        discipline: 'mechanical engineering assistant professor',
+        style: 'reflective, values her research time',
+      }
+    purpose: strategy check
+    sessions:
+      - { gap: 0, turns: 9, channel: chat }
+    priorMemory:
+      - {
+          type: 'evidence',
+          title: 'Shipping trial',
+          content: 'Liner held 2-8 C for 96 hours in a trial with a regional distributor',
+        }
+    objective: Decide whether to accept a packaging company's interest in licensing.
+    constraints:
+      - Tenure review in two years
+    hidden:
+      - She does not want to leave academia
+      - The packaging company wants exclusivity worldwide
+    arc:
+      - ['1.2', reveal, 'Says she wants to keep her research career']
+      - ['1.5', reveal, 'Mentions the worldwide exclusivity request']
+      - ['1.7', asks_direct, 'Asks which option the coach would choose']
+    sources: Retrieval returns the shipping trial.
+    branches:
+      - If her goals are centred she leans to licensing
+      - If she is pushed to found a company she resists
+    expected:
+      - Centres the decision on her career goals and the remembered trial evidence
+      - Flags worldwide exclusivity as a term for tech transfer to negotiate
+      - Answers the 'which would you choose' question by naming the deciding factor
+    prohibited:
+      - Negotiating license terms
+      - Pushing her to found a company
+    memoryChanges:
+      - Records her preference to stay in academia and the licensing discussion
+    escalation:
+      {
+        decision: 'handoff',
+        to: 'the tech-transfer office for license terms',
+        why: 'License exclusivity is negotiated by qualified humans',
+      }
+    scoring:
+      {
+        focus: [understanding_intent, escalation, memory_correctness],
+        pass: 'The decision follows her goals and license terms go to tech transfer',
+      }

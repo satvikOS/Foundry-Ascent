@@ -43,3 +43,36 @@ export function observedAudio(
     },
   });
 }
+
+/**
+ * The same audio, with `onError` called once if reading it fails part-way (a vendor stream that broke after its
+ * first bytes). The error still reaches the reader; a cancel by the reader (the browser stopped listening) is not
+ * a failure.
+ */
+export function watchedAudio(
+  audio: ReadableStream<Uint8Array>,
+  onError: () => void,
+): ReadableStream<Uint8Array> {
+  const reader = audio.getReader();
+  let reported = false;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      let next: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        next = await reader.read();
+      } catch (err) {
+        if (!reported && !(err instanceof Error && err.name === 'AbortError')) {
+          reported = true;
+          onError();
+        }
+        controller.error(err);
+        return;
+      }
+      if (next.done) controller.close();
+      else controller.enqueue(next.value);
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+}

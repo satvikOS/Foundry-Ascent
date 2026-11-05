@@ -194,13 +194,53 @@ export function fakeMicStream(track = new FakeTrack()): { track: FakeTrack; stre
 
 // Web Audio --------------------------------------------------------------------------------------------
 
+/** One automation event of a {@link FakeAudioParam}. */
+export interface FakeAutomation {
+  readonly kind: 'set' | 'ramp';
+  readonly value: number;
+  readonly time: number;
+}
+
 export class FakeAudioParam {
   value = 1;
+  /** `setValueAtTime` / `linearRampToValueAtTime` events, in time order (what `cancelScheduledValues` left). */
+  events: FakeAutomation[] = [];
   setTargetAtTime(value: number): void {
     this.value = value;
   }
-  cancelScheduledValues(): void {
-    /* no automation in the fake */
+  setValueAtTime(value: number, time: number): void {
+    this.insert({ kind: 'set', value, time });
+  }
+  linearRampToValueAtTime(value: number, time: number): void {
+    this.insert({ kind: 'ramp', value, time });
+  }
+  /** Removes every event at or after `time` (no argument: all of them). */
+  cancelScheduledValues(time = 0): void {
+    this.events = this.events.filter((e) => e.time < time);
+  }
+  /** The automated value at `time`, as Web Audio computes it (set steps, linear ramps from the event before). */
+  valueAt(time: number): number {
+    let value = this.value;
+    let from = { value: this.value, time: 0 };
+    for (const event of this.events) {
+      if (event.time > time) {
+        if (event.kind === 'ramp') {
+          const span = event.time - from.time;
+          return span <= 0
+            ? event.value
+            : from.value + ((event.value - from.value) * (time - from.time)) / span;
+        }
+        return value;
+      }
+      value = event.value;
+      from = { value: event.value, time: event.time };
+    }
+    return value;
+  }
+  private insert(event: FakeAutomation): void {
+    const i = this.events.findIndex((e) => e.time > event.time);
+    if (i < 0) this.events.push(event);
+    else this.events.splice(i, 0, event);
   }
 }
 
@@ -232,12 +272,18 @@ export class FakeBufferSource extends FakeNode {
   onended: (() => void) | null = null;
   started = false;
   stopped = false;
-  start(): void {
+  /** The context time it was scheduled at (`start(when)`). */
+  startAt: number | null = null;
+  /** The context time it was told to stop at (`stop(when)`; null: at once). */
+  stopAt: number | null = null;
+  start(when?: number): void {
     this.started = true;
+    this.startAt = when ?? null;
   }
-  stop(): void {
+  stop(when?: number): void {
     if (this.stopped) return;
     this.stopped = true;
+    this.stopAt = when ?? null;
     this.onended?.();
   }
   /** Test control: the buffer played to its end. */
@@ -262,6 +308,8 @@ export class FakeAudioContext {
   resumeAllowed = true;
   private readonly stateListeners = new Set<() => void>();
   currentTime = 0;
+  /** The context's own rate (44.1 kHz is macOS Safari's default; most others run at 48 kHz). */
+  sampleRate = 48_000;
   readonly destination = new FakeNode();
   readonly sources: FakeBufferSource[] = [];
   readonly worklets: FakeWorkletNode[] = [];
@@ -298,6 +346,19 @@ export class FakeAudioContext {
     const node = new FakeNode();
     this.streamSources.push({ node, stream });
     return node;
+  }
+  /** Every `createBuffer` (raw PCM played as it arrives), with its samples. */
+  readonly buffers: { sampleRate: number; samples: Float32Array }[] = [];
+  createBuffer(_channels: number, length: number, sampleRate: number): AudioBuffer {
+    const samples = new Float32Array(length);
+    this.buffers.push({ sampleRate, samples });
+    return {
+      length,
+      sampleRate,
+      duration: length / sampleRate,
+      numberOfChannels: 1,
+      getChannelData: () => samples,
+    } as unknown as AudioBuffer;
   }
   decodeAudioData(data: ArrayBuffer): Promise<AudioBuffer> {
     if (this.decodeFails) return Promise.reject(new Error('decode failed'));

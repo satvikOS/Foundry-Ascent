@@ -104,9 +104,11 @@ export const FAKE_ENV_VALUES: Readonly<Record<string, string>> = {
   MEDIA_FACE_AVATAR_ID: 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a',
   MEDIA_FACE_VOICE_ID: '',
   MEDIA_FACE_AUDIENCE: 'admins',
-  MEDIA_VOICE_PROVIDER: 'elevenlabs',
+  // The stock ElevenLabs voice (and the EIRs' clones through the same adapter).
+  MEDIA_VOICE_PROVIDER: 'elevenlabs-stock',
   MEDIA_VOICE_MODEL: 'eleven_flash_v2_5',
   MEDIA_VOICE_ZERO_RETENTION: 'false',
+  MEDIA_VOICE_ID: 'OZ0L6eISlOejga3XjDFt',
 };
 
 /**

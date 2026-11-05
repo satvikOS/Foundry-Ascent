@@ -42,7 +42,7 @@ function writes() {
 }
 
 describe('MemoryActionBar', () => {
-  it('offers approval and rejection only for pending suggestions', async () => {
+  it('offers Edit, Pin and Forget, and never Approve, Reject or Dispute', async () => {
     for (const status of ['proposed', 'confirmed', 'disputed'] as const) {
       const { unmount } = await (async () => {
         const client = testQueryClient();
@@ -52,9 +52,7 @@ describe('MemoryActionBar', () => {
       })();
       expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Forget' })).toBeInTheDocument();
-      expect(screen.queryAllByRole('button', { name: /Approve memory|Reject/ })).toHaveLength(
-        status === 'proposed' ? 2 : 0,
-      );
+      expect(screen.queryByRole('button', { name: /Approve|Reject|Keep|Not now|Dispute/ })).toBeNull();
       unmount();
     }
   });

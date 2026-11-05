@@ -464,7 +464,7 @@ describe('Remember or Private for a call from New chat', () => {
     );
     const group = await memoryChoice();
     expect(within(group).getByRole('radio', { name: 'Remember this call' })).toBeChecked();
-    expect(group).toHaveAccessibleDescription('Conversation saved. Memory needs approval.');
+    expect(group).toHaveAccessibleDescription('Remembered for next time.');
     await userEvent.keyboard('{Escape}');
     // Nothing is created or started before the founder chooses.
     await new Promise((resolve) => setTimeout(resolve, 30));
