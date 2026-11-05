@@ -927,10 +927,14 @@ test.describe('vEIR calls', () => {
       await expect(screen.getByRole('status').first()).toBeVisible();
       await expectNoSeriousA11yViolations(page, `call screen (${scheme})`);
 
-      // Every control is reachable by Tab; captions toggle with its shortcut.
-      const captions = screen.getByRole('button', { name: 'Captions' });
+      // The call settings open from the keyboard; captions toggle there (and with their shortcut).
+      const trigger = screen.getByRole('button', { name: 'Call settings' });
+      await trigger.focus();
+      await page.keyboard.press('Enter');
+      const settings = page.getByRole('dialog', { name: 'Call settings' });
+      const captions = settings.getByRole('button', { name: /^Captions/ });
       await expect(captions).toHaveAttribute('aria-pressed', 'true');
-      for (let presses = 0; presses < 4; presses++) {
+      for (let presses = 0; presses < 6; presses++) {
         if (await captions.evaluate((element) => element === document.activeElement)) break;
         await page.keyboard.press('Tab');
       }
@@ -938,10 +942,11 @@ test.describe('vEIR calls', () => {
       await page.keyboard.press('Enter');
       await expect(captions).toHaveAttribute('aria-pressed', 'false');
       await page.keyboard.press('Enter');
+      await expect(captions).toHaveAttribute('aria-pressed', 'true');
+      await expectNoSeriousA11yViolations(page, `call settings (${scheme})`);
 
-      // The rarer controls live under More, reachable by keyboard too.
-      await screen.getByRole('button', { name: 'More call controls' }).click();
-      await page.getByRole('menuitem', { name: 'Switch to chat' }).click();
+      // The rarer controls live in the settings too, reachable by keyboard.
+      await settings.getByRole('button', { name: 'Switch to chat' }).click();
       await expect(screen).toBeHidden();
       await expect(page.getByRole('region', { name: /^Call with / })).toHaveCount(0);
       await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'New chat' }).click();
@@ -1066,7 +1071,7 @@ test.describe('vEIR calls', () => {
       const screen = callScreen(page);
       await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
       await expectNoHorizontalScroll(page);
-      for (const name of ['Captions', 'More call controls', 'End call']) {
+      for (const name of ['Call settings', 'End call']) {
         await expectReachable(page, screen.getByRole('button', { name }));
       }
       await screen.getByRole('button', { name: 'End call' }).click();

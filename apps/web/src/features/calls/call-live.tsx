@@ -1,6 +1,6 @@
 import type { TurnBlockedDetail } from '@foundry/contracts';
 import { ArrowUp, Info, Mic, Play, Volume2, VolumeX } from 'lucide-react';
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { BlockedPanel } from '@/features/coach/blocked-panel';
@@ -10,8 +10,13 @@ import { cn } from '@/lib/utils';
 
 import { CallCaptions } from './call-captions';
 import { CallDock, HoldToTalk } from './call-dock';
+import { CallSettings } from './call-settings';
 import { CallNameTag, CallStage } from './call-stage';
 import { storeTalkMode, useAnnounceCaptions, useCaptionSize, useCaptionsPreference } from './preferences';
+import { ConversationTimeline, clockLabel } from './timeline/ConversationTimeline';
+import { callTimeline } from './timeline/call-timeline';
+import type { TimelineTurn } from './timeline/timeline-model';
+import { sphereState } from './voice-sphere';
 import type { CallFaceController } from './use-call-face';
 import type { CallVeir } from './use-call-veir';
 
@@ -73,11 +78,15 @@ interface CallLiveProps {
   face?: CallFaceController | null;
 }
 
+/** How long a turn picked on the timeline stays in place of the live captions. */
+const REVIEW_MS = 8_000;
+
 /**
- * The call in progress: the vEIR's tile (its presence, and its name tag with the vEIR badge, which explains what
- * it is) and its state, live captions (or, after a held-back turn, the support it offers), any notice, the typed
- * line and the controls. No disclaimer line: the person read what a vEIR is once, and the badge keeps it a tap
- * away.
+ * The call in progress, laid out like the owner's reference: the vEIR's presence (the voice sphere by default)
+ * centred on the canvas with its name tag (the vEIR badge explains what it is) and its state as words, live
+ * captions (or, after a held-back turn, the support it offers), any notice, the typed line, the conversation
+ * timeline, and two controls: the microphone bottom-left and End bottom-right. Everything rarer is in the call
+ * settings (top right). No disclaimer line: the person read what a vEIR is once, and the badge keeps it a tap away.
  */
 export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face = null }: CallLiveProps) {
   const [captions, setCaptions] = useCaptionsPreference();
@@ -85,12 +94,20 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
   const [announceCaptions] = useAnnounceCaptions();
   const typedOnly = snapshot.input === 'typed';
   const [typingOpen, setTypingOpen] = useState(false);
+  const [video, setVideo] = useState(false);
+  const [review, setReview] = useState<TimelineTurn | null>(null);
   const typing = typedOnly || typingOpen;
   const live = snapshot.phase === 'live';
   const voice = snapshot.input === 'voice';
   const pushToTalk = snapshot.talkMode === 'push_to_talk';
   const typeRef = useRef<HTMLInputElement | null>(null);
   const nameRef = useRef<HTMLHeadingElement | null>(null);
+  const timeline = callTimeline(engine).recorder;
+  const hasTurns = useSyncExternalStore(
+    timeline.subscribe,
+    () => timeline.turns().length > 0,
+    () => false,
+  );
 
   // Focus starts on the vEIR's name (the state is announced next to it); typing-only calls focus the line.
   useEffect(() => {
@@ -99,6 +116,17 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
   useEffect(() => {
     if (live && typedOnly) typeRef.current?.focus();
   }, [live, typedOnly]);
+
+  // A turn picked on the timeline shows its words for a while, then the live captions return.
+  useEffect(() => {
+    if (!review) return undefined;
+    const timer = setTimeout(() => {
+      setReview(null);
+    }, REVIEW_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [review]);
 
   const toggleMute = () => {
     engine.setMuted(!snapshot.muted);
@@ -114,6 +142,9 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
   useEffect(() => {
     if (typingOpen) typeRef.current?.focus();
   }, [typingOpen]);
+  const onVideoChange = useCallback((shown: boolean) => {
+    setVideo(shown);
+  }, []);
 
   useHotkeys(
     {
@@ -179,27 +210,45 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
   const onScreenOnly = snapshot.voice === 'captions';
   const readCaptions = announceCaptions || onScreenOnly;
   const veirLine = snapshot.captions.veir;
+  const names = { veir: veir.name, student: 'You' };
 
   return (
     // Content taller than the screen (support resources, a long caption) scrolls the call screen instead of
-    // running under the dock.
-    <div className="flex flex-1 flex-col">
-      <div className="flex flex-1 flex-col items-center justify-center gap-5 px-4 py-4 sm:gap-6">
+    // running under the controls.
+    <div data-slot="call-live" className="flex flex-1 flex-col">
+      <div className="absolute top-1.5 right-2 z-10 sm:right-4">
+        <CallSettings
+          name={veir.name}
+          voice={voice}
+          captions={captions}
+          pushToTalk={pushToTalk}
+          typing={typingOpen}
+          disabled={!live}
+          video={video}
+          onCaptions={() => {
+            setCaptions(!captions);
+          }}
+          onPushToTalk={toggleTalkMode}
+          onTyping={toggleTyping}
+          onSwitchToChat={onSwitchToChat}
+        />
+      </div>
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-4 sm:gap-5">
         {snapshot.blocked ? (
           <CallNameTag veir={veir} speaking={false} headingRef={nameRef} />
         ) : (
           <CallStage
             veir={veir}
             engine={engine}
-            state={engine.avatarState()}
+            state={sphereState(snapshot, engine.avatarState())}
             nameTag={<CallNameTag veir={veir} speaking={speaking} headingRef={nameRef} />}
             ventureId={snapshot.ventureId}
             callId={live ? (snapshot.call?.id ?? null) : null}
             face={face}
-            className="h-[min(20rem,34dvh)] sm:h-[min(24rem,40dvh)]"
+            onVideoChange={onVideoChange}
           />
         )}
-        <div className="flex flex-col items-center gap-1.5">
+        <div className="-mt-2 flex flex-col items-center gap-1.5">
           {/* Always present, so each new line is announced (a live region added with its text is not). */}
           <p className="sr-only" aria-live="polite" aria-atomic="true">
             {readCaptions && veirLine ? `${veir.name}: ${veirLine}` : ''}
@@ -217,7 +266,7 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
                     engine.interrupt();
                   }}
                   aria-keyshortcuts="Escape"
-                  className="rounded-sm font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  className="fa-call-focus rounded-sm font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
                 >
                   Interrupt
                 </button>
@@ -267,6 +316,14 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
             personaName={veir.name}
             onSwitchToChat={live ? onSwitchToChat : null}
           />
+        ) : review ? (
+          <TurnReview
+            turn={review}
+            name={review.speaker === 'veir' ? veir.name : 'You'}
+            onBack={() => {
+              setReview(null);
+            }}
+          />
         ) : captions || onScreenOnly ? (
           <CallCaptions
             name={veir.name}
@@ -279,7 +336,7 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
         ) : null}
       </div>
 
-      <div className="flex shrink-0 flex-col items-center gap-4 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <div className="flex shrink-0 flex-col items-center gap-4 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:pb-5">
         {live && snapshot.voice === 'captions' ? (
           <p role="status" className="flex max-w-xl items-start gap-2 text-small text-muted-foreground">
             <VolumeX aria-hidden className="mt-0.5 size-4 shrink-0" />
@@ -324,27 +381,50 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
             }}
           />
         ) : null}
+        {hasTurns ? (
+          <ConversationTimeline
+            source={timeline}
+            names={names}
+            onSelectTurn={setReview}
+            className="max-w-[45rem]"
+          />
+        ) : null}
         <CallDock
           name={veir.name}
           voice={voice}
           muted={snapshot.muted}
-          pushToTalk={pushToTalk}
-          captions={captions}
-          typing={typingOpen}
           disabled={!live}
           onMute={toggleMute}
-          onPushToTalk={toggleTalkMode}
-          onCaptions={() => {
-            setCaptions(!captions);
-          }}
-          onTyping={toggleTyping}
-          onSwitchToChat={onSwitchToChat}
           onEnd={() => {
             void engine.end('user');
           }}
         />
       </div>
     </div>
+  );
+}
+
+/** A turn picked on the timeline: its words, in place of the live captions for a few seconds. */
+function TurnReview({ turn, name, onBack }: { turn: TimelineTurn; name: string; onBack: () => void }) {
+  return (
+    <section
+      aria-label="Earlier in the call"
+      className="mx-auto grid w-full max-w-2xl justify-items-center gap-2 px-2 text-center"
+    >
+      <p className="font-mono text-caption text-muted-foreground">
+        {clockLabel(turn.startMs)} · {name}
+      </p>
+      <p className="line-clamp-4 font-serif text-[1.25rem] leading-[1.5] text-pretty text-foreground sm:line-clamp-5 sm:text-[1.375rem]">
+        {turn.text || 'Nothing transcribed.'}
+      </p>
+      <button
+        type="button"
+        onClick={onBack}
+        className="fa-call-focus rounded-sm text-small font-medium text-muted-foreground underline decoration-border-strong underline-offset-4 hover:text-foreground"
+      >
+        Live captions
+      </button>
+    </section>
   );
 }
 

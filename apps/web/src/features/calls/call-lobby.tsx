@@ -140,8 +140,7 @@ export function CallLobby({
         <CallStage
           veir={veir}
           engine={engine}
-          state={busy ? 'connecting' : 'idle'}
-          className="h-[min(16rem,30dvh)] sm:h-[min(20rem,34dvh)]"
+          state={busy ? 'connecting' : failure ? 'disconnected' : 'idle'}
         />
         <div className="flex max-w-md flex-col items-center gap-2">
           <h2 className="font-serif text-heading font-normal">

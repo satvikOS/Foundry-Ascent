@@ -7,6 +7,7 @@ import { refreshVentureAfterTurn } from '@/lib/api/venture-refresh';
 import { browserCallDeps } from '@/lib/realtime/browser';
 import { CallEngine } from '@/lib/realtime/call-engine';
 
+import { callTimeline } from './timeline/call-timeline';
 import { CallFaceController } from './use-call-face';
 
 /**
@@ -40,6 +41,8 @@ export function createCallEngine(queryClient: QueryClient): CallEngine {
         void queryClient.invalidateQueries({ queryKey: queryKeys.venture.scope(ventureId) });
     }),
   );
+  // The call's frame loop and timeline follow the engine from its first call (minimized calls included).
+  callTimeline(engine);
   return engine;
 }
 

@@ -7,12 +7,12 @@ import type {
 
 import type { FaceMediaElement } from './embodiment/face-media';
 import type { FaceRenderer, FaceUnitAudio, SpeechUnitToPlay } from './playback';
-import { PresenceAvatar } from './presence';
+import { SphereAvatar } from './sphere';
 
 /**
  * The face of a call (docs/architecture/calls.md §4). The call engine owns the conversation (speech in,
  * validated speech out); an avatar provider only embodies it. `builtin` is the presence: an abstract,
- * audio-reactive form around the vEIR's monogram (or consented portrait), drawn from the colour tokens.
+ * audio-reactive voice sphere (lib/realtime/sphere.ts) with the vEIR's monogram (or consented portrait) beside its name.
  * A vendor face (a realtime avatar over WebRTC) implements the same interface plus the optional vendor part:
  * it connects with the API's single-use token, hands the call tile its video, and, with voicing `audio`,
  * renders the call's own validated audio itself, lip-synced, through `renderer()`; with voicing `text` (a FULL
@@ -66,8 +66,8 @@ export interface SpokenUnit {
 export interface AvatarProvider {
   readonly id: EmbodimentProviderId;
   /**
-   * True when the provider draws the face itself (a vendor's video). The built-in presence frames the
-   * vEIR's monogram or consented portrait, which the call stage renders inside it.
+   * True when the provider draws the face itself (a vendor's video). The built-in sphere draws no
+   * face: the call stage shows the vEIR's monogram or consented portrait beside its name.
    */
   readonly drawsFace: boolean;
   /**
@@ -108,7 +108,7 @@ export interface AvatarProvider {
  * with {@link loadAvatarProvider} once the API minted its session.
  */
 export function createAvatarProvider(_id?: EmbodimentProviderId): AvatarProvider {
-  return new PresenceAvatar();
+  return new SphereAvatar();
 }
 
 /**

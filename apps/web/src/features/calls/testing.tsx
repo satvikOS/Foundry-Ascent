@@ -118,6 +118,7 @@ export function fakeEngine(initial: CallSnapshot = LIVE) {
     end: vi.fn(() => Promise.resolve()),
     avatarState: vi.fn(() => 'listening' as const),
     levels: vi.fn(() => ({ veir: 0, founder: 0 })),
+    founderVoiced: vi.fn(() => false),
     onSpeak: vi.fn(() => () => undefined),
     attachFace: vi.fn(),
   };

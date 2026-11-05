@@ -5,23 +5,26 @@ import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { VeirName } from '@/components/faces/veir-name';
 import { useMe } from '@/lib/auth/use-me';
 import { useMediaQuery } from '@/lib/hooks/use-media-query';
-import { createAvatarProvider, type AvatarState } from '@/lib/realtime/avatar';
+import { createAvatarProvider, type AvatarProvider } from '@/lib/realtime/avatar';
 import type { CallEngine } from '@/lib/realtime/call-engine';
-import { cn } from '@/lib/utils';
 import { loadLocalCharacter } from '@/lib/realtime/presentation';
-import { usePresentationPreference } from './preferences';
+import type { SphereState } from '@/lib/realtime/sphere';
+import { cn } from '@/lib/utils';
 
 import { CallFaceVideo } from './call-video-tile';
+import { usePresentationPreference } from './preferences';
+import { callTimeline } from './timeline/call-timeline';
 import { useCallFace, type CallFaceController } from './use-call-face';
 import type { CallVeir } from './use-call-veir';
 
 interface CallStageProps {
   veir: CallVeir;
   engine: CallEngine;
-  state: AvatarState;
+  /** What the presence shows (the engine's avatar state, or the call screen's own: paused, disconnected, ended). */
+  state: SphereState;
   /**
-   * The name tag in the tile's corner, like a video call's ("Corin · vEIR"). The call screen passes its heading;
-   * by default the vEIR's name and badge.
+   * The name tag under the presence (in the corner of a face's video), "Corin · vEIR". The call screen passes its
+   * heading; by default the vEIR's name and badge.
    */
   nameTag?: ReactNode;
   /** The call's venture and, once live, the call: a vendor face is minted for that call only. */
@@ -34,15 +37,16 @@ interface CallStageProps {
   face?: CallFaceController | null;
 }
 
+/** A local presentation's provider (the engine's states only; the sphere also takes the call screen's). */
+type LocalProvider = AvatarProvider & { setState(state: SphereState): void };
+
 /**
- * The vEIR's tile, like a participant on a video call. By default the built-in presence mounts into it and
- * follows the call's state and both voices every animation frame, with the vEIR's monogram or consented
- * portrait in the middle. When the call settings name a vendor face, the tile asks for its session once the
- * call is live and, as soon as the face shows its first frame, the same tile shows the face's video instead
- * (the face follows the same state, voices and sentences) with the founder's initials in the corner. Until
- * then, and whenever the face is unavailable, the presence is the face. The tile keeps its size either way,
- * with the name tag in the corner and a speaking indicator: the edge lights and the tag shows a voice mark
- * while the vEIR speaks (text says it too, beside the tile).
+ * The vEIR's presence on the call. By default the voice sphere, centred on the call's canvas, following the call's
+ * state and both measured voices every animation frame (the call's one frame loop). The person may pick the
+ * character instead (call settings), which is always labelled "AI avatar". When the call settings name a vendor
+ * face, the stage asks for its session once the call is live and, as soon as the face shows its first frame, shows
+ * the face's video in a tile instead, with the name tag in its corner. Until then, and whenever the face is
+ * unavailable, the sphere or character is the face.
  */
 export function CallStage({
   veir,
@@ -57,12 +61,15 @@ export function CallStage({
 }: CallStageProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
-  const presence = useMemo(() => createAvatarProvider(), []);
-  const [presentation, setPresentation] = usePresentationPreference();
-  const [character, setCharacter] = useState<ReturnType<typeof createAvatarProvider> | null>(null);
+  const sphere = useMemo(() => createAvatarProvider() as LocalProvider, []);
+  const [presentation] = usePresentationPreference();
+  const [character, setCharacter] = useState<AvatarProvider | null>(null);
   const [characterFailed, setCharacterFailed] = useState(false);
   useEffect(() => {
-    if (presentation !== 'character') return undefined;
+    if (presentation !== 'character') {
+      setCharacterFailed(false);
+      return undefined;
+    }
     let current = true;
     void loadLocalCharacter()
       .then((provider) => {
@@ -76,10 +83,12 @@ export function CallStage({
       current = false;
     };
   }, [presentation]);
-  const local = presentation === 'character' && character && !characterFailed ? character : presence;
+  const local: AvatarProvider =
+    presentation === 'character' && character && !characterFailed ? character : sphere;
   const face = useCallFace(controller);
   const video = face.status === 'live';
   const active = face.status === 'live' ? face.provider : local;
+  const isCharacter = !video && local.drawsFace;
 
   // Once the call is live, ask for its face (once per call; the controller keeps it while minimized).
   useEffect(() => {
@@ -94,7 +103,7 @@ export function CallStage({
     onVideoChange?.(video);
   }, [onVideoChange, video]);
 
-  // The presence draws into the square stage, which is shown whenever no video is.
+  // The presence draws into the stage, which is shown whenever no video is.
   useEffect(() => {
     const stage = stageRef.current;
     if (video || !stage) return undefined;
@@ -105,8 +114,10 @@ export function CallStage({
   }, [local, reducedMotion, video]);
 
   useEffect(() => {
-    active.setState(state);
-  }, [active, state]);
+    if (active === sphere) sphere.setState(state);
+    else
+      active.setState(state === 'paused' || state === 'disconnected' || state === 'ended' ? 'muted' : state);
+  }, [active, sphere, state]);
 
   useEffect(
     () =>
@@ -116,108 +127,97 @@ export function CallStage({
     [engine, active],
   );
 
+  // The call's one frame loop hands the measured levels over while the call is live and the page visible.
   useEffect(() => {
     if (reducedMotion) return undefined;
-    let frame = 0;
+    return callTimeline(engine).onFrame((frame) => {
+      active.setLevels(frame);
+    });
+  }, [engine, active, reducedMotion]);
+
+  // CSS breathing pauses while the page is hidden.
+  useEffect(() => {
     const stage = stageRef.current;
-    const loop = () => {
-      active.setLevels(engine.levels());
-      frame = requestAnimationFrame(loop);
-    };
+    if (!stage) return undefined;
     const visibility = () => {
-      cancelAnimationFrame(frame);
-      const hidden = document.visibilityState === 'hidden';
-      stage?.setAttribute('data-hidden', String(hidden));
-      stage?.querySelector('.fa-character')?.setAttribute('data-hidden', String(hidden));
-      if (hidden) active.setLevels({ veir: 0, founder: 0 });
-      else frame = requestAnimationFrame(loop);
+      stage.dataset.hidden = String(document.visibilityState === 'hidden');
     };
     document.addEventListener('visibilitychange', visibility);
     visibility();
     return () => {
-      cancelAnimationFrame(frame);
       document.removeEventListener('visibilitychange', visibility);
     };
-  }, [engine, active, reducedMotion]);
+  }, [video]);
+
+  const tag = nameTag ?? <CallNameTag veir={veir} speaking={speaking} />;
 
   return (
     <div
       data-slot="call-tile"
       data-speaking={speaking || undefined}
-      data-face={video ? 'video' : local.drawsFace ? 'character' : 'presence'}
-      className={cn(
-        'relative grid aspect-video max-w-[calc(100vw-2rem)] place-items-center overflow-hidden rounded-3xl border shadow-sm transition-[box-shadow,border-color] duration-300',
-        video ? 'bg-black' : 'bg-card/60',
-        speaking && 'border-foreground/30 ring-2 ring-foreground/20',
-        className,
-      )}
+      data-face={video ? 'video' : isCharacter ? 'character' : 'presence'}
+      className={cn('flex w-full flex-col items-center gap-4', className)}
     >
       {face.status === 'live' ? (
-        <CallFaceVideo
-          stream={face.stream}
-          media={face.media}
-          you={me.data?.principal.displayName ?? 'You'}
-          levels={levels}
-          reducedMotion={reducedMotion}
-          stock={face.stock}
-        />
+        <div
+          className={cn(
+            'relative grid aspect-video w-full max-w-3xl max-h-[44dvh] place-items-center overflow-hidden rounded-3xl border bg-black shadow-sm transition-[box-shadow,border-color] duration-300',
+            speaking && 'border-foreground/30 ring-2 ring-foreground/20',
+          )}
+        >
+          <CallFaceVideo
+            stream={face.stream}
+            media={face.media}
+            you={me.data?.principal.displayName ?? 'You'}
+            levels={levels}
+            reducedMotion={reducedMotion}
+            stock={face.stock}
+          />
+          <div className="glass-strong absolute bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] items-center rounded-full border">
+            {tag}
+          </div>
+        </div>
       ) : (
-        <div
-          ref={stageRef}
-          data-slot="call-stage"
-          data-state={state}
-          className="relative grid aspect-square h-[86%] place-items-center"
-        >
-          {!local.drawsFace ? (
-            <PersonaAvatar
-              name={veir.name}
-              portraitUrl={veir.portraitUrl}
-              size="2xl"
-              decorative
-              className="relative shadow-lg"
-            />
-          ) : null}
-        </div>
+        <>
+          <div
+            ref={stageRef}
+            data-slot="call-stage"
+            data-state={state}
+            className={cn(
+              'relative grid place-items-center',
+              isCharacter &&
+                'aspect-square w-[clamp(168px,34vmin,340px)] overflow-hidden rounded-[2rem] bg-card/60',
+            )}
+          >
+            {isCharacter ? (
+              // The character is a drawn stand-in, never a likeness: it always says what it is.
+              <p
+                data-slot="ai-avatar-label"
+                className="absolute top-3 left-3 rounded-full border border-border-strong bg-background/85 px-2 py-0.5 font-mono text-[0.625rem] font-medium tracking-[0.08em] text-muted-foreground"
+              >
+                AI avatar
+              </p>
+            ) : null}
+          </div>
+          <div className="flex max-w-full items-center gap-2">
+            {!isCharacter ? (
+              <PersonaAvatar name={veir.name} portraitUrl={veir.portraitUrl} size="md" decorative />
+            ) : null}
+            {tag}
+          </div>
+        </>
       )}
-      {!video ? (
-        <div
-          role="group"
-          aria-label="Conversation presentation"
-          className="absolute top-3 right-3 flex rounded-full border bg-background p-1 text-caption"
-        >
-          {(['sphere', 'character'] as const).map((choice) => (
-            <button
-              key={choice}
-              type="button"
-              aria-pressed={presentation === choice}
-              onClick={() => {
-                setPresentation(choice);
-                setCharacterFailed(false);
-              }}
-              className={cn(
-                'min-h-9 rounded-full px-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-                presentation === choice ? 'bg-secondary text-foreground' : 'text-muted-foreground',
-              )}
-            >
-              {choice === 'sphere' ? 'Sphere' : 'Avatar'}
-            </button>
-          ))}
-        </div>
-      ) : null}
       {characterFailed && !video ? (
-        <p role="status" className="absolute top-16 right-3 text-caption text-muted-foreground">
+        <p role="status" className="text-caption text-muted-foreground">
           Avatar unavailable. Voice stays on.
         </p>
       ) : null}
-      <div className="absolute bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] items-center">
-        {nameTag ?? <CallNameTag veir={veir} speaking={speaking} />}
-      </div>
     </div>
   );
 }
 
 /**
- * The tile's name tag: a voice mark while the vEIR speaks, then its name and badge ("Corin · vEIR"). With
+ * The presence's name tag: a voice mark while the vEIR speaks, then its name and badge ("Corin · vEIR"). With
  * `headingRef` it is the call screen's heading (focused when the call opens).
  */
 export function CallNameTag({
@@ -230,7 +230,7 @@ export function CallNameTag({
   headingRef?: Ref<HTMLHeadingElement>;
 }) {
   const className =
-    'glass-strong flex min-w-0 items-center gap-1.5 rounded-full border py-1 pr-1.5 pl-3 text-small font-medium text-foreground outline-none';
+    'flex min-w-0 items-center gap-1.5 rounded-full py-1 pr-1.5 pl-2 text-small font-medium text-foreground outline-none focus-visible:outline-2 focus-visible:outline-ring';
   const content = (
     <>
       {speaking ? <AudioLines aria-hidden className="size-3.5 shrink-0" data-slot="speaking-mark" /> : null}

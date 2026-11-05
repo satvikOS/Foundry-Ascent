@@ -1,6 +1,5 @@
 import { Maximize2, Mic, MicOff, PhoneOff, Volume2, X } from 'lucide-react';
 
-import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { VeirName } from '@/components/faces/veir-name';
 import { Button } from '@/components/ui/button';
 import { SimpleTooltip } from '@/components/ui/tooltip';
@@ -14,6 +13,7 @@ import { CallFaceThumbnail } from './call-video-tile';
 import { formatClock, spokenDuration, useCallClock } from './use-call-clock';
 import { useCallFace } from './use-call-face';
 import { useCallVeir } from './use-call-veir';
+import { sphereState, VoiceSphere } from './voice-sphere';
 
 /**
  * What the bar announces (its status region): the time warning, a microphone that went away, sound the
@@ -72,13 +72,8 @@ export function MiniCallBarView() {
       {current.status === 'live' && !ended && !reducedMotion ? (
         <CallFaceThumbnail stream={current.stream} speaking={speaking} stock={current.stock} />
       ) : (
-        <PersonaAvatar
-          name={veir.name}
-          portraitUrl={veir.portraitUrl}
-          size="sm"
-          speaking={speaking}
-          decorative
-        />
+        // A small, still sphere tinted by the call's state (muted and on hold are greyed).
+        <VoiceSphere state={sphereState(snapshot, engine.avatarState())} size="1.75rem" reducedMotion />
       )}
       <div className="flex min-w-0 flex-1 items-center gap-2 text-small">
         <p className="min-w-0 truncate">
