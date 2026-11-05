@@ -136,8 +136,8 @@ for (const [device, width, height] of [
           ).violations.map((v) => v.id),
         ).toEqual([]);
         await page.request.post('/api/v1/calls/notice/acknowledge', { headers });
-        await page.goto(`/${TENANT}/app/v/${ventureId}/c/${sessionId}?call=1`);
-        const call = page.getByRole('dialog', { name: /^Call with / });
+        await page.goto(`/${TENANT}/app/v/${ventureId}/c/${sessionId}?call=voice`);
+        const call = page.getByRole('dialog', { name: /^(Voice|Video) call with / });
         await expect(call.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
         // The sphere is the default presence; the character is chosen in the call settings, labelled AI avatar.
         await expect(call.locator('[data-face="presence"] .fa-sphere')).toBeVisible();
@@ -230,7 +230,7 @@ for (const [device, width, height] of [
         // After End's short Undo window the screen closes onto the conversation and its call review.
         const review = page.getByRole('region', { name: 'Call ended' });
         await expect(review).toBeVisible({ timeout: 20_000 });
-        await expect(page.getByRole('dialog', { name: /^Call with / })).toHaveCount(0);
+        await expect(page.getByRole('dialog', { name: /^(Voice|Video) call with / })).toHaveCount(0);
         await review.getByRole('button', { name: 'Dismiss call review' }).click();
         await expect(review).toHaveCount(0);
       });

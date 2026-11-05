@@ -61,7 +61,6 @@ describe('CallLobby', () => {
         blocker={null}
         failure={{ message: CALL_ELSEWHERE_MESSAGE, retry: false, elsewhere: true }}
         busy={false}
-        voiceNotice={false}
         welcome={null}
         privacy={null}
         onStart={vi.fn()}
@@ -81,12 +80,11 @@ describe('CallLobby', () => {
     expect(screen.queryByRole('button', { name: 'Not now' })).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
     expect(onRetry).not.toHaveBeenCalled();
-    // No disclaimer line: the tile's name tag carries the vEIR badge.
+    // No disclaimer line: the call's disclosure was read before the first call, and stays in the settings.
     expect(screen.queryByRole('note', { name: 'AI disclosure' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'vEIR: what is Corin · vEIR?' })).toBeInTheDocument();
   });
 
-  it('says what a vEIR is before a first meeting, beside how voice is handled', async () => {
+  it('says what a vEIR is before a first meeting (how voice is handled is in the disclosure)', async () => {
     const { asEngine } = fakeEngine();
     renderWithRouter(
       <CallLobby
@@ -96,7 +94,6 @@ describe('CallLobby', () => {
         blocker={null}
         failure={null}
         busy={false}
-        voiceNotice
         welcome={{
           title: 'Meet Corin’s vEIR',
           lines: [
@@ -114,7 +111,7 @@ describe('CallLobby', () => {
     const welcome = await screen.findByTestId('veir-welcome-inline');
     expect(welcome).toHaveTextContent('Corin’s digital twin: an AI built with Corin’s consent');
     expect(welcome).toHaveTextContent('Corin sees what you work on here.');
-    expect(screen.getByTestId('voice-notice')).toHaveTextContent('Amazon Transcribe');
+    expect(screen.queryByTestId('voice-notice')).toBeNull();
   });
 
   it('is the idle voice surface: the sphere, one status line, and Start call in the microphone’s place', async () => {
@@ -128,7 +125,6 @@ describe('CallLobby', () => {
         blocker={null}
         failure={null}
         busy={false}
-        voiceNotice={false}
         welcome={null}
         privacy={null}
         onStart={onStart}
@@ -141,9 +137,11 @@ describe('CallLobby', () => {
     expect(start).toHaveFocus();
     expect(document.querySelector('[data-slot="call-stage"]')).toHaveAttribute('data-state', 'idle');
     expect(screen.getByRole('status')).toHaveTextContent('Up to 20 min · 14 left today');
-    // No separate "Call Corin" page: the name tag under the sphere names the call, as during it.
+    // The call screen's header names the vEIR (CallScreen); nothing under the sphere repeats it.
     expect(screen.queryByRole('heading')).toBeNull();
-    expect(document.querySelector('[data-slot="call-name-tag"]')).toHaveTextContent('CorinvEIR');
+    expect(document.querySelector('[data-slot="call-name-tag"]')).toBeNull();
+    // A voice call, with video offered beside the settings.
+    expect(start.querySelector('svg')).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Call settings' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Not now' })).toBeNull();
     await userEvent.click(start);
@@ -162,7 +160,6 @@ describe('CallLobby', () => {
         blocker={null}
         failure={null}
         busy={false}
-        voiceNotice
         welcome={null}
         privacy={{ value: 'standard', onChange }}
         onStart={onStart}
@@ -199,7 +196,6 @@ describe('CallLobby', () => {
         blocker={null}
         failure={null}
         busy={false}
-        voiceNotice={false}
         welcome={null}
         privacy={null}
         onStart={vi.fn()}
@@ -219,5 +215,62 @@ describe('CallLobby', () => {
       'aria-pressed',
       'false',
     );
+  });
+
+  it('switches the call about to start between voice and video, and says why video cannot start', async () => {
+    const { asEngine } = fakeEngine();
+    const onSwitchKind = vi.fn();
+    const { unmount } = renderWithRouter(
+      <CallLobby
+        engine={asEngine}
+        veir={VEIR}
+        config={CONFIG}
+        blocker={null}
+        failure={null}
+        busy={false}
+        kind="voice"
+        onSwitchKind={onSwitchKind}
+        videoBlocked={null}
+        welcome={null}
+        privacy={null}
+        onStart={vi.fn()}
+        onRetry={vi.fn()}
+        onMoveHere={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Switch to video' }));
+    expect(onSwitchKind).toHaveBeenCalledWith('video');
+    unmount();
+
+    renderWithRouter(
+      <CallLobby
+        engine={asEngine}
+        veir={VEIR}
+        config={CONFIG}
+        blocker={null}
+        failure={null}
+        busy={false}
+        kind="voice"
+        onSwitchKind={onSwitchKind}
+        videoBlocked="Video isn’t available for you yet. Voice works."
+        note="Video isn’t available for you yet, so this is a voice call."
+        welcome={null}
+        privacy={null}
+        onStart={vi.fn()}
+        onRetry={vi.fn()}
+        onMoveHere={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const blocked = await screen.findByRole('button', {
+      name: 'Switch to video: Video isn’t available for you yet. Voice works.',
+    });
+    expect(blocked).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(blocked);
+    expect(onSwitchKind).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByText('Video isn’t available for you yet, so this is a voice call.'),
+    ).toBeInTheDocument();
   });
 });

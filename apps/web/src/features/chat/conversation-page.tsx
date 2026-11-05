@@ -1,6 +1,6 @@
 import type { TurnView } from '@foundry/contracts';
 import { getRouteApi, Link } from '@tanstack/react-router';
-import { AudioLines, LockKeyhole } from 'lucide-react';
+import { LockKeyhole } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -21,7 +21,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton, SkeletonText } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
-import { SimpleTooltip } from '@/components/ui/tooltip';
 import { errorMessage } from '@/lib/api/errors';
 import { useVentureEscalations } from '@/lib/api/hooks/escalations';
 import { useMemory } from '@/lib/api/hooks/memory';
@@ -29,7 +28,8 @@ import { useEndSession, useSession } from '@/lib/api/hooks/sessions';
 import { useTurnStream } from '@/lib/api/hooks/turn-stream';
 import { useVenture } from '@/lib/api/hooks/ventures';
 import { CallReviewSlot } from '@/features/calls/call-review-slot';
-import { useCallsAvailable } from '@/features/calls/calls-available';
+import { CallButtons } from '@/features/calls/call-buttons';
+import { useCallEntry } from '@/features/calls/call-entry';
 import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { conversationTitle } from '@/lib/conversations';
@@ -149,7 +149,8 @@ function Conversation() {
   const availability = venture.data && session ? coachingAvailability(me, venture.data, session) : null;
   const canSend = Boolean(availability?.available);
   // Call entries show only while calls are on for this venture (no link to a call that cannot start).
-  const callable = useCallsAvailable(ventureId, canWrite(me, ventureId)) && canSend;
+  const calls = useCallEntry(ventureId, canWrite(me, ventureId));
+  const callable = calls.callable && canSend;
   const { state } = stream;
   const progress = deriveTurnProgress(state);
   const veir = veirDisplay(venture.data);
@@ -353,6 +354,17 @@ function Conversation() {
         portraitUrl={veir?.portraitUrl}
         canEdit
         onAction={onMenu}
+        calls={
+          callable ? (
+            <CallButtons
+              tenant={tenant}
+              ventureId={ventureId}
+              sessionId={sessionId}
+              name={calls.name}
+              video={calls.video}
+            />
+          ) : null
+        }
       />
 
       <div
@@ -481,22 +493,6 @@ function Conversation() {
                 session.privacy === 'ephemeral' ? null : (
                   <AttachButton onFiles={attachments.attach} disabled={!canSend} />
                 )
-              }
-              actions={
-                callable ? (
-                  <SimpleTooltip content={`Call ${personaName}`}>
-                    <Button asChild variant="subtle" size="icon-sm" className="rounded-full">
-                      <Link
-                        to="/$tenant/app/v/$ventureId/c/$sessionId"
-                        params={{ tenant, ventureId, sessionId }}
-                        search={{ call: 1 }}
-                        aria-label={`Call ${personaName}`}
-                      >
-                        <AudioLines aria-hidden />
-                      </Link>
-                    </Button>
-                  </SimpleTooltip>
-                ) : null
               }
             />
           </div>

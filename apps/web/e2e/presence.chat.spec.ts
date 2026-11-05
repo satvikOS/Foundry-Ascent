@@ -132,16 +132,21 @@ test.describe('meeting the vEIR', () => {
     });
     try {
       await signIn(page, accessCode, { welcome: 'keep' });
-      await page.goto(`/${TENANT}/app/v/${ventureId}?call=1`);
-      const screen = page.getByRole('dialog', { name: /^Call with / });
+      await page.goto(`/${TENANT}/app/v/${ventureId}?call=voice`);
+      const screen = page.getByRole('dialog', { name: /^Voice call with / });
+      // A first call: its disclosure comes first, over the call screen, then the start screen (Remember or Private
+      // was not in view).
+      const disclosure = page.getByRole('alertdialog', { name: /^Before your voice call with / });
+      await expect(disclosure).toContainText('Amazon Transcribe');
+      await disclosure.getByRole('button', { name: 'Continue' }).click();
       await expect(screen).toBeVisible();
-      // The welcome is not stacked over the call: its start screen says it, beside how voice is handled.
+      // The welcome is not stacked over the call: its start screen says it.
       await expect(veirWelcome(page)).toHaveCount(0);
       await expect(screen.getByTestId('veir-welcome-inline')).toContainText(
         'Corin’s digital twin: an AI built with Corin’s consent from how Corin coaches.',
       );
-      await expect(screen.getByTestId('voice-notice')).toContainText('Amazon Transcribe');
-      await expect(screen.locator('[data-slot="call-name-tag"]')).toHaveText('CorinvEIR');
+      // The header names the persona as it is named, with no badge.
+      await expect(screen.locator('[data-slot="call-heading"]')).toHaveText("Corin's vEIR");
       const stored = page.waitForResponse(
         (response) =>
           response.url().endsWith('/api/v1/me/veir-welcome/acknowledge') && response.status() === 200,
@@ -223,7 +228,7 @@ test.describe('talking with the vEIR', () => {
         await expectNoBareEirName(page, 'a conversation about what the vEIR is', [/Corin['’]s digital twin/]);
       });
 
-      await test.step('the call tile shows "Corin · vEIR", with no chip clutter or disclaimer line', async () => {
+      await test.step('the call names the persona as it is named, with no chip clutter or disclaimer line', async () => {
         const calls: string[] = [];
         page.on('response', (response) => {
           if (response.request().method() !== 'POST' || response.status() !== 201) return;
@@ -239,8 +244,8 @@ test.describe('talking with the vEIR', () => {
         const intro = page.waitForResponse(
           (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
         );
-        await page.goto(`${page.url().split('?')[0] ?? ''}?call=1`);
-        const screen = page.getByRole('dialog', { name: /^Call with / });
+        await page.goto(`${page.url().split('?')[0] ?? ''}?call=voice`);
+        const screen = page.getByRole('dialog', { name: /^Voice call with / });
         await expect(screen).toBeVisible();
         // The page was clicked before (the conversation above), so the call may start at once; else it waits for
         // Start call. Either way it must reach the live call: every check below runs on both paths.
@@ -249,9 +254,9 @@ test.describe('talking with the vEIR', () => {
         await expect(start.or(reply)).toBeVisible({ timeout: 20_000 });
         if (await start.isVisible()) await start.click();
         await expect(reply).toBeVisible({ timeout: 20_000 });
-        const tag = screen.locator('[data-slot="call-name-tag"]');
-        await expect(tag).toHaveText('CorinvEIR');
-        await expect(tag.locator('xpath=ancestor::*[@data-slot="call-tile"]')).toHaveCount(1);
+        // The header names the persona as it is named ("Thomas" in production), with no badge or chip.
+        await expect(screen.locator('[data-slot="call-heading"]')).toHaveText("Corin's vEIR");
+        await expect(screen.locator('[data-slot="veir-badge"]')).toHaveCount(0);
         await expect(screen).not.toContainText('Live voice');
         await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(0);
         // Maya has met Corin's vEIR before: it greets her, it does not introduce itself or say "an AI coach".

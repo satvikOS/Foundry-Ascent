@@ -1,5 +1,6 @@
 import type { CallView } from '@foundry/contracts';
 import { act, fireEvent, screen, within } from '@testing-library/react';
+import { createRef, type ComponentProps, type RefObject } from 'react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,8 +28,8 @@ const CALL: CallView = {
 };
 
 const VEIR: CallVeir = {
-  name: 'Corin · vEIR',
-  shortName: 'Corin',
+  name: 'Thomas',
+  shortName: 'Thomas',
   badge: 'vEIR',
   kind: 'eir_persona',
   eirFirstName: 'Corin',
@@ -39,19 +40,37 @@ const VEIR: CallVeir = {
   provider: 'builtin',
 };
 
-function renderLive(snapshot: Partial<CallSnapshot> = {}) {
+/** The call screen's heading, as CallScreen's header renders it. */
+function Heading({ headingRef }: { headingRef: RefObject<HTMLHeadingElement | null> }) {
+  return (
+    <h2 ref={headingRef} tabIndex={-1}>
+      Thomas
+    </h2>
+  );
+}
+
+function renderLive(
+  snapshot: Partial<CallSnapshot> = {},
+  props: Partial<Pick<ComponentProps<typeof CallLive>, 'kind' | 'onSwitchKind' | 'videoBlocked'>> = {},
+) {
   const { engine, asEngine } = fakeEngine();
   let switched = 0;
+  const headingRef = createRef<HTMLHeadingElement>();
   renderWithRouter(
-    <CallLive
-      tenant="ain"
-      engine={asEngine}
-      snapshot={{ ...LIVE, ...snapshot }}
-      veir={VEIR}
-      onSwitchToChat={() => {
-        switched += 1;
-      }}
-    />,
+    <>
+      <Heading headingRef={headingRef} />
+      <CallLive
+        tenant="ain"
+        engine={asEngine}
+        snapshot={{ ...LIVE, ...snapshot }}
+        veir={VEIR}
+        headingRef={headingRef}
+        onSwitchToChat={() => {
+          switched += 1;
+        }}
+        {...props}
+      />
+    </>,
   );
   return { engine, switched: () => switched };
 }
@@ -91,17 +110,17 @@ describe('callStatusLabel', () => {
 });
 
 describe('CallLive', () => {
-  it('shows the vEIR as a call tile with its name tag, its state and named controls, and no disclaimer line', async () => {
+  it('shows the vEIR as a call tile, its state and named controls, and no disclaimer line', async () => {
     const { engine } = renderLive();
-    const tag = await screen.findByRole('heading', { name: /Corin/ });
-    expect(tag).toHaveFocus();
-    // Like a video call's name tag: the EIR's first name and the vEIR badge, no "AI · Live voice" chip.
-    expect(tag).toHaveTextContent(/^CorinvEIR$/);
-    expect(tag.closest('[data-slot="call-tile"]')).not.toBeNull();
-    expect(within(tag).getByRole('button', { name: 'vEIR: what is Corin · vEIR?' })).toBeInTheDocument();
+    // The call screen's header names the vEIR (and takes focus); nothing under the sphere repeats it.
+    const heading = await screen.findByRole('heading', { name: 'Thomas' });
+    expect(heading).toHaveFocus();
+    expect(document.querySelector('[data-slot="call-name-tag"]')).toBeNull();
+    expect(screen.queryByText(/vEIR/)).toBeNull();
     expect(screen.queryByText(/Live voice/)).toBeNull();
     expect(screen.getByRole('status')).toHaveTextContent('Listening');
     expect(screen.queryByRole('note', { name: 'AI disclosure' })).toBeNull();
+    const tile = document.querySelector('[data-slot="call-tile"]');
 
     const controls = screen.getByRole('toolbar', { name: 'Call controls' });
     const names = within(controls)
@@ -111,7 +130,7 @@ describe('CallLive', () => {
     expect(names).toEqual(['Mute', 'End call']);
     expect(screen.getByRole('button', { name: 'Call settings' })).toBeInTheDocument();
     // The sphere is the default presence.
-    expect(tag.closest('[data-slot="call-tile"]')).toHaveAttribute('data-face', 'presence');
+    expect(tile).toHaveAttribute('data-face', 'presence');
     expect(document.querySelector('.fa-sphere')).not.toBeNull();
 
     await userEvent.click(within(controls).getByRole('button', { name: 'Mute' }));
@@ -232,7 +251,7 @@ describe('CallLive', () => {
       captions: { veir: 'Twelve is a good start.', founder: 'We interviewed twelve', founderLive: true },
     });
     const captions = await screen.findByRole('region', { name: 'Captions' });
-    expect(captions).toHaveTextContent('Corin · vEIR: Twelve is a good start.');
+    expect(captions).toHaveTextContent('Thomas: Twelve is a good start.');
     expect(captions).toHaveTextContent('YouWe interviewed twelve');
   });
 
@@ -244,7 +263,7 @@ describe('CallLive', () => {
 
   it('continues by typing when there is no voice input, and says why', async () => {
     const { engine } = renderLive({ input: 'typed', typedReason: 'mic_denied' });
-    const line = await screen.findByRole('textbox', { name: 'Reply to Corin · vEIR' });
+    const line = await screen.findByRole('textbox', { name: 'Reply to Thomas' });
     expect(line).toHaveFocus();
     // Said once, not three times: the status does not repeat "type".
     expect(screen.getByText(/Microphone blocked/)).toBeInTheDocument();
@@ -263,7 +282,7 @@ describe('CallLive', () => {
       typedReason: 'mic_lost',
       call: { ...CALL, inputMode: 'transcribe' },
     });
-    const line = await screen.findByRole('textbox', { name: 'Reply to Corin · vEIR' });
+    const line = await screen.findByRole('textbox', { name: 'Reply to Thomas' });
     expect(line).toHaveFocus();
     expect(screen.getByText('Microphone disconnected. Reconnect it, or type.')).toHaveAttribute(
       'role',
@@ -275,7 +294,7 @@ describe('CallLive', () => {
 
   it('offers no microphone to a call that started typed', async () => {
     renderLive({ input: 'typed', typedReason: 'mic_denied', call: { ...CALL, inputMode: 'typed' } });
-    await screen.findByRole('textbox', { name: 'Reply to Corin · vEIR' });
+    await screen.findByRole('textbox', { name: 'Reply to Thomas' });
     expect(screen.queryByRole('button', { name: 'Reconnect microphone' })).toBeNull();
   });
 
@@ -283,7 +302,7 @@ describe('CallLive', () => {
     const { engine } = renderLive();
     await userEvent.click(await screen.findByRole('button', { name: 'Call settings' }));
     await userEvent.click(await screen.findByRole('button', { name: /^Type instead/ }));
-    const line = screen.getByRole('textbox', { name: 'Reply to Corin · vEIR' });
+    const line = screen.getByRole('textbox', { name: 'Reply to Thomas' });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
@@ -439,7 +458,7 @@ describe('CallLive', () => {
     const line = (await screen.findByRole('region', { name: 'Captions' })).querySelector('p');
     // Large: the type scale's 24 px step.
     expect(line?.className).toMatch(/\btext-2xl\b/);
-    expect(liveText()).toContain('Corin · vEIR: Twelve is a good start.');
+    expect(liveText()).toContain('Thomas: Twelve is a good start.');
   });
 
   it('does not read the captions over the vEIR’s voice unless asked', async () => {
@@ -461,7 +480,7 @@ describe('CallLive', () => {
     });
     await screen.findByText('Replying on screen');
     // No voice to talk over: each line is announced, without a setting to find first.
-    expect(liveText()).toContain('Corin · vEIR: Twelve is a good start.');
+    expect(liveText()).toContain('Thomas: Twelve is a good start.');
   });
 
   it('shows the vEIR’s reply when it is on screen only, even with captions turned off', async () => {
@@ -475,7 +494,7 @@ describe('CallLive', () => {
     expect(captions).toHaveTextContent('Twelve is a good start.');
     // Only the reply: the founder chose not to see their own words.
     expect(captions).not.toHaveTextContent('What about price?');
-    expect(liveText()).toContain('Corin · vEIR: Twelve is a good start.');
+    expect(liveText()).toContain('Thomas: Twelve is a good start.');
     await userEvent.click(screen.getByRole('button', { name: 'Call settings' }));
     expect(await screen.findByRole('button', { name: /^Captions/ })).toHaveAttribute('aria-pressed', 'false');
   });
@@ -485,5 +504,30 @@ describe('CallLive', () => {
     expect(await screen.findByRole('button', { name: 'Mute' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'End call' })).toBeEnabled();
     expect(screen.getByRole('status')).toHaveTextContent('Connecting…');
+  });
+
+  it('switches a voice call to video and back from the corner beside the settings', async () => {
+    const onSwitchKind = vi.fn();
+    renderLive({}, { kind: 'voice', onSwitchKind });
+    await userEvent.click(await screen.findByRole('button', { name: 'Switch to video' }));
+    expect(onSwitchKind).toHaveBeenLastCalledWith('video');
+  });
+
+  it('says why a voice call cannot turn video on, and does nothing', async () => {
+    const onSwitchKind = vi.fn();
+    renderLive({}, { kind: 'voice', onSwitchKind, videoBlocked: 'Video can’t restart in this call.' });
+    const blocked = await screen.findByRole('button', {
+      name: 'Switch to video: Video can’t restart in this call.',
+    });
+    expect(blocked).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(blocked);
+    expect(onSwitchKind).not.toHaveBeenCalled();
+  });
+
+  it('offers a video call the way back to voice whatever the face', async () => {
+    const onSwitchKind = vi.fn();
+    renderLive({}, { kind: 'video', onSwitchKind, videoBlocked: 'Video can’t restart in this call.' });
+    await userEvent.click(await screen.findByRole('button', { name: 'Switch to voice' }));
+    expect(onSwitchKind).toHaveBeenLastCalledWith('voice');
   });
 });

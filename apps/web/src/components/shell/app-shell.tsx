@@ -131,7 +131,11 @@ export function AppShell({ me, children }: AppShellProps) {
   });
   const startCall = useCallback(() => {
     if (ventureId && callable)
-      void navigate({ to: '/$tenant/app/v/$ventureId', params: { tenant, ventureId }, search: { call: 1 } });
+      void navigate({
+        to: '/$tenant/app/v/$ventureId',
+        params: { tenant, ventureId },
+        search: { call: 'voice' },
+      });
   }, [callable, navigate, tenant, ventureId]);
 
   // The page and workspace shortcuts come from nav.ts, which the shortcuts list reads too.

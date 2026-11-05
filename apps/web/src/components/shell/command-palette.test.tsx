@@ -11,7 +11,13 @@ import { CommandPalette, type PaletteScope } from './command-palette';
 
 // Signing out and the call settings are not what these tests are about.
 vi.mock('./account-menu', () => ({ useSignOutAndRedirect: () => ({ signOut: vi.fn() }) }));
-vi.mock('@/features/calls/calls-available', () => ({ useCallsAvailable: () => true }));
+vi.mock('@/features/calls/call-entry', () => ({
+  useCallEntry: () => ({
+    callable: true,
+    name: 'Thomas',
+    video: { available: false, reason: 'Video isn’t available for you yet. Voice works.' },
+  }),
+}));
 
 const founder: Me = {
   principal: { id: IDS.principal, displayName: 'Maya', title: null, synthetic: true },
@@ -72,8 +78,12 @@ describe('CommandPalette', () => {
   it('lists every action of the venture with its shortcut where it has one', async () => {
     await renderWithRouter(<Palette />);
     const dialog = await screen.findByRole('dialog');
-    const call = await within(dialog).findByRole('option', { name: /^Start a call/ });
-    expect(call).toHaveTextContent(/GV$/);
+    const voice = await within(dialog).findByRole('option', { name: /^Voice call with Thomas/ });
+    expect(voice).toHaveTextContent(/GV$/);
+    // Video is listed, disabled, with why.
+    const video = within(dialog).getByRole('option', { name: /^Video call with Thomas/ });
+    expect(video).toHaveAttribute('aria-disabled', 'true');
+    expect(video).toHaveTextContent('Video isn’t available for you yet.');
     expect(within(dialog).getByRole('option', { name: /^New chat/ })).toHaveTextContent(/GN$/);
     expect(within(dialog).getByRole('option', { name: /^Venture/ })).toHaveTextContent(/GS$/);
     expect(within(dialog).getByRole('option', { name: /^Toggle sidebar/ })).toHaveTextContent(/\[$/);

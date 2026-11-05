@@ -43,14 +43,16 @@ interface ConversationHeaderProps {
   onAction: (action: ConversationMenuAction) => void;
   /** Under the title. */
   children?: ReactNode;
+  /** The call buttons (voice, video), before the panel toggle and the menu; null when calls are off. */
+  calls?: ReactNode;
 }
 
 /**
  * The conversation's one header, on the shared glass surface: the vEIR's face, its name and badge ("Corin ·
- * vEIR", the badge explains what it is), the title, a quiet "Private" for a private conversation, then the context
- * panel and a menu for everything rarer (rename, end, report, delete). Calls start from the composer's voice
- * button. On phones it is the only bar: the menu button, the title over the name and badge, New chat and the
- * menu (which also opens the panel).
+ * vEIR", the badge explains what it is), the title, a quiet "Private" for a private conversation, then the call
+ * buttons (voice, video), the context panel and a menu for everything rarer (rename, end, report, delete). On
+ * phones it is the only bar: the menu button, the title over the name and badge, the call buttons, New chat and
+ * the menu (which also opens the panel).
  */
 export function ConversationHeader({
   tenant,
@@ -62,6 +64,7 @@ export function ConversationHeader({
   canEdit,
   onAction,
   children,
+  calls = null,
 }: ConversationHeaderProps) {
   const openNavigation = usePageMobileBar();
   const inspector = useInspector();
@@ -128,6 +131,7 @@ export function ConversationHeader({
           )}
         </div>
         <div className="-mr-1.5 flex shrink-0 items-center gap-0.5 sm:mr-0">
+          {calls}
           {openNavigation && canEdit ? (
             <Button asChild variant="ghost" size="icon-sm" className="md:hidden">
               <Link to="/$tenant/app/v/$ventureId" params={{ tenant, ventureId }} aria-label="New chat">

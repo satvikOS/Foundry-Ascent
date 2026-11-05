@@ -1,8 +1,6 @@
 import { AudioLines } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 
-import { PersonaAvatar } from '@/components/faces/persona-avatar';
-import { VeirName } from '@/components/faces/veir-name';
 import { useMe } from '@/lib/auth/use-me';
 import { useMediaQuery } from '@/lib/hooks/use-media-query';
 import { createAvatarProvider, type AvatarProvider } from '@/lib/realtime/avatar';
@@ -23,8 +21,8 @@ interface CallStageProps {
   /** What the presence shows (the engine's avatar state, or the call screen's own: paused, disconnected, ended). */
   state: SphereState;
   /**
-   * The name tag under the presence (in the corner of a face's video), "Corin · vEIR". The call screen passes its
-   * heading; by default the vEIR's name and badge.
+   * The name tag in the corner of a face's video, and under the presence unless null (the call screen names the
+   * vEIR in its header). By default the vEIR's display name.
    */
   nameTag?: ReactNode;
   /** The call's venture and, once live, the call: a vendor face is minted for that call only. */
@@ -33,6 +31,11 @@ interface CallStageProps {
   className?: string;
   /** The face became a live video (true) or went back to the presence (false). */
   onVideoChange?: (live: boolean) => void;
+  /**
+   * A video call: the vendor face is asked for once the call is live (when the call settings name one). A voice call
+   * never asks for it: the sphere (or the character) is the face.
+   */
+  video?: boolean;
   /** The call's face (it outlives this screen: minimized, the call keeps it). Null: always the presence. */
   face?: CallFaceController | null;
 }
@@ -58,6 +61,7 @@ export function CallStage({
   className,
   onVideoChange,
   face: controller = null,
+  video: wantsVideo = true,
 }: CallStageProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
@@ -90,11 +94,11 @@ export function CallStage({
   const active = face.status === 'live' ? face.provider : local;
   const isCharacter = !video && local.drawsFace;
 
-  // Once the call is live, ask for its face (once per call; the controller keeps it while minimized).
+  // Once a video call is live, ask for its face (once per call; the controller keeps it while minimized).
   useEffect(() => {
-    if (controller === null || ventureId === null || callId === null) return;
+    if (!wantsVideo || controller === null || ventureId === null || callId === null) return;
     controller.request({ provider: veir.provider, ventureId, callId, reducedMotion });
-  }, [controller, veir.provider, ventureId, callId, reducedMotion]);
+  }, [wantsVideo, controller, veir.provider, ventureId, callId, reducedMotion]);
   const speaking = state === 'speaking';
   const me = useMe();
   const levels = useCallback(() => engine.levels(), [engine]);
@@ -149,7 +153,8 @@ export function CallStage({
     };
   }, [video]);
 
-  const tag = nameTag ?? <CallNameTag veir={veir} speaking={speaking} />;
+  const tag = nameTag === undefined ? <CallNameTag veir={veir} speaking={speaking} /> : nameTag;
+  const videoTag = tag ?? <CallNameTag veir={veir} speaking={speaking} />;
 
   return (
     <div
@@ -161,7 +166,7 @@ export function CallStage({
       {face.status === 'live' ? (
         <div
           className={cn(
-            'relative grid aspect-video w-full max-w-3xl max-h-[44dvh] place-items-center overflow-hidden rounded-3xl border bg-black shadow-sm transition-[box-shadow,border-color] duration-300',
+            'relative grid aspect-video w-full max-w-3xl max-h-[max(12rem,min(40dvh,calc(100dvh-30rem)))] place-items-center overflow-hidden rounded-3xl border bg-black shadow-sm transition-[box-shadow,border-color] duration-300',
             speaking && 'border-foreground/30 ring-2 ring-foreground/20',
           )}
         >
@@ -174,7 +179,7 @@ export function CallStage({
             stock={face.stock}
           />
           <div className="glass-strong absolute bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] items-center rounded-full border">
-            {tag}
+            {videoTag}
           </div>
         </div>
       ) : (
@@ -199,12 +204,7 @@ export function CallStage({
               </p>
             ) : null}
           </div>
-          <div className="flex max-w-full items-center gap-2">
-            {!isCharacter ? (
-              <PersonaAvatar name={veir.name} portraitUrl={veir.portraitUrl} size="md" decorative />
-            ) : null}
-            {tag}
-          </div>
+          {tag === null ? null : <div className="flex max-w-full items-center gap-2">{tag}</div>}
         </>
       )}
       {characterFailed && !video ? (
@@ -217,8 +217,8 @@ export function CallStage({
 }
 
 /**
- * The presence's name tag: a voice mark while the vEIR speaks, then its name and badge ("Corin · vEIR"). With
- * `headingRef` it is the call screen's heading (focused when the call opens).
+ * The presence's name tag: a voice mark while the vEIR speaks, then its display name ("Thomas"). With `headingRef`
+ * it is a heading (focused when shown).
  */
 export function CallNameTag({
   veir,
@@ -234,7 +234,7 @@ export function CallNameTag({
   const content = (
     <>
       {speaking ? <AudioLines aria-hidden className="size-3.5 shrink-0" data-slot="speaking-mark" /> : null}
-      <VeirName veir={veir} />
+      <span className="min-w-0 truncate">{veir.name}</span>
     </>
   );
   return headingRef ? (

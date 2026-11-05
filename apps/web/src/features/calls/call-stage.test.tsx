@@ -1,5 +1,7 @@
 import type { AvatarSessionResponse, FaceJoinStage } from '@foundry/contracts';
 import { act, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AvatarProvider, FaceLoss, FaceRelay, FaceRenderer } from '@/lib/realtime/avatar';
@@ -130,6 +132,8 @@ function stage(props: {
   callId?: string | null;
   state?: 'listening' | 'speaking' | 'connecting';
   onVideoChange?: (live: boolean) => void;
+  /** A voice call (false) never asks for the face; a video call (the default here) does. */
+  video?: boolean;
 }) {
   return (
     <CallStage
@@ -139,6 +143,7 @@ function stage(props: {
       ventureId={VENTURE}
       callId={props.callId === undefined ? CALL : props.callId}
       face={props.controller}
+      video={props.video ?? true}
       {...(props.onVideoChange ? { onVideoChange: props.onVideoChange } : {})}
     />
   );
@@ -168,6 +173,36 @@ describe('CallStage: the face of a call', () => {
     expect(engine.attachFace).not.toHaveBeenCalled();
     // Without faces, the tile is exactly the presence tile (no layout change).
     expect(document.querySelector('[data-slot="call-tile"]')).toHaveAttribute('data-face', 'presence');
+  });
+
+  it('never asks for a face on a voice call, even when one is offered; once switched to video it does', async () => {
+    const face = vendorFace();
+    const { asEngine, controller, faceDeps } = controllerWith(face);
+    function Switchable() {
+      const [video, setVideo] = useState(false);
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setVideo(true);
+            }}
+          >
+            Video
+          </button>
+          {stage({ controller, engine: asEngine, video })}
+        </>
+      );
+    }
+    renderWithRouter(<Switchable />);
+    await presenceShown();
+    expect(faceDeps.startSession).not.toHaveBeenCalled();
+    expect(controller.hasAsked(CALL)).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: 'Video' }));
+    await waitFor(() => {
+      expect(faceDeps.startSession).toHaveBeenCalledTimes(1);
+    });
+    expect(controller.hasAsked(CALL)).toBe(true);
   });
 
   it('becomes a video in the same tile once the vendor face shows its first frame, and hands it the call’s audio', async () => {

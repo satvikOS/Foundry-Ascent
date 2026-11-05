@@ -87,13 +87,16 @@ test.describe('vEIR calls · a video face', () => {
       const started = page.waitForResponse(
         (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
       );
-      // ⌘K → Start a call (the side panel has no Call entry: one entry per action).
+      // ⌘K → Video call (the side panel's Call offers the same choice).
       await page.keyboard.press('ControlOrMeta+k');
       await page
         .getByRole('dialog')
-        .getByRole('option', { name: /^Start a call/ })
+        .getByRole('option', { name: /^Video call with / })
         .click();
-      const screen = page.getByRole('dialog', { name: /^Call with / });
+      // The call screen, whichever kind it shows (a video call that loses its face goes on as voice).
+      const screen = page.getByRole('dialog', { name: /^(Voice|Video) call with / });
+      await expect(page.getByRole('dialog', { name: /^Video call with / })).toBeVisible();
+      await expect(screen.locator('[data-slot="call-kind"]')).toContainText('Video call');
       await screen.getByRole('button', { name: 'Start call' }).click();
       callId = ((await (await started).json()) as { call: { id: string } }).call.id;
 
@@ -109,8 +112,9 @@ test.describe('vEIR calls · a video face', () => {
         expect(String(sessions[0]?.body.token)).toMatch(/^fake\./);
         // Frames are flowing from the face, and the tile itself never plays sound.
         await expect.poll(() => videoState(video)).toEqual({ stream: true, muted: true, width: 640 });
-        // The name tag (the call's heading) stays on the tile, over the face.
+        // The persona's name stays on the tile, over the face; the header names it and the kind of call.
         await expect(tile.locator('[data-slot="call-name-tag"]')).toContainText('vEIR');
+        await expect(screen.locator('[data-slot="call-kind"]')).toContainText('Video call');
         await expect(tile.locator('[data-slot="call-you-tile"]')).toBeVisible();
         await expectNoSeriousA11yViolations(page, 'video call');
         await expectNoHorizontalScroll(page);
@@ -129,6 +133,7 @@ test.describe('vEIR calls · a video face', () => {
         await screen.getByRole('button', { name: 'Minimize call' }).click();
         const bar = page.getByRole('region', { name: /^Call with / });
         await expect(bar.locator('[data-slot="call-face-thumbnail"] video')).toBeVisible();
+        await expect(bar).toContainText('Video call');
         await shoot(page, 'video-call-mini-bar');
         await bar.getByRole('button', { name: 'Return to call' }).click();
         await expect(tile).toBeVisible();
@@ -136,7 +141,7 @@ test.describe('vEIR calls · a video face', () => {
         expect(sessions).toHaveLength(1);
       });
 
-      await test.step('the face drops: the presence is back, quietly, and the call goes on', async () => {
+      await test.step('the face drops: the presence is back, the call says so once, and goes on as voice', async () => {
         await video.evaluate((element: HTMLVideoElement) => {
           const stream = element.srcObject as MediaStream;
           for (const track of stream.getVideoTracks()) track.dispatchEvent(new Event('ended'));
@@ -144,7 +149,14 @@ test.describe('vEIR calls · a video face', () => {
         await expect(tile).toHaveCount(0);
         await expect(screen.locator('[data-slot="call-tile"][data-face="presence"]')).toBeVisible();
         await expect(screen.locator('[data-slot="call-stage"]')).toBeVisible();
-        await expect(screen.locator('[data-slot="call-name-tag"]')).toContainText('vEIR');
+        await expect(screen.locator('[data-slot="video-lost"]')).toContainText('goes on as a voice call');
+        await expect(page.getByRole('dialog', { name: /^Voice call with / })).toBeVisible();
+        await expect(screen.locator('[data-slot="call-kind"]')).toContainText('Voice call');
+        // One face per call: video cannot come back in this call, and says why.
+        await expect(screen.getByRole('button', { name: /^Switch to video: / })).toHaveAttribute(
+          'aria-disabled',
+          'true',
+        );
         await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeEditable();
         await expect(screen.getByRole('button', { name: /^End call/ })).toBeVisible();
         // The server is told, so the vendor session stops billing; no second session is opened.
@@ -177,13 +189,17 @@ test.describe('vEIR calls · a video face', () => {
     const started = page.waitForResponse(
       (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
     );
-    // ⌘K → Start a call (the side panel has no Call entry: one entry per action).
+    // Video is offered nowhere it cannot start: in ⌘K it is listed, disabled, with why.
     await page.keyboard.press('ControlOrMeta+k');
+    await expect(page.getByRole('dialog').getByRole('option', { name: /^Video call with / })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     await page
       .getByRole('dialog')
-      .getByRole('option', { name: /^Start a call/ })
+      .getByRole('option', { name: /^Voice call with / })
       .click();
-    const screen = page.getByRole('dialog', { name: /^Call with / });
+    const screen = page.getByRole('dialog', { name: /^Voice call with / });
     await screen.getByRole('button', { name: 'Start call' }).click();
     const callId = ((await (await started).json()) as { call: { id: string } }).call.id;
     try {
@@ -197,6 +213,90 @@ test.describe('vEIR calls · a video face', () => {
         data: { reason: 'user' },
       });
       expect(ended.status(), 'POST /calls/:id/end').toBe(200);
+    }
+  });
+
+  test('voice and video are two calls: the header starts either, a voice call never asks for a face, and switches', async ({
+    page,
+    baseURL,
+  }) => {
+    if (!baseURL) throw new Error('baseURL is required');
+    const asked: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().endsWith('/api/v1/calls/avatar-session')) asked.push(request.url());
+    });
+    const faceEnds: string[] = [];
+    page.on('request', (request) => {
+      if (/\/api\/v1\/calls\/[0-9a-f-]{36}\/face\/end$/.test(request.url()))
+        faceEnds.push(request.postData() ?? '');
+    });
+    await setFacesEnabled(baseURL, true);
+    let callId: string | null = null;
+    try {
+      const notice = await page.request.post('/api/v1/calls/notice/acknowledge', { headers: WRITE_HEADERS });
+      expect(notice.status(), 'POST /calls/notice/acknowledge').toBe(200);
+      await openVenture(page);
+      // New chat's corner: Voice call and Video call, both offered.
+      const corner = page.getByRole('main').getByRole('group', { name: 'Call' });
+      await expect(corner.getByRole('link', { name: /^Voice call with / })).toBeVisible();
+      await expect(corner.getByRole('link', { name: /^Video call with / })).toBeVisible();
+      const started = page.waitForResponse(
+        (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
+      );
+      await corner.getByRole('link', { name: /^Voice call with / }).click();
+      await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=voice$/);
+      callId = ((await (await started).json()) as { call: { id: string } }).call.id;
+      const voice = page.getByRole('dialog', { name: /^Voice call with / });
+      await expect(voice.locator('[data-slot="call-tile"][data-face="presence"]')).toBeVisible();
+      await page.waitForTimeout(1_000);
+      expect(asked).toEqual([]);
+
+      await test.step('switched to video, the face is asked for once and shows', async () => {
+        await voice.getByRole('button', { name: 'Switch to video' }).click();
+        await page.waitForURL(/\?call=video$/);
+        const video = page.getByRole('dialog', { name: /^Video call with / });
+        await expect(video.locator('[data-slot="call-tile"][data-face="video"]')).toBeVisible({
+          timeout: 15_000,
+        });
+        expect(asked).toHaveLength(1);
+      });
+
+      await test.step('switched back to voice, the face ends (told to the server) and cannot come back', async () => {
+        const video = page.getByRole('dialog', { name: /^Video call with / });
+        await video.getByRole('button', { name: 'Switch to voice' }).click();
+        await page.waitForURL(/\?call=voice$/);
+        await expect(voice.locator('[data-slot="call-tile"][data-face="presence"]')).toBeVisible();
+        await expect.poll(() => faceEnds.length).toBe(1);
+        expect(faceEnds[0]).toContain('switched_to_voice');
+        await expect(voice.getByRole('button', { name: /^Switch to video: / })).toHaveAttribute(
+          'aria-disabled',
+          'true',
+        );
+        await expect(voice.locator('[data-slot="video-lost"]')).toHaveCount(0);
+        expect(asked).toHaveLength(1);
+      });
+
+      await test.step('minimized on another page, the bar names the kind; Return comes back to it', async () => {
+        await voice.getByRole('button', { name: 'Minimize call' }).click();
+        await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Knowledge' }).click();
+        const bar = page.getByRole('region', { name: /^Call with / });
+        await expect(bar).toContainText('Voice call');
+        await expectNoHorizontalScroll(page);
+        await bar.getByRole('button', { name: 'Return to call' }).click();
+        await expect(voice).toBeVisible();
+        await page.goBack();
+        await expect(voice).toHaveCount(0);
+        await expect(bar).toBeVisible();
+      });
+    } finally {
+      if (callId) {
+        const ended = await page.request.post(`/api/v1/calls/${callId}/end`, {
+          headers: WRITE_HEADERS,
+          data: { reason: 'user' },
+        });
+        expect(ended.status(), 'POST /calls/:id/end').toBe(200);
+      }
+      await setFacesEnabled(baseURL, false);
     }
   });
 });

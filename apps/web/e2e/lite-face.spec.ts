@@ -59,18 +59,18 @@ function record(page: Page): Promise<PageRecord> {
   return page.evaluate(() => (window as unknown as { __lite: PageRecord }).__lite);
 }
 
-/** Starts a call from the founder's venture; returns the call id and the call screen. */
-async function startCall(page: Page) {
+/** Starts a call (a video call unless asked) from the founder's venture; returns the call id and the call screen. */
+async function startCall(page: Page, kind: 'Voice' | 'Video' = 'Video') {
   const started = page.waitForResponse(
     (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
   );
-  // ⌘K → Start a call (the side panel has no Call entry: one entry per action).
+  // ⌘K → Video call (or Voice call); the side panel's Call offers the same choice.
   await page.keyboard.press('ControlOrMeta+k');
   await page
     .getByRole('dialog')
-    .getByRole('option', { name: /^Start a call/ })
+    .getByRole('option', { name: new RegExp(`^${kind} call with `) })
     .click();
-  const screen = page.getByRole('dialog', { name: /^Call with / });
+  const screen = page.getByRole('dialog', { name: /^(Voice|Video) call with / });
   await screen.getByRole('button', { name: 'Start call' }).click();
   const callId = ((await (await started).json()) as { call: { id: string } }).call.id;
   return { callId, screen };
