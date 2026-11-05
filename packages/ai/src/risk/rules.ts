@@ -242,12 +242,15 @@ const LEGAL_RULES: readonly RiskRule[] = [
         'contract (?:manufactur\\w*|research organi[sz]ations?|cro|cm|engineering firm)',
         'smart contracts?',
         '(?:market|economy|demand|margins?|budgets?|muscles?) (?:will |would |may |might |could |to |is going to )?contracts?',
+        // Live pilot 42099643194: routine pilot paperwork escalated as legal on every turn (5 runs).
+        '(?:pilot|trial|evaluation|paid pilot) contracts?',
+        'contracts? (?:for|with|on) (?:the |a |our |this )?(?:pilot|trial)',
       ]),
     ],
   }),
   rule('legal', 'agreement', [
     w([
-      `(?:shareholders?'?|stockholders?'?|operating|partnership|founders?'?|co-?founders?'?|employment|consulting|contractor|services?|master services|vendor|supplier|distribution|reseller|joint venture|data processing|non-?compete|non-?solicitation|indemnity|settlement|separation|severance|purchase|lease|loan|advisor|advisory|teaming|pilot|data[- ]use|data[- ]sharing|collaboration|sponsorship|evaluation|beta|customer|subscription|sales|supply|manufacturing|participation|release|waiver) agreements?`,
+      `(?:shareholders?'?|stockholders?'?|operating|partnership|founders?'?|co-?founders?'?|employment|consulting|contractor|services?|master services|vendor|supplier|distribution|reseller|joint venture|data processing|non-?compete|non-?solicitation|indemnity|settlement|separation|severance|purchase|lease|loan|advisor|advisory|teaming|data[- ]use|data[- ]sharing|collaboration|sponsorship|customer|subscription|sales|supply|manufacturing|participation|release|waiver) agreements?`,
       'msas?',
       'non-?competes?',
       'conflicts? of interest',
@@ -294,6 +297,14 @@ const LEGAL_RULES: readonly RiskRule[] = [
       `(?:collect|collecting|collected|track|tracking|scrape|scraping|pull|pulling|harvest|harvesting|record|recording|monitor|monitoring|log|logging|capture|capturing|sell|selling|share|sharing|use|using|access|accessing|mine|mining|store|storing|read|reading|buy|buying)${GAP(100)}${WORD_START}without (?:(?:their|the|any|explicit|prior|written|informed|user|users'?|students'?|customers'?|employees'?|patients'?|parental) )*(?:consent|permission|knowledge|authori[sz]ation|approval|notice|opt-?in|them knowing|anyone knowing|(?:asking|telling|informing|notifying|getting permission from) ${WORDS(2)}(?:them|users?|students?|customers?|employees?|people|anyone|anybody|patients?|participants?|it|parents?|staff|the university|the school|the hospital|the clinic|consent|permission))`,
       '(?:secretly|covertly|quietly|silently) (?:record|recording|track|tracking|monitor|monitoring|collect|collecting|log|logging|scrape|scraping)',
       '(?:location|biometric|facial[- ]recognition|wi-?fi|browsing|keystroke|surveillance) (?:data|logs|tracking|history) (?:of|from|about) (?:students|users|employees|customers|people|children|kids|minors)',
+    ]),
+  ]),
+  rule('legal', 'third_party_data', [
+    w([
+      // Live pilot 42099643194: a library of other organisations' grant applications planned as a product asset was
+      // never escalated (data rights and confidentiality).
+      `(?:use|using|reuse|reusing|sell|selling|resell|reselling|repackag\\w*|repurpos\\w*|share|sharing|publish|publishing|train(?:ing)? ${WORDS(3)}(?:on|with)|build(?:ing)? ${WORDS(3)}(?:from|out of|on|with)|turn(?:ing)? ${WORDS(3)}into)${GAP(60)}${WORD_START}(?:other (?:organi[sz]ations|companies|people|schools|universities|labs|teams|nonprofits|non-profits|applicants|founders|clients)'?s?|third[- ]party|confidential|someone else'?s|clients'|customers'|competitors'?) (?:grant applications?|applications|proposals|data(?: ?sets?)?|documents|files|materials|reports|records|pitch decks?|decks)`,
+      "(?:library|database|collection|archive|bank) of (?:other (?:organi[sz]ations|companies|people|nonprofits|non-profits|applicants|teams)'?s?|competitors'?|clients'|third[- ]party) (?:grant applications|applications|proposals|data|documents|decks)",
     ]),
   ]),
   rule(
@@ -525,6 +536,11 @@ const SECURITIES_RULES: readonly RiskRule[] = [
         '83 ?\\( ?b ?\\)(?: election)?',
         'sweat equity',
         'how much equity',
+        // Live pilot 42099643194: "what's a fair split?" between founders after one cut back to a few hours a week.
+        "(?:fair|equal|even|50 ?/ ?50|fifty[- ]fifty|founder|founders'?|ownership) splits?",
+        'equal (?:partners|owners|ownership)',
+        '(?:split|splitting|divide|dividing) (?:up )?(?:the )?(?:company|ownership|shares)',
+        'how much of the company',
         `(?:give|giving|gave|offer|offering|grant|granting|trade|trading) (?:up |away )?(?:${EQUITY_NUM}|equity|shares|stock)`,
         `${EQUITY_NUM} (?:of (?:the |our |my )?(?:company|startup|equity|business|shares)|equity|stake)`,
         `in exchange for (?:equity|shares|stock|${EQUITY_NUM})`,
@@ -538,6 +554,7 @@ const SECURITIES_RULES: readonly RiskRule[] = [
           'dilut\\w* (?:with|in) (?:water|saline|buffer|media|medium)',
           '(?:serial|sample|buffer) dilution',
           'vested interests?',
+          '(?:fair|equal|even|50 ?/ ?50|fifty[- ]fifty) splits? (?:of|on|for) (?:the )?(?:work|tasks?|chores|workload|hours|time|costs?|bills?|rent|revenue|profits?|commission|traffic|test|load|labou?r)',
           `(?:give|giving|gave|offer|offering|grant|granting) (?:up )?${EQUITY_NUM} (?:discount|off|rebate|commission|cashback|refund|more|less)`,
         ]),
       ],
@@ -643,6 +660,8 @@ const MEDICAL_RULES: readonly RiskRule[] = [
       'good clinical practice',
       'randomi[sz]ed controlled trials?',
       'rcts?',
+      // Live pilot 42099643194: a health outcome measured on friends "with no review needed" was never escalated.
+      `(?:test|testing|tested|trial|trialling|trialing|pilot|piloting|study|studying|experiment|experimenting|measure|measuring)${GAP(80)}${WORD_START}(?:on|with) (?:\\d+ |a few |some |our |my |ten |twenty |a group of )?(?:friends|people|volunteers|participants|students|classmates|users|athletes|kids|children|seniors|residents|patients)${GAP(80)}${WORD_START}(?:blood pressure|heart rate|glucose|blood sugar|cortisol|sleep quality|weight loss|symptoms?|pain levels?|anxiety|depression|health outcomes?|biomarkers?)`,
     ]),
   ]),
   rule('medical_regulatory', 'clinical_parameters', [
@@ -690,23 +709,37 @@ const MEDICAL_RULES: readonly RiskRule[] = [
       'do i have (?:cancer|diabetes|covid|adhd|depression|an? (?:infection|disease|disorder|condition))',
     ]),
   ]),
-  rule('medical_regulatory', 'medical_claims', [
-    w([
-      'medical (?:advice|claims?|treatment|conditions?|regulatory|regulations?|grade|compliance|liability)',
-      '(?:health|therapeutic|treatment|efficacy|wellness|clinical) claims?',
-      "(?:treats?|cures?|prevents?|treating|curing|preventing|heals?|healing) (?:cancer|diseases?|diabetes|depression|anxiety|covid(?:-19)?|alzheimer'?s|dementia|heart disease|infections?|insomnia|adhd|autism|obesity|hypertension|arthritis)",
-      'drug (?:approval|development|trials?|interactions?|safety)',
-      'prescriptions?',
-      'prescrib(?:e|es|ing|ed) (?:medications?|drugs?|medicines?|treatments?|antibiotics|opioids|doses)',
-      'dosages?',
-      'dosing',
-      'biocompatib(?:le|ility)',
-      'reimbursement codes?',
-      'cpt codes?',
-      'medicare',
-      'medicaid',
-    ]),
-  ]),
+  rule(
+    'medical_regulatory',
+    'medical_claims',
+    [
+      w([
+        'medical (?:advice|claims?|treatment|conditions?|regulatory|regulations?|grade|compliance|liability)',
+        '(?:health|therapeutic|treatment|efficacy|wellness|clinical) claims?',
+        "(?:treats?|cures?|prevents?|treating|curing|preventing|heals?|healing) (?:cancer|diseases?|diabetes|depression|anxiety|covid(?:-19)?|alzheimer'?s|dementia|heart disease|infections?|insomnia|adhd|autism|obesity|hypertension|arthritis)",
+        'drug (?:approval|development|trials?|interactions?|safety)',
+        'prescriptions?',
+        'prescrib(?:e|es|ing|ed) (?:medications?|drugs?|medicines?|treatments?|antibiotics|opioids|doses)',
+        'dosages?',
+        'dosing',
+        'biocompatib(?:le|ility)',
+        'reimbursement codes?',
+        'cpt codes?',
+        'medicare',
+        'medicaid',
+      ]),
+    ],
+    {
+      exclude: [
+        // Live pilot 42099643194: "tutoring dosage" in a maths-tutoring venture escalated on 13 turns. Dose of teaching is
+        // an education term, not a clinical one.
+        w([
+          '(?:tutoring|tutor|practice|instruction(?:al)?|learning|lesson|session|intervention|exercise|training|homework|reading|math|maths|study|coaching|content|exposure) (?:dosages?|dosing)',
+          '(?:dosages?|dosing) (?:of|for) (?:the )?(?:tutoring|practice|instruction|sessions?|lessons?|homework|reading|math|maths|coaching|content|exposure|training)',
+        ]),
+      ],
+    },
+  ),
 ];
 
 // --------------------------------------------------------------------------------------------------
