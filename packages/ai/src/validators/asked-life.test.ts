@@ -424,11 +424,12 @@ describe('reading a made-up life stays linear', () => {
   it('reads a run of bare answers opening the reply in a few rounds, not one round each', () => {
     const founder = 'how was your weekend?';
     // Each round reads every bare answer, but only the first rounds may take one out where the reply opens: a round
-    // per answer would take sixty-four times as long for eight times the answers (see `expectLinearTime`).
+    // per answer would take sixty-four times as long for eight times the answers (see `expectLinearTime`). Each round
+    // has a fixed cost too, so the answers are many enough for one round each to show as quadratic.
     expectLinearTime((count) => {
       const input = 'Lovely! '.repeat(count).trim();
       return () => reply(input, founder, false);
-    }, 150);
+    }, 600);
   }, 120_000);
 });
 

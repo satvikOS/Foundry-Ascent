@@ -68,9 +68,12 @@ def assert_linear_time(
     factor: int = 8,
     exponent: float = 1.5,
     attempts: int = 2,
+    budget_s: float | None = None,
 ) -> Scaling:
     """Asserts the work `prepare(size)` returns takes about `factor` times as long at `factor * size`, never
-    `factor ** 2` (one round per item, or a regular expression that backtracks over what it read)."""
+    `factor ** 2` (one round per item, or a regular expression that backtracks over what it read). `budget_s`: the
+    most CPU time one run of the small input may take, as a window that bounds what is read makes both sizes cost the
+    same however slow each is (a regular expression that backtracks exponentially within the window)."""
     scaling = measure_scaling(prepare, size, factor=factor, exponent=exponent)
     for _ in range(1, attempts):
         if scaling.ratio < scaling.bound:
@@ -83,4 +86,6 @@ def assert_linear_time(
     if os.environ.get("LINEAR_TIME_REPORT") == "1":
         print(f"linear-time: {report}", file=sys.stderr)
     assert scaling.ratio < scaling.bound, report
+    if budget_s is not None:
+        assert scaling.small / scaling.runs < budget_s, report
     return scaling

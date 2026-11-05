@@ -1226,11 +1226,16 @@ describe('spoken text (voice channel)', () => {
       });
     expect(validateCoachResponse(input(40), corinCall).blocked).toBe(true);
     // Eight times the greetings take about eight times the CPU time, never sixty-four or more (see
-    // `expectLinearTime`): the words before the name are never read back from each one.
-    expectLinearTime((greetings) => {
-      const response = input(greetings);
-      return () => validateCoachResponse(response, corinCall);
-    }, 40);
+    // `expectLinearTime`): the words before the name are never read back from each one. 200 greetings, so that the
+    // fixed cost of a run is small next to a quadratic one; within 50 ms of CPU time even so.
+    expectLinearTime(
+      (greetings) => {
+        const response = input(greetings);
+        return () => validateCoachResponse(response, corinCall);
+      },
+      200,
+      { budgetMs: 50 },
+    );
   }, 120_000);
 
   it('never speaks a sign-off in a spoken reply derived from the answer', () => {

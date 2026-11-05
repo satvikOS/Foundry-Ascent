@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -506,14 +507,16 @@ def _fragment_work(
 @pytest.mark.parametrize("lead", ["hi ", "ok so ", "good morning ", "hey there Maya "])
 def test_name_here_after_a_long_greeting_run_is_linear(lead: str, veir_ctx: GradingContext) -> None:
     """Eight times the words take about eight times the CPU time, never sixty-four or more (see linear_time): the
-    words before the name are never read back from each one."""
+    words before the name are never read back from each one. 200 words, so that the fixed cost of a run is small next
+    to a quadratic one; within 50 ms of CPU time even so (the clause read is bounded, so a regular expression
+    backtracking within it would cost both sizes the same)."""
 
     def work(count: int) -> Callable[[], object]:
         text = f"{lead * count}1 Corin here."
         fields = [TextField("answer", text), TextField("spoken", text)]
         return lambda: grade_identity(fields, veir_ctx, 1)
 
-    assert_linear_time(work, 40)
+    assert_linear_time(work, 200, budget_s=0.05)
 
 
 def test_long_repeated_fragments_stay_fast(veir_ctx: GradingContext) -> None:
@@ -534,6 +537,15 @@ def test_long_repeated_fragments_stay_fast(veir_ctx: GradingContext) -> None:
     # Eight times the text, up to 6,400 characters, takes about eight times the CPU time, not sixty-four (see
     # linear_time), summed over every fragment so the fixed allowance is small next to one rule turning quadratic.
     assert_linear_time(_fragment_work(fragments, endings, veir_ctx), 800)
+    # And each text of 6,400 characters within half a second of CPU time.
+    slowest = 0.0
+    for fragment in fragments:
+        for ending in endings:
+            text = (fragment * (6_400 // len(fragment) + 1))[:6_400] + ending
+            started = time.thread_time()
+            grade_identity([TextField("answer", text), TextField("spoken", text)], veir_ctx, 1)
+            slowest = max(slowest, time.thread_time() - started)
+    assert slowest < 0.5
 
 
 def test_question_relay_and_feedback_rules_stay_linear(veir_ctx: GradingContext) -> None:

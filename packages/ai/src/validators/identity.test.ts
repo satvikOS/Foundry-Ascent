@@ -394,17 +394,23 @@ describe('rewriteIdentity — a vEIR persona never claims to be its EIR', () => 
   }, 120_000);
 
   it.each(['hi ', 'ok so ', 'good morning ', 'hey there Maya '])(
-    'checks the words before "<name> here" in linear time: 40 × %j',
+    'checks the words before "<name> here" in linear time: 200 × %j',
     (lead) => {
       // Eight times the words take about eight times the CPU time, never sixty-four or more (see
-      // `expectLinearTime`): the words before the name are never read back from each one.
-      expectLinearTime((count) => {
-        const text = `${lead.repeat(count)}1 Corin here.`;
-        return () => {
-          rewriteIdentity(text, CORIN);
-          rewriteIdentity(text, { ...CORIN, spoken: true });
-        };
-      }, 40);
+      // `expectLinearTime`): the words before the name are never read back from each one. 200 words, not 40, so
+      // that the fixed cost of a run is small next to a quadratic one; within 50 ms of CPU time even so (the clause
+      // read is bounded, so a regular expression backtracking within it would cost both sizes the same).
+      expectLinearTime(
+        (count) => {
+          const text = `${lead.repeat(count)}1 Corin here.`;
+          return () => {
+            rewriteIdentity(text, CORIN);
+            rewriteIdentity(text, { ...CORIN, spoken: true });
+          };
+        },
+        200,
+        { budgetMs: 50 },
+      );
     },
     120_000,
   );

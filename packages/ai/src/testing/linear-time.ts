@@ -29,6 +29,12 @@ export interface LinearTimeOptions {
   samples?: number;
   /** Attempts before the check fails (default 2): a super-linear cost fails every one. */
   attempts?: number;
+  /**
+   * Most CPU time one run of the small input may take, in ms (default: none). A window that bounds what is read
+   * makes both sizes cost the same, however slow each is: this catches a cost that is bounded but far too large
+   * (a regular expression that backtracks exponentially within the window).
+   */
+  budgetMs?: number;
 }
 
 export interface Scaling {
@@ -100,5 +106,6 @@ export function expectLinearTime(
     `${large.toFixed(1)} ms: ${ratio.toFixed(1)} times as long (bound ${bound.toFixed(1)})`;
   if (process.env.LINEAR_TIME_REPORT === '1') console.warn(`linear-time: ${report}`);
   expect(ratio, report).toBeLessThan(bound);
+  if (options.budgetMs !== undefined) expect(small / runs, report).toBeLessThan(options.budgetMs);
   return scaling;
 }
