@@ -188,6 +188,8 @@ interface ActiveTurn {
 
 /** After voice alone stopped the vEIR, how long a word may take to follow before the sound counts as not the founder. */
 const SILENT_BARGE_MS = 3_000;
+/** How long after the last voiced microphone frame the founder still counts as speaking (bridges syllables). */
+const VOICED_HANGOVER_MS = 250;
 
 /** A grant this close to expiry is re-minted before connecting with it. */
 const GRANT_MARGIN_MS = 15_000;
@@ -259,6 +261,8 @@ export class CallEngine {
   private reconnectAttempt = 0;
   private readonly timing = new VoiceTimings();
   private lastVoicedAt: number | null = null;
+  /** When the founder's voice was last detected (after the push-to-talk and half-duplex gates). */
+  private voicedAt: number | null = null;
 
   /** Numeric diagnostics only; VAD boundary and playback callbacks are browser estimates. */
   diagnostics() {
@@ -337,6 +341,16 @@ export class CallEngine {
       }
     }
     return { veir, founder: this.snapshot.muted ? 0 : this.founderLevel };
+  }
+
+  /**
+   * Whether the founder is speaking right now: their voice was detected within the last moment, on a live call that
+   * is not muted (the conversation timeline draws their turn from this and the microphone level).
+   */
+  founderVoiced(): boolean {
+    const s = this.snapshot;
+    if (s.phase !== 'live' || s.muted || s.held || this.voicedAt === null) return false;
+    return this.deps.clock.now() - this.voicedAt < VOICED_HANGOVER_MS;
   }
 
   /** The state the avatar shows. */
@@ -931,6 +945,7 @@ export class CallEngine {
     if (vad.voiced) {
       this.endpointer.onVoice();
       this.lastVoicedAt = this.deps.clock.now();
+      this.voicedAt = this.lastVoicedAt;
     }
     if (vad.onset && s.activity === 'speaking') this.duckForBargeIn();
     if (s.activity === 'speaking' && s.talkMode === 'hands_free') {

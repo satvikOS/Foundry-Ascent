@@ -92,6 +92,7 @@ class StandInEngine {
   reconnectMicrophone = vi.fn(() => Promise.resolve());
   avatarState = () => 'idle';
   levels = () => ({ veir: 0, founder: 0 });
+  founderVoiced = () => false;
   onSpeak = () => () => undefined;
 }
 

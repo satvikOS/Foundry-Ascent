@@ -129,8 +129,18 @@ for (const [device, width, height] of [
         await page.goto(`/${TENANT}/app/v/${ventureId}/c/${sessionId}?call=1`);
         const call = page.getByRole('dialog', { name: /^Call with / });
         await expect(call.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
+        // The sphere is the default presence; the character is chosen in the call settings, labelled AI avatar.
+        await expect(call.locator('[data-face="presence"] .fa-sphere')).toBeVisible();
+        await call.getByRole('button', { name: 'Call settings', exact: true }).click();
+        const settings = page.getByRole('dialog', { name: 'Call settings' });
+        await expect(settings.getByRole('button', { name: 'Sphere', exact: true })).toHaveAttribute(
+          'aria-pressed',
+          'true',
+        );
+        await settings.getByRole('button', { name: 'AI avatar', exact: true }).click();
         await expect(call.locator('[data-face="character"] svg')).toBeVisible();
-        await expect(call.getByRole('button', { name: 'Avatar', exact: true })).toHaveAttribute(
+        await expect(call.locator('[data-slot="ai-avatar-label"]')).toHaveText('AI avatar');
+        await expect(settings.getByRole('button', { name: 'AI avatar', exact: true })).toHaveAttribute(
           'aria-pressed',
           'true',
         );
@@ -156,9 +166,9 @@ for (const [device, width, height] of [
           );
         });
         for (let i = 0; i < 10; i++) {
-          await call.getByRole('button', { name: 'Sphere', exact: true }).click();
+          await settings.getByRole('button', { name: 'Sphere', exact: true }).click();
           await expect(call.locator('[data-face="presence"]')).toBeVisible();
-          await call.getByRole('button', { name: 'Avatar', exact: true }).click();
+          await settings.getByRole('button', { name: 'AI avatar', exact: true }).click();
           await expect(call.locator('[data-face="character"]')).toBeVisible();
         }
         await expect
@@ -185,13 +195,15 @@ for (const [device, width, height] of [
             2,
           ),
         );
-        await call.getByRole('button', { name: 'Sphere', exact: true }).focus();
+        await settings.getByRole('button', { name: 'Sphere', exact: true }).focus();
         await page.keyboard.press('Enter');
-        await expect(call.getByRole('button', { name: 'Sphere', exact: true })).toHaveAttribute(
+        await expect(settings.getByRole('button', { name: 'Sphere', exact: true })).toHaveAttribute(
           'aria-pressed',
           'true',
         );
-        await call.getByRole('button', { name: 'Avatar', exact: true }).click();
+        await settings.getByRole('button', { name: 'AI avatar', exact: true }).click();
+        await page.keyboard.press('Escape');
+        await expect(settings).toHaveCount(0);
         await page.emulateMedia({ reducedMotion: 'reduce' });
         await expect(call.locator('.fa-character')).toHaveAttribute('data-motion', 'reduced');
         expect(

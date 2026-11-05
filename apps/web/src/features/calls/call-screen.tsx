@@ -1,21 +1,11 @@
 import type { SessionView } from '@foundry/contracts';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { ChevronDown, EyeOff, Settings2, X } from 'lucide-react';
+import { ChevronDown, EyeOff, X } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { toast } from '@/components/ui/toast';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { errorMessage } from '@/lib/api/errors';
@@ -34,8 +24,9 @@ import { CallLive } from './call-live';
 import { callBlocker, CallLobby } from './call-lobby';
 import { CallSummaryPanel } from './call-summary';
 import { useCallNotice } from './call-notice';
+import { callTimeline } from './timeline/call-timeline';
 import { inlineWelcome, useVeirWelcome } from '../veir/welcome';
-import { CAPTION_SIZES, storedTalkMode, useAnnounceCaptions, useCaptionSize } from './preferences';
+import { storedTalkMode } from './preferences';
 import { formatClock, spokenDuration, useCallClock } from './use-call-clock';
 import { useCallConfig, useCallVeir, type CallVeir } from './use-call-veir';
 
@@ -388,6 +379,7 @@ export function CallScreen() {
                 onLeave={() => {
                   engine.reset();
                 }}
+                timeline={callTimeline(engine).recorder}
               />
             </div>
           ) : live ? (
@@ -483,7 +475,8 @@ function CallHeader({
       ) : (
         <span />
       )}
-      {live ? <CallSettings /> : <span />}
+      {/* The live call's settings sit in this corner (CallLive). */}
+      <span />
     </header>
   );
 }
@@ -498,52 +491,5 @@ function PrivateMark() {
       <EyeOff aria-hidden className="size-3.5" />
       Private
     </span>
-  );
-}
-
-/** Caption size and screen-reader captions, remembered in this browser. */
-function CallSettings() {
-  const [size, setSize] = useCaptionSize();
-  const [announce, setAnnounce] = useAnnounceCaptions();
-  return (
-    <DropdownMenu>
-      <SimpleTooltip content="Call settings" side="bottom">
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Call settings"
-            className="justify-self-end text-muted-foreground hover:text-foreground"
-          >
-            <Settings2 aria-hidden className="size-5" />
-          </Button>
-        </DropdownMenuTrigger>
-      </SimpleTooltip>
-      <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuLabel>Caption size</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={size}
-          onValueChange={(value) => {
-            const next = CAPTION_SIZES.find((option) => option.value === value);
-            if (next) setSize(next.value);
-          }}
-        >
-          {CAPTION_SIZES.map((option) => (
-            <DropdownMenuRadioItem key={option.value} value={option.value}>
-              {option.label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuCheckboxItem
-          checked={announce}
-          onCheckedChange={(checked) => {
-            setAnnounce(checked);
-          }}
-        >
-          Read captions with my screen reader
-        </DropdownMenuCheckboxItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }

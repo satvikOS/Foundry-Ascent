@@ -179,7 +179,7 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
       await openVenture(page);
       const call = await startCall(page);
       callId = call.callId;
-      await expect(call.screen.locator('[data-slot="call-tile"][data-face="character"]')).toBeVisible();
+      await expect(call.screen.locator('[data-slot="call-tile"][data-face="presence"]')).toBeVisible();
       await expect.poll(() => configs.length).toBeGreaterThan(0);
       // The API names no face for this founder, so the page never asks for one.
       expect(configs.at(-1)).toMatchObject({ provider: 'builtin' });
@@ -517,7 +517,7 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
           for (const track of stream.getVideoTracks()) track.dispatchEvent(new Event('ended'));
         });
         await expect(tile).toHaveCount(0);
-        await expect(screen.locator('[data-slot="call-tile"][data-face="character"]')).toBeVisible();
+        await expect(screen.locator('[data-slot="call-tile"][data-face="presence"]')).toBeVisible();
         await expect(line).toBeEditable();
         await expect.poll(() => faceEnds.length).toBe(1);
         // The server is told which trigger ended the face (audited with its end).

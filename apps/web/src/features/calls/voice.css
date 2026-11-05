@@ -1,0 +1,31 @@
+/*
+ * The call surface's own chrome (design-spec §10.1): round controls on a quiet surface (the owner's reference
+ * #1F1F1F on black), and a two-tone focus ring that holds on the black canvas, the sphere and glass.
+ */
+.fa-call-control {
+  background-color: light-dark(#ededeb, #1f1f1f);
+  color: var(--foreground);
+}
+
+.fa-call-control:hover {
+  background-color: light-dark(#e2e2de, #2a2a2a);
+}
+
+.fa-call-control[aria-pressed='true'],
+.fa-call-control--on {
+  background-color: var(--foreground);
+  color: var(--background);
+}
+
+.fa-call-control:focus-visible,
+.fa-call-focus:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--background);
+}
+
+@media (forced-colors: active) {
+  .fa-call-control {
+    border: 1px solid ButtonText;
+  }
+}

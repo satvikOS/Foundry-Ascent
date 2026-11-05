@@ -17,6 +17,8 @@ import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
 
 import { MemorySaved, savedByIds } from '../chat/memory-saved';
 
+import { ConversationTimeline } from './timeline/ConversationTimeline';
+import type { TimelineSource } from './timeline/timeline-model';
 import { formatClock, spokenDuration } from './use-call-clock';
 import { useCallConfig, type CallVeir } from './use-call-veir';
 
@@ -32,6 +34,8 @@ interface CallSummaryProps {
   onCallAgain: () => void;
   /** Leaving for another page from the summary (Human help): the call is over, forget it. */
   onLeave: () => void;
+  /** The call's conversation timeline, measured in this page (in memory only); omitted when there is none. */
+  timeline?: TimelineSource | null;
 }
 
 /**
@@ -49,6 +53,7 @@ export function CallSummaryPanel({
   onBackToConversation,
   onCallAgain,
   onLeave,
+  timeline = null,
 }: CallSummaryProps) {
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const supportRef = useRef<HTMLDivElement | null>(null);
@@ -107,6 +112,14 @@ export function CallSummaryPanel({
         <p role="status" className="mt-1 max-w-md text-small text-pretty text-muted-foreground">
           {endLine}
         </p>
+      ) : null}
+      {timeline && timeline.turns().length > 0 ? (
+        <ConversationTimeline
+          source={timeline}
+          names={{ veir: veir.name, student: 'You' }}
+          legend
+          className="mt-6 text-left"
+        />
       ) : null}
 
       {summary ? (

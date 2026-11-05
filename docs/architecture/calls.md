@@ -602,14 +602,22 @@ not its billing ran yet. Clone characters are
 metered per unit as `elevenlabs:<model>` at its per-1,000-characters price. Both are purpose `speech`, so the
 platform's daily cap counts them and a person's AI cap does not; the call's speech budget (§2.5) bounds the clone.
 
-**Built-in presence** (`presence.ts`, `presence.css`): concentric hairlines and a soft halo drawn only from the
-colour tokens, so it follows the theme. The outer ring and halo follow the vEIR's voice (the playback
-`AnalyserNode`; a gentle synthetic pulse when the browser voice or captions-only mode leave nothing to
-measure), the inner ring follows the founder's microphone, an arc turns while connecting or thinking, and each
-sentence gives the halo a soft lift. Levels reach CSS as custom properties set through the CSSOM, which the
-strict CSP allows. With `prefers-reduced-motion` it is still and the state shows only in words. It implies no
-likeness: the face is the vEIR's monogram (serif initials in a hairline ring) unless the EIR consented to a
-portrait. It is the face whenever no vendor face is live.
+**Built-in presence: the voice sphere** (`sphere.ts`, `sphere.css`, `features/calls/voice-sphere.tsx`): a soft,
+cloud-textured orb (an original generated texture, `apps/web/scripts/generate-sphere-clouds.mjs`, over the voice
+palette) centred on the call's canvas. Its state is the call's real state: idle and connecting breathe slowly in CSS;
+listening drifts and follows the founder's microphone RMS; speaking moves only with the playback `AnalyserNode` level
+of audio actually playing (silence, captions-only and browser-voice replies never animate it); thinking turns the
+clouds evenly; muted, on hold, sound off and disconnected are desaturated and still. Per-frame work is a few
+compositor-only transform and opacity writes from the call's one frame loop (`timeline/call-timeline.ts`), never a
+React render; it pauses with the page. With `prefers-reduced-motion` it is still and the state shows only in words.
+It implies no likeness: the vEIR's monogram (or consented portrait) sits beside its name under the sphere. The
+in-browser character (`character.ts`) can be chosen in the call settings instead and always carries an "AI avatar"
+label. The sphere is the face whenever no vendor face is live.
+
+**Conversation timeline** (`features/calls/timeline/`): who spoke when, as 10 Hz RMS bins from the same frame loop
+(the vEIR from the playback level while it speaks, the founder from the microphone while their voice is detected),
+drawn on one canvas at most ten times a second, with a keyboard-reachable button per turn. It lives in the page's
+memory only and is dropped with the call; a past session without measured audio would draw a flat midline.
 
 ## 5. Privacy, consent and safety
 

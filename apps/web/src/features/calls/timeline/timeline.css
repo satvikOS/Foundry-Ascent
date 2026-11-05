@@ -1,0 +1,135 @@
+/*
+ * The conversation timeline (ConversationTimeline.tsx). Sizes from the owner's reference (design-spec §2.2, §10.2):
+ * a 56 px bar (48 px on phones) with 4 px padding and a 10 px radius; the segments and bars are drawn on the canvas.
+ */
+.fa-timeline {
+  --tl-ground: light-dark(#ededea, #1f1f1f);
+  --tl-veir: light-dark(#d5dcf5, #303d71);
+  --tl-student: light-dark(#d8e6cf, #344b2a);
+  --tl-veir-ink: light-dark(#22306b, #ffffff);
+  --tl-student-ink: light-dark(#2c4520, #ffffff);
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.fa-timeline__frame {
+  position: relative;
+  height: 48px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--tl-ground);
+  border: 1px solid light-dark(transparent, rgb(255 255 255 / 0.06));
+}
+
+@media (min-width: 40rem) {
+  .fa-timeline__frame {
+    height: 56px;
+  }
+}
+
+/* The latest stretch is shown: it fades in from the left edge. */
+.fa-timeline__frame[data-scrolling='true'] .fa-timeline__canvas {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 48px);
+  mask-image: linear-gradient(to right, transparent, #000 48px);
+}
+
+.fa-timeline__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Read by the draw pass to pick the palette: white in dark, black in light. */
+  color: light-dark(rgb(0 0 0), rgb(255 255 255));
+}
+
+.fa-timeline__overlay {
+  position: absolute;
+  inset: 4px;
+}
+
+.fa-timeline__turn {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* At least 24 px wide: a short turn is still a comfortable target (WCAG 2.5.8). */
+  min-width: 24px;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.fa-timeline__turn:hover {
+  background: light-dark(rgb(17 17 16 / 0.05), rgb(255 255 255 / 0.06));
+}
+
+/* Two-tone ring: holds on the bar's ground and on either segment colour. */
+.fa-timeline__turn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 4px var(--background);
+}
+
+.fa-timeline__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 1.5rem;
+}
+
+.fa-timeline__legend {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.fa-timeline__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.fa-timeline__legend span {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 3px;
+}
+
+.fa-timeline__legend span[data-speaker='veir'] {
+  background: var(--tl-veir);
+  box-shadow: inset 0 0 0 1px var(--tl-veir-ink);
+}
+
+.fa-timeline__legend span[data-speaker='student'] {
+  background: var(--tl-student);
+  box-shadow: inset 0 0 0 1px var(--tl-student-ink);
+}
+
+.fa-timeline__whole {
+  min-height: 1.75rem;
+  border-radius: 9999px;
+  padding: 0 0.625rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.fa-timeline__whole:hover,
+.fa-timeline__whole[aria-pressed='true'] {
+  color: var(--foreground);
+}
+
+.fa-timeline__whole:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .fa-timeline__frame {
+    border-color: CanvasText;
+  }
+
+  .fa-timeline__turn {
+    border: 1px solid ButtonText;
+  }
+}

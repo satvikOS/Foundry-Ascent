@@ -87,12 +87,15 @@ export function useAnnounceCaptions(): [boolean, (on: boolean) => void] {
   return [on, update];
 }
 
-/** UI preference only: switching presentation never changes voice, identity or session. */
+/**
+ * UI preference only: switching presentation never changes voice, identity or session. The sphere is the default;
+ * the character ("AI avatar") is chosen in the call settings.
+ */
 export function usePresentationPreference(): [
   'sphere' | 'character',
   (value: 'sphere' | 'character') => void,
 ] {
-  const value = useStored(KEYS.presentation) === 'sphere' ? 'sphere' : 'character';
+  const value = useStored(KEYS.presentation) === 'character' ? 'character' : 'sphere';
   const update = useCallback((next: 'sphere' | 'character') => {
     write(KEYS.presentation, next);
   }, []);

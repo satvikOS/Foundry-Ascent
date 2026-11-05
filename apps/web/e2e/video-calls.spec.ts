@@ -140,7 +140,7 @@ test.describe('vEIR calls · a video face', () => {
           for (const track of stream.getVideoTracks()) track.dispatchEvent(new Event('ended'));
         });
         await expect(tile).toHaveCount(0);
-        await expect(screen.locator('[data-slot="call-tile"][data-face="character"]')).toBeVisible();
+        await expect(screen.locator('[data-slot="call-tile"][data-face="presence"]')).toBeVisible();
         await expect(screen.locator('[data-slot="call-stage"]')).toBeVisible();
         await expect(screen.locator('[data-slot="call-name-tag"]')).toContainText('vEIR');
         await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeEditable();
@@ -183,7 +183,7 @@ test.describe('vEIR calls · a video face', () => {
     await screen.getByRole('button', { name: 'Start call' }).click();
     const callId = ((await (await started).json()) as { call: { id: string } }).call.id;
     try {
-      await expect(screen.locator('[data-slot="call-tile"][data-face="character"]')).toBeVisible();
+      await expect(screen.locator('[data-slot="call-tile"][data-face="presence"]')).toBeVisible();
       await page.waitForTimeout(1_000);
       expect(asked).toEqual([]);
       await expect(screen.locator('[data-slot="call-video"]')).toHaveCount(0);

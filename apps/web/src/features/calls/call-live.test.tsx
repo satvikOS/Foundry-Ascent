@@ -107,12 +107,12 @@ describe('CallLive', () => {
     const names = within(controls)
       .getAllByRole('button')
       .map((b) => b.getAttribute('aria-label'));
-    // A calm row: the rarer controls live under More.
-    expect(names).toEqual(['Mute', 'Captions', 'More call controls', 'End call']);
-    expect(within(controls).getByRole('button', { name: 'Captions' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    // As in the reference: the microphone and End only; the rarer controls live in the call settings.
+    expect(names).toEqual(['Mute', 'End call']);
+    expect(screen.getByRole('button', { name: 'Call settings' })).toBeInTheDocument();
+    // The sphere is the default presence.
+    expect(tag.closest('[data-slot="call-tile"]')).toHaveAttribute('data-face', 'presence');
+    expect(document.querySelector('.fa-sphere')).not.toBeNull();
 
     await userEvent.click(within(controls).getByRole('button', { name: 'Mute' }));
     expect(engine.setMuted).toHaveBeenCalledWith(true);
@@ -120,20 +120,39 @@ describe('CallLive', () => {
     expect(engine.end).toHaveBeenCalledWith('user');
   });
 
-  it('keeps push to talk, typing and switching to chat under More, with their state', async () => {
+  it('keeps captions, push to talk, typing and switching to chat in the call settings, with their state', async () => {
     const { engine, switched } = renderLive({ talkMode: 'push_to_talk' });
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'More call controls' }));
-    const menu = await screen.findByRole('menu');
-    expect(within(menu).getByRole('menuitemcheckbox', { name: /Push to talk/ })).toHaveAttribute(
-      'aria-checked',
+    await user.click(await screen.findByRole('button', { name: 'Call settings' }));
+    const settings = await screen.findByRole('dialog', { name: 'Call settings' });
+    expect(within(settings).getByRole('button', { name: /^Captions/ })).toHaveAttribute(
+      'aria-pressed',
       'true',
     );
-    await user.click(within(menu).getByRole('menuitemcheckbox', { name: /Push to talk/ }));
+    expect(within(settings).getByRole('button', { name: /^Push to talk/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await user.click(within(settings).getByRole('button', { name: /^Push to talk/ }));
     expect(engine.setTalkMode).toHaveBeenCalledWith('hands_free');
-    await user.click(screen.getByRole('button', { name: 'More call controls' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Switch to chat' }));
+    await user.click(within(settings).getByRole('button', { name: 'Switch to chat' }));
     expect(switched()).toBe(1);
+  });
+
+  it('offers the sphere (the default) or the character, labelled AI avatar, in the call settings', async () => {
+    renderLive();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Call settings' }));
+    const settings = await screen.findByRole('dialog', { name: 'Call settings' });
+    const presentation = within(settings).getByRole('group', { name: 'Presentation' });
+    expect(within(presentation).getByRole('button', { name: 'Sphere' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await user.click(within(presentation).getByRole('button', { name: 'AI avatar' }));
+    expect(window.localStorage.getItem('fa.call.presentation')).toBe('character');
+    expect(await screen.findByText('AI avatar', { selector: '[data-slot="ai-avatar-label"]' })).toBeVisible();
+    expect(document.querySelector('[data-slot="call-tile"]')).toHaveAttribute('data-face', 'character');
   });
 
   it('has keyboard shortcuts for mute, push-to-talk and captions', async () => {
@@ -203,10 +222,9 @@ describe('CallLive', () => {
 
   it('opens a typed line during a voice call', async () => {
     const { engine } = renderLive();
-    await userEvent.click(await screen.findByRole('button', { name: 'More call controls' }));
-    await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: /Type instead/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Call settings' }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Type instead/ }));
     const line = screen.getByRole('textbox', { name: 'Reply to Corin · vEIR' });
-    // The closing menu returns focus a moment later (a timer): it must not take it back to More.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
@@ -398,7 +416,8 @@ describe('CallLive', () => {
     // Only the reply: the founder chose not to see their own words.
     expect(captions).not.toHaveTextContent('What about price?');
     expect(liveText()).toContain('Corin · vEIR: Twelve is a good start.');
-    expect(screen.getByRole('button', { name: 'Captions' })).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(screen.getByRole('button', { name: 'Call settings' }));
+    expect(await screen.findByRole('button', { name: /^Captions/ })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('disables the controls until the call is live', async () => {
