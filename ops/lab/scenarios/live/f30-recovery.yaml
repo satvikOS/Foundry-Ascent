@@ -251,7 +251,7 @@ scenarios:
       { focus: [recovery, natural_flow, relevance_directness], pass: 'One coherent reply after a delay' }
 
   - id: LV-30-06
-    version: 1
+    version: 2
     title: A two-hour working session with many threads
     challenge: A long session; the coach must keep track of decisions and threads without repeating itself.
     venture:
@@ -283,7 +283,7 @@ scenarios:
       - ['1.8', topic_change, 'Moves to staffing']
       - ['1.12', interrupt, 'Interrupts to ask about storage']
       - ['1.16', return, 'Returns to pricing and asks to confirm the buyback rate']
-      - ['1.20', duplicate, 'Repeats an earlier question by accident']
+      - ['1.20', resend, 'Sends the previous message again by accident (a double submit)']
       - ['1.24', topic_change, 'Moves to marketing']
       - ['1.28', asks_direct, 'Asks for a final checklist of decisions']
     sources: null

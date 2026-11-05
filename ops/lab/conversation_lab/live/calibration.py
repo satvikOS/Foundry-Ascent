@@ -1,6 +1,7 @@
 """The blinded human-calibration packet (brief section 17): at least 60 transcripts from a live run's private
 outputs, stratified across families and across judge pass/fail, each under a random code with no scores, model
-ids, run ids or check results. The key (code -> run, judge scores, check codes) is written separately so the
+ids, run ids or check results, in a shuffled order (drawn with its own random generator, so a transcript's position
+says nothing about the judge's verdict), and never two runs of the same scenario. The key (code -> run, judge scores, check codes) is written separately so the
 reviewer never sees it. Everything here is private: it is built locally from the unsealed outputs and never
 committed or uploaded.
 
@@ -36,10 +37,15 @@ def load_private(dirs: Sequence[Path]) -> list[dict[str, Any]]:
 
 
 def choose(rows: Sequence[dict[str, Any]], size: int, seed: int) -> list[dict[str, Any]]:
-    """Round-robin over families, alternating judge-passed and judge-failed runs where both exist."""
+    """Round-robin over families, alternating judge-passed and judge-failed runs where both exist; one run per
+    scenario (a repeated scenario contributes one of its runs, at random). The order is shuffled separately."""
     rng = random.Random(seed)  # noqa: S311 - reproducible sampling, not security
-    by_family: dict[int, dict[bool, list[dict[str, Any]]]] = defaultdict(lambda: {True: [], False: []})
+    by_scenario: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in rows:
+        by_scenario[str(r["scenario"])].append(r)
+    unique = [rng.choice(runs) for _, runs in sorted(by_scenario.items())]
+    by_family: dict[int, dict[bool, list[dict[str, Any]]]] = defaultdict(lambda: {True: [], False: []})
+    for r in unique:
         by_family[int(r["family"])][bool(r.get("passed"))].append(r)
     for groups in by_family.values():
         for lst in groups.values():
@@ -54,6 +60,8 @@ def choose(rows: Sequence[dict[str, Any]], size: int, seed: int) -> list[dict[st
             if pool and len(chosen) < size:
                 chosen.append(pool.pop())
         want_pass = not want_pass
+    # Blind the order: a separate generator, so the stratification pattern cannot be read off the positions.
+    random.Random(f"order-{seed}").shuffle(chosen)  # noqa: S311 - presentation order, not security
     return chosen
 
 
@@ -61,8 +69,11 @@ def build_packet(
     private_dirs: Sequence[Path], out: Path, *, size: int = PACKET_SIZE, seed: int = 1
 ) -> dict[str, Any]:
     rows = load_private(private_dirs)
-    if len(rows) < size:
-        raise ValueError(f"only {len(rows)} completed transcripts; the packet needs {size}")
+    scenarios_run = len({r["scenario"] for r in rows})
+    if scenarios_run < size:
+        raise ValueError(
+            f"only {scenarios_run} scenarios with a completed transcript; the packet needs {size} different ones"
+        )
     scenarios = load().by_id()
     chosen = choose(rows, size, seed)
     out.mkdir(parents=True, exist_ok=True)

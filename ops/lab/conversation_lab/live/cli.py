@@ -147,13 +147,17 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
 
 def cmd_merge(args: argparse.Namespace) -> int:
-    from conversation_lab.live.report import merge, render
+    from conversation_lab.live.report import MergeError, merge, render
 
     summaries = [json.loads(Path(p).read_text(encoding="utf-8")) for p in args.summaries]
     if not summaries:
         print("live-merge: no summaries", file=sys.stderr)
         return 2
-    merged = merge(summaries)
+    try:
+        merged = merge(summaries)
+    except MergeError as exc:
+        print(f"live-merge: {exc}", file=sys.stderr)
+        return 2
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "live-summary.json").write_text(json.dumps(merged, indent=1), encoding="utf-8")

@@ -159,6 +159,9 @@ DIMENSIONS: tuple[str, ...] = (
 #: The student's scripted behaviours over the conversation ("arc beats"). The simulator weaves each into its reply
 #: at (or soon after) its turn, in its own words, in response to what the coach actually said. ``memory_*`` beats at
 #: turn 0 are actions the runner takes in the app before that session starts (the student reviewing their memory).
+#: Three more are the runner's, enacted for real rather than described: ``duplicate`` delivers the previous request
+#: again with the same idempotency key (a duplicate event), ``resend`` sends the student's previous message again as
+#: a new message (a double submit), and ``disconnect`` drops the call before that turn and dials back in.
 BEAT_KINDS = frozenset(
     {
         "hesitation",
@@ -192,6 +195,7 @@ BEAT_KINDS = frozenset(
         "team_change",
         "disconnect",
         "duplicate",
+        "resend",
         "retry",
         "memory_reject",
         "memory_delete",
@@ -208,6 +212,15 @@ INTERRUPTION_KINDS = frozenset(
 )
 #: Runner actions before a session (turn 0).
 MEMORY_ACTIONS = frozenset({"memory_reject", "memory_delete", "memory_correct"})
+
+#: Failure conditions the runner enacts for real (barge-in on a call, a duplicate event, a double submit, a dropped
+#: call).
+ENACTED_FAILURES = frozenset({"interrupt", "duplicate", "resend", "disconnect"})
+_DESCRIBED_FAILURE = re.compile(
+    r"\b(late|delay\w*|slow\w*|times? out|timeouts?|unavailable|not at all|fails?|failure|failing|errors?|"
+    r"outage|offline|degraded)\b",
+    re.IGNORECASE,
+)
 
 SCENARIO_ID = re.compile(r"^LV-(\d{2})-(\d{2})$")
 BEAT_AT = re.compile(r"^(\d{1,2})\.(\d{1,2})$")
@@ -310,6 +323,18 @@ class Scenario:
         return any(s.channel == "call" for s in self.sessions)
 
     @property
+    def described_failure(self) -> bool:
+        """The scenario describes a failure the runner cannot inject: a retrieval or tool condition in ``sources``
+        (late, unavailable, erroring), a ``retry`` beat (the student says something failed), or a recovery-family
+        condition with no runner-enacted beat (a slow or degraded provider, an outage). Results for these measure
+        the coach's reaction to a described failure, and the report labels them so."""
+        if self.raw.get("sources") and _DESCRIBED_FAILURE.search(str(self.raw["sources"])):
+            return True
+        if any(b.kind == "retry" for b in self.arc):
+            return True
+        return self.family == 30 and not any(b.kind in ENACTED_FAILURES for b in self.arc)
+
+    @property
     def escalation(self) -> str:
         return str(self.raw["escalation"]["decision"])
 
@@ -331,6 +356,16 @@ class Dataset:
 
     def family(self, number: int) -> list[Scenario]:
         return [s for s in self.scenarios if s.family == number]
+
+
+def own_text(raw: Mapping[str, Any]) -> str:
+    """What the coach legitimately knows about the student's own venture before a word is said: the seeded venture
+    (name, one-liner, goal), its prior memory and its documents."""
+    v = raw.get("venture") or {}
+    parts = [str(v.get("name", "")), str(v.get("oneLiner", "")), str(raw.get("objective", ""))]
+    parts += [str(m.get("content", "")) for m in raw.get("priorMemory") or [] if isinstance(m, dict)]
+    parts += [str(d.get("text", "")) for d in raw.get("documents") or [] if isinstance(d, dict)]
+    return "\n".join(parts)
 
 
 def memory_target(text: str) -> str:
@@ -458,10 +493,24 @@ def validate_scenario(raw: Any, family: int, problems: list[str]) -> Scenario | 
                     _text(m.get("name"), f"{p}.documents[{i}].name", problems, max_len=80)
                     _text(m.get("text"), f"{p}.documents[{i}].text", problems, min_len=40, max_len=4000)
     if "neighbour" in raw:
-        m = _mapping(raw["neighbour"], f"{p}.neighbour", {"venture", "founder", "secret"}, problems)
+        m = _mapping(
+            raw["neighbour"],
+            f"{p}.neighbour",
+            {"venture", "founder", "secret", "leaks"},
+            problems,
+            optional=frozenset({"leaks"}),
+        )
         if m is not None:
             for key in ("venture", "founder", "secret"):
                 _text(m.get(key), f"{p}.neighbour.{key}", problems, min_len=3, max_len=300)
+            if "leaks" in m:
+                _texts(m["leaks"], f"{p}.neighbour.leaks", problems, min_items=1, max_items=6, max_len=60)
+                own = own_text(raw).lower()
+                for leak in m["leaks"] if isinstance(m["leaks"], list) else []:
+                    if isinstance(leak, str) and re.search(
+                        r"(?<![\w])" + re.escape(leak.lower()) + r"(?![\w])", own
+                    ):
+                        problems.append(f"{p}.neighbour.leaks: {leak!r} is in the venture's own content")
     _text(raw["objective"], f"{p}.objective", problems, min_len=20, max_len=400)
     _texts(raw["constraints"], f"{p}.constraints", problems, min_items=1, max_items=5)
     _texts(raw["hidden"], f"{p}.hidden", problems, min_items=1, max_items=6)

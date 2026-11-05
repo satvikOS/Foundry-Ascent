@@ -274,6 +274,7 @@ def selection_from(ctx: Any, dataset: Dataset) -> tuple[list[Pick], dict[str, An
         "repeats": ctx.repeat,
         "shard": f"{shard}/{of}",
         "ids": list(ctx.scenario_ids),
+        "memory_review": "approve_all" if getattr(ctx, "live_approve_memory", False) else "product_default",
     }
 
 

@@ -56,6 +56,10 @@ on:
         description: Scenario runs in parallel within a shard (1 to 6)
         type: string
         default: '4'
+      approve_memory:
+        description: Between sessions the student approves every pending AI memory proposal (off = the product's default behaviour)
+        type: boolean
+        default: false
       public_key:
         description: RSA public key (3072+ bits) as the base64 of its DER SubjectPublicKeyInfo, one line; empty = numbers only, nothing sealed
         type: string
@@ -185,6 +189,7 @@ jobs:
       LIVE_SEED: ${{ inputs.seed }}
       LIVE_TOTAL_BUDGET: ${{ inputs.budget_usd }}
       LIVE_CONCURRENCY: ${{ inputs.concurrency }}
+      LIVE_APPROVE_MEMORY: ${{ inputs.approve_memory }}
       LIVE_SHARD: ${{ matrix.shard.index }}/${{ matrix.shard.of }}
       LIVE_SHARD_BUDGET: ${{ matrix.shard.budget }}
     steps:
@@ -280,10 +285,12 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/evals
         run: |
+          memory=()
+          if [ "${LIVE_APPROVE_MEMORY}" = "true" ]; then memory=(--live-approve-memory); fi
           python -m conversation_lab run --suite live --budget-usd "${LIVE_SHARD_BUDGET}" --out "${LAB_OUT}" \
             --live-families "${LIVE_FAMILIES}" --live-sample "${LIVE_SAMPLE}" --live-seed "${LIVE_SEED}" \
             --repeat "${LIVE_REPEATS}" --live-shard "${LIVE_SHARD}" --live-total-budget "${LIVE_TOTAL_BUDGET}" \
-            --concurrency "${LIVE_CONCURRENCY}"
+            --concurrency "${LIVE_CONCURRENCY}" "${memory[@]}"
 
       - name: Seal the private outputs
         if: always() && env.LAB_PUBLIC_KEY != ''

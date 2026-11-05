@@ -19,7 +19,7 @@ or missing keys fail) holds the section 17 fields:
 | `id`, `version`                             | Stable id and content version (the run records both, with prompt, model, code and dataset hashes, a run id and timestamps)                                                                                                  |
 | `title`, `challenge`                        | The decision or failure mode the scenario exists to test                                                                                                                                                                    |
 | `venture`, `student`, `purpose`, `sessions` | Venture and student state; sessions with their gap in days, turns and channel (`chat` or `call`)                                                                                                                            |
-| `priorMemory`, `documents`, `neighbour`     | Prior approved memory, uploaded documents, and for isolation tests a separate venture holding a secret                                                                                                                      |
+| `priorMemory`, `documents`, `neighbour`     | Prior approved memory, uploaded documents, and for isolation tests a separate venture holding a secret (with `leaks`: phrases that would reveal it)                                                                         |
 | `objective`, `constraints`, `hidden`        | What the student wants, their constraints, and the facts they know but reveal only when natural                                                                                                                             |
 | `arc`                                       | Scripted behaviours (`["session.turn", kind, text]`): hesitations, corrections, contradictions, interruptions, topic changes, returns, distress, injections; `memory_*` beats at turn 0 are review actions before a session |
 | `sources`                                   | Retrieval and tool conditions (null: normal retrieval, no documents)                                                                                                                                                        |
@@ -61,19 +61,32 @@ built like the audited upgrade corpus (a fixed template with only the decision s
 
 One synthetic venture and founder per scenario run (`apps/api/src/scripts/lab-live-ventures.ts`), prior memory and
 documents created through the founder's own API, real sessions (standard privacy) with the conversation distilled
-and aged between sessions (`lab-age-conversation.ts`), pending memory proposals approved between sessions as an
-engaged student would, voice sessions on typed-input calls (signed speech units, barge-in through
-`POST /turns/:id/interrupt`). The student is an LLM (`live.simulator` in `ops/lab/models.json`, Llama 4 Maverick
+and aged between sessions (`lab-age-conversation.ts`), the AI's memory proposals left as the product leaves them
+(the `approve_memory` input opts into a student who approves every proposal; the number approved is published),
+voice sessions on typed-input calls (signed speech units, barge-in through `POST /turns/:id/interrupt`). Failure
+conditions are enacted where the API allows: a barge-in, a duplicate event (the previous request again with the same
+idempotency key), a double submit (`resend`), and a dropped call redialled before the student's turn, whose new
+opening the student and the judge see. Conditions the runner cannot inject (a late or unavailable retrieval, a
+degraded provider, a "your reply cut off" complaint) are carried by the student's words only, and the summary labels
+those runs "failures described, not injected". The session ends when the student leaves (a stop or wrap-up beat, or
+the simulator saying it is done) unless scripted beats remain. The student is an LLM (`live.simulator` in `ops/lab/models.json`, Llama 4 Maverick
 first, Nova Pro as fallback, temperature 0.7) that reads the coach's actual reply. The judge (`live.judge`: Claude
 Haiku 4.5 first, then Llama 4 Maverick, then Nova Premier, temperature 0) scores the twelve section 19 dimensions
 with poor/acceptable/excellent anchors and checks every expected and prohibited behaviour. Deterministic checks run
 beside it: repeated questions, semantic repetition, canned phrases, stacked questions, Markdown in speech,
-volunteered AI disclaimers, suspected fabricated citations and figures, false action claims, isolation leaks.
+volunteered AI disclaimers, suspected fabricated citations and figures, false action claims, isolation leaks
+(figures compared as normalised values, plus each neighbour's authored `leaks` phrases), and each watch phrase's
+rate per 100 replies across the whole run.
 
 A scenario passes when it completed, every expected behaviour was met, no prohibited one occurred, escalation and
 memory were right, nothing was fabricated, there was no presence violation, and no blocking deterministic finding.
-Failures and timeouts count in every denominator. The summary reports per family, severe outliers, p50/p95 coach
-turn latency, the section 19 gates, and run-to-run stability when a scenario ran more than once.
+Failures and timeouts count in every denominator, and their turns stay in the latency distribution at their elapsed
+time. A run the simulator could not continue (`simulator_failed`: nothing is sent to the coach in its place) or a
+budget stopped part-way (`stopped`) is not scored as the coach's behaviour, and every gate is computed over the
+planned runs: while any planned run lacks a verdict a gate reads "NOT met (incomplete)" with its coverage. The
+isolation gate counts the deterministic leaks and the judge's severe isolation codes. The summary reports per family,
+severe outliers, p50/p95 coach turn latency, the section 19 gates, and run-to-run stability when a scenario ran more
+than once.
 
 ## Cost (dry-run estimates, no model called)
 

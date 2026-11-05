@@ -562,8 +562,13 @@ gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=60 -f se
   -f budget_usd=7 -f dry_run=false -f public_key="$KEY"
 ```
 
+`approve_memory=true` adds a student who approves every pending AI memory proposal between sessions; the default
+leaves them as the product does (compare both when memory continuity is the question; the summary counts approvals).
+
 The merged public summary (artifact `live-evals-merged-<run>`, and the job summary) holds numbers, ids and codes
-only. To compare two runs, download both merged `live-summary.json` files and run
+only. Gates are computed over the planned runs and read "NOT met (incomplete)" while any planned run lacks a verdict
+(skipped by the deadline or a budget, stopped part-way, a simulator failure, a judge error). `live-merge` refuses
+summaries with different evidence labels and keeps models that differ between shards as `models.mixed`. To compare two runs, download both merged `live-summary.json` files and run
 `python -m conversation_lab live-merge --out <dir> a.json b.json` (stability is reported for scenarios seen twice).
 Open the sealed shards with `lab-seal.ts open`, then build the blinded human-calibration packet locally (private;
 never commit it):

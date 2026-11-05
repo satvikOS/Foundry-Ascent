@@ -95,6 +95,8 @@ class Context:
     live_shard: tuple[int, int] = (1, 1)
     live_total_budget: float = 0.0
     concurrency: int = 4
+    #: The student approves every pending AI memory proposal between sessions (off: the product's default).
+    live_approve_memory: bool = False
     live_picks: list[Any] = field(default_factory=list)
     live_selection: dict[str, Any] = field(default_factory=dict)
     live_seeded: dict[str, Any] = field(default_factory=dict)
@@ -215,6 +217,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         live_shard=_shard_arg(str(args.live_shard)),
         live_total_budget=float(args.live_total_budget or 0),
         concurrency=int(args.concurrency),
+        live_approve_memory=bool(args.live_approve_memory),
     )
     ctx.private.mkdir(parents=True, exist_ok=True)
     ctx.public.mkdir(parents=True, exist_ok=True)
@@ -1035,6 +1038,7 @@ def suite_live(
         guard=guard,
         private_dir=ctx.private,
         concurrency=ctx.concurrency,
+        approve_proposals=ctx.live_approve_memory,
         # The role session lasts an hour; the job spent some of it installing and seeding.
         deadline_seconds=45 * 60,
     )
@@ -1126,6 +1130,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--live-total-budget", type=float, default=0.0, help="live: the whole run's budget (shard split)"
     )
     run.add_argument("--concurrency", type=int, default=4, help="live: scenario runs in parallel (1-6)")
+    run.add_argument(
+        "--live-approve-memory",
+        action="store_true",
+        help="live: the student approves every pending AI memory proposal between sessions (default: left as "
+        "the product leaves them)",
+    )
     run.add_argument("--out", required=True)
     run.add_argument("--api-port", type=int, default=8787)
     run.add_argument("--web-port", type=int, default=4173)

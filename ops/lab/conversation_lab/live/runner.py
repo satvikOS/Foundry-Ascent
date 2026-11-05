@@ -7,7 +7,19 @@ runs. The simulated student answers what the coach actually said; the judge and 
 whole run afterwards.
 
 Scenario runs execute concurrently (one founder client per run). Failures and timeouts are results, not
-omissions: they count in every denominator.
+omissions: they count in every denominator, and a failed or timed-out turn keeps its elapsed time in the latency
+distribution. A run the simulator could not continue (``simulator_failed``) or a budget stopped part-way
+(``stopped``) is not scored as the coach's behaviour; both stay in the planned denominator and the report's gates
+say "incomplete" while any planned run lacks a verdict.
+
+Failure conditions are enacted where the API allows it: a barge-in on a call (``interrupt``), the previous request
+delivered again with the same idempotency key (``duplicate``), the previous message sent again as a new one
+(``resend``), and a dropped call redialled before the student's turn (``disconnect``; the student and the judge see
+the new call's opening). Conditions the runner cannot inject (a late or unavailable retrieval, a degraded provider,
+a "your reply cut off" complaint) are carried by the student's words only, and each run says which it was.
+
+Between sessions the AI's memory proposals are left as the product leaves them (``approve_proposals=False``); the
+lab can opt into a student who approves every proposal, and the number approved is published either way.
 """
 
 from __future__ import annotations
@@ -27,7 +39,7 @@ from typing import Any, Protocol
 
 from conversation_lab.budget import BudgetExceededError
 from conversation_lab.live.checks import BLOCKING, CheckResult, Turn, run_checks
-from conversation_lab.live.dataset import Scenario, memory_correction, memory_target
+from conversation_lab.live.dataset import Scenario, memory_correction, memory_target, own_text
 from conversation_lab.live.judge import Verdict
 from conversation_lab.live.plan import Pick
 from conversation_lab.live.student import Exchange, Student, due_beats
@@ -70,6 +82,13 @@ class TurnLog:
     speech_units: int = 0
     student_source: str = "llm"
     model: str | None = None
+    #: replayed | not_deduplicated (a duplicate event), resent (a double submit), cut_off (the call dropped
+    #: while this reply was being said: ``coach`` is what the student heard).
+    note: str = ""
+
+    @property
+    def is_student_turn(self) -> bool:
+        return self.kind != "reconnect"
 
 
 @dataclass
@@ -80,6 +99,9 @@ class SessionLog:
     opener: str | None = None
     turns: list[TurnLog] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    #: Failure conditions this session enacted for real (interrupt, duplicate, resend, disconnect).
+    enacted: set[str] = field(default_factory=set)
+    approved: int = 0
 
     def for_judge(self) -> dict[str, Any]:
         return {
@@ -89,12 +111,14 @@ class SessionLog:
             "opener": self.opener,
             "turns": [
                 {
+                    "at": t.at,
                     "student": t.student,
                     "coach": t.coach,
                     "kind": t.kind,
                     "escalated": t.escalated,
                     "interrupted": t.interrupted,
                     "error": t.error,
+                    "note": t.note,
                 }
                 for t in self.turns
             ],
@@ -105,7 +129,9 @@ class SessionLog:
 class RunResult:
     run_id: str
     scenario: Scenario
-    status: str = "not_run"  # completed | failed | timeout | error | skipped
+    #: completed | failed | timeout | error (executed: the coach is scored) | simulator_failed | stopped | skipped
+    #: | not_run (planned, never scored as the coach's behaviour)
+    status: str = "not_run"
     reason: str = ""
     sessions: list[SessionLog] = field(default_factory=list)
     memory_after: list[dict[str, Any]] | None = None
@@ -127,6 +153,12 @@ class RunResult:
 
     def public(self) -> dict[str, Any]:
         s = self.scenario
+        student_turns = [t for t in self.turns if t.is_student_turn]
+        # Every exchange with the coach counts toward latency, errors and timeouts included at their elapsed time;
+        # a duplicate the app replayed from storage is not a coach turn.
+        timed = [t for t in student_turns if t.note != "replayed"]
+        sessions_run = sum(1 for sess in self.sessions if any(t.is_student_turn for t in sess.turns))
+        enacted = sorted({k for sess in self.sessions for k in sess.enacted})
         return {
             "run_id": self.run_id,
             "scenario": s.id,
@@ -136,20 +168,31 @@ class RunResult:
             "passed": self.passed,
             "failures": sorted(set(self.failures)),
             "sessions": len(self.sessions),
-            "turns": len(self.turns),
-            "turn_seconds": [round(t.seconds, 2) for t in self.turns if t.kind != "error"],
-            "turn_channels": [t.channel for t in self.turns if t.kind != "error"],
+            "planned_turns": s.student_turns,
+            "turns": len(student_turns),
+            "turn_seconds": [round(t.seconds, 2) for t in timed],
+            "turn_channels": [t.channel for t in timed],
             "turn_errors": sorted({t.error for t in self.turns if t.error}),
             "timeouts": sum(1 for t in self.turns if t.error == "timeout"),
-            "student_fallbacks": sum(1 for t in self.turns if t.student_source == "fallback"),
+            "student_failures": 1 if self.status == "simulator_failed" else 0,
             "speech_units": sum(t.speech_units for t in self.turns),
             "escalated": any(t.escalated for t in self.turns),
+            "approved_proposals": sum(max(0, sess.approved) for sess in self.sessions),
             "groups": {
                 "multi_session": s.multi_session,
                 "long_running": s.long_running,
                 "correction": s.correction,
                 "interruption": s.interruption,
                 "voice": s.voice,
+            },
+            # What actually ran: a student who left early, or a run cut short, can leave a group.
+            "groups_executed": {
+                "multi_session": sessions_run >= 3,
+                "long_running": 2 * len(student_turns) >= 50,
+            },
+            "failure_conditions": {
+                "enacted": enacted,
+                "described_only": s.described_failure and not enacted,
             },
             "checks": self.checks.public(),
             "judge": self.verdict.public() if self.verdict else None,
@@ -239,7 +282,7 @@ class LiveRunner:
         guard: Any = None,
         private_dir: Path | None = None,
         concurrency: int = 4,
-        approve_proposals: bool = True,
+        approve_proposals: bool = False,
         deadline_seconds: float | None = None,
         clock: Callable[[], float] = time.monotonic,
         log: Callable[[str], None] = print,
@@ -285,13 +328,19 @@ class LiveRunner:
                     return
                 self.run_one(result, seed)
             except BudgetExceededError as exc:
+                reason = f"budget_{exc.side}"
                 with self._lock:
-                    self.stopped = self.stopped or f"budget_{exc.side}"
+                    self.stopped = self.stopped or reason
                 if result.status == "not_run":
-                    result.status, result.reason = "skipped", f"budget_{exc.side}"
+                    result.status, result.reason = "skipped", reason
+                elif result.status in ("running", "completed"):
+                    # Cut part-way (simulator, judge or app budget): not a completed run and not the coach's fault.
+                    result.status, result.reason = "stopped", reason
             except Exception as exc:  # noqa: BLE001 - recorded by class name; the run continues
                 result.status, result.reason = "error", type(exc).__name__
             finally:
+                if result.status == "running":
+                    result.status, result.reason = "error", result.reason or "interrupted"
                 if result.executed:
                     decide(result)
                 self._write_private(result)
@@ -319,40 +368,45 @@ class LiveRunner:
         s = result.scenario
         result.started_at = datetime.now(UTC).isoformat(timespec="seconds")
         client = self.app.founder_client(seed.founder_id)
+        result.status = "running"
         try:
             self._setup(client, s, seed, result)
             history: list[Exchange] = []
             revealed: set[int] = set()
             done: set[str] = set()
-            result.status = "completed"
             for index, sess in enumerate(s.sessions, start=1):
                 log = SessionLog(index=index, channel=sess.channel, gap_days=sess.gap_days)
                 result.sessions.append(log)
                 self._memory_actions(client, s, seed, index, log)
-                ok, session_id = self._session(client, s, seed, index, log, history, revealed, done)
-                if not ok:
+                state, session_id = self._session(client, s, seed, index, log, history, revealed, done)
+                if state == "simulator_failed":
+                    result.status = "simulator_failed"
+                    result.reason = next((n for n in log.notes if n.startswith("simulator:")), "simulator")
+                    break
+                if state != "ok":
                     result.status = "timeout" if any(t.error == "timeout" for t in log.turns) else "failed"
                     result.reason = (
                         next((t.error for t in log.turns if t.error), "turn_failed") or "turn_failed"
                     )
                     break
-                if session_id is None:
-                    continue
                 if index < len(s.sessions):
                     if self.approve_proposals:
-                        log.notes.append(f"approved_proposals:{self._approve(client, seed.venture_id)}")
+                        log.approved = self._approve(client, seed.venture_id)
+                        log.notes.append(f"approved_proposals:{log.approved}")
                     failure = self.app.between_sessions(session_id, s.sessions[index].gap_days)
                     log.notes.append("aged" if failure is None else f"aging_failed:{failure}")
                 else:
                     failure = self.app.wait_distilled(session_id)
                     log.notes.append("distilled" if failure is None else f"distill_wait:{failure}")
+            else:
+                result.status = "completed"
             with contextlib.suppress(Exception):
                 result.memory_after = _memory_rows(client.list_memory(seed.venture_id))
         finally:
             with contextlib.suppress(Exception):
                 client.close()
+            result.finished_at = datetime.now(UTC).isoformat(timespec="seconds")
         self._grade(result)
-        result.finished_at = datetime.now(UTC).isoformat(timespec="seconds")
 
     def _setup(self, client: Any, s: Scenario, seed: Seeded, result: RunResult) -> None:
         for m in s.raw["priorMemory"]:
@@ -455,7 +509,8 @@ class LiveRunner:
         history: list[Exchange],
         revealed: set[int],
         done: set[str],
-    ) -> tuple[bool, str | None]:
+    ) -> tuple[str, str]:
+        """One real session. Returns ("ok" | "failed" | "simulator_failed", the session id)."""
         from foundry_evals.client import ApiError, ApiUnreachableError
 
         spec = s.sessions[index - 1]
@@ -473,11 +528,14 @@ class LiveRunner:
             history.append(Exchange(session=index, student="", coach=coach_last, opener=True))
         prev_outcome: Any = None
         prev_text: str | None = None
-        ok = True
+        prev_key: str | None = None
+        state = "ok"
         try:
             for turn in range(1, spec.turns + 1):
                 beats = due_beats(s, index, turn, done)
-                runner_beats = {b.kind for b in s.beats_for(index, turn)}
+                here = s.beats_for(index, turn)
+                runner_beats = {b.kind for b in here}
+                at = f"{index}.{turn}"
                 barged = False
                 heard_last = coach_last
                 if "interrupt" in runner_beats and voice and prev_outcome is not None:
@@ -486,12 +544,45 @@ class LiveRunner:
                         with contextlib.suppress(ApiError, ApiUnreachableError):
                             client.interrupt_turn(prev_outcome.turn_id, call_id, units[:1])
                             heard_last, barged = units[0], True
+                            log.enacted.add("interrupt")
                             if log.turns:
                                 log.turns[-1].interrupted = True
-                if "duplicate" in runner_beats and prev_text:
-                    text, source = prev_text, "runner"
-                    for b in s.beats_for(index, turn):
-                        done.add(b.at)
+                if "disconnect" in runner_beats and voice and log.turns and call_id is not None:
+                    units = list(getattr(prev_outcome, "speech", None) or [])
+                    reconnected = self._reconnect(
+                        client, view.id, call_id, units, at, spec.channel, log, history
+                    )
+                    if reconnected is None:
+                        state = "failed"
+                        break
+                    call_id, heard_last = reconnected
+                    barged = False
+                if "duplicate" in runner_beats and prev_text and prev_key:
+                    # The previous request delivered again with its own idempotency key: a duplicate event. (Runner
+                    # beats are never marked done: the simulator's beats due at this turn carry to the next.)
+                    logged = self._exchange(
+                        client, view.id, prev_text, prev_key, call_id, at, spec.channel, "runner", log, voice
+                    )
+                    if logged is None:
+                        state = "failed"
+                        break
+                    entry, outcome = logged
+                    entry.kind = "duplicate"
+                    same = outcome.replayed or (
+                        prev_outcome is not None and outcome.turn_id == prev_outcome.turn_id
+                    )
+                    entry.note = "replayed" if same else "not_deduplicated"
+                    log.enacted.add("duplicate")
+                    if not same:
+                        history.append(Exchange(session=index, student=prev_text, coach=entry.coach))
+                        coach_last, prev_outcome = entry.coach, outcome
+                    continue
+                reply_done = False
+                performed: list[Any] = []
+                if "resend" in runner_beats and prev_text:
+                    # The student's previous message sent again as a new message (a double submit).
+                    text, source, note = prev_text, "runner", "resent"
+                    log.enacted.add("resend")
                 else:
                     reply = self.student.respond(
                         s,
@@ -503,83 +594,172 @@ class LiveRunner:
                         revealed=revealed,
                         barged_in=barged,
                     )
-                    text, source = reply.message, reply.source
+                    if reply.source == "failed" or not reply.message.strip():
+                        # Never send a stand-in to the coach: the run ends as the simulator's failure.
+                        log.notes.append("simulator:" + (reply.problems[-1] if reply.problems else "empty"))
+                        state = "simulator_failed"
+                        break
+                    text, source, note = reply.message, reply.source, ""
                     revealed.update(reply.revealed)
                     done.update(b.at for b in beats)
-                at = f"{index}.{turn}"
-                try:
-                    outcome = client.run_turn(view.id, text, call_id=call_id)
-                except ApiError as exc:
-                    log.turns.append(
-                        TurnLog(
-                            at, text, "", "error", 0.0, spec.channel, error=exc.code, student_source=source
-                        )
-                    )
-                    if exc.code in STOP_CODES:
-                        with self._lock:
-                            self.stopped = self.stopped or f"app_refused:{exc.code}"
-                    ok = False
-                    break
-                except ApiUnreachableError:
-                    log.turns.append(
-                        TurnLog(
-                            at, text, "", "error", 0.0, spec.channel, error="timeout", student_source=source
-                        )
-                    )
-                    ok = False
-                    break
-                said = heard(outcome, voice)
-                turn_view = getattr(outcome, "turn", None)
-                usage = getattr(turn_view, "usage", None)
-                log.turns.append(
-                    TurnLog(
-                        at,
-                        text,
-                        said,
-                        outcome.kind,
-                        float(outcome.duration_seconds),
-                        spec.channel,
-                        error=outcome.error_code if outcome.kind == "error" else None,
-                        escalated=_escalated(outcome),
-                        speech_units=len(outcome.speech or []),
-                        student_source=source,
-                        model=getattr(usage, "model_id", None),
-                    )
+                    performed, reply_done = list(beats), reply.done
+                key = str(uuid.uuid4())
+                logged = self._exchange(
+                    client, view.id, text, key, call_id, at, spec.channel, source, log, voice
                 )
-                if outcome.kind == "error":
-                    ok = False
+                if logged is None:
+                    state = "failed"
                     break
-                history.append(Exchange(session=index, student=text, coach=said))
-                coach_last, prev_outcome, prev_text = said, outcome, text
-                if "disconnect" in runner_beats and voice and turn < spec.turns:
-                    with contextlib.suppress(ApiError, ApiUnreachableError):
-                        client.end_call(call_id)
-                    call_id = client.start_call(view.id).call.id
-                    log.notes.append("reconnected")
+                entry, outcome = logged
+                entry.note = note
+                history.append(Exchange(session=index, student=text, coach=entry.coach))
+                coach_last, prev_outcome, prev_text, prev_key = entry.coach, outcome, text, key
+                # The student leaving: after a stop or wrap-up beat, or when the student says it is done, unless
+                # the session still has scripted beats ahead (a "stop the role-play" is a pause, not a goodbye).
+                left = reply_done or any(b.kind in ("stop", "wrap_up") for b in performed)
+                ahead = [b for b in s.arc if b.session == index and b.turn > turn]
+                if left and turn < spec.turns:
+                    if ahead:
+                        log.notes.append("done_ignored")
+                    else:
+                        log.notes.append(f"ended_by_student:{turn}/{spec.turns}")
+                        break
         finally:
             if call_id is not None:
                 with contextlib.suppress(Exception):
                     client.end_call(call_id)
             with contextlib.suppress(Exception):
                 client.end_session(view.id)
-        return ok, view.id
+        return state, view.id
+
+    def _exchange(
+        self,
+        client: Any,
+        session_id: str,
+        text: str,
+        key: str,
+        call_id: str | None,
+        at: str,
+        channel: str,
+        source: str,
+        log: SessionLog,
+        voice: bool,
+    ) -> tuple[TurnLog, Any] | None:
+        """One request to the coach. Logs the turn either way (a refused or timed-out turn keeps its elapsed time);
+        returns None when the session cannot go on."""
+        from foundry_evals.client import ApiError, ApiUnreachableError
+
+        started = time.monotonic()
+        try:
+            outcome = client.run_turn(session_id, text, call_id=call_id, idempotency_key=key)
+        except ApiError as exc:
+            log.turns.append(
+                TurnLog(
+                    at,
+                    text,
+                    "",
+                    "error",
+                    time.monotonic() - started,
+                    channel,
+                    error=exc.code,
+                    student_source=source,
+                )
+            )
+            if exc.code in STOP_CODES:
+                with self._lock:
+                    self.stopped = self.stopped or f"app_refused:{exc.code}"
+            return None
+        except ApiUnreachableError:
+            log.turns.append(
+                TurnLog(
+                    at,
+                    text,
+                    "",
+                    "error",
+                    time.monotonic() - started,
+                    channel,
+                    error="timeout",
+                    student_source=source,
+                )
+            )
+            return None
+        turn_view = getattr(outcome, "turn", None)
+        usage = getattr(turn_view, "usage", None)
+        entry = TurnLog(
+            at,
+            text,
+            heard(outcome, voice),
+            outcome.kind,
+            float(outcome.duration_seconds or (time.monotonic() - started)),
+            channel,
+            error=outcome.error_code if outcome.kind == "error" else None,
+            escalated=_escalated(outcome),
+            speech_units=len(outcome.speech or []),
+            student_source=source,
+            model=getattr(usage, "model_id", None),
+        )
+        log.turns.append(entry)
+        if outcome.kind == "error":
+            return None
+        return entry, outcome
+
+    def _reconnect(
+        self,
+        client: Any,
+        session_id: str,
+        call_id: str,
+        units: list[str],
+        at: str,
+        channel: str,
+        log: SessionLog,
+        history: list[Exchange],
+    ) -> tuple[str, str | None] | None:
+        """The call drops before the student's turn, part-way through the coach's last reply, and the student
+        dials back in. The student heard only the first half of that reply's speech units; the new call's opening
+        (if the app says one) is what the student and the judge see next. Returns (new call id, what the student
+        last heard) or None when the call cannot be restarted."""
+        from foundry_evals.client import ApiError, ApiUnreachableError
+
+        last = log.turns[-1]
+        units = [u for u in units if u.strip()] or [
+            u for u in re.split(r"(?<=[.!?])\s+", last.coach) if u.strip()
+        ]
+        if len(units) >= 2 and last.is_student_turn:
+            last.coach = " ".join(units[: len(units) // 2])
+            last.note = last.note or "cut_off"
+            for h in reversed(history):
+                if h.session == log.index and not h.opener:
+                    h.coach = last.coach
+                    break
+        with contextlib.suppress(ApiError, ApiUnreachableError):
+            client.end_call(call_id)
+        started = time.monotonic()
+        try:
+            call = client.start_call(session_id)
+        except (ApiError, ApiUnreachableError) as exc:
+            code = getattr(exc, "code", "timeout")
+            log.turns.append(
+                TurnLog(at + "r", "", "", "reconnect", time.monotonic() - started, channel, error=code)
+            )
+            return None
+        intro = getattr(getattr(call, "intro", None), "text", None) or ""
+        log.turns.append(TurnLog(at + "r", "", intro, "reconnect", time.monotonic() - started, channel))
+        log.notes.append("reconnected")
+        log.enacted.add("disconnect")
+        history.append(Exchange(session=log.index, student="", coach=intro, opener=True, event="reconnected"))
+        return call.call.id, intro or None
 
     def _grade(self, result: RunResult) -> None:
         s = result.scenario
         turns = [Turn(t.at, t.student, t.coach, t.channel, spoken=t.channel == "call") for t in result.turns]
-        sources = [m["content"] for m in s.raw["priorMemory"]] + [
-            d["text"] for d in s.raw.get("documents") or []
-        ]
         result.checks = run_checks(
             turns,
-            known_sources=sources,
+            known_sources=[own_text(s.raw)],
             neighbour=s.raw.get("neighbour"),
             student_name=s.raw["student"]["name"],
         )
         if result.status == "completed":
-            try:
-                result.verdict = self.judge.grade(
-                    s, sessions=[x.for_judge() for x in result.sessions], memory_after=result.memory_after
-                )
-            except BudgetExceededError:
-                result.verdict = Verdict(error="budget")
+            # A budget stop here propagates: the run is "stopped", not a coach failure with a missing verdict.
+            result.verdict = self.judge.grade(
+                s, sessions=[x.for_judge() for x in result.sessions], memory_after=result.memory_after
+            )

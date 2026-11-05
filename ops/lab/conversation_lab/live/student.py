@@ -8,8 +8,10 @@ Contract (tested in tests/test_live_student.py):
   says so; the beats due at this turn (and any overdue ones) are performed in the student's own words;
 * the persona's register is kept (fragments, typos, slang, fillers on a call), without stage directions, name
   prefixes, or any mention of scenarios, beats or evaluation;
-* a malformed or contract-breaking reply is retried once with the reason; after that the turn falls back to the
-  deterministic text of the due beat (counted as a simulator fallback, never silently).
+* a malformed or contract-breaking reply is retried once with the reason; a transient model error (throttling, a
+  timeout, a service error) is retried with backoff. If the simulator still has no valid message the turn fails
+  (``source="failed"``, empty message): the runner ends the run as ``simulator_failed`` and never sends a stand-in
+  to the coach, so a simulator failure is never scored as the coach's behaviour.
 
 The model is a different family from the coach where Bedrock offers one (ops/lab/models.json ``live.simulator``),
 at temperature 0.7; the coach runs at the app's own settings.
@@ -19,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -30,12 +33,34 @@ MAX_CHARS = {"chat": 900, "call": 420}
 TEMPERATURE = 0.7
 MAX_TOKENS = 260
 #: Beats the runner enacts itself (not the simulator's words).
-RUNNER_BEATS = frozenset({"duplicate", "memory_reject", "memory_delete", "memory_correct"})
+RUNNER_BEATS = frozenset(
+    {"duplicate", "resend", "disconnect", "memory_reject", "memory_delete", "memory_correct"}
+)
+#: Self-references to the simulation only. Ordinary founder words ("worst case scenario", "the judge from Deloitte",
+#: "our product evaluation", "we ran simulations") are fine.
 _META = re.compile(
-    r"\b(scenario|arc beat|beats?\b due|hidden facts?|simulat\w*|role-?play(ing)? as the student|"
-    r"as an ai language model|evaluation|the judge)\b",
+    r"\b(this scenario|the scenario (card|says)|(persona|scenario|character) card|my (private|hidden) facts?|"
+    r"hidden facts?|arc beats?|beats? due|do[- ]now instructions?|these instructions|as the simulated student|"
+    r"simulated (student|founder)|role-?play(ing)? as the (student|founder)|as an ai language model)\b",
     re.IGNORECASE,
 )
+#: Bedrock error codes worth retrying (throttling, timeouts, transient service errors).
+TRANSIENT_MODEL_ERRORS = frozenset(
+    {
+        "ThrottlingException",
+        "TooManyRequestsException",
+        "ServiceUnavailableException",
+        "ModelTimeoutException",
+        "ModelNotReadyException",
+        "InternalServerException",
+        "ModelErrorException",
+        "ReadTimeoutError",
+        "ConnectTimeoutError",
+        "EndpointConnectionError",
+    }
+)
+MODEL_RETRIES = 3
+BACKOFF_SECONDS = 2.0
 _PREFIX = re.compile(r"^\s*(student|founder|me|coach|mentor|veir)\s*[:\-–]\s*", re.IGNORECASE)
 _JSON = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -83,6 +108,9 @@ class Exchange:
     coach: str
     #: The session's opening line from the coach, recorded before the first student message.
     opener: bool = False
+    #: Something that happened to the conversation rather than a message ("reconnected": the call dropped and
+    #: the student dialled back in; ``coach`` is then what the coach said on the new call, if anything).
+    event: str = ""
 
 
 @dataclass
@@ -90,7 +118,7 @@ class StudentTurn:
     message: str
     revealed: list[int] = field(default_factory=list)
     done: bool = False
-    source: str = "llm"  # llm | retry | fallback | runner
+    source: str = "llm"  # llm | retry | failed | runner | mock
     problems: list[str] = field(default_factory=list)
 
 
@@ -128,14 +156,22 @@ def _history_text(history: Sequence[Exchange], session: int, window: int = 12) -
     if earlier:
         parts.append("Earlier conversations with this coach (you remember them):")
         for h in earlier[-window:]:
-            if h.opener:
+            if h.event == "reconnected":
+                parts.append("  (The call dropped and you called back.)")
+                if h.coach:
+                    parts.append(f"  Coach: {h.coach}")
+            elif h.opener:
                 parts.append(f"  Coach: {h.coach}")
             else:
                 parts.append(f"  You: {h.student}\n  Coach: {h.coach}")
     if current:
         parts.append("This conversation so far:")
         for h in current[-window:]:
-            if h.opener:
+            if h.event == "reconnected":
+                parts.append("  (The call dropped and you called back.)")
+                if h.coach:
+                    parts.append(f"  Coach (on the new call): {h.coach}")
+            elif h.opener:
                 parts.append(f"  Coach (opening): {h.coach}")
             else:
                 parts.append(f"  You: {h.student}\n  Coach: {h.coach}")
@@ -163,6 +199,12 @@ def build_prompt(
         f"Conversation {session} of {len(s.sessions)}, your message {turn} of {turns_in_session}, on {medium}."
     )
     parts.append(_history_text(history, session))
+    current = [h for h in history if h.session == session]
+    if current and current[-1].event == "reconnected":
+        parts.append(
+            "The call dropped a moment ago and you have just called back. Pick up where you were, the way this "
+            "person would after being cut off."
+        )
     if coach_last is None:
         parts.append("You speak first in this conversation.")
     elif barged_in:
@@ -232,15 +274,6 @@ def parse_reply(text: str, hidden_count: int) -> StudentTurn:
     return StudentTurn(message=text.strip().strip('"').strip())
 
 
-def fallback_message(beats: Sequence[Beat], coach_last: str | None) -> str:
-    """Deterministic text when the model fails twice: the due beats, said plainly. Still a reply to the coach."""
-    if beats:
-        return " ".join(b.text.rstrip(".") + "." for b in beats)
-    if coach_last and "?" in coach_last:
-        return "I'm not totally sure, honestly. Can you say more about why that matters?"
-    return "Okay. What should I do next?"
-
-
 class Student(Protocol):
     name: str
 
@@ -261,9 +294,12 @@ class Student(Protocol):
 class LlmStudent:
     name = "llm"
 
-    def __init__(self, models: ModelClient, model_id: str) -> None:
+    def __init__(
+        self, models: ModelClient, model_id: str, *, sleep: Callable[[float], None] = time.sleep
+    ) -> None:
         self._models = models
         self.model_id = model_id
+        self._sleep = sleep
 
     def respond(
         self,
@@ -290,11 +326,12 @@ class LlmStudent:
             revealed=revealed,
             barged_in=barged_in,
         )
+        from conversation_lab.bedrock import ModelCallError
+
         messages: list[dict[str, Any]] = [{"role": "user", "content": [{"text": prompt}]}]
         problems: list[str] = []
-        for attempt in (1, 2):
-            from conversation_lab.bedrock import ModelCallError
-
+        attempts = model_errors = 0
+        while attempts < 2:
             try:
                 text = self._models.converse(
                     self.model_id,
@@ -306,12 +343,17 @@ class LlmStudent:
                 )
             except ModelCallError as exc:
                 problems.append(f"model:{exc.code}")
+                if exc.code in TRANSIENT_MODEL_ERRORS and model_errors < MODEL_RETRIES:
+                    model_errors += 1
+                    self._sleep(BACKOFF_SECONDS * 2 ** (model_errors - 1))
+                    continue
                 break
+            attempts += 1
             reply = parse_reply(text, len(s.raw["hidden"]))
             reply.message = _PREFIX.sub("", reply.message).strip()
             found = contract_problems(reply.message, coach_last=coach_last, channel=channel)
             if not found:
-                reply.source = "llm" if attempt == 1 else "retry"
+                reply.source = "llm" if attempts == 1 else "retry"
                 reply.problems = problems
                 return reply
             problems += found
@@ -329,7 +371,7 @@ class LlmStudent:
                     ],
                 },
             ]
-        return StudentTurn(message=fallback_message(beats, coach_last), source="fallback", problems=problems)
+        return StudentTurn(message="", source="failed", problems=problems)
 
 
 class MockStudent:

@@ -23,6 +23,9 @@ class FakeApp:
     aged: list[tuple[str, int]] = field(default_factory=list)
     replies: Any = None
     fail_on: str | None = None
+    #: What a (re)started call says first, if anything.
+    call_intro: str | None = None
+    calls_started: int = 0
     _ids: Any = field(default_factory=lambda: itertools.count(1))
 
     def next_id(self, prefix: str) -> str:
@@ -50,6 +53,7 @@ class FakeClient:
         self.app = app
         self.principal_id = principal_id
         self.turns: list[str] = []
+        self.by_key: dict[str, TurnOutcome] = {}
 
     def close(self) -> None:
         return None
@@ -122,7 +126,9 @@ class FakeClient:
         return None
 
     def start_call(self, session_id: str) -> Any:
-        return SimpleNamespace(call=SimpleNamespace(id=self.app.next_id("call")), intro=None)
+        self.app.calls_started += 1
+        intro = SimpleNamespace(text=self.app.call_intro) if self.app.call_intro else None
+        return SimpleNamespace(call=SimpleNamespace(id=self.app.next_id("call")), intro=intro)
 
     def end_call(self, call_id: str) -> None:
         return None
@@ -130,7 +136,26 @@ class FakeClient:
     def interrupt_turn(self, turn_id: str, call_id: str, heard: list[str]) -> None:
         return None
 
-    def run_turn(self, session_id: str, text: str, *, call_id: str | None = None, **_: Any) -> TurnOutcome:
+    def run_turn(
+        self,
+        session_id: str,
+        text: str,
+        *,
+        call_id: str | None = None,
+        idempotency_key: str | None = None,
+        **_: Any,
+    ) -> TurnOutcome:
+        if idempotency_key is not None and idempotency_key in self.by_key:
+            # The same request again: replayed from storage, as the API does.
+            earlier = self.by_key[idempotency_key]
+            return TurnOutcome(
+                kind=earlier.kind,
+                turn_id=earlier.turn_id,
+                turn=earlier.turn,
+                duration_seconds=0.01,
+                speech=list(earlier.speech),
+                replayed=True,
+            )
         self.turns.append(text)
         if self.app.fail_on and self.app.fail_on in text:
             return TurnOutcome(kind="error", error_code="model_error", duration_seconds=0.1)
@@ -140,6 +165,9 @@ class FakeClient:
             answer=answer, spoken=answer if call_id else None, escalation=SimpleNamespace(required=False)
         )
         turn = SimpleNamespace(response=response, usage=SimpleNamespace(model_id="mock"), validator=None)
-        return TurnOutcome(
+        outcome = TurnOutcome(
             kind="completed", turn_id=self.app.next_id("turn"), turn=turn, duration_seconds=0.05, speech=units
         )
+        if idempotency_key is not None:
+            self.by_key[idempotency_key] = outcome
+        return outcome

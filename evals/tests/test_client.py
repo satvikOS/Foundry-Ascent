@@ -260,6 +260,25 @@ class TestTurns:
         assert "channel" not in sent[-1]
         assert typed.speech == ["Run five interviews.", "Then decide."]
 
+    def test_a_caller_chosen_idempotency_key_delivers_a_duplicate(self, turn_payload: dict[str, Any]) -> None:
+        keys: list[str | None] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            keys.append(request.headers.get("idempotency-key"))
+            return httpx.Response(
+                200,
+                content=completed_stream(turn_payload).encode(),
+                headers={"content-type": "text/event-stream", "idempotency-replayed": "true"},
+            )
+
+        client = client_for(handler)
+        outcome = client.run_turn("s", "hi", idempotency_key="dup-1")
+        client.run_turn("s", "hi")
+        assert keys[0] == "dup-1"
+        assert keys[1]
+        assert keys[1] != "dup-1"
+        assert outcome.replayed is True
+
     def test_start_and_end_a_typed_call(self) -> None:
         api = FakeFoundryApi()
         client = FoundryClient(BASE, transport=api.transport())

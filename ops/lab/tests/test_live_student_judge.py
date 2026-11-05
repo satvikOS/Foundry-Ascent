@@ -137,7 +137,7 @@ def test_parse_reply_takes_json_or_plain_text() -> None:
     assert parse_reply('"just the text"', 3).message == "just the text"
 
 
-def test_the_llm_student_retries_once_then_falls_back(scenarios) -> None:
+def test_the_llm_student_retries_once_then_fails_without_a_stand_in(scenarios) -> None:
     s = scenarios["LV-01-01"]
     beats = due_beats(s, 1, 3, set())
     good = json.dumps({"message": "no idea who'd pay, is that a dealbreaker?", "revealed": [], "done": False})
@@ -150,13 +150,103 @@ def test_the_llm_student_retries_once_then_falls_back(scenarios) -> None:
     assert models.calls[0]["system"] == SYSTEM
     assert models.calls[0]["temperature"] == 0.7
     assert "broke the rules" in models.calls[1]["messages"][-1]["content"][0]["text"]
-    models = FakeModels(ModelCallError("ThrottlingException"))
+    # Twice off-contract: the turn fails with no text at all (the runner ends the run; nothing reaches the coach).
+    models = FakeModels('{"message": "as the simulated student I say"}', '{"message": "my hidden facts say"}')
     reply = LlmStudent(models, "m").respond(
         s, session=1, turn=3, history=[], coach_last="Who would pay?", beats=beats, revealed=set()
     )
-    assert reply.source == "fallback"
-    assert "who would pay" in reply.message.lower()
-    assert reply.problems == ["model:ThrottlingException"]
+    assert (reply.source, reply.message) == ("failed", "")
+    assert reply.problems == ["meta_reference", "meta_reference"]
+
+
+def test_transient_model_errors_are_retried_with_backoff(scenarios) -> None:
+    s = scenarios["LV-01-01"]
+    beats = due_beats(s, 1, 3, set())
+    good = json.dumps({"message": "honestly no clue who'd pay", "revealed": [], "done": False})
+    sleeps: list[float] = []
+    models = FakeModels(ModelCallError("ThrottlingException"), ModelCallError("ModelTimeoutException"), good)
+    reply = LlmStudent(models, "m", sleep=sleeps.append).respond(
+        s, session=1, turn=3, history=[], coach_last="Who would pay?", beats=beats, revealed=set()
+    )
+    assert reply.source == "llm"
+    assert reply.message == "honestly no clue who'd pay"
+    assert sleeps == [2.0, 4.0]
+    assert reply.problems == ["model:ThrottlingException", "model:ModelTimeoutException"]
+    # Throttled past the retry budget: a failure, never the beat's stage direction sent as the student.
+    sleeps.clear()
+    models = FakeModels(*[ModelCallError("ThrottlingException")] * 4)
+    reply = LlmStudent(models, "m", sleep=sleeps.append).respond(
+        s, session=1, turn=3, history=[], coach_last="Who would pay?", beats=beats, revealed=set()
+    )
+    assert (reply.source, reply.message) == ("failed", "")
+    assert len(models.calls) == 4
+    assert sleeps == [2.0, 4.0, 8.0]
+    # A permanent error is not retried.
+    models = FakeModels(ModelCallError("AccessDeniedException"))
+    reply = LlmStudent(models, "m", sleep=sleeps.append).respond(
+        s, session=1, turn=3, history=[], coach_last="Who would pay?", beats=beats, revealed=set()
+    )
+    assert (reply.source, len(models.calls)) == ("failed", 1)
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "In the worst case scenario we just return them, right?",
+        "We ran simulations of the dorm usage.",
+        "the judge from Deloitte said our pitch was the strongest",
+        "Our product evaluation with the RA went fine",
+    ],
+)
+def test_ordinary_founder_words_are_not_meta_references(message: str) -> None:
+    assert "meta_reference" not in contract_problems(message, coach_last="How did it go?", channel="chat")
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "In this scenario I'd say yes",
+        "as the simulated student I think so",
+        "my hidden facts say no",
+        "the persona card says I'm shy",
+    ],
+)
+def test_self_references_to_the_simulation_are(message: str) -> None:
+    assert "meta_reference" in contract_problems(message, coach_last="How did it go?", channel="chat")
+
+
+def test_no_authored_founder_line_reads_as_a_meta_reference(scenarios) -> None:
+    """The words a scenario gives the student (private facts, beat texts, objectives) never trip the contract."""
+    flagged = [
+        s.id
+        for s in scenarios.values()
+        for text in [*s.raw["hidden"], s.raw["objective"], *(b.text for b in s.arc)]
+        if "meta_reference" in contract_problems(text, coach_last=None, channel="chat")
+    ]
+    assert flagged == []
+
+
+def test_a_reconnect_is_in_the_students_view(scenarios) -> None:
+    s = scenarios["LV-30-03"]
+    history = [
+        Exchange(session=1, student="so the pricing", coach="Start with the"),
+        Exchange(session=1, student="", coach="Hi again, you dropped off.", opener=True, event="reconnected"),
+    ]
+    prompt = build_prompt(
+        s,
+        session=1,
+        turn=4,
+        turns_in_session=4,
+        channel="call",
+        history=history,
+        coach_last="Hi again, you dropped off.",
+        beats=due_beats(s, 1, 4, set()),
+        revealed=set(),
+    )
+    assert "(The call dropped and you called back.)" in prompt
+    assert "Coach (on the new call): Hi again, you dropped off." in prompt
+    assert "just called back" in prompt
+    assert all(b.kind != "disconnect" for b in due_beats(s, 1, 4, set()))  # the runner's, not the student's
 
 
 def test_the_mock_student_responds_to_what_the_coach_said(scenarios) -> None:
@@ -279,6 +369,54 @@ def test_the_live_judge_sends_the_brief_and_transcript(scenarios) -> None:
         s, sessions=sessions, memory_after=None
     )
     assert failing.error == "model:AccessDeniedException"
+    sleeps: list[float] = []
+    retried = LiveJudge(
+        FakeModels(
+            ModelCallError("ThrottlingException"),
+            json.dumps(_verdict(len(s.raw["expected"]), len(s.raw["prohibited"]))),
+        ),
+        "m",
+        sleep=sleeps.append,
+    ).grade(s, sessions=sessions, memory_after=None)
+    assert retried.ok
+    assert sleeps == [2.0]
+
+
+def test_the_transcript_shows_reconnects_duplicates_and_cut_off_replies() -> None:
+    from conversation_lab.live.judge import transcript_text
+
+    text = transcript_text(
+        [
+            {
+                "index": 1,
+                "channel": "call",
+                "gap_days": 0,
+                "opener": "Hi Tom.",
+                "turns": [
+                    {
+                        "student": "pricing?",
+                        "coach": "Start with the",
+                        "kind": "completed",
+                        "note": "cut_off",
+                    },
+                    {"student": "", "coach": "Welcome back.", "kind": "reconnect"},
+                    {"student": "so, pricing", "coach": "Charge five.", "kind": "completed"},
+                    {
+                        "student": "so, pricing",
+                        "coach": "Charge five.",
+                        "kind": "duplicate",
+                        "note": "replayed",
+                    },
+                ],
+            }
+        ]
+    )
+    assert "[1.1] Coach (the call dropped while this was being said" in text
+    assert "--- the call dropped; the student dialled back in ---" in text
+    assert "Coach (opening the new call): Welcome back." in text
+    assert "[1.2] Student: so, pricing" in text  # the reconnect is not a student turn
+    assert "[1.3] (the student's previous request was delivered to the app a second time" in text
+    assert "replayed its earlier answer" in text
 
 
 def test_the_mock_judge_is_labelled_and_never_passes(scenarios) -> None:

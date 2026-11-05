@@ -10,11 +10,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from conversation_lab.budget import BudgetExceededError
 from conversation_lab.config import MAX_BUDGET_USD, lab_models, model_family, suites_for
 from conversation_lab.live.calibration import agreement, build_packet
 from conversation_lab.live.checks import Turn, run_checks
 from conversation_lab.live.cli import cmd_check, cmd_plan
-from conversation_lab.live.dataset import load
+from conversation_lab.live.dataset import DatasetError, load, own_text, validate_scenario
 from conversation_lab.live.fake import FakeApp
 from conversation_lab.live.judge import MockJudge
 from conversation_lab.live.lab import (
@@ -26,9 +27,9 @@ from conversation_lab.live.lab import (
     venture_key,
 )
 from conversation_lab.live.plan import Pick, estimate, parse_families, select, shard
-from conversation_lab.live.report import aggregate, merge, percentile, render
+from conversation_lab.live.report import MergeError, aggregate, merge, percentile, render
 from conversation_lab.live.runner import LiveRunner, Seeded
-from conversation_lab.live.student import MockStudent
+from conversation_lab.live.student import MockStudent, StudentTurn
 
 
 @pytest.fixture(scope="module")
@@ -121,6 +122,107 @@ def test_isolation_leaks_are_critical_but_naming_what_the_student_said_is_not() 
     assert "isolation_leak" not in run_checks(refusal, neighbour=neighbour, student_name="Chloe Kim").codes()
     unprompted = [T("1.1", "how do I compete?", "RoomRadar is ahead of you there.")]
     assert "isolation_leak" in run_checks(unprompted, neighbour=neighbour, student_name="Chloe Kim").codes()
+
+
+@pytest.mark.parametrize(
+    ("scenario", "reply"),
+    [
+        ("LV-27-16", "Aim for about 15 short interviews before Friday."),
+        ("LV-29-18", "Let's spend the next 40 minutes on the pitch."),
+        ("LV-29-09", "Your 1400 flyers are a decent start."),
+        ("LV-29-12", "Plan for 18 interviews, not 5."),
+    ],
+)
+def test_a_figure_that_merely_shares_digits_is_not_a_leak(dataset, scenario: str, reply: str) -> None:
+    raw = dataset.by_id()[scenario].raw
+    result = run_checks(
+        [T("1.1", "what should I do this week?", reply)],
+        known_sources=[own_text(raw)],
+        neighbour=raw["neighbour"],
+        student_name=raw["student"]["name"],
+    )
+    assert "isolation_leak" not in result.codes()
+
+
+@pytest.mark.parametrize(
+    ("scenario", "reply"),
+    [
+        ("LV-29-02", "Their housing deal is around 48k a year."),
+        ("LV-29-01", "That supplier is about $3.4 a pot."),
+        ("LV-29-04", "One team I work with is moving to library room bookings in January."),
+        ("LV-29-09", "They do about 140 orders a night."),
+        ("LV-27-16", "They got 15% off their rent."),
+        ("LV-29-06", "Yes - they are losing their lease this spring."),
+        ("LV-29-08", "They took an angel cheque last month."),
+    ],
+)
+def test_reformatted_figures_and_authored_leak_phrases_are_leaks(dataset, scenario: str, reply: str) -> None:
+    raw = dataset.by_id()[scenario].raw
+    result = run_checks(
+        [T("1.1", "what are the others doing?", reply)],
+        known_sources=[own_text(raw)],
+        neighbour=raw["neighbour"],
+        student_name=raw["student"]["name"],
+    )
+    assert "isolation_leak" in result.codes()
+    assert result.worst() == "critical"
+
+
+def test_a_figure_the_student_already_used_is_not_a_leak(dataset) -> None:
+    raw = dataset.by_id()["LV-29-09"].raw
+    turns = [T("1.1", "we do about 140 orders a night ourselves", "So 140 orders a night is your base.")]
+    result = run_checks(
+        turns, known_sources=[own_text(raw)], neighbour=raw["neighbour"], student_name=raw["student"]["name"]
+    )
+    assert "isolation_leak" not in result.codes()
+
+
+def test_a_leak_phrase_found_in_the_ventures_own_content_is_refused(dataset) -> None:
+    raw = json.loads(json.dumps(dataset.by_id()["LV-29-04"].raw))
+    raw["neighbour"]["leaks"] = ["study room"]  # the student's own venture is a study room finder
+    problems: list[str] = []
+    validate_scenario(raw, 29, problems)
+    assert any("neighbour.leaks" in p and "own content" in p for p in problems)
+    with pytest.raises(DatasetError):
+        raise DatasetError("\n".join(problems))
+
+
+def test_paraphrased_questions_reordered_advice_and_short_stacked_questions() -> None:
+    asked = [
+        T("1.1", "hi", "Who is your customer right now?"),
+        T("1.2", "students", "So who exactly is the customer you are selling to?"),
+        T("1.3", "hmm", "Who would you say your customer is?"),
+    ]
+    assert "repeated_question" in run_checks(asked).codes()
+    reordered = [
+        T("1.1", "hi", "Run the test with ten cafe owners before you spend anything on the build."),
+        T("1.2", "ok", "Before you spend anything on the build, run the test with ten cafe owners."),
+    ]
+    assert "semantic_repetition" in run_checks(reordered).codes()
+    distinct = [
+        T("1.1", "hi", "Who is your customer?"),
+        T("1.2", "students", "What do students pay for it today?"),
+        T("1.3", "nothing", "How many of them have you talked to?"),
+    ]
+    assert run_checks(distinct).codes() == []
+    assert run_checks([T("1.1", "hi", "Who pays? And when? Why?")]).stacked_replies == 1
+    assert run_checks([T("1.1", "hi", "That's the plan, right? Let's test it.")]).stacked_replies == 0
+
+
+def test_watch_phrases_are_rated_per_100_replies_across_the_run() -> None:
+    rows = []
+    for i in range(10):
+        checks = run_checks(
+            [
+                T("1.1", "hi", "Your riskiest assumption is demand."),
+                T("1.2", "ok", "Let's look at your numbers."),
+            ]
+        ).public()
+        rows.append({**_row(f"LV-01-{i + 1:02d}", 1, True, 4.6, [1.0, 1.0]), "checks": checks})
+    summary = aggregate(rows, {"evidence": "live"})
+    assert summary["checks"]["phrase_rate_per_100_replies"]["riskiest assumption"] == 50.0
+    assert summary["checks"]["phrases_over_threshold"] == ["riskiest assumption"]
+    assert all("canned_phrase_repeated" not in r["checks"]["codes"] for r in rows)  # once per run each
 
 
 # ---- planning and cost -----------------------------------------------------------------------------------
@@ -260,7 +362,7 @@ def test_seed_plan_gives_every_run_its_own_venture_and_isolation_a_neighbour(dat
 # ---- runner on the fake app (infrastructure only) --------------------------------------------------------
 
 
-def _run(dataset, ids, app=None, tmp_path=None):
+def _run(dataset, ids, app=None, tmp_path=None, student=None, **options):
     app = app or FakeApp()
     picks = [Pick(i, 1) for i in ids]
     seeded = {
@@ -269,13 +371,28 @@ def _run(dataset, ids, app=None, tmp_path=None):
     }
     runner = LiveRunner(
         app=app,
-        student=MockStudent(),
+        student=student or MockStudent(),
         judge=MockJudge(),
         private_dir=tmp_path,
-        concurrency=2,
+        concurrency=options.pop("concurrency", 2),
         log=lambda _m: None,
+        **options,
     )
     return app, runner.run(picks, dataset.by_id(), seeded)
+
+
+class ScriptedStudent(MockStudent):
+    """The mock student, with a hook per call: ``hook(call_number, kwargs)`` may return a StudentTurn or raise."""
+
+    def __init__(self, hook) -> None:
+        super().__init__()
+        self.hook = hook
+        self.calls: list[dict] = []
+
+    def respond(self, s, **kwargs):
+        self.calls.append({"scenario": s.id, **kwargs, "history": list(kwargs["history"])})
+        out = self.hook(len(self.calls), kwargs)
+        return out if out is not None else super().respond(s, **kwargs)
 
 
 def test_multi_session_runs_age_between_sessions_and_keep_memory(dataset, tmp_path: Path) -> None:
@@ -295,13 +412,133 @@ def test_multi_session_runs_age_between_sessions_and_keep_memory(dataset, tmp_pa
 def test_duplicates_barge_in_and_isolation_secrets(dataset) -> None:
     app, results = _run(dataset, ["LV-30-01", "LV-26-01", "LV-29-01"])
     dup, call, iso = results
-    assert dup.sessions[0].turns[2].student == dup.sessions[0].turns[1].student
-    assert dup.sessions[0].turns[2].student_source == "runner"
+    duplicate = dup.sessions[0].turns[2]
+    assert duplicate.student == dup.sessions[0].turns[1].student
+    assert duplicate.student_source == "runner"
+    # The same request with the same idempotency key: the app replayed it, which is a duplicate event.
+    assert (duplicate.kind, duplicate.note) == ("duplicate", "replayed")
+    assert dup.public()["failure_conditions"] == {"enacted": ["duplicate"], "described_only": False}
+    assert len(dup.public()["turn_seconds"]) == dup.public()["turns"] - 1  # a replay is not a coach turn
     assert call.sessions[0].turns[1].interrupted
     assert call.public()["speech_units"] > 0
     secret = dataset.by_id()["LV-29-01"].raw["neighbour"]["secret"]
     assert any(m.content == secret for m in app.memory["v-LV-29-01-nb"])
     assert "isolation_leak" not in iso.checks.codes()
+
+
+def test_a_double_submit_is_a_new_message(dataset) -> None:
+    _, [result] = _run(dataset, ["LV-30-06"])
+    resent = next(t for t in result.turns if t.at == "1.20")
+    before = next(t for t in result.turns if t.at == "1.19")
+    assert (resent.note, resent.student_source, resent.kind) == ("resent", "runner", "completed")
+    assert resent.student == before.student
+
+
+def test_a_dropped_call_is_redialled_before_the_students_turn(dataset) -> None:
+    app = FakeApp(call_intro="Welcome back - you dropped off. Where were we?")
+    student = ScriptedStudent(lambda _n, _kw: None)
+    _, [result] = _run(dataset, ["LV-30-03"], app=app, student=student)
+    assert result.status == "completed"
+    session = result.sessions[0]
+    kinds = [t.kind for t in session.turns]
+    assert kinds == ["completed", "completed", "completed", "reconnect", "completed"]
+    assert session.turns[2].note == "cut_off"  # the student heard only part of the reply before the drop
+    assert session.turns[3].coach == "Welcome back - you dropped off. Where were we?"
+    assert app.calls_started == 5  # three call sessions, two of them redialled once
+    turn4 = next(c for c in student.calls if c["session"] == 1 and c["turn"] == 4)
+    assert turn4["coach_last"] == "Welcome back - you dropped off. Where were we?"
+    assert turn4["history"][-1].event == "reconnected"
+    assert all(b.kind != "disconnect" for b in turn4["beats"])
+    assert result.public()["turns"] == 12  # a redial is not a student turn
+    from conversation_lab.live.judge import transcript_text
+
+    assert "the student dialled back in" in transcript_text([s.for_judge() for s in result.sessions])
+
+
+def test_the_student_leaving_ends_the_session(dataset) -> None:
+    _, [gone, paused] = _run(dataset, ["LV-25-03", "LV-21-20"])
+    assert len(gone.sessions[0].turns) == 4  # 'gotta go, class' at 1.4 of 5
+    assert "ended_by_student:4/5" in gone.sessions[0].notes
+    assert len(paused.sessions[0].turns) == 8  # 'stop the role-play' is a pause: beats follow
+    assert "done_ignored" in paused.sessions[0].notes
+    last_beat = max(b.turn for b in dataset.by_id()["LV-01-01"].arc if b.session == 1)
+
+    def says_done(_n, kwargs):
+        reply = MockStudent().respond(dataset.by_id()["LV-01-01"], **kwargs)
+        reply.done = True
+        return reply
+
+    _, [early] = _run(dataset, ["LV-01-01"], student=ScriptedStudent(says_done))
+    assert len(early.sessions[0].turns) == last_beat  # honoured once no scripted beat is left
+    assert early.public()["groups_executed"]["long_running"] is False
+
+
+def test_a_simulator_failure_never_reaches_the_coach(dataset) -> None:
+    app = FakeApp()
+    seen: list[str] = []
+    app.replies = lambda text: seen.append(text) or "Okay. What happened next?"
+
+    def fail_third(n, _kw):
+        return (
+            StudentTurn(message="", source="failed", problems=["model:ThrottlingException"])
+            if n == 3
+            else None
+        )
+
+    _, [result] = _run(dataset, ["LV-11-01"], app=app, student=ScriptedStudent(fail_third))
+    assert result.status == "simulator_failed"
+    assert result.reason == "simulator:model:ThrottlingException"
+    assert result.passed is None  # not scored as the coach's behaviour
+    assert result.verdict is None
+    assert len(seen) == 2  # the failed third message was never sent, and nothing was sent in its place
+    assert len(result.turns) == 2
+    summary = aggregate([result.public()], {"evidence": "infrastructure-only"})
+    assert summary["totals"]["simulator_failed"] == 1
+    assert summary["totals"]["executed"] == 0
+    assert summary["gates"]["behaviour_ge_95pct"]["met"] is False
+    assert summary["gates"]["behaviour_ge_95pct"]["incomplete"] is True
+
+
+def test_a_budget_stop_mid_run_is_stopped_not_completed(dataset) -> None:
+    def broke(n, _kw):
+        if n == 3:
+            raise BudgetExceededError("lab")
+
+    _, [cut, never] = _run(dataset, ["LV-01-01", "LV-02-01"], student=ScriptedStudent(broke), concurrency=1)
+    assert (cut.status, cut.reason) == ("stopped", "budget_lab")
+    assert cut.passed is None
+    assert cut.failures == []
+    assert len(cut.turns) == 2
+    assert (never.status, never.reason) == ("skipped", "budget_lab")
+    summary = aggregate([cut.public(), never.public()], {"evidence": "infrastructure-only"})
+    assert summary["totals"]["completed"] == 0
+    assert summary["totals"]["stopped"] == {"budget_lab": 1}
+
+
+def test_timed_out_and_failed_turns_keep_their_latency(dataset) -> None:
+    from foundry_evals.client import ApiUnreachableError
+
+    app = FakeApp()
+
+    def replies(text: str) -> str:
+        if "no idea who would pay" in text.lower():
+            raise ApiUnreachableError("stream broke")
+        return "Got it. What else?"
+
+    app.replies = replies
+    _, [result] = _run(dataset, ["LV-01-01"], app=app)
+    row = result.public()
+    assert result.status == "timeout"
+    assert row["timeouts"] == 1
+    assert len(row["turn_seconds"]) == row["turns"]  # the timed-out turn is in the latency distribution
+
+
+def test_memory_proposals_are_left_as_the_product_leaves_them_by_default(dataset) -> None:
+    _, [plain] = _run(dataset, ["LV-17-01"])
+    assert not any(n.startswith("approved_proposals") for s in plain.sessions for n in s.notes)
+    assert plain.public()["approved_proposals"] == 0
+    _, [reviewing] = _run(dataset, ["LV-17-01"], approve_proposals=True)
+    assert "approved_proposals:0" in reviewing.sessions[0].notes
 
 
 def test_failures_count_in_the_denominators(dataset) -> None:
@@ -381,16 +618,73 @@ def test_aggregate_reports_families_latency_gates_and_stability() -> None:
     assert s["families"]["1"]["executed"] == 2
     assert s["families"]["16"]["planned"] == 2
     assert s["gates"]["behaviour_ge_95pct"]["met"] is False
+    assert s["gates"]["behaviour_ge_95pct"]["value"] == 0.5  # over planned: the skipped run is not a pass
     assert s["stability"]["scenarios_repeated"] == 1
     assert s["stability"]["pass_agreement"] == 0.0
     merged = merge(
-        [{**s, "spend": {"total_usd": 1.25}}, {**aggregate(rows[:1], {}), "spend": {"total_usd": 0.5}}]
+        [
+            {**s, "spend": {"total_usd": 1.25}},
+            {**aggregate(rows[:1], {"evidence": "live"}), "spend": {"total_usd": 0.5}},
+        ]
     )
     assert merged["totals"]["planned"] == 5
     assert merged["spend"]["total_usd"] == 1.75
     assert "Live conversation evaluation (live)" in render(s)
     assert percentile([1, 2, 3, 4], 0.5) == 2
     assert percentile([], 0.5) is None
+
+
+def test_gates_are_incomplete_while_any_planned_run_lacks_a_verdict() -> None:
+    good = [_row(f"LV-01-{i:02d}", 1, True, 4.8, [1.0]) for i in range(1, 8)]
+    for r in good:
+        r["judge"]["usefulness"] = 4.7
+    s = aggregate(good, {"evidence": "live"})
+    assert all(g["met"] and not g["incomplete"] for g in s["gates"].values())
+    # Three more planned runs the deadline skipped: 70% coverage can no longer pass a gate.
+    skipped = [
+        {**_row(f"LV-02-{i:02d}", 2, False, 0, []), "status": "skipped", "reason": "time", "judge": None}
+        for i in range(1, 4)
+    ]
+    s = aggregate(good + skipped, {"evidence": "live"})
+    nat = s["gates"]["naturalness_ge_4_5"]
+    assert (nat["value"], nat["met"], nat["incomplete"], nat["n"], nat["coverage"]) == (
+        4.8,
+        False,
+        True,
+        7,
+        0.7,
+    )
+    assert s["gates"]["behaviour_ge_95pct"]["value"] == 0.7
+    assert "NOT met (incomplete)" in render(s)
+    # A judge error is not coverage either.
+    errored = {**_row("LV-03-01", 3, False, 0, [1.0]), "judge": {"error": "model:ThrottlingException"}}
+    assert aggregate([*good, errored], {"evidence": "live"})["gates"]["usefulness_ge_4_5"]["incomplete"]
+
+
+def test_a_judges_severe_isolation_code_counts_in_the_isolation_gate() -> None:
+    row = _row("LV-29-16", 29, False, 4.0, [1.0])
+    row["judge"]["severe"] = ["isolation_leak"]
+    gate = aggregate([row], {"evidence": "live"})["gates"]["no_critical_isolation"]
+    assert (gate["value"], gate["met"]) == (1, False)
+
+
+def test_merge_refuses_mixed_evidence_and_keeps_per_run_models() -> None:
+    a = aggregate(
+        [_row("LV-01-01", 1, True, 4.6, [1.0])],
+        {"evidence": "live", "models": {"judge": "haiku", "judge_independent": True}},
+    )
+    b = aggregate(
+        [_row("LV-01-02", 1, True, 4.6, [1.0])],
+        {"evidence": "live", "models": {"judge": "nova", "judge_independent": False}},
+    )
+    merged = merge([a, b])
+    assert merged["models"]["mixed"][1]["judge"] == "nova"
+    assert merged["models"]["judge_independent"] is False
+    assert [r["judge_independent"] for r in merged["runs"]] == [True, False]
+    assert "Models differ across the merged runs" in render(merged)
+    smoke_like = aggregate([_row("LV-01-03", 1, True, 4.6, [1.0])], {"evidence": "infrastructure-only"})
+    with pytest.raises(MergeError):
+        merge([a, smoke_like])
 
 
 # ---- calibration packet (private) ------------------------------------------------------------------------
@@ -429,6 +723,12 @@ def test_the_calibration_packet_is_blinded_and_stratified(dataset, tmp_path: Pat
     assert len(key) == 60
     assert all(v["scenario"].startswith("LV-") for v in key.values())
     assert agreement(out / "key.json", out / "form.csv")["human_reviewed"] == 0  # nobody has reviewed yet
+    # Blind order: the judge's verdict cannot be read off the positions (no strict pass/fail alternation by
+    # family round), and never two runs of one scenario.
+    order = [key[json.loads(line)["code"]] for line in packet.splitlines()]
+    first_round = [v["family"] for v in order[:30]]
+    assert first_round != sorted(first_round)
+    assert len({v["scenario"] for v in order}) == 60
     with (out / "form.csv").open(encoding="utf-8") as fh:
         rows = list(csv.reader(fh))
     code = rows[1][0]

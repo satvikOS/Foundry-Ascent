@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from conversation_lab.live.dataset import DIMENSIONS, Scenario
+from conversation_lab.live.student import BACKOFF_SECONDS, MODEL_RETRIES, TRANSIENT_MODEL_ERRORS
 
 JUDGE_PROMPT_VERSION = "live-judge/2026-11-05.1"
 MAX_TOKENS = 1400
@@ -282,9 +284,28 @@ def transcript_text(sessions: Sequence[Mapping[str, Any]]) -> str:
         out.append(f"=== Session {sess['index']} ({medium}{gap}) ===")
         if sess.get("opener"):
             out.append(f"Coach (opening line): {sess['opener']}")
-        for n, t in enumerate(sess["turns"], start=1):
-            out.append(f"[{sess['index']}.{n}] Student: {t['student']}")
+        n = 0
+        for t in sess["turns"]:
+            if t.get("kind") == "reconnect":
+                out.append("--- the call dropped; the student dialled back in ---")
+                if t.get("coach"):
+                    out.append(f"Coach (opening the new call): {t['coach']}")
+                continue
+            n += 1
+            if t.get("kind") == "duplicate":
+                out.append(
+                    f"[{sess['index']}.{n}] (the student's previous request was delivered to the app a second time, "
+                    "as a duplicate event)"
+                )
+            else:
+                out.append(f"[{sess['index']}.{n}] Student: {t['student']}")
             notes = []
+            if t.get("note") == "replayed":
+                notes.append("the app recognised the duplicate and replayed its earlier answer")
+            elif t.get("note") == "not_deduplicated":
+                notes.append("the app treated the duplicate as a new message")
+            elif t.get("note") == "cut_off":
+                notes.append("the call dropped while this was being said; the student heard only this much")
             if t.get("interrupted"):
                 notes.append("the student cut in; this is what was heard")
             if t.get("escalated"):
@@ -309,10 +330,11 @@ def memory_text(memory: Sequence[Mapping[str, Any]] | None) -> str:
 
 
 class LiveJudge:
-    def __init__(self, models: Any, model_id: str) -> None:
+    def __init__(self, models: Any, model_id: str, *, sleep: Callable[[float], None] = time.sleep) -> None:
         self._models = models
         self.model_id = model_id
         self._system = system_prompt()
+        self._sleep = sleep
 
     def grade(
         self,
@@ -330,17 +352,24 @@ class LiveJudge:
             + "\n\nThe venture's memory record after the last session:\n"
             + memory_text(memory_after)
         )
-        try:
-            text = self._models.converse(
-                self.model_id,
-                system=self._system,
-                messages=[{"role": "user", "content": [{"text": prompt}]}],
-                max_tokens=MAX_TOKENS,
-                temperature=0.0,
-                purpose="judge",
-            )
-        except ModelCallError as exc:
-            return Verdict(error=f"model:{exc.code}")
+        retries = 0
+        while True:
+            try:
+                text = self._models.converse(
+                    self.model_id,
+                    system=self._system,
+                    messages=[{"role": "user", "content": [{"text": prompt}]}],
+                    max_tokens=MAX_TOKENS,
+                    temperature=0.0,
+                    purpose="judge",
+                )
+                break
+            except ModelCallError as exc:
+                if exc.code in TRANSIENT_MODEL_ERRORS and retries < MODEL_RETRIES:
+                    retries += 1
+                    self._sleep(BACKOFF_SECONDS * 2 ** (retries - 1))
+                    continue
+                return Verdict(error=f"model:{exc.code}")
         return parse_verdict(
             text, expected=len(s.raw["expected"]), prohibited=len(s.raw["prohibited"]), voice=s.voice
         )
