@@ -24,13 +24,13 @@ import type { CallEngine } from '@/lib/realtime/call-engine';
 import type { CallSnapshot } from '@/lib/realtime/call-state';
 
 /**
- * The face of a live call (docs/architecture/calls.md §4). The presence is the face until a vendor face is
- * live: the API opens the vendor's session for this call, the adapter loads (its own chunk) and joins, and only
- * then does the call tile show its video and hand it the call's audio (through the server, which relays only
- * the audio it synthesized) or, for a FULL stock face, the validated units the server admits for the vendor to
- * say. Every face is labelled "AI avatar" on its tile. Anything that fails (no face offered, no adapter, a slow or refused join, the
- * vendor dropping, the server saying stop) leaves the call on the presence and its own speakers, without a word
- * to the founder: the call itself never stops for its face.
+ * The face of a live call (docs/architecture/calls.md §4): the API opens the vendor's session for this call, the
+ * adapter loads (its own chunk) and joins, and only then does the call tile show its video and hand it the call's
+ * audio (through the server, which relays only the audio it synthesized) or, for a FULL stock face, the validated
+ * units the server admits for the vendor to say. Every face is labelled "AI avatar" on its tile. Anything that
+ * fails (no face offered, no adapter, a slow or refused join, the vendor dropping, the server saying stop) gives the
+ * face up (`presence`): the call goes on on its own speakers, the tile says the video could not start or stopped
+ * (`hadVideo`), and the call screen offers a voice call; the call itself never stops for its face.
  *
  * The face belongs to the call, not to the screen: it lives in the call's controller (one per call engine), so
  * minimizing the call to the mini bar keeps it, and it ends with the call. One face per call: a face that

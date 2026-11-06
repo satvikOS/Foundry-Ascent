@@ -547,6 +547,8 @@ describe('CallLive', () => {
       { kind: 'video', onSwitchKind, face: faceNotShown(false), veir: { ...VEIR, provider: 'heygen' } },
     );
     expect(await screen.findByText('Video couldn’t start. You can carry on as a voice call.')).toBeVisible();
+    // The status line says it as well, so it is announced.
+    expect(liveText().join(' ')).toContain('Video couldn’t start');
     // The tile says it too, in place of the face (never the sphere as a stand-in).
     expect(document.querySelector('[data-slot="call-tile"]')).toHaveAttribute(
       'data-face',

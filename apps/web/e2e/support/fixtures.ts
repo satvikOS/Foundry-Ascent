@@ -231,7 +231,7 @@ export async function expectVeirBadgeInView(page: Page): Promise<void> {
   // The panel is open beside the content, or its toggle shows (closed, or a sheet on a smaller screen); in a
   // conversation on a phone the toggle is in the header's More menu.
   const more = page.getByRole('button', { name: 'Conversation options' }).filter({ visible: true }).first();
-  await expect(panel.or(show).or(more)).toBeVisible();
+  await expect(panel.or(show).or(more).first()).toBeVisible();
   if (await show.isVisible()) await show.click();
   else if (!(await panel.isVisible())) {
     await more.click();

@@ -1,6 +1,7 @@
-import { AudioLines, VideoOff } from 'lucide-react';
+import { AudioLines, Phone, VideoOff } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, type ReactNode, type Ref } from 'react';
 
+import { Button } from '@/components/ui/button';
 import { useMe } from '@/lib/auth/use-me';
 import { useMediaQuery } from '@/lib/hooks/use-media-query';
 import { createAvatarProvider, type AvatarProvider } from '@/lib/realtime/avatar';
@@ -33,6 +34,8 @@ interface CallStageProps {
    * so (the call screen offers a voice call). A voice call never asks for it: the sphere is its presence.
    */
   video?: boolean;
+  /** A video call whose face could not start or stopped offers this (switch to a voice call); null: no offer. */
+  onVoiceInstead?: (() => void) | null;
   /** The call's face (it outlives this screen: minimized, the call keeps it). Null: always the presence. */
   face?: CallFaceController | null;
 }
@@ -58,6 +61,7 @@ export function CallStage({
   className,
   face: controller = null,
   video: wantsVideo = true,
+  onVoiceInstead = null,
 }: CallStageProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
@@ -158,7 +162,7 @@ export function CallStage({
         </div>
       ) : pending !== null ? (
         <div data-slot="call-video-pending" className={videoFrame}>
-          <p className="flex flex-col items-center gap-3 px-6 text-center text-small text-white/80">
+          <div className="flex flex-col items-center gap-3 px-6 text-center text-small text-white/80">
             {pending === 'starting' ? (
               <span
                 aria-hidden
@@ -170,8 +174,25 @@ export function CallStage({
             ) : (
               <VideoOff aria-hidden className="size-5 text-white/70" />
             )}
-            {PENDING_TEXT[pending]}
-          </p>
+            {/* The call's status line announces the state; this is what the tile shows. */}
+            <p>
+              {VIDEO_PENDING_TEXT[pending]}
+              {pending !== 'starting' && onVoiceInstead ? '. You can carry on as a voice call.' : ''}
+            </p>
+            {pending !== 'starting' && onVoiceInstead ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                data-slot="video-off"
+                className="min-h-11 sm:min-h-9"
+                onClick={onVoiceInstead}
+              >
+                <Phone aria-hidden />
+                Voice call
+              </Button>
+            ) : null}
+          </div>
           <div className="glass-strong absolute bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] items-center rounded-full border">
             {videoTag}
           </div>
@@ -191,14 +212,14 @@ export function CallStage({
   );
 }
 
-/** What a video call's tile says while its face is not shown. */
-const PENDING_TEXT = {
+/** What a video call's tile (and its status line) says while its face is not shown. */
+export const VIDEO_PENDING_TEXT = {
   starting: 'Starting video…',
   stopped: 'Video stopped',
   unavailable: 'Video couldn’t start',
 } as const;
 
-export type VideoPending = keyof typeof PENDING_TEXT;
+export type VideoPending = keyof typeof VIDEO_PENDING_TEXT;
 
 /**
  * A video call's face that is not shown (null when it is shown, or on a voice call, or with no vendor face to ask

@@ -24,7 +24,7 @@ import {
  * first (one `POST /calls/:id/face/say` 204). It also checks that tampered words are refused (422) and never sent,
  * that no track is published and no microphone asked for, that barge-in interrupts the vendor, that the call
  * never fetches its own audio for a unit the face said, that the tile says "AI avatar", and that a face that drops
- * leaves the call on the presence. The face's video and voice play together in one unmuted element (the browser
+ * leaves the call on its own speakers, the tile saying the video stopped. The face's video and voice play together in one unmuted element (the browser
  * keeps the lips in step with the voice): the tile shows that element, no other element plays the voice, the call's
  * Web Audio only measures it (an analyser), and minimizing the call keeps it playing out of sight.
  *
@@ -207,7 +207,7 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
     }
   });
 
-  test('says only admitted units, refuses tampered words, interrupts on barge-in and falls back quietly', async ({
+  test('says only admitted units, refuses tampered words, interrupts on barge-in and says when the face stops', async ({
     page,
     baseURL,
     browser,
@@ -519,13 +519,14 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
         expect(await microphoneAsked(page)).toBe(micAtStart);
       });
 
-      await test.step('the face drops: the presence is back, quietly, and the call goes on', async () => {
+      await test.step('the face drops: the tile says so, the call goes on and offers a voice call', async () => {
         await tile.locator('video').evaluate((element: HTMLVideoElement) => {
           const stream = element.srcObject as MediaStream;
           for (const track of stream.getVideoTracks()) track.dispatchEvent(new Event('ended'));
         });
         await expect(tile).toHaveCount(0);
-        await expect(screen.locator('[data-slot="call-tile"][data-face="presence"]')).toBeVisible();
+        await expect(screen.locator('[data-slot="call-tile"][data-face="video-stopped"]')).toBeVisible();
+        await expect(screen.locator('[data-slot="call-video-pending"]')).toContainText('Video stopped.');
         await expect(line).toBeEditable();
         await expect.poll(() => faceEnds.length).toBe(1);
         // The server is told which trigger ended the face (audited with its end).

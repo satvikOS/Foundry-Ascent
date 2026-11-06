@@ -155,8 +155,10 @@ test.describe('vEIR calls · a video face', () => {
         // No stand-in presence for video: the tile says the video stopped.
         await expect(screen.locator('[data-slot="call-tile"][data-face="video-stopped"]')).toBeVisible();
         await expect(screen.locator('[data-slot="call-stage"]')).toHaveCount(0);
-        const off = screen.locator('[data-slot="video-off"]');
+        const off = screen.locator('[data-slot="call-video-pending"]');
         await expect(off).toContainText('Video stopped. You can carry on as a voice call.');
+        // The status line says it too (announced politely).
+        await expect(screen.getByRole('status').filter({ hasText: 'Video stopped' })).toHaveCount(1);
         // Still a video call until the founder says otherwise.
         await expect(page.getByRole('dialog', { name: /^Video call with / })).toBeVisible();
         await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeEditable();
@@ -284,7 +286,7 @@ test.describe('vEIR calls · a video face', () => {
           'aria-disabled',
           'true',
         );
-        await expect(voice.locator('[data-slot="video-off"]')).toHaveCount(0);
+        await expect(voice.locator('[data-slot="call-video-pending"]')).toHaveCount(0);
         expect(asked).toHaveLength(1);
       });
 

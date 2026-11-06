@@ -162,21 +162,29 @@ async function screen(page: Page, size: Size, name: string, options: { fullPage?
  * banner), 12 px in from the bottom like the left panel, and a page shorter than the screen does not scroll.
  */
 async function expectPanelsFit(page: Page, options: { pageFits?: boolean } = {}): Promise<void> {
-  const fit = await page.evaluate(() => {
-    const panel = document.querySelector('[data-slot="context-panel"]')?.getBoundingClientRect() ?? null;
-    const side = document.querySelector('[data-slot="side-panel"]')?.getBoundingClientRect() ?? null;
-    return {
-      inner: window.innerHeight,
-      scroll: document.documentElement.scrollHeight,
-      panelBottom: panel ? panel.bottom : null,
-      sideBottom: side ? side.bottom : null,
-    };
-  });
-  expect(fit.panelBottom, 'the right panel is shown').not.toBeNull();
-  expect(fit.panelBottom ?? 0, 'the right panel ends 12 px above the bottom').toBeLessThanOrEqual(
-    fit.inner - 11.5,
-  );
-  if (fit.sideBottom !== null) expect(Math.round(fit.panelBottom ?? 0)).toBe(Math.round(fit.sideBottom));
+  const measure = () =>
+    page.evaluate(() => {
+      const panel = document.querySelector('[data-slot="context-panel"]')?.getBoundingClientRect() ?? null;
+      const side = document.querySelector('[data-slot="side-panel"]')?.getBoundingClientRect() ?? null;
+      return {
+        inner: window.innerHeight,
+        scroll: document.documentElement.scrollHeight,
+        panelBottom: panel ? Math.round(panel.bottom) : null,
+        sideBottom: side ? Math.round(side.bottom) : null,
+      };
+    });
+  // The banners' height reaches the panel through a ResizeObserver: measured once the layout has caught up.
+  await expect
+    .poll(
+      async () => {
+        const fit = await measure();
+        return fit.panelBottom !== null && fit.panelBottom <= fit.inner - 12;
+      },
+      { message: 'the right panel is shown and ends 12 px above the bottom' },
+    )
+    .toBe(true);
+  const fit = await measure();
+  if (fit.sideBottom !== null) expect(fit.panelBottom).toBe(fit.sideBottom);
   if (options.pageFits) expect(fit.scroll, 'the page does not scroll by the banner').toBe(fit.inner);
 }
 
@@ -443,6 +451,9 @@ for (const size of sizes()) {
           await expect(settings).toBeHidden();
         } finally {
           // Never leave the call open for the next test (it ends once its few seconds of Undo have passed).
+          const minimized = page.getByRole('region', { name: /^Call with / });
+          if (await minimized.isVisible())
+            await minimized.getByRole('button', { name: 'Return to call' }).click();
           if (await end.isVisible()) {
             await end.click();
             await expect(page.getByRole('region', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });

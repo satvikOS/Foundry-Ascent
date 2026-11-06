@@ -21,7 +21,7 @@ import {
  * (the same id on every chunk, a 200 ms first chunk, ~1 s after, one `agent.speak_end`), made only of units the
  * server admitted as it signed them; the call plays none of them on its own speakers while the face is healthy
  * (never both); barge-in interrupts the vendor and silences the element at once; and when the channel drops, the face
- * ends (`control_lost`), the presence is back and the call plays the next reply itself.
+ * ends (`control_lost`), the tile says the video stopped and the call plays the next reply itself.
  */
 
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
@@ -89,7 +89,7 @@ function utterances(commands: readonly LiteCommand[], from = 0): Map<string, Lit
 test.describe('vEIR calls · a LITE stock face the page feeds (the ElevenLabs voice, lip-synced)', () => {
   test.use({ storageState: FOUNDER_STATE });
 
-  test('says each reply as one utterance of admitted units, never twice, and falls back quietly', async ({
+  test('says each reply as one utterance of admitted units, never twice, and says when the face stops', async ({
     page,
     baseURL,
   }) => {
@@ -297,10 +297,11 @@ test.describe('vEIR calls · a LITE stock face the page feeds (the ElevenLabs vo
         expect(now.localStarts.filter((at) => at > liveAt)).toEqual([]);
       });
 
-      await test.step('the speak channel drops: the face ends, the presence is back and the call speaks itself', async () => {
+      await test.step('the speak channel drops: the face ends, the tile says so and the call speaks itself', async () => {
         await page.evaluate(() => window.dispatchEvent(new Event('foundry:face-lite-drop')));
         await expect(tile).toHaveCount(0);
-        await expect(screen.locator('[data-slot="call-tile"][data-face="presence"]')).toBeVisible();
+        await expect(screen.locator('[data-slot="call-tile"][data-face="video-stopped"]')).toBeVisible();
+        await expect(screen.locator('[data-slot="call-video-pending"]')).toContainText('Video stopped.');
         await expect.poll(() => faceEnds.length).toBe(1);
         expect(faceEnds[0]?.status).toBe(204);
         expect(JSON.parse(faceEnds[0]?.body ?? '{}')).toEqual({ reason: 'control_lost' });
