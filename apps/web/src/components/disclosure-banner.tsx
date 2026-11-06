@@ -7,11 +7,12 @@ import { meQueryOptions } from '@/lib/api/hooks/auth';
 import { cn } from '@/lib/utils';
 
 /**
- * The disclosure on public pages, before anyone has signed in (no persona is known yet): what every vEIR
- * is, and that it never speaks for the EIR.
+ * The disclosure on public pages, before anyone has signed in (no persona is known yet): what the mentor is
+ * and how it is made. The EIR consents, approves the doctrine and style it is built from, and reviews each
+ * release before it reaches students; it does not claim a person approved each answer.
  */
 export const PUBLIC_DISCLOSURE =
-  'Every vEIR is an AI, built with consent from an EIR’s approved doctrine and style. It is not the EIR and never speaks for them.';
+  'Your mentor here is an AI, not a person: built with an entrepreneur-in-residence’s consent from their approved doctrine and coaching style, and released after their review. A person from the program is there when you need one.';
 
 interface DisclosureBannerProps {
   /**
@@ -21,6 +22,8 @@ interface DisclosureBannerProps {
   text?: string | null;
   /** The vEIR's full name ("Corin's vEIR"), for the line's always-visible summary. */
   veirName?: string | null | undefined;
+  /** The line's always-visible summary, when the page words it itself (otherwise {@link disclosureSummary}). */
+  summary?: string | null | undefined;
   /**
    * "line" (one quiet line: the EIR studio's test bench, beside a release its author is trying), "inline" (a
    * callout on public pages and reviews), "print" (exports; always visible). Founder conversations and
@@ -48,7 +51,13 @@ export function disclosureSummary(veirName?: string | null): string {
  * (ADR-0020). It is not dismissible, uses a label + text (never colour alone), and is exposed as a note named
  * "AI disclosure" so assistive technology reads it in context.
  */
-export function DisclosureBanner({ text, veirName, variant = 'line', className }: DisclosureBannerProps) {
+export function DisclosureBanner({
+  text,
+  veirName,
+  summary,
+  variant = 'line',
+  className,
+}: DisclosureBannerProps) {
   // Read the cached principal only: public pages must not call GET /me (it would wake the paused DB).
   const { data: me } = useQuery({ ...meQueryOptions(), enabled: false });
   const message =
@@ -71,7 +80,13 @@ export function DisclosureBanner({ text, veirName, variant = 'line', className }
   }
 
   if (variant === 'line') {
-    return <DisclosureLine message={message} summary={disclosureSummary(veirName)} className={className} />;
+    return (
+      <DisclosureLine
+        message={message}
+        summary={summary?.trim() ? summary.trim() : disclosureSummary(veirName)}
+        className={className}
+      />
+    );
   }
 
   return (

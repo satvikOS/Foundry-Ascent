@@ -37,7 +37,8 @@ export const AD_IDS = {
 export const AD_TENANT = 'example';
 const AT = '2026-11-05T15:42:00.000Z';
 const person = { id: AD_IDS.principal, displayName: session.founder, title: null, synthetic: true };
-const veirName = `${session.eir.firstName} · vEIR`;
+/** The persona's display name, as the product shows it: just the name. */
+const veirName = session.eir.firstName;
 
 export const AD_ME: Me = {
   principal: person,

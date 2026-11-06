@@ -2,13 +2,15 @@ import type { Me } from '@foundry/contracts';
 import { Bot, Check, Lock, PauseCircle, ShieldCheck } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
-import { BrandMark } from '@/components/shell/brand';
+import { BrandWordmark } from '@/components/shell/brand';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { cn } from '@/lib/utils';
 
 import { VoiceDemo } from './device-ad/voice-demo';
 import { CoachFragment, DiagnoseFragment, RecordFragment, VentureFragment } from './fragments';
 import { AccountPill } from './landing-nav';
+import { PERSONA } from './persona';
+import { Streak } from './streak';
 import { useReveals } from './use-reveals';
 
 /** The program its students are on (the Ain Foundry roadmap): three modules, with EIR sessions in each. */
@@ -56,7 +58,7 @@ function SplitBand() {
             Talk it out loud.
           </h2>
           <p data-reveal className="l-body max-w-[30rem] text-foreground">
-            Call your vEIR, interrupt it, think out loud. Your words stay on screen as captions.
+            Call {PERSONA}, interrupt him, think out loud. Your words stay on screen as captions.
           </p>
           <div data-reveal>
             <a href="#see-a-session" className="pill pill--ink">
@@ -84,21 +86,21 @@ function SessionLoop() {
   const cards: LoopCard[] = [
     {
       eyebrow: 'Diagnose',
-      title: 'It asks before it answers.',
-      body: 'Your vEIR finds out where the venture stands first, one sharp question at a time.',
+      title: 'He asks before he answers.',
+      body: `${PERSONA} finds out where your venture stands first, one sharp question at a time.`,
       tone: 'ink',
       fragment: <DiagnoseFragment />,
     },
     {
       eyebrow: 'Coach',
-      title: 'It argues with your evidence, kindly.',
+      title: 'He argues with your evidence, kindly.',
       body: 'Answers cite your own notes and documents, and say what is fact, inference or hunch.',
       tone: 'black',
       fragment: <CoachFragment />,
     },
     {
       eyebrow: 'Record',
-      title: 'It remembers what you decided.',
+      title: 'He remembers what you decided.',
       body: 'Decisions, experiments and actions carry into the next session. Read, correct or delete any of it.',
       tone: 'light',
       fragment: <RecordFragment />,
@@ -174,7 +176,8 @@ function Ventures() {
   const [open, setOpen] = useState<VentureId>('software');
   const base = useId();
   return (
-    <section id="for-students" aria-labelledby="ventures-title" className="l-section">
+    <section id="for-students" aria-labelledby="ventures-title" className="l-section relative isolate">
+      <Streak variant="mid" />
       <div className="l-wrap">
         <h2 id="ventures-title" data-reveal className="l-h2 text-center">
           For every kind of venture
@@ -254,7 +257,7 @@ function Principles() {
               key={item.title}
               data-reveal
               style={{ '--stagger': index } as CSSProperties}
-              className="grid content-start gap-4 rounded-[1.25rem] bg-(--surface-2) p-7 pb-10"
+              className="grid content-start gap-4 rounded-[1.25rem] border border-border bg-(--surface-2) p-7 pb-10"
             >
               <h3 className="l-h3">{item.title}</h3>
               <p className="l-body text-muted-foreground">{item.body}</p>
@@ -269,7 +272,7 @@ function Principles() {
 const TRUST = [
   { icon: Lock, label: 'Private to your venture' },
   { icon: Bot, label: 'AI, and says so when asked' },
-  { icon: PauseCircle, label: 'Staff can pause a vEIR at once' },
+  { icon: PauseCircle, label: `Staff can pause ${PERSONA} at once` },
   { icon: ShieldCheck, label: 'Designed to WCAG 2.2 AA' },
 ] as const;
 
@@ -278,7 +281,7 @@ function TrustBand() {
     <section
       id="trust"
       aria-labelledby="trust-title"
-      className="l-section l-scheme-dark bg-(--band-ink) text-[#f4f4f2]"
+      className="l-section l-scheme-dark border-t border-white/[0.06] bg-(--band-ink) text-[#f4f4f2]"
     >
       <div className="l-wrap text-center">
         <h2 id="trust-title" data-reveal className="l-h2 mx-auto max-w-[20ch]">
@@ -353,17 +356,17 @@ const FOOTER = [
 
 function Footer() {
   return (
-    <footer className="l-scheme-dark bg-(--band-ink) text-[#f4f4f2]">
-      <div className="l-wrap grid gap-14 pt-20 pb-10 md:grid-cols-[1fr_auto]">
-        <BrandMark className="size-12" label="Foundry Ascent" />
-        <nav aria-label="Footer" className="grid grid-cols-2 gap-x-12 gap-y-10 sm:grid-cols-3 md:gap-x-20">
+    <footer className="l-scheme-dark border-t border-white/[0.06] bg-(--band-ink) text-[#f4f4f2]">
+      <div className="l-wrap grid gap-12 pt-16 pb-8 md:grid-cols-[minmax(0,1fr)_auto] md:gap-x-16 md:pt-20">
+        <BrandWordmark className="self-start text-[1.0625rem]" />
+        <nav aria-label="Footer" className="grid grid-cols-2 gap-x-12 gap-y-8 sm:grid-cols-3 md:gap-x-20">
           {FOOTER.map((group) => (
             <div key={group.label}>
-              <h2 className="text-[0.75rem] font-medium text-[#a6a6a3]">{group.label}</h2>
-              <ul className="mt-4 grid gap-3">
+              <h2 className="text-[0.75rem] leading-[1.4] font-medium text-[#a6a6a3]">{group.label}</h2>
+              <ul className="mt-3 grid">
                 {group.links.map((link) => (
                   <li key={link.href}>
-                    <a href={link.href} className="l-link text-[0.9375rem]">
+                    <a href={link.href} className="l-link min-h-9 text-[0.9375rem]">
                       {link.text}
                     </a>
                   </li>
@@ -372,7 +375,7 @@ function Footer() {
             </div>
           ))}
         </nav>
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-white/10 pt-6 text-small text-[#a6a6a3] md:col-span-2">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-white/10 pt-6 text-small text-[#a6a6a3] md:col-span-2">
           <p>All data shown is synthetic.</p>
           <span className="ml-auto">
             <ThemeToggle />

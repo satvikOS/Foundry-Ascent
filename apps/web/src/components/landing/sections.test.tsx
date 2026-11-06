@@ -91,4 +91,16 @@ describe('LandingSections', () => {
     }
     expect(within(footer).queryByRole('link', { name: 'Privacy' })).toBeNull();
   });
+
+  it('calls the mentor by his name, never “vEIR”, in everything it shows', async () => {
+    renderSections();
+    await screen.findByRole('heading', { name: 'How a session works' });
+    const visible = [...document.querySelectorAll('section, footer')]
+      .filter((node) => !node.closest('[aria-hidden="true"]'))
+      .map((node) => node.textContent)
+      .join(' ');
+    expect(visible).not.toMatch(/vEIR/);
+    expect(screen.getByText(/Call Thomas, interrupt him/)).toBeInTheDocument();
+    expect(screen.getByText('Staff can pause Thomas at once')).toBeInTheDocument();
+  });
 });

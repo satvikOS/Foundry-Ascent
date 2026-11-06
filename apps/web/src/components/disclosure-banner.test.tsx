@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { renderWithProviders } from '@/features/admin/shared/test-utils';
 
-import { DisclosureBanner, disclosureSummary } from './disclosure-banner';
+import { DisclosureBanner, disclosureSummary, PUBLIC_DISCLOSURE } from './disclosure-banner';
 
 const PERSONA_DISCLOSURE =
   "You are talking with Corin's vEIR, an AI coach built from Corin Halvorsen's approved frameworks and coaching " +
@@ -36,6 +36,27 @@ describe('DisclosureBanner line', () => {
       'aria-expanded',
       'true',
     );
+  });
+
+  it('takes a page’s own summary, and keeps the full disclosure one press away', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <DisclosureBanner text={PUBLIC_DISCLOSURE} summary="Thomas is an AI mentor, not a person." />,
+    );
+    const note = screen.getByRole('note', { name: 'AI disclosure' });
+    expect(note.querySelector('[data-slot="disclosure-summary"]')).toHaveTextContent(
+      'Thomas is an AI mentor, not a person.',
+    );
+    await user.click(within(note).getByRole('button', { name: 'More of the AI disclosure' }));
+    expect(within(note).getByText(PUBLIC_DISCLOSURE)).toBeVisible();
+  });
+
+  it('describes the public mentor as the EIR made it: consented, approved doctrine, reviewed releases', () => {
+    expect(PUBLIC_DISCLOSURE).toMatch(/consent/);
+    expect(PUBLIC_DISCLOSURE).toMatch(/approved doctrine and coaching style/);
+    expect(PUBLIC_DISCLOSURE).toMatch(/released after their review/);
+    // It never claims a person approved each answer, nor that the mentor never speaks for its EIR.
+    expect(PUBLIC_DISCLOSURE).not.toMatch(/wrote or approved|never speaks for/i);
   });
 
   it('names no one when the vEIR is unknown', () => {

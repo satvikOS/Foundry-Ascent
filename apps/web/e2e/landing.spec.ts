@@ -105,6 +105,35 @@ test.describe('landing page device ad', () => {
     await expect(page.locator('[data-slot="device-ad"] .ad-screen').first()).toBeVisible();
   });
 
+  test('says what Thomas is under the hero, and how the EIR made him, without claiming each answer', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    const note = page.getByRole('main').getByRole('note', { name: 'AI disclosure' });
+    await expect(note).toContainText('Thomas is an AI mentor, not a person.');
+    await note.getByRole('button', { name: 'More of the AI disclosure' }).press('Enter');
+    await expect(note).toContainText('released after their review');
+    await expect(note).not.toContainText(/wrote or approved|never speaks for/);
+    await expect(page.getByRole('main')).not.toContainText('vEIR');
+  });
+
+  test('lays a still colour streak across the ground, and drops it in forced colours', async ({ page }) => {
+    await page.goto('/');
+    const streaks = page.locator('[data-slot="streak"]');
+    await page.locator('#for-students').scrollIntoViewIfNeeded();
+    await expect(streaks).toHaveCount(2);
+    for (const streak of await streaks.all()) {
+      await expect(streak).toHaveAttribute('aria-hidden', 'true');
+      const band = streak.locator('.l-streak');
+      expect(await band.evaluate((node) => getComputedStyle(node).animationName)).toBe('none');
+    }
+    await expectNoHorizontalScroll(page);
+    await page.emulateMedia({ forcedColors: 'active' });
+    for (const streak of await streaks.all()) {
+      expect(await streak.evaluate((node) => getComputedStyle(node).display)).toBe('none');
+    }
+  });
+
   test('follows a section link from the bar, and nothing scrolls sideways', async ({ page }) => {
     await page.goto('/');
     await page
