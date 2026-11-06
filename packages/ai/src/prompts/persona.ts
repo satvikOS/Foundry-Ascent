@@ -65,13 +65,3 @@ export function resolvePersonaIdentity(
   }
   return { kind: 'veir', personaName: name, eirFirstName: first, eirFullName: full };
 }
-
-/**
- * A disclosure for a vEIR persona release that meets the persistent-disclosure requirement (it says
- * the coach is an AI, that it is not a person, and that no human EIR authored or approved the
- * responses; evals `grade_disclosure`) while naming whose approach it carries.
- */
-export function buildVeirDisclosure(input: { personaName: string; eirName: string }): string {
-  const first = firstNameOf(input.eirName);
-  return `You are talking with ${input.personaName}, an AI mentor built with consent from ${input.eirName}'s approach. It is not a person and it is not ${first}, and no human EIR authored or approved these responses.`;
-}

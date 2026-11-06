@@ -26,11 +26,6 @@ purpose: the deploy role has no Bedrock, Polly, S3 or Data API permissions, and 
 its own narrowly scoped role (see
 [deploy and rollback](../../docs/runbooks/deploy-and-rollback.md#probing-bedrock-and-polly)).
 
-Left for the account owner (optional hygiene): delete the IAM user `Foundry-Ascent` (it still has
-`FoundryAscent-BootstrapOperator` and `IAMUserChangePassword` attached and possibly a console
-password, but no access keys), and delete the repository secrets `AWS_ACCESS_KEY_ID` and
-`AWS_SECRET_ACCESS_KEY`.
-
 **Security hardening (2026-10):** the stage-0 policy used to let the CI user create and change
 `cdk-*` and `FoundryAscent*` roles and publish `FoundryAscent*` policies, including the permissions
 boundary. Any of those lets a holder of the access key grant itself administrator access (for example: a
@@ -45,6 +40,28 @@ groups or credentials for IAM users; no new versions of `FoundryAscent-Boundary`
 deploy access (the OIDC deploy role, the only path since the stage-0 key was deleted) can deploy
 CloudFormation within the boundary.
 
+### Leftovers
+
+Left for the account owner (optional hygiene): delete the IAM user `Foundry-Ascent` (it still has
+`FoundryAscent-BootstrapOperator` and `IAMUserChangePassword` attached and possibly a console
+password, but no access keys), and delete the repository secrets `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY`. The user's inline `FoundryAscent-SelfRetirement` policy and the detached managed policy
+`FoundryAscent-LegacyCleanup` have no use left (their documents were removed from the repository; they are in git
+history): delete them in CloudShell, or delete the user, which takes the inline policy with it.
+
+```bash
+ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+aws iam delete-user-policy --user-name Foundry-Ascent --policy-name FoundryAscent-SelfRetirement || true
+legacy="arn:aws:iam::${ACCOUNT_ID}:policy/FoundryAscent-LegacyCleanup"
+for version in $(aws iam list-policy-versions --policy-arn "${legacy}" \
+  --query 'Versions[?IsDefaultVersion==`false`].VersionId' --output text 2>/dev/null); do
+  aws iam delete-policy-version --policy-arn "${legacy}" --version-id "${version}"
+done
+aws iam delete-policy --policy-arn "${legacy}" || true
+```
+
+The permissions boundary keeps denying changes to `FoundryAscent-LegacyCleanup` while it may still exist.
+
 ## Account owner: apply the policies (CloudShell)
 
 Sign in to the AWS console as an administrator, open **CloudShell** (terminal icon in the top bar,
@@ -56,10 +73,8 @@ git clone --depth 1 https://github.com/satvikOS/Foundry-Ascent && bash Foundry-A
 
 [`apply-bootstrap-access.sh`](apply-bootstrap-access.sh) is idempotent. It publishes
 `FoundryAscent-Boundary` (from [`policies/permissions-boundary.json`](policies/permissions-boundary.json)),
-publishes and attaches `FoundryAscent-BootstrapOperator`, puts the inline policy
-`FoundryAscent-SelfRetirement` ([`policies/self-retirement.json`](policies/self-retirement.json)) on the
-user, publishes the tightened `FoundryAscent-LegacyCleanup` if it exists and **detaches** it (pass
-`--with-legacy-cleanup` only while a legacy cleanup is still running), then prints what is attached.
+publishes and attaches `FoundryAscent-BootstrapOperator`, then prints what is attached. It no longer touches the
+retired inline `FoundryAscent-SelfRetirement` or `FoundryAscent-LegacyCleanup` (see [Leftovers](#leftovers)).
 
 Run it again whenever one of the policy files changes in `main`; the CI user cannot publish them.
 [`required-actions.json`](required-actions.json) lists what the stage-0 user must be able to do **and**
@@ -147,12 +162,10 @@ done
 
 ## Policies
 
-| File                                 | Attached to                                                                  | Purpose                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------------ | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `policies/bootstrap-operator.json`   | IAM user (stage 0)                                                           | Post-bootstrap: caller identity; read CloudFormation, the CDK bootstrap version, the platform roles and policies, the GitHub OIDC provider; assume the CDK deploy, file-publishing, image-publishing and lookup roles; Bedrock smoke tests; Cost Explorer and budget reads; self-retirement. Explicit `Deny` on IAM writes                          |
-| `policies/self-retirement.json`      | IAM user (stage 0), inline `FoundryAscent-SelfRetirement`                    | List the user's policies and keys, detach its policies, delete its keys — on the user itself only. Survives the managed policies so the last key can be deleted                                                                                                                                                                                     |
-| `policies/legacy-cleanup.json`       | Nobody by default (historical; attach only for a legacy cleanup run)         | Inventory and deletion of resources that predate Foundry Ascent. Explicit `Deny` statements protect `CDKToolkit`, `FoundryAscent*` stacks, the `cdk-*`/`FoundryAscent*` roles and policies, the OIDC provider, platform buckets, Aurora, its secret, functions, queues, topics, logs, parameters and every resource tagged `project=foundry-ascent` |
-| `policies/permissions-boundary.json` | Every role the platform creates, including the CloudFormation execution role | Blocks privilege escalation (no role or user without this boundary, no edits or removal of the boundary or of the stage-0 policies, no policies or groups for IAM users, no long-lived credentials) and cost blowups (customer KMS keys, EC2, NAT, VPC endpoints, provisioned throughput, non-serverless databases, …)                              |
+| File                                 | Attached to                                                                  | Purpose                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `policies/bootstrap-operator.json`   | IAM user (stage 0)                                                           | Post-bootstrap: caller identity; read CloudFormation, the CDK bootstrap version, the platform roles and policies, the GitHub OIDC provider; assume the CDK deploy, file-publishing, image-publishing and lookup roles; Bedrock smoke tests; Cost Explorer and budget reads; self-retirement. Explicit `Deny` on IAM writes |
+| `policies/permissions-boundary.json` | Every role the platform creates, including the CloudFormation execution role | Blocks privilege escalation (no role or user without this boundary, no edits or removal of the boundary or of the stage-0 policies, no policies or groups for IAM users, no long-lived credentials) and cost blowups (customer KMS keys, EC2, NAT, VPC endpoints, provisioned throughput, non-serverless databases, …)     |
 
 The boundary allows every other action, so deployments do not fail on a missing
 permission, while the guardrails hold even if a pipeline is compromised.

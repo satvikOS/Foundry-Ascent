@@ -11,23 +11,19 @@
 #   2. FoundryAscent-BootstrapOperator  post-bootstrap stage-0 policy: read-only, assume the four CDK
 #                                       bootstrap roles, model smoke tests, FinOps reads, self-retirement.
 #                                       Attached to the user.
-#   3. FoundryAscent-SelfRetirement     inline policy on the user: list, detach and delete-key on itself
-#                                       only, so the retire workflow can delete the last access key after
-#                                       detaching the managed policies.
-#   4. FoundryAscent-LegacyCleanup      the tightened version is published if the policy exists. It is
-#                                       DETACHED unless --with-legacy-cleanup is given (only while a legacy
-#                                       cleanup is still running; docs/runbooks/legacy-aws-cleanup.md).
+#
+# The stage-0 access key was deleted on 2026-10-06 and the one-time legacy cleanup is closed, so this script no
+# longer publishes the user's inline FoundryAscent-SelfRetirement policy or FoundryAscent-LegacyCleanup (both
+# documents were removed; they are in git history). An account that still holds them can delete them
+# (infra/iam/README.md, "Leftovers").
 #
 # Options:
-#   --with-legacy-cleanup   keep (or attach) FoundryAscent-LegacyCleanup
 #   --user NAME             CI user name (default Foundry-Ascent)
 set -euo pipefail
 
 USER_NAME="Foundry-Ascent"
-WITH_LEGACY=false
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --with-legacy-cleanup) WITH_LEGACY=true ;;
     --user)
       USER_NAME="$2"
       shift
@@ -83,11 +79,6 @@ upsert_policy() {
   fi
 }
 
-is_attached() {
-  aws iam list-attached-user-policies --user-name "${USER_NAME}" \
-    --query "AttachedPolicies[?PolicyName=='$1'].PolicyName" --output text | grep -qx "$1"
-}
-
 upsert_policy "FoundryAscent-Boundary" "${POLICY_DIR}/permissions-boundary.json" \
   "Foundry Ascent permissions boundary for every platform role"
 
@@ -95,23 +86,6 @@ upsert_policy "FoundryAscent-BootstrapOperator" "${POLICY_DIR}/bootstrap-operato
   "Foundry Ascent CI (stage 0, after the CDK bootstrap): read-only, CDK bootstrap roles, model smoke tests, FinOps read, self-retirement"
 aws iam attach-user-policy --user-name "${USER_NAME}" --policy-arn "$(policy_arn FoundryAscent-BootstrapOperator)"
 echo "attached  FoundryAscent-BootstrapOperator -> ${USER_NAME}"
-
-aws iam put-user-policy --user-name "${USER_NAME}" --policy-name FoundryAscent-SelfRetirement \
-  --policy-document "file://${POLICY_DIR}/self-retirement.json"
-echo "inline    FoundryAscent-SelfRetirement -> ${USER_NAME}"
-
-legacy_arn="$(policy_arn FoundryAscent-LegacyCleanup)"
-if [ "${WITH_LEGACY}" = true ] || aws iam get-policy --policy-arn "${legacy_arn}" >/dev/null 2>&1; then
-  upsert_policy "FoundryAscent-LegacyCleanup" "${POLICY_DIR}/legacy-cleanup.json" \
-    "Foundry Ascent CI: one-time inventory and removal of pre-existing billable resources (never platform resources)"
-fi
-if [ "${WITH_LEGACY}" = true ]; then
-  aws iam attach-user-policy --user-name "${USER_NAME}" --policy-arn "${legacy_arn}"
-  echo "attached  FoundryAscent-LegacyCleanup -> ${USER_NAME} (detach it when the legacy cleanup is closed)"
-elif is_attached FoundryAscent-LegacyCleanup; then
-  aws iam detach-user-policy --user-name "${USER_NAME}" --policy-arn "${legacy_arn}"
-  echo "detached  FoundryAscent-LegacyCleanup from ${USER_NAME}"
-fi
 
 aws iam list-attached-user-policies --user-name "${USER_NAME}" --output table
 aws iam list-user-policies --user-name "${USER_NAME}" --output table

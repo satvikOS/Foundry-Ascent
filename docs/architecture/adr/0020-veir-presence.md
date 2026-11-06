@@ -47,7 +47,9 @@ Chosen option: **1**.
   Acknowledged once,
   stored with the person (`principals.veir_welcome_acknowledged_at`, migration 0016, closed to `app_rls` like
   0010's call notice; `POST /me/veir-welcome/acknowledge`, audited once). A call opened first says it on its
-  start screen, beside the voice notice; Start call stores both.
+  start screen, beside the voice notice; Start call stores both. Since migration 0029 the welcome is once per
+  mentor and presentation (`principals.veir_welcome_introductions`): a founder who read "Meet Corin's vEIR" meets
+  Thomas when the persona became him (ADR-0021), and a second venture's mentor is introduced on its own.
 - **Badge.** Wherever the vEIR is named it carries a badge ("vEIR" under the EIR's first name, "AI"
   otherwise) that opens one short paragraph: an AI, the EIR's digital twin, not the EIR in person, who does not
   write or approve its replies. No disclaimer line under composers, calls or summaries; exports keep the

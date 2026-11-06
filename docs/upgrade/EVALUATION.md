@@ -40,10 +40,13 @@ UPGRADE_RESULTS_DIR=/absolute/path/new-run pnpm --filter @foundry/api exec tsx s
 UPGRADE_OFFSET=0 UPGRADE_LIMIT=150 UPGRADE_RESULTS_DIR=/absolute/path/shard-0 pnpm --filter @foundry/api exec tsx src/scripts/upgrade-eval.ts
 python3 evals/datasets/upgrade/merge_runs.py --runs /absolute/path/shard-0 /absolute/path/shard-150 /absolute/path/shard-300 /absolute/path/shard-450 --out /absolute/path/completed-run
 python3 evals/datasets/upgrade/calibration.py --run-dir /absolute/path/completed-run --output-dir /absolute/path/new-calibration-packet
-pnpm --filter @foundry/web exec node scripts/upgrade-media.mjs
 ```
 
-`TEST_DATABASE_ADMIN_URL` must identify a disposable PostgreSQL 16 + pgvector cluster. The runner creates/drops its own test database. Run media with Vite at `UPGRADE_WEB_URL` (default 127.0.0.1:5173). This uses an actual Chromium AudioContext and fake audio device; it does not validate provider speech recognition, synthesized voice naturalness or physical-device acoustics. Full results and unresolved acceptance dependencies are linked in the delivery report.
+The Chromium media harness (`apps/web/scripts/upgrade-media.mjs`) and its five-minute soak (`upgrade-session.mjs`)
+drove the drawn character, which was removed on 2026-11-06; both scripts are in git history (last present at commit
+`9ebeffa`) and their recorded results stay in `evidence/media/`.
+
+`TEST_DATABASE_ADMIN_URL` must identify a disposable PostgreSQL 16 + pgvector cluster. The runner creates/drops its own test database. The media harness (now retired, see above) ran with Vite at `UPGRADE_WEB_URL` (default 127.0.0.1:5173) on an actual Chromium AudioContext and fake audio device; it did not validate provider speech recognition, synthesized voice naturalness or physical-device acoustics. Full results and unresolved acceptance dependencies are linked in the delivery report.
 
 Each scenario is synchronously journaled with flush before finalization. The transcript journal survives an evidence-export failure; gzip is published only after a complete stream. Git-diff hashing streams output rather than buffering it. A failed finalizer remains a failed run even when its scenario rows passed. Merge validation requires all 600 distinct IDs, matching source/prompt/fixture/code versions, unchanged source, and complete student/coach exchanges; it preserves failed scenario rows. Concurrency records overlapping shard intervals. The final protocol rerun uses four disposable databases; page/media latency measurements remain separate single-case laboratory runs.
 

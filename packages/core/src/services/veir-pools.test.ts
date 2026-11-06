@@ -2,10 +2,20 @@ import { notebooksRepo } from '@foundry/db';
 import { describe, expect, it } from 'vitest';
 
 import { summarize } from './knowledge-library.js';
-import { applyNotebookEdit, isSuppressed, notebookFingerprint } from './notebook.js';
+import { applyNotebookEdit, notebookFingerprint } from './notebook.js';
 import { embodimentView, shortName } from './veir.js';
 
 const NOW = new Date('2026-10-16T12:00:00.000Z');
+
+/** Whether `text` in `section` is recorded as removed or corrected (what distillation's `dropSuppressed` skips). */
+function isSuppressed(
+  suppressed: readonly notebooksRepo.SuppressedLine[],
+  section: notebooksRepo.SuppressedLine['section'],
+  text: string,
+): boolean {
+  const fingerprint = notebookFingerprint(text);
+  return suppressed.some((line) => line.section === section && line.fingerprint === fingerprint);
+}
 const SESSION = '6f1c3a52-9d7e-4b0a-8f2e-3c5d7a9b1e04';
 
 const notebook: notebooksRepo.NotebookContent = {

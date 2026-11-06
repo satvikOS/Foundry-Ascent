@@ -10,6 +10,7 @@ import {
 import { eirRepo, personasRepo, principalsRepo, turnsRepo } from '@foundry/db';
 import { type z } from 'zod';
 
+import { requirePersonaCurator } from '../authz/persona-curator.js';
 import { hasAnyRole, loadPrincipalRoles, requireRole } from '../authz/roles.js';
 import { requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
@@ -75,27 +76,6 @@ export function createEirStudioService(kit: Kit): EirStudioService {
     const persona = await personasRepo.getPersona(scope.tx, personaId);
     if (persona?.tenantId !== scope.ctx.tenantId) throw fail.notFound('Persona');
     return persona;
-  }
-
-  /** Program lead of the tenant, or the EIR whose profile the persona is built from. */
-  async function requirePersonaControl(
-    scope: RequestScope,
-    persona: personasRepo.PersonaRecord,
-  ): Promise<'program_lead' | 'linked_eir'> {
-    const roles = await loadPrincipalRoles(scope.tx, scope.ctx);
-    if (hasAnyRole(roles, ['program_lead'])) return 'program_lead';
-    if (persona.eirProfileId !== null) {
-      const profile = await eirRepo.getEirProfile(scope.tx, persona.eirProfileId);
-      if (profile?.principalId === scope.ctx.principalId) return 'linked_eir';
-    }
-    scope.deferAudit({
-      action: 'authz.denied',
-      outcome: 'denied',
-      objectType: 'persona',
-      objectId: persona.id,
-      policyReason: 'requires_program_lead_or_linked_eir',
-    });
-    throw fail.forbidden('requires_program_lead_or_linked_eir');
   }
 
   /**
@@ -201,7 +181,7 @@ export function createEirStudioService(kit: Kit): EirStudioService {
         const persona = await loadPersona(scope, release.personaId);
         const unpublished = release.status === 'draft' || release.status === 'withdrawn';
         if (unpublished && !hasAnyRole(roles, ['platform_admin'])) {
-          await requirePersonaControl(scope, persona);
+          await requirePersonaCurator(scope, persona);
         }
         const { expiresAt: _expiresAt, ...view } = release;
         return view;
@@ -219,7 +199,7 @@ export function createEirStudioService(kit: Kit): EirStudioService {
       const input = parseInput(CreatePersonaReleaseRequest, rawInput);
       return await kit.inRequest(ctx, async (scope) => {
         const persona = await loadPersona(scope, personaId);
-        const via = await requirePersonaControl(scope, persona);
+        const via = await requirePersonaCurator(scope, persona);
         if (persona.status === 'retired') throw fail.conflict('Retired personas cannot get new releases');
         const release = await personasRepo.createRelease(scope.tx, {
           personaId,
@@ -247,7 +227,7 @@ export function createEirStudioService(kit: Kit): EirStudioService {
         const release = await personasRepo.getRelease(scope.tx, releaseId);
         if (release === null) throw fail.notFound('Persona release');
         const persona = await loadPersona(scope, release.personaId);
-        const via = await requirePersonaControl(scope, persona);
+        const via = await requirePersonaCurator(scope, persona);
         if (release.status !== 'draft')
           throw fail.conflict('Only draft releases can be approved', 'invalid_transition');
         // A draft older than the live release would roll every assigned venture back to stale doctrine.
@@ -291,7 +271,7 @@ export function createEirStudioService(kit: Kit): EirStudioService {
         const release = await personasRepo.getRelease(scope.tx, releaseId);
         if (release === null) throw fail.notFound('Persona release');
         const persona = await loadPersona(scope, release.personaId);
-        const via = await requirePersonaControl(scope, persona);
+        const via = await requirePersonaCurator(scope, persona);
         if (release.status === 'approved') {
           throw fail.conflict(
             'The active release can’t be withdrawn. Approve a corrected release, which replaces it.',
@@ -323,7 +303,7 @@ export function createEirStudioService(kit: Kit): EirStudioService {
       const input = parseInput(SuspendPersonaRequest, rawInput);
       return await kit.inRequest(ctx, async (scope) => {
         const persona = await loadPersona(scope, personaId);
-        const via = await requirePersonaControl(scope, persona);
+        const via = await requirePersonaCurator(scope, persona);
         if (persona.status === 'retired') throw fail.conflict('The persona is retired');
         if (persona.status !== 'suspended') {
           await personasRepo.setPersonaStatus(scope.tx, {
@@ -348,7 +328,7 @@ export function createEirStudioService(kit: Kit): EirStudioService {
       const personaId = requireId(rawPersonaId, 'Persona');
       return await kit.inRequest(ctx, async (scope) => {
         const persona = await loadPersona(scope, personaId);
-        const via = await requirePersonaControl(scope, persona);
+        const via = await requirePersonaCurator(scope, persona);
         if (persona.status !== 'suspended')
           throw fail.conflict('Only suspended personas can be resumed', 'invalid_transition');
         await requireConsent(scope, persona);

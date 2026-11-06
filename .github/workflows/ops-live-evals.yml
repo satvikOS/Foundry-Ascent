@@ -24,7 +24,10 @@ name: Ops - live conversation evals
 #
 # Spend: budget_usd is a hard cap for the whole run, split across shards by estimated cost; within a shard the
 # app's share is enforced by the app itself (its daily platform cap) and the simulator and judge are metered and
-# refused before they could go over.
+# refused before they could go over. The owner caps a paid run at USD 2 (the default; sample defaults to 20, about
+# USD 1.84 on production's models): a budget_usd above 2 is refused unless approved_over_cap is exactly
+# "I approve USD <budget_usd>" with the budget as typed (e.g. "I approve USD 7"), which only the owner types
+# (docs/runbooks/conversation-lab.md "Spend cap"); a dry run (no model called) may estimate a larger budget without it.
 #
 # coach_model (an A/B of the coach, docs/runbooks/conversation-lab.md "Coach model A/B"): `default` runs the app's coach
 # on production's models (infra/cdk/config/production.json); a model of ops/lab/models.json `live.coach` runs it on that
@@ -44,7 +47,7 @@ on:
       sample:
         description: Stratified sample size across the chosen families (0 = every scenario in them)
         type: string
-        default: '60'
+        default: '20'
       repeats:
         description: Run each chosen scenario this many times (1 to 5; 2+ reports run-to-run stability)
         type: string
@@ -54,9 +57,13 @@ on:
         type: string
         default: '1'
       budget_usd:
-        description: Hard cap in USD for the whole run (0.5 to 200), split across shards; the plan refuses an estimate above it
+        description: Hard cap in USD for the whole run (0.5 to 2; up to 200 only with approved_over_cap), split across shards; the plan refuses an estimate above it
         type: string
-        default: '7'
+        default: '2'
+      approved_over_cap:
+        description: Owner only - a budget_usd above USD 2 runs (dry_run false) only when this is exactly "I approve USD <budget_usd>" (the budget as typed); empty otherwise
+        type: string
+        default: ''
       dry_run:
         description: Plan only - print the selection, the cost estimate and the shards; call no model
         type: boolean
@@ -116,6 +123,8 @@ jobs:
           REPEATS: ${{ inputs.repeats }}
           SEED: ${{ inputs.seed }}
           BUDGET: ${{ inputs.budget_usd }}
+          APPROVED_OVER_CAP: ${{ inputs.approved_over_cap }}
+          DRY_RUN: ${{ inputs.dry_run }}
           CONCURRENCY: ${{ inputs.concurrency }}
           PUBLIC_KEY: ${{ inputs.public_key }}
         run: |
@@ -131,6 +140,14 @@ jobs:
           if [[ ! "${CONCURRENCY}" =~ ^[1-6]$ ]]; then echo "::error::concurrency must be 1 to 6."; exit 1; fi
           if [[ ! "${BUDGET}" =~ ^[0-9]{1,3}(\.[0-9]{1,2})?$ ]] || ! awk -v b="${BUDGET}" 'BEGIN { exit !(b >= 0.5 && b <= 200) }'; then
             echo "::error::budget_usd must be a number from 0.5 to 200."; exit 1
+          fi
+          # The owner's cap on a paid run (USD 2): more only with the owner's typed approval of this exact budget. A dry
+          # run calls no model, so it may estimate a larger run without it.
+          if [ "${DRY_RUN}" != "true" ] && awk -v b="${BUDGET}" 'BEGIN { exit !(b > 2) }'; then
+            if [ "${APPROVED_OVER_CAP}" != "I approve USD ${BUDGET}" ]; then
+              echo "::error::budget_usd above USD 2 needs the owner's approval: approved_over_cap must be exactly \"I approve USD ${BUDGET}\"."; exit 1
+            fi
+            echo "Budget USD ${BUDGET} is above the USD 2 cap: approved by approved_over_cap." >> "${GITHUB_STEP_SUMMARY}"
           fi
           key="$(printf '%s' "${PUBLIC_KEY}" | tr -d '[:space:]')"
           if [ -n "${key}" ] && [[ ! "${key}" =~ ^[A-Za-z0-9+/]{500,1400}={0,2}$ ]]; then

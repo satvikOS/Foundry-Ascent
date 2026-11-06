@@ -57,7 +57,9 @@ name: Ops - conversation lab
 #
 # Spend: `budget_usd` is a hard cap for the whole run, split across the suites; within a suite the app's share is
 # enforced by the app itself (its daily platform cap is set to it) and the lab's own calls are metered and refused
-# before they could go over. The summary prints what was spent.
+# before they could go over. The summary prints what was spent. The owner caps a paid run at USD 2 (the default): a
+# budget_usd above 2 is refused unless approved_over_cap is exactly "I approve USD <budget_usd>" with the budget as
+# typed (e.g. "I approve USD 5"), which only the owner types (docs/runbooks/conversation-lab.md "Spend cap").
 on:
   workflow_dispatch:
     inputs:
@@ -67,9 +69,13 @@ on:
         options: [recall, matrix, voice, ui, agenda, safety, face, all]
         default: recall
       budget_usd:
-        description: Hard cap in USD for the whole run, split across the suites (0.5 to 50)
+        description: Hard cap in USD for the whole run, split across the suites (0.5 to 2; up to 50 only with approved_over_cap)
         type: string
-        default: '5'
+        default: '2'
+      approved_over_cap:
+        description: Owner only - a budget_usd above USD 2 runs only when this is exactly "I approve USD <budget_usd>" (the budget as typed); empty otherwise
+        type: string
+        default: ''
       max_scenarios:
         description: Most scenarios a suite runs (1 to 40; safety always reads its whole corpus)
         type: string
@@ -130,6 +136,7 @@ jobs:
         env:
           SUITE: ${{ inputs.suite }}
           BUDGET: ${{ inputs.budget_usd }}
+          APPROVED_OVER_CAP: ${{ inputs.approved_over_cap }}
           MAX_SCENARIOS: ${{ inputs.max_scenarios }}
           PUBLIC_KEY: ${{ inputs.public_key }}
           BASELINE_RUN_ID: ${{ inputs.baseline_run_id }}
@@ -143,6 +150,14 @@ jobs:
           if [[ ! "${BUDGET}" =~ ^[0-9]{1,2}(\.[0-9]{1,2})?$ ]] || ! awk -v b="${BUDGET}" 'BEGIN { exit !(b >= 0.5 && b <= 50) }'; then
             echo "::error::budget_usd must be a number from 0.5 to 50."
             exit 1
+          fi
+          # The owner's cap on a paid run (USD 2): more only with the owner's typed approval of this exact budget.
+          if awk -v b="${BUDGET}" 'BEGIN { exit !(b > 2) }'; then
+            if [ "${APPROVED_OVER_CAP}" != "I approve USD ${BUDGET}" ]; then
+              echo "::error::budget_usd above USD 2 needs the owner's approval: approved_over_cap must be exactly \"I approve USD ${BUDGET}\"."
+              exit 1
+            fi
+            echo "Budget USD ${BUDGET} is above the USD 2 cap: approved by approved_over_cap." >> "${GITHUB_STEP_SUMMARY}"
           fi
           if [[ ! "${MAX_SCENARIOS}" =~ ^[0-9]{1,2}$ ]] || (( 10#${MAX_SCENARIOS} < 1 || 10#${MAX_SCENARIOS} > 40 )); then
             echo "::error::max_scenarios must be a whole number from 1 to 40."

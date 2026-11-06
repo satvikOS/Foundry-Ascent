@@ -82,7 +82,7 @@ describe('NotebookEditor', () => {
   it('opens the opening line again with the server’s reason when the vEIR could not say it (422)', async () => {
     const notebook = makeNotebook();
     const reason =
-      'The vEIR says this line itself, so it can’t name an EIR, speak as a person, or say anyone reviewed or approved something.';
+      'Your mentor says this line itself, so it can’t name an EIR, speak as a person, or say anyone reviewed or approved something.';
     fetchMock.mockImplementation((_input, init) =>
       Promise.resolve(
         init?.method === 'PATCH'
@@ -92,7 +92,7 @@ describe('NotebookEditor', () => {
                 title: 'Problem',
                 status: 422,
                 code: 'validation_failed',
-                detail: 'The vEIR can’t say this opening line',
+                detail: 'Your mentor can’t say this opening line',
                 requestId: 'req-1',
                 errors: [{ path: 'edit.text', message: reason }],
               }),
@@ -126,7 +126,7 @@ describe('NotebookEditor', () => {
   it('keeps a refused opening line and its reason when another edit is made while it saves', async () => {
     const notebook = makeNotebook();
     const reason =
-      'The vEIR says this line itself, so it can’t name an EIR, speak as a person, or say anyone reviewed or approved something.';
+      'Your mentor says this line itself, so it can’t name an EIR, speak as a person, or say anyone reviewed or approved something.';
     let refuseOpener: (response: Response) => void = () => undefined;
     fetchMock.mockImplementation((_input, init) => {
       if (init?.method !== 'PATCH') return Promise.resolve(json(notebook)); // the reload after the refusal
@@ -154,7 +154,7 @@ describe('NotebookEditor', () => {
           title: 'Problem',
           status: 422,
           code: 'validation_failed',
-          detail: 'The vEIR can’t say this opening line',
+          detail: 'Your mentor can’t say this opening line',
           requestId: 'req-1',
           errors: [{ path: 'edit.text', message: reason }],
         }),

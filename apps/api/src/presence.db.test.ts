@@ -88,6 +88,63 @@ describe('the vEIR welcome', () => {
     // Signed out: refused.
     expect((await api.request('/me/veir-welcome/acknowledge', { method: 'POST' })).status).toBe(401);
   });
+
+  it('introduces each mentor once, and again when the persona is presented differently (Corin’s vEIR → Thomas)', async () => {
+    const persona = api.h.ventures.quietquad.personaId;
+    const audited = async () =>
+      Number(
+        (
+          await api.h.t.db.system((sx) =>
+            sx.query(
+              `SELECT count(*) AS n FROM audit_events WHERE action = 'veir.welcome_acknowledged' AND actor_id = :id`,
+              { id: p.uuid(api.h.people.maya) },
+            ),
+          )
+        ).rows[0]?.n,
+      );
+    const introductions = async () =>
+      (await json(await api.request('/me', { cookie: maya }), Me)).veirWelcomeIntroductions;
+    const acknowledge = async (body?: object) =>
+      json(
+        await api.request('/me/veir-welcome/acknowledge', {
+          method: 'POST',
+          cookie: maya,
+          ...(body === undefined ? {} : { body }),
+        }),
+        VeirWelcomeAcknowledgement,
+      );
+    // The test above acknowledged without a persona: every mentor Maya meets today (QuietQuad's, a twin here).
+    expect(await introductions()).toEqual([`${persona}:twin`]);
+    const before = await audited();
+    try {
+      await api.h.t.db.system((sx) =>
+        sx.query(`UPDATE personas SET presentation = 'mentor' WHERE id = :id`, { id: p.uuid(persona) }),
+      );
+      // Thomas is new to her: the web shows his welcome until she reads it.
+      expect(await introductions()).not.toContain(`${persona}:mentor`);
+      const read = await acknowledge({ personaId: persona });
+      expect(read.introductions).toEqual([`${persona}:twin`, `${persona}:mentor`]);
+      expect(await introductions()).toEqual(read.introductions);
+      expect(await audited()).toBe(before + 1);
+      // Again: nothing new, not audited.
+      expect((await acknowledge({ personaId: persona })).introductions).toEqual(read.introductions);
+      // A persona that is not her mentor adds nothing.
+      const stranger = await acknowledge({ personaId: '7c8d9e0f-1a2b-4c3d-8e4f-6a7b8c9d0e08' });
+      expect(stranger.introductions).toEqual(read.introductions);
+      expect(await audited()).toBe(before + 1);
+      // Not an id: refused.
+      const bad = await api.request('/me/veir-welcome/acknowledge', {
+        method: 'POST',
+        cookie: maya,
+        body: { personaId: 'Thomas' },
+      });
+      expect(bad.status).toBe(422);
+    } finally {
+      await api.h.t.db.system((sx) =>
+        sx.query(`UPDATE personas SET presentation = 'twin' WHERE id = :id`, { id: p.uuid(persona) }),
+      );
+    }
+  });
 });
 
 describe('how the persona presents itself (ADR-0021)', () => {

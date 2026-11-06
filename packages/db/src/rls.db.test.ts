@@ -567,7 +567,8 @@ describe('RLS coverage', () => {
     ];
     expect(Object.keys(granted).sort()).toEqual([...directory, 'updated_at'].sort());
     expect(new Set(Object.values(granted))).toEqual(new Set(['INSERT,SELECT,UPDATE']));
-    // The call notice (0010), the vEIR welcome (0016) and video-face access (0019) are read through functions.
+    // The call notice (0010), the vEIR welcome (0016), video-face access (0019) and the mentor introductions read
+    // (0029) are read through functions.
     const columns = await t.db.system((sx) =>
       sx.query(
         `SELECT column_name FROM information_schema.columns
@@ -578,6 +579,7 @@ describe('RLS coverage', () => {
       'call_notice_acknowledged_at',
       'face_access',
       'veir_welcome_acknowledged_at',
+      'veir_welcome_introductions',
     ]);
     expect(await as(t.db, f.maya, (tx) => principalsRepo.faceAccess(tx))).toBe(false);
     expect(

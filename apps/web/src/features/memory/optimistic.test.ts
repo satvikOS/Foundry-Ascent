@@ -157,7 +157,7 @@ describe('candidate matching', () => {
   });
 
   it('has a success message for every action', () => {
-    expect(memoryActionSuccessMessage('approve')).toMatch(/Approved/);
+    expect(memoryActionSuccessMessage('pin')).toBe('Pinned');
     expect(memoryActionSuccessMessage('delete')).toBe('Forgotten');
   });
 });

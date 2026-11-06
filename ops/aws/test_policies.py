@@ -23,7 +23,6 @@ ACCOUNT = "123456789012"
 REGION = "us-east-1"
 MANIFEST = REPO / "infra" / "iam" / "required-actions.json"
 MAX_POLICY_CHARS = 6144  # IAM managed policy limit, whitespace excluded
-INLINE_MAX_CHARS = 2048  # IAM user inline policies, all together
 
 CDK_ROLES = ("deploy-role", "file-publishing-role", "image-publishing-role", "lookup-role")
 # IAM verbs that change identities, policies or credentials.
@@ -78,14 +77,6 @@ def operator() -> dict[str, Any]:
     return load("bootstrap-operator.json")
 
 
-def legacy() -> dict[str, Any]:
-    return load("legacy-cleanup.json")
-
-
-def self_retirement() -> dict[str, Any]:
-    return load("self-retirement.json")
-
-
 @dataclass(frozen=True)
 class Entry:
     """One entry of infra/iam/required-actions.json."""
@@ -94,7 +85,6 @@ class Entry:
     actions: tuple[str, ...]
     resources: tuple[str, ...]
     required: bool
-    policy: str | None = None  # granted by this managed policy (FoundryAscent-LegacyCleanup), evaluated with it
     expect: str = "allowed"  # "denied": the stage-0 identity must not be able to do this
 
 
@@ -113,8 +103,8 @@ def entry_problems(where: str, item: Any) -> list[str]:
         problems.append(f"{where}: purpose must be a non-empty string")
     if not isinstance(item["required"], bool):
         problems.append(f"{where}: required must be true or false")
-    if "policy" in item and item["policy"] != "FoundryAscent-LegacyCleanup":
-        problems.append(f"{where}: policy must be FoundryAscent-LegacyCleanup, got {item['policy']!r}")
+    if unknown_keys := set(item) - {"purpose", "actions", "resources", "required", "expect"}:
+        problems.append(f"{where}: unknown key(s) {sorted(unknown_keys)}")
     if item.get("expect", "allowed") not in ("allowed", "denied"):
         problems.append(f"{where}: expect must be allowed or denied, got {item['expect']!r}")
     actions, resources = item["actions"], item["resources"]
@@ -142,7 +132,7 @@ def manifest() -> list[Entry]:
     assert isinstance(raw, list) and raw, "expected a non-empty 'entries' list"
     problems = [p for i, item in enumerate(raw) for p in entry_problems(f"entries[{i}]", item)]
     assert problems == [], problems
-    return [Entry(e["purpose"].strip(), tuple(e["actions"]), tuple(e["resources"]), e["required"], e.get("policy"),
+    return [Entry(e["purpose"].strip(), tuple(e["actions"]), tuple(e["resources"]), e["required"],
                   e.get("expect", "allowed"))
             for e in raw]
 
@@ -169,8 +159,7 @@ def test_policy_documents_are_valid_and_within_the_iam_size_limit(name: str) -> 
         assert ("Action" in st) != ("NotAction" in st)
         assert ("Resource" in st) != ("NotResource" in st)
     size = len(re.sub(r"\s", "", json.dumps(doc, separators=(",", ":"))))
-    limit = INLINE_MAX_CHARS if name == "self-retirement.json" else MAX_POLICY_CHARS
-    assert size < limit, f"{name}: {size} characters without whitespace"
+    assert size < MAX_POLICY_CHARS, f"{name}: {size} characters without whitespace"
 
 
 def test_policies_contain_no_account_ids() -> None:
@@ -221,12 +210,7 @@ def test_operator_policy_grants_no_iam_mutation_beyond_self_retirement() -> None
     ],
 )
 def test_operator_cannot_escalate_or_change_the_platform(action: str, resource: str) -> None:
-    for docs in ([operator()], [operator(), self_retirement()]):
-        assert decide(docs, action, resource) != "allowed", (action, resource)
-    # With the legacy cleanup policy attached too (it may delete resources that predate the platform, so only
-    # platform resources of the action's own service are meaningful here).
-    if resource != "*" and resource.split(":")[2] == action.split(":")[0]:
-        assert decide([operator(), legacy(), self_retirement()], action, resource) != "allowed", (action, resource)
+    assert decide([operator()], action, resource) != "allowed", (action, resource)
 
 
 def test_operator_assumes_exactly_the_four_cdk_bootstrap_roles() -> None:
@@ -243,18 +227,7 @@ def test_operator_assumes_exactly_the_four_cdk_bootstrap_roles() -> None:
         f"arn:aws:iam::{ACCOUNT}:role/FoundryAscent-GitHubDeploy",
         f"arn:aws:iam::{ACCOUNT}:role/Admin",
     ):
-        assert decide([operator(), legacy()], "sts:AssumeRole", other) != "allowed", other
-
-
-def test_self_retirement_inline_policy_only_touches_the_user_itself() -> None:
-    for st in self_retirement()["Statement"]:
-        assert st["Effect"] == "Allow"
-        for action in as_list(st["Action"]):
-            if action.startswith("iam:"):
-                assert action.startswith(("iam:Get", "iam:List")) or action.lower() in SELF_RETIREMENT, action
-                assert as_list(st["Resource"]) == [STAGE0_USER]
-            else:
-                assert action == "sts:GetCallerIdentity"
+        assert decide([operator()], "sts:AssumeRole", other) != "allowed", other
 
 
 # --------------------------------------------------------------------------- manifest vs policies
@@ -265,50 +238,11 @@ def test_every_manifest_entry_matches_the_policies() -> None:
     for entry in manifest():
         for action, resource in pairs(entry):
             if entry.expect == "denied":
-                for docs in ([operator(), self_retirement()], [operator(), legacy(), self_retirement()]):
-                    if decide(docs, action, resource) == "allowed":
-                        problems.append(f"must be denied but allowed: {action} on {resource} ({entry.purpose})")
-            else:
-                docs = [operator(), legacy()] if entry.policy == "FoundryAscent-LegacyCleanup" else [operator()]
-                if entry.required and decide(docs, action, resource) != "allowed":
+                if decide([operator()], action, resource) == "allowed":
+                    problems.append(f"must be denied but allowed: {action} on {resource} ({entry.purpose})")
+            elif entry.required and decide([operator()], action, resource) != "allowed":
                     problems.append(f"required but not allowed: {action} on {resource} ({entry.purpose})")
     assert problems == []
-
-
-def test_retirement_keeps_working_after_the_managed_policies_are_detached() -> None:
-    user = f"arn:aws:iam::{ACCOUNT}:user/Foundry-Ascent"
-    for action in ("iam:DeleteAccessKey", "iam:DetachUserPolicy", "iam:ListAccessKeys", "iam:ListAttachedUserPolicies"):
-        assert decide([self_retirement()], action, user) == "allowed"
-        # Legacy cleanup never blocks it.
-        assert decide([operator(), legacy()], action, user) == "allowed"
-
-
-def test_legacy_cleanup_can_no_longer_delete_platform_resources() -> None:
-    platform = [
-        ("cloudformation:DeleteStack", f"arn:aws:cloudformation:{REGION}:{ACCOUNT}:stack/FoundryAscent-Data/x"),
-        ("cloudformation:DeleteStack", f"arn:aws:cloudformation:{REGION}:{ACCOUNT}:stack/CDKToolkit/x"),
-        ("rds:DeleteDBCluster", f"arn:aws:rds:{REGION}:{ACCOUNT}:cluster:foundry-ascent"),
-        ("rds:ModifyDBCluster", f"arn:aws:rds:{REGION}:{ACCOUNT}:cluster:foundry-ascent"),
-        ("secretsmanager:DeleteSecret", f"arn:aws:secretsmanager:{REGION}:{ACCOUNT}:secret:foundry-ascent/aurora-admin-AbCdEf"),
-        ("s3:DeleteObject", "arn:aws:s3:::foundryascent-data-documentsbucket-abc/tenants/t/doc.pdf"),
-        ("s3:DeleteBucket", f"arn:aws:s3:::cdk-hnb659fds-assets-{ACCOUNT}-{REGION}"),
-        ("iam:DeleteRole", f"arn:aws:iam::{ACCOUNT}:role/FoundryAscent-GitHubDeploy"),
-        ("iam:DetachRolePolicy", f"arn:aws:iam::{ACCOUNT}:role/cdk-hnb659fds-cfn-exec-role-{ACCOUNT}-{REGION}"),
-        ("iam:DeletePolicyVersion", f"arn:aws:iam::{ACCOUNT}:policy/FoundryAscent-Boundary"),
-        ("iam:DeleteOpenIDConnectProvider", f"arn:aws:iam::{ACCOUNT}:oidc-provider/token.actions.githubusercontent.com"),
-        ("lambda:DeleteFunction", f"arn:aws:lambda:{REGION}:{ACCOUNT}:function:FoundryAscent-Api"),
-        ("sqs:DeleteQueue", f"arn:aws:sqs:{REGION}:{ACCOUNT}:FoundryAscent-Jobs"),
-        ("logs:DeleteLogGroup", f"arn:aws:logs:{REGION}:{ACCOUNT}:log-group:/aws/lambda/FoundryAscent-Api"),
-        ("ssm:DeleteParameter", f"arn:aws:ssm:{REGION}:{ACCOUNT}:parameter/cdk-bootstrap/hnb659fds/version"),
-    ]
-    for action, resource in platform:
-        assert decide([operator(), legacy()], action, resource) == "explicitDeny", (action, resource)
-    # It still removes resources that predate the platform.
-    assert decide([legacy()], "rds:DeleteDBCluster", f"arn:aws:rds:{REGION}:{ACCOUNT}:cluster:old-project") == "allowed"
-    assert decide([legacy()], "s3:DeleteBucket", "arn:aws:s3:::old-project-bucket") == "allowed"
-    tag_deny = next(st for st in legacy()["Statement"] if st["Sid"] == "ProtectPlatformByTag")
-    assert tag_deny["Effect"] == "Deny"
-    assert tag_deny["Condition"] == {"StringEquals": {"aws:ResourceTag/project": "foundry-ascent"}}
 
 
 # --------------------------------------------------------------------------- workflows
@@ -430,7 +364,7 @@ def test_every_aws_cli_call_in_the_workflows_is_in_the_manifest_and_allowed() ->
     assert ("deploy.yml", "cloudformation:describestacks") in calls
     assert ("deploy.yml", "iam:listopenidconnectproviders") in calls
     assert ("deploy.yml", "cloudformation:describestackresources") in calls
-    entries = [e for e in manifest() if e.expect == "allowed" and e.policy is None]
+    entries = [e for e in manifest() if e.expect == "allowed"]
     problems: list[str] = []
     for workflow, action in calls:
         if workflow in OWN_ROLE_WORKFLOWS:
@@ -701,15 +635,13 @@ def test_the_elevenlabs_key_workflow_never_exposes_the_key() -> None:
 def test_the_stage0_identity_cannot_write_or_read_the_elevenlabs_key() -> None:
     arn = f"arn:aws:secretsmanager:{REGION}:{ACCOUNT}:secret:{voice_key_secret_name()}-AbCdEf"
     for action in ("secretsmanager:CreateSecret", "secretsmanager:PutSecretValue", "secretsmanager:GetSecretValue"):
-        for docs in ([operator(), self_retirement()], [operator(), legacy(), self_retirement()]):
-            assert decide(docs, action, arn) != "allowed", (action, docs)
+        assert decide([operator()], action, arn) != "allowed", action
 
 
 def test_the_stage0_identity_cannot_write_or_read_the_heygen_key() -> None:
     arn = f"arn:aws:secretsmanager:{REGION}:{ACCOUNT}:secret:{media_key_secret_name()}-AbCdEf"
     for action in ("secretsmanager:CreateSecret", "secretsmanager:PutSecretValue", "secretsmanager:GetSecretValue"):
-        for docs in ([operator(), self_retirement()], [operator(), legacy(), self_retirement()]):
-            assert decide(docs, action, arn) != "allowed", (action, docs)
+        assert decide([operator()], action, arn) != "allowed", action
 
 
 def test_the_costs_workflow_uploads_only_a_sealed_file_kept_one_day() -> None:

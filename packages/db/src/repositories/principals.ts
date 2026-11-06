@@ -203,6 +203,39 @@ export async function acknowledgeVeirWelcome(
   return row?.acknowledgedAt ? { acknowledgedAt: row.acknowledgedAt, firstTime: row.firstTime } : null;
 }
 
+/**
+ * The mentor introductions the request's principal has read (migration 0029): `<persona id>:<presentation>` keys
+ * (@foundry/contracts `veirIntroductionKey`), newest last. Empty without a request principal.
+ */
+export async function veirWelcomeIntroductions(ex: SqlExecutor): Promise<string[]> {
+  return (
+    (await queryFirst(ex, 'SELECT app.veir_welcome_introductions() AS keys', {}, (r) =>
+      col.textArray.nullable.decode(r.keys, 'keys'),
+    )) ?? []
+  );
+}
+
+/**
+ * Records that the request's principal read these mentors' introductions (at most 20 keys; a key already read is
+ * kept) and the 0016 acknowledgement the first time. `firstTime` says whether any key was new. Null without an
+ * active request principal.
+ */
+export async function acknowledgeVeirIntroductions(
+  ex: SqlExecutor,
+  keys: readonly string[],
+): Promise<{ acknowledgedAt: string; firstTime: boolean } | null> {
+  const row = await queryFirst(
+    ex,
+    'SELECT w.acknowledged_at, w.first_time FROM app.acknowledge_veir_introductions(:keys) AS w',
+    { keys: p.textArray(keys) },
+    (r) => ({
+      acknowledgedAt: col.ts.nullable.decode(r.acknowledged_at, 'acknowledged_at'),
+      firstTime: col.bool.decode(r.first_time, 'first_time'),
+    }),
+  );
+  return row?.acknowledgedAt ? { acknowledgedAt: row.acknowledgedAt, firstTime: row.firstTime } : null;
+}
+
 // ------------------------------------------------------------------------------------------------
 // Video-face access (migration 0019)
 // ------------------------------------------------------------------------------------------------

@@ -11,13 +11,21 @@ import type { MemoryFilters } from '@/lib/api/query-keys';
 
 export type MemoryActionKind = MemoryActionInput['action'];
 
+/**
+ * The actions a founder takes on one item through the memory action bar and dialogs. Approve and reject belong to
+ * pending suggestions only and go through useMemoryReview (knowledge/review-api.ts), never this path.
+ */
+export type FounderMemoryActionInput = Exclude<MemoryActionInput, { action: 'approve' | 'reject' }>;
+export type FounderMemoryActionKind = FounderMemoryActionInput['action'];
+
 /** Statuses a list without an explicit status filter does not show. */
 const HIDDEN_BY_DEFAULT: ReadonlySet<MemoryStatus> = new Set(['deleted']);
 
 /**
  * The founder-facing actions allowed for an item in its current state: edit (`correct`), pin and forget
- * (`delete`). Memory is kept automatically, so nothing is approved or rejected; editing a disputed item
- * settles it (the new version is kept).
+ * (`delete`). The vEIR's memory is kept automatically; a pending suggestion (an assigned EIR's) is kept by editing
+ * it, through useMemoryReview, never by an approve action here; editing a disputed item settles it (the new version
+ * is kept).
  */
 export function availableMemoryActions(
   item: Pick<MemoryObjectView, 'status' | 'pinned'>,
@@ -115,12 +123,8 @@ export function applyMemoryActionToList(
 }
 
 /** Toast/announcement copy for a completed action (never includes memory content). */
-export function memoryActionSuccessMessage(action: MemoryActionKind): string {
+export function memoryActionSuccessMessage(action: FounderMemoryActionKind): string {
   switch (action) {
-    case 'approve':
-      return 'Approved — now part of venture memory';
-    case 'reject':
-      return 'Rejected — it won’t be used as memory';
     case 'correct':
       return 'Saved';
     case 'dispute':
@@ -133,16 +137,6 @@ export function memoryActionSuccessMessage(action: MemoryActionKind): string {
       return 'Forgotten';
   }
 }
-
-export const MEMORY_ACTION_LABELS: Record<MemoryActionKind, string> = {
-  approve: 'Approve',
-  reject: 'Reject',
-  correct: 'Correct',
-  dispute: 'Dispute',
-  pin: 'Pin',
-  unpin: 'Unpin',
-  delete: 'Delete',
-};
 
 /** Memory objects created from a specific turn (memory candidates become proposed objects). */
 export function memoryFromTurn(items: readonly MemoryObjectView[], turnId: string): MemoryObjectView[] {

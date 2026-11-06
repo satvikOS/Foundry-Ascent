@@ -14,7 +14,11 @@ import {
 } from '@/lib/api/hooks/memory';
 import { queryKeys, type MemoryFilters } from '@/lib/api/query-keys';
 
-import { applyMemoryActionToList, memoryActionSuccessMessage } from './optimistic';
+import {
+  applyMemoryActionToList,
+  memoryActionSuccessMessage,
+  type FounderMemoryActionInput,
+} from './optimistic';
 
 type MemoryListData = z.infer<typeof MemoryListResponse>;
 
@@ -105,7 +109,7 @@ export function useMemoryActions(ventureId: string) {
   const mutation = useOptimisticMemoryAction(ventureId);
   const { mutate } = mutation;
   const run = useCallback(
-    (memoryId: string, action: MemoryActionInput, options: RunOptions = {}) => {
+    (memoryId: string, action: FounderMemoryActionInput, options: RunOptions = {}) => {
       mutate(
         { memoryId, action },
         {

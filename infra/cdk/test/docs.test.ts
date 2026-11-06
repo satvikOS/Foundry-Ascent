@@ -18,7 +18,6 @@ const OWNER_DOCS = [
   'docs/architecture/system-design.md',
   'docs/runbooks/cost-controls.md',
   'docs/runbooks/owner-actions.md',
-  'docs/runbooks/legacy-aws-cleanup.md',
 ] as const;
 /** Also read for what they say about Aurora's pausing (the latency runbook records what was tried). */
 const AURORA_DOCS = [...OWNER_DOCS, 'docs/runbooks/latency.md'] as const;

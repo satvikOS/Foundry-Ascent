@@ -19,5 +19,5 @@ verify and reverse them. Decisions behind them are in the [ADRs](../architecture
 | [The vEIR's live voice](elevenlabs-voice.md)                                | The ElevenLabs stock voice ("AI voice"): key sync and plan check, the chosen voice, fallback to Polly, live checks        |
 | [Local development](local-development.md)                                   | Running and testing everything on one machine                                                                             |
 
-Archived: [legacy AWS cleanup](legacy-aws-cleanup.md) (one-time removal of pre-existing resources, closed
-2026-10-06).
+The one-time legacy AWS cleanup (removal of pre-existing resources, closed 2026-10-06) is in git history:
+`docs/runbooks/legacy-aws-cleanup.md`, last present at commit `9ebeffa`, with its policy and tools.

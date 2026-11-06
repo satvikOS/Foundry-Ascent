@@ -89,10 +89,6 @@ export const sessionsQueryOptions = (ventureId: string) =>
     queryFn: ({ signal }) => api.get(path`/ventures/${ventureId}/sessions`, SessionListResponse, { signal }),
   });
 
-export function useSessions(ventureId: string) {
-  return useQuery({ ...sessionsQueryOptions(ventureId), select: (data) => data.items });
-}
-
 /** GET /sessions/:id — a conversation with its turns (founders and team only). */
 export const sessionQueryOptions = (sessionId: string) =>
   queryOptions({

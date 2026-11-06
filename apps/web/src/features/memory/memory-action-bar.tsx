@@ -23,7 +23,8 @@ interface MemoryActionBarProps {
 
 /**
  * What a person can do with something the vEIR knows: Edit (saved as a new version), Pin and Forget (asks
- * first). Nothing is approved or rejected: memory is kept automatically.
+ * first). The vEIR's own memory is kept automatically; an assigned EIR's pending suggestion is kept by editing it
+ * (useMemoryReview, then the edit) or forgotten, never approved with a button.
  */
 export function MemoryActionBar({
   ventureId,

@@ -236,14 +236,39 @@ export const Me = z.object({
    * null until then, and the venture shows the welcome once. Additive: absent (an older API) counts as read.
    */
   veirWelcomeAcknowledgedAt: Timestamp.nullable().optional(),
+  /**
+   * The mentor introductions this person has read ({@link veirIntroductionKey}, migration 0029): a venture shows its
+   * mentor's welcome while its key is missing, so a mentor presented differently (a twin who became Thomas,
+   * ADR-0021) is introduced again. Additive: absent (an older API) falls back to `veirWelcomeAcknowledgedAt`.
+   */
+  veirWelcomeIntroductions: z.array(z.string().max(80)).max(20).optional(),
 });
 export type Me = z.infer<typeof Me>;
 
 /**
- * `POST /me/veir-welcome/acknowledge` — the person read the one-time welcome that says what a vEIR is. Stored
- * with the person, not the browser; idempotent: a repeat returns the first time.
+ * The key of a mentor's introduction: the persona and how it presents itself (`twin` or `mentor`). The welcome says
+ * what the mentor is, which these two decide; a new release or a rename alone does not introduce it again.
  */
-export const VeirWelcomeAcknowledgement = z.object({ acknowledgedAt: Timestamp });
+export function veirIntroductionKey(personaId: string, presentation: PersonaPresentation): string {
+  return `${personaId}:${presentation}`;
+}
+
+/**
+ * `POST /me/veir-welcome/acknowledge` body: the persona whose introduction the person read. Without one (an older
+ * web build, or a script), every mentor the person meets in their ventures today counts as introduced.
+ */
+export const VeirWelcomeAcknowledgeRequest = z.object({ personaId: Id.optional() });
+export type VeirWelcomeAcknowledgeRequest = z.infer<typeof VeirWelcomeAcknowledgeRequest>;
+
+/**
+ * `POST /me/veir-welcome/acknowledge` — the person read the welcome that introduces their mentor. Stored with the
+ * person, not the browser; idempotent: a repeat returns the first time. `introductions` is the person's list after
+ * this one (additive: absent from an older API).
+ */
+export const VeirWelcomeAcknowledgement = z.object({
+  acknowledgedAt: Timestamp,
+  introductions: z.array(z.string().max(80)).max(20).optional(),
+});
 export type VeirWelcomeAcknowledgement = z.infer<typeof VeirWelcomeAcknowledgement>;
 
 export const PersonaSummary = z.object({

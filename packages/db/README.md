@@ -165,6 +165,9 @@ original error is `cause` — do not log it verbatim).
   that the next seed re-points the demo ventures to their vEIRs exactly once. New functions revoke `EXECUTE` from `PUBLIC`
   and grant it to `app_rls` only where requests need them. Statements selected through the Data API must
   not return a `void` column (wrap `pg_advisory_xact_lock` in `SELECT count(*) … FROM (SELECT …)`).
+- A migration on main is never edited or deleted (the checksum check above would fail the next deploy): CI runs
+  `scripts/check-migrations-immutable.sh` against a pull request's base and against the previous main, and fails when
+  a migration present there differs byte for byte. Change the schema with the next free number.
 
 Migration 0028 (ADR-0021): `personas.presentation` (`twin` by default, `mentor` for an EIR persona the owner presents as
 an AI mentor under its own name); `personasRepo.getPersonaPresence` reports it (`mentor`). `migrate-0028.db.test.ts`.
@@ -236,6 +239,13 @@ Added for the vEIR's presence (migration 0016, ADR-0020): `principalsRepo.veirWe
 (one round trip: the persona's EIR, whether its consent in force covers `first_person`, whether that EIR is the
 venture's assigned EIR); `sessionsRepo.startedEarlierConversation` (a call introduces the vEIR only on a first
 meeting). The seed extends its fictional EIRs' own seeded consents with `first_person` once, never a revoked one.
+
+Migration 0029 (the welcome per mentor): `principals.veir_welcome_introductions` (closed to app_rls like 0016's
+column) lists the mentor introductions the person has read, `<persona id>:<presentation>` keys (`veirIntroductionKey`
+in `@foundry/contracts`, at most 20, newest last); `principalsRepo.veirWelcomeIntroductions` and
+`acknowledgeVeirIntroductions` read and add the caller's own through `app.veir_welcome_introductions()` and
+`app.acknowledge_veir_introductions(keys)`, which also sets 0016's acknowledgement the first time.
+`migrate-0029.db.test.ts`.
 
 Added for platform insights (docs/runbooks/insights.md): `insightsRepo` (S; `beginReadOnly` — callers make the
 transaction read-only first —, `listConversations`, `listCalls`, `turnStats`, `turnTrace` — what each turn's audit

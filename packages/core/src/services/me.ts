@@ -1,14 +1,25 @@
 import {
   DEFAULT_DISCLOSURE,
+  VeirWelcomeAcknowledgeRequest,
+  veirIntroductionKey,
   type AccountNotice,
   type Me,
   type VeirWelcomeAcknowledgement,
 } from '@foundry/contracts';
-import { authRepo, principalsRepo, settingsRepo, tenantsRepo } from '@foundry/db';
+import {
+  assignmentsRepo,
+  authRepo,
+  personasRepo,
+  principalsRepo,
+  settingsRepo,
+  tenantsRepo,
+  type SqlExecutor,
+} from '@foundry/db';
+import { type z } from 'zod';
 
 import { loadPrincipalRoles } from '../authz/roles.js';
 import { type RequestContext } from '../context.js';
-import { DomainError } from '../errors.js';
+import { DomainError, parseInput } from '../errors.js';
 import { audit, type Kit } from '../internal/kit.js';
 
 export interface MeService {
@@ -19,11 +30,40 @@ export interface MeService {
    */
   get(ctx: RequestContext & { readonly sessionId?: string }): Promise<Me>;
   /**
-   * The caller read the welcome that introduces their vEIR (what a vEIR is, once, before their first
-   * conversation): stored with the person (migration 0016), idempotent (a repeat returns the first time),
-   * audited the first time only.
+   * The caller read the welcome that introduces their mentor (what it is, once per mentor and presentation, before
+   * their first conversation with it): stored with the person (migrations 0016 and 0029), idempotent (a repeat
+   * returns the first time), audited only when an introduction is new. With `personaId`, that mentor's
+   * introduction, when it is the mentor of one of the caller's ventures; without, every mentor the caller meets
+   * in their ventures today (older web builds and scripts).
    */
-  acknowledgeVeirWelcome(ctx: RequestContext): Promise<VeirWelcomeAcknowledgement>;
+  acknowledgeVeirWelcome(
+    ctx: RequestContext,
+    input?: z.input<typeof VeirWelcomeAcknowledgeRequest>,
+  ): Promise<VeirWelcomeAcknowledgement>;
+}
+
+/**
+ * The introductions of the mentors the caller meets today: the persona of each venture they found or work on (the
+ * people the welcome is for), keyed by how it presents itself (`veirIntroductionKey`).
+ */
+async function currentIntroductions(tx: SqlExecutor, ctx: RequestContext): Promise<Map<string, string>> {
+  const memberships = await principalsRepo.listMembershipsForPrincipals(tx, [ctx.principalId]);
+  const byPersona = new Map<string, string>();
+  for (const membership of memberships) {
+    if (membership.role !== 'founder' && membership.role !== 'team') continue;
+    const resolved = await assignmentsRepo.resolveActiveAssignment(tx, membership.ventureId);
+    if (resolved?.release == null || byPersona.has(resolved.persona.id)) continue;
+    const mentor =
+      resolved.persona.kind === 'eir_persona' &&
+      (
+        await personasRepo.getPersonaPresence(tx, {
+          personaId: resolved.persona.id,
+          assignedEirProfileId: null,
+        })
+      ).mentor;
+    byPersona.set(resolved.persona.id, veirIntroductionKey(resolved.persona.id, mentor ? 'mentor' : 'twin'));
+  }
+  return byPersona;
 }
 
 export function createMeService(kit: Kit): MeService {
@@ -54,6 +94,7 @@ export function createMeService(kit: Kit): MeService {
           disclosure: DEFAULT_DISCLOSURE,
           aiEnabled: settings.aiEnabled,
           veirWelcomeAcknowledgedAt: await principalsRepo.veirWelcomeAcknowledgedAt(tx),
+          veirWelcomeIntroductions: await principalsRepo.veirWelcomeIntroductions(tx),
         };
       });
       // Credential tables are closed to app_rls: read the caller's own code history with the owner role,
@@ -74,9 +115,16 @@ export function createMeService(kit: Kit): MeService {
       return { ...me, notices };
     },
 
-    acknowledgeVeirWelcome: async (ctx) =>
+    acknowledgeVeirWelcome: async (ctx, input = {}) =>
       kit.inRequest(ctx, async (scope) => {
-        const acknowledged = await principalsRepo.acknowledgeVeirWelcome(scope.tx);
+        const { personaId } = parseInput(VeirWelcomeAcknowledgeRequest, input);
+        const current = await currentIntroductions(scope.tx, ctx);
+        // A persona that is not the caller's mentor (or no longer is) adds nothing: the 0016 acknowledgement only.
+        const keys =
+          personaId === undefined
+            ? [...current.values()]
+            : [current.get(personaId)].filter((key): key is string => key !== undefined);
+        const acknowledged = await principalsRepo.acknowledgeVeirIntroductions(scope.tx, keys.slice(0, 20));
         if (acknowledged === null) {
           throw new DomainError('unauthenticated', 'Please sign in again.', {
             reason: 'principal_unavailable',
@@ -90,7 +138,10 @@ export function createMeService(kit: Kit): MeService {
             objectId: ctx.principalId,
           });
         }
-        return { acknowledgedAt: acknowledged.acknowledgedAt };
+        return {
+          acknowledgedAt: acknowledged.acknowledgedAt,
+          introductions: await principalsRepo.veirWelcomeIntroductions(scope.tx),
+        };
       }),
   };
 }

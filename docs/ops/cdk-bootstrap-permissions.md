@@ -12,8 +12,8 @@ The former **Platform - bootstrap** workflow (`.github/workflows/platform-bootst
 `cdk bootstrap` (aws-cdk 2.1144.0, bootstrap template version 32) as the IAM user
 `Foundry-Ascent`. It passes no `--role-arn`, so CloudFormation calls every resource handler with the
 caller's own credentials. This page checks every one of those calls against
-`infra/iam/policies/bootstrap-operator.json`. `legacy-cleanup.json` is not counted, because it is
-detached after the cleanup.
+`infra/iam/policies/bootstrap-operator.json`. The former `legacy-cleanup.json` is not counted: it was
+detached after the cleanup and later removed (git history).
 
 **Result:** the bootstrap is fully covered for create, for idempotent re-runs, and for rollback or
 delete. Six actions are not granted. None of them runs in this workflow; see
@@ -62,8 +62,9 @@ Choices:
   falls back to its template default (`ParameterValues`, 96467-96491). For
   `FileAssetsBucketKmsKeyId` that default is `''`, which means "create a customer KMS key". That
   costs $1/month, and `kms:CreateKey` is not granted, so the run would fail.
-- **`--termination-protection` is passed.** `legacy-cleanup.json` grants `cloudformation:DeleteStack`
-  on `*`, and termination protection stops it from deleting `CDKToolkit` by accident.
+- **`--termination-protection` is passed.** The former `legacy-cleanup.json` granted
+  `cloudformation:DeleteStack` on `*`, and termination protection stopped it from deleting `CDKToolkit` by
+  accident.
 
 ## Template resources
 
@@ -144,7 +145,7 @@ rollback. They become relevant only if the inputs change as described.
 | `iam:DeleteRolePermissionsBoundary`                                                                | `role/cdk-*`                | The boundary is removed from the execution role                                                       | Intentionally not granted, and the boundary forbids it. A re-run without `--custom-permissions-boundary` keeps the previous value. |
 | `kms:CreateKey`, `kms:PutKeyPolicy`, `kms:TagResource`, `kms:EnableKeyRotation`, `kms:CreateAlias` | `*`                         | `--bootstrap-customer-key`, or `--no-previous-parameters` without `--bootstrap-kms-key-id`            | Intentionally not granted: $1/month per key, and the boundary's `CostGuardrails` denies `kms:CreateKey`                            |
 | `iam:CreatePolicy` and the other policy actions                                                    | `policy/cdk-*`              | `--example-permissions-boundary`                                                                      | Not used. The project uses its own boundary.                                                                                       |
-| `s3:ListAllMyBuckets`, `iam:ListRoles`, `ssm:DescribeParameters`, `ecr:DescribeRepositories`       | `*`                         | The handlers' `list` operations, used only by the IaC generator and resource scans, never by a deploy | Until it is detached, `legacy-cleanup.json` (InventoryRead) also grants these                                                      |
+| `s3:ListAllMyBuckets`, `iam:ListRoles`, `ssm:DescribeParameters`, `ecr:DescribeRepositories`       | `*`                         | The handlers' `list` operations, used only by the IaC generator and resource scans, never by a deploy | The former `legacy-cleanup.json` (InventoryRead) granted these while it was attached                                               |
 
 ## Observations (not policy coverage)
 
@@ -184,18 +185,10 @@ rollback. They become relevant only if the inputs change as described.
    AdministratorAccess ∩ FoundryAscent-Boundary. The stage-0 user reaches those roles through
    `AssumeCdkRoles`, which includes `sts:TagSession`. The deploy role reads
    `/cdk-bootstrap/hnb659fds/version` through its own `ReadVersion` statement.
-4. **`legacy-cleanup.json` does not protect platform resources.** `LegacyResourceDeletion` allows every
-   delete action on `*`. Its only Deny covers `user/Foundry-Ascent`. IAM therefore allows deleting
-   `cdk-*` and `FoundryAscent*` roles, `FoundryAscent-Boundary`, the GitHub OIDC provider,
-   `/cdk-bootstrap/*` and `/foundry-ascent/*` parameters, `foundry-ascent/*` secrets, `cdk-*` and
-   `foundry-ascent-*` buckets, `cdk-*` ECR repositories, the default VPC and the `FoundryAscent*`
-   stacks. Termination protection is the only thing protecting `CDKToolkit`. `ops/aws/cleanup.py`
-   enforces the protections in code in two layers: each step's own filter, then a guard in
-   `Mutator.call()` that re-checks every target. It also refuses all changes in a region whose
-   protected stacks cannot be listed. Recommended policy change, for the account owner to decide
-   before running the cleanup with `--mode apply`: add an explicit Deny statement to
-   `legacy-cleanup.json` that covers this protected set. No policy was changed here.
-5. **`required-actions.json` follows the detach.** The legacy inventory and cleanup entries carry
-   `"policy": "FoundryAscent-LegacyCleanup"`. `verify_access.py` checks them only while
-   `iam:ListAttachedUserPolicies` shows that policy attached to `Foundry-Ascent`, so the
-   **Ops - verify AWS access** workflow stays green after the planned detach.
+4. **The legacy cleanup policy (closed).** At the time of this analysis `legacy-cleanup.json` allowed every
+   delete action on `*` with a Deny only on `user/Foundry-Ascent`, so termination protection was the only
+   thing protecting `CDKToolkit`, and the cleanup script enforced the platform's protections in code. The
+   recommended explicit Deny statements for the protected set were added before the cleanup ran; the policy
+   was detached when the cleanup closed on 2026-10-06, and the policy, its manifest entries, the cleanup and
+   access-check scripts and their runbook were later removed from the repository (git history, last present
+   at commit `9ebeffa`).

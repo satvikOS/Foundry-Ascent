@@ -1,6 +1,7 @@
 -- A dedicated synthetic "Memory Lab" venture for remembered (multi-session) evaluation conversations, on a LOCAL
 -- database only (evals/scripts/record-matrix-ci.sh). Two synthetic members (a founder and a teammate, for the
--- matrix `teammate` scenarios) and the same active vEIR assignment as QuietQuad (Corin's vEIR). Idempotent.
+-- matrix `teammate` scenarios) and the same active mentor assignment as QuietQuad (the persona seeded from Corin's
+-- profile: Thomas once production's owner release is applied, ADR-0021). Idempotent.
 BEGIN;
 WITH src AS (SELECT * FROM ventures WHERE name = 'QuietQuad'),
 v AS (

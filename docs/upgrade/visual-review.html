@@ -114,7 +114,6 @@
     <label
       >Journey<select id="journey">
         <option value="context">Return and review context</option>
-        <option value="avatar">Live avatar</option>
         <option value="learning">Student development</option>
         <option value="memory-review">Memory approval</option>
         <option value="conversation">Conversation</option>
@@ -152,25 +151,16 @@
     const controls = ['journey', 'device', 'theme'].map((id) => document.getElementById(id));
     // Resolve DOM selections through a closed catalog; only repository image paths can be attached.
     const assets = new Map();
-    for (const journey of [
-      'context',
-      'avatar',
-      'learning',
-      'memory-review',
-      'conversation',
-      'documents',
-      'help',
-    ]) {
+    for (const journey of ['context', 'learning', 'memory-review', 'conversation', 'documents', 'help']) {
       for (const device of ['desktop', 'mobile']) {
         for (const theme of ['dark', 'light']) {
           const before =
             {
               context: 'venture-home',
-              avatar: 'call',
               learning: 'venture-settings',
               'memory-review': 'knowledge',
             }[journey] ?? journey;
-          const custom = ['context', 'avatar', 'learning', 'memory-review'].includes(journey);
+          const custom = ['context', 'learning', 'memory-review'].includes(journey);
           assets.set(`${journey}/${device}/${theme}`, {
             before: `evidence/before/${before}-before-${device}-${theme}.png`,
             after: custom
