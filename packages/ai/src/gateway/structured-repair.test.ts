@@ -396,6 +396,22 @@ const LAB_CASES: readonly Case[] = [
     input: { ...clone(DRAFT), title: { text: DRAFT.title } },
     repair: 'object_string:title',
   },
+  {
+    // Claude Haiku 4.5 (live run 42238272157): every notebook note failed as `invalid_type`.
+    name: 'notebook notes written as bare strings, not {id, text}',
+    schema: DistillDraft,
+    expected: DRAFT,
+    input: {
+      ...clone(DRAFT),
+      notebook: {
+        ...clone(DRAFT.notebook),
+        founder_profile: ['Prefers short answers with numbers'],
+        open_questions: ['Who signs the purchase order?'],
+        last_advice: ['Price per library, not per seat'],
+      },
+    },
+    repair: 'string_object:notebook.founder_profile[0]',
+  },
 ];
 
 function strictParse(schema: z.ZodType, value: unknown): boolean {
@@ -436,6 +452,15 @@ describe('repairStructured: each failure mode of hand-written structured output'
       expect(outcome.ok).toBe(true);
       if (outcome.ok) expect(outcome.value.title).toBe('');
     }
+  });
+
+  it('reads a bare string as an object only when one string property is required and the rest may be null', () => {
+    // A commitment needs a status too (an enum, never null): the string is not enough to make one.
+    const v = clone(DRAFT);
+    v.notebook = { ...clone(DRAFT.notebook), commitments: ['Call facilities about the budget'] };
+    const outcome = validateStructured(v, DistillDraft, toStrictJsonSchema(DistillDraft));
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.issues).toContain('notebook.commitments.[0]: invalid_type');
   });
 
   it('maps an enum value to a member only when exactly one fits', () => {

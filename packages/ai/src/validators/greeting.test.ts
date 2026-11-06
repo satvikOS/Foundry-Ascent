@@ -62,6 +62,9 @@ describe('withoutRepeatedGreeting: the first reply after an intro that said hell
       'Lovely to see you, Mina! How were the interviews?',
       'Good morning, Mina. Ready for the numbers?',
       'Good to see you Mina! How did it go?',
+      'Good to see you again — how did it go?',
+      'Nice to see you - did the librarians reply?',
+      'Good to talk again; where did pricing land?',
     ]) {
       expect(openerSaidHello(opener, MINA), opener).toBe(true);
     }

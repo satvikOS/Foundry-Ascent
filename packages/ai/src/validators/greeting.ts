@@ -140,6 +140,7 @@ export function openerSaidHello(opener: string | null, names: readonly string[] 
   if (opener === null) return false;
   const text = opener.trim();
   if (/^(?:hi|hello|hey|hiya)\b/i.test(text)) return true;
-  const clause = /^([^,.!?…\n]+)/u.exec(text)?.[1];
+  // A clause ends at punctuation, a dash or a spaced hyphen ("Good to see you again — how did it go?").
+  const clause = text.split(/[,.!?…\n;:—–]|\s-\s/u)[0];
   return clause !== undefined && HELLO_CLAUSE.test(withoutNames(clause, names));
 }

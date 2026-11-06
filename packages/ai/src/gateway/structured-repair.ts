@@ -40,6 +40,10 @@ import { stripReasoning } from './reasoning-filter.js';
  *   `"none"` → `[]`);
  * - `scalar_string` / `list_string` / `object_string`: a number, a list of words or a one-field object where a
  *   string is expected (`"title": 2026`, `["Pilot", "pricing"]`, `{"text": "Pilot pricing"}`).
+ * - `string_object`: a bare string where an object is expected whose one required string property is the only one
+ *   that may not be null (Claude Haiku 4.5's distillations failed on `notebook.founder_profile[n]: invalid_type` for
+ *   every note, live run 42238272157: a note written as `"Prefers short answers"`, not `{id, text}`): the string
+ *   becomes that property and every other property null (a kept note's id is lost; it is written as a new note).
  *
  * Nothing is weakened: every repair only reshapes what the model wrote into the form the schema asks for, and the
  * result is still validated by the Zod schema in full (a repaired value that fails is reported with its issues).
@@ -425,6 +429,15 @@ class Repairer {
         return this.value(decoded, node, path);
       }
     }
+    if (types.has('object') && trimmed !== '' && !/^[[{`]/.test(trimmed)) {
+      const object = objectBranch(node, this.root);
+      const key = object === null ? null : soleTextProperty(object, this.root);
+      if (object !== null && key !== null) {
+        this.note('string_object', path);
+        const properties = isObject(object.properties) ? object.properties : {};
+        return Object.fromEntries(Object.keys(properties).map((k) => [k, k === key ? value : null]));
+      }
+    }
     if ((types.has('number') || types.has('integer')) && /^-?\d+(?:\.\d+)?$/.test(trimmed)) {
       this.note('number_string', path);
       return Number(trimmed);
@@ -486,6 +499,24 @@ class Repairer {
     }
     return out;
   }
+}
+
+/**
+ * The one property of an object schema a bare string stands for (see `string_object`): a string that may not be null,
+ * when every other property may be null and is not an enum. Null otherwise.
+ */
+function soleTextProperty(object: JsonObject, root: JsonObject): string | null {
+  const properties = isObject(object.properties) ? object.properties : {};
+  let key: string | null = null;
+  for (const [name, child] of Object.entries(properties)) {
+    const node = resolve(child, root);
+    if (node === null) return null;
+    const types = typesOf(node, root);
+    if (types.has('null')) continue;
+    if (key !== null || !types.has('string') || types.size !== 1 || enumOf(node, root) !== null) return null;
+    key = name;
+  }
+  return key;
 }
 
 /** One string as the list of strings it stands for (see `string_list` in the module comment). */
