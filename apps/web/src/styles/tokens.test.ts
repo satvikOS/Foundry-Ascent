@@ -801,6 +801,24 @@ describe('colour tokens (globals.css)', () => {
       expect(css).toMatch(/:root\[data-perf='low'\] \.breathing-ground \{\s*display: none;/);
     });
 
+    it('the window caps never depend on the breathing ground: plain caps match the static ground and stay', () => {
+      const squash = (text: string | undefined) => (text ?? '').replace(/\s+/g, ' ').trim();
+      // The plain caps paint the ground the page shows without the breathing ground: its colour and its atmosphere.
+      const atmosphere = squash(/\.app-ground::before \{[^}]*background:([^;]*);/.exec(css)?.[1]);
+      const caps = squash(/\.window-caps \{[^}]*background:([^;]*);/.exec(css)?.[1]);
+      expect(atmosphere).not.toBe('');
+      expect(caps).toBe(`${atmosphere}, var(--background)`);
+      // The breathing ground's moving copy lies over them, never under.
+      const zOf = (rule: string) => Number(new RegExp(`\\.${rule} \\{[^}]*z-index: (\\d+);`).exec(css)?.[1]);
+      expect(zOf('breathing-caps')).toBeGreaterThan(zOf('window-caps'));
+      // Hidden only on a phone (no gaps there): never on a slow device, in forced colours or under a status banner.
+      const hidden = [...css.matchAll(/([^{}]*(?:window-caps|ground-caps)[^{}]*)\{\s*display: none;/g)].map(
+        (m) => squash(m[1]),
+      );
+      expect(hidden).toEqual(['.ground-caps']);
+      expect(css).toMatch(/@media \(width < 48rem\) \{\s*\.ground-caps \{\s*display: none;/);
+    });
+
     it('borders are low-alpha white hairlines', () => {
       for (const name of [
         '--fa-border',

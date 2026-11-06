@@ -5,6 +5,7 @@ import { ChevronDown, EyeOff, Phone, Video } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
+import { useCoverGround } from '@/components/shell/ground-cover';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/toast';
 import { SimpleTooltip } from '@/components/ui/tooltip';
@@ -129,6 +130,8 @@ export function CallScreen() {
   const queryClient = useQueryClient();
   const tenant = me.tenant.slug;
   const open = route?.open === true;
+  // The open screen hides the app's ground entirely: the breathing ground behind it stops drawing.
+  useCoverGround(open);
   const routeVenture = route?.ventureId ?? null;
   const active = snapshot.phase !== 'idle';
   const ventureId = (active ? snapshot.ventureId : null) ?? routeVenture;

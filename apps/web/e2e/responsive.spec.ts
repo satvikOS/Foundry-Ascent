@@ -312,9 +312,23 @@ for (const size of sizes()) {
         await expect(answer.getByRole('button', { name: 'Copy answer' })).toBeVisible({ timeout: 30_000 });
         const box = composer(page);
         await expect(box).toBeVisible();
-        // Both panels where the screen has room for them: the conversation keeps a readable measure.
-        if (size.width >= 1280) {
+        // Both panels where the screen has room for them (from 1600 px), and the conversation keeps a readable
+        // measure. On a laptop (1280-1599 px) the context panel starts closed and the conversation window takes the
+        // room: it reaches 12 px from the right edge of the screen.
+        if (size.width >= 1600) {
           await expect(page.locator('[data-slot="context-panel"]')).toBeVisible();
+        } else if (size.width >= 1280) {
+          await expect(page.locator('[data-slot="context-panel"]')).toHaveCount(0);
+          // (Measured from the page's own right edge: the scrollbar's reserved gutter is not the page's room.)
+          const gap = await page
+            .locator('[data-slot="conversation-window-frame"]')
+            .evaluate(
+              (element) =>
+                document.body.getBoundingClientRect().right - element.getBoundingClientRect().right,
+            );
+          expect(Math.round(gap), 'the window uses the room the panel left').toBe(12);
+        }
+        if (size.width >= 1280) {
           expect(await widestProse(page, 'main article p')).toBeLessThanOrEqual(760);
         }
         await screen(page, size, 'conversation');

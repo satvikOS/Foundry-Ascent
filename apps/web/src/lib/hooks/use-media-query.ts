@@ -25,4 +25,6 @@ export const BREAKPOINTS = {
   md: '(min-width: 48rem)',
   lg: '(min-width: 64rem)',
   xl: '(min-width: 80rem)',
+  /** 1600 px: room for both panels beside a conversation window wider than its reading column. */
+  roomy: '(min-width: 100rem)',
 } as const;

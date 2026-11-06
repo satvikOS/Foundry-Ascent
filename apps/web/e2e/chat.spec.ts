@@ -345,9 +345,12 @@ test.describe('conversation composer', () => {
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await askFirstQuestion(page);
-    // The context panel is open beside the conversation on a desktop by default. A long Sources list in it must
-    // scroll inside the panel, not stretch the page.
+    // On a laptop the conversation window takes the room and the context panel starts closed (it opens by default
+    // from 1600 px); opened, it sits beside the conversation. A long Sources list in it must scroll inside the panel,
+    // not stretch the page.
     const panel = page.getByRole('complementary', { name: 'Context' });
+    await expect(panel).toHaveCount(0);
+    await page.getByRole('button', { name: 'Show context panel' }).click();
     await expect(panel.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
     await panel.getByRole('tab', { name: 'Sources' }).click();
     await expect(panel.getByRole('tab', { name: 'Sources' })).toHaveAttribute('aria-selected', 'true');

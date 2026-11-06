@@ -231,9 +231,17 @@ export function AppShell({ me, children }: AppShellProps) {
   return (
     <div className="app-ground min-h-dvh">
       {breathingClaims > 0 ? (
-        <Suspense fallback={null}>
-          <BreathingGround />
-        </Suspense>
+        <>
+          <Suspense fallback={null}>
+            <BreathingGround />
+          </Suspense>
+          {/*
+           * The window's gaps, over what scrolls out of it: the ground's own colour, always there, so the transcript
+           * never shows in a gap where the breathing ground is not drawn (a slow device, forced colours, while it
+           * loads); the breathing ground's moving copy lies over it when it is.
+           */}
+          <div aria-hidden data-slot="window-caps" data-print="hide" className="window-caps ground-caps" />
+        </>
       ) : null}
       <aside
         aria-label="Sidebar"
@@ -305,7 +313,8 @@ export function AppShell({ me, children }: AppShellProps) {
         )}
         <MiniCallBar />
 
-        <div ref={bannersRef} data-print="hide" data-slot="status-banners">
+        {/* Above the window's caps (globals.css `.ground-caps`, 15-16), under the sticky mini call bar (20). */}
+        <div ref={bannersRef} data-print="hide" data-slot="status-banners" className="relative z-17">
           <DbWakingBanner />
           <DbUnavailableBanner />
           <OfflineBanner />

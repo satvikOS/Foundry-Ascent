@@ -336,6 +336,9 @@ test.describe('frosted glass', () => {
         page.getByRole('article', { name: 'Exchange 1' }).getByRole('button', { name: 'Copy answer' }),
       ).toBeVisible({ timeout: 30_000 });
       await expect(page.getByRole('list', { name: 'Follow-up questions' })).toBeVisible();
+      // Both panels, as a wide screen shows them (on this laptop size the context panel starts closed).
+      await page.getByRole('button', { name: 'Show context panel' }).click();
+      await expect(page.locator('[data-slot="context-panel"]')).toBeVisible();
       await page.mouse.move(720, 450);
 
       // Translucent, with one blur: the docked panel has its own; the composer and its chips are tints over the
@@ -469,6 +472,143 @@ test.describe('frosted glass', () => {
       report(await measure(page, sheet, 'navigation sheet'), testInfo, `glass-${scheme}-phone`);
     });
   }
+
+  test('the window gaps never show the transcript: breathing, on a slow device, in forced colours, under a banner', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await keepGlassOn(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    // Reduced motion: the breathing ground holds one still frame, so two captures differ only by the transcript.
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+    await feedLongAnswers(page, { unitDelayMs: 5 });
+    await openVenture(page);
+    await useTheme(page, 'dark');
+    await startConversation(page, 'How should we price the two-library pilot?');
+    await expect(
+      page.getByRole('article', { name: 'Exchange 1' }).getByRole('button', { name: 'Copy answer' }),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-slot="breathing-ground"]')).toHaveCount(1);
+    await page.mouse.move(720, 450);
+
+    const frame = () =>
+      page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      );
+    const pane = await page.locator('[data-slot="conversation-window-frame"]').boundingBox();
+    if (!pane) throw new Error('the conversation window is not on screen');
+    expect(Math.round(pane.y), 'the window floats 12 px below the top').toBe(12);
+    // The two gaps across the window's width (inside its corners): 0-12 px above it, the last 12 px below it.
+    const gaps = [
+      { name: 'above', clip: { x: pane.x + 24, y: 1, width: pane.width - 48, height: 10 } },
+      { name: 'below', clip: { x: pane.x + 24, y: 900 - 11, width: pane.width - 48, height: 10 } },
+    ];
+    /** The largest change (0-255) in either gap when the transcript is hidden, over a few reading positions. */
+    const transcriptInGaps = async (mode: string): Promise<number> => {
+      let max = 0;
+      for (const y of [220, 300, 380, 460, 540]) {
+        await page.evaluate((top) => {
+          window.scrollTo(0, top);
+        }, y);
+        await frame();
+        // What was measured, kept on request: GLASS_SHOTS_DIR=<dir>.
+        const keep = process.env.GLASS_SHOTS_DIR;
+        if (keep && y === 300) {
+          mkdirSync(keep, { recursive: true });
+          await page.screenshot({ path: join(keep, `window-gaps-${mode}.png`), animations: 'disabled' });
+        }
+        for (const gap of gaps) {
+          const shown = decodePng(
+            await page.screenshot({ clip: gap.clip, animations: 'disabled', caret: 'hide' }),
+          );
+          await page.evaluate(() => {
+            const style = document.createElement('style');
+            style.id = 'gap-probe-hide';
+            style.textContent = 'section[aria-label="Transcript"] { opacity: 0 !important; }';
+            document.head.append(style);
+          });
+          await frame();
+          const hidden = decodePng(
+            await page.screenshot({ clip: gap.clip, animations: 'disabled', caret: 'hide' }),
+          );
+          await page.evaluate(() => document.getElementById('gap-probe-hide')?.remove());
+          await frame();
+          for (let i = 0; i < shown.data.length; i += 4) {
+            for (let c = 0; c < 3; c++) {
+              max = Math.max(max, Math.abs((shown.data[i + c] ?? 0) - (hidden.data[i + c] ?? 0)));
+            }
+          }
+        }
+      }
+      return max;
+    };
+
+    // The probe sees the transcript where nothing caps the gaps (so a pass below is not a blind one).
+    await page.addStyleTag({ content: '.ground-caps { display: none !important; }' });
+    expect(
+      await transcriptInGaps('no-caps'),
+      'without caps the transcript shows in the gaps',
+    ).toBeGreaterThan(40);
+    await page.evaluate(() => {
+      for (const tag of document.querySelectorAll('style')) {
+        if (tag.textContent.includes('.ground-caps { display: none')) tag.remove();
+      }
+    });
+
+    expect(await transcriptInGaps('breathing'), 'breathing ground').toBeLessThanOrEqual(2);
+
+    // A slow device: no breathing ground at all, the plain caps alone.
+    await page.evaluate(() => {
+      document.documentElement.dataset.perf = 'low';
+    });
+    await expect(page.locator('[data-slot="breathing-ground"]')).toHaveCount(0);
+    await expect(page.locator('[data-slot="window-caps"]')).toHaveCount(1);
+    expect(await transcriptInGaps('slow-device'), 'slow device').toBeLessThanOrEqual(2);
+    await page.evaluate(() => {
+      delete document.documentElement.dataset.perf;
+    });
+    await expect(page.locator('[data-slot="breathing-ground"]')).toHaveCount(1);
+
+    // Forced colours: the breathing ground is not drawn; the caps are the system canvas.
+    await page.emulateMedia({ forcedColors: 'active' });
+    expect(await transcriptInGaps('forced-colours'), 'forced colours').toBeLessThanOrEqual(2);
+    await page.emulateMedia({ forcedColors: 'none' });
+
+    // A status banner at the top of the page (offline): the caps stay, the banner sits above them.
+    await page.context().setOffline(true);
+    try {
+      await expect(page.locator('[data-slot="status-banner"]')).toBeVisible();
+      expect(await transcriptInGaps('status-banner'), 'under a status banner').toBeLessThanOrEqual(2);
+      await page.evaluate(() => {
+        window.scrollTo(0, 0);
+      });
+      await frame();
+      // Scrolled to the top, the banner shows whole, over the caps: hiding it changes the top gap's pixels.
+      const top = gaps[0]?.clip;
+      if (!top) throw new Error('no top gap');
+      const withBanner = decodePng(
+        await page.screenshot({ clip: top, animations: 'disabled', caret: 'hide' }),
+      );
+      await page.evaluate(() => {
+        const banners = document.querySelector<HTMLElement>('[data-slot="status-banners"]');
+        if (banners) banners.style.visibility = 'hidden';
+      });
+      await frame();
+      const without = decodePng(await page.screenshot({ clip: top, animations: 'disabled', caret: 'hide' }));
+      await page.evaluate(() => {
+        const banners = document.querySelector<HTMLElement>('[data-slot="status-banners"]');
+        if (banners) banners.style.visibility = '';
+      });
+      let bannerShows = 0;
+      for (let i = 0; i < withBanner.data.length; i++) {
+        bannerShows = Math.max(bannerShows, Math.abs((withBanner.data[i] ?? 0) - (without.data[i] ?? 0)));
+      }
+      expect(bannerShows, 'the banner is drawn above the caps').toBeGreaterThan(8);
+      await expect(page.getByText('You’re offline.')).toBeInViewport();
+    } finally {
+      await page.context().setOffline(false);
+    }
+  });
 
   test('the glass turns solid where transparency is reduced, on a slow device, and in forced colours', async ({
     page,

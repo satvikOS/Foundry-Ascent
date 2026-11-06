@@ -24,6 +24,12 @@ import { cn } from '@/lib/utils';
  * (smaller screens), so page state survives the switch and there is no render loop between page and layout. On
  * desktop the person's last choice is remembered per panel (`remember`); a panel never opens by itself over the
  * content on a smaller screen. Only one <Inspector> should be mounted at a time.
+ *
+ * A conversation's panel opens by default from 1600 px only (`defaultOpen="wide"`): on a laptop (1280-1599 px) both
+ * panels open would leave the conversation window little wider than its reading column (owner, 2026-11-06: the
+ * window "larger"), so there the conversation starts in a wide window with the panel one click from its toggle (a
+ * citation opens it too). New chat's panel stays open by default at every desktop width: the memory choice is in it.
+ * Once the person opens or closes the panel, that choice is remembered at every width.
  */
 
 /** Which remembered choice a panel uses: the venture context (New chat and conversations share it) or the rest. */
@@ -33,8 +39,8 @@ interface InspectorMeta {
   title: string;
   description?: string | undefined;
   remember: InspectorMemory;
-  /** Open on desktop until the person closes it (then their choice is remembered). */
-  defaultOpen: boolean;
+  /** Open on desktop (true) or on a wide screen only ('wide', from 1600 px) until the person chooses. */
+  defaultOpen: boolean | 'wide';
   /** The close button's and the toggle's name ("context panel"). */
   label: string;
 }
@@ -69,6 +75,7 @@ export function InspectorProvider({ children }: { children: ReactNode }) {
   });
   const [meta, setMeta] = useState<InspectorMeta | null>(null);
   const isDesktop = useMediaQuery(BREAKPOINTS.xl);
+  const roomy = useMediaQuery(BREAKPOINTS.roomy);
   // The desktop choice per panel, read from storage once and kept here after a change.
   const [desktopChoice, setDesktopChoice] = useState<Partial<Record<InspectorMemory, boolean>>>(() => ({
     context: storedChoice('context') ?? undefined,
@@ -86,7 +93,8 @@ export function InspectorProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const memory = meta?.remember ?? 'default';
-  const desktopOpen = desktopChoice[memory] ?? meta?.defaultOpen ?? false;
+  const desktopOpen =
+    desktopChoice[memory] ?? (meta?.defaultOpen === true || (meta?.defaultOpen === 'wide' && roomy));
 
   const setOpen = useCallback(
     (open: boolean) => {
@@ -136,8 +144,11 @@ interface InspectorProps {
   description?: string;
   /** Which remembered open/closed choice the panel follows on desktop (default: the shared "default"). */
   remember?: InspectorMemory;
-  /** Open on desktop until the person closes it. */
-  defaultOpen?: boolean;
+  /**
+   * Open on desktop until the person closes it; 'wide': only from 1600 px, so a laptop keeps the room for the
+   * conversation window.
+   */
+  defaultOpen?: boolean | 'wide';
   /** How the toggle names the panel ("context panel"); default: "<title> panel", lower case. */
   label?: string;
   children: ReactNode;

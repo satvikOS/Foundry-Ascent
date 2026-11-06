@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { BREATHING_FPS, canvasSize, fieldsAt, parseRgba } from './breathing';
+import { groundCovered, subscribeGroundCover } from './ground-cover';
 
 type Rgba = NonNullable<ReturnType<typeof parseRgba>>;
 
@@ -26,7 +27,8 @@ function context2d(canvas: HTMLCanvasElement | null): CanvasRenderingContext2D |
 /**
  * The breathing ground behind an open conversation window (globals.css `.breathing-ground`, the motion in
  * breathing.ts): one small canvas the browser smooths up to the screen, redrawn a dozen times a second while the tab is
- * visible, and a copy of it over the content in the window's gaps (`.breathing-caps`). It stops while the tab is hidden,
+ * visible, and a copy of it over the window's gaps (`.breathing-caps`, over the plain caps the shell keeps there). It
+ * stops while the tab is hidden and while a full-screen layer covers the ground (the call screen, ground-cover.ts),
  * holds one still frame under reduced motion, follows the theme, and is not drawn at all on a slow device.
  */
 export function BreathingGround() {
@@ -96,7 +98,7 @@ export function BreathingGround() {
       draw(time / 1000);
     };
     const start = () => {
-      if (frame !== 0 || reduced.matches || document.hidden) return;
+      if (frame !== 0 || reduced.matches || document.hidden || groundCovered()) return;
       frame = requestAnimationFrame(tick);
     };
     const stop = () => {
@@ -105,6 +107,10 @@ export function BreathingGround() {
     };
     const onVisibility = () => {
       if (document.hidden) stop();
+      else start();
+    };
+    const onCover = () => {
+      if (groundCovered()) stop();
       else start();
     };
     const onMotion = () => {
@@ -121,6 +127,7 @@ export function BreathingGround() {
     start();
     window.addEventListener('resize', refresh);
     document.addEventListener('visibilitychange', onVisibility);
+    const unsubscribeCover = subscribeGroundCover(onCover);
     reduced.addEventListener('change', onMotion);
     scheme.addEventListener('change', onTheme);
     // The theme toggle sets a class (and data-theme) on <html>: the fields' colours follow it.
@@ -133,6 +140,7 @@ export function BreathingGround() {
       stop();
       window.removeEventListener('resize', refresh);
       document.removeEventListener('visibilitychange', onVisibility);
+      unsubscribeCover();
       reduced.removeEventListener('change', onMotion);
       scheme.removeEventListener('change', onTheme);
       themeObserver.disconnect();
@@ -148,7 +156,7 @@ export function BreathingGround() {
         aria-hidden
         data-slot="breathing-caps"
         data-print="hide"
-        className="breathing-ground breathing-caps"
+        className="breathing-ground breathing-caps ground-caps"
       />
     </>
   );

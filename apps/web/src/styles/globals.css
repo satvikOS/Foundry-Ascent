@@ -965,8 +965,8 @@
    * panels' 22 px corners, a lit edge and a soft shadow, and takes all the room between the panels (the reading
    * column inside keeps its measure). The page still scrolls as a whole, so the reading position, the keyboard and
    * every link into the transcript behave as before: the pane is a sticky layer behind the content, the header rides
-   * its top edge and the composer dock its bottom edge, and the breathing ground's caps (`.breathing-caps`, above the
-   * content) hide the transcript in the gaps above and below the window.
+   * its top edge and the composer dock its bottom edge, and the window's caps (`.ground-caps`, above the content)
+   * hide the transcript in the gaps above and below the window.
    */
   .conv-window {
     --conv-window-radius: var(--radius-panel);
@@ -1044,10 +1044,8 @@
    * The breathing ground (components/shell/breathing-ground.tsx): a small canvas, drawn at a tenth of the screen's size a
    * dozen times a second and smoothed up to fill it, fixed behind everything on the app's ground while a conversation
    * window is open. Its border colours carry the fields' colours to the canvas (computed, so the theme decides them).
-   * The caps are the same picture over the content, shown only in the gaps above and below the floating window, so
-   * what scrolls out of the window disappears into the ground instead of showing in the gap. They step aside while a
-   * status banner shows at the top (it would sit under the top cap). Static under reduced motion (the script draws
-   * one frame), and never on a slow device, in forced colours or in print. The static atmosphere gives way to it.
+   * Static under reduced motion (the script draws one frame), and never on a slow device, in forced colours or in print.
+   * The static atmosphere gives way to it.
    */
   .breathing-ground {
     position: fixed;
@@ -1061,11 +1059,22 @@
     border-right-color: var(--breath-2);
     border-bottom-color: var(--breath-3);
   }
-  .breathing-caps {
+  /*
+   * The window's caps: the ground again, over the content, shown only in the gaps above and below the floating window,
+   * so what scrolls out of the window disappears into the ground instead of showing in the gap. Two layers: the plain
+   * caps (`.window-caps`, the app shell's), the ground's colour and its static atmosphere, always there while the
+   * window is; and over them the breathing ground's moving copy (`.breathing-caps`) wherever that is drawn. So a slow
+   * device, forced colours or the moment before the breathing ground loads never let the transcript through. The status
+   * banners and the mini call bar sit above them (app-shell.tsx).
+   */
+  .ground-caps {
     --cap-top: calc(var(--mini-call-height) + var(--panel-inset));
     --cap-bottom: calc(var(--keyboard-inset) + var(--panel-inset));
-    z-index: 15;
-    background-color: var(--background);
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
     clip-path: polygon(
       0 0,
       100% 0,
@@ -1077,12 +1086,21 @@
       0 100%
     );
   }
+  .window-caps {
+    z-index: 15;
+    background:
+      radial-gradient(30rem 52rem at 0% 55%, var(--atmosphere-1), transparent 72%),
+      radial-gradient(48rem 34rem at 100% 100%, var(--atmosphere-2), transparent 72%), var(--background);
+  }
+  .breathing-caps {
+    z-index: 16;
+    background-color: var(--background);
+  }
   @media (width < 48rem) {
-    .breathing-caps {
+    .ground-caps {
       display: none;
     }
   }
-  :root:has([data-slot='status-banner']) .breathing-caps,
   :root[data-perf='low'] .breathing-ground {
     display: none;
   }
@@ -1207,6 +1225,9 @@
   }
   .conv-window {
     --window-face: Canvas;
+  }
+  .window-caps {
+    background: Canvas;
   }
   .conv-window-frame {
     border-color: CanvasText;

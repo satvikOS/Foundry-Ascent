@@ -512,7 +512,8 @@ function Conversation() {
         </div>
       )}
 
-      <Inspector title="Context" remember="context" defaultOpen>
+      {/* Open by default from 1600 px: on a laptop the conversation window takes the room (inspector.tsx). */}
+      <Inspector title="Context" remember="context" defaultOpen="wide">
         <ContextPanel
           session={session}
           turns={turns}
