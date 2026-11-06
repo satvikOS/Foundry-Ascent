@@ -1675,11 +1675,17 @@ describe('what a distillation draws from a conversation, and its deletion', () =
     expect(content?.summarySources).toContain(drawn);
 
     // A later conversation opens with that line, and remembers where it came from (the conversation it was drawn
-    // from is Maya's latest: the earlier tests' conversations are older).
+    // from is Maya's latest: the earlier tests' conversations are older). They keep their order, a millisecond
+    // apart: one shared timestamp would leave which of them is "latest" to the random ids (`s.id DESC` breaks the
+    // tie), and the next tests' conversations open on that one (a thread the founder never takes up there is
+    // never opened on again, so a library thread drawn at random silenced the library opener of a later test).
     await h.t.db.system((sx) =>
       sx.query(
-        `UPDATE coaching_sessions SET last_activity_at = now() - interval '1 hour'
-         WHERE venture_id = :v AND id <> :id`,
+        `UPDATE coaching_sessions s
+         SET last_activity_at = now() - interval '1 hour' - make_interval(secs => o.rank / 1000.0)
+         FROM (SELECT id, row_number() OVER (ORDER BY last_activity_at DESC, id DESC) AS rank
+               FROM coaching_sessions WHERE venture_id = :v AND id <> :id) o
+         WHERE s.id = o.id`,
         { v: p.uuid(quietquad()), id: p.uuid(drawn) },
       ),
     );
