@@ -209,9 +209,9 @@ export function errorMessage(error: unknown): string {
     case 'idempotency_conflict':
       return 'This changed since you loaded it. Refresh and try again.';
     case 'persona_suspended':
-      return 'This vEIR is paused by a reviewer. Past conversations and human help still work.';
+      return 'Your mentor is paused by a reviewer. Past conversations and human help still work.';
     case 'assignment_inactive':
-      return 'No vEIR is assigned to this venture yet. Your program lead can assign one.';
+      return 'No mentor is assigned to this venture yet. Your program lead can assign one.';
     case 'ai_disabled':
       return 'AI is paused by an administrator. Everything else still works.';
     case 'spend_cap_reached':
@@ -223,7 +223,7 @@ export function errorMessage(error: unknown): string {
     case 'database_resuming':
       return 'Your workspace is still waking up. Try again in a few seconds.';
     case 'model_unavailable':
-      return 'Your vEIR is temporarily unavailable. Try again shortly.';
+      return 'Your mentor is temporarily unavailable. Try again shortly.';
     case 'upload_too_large':
       return 'That file is too large. The limit is 10 MB.';
     case 'unsupported_media_type':

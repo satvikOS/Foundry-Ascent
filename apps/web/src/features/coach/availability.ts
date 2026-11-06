@@ -37,13 +37,13 @@ export function coachingAvailability(
   if (!venture.persona) {
     return {
       available: false,
-      title: 'No vEIR yet',
+      title: 'No mentor yet',
       reason: 'Your program lead can assign one.',
     };
   }
   if (venture.persona.status === 'suspended') {
     const { persona } = venture;
-    const name = veirName(persona.name, persona.kind, persona.eirFirstName, persona.firstPerson === true);
+    const name = persona.kind === 'eir_persona' ? veirName(persona.name) : persona.name;
     return {
       available: false,
       title: `${name} is paused`,

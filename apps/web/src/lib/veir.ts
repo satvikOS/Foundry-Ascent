@@ -1,111 +1,84 @@
 import type { PersonaSummary, SessionView, VeirIdentity, VentureDetail } from '@foundry/contracts';
 
 /**
- * How the vEIR assigned to a venture is shown: its face (portrait or monogram), its name with its badge, and what a
- * vEIR is. A vEIR is an EIR's digital twin, an AI built with the EIR's consent from how they coach.
+ * How the vEIR assigned to a venture is shown: its name, its face (a consented portrait, else the small sphere) and
+ * what it is. A vEIR is an AI mentor built with an EIR's consent from their approved doctrine and style.
  *
- * Naming rule (the presence policy; every surface takes the name from here):
- * - With the EIR's first-person consent (`firstPerson`), the twin appears like a call tile: the EIR's first name
- *   with a "vEIR" badge ("Corin · vEIR"). In text (buttons, placeholders, aria-labels, announcements) it is
- *   "Corin · vEIR"; rendered, the name "Corin" sits beside the badge, which opens a short explanation.
- * - Without it, the twin is "Corin’s vEIR" (its badge reads "AI").
- * - A neutral guide keeps its own name ("Foundry Guide", badge "AI").
- * - Where the human EIR is meant (human help, reviews, the studio), the person is their full name ("Corin
- *   Halvorsen"); a bare first name alone is never the AI's label outside the name-and-badge pair.
+ * Naming rule (owner, 2026-11-05; every surface takes the name from here): the mentor is shown by its persona's
+ * display name alone ("Thomas"), never "Thomas’s vEIR", "Thomas · vEIR" or a "vEIR" badge beside it. The name
+ * comes from the persona's data; a name stored with a "vEIR" label ("Corin’s vEIR", "Corin · vEIR") is shown
+ * without it. A neutral guide keeps its own name ("Foundry Guide"). Where the human EIR is meant (human help,
+ * reviews, the studio), the person is their full name ("Corin Halvorsen"). That it is an AI is said in the About
+ * dialog (the right panel), the first-visit welcome, before a first call, and on the AI avatar's own label; the
+ * transcript never carries it.
  */
 export interface VeirDisplay {
   personaId: string;
-  /** The twin in text: "Corin · vEIR", "Corin’s vEIR", or a guide's own name. */
+  /** The mentor's display name ("Thomas"), in text and rendered alike. */
   name: string;
-  /** The name rendered beside the badge: "Corin", "Corin’s vEIR", or a guide's own name. */
+  /** The same display name (kept for callers that render the short form). */
   shortName: string;
-  /** The badge that travels with the name and opens the explanation. */
-  badge: VeirBadgeText;
   kind: PersonaSummary['kind'];
-  /** The EIR's first name ("Corin") for a vEIR; null for a guide. */
+  /** The first name of the EIR the persona was built with ("Corin"); null for a guide. */
   eirFirstName: string | null;
-  /** Shown under the EIR's first name, speaking as their digital twin (the EIR consented). */
+  /** The EIR consented to the persona speaking in the first person. */
   firstPerson: boolean;
   /** The vEIR's own EIR is the venture's assigned EIR, who sees its work. */
   eirSeesWork: boolean;
   /** The persona release's AI disclosure (exports and print). */
   disclosure: string;
-  /** Served portrait, only when the EIR consented to their likeness; otherwise the monogram is shown. */
+  /** Served portrait, only when the EIR consented to their likeness; otherwise the sphere is shown. */
   portraitUrl: string | null;
 }
 
-export type VeirBadgeText = 'vEIR' | 'AI';
+/** What naming a mentor needs: its display name and what the About dialog explains. */
+export type VeirName = Pick<
+  VeirDisplay,
+  'name' | 'shortName' | 'kind' | 'eirFirstName' | 'firstPerson' | 'eirSeesWork'
+>;
+
+/** Who to call the mentor when no persona is known yet. */
+export const NEUTRAL_MENTOR_NAME = 'your mentor';
 
 const POSSESSIVE_VEIR = /^(.+?)[’']s\s+vEIR$/i;
-const TILE_VEIR = /^(.+?)\s+·\s+vEIR$/;
+const TILE_VEIR = /^(.+?)\s+·\s+vEIR$/i;
 const ENDS_WITH_VEIR = /\bvEIR$/i;
+const TRAILING_VEIR = /\s*[·\-–—,:]?\s*\bvEIR$/i;
 
 /** The first word of a name ("Corin Halvorsen" → "Corin"). */
 function firstWord(name: string | null | undefined): string {
   return (name ?? '').trim().split(/\s+/)[0] ?? '';
 }
 
-/** The EIR first name a persona's own name carries ("Corin’s vEIR" → "Corin"), or ''. */
-function possessiveFirstName(personaName: string): string {
-  return POSSESSIVE_VEIR.exec(personaName.trim())?.[1]?.trim() ?? '';
-}
-
 /**
- * The name of a vEIR in text (see {@link VeirDisplay}). With the first-person consent it is the tile name
- * "<first name> · vEIR"; otherwise a persona already called "…’s vEIR" (or "… vEIR") keeps its name and any
- * other EIR persona becomes "<first name>’s vEIR". The first name comes from the persona's own consented EIR
- * (`PersonaView.eirProfile`, `PersonaSummary.eirFirstName`) when known, else from its own name. Never pass the
- * venture assignment's reviewing EIR: that person did not necessarily consent to this vEIR. A neutral guide keeps
- * its own name.
+ * The mentor's display name from its persona's name: the name itself, without a "vEIR" label ("Thomas" → "Thomas",
+ * "Corin’s vEIR" → "Corin", "Corin · vEIR" → "Corin"). A name that is nothing but the label stays as it is.
  */
-export function veirName(
-  personaName: string,
-  kind: PersonaSummary['kind'],
-  profileDisplayName?: string | null,
-  firstPerson = false,
-): string {
+export function veirName(personaName: string): string {
   const name = personaName.trim().replace(/\s+/g, ' ');
-  if (kind !== 'eir_persona') return name;
-  const first = firstWord(profileDisplayName) || possessiveFirstName(name);
-  if (firstPerson && first !== '') return `${first} · vEIR`;
-  if (ENDS_WITH_VEIR.test(name)) return name;
-  const fallback = first || firstWord(name);
-  return `${fallback === '' ? name : fallback}’s vEIR`;
+  const bare =
+    POSSESSIVE_VEIR.exec(name)?.[1] ?? TILE_VEIR.exec(name)?.[1] ?? name.replace(TRAILING_VEIR, '');
+  return bare.trim() === '' ? name : bare.trim();
 }
 
-/** The name and badge for a vEIR shown as a pair (see {@link VeirDisplay}). */
-function pairFor(
+function named(
   personaName: string,
   kind: PersonaSummary['kind'],
   eirFirstName: string | null,
   firstPerson: boolean,
-): Pick<VeirDisplay, 'name' | 'shortName' | 'badge' | 'eirFirstName' | 'firstPerson'> {
-  const name = veirName(personaName, kind, eirFirstName, firstPerson);
-  if (kind !== 'eir_persona') {
-    return { name, shortName: name, badge: 'AI', eirFirstName: null, firstPerson: false };
-  }
-  // A first name is a non-empty word: '' (none given) falls through to the next source.
-  const first =
-    [firstWord(eirFirstName), possessiveFirstName(name), TILE_VEIR.exec(name)?.[1] ?? ''].find(
-      (candidate) => candidate !== '',
-    ) ?? null;
-  const tile = firstPerson && first !== null;
-  return {
-    name,
-    shortName: tile ? first : name,
-    badge: tile ? 'vEIR' : 'AI',
-    eirFirstName: first,
-    firstPerson: tile,
-  };
+): Pick<VeirDisplay, 'name' | 'shortName' | 'eirFirstName' | 'firstPerson'> {
+  const name = kind === 'eir_persona' ? veirName(personaName) : personaName.trim().replace(/\s+/g, ' ');
+  const eir = kind === 'eir_persona' ? firstWord(eirFirstName) || null : null;
+  return { name, shortName: name, eirFirstName: eir, firstPerson: kind === 'eir_persona' && firstPerson };
 }
 
-/** The vEIR for a venture, or null when no persona is assigned. Named after the persona and its own EIR. */
+/** The mentor for a venture, or null when no persona is assigned. Named after the persona alone. */
 export function veirDisplay(venture: Pick<VentureDetail, 'persona'> | null | undefined): VeirDisplay | null {
   const persona = venture?.persona;
   if (!persona) return null;
   return {
     personaId: persona.personaId,
-    ...pairFor(persona.name, persona.kind, persona.eirFirstName ?? null, persona.firstPerson ?? false),
+    ...named(persona.name, persona.kind, persona.eirFirstName ?? null, persona.firstPerson ?? false),
     kind: persona.kind,
     eirSeesWork: persona.kind === 'eir_persona' && persona.eirSeesWork === true,
     disclosure: persona.disclosure,
@@ -113,12 +86,11 @@ export function veirDisplay(venture: Pick<VentureDetail, 'persona'> | null | und
   };
 }
 
-/** The vEIR as the call settings describe it (`VeirIdentity`), named by the same rule. */
+/** The mentor as the call settings describe it (`VeirIdentity`), named by the same rule. */
 export function veirFromIdentity(identity: VeirIdentity): VeirDisplay {
-  const eir = identity.kind === 'eir_persona' ? firstWord(identity.eirDisplayName) || null : null;
   return {
     personaId: identity.personaId,
-    ...pairFor(identity.name, identity.kind, eir, identity.firstPerson === true),
+    ...named(identity.name, identity.kind, identity.eirDisplayName ?? null, identity.firstPerson === true),
     kind: identity.kind,
     eirSeesWork: identity.kind === 'eir_persona' && identity.eirSeesWork === true,
     disclosure: identity.disclosure,
@@ -127,10 +99,9 @@ export function veirFromIdentity(identity: VeirIdentity): VeirDisplay {
 }
 
 /**
- * Who a conversation is with: the venture's vEIR when the conversation is with it, otherwise the conversation's
- * own persona (an older conversation can be with a persona the venture no longer has), named by that persona's
- * own kind: a guide keeps its name ("Foundry Guide", never "Foundry’s vEIR"). Without the kind (an older API),
- * a name ending in "vEIR" is an EIR persona's, which the API requires them to carry.
+ * Who a conversation is with: the venture's mentor when the conversation is with it, otherwise the conversation's
+ * own persona (an older conversation can be with a persona the venture no longer has), named by the same rule.
+ * Without the kind (an older API), a name ending in "vEIR" is an EIR persona's.
  */
 export function conversationVeir(
   session: Pick<SessionView, 'personaId' | 'personaName' | 'personaKind'>,
@@ -140,60 +111,84 @@ export function conversationVeir(
   const kind =
     session.personaKind ??
     (ENDS_WITH_VEIR.test(session.personaName.trim()) ? 'eir_persona' : 'neutral_guide');
-  return { ...pairFor(session.personaName, kind, null, false), kind, eirSeesWork: false };
+  return { ...named(session.personaName, kind, null, false), kind, eirSeesWork: false };
 }
 
-/** What naming a vEIR needs: its text name, the name and badge rendered as a pair, and what its badge explains. */
-export type VeirName = Pick<
-  VeirDisplay,
-  'name' | 'shortName' | 'badge' | 'kind' | 'eirFirstName' | 'firstPerson' | 'eirSeesWork'
->;
+type AboutInput = Pick<VeirDisplay, 'kind' | 'name' | 'eirFirstName' | 'eirSeesWork'>;
 
-/**
- * What a vEIR is, in one short paragraph (the badge's popover): the EIR's digital twin, an AI built with their
- * consent from how they coach; who sees the work; and that it is not the EIR in person, who does not write or
- * approve its replies. A guide is the program's AI coach.
- */
-export function veirExplanation(
-  veir: Pick<VeirDisplay, 'kind' | 'name' | 'eirFirstName' | 'eirSeesWork'>,
-): string {
+/** The EIR as the About text names them: their first name, or "an EIR" when it would read as the mentor's own. */
+function eirLabel(veir: AboutInput): string | null {
   const first = veir.eirFirstName;
-  if (veir.kind !== 'eir_persona' || first === null) {
-    return `${veir.name} is the program’s AI coach. It isn’t a person, and no one in the program writes or approves its replies.`;
+  if (veir.kind !== 'eir_persona' || first === null) return null;
+  return first.toLocaleLowerCase() === veir.name.toLocaleLowerCase() ? null : first;
+}
+
+/** What the mentor is, in one sentence (the About dialog's first line, the welcome's first line). */
+export function veirExplanation(veir: AboutInput): string {
+  if (veir.kind !== 'eir_persona') {
+    return `${veir.name} is the program’s AI mentor, built on its coaching doctrine.`;
   }
-  const sees = veir.eirSeesWork ? ` ${first} sees what you work on here.` : '';
-  return `${first}’s digital twin: an AI built with ${first}’s consent from how ${first} coaches.${sees} It isn’t ${first} in person, and ${first} doesn’t write or approve its replies.`;
+  const eir = eirLabel(veir);
+  return eir
+    ? `${veir.name} is an AI mentor, built with ${eir}’s consent from their approved doctrine and style, and released after their review.`
+    : `${veir.name} is an AI mentor, built with an entrepreneur-in-residence’s consent from their approved doctrine and style, and released after their review.`;
+}
+
+/** One fact of the About dialog: a short heading and its sentence. */
+export interface VeirFact {
+  readonly id: 'what' | 'face' | 'memory' | 'people' | 'limits';
+  readonly title: string;
+  readonly text: string;
 }
 
 /**
- * The welcome a person sees the first time they meet their vEIR (stored with them once read): two short sentences
- * on what it is. The voice facts of a call stay with the call.
+ * The plain facts about the mentor (the About dialog, reachable from the right panel at any time): what it is, that
+ * a call's face and voice are AI-generated, what is remembered and the Private option, that a person from the
+ * program is there, and what it cannot do.
  */
-export function veirWelcome(veir: Pick<VeirDisplay, 'kind' | 'name' | 'eirFirstName' | 'eirSeesWork'>): {
-  title: string;
-  lines: [string, string];
-} {
-  const first = veir.eirFirstName;
-  if (veir.kind !== 'eir_persona' || first === null) {
-    return {
-      title: `Meet ${veir.name}`,
-      lines: ['The program’s AI coach, built on its coaching doctrine.', 'It isn’t a person.'],
-    };
-  }
+export function veirFacts(veir: AboutInput): readonly VeirFact[] {
+  const eir = eirLabel(veir);
+  const sees = veir.eirSeesWork && eir ? ` ${eir} sees what you work on here.` : '';
+  return [
+    { id: 'what', title: 'An AI mentor', text: `${veirExplanation(veir)}${sees}` },
+    {
+      id: 'face',
+      title: 'Face and voice',
+      text: `On a call, ${veir.name}’s voice is AI-generated, and on video the face is an AI avatar.`,
+    },
+    {
+      id: 'memory',
+      title: 'What is remembered',
+      text: 'What you discuss is remembered for next time; you can read and correct it in Knowledge. Choose Private for a one-off that isn’t kept.',
+    },
+    {
+      id: 'people',
+      title: 'People are there',
+      text: 'A person from the program is available whenever you need one: ask for human help at any time.',
+    },
+    {
+      id: 'limits',
+      title: 'Limits',
+      text: `${veir.name} can’t pass messages to anyone or schedule meetings, and doesn’t give legal, medical or financial advice.`,
+    },
+  ];
+}
+
+/**
+ * The welcome a person sees the first time they meet their mentor (stored with them once read): two short
+ * sentences on what it is. The voice facts of a call stay with the call.
+ */
+export function veirWelcome(veir: AboutInput): { title: string; lines: [string, string] } {
+  const eir = eirLabel(veir);
   return {
-    title: `Meet ${first}’s vEIR`,
+    title: `Meet ${veir.name}`,
     lines: [
-      `${first}’s digital twin: an AI built with ${first}’s consent from how ${first} coaches.`,
-      veir.eirSeesWork ? `${first} sees what you work on here.` : `It isn’t ${first} in person.`,
+      veirExplanation(veir),
+      veir.eirSeesWork && eir
+        ? `${eir} sees what you work on here, and a person from the program is there when you need one.`
+        : 'A person from the program is there whenever you need one.',
     ],
   };
-}
-
-/** The letters on a vEIR's face: its EIR's initial ("Corin · vEIR", "Corin’s vEIR" → "C"), a guide's initials. */
-export function faceMonogram(name: string): string {
-  const trimmed = name.trim();
-  const eir = POSSESSIVE_VEIR.exec(trimmed)?.[1] ?? TILE_VEIR.exec(trimmed)?.[1];
-  return eir ? monogram(eir, 1) : monogram(trimmed);
 }
 
 /**

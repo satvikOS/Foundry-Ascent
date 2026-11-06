@@ -42,9 +42,8 @@ const SESSION: AvatarSessionResponse = {
 
 function veir(provider: CallVeir['provider']): CallVeir {
   return {
-    name: 'Corin · vEIR',
-    shortName: 'Corin',
-    badge: 'vEIR',
+    name: 'Thomas',
+    shortName: 'Thomas',
     kind: 'eir_persona',
     eirFirstName: 'Corin',
     firstPerson: true,
@@ -195,7 +194,7 @@ describe('CallStage: the face of a call', () => {
     const tile = container.querySelector('[data-slot="call-tile"]');
     expect(tile).toHaveAttribute('data-face', 'video');
     expect(tile).toHaveAttribute('data-speaking', 'true');
-    expect(container.querySelector('[data-slot="call-name-tag"]')).toHaveTextContent('Corin');
+    expect(container.querySelector('[data-slot="call-name-tag"]')).toHaveTextContent('Thomas');
     expect(container.querySelector('[data-slot="call-stage"]')).toBeNull();
     const video = container.querySelector<HTMLVideoElement>('[data-slot="call-video"]');
     expect(video?.muted).toBe(true);

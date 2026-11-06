@@ -29,9 +29,8 @@ import { formatClock, spokenDuration, useCallClock } from './use-call-clock';
 import { useCallConfig, useCallVeir, type CallVeir } from './use-call-veir';
 
 const FALLBACK_VEIR: CallVeir = {
-  name: 'your vEIR',
-  shortName: 'your vEIR',
-  badge: 'AI',
+  name: 'your mentor',
+  shortName: 'your mentor',
   kind: 'eir_persona',
   eirFirstName: null,
   firstPerson: false,

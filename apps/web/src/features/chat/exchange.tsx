@@ -3,7 +3,6 @@ import { useNavigate } from '@tanstack/react-router';
 import { RotateCcw } from 'lucide-react';
 import { useCallback, useMemo, type ReactNode } from 'react';
 
-import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { UserAvatar } from '@/components/faces/user-avatar';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -55,25 +54,21 @@ export function FounderMessage({
   );
 }
 
-/** The vEIR's side of an exchange: its face sits in the left gutter on wide screens. */
+/**
+ * The mentor's side of an exchange: its words, with no face in the gutter (the name is in the header, and the
+ * founder's own messages are the bubbles). Screen readers hear who said it.
+ */
 export function VeirMessage({
   personaName,
-  portraitUrl,
   children,
 }: {
   personaName: string;
+  /** Accepted from older callers; the transcript shows no face. */
   portraitUrl?: string | null | undefined;
   children: ReactNode;
 }) {
   return (
     <div className="relative min-w-0">
-      <PersonaAvatar
-        name={personaName}
-        portraitUrl={portraitUrl}
-        size="sm"
-        decorative
-        className="absolute top-0.5 -left-10 hidden @min-[54rem]/conv:inline-flex"
-      />
       <span className="sr-only">{personaName} said: </span>
       {children}
     </div>

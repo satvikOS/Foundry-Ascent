@@ -324,10 +324,10 @@ describe('NotebookEditor', () => {
     expect(screen.getByRole('region', { name: 'Next conversation' })).toBeInTheDocument();
   });
 
-  it('credits the notes to the vEIR, not to the human EIR', async () => {
+  it('credits the notes to the mentor by its name, not to the human EIR', async () => {
     await renderNotebook(makeNotebook());
-    expect(screen.getByText(/^Updated by Corin’s vEIR/)).toBeInTheDocument();
-    expect(screen.getByText(/Notes Corin’s vEIR keeps from your conversations/)).toBeInTheDocument();
+    expect(screen.getByText(/^Updated by Thomas/)).toBeInTheDocument();
+    expect(screen.getByText(/Notes Thomas keeps from your conversations/)).toBeInTheDocument();
   });
 
   it('asks before clearing the whole notebook', async () => {

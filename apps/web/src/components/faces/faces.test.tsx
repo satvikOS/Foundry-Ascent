@@ -6,14 +6,15 @@ import { UserAvatar, VentureMark } from './user-avatar';
 import { VeirBadge } from './veir-badge';
 
 describe('PersonaAvatar', () => {
-  it('shows a monogram named after the vEIR when there is no portrait', () => {
-    render(<PersonaAvatar name="Corin" size="xl" />);
-    const face = screen.getByRole('img', { name: 'Corin' });
-    expect(face).toHaveTextContent('C');
+  it('shows the small sphere named after the mentor when there is no portrait, never a letter', () => {
+    render(<PersonaAvatar name="Thomas" size="xl" />);
+    const face = screen.getByRole('img', { name: 'Thomas' });
+    expect(face).toHaveTextContent('');
+    expect(face.querySelector('[data-slot="persona-orb"]')).not.toBeNull();
     expect(face.querySelector('img')).toBeNull();
   });
 
-  it('shows the consented portrait and falls back to the monogram if it fails to load', () => {
+  it('shows the consented portrait and falls back to the sphere if it fails to load', () => {
     render(<PersonaAvatar name="Ruth" portraitUrl="/portraits/ruth.webp" />);
     const face = screen.getByRole('img', { name: 'Ruth' });
     const portrait = face.querySelector('img');
@@ -21,7 +22,8 @@ describe('PersonaAvatar', () => {
     expect(portrait).toHaveAttribute('alt', '');
     if (portrait) fireEvent.error(portrait);
     expect(face.querySelector('img')).toBeNull();
-    expect(face).toHaveTextContent('R');
+    expect(face.querySelector('[data-slot="persona-orb"]')).not.toBeNull();
+    expect(face).toHaveTextContent('');
   });
 
   it('marks the speaking state and can be decorative', () => {
@@ -30,7 +32,7 @@ describe('PersonaAvatar', () => {
     const face = container.querySelector('[data-slot="persona-avatar"]');
     expect(face).toHaveAttribute('data-speaking', 'true');
     expect(face).toHaveAttribute('aria-hidden', 'true');
-    expect(face).toHaveTextContent('FG');
+    expect(face).toHaveTextContent('');
   });
 });
 
@@ -51,11 +53,11 @@ describe('UserAvatar and VentureMark', () => {
   });
 });
 
-describe('VeirBadge', () => {
-  it('says vEIR and AI for an EIR persona, AI for the neutral guide', () => {
+describe('VeirBadge (the studio’s AI marker)', () => {
+  it('says AI for every persona, with no vEIR label beside the name', () => {
     const { rerender } = render(<VeirBadge kind="eir_persona" />);
-    // The brand keeps its casing: never "VEIR".
-    expect(screen.getByText('vEIR · AI')).not.toHaveClass('uppercase');
+    expect(screen.getByText('AI')).toBeInTheDocument();
+    expect(screen.queryByText(/vEIR/)).toBeNull();
     rerender(<VeirBadge kind="neutral_guide" />);
     expect(screen.getByText('AI')).toBeInTheDocument();
   });

@@ -11,9 +11,8 @@ import { fakeEngine, renderWithRouter } from './testing';
 import type { CallVeir } from './use-call-veir';
 
 const VEIR: CallVeir = {
-  name: 'Corin · vEIR',
-  shortName: 'Corin',
-  badge: 'vEIR',
+  name: 'Thomas',
+  shortName: 'Thomas',
   kind: 'eir_persona',
   eirFirstName: 'Corin',
   firstPerson: true,
@@ -27,7 +26,7 @@ const CONFIG = {
   veir: {
     personaId: IDS.persona,
     name: "Corin's vEIR",
-    shortName: 'Corin',
+    shortName: 'Thomas',
     kind: 'eir_persona',
     eirDisplayName: 'Corin Halvorsen',
     tagline: null,
@@ -81,9 +80,9 @@ describe('CallLobby', () => {
     expect(screen.queryByRole('button', { name: 'Not now' })).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
     expect(onRetry).not.toHaveBeenCalled();
-    // No disclaimer line: the tile's name tag carries the vEIR badge.
+    // No disclaimer line, and no vEIR badge beside the name.
     expect(screen.queryByRole('note', { name: 'AI disclosure' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'vEIR: what is Corin · vEIR?' })).toBeInTheDocument();
+    expect(screen.queryByText('vEIR')).toBeNull();
   });
 
   it('says what a vEIR is before a first meeting, beside how voice is handled', async () => {
@@ -143,7 +142,7 @@ describe('CallLobby', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Up to 20 min · 14 left today');
     // No separate "Call Corin" page: the name tag under the sphere names the call, as during it.
     expect(screen.queryByRole('heading')).toBeNull();
-    expect(document.querySelector('[data-slot="call-name-tag"]')).toHaveTextContent('CorinvEIR');
+    expect(document.querySelector('[data-slot="call-name-tag"]')).toHaveTextContent(/^Thomas$/);
     expect(screen.getByRole('button', { name: 'Call settings' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Not now' })).toBeNull();
     await userEvent.click(start);

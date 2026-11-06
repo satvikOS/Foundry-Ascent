@@ -73,16 +73,17 @@ test.describe('meeting the vEIR', () => {
     await page.waitForURL(new RegExp(`/v/${ventureId}$`));
     expect(await welcomeAcknowledgedAt(page)).toBeNull();
 
-    await test.step('one calm screen: its face, two short sentences, one button', async () => {
+    await test.step('one calm screen: its mark, two short sentences, one button', async () => {
       const welcome = veirWelcome(page);
       await expect(welcome).toBeVisible();
-      await expect(welcome.getByRole('heading', { name: 'Meet Corin’s vEIR' })).toBeVisible();
-      await expect(welcome).toContainText(
-        'Corin’s digital twin: an AI built with Corin’s consent from how Corin coaches.',
-      );
-      await expect(welcome).toContainText('Corin sees what you work on here.');
+      // The mentor by its display name alone (the seeded "Corin's vEIR" shows as "Corin").
+      await expect(welcome.getByRole('heading', { name: 'Meet Corin' })).toBeVisible();
+      await expect(welcome).toContainText(/^Meet Corin(?!’s)/);
+      await expect(welcome).toContainText('Corin is an AI mentor, built with');
+      await expect(welcome).toContainText('released after their review');
+      await expect(welcome).toContainText('A person from the program is there');
       await expect(welcome.getByRole('button')).toHaveText(['Continue']);
-      await expect(welcome).not.toContainText(/not a person|No human wrote/);
+      await expect(welcome).not.toContainText(/not a person|No human wrote|vEIR/);
       await expectNoSeriousA11yViolations(page, 'the vEIR welcome');
     });
 
@@ -138,10 +139,10 @@ test.describe('meeting the vEIR', () => {
       // The welcome is not stacked over the call: its start screen says it, beside how voice is handled.
       await expect(veirWelcome(page)).toHaveCount(0);
       await expect(screen.getByTestId('veir-welcome-inline')).toContainText(
-        'Corin’s digital twin: an AI built with Corin’s consent from how Corin coaches.',
+        'Corin is an AI mentor, built with',
       );
       await expect(screen.getByTestId('voice-notice')).toContainText('Amazon Transcribe');
-      await expect(screen.locator('[data-slot="call-name-tag"]')).toHaveText('CorinvEIR');
+      await expect(screen.locator('[data-slot="call-name-tag"]')).toHaveText('Corin');
       const stored = page.waitForResponse(
         (response) =>
           response.url().endsWith('/api/v1/me/veir-welcome/acknowledge') && response.status() === 200,
@@ -213,17 +214,15 @@ test.describe('talking with the vEIR', () => {
         );
       });
 
-      await test.step('the header names it like a call tile, and its badge explains it', async () => {
+      await test.step('the header names it plainly, and About in the context panel explains it', async () => {
         const header = page.locator('header').filter({ has: page.getByRole('heading', { level: 1 }) });
-        await expect(header.locator('[data-slot="veir-name"]').filter({ visible: true })).toHaveText(
-          'CorinvEIR',
-        );
+        await expect(header.locator('[data-slot="veir-name"]').filter({ visible: true })).toHaveText('Corin');
         await expectVeirBadgeInView(page);
         // The twin's own line names Corin, the person, on purpose ("built from how Corin coaches").
         await expectNoBareEirName(page, 'a conversation about what the vEIR is', [/Corin['’]s digital twin/]);
       });
 
-      await test.step('the call tile shows "Corin · vEIR", with no chip clutter or disclaimer line', async () => {
+      await test.step('the call tile shows its name alone, with no chip clutter or disclaimer line', async () => {
         const calls: string[] = [];
         page.on('response', (response) => {
           if (response.request().method() !== 'POST' || response.status() !== 201) return;
@@ -250,7 +249,7 @@ test.describe('talking with the vEIR', () => {
         if (await start.isVisible()) await start.click();
         await expect(reply).toBeVisible({ timeout: 20_000 });
         const tag = screen.locator('[data-slot="call-name-tag"]');
-        await expect(tag).toHaveText('CorinvEIR');
+        await expect(tag).toHaveText('Corin');
         await expect(tag.locator('xpath=ancestor::*[@data-slot="call-tile"]')).toHaveCount(1);
         await expect(screen).not.toContainText('Live voice');
         await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(0);

@@ -195,8 +195,9 @@ export function EscalationQueuePage() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <span className="block whitespace-nowrap">{ESCALATION_CATEGORY_LABELS[e.category]}</span>
-                    <span className="block text-xs whitespace-nowrap text-muted-foreground">
+                    {/* Topics wrap, so the queue fits beside the wider side panel at laptop widths. */}
+                    <span className="block min-w-28">{ESCALATION_CATEGORY_LABELS[e.category]}</span>
+                    <span className="block text-xs text-muted-foreground">
                       for {REQUESTED_ROLE_LABELS[e.requestedRole] ?? e.requestedRole}
                     </span>
                   </TableCell>
@@ -209,7 +210,7 @@ export function EscalationQueuePage() {
                       </time>
                     </span>
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">
+                  <TableCell className="min-w-28">
                     {e.assigneeId === null ? (
                       <span className="inline-flex items-center gap-1 text-muted-foreground">
                         <CircleAlert aria-hidden className="size-3.5" />

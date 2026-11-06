@@ -35,7 +35,7 @@ import { useRequiredMe } from '@/lib/auth/use-me';
 import { conversationTitle } from '@/lib/conversations';
 import { useDockedBottom } from '@/lib/hooks/use-docked-bottom';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
-import { conversationVeir, veirDisplay } from '@/lib/veir';
+import { conversationVeir, NEUTRAL_MENTOR_NAME, veirDisplay } from '@/lib/veir';
 import { conversationOrigin } from '@/features/documents/upload-queue';
 import { EscalationFlowDialog, type EscalationDraft } from '@/features/escalations/escalation-flow-dialog';
 
@@ -60,6 +60,7 @@ import { FollowUps } from './follow-ups';
 import { useKeepEndInView } from './keep-end-in-view';
 import { savedFromTurn } from './memory-saved';
 import { PanelStateProvider } from './panel-state';
+import type { PromptSuggestion } from './venture-context';
 
 const routeApi = getRouteApi('/$tenant/app/v/$ventureId/c/$sessionId');
 
@@ -155,7 +156,7 @@ function Conversation() {
   const veir = veirDisplay(venture.data);
   // Named after the conversation's own persona: an older conversation can be with one the venture no longer has.
   const withVeir = session ? conversationVeir(session, veir) : null;
-  const personaName = withVeir?.name ?? veir?.name ?? 'your vEIR';
+  const personaName = withVeir?.name ?? veir?.name ?? NEUTRAL_MENTOR_NAME;
 
   const setMode = useCallback(
     (next: ComposerMode) => {
@@ -315,6 +316,15 @@ function Conversation() {
   const askPerson = () => {
     setEscalation({ open: true, draft: { turnId: null, founderQuestion: session.goal ?? '' } });
   };
+  // A quick action from the context panel: its words go into the composer (with its mode when the mentor offers
+  // it), ready to edit and send.
+  const fillPrompt = (suggestion: PromptSuggestion) => {
+    setText(suggestion.prompt.slice(0, MAX_TURN_CHARS));
+    if (suggestion.mode && (venture.data?.persona?.allowedModes ?? []).includes(suggestion.mode)) {
+      setMode(suggestion.mode);
+    }
+    focusComposer();
+  };
 
   const onMenu = (action: ConversationMenuAction) => {
     setDialog(action);
@@ -350,7 +360,6 @@ function Conversation() {
         session={session}
         title={title}
         veir={withVeir ?? veir}
-        portraitUrl={veir?.portraitUrl}
         canEdit
         onAction={onMenu}
       />
@@ -503,14 +512,16 @@ function Conversation() {
         </div>
       )}
 
-      <Inspector title="Context">
+      <Inspector title="Context" remember="context" defaultOpen>
         <ContextPanel
           session={session}
           turns={turns}
           personaName={personaName}
+          veir={withVeir ?? veir}
           tenant={tenant}
           ventureId={ventureId}
           onAskPerson={askPerson}
+          onPrompt={ended || !canSend ? undefined : fillPrompt}
         />
       </Inspector>
 

@@ -133,7 +133,7 @@ test.describe('founder journey', () => {
     });
 
     let ventureId = '';
-    await test.step('New chat: the vEIR greets the founder with starting points, its badge and no disclaimer line', async () => {
+    await test.step('New chat: a calm centre, the venture’s context beside it, the mentor named plainly', async () => {
       ventureId = await openVenture(page);
       const nav = page.getByRole('navigation', { name: 'Main' });
       // The switcher names the venture and then its stage, as it shows them.
@@ -143,9 +143,13 @@ test.describe('founder journey', () => {
       await expect(nav.getByRole('link', { name: 'New chat' })).toHaveAttribute('aria-current', 'page');
       // Calls start from the composer and ⌘K; the side panel has no Call entry (one entry per action).
       await expect(nav.getByRole('link', { name: /^Call / })).toHaveCount(0);
+      // Starting points and the memory choice sit in the right panel, not under the composer.
+      const context = page.getByRole('complementary', { name: 'Context' });
       await expect(
-        page.getByRole('list', { name: 'Suggestions' }).getByRole('listitem').first(),
+        context.getByRole('list', { name: 'Quick actions' }).getByRole('listitem').first(),
       ).toBeVisible();
+      await expect(context.getByRole('radio', { name: 'Remember this conversation' })).toBeChecked();
+      await expect(page.getByRole('main').getByRole('list', { name: 'Suggestions' })).toHaveCount(0);
       await expect(page.getByRole('combobox', { name: 'Mode for the next message' })).toHaveText(/Auto/);
       await expectVeirBadgeInView(page);
       await expectNoBareEirName(page, 'New chat');
@@ -181,7 +185,7 @@ test.describe('founder journey', () => {
       const chip = answer.getByRole('button', { name: /^Source 1: / }).first();
       const title = ((await chip.getAttribute('aria-label')) ?? '').replace(/^Source 1: /, '');
       await chip.click();
-      const panel = page.getByRole('complementary', { name: 'Context inspector' });
+      const panel = page.getByRole('complementary', { name: 'Context' });
       await expect(panel.getByRole('tab', { name: 'Sources' })).toHaveAttribute('aria-selected', 'true');
       const source = panel.getByRole('article', { name: title, exact: true }).first();
       await expect(source).toBeVisible();

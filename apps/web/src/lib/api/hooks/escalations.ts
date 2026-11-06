@@ -20,8 +20,12 @@ export const ventureEscalationsQueryOptions = (ventureId: string) =>
       api.get(path`/ventures/${ventureId}/escalations`, EscalationListResponse, { signal }),
   });
 
-export function useVentureEscalations(ventureId: string) {
-  return useQuery({ ...ventureEscalationsQueryOptions(ventureId), select: (data) => data.items });
+export function useVentureEscalations(ventureId: string, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    ...ventureEscalationsQueryOptions(ventureId),
+    select: (data) => data.items,
+    enabled: options.enabled ?? true,
+  });
 }
 
 /** GET /inbox/escalations — escalations routed to the signed-in EIR / program lead. */

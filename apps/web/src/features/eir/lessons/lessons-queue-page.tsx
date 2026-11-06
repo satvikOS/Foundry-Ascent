@@ -25,11 +25,7 @@ function PersonaGroup({
   return (
     <section aria-labelledby={headingId} className="grid gap-3">
       <h2 id={headingId} className="flex items-center gap-2.5 text-body font-medium">
-        <PersonaAvatar
-          name={veirName(persona.name, persona.kind, persona.eirProfile?.displayName)}
-          size="sm"
-          decorative
-        />
+        <PersonaAvatar name={veirName(persona.name)} size="sm" decorative />
         {persona.name}
         <span className="tabular text-small font-normal text-muted-foreground">{lessons.length}</span>
       </h2>

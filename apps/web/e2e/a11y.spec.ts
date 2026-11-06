@@ -122,7 +122,7 @@ for (const scheme of ['dark', 'light'] as const) {
           .getByRole('button', { name: /^Source 1: / })
           .first()
           .click();
-        const panel = page.getByRole('complementary', { name: 'Context inspector' });
+        const panel = page.getByRole('complementary', { name: 'Context' });
         await expect(panel.getByRole('tab', { name: 'Sources' })).toHaveAttribute('aria-selected', 'true');
         await expectNoSeriousA11yViolations(page, `sources panel (${scheme})`);
         await panel.getByRole('tab', { name: 'Notebook' }).click();

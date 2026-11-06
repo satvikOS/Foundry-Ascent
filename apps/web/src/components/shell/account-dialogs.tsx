@@ -53,8 +53,9 @@ export function DataUseDialog({
           </Section>
           <Section title="What is remembered">
             <p>
-              What your vEIR learns in conversations and calls goes into Knowledge on its own, with its notes
-              and summaries, so it picks up where you left off. Your team can see, edit and forget any of it.
+              What your mentor learns in conversations and calls goes into Knowledge on its own, with its
+              notes and summaries, so it picks up where you left off. Your team can see, edit and forget any
+              of it.
             </p>
             <p className="mt-2">
               Private chats are never remembered. They are erased when they end, or after 24 hours idle.
@@ -63,7 +64,7 @@ export function DataUseDialog({
           <Section title="Who can see your venture">
             <p>
               Your team sees conversations, memory and documents. Advisors see only the memory and documents
-              shared with them. Your EIR reads your vEIR’s notes and a sample of answers. Program staff see
+              shared with them. Your EIR reads your mentor’s notes and a sample of answers. Program staff see
               totals. Nothing else is shared unless you approve a help request.
             </p>
           </Section>

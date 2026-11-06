@@ -1,7 +1,6 @@
 import { AudioLines } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 
-import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { VeirName } from '@/components/faces/veir-name';
 import { useMe } from '@/lib/auth/use-me';
 import { useMediaQuery } from '@/lib/hooks/use-media-query';
@@ -23,8 +22,8 @@ interface CallStageProps {
   /** What the presence shows (the engine's avatar state, or the call screen's own: paused, disconnected, ended). */
   state: SphereState;
   /**
-   * The name tag under the presence (in the corner of a face's video), "Corin · vEIR". The call screen passes its
-   * heading; by default the vEIR's name and badge.
+   * The name tag under the presence (in the corner of a face's video), "Thomas". The call screen passes its
+   * heading; by default the mentor's name.
    */
   nameTag?: ReactNode;
   /** The call's venture and, once live, the call: a vendor face is minted for that call only. */
@@ -199,12 +198,7 @@ export function CallStage({
               </p>
             ) : null}
           </div>
-          <div className="flex max-w-full items-center gap-2">
-            {!isCharacter ? (
-              <PersonaAvatar name={veir.name} portraitUrl={veir.portraitUrl} size="md" decorative />
-            ) : null}
-            {tag}
-          </div>
+          <div className="flex max-w-full items-center gap-2">{tag}</div>
         </>
       )}
       {characterFailed && !video ? (
@@ -217,7 +211,7 @@ export function CallStage({
 }
 
 /**
- * The presence's name tag: a voice mark while the vEIR speaks, then its name and badge ("Corin · vEIR"). With
+ * The presence's name tag: a voice mark while the vEIR speaks, then its name ("Thomas"). With
  * `headingRef` it is the call screen's heading (focused when the call opens).
  */
 export function CallNameTag({

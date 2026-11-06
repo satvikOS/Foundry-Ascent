@@ -110,7 +110,7 @@ test.describe('vEIR calls · a video face', () => {
         // Frames are flowing from the face, and the tile itself never plays sound.
         await expect.poll(() => videoState(video)).toEqual({ stream: true, muted: true, width: 640 });
         // The name tag (the call's heading) stays on the tile, over the face.
-        await expect(tile.locator('[data-slot="call-name-tag"]')).toContainText('vEIR');
+        await expect(tile.locator('[data-slot="call-name-tag"]')).toContainText('Corin');
         await expect(tile.locator('[data-slot="call-you-tile"]')).toBeVisible();
         await expectNoSeriousA11yViolations(page, 'video call');
         await expectNoHorizontalScroll(page);
@@ -144,7 +144,7 @@ test.describe('vEIR calls · a video face', () => {
         await expect(tile).toHaveCount(0);
         await expect(screen.locator('[data-slot="call-tile"][data-face="presence"]')).toBeVisible();
         await expect(screen.locator('[data-slot="call-stage"]')).toBeVisible();
-        await expect(screen.locator('[data-slot="call-name-tag"]')).toContainText('vEIR');
+        await expect(screen.locator('[data-slot="call-name-tag"]')).toContainText('Corin');
         await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeEditable();
         await expect(screen.getByRole('button', { name: /^End call/ })).toBeVisible();
         // The server is told, so the vendor session stops billing; no second session is opened.

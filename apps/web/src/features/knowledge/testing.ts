@@ -61,11 +61,11 @@ export function makeVenture(overrides: Partial<VentureDetail> = {}): VentureDeta
     persona: {
       personaId: IDS.persona,
       releaseId: IDS.release,
-      name: 'Corin’s vEIR',
+      name: 'Thomas',
       kind: 'eir_persona',
       version: 1,
       status: 'active',
-      disclosure: 'Corin’s vEIR is an AI coach.',
+      disclosure: 'Thomas is an AI mentor.',
       allowedModes: ['diagnose', 'coach'],
     },
     assignedEir: { id: IDS.eir, displayName: 'Corin Halvorsen', synthetic: true },

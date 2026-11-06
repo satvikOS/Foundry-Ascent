@@ -576,7 +576,7 @@ describe('the mini call bar', () => {
       remaining: { seconds: 600, at: Date.now() },
     });
     await userEvent.click(await screen.findByRole('button', { name: 'Minimize call' }));
-    const bar = await screen.findByRole('region', { name: "Call with Corin's vEIR" });
+    const bar = await screen.findByRole('region', { name: 'Call with Corin' });
     return { ...app, bar };
   }
 
@@ -643,11 +643,11 @@ describe('the mini call bar', () => {
     });
     // In the call's own conversation the review closes the transcript, so the bar goes.
     expect(screen.getByRole('region', { name: 'Call ended' })).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: "Call with Corin's vEIR" })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Call with Corin' })).toBeNull();
     expect(screen.getByRole('heading', { name: 'Call ended' })).not.toHaveFocus();
     // Elsewhere, the bar says it ended and why, and Review returns to that conversation (not the call screen).
     await userEvent.click(screen.getByRole('link', { name: 'Knowledge' }));
-    const after = await screen.findByRole('region', { name: "Call with Corin's vEIR" });
+    const after = await screen.findByRole('region', { name: 'Call with Corin' });
     expect(after).toHaveTextContent('Call ended');
     expect(within(after).getByRole('status')).toHaveTextContent(
       'Call ended. The call reached its time limit.',
@@ -685,7 +685,7 @@ describe('the mini call bar', () => {
       expect(heading).toHaveFocus();
     });
     // No bar beside the review, and no separate "Call ended" page.
-    expect(screen.queryByRole('region', { name: "Call with Corin's vEIR" })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Call with Corin' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Call again' }));
     await waitFor(() => {
       expect(engine.start).toHaveBeenCalledTimes(1);
@@ -694,7 +694,7 @@ describe('the mini call bar', () => {
     expect(url()).toBe(`${BASE}/c/${SESSION}?call=1`);
   });
 
-  it('offers Turn on sound when the browser stopped the call’s sound, keeping the AI marker', async () => {
+  it('offers Turn on sound when the browser stopped the call’s sound, keeping the name', async () => {
     const { engine, bar } = await minimized();
     expect(within(bar).queryByRole('button', { name: 'Turn on sound' })).toBeNull();
     // An interruption (a phone call on iOS) suspends the call's audio while it is minimized.
@@ -705,8 +705,9 @@ describe('the mini call bar', () => {
     expect(within(bar).getByRole('status')).toHaveTextContent('Sound is off.');
     await userEvent.click(within(bar).getByRole('button', { name: 'Turn on sound' }));
     expect(engine.resumeAudio).toHaveBeenCalledTimes(1);
-    // The vEIR keeps its badge in the bar (the call settings here carry no first-person consent: "AI").
-    expect(bar.querySelector('[data-slot="veir-badge"]')).toHaveTextContent('AI');
+    // The mentor is named alone in the bar: no vEIR badge beside the name.
+    expect(bar.querySelector('[data-slot="veir-name"]')).toHaveTextContent(/^Corin$/);
+    expect(bar.querySelector('[data-slot="veir-badge"]')).toBeNull();
 
     act(() => {
       engine.set({ audioBlocked: false });

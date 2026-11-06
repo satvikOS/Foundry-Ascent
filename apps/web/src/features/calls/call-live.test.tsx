@@ -27,9 +27,8 @@ const CALL: CallView = {
 };
 
 const VEIR: CallVeir = {
-  name: 'Corin · vEIR',
-  shortName: 'Corin',
-  badge: 'vEIR',
+  name: 'Thomas',
+  shortName: 'Thomas',
   kind: 'eir_persona',
   eirFirstName: 'Corin',
   firstPerson: true,
@@ -93,12 +92,12 @@ describe('callStatusLabel', () => {
 describe('CallLive', () => {
   it('shows the vEIR as a call tile with its name tag, its state and named controls, and no disclaimer line', async () => {
     const { engine } = renderLive();
-    const tag = await screen.findByRole('heading', { name: /Corin/ });
+    const tag = await screen.findByRole('heading', { name: /Thomas/ });
     expect(tag).toHaveFocus();
-    // Like a video call's name tag: the EIR's first name and the vEIR badge, no "AI · Live voice" chip.
-    expect(tag).toHaveTextContent(/^CorinvEIR$/);
+    // Like a video call's name tag: the mentor's name alone (no vEIR badge), no "AI · Live voice" chip.
+    expect(tag).toHaveTextContent(/^Thomas$/);
     expect(tag.closest('[data-slot="call-tile"]')).not.toBeNull();
-    expect(within(tag).getByRole('button', { name: 'vEIR: what is Corin · vEIR?' })).toBeInTheDocument();
+    expect(within(tag).queryByRole('button')).toBeNull();
     expect(screen.queryByText(/Live voice/)).toBeNull();
     expect(screen.getByRole('status')).toHaveTextContent('Listening');
     expect(screen.queryByRole('note', { name: 'AI disclosure' })).toBeNull();
@@ -232,7 +231,7 @@ describe('CallLive', () => {
       captions: { veir: 'Twelve is a good start.', founder: 'We interviewed twelve', founderLive: true },
     });
     const captions = await screen.findByRole('region', { name: 'Captions' });
-    expect(captions).toHaveTextContent('Corin · vEIR: Twelve is a good start.');
+    expect(captions).toHaveTextContent('Thomas: Twelve is a good start.');
     expect(captions).toHaveTextContent('YouWe interviewed twelve');
   });
 
@@ -244,7 +243,7 @@ describe('CallLive', () => {
 
   it('continues by typing when there is no voice input, and says why', async () => {
     const { engine } = renderLive({ input: 'typed', typedReason: 'mic_denied' });
-    const line = await screen.findByRole('textbox', { name: 'Reply to Corin · vEIR' });
+    const line = await screen.findByRole('textbox', { name: 'Reply to Thomas' });
     expect(line).toHaveFocus();
     // Said once, not three times: the status does not repeat "type".
     expect(screen.getByText(/Microphone blocked/)).toBeInTheDocument();
@@ -263,7 +262,7 @@ describe('CallLive', () => {
       typedReason: 'mic_lost',
       call: { ...CALL, inputMode: 'transcribe' },
     });
-    const line = await screen.findByRole('textbox', { name: 'Reply to Corin · vEIR' });
+    const line = await screen.findByRole('textbox', { name: 'Reply to Thomas' });
     expect(line).toHaveFocus();
     expect(screen.getByText('Microphone disconnected. Reconnect it, or type.')).toHaveAttribute(
       'role',
@@ -275,7 +274,7 @@ describe('CallLive', () => {
 
   it('offers no microphone to a call that started typed', async () => {
     renderLive({ input: 'typed', typedReason: 'mic_denied', call: { ...CALL, inputMode: 'typed' } });
-    await screen.findByRole('textbox', { name: 'Reply to Corin · vEIR' });
+    await screen.findByRole('textbox', { name: 'Reply to Thomas' });
     expect(screen.queryByRole('button', { name: 'Reconnect microphone' })).toBeNull();
   });
 
@@ -283,7 +282,7 @@ describe('CallLive', () => {
     const { engine } = renderLive();
     await userEvent.click(await screen.findByRole('button', { name: 'Call settings' }));
     await userEvent.click(await screen.findByRole('button', { name: /^Type instead/ }));
-    const line = screen.getByRole('textbox', { name: 'Reply to Corin · vEIR' });
+    const line = screen.getByRole('textbox', { name: 'Reply to Thomas' });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
@@ -439,7 +438,7 @@ describe('CallLive', () => {
     const line = (await screen.findByRole('region', { name: 'Captions' })).querySelector('p');
     // Large: the type scale's 24 px step.
     expect(line?.className).toMatch(/\btext-2xl\b/);
-    expect(liveText()).toContain('Corin · vEIR: Twelve is a good start.');
+    expect(liveText()).toContain('Thomas: Twelve is a good start.');
   });
 
   it('does not read the captions over the vEIR’s voice unless asked', async () => {
@@ -461,7 +460,7 @@ describe('CallLive', () => {
     });
     await screen.findByText('Replying on screen');
     // No voice to talk over: each line is announced, without a setting to find first.
-    expect(liveText()).toContain('Corin · vEIR: Twelve is a good start.');
+    expect(liveText()).toContain('Thomas: Twelve is a good start.');
   });
 
   it('shows the vEIR’s reply when it is on screen only, even with captions turned off', async () => {
@@ -475,7 +474,7 @@ describe('CallLive', () => {
     expect(captions).toHaveTextContent('Twelve is a good start.');
     // Only the reply: the founder chose not to see their own words.
     expect(captions).not.toHaveTextContent('What about price?');
-    expect(liveText()).toContain('Corin · vEIR: Twelve is a good start.');
+    expect(liveText()).toContain('Thomas: Twelve is a good start.');
     await userEvent.click(screen.getByRole('button', { name: 'Call settings' }));
     expect(await screen.findByRole('button', { name: /^Captions/ })).toHaveAttribute('aria-pressed', 'false');
   });
