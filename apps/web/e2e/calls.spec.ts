@@ -1105,10 +1105,10 @@ test.describe('vEIR calls', () => {
     test('New chat → call: no sideways scroll, controls within reach', async ({ page }) => {
       await voiceNoticeSeen(page);
       await openVenture(page);
-      await page
-        .getByRole('main')
-        .getByRole('link', { name: /^Voice call with / })
-        .click();
+      // On a phone New chat's call buttons sit in the phone bar, with the context panel's toggle.
+      const corner = page.getByRole('banner').locator('[data-slot="new-chat-corner"]');
+      await expectReachable(page, corner.getByRole('link', { name: /^Voice call with / }));
+      await corner.getByRole('link', { name: /^Voice call with / }).click();
       const screen = callScreen(page);
       // On a phone the memory choice sits in the closed context sheet, not beside the Call button: the call asks
       // Remember or Private on its own start screen first.
