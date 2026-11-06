@@ -155,12 +155,17 @@ separate; this is the common pool's `public` scope.
     nothing; "…is that bad?" does); a case by its company's **full name** (or a short form that is not everyday
     English), case-insensitive, as whole words, in an entrepreneurship context; a company whose name is everyday
     English or an everyday product (Grove, Embrace, Station A, Dropbox, Duolingo…) needs a word that shows the company
-    is meant ("Grove Street has cheaper rent", "the deck is on Dropbox" retrieve nothing); a case's subject ("home
-    try-on") only when the founder asks for an example;
+    is meant within six words of the name in the same sentence, or a case frame in its own clause ("Grove Street has
+    cheaper rent", "the deck is on Dropbox" retrieve nothing); a short one-word name (NONA, Locu, r2c) needs a business
+    word beside it or a case frame, not just any question; a case's subject ("home try-on") only within ten words of
+    a genuine ask for an example, a case study or a company's story ("any examples of startups that…", "which
+    companies have…"), never on an idiom ("in that case", "for example", "companies like ours", "use cases"); a
+    one-word stage term ("repeatability") only beside a startup word;
   - a question about the program itself (its stage gates, cohort, curriculum, EIRs) draws on the program's guidance
     only;
-  - **one item per turn**, unless the founder asks for several (examples, cases, frameworks, a comparison) or names
-    several themselves; then at most two on a typed turn, never more than one on a call;
+  - **one item per turn**, unless the founder asks for several (examples, cases, frameworks, a comparison; "in some
+    cases" is not asking) or names several themselves (a subject asked for as an example is not naming one); then at
+    most two on a typed turn, never more than one on a call;
   - with a query embedding, a passage less similar than 0.2 is vetoed; similarity never admits one;
   - an item **already cited in the conversation** (`turn_evidence` with source scope `public`) is never shown again;
   - one passage per item (a documented account before editorial guidance), in slots of their own beside the shared

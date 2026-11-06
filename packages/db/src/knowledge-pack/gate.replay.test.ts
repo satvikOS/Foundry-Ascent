@@ -136,6 +136,92 @@ describe('what the gate reads', () => {
     expect(selectReferences('What is design thinking?', { limit: 0 }).matches).toEqual([]);
   });
 
+  it('a case’s subject counts only on a genuine ask for an example, never on an everyday idiom', () => {
+    // Idioms that use "case", "example" or "companies" without asking for one.
+    expect(keys('In that case, should we sell glasses online?')).toEqual([]);
+    expect(keys('In any case, how do we handle catering orders?')).toEqual([]);
+    expect(keys('Just in case, what should I tell the pharmacy?')).toEqual([]);
+    expect(keys('For example, could a pharmacy stock our vitamins?')).toEqual([]);
+    expect(keys('Companies like ours, how should we think about recycling?')).toEqual([]);
+    expect(keys('Do companies that sell glasses need a license?')).toEqual([]);
+    expect(keys('What is the business case for adding catering?')).toEqual([]);
+    expect(keys('What are the use cases for our app in pet care?')).toEqual([]);
+    // A genuine ask, near the subject.
+    expect(keys('Any examples of startups that did home try-on for glasses?')).toEqual(['case/SC03']);
+    expect(keys('Is there a case study on pet care startups?')).toEqual(['case/SC19']);
+    expect(keys('Which companies have done recycling pickup well?')).toEqual(['case/SC07']);
+    expect(keys('Show me a real case of a catering startup.')).toEqual(['case/SC09']);
+    expect(keys('Has anyone done portable desalination?')).toEqual(['case/SC01']);
+    // An ask for an example of something else, the subject far from it.
+    expect(
+      keys(
+        'Can you give me an example of a good landing page headline for a small business that we could adapt next month for our pet care app?',
+      ),
+    ).toEqual([]);
+  });
+
+  it('a cue confirms an everyday company name only beside it, in the same sentence', () => {
+    expect(
+      keys(
+        'I keep our files in Dropbox. My aunt started a referral program at her bakery, should we copy it?',
+      ),
+    ).toEqual([]);
+    expect(
+      keys(
+        'I keep the files in Dropbox and my aunt, who runs a bakery across town, started a referral program, should we?',
+      ),
+    ).toEqual([]);
+    expect(keys('Was the Dropbox referral program the reason it grew?')).toEqual(['case/SC15']);
+    expect(keys('Grove has an indoor garden kit, is that a good model for us?')).toEqual(['case/SC11']);
+    // A case frame counts inside the name's own clause only.
+    expect(keys('I saved it in Dropbox, did the upload finish?')).toEqual([]);
+  });
+
+  it('a short company name needs a business word or a case frame beside it, not just any question', () => {
+    expect(keys('Is my nona coming to dinner on Sunday?')).toEqual([]);
+    expect(keys('Should I call my nona before the meeting?')).toEqual([]);
+    expect(keys('NONA is a startup I keep hearing about, what did they do?')).toEqual(['case/SC01']);
+    expect(keys('What happened with NONA?')).toEqual(['case/SC01']);
+  });
+
+  it('a one-word stage term counts only in a startup context', () => {
+    expect(keys('How do I improve the repeatability of our 3D prints?')).toEqual([]);
+    expect(keys('What does repeatability mean for a startup at our stage?')).toEqual([
+      'stage/early_traction',
+    ]);
+    expect(keys('How do we get to repeatable sales?')).toEqual(['stage/early_traction']);
+  });
+
+  it('one item per turn: a topic beside a named item, or two topics, still give one', () => {
+    expect(
+      keys('Can you give me an example of a startup doing pet care, and explain the lean canvas?'),
+    ).toEqual(['framework/F02']);
+    expect(keys('Is there an example of a startup doing recycling or catering?')).toEqual(['case/SC07']);
+    // An idiom never reads as asking for several.
+    expect(
+      keys('In some cases a lean canvas helps; can you show me an example of a pet care startup?'),
+    ).toEqual(['framework/F02']);
+    // A term inside a longer term of another item is that item only.
+    expect(keys('What should we focus on at the MVP stage?')).toEqual(['stage/MVP']);
+    // An acronym whose lowercase is a name or a word counts only as written.
+    expect(keys('my friend sam says the tam is huge lol')).toEqual([]);
+    expect(keys('Is Sam coming to the meeting?')).toEqual([]);
+    expect(keys('What is our TAM?')).toEqual(['framework/F07']);
+  });
+
+  it('every rule needs its own condition', () => {
+    // A case's subject needs a sentence that asks, not only the word "examples".
+    expect(keys('There are examples of recycling startups all over our city.')).toEqual([]);
+    expect(keys('Are there examples of recycling startups?')).toEqual(['case/SC07']);
+    // A paired term needs its cue in the sentence.
+    expect(keys('We are scaling fast and I am exhausted, how do I cope?')).toEqual([]);
+    expect(keys('How do you get traction on TikTok?')).toEqual([]);
+    expect(keys('Who should mentor a startup that is scaling?')).toEqual(['stage/growth']);
+    // A company's full name needs an entrepreneurship context or a question.
+    expect(keys('I walked past Warby Parker on my way home.')).toEqual([]);
+    expect(keys('What happened with Quincy Apparel?')).toEqual(['case/SC17']);
+  });
+
   it('reads sentences and words as a founder writes them', () => {
     expect(gateTokens('Warby Parker’s home try-on, TAM/SAM')).toEqual([
       'warby',

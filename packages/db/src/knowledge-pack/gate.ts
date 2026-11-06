@@ -16,13 +16,18 @@
  *   passing ("We did five customer interviews.") retrieves nothing.
  * - **A case by its company's full name** (or a short form that is not everyday English), case-insensitive, as
  *   whole words, in an entrepreneurship context. A company whose name is everyday English or an everyday product
- *   needs a word that shows the company is meant ("Grove Street has cheaper rent" and "the deck is on Dropbox"
- *   retrieve nothing; "How did Dropbox grow?" does). A case's subject ("home try-on") counts only when the founder
- *   asks for an example or a case.
+ *   needs a word that shows the company is meant within six words of the name in its sentence, or a case frame in
+ *   its own clause ("Grove Street has cheaper rent" and "the deck is on Dropbox" retrieve nothing; "How did Dropbox
+ *   grow?" and "the Dropbox referral program" do). A short one-word name ("NONA", "Locu") needs a business word
+ *   beside it or a case frame, not just any question ("Is my nona coming?" retrieves nothing).
+ * - **A case's subject** ("home try-on") counts only in a sentence that genuinely asks for an example, a case or a
+ *   company's story ("any examples of startups that…", "a case study", "which companies have…"), within ten words
+ *   of that ask, and never on an idiom ("in that case", "for example", "companies like ours", "use cases").
  * - **A question about the program itself** (its curriculum, stage gates, cohort, EIRs) is answered from the
  *   program's own guidance: no reference item.
  * - **One item per turn**, the strongest match, unless the founder explicitly asks for several (examples, cases,
- *   frameworks, a comparison) or names several library subjects themselves; then at most `limit`.
+ *   frameworks, a comparison; an idiom such as "in some cases" is not asking) or names several library subjects
+ *   themselves; then at most `limit`. A subject asked for as an example does not count as naming one.
  *
  * The database side (`retrieval.ts`) adds what needs the database: the vector floor (a passage whose embedding is
  * far from the query is vetoed; similarity never admits one), and never an item already cited in the conversation.
@@ -72,17 +77,82 @@ export function asks(sentence: string): boolean {
   return s.includes('?') || QUESTION_START.test(s) || REQUEST.test(s);
 }
 
-const EXAMPLE_ASK =
-  /\b(?:examples?|case stud(?:y|ies)|cases?|precedents?|companies|startups? (?:that|who)|(?:a|any) (?:company|startup|business) (?:that|who)|has anyone|anyone (?:who|that) (?:has|did))\b/;
+/**
+ * Everyday idioms that use "case", "example" or "companies" without asking for one ("in that case", "for example",
+ * "companies like ours", "the business case", "use cases"). They are removed before looking for an ask.
+ */
+const IDIOMS =
+  /\b(?:(?:just )?in case|(?:in|for) (?:that|this|any|which|either|each|every|such|my|our|your|their|his|her|its|the|most|some|many|few|those|these|all|both|no|other|rare|extreme|certain) cases?|case by case|(?:for|as an?) (?:example|instance)|(?:lead|leading|led|set|setting) (?:an? |the |by )?example|follow (?:the |their |his |her |that |this )?example|(?:companies|startups|businesses|people|founders) like (?:ours|us|mine|me|yours|you|theirs|them|this|that)|(?:business|use|edge|test|worst|best|base|phone|court|legal) cases?|(?:make|makes|making|made|build|building|built) (?:an? |the |my |our |a strong |a good |a better )?case|(?:is|was|be|been|not|isn't|wasn't) (?:it |that |this |always |really |actually |still )?the case|the case (?:that|for|against|with))\b/g;
 
-/** Whether `sentence` asks for an example, a case or a company that did something. */
-function asksForExample(sentence: string): boolean {
-  return asks(sentence) && EXAMPLE_ASK.test(sentence.toLowerCase());
+const DETERMINER =
+  '(?:an?|any|some|one|other|another|more|real|good|concrete|specific|famous|known|well known|similar|successful|documented|actual|startup|company|business|real[- ]world|real[- ]life|two|three|a few|few)';
+/**
+ * A genuine ask for an example, a case or a company or startup story ("any examples of startups that…", "a case
+ * study", "which companies have…", "show me a real case", "has anyone done…"). Read only after the idioms are
+ * removed, and only in a sentence that asks; a case's subject must then be near it (`EXAMPLE_REACH`).
+ */
+const EXAMPLE_ASKS: readonly RegExp[] = [
+  /\bexamples? (?:of|where|in which|like|from)\b/g,
+  new RegExp(`\\b${DETERMINER}(?: ${DETERMINER}){0,2} examples?\\b`, 'g'),
+  /\b(?:show|give|tell|send|share with) (?:me|us) (?:an? |some |one |two |three |a few |more )?(?:real |good |concrete |actual )?(?:examples?|cases?|stor(?:y|ies))\b/g,
+  /\bcase stud(?:y|ies)\b/g,
+  new RegExp(
+    `\\b${DETERMINER}(?: ${DETERMINER}){0,2} cases? (?:of|where|in which|like|that|about|from)\\b`,
+    'g',
+  ),
+  /\b(?:startup|company|founder|founding|success|failure|real|true) stor(?:y|ies)\b/g,
+  /\bstories (?:of|about|from) (?:startups?|companies|founders|businesses)\b/g,
+  /\b(?:which|what) (?:other |real |successful |existing )?(?:companies|startups|businesses|company|startup|business|founders)\b (?:have|has|had|did|do|does|are|were|tried|used|went|built|solved|started|succeeded|failed|managed|got|made|launched|pulled)\b/g,
+  /\b(?:are there|is there|were there|was there|do you know(?: of)?|know of|know any|can you name|name|any|did any|has any|have any) (?:an? |any |other |some |real |successful |existing )?(?:companies|startups|businesses|company|startup|business|founders?)\b(?! (?:model|models|plan|plans|idea|ideas|card|cards|name|names|owner|owners|license|licence|account|accounts|school|class|email|partner|partners|loan|loans|hours|insurance|address|bank|registration|tax|taxes|expense|expenses|trip|meeting|meetings|lunch|dinner|event|events|course|degree|major|advice|tips|questions|question|stuff|thing|things)\b)/g,
+  /\b(?:a|another|one) (?:company|startup|business) (?:that|who|which)\b/g,
+  /\bhas anyone (?:ever |else )?(?:done|tried|built|made|started|used|solved|pulled off|launched|succeeded|figured out|cracked)\b/g,
+  /\banyone (?:who|that) (?:has|have|did|tried|built|started|made|launched|solved)\b/g,
+  /\b(?:any|a|some) precedents?\b/g,
+];
+
+/** Furthest a case's subject may be from the ask, in words ("any examples of startups that did home try-on"). */
+const EXAMPLE_REACH = 10;
+
+/** `sentence` lowercased as `gateTokens` reads it, with the everyday idioms removed. */
+function withoutIdioms(sentence: string): string {
+  return sentence
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[’‘`´]/g, "'")
+    .replace(/-/g, ' ')
+    .replace(IDIOMS, ' ; ');
 }
 
-/** The founder explicitly asks for several (examples, cases, frameworks, a comparison). */
+/** Word spans [start, end) of the genuine asks for an example in `text` (already `withoutIdioms`). */
+function exampleAskSpans(text: string): [number, number][] {
+  const spans: [number, number][] = [];
+  for (const pattern of EXAMPLE_ASKS) {
+    pattern.lastIndex = 0;
+    for (let m = pattern.exec(text); m !== null; m = pattern.exec(text)) {
+      const start = gateTokens(text.slice(0, m.index)).length;
+      spans.push([start, start + gateTokens(m[0]).length]);
+      if (m[0] === '') pattern.lastIndex += 1;
+    }
+  }
+  return spans;
+}
+
+/** Words between two spans [start, end) (0 when they touch or overlap). */
+function gap(a: readonly [number, number], b: readonly [number, number]): number {
+  if (a[1] <= b[0]) return b[0] - a[1];
+  if (b[1] <= a[0]) return a[0] - b[1];
+  return 0;
+}
+
+/** The founder explicitly asks for several (examples, cases, frameworks, a comparison); read without the idioms. */
 const SEVERAL =
   /\b(?:examples|cases|case studies|frameworks|compare|comparing|comparison|difference between|versus|vs)\b/;
+
+/** How near a cue must stand to an everyday company name, in words of the same sentence ("the Dropbox referral program"). */
+const CUE_REACH = 6;
+
+/** A one-word company name this short ("NONA", "Locu", "r2c") needs a business word or a case frame beside it. */
+const SHORT_NAME = 5;
 
 /** Words of a message about the program itself (its name, curriculum, gates, EIRs). */
 const PROGRAM_TOKENS = new Set(['ain', 'foundry', 'cohort', 'curriculum', 'handbook', 'eir', 'eirs']);
@@ -122,6 +192,8 @@ const FRAME_BEFORE = [
   ['learned', 'from'],
   ['lessons', 'from'],
   ['case', 'of'],
+  ['happened', 'with'],
+  ['happened', 'to'],
   ['company'],
   ['startup'],
 ];
@@ -229,6 +301,22 @@ interface Hit {
   readonly named: boolean;
 }
 
+/** Whether a cue stands within `CUE_REACH` words of the name at `at` in `tokens` (one sentence). */
+function cueBeside(c: Compiled, tokens: readonly string[], at: number, length: number): boolean {
+  const name: [number, number] = [at, at + length];
+  return c.nameCues.some((cue) =>
+    occurrences(tokens, cue).some((start) => gap(name, [start, start + cue.length]) <= CUE_REACH),
+  );
+}
+
+/** Whether a word placing a company in an entrepreneurship context stands within `CUE_REACH` words of the name. */
+function contextBeside(tokens: readonly string[], at: number, length: number): boolean {
+  for (let i = Math.max(0, at - CUE_REACH); i < Math.min(tokens.length, at + length + CUE_REACH); i += 1) {
+    if ((i < at || i >= at + length) && CONTEXT_TOKENS.has(tokens[i] ?? '')) return true;
+  }
+  return false;
+}
+
 function caseHits(
   c: Compiled,
   all: readonly string[],
@@ -237,21 +325,44 @@ function caseHits(
 ): Hit[] {
   const hits: Hit[] = [];
   const context = all.some((t) => CONTEXT_TOKENS.has(t)) || parts.some(asks);
+  const sentenceTokens = parts.map(gateTokens);
+  const inFrame = (name: readonly string[]) =>
+    clauses.some((clause) => occurrences(clause, name).some((at) => framed(clause, at, name.length)));
   for (const name of c.names) {
     if (!has(all, name)) continue;
-    // An everyday name needs a cue anywhere, or a case frame inside its own clause ("in Dropbox, does the layout…"
-    // is not "Dropbox does").
-    const ok = c.vocab.everyday
-      ? c.nameCues.some((cue) => has(all, cue)) ||
-        clauses.some((clause) => occurrences(clause, name).some((at) => framed(clause, at, name.length)))
-      : context;
+    const short = name.length === 1 && (name[0]?.length ?? 0) <= SHORT_NAME;
+    let ok: boolean;
+    if (c.vocab.everyday) {
+      // An everyday name needs a cue beside it in its sentence, or a case frame inside its own clause ("in Dropbox,
+      // does the layout…" is not "Dropbox does").
+      ok =
+        sentenceTokens.some((tokens) =>
+          occurrences(tokens, name).some((at) => cueBeside(c, tokens, at, name.length)),
+        ) || inFrame(name);
+    } else if (short) {
+      // A short name ("my nona is coming") needs a business word beside it or a case frame, not just any question.
+      ok =
+        sentenceTokens.some((tokens) =>
+          occurrences(tokens, name).some((at) => contextBeside(tokens, at, name.length)),
+        ) || inFrame(name);
+    } else {
+      ok = context;
+    }
     if (ok) hits.push({ key: c.key, strength: 3, matched: name.join(' '), named: true });
   }
   for (const sentence of parts) {
-    if (!asksForExample(sentence)) continue;
-    const tokens = gateTokens(sentence);
+    if (!asks(sentence)) continue;
+    // A case's subject counts only near a genuine ask for an example ("any examples of startups that did home
+    // try-on"), never on an idiom ("in that case", "for example", "companies like ours").
+    const text = withoutIdioms(sentence);
+    const spans = exampleAskSpans(text);
+    if (spans.length === 0) continue;
+    const tokens = gateTokens(text);
     for (const topic of c.topics) {
-      if (has(tokens, topic)) hits.push({ key: c.key, strength: 1, matched: topic.join(' '), named: false });
+      const near = occurrences(tokens, topic).some((start) =>
+        spans.some((span) => gap(span, [start, start + topic.length]) <= EXAMPLE_REACH),
+      );
+      if (near) hits.push({ key: c.key, strength: 1, matched: topic.join(' '), named: false });
     }
   }
   return hits;
@@ -334,7 +445,10 @@ export function selectReferences(
     .sort((a, b) => b.score - a.score || a.order - b.order);
   if (ranked.length === 0) return { matches: [], reason: 'none' };
   const several =
-    SEVERAL.test(text.toLowerCase()) || ranked.filter((r) => r.named).length >= 2 ? options.limit : 1;
+    parts.some((sentence) => SEVERAL.test(withoutIdioms(sentence))) ||
+    ranked.filter((r) => r.named).length >= 2
+      ? options.limit
+      : 1;
   const matches = ranked.slice(0, Math.min(several, options.limit)).map((r) => ({
     key: r.key,
     uri: `${PACK_URI_PREFIX}${r.key}`,

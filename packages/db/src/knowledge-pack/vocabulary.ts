@@ -10,7 +10,9 @@
  * - a company whose name is everyday English or an everyday product ("Grove", "Embrace", "Dropbox") is `everyday`:
  *   its name counts only beside a word that shows the company is meant (`nameCues`, or a case frame such as "how did
  *   Dropbox", "the Grove case"), so "Grove Street has cheaper rent" or "the deck is on Dropbox" retrieve nothing;
- * - `topics` (a case's subject: "home try-on", "pet care") count only when the founder asks for an example or case.
+ * - `nameCues` count only within a few words of the name, in the same sentence ("the Dropbox referral program");
+ * - `topics` (a case's subject: "home try-on", "pet care") count only near a genuine ask for an example or case;
+ * - a stage is never named by one word alone: "repeatability" is a paired term that needs a startup word.
  */
 
 export interface PairedTerm {
@@ -371,9 +373,24 @@ export const REFERENCE_VOCABULARY: Readonly<Record<string, ItemVocabulary>> = {
     terms: ['mvp stage', 'mvp phase', 'initial delivery stage'],
   },
   'stage/early_traction': {
-    terms: ['early traction', 'initial traction', 'traction stage', 'repeatable sales', 'repeatability'],
+    terms: ['early traction', 'initial traction', 'traction stage', 'repeatable sales'],
     // "Get traction on TikTok" is a channel question; with first customers it is this stage.
     paired: [
+      // "The repeatability of our 3D prints" is about a process; with a startup or its sales it is this stage.
+      {
+        terms: ['repeatability'],
+        cues: [
+          'startup',
+          'startups',
+          'stage',
+          'sales',
+          'selling',
+          'customers',
+          'revenue',
+          'traction',
+          'growth',
+        ],
+      },
       {
         terms: ['get traction', 'getting traction', 'gain traction'],
         cues: ['first customers', 'first users', 'early', 'stage', 'startup', 'mentor', 'repeatable'],
