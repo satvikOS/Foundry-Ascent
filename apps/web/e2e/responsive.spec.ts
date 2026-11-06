@@ -446,6 +446,9 @@ for (const size of sizes()) {
             await call.getByRole('button', { name: 'Minimize call' }).click();
             const bar = page.getByRole('region', { name: /^Call with / });
             await expect(bar).toBeVisible();
+            // (On a laptop the conversation's panel starts closed: opened, as the person would.)
+            const show = page.getByRole('button', { name: 'Show context panel' }).filter({ visible: true });
+            if ((await show.count()) > 0) await show.first().click();
             await page.context().setOffline(true);
             await expect(page.locator('[data-slot="status-banners"]')).toContainText('You’re offline.');
             await settle(page);

@@ -577,7 +577,10 @@ test.describe('frosted glass', () => {
     // A status banner at the top of the page (offline): the caps stay, the banner sits above them.
     await page.context().setOffline(true);
     try {
-      await expect(page.locator('[data-slot="status-banner"]')).toBeVisible();
+      // (Another notice, such as a new access code, may show beside it.)
+      await expect(
+        page.locator('[data-slot="status-banner"]').filter({ hasText: 'You’re offline.' }),
+      ).toBeVisible();
       expect(await transcriptInGaps('status-banner'), 'under a status banner').toBeLessThanOrEqual(2);
       await page.evaluate(() => {
         window.scrollTo(0, 0);
