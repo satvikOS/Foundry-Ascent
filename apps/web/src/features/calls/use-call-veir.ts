@@ -22,7 +22,7 @@ export function useCallConfig(ventureId: string | null, enabled: boolean) {
   return useQuery({ ...callConfigQueryOptions(ventureId ?? ''), enabled: enabled && ventureId !== null });
 }
 
-/** Who the founder is calling, as the call screen and mini bar show it: the vEIR's name, badge and face. */
+/** Who the founder is calling, as the call screen and mini bar show it: the mentor's name and face. */
 export interface CallVeir extends VeirName {
   readonly disclosure: string;
   /** Only with likeness consent; otherwise the monogram is the face. */
@@ -33,7 +33,9 @@ export interface CallVeir extends VeirName {
 
 /**
  * The vEIR of a venture for the call UI: from the call config when loaded, otherwise from the venture
- * (already cached by the sidebar), so the screen has a face and a name from its first frame.
+ * (already cached by the sidebar), so the screen has a face and a name from its first frame. Named as every
+ * surface names it (lib/veir: a mentor by its own name, "Thomas"; a twin with its marker, "Corin · vEIR"); what it
+ * is (an AI mentor) is said in the call's disclosure and on its tile.
  */
 export function useCallVeir(
   ventureId: string | null,
@@ -41,7 +43,12 @@ export function useCallVeir(
   provider?: EmbodimentProviderId,
 ): CallVeir | null {
   const venture = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: ventureId !== null });
-  if (config) return { ...veirFromIdentity(config), provider: provider ?? config.embodiment.provider };
+  if (config) {
+    return {
+      ...veirFromIdentity(config),
+      provider: provider ?? config.embodiment.provider,
+    };
+  }
   const display = ventureId ? veirDisplay(venture.data) : null;
   if (!display) return null;
   return { ...display, provider: 'builtin' };

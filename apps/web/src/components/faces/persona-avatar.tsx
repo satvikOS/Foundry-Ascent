@@ -1,7 +1,6 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { useState, type ComponentProps } from 'react';
 
-import { faceMonogram } from '@/lib/veir';
 import { cn } from '@/lib/utils';
 
 export type FaceSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
@@ -11,11 +10,11 @@ const faceVariants = cva(
   {
     variants: {
       size: {
-        xs: 'size-5',
-        sm: 'size-6',
-        md: 'size-8',
-        lg: 'size-10',
-        xl: 'size-16',
+        xs: 'size-3',
+        sm: 'size-4',
+        md: 'size-5',
+        lg: 'size-8',
+        xl: 'size-12',
         /** The call stage. */
         '2xl': 'size-28',
       },
@@ -24,34 +23,26 @@ const faceVariants = cva(
   },
 );
 
-/** Serif monogram sizes, tuned per face size so the letters sit optically centred. */
-const MONOGRAM_TEXT: Record<FaceSize, string> = {
-  xs: 'text-[0.6875rem]',
-  sm: 'text-[0.8125rem]',
-  md: 'text-[1rem]',
-  lg: 'text-[1.25rem]',
-  xl: 'text-[1.875rem]',
-  '2xl': 'text-[3.25rem]',
-};
-
 interface PersonaAvatarProps
   extends Omit<ComponentProps<'span'>, 'children'>, VariantProps<typeof faceVariants> {
-  /** The vEIR's name ("Corin’s vEIR"); its monogram is used when there is no portrait. */
+  /** The mentor's display name ("Thomas"): the face's accessible name unless decorative. */
   name: string;
   /**
-   * Served portrait. Only pass one when the EIR consented to their likeness being used; without it
-   * the face is a monogram, never a stock image.
+   * Served portrait. Only pass one when the EIR consented to their likeness being used; without it the face is
+   * the small sphere, never a stock image and never a letter.
    */
   portraitUrl?: string | null;
-  /** On a call: an expanding ring shows the vEIR is speaking (static ring with reduced motion). */
+  /** On a call: an expanding ring shows the mentor is speaking (static ring with reduced motion). */
   speaking?: boolean;
   /** Hide from assistive technology when the name is already visible next to the face. */
   decorative?: boolean;
 }
 
 /**
- * The face of a vEIR: the consented portrait when one exists, otherwise a refined monogram (the
- * initial inside a hairline ring). Exposed as an image named after the vEIR unless decorative.
+ * The mentor's mark where a visual is truly needed (the studio's persona lists, the welcome): the consented
+ * portrait when one exists, otherwise a small, still sphere in the voice palette (the call's presence in
+ * miniature). There is no letter monogram (owner, 2026-11-05). Exposed as an image named after the mentor
+ * unless decorative.
  */
 export function PersonaAvatar({
   name,
@@ -63,9 +54,7 @@ export function PersonaAvatar({
   ...props
 }: PersonaAvatarProps) {
   const [portraitFailed, setPortraitFailed] = useState(false);
-  const key: FaceSize = size ?? 'md';
   const showPortrait = Boolean(portraitUrl) && !portraitFailed;
-  const large = key === 'lg' || key === 'xl' || key === '2xl';
 
   return (
     <span
@@ -86,16 +75,11 @@ export function PersonaAvatar({
           />
         </>
       ) : null}
-      <span
-        aria-hidden
-        className={cn(
-          'relative flex size-full items-center justify-center overflow-hidden rounded-full',
-          'border border-border-strong bg-gradient-to-b from-card to-muted text-foreground',
-          // A second hairline inside the first: the "ring" of the monogram on larger faces.
-          large && 'shadow-[inset_0_0_0_3px_var(--card),inset_0_0_0_4px_var(--border)]',
-        )}
-      >
-        {showPortrait ? (
+      {showPortrait ? (
+        <span
+          aria-hidden
+          className="relative flex size-full items-center justify-center overflow-hidden rounded-full border border-border-strong"
+        >
           <img
             src={portraitUrl ?? undefined}
             alt=""
@@ -105,12 +89,10 @@ export function PersonaAvatar({
               setPortraitFailed(true);
             }}
           />
-        ) : (
-          <span className={cn('leading-none font-medium tracking-[-0.01em]', MONOGRAM_TEXT[key])}>
-            {faceMonogram(name)}
-          </span>
-        )}
-      </span>
+        </span>
+      ) : (
+        <span aria-hidden data-slot="persona-orb" className="persona-orb relative size-full" />
+      )}
     </span>
   );
 }

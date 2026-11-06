@@ -1,12 +1,13 @@
 import type { Me } from '@foundry/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { createLink } from '@tanstack/react-router';
-import { Search, SquarePen, type LucideIcon } from 'lucide-react';
+import { Phone, Search, SquarePen, type LucideIcon } from 'lucide-react';
 import { useMemo, type ComponentProps, type ReactNode } from 'react';
 
 import { VentureMark } from '@/components/faces/user-avatar';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { SimpleTooltip } from '@/components/ui/tooltip';
+import { CallMenu, useCallEntry } from '@/features/calls/call-entry';
 import { useLessonsToReview } from '@/lib/api/hooks/eir';
 import { ventureQueryOptions, useVentures } from '@/lib/api/hooks/ventures';
 import { canAccessVenture, canWrite, writesAnyVenture } from '@/lib/auth/roles';
@@ -121,8 +122,8 @@ export interface SidebarContentProps {
 
 /**
  * The side panel's contents, shared by the docked panel (and its rail) and the overlay: the workspace
- * switcher, New chat and Search, the conversations (or a staff workspace's sections), the venture's pages and
- * the account. Calls start from the composer and from ⌘K, so the panel has no Call entry of its own.
+ * switcher, New chat, Call (a choice of a voice or a video call) and Search, the conversations (or a staff
+ * workspace's sections), the venture's pages and the account.
  */
 export function SidebarContent({
   me,
@@ -145,6 +146,7 @@ export function SidebarContent({
   const venture = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: readable });
   const ventureName = useVentureName(me, ventureId);
   const writable = ventureId !== null && canWrite(me, ventureId);
+  const calls = useCallEntry(ventureId, writable);
   // Only founders and team members hold conversations; read-only roles never request them.
   const hasConversations = writesAnyVenture(me);
   const ventureNames = useMemo(
@@ -200,6 +202,30 @@ export function SidebarContent({
               collapsed={collapsed}
             />
           </Tip>
+        ) : null}
+        {ventureId && calls.callable ? (
+          <CallMenu
+            tenant={tenant}
+            ventureId={ventureId}
+            name={calls.name}
+            video={calls.video}
+            onNavigate={onNavigate}
+            side={collapsed ? 'right' : 'bottom'}
+            tooltip={collapsed ? `Call ${calls.name}` : undefined}
+            trigger={
+              <button
+                type="button"
+                data-slot="sidebar-row"
+                data-testid="sidebar-call"
+                className={cn(sidebarRowClasses, collapsed && 'justify-center px-0')}
+              >
+                <Phone aria-hidden className="size-4 shrink-0 text-sidebar-muted" />
+                <span className={cn('min-w-0 flex-1 truncate text-left', collapsed && 'sr-only')}>
+                  Call {calls.name}
+                </span>
+              </button>
+            }
+          />
         ) : null}
         {search}
       </div>

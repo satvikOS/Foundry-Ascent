@@ -5,7 +5,7 @@ import {
   Flag,
   Menu,
   MoreHorizontal,
-  PanelRight,
+  PanelRightOpen,
   Pencil,
   Square,
   SquarePen,
@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { PersonaAvatar } from '@/components/faces/persona-avatar';
 import { VeirName } from '@/components/faces/veir-name';
 import { InspectorToggle, useInspector } from '@/components/shell/inspector';
 import { usePageMobileBar } from '@/components/shell/shell-chrome';
@@ -26,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { SimpleTooltip } from '@/components/ui/tooltip';
+import { BREAKPOINTS, useMediaQuery } from '@/lib/hooks/use-media-query';
 import { type VeirName as VeirNameView } from '@/lib/veir';
 
 export type ConversationMenuAction = 'rename' | 'end' | 'report' | 'delete';
@@ -35,22 +35,23 @@ interface ConversationHeaderProps {
   ventureId: string;
   session: SessionView;
   title: string;
-  /** Who the conversation is with: the name and badge ("Corin · vEIR"); null while unknown. */
+  /** Who the conversation is with: the mentor's name ("Thomas"); null while unknown. */
   veir: VeirNameView | null;
-  portraitUrl?: string | null | undefined;
   /** The person may change this conversation (founders and team). */
   canEdit: boolean;
   onAction: (action: ConversationMenuAction) => void;
   /** Under the title. */
   children?: ReactNode;
+  /** The call buttons (voice, video), before the panel toggle and the menu; null when calls are off. */
+  calls?: ReactNode;
 }
 
 /**
- * The conversation's one header, on the shared glass surface: the vEIR's face, its name and badge ("Corin ·
- * vEIR", the badge explains what it is), the title, a quiet "Private" for a private conversation, then the context
- * panel and a menu for everything rarer (rename, end, report, delete). Calls start from the composer's voice
- * button. On phones it is the only bar: the menu button, the title over the name and badge, New chat and the
- * menu (which also opens the panel).
+ * The conversation's one header, on the shared glass surface: the mentor's name ("Thomas", no face and no badge),
+ * the title, a quiet "Private" for a private conversation, then the call buttons (voice, video), the context panel's
+ * toggle and a menu for everything rarer (rename, end, report, delete). On phones it is the only bar: the menu
+ * button, the title over the name, then at most three icons (Voice call, Video call, More), so the title keeps its
+ * room; New chat and the context panel are the first items of More there.
  */
 export function ConversationHeader({
   tenant,
@@ -58,13 +59,17 @@ export function ConversationHeader({
   session,
   title,
   veir,
-  portraitUrl,
   canEdit,
   onAction,
   children,
+  calls = null,
 }: ConversationHeaderProps) {
   const openNavigation = usePageMobileBar();
+  // The panel beside the content has its own close: the header toggles it only while it is not there.
   const inspector = useInspector();
+  const panelBeside = inspector.open && inspector.isDesktop;
+  // Phones (the header is the only bar): New chat and the panel live in More, beside the two call buttons.
+  const phone = !useMediaQuery(BREAKPOINTS.md, true) && openNavigation !== null && canEdit;
   const active = session.status === 'active';
   // A private conversation (a one-off: nothing from it is remembered) says so while it lasts.
   const isPrivate = session.privacy === 'ephemeral';
@@ -85,13 +90,6 @@ export function ConversationHeader({
           </Button>
         ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <PersonaAvatar
-            name={name}
-            portraitUrl={portraitUrl}
-            size="sm"
-            decorative
-            className="hidden sm:inline-flex"
-          />
           {veir ? (
             <VeirName veir={veir} className="hidden shrink-0 text-small font-medium sm:inline-flex" />
           ) : null}
@@ -127,15 +125,9 @@ export function ConversationHeader({
             <span className="hidden shrink-0 text-caption text-muted-foreground sm:inline">Ended</span>
           )}
         </div>
-        <div className="-mr-1.5 flex shrink-0 items-center gap-0.5 sm:mr-0">
-          {openNavigation && canEdit ? (
-            <Button asChild variant="ghost" size="icon-sm" className="md:hidden">
-              <Link to="/$tenant/app/v/$ventureId" params={{ tenant, ventureId }} aria-label="New chat">
-                <SquarePen aria-hidden />
-              </Link>
-            </Button>
-          ) : null}
-          <InspectorToggle className="hidden md:inline-flex" />
+        <div data-slot="header-actions" className="-mr-1.5 flex shrink-0 items-center gap-0.5 sm:mr-0">
+          {calls}
+          {panelBeside || phone ? null : <InspectorToggle />}
           {canEdit ? (
             <DropdownMenu>
               <SimpleTooltip content="More">
@@ -146,16 +138,26 @@ export function ConversationHeader({
                 </DropdownMenuTrigger>
               </SimpleTooltip>
               <DropdownMenuContent align="end" className="w-56">
-                {inspector.hasContent ? (
-                  <DropdownMenuItem
-                    className="md:hidden"
-                    onSelect={() => {
-                      inspector.setOpen(true);
-                    }}
-                  >
-                    <PanelRight aria-hidden />
-                    Sources and notes
-                  </DropdownMenuItem>
+                {phone ? (
+                  <>
+                    <DropdownMenuItem asChild>
+                      <Link to="/$tenant/app/v/$ventureId" params={{ tenant, ventureId }}>
+                        <SquarePen aria-hidden />
+                        New chat
+                      </Link>
+                    </DropdownMenuItem>
+                    {inspector.label ? (
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          inspector.setOpen(true);
+                        }}
+                      >
+                        <PanelRightOpen aria-hidden />
+                        Show {inspector.label}
+                      </DropdownMenuItem>
+                    ) : null}
+                    <DropdownMenuSeparator />
+                  </>
                 ) : null}
                 {session.privacy === 'standard' ? (
                   <DropdownMenuItem

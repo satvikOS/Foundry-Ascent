@@ -1,6 +1,6 @@
-import { Maximize2, Mic, MicOff, PhoneOff, Volume2, X } from 'lucide-react';
+import { Maximize2, Mic, MicOff, Phone, PhoneOff, Video, Volume2, X } from 'lucide-react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
-import { VeirName } from '@/components/faces/veir-name';
 import { Button } from '@/components/ui/button';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { useMediaQuery } from '@/lib/hooks/use-media-query';
@@ -9,6 +9,8 @@ import type { CallSnapshot } from '@/lib/realtime/call-state';
 import { cn } from '@/lib/utils';
 
 import { useCall } from './call-context';
+import { CALL_KIND_LABEL } from './call-kind';
+import { useEndWithUndo } from './use-end-with-undo';
 import { CallFaceThumbnail } from './call-video-tile';
 import { formatClock, spokenDuration, useCallClock } from './use-call-clock';
 import { useCallFace } from './use-call-face';
@@ -34,22 +36,67 @@ function barAnnouncement(snapshot: CallSnapshot): string {
 }
 
 /**
- * A call that continues while the person looks elsewhere: the vEIR's face and AI marker, the timer (and the
- * time left near the end), Turn on sound when the browser stopped the call's sound (as the call screen
- * offers), mute, back to the call and end. After a call ended out of view (its time ran out, or the program
- * paused calls), it says so and offers its review (in its conversation) instead. Rendered by `MiniCallBar` only while there is a
- * call to show; while shown, the page's sticky headers sit below it (`--mini-call-height`).
+ * A call that continues while the person looks elsewhere, on every page: the vEIR's face (or a small sphere), its
+ * name, the kind of call and the timer (and the time left near the end), Turn on sound when the browser stopped the
+ * call's sound (as the call screen offers), mute, back to the call and End, with a short Undo as on the call
+ * screen. After a call ended out of view (its time ran out, or the program paused calls), it says so and offers its
+ * review (in its conversation) instead. Rendered by `MiniCallBar` only while there is a call to show; while shown,
+ * the page's sticky headers sit below it (`--mini-call-height`).
  */
 export function MiniCallBarView() {
-  const { engine, face, snapshot, showCall } = useCall();
+  const { engine, face, snapshot, showCall, kind } = useCall();
   const veir = useCallVeir(snapshot.ventureId);
   const clock = useCallClock(snapshot);
   const current = useCallFace(face);
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const ended = snapshot.phase === 'ended';
   if (!engine || !veir) return null;
+  return (
+    <Bar
+      engine={engine}
+      snapshot={snapshot}
+      name={veir.name}
+      kind={kind}
+      clock={clock}
+      faceThumb={
+        current.status === 'live' && !ended && !reducedMotion ? (
+          <CallFaceThumbnail
+            stream={current.stream}
+            speaking={snapshot.phase === 'live' && snapshot.activity === 'speaking'}
+          />
+        ) : null
+      }
+      showCall={showCall}
+    />
+  );
+}
 
-  const speaking = snapshot.phase === 'live' && snapshot.activity === 'speaking';
+function Bar({
+  engine,
+  snapshot,
+  name,
+  kind,
+  clock,
+  faceThumb,
+  showCall,
+}: {
+  engine: NonNullable<ReturnType<typeof useCall>['engine']>;
+  snapshot: CallSnapshot;
+  name: string;
+  kind: ReturnType<typeof useCall>['kind'];
+  clock: ReturnType<typeof useCallClock>;
+  faceThumb: ReactNode;
+  showCall: () => void;
+}) {
+  const ended = snapshot.phase === 'ended';
+  const ending = useEndWithUndo(engine, snapshot);
+  const undoRef = useRef<HTMLButtonElement | null>(null);
+  const endRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (ending.pending) undoRef.current?.focus();
+  }, [ending.pending]);
+  const KindIcon = kind === 'video' ? Video : Phone;
+
   const duration = ended ? (snapshot.ended?.durationSeconds ?? 0) : clock.elapsed;
   const micLost = !ended && snapshot.typedReason === 'mic_lost';
   // The browser stopped the call's sound (no tap yet, or an interruption such as a phone call on iOS).
@@ -57,7 +104,7 @@ export function MiniCallBarView() {
 
   return (
     <section
-      aria-label={`Call with ${veir.name}`}
+      aria-label={`Call with ${name}`}
       data-print="hide"
       data-mini-call-bar=""
       className={cn(
@@ -69,24 +116,20 @@ export function MiniCallBarView() {
       <span role="status" className="sr-only">
         {barAnnouncement(snapshot)}
       </span>
-      {current.status === 'live' && !ended && !reducedMotion ? (
-        <CallFaceThumbnail stream={current.stream} speaking={speaking} stock={current.stock} />
-      ) : (
+      {faceThumb ?? (
         // A small, still sphere tinted by the call's state (muted and on hold are greyed).
         <VoiceSphere state={sphereState(snapshot, engine.avatarState())} size="1.75rem" reducedMotion />
       )}
       <div className="flex min-w-0 flex-1 items-center gap-2 text-small">
         <p className="min-w-0 truncate">
-          <span className="font-medium">
-            {ended ? (
-              'Call ended'
-            ) : (
-              <>
-                <span className="hidden sm:inline">Call with </span>
-                <VeirName veir={veir} className="align-middle" />
-              </>
-            )}
-          </span>
+          <span className="font-medium">{ended || ending.pending ? 'Call ended' : name}</span>
+          {ended ? null : (
+            <span className="text-muted-foreground">
+              {' · '}
+              <KindIcon aria-hidden className="inline size-3.5 align-[-2px] sm:hidden" />
+              <span className="sr-only sm:not-sr-only">{CALL_KIND_LABEL[kind]}</span>
+            </span>
+          )}
           <span className="text-muted-foreground"> · </span>
           {snapshot.held ? (
             <span className="text-muted-foreground">On hold</span>
@@ -123,6 +166,20 @@ export function MiniCallBarView() {
             </Button>
           </SimpleTooltip>
         </>
+      ) : ending.pending ? (
+        <div role="group" aria-label="Call ended" data-slot="end-undo" className="flex items-center gap-1">
+          <Button
+            ref={undoRef}
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              ending.undo();
+              endRef.current?.focus();
+            }}
+          >
+            Undo
+          </Button>
+        </div>
       ) : (
         <>
           {soundOff ? (
@@ -160,13 +217,12 @@ export function MiniCallBarView() {
           </Button>
           <SimpleTooltip content="End call">
             <Button
+              ref={endRef}
               size="icon-sm"
               variant="destructive"
               aria-label="End call"
               disabled={snapshot.phase === 'ending'}
-              onClick={() => {
-                void engine.end('user');
-              }}
+              onClick={ending.request}
             >
               <PhoneOff aria-hidden />
             </Button>

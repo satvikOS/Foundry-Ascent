@@ -1,5 +1,5 @@
 import type { Me } from '@foundry/contracts';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
   Download,
@@ -17,6 +17,7 @@ import {
   Plus,
   SquarePen,
   Sun,
+  Video,
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -34,17 +35,17 @@ import {
 } from '@/components/ui/command';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { toast } from '@/components/ui/toast';
-import { useCallsAvailable } from '@/features/calls/calls-available';
+import { useCallEntry } from '@/features/calls/call-entry';
+import type { CallKind } from '@/features/calls/call-kind';
 import { exportLearning } from '@/features/student/learning';
 import { errorMessage } from '@/lib/api/errors';
 import { useRecentConversations } from '@/lib/api/hooks/sessions';
-import { ventureQueryOptions, useVentures } from '@/lib/api/hooks/ventures';
-import { canAccessVenture, canWrite, writesAnyVenture } from '@/lib/auth/roles';
+import { useVentures } from '@/lib/api/hooks/ventures';
+import { canWrite, writesAnyVenture } from '@/lib/auth/roles';
 import { conversationTitle, lastActivity } from '@/lib/conversations';
 import { formatHotkey } from '@/lib/hooks/use-hotkeys';
 import { STAGE_LABELS } from '@/lib/labels';
 import { useTheme } from '@/lib/theme';
-import { veirDisplay } from '@/lib/veir';
 
 import { useSignOutAndRedirect } from './account-menu';
 import { staffSections, staffWorkspaces, ventureDestinations, type Workspace } from './nav';
@@ -61,6 +62,39 @@ interface CommandPaletteProps {
   onToggleSidebar: () => void;
   scope?: PaletteScope;
   onScopeChange?: (scope: PaletteScope) => void;
+}
+
+/** "Voice call with Thomas" (g v) or "Video call with Thomas"; a video call not offered shows why, disabled. */
+function CallKindItem({
+  kind,
+  name,
+  blocked,
+  onSelect,
+}: {
+  kind: CallKind;
+  name: string;
+  blocked: string | null;
+  onSelect: () => void;
+}) {
+  const Icon = kind === 'video' ? Video : Phone;
+  const label = kind === 'video' ? 'Video call' : 'Voice call';
+  return (
+    <CommandItem
+      value={`${label} with ${name} call talk ${kind === 'video' ? 'face camera' : 'voice phone'}`}
+      disabled={blocked !== null}
+      onSelect={onSelect}
+    >
+      <Icon aria-hidden />
+      <span className="min-w-0 truncate">
+        {label} with {name}
+      </span>
+      {blocked ? (
+        <span className="ml-auto truncate pl-3 text-caption text-muted-foreground">{blocked}</span>
+      ) : kind === 'voice' ? (
+        <Hotkey binding="g v" />
+      ) : null}
+    </CommandItem>
+  );
 }
 
 function Hotkey({ binding }: { binding: string }) {
@@ -101,11 +135,6 @@ export function CommandPalette({
   const ventureId = workspace.kind === 'venture' ? workspace.ventureId : null;
   const { data: ventures = [] } = useVentures();
   const recents = useRecentConversations({ enabled: open && writesAnyVenture(me) });
-  const ventureDetail = useQuery({
-    ...ventureQueryOptions(ventureId ?? ''),
-    enabled: ventureId !== null && canAccessVenture(me, ventureId),
-  });
-  const veir = veirDisplay(ventureDetail.data);
   const { setTheme } = useTheme();
   const { signOut } = useSignOutAndRedirect();
   const searching = search.trim().length > 0;
@@ -128,7 +157,7 @@ export function CommandPalette({
   );
   const otherVentures = ventures.filter((v) => v.id !== ventureId);
   const writable = ventureId !== null && canWrite(me, ventureId);
-  const callable = useCallsAvailable(ventureId, writable);
+  const calls = useCallEntry(ventureId, writable);
 
   const close = () => {
     onOpenChange(false);
@@ -189,25 +218,30 @@ export function CommandPalette({
                 <Hotkey binding="g n" />
               </CommandItem>
             ) : null}
-            {callable && veir ? (
-              <CommandItem
-                value={`start a call ${veir.name} voice talk`}
-                onSelect={() => {
-                  run(
-                    () =>
-                      void navigate({
-                        to: '/$tenant/app/v/$ventureId',
-                        params: { tenant, ventureId },
-                        search: { call: 1 },
-                      }),
+            {calls.callable
+              ? (['voice', 'video'] as const satisfies readonly CallKind[]).map((kind) => {
+                  const blocked =
+                    kind === 'video' && calls.video?.available === false ? calls.video.reason : null;
+                  return (
+                    <CallKindItem
+                      key={kind}
+                      kind={kind}
+                      name={calls.name}
+                      blocked={blocked}
+                      onSelect={() => {
+                        run(
+                          () =>
+                            void navigate({
+                              to: '/$tenant/app/v/$ventureId',
+                              params: { tenant, ventureId },
+                              search: { call: kind },
+                            }),
+                        );
+                      }}
+                    />
                   );
-                }}
-              >
-                <Phone aria-hidden />
-                Start a call
-                <Hotkey binding="g v" />
-              </CommandItem>
-            ) : null}
+                })
+              : null}
             {ventureDestinations(me, ventureId).map((destination) => (
               <CommandItem
                 key={destination.id}

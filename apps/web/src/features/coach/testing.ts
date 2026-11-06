@@ -129,6 +129,7 @@ export function makeSession(overrides: Partial<SessionView> = {}): SessionView {
     title: null,
     personaId: null,
     personaKind: null,
+    personaPresentation: null,
     lastActivityAt: null,
     hasCalls: false,
     digestDeleted: false,

@@ -1,6 +1,6 @@
 import type { TurnView } from '@foundry/contracts';
 import { getRouteApi, Link } from '@tanstack/react-router';
-import { AudioLines, LockKeyhole } from 'lucide-react';
+import { LockKeyhole } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
@@ -21,7 +21,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton, SkeletonText } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
-import { SimpleTooltip } from '@/components/ui/tooltip';
 import { errorMessage } from '@/lib/api/errors';
 import { useVentureEscalations } from '@/lib/api/hooks/escalations';
 import { useMemory } from '@/lib/api/hooks/memory';
@@ -29,13 +28,14 @@ import { useEndSession, useSession } from '@/lib/api/hooks/sessions';
 import { useTurnStream } from '@/lib/api/hooks/turn-stream';
 import { useVenture } from '@/lib/api/hooks/ventures';
 import { CallReviewSlot } from '@/features/calls/call-review-slot';
-import { useCallsAvailable } from '@/features/calls/calls-available';
+import { CallButtons } from '@/features/calls/call-buttons';
+import { useCallEntry } from '@/features/calls/call-entry';
 import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { conversationTitle } from '@/lib/conversations';
 import { useDockedBottom } from '@/lib/hooks/use-docked-bottom';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
-import { conversationVeir, veirDisplay } from '@/lib/veir';
+import { conversationVeir, NEUTRAL_MENTOR_NAME, veirDisplay } from '@/lib/veir';
 import { conversationOrigin } from '@/features/documents/upload-queue';
 import { EscalationFlowDialog, type EscalationDraft } from '@/features/escalations/escalation-flow-dialog';
 
@@ -60,6 +60,7 @@ import { FollowUps } from './follow-ups';
 import { useKeepEndInView } from './keep-end-in-view';
 import { savedFromTurn } from './memory-saved';
 import { PanelStateProvider } from './panel-state';
+import type { PromptSuggestion } from './venture-context';
 
 const routeApi = getRouteApi('/$tenant/app/v/$ventureId/c/$sessionId');
 
@@ -149,13 +150,14 @@ function Conversation() {
   const availability = venture.data && session ? coachingAvailability(me, venture.data, session) : null;
   const canSend = Boolean(availability?.available);
   // Call entries show only while calls are on for this venture (no link to a call that cannot start).
-  const callable = useCallsAvailable(ventureId, canWrite(me, ventureId)) && canSend;
+  const calls = useCallEntry(ventureId, canWrite(me, ventureId));
+  const callable = calls.callable && canSend;
   const { state } = stream;
   const progress = deriveTurnProgress(state);
   const veir = veirDisplay(venture.data);
   // Named after the conversation's own persona: an older conversation can be with one the venture no longer has.
   const withVeir = session ? conversationVeir(session, veir) : null;
-  const personaName = withVeir?.name ?? veir?.name ?? 'your vEIR';
+  const personaName = withVeir?.name ?? veir?.name ?? NEUTRAL_MENTOR_NAME;
 
   const setMode = useCallback(
     (next: ComposerMode) => {
@@ -315,6 +317,15 @@ function Conversation() {
   const askPerson = () => {
     setEscalation({ open: true, draft: { turnId: null, founderQuestion: session.goal ?? '' } });
   };
+  // A quick action from the context panel: its words go into the composer (with its mode when the mentor offers
+  // it), ready to edit and send.
+  const fillPrompt = (suggestion: PromptSuggestion) => {
+    setText(suggestion.prompt.slice(0, MAX_TURN_CHARS));
+    if (suggestion.mode && (venture.data?.persona?.allowedModes ?? []).includes(suggestion.mode)) {
+      setMode(suggestion.mode);
+    }
+    focusComposer();
+  };
 
   const onMenu = (action: ConversationMenuAction) => {
     setDialog(action);
@@ -350,9 +361,19 @@ function Conversation() {
         session={session}
         title={title}
         veir={withVeir ?? veir}
-        portraitUrl={veir?.portraitUrl}
         canEdit
         onAction={onMenu}
+        calls={
+          callable ? (
+            <CallButtons
+              tenant={tenant}
+              ventureId={ventureId}
+              sessionId={sessionId}
+              name={calls.name}
+              video={calls.video}
+            />
+          ) : null
+        }
       />
 
       <div
@@ -434,7 +455,7 @@ function Conversation() {
         <div
           ref={dockRef}
           data-slot="composer-dock"
-          className="composer-dock sticky bottom-0 z-10 pt-3"
+          className="composer-dock sticky bottom-(--keyboard-inset) z-10 pt-3"
           data-print="hide"
         >
           <div className="mx-auto grid w-full max-w-(--content-width) gap-2.5 px-4 sm:px-6">
@@ -482,35 +503,21 @@ function Conversation() {
                   <AttachButton onFiles={attachments.attach} disabled={!canSend} />
                 )
               }
-              actions={
-                callable ? (
-                  <SimpleTooltip content={`Call ${personaName}`}>
-                    <Button asChild variant="subtle" size="icon-sm" className="rounded-full">
-                      <Link
-                        to="/$tenant/app/v/$ventureId/c/$sessionId"
-                        params={{ tenant, ventureId, sessionId }}
-                        search={{ call: 1 }}
-                        aria-label={`Call ${personaName}`}
-                      >
-                        <AudioLines aria-hidden />
-                      </Link>
-                    </Button>
-                  </SimpleTooltip>
-                ) : null
-              }
             />
           </div>
         </div>
       )}
 
-      <Inspector title="Context">
+      <Inspector title="Context" remember="context" defaultOpen>
         <ContextPanel
           session={session}
           turns={turns}
           personaName={personaName}
+          veir={withVeir ?? veir}
           tenant={tenant}
           ventureId={ventureId}
           onAskPerson={askPerson}
+          onPrompt={ended || !canSend ? undefined : fillPrompt}
         />
       </Inspector>
 

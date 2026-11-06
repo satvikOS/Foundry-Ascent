@@ -24,26 +24,22 @@ for (const [device, width, height] of [
   for (const theme of ['dark', 'light'] as const) {
     test.describe(`${device}, ${theme}: upgraded student journey`, () => {
       test.use({ storageState: FOUNDER_STATE, viewport: { width, height } });
-      test('context, student profile, reflection, automatic memory, and free avatar share one venture', async ({
+      test('context, student profile, reflection, automatic memory, and a voice call share one venture', async ({
         page,
       }) => {
         test.setTimeout(120_000);
         const ventureId = await openVenture(page);
         await useTheme(page, theme);
-        const briefQueries: string[] = [];
-        page.on('request', (request) => {
-          const u = new URL(request.url());
-          if (u.pathname.endsWith('/memory') && u.searchParams.get('limit') === '3')
-            briefQueries.push(u.searchParams.get('limit') ?? '');
-        });
-        expect(briefQueries).toEqual([]);
-        await page.locator('[data-slot="context-brief"] summary').click();
-        // One read of what the vEIR remembered: no separate check for anything awaiting approval.
-        await expect.poll(() => briefQueries.length).toBe(1);
-        expect(briefQueries).toEqual(['3']);
-        await expect(page.getByRole('link', { name: 'Edit venture focus' })).toBeVisible();
+        // The venture's context is the right panel: beside New chat on a wide screen, a sheet from its toggle
+        // otherwise. Nothing in it waits for approval: memory is kept automatically.
+        const show = page.getByRole('button', { name: 'Show context panel' }).filter({ visible: true });
+        if ((await show.count()) > 0) await show.first().click();
+        const context = page.locator('[data-slot="venture-context"]').filter({ visible: true });
+        const focus = context.getByRole('link', { name: /^(?:Edit|Set one)$/ });
+        await expect(focus).toBeVisible();
+        await expect(context).not.toContainText(/approve|awaiting/i);
         await page.screenshot({ path: `${root}/context-${device}-${theme}.png`, fullPage: true });
-        await page.getByRole('link', { name: 'Edit venture focus' }).click();
+        await focus.click();
         await expect(page.getByRole('heading', { level: 1, name: 'Venture' })).toBeVisible();
         // The student's own development lives under Knowledge → You, apart from the venture's profile.
         await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=you`);
@@ -136,25 +132,17 @@ for (const [device, width, height] of [
           ).violations.map((v) => v.id),
         ).toEqual([]);
         await page.request.post('/api/v1/calls/notice/acknowledge', { headers });
-        await page.goto(`/${TENANT}/app/v/${ventureId}/c/${sessionId}?call=1`);
-        const call = page.getByRole('dialog', { name: /^Call with / });
+        await page.goto(`/${TENANT}/app/v/${ventureId}/c/${sessionId}?call=voice`);
+        const call = page.getByRole('dialog', { name: /^(Voice|Video) call with / });
         await expect(call.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
-        // The sphere is the default presence; the character is chosen in the call settings, labelled AI avatar.
+        // The sphere is a voice call's presence; there is no drawn character to choose (owner, round 3).
         await expect(call.locator('[data-face="presence"] .fa-sphere')).toBeVisible();
         await call.getByRole('button', { name: 'Call settings', exact: true }).click();
         const settings = page.getByRole('dialog', { name: 'Call settings' });
-        await expect(settings.getByRole('button', { name: 'Sphere', exact: true })).toHaveAttribute(
-          'aria-pressed',
-          'true',
-        );
-        await settings.getByRole('button', { name: 'AI avatar', exact: true }).click();
-        await expect(call.locator('[data-face="character"] svg')).toBeVisible();
-        await expect(call.locator('[data-slot="ai-avatar-label"]')).toHaveText('AI avatar');
-        await expect(settings.getByRole('button', { name: 'AI avatar', exact: true })).toHaveAttribute(
-          'aria-pressed',
-          'true',
-        );
-        await page.screenshot({ path: `${root}/avatar-${device}-${theme}.png`, fullPage: false });
+        await expect(settings.getByRole('group', { name: 'Caption size' })).toBeVisible();
+        await expect(settings.getByRole('group', { name: 'Presentation' })).toHaveCount(0);
+        await expect(settings.getByRole('button', { name: 'AI avatar', exact: true })).toHaveCount(0);
+        await page.screenshot({ path: `${root}/voice-call-${device}-${theme}.png`, fullPage: false });
         // Trusted pointer input → React's pressed state → next paint, measured entirely in the browser.
         await page.evaluate(() => {
           const timing = { samples: [] as number[] };
@@ -175,11 +163,13 @@ for (const [device, width, height] of [
             { capture: true },
           );
         });
+        const small = settings.getByRole('button', { name: 'Small', exact: true });
+        const large = settings.getByRole('button', { name: 'Large', exact: true });
         for (let i = 0; i < 10; i++) {
-          await settings.getByRole('button', { name: 'Sphere', exact: true }).click();
-          await expect(call.locator('[data-face="presence"]')).toBeVisible();
-          await settings.getByRole('button', { name: 'AI avatar', exact: true }).click();
-          await expect(call.locator('[data-face="character"]')).toBeVisible();
+          await small.click();
+          await expect(small).toHaveAttribute('aria-pressed', 'true');
+          await large.click();
+          await expect(large).toHaveAttribute('aria-pressed', 'true');
         }
         await expect
           .poll(() =>
@@ -205,22 +195,16 @@ for (const [device, width, height] of [
             2,
           ),
         );
-        await settings.getByRole('button', { name: 'Sphere', exact: true }).focus();
+        await settings.getByRole('button', { name: 'Medium', exact: true }).focus();
         await page.keyboard.press('Enter');
-        await expect(settings.getByRole('button', { name: 'Sphere', exact: true })).toHaveAttribute(
+        await expect(settings.getByRole('button', { name: 'Medium', exact: true })).toHaveAttribute(
           'aria-pressed',
           'true',
         );
-        await settings.getByRole('button', { name: 'AI avatar', exact: true }).click();
         await page.keyboard.press('Escape');
         await expect(settings).toHaveCount(0);
         await page.emulateMedia({ reducedMotion: 'reduce' });
-        await expect(call.locator('.fa-character')).toHaveAttribute('data-motion', 'reduced');
-        expect(
-          await call
-            .locator('.fa-character__head')
-            .evaluate((element) => getComputedStyle(element).animationName),
-        ).toBe('none');
+        await expect(call.locator('.fa-sphere')).toHaveAttribute('data-motion', 'reduced');
         const violations = (
           await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze()
         ).violations;
@@ -230,7 +214,7 @@ for (const [device, width, height] of [
         // After End's short Undo window the screen closes onto the conversation and its call review.
         const review = page.getByRole('region', { name: 'Call ended' });
         await expect(review).toBeVisible({ timeout: 20_000 });
-        await expect(page.getByRole('dialog', { name: /^Call with / })).toHaveCount(0);
+        await expect(page.getByRole('dialog', { name: /^(Voice|Video) call with / })).toHaveCount(0);
         await review.getByRole('button', { name: 'Dismiss call review' }).click();
         await expect(review).toHaveCount(0);
       });

@@ -55,7 +55,7 @@ function SignInPage() {
           <div className="max-w-md">
             <p className="text-title font-semibold text-balance">Pick up where you left off.</p>
             <p className="mt-6 text-body text-muted-foreground">
-              Your vEIR remembers your decisions, tests and promises. You can read and correct all of it.
+              Your mentor remembers your decisions, tests and promises. You can read and correct all of it.
             </p>
           </div>
           <DisclosureBanner variant="inline" className="max-w-md bg-background/60" text={PUBLIC_DISCLOSURE} />

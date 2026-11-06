@@ -18,7 +18,7 @@ import {
   TENANT,
   VENTURE_NAME,
   test,
-  expectNoBareEirName,
+  expectPlainMentorName,
 } from './support/fixtures';
 
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
@@ -133,7 +133,7 @@ test.describe('founder journey', () => {
     });
 
     let ventureId = '';
-    await test.step('New chat: the vEIR greets the founder with starting points, its badge and no disclaimer line', async () => {
+    await test.step('New chat: a calm centre, the venture’s context beside it, the mentor named plainly', async () => {
       ventureId = await openVenture(page);
       const nav = page.getByRole('navigation', { name: 'Main' });
       // The switcher names the venture and then its stage, as it shows them.
@@ -143,12 +143,16 @@ test.describe('founder journey', () => {
       await expect(nav.getByRole('link', { name: 'New chat' })).toHaveAttribute('aria-current', 'page');
       // Calls start from the composer and ⌘K; the side panel has no Call entry (one entry per action).
       await expect(nav.getByRole('link', { name: /^Call / })).toHaveCount(0);
+      // Starting points and the memory choice sit in the right panel, not under the composer.
+      const context = page.getByRole('complementary', { name: 'Context' });
       await expect(
-        page.getByRole('list', { name: 'Suggestions' }).getByRole('listitem').first(),
+        context.getByRole('list', { name: 'Quick actions' }).getByRole('listitem').first(),
       ).toBeVisible();
+      await expect(context.getByRole('radio', { name: 'Remember this conversation' })).toBeChecked();
+      await expect(page.getByRole('main').getByRole('list', { name: 'Suggestions' })).toHaveCount(0);
       await expect(page.getByRole('combobox', { name: 'Mode for the next message' })).toHaveText(/Auto/);
       await expectVeirBadgeInView(page);
-      await expectNoBareEirName(page, 'New chat');
+      await expectPlainMentorName(page, 'New chat');
     });
 
     // A question only the venture's own records answer (the seeded seat-map experiment), so any model that
@@ -173,7 +177,7 @@ test.describe('founder journey', () => {
         .locator(`a[href$="/c/${conversationId}"]`);
       await expect(row).toHaveAttribute('aria-current', 'page');
       await expect(row).toContainText('How many repeat visitors');
-      await expectNoBareEirName(page, 'a conversation with an answer');
+      await expectPlainMentorName(page, 'a conversation with an answer');
     });
 
     await test.step('a citation opens the Sources panel on that source; reasoning expands in place', async () => {
@@ -181,7 +185,7 @@ test.describe('founder journey', () => {
       const chip = answer.getByRole('button', { name: /^Source 1: / }).first();
       const title = ((await chip.getAttribute('aria-label')) ?? '').replace(/^Source 1: /, '');
       await chip.click();
-      const panel = page.getByRole('complementary', { name: 'Context inspector' });
+      const panel = page.getByRole('complementary', { name: 'Context' });
       await expect(panel.getByRole('tab', { name: 'Sources' })).toHaveAttribute('aria-selected', 'true');
       const source = panel.getByRole('article', { name: title, exact: true }).first();
       await expect(source).toBeVisible();
@@ -304,7 +308,7 @@ test.describe('founder journey', () => {
       await expect(composer(page)).toHaveCount(0);
       // The summary holds the next steps now: the answers above no longer offer them a second time.
       await expect(page.getByRole('region', { name: 'Suggested next steps' })).toHaveCount(0);
-      await expectNoBareEirName(page, 'an ended conversation and its summary');
+      await expectPlainMentorName(page, 'an ended conversation and its summary');
     });
 
     await test.step('an old memory link lands on Knowledge with its search', async () => {

@@ -4,6 +4,9 @@ import { ApiError } from '@/lib/api/errors';
 import { callErrorMessage } from '@/lib/realtime/call-api';
 
 import { callRouteFrom } from './call-context';
+import { disclosureFacts } from './call-disclosure';
+import { acknowledgeDisclosure, disclosureSeen } from './call-disclosure-store';
+import { callKindFrom, VIDEO_UNAVAILABLE, videoAvailability } from './call-kind';
 import { callBlocker } from './call-lobby';
 import { callClock, formatClock, spokenDuration } from './use-call-clock';
 
@@ -11,28 +14,86 @@ const VENTURE = '0b9d1f0e-6a0c-4f39-9d0e-5d3b8a1c2e01';
 const SESSION = '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e02';
 
 describe('callRouteFrom', () => {
-  it('reads New chat and conversation URLs with and without ?call=1', () => {
-    expect(callRouteFrom(`/ain/app/v/${VENTURE}`, { call: 1 }, 'ain')).toEqual({
+  it('reads New chat and conversation URLs, and the kind of call they ask for', () => {
+    expect(callRouteFrom(`/ain/app/v/${VENTURE}`, { call: 'voice' }, 'ain')).toEqual({
       ventureId: VENTURE,
       sessionId: null,
       open: true,
+      kind: 'voice',
     });
-    expect(callRouteFrom(`/ain/app/v/${VENTURE}/c/${SESSION}`, { call: '1' }, 'ain')).toEqual({
+    expect(callRouteFrom(`/ain/app/v/${VENTURE}/c/${SESSION}`, { call: 'video' }, 'ain')).toEqual({
       ventureId: VENTURE,
       sessionId: SESSION,
       open: true,
+      kind: 'video',
+    });
+    // Older `?call=1` links are voice calls.
+    expect(callRouteFrom(`/ain/app/v/${VENTURE}/c/${SESSION}`, { call: '1' }, 'ain')).toMatchObject({
+      open: true,
+      kind: 'voice',
     });
     expect(callRouteFrom(`/ain/app/v/${VENTURE}/c/${SESSION}`, {}, 'ain')?.open).toBe(false);
+    expect(callRouteFrom(`/ain/app/v/${VENTURE}/c/${SESSION}`, { call: 'fax' }, 'ain')?.open).toBe(false);
   });
 
   it('never opens the call screen on other pages or another tenant', () => {
-    expect(callRouteFrom(`/ain/app/v/${VENTURE}/knowledge`, { call: 1 }, 'ain')).toEqual({
+    expect(callRouteFrom(`/ain/app/v/${VENTURE}/knowledge`, { call: 'voice' }, 'ain')).toEqual({
       ventureId: VENTURE,
       sessionId: null,
       open: false,
+      kind: 'voice',
     });
-    expect(callRouteFrom('/ain/app/admin/settings', { call: 1 }, 'ain')).toBeNull();
-    expect(callRouteFrom(`/other/app/v/${VENTURE}`, { call: 1 }, 'ain')).toBeNull();
+    expect(callRouteFrom('/ain/app/admin/settings', { call: 'voice' }, 'ain')).toBeNull();
+    expect(callRouteFrom(`/other/app/v/${VENTURE}`, { call: 'video' }, 'ain')).toBeNull();
+  });
+});
+
+describe('call kinds', () => {
+  it('reads ?call= as voice or video, and nothing else', () => {
+    expect(callKindFrom('video')).toBe('video');
+    expect(callKindFrom('voice')).toBe('voice');
+    expect(callKindFrom(1)).toBe('voice');
+    expect(callKindFrom(true)).toBe('voice');
+    expect(callKindFrom(undefined)).toBeUndefined();
+    expect(callKindFrom('VIDEO')).toBeUndefined();
+  });
+
+  it('offers video only when the call settings name a face for this person', () => {
+    expect(videoAvailability(undefined)).toBeNull();
+    expect(videoAvailability({ provider: 'builtin' })).toEqual({
+      available: false,
+      reason: VIDEO_UNAVAILABLE,
+    });
+    expect(videoAvailability({ provider: 'fake' })).toEqual({ available: true });
+  });
+
+  it('remembers the disclosure per person and per kind, in this browser', () => {
+    window.localStorage.clear();
+    expect(disclosureSeen('p1', 'voice')).toBe(false);
+    acknowledgeDisclosure('p1', 'voice');
+    expect(disclosureSeen('p1', 'voice')).toBe(true);
+    expect(disclosureSeen('p1', 'video')).toBe(false);
+    expect(disclosureSeen('p2', 'voice')).toBe(false);
+    window.localStorage.clear();
+  });
+
+  it('says every fact before a call', () => {
+    const video = disclosureFacts('Thomas', 'video')
+      .map((fact) => fact.text)
+      .join(' ');
+    expect(video).toMatch(/Thomas is an AI mentor, not a person/);
+    expect(video).toMatch(/AI avatar/);
+    expect(video).toMatch(/voice is AI-generated/);
+    expect(video).toMatch(/remembered/);
+    expect(video).toMatch(/Private/);
+    expect(video).toMatch(/person from the program/);
+    expect(video).toMatch(/can’t pass on messages or schedule anything/);
+    expect(video).toMatch(/legal, medical or financial advice/);
+    expect(
+      disclosureFacts('Thomas', 'voice')
+        .map((fact) => fact.text)
+        .join(' '),
+    ).not.toMatch(/avatar/);
   });
 });
 

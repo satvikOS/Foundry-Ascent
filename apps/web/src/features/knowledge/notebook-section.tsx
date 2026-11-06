@@ -63,7 +63,7 @@ const COMMITMENT_STATUS_LABEL: Record<CommitmentStatus, string> = {
 interface NotebookEditorProps {
   tenant: string;
   ventureId: string;
-  /** The vEIR's name ("Corin’s vEIR", or "your vEIR"; lib/veir). */
+  /** The mentor's name ("Thomas", or "your mentor"; lib/veir). */
   veirName: string;
   /** Founders and the team edit; the assigned EIR reads. */
   canEdit: boolean;

@@ -113,6 +113,7 @@ export async function resolveVeir(ex: SqlExecutor, ventureId: string): Promise<R
       firstPerson: veir && assets.includes('first_person'),
       eirSeesWork:
         veir && persona.eirProfileId !== null && persona.eirProfileId === (resolved.eir?.id ?? null),
+      presentation: mentor ? 'mentor' : 'twin',
     },
   };
 }

@@ -1,5 +1,7 @@
 import type { AvatarSessionResponse, FaceJoinStage } from '@foundry/contracts';
 import { act, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AvatarProvider, FaceLoss, FaceRelay, FaceRenderer } from '@/lib/realtime/avatar';
@@ -42,10 +44,10 @@ const SESSION: AvatarSessionResponse = {
 
 function veir(provider: CallVeir['provider']): CallVeir {
   return {
-    name: 'Corin · vEIR',
-    shortName: 'Corin',
-    badge: 'vEIR',
+    name: 'Thomas',
+    shortName: 'Thomas',
     kind: 'eir_persona',
+    presentation: 'mentor',
     eirFirstName: 'Corin',
     firstPerson: true,
     eirSeesWork: true,
@@ -64,7 +66,6 @@ function vendorFace(options: { media?: HTMLVideoElement; joinStage?: FaceJoinSta
   const stream = { getTracks: () => [] } as unknown as MediaStream;
   const provider = {
     id: 'fake',
-    drawsFace: true,
     voicing: 'audio',
     mount: vi.fn(),
     setState: vi.fn(),
@@ -129,7 +130,8 @@ function stage(props: {
   provider?: CallVeir['provider'];
   callId?: string | null;
   state?: 'listening' | 'speaking' | 'connecting';
-  onVideoChange?: (live: boolean) => void;
+  /** A voice call (false) never asks for the face; a video call (the default here) does. */
+  video?: boolean;
 }) {
   return (
     <CallStage
@@ -139,16 +141,28 @@ function stage(props: {
       ventureId={VENTURE}
       callId={props.callId === undefined ? CALL : props.callId}
       face={props.controller}
-      {...(props.onVideoChange ? { onVideoChange: props.onVideoChange } : {})}
+      video={props.video ?? true}
     />
   );
 }
 
-/** The square stage of the presence (the face whenever no video is shown). */
+/** The sphere's stage (a voice call's presence, or a call without a vendor face). */
 async function presenceShown(): Promise<void> {
   await waitFor(() => {
     expect(document.querySelector('[data-slot="call-stage"]')).not.toBeNull();
   });
+}
+
+/**
+ * A video call's tile while its face is not shown: it says so in words, and never falls back to the sphere (owner,
+ * round 3).
+ */
+async function videoTileSays(text: string, face: 'starting' | 'stopped' | 'unavailable'): Promise<void> {
+  await waitFor(() => {
+    expect(document.querySelector('[data-slot="call-video-pending"]')).toHaveTextContent(text);
+  });
+  expect(document.querySelector('[data-slot="call-tile"]')).toHaveAttribute('data-face', `video-${face}`);
+  expect(document.querySelector('[data-slot="call-stage"]')).toBeNull();
 }
 
 beforeEach(() => {
@@ -170,13 +184,40 @@ describe('CallStage: the face of a call', () => {
     expect(document.querySelector('[data-slot="call-tile"]')).toHaveAttribute('data-face', 'presence');
   });
 
+  it('never asks for a face on a voice call, even when one is offered; once switched to video it does', async () => {
+    const face = vendorFace();
+    const { asEngine, controller, faceDeps } = controllerWith(face);
+    function Switchable() {
+      const [video, setVideo] = useState(false);
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setVideo(true);
+            }}
+          >
+            Video
+          </button>
+          {stage({ controller, engine: asEngine, video })}
+        </>
+      );
+    }
+    renderWithRouter(<Switchable />);
+    await presenceShown();
+    expect(faceDeps.startSession).not.toHaveBeenCalled();
+    expect(controller.hasAsked(CALL)).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: 'Video' }));
+    await waitFor(() => {
+      expect(faceDeps.startSession).toHaveBeenCalledTimes(1);
+    });
+    expect(controller.hasAsked(CALL)).toBe(true);
+  });
+
   it('becomes a video in the same tile once the vendor face shows its first frame, and hands it the call’s audio', async () => {
     const face = vendorFace();
     const { asEngine, engine, controller, faceDeps } = controllerWith(face);
-    const onVideoChange = vi.fn();
-    const { container } = renderWithRouter(
-      stage({ controller, engine: asEngine, state: 'speaking', onVideoChange }),
-    );
+    const { container } = renderWithRouter(stage({ controller, engine: asEngine, state: 'speaking' }));
     await waitFor(() => {
       expect(face.provider.connect).toHaveBeenCalled();
     });
@@ -184,8 +225,8 @@ describe('CallStage: the face of a call', () => {
     expect(face.provider.connect.mock.calls[0]?.[0]).toEqual(SESSION);
     // The face's audio goes through the server for this call.
     expect(faceDeps.relayFor).toHaveBeenCalledWith(CALL);
-    // Until the first frame, the presence is the face.
-    await presenceShown();
+    // Until the first frame, the tile says the video is starting (no stand-in face).
+    await videoTileSays('Starting video…', 'starting');
     expect(engine.attachFace).not.toHaveBeenCalledWith(face.renderer);
 
     act(() => {
@@ -195,14 +236,13 @@ describe('CallStage: the face of a call', () => {
     const tile = container.querySelector('[data-slot="call-tile"]');
     expect(tile).toHaveAttribute('data-face', 'video');
     expect(tile).toHaveAttribute('data-speaking', 'true');
-    expect(container.querySelector('[data-slot="call-name-tag"]')).toHaveTextContent('Corin');
+    expect(container.querySelector('[data-slot="call-name-tag"]')).toHaveTextContent('Thomas');
     expect(container.querySelector('[data-slot="call-stage"]')).toBeNull();
     const video = container.querySelector<HTMLVideoElement>('[data-slot="call-video"]');
     expect(video?.muted).toBe(true);
     expect(video?.srcObject).toBe(face.stream);
     expect(engine.attachFace).toHaveBeenLastCalledWith(face.renderer);
     expect(engine.setFaceShown).toHaveBeenLastCalledWith(true);
-    expect(onVideoChange).toHaveBeenLastCalledWith(true);
     expect(face.provider.setState).toHaveBeenCalledWith('speaking');
   });
 
@@ -246,7 +286,7 @@ describe('CallStage: the face of a call', () => {
       media.remove();
       face.lose();
     });
-    await presenceShown();
+    await videoTileSays('Video stopped', 'stopped');
     expect(media.isConnected).toBe(false);
   });
 
@@ -266,10 +306,10 @@ describe('CallStage: the face of a call', () => {
     expect(screen.getByText('AI avatar')).toBeVisible();
     expect(container.querySelector('[data-slot="call-ai-avatar-label"]')).not.toBeNull();
     expect(engine.attachFace).toHaveBeenLastCalledWith(face.renderer);
-    expect(controller.getSnapshot()).toMatchObject({ status: 'live', stock: true });
+    expect(controller.getSnapshot()).toMatchObject({ status: 'live' });
   });
 
-  it('shows no "AI avatar" label on a face that is not a stock avatar', async () => {
+  it('labels a face that is not a stock avatar (an EIR’s consented likeness) "AI avatar" too', async () => {
     const face = vendorFace();
     const { asEngine, controller, faceDeps } = controllerWith(face);
     renderWithRouter(stage({ controller, engine: asEngine }));
@@ -281,7 +321,7 @@ describe('CallStage: the face of a call', () => {
       face.connect();
     });
     await screen.findByRole('figure');
-    expect(screen.queryByText('AI avatar')).toBeNull();
+    expect(screen.getByText('AI avatar')).toBeVisible();
   });
 
   it('keeps the face while the call is minimized and shows it again, asking only once per call', async () => {
@@ -304,11 +344,10 @@ describe('CallStage: the face of a call', () => {
     expect(faceDeps.startSession).toHaveBeenCalledTimes(1);
   });
 
-  it('goes back to the presence, quietly, when the face drops mid-call, and tells the server', async () => {
+  it('says the video stopped when the face drops mid-call, and tells the server', async () => {
     const face = vendorFace();
     const { asEngine, engine, controller, faceDeps } = controllerWith(face);
-    const onVideoChange = vi.fn();
-    renderWithRouter(stage({ controller, engine: asEngine, onVideoChange }));
+    renderWithRouter(stage({ controller, engine: asEngine }));
     await waitFor(() => {
       expect(face.provider.connect).toHaveBeenCalled();
     });
@@ -319,7 +358,7 @@ describe('CallStage: the face of a call', () => {
     act(() => {
       face.lose({ reason: 'vendor_stopped', vendorReason: 'session_timeout' });
     });
-    await presenceShown();
+    await videoTileSays('Video stopped', 'stopped');
     expect(engine.attachFace).toHaveBeenLastCalledWith(null);
     expect(engine.setFaceShown).toHaveBeenLastCalledWith(false);
     expect(face.provider.unmount).toHaveBeenCalled();
@@ -328,7 +367,6 @@ describe('CallStage: the face of a call', () => {
       reason: 'vendor_stopped',
       vendorReason: 'session_timeout',
     });
-    expect(onVideoChange).toHaveBeenLastCalledWith(false);
     // Never asked for again in this call.
     renderWithRouter(stage({ controller, engine: asEngine }));
     expect(faceDeps.startSession).toHaveBeenCalledTimes(1);
@@ -400,7 +438,7 @@ describe('CallStage: the face of a call', () => {
     expect(face.provider.unmount).toHaveBeenCalled();
   });
 
-  it('keeps the presence when the API offers no face or the face cannot connect', async () => {
+  it('says video couldn’t start when the API offers no face or the face cannot connect', async () => {
     const noToken = vendorFace();
     const a = controllerWith(noToken, { ...SESSION, provider: 'builtin', token: null, voicing: 'engine' });
     const first = renderWithRouter(stage({ controller: a.controller, engine: a.asEngine }));
@@ -408,7 +446,7 @@ describe('CallStage: the face of a call', () => {
       expect(a.faceDeps.startSession).toHaveBeenCalled();
     });
     expect(a.faceDeps.loadProvider).not.toHaveBeenCalled();
-    await presenceShown();
+    await videoTileSays('Video couldn’t start', 'unavailable');
     first.unmount();
 
     const refused = vendorFace();
@@ -424,6 +462,7 @@ describe('CallStage: the face of a call', () => {
       expect(refused.provider.unmount).toHaveBeenCalled();
     });
     expect(screen.queryByRole('figure')).not.toBeInTheDocument();
+    await videoTileSays('Video couldn’t start', 'unavailable');
     // Where the join stopped (the adapter gave no stage: the room, the controller's own) and the page's plain code.
     expect(b.faceDeps.endFace).toHaveBeenCalledWith(CALL, {
       reason: 'connect_failed',
@@ -477,7 +516,7 @@ describe('CallStage: the face of a call', () => {
     act(() => {
       slow.connect();
     });
-    await presenceShown();
+    await videoTileSays('Video couldn’t start', 'unavailable');
     expect(screen.queryByRole('figure')).not.toBeInTheDocument();
     expect(fake.engine.attachFace).not.toHaveBeenCalledWith(slow.renderer);
     expect(faceDeps.endFace).toHaveBeenCalledWith(CALL, {
@@ -491,7 +530,7 @@ describe('CallStage: the face of a call', () => {
     const face = vendorFace();
     const { asEngine, engine, controller, faceDeps, setSnapshot } = controllerWith(face);
     const view = renderWithRouter(stage({ controller, engine: asEngine, callId: null, state: 'connecting' }));
-    await presenceShown();
+    await videoTileSays('Starting video…', 'starting');
     expect(faceDeps.startSession).not.toHaveBeenCalled();
     view.unmount();
 

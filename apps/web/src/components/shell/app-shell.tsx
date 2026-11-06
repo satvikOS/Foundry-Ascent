@@ -12,6 +12,8 @@ import { MiniCallBar } from '@/features/calls/mini-call-bar';
 import { canWrite } from '@/lib/auth/roles';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import { BREAKPOINTS, useMediaQuery } from '@/lib/hooks/use-media-query';
+import { STATUS_BANNERS_VAR, useHeightVariable } from '@/lib/hooks/use-docked-bottom';
+import { useKeyboardInset } from '@/lib/hooks/use-keyboard-inset';
 import { safeStorage, STORAGE_KEYS } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 
@@ -25,7 +27,7 @@ import {
   workspaceFromPath,
   type Workspace,
 } from './nav';
-import { ShellChromeContext, type ShellChrome } from './shell-chrome';
+import { PhoneBarSlotContext, ShellChromeContext, type ShellChrome } from './shell-chrome';
 import { SidebarContent } from './sidebar';
 import { useVentureName } from './venture-name';
 import {
@@ -71,6 +73,10 @@ export function AppShell({ me, children }: AppShellProps) {
   const ventureId = workspace.kind === 'venture' ? workspace.ventureId : null;
   const callable = useCallsAvailable(ventureId, ventureId !== null && canWrite(me, ventureId));
   const docked = useMediaQuery(BREAKPOINTS.lg, true);
+  // The on-screen keyboard (phones and iPads): the conversation's composer stays above it.
+  useKeyboardInset();
+  // The status banners' height: the right panel, sticky beside the page, leaves room for them.
+  const bannersRef = useHeightVariable(STATUS_BANNERS_VAR);
   const [collapsed, setCollapsed] = useState(() => safeStorage.get(STORAGE_KEYS.sidebarCollapsed) === '1');
   // The panel as an overlay: the tablet rail's expanded state, and the phone's navigation sheet.
   const [overlayOpen, setOverlayOpen] = useState(false);
@@ -80,6 +86,8 @@ export function AppShell({ me, children }: AppShellProps) {
   const [opened, setOpened] = useState<ReadonlySet<Exclude<ShellDialog, null>>>(() => new Set());
   // Pages with their own phone header (a conversation) claim the bar; the shell's bar shows otherwise.
   const [mobileBarClaims, setMobileBarClaims] = useState(0);
+  // The phone bar's slot for one page action (a page portals into it while the bar is shown).
+  const [phoneBarActions, setPhoneBarActions] = useState<HTMLElement | null>(null);
   const chrome = useMemo<ShellChrome>(
     () => ({
       openNavigation: () => {
@@ -131,7 +139,11 @@ export function AppShell({ me, children }: AppShellProps) {
   });
   const startCall = useCallback(() => {
     if (ventureId && callable)
-      void navigate({ to: '/$tenant/app/v/$ventureId', params: { tenant, ventureId }, search: { call: 1 } });
+      void navigate({
+        to: '/$tenant/app/v/$ventureId',
+        params: { tenant, ventureId },
+        search: { call: 'voice' },
+      });
   }, [callable, navigate, tenant, ventureId]);
 
   // The page and workspace shortcuts come from nav.ts, which the shortcuts list reads too.
@@ -265,11 +277,17 @@ export function AppShell({ me, children }: AppShellProps) {
         )}
       >
         {mobileBarClaims > 0 ? null : (
-          <MobileBar me={me} workspace={workspace} navOpen={overlayOpen} onOpenNav={chrome.openNavigation} />
+          <MobileBar
+            me={me}
+            workspace={workspace}
+            navOpen={overlayOpen}
+            onOpenNav={chrome.openNavigation}
+            actionsRef={setPhoneBarActions}
+          />
         )}
         <MiniCallBar />
 
-        <div data-print="hide">
+        <div ref={bannersRef} data-print="hide" data-slot="status-banners">
           <DbWakingBanner />
           <DbUnavailableBanner />
           <OfflineBanner />
@@ -278,7 +296,9 @@ export function AppShell({ me, children }: AppShellProps) {
         </div>
 
         <main id="main-content" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">
-          <ShellChromeContext.Provider value={chrome}>{children}</ShellChromeContext.Provider>
+          <ShellChromeContext.Provider value={chrome}>
+            <PhoneBarSlotContext.Provider value={phoneBarActions}>{children}</PhoneBarSlotContext.Provider>
+          </ShellChromeContext.Provider>
         </main>
       </div>
 
@@ -346,17 +366,19 @@ function PanelOverlay({
   );
 }
 
-/** Phones only: menu, where you are, and New chat. Desktop has no top bar. */
+/** Phones only: menu, where you are, a page's own action (New chat's context panel) and New chat. */
 function MobileBar({
   me,
   workspace,
   navOpen,
   onOpenNav,
+  actionsRef,
 }: {
   me: Me;
   workspace: Workspace;
   navOpen: boolean;
   onOpenNav: () => void;
+  actionsRef: (element: HTMLElement | null) => void;
 }) {
   const tenant = me.tenant.slug;
   const ventureId = workspace.kind === 'venture' ? workspace.ventureId : null;
@@ -384,6 +406,7 @@ function MobileBar({
         <Menu aria-hidden />
       </Button>
       <p className="min-w-0 flex-1 truncate px-1 text-sm font-medium tracking-tight">{title}</p>
+      <div ref={actionsRef} data-slot="phone-bar-actions" className="contents" />
       {ventureId && canWrite(me, ventureId) ? (
         <Button asChild variant="ghost" size="icon">
           <Link to="/$tenant/app/v/$ventureId" params={{ tenant, ventureId }} aria-label="New chat">

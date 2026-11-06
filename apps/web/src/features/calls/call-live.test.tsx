@@ -1,5 +1,6 @@
 import type { CallView } from '@foundry/contracts';
 import { act, fireEvent, screen, within } from '@testing-library/react';
+import { createRef, type ComponentProps, type RefObject } from 'react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +10,7 @@ import { IDS } from '@/lib/realtime/testing';
 
 import { callStatusLabel, CallLive, END_UNDO_MS } from './call-live';
 import { fakeEngine, LIVE, renderWithRouter } from './testing';
+import type { CallFaceController } from './use-call-face';
 import type { CallVeir } from './use-call-veir';
 
 const CALL: CallView = {
@@ -27,10 +29,10 @@ const CALL: CallView = {
 };
 
 const VEIR: CallVeir = {
-  name: 'Corin · vEIR',
-  shortName: 'Corin',
-  badge: 'vEIR',
+  name: 'Thomas',
+  shortName: 'Thomas',
   kind: 'eir_persona',
+  presentation: 'mentor',
   eirFirstName: 'Corin',
   firstPerson: true,
   eirSeesWork: true,
@@ -39,19 +41,39 @@ const VEIR: CallVeir = {
   provider: 'builtin',
 };
 
-function renderLive(snapshot: Partial<CallSnapshot> = {}) {
+/** The call screen's heading, as CallScreen's header renders it. */
+function Heading({ headingRef }: { headingRef: RefObject<HTMLHeadingElement | null> }) {
+  return (
+    <h2 ref={headingRef} tabIndex={-1}>
+      Thomas
+    </h2>
+  );
+}
+
+function renderLive(
+  snapshot: Partial<CallSnapshot> = {},
+  props: Partial<
+    Pick<ComponentProps<typeof CallLive>, 'kind' | 'onSwitchKind' | 'videoBlocked' | 'face' | 'veir'>
+  > = {},
+) {
   const { engine, asEngine } = fakeEngine();
   let switched = 0;
+  const headingRef = createRef<HTMLHeadingElement>();
   renderWithRouter(
-    <CallLive
-      tenant="ain"
-      engine={asEngine}
-      snapshot={{ ...LIVE, ...snapshot }}
-      veir={VEIR}
-      onSwitchToChat={() => {
-        switched += 1;
-      }}
-    />,
+    <>
+      <Heading headingRef={headingRef} />
+      <CallLive
+        tenant="ain"
+        engine={asEngine}
+        snapshot={{ ...LIVE, ...snapshot }}
+        veir={VEIR}
+        headingRef={headingRef}
+        onSwitchToChat={() => {
+          switched += 1;
+        }}
+        {...props}
+      />
+    </>,
   );
   return { engine, switched: () => switched };
 }
@@ -91,17 +113,17 @@ describe('callStatusLabel', () => {
 });
 
 describe('CallLive', () => {
-  it('shows the vEIR as a call tile with its name tag, its state and named controls, and no disclaimer line', async () => {
+  it('shows the vEIR as a call tile, its state and named controls, and no disclaimer line', async () => {
     const { engine } = renderLive();
-    const tag = await screen.findByRole('heading', { name: /Corin/ });
-    expect(tag).toHaveFocus();
-    // Like a video call's name tag: the EIR's first name and the vEIR badge, no "AI · Live voice" chip.
-    expect(tag).toHaveTextContent(/^CorinvEIR$/);
-    expect(tag.closest('[data-slot="call-tile"]')).not.toBeNull();
-    expect(within(tag).getByRole('button', { name: 'vEIR: what is Corin · vEIR?' })).toBeInTheDocument();
+    // The call screen's header names the vEIR (and takes focus); nothing under the sphere repeats it.
+    const heading = await screen.findByRole('heading', { name: 'Thomas' });
+    expect(heading).toHaveFocus();
+    expect(document.querySelector('[data-slot="call-name-tag"]')).toBeNull();
+    expect(screen.queryByText(/vEIR/)).toBeNull();
     expect(screen.queryByText(/Live voice/)).toBeNull();
     expect(screen.getByRole('status')).toHaveTextContent('Listening');
     expect(screen.queryByRole('note', { name: 'AI disclosure' })).toBeNull();
+    const tile = document.querySelector('[data-slot="call-tile"]');
 
     const controls = screen.getByRole('toolbar', { name: 'Call controls' });
     const names = within(controls)
@@ -111,7 +133,7 @@ describe('CallLive', () => {
     expect(names).toEqual(['Mute', 'End call']);
     expect(screen.getByRole('button', { name: 'Call settings' })).toBeInTheDocument();
     // The sphere is the default presence.
-    expect(tag.closest('[data-slot="call-tile"]')).toHaveAttribute('data-face', 'presence');
+    expect(tile).toHaveAttribute('data-face', 'presence');
     expect(document.querySelector('.fa-sphere')).not.toBeNull();
 
     await userEvent.click(within(controls).getByRole('button', { name: 'Mute' }));
@@ -198,20 +220,14 @@ describe('CallLive', () => {
     expect(switched()).toBe(1);
   });
 
-  it('offers the sphere (the default) or the character, labelled AI avatar, in the call settings', async () => {
+  it('shows the sphere on a voice call, with no drawn character to choose (owner, round 3)', async () => {
     renderLive();
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Call settings' }));
+    expect(document.querySelector('[data-slot="call-tile"]')).toHaveAttribute('data-face', 'presence');
     const settings = await screen.findByRole('dialog', { name: 'Call settings' });
-    const presentation = within(settings).getByRole('group', { name: 'Presentation' });
-    expect(within(presentation).getByRole('button', { name: 'Sphere' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    await user.click(within(presentation).getByRole('button', { name: 'AI avatar' }));
-    expect(window.localStorage.getItem('fa.call.presentation')).toBe('character');
-    expect(await screen.findByText('AI avatar', { selector: '[data-slot="ai-avatar-label"]' })).toBeVisible();
-    expect(document.querySelector('[data-slot="call-tile"]')).toHaveAttribute('data-face', 'character');
+    expect(within(settings).queryByRole('group', { name: 'Presentation' })).toBeNull();
+    expect(within(settings).queryByRole('button', { name: 'AI avatar' })).toBeNull();
   });
 
   it('has keyboard shortcuts for mute, push-to-talk and captions', async () => {
@@ -232,7 +248,7 @@ describe('CallLive', () => {
       captions: { veir: 'Twelve is a good start.', founder: 'We interviewed twelve', founderLive: true },
     });
     const captions = await screen.findByRole('region', { name: 'Captions' });
-    expect(captions).toHaveTextContent('Corin · vEIR: Twelve is a good start.');
+    expect(captions).toHaveTextContent('Thomas: Twelve is a good start.');
     expect(captions).toHaveTextContent('YouWe interviewed twelve');
   });
 
@@ -244,7 +260,7 @@ describe('CallLive', () => {
 
   it('continues by typing when there is no voice input, and says why', async () => {
     const { engine } = renderLive({ input: 'typed', typedReason: 'mic_denied' });
-    const line = await screen.findByRole('textbox', { name: 'Reply to Corin · vEIR' });
+    const line = await screen.findByRole('textbox', { name: 'Reply to Thomas' });
     expect(line).toHaveFocus();
     // Said once, not three times: the status does not repeat "type".
     expect(screen.getByText(/Microphone blocked/)).toBeInTheDocument();
@@ -263,7 +279,7 @@ describe('CallLive', () => {
       typedReason: 'mic_lost',
       call: { ...CALL, inputMode: 'transcribe' },
     });
-    const line = await screen.findByRole('textbox', { name: 'Reply to Corin · vEIR' });
+    const line = await screen.findByRole('textbox', { name: 'Reply to Thomas' });
     expect(line).toHaveFocus();
     expect(screen.getByText('Microphone disconnected. Reconnect it, or type.')).toHaveAttribute(
       'role',
@@ -275,7 +291,7 @@ describe('CallLive', () => {
 
   it('offers no microphone to a call that started typed', async () => {
     renderLive({ input: 'typed', typedReason: 'mic_denied', call: { ...CALL, inputMode: 'typed' } });
-    await screen.findByRole('textbox', { name: 'Reply to Corin · vEIR' });
+    await screen.findByRole('textbox', { name: 'Reply to Thomas' });
     expect(screen.queryByRole('button', { name: 'Reconnect microphone' })).toBeNull();
   });
 
@@ -283,7 +299,7 @@ describe('CallLive', () => {
     const { engine } = renderLive();
     await userEvent.click(await screen.findByRole('button', { name: 'Call settings' }));
     await userEvent.click(await screen.findByRole('button', { name: /^Type instead/ }));
-    const line = screen.getByRole('textbox', { name: 'Reply to Corin · vEIR' });
+    const line = screen.getByRole('textbox', { name: 'Reply to Thomas' });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
@@ -439,7 +455,7 @@ describe('CallLive', () => {
     const line = (await screen.findByRole('region', { name: 'Captions' })).querySelector('p');
     // Large: the type scale's 24 px step.
     expect(line?.className).toMatch(/\btext-2xl\b/);
-    expect(liveText()).toContain('Corin · vEIR: Twelve is a good start.');
+    expect(liveText()).toContain('Thomas: Twelve is a good start.');
   });
 
   it('does not read the captions over the vEIR’s voice unless asked', async () => {
@@ -461,7 +477,7 @@ describe('CallLive', () => {
     });
     await screen.findByText('Replying on screen');
     // No voice to talk over: each line is announced, without a setting to find first.
-    expect(liveText()).toContain('Corin · vEIR: Twelve is a good start.');
+    expect(liveText()).toContain('Thomas: Twelve is a good start.');
   });
 
   it('shows the vEIR’s reply when it is on screen only, even with captions turned off', async () => {
@@ -475,7 +491,7 @@ describe('CallLive', () => {
     expect(captions).toHaveTextContent('Twelve is a good start.');
     // Only the reply: the founder chose not to see their own words.
     expect(captions).not.toHaveTextContent('What about price?');
-    expect(liveText()).toContain('Corin · vEIR: Twelve is a good start.');
+    expect(liveText()).toContain('Thomas: Twelve is a good start.');
     await userEvent.click(screen.getByRole('button', { name: 'Call settings' }));
     expect(await screen.findByRole('button', { name: /^Captions/ })).toHaveAttribute('aria-pressed', 'false');
   });
@@ -485,5 +501,75 @@ describe('CallLive', () => {
     expect(await screen.findByRole('button', { name: 'Mute' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'End call' })).toBeEnabled();
     expect(screen.getByRole('status')).toHaveTextContent('Connecting…');
+  });
+
+  it('switches a voice call to video and back from the corner beside the settings', async () => {
+    const onSwitchKind = vi.fn();
+    renderLive({}, { kind: 'voice', onSwitchKind });
+    await userEvent.click(await screen.findByRole('button', { name: 'Switch to video' }));
+    expect(onSwitchKind).toHaveBeenLastCalledWith('video');
+  });
+
+  it('says why a voice call cannot turn video on, and does nothing', async () => {
+    const onSwitchKind = vi.fn();
+    renderLive({}, { kind: 'voice', onSwitchKind, videoBlocked: 'Video can’t restart in this call.' });
+    const blocked = await screen.findByRole('button', {
+      name: 'Switch to video: Video can’t restart in this call.',
+    });
+    expect(blocked).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(blocked);
+    expect(onSwitchKind).not.toHaveBeenCalled();
+  });
+
+  it('offers a video call the way back to voice whatever the face', async () => {
+    const onSwitchKind = vi.fn();
+    renderLive({}, { kind: 'video', onSwitchKind, videoBlocked: 'Video can’t restart in this call.' });
+    await userEvent.click(await screen.findByRole('button', { name: 'Switch to voice' }));
+    expect(onSwitchKind).toHaveBeenLastCalledWith('voice');
+  });
+
+  /** A face this call asked for that is not shown (the controller's view of it). */
+  function faceNotShown(hadVideo: boolean): CallFaceController {
+    const presence = { status: 'presence' } as const;
+    return {
+      subscribe: () => () => undefined,
+      getSnapshot: () => presence,
+      hasAsked: () => true,
+      hadVideo: () => hadVideo,
+      request: vi.fn(),
+    } as unknown as CallFaceController;
+  }
+
+  it('says when video could not start and offers a voice call, never switching by itself', async () => {
+    const onSwitchKind = vi.fn();
+    renderLive(
+      { call: CALL },
+      { kind: 'video', onSwitchKind, face: faceNotShown(false), veir: { ...VEIR, provider: 'heygen' } },
+    );
+    expect(await screen.findByText('Video couldn’t start. You can carry on as a voice call.')).toBeVisible();
+    // The status line says it as well, so it is announced.
+    expect(liveText().join(' ')).toContain('Video couldn’t start');
+    // The tile says it too, in place of the face (never the sphere as a stand-in).
+    expect(document.querySelector('[data-slot="call-tile"]')).toHaveAttribute(
+      'data-face',
+      'video-unavailable',
+    );
+    expect(onSwitchKind).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Voice call' }));
+    expect(onSwitchKind).toHaveBeenLastCalledWith('voice');
+  });
+
+  it('says the video stopped once a face that showed is gone', async () => {
+    renderLive(
+      { call: CALL },
+      {
+        kind: 'video',
+        onSwitchKind: vi.fn(),
+        face: faceNotShown(true),
+        veir: { ...VEIR, provider: 'heygen' },
+      },
+    );
+    expect(await screen.findByText('Video stopped. You can carry on as a voice call.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Voice call' })).toBeVisible();
   });
 });

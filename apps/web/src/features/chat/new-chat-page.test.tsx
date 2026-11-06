@@ -13,11 +13,12 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { InspectorProvider, InspectorRegion } from '@/components/shell/inspector';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { jsonResponse, stubFetch } from '@/features/admin/shared/test-utils';
 import { conversationOrigin } from '@/features/documents/upload-queue';
 import { VentureUploadsProvider } from '@/features/documents/venture-uploads';
-import { makeSession, makeVenture } from '@/features/knowledge/testing';
+import { makeMemory, makeSession, makeVenture } from '@/features/knowledge/testing';
 import { meQueryOptions } from '@/lib/api/hooks/auth';
 
 import { AttachmentTray, useComposerAttachments } from './attachments';
@@ -92,9 +93,10 @@ function stubApi({
         jsonResponse({
           veir: {
             personaId: SESSION,
-            name: 'Corin’s vEIR',
-            shortName: 'Corin',
+            name: 'Thomas',
+            shortName: 'Thomas',
             kind: 'eir_persona',
+            presentation: 'mentor',
             eirDisplayName: 'Corin Halvorsen',
             tagline: null,
             disclosure: 'AI',
@@ -135,6 +137,9 @@ function stubApi({
       if (method === 'GET' && url === `/api/v1/ventures/${id}`) {
         return Promise.resolve(jsonResponse(makeVenture({ id, name })));
       }
+      if (method === 'GET' && url === `/api/v1/ventures/${id}/overview`) {
+        return Promise.resolve(jsonResponse(overviewOf(makeVenture({ id, name }))));
+      }
       if (method === 'GET' && url === `/api/v1/ventures/${id}/opener`) {
         return opener ?? Promise.resolve(jsonResponse(preview));
       }
@@ -159,13 +164,45 @@ function stubApi({
   return calls;
 }
 
-/** The venture layout's part these tests need: the venture's uploads, above its pages. */
+/** The venture's state as the context panel reads it: one overdue action, a goal, an open assumption, help. */
+function overviewOf(venture: ReturnType<typeof makeVenture>) {
+  return {
+    venture,
+    sinceLastSession: { lastSessionAt: null, newEvidence: [], changedMemory: [] },
+    currentGoal: 'Prove four libraries will pay per seat',
+    verifiedDecisions: [],
+    openAssumptions: [
+      makeMemory({
+        id: '7a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c11',
+        type: 'hypothesis',
+        title: 'Librarians sign off',
+      }),
+    ],
+    overdueActions: [
+      makeMemory({
+        id: '7a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c12',
+        type: 'action',
+        title: 'Call the facilities manager',
+        attributes: { due: '2026-10-01', status: 'open' },
+      }),
+    ],
+    upcomingMilestones: [],
+    pendingMemoryCount: 0,
+    openEscalations: 2,
+    recentSessions: [],
+  };
+}
+
+/** The venture layout's part these tests need: the venture's uploads above its pages, and the right panel. */
 function VentureLayout() {
   const { ventureId } = useParams({ strict: false });
   if (!ventureId) throw new Error('no venture');
   return (
     <VentureUploadsProvider ventureId={ventureId}>
-      <Outlet />
+      <InspectorProvider>
+        <Outlet />
+        <InspectorRegion />
+      </InspectorProvider>
     </VentureUploadsProvider>
   );
 }
@@ -229,9 +266,11 @@ async function attach(name: string) {
   await userEvent.setup().upload(input, new File(['# notes'], name, { type: 'text/markdown' }));
 }
 
+/** A wide desktop (the context panel sits beside the content), with a touch pointer unless a test says not. */
 beforeEach(() => {
+  window.localStorage.clear();
   vi.stubGlobal('matchMedia', (query: string) => ({
-    matches: false,
+    matches: /min-width: (?:48|64|80)rem/.test(query),
     media: query,
     onchange: null,
     addEventListener: () => undefined,
@@ -303,7 +342,7 @@ describe('New chat', () => {
 
   it('puts the cursor in the composer on a desktop once the greeting has arrived', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query.includes('pointer: fine'),
+      matches: query.includes('pointer: fine') || /min-width: (?:48|64|80)rem/.test(query),
       media: query,
       onchange: null,
       addEventListener: () => undefined,
@@ -428,15 +467,20 @@ describe('New chat', () => {
     expect(create?.body).not.toHaveProperty('openerShownAt');
   });
 
-  it('starts a call at once from its own Call button, beside the choice (and only that opening)', async () => {
+  it('starts a call at once from its own Call buttons, beside the choice (and only that opening)', async () => {
     stubApi({ calls: true });
     const router = renderNewChat(A);
-    const call = await screen.findByRole('link', { name: /^Call / });
-    expect(call).toHaveAttribute('href', `/ain/app/v/${A}?call=1`);
+    const group = await screen.findByRole('group', { name: 'Call' });
+    const call = within(group).getByRole('link', { name: /^Voice call with / });
+    expect(call).toHaveAttribute('href', `/ain/app/v/${A}?call=voice`);
+    // No face offered to this person: Video stays in place and says why.
+    expect(
+      within(group).getByRole('button', { name: /^Video call with .*: Video isn’t available/ }),
+    ).toHaveAttribute('aria-disabled', 'true');
     expect(takeChoiceInView(A)).toBe(false);
     await userEvent.setup().click(call);
     await waitFor(() => {
-      expect(router.state.location.searchStr).toBe('?call=1');
+      expect(router.state.location.searchStr).toBe('?call=voice');
     });
     // The call screen takes the mark when it opens; it is good for that one opening only.
     expect(takeChoiceInView(A)).toBe(true);
@@ -459,5 +503,77 @@ describe('New chat', () => {
     });
     expect(await screen.findByRole('radio', { name: 'Remember this conversation' })).toBeChecked();
     expect(startPrivacy(A)).toBe('standard');
+  });
+
+  it('keeps the centre to the greeting, one line and the composer; the venture’s context is in the right panel', async () => {
+    stubApi();
+    renderNewChat(A);
+    await screen.findByText('What should we work on today?');
+    const main = screen.getByRole('heading', { level: 1 }).closest('[class*="max-w-(--content-width)"]');
+    if (!(main instanceof HTMLElement)) throw new Error('no centre column');
+    // Nothing piled under the composer: no chips, no memory choice, no context disclosure, no face.
+    expect(within(main).queryByRole('list')).toBeNull();
+    expect(within(main).queryByRole('radio')).toBeNull();
+    expect(main.querySelector('details, [data-slot="persona-avatar"], [data-slot="veir-badge"]')).toBeNull();
+    expect(main).not.toHaveTextContent(/vEIR/);
+    expect(composer()).toHaveAttribute('placeholder', 'Message Thomas');
+
+    const panel = screen.getByRole('complementary', { name: 'Context' });
+    expect(await within(panel).findByText('Validation stage')).toBeVisible();
+    expect(panel).toHaveTextContent('Prove four libraries will pay per seat');
+    expect(within(panel).getByRole('button', { name: /Call the facilities manager/ })).toHaveTextContent(
+      /Overdue/,
+    );
+    expect(within(panel).getByRole('button', { name: /Librarians sign off/ })).toBeVisible();
+    expect(within(panel).getByRole('link', { name: '2 open requests' })).toHaveAttribute(
+      'href',
+      `/ain/app/v/${A}/help`,
+    );
+    expect(within(panel).getByRole('radio', { name: 'Remember this conversation' })).toBeChecked();
+    expect(within(panel).getByRole('button', { name: 'About Thomas' })).toBeVisible();
+  });
+
+  it('fills the composer from a quick action in the panel, ready to edit', async () => {
+    stubApi();
+    renderNewChat(A);
+    const panel = await screen.findByRole('complementary', { name: 'Context' });
+    const actions = await within(panel).findByRole('list', { name: 'Quick actions' });
+    await userEvent.setup().click(within(actions).getByRole('button', { name: 'Plan our next step' }));
+    expect(composer()).toHaveValue(
+      'Our current goal is: Prove four libraries will pay per seat. What should we do next to get there?',
+    );
+    expect(composer()).toHaveFocus();
+    // What is due starts a conversation about it too.
+    await userEvent.setup().click(within(panel).getByRole('button', { name: /Call the facilities manager/ }));
+    expect(composer()).toHaveValue('“Call the facilities manager” is overdue. Help me get it back on track.');
+  });
+
+  it('closes the panel and remembers that, and says what the mentor is in About', async () => {
+    stubApi();
+    renderNewChat(A);
+    const panel = await screen.findByRole('complementary', { name: 'Context' });
+    const user = userEvent.setup();
+    await user.click(within(panel).getByRole('button', { name: 'About Thomas' }));
+    const about = screen.getByRole('dialog', { name: 'About Thomas' });
+    expect(about).toHaveTextContent('AI mentor');
+    expect(about).toHaveTextContent('AI avatar');
+    expect(about).toHaveTextContent('A person from the program');
+    await user.click(within(about).getByRole('button', { name: 'Done' }));
+    await user.click(within(panel).getByRole('button', { name: 'Hide context panel' }));
+    expect(screen.queryByRole('complementary', { name: 'Context' })).toBeNull();
+    expect(window.localStorage.getItem('fa.context-panel.open')).toBe('0');
+    expect(screen.getByRole('button', { name: 'Show context panel' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
+  it('asks Remember or Private in the call when the panel (and so the choice) was closed', async () => {
+    window.localStorage.setItem('fa.context-panel.open', '0');
+    stubApi({ calls: true });
+    renderNewChat(A);
+    const call = await screen.findByRole('link', { name: /^Voice call with / });
+    await userEvent.setup().click(call);
+    expect(takeChoiceInView(A)).toBe(false);
   });
 });

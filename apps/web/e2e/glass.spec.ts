@@ -357,10 +357,20 @@ test.describe('frosted glass', () => {
         await dock.evaluate((element) => getComputedStyle(element, '::before').backdropFilter),
         'the dock frosts the transcript once',
       ).toContain('blur(24px)');
-      // Never glass on glass, and few blurs while the transcript scrolls: the panel, the header, the dock.
+      // Never glass on glass, and few blurs while the transcript scrolls: the panel, the header, the dock. The
+      // context panel is frosted too, but it sits beside the conversation (nothing scrolls under it): it is not one
+      // of the layers the transcript moves beneath.
       const { layers, nested } = await blurLayers(page);
       expect(nested, 'no blur over another').toEqual([]);
-      expect(layers.length, `blurred layers: ${layers.join(', ')}`).toBeLessThanOrEqual(3);
+      const context = await page.locator('[data-slot="context-panel"]').boundingBox();
+      const column = await page.locator('main [class*="@container/conv"]').boundingBox();
+      if (context && column) {
+        expect(context.x, 'the context panel sits beside the conversation').toBeGreaterThanOrEqual(
+          column.x + column.width - 1,
+        );
+      }
+      const overTranscript = layers.filter((layer) => layer !== 'aside[context-panel]');
+      expect(overTranscript.length, `blurred layers: ${layers.join(', ')}`).toBeLessThanOrEqual(3);
 
       const settled = (layer: Locator) =>
         layer.evaluate((element) =>

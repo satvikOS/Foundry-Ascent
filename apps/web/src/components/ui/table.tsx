@@ -14,7 +14,8 @@ export function Table({
     // buttons' bleed on the first and last columns inside the clip box without moving the content.
     <div
       data-slot="table-container"
-      className={cn('relative -mx-2 overflow-x-auto px-2', containerClassName)}
+      // `table-scroll` (globals.css): a soft edge shows on the side that has more columns to scroll to.
+      className={cn('table-scroll relative -mx-2 overflow-x-auto px-2', containerClassName)}
     >
       <table
         data-slot="table"

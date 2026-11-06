@@ -10,7 +10,7 @@ import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { DistilledBadge, LessonStatusBadge } from '@/features/eir/personas/lesson-labels';
 import { useLessonsToReview, usePersonas } from '@/lib/api/hooks/eir';
 import { formatNumber, formatRelative, pluralize } from '@/lib/format';
-import { veirName } from '@/lib/veir';
+import { personaName } from '@/lib/veir';
 
 function PersonaGroup({
   tenant,
@@ -25,11 +25,7 @@ function PersonaGroup({
   return (
     <section aria-labelledby={headingId} className="grid gap-3">
       <h2 id={headingId} className="flex items-center gap-2.5 text-body font-medium">
-        <PersonaAvatar
-          name={veirName(persona.name, persona.kind, persona.eirProfile?.displayName)}
-          size="sm"
-          decorative
-        />
+        <PersonaAvatar name={personaName(persona.name)} size="sm" decorative />
         {persona.name}
         <span className="tabular text-small font-normal text-muted-foreground">{lessons.length}</span>
       </h2>

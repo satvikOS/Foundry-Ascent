@@ -77,7 +77,6 @@ function abortError(): DOMException {
 
 export class FakeFaceAvatar implements AvatarProvider {
   readonly id = 'fake' as const;
-  readonly drawsFace = true;
   readonly voicing = 'audio' as const;
 
   private canvas: HTMLCanvasElement | null = null;

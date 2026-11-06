@@ -1,9 +1,7 @@
 {
   "$comment": "The synthetic session the landing page shows (device ad and session cards). Invented names; no real student, venture or conversation. The call lines' audio envelopes are generated from it (scripts/landing-envelopes.mjs).",
-  "eir": {
-    "firstName": "Corin",
-    "fullName": "Corin Halvorsen"
-  },
+  "mentor": "Thomas",
+  "eir": "Corin Halvorsen",
   "founder": "Amara Osei",
   "venture": {
     "name": "Helio Grid",

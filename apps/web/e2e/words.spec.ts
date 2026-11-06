@@ -7,6 +7,7 @@ import { expect, type APIRequestContext, type Locator, type Page } from '@playwr
 import {
   composer,
   issueAccessCodeViaApi,
+  markCallDisclosuresSeen,
   openVenture,
   OWNER_STATE,
   runToken,
@@ -23,7 +24,9 @@ import {
  * Counted: every rendered word (text and empty-field placeholders) a sighted person can see, shell included.
  * Not counted: words read only by screen readers, the AI disclosure (never cut for brevity), what the vEIR
  * or the founder wrote (the answer, its follow-ups, its next steps' text, owner and date, call captions, the
- * founder's own message, conversation titles), toasts, and dialogs layered over the screen.
+ * founder's own message, conversation titles), toasts, dialogs layered over the screen, and the venture's context
+ * panel beside it (collapsible, and mostly the venture's own records; its copy is budgeted as "Context panel" in
+ * src/test/copy-budget.json).
  *
  * The call is measured as typed with no microphone found: the browser is told there is none, so the reason
  * line is the same on every host (a laptop whose headless browser refuses its microphone would otherwise
@@ -74,6 +77,7 @@ async function visibleWords(root: Locator, skipText: readonly string[] = []): Pr
       '[aria-label="Captions"]',
       '[aria-label="Recent conversations"]',
       '[data-sonner-toaster]',
+      '[data-slot="context-panel"]',
     ].join(', ');
     const layered = (node: Element) => {
       const dialog = node.closest('[role="dialog"], [role="alertdialog"]');
@@ -153,6 +157,8 @@ test.describe('word budgets', () => {
     const code = await issueAccessCodeViaApi(owner.request, FOUNDER);
     await owner.close();
     await signIn(page, code);
+    // She has read the call's disclosure before (its own budget is not one of these screens).
+    await markCallDisclosuresSeen(page.context());
     const ventureId = await openVenture(page);
     // From the second run on, Priya has an older code too, so the shell says a new one was issued: a one-time
     // notice she would dismiss, not part of any screen (dismissed for the rest of this browser's visit).
@@ -223,10 +229,10 @@ test.describe('word budgets', () => {
       await test.step('Call (typed, as in a browser without a microphone)', async () => {
         await page
           .getByRole('main')
-          .getByRole('link', { name: /^Call / })
+          .getByRole('link', { name: /^Voice call with / })
           .first()
           .click();
-        const screen = page.getByRole('dialog', { name: /^Call with / });
+        const screen = page.getByRole('dialog', { name: /^(Voice|Video) call with / });
         await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
         // Measured on one footing: no microphone found (never the longer "blocked" line some hosts give).
         await expect(screen.getByText(/^No microphone/)).toBeVisible();

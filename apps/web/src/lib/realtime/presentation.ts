@@ -1,7 +1,5 @@
 import type { AvatarProvider } from './avatar';
 
-export type LocalPresentation = 'sphere' | 'character';
-
 /** Negotiated capabilities: the conversation never assumes remote and local providers are equivalent. */
 export interface PresentationCapabilities {
   readonly audioOwner: 'engine' | 'presentation';
@@ -20,10 +18,4 @@ export function presentationCapabilities(provider: AvatarProvider): Presentation
     visemes: false,
     interruption: remote ? 'local-and-remote' : 'local',
   };
-}
-
-/** Loaded only when the student selects a character. Failure leaves the working sphere and voice intact. */
-export async function loadLocalCharacter(): Promise<AvatarProvider> {
-  const { LocalCharacter } = await import('./character');
-  return new LocalCharacter();
 }

@@ -61,7 +61,7 @@ export interface VoiceSphereProps {
    * {@link recordedLevels}, or a live source). Omit for a still sphere.
    */
   levels?: () => AudioLevels;
-  /** CSS size (default: the call's `clamp(168px, 30vmin, 340px)`). */
+  /** CSS size (default: the call's `clamp(168px, 30vmin, 384px)`). */
   size?: string;
   /** Force the still variant (the media query is always honoured). */
   reducedMotion?: boolean;

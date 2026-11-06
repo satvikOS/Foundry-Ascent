@@ -1,6 +1,7 @@
 import { lazy, Suspense, useRef } from 'react';
 
 import { DeviceStage } from './device-ad/frames';
+import { PERSONA } from './persona';
 import { useNearViewport } from './use-near-viewport';
 
 const DeviceAd = lazy(() => import('./device-ad/device-ad'));
@@ -18,7 +19,7 @@ export function HeroMedia() {
       <div
         ref={ref}
         role="img"
-        aria-label="A synthetic example. On a laptop, a student asks Corin, a vEIR, whether to raise now or finish a paid pilot; the answer cites two pieces of evidence and suggests a next step. On a phone, the student calls Corin, who asks what a site would need to see to pay; the student decides to finish the pilot first, and the decision is saved to Knowledge."
+        aria-label={`A synthetic example. On a laptop, a student asks ${PERSONA}, an AI mentor, whether to raise now or finish a paid pilot; the answer cites two pieces of evidence and suggests a next step. On a phone, the student calls ${PERSONA}, who asks what a site would need to see to pay; the student decides to finish the pilot first, and the decision is saved to Knowledge.`}
         className="l-media art art--hero grain"
       >
         {near ? (

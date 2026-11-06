@@ -36,6 +36,8 @@ export const STORAGE_KEYS = {
   lastVenture: 'fa.last-venture',
   /** Right-hand panel left open on desktop ("1") or closed (default). */
   inspectorOpen: 'fa.inspector.open',
+  /** The venture context panel (New chat and conversations) open ("1", the default) or closed ("0") on desktop. */
+  contextPanelOpen: 'fa.context-panel.open',
   /** Device class for costly effects ("low" swaps glass for solid surfaces): lib/perf.ts. */
   perf: 'fa.perf',
 } as const;

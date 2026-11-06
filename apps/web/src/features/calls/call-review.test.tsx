@@ -15,10 +15,10 @@ import type { CallVeir } from './use-call-veir';
 vi.mock('@/components/a11y/live-announcer', () => ({ announce: vi.fn() }));
 
 const VEIR: CallVeir = {
-  name: 'Corin · vEIR',
-  shortName: 'Corin',
-  badge: 'vEIR',
+  name: 'Thomas',
+  shortName: 'Thomas',
   kind: 'eir_persona',
+  presentation: 'mentor',
   eirFirstName: 'Corin',
   firstPerson: true,
   eirSeesWork: true,
@@ -333,7 +333,7 @@ describe('CallReviewCard', () => {
       timeline: timelineOf(['veir']),
     });
     expect(await screen.findByRole('group', { name: 'Conversation timeline' })).toBeInTheDocument();
-    expect(screen.getByText(/Only Corin spoke/)).toHaveTextContent(/^0:055 seconds · Only Corin spoke$/);
+    expect(screen.getByText(/Only Thomas spoke/)).toHaveTextContent(/^0:055 seconds · Only Thomas spoke$/);
     expect(screen.queryByText(/No exchanges|Nothing was said/)).toBeNull();
   });
 
@@ -411,7 +411,7 @@ function callConfig(overrides: { remainingMinutesToday: number }) {
     veir: {
       personaId: IDS.persona,
       name: "Corin's vEIR",
-      shortName: 'Corin',
+      shortName: 'Thomas',
       kind: 'eir_persona',
       eirDisplayName: 'Corin Halvorsen',
       tagline: null,

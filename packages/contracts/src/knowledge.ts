@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
-import { CoachMode, Doctrine, Id, PersonaStatus, PrincipalView, Style, Timestamp } from './domain.js';
+import {
+  CoachMode,
+  Doctrine,
+  Id,
+  PersonaPresentation,
+  PersonaStatus,
+  PrincipalView,
+  Style,
+  Timestamp,
+} from './domain.js';
 
 /**
  * vEIR knowledge pools (docs/architecture/knowledge-pools.md).
@@ -220,6 +229,11 @@ export const VeirIdentity = z.object({
    * Additive: absent means no.
    */
   eirSeesWork: z.boolean().optional(),
+  /**
+   * `mentor`: an AI mentor under its own name ("Thomas", ADR-0021), never named after its EIR; `twin`: the EIR's
+   * digital twin ("Corin's vEIR"). Additive: absent means `twin`.
+   */
+  presentation: PersonaPresentation.optional(),
 });
 export type VeirIdentity = z.infer<typeof VeirIdentity>;
 
@@ -279,7 +293,8 @@ export type FaceSayRequest = z.infer<typeof FaceSayRequest>;
  * (`connect_timeout`) or failed to join (`connect_failed`), the page has no adapter for it (`no_adapter`), a crisis
  * turn (`crisis`), or the call stayed on hold too long (`on_hold`). A LITE stock face the browser feeds: its speak
  * channel closed or failed (`control_lost`), it twice did not start saying a unit in time (`speech_stalled`), or
- * the session's time left was too short for the next turn and the call took over between turns (`time_limit`).
+ * the session's time left was too short for the next turn and the call took over between turns (`time_limit`). The
+ * person switched a video call to a voice call (`switched_to_voice`): not a failure.
  */
 export const FaceEndReason = z.enum([
   'video_ended',
@@ -295,6 +310,7 @@ export const FaceEndReason = z.enum([
   'control_lost',
   'speech_stalled',
   'time_limit',
+  'switched_to_voice',
 ]);
 export type FaceEndReason = z.infer<typeof FaceEndReason>;
 

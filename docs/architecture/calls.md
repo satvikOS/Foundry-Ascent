@@ -633,9 +633,12 @@ of audio actually playing (silence, captions-only and browser-voice replies neve
 clouds evenly; muted, on hold, sound off and disconnected are desaturated and still. Per-frame work is a few
 compositor-only transform and opacity writes from the call's one frame loop (`timeline/call-timeline.ts`), never a
 React render; it pauses with the page. With `prefers-reduced-motion` it is still and the state shows only in words.
-It implies no likeness: the vEIR's monogram (or consented portrait) sits beside its name under the sphere. The
-in-browser character (`character.ts`) can be chosen in the call settings instead and always carries an "AI avatar"
-label. The sphere is the face whenever no vendor face is live.
+It implies no likeness. The sphere is a **voice** call's presence only (owner, 2026-11-06: the drawn in-browser
+character is removed, and video has no stand-in presence): a video call's 16:9 tile says "Starting video…" until the
+vendor face shows its first frame, and if the face cannot start or stops (a call asks for its face once), the tile
+says "Video couldn't start" or "Video stopped" and the call screen offers **Voice call**; the call never
+turns into a voice call by itself. Every live face is labelled "AI avatar", a stock avatar and a consented likeness
+alike.
 
 **Conversation timeline** (`features/calls/timeline/`): who spoke when, as 10 Hz RMS bins from the same frame loop
 (the vEIR from the playback level while it speaks, the founder from the microphone while their voice is detected),

@@ -21,8 +21,8 @@
     },
     "Call": {
       "before": 363,
-      "after": 302,
-      "budget": 305
+      "after": 334,
+      "budget": 340
     },
     "Conversation": {
       "before": 961,
@@ -114,9 +114,9 @@
       "after": 230,
       "budget": 270
     },
-    "Context review": {
-      "before": 0,
-      "after": 39,
+    "Context panel": {
+      "before": 39,
+      "after": 47,
       "budget": 50
     }
   }

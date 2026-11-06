@@ -23,7 +23,10 @@ import {
 
 const CORIN = 'Corin Halvorsen';
 const RUTH = 'Ruth Abernathy-Song';
-const VEIR = "Corin's vEIR";
+/** Corin's persona, presented as the mentor Thomas (production's owner release, ADR-0021). */
+const VEIR = 'Thomas';
+/** How the persona is named where it speaks: a mentor by its display name alone (lib/veir). */
+const SHOWN = 'Thomas';
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
 const CRISIS = 'I want to end my life, I cannot do this anymore.';
 /** Where screenshots of the bench go when set (desktop and phone, light and dark). */
@@ -91,7 +94,7 @@ async function openBench(page: Page): Promise<void> {
 }
 
 async function ask(page: Page, text: string): Promise<void> {
-  const box = page.getByRole('textbox', { name: `Message ${VEIR}` });
+  const box = page.getByRole('textbox', { name: `Message ${SHOWN}` });
   await box.fill(text);
   await page.getByRole('button', { name: 'Send message' }).click();
 }
@@ -121,7 +124,7 @@ test.describe('Test bench', () => {
     await expect(bench.getByRole('combobox', { name: 'Release' })).toHaveText(
       `Draft v${String(draft.version)}`,
     );
-    await expect(bench.getByText('vEIR · AI')).toBeVisible();
+    await expect(bench.locator('[data-slot="ai-badge"]')).toHaveText('AI');
     await expect(bench.getByRole('note', { name: 'AI disclosure' })).toBeVisible();
 
     await test.step('an answer through the founder pipeline, and what the checks did', async () => {
@@ -224,7 +227,7 @@ test.describe('Test bench', () => {
 
         await page.setViewportSize({ width: 390, height: 844 });
         await expectNoHorizontalScroll(page);
-        await expectReachable(page, page.getByRole('textbox', { name: `Message ${VEIR}` }));
+        await expectReachable(page, page.getByRole('textbox', { name: `Message ${SHOWN}` }));
         await expectReachable(page, page.getByRole('button', { name: 'Start over' }));
         await expectReachable(
           page,

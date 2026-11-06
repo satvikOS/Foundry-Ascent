@@ -11,7 +11,7 @@ import { LoadingRegion, Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePersona } from '@/lib/api/hooks/eir';
-import { veirName } from '@/lib/veir';
+import { personaName } from '@/lib/veir';
 
 import { ConsentTab } from './consent-tab';
 import { DoctrineTab } from './doctrine-tab';
@@ -90,7 +90,7 @@ export function PersonaDetailPage({
   }
 
   const p = persona.data;
-  const displayName = veirName(p.name, p.kind, p.eirProfile?.displayName);
+  const displayName = personaName(p.name);
   const tabs = personaTabs(p);
   const current = tabs.some((t) => t.id === tab) ? tab : 'overview';
   const canCurate = p.canCurate === true;

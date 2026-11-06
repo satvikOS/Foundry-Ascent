@@ -16,7 +16,7 @@
   --orb-edge: light-dark(rgb(17 17 16 / 0.07), transparent);
   position: relative;
   flex-shrink: 0;
-  width: var(--fa-sphere-size, clamp(168px, 30vmin, 340px));
+  width: var(--fa-sphere-size, clamp(168px, 30vmin, 384px));
   aspect-ratio: 1;
   contain: layout style;
   pointer-events: none;

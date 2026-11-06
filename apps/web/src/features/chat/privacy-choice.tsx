@@ -92,6 +92,8 @@ interface PrivacyChoiceProps {
   onChange: (privacy: ConversationPrivacy) => void;
   what?: 'conversation' | 'call';
   disabled?: boolean;
+  /** Centred under a composer (default), or at the start of a panel's column. */
+  align?: 'center' | 'start';
   className?: string;
 }
 
@@ -104,6 +106,7 @@ export function PrivacyChoice({
   onChange,
   what = 'conversation',
   disabled = false,
+  align = 'center',
   className,
 }: PrivacyChoiceProps) {
   const name = useId();
@@ -113,7 +116,8 @@ export function PrivacyChoice({
       aria-describedby={described}
       disabled={disabled}
       className={cn(
-        'flex min-w-0 flex-col items-center gap-x-3 gap-y-1.5 sm:flex-row sm:justify-center',
+        'flex min-w-0 flex-col gap-x-3 gap-y-1.5',
+        align === 'center' ? 'items-center sm:flex-row sm:justify-center' : 'items-start',
         className,
       )}
     >
@@ -153,7 +157,10 @@ export function PrivacyChoice({
           );
         })}
       </div>
-      <p id={described} className="text-center text-caption text-pretty text-muted-foreground">
+      <p
+        id={described}
+        className={cn('text-caption text-pretty text-muted-foreground', align === 'center' && 'text-center')}
+      >
         {privacyExplanation(value)}
       </p>
     </fieldset>

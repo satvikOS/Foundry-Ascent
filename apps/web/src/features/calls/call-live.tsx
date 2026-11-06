@@ -1,6 +1,6 @@
 import type { TurnBlockedDetail } from '@foundry/contracts';
 import { ArrowUp, Info, Mic, Play, Volume2, VolumeX } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { BlockedPanel } from '@/features/coach/blocked-panel';
@@ -10,14 +10,17 @@ import { cn } from '@/lib/utils';
 
 import { CallCaptions } from './call-captions';
 import { CallDock, HoldToTalk } from './call-dock';
+import type { CallKind } from './call-kind';
+import { CallKindSwitch } from './call-kind-switch';
 import { CallSettings } from './call-settings';
-import { CallNameTag, CallStage } from './call-stage';
+import { CallStage, VIDEO_PENDING_TEXT, videoPending } from './call-stage';
+import { END_UNDO_MS, useEndWithUndo } from './use-end-with-undo';
 import { storeTalkMode, useAnnounceCaptions, useCaptionSize, useCaptionsPreference } from './preferences';
 import { ConversationTimeline, clockLabel } from './timeline/ConversationTimeline';
 import { callTimeline } from './timeline/call-timeline';
 import type { TimelineTurn } from './timeline/timeline-model';
 import { sphereState } from './voice-sphere';
-import type { CallFaceController } from './use-call-face';
+import { useCallFace, type CallFaceController } from './use-call-face';
 import type { CallVeir } from './use-call-veir';
 
 /** The words under the presence: what the call is doing, as text (never colour or motion alone). */
@@ -76,34 +79,53 @@ interface CallLiveProps {
   onSwitchToChat: () => void;
   /** The call's face (null: the presence only). */
   face?: CallFaceController | null;
+  /** Voice (the sphere, no face) or video (the vEIR's face, once it shows). */
+  kind?: CallKind;
+  /** Switches the call to the other kind; null when the screen offers no switch. */
+  onSwitchKind?: ((kind: CallKind) => void) | null;
+  /** Why turning video on is not possible in this call (none offered, or the call already had its face). */
+  videoBlocked?: string | null;
+  /** The call screen's heading (the vEIR's name in its header), focused when the call opens. */
+  headingRef?: RefObject<HTMLHeadingElement | null>;
 }
+
+export { END_UNDO_MS, useEndWithUndo };
 
 /** How long a turn picked on the timeline stays in place of the live captions. */
 const REVIEW_MS = 8_000;
-/** How long "Call ended · Undo" waits before the call really ends (design-spec §10.1: no confirm dialog). */
-export const END_UNDO_MS = 3_000;
 
 /**
- * The call in progress, laid out like the owner's reference: the vEIR's presence (the voice sphere by default)
- * centred on the canvas with its name tag (the vEIR badge explains what it is) and its state as words, live
- * captions (or, after a held-back turn, the support it offers), any notice, the typed line, the conversation
- * timeline, and two controls: the microphone bottom-left and End bottom-right. Everything rarer is in the call
- * settings (top right). No disclaimer line: the person read what a vEIR is once, and the badge keeps it a tap away.
+ * The call in progress, laid out like the owner's reference: the vEIR's presence (the voice sphere by default; on a
+ * video call the vEIR's face once it shows, labelled as an AI avatar) centred on the canvas with its state as words,
+ * live captions (or, after a held-back turn, the support it offers), any notice, the typed line, the conversation
+ * timeline, and two controls: the microphone bottom-left and End bottom-right. Top right: switch voice/video, then
+ * the call settings with everything rarer. No disclaimer line: the person read the call's disclosure before their
+ * first call, and the settings keep it a tap away.
  */
-export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face = null }: CallLiveProps) {
+export function CallLive({
+  tenant,
+  engine,
+  snapshot,
+  veir,
+  onSwitchToChat,
+  face = null,
+  kind = 'voice',
+  onSwitchKind = null,
+  videoBlocked = null,
+  headingRef,
+}: CallLiveProps) {
   const [captions, setCaptions] = useCaptionsPreference();
   const [captionSize] = useCaptionSize();
   const [announceCaptions] = useAnnounceCaptions();
   const typedOnly = snapshot.input === 'typed';
   const [typingOpen, setTypingOpen] = useState(false);
-  const [video, setVideo] = useState(false);
   const [review, setReview] = useState<TimelineTurn | null>(null);
   const typing = typedOnly || typingOpen;
   const live = snapshot.phase === 'live';
   const voice = snapshot.input === 'voice';
   const pushToTalk = snapshot.talkMode === 'push_to_talk';
   const typeRef = useRef<HTMLInputElement | null>(null);
-  const nameRef = useRef<HTMLHeadingElement | null>(null);
+  const currentFace = useCallFace(face);
   const endRef = useRef<HTMLButtonElement | null>(null);
   const undoRef = useRef<HTMLButtonElement | null>(null);
   const ending = useEndWithUndo(engine, snapshot);
@@ -114,10 +136,19 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
     () => false,
   );
 
-  // Focus starts on the vEIR's name (the state is announced next to it); typing-only calls focus the line.
+  // Focus starts on the vEIR's name (the header's heading); typing-only calls focus the line.
   useEffect(() => {
-    nameRef.current?.focus();
-  }, []);
+    headingRef?.current?.focus();
+  }, [headingRef]);
+
+  // A video call whose face is not shown says so in the status line (the tile says it too, and offers a voice call
+  // when the face could not start or stopped: it never turns into a voice call by itself, owner round 3). Not while
+  // ending, nor over a held-back turn (its support comes first).
+  const callId = live ? (snapshot.call?.id ?? null) : null;
+  const videoNote =
+    kind === 'video' && !ending.pending && !snapshot.blocked
+      ? videoPending(true, face, veir.provider, callId, currentFace)
+      : null;
   useEffect(() => {
     if (live && typedOnly) typeRef.current?.focus();
   }, [live, typedOnly]);
@@ -147,9 +178,6 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
   useEffect(() => {
     if (typingOpen) typeRef.current?.focus();
   }, [typingOpen]);
-  const onVideoChange = useCallback((shown: boolean) => {
-    setVideo(shown);
-  }, []);
 
   useHotkeys(
     {
@@ -227,7 +255,16 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
     // Content taller than the screen (support resources, a long caption) scrolls the call screen instead of
     // running under the controls.
     <div data-slot="call-live" className="flex flex-1 flex-col">
-      <div className="absolute top-1.5 right-2 z-10 sm:right-4">
+      <div className="absolute top-1.5 right-2 z-10 flex items-center sm:right-4">
+        {onSwitchKind ? (
+          <CallKindSwitch
+            kind={kind}
+            blockedReason={kind === 'voice' ? videoBlocked : null}
+            onSwitch={() => {
+              onSwitchKind(kind === 'voice' ? 'video' : 'voice');
+            }}
+          />
+        ) : null}
         <CallSettings
           name={veir.name}
           captions={captions}
@@ -240,25 +277,30 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
             voice,
             typing: typingOpen,
             disabled: !live || ending.pending,
-            video,
             onTyping: toggleTyping,
             onSwitchToChat,
           }}
         />
       </div>
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-4 sm:gap-5">
-        {snapshot.blocked ? (
-          <CallNameTag veir={veir} speaking={false} headingRef={nameRef} />
-        ) : (
+        {snapshot.blocked ? null : (
           <CallStage
             veir={veir}
             engine={engine}
             state={ending.pending ? 'ended' : sphereState(snapshot, engine.avatarState())}
-            nameTag={<CallNameTag veir={veir} speaking={speaking} headingRef={nameRef} />}
+            // The header names the vEIR; a face's video carries its name in its corner.
+            nameTag={null}
             ventureId={snapshot.ventureId}
-            callId={live ? (snapshot.call?.id ?? null) : null}
+            callId={callId}
             face={face}
-            onVideoChange={onVideoChange}
+            video={kind === 'video'}
+            onVoiceInstead={
+              onSwitchKind
+                ? () => {
+                    onSwitchKind('voice');
+                  }
+                : null
+            }
           />
         )}
         <div className="-mt-2 flex flex-col items-center gap-1.5">
@@ -269,6 +311,7 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
           <p className="flex items-center gap-2 text-small text-muted-foreground">
             <span role="status" aria-live="polite">
               {status}
+              {videoNote ? ` · ${VIDEO_PENDING_TEXT[videoNote]}` : ''}
             </span>
             {speaking && !halfDuplexInterrupt ? (
               <>
@@ -279,7 +322,8 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
                     engine.interrupt();
                   }}
                   aria-keyshortcuts="Escape"
-                  className="fa-call-focus rounded-sm font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
+                  data-touch-target
+                  className="fa-call-focus relative rounded-sm font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
                 >
                   Interrupt
                 </button>
@@ -423,69 +467,6 @@ export function CallLive({ tenant, engine, snapshot, veir, onSwitchToChat, face 
       </div>
     </div>
   );
-}
-
-/**
- * End with a short undo (design-spec §10.1): a single press of End silences the call at once (the microphone is
- * muted and a reply in progress stops) and ends it after `END_UNDO_MS` unless Undo is pressed; a second press ends
- * it now. Leaving the screen meanwhile (minimizing, Escape) ends it at once: the founder asked to end. A call that
- * is still connecting ends at once (there is nothing to undo).
- */
-export function useEndWithUndo(
-  engine: CallEngine,
-  snapshot: CallSnapshot,
-  delayMs: number = END_UNDO_MS,
-): { pending: boolean; request: () => void; undo: () => void } {
-  const [pending, setPending] = useState<{ wasMuted: boolean } | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const clear = () => {
-    if (timer.current !== null) clearTimeout(timer.current);
-    timer.current = null;
-  };
-  const commit = useCallback(() => {
-    if (timer.current !== null) clearTimeout(timer.current);
-    timer.current = null;
-    setPending(null);
-    void engine.end('user');
-  }, [engine]);
-
-  // Unmounted while ending (minimized, closed): end now.
-  useEffect(
-    () => () => {
-      if (timer.current === null) return;
-      clearTimeout(timer.current);
-      timer.current = null;
-      void engine.end('user');
-    },
-    [engine],
-  );
-  // Ended some other way meanwhile (its time ran out, the program paused calls): nothing left to undo.
-  useEffect(() => {
-    if (snapshot.phase === 'live' || timer.current === null) return;
-    clearTimeout(timer.current);
-    timer.current = null;
-    setPending(null);
-  }, [snapshot.phase]);
-
-  const request = () => {
-    if (snapshot.phase !== 'live' || pending) {
-      commit();
-      return;
-    }
-    const wasMuted = snapshot.muted;
-    if (snapshot.activity === 'speaking') engine.interrupt();
-    if (snapshot.input === 'voice' && !wasMuted) engine.setMuted(true);
-    setPending({ wasMuted });
-    clear();
-    timer.current = setTimeout(commit, delayMs);
-  };
-  const undo = () => {
-    if (!pending) return;
-    clear();
-    if (snapshot.input === 'voice' && !pending.wasMuted) engine.setMuted(false);
-    setPending(null);
-  };
-  return { pending: pending !== null, request, undo };
 }
 
 /** "Call ended · Undo": the short window in which End can be taken back, in the call screen itself. */

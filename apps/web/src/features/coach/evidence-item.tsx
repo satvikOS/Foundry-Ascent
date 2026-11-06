@@ -39,7 +39,7 @@ export function evidenceKindLabel(item: Pick<EvidenceItem, 'kind' | 'source'>, v
       const scope = item.source?.scope ?? (item.kind === 'doctrine' ? 'persona' : null);
       if (scope === 'venture') return { label: 'Venture document', icon: FileText };
       if (scope === 'persona') {
-        return { label: veirName ? `${veirName}’s library` : 'vEIR library', icon: ScrollText };
+        return { label: veirName ? `${veirName}’s library` : 'Library', icon: ScrollText };
       }
       if (scope === 'program') return { label: 'Program guidance', icon: BookOpen };
       // The shared reference library (university and academic sources), not the program's own guidance.

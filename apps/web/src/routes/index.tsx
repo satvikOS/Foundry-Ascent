@@ -10,15 +10,17 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 
-import { DisclosureBanner, PUBLIC_DISCLOSURE } from '@/components/disclosure-banner';
+import { DisclosureBanner } from '@/components/disclosure-banner';
 import { HeroMedia } from '@/components/landing/hero-media';
+import { Streak } from '@/components/landing/streak';
 import { AccountPill, LandingNav } from '@/components/landing/landing-nav';
+import { LANDING_DISCLOSURE, LANDING_DISCLOSURE_SUMMARY, PERSONA } from '@/components/landing/persona';
 import { useNearViewport } from '@/components/landing/use-near-viewport';
 import { meQueryOptions } from '@/lib/api/hooks/auth';
 import { sessionHint } from '@/lib/storage';
 
 export const Route = createFileRoute('/')({
-  head: () => ({ meta: [{ title: 'Foundry Ascent: think it through with your vEIR' }] }),
+  head: () => ({ meta: [{ title: `Foundry Ascent: think it through with ${PERSONA}` }] }),
   component: LandingPage,
 });
 
@@ -51,7 +53,12 @@ function LandingPage() {
   return (
     <div className="landing flex min-h-dvh flex-col">
       <LandingNav me={me} />
-      <main id="main-content" tabIndex={-1} className="flex-1 pt-(--nav-height) outline-none">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="relative isolate flex-1 pt-(--nav-height) outline-none"
+      >
+        <Streak variant="hero" />
         <section aria-labelledby="hero-title" className="l-wrap pt-24 pb-12 text-center sm:pt-32 sm:pb-14">
           <h1
             id="hero-title"
@@ -62,8 +69,8 @@ function LandingPage() {
             Think it through with someone who <em className="italic">remembers</em>.
           </h1>
           <p className="l-lead mx-auto mt-6 max-w-[40rem] text-pretty">
-            Your vEIR is the Ain Foundry entrepreneur-in-residence’s AI twin. It diagnoses before it advises,
-            tests your claims against evidence, and brings in a person when it matters.
+            Meet {PERSONA}, an AI mentor whose coaching approach the program wrote and approved. He answers
+            what you ask, tests your claims against evidence, and brings in a person when it matters.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <AccountPill me={me} size="lg" />
@@ -73,8 +80,8 @@ function LandingPage() {
           </div>
           <DisclosureBanner
             variant="line"
-            veirName="Every vEIR"
-            text={PUBLIC_DISCLOSURE}
+            text={LANDING_DISCLOSURE}
+            summary={LANDING_DISCLOSURE_SUMMARY}
             className="mx-auto mt-6 max-w-[34rem]"
           />
         </section>

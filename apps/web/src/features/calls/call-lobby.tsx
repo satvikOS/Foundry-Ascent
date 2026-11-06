@@ -1,11 +1,13 @@
 import type { CallConfigResponse } from '@foundry/contracts';
-import { AudioLines, ChevronDown, EyeOff, History, Phone } from 'lucide-react';
+import { ChevronDown, EyeOff, History, Phone, Video } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { CallEngine, CallFailure } from '@/lib/realtime/call-engine';
 import { cn } from '@/lib/utils';
 
 import type { ConversationPrivacy } from '../chat/privacy-choice';
+import type { CallKind } from './call-kind';
+import { CallKindSwitch } from './call-kind-switch';
 import { CallSettings } from './call-settings';
 import { CallStage } from './call-stage';
 import { useCaptionsPreference, useTalkModePreference } from './preferences';
@@ -68,8 +70,14 @@ interface CallLobbyProps {
   /** A start that failed: the server's refusal (which will not pass by trying again) or a hiccup. */
   failure: CallFailure | null;
   busy: boolean;
-  /** The first call: say how the founder's voice is handled before it starts. */
-  voiceNotice: boolean;
+  /** The call about to start: voice (the sphere) or video (the vEIR's face once live). */
+  kind?: CallKind;
+  /** Switches the call about to start to the other kind; null to offer no switch. */
+  onSwitchKind?: ((kind: CallKind) => void) | null;
+  /** Why a video call cannot start (none offered to this person); null when it can. */
+  videoBlocked?: string | null;
+  /** A note under the status (a video call asked for, but only voice is offered). */
+  note?: string | null;
   /**
    * The person has not met their vEIR yet (the call screen opened before the welcome): its two lines, said here
    * once, and Start call acknowledges them. Null when already read.
@@ -98,9 +106,10 @@ const startControl = cn(
  * the vEIR's name tag, what the call allows as one status line, and Start call in the microphone's place
  * (bottom left). The settings (top right) hold the presentation, captions and talk mode and, for a call that
  * starts a new conversation, Remember (the default) or Private, whose current choice also shows under the status
- * and opens them. The first call ever waits here so the founder reads how their voice is handled (and, on a first
- * meeting, what a vEIR is); otherwise a call opened by a click starts at once and this shows "Connecting". When a
- * call cannot start, the title says why and the same place offers Try again, Move here or Back.
+ * and opens them. Top right also switches between a voice and a video call. A first meeting waits here so the
+ * founder reads what their mentor is (the call's disclosure, a dialog over this screen, comes before the first call
+ * of each kind); otherwise a call opened by a click starts at once and this shows "Connecting". When a call cannot
+ * start, the title says why and the same place offers Try again, Move here or Back.
  */
 export function CallLobby({
   engine,
@@ -109,7 +118,10 @@ export function CallLobby({
   blocker,
   failure,
   busy,
-  voiceNotice,
+  kind = 'voice',
+  onSwitchKind = null,
+  videoBlocked = null,
+  note = null,
   welcome,
   privacy,
   onStart,
@@ -144,16 +156,30 @@ export function CallLobby({
         }
       : null);
   const moveHere = failure?.elsewhere === true;
+  const videoMinutes =
+    kind === 'video' && config?.faceMinutesLeft !== undefined
+      ? ` · ${String(Math.floor(config.faceMinutesLeft))} video min this month`
+      : '';
   const minutes =
     config && !problem
-      ? `Up to ${String(config.maxMinutes)} min · ${String(Math.floor(config.remainingMinutesToday))} left today`
+      ? `Up to ${String(config.maxMinutes)} min · ${String(Math.floor(config.remainingMinutesToday))} left today${videoMinutes}`
       : null;
+  const StartIcon = kind === 'video' ? Video : Phone;
   const isPrivate = privacy?.value === 'ephemeral';
 
   return (
     <div data-slot="call-lobby" className="flex flex-1 flex-col">
       {problem ? null : (
-        <div className="absolute top-1.5 right-2 z-10 sm:right-4">
+        <div className="absolute top-1.5 right-2 z-10 flex items-center sm:right-4">
+          {onSwitchKind ? (
+            <CallKindSwitch
+              kind={kind}
+              blockedReason={kind === 'voice' ? videoBlocked : null}
+              onSwitch={() => {
+                onSwitchKind(kind === 'voice' ? 'video' : 'voice');
+              }}
+            />
+          ) : null}
           <CallSettings
             name={veir.name}
             captions={captions}
@@ -181,6 +207,8 @@ export function CallLobby({
           veir={veir}
           engine={engine}
           state={busy ? 'connecting' : failure ? 'disconnected' : 'idle'}
+          // The header names the vEIR.
+          nameTag={null}
         />
         <div className="-mt-2 flex max-w-md flex-col items-center gap-1.5">
           {problem ? <h2 className="text-heading font-semibold">{problem.title}</h2> : null}
@@ -190,6 +218,11 @@ export function CallLobby({
           >
             {busy ? 'Connecting…' : problem ? problem.message : (minutes ?? 'Getting ready…')}
           </p>
+          {note && !problem ? (
+            <p data-slot="call-note" className="text-small text-pretty text-muted-foreground">
+              {note}
+            </p>
+          ) : null}
           {privacy && !problem ? (
             <button
               ref={memoryRef}
@@ -226,18 +259,6 @@ export function CallLobby({
               <p key={line}>{line}</p>
             ))}
           </div>
-        ) : null}
-        {voiceNotice && !problem ? (
-          <p
-            data-testid="voice-notice"
-            className="flex max-w-md items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left text-small text-muted-foreground"
-          >
-            <AudioLines aria-hidden className="mt-0.5 size-4 shrink-0 text-foreground" />
-            <span>
-              Amazon Transcribe turns your voice into text. No audio is kept; the transcript is saved here
-              like chat.
-            </span>
-          </p>
         ) : null}
       </div>
 
@@ -285,7 +306,7 @@ export function CallLobby({
             aria-busy={busy || undefined}
             className={cn(startControl, 'bg-primary text-primary-foreground hover:bg-primary/90')}
           >
-            <Phone aria-hidden />
+            <StartIcon aria-hidden />
             Start call
           </button>
         )}

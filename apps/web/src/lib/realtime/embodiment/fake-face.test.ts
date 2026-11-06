@@ -97,7 +97,7 @@ afterEach(() => {
 describe('FakeFaceAvatar (the development stand-in face)', () => {
   it('is a face that renders the call’s own audio', () => {
     const { face } = setup();
-    expect(face).toMatchObject({ id: 'fake', drawsFace: true, voicing: 'audio' });
+    expect(face).toMatchObject({ id: 'fake', voicing: 'audio' });
   });
 
   it('opens only a stand-in session, after the join delay, and then streams video', async () => {

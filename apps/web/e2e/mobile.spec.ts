@@ -64,8 +64,18 @@ test.describe('mobile 390×844', () => {
       await expectReachable(page, box);
       await expectReachable(page, page.getByRole('combobox', { name: 'Mode for the next message' }));
       await expectReachable(page, page.getByRole('button', { name: 'Add documents' }));
-      await expectReachable(page, page.getByRole('radio', { name: 'Remember this conversation' }));
-      await expectReachable(page, page.getByRole('radio', { name: 'Private, a one-off' }));
+      // The venture's context and the memory choice are a sheet from the phone bar, never squeezing the page.
+      const show = page.getByRole('button', { name: 'Show context panel' });
+      await expectReachable(page, show);
+      await show.click();
+      const context = page.getByRole('dialog', { name: 'Context' });
+      await expectReachable(page, context.getByRole('radio', { name: 'Remember this conversation' }));
+      await expectReachable(page, context.getByRole('radio', { name: 'Private, a one-off' }));
+      const sheetBox = await context.boundingBox();
+      expect(sheetBox?.y).toBeGreaterThanOrEqual(8);
+      await page.keyboard.press('Escape');
+      await expect(context).toBeHidden();
+      await expectNoHorizontalScroll(page);
 
       // A question only the venture's own records answer (the seeded seat-map experiment): the answer cites them.
       await box.fill(`How many repeat visitors did our hand-counted seat map get? ${token}`);
@@ -79,17 +89,21 @@ test.describe('mobile 390×844', () => {
       await expectNoHorizontalScroll(page);
       await expectReachable(page, composer(page));
       await expectVeirBadgeInView(page);
-      // One bar on a phone: the conversation's header carries the menu, its title and New chat. Calls start
-      // from the composer's voice button, as on New chat.
+      // One bar on a phone: the conversation's header carries the menu, its title, and three icons (voice call,
+      // video call, More); New chat and the context panel are in More, so the title keeps its room.
       const bar = page.locator('header').filter({ has: page.getByRole('heading', { level: 1 }) });
       await expect(page.locator('header:visible')).toHaveCount(1);
       await expectReachable(page, bar.getByRole('button', { name: 'Open navigation' }));
-      // The vEIR's name and badge ("Corin · vEIR") under the title.
-      await expect(bar.locator('[data-slot="veir-badge"]').filter({ visible: true })).toHaveText('vEIR');
-      await expect(bar.getByRole('link', { name: /^Call / })).toHaveCount(0);
-      await expectReachable(page, page.getByRole('main').getByRole('link', { name: /^Call / }));
-      await expectReachable(page, bar.getByRole('link', { name: 'New chat' }));
+      // The mentor's name alone under the title: no vEIR badge.
+      await expect(bar.locator('[data-slot="veir-name"]').filter({ visible: true })).toHaveText('Thomas');
+      await expect(bar.locator('[data-slot="veir-badge"]')).toHaveCount(0);
+      await expectReachable(page, bar.getByRole('link', { name: /^Voice call with / }));
+      await expect(bar.getByRole('group', { name: 'Call' }).getByLabel(/^Video call with /)).toBeVisible();
       await expectReachable(page, page.getByRole('button', { name: 'Conversation options' }));
+      await expect(
+        bar.locator('[data-slot="header-actions"]').locator('a:visible, button:visible'),
+      ).toHaveCount(3);
+      await expect(bar.getByRole('link', { name: 'New chat' })).toHaveCount(0);
 
       // A citation opens the sources as a sheet.
       const chip = answer.getByRole('button', { name: /^Source 1: / }).first();
@@ -97,13 +111,15 @@ test.describe('mobile 390×844', () => {
       await chip.click();
       const panel = page.getByRole('dialog', { name: 'Context' });
       await expect(panel.getByRole('tab', { name: 'Sources' })).toHaveAttribute('aria-selected', 'true');
-      await expectReachable(page, panel.getByRole('tab', { name: 'Human help' }));
+      await expectReachable(page, panel.getByRole('tab', { name: 'Overview' }));
       await page.keyboard.press('Escape');
       await expect(panel).toBeHidden();
 
-      // The panel also opens from the conversation's menu, and the header opens the navigation sheet.
-      await page.getByRole('button', { name: 'Conversation options' }).click();
-      await page.getByRole('menuitem', { name: 'Sources and notes' }).click();
+      // The panel also opens from More (with New chat), and the header opens the navigation sheet.
+      await bar.getByRole('button', { name: 'Conversation options' }).click();
+      const more = page.getByRole('menu');
+      await expectReachable(page, more.getByRole('menuitem', { name: 'New chat' }));
+      await more.getByRole('menuitem', { name: 'Show context panel' }).click();
       await expect(panel.getByRole('tab', { name: 'Sources' })).toBeVisible();
       await page.keyboard.press('Escape');
       await expect(panel).toBeHidden();

@@ -13,6 +13,9 @@ export const buttonVariants = cva(
     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
     'disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50',
     "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+    // Touch screens: a hit area of at least 44 x 44 px (--touch-target), centred on the button, without making a
+    // compact control look bigger (a button already 44 px on an axis keeps its own box on it).
+    "pointer-coarse:after:absolute pointer-coarse:after:inset-[min(0px,calc((100%_-_var(--touch-target))/2))] pointer-coarse:after:content-['']",
   ],
   {
     variants: {

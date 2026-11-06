@@ -14,7 +14,7 @@ import { veirWelcome, type VeirDisplay } from '@/lib/veir';
 export function inlineWelcome(
   seen: boolean,
   writable: boolean,
-  veir: Pick<VeirDisplay, 'kind' | 'name' | 'eirFirstName' | 'eirSeesWork'> | null,
+  veir: Pick<VeirDisplay, 'kind' | 'presentation' | 'name' | 'eirFirstName' | 'eirSeesWork'> | null,
 ): ReturnType<typeof veirWelcome> | null {
   return !seen && writable && veir !== null ? veirWelcome(veir) : null;
 }

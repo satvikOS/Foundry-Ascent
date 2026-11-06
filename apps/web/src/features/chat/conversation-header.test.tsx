@@ -1,17 +1,18 @@
 import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from '@tanstack/react-router';
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { InspectorProvider } from '@/components/shell/inspector';
+import { Inspector, InspectorProvider } from '@/components/shell/inspector';
+import { ShellChromeContext } from '@/components/shell/shell-chrome';
 import { renderWithProviders } from '@/features/admin/shared/test-utils';
 
 import { IDS, makeSession } from '../coach/testing';
 import { ConversationHeader } from './conversation-header';
 
-async function renderHeader(privacy: 'standard' | 'ephemeral') {
+async function renderHeader(privacy: 'standard' | 'ephemeral', phone = false) {
   const session = makeSession({ privacy, status: 'active', endedAt: null });
-  const ui = (
+  const header = (
     <InspectorProvider>
       <ConversationHeader
         tenant="ain"
@@ -19,18 +20,35 @@ async function renderHeader(privacy: 'standard' | 'ephemeral') {
         session={session}
         title="Pricing per library"
         veir={{
-          name: 'Corin · vEIR',
-          shortName: 'Corin',
-          badge: 'vEIR',
+          name: 'Thomas',
+          shortName: 'Thomas',
           kind: 'eir_persona',
+          presentation: 'mentor',
           eirFirstName: 'Corin',
           firstPerson: true,
           eirSeesWork: true,
         }}
         canEdit
         onAction={vi.fn()}
+        calls={
+          <div role="group" aria-label="Call">
+            <button type="button">Voice call with Thomas</button>
+            <button type="button">Video call with Thomas</button>
+          </div>
+        }
       />
+      <Inspector title="Context" label="context panel">
+        <p>Stage</p>
+      </Inspector>
     </InspectorProvider>
+  );
+  // On a phone the header is the only bar: the shell's chrome is there.
+  const ui = phone ? (
+    <ShellChromeContext.Provider value={{ openNavigation: vi.fn(), claimMobileBar: () => () => undefined }}>
+      {header}
+    </ShellChromeContext.Provider>
+  ) : (
+    header
   );
   const router = createRouter({
     routeTree: createRootRoute({ component: () => ui }),
@@ -39,6 +57,10 @@ async function renderHeader(privacy: 'standard' | 'ephemeral') {
   renderWithProviders(<RouterProvider router={router} />);
   return screen.findByRole('heading', { level: 1, name: 'Pricing per library' });
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('ConversationHeader', () => {
   it('says quietly that a private conversation is private, on wide screens and phones', async () => {
@@ -54,25 +76,47 @@ describe('ConversationHeader', () => {
     expect(screen.queryByText(/Private/)).toBeNull();
   });
 
-  it('shows the vEIR as its name with a badge that explains it, and no disclaimer line', async () => {
-    await renderHeader('standard');
-    const badges = screen.getAllByRole('button', { name: 'vEIR: what is Corin · vEIR?' });
-    expect(badges.length).toBeGreaterThan(0);
+  it('shows the mentor by its name alone: no face, no vEIR badge, no disclaimer line', async () => {
+    const heading = await renderHeader('standard');
+    const header = heading.closest('header');
+    if (!header) throw new Error('no header');
+    expect(within(header).getAllByText('Thomas').length).toBeGreaterThan(0);
+    expect(header).not.toHaveTextContent(/vEIR/);
+    expect(header.querySelector('[data-slot="persona-avatar"], [data-slot="veir-badge"]')).toBeNull();
     expect(screen.queryByRole('note', { name: 'AI disclosure' })).toBeNull();
-    const [badge] = badges;
-    if (!badge) throw new Error('no vEIR badge');
-    await userEvent.setup().click(badge);
-    const about = await screen.findByRole('dialog', { name: 'About Corin · vEIR' });
-    expect(about).toHaveTextContent(
-      'Corin’s digital twin: an AI built with Corin’s consent from how Corin coaches. Corin sees what you work on here.',
-    );
-    expect(about).toHaveTextContent(
-      'It isn’t Corin in person, and Corin doesn’t write or approve its replies.',
-    );
   });
 
   it('sits on the bars’ glass, dense enough for its text over the prose scrolling under it', async () => {
     const heading = await renderHeader('standard');
     expect(heading.closest('header')).toHaveClass('glass-bar');
+  });
+
+  it('keeps three icons after the title on a phone: Voice call, Video call and More (New chat and the panel in it)', async () => {
+    // A phone: no width query matches.
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+    const heading = await renderHeader('standard', true);
+    const header = heading.closest('header');
+    if (!header) throw new Error('no header');
+    const trailing = header.querySelector('[data-slot="header-actions"]');
+    if (!(trailing instanceof HTMLElement)) throw new Error('no trailing controls');
+    expect(
+      within(trailing)
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label') ?? button.textContent),
+    ).toEqual(['Voice call with Thomas', 'Video call with Thomas', 'Conversation options']);
+    expect(within(header).queryByRole('link', { name: 'New chat' })).toBeNull();
+    await userEvent.setup().click(within(header).getByRole('button', { name: 'Conversation options' }));
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByRole('menuitem', { name: 'New chat' })).toBeVisible();
+    expect(within(menu).getByRole('menuitem', { name: 'Show context panel' })).toBeVisible();
   });
 });

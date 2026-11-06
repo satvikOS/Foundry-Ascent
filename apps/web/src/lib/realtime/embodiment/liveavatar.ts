@@ -249,7 +249,6 @@ function unitKey(unit: SpeechUnitToPlay): string {
 
 export class LiveAvatarFace implements AvatarProvider {
   readonly id: 'heygen' | 'fake';
-  readonly drawsFace = true;
   readonly voicing: 'audio' | 'text';
 
   private room: LiveAvatarRoom | null = null;

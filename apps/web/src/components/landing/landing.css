@@ -375,6 +375,83 @@
     }
   }
 
+  /*
+   * --- Streaks: a soft band of light across the ground (streak.tsx) -------------------------------------------
+   * The page's canvas is otherwise one flat colour. A streak is a wide, tilted field of four static gradients in
+   * the voice palette (a blue head, a long mist body, one thin bright filament, a moss tail) with the grain tile,
+   * faded at its top and bottom so it never meets the bar or a band's edge. Its colours stay faint enough that the
+   * secondary text over it keeps 4.5:1 (landing-css.test.ts composites all four at their peak).
+   */
+  .landing {
+    --streak-head: light-dark(rgb(92 121 245 / 0.1), rgb(92 121 245 / 0.18));
+    --streak-body: light-dark(rgb(171 207 245 / 0.3), rgb(48 61 113 / 0.26));
+    --streak-glint: light-dark(rgb(234 247 253 / 0.85), rgb(171 207 245 / 0.07));
+    --streak-tail: light-dark(rgb(127 163 122 / 0.16), rgb(52 75 42 / 0.36));
+  }
+
+  .l-streak-field {
+    position: absolute;
+    inset-inline: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 34%, #000 62%, transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 34%, #000 62%, transparent);
+  }
+
+  /* From under the bar to past the hero's media: on wide screens it shows on both sides of the device ad. */
+  .l-streak-field--hero {
+    top: 0;
+    height: clamp(52rem, 62rem + 10vw, 84rem);
+  }
+
+  .l-streak-field--mid {
+    top: -6rem;
+    bottom: -6rem;
+  }
+
+  .l-streak {
+    position: absolute;
+    top: 50%;
+    left: -30%;
+    width: 160%;
+    height: clamp(22rem, 16rem + 18vw, 40rem);
+    translate: 0 -50%;
+    rotate: -9deg;
+    background:
+      radial-gradient(42% 7% at 44% 52%, var(--streak-glint), transparent 100%),
+      radial-gradient(24% 46% at 26% 50%, var(--streak-head), transparent 72%),
+      radial-gradient(26% 44% at 78% 52%, var(--streak-tail), transparent 72%),
+      radial-gradient(closest-side, var(--streak-body), transparent);
+  }
+
+  .l-streak-field--hero .l-streak {
+    top: 46%;
+  }
+
+  /* The middle one crosses the other way, moss first. */
+  .l-streak-field--mid .l-streak {
+    rotate: 7deg;
+    background:
+      radial-gradient(40% 6% at 56% 48%, var(--streak-glint), transparent 100%),
+      radial-gradient(24% 46% at 24% 50%, var(--streak-tail), transparent 72%),
+      radial-gradient(26% 44% at 76% 50%, var(--streak-head), transparent 72%),
+      radial-gradient(closest-side, var(--streak-body), transparent);
+  }
+
+  /* The grain follows the band's own shape, never the plain ground around it. */
+  .l-streak.grain::after {
+    opacity: 0.12;
+    -webkit-mask-image: radial-gradient(closest-side, #000 20%, transparent);
+    mask-image: radial-gradient(closest-side, #000 20%, transparent);
+  }
+
+  @media print {
+    .l-streak-field {
+      display: none;
+    }
+  }
+
   /* --- Hero media card (the device ad) ---------------------------------------------------------------------- */
   .l-media {
     height: clamp(32.5rem, 140vw, 40rem);
@@ -385,6 +462,20 @@
     .l-media {
       height: clamp(26.25rem, 46vw, 40rem);
     }
+  }
+
+  /* Monitors: a taller card, so the devices grow with the screen instead of floating small in a wide field. */
+  @media (min-width: 100rem) {
+    .l-media {
+      height: clamp(40rem, 36vw, 44rem);
+    }
+  }
+
+  /* The card's edge: a hairline that holds on the ground in both themes, and a soft drop under it. */
+  .l-media {
+    outline: 1px solid light-dark(rgb(17 17 16 / 0.06), rgb(255 255 255 / 0.07));
+    outline-offset: -1px;
+    box-shadow: 0 40px 80px -48px light-dark(rgb(30 40 90 / 0.28), rgb(0 0 0 / 0.9));
   }
 
   /* --- Program strip ---------------------------------------------------------------------------------------- */
@@ -506,11 +597,24 @@
   @media (forced-colors: active) {
     .art::before,
     .art-grid,
-    .grain::after {
+    .grain::after,
+    .l-streak-field {
       display: none;
     }
     .l-acc-item[data-open='true']::before {
       background: CanvasText;
     }
+  }
+}
+
+/*
+ * Large monitors: the landing page scales up as a whole (type, rhythm, the device ad and the content width are all
+ * in rem), so a 2560 x 1440 screen shows the page as a 1920 x 1080 one does instead of a small column in a wide
+ * field. The scale follows the smaller of width and height (an ultrawide is as tall as a 1440p screen), never drops
+ * below the person's own font size, and stops at 125%. Only while the landing page is shown.
+ */
+@media (min-width: 120rem) and (min-height: 64rem) {
+  html:has(.landing) {
+    font-size: clamp(100%, min(0.8333vw, 1.4815vh), 125%);
   }
 }

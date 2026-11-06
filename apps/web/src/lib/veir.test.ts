@@ -3,47 +3,59 @@ import { describe, expect, it } from 'vitest';
 
 import {
   conversationVeir,
-  faceMonogram,
   monogram,
+  personaName,
   veirDisplay,
   veirExplanation,
+  veirFacts,
   veirFromIdentity,
   veirName,
   veirWelcome,
 } from './veir';
 
-const PERSONA: PersonaSummary = {
+/** Thomas: an EIR persona presented as an AI mentor under its own name (ADR-0021). */
+const THOMAS: PersonaSummary = {
   personaId: '00000000-0000-4000-8000-000000000001',
   releaseId: '00000000-0000-4000-8000-000000000002',
-  name: "Corin's vEIR",
+  name: 'Thomas',
   kind: 'eir_persona',
   version: 1,
   status: 'active',
-  disclosure: 'Corin’s vEIR is an AI.',
+  disclosure: 'Thomas is an AI mentor.',
   allowedModes: ['diagnose'],
+  presentation: 'mentor',
 };
 
-describe('veirName (the twin in text)', () => {
-  it('is "<first name> · vEIR" with the EIR’s first-person consent', () => {
-    expect(veirName("Corin's vEIR", 'eir_persona', 'Corin Halvorsen', true)).toBe('Corin · vEIR');
-    // The first name of the persona's own consented EIR, else its own possessive name.
-    expect(veirName('Deep-tech pathway mentor', 'eir_persona', 'Ruth Abernathy-Song', true)).toBe(
-      'Ruth · vEIR',
-    );
-    expect(veirName('Ruth’s vEIR', 'eir_persona', null, true)).toBe('Ruth · vEIR');
+/** Corin's vEIR: an EIR's digital twin (ADR-0020). */
+const CORIN: PersonaSummary = {
+  ...THOMAS,
+  personaId: '00000000-0000-4000-8000-000000000004',
+  name: "Corin's vEIR",
+  presentation: 'twin',
+  eirFirstName: 'Corin',
+};
+
+describe('veirName (the name founders see)', () => {
+  it('shows a mentor by its own name alone, whatever its EIR or consent', () => {
+    expect(veirName('Thomas', 'eir_persona', 'mentor')).toBe('Thomas');
+    expect(veirName('  Thomas   Reid ', 'eir_persona', 'mentor', 'Corin', true)).toBe('Thomas Reid');
   });
 
-  it('keeps "<first name>’s vEIR" without that consent', () => {
-    expect(veirName("Corin's vEIR", 'eir_persona', 'Corin Halvorsen')).toBe("Corin's vEIR");
-    expect(veirName('  Ruth’s   vEIR ', 'eir_persona')).toBe('Ruth’s vEIR');
-    // An EIR persona never reads as the EIR: any other name becomes "<first name>’s vEIR".
-    expect(veirName('Corin Halvorsen', 'eir_persona')).toBe('Corin’s vEIR');
-    expect(veirName('Corin', 'eir_persona')).toBe('Corin’s vEIR');
-    expect(veirName('Deep-tech pathway mentor', 'eir_persona', 'Ruth Abernathy-Song')).toBe('Ruth’s vEIR');
+  it('keeps a twin’s AI marker, so it is never called by the person’s bare first name', () => {
+    expect(veirName("Corin's vEIR", 'eir_persona', 'twin', 'Corin', true)).toBe('Corin · vEIR');
+    expect(veirName("Corin's vEIR", 'eir_persona', 'twin', 'Corin', false)).toBe("Corin's vEIR");
+    expect(veirName('Corin', 'eir_persona', 'twin', 'Corin Halvorsen')).toBe('Corin’s vEIR');
+    expect(veirName('Corin', 'eir_persona', 'twin', null, true)).toBe('Corin’s vEIR');
+    // An older API without the presentation is a twin: the safe side.
+    expect(veirName('Corin', 'eir_persona', undefined, 'Corin')).toBe('Corin’s vEIR');
   });
 
-  it('keeps a neutral guide’s own name, consent or not', () => {
-    expect(veirName('Foundry Guide', 'neutral_guide', 'Corin Halvorsen', true)).toBe('Foundry Guide');
+  it('keeps a guide’s own name', () => {
+    expect(veirName('Foundry Guide', 'neutral_guide', 'twin', null, true)).toBe('Foundry Guide');
+  });
+
+  it('shows stored names as stored (the studio)', () => {
+    expect(personaName("  Corin's   vEIR ")).toBe("Corin's vEIR");
   });
 });
 
@@ -53,40 +65,35 @@ describe('veirDisplay', () => {
     expect(veirDisplay(undefined)).toBeNull();
   });
 
-  it('shows the twin like a call tile: "Corin" beside a "vEIR" badge, with the consent', () => {
-    const veir = veirDisplay({
-      persona: { ...PERSONA, eirFirstName: 'Corin', firstPerson: true, eirSeesWork: true },
-    });
-    expect(veir).toMatchObject({
-      name: 'Corin · vEIR',
-      shortName: 'Corin',
-      badge: 'vEIR',
-      eirFirstName: 'Corin',
-      firstPerson: true,
-      eirSeesWork: true,
-      portraitUrl: null,
-    });
-  });
-
-  it('stays "Corin’s vEIR" with an "AI" badge without it, and for an older API', () => {
+  it('shows a mentor by its name alone, whatever its EIR or consent', () => {
     for (const persona of [
-      { ...PERSONA, eirFirstName: 'Corin', firstPerson: false },
-      PERSONA, // no presence fields at all
+      { ...THOMAS, eirFirstName: 'Corin', firstPerson: true, eirSeesWork: true },
+      { ...THOMAS, eirFirstName: 'Corin', firstPerson: false },
+      THOMAS,
     ]) {
-      expect(veirDisplay({ persona })).toMatchObject({
-        name: "Corin's vEIR",
-        shortName: "Corin's vEIR",
-        badge: 'AI',
-        firstPerson: false,
-        eirSeesWork: false,
-      });
+      const veir = veirDisplay({ persona });
+      expect(veir).toMatchObject({ name: 'Thomas', shortName: 'Thomas', presentation: 'mentor' });
+      expect(veir?.name).not.toMatch(/vEIR/);
     }
   });
 
-  it('never names a vEIR after the assignment’s reviewing EIR', () => {
-    // A persona built from Ruth but reviewed by Corin: the reviewing EIR's name must not appear.
+  it('shows a twin with its marker, by the first-person consent', () => {
+    expect(veirDisplay({ persona: { ...CORIN, firstPerson: true } })).toMatchObject({
+      name: 'Corin · vEIR',
+      shortName: 'Corin · vEIR',
+      presentation: 'twin',
+      eirFirstName: 'Corin',
+      firstPerson: true,
+    });
+    expect(veirDisplay({ persona: CORIN })?.name).toBe("Corin's vEIR");
+    // No presentation at all (an older API): a twin.
+    const { presentation: _omitted, ...older } = CORIN;
+    expect(veirDisplay({ persona: older })?.presentation).toBe('twin');
+  });
+
+  it('never names a twin after the assignment’s reviewing EIR', () => {
     const veir = veirDisplay({
-      persona: { ...PERSONA, name: 'Ruth’s vEIR', eirFirstName: 'Ruth', firstPerson: true },
+      persona: { ...CORIN, name: "Ruth's vEIR", eirFirstName: 'Ruth', firstPerson: true },
       assignedEir: {
         id: '00000000-0000-4000-8000-000000000003',
         displayName: 'Corin Halvorsen',
@@ -94,27 +101,22 @@ describe('veirDisplay', () => {
       },
     } as Parameters<typeof veirDisplay>[0]);
     expect(veir?.name).toBe('Ruth · vEIR');
-    expect(veir?.name).not.toContain('Corin');
+    expect(JSON.stringify(veir)).not.toContain('Corin');
   });
 
-  it('shows a guide by its own name with an "AI" badge', () => {
+  it('shows a guide by its own name', () => {
     const veir = veirDisplay({
-      persona: { ...PERSONA, name: 'Foundry Guide', kind: 'neutral_guide', firstPerson: true },
+      persona: { ...THOMAS, name: 'Foundry Guide', kind: 'neutral_guide', firstPerson: true },
     });
-    expect(veir).toMatchObject({
-      name: 'Foundry Guide',
-      shortName: 'Foundry Guide',
-      badge: 'AI',
-      firstPerson: false,
-    });
+    expect(veir).toMatchObject({ name: 'Foundry Guide', eirFirstName: null, firstPerson: false });
   });
 });
 
 describe('veirFromIdentity (the call settings)', () => {
   const IDENTITY: VeirIdentity = {
-    personaId: PERSONA.personaId,
-    name: "Corin's vEIR",
-    shortName: 'Corin',
+    personaId: THOMAS.personaId,
+    name: 'Thomas',
+    shortName: 'Thomas',
     kind: 'eir_persona',
     eirDisplayName: 'Corin Halvorsen',
     tagline: null,
@@ -128,13 +130,14 @@ describe('veirFromIdentity (the call settings)', () => {
     },
     firstPerson: true,
     eirSeesWork: false,
+    presentation: 'mentor',
   };
 
-  it('names the vEIR by the same rule, and offers a portrait only with likeness consent', () => {
+  it('names the mentor by the same rule, and offers a portrait only with likeness consent', () => {
     expect(veirFromIdentity(IDENTITY)).toMatchObject({
-      name: 'Corin · vEIR',
-      shortName: 'Corin',
-      badge: 'vEIR',
+      name: 'Thomas',
+      shortName: 'Thomas',
+      eirFirstName: 'Corin',
       eirSeesWork: false,
       portraitUrl: null,
     });
@@ -142,107 +145,162 @@ describe('veirFromIdentity (the call settings)', () => {
       veirFromIdentity({ ...IDENTITY, embodiment: { ...IDENTITY.embodiment, likenessConsented: true } })
         .portraitUrl,
     ).toBe('https://example.test/p.png');
-    expect(veirFromIdentity({ ...IDENTITY, firstPerson: false }).name).toBe("Corin's vEIR");
+  });
+
+  it('names a twin with its marker', () => {
+    expect(veirFromIdentity({ ...IDENTITY, name: "Corin's vEIR", presentation: 'twin' }).name).toBe(
+      'Corin · vEIR',
+    );
   });
 });
 
-describe('what a vEIR is (the badge, the welcome)', () => {
-  const corin = {
+describe('what the mentor is (the About dialog, the welcome)', () => {
+  const thomas = {
     kind: 'eir_persona' as const,
-    name: 'Corin · vEIR',
+    presentation: 'mentor' as const,
+    name: 'Thomas',
     eirFirstName: 'Corin',
     eirSeesWork: true,
   };
+  const corin = { ...thomas, presentation: 'twin' as const, name: 'Corin · vEIR' };
 
-  it('explains the twin honestly in one short paragraph', () => {
-    expect(veirExplanation(corin)).toBe(
-      'Corin’s digital twin: an AI built with Corin’s consent from how Corin coaches. Corin sees what you work on here. It isn’t Corin in person, and Corin doesn’t write or approve its replies.',
+  it('a mentor: an AI mentor whose approach the program wrote and approved, never an EIR’s (ADR-0021)', () => {
+    expect(veirExplanation(thomas)).toBe(
+      'Thomas is an AI mentor, not a person. The program wrote and approved the coaching approach Thomas follows; no person writes or approves individual replies.',
     );
-    expect(veirExplanation({ ...corin, eirSeesWork: false })).not.toContain('sees what you work on');
+    const all = [
+      veirExplanation(thomas),
+      ...veirFacts(thomas).map((f) => f.text),
+      ...veirWelcome(thomas).lines,
+    ];
+    expect(all.join(' ')).not.toMatch(/consent|their review|doctrine and style|Corin’s/);
+  });
+
+  it('a twin: built with its EIR’s consent from their approved doctrine and style, released after review', () => {
+    expect(veirExplanation(corin)).toBe(
+      'Corin · vEIR is an AI mentor, built with Corin’s consent from their approved doctrine and style, and released after their review.',
+    );
+    // A twin named exactly as its EIR does not read as "Corin, built with Corin's consent".
+    expect(veirExplanation({ ...corin, name: 'Corin' })).not.toContain('Corin’s consent');
+  });
+
+  it('a guide: the program’s', () => {
     expect(
       veirExplanation({
         kind: 'neutral_guide',
+        presentation: 'twin',
         name: 'Foundry Guide',
         eirFirstName: null,
         eirSeesWork: false,
       }),
-    ).toBe(
-      'Foundry Guide is the program’s AI coach. It isn’t a person, and no one in the program writes or approves its replies.',
-    );
+    ).toBe('Foundry Guide is the program’s AI mentor, built on its coaching doctrine.');
   });
 
-  it('welcomes in two short sentences, naming who sees the work only when that is true', () => {
-    expect(veirWelcome(corin)).toEqual({
-      title: 'Meet Corin’s vEIR',
+  it('never claims each answer is approved by a person, or that it never speaks for the EIR', () => {
+    for (const veir of [thomas, corin]) {
+      const all = [veirExplanation(veir), ...veirFacts(veir).map((f) => f.text)].join(' ');
+      expect(all).not.toMatch(/wrote or approved|approves? (its|each) (replies|answers)|never speaks for/i);
+    }
+  });
+
+  it('lists the facts: AI mentor, AI face and voice, memory and Private, people, limits', () => {
+    const facts = veirFacts(thomas);
+    expect(facts.map((f) => f.id)).toEqual(['what', 'face', 'memory', 'people', 'limits']);
+    const text = facts.map((f) => f.text).join(' ');
+    expect(text).toContain('AI avatar');
+    expect(text).toContain('AI-generated');
+    expect(text).toContain('Private');
+    expect(text).toContain('A person from the program');
+    expect(text).toMatch(/can’t pass messages.*schedule.*legal, medical or financial advice/);
+    // Who sees the work: the person, by their role beside a mentor's name, by their name beside a twin's.
+    expect(facts[0]?.text).toContain('Corin, your entrepreneur-in-residence, sees what you work on here.');
+    expect(veirFacts(corin)[0]?.text).toContain('Corin sees what you work on here.');
+    expect(veirFacts({ ...thomas, eirSeesWork: false })[0]?.text).not.toContain('sees what you work on');
+  });
+
+  it('welcomes by name', () => {
+    expect(veirWelcome(thomas)).toEqual({
+      title: 'Meet Thomas',
       lines: [
-        'Corin’s digital twin: an AI built with Corin’s consent from how Corin coaches.',
-        'Corin sees what you work on here.',
+        veirExplanation(thomas),
+        'Corin, your entrepreneur-in-residence, sees what you work on here, and a person from the program is there when you need one.',
       ],
     });
-    expect(veirWelcome({ ...corin, eirSeesWork: false }).lines[1]).toBe('It isn’t Corin in person.');
+    expect(veirWelcome(corin).title).toBe('Meet Corin · vEIR');
+    expect(veirWelcome({ ...thomas, eirSeesWork: false }).lines[1]).toBe(
+      'A person from the program is there whenever you need one.',
+    );
   });
 });
 
-describe('faceMonogram', () => {
-  it('shows the EIR’s initial on a vEIR’s face and a guide’s initials', () => {
-    expect(faceMonogram('Corin’s vEIR')).toBe('C');
-    expect(faceMonogram("Ruth's vEIR")).toBe('R');
-    expect(faceMonogram('Corin · vEIR')).toBe('C');
-    expect(faceMonogram('Foundry Guide')).toBe('FG');
-  });
-});
-
-describe('monogram', () => {
+describe('monogram (people and ventures only)', () => {
   it('uses one letter per word, up to the limit', () => {
     expect(monogram('Corin')).toBe('C');
     expect(monogram('Foundry Guide')).toBe('FG');
     expect(monogram('Maya Okafor-Lindqvist')).toBe('MO');
     expect(monogram('Corin Halvorsen', 1)).toBe('C');
   });
-
-  it('skips leading punctuation and handles empty names', () => {
-    expect(monogram('  (ruth)  abernathy ')).toBe('RA');
-    expect(monogram('   ')).toBe('?');
-  });
 });
 
 describe('conversationVeir (who a conversation is with)', () => {
-  const CORIN = veirDisplay({
-    persona: { ...PERSONA, personaId: 'p-corin', eirFirstName: 'Corin', firstPerson: true },
-  });
-  const GUIDE_ID = 'p-guide';
-
-  it('names a conversation with the venture’s current vEIR after it', () => {
-    expect(
-      conversationVeir(
-        { personaId: 'p-corin', personaName: "Corin's vEIR", personaKind: 'eir_persona' },
-        CORIN,
-      ),
-    ).toMatchObject({ name: 'Corin · vEIR', shortName: 'Corin', badge: 'vEIR', kind: 'eir_persona' });
+  const current = veirDisplay({
+    persona: { ...THOMAS, personaId: 'p-thomas', eirFirstName: 'Corin', firstPerson: true },
   });
 
-  it('keeps an older conversation’s guide as the guide, never "Foundry’s vEIR"', () => {
+  it('names a conversation with the venture’s current mentor after it', () => {
     expect(
       conversationVeir(
-        { personaId: GUIDE_ID, personaName: 'Foundry Guide', personaKind: 'neutral_guide' },
-        CORIN,
+        {
+          personaId: 'p-thomas',
+          personaName: 'Thomas',
+          personaKind: 'eir_persona',
+          personaPresentation: 'mentor',
+        },
+        current,
       ),
-    ).toMatchObject({ name: 'Foundry Guide', kind: 'neutral_guide', badge: 'AI' });
-    // An older API without the kind: a name without "vEIR" is a guide's.
-    expect(
-      conversationVeir({ personaId: GUIDE_ID, personaName: 'Foundry Guide', personaKind: null }, CORIN),
-    ).toMatchObject({ name: 'Foundry Guide', kind: 'neutral_guide' });
+    ).toMatchObject({ name: 'Thomas', kind: 'eir_persona' });
   });
 
-  it('names an older conversation with another EIR’s vEIR after that vEIR, without the tile name', () => {
+  it('names an older conversation’s persona by its own presentation', () => {
     expect(
       conversationVeir(
-        { personaId: 'p-ruth', personaName: "Ruth's vEIR", personaKind: 'eir_persona' },
-        CORIN,
+        {
+          personaId: 'p-old',
+          personaName: "Ruth's vEIR",
+          personaKind: 'eir_persona',
+          personaPresentation: 'twin',
+        },
+        current,
       ),
-    ).toMatchObject({ name: "Ruth's vEIR", kind: 'eir_persona', badge: 'AI', firstPerson: false });
-    expect(
-      conversationVeir({ personaId: 'p-ruth', personaName: "Ruth's vEIR", personaKind: null }, null),
     ).toMatchObject({ name: "Ruth's vEIR", kind: 'eir_persona' });
+    expect(
+      conversationVeir(
+        { personaId: 'p-old', personaName: 'Ada', personaKind: 'eir_persona', personaPresentation: 'mentor' },
+        current,
+      ),
+    ).toMatchObject({ name: 'Ada' });
+    // An older API without the kind or presentation: a name ending in "vEIR" is an EIR persona's, a twin.
+    const older = { personaId: 'p-old', personaName: "Ruth's vEIR" } as Parameters<
+      typeof conversationVeir
+    >[0];
+    expect(conversationVeir(older, current)).toMatchObject({
+      name: "Ruth's vEIR",
+      kind: 'eir_persona',
+      presentation: 'twin',
+    });
+  });
+
+  it('keeps an older conversation’s guide as the guide', () => {
+    expect(
+      conversationVeir(
+        {
+          personaId: 'p-guide',
+          personaName: 'Foundry Guide',
+          personaKind: 'neutral_guide',
+          personaPresentation: 'twin',
+        },
+        current,
+      ),
+    ).toMatchObject({ name: 'Foundry Guide', kind: 'neutral_guide' });
   });
 });

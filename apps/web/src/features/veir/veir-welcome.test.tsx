@@ -33,10 +33,10 @@ const ME: Me = {
 
 const CORIN: VeirDisplay = {
   personaId: '7c8d9e0f-1a2b-4c3d-8e4f-6a7b8c9d0e08',
-  name: 'Corin · vEIR',
-  shortName: 'Corin',
-  badge: 'vEIR',
+  name: 'Thomas',
+  shortName: 'Thomas',
   kind: 'eir_persona',
+  presentation: 'mentor',
   eirFirstName: 'Corin',
   firstPerson: true,
   eirSeesWork: true,
@@ -49,16 +49,17 @@ afterEach(() => {
 });
 
 describe('VeirWelcomeDialog', () => {
-  it('says what a vEIR is in two short sentences, once, and any way of closing it counts as read', async () => {
+  it('says what the mentor is in two short sentences, once, and any way of closing it counts as read', async () => {
     const onAcknowledge = vi.fn();
     renderWithProviders(<VeirWelcomeDialog veir={CORIN} open onAcknowledge={onAcknowledge} />);
-    const dialog = await screen.findByRole('dialog', { name: 'Meet Corin’s vEIR' });
+    const dialog = await screen.findByRole('dialog', { name: 'Meet Thomas' });
+    // A mentor (ADR-0021): the program wrote and approved his approach; no EIR is said to have written or reviewed it.
     expect(dialog).toHaveAccessibleDescription(
-      'Corin’s digital twin: an AI built with Corin’s consent from how Corin coaches. Corin sees what you work on here.',
+      'Thomas is an AI mentor, not a person. The program wrote and approved the coaching approach Thomas follows; no person writes or approves individual replies. Corin, your entrepreneur-in-residence, sees what you work on here, and a person from the program is there when you need one.',
     );
-    // Calm: one button, no close cross, no legal sentence.
+    // Calm: one button, no close cross.
     expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Continue']);
-    expect(dialog).not.toHaveTextContent(/not a person|No human wrote/);
+    expect(dialog).not.toHaveTextContent(/consent|their review|No human wrote|vEIR/);
     await userEvent.setup().click(screen.getByRole('button', { name: 'Continue' }));
     expect(onAcknowledge).toHaveBeenCalledTimes(1);
   });

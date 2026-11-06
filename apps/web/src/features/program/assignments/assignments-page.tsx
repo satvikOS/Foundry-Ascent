@@ -15,7 +15,7 @@ import { usePersonas } from '@/lib/api/hooks/eir';
 import { type ProgramVenture, useProgramVentures } from '@/lib/api/hooks/program';
 import { useEirProfiles } from '@/lib/api/hooks/veir-pools';
 import { formatDate } from '@/lib/format';
-import { veirName } from '@/lib/veir';
+import { personaName } from '@/lib/veir';
 
 import { AssignDialog } from './assign-dialog';
 import { countByPersona } from './assignment';
@@ -148,11 +148,7 @@ function AssignmentsTable({
                 <TableCell className="hidden sm:table-cell">
                   {persona ? (
                     <span className="flex items-center gap-2">
-                      <PersonaAvatar
-                        name={veirName(persona.name, persona.kind, persona.eirProfile?.displayName)}
-                        size="xs"
-                        decorative
-                      />
+                      <PersonaAvatar name={personaName(persona.name)} size="xs" decorative />
                       <Link
                         to="/$tenant/app/eir/personas/$personaId"
                         params={{ tenant, personaId: persona.id }}

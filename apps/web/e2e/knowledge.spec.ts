@@ -12,7 +12,7 @@ import {
   TENANT,
   useTheme,
   test,
-  expectNoBareEirName,
+  expectPlainMentorName,
 } from './support/fixtures';
 
 /*
@@ -91,9 +91,7 @@ test.describe('what the vEIR knows', () => {
     try {
       await page.getByRole('tab', { name: 'Notebook' }).click();
       await expect(page).toHaveURL(/view=notebook/);
-      await expect(
-        page.getByRole('heading', { level: 2, name: /^What Corin(?:['’]s| ·) vEIR knows$/ }),
-      ).toBeVisible();
+      await expect(page.getByRole('heading', { level: 2, name: /^What Thomas knows$/ })).toBeVisible();
       await expect(page.getByRole('button', { name: 'About these notes' })).toHaveAccessibleDescription(
         /never treated as facts/,
       );
@@ -239,14 +237,14 @@ test.describe('memory', () => {
         .getByRole('list', { name: 'Memory' })
         .getByRole('button', { name: new RegExp(`^Seats counted at nine ${token}`) })
         .click();
-      const panel = page.getByRole('complementary', { name: 'Memory inspector' });
+      const panel = page.getByRole('complementary', { name: 'Memory' });
       await expect(panel.getByRole('heading', { name: `Seats counted at nine ${token}` })).toBeVisible();
       await expect(panel).not.toContainText('no longer in memory');
       await expect(panel.getByRole('region', { name: 'History' })).toBeVisible();
 
       // A link to an item opens the panel even after the person closed it; the new version links to
       // the one it replaced.
-      await panel.getByRole('button', { name: 'Close inspector' }).click();
+      await panel.getByRole('button', { name: 'Hide memory panel' }).click();
       await expect(panel).toHaveCount(0);
       await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?m=${replacement.id}`);
       await expect(panel.getByRole('heading', { name: `Seats counted hourly ${token}` })).toBeVisible();
@@ -281,7 +279,7 @@ test.describe('memory', () => {
       expect(disputed.status(), 'PATCH /memory/:id dispute').toBe(200);
 
       await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?m=${item.id}`);
-      const panel = page.getByRole('complementary', { name: 'Memory inspector' });
+      const panel = page.getByRole('complementary', { name: 'Memory' });
       await expect(panel.getByRole('heading', { name: `Door counter undercounts ${token}` })).toBeVisible();
       await expect(panel.getByRole('button', { name: /Approve|Reject|Dispute/ })).toHaveCount(0);
       const saved = page.waitForResponse(
@@ -342,7 +340,7 @@ test.describe('memory', () => {
     try {
       if (href.includes('m=')) await saved.getByRole('link').click();
       else await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?m=${memoryId}`);
-      const panel = page.getByRole('complementary', { name: 'Memory inspector' });
+      const panel = page.getByRole('complementary', { name: 'Memory' });
       // Its provenance link (a memory with history also lists "Learned from a conversation" in its timeline).
       await expect(panel.getByRole('link', { name: /^Learned from / })).toBeVisible();
       const corrected = page.waitForResponse(
@@ -442,17 +440,15 @@ for (const scheme of ['dark', 'light'] as const) {
     await useTheme(page, scheme);
 
     await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=notebook`);
-    await expect(
-      page.getByRole('heading', { level: 2, name: /^What Corin(?:['’]s| ·) vEIR knows$/ }),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: /^What Thomas knows$/ })).toBeVisible();
     await expectNoSeriousA11yViolations(page, `knowledge notebook (${scheme})`);
-    await expectNoBareEirName(page, 'the notebook');
+    await expectPlainMentorName(page, 'the notebook');
 
     await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge`);
     await expect(page.getByRole('list', { name: 'Memory' })).toBeVisible();
     await expect(page.getByRole('tab', { name: /^To review/ })).toHaveCount(0);
     await expectNoSeriousA11yViolations(page, `knowledge memory (${scheme})`);
-    await expectNoBareEirName(page, 'Knowledge memory');
+    await expectPlainMentorName(page, 'Knowledge memory');
     // The conversations tab is gone (the side panel and ⌘K list conversations): old links open the memory.
     await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=conversations`);
     await expect(page.getByRole('tab', { name: 'Memory' })).toHaveAttribute('aria-selected', 'true');
@@ -461,18 +457,18 @@ for (const scheme of ['dark', 'light'] as const) {
     await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=you`);
     await expect(page.getByRole('heading', { level: 2, name: 'Coaching profile' })).toBeVisible();
     await expectNoSeriousA11yViolations(page, `knowledge you (${scheme})`);
-    await expectNoBareEirName(page, 'Knowledge you');
+    await expectPlainMentorName(page, 'Knowledge you');
 
     await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=evidence`);
     await expect(page.getByRole('list', { name: 'Sources' })).toBeVisible();
     await expectNoSeriousA11yViolations(page, `knowledge evidence (${scheme})`);
     // A seeded library source's own title is about the person, so it may name them.
-    await expectNoBareEirName(page, 'Knowledge evidence', [/^Interview excerpt: how Corin frames /]);
+    await expectPlainMentorName(page, 'Knowledge evidence', [/^Interview excerpt: how Corin frames /]);
 
     await page.goto(`/${TENANT}/app/v/${ventureId}/help`);
     await expect(page.getByRole('heading', { level: 1, name: 'Human help' })).toBeVisible();
     await expectNoSeriousA11yViolations(page, `human help (${scheme})`);
-    await expectNoBareEirName(page, 'Human help');
+    await expectPlainMentorName(page, 'Human help');
 
     // Team is a section of the Venture page; old Team links land on it there.
     await page.goto(`/${TENANT}/app/v/${ventureId}/team`);
@@ -480,6 +476,6 @@ for (const scheme of ['dark', 'light'] as const) {
     await expect(page.getByRole('heading', { level: 1, name: 'Venture' })).toBeVisible();
     await expect(page.getByRole('list', { name: 'Team members' })).toBeVisible();
     await expectNoSeriousA11yViolations(page, `venture (${scheme})`);
-    await expectNoBareEirName(page, 'Venture');
+    await expectPlainMentorName(page, 'Venture');
   });
 }
