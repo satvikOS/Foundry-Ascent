@@ -250,8 +250,10 @@ export async function expectVeirBadgeInView(page: Page): Promise<void> {
   await expect(dialog).toContainText(/AI mentor/);
   await expect(dialog).toContainText('AI avatar');
   await expect(dialog).toContainText(/A person from the program/);
-  // Escape closes it once focus has moved into it (the dialog opens over the sheet on a phone).
+  // Escape closes it once focus has moved into it and it has finished opening (the dialog opens over the sheet on a
+  // phone; an Escape inside its first ~50 ms, faster than a person, sometimes reached the sheet beneath instead).
   await expect(dialog.locator(':focus')).toHaveCount(1);
+  await dialog.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   // A sheet (phones and tablets) closes again; a desktop panel stays open, as the person left it.
