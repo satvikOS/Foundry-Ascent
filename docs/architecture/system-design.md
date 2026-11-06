@@ -12,23 +12,24 @@ blueprints, the deviation is recorded as an ADR in [`adr/`](adr/) with its ratio
 **V1 = a conversation-first coaching product with voice calls** (blueprint 05 §24 "Recommended first
 build"; blueprint 03 sprints 1–3 + 6; the owner's acceptance bar of 2026-10-16):
 
-| In V1                                                                                                                                                                                                                                                            | Deferred (seams exist)                                                                                               |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Partner-separated (multi-tenant) venture workspaces, Ain as the first tenant                                                                                                                                                                                     | Avatar vendors (HeyGen LiveAvatar, Anam, Tavus): need an approved vendor and the EIR's `likeness` consent (ADR-0010) |
-| vEIR coaches built with consent from fictional EIRs (Corin's vEIR, Ruth's vEIR), plus the neutral **Foundry Guide**; modes auto, diagnose, challenge, coach, teach, rehearse, route                                                                              | A real EIR's likeness or cloned voice: needs signed consent records (ADR-0005)                                       |
-| **Knowledge pools** (ADR-0018): a common pool per persona (doctrine and style, knowledge library, published lessons) and a specific pool per venture (approved memory, documents, conversation digests, the vEIR notebook), grown by approval-gated distillation | Full-duplex realtime media (WebRTC or speech-to-speech on long-running compute)                                      |
-| Typed, source-linked venture memory with founder approval, correction, supersession, pin, delete                                                                                                                                                                 | SSO (UR / Cognito): the identity provider interface exists                                                           |
-| Evidence pack + citations for every substantive answer; fact / inference / hypothesis / recommendation labels                                                                                                                                                    | Offline kit, async review queue                                                                                      |
-| Streamed, validated replies (`turn.delta`) and the session contract: diagnosis, evidence, challenge, next actions, escalation                                                                                                                                    | Localization                                                                                                         |
-| **Voice calls** (ADR-0010): browser-direct Amazon Transcribe, validated and signed speech units, Amazon Polly, a built-in presence avatar                                                                                                                        | Real venture data (needs University approval, ADR-0006)                                                              |
-| Escalation packets (P0–P3) with founder sharing consent, EIR/program inbox                                                                                                                                                                                       |                                                                                                                      |
-| Document upload → ingestion → hybrid (vector + full-text) retrieval                                                                                                                                                                                              |                                                                                                                      |
-| EIR studio (personas, consent, knowledge library, lessons, releases, calibration reviews), program (portfolio with k-anonymous aggregates, vEIR assignments), admin (access codes, kill switches, daily AI spend caps, audit log, usage)                         |                                                                                                                      |
-| Synthetic seed data only (ADR-006)                                                                                                                                                                                                                               |                                                                                                                      |
+| In V1                                                                                                                                                                                                                                                      | Deferred (seams exist)                                                                                        |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Partner-separated (multi-tenant) venture workspaces, Ain as the first tenant                                                                                                                                                                               | A vendor face for every caller (today a HeyGen LITE stock face for admins and face access); an EIR's own face |
+| vEIR coaches: in production **Thomas**, an AI mentor persona with an owner-authored doctrine (ADR-0021); twins built with consent from fictional EIRs (Ruth's vEIR); the **Foundry Guide**; modes auto, diagnose, challenge, coach, teach, rehearse, route | A real EIR's likeness or cloned voice: needs signed consent records (ADR-0005)                                |
+| **Knowledge pools** (ADR-0018): a common pool per persona (doctrine and style, knowledge library, published lessons, a cited reference library) and a specific pool per venture (memory, documents, digests, the vEIR notebook), grown by distillation     | Full-duplex realtime media (WebRTC or speech-to-speech on long-running compute)                               |
+| Typed, source-linked venture memory the vEIR keeps automatically (no approval step; a Private conversation keeps nothing), with correction, supersession, pin, delete, export (ADR-0003 amendments, migration 0026)                                        | SSO (UR / Cognito): the identity provider interface exists                                                    |
+| Evidence pack + citations for every substantive answer; fact / inference / hypothesis / recommendation labels                                                                                                                                              | Offline kit, async review queue                                                                               |
+| Streamed, validated replies (`turn.delta`) and the session contract: diagnosis, evidence, challenge, next actions, escalation                                                                                                                              | Localization                                                                                                  |
+| **Voice calls** (ADR-0010): browser-direct Amazon Transcribe, validated and signed speech units, the ElevenLabs stock voice (Polly fallback), a built-in presence, a HeyGen LITE stock face for admins and face access                                     | Real venture data (needs University approval, ADR-0006)                                                       |
+| Escalation packets (P0–P3) with founder sharing consent, EIR/program inbox                                                                                                                                                                                 |                                                                                                               |
+| Document upload → ingestion → hybrid (vector + full-text) retrieval                                                                                                                                                                                        |                                                                                                               |
+| EIR studio (personas, consent, knowledge library, lessons, releases, calibration reviews), program (portfolio with k-anonymous aggregates, vEIR assignments), admin (access codes, kill switches, daily AI spend caps, audit log, usage)                   |                                                                                                               |
+| Synthetic seed data only (ADR-006)                                                                                                                                                                                                                         |                                                                                                               |
 
-Non-negotiables carried from the blueprints: amplify never impersonate (persistent synthetic
-disclosure), venture-private by default, human authority (suspend without engineering), evidence before
-eloquence, memory visible and correctable, escalation is a feature.
+Non-negotiables carried from the blueprints: amplify never impersonate (AI disclosure before the first
+conversation and before every call, ADR-0020 and ADR-0021), venture-private by default, human authority
+(suspend without engineering), evidence before eloquence, memory visible and correctable, escalation is a
+feature.
 
 ---
 
@@ -52,7 +53,10 @@ CloudFront ──/*──► S3 site bucket (OAC)              CDK → CloudForm
                      │                   └─► amazon.titan-embed-text-v2:0   (embeddings, 1024-d)
                      ├╌╌ Bedrock Mantle  ╌╌► openai.gpt-6-luna  (gated by AWS for this account;
                      │                       disabled: models.luna.enabled = false, see §7)
-                     ├── Amazon Polly ──► call speech (neural voices, validated text only)
+                     ├── ElevenLabs ──► call speech, stock voice (validated text only)
+                     ├── Amazon Polly ──► call speech fallback and crisis lines (neural voices)
+                     ├── HeyGen LiveAvatar ──► LITE stock face (session token; the page sends it
+                     │                         only the speech units the server admitted)
                      ├── S3 documents bucket (presigned PUT, venture-scoped keys)
                      └── SQS jobs queue ──► worker Lambda (ingestion, embeddings, distillation,
                                             daily maintenance) ──► DLQ
@@ -91,7 +95,7 @@ packages/
   core/           Domain services: authz, sessions/orchestrator, memory, retrieval, escalation, usage, audit
 infra/
   cdk/            AWS CDK v2 app (TypeScript)
-  iam/            Stage-0 policies and permissions boundary
+  iam/            Permissions boundary and the IAM bootstrap path (operator policy and scripts)
 evals/            Python 3.12: scenario benchmark, red-team suite, report
 ops/aws/          Python ops tooling (inventory, verify access, cleanup, policy upsert)
 docs/             Architecture, ADRs, runbooks, blueprints
@@ -161,7 +165,7 @@ docs/             Architecture, ADRs, runbooks, blueprints
 
 ### 4.3 Authorization (ADR-004: service **and** database)
 
-1. **Service layer** (`packages/core/authz`): every request resolves `RequestContext {principalId,
+1. **Service layer** (`packages/core/src/authz`): every request resolves `RequestContext {principalId,
 tenantId, roles, requestId}` server-side; every venture-scoped operation calls
    `authz.requireVentureAccess(ctx, ventureId, action)` which re-derives membership/assignment from the
    database. Browser-supplied IDs are never trusted as authority. Decisions are audited
@@ -294,7 +298,7 @@ exactly those people). The packet is editable only before consent.
 
 ---
 
-## 7. Coaching orchestrator (`packages/core/orchestrator`)
+## 7. Coaching orchestrator (`packages/core/src/orchestrator`)
 
 One testable orchestrator with deterministic validators (ADR-002). State machine from blueprint 03 §5
 (`NEW → AUTHENTICATED → … → RESPONDING → SUMMARIZING → MEMORY_REVIEW`, any → `SUSPENDED`).
@@ -303,7 +307,7 @@ One testable orchestrator with deterministic validators (ADR-002). State machine
 
 1. **Authorize**: principal is an active member; session active; assignment + persona release active;
    global kill switch off; daily spend caps not exceeded; per-principal rate limit (20 turns / 10 min).
-2. **Pre-classify (deterministic)** with `packages/ai/risk`: high-risk categories (IP/licensing,
+2. **Pre-classify (deterministic)** with `packages/ai/src/risk`: high-risk categories (IP/licensing,
    legal/contracts, securities/valuation/investment, medical/clinical/FDA/human-subjects, safety/crisis/
    wellbeing, harassment/conflict) and prompt-injection/exfiltration heuristics. Crisis language →
    immediate human-support response (no model call) + P1 escalation draft, whatever the rate, in-flight,
@@ -326,10 +330,13 @@ critique} | null }`.
 6. **Validate (deterministic)**: unknown evidence IDs stripped; `fact` claims without evidence are
    downgraded to `inference` and flagged; grounding coverage < 0.6 with ≥ 2 facts → answer narrowed
    (explicit uncertainty banner); pre-classifier high-risk ⇒ escalation forced; identity validator blocks
-   first-person claims of being the human EIR or of personal endorsement; cross-venture validator blocks
+   first-person claims of being the human EIR or of personal endorsement (and, for a mentor persona,
+   claims of a past of his own, rule `own_experience`); cross-venture validator blocks
    names/canaries of other ventures in the tenant; output length bounds.
-7. **Persist** turn, evidence links, usage ledger, audit; memory candidates become `proposed`
-   memory objects (never auto-confirmed).
+7. **Persist** turn, evidence links, usage ledger, audit; memory candidates are kept automatically
+   (`confirmed`, origin `ai`, no approver, `auto_kept_at`; ADR-0003 amendments, migrations 0013 and 0026)
+   when they are what the founder said or explicitly took up, never the coach's own advice and never
+   something the founder made the vEIR forget; a temporary (Private) conversation keeps nothing.
 
 **Model routing (packages/ai, ADR-0014):** the gateway picks the adapter by model id: `openai.*` →
 Bedrock Mantle Chat Completions (SigV4, `response_format: json_schema` strict); anything else → Bedrock
@@ -416,13 +423,14 @@ Geist and Geist Mono (owner decision, 2026-11-05); 4-pt spacing grid; one motion
 motion; status = label + icon + shape (never colour alone); WCAG 2.2 AA; full keyboard path, visible
 focus, skip links, landmarks.
 
-**Disclosure (ADR-0020):** said once, before the first conversation — a welcome stored with the person
-("Corin's digital twin: an AI built with Corin's consent from how Corin coaches. Corin sees what you work on
-here.") — then a persistent badge beside the vEIR's name on every surface that names it ("Corin · vEIR" with
-the EIR's first-person consent, else "Corin's vEIR" with "AI"), which opens one short paragraph on what the
-vEIR is. Exports carry the persona release's full disclosure, for example: "You are talking with Corin's
-vEIR, an AI coach built from Corin Halvorsen's approved frameworks and coaching style. It is not a person,
-and no human EIR, including Corin, wrote or approved these responses."
+**Disclosure (ADR-0020), as a twin persona shows it:** said once, before the first conversation — a welcome
+stored with the person ("Corin's digital twin: an AI built with Corin's consent from how Corin coaches. Corin
+sees what you work on here.") — then a persistent badge beside the vEIR's name on every surface that names it
+("Corin · vEIR" with the EIR's first-person consent, else "Corin's vEIR" with "AI"), which opens one short
+paragraph on what the vEIR is. Exports carry the persona release's full disclosure, for example: "You are
+talking with Corin's vEIR, an AI coach built from Corin Halvorsen's approved frameworks and coaching style. It
+is not a person, and no human EIR, including Corin, wrote or approved these responses." Production's persona
+is not a twin but a mentor presented under its own name, "Thomas" (below).
 
 **A mentor under its own name (ADR-0021):** the owner presents the Ain tenant's vEIR as **Thomas** (owner-approved
 release of 2026-11-05, a stock-avatar mentor persona; `personas.presentation = 'mentor'`, migration 0028). Thomas speaks
@@ -462,7 +470,9 @@ Stacks (all `FoundryAscent-*`, termination protection on Foundation and Data, ta
    Function URL, `/api/*` uncached with `ALL_VIEWER_EXCEPT_HOST_HEADER` and a viewer-request function that
    sets `x-fa-viewer-ip` and `x-fa-viewer-host`, SPA rewrite CloudFront Function, security headers policy
    with CSP, HSTS, frame-ancestors none, `Permissions-Policy` with the microphone for this origin only),
-   the API role's Polly and Transcribe-streaming grants for calls, EventBridge Scheduler schedules (daily
+   the API role's Polly and Transcribe-streaming grants for calls and read access to the keys of the media
+   vendors the `media` config wires (`foundry-ascent/media/elevenlabs`, `foundry-ascent/media/heygen`),
+   EventBridge Scheduler schedules (daily
    maintenance; a distillation sweep shipped disabled), log retention 30 days, alarms (API
    errors/throttles, worker errors, DLQ depth, CloudFront 5xx rate, Polly characters per hour and per
    day) to the SNS topic `FoundryAscent-Alarms`.
@@ -499,6 +509,26 @@ Acceptance gates (blueprint 01 §9): 0 critical cross-venture disclosures; ≥ 9
 100 % source links; ≥ 90 % grounded material claims; ≥ 95 % high-risk escalation recall; no unsupported
 high-confidence statements; persona suspension without engineering.
 
+**Live conversation evals** (`ops/lab`, manual `ops-live-evals.yml`, [conversation
+lab](../runbooks/conversation-lab.md)). Every suite above runs on the deterministic mock model, so none of
+them measures coaching quality. The live suite plays scripted founder scenarios (30 families × 20) with a
+Llama 4 Maverick student simulator against the app's coach on Bedrock, on the persona releases production
+ships, and grades each with a judge from another model family. Its gate: ≥ 95 % behavioural pass rate,
+naturalness and usefulness ≥ 4.5 of 5, no critical isolation failure, no fabrication. Results on a 60-scenario
+sample (2 per family), as run:
+
+| Run (UTC date)           | Persona         | Judge            | Passed         | Naturalness / usefulness | Isolation / fabrication |
+| ------------------------ | --------------- | ---------------- | -------------- | ------------------------ | ----------------------- |
+| 42099643194 (2026-11-05) | Corin's vEIR v1 | Claude Haiku 4.5 | 9 / 60 (15 %)  | 2.40 / 2.56 (53 judged)  | 3 / 3 (53 judged)       |
+| 42124259353 (2026-11-05) | Corin's vEIR v1 | Claude Haiku 4.5 | 8 / 60 (13 %)  | 2.81 / 2.84              | 0 / 7                   |
+| 42143561959 (2026-11-06) | Thomas v2       | Llama 4 Maverick | 44 / 60 (73 %) | 4.44 / 4.38              | 0 / 1                   |
+
+No run has met the gate. The Thomas run used a different judge (Llama 4 Maverick, the student simulator's
+model too), a revised judge prompt and newer code than the Corin pilots, so 13 % → 73 % is not a like-for-like
+measure of the persona change alone. Its six severe outliers include one fabrication, two memory corruptions
+and two false promises; customer discovery, ambiguous language and conversation control were its weakest
+families (0, 0 and 1 of 2 passed), and its p50 / p95 coach turn latency was 5.7 s / 11.9 s.
+
 ---
 
 ## 12. Delivery
@@ -512,8 +542,7 @@ high-confidence statements; persona suspension without engineering.
   passes `--context githubOidcProviderArn=<arn>` only when a provider exists **and** Foundation does not
   manage it, so first deploys create it, re-deploys keep whichever mode they had, and CloudFormation is
   never asked to delete a provider it manages.
-- `deploy.yml` runs in the concurrency group `deploy-production`, so two deployments never overlap. The
-  stage-0 workflows are retired: each stops at its first step with an explanation.
+- `deploy.yml` runs in the concurrency group `deploy-production`, so two deployments never overlap.
 - Post-deploy smoke test (`scripts/smoke.mjs`): security headers (including the voice-call
   Permissions-Policy, `media-src` and `connect-src`) and SPA on `/`, an immutable asset,
   `/api/v1/health` reporting the deployed commit, a signed `POST /api/v1/auth/sign-in` with an invalid

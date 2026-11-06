@@ -1,6 +1,10 @@
-# ADR-0003: Typed, source-linked venture memory with founder approval
+# ADR-0003: Typed, source-linked venture memory, kept automatically and corrected by people
 
-- **Status:** Accepted
+- **Status:** Accepted. Amended 2026-10-16 and 2026-11-05 (owner decisions): the vEIR keeps what it learns
+  automatically, with no approval step; people correct, pin, delete and export it. The founder-approval
+  lifecycle in the decision outcome below is the original 2026-10-05 decision, kept for history; the
+  [amendments](#amendment-2026-11-05-memory-is-automatic-owner-decision-of-2026-10-16-reconfirmed) are what is
+  built. (The file name keeps its original slug so links hold.)
 - **Date:** 2026-10-05
 - **Deciders:** Platform owner
 - **Blueprint basis:** 03 §6 "Knowledge and memory architecture", §26 ADR-003; 05 §9 "The
