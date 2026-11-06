@@ -13,9 +13,11 @@
  * - {@link withoutExampleFigures} leaves out an aside that only offers a made-up figure as an example ("(say, $10 a
  *   month)", "— e.g. 40 percent —", "(even $5–$10)"). The sentence around it stands; nothing else of the reply is touched.
  * - {@link withoutInventedFigures} (coaching v3: pilot v3 still stated 30 made-up figures) says a figure nobody gave by
- *   what it is, where the sentence reads as well without the number: "a $10 gift card" → "a gift card", "a 10 percent
- *   discount" → "a discount", "pay $2/month for it" → "pay a monthly price for it", "at $30 per unit" → "at a set price
- *   per unit". Any other made-up figure stays as written (and counted): the sentence would not read without it.
+ *   what it is, where a price is offered or asked and the sentence reads as well without the number: "offer a $10 gift
+ *   card" → "offer a gift card", "add a 10 percent discount" → "add a discount", "would you pay $2/month for it" →
+ *   "would you pay a monthly price for it", "sell it at $30 per unit" → "sell it at a set price per unit". Any other
+ *   made-up figure (an estimate, a fact about the market) stays as written (and counted): the sentence would not
+ *   read without it.
  */
 
 /** A money or percentage figure ("$1,200", "$1.5k", "40%", "15 percent", "$2/month"). */
@@ -157,6 +159,30 @@ const PRICE_PER = new RegExp(
 
 const PERIOD: Readonly<Record<string, string>> = { month: 'monthly', week: 'weekly', year: 'yearly' };
 
+/** Where a verb of offering may stand: a clause's start, after "you", "we", a modal, "try", "then"… (never "they"). */
+const OFFER_LEAD = String.raw`(?:^[\s*_"“]*|[:;(—–]\s*|,\s+|\b(?:you|we|i|to|could|would|should|might|can|will|then|and|or|just|first|maybe|perhaps|try|consider|start by)\s+)`;
+
+/**
+ * The clause before a figure offers or asks a price: a verb of offering, charging or selling ("Offer a small reward
+ * (a…", "Add a…", "Sell it at…", "charge…"), or paying asked of someone ("would you pay…", "willing to pay…", "ask
+ * them to pay…"). Only there is a made-up figure said by its role: a figure stated as an estimate or a fact ("Rent alone
+ * is likely $1,200 a month", "A 30% margin is healthy", "Most cafés pay $4 a box") would lose its meaning without its
+ * number, so it stays as written and is counted (review of coaching v3).
+ */
+const OFFERING = new RegExp(
+  String.raw`(?:${OFFER_LEAD}(?:offer(?:ing)?|add(?:ing)?(?! up)|charg(?:e|ing)|sell(?:ing)?|pric(?:e|ing) (?:it|them|this|that|the \w+)|quot(?:e|ing)|propos(?:e|ing)|ask(?:ing)? for)\b|\b(?:would|will|could|ask \p{L}+ to|willing to|ready to|happy to|want to)\s+(?:(?:you|they|people|customers|parents|\p{L}+s)\s+)?pay\b|\b(?:you|they|we|people)['’]d\s+pay\b)[^.!?\n]*$`,
+  'iu',
+);
+
+/** Whether the figure at `index` of `text` is offered or asked as a price ({@link OFFERING}). */
+function offeredAt(text: string, index: number): boolean {
+  const from = Math.max(0, index - 80);
+  const parts = text.slice(from, index).split(/[.!?\n]\s/u);
+  // A clause cut by the window does not start where the window does.
+  const clause = parts.length === 1 && from > 0 ? `… ${parts[0] ?? ''}` : (parts.pop() ?? '');
+  return OFFERING.test(clause);
+}
+
 /** The article for a word ("a gift card", "an evening class"). */
 function articleFor(word: string, capital: boolean): string {
   const an = /^(?:[aeio]|u(?!n[aeiou]|ni|s[aeiou]|r[aeiou]|tility)|hour|honest)/iu.test(word);
@@ -180,13 +206,16 @@ export function withoutInventedFigures(
     return false;
   };
   let removed = 0;
-  let text = answer.replace(PRICED_THING, (whole, article: string, figure: string, next: string) => {
-    if (!madeUp(figure)) return whole;
-    removed += 1;
-    return `${articleFor(next, article.startsWith('A'))} `;
-  });
-  text = text.replace(PRICE_PER, (whole, figure: string, per: string) => {
-    if (!madeUp(figure)) return whole;
+  let text = answer.replace(
+    PRICED_THING,
+    (whole, article: string, figure: string, next: string, at: number) => {
+      if (!madeUp(figure) || !offeredAt(answer, at)) return whole;
+      removed += 1;
+      return `${articleFor(next, article.startsWith('A'))} `;
+    },
+  );
+  text = text.replace(PRICE_PER, (whole, figure: string, per: string, at: number, all: string) => {
+    if (!madeUp(figure) || !offeredAt(all, at)) return whole;
     removed += 1;
     const period = PERIOD[per.toLowerCase()];
     return period === undefined ? `a set price per ${per}` : `a ${period} price`;

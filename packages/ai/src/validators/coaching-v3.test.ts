@@ -141,6 +141,37 @@ describe('stock openers the v2 list missed (pilot v3: 97)', () => {
       expect(withoutStockOpener(reply, { founderText }).text).toBe(reply);
     }
   });
+
+  it('keeps a grade of their situation, which is substance (review of coaching v3: risk, price, data, deadline)', () => {
+    for (const [founderText, reply] of [
+      [
+        'We want to put sensors in all five libraries at once.',
+        'That’s a clear risk for the pilot. Test two sensors first.',
+      ],
+      ['We plan to charge libraries $5 per seat.', 'That’s a good price for a library. Who signs off on it?'],
+      [
+        'Eight of the ten libraries used the room every day last week.',
+        'That’s a strong signal from the data. Which two did not, and why?',
+      ],
+      [
+        'We only have two weeks of cash.',
+        'That’s a sharp deadline. What is the one thing that has to happen first?',
+      ],
+      [
+        'The competitor charges $40 a month for the same thing.',
+        'That’s a useful benchmark for your pricing. Ask two libraries what they pay now.',
+      ],
+    ] as const) {
+      expect(withoutStockOpener(reply, { founderText, names: ['Maya'] }).text).toBe(reply);
+      for (const chunks of chunkings(reply)) expect(shown(run(gate({ founderText }), chunks))).toBe(reply);
+    }
+    // A grade of their move with the same adjectives still goes.
+    expect(
+      withoutStockOpener('That’s a smart simplification for the dean. Send it today.', {
+        founderText: 'I cut the ask down to one page.',
+      }).text,
+    ).toBe('Send it today.');
+  });
 });
 
 describe('the stored answer is what the gate released (the root of pilot v3’s openers and names)', () => {
@@ -324,7 +355,8 @@ describe('figures nobody gave, said by what they are (pilot v3: 30)', () => {
         'Ask: would you pay a monthly price for verified reviews?',
       ],
       ['Sell it at $30 per unit to the landlords.', 'Sell it at a set price per unit to the landlords.'],
-      ['A $12 evening class is a clear win for them.', 'An evening class is a clear win for them.'],
+      ['Ask if they’d pay $2/month for it.', 'Ask if they’d pay a monthly price for it.'],
+      ['Offer a $12 evening class as the first step.', 'Offer an evening class as the first step.'],
     ] as const) {
       expect(withoutInventedFigures(reply, known)).toEqual({ text: expected, removed: 1 });
     }
@@ -339,6 +371,13 @@ describe('figures nobody gave, said by what they are (pilot v3: 30)', () => {
       'At $3.50 a crate, 45 crates is $157.50 a week.',
       'Run the $2/month question right away.',
       'Ask if they would pay $2.',
+      // An estimate or a fact about the market says nothing without its number (review of coaching v3): it stays, and
+      // is counted.
+      'Rent alone is likely $1,200 a month.',
+      'A 30% margin is healthy for food.',
+      'Most cafés pay $4 a box for this, so you have room.',
+      'They charge $40 a month for the same thing.',
+      'That adds up to $900 a month across the three sites.',
     ]) {
       expect(withoutInventedFigures(reply, known).text).toBe(reply);
     }

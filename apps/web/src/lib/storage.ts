@@ -40,6 +40,11 @@ export const STORAGE_KEYS = {
   contextPanelOpen: 'fa.context-panel.open',
   /** Device class for costly effects ("low" swaps glass for solid surfaces): lib/perf.ts. */
   perf: 'fa.perf',
+  /**
+   * The welcome New chat put over the vEIR's last line without a greeting of its own, and a hash of that line (never
+   * its words): the next line gets another welcome (features/chat/greeting.ts).
+   */
+  newChatWelcome: 'fa.new-chat.welcome',
 } as const;
 
 /**

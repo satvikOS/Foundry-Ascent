@@ -206,10 +206,18 @@ describe('figures nobody gave', () => {
 
   it('is counted on the turn record, and asked of the prompt in plain words', () => {
     const out = validateCoachResponse(
-      response('Ask if they would pay $2. That is $140 a week now.'),
+      response(
+        'Ask if they would pay $2 a month. Rent alone is likely $1,200 a month. That is $140 a week now.',
+      ),
       opts({ knownFigures: known }),
     );
-    expect(out.results.notes).toContain('invented_figure:1');
+    // The price asked is said by its role (coaching v3); the estimate keeps its number and is counted.
+    expect(out.response.answer).toBe(
+      'Ask if they would pay a monthly price. Rent alone is likely $1,200 a month. That is $140 a week now.',
+    );
+    expect(out.results.notes).toEqual(
+      expect.arrayContaining(['invented_figure_removed:1', 'invented_figure:1']),
+    );
     expect(conversationCraftRules('text')).toContain(
       'Never a figure of your own in a price, threshold, target or example',
     );

@@ -62,6 +62,32 @@ describe('New chat’s greeting', () => {
       ].map((line) => newChatGreeting({ ...base, opener: line }).title),
     );
     expect(titles.size).toBeGreaterThan(1);
+    // Never the welcome the previous line had (review of coaching v3: chosen by the line alone, one in four came back),
+    // whatever the lines: a founder's run of new openers never sees the same heading twice in a row.
+    const lines = [
+      'Did the second library answer about the trial?',
+      'How did the facilities call go?',
+      'Where did the pricing page land with the dean?',
+      'Any word from the landlord on the sensors?',
+      'The survey went out: how many replies so far?',
+      'You were about to book the study room; did it work out?',
+      'Two quotes were due back on Friday. Did either arrive?',
+      'Last time the dean wanted numbers. Which ones did you send?',
+    ];
+    let previousWelcome = null as ReturnType<typeof newChatGreeting>['welcome'] | null;
+    let lastTitle = '';
+    for (const line of lines) {
+      const next = newChatGreeting({ ...base, opener: line, previousWelcome });
+      expect(next.title).not.toBe(lastTitle);
+      // The same line again (a reload) keeps its heading.
+      expect(newChatGreeting({ ...base, opener: line, previousWelcome: next.welcome }).title).toBe(
+        next.title,
+      );
+      lastTitle = next.title;
+      previousWelcome = next.welcome ?? null;
+    }
+    // The heading's welcome is remembered by a hash of the line, never its words.
+    expect(JSON.stringify(previousWelcome)).not.toContain('dean');
     // A line a person wrote for a founder with no conversation yet.
     expect(newChatGreeting({ ...base, opener: 'Corin asked me to check in.', returning: false })).toEqual({
       title: 'Hi, Maya',

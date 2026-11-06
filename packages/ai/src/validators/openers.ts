@@ -48,11 +48,24 @@ const VERDICT_NOUN = String.raw`(?:plan|start|step|first step|next step|question
  */
 const PRAISE_ADJ = String.raw`(?:solid|great|good|strong|smart|clear|useful|excellent|fantastic|helpful|reasonable|sensible|promising|clever|thoughtful|wise|sharp|nice|encouraging|impressive|practical|concrete|fair|valid|interesting|brilliant|neat|tidy)`;
 
-/** A short noun phrase after a grading adjective ("revision", "token price", "one-page document"): one to three words. */
-const GRADED_THING = String.raw`(?: [\p{L}\p{N}'’-]+){1,3}`;
+/**
+ * Words that name the founder's situation rather than their message or move: "That's a clear risk for the pilot",
+ * "That's a good price for a library", "That's a sharp deadline", "That's a strong signal from the data", "That's a
+ * useful benchmark for your pricing" judge where they stand, which is substance (review of coaching v3: the broad grade
+ * left these out). A grade whose words hold one of them is never a stock opener by {@link GRADED_THING} alone; the
+ * listed verdicts ({@link VERDICT_NOUN}, "That's a strong signal.") are read as before, and a
+ * signal graded alone ("a clear and measurable signal") is a grade of their measure.
+ */
+const SITUATION_WORD = String.raw`(?:risk|danger|threat|price|pricing|cost|fee|rate|rent|wage|salary|budget|deadline|runway|cash|money|revenue|margin|loss|debt|benchmark|problem|issue|gap|constraint|limit|bottleneck|obstacle|hurdle|trade-?off|data|market|competitor|competition|demand|worry|fear|concern|stress|struggle|challenge|situation|position|spot|pain)(?:s|es)?`;
+
+/** One word of a graded phrase that is not a {@link SITUATION_WORD}. */
+const GRADED_WORD = String.raw` (?!${SITUATION_WORD}(?![\p{L}\p{N}'’-]))[\p{L}\p{N}'’-]+`;
+
+/** A short noun phrase after a grading adjective ("revision", "simplification", "one-page document"): one to three words. */
+const GRADED_THING = String.raw`(?:${GRADED_WORD}){1,3}`;
 
 /** What the grade is of, as a short tail ("…with the two letters", "…for Friday", "…from the libraries"). */
-const GRADE_TAIL = String.raw`(?: (?:with|for|from|on|in|about|there|here)(?: [\p{L}\p{N}'’-]+){1,4})?`;
+const GRADE_TAIL = String.raw`(?: (?:with|for|from|on|in|about|there|here)(?:${GRADED_WORD}){1,4})?`;
 
 /**
  * A verdict on what they said ("That's a solid plan", "That sounds like a strong start", "This is a really good

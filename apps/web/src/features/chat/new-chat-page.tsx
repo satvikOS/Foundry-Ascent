@@ -15,6 +15,7 @@ import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { greeting } from '@/lib/format';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
+import { safeStorage, STORAGE_KEYS } from '@/lib/storage';
 import { BREAKPOINTS, useMediaQuery } from '@/lib/hooks/use-media-query';
 import { NEUTRAL_MENTOR_NAME, veirDisplay } from '@/lib/veir';
 
@@ -26,7 +27,7 @@ import { coachingAvailability } from '../coach/availability';
 import { AttachButton, AttachmentTray, useComposerAttachments } from './attachments';
 import { Composer, MAX_TURN_CHARS, modeToSend, type ComposerMode } from './composer';
 import { newConversationRequest, setPendingFirstMessage } from './first-message';
-import { newChatGreeting } from './greeting';
+import { newChatGreeting, type ShownWelcome } from './greeting';
 import { useStartPrivacy } from './privacy-choice';
 import { VentureContext, type PromptSuggestion } from './venture-context';
 
@@ -38,6 +39,20 @@ function firstName(displayName: string): string {
 
 /** Longest New chat waits for the vEIR's opener before greeting without one (a slow network, a cold server). */
 export const OPENER_WAIT_MS = 1_500;
+
+/** The welcome this browser showed last over a line without its own greeting (`greeting.ts`), if any. */
+function readShownWelcome(): ShownWelcome | null {
+  const raw = safeStorage.get(STORAGE_KEYS.newChatWelcome);
+  if (raw === null) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<ShownWelcome> | null;
+    return typeof value?.lineKey === 'string' && typeof value.welcome === 'string'
+      ? { lineKey: value.lineKey, welcome: value.welcome }
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 /** What New chat greets a remembered conversation with, decided once per visit (see `NewChat`). */
 interface ShownOpener {
@@ -132,6 +147,8 @@ function NewChat() {
     };
   }, []);
   const [shown, setShown] = useState<ShownOpener | null>(null);
+  // Read once per visit: the heading never changes in front of the founder.
+  const [previousWelcome] = useState(readShownWelcome);
   if (shown === null) {
     const preview = openerQuery.data;
     if (preview !== undefined && !openerQuery.isRefetching) {
@@ -246,7 +263,13 @@ function NewChat() {
     ventureName: venture.data?.name ?? 'your venture',
     returning: shown?.returning ?? false,
     privateChat: temporary,
+    previousWelcome,
   });
+  // Remembered once shown, so the next line New chat greets with gets another welcome.
+  const shownWelcome = ready && welcome.welcome !== undefined ? JSON.stringify(welcome.welcome) : null;
+  useEffect(() => {
+    if (shownWelcome !== null) safeStorage.set(STORAGE_KEYS.newChatWelcome, shownWelcome);
+  }, [shownWelcome]);
 
   // The page appears once its greeting is known (briefly, at most OPENER_WAIT_MS): it never changes in front of
   // the founder, and nothing moves under them.

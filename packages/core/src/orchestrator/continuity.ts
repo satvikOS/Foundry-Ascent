@@ -515,37 +515,39 @@ export async function chooseOpener(
     if (
       since.withOpener === 0 &&
       !repeatsOpener(stored, latest?.opener ?? null) &&
-      !(latest !== null && (await askedAtTheEnd(tx, latest.sessionId, stored)))
+      !askedAtTheEnd(heard, stored)
     ) {
       return found(drawn(stored));
     }
     // The deterministic fallback: a line phrased around the thread it noted.
-    const around =
+    const when =
+      latest !== null && source === latest.sessionId ? relativeWhen(latest.lastActivityAt, args.now) : null;
+    // Phrased another way while a phrasing opens the way the latest conversation did (never given up for a line
+    // without the thread just because one phrasing's greeting and frame repeated).
+    const arounds =
       topic === null
-        ? null
-        : validatedOpener(
-            threadOpener(topic, {
-              seed,
-              people,
-              when:
-                latest !== null && source === latest.sessionId
-                  ? relativeWhen(latest.lastActivityAt, args.now)
-                  : null,
-            }),
-            guards,
-          );
+        ? []
+        : openerPhrasings(seed, (s) =>
+            validatedOpener(threadOpener(topic, { seed: s, people, when }), guards),
+          ).filter((t): t is string => t !== null);
+    const around = arounds.find((t) => !repeatsOpener(t, latest?.opener ?? null)) ?? null;
     const thread = topic === null ? null : threadSubject(topic, people);
-    if (around !== null && !repeatsOpener(around, latest?.opener ?? null))
+    if (around !== null)
       return found(drawn(around, thread === null ? null : { kind: 'thread', text: thread }));
   }
   if (latest !== null) {
-    const lines = continuityOpener(latest, { now: args.now, seed, people, subject: pickUp });
     const subject = latest.withThisVeir ? subjectOf(latest, people, pickUp) : null;
+    // The line about what they brought, phrased another way (another greeting and frame) while one phrasing opens the
+    // way the latest conversation did; the line without a subject only when no phrasing of it is new. A phrasing that
+    // repeated the last opener's start once gave way to the generic line, losing the subject (flaky in review).
+    const phrasings = openerPhrasings(seed, (s) =>
+      continuityOpener(latest, { now: args.now, seed: s, people, subject: pickUp }),
+    );
     const valid: ChosenOpener[] = [];
     for (const [candidate, about] of [
-      [lines.withTopic, subject],
-      [lines.generic, null],
-    ] as const) {
+      ...phrasings.map((lines) => [lines.withTopic, subject] as const),
+      ...phrasings.map((lines) => [lines.generic, null] as const),
+    ]) {
       const text = candidate === null ? null : validatedOpener(candidate, guards);
       if (text !== null)
         valid.push({ text, sourceSessionId: latest.sessionId, byPerson: false, subject: about });
@@ -561,15 +563,27 @@ export async function chooseOpener(
 interface FounderLines {
   readonly lines: readonly string[];
   readonly complete: boolean;
+  /** The vEIR's last {@link OPENER_ECHO_EXCHANGES} answers there (read by {@link askedAtTheEnd}). */
+  readonly endAnswers: readonly string[];
 }
 
-/** The founder's last {@link TAKE_UP_EXCHANGES} messages in `sessionId` (one indexed statement). */
+/**
+ * The founder's last {@link TAKE_UP_EXCHANGES} messages in `sessionId`, and the vEIR's last answers there (one indexed
+ * statement: the opener reads both from it, never a second one for the answers).
+ */
 async function founderLinesOf(tx: AppExecutor, sessionId: string): Promise<FounderLines> {
   const exchanges = await sessionsRepo.listLastExchanges(tx, {
     sessionIds: [sessionId],
     perSession: TAKE_UP_EXCHANGES,
   });
-  return { lines: exchanges.map((x) => x.founderText), complete: exchanges.length < TAKE_UP_EXCHANGES };
+  return {
+    lines: exchanges.map((x) => x.founderText),
+    complete: exchanges.length < TAKE_UP_EXCHANGES,
+    endAnswers: exchanges
+      .filter((x) => x.fromEnd <= OPENER_ECHO_EXCHANGES)
+      .map((x) => x.answer)
+      .filter((a): a is string => a !== null),
+  };
 }
 
 /**
@@ -607,17 +621,28 @@ export function repeatsOpener(candidate: string, previous: string | null): boole
   return isNearDuplicate(candidate, previous, 0.6) || (a !== '' && a === start(previous));
 }
 
+/** Phrasings of the fallback line tried before one that opens differently from the latest conversation is given up. */
+export const OPENER_PHRASINGS = 6;
+
+/**
+ * The fallback line `make` phrases for `seed`, then for {@link OPENER_PHRASINGS} - 1 seeds derived from it: another
+ * greeting and frame for the same substance, so a phrasing that opens the way the latest conversation did is said
+ * another way rather than dropped for a line without its subject.
+ */
+export function openerPhrasings<T>(seed: string, make: (seed: string) => T): T[] {
+  return Array.from({ length: OPENER_PHRASINGS }, (_, i) => make(i === 0 ? seed : `${seed}:${String(i)}`));
+}
+
 /** First words of two openers that may not be the same (a greeting and its frame: "Good to talk again. Shall we pick up"). */
 const OPENER_START_WORDS = 8;
 
-/** Whether `opener` repeats a question the vEIR asked in one of the last answers of the conversation. */
-async function askedAtTheEnd(tx: AppExecutor, sessionId: string, opener: string): Promise<boolean> {
-  const exchanges = await sessionsRepo.listLastExchanges(tx, {
-    sessionIds: [sessionId],
-    perSession: OPENER_ECHO_EXCHANGES,
-  });
-  return exchanges.some((x) => {
-    const question = x.answer === null ? null : lastQuestionOf(x.answer);
+/**
+ * Whether `opener` repeats a question the vEIR asked in one of the last answers of the conversation (`heard`, read
+ * with the founder's lines: no round trip of its own, so the stored line costs the opener nothing more).
+ */
+function askedAtTheEnd(heard: FounderLines | null, opener: string): boolean {
+  return (heard?.endAnswers ?? []).some((answer) => {
+    const question = lastQuestionOf(answer);
     return question !== null && (isNearDuplicate(opener, question, 0.6) || opener.includes(question));
   });
 }

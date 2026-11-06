@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { replayRates } from './reference-replay.js';
+import { replayRates, ventureWords } from './reference-replay.js';
 
 describe('reference replay (rates only)', () => {
   it('counts turns and runs that would get a reference, never an item twice in a conversation', () => {
@@ -42,5 +42,29 @@ describe('reference replay (rates only)', () => {
     ]);
     // Turn 2 is the first the conversation corroborates; the item is never offered again in the conversation.
     expect(rates).toMatchObject({ turns: 6, turnsWithReference: 1, contextualTurns: 1, passages: 1 });
+  });
+
+  it('counts what the venture’s own words bring too, as production does (review of coaching v3)', () => {
+    const say = (student: string) => ({ student, channel: 'text' });
+    const run = [
+      [
+        say('We lost two of the recycling pickups this week because the van broke down.'),
+        say('thanks, that helps'),
+      ],
+    ];
+    const venture = ventureWords({
+      oneLiner: 'Recycling pickups for student halls',
+      goal: 'Sign three halls',
+    });
+    expect(venture).toBe('Recycling pickups for student halls. Sign three halls');
+    // The founder's words alone: nothing earlier names it, so nothing comes unasked.
+    expect(replayRates([run])).toMatchObject({ turnsWithReference: 0, contextualTurns: 0 });
+    // The venture's own words back it, as a production turn reads them: offered once.
+    expect(replayRates([run], [venture])).toMatchObject({
+      turnsWithReference: 1,
+      contextualTurns: 1,
+      passages: 1,
+    });
+    expect(ventureWords({ oneLiner: ' ', goal: null })).toBeNull();
   });
 });

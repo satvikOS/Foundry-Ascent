@@ -10,9 +10,11 @@
  * database stands between the request and its first spoken unit (`perf/critical-path.ts`). Calls with and without a
  * FULL face (a fake vendor voicing the admitted text: each unit is admitted to it before it is sent).
  */
+import { ConversationOpenerResponse } from '@foundry/contracts';
+import { notebooksRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { sequentialOf, type SequentialSample } from './critical-path.js';
+import { sequentialOf, sequentialRoundTrips, type SequentialSample } from './critical-path.js';
 import { createLatencyRig, QUICK_PREFIX, type LatencyRig } from './rig.js';
 import { newConversation, startCall, turn } from './scenarios.js';
 import { type SimulatedLatency } from './simulation.js';
@@ -76,5 +78,94 @@ describe.each([
     expect(turns.map((t) => ({ streamOpen: t.streamOpen, firstSpeech: t.firstSpeech }))).toEqual(
       MESSAGES.map(() => ({ streamOpen, firstSpeech })),
     );
+  });
+});
+
+/**
+ * A returning founder's opener (`GET /ventures/:id/opener`: New chat waits for it, and creating a conversation and
+ * starting a call choose it the same way), with the line the distillation wrote ahead current: the round trips it
+ * waits for one after another, pinned. Coaching v3 says the model's own line first; reading whether it only repeats the
+ * question the last conversation ended on comes from the statement that already reads the founder's last messages
+ * there, never one more round trip (review of coaching v3: it had added one).
+ */
+describe("a returning founder's opener", () => {
+  // 16 and 31 before the review of coaching v3 (the stored line's closing-question check read the answers again).
+  const OPENER_ROUND_TRIPS = 15;
+  const CREATE_ROUND_TRIPS = 30;
+  let rig: LatencyRig;
+  let sequential: number;
+  let created: number;
+  let opener: string | null;
+  let createdOpener: string | null;
+  const stored = 'The library pilot starts soon. Which number will you check first on Monday?';
+
+  beforeAll(async () => {
+    rig = await createLatencyRig(LATENCY, { traceQueries: true });
+    const cookie = await rig.signIn(rig.founderId);
+    const conversation = await newConversation(rig, cookie);
+    for (const text of MESSAGES.slice(0, 2)) {
+      await turn(rig, { cookie, sessionId: conversation.id, text });
+      await rig.drain();
+    }
+    const venture = rig.t.seed?.ventures.find((v) => v.id === rig.ventureId);
+    if (venture === undefined || rig.t.seed === null) throw new Error('the seed has no quietquad venture');
+    const key = { ventureId: rig.ventureId, personaId: venture.personaId };
+    const tenantId = rig.t.seed.tenantId;
+    // As the distillation of that conversation writes it: the model's line for the next conversation, drawn from it.
+    await rig.t.db.system(async (sx) => {
+      const current = await notebooksRepo.getNotebook(sx, key);
+      await notebooksRepo.saveNotebook(sx, {
+        tenantId,
+        ...key,
+        expectedVersion: current?.version ?? 0,
+        content: { ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK), nextOpener: stored },
+        suppressed: current?.suppressed ?? [],
+        editedBy: 'veir',
+        sourceSessionId: conversation.id,
+      });
+    });
+    const requestId = `opener-${String(process.pid)}`;
+    const sentAt = performance.now();
+    const res = await rig.request(`/ventures/${rig.ventureId}/opener`, {
+      cookie,
+      headers: { 'x-request-id': requestId },
+    });
+    const body = await res.text();
+    const answeredAt = performance.now();
+    expect(res.status).toBe(200);
+    opener = ConversationOpenerResponse.parse(JSON.parse(body)).opener;
+    sequential = sequentialRoundTrips(
+      rig.queries.filter((q) => q.requestId === requestId),
+      answeredAt,
+    );
+    expect(sentAt).toBeLessThan(answeredAt);
+    // The conversation New chat then creates opens with the same line.
+    const createId = `opener-create-${String(process.pid)}`;
+    const createRes = await rig.request(`/ventures/${rig.ventureId}/sessions`, {
+      body: {},
+      cookie,
+      headers: { 'x-request-id': createId },
+    });
+    const createBody = await createRes.text();
+    const createdAt = performance.now();
+    expect(createRes.status).toBe(201);
+    createdOpener = (JSON.parse(createBody) as { opener?: string | null }).opener ?? null;
+    created = sequentialRoundTrips(
+      rig.queries.filter((q) => q.requestId === createId),
+      createdAt,
+    );
+  }, 180_000);
+  afterAll(async () => {
+    await rig.cleanup();
+  });
+
+  it(`says the line written ahead and waits for ${String(OPENER_ROUND_TRIPS)} round trips`, () => {
+    expect(opener).toBe(stored);
+    expect(sequential).toBe(OPENER_ROUND_TRIPS);
+  });
+
+  it(`opens the conversation New chat creates with it, waiting for ${String(CREATE_ROUND_TRIPS)} round trips`, () => {
+    expect(createdOpener).toBe(stored);
+    expect(created).toBe(CREATE_ROUND_TRIPS);
   });
 });

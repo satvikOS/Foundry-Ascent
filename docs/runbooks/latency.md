@@ -398,6 +398,12 @@ is still in flight at the moment measured instead of filling the model's wait. A
 one more: its usage row is still written before its only unit (plan item 7 below, not taken). In production two of
 the 13 (the retrieval transaction's begin and context) overlap the ~155-200 ms query embedding.
 
+A returning founder's opener is pinned the same way (`perf/round-trips.db.test.ts`, coaching v3): with the line the
+distillation wrote ahead current, `GET /ventures/:id/opener` waits for 15 round trips one after another and creating
+the conversation for 30, no model call on either. Coaching v3 first read the stored line's closing-question check
+(does it only repeat the question the last conversation ended on?) with a statement of its own (16 and 31); it now
+reads the answers from the statement that already reads the founder's last messages there.
+
 What changed, in the order of the way to the first spoken unit:
 
 | Step                    | Before                                                                                                                            | After                                                                                                                                                                                                                                                                                          |
