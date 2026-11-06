@@ -86,8 +86,8 @@ interface CallContextValue {
   /** Sets the kind of the call about to start (the call screen, as it starts one). */
   readonly setKind: (kind: CallKind) => void;
   /**
-   * Switches the live call: to voice (its face, if any, is given up for the rest of the call) or to video (the
-   * face is asked for, once per call). The call screen's URL follows.
+   * Switches the live call: to voice (its face, if any, is given up) or to video (a face is asked for again, while the
+   * call has vendor sessions left). The call screen's URL follows.
    */
   readonly switchKind: (kind: CallKind) => void;
   /** Opens the call screen of the live call (or the conversation of an ended one, where its review is). */
@@ -266,8 +266,9 @@ export function CallProvider({ me, children }: { me: Me; children: ReactNode }) 
   const switchKind = useCallback(
     (next: CallKind) => {
       setKind(next);
-      // A face given up is not asked for again in this call (the vendor bills per session; the server refuses).
-      if (next === 'voice') face?.close(true, { reason: 'switched_to_voice' });
+      // To voice: the face is given up (the server ends its session) and a call still waiting for its face starts its
+      // conversation now. Back to video: the call screen asks for a new session (within the call's sessions).
+      if (next === 'voice') face?.switchedToVoice();
       const { ventureId, sessionId } = engine?.getSnapshot() ?? IDLE_CALL;
       if (route?.open !== true || !ventureId || !sessionId) return;
       void navigate({

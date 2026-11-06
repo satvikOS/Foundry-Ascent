@@ -13,7 +13,8 @@ import { CallDock, HoldToTalk } from './call-dock';
 import type { CallKind } from './call-kind';
 import { CallKindSwitch } from './call-kind-switch';
 import { CallSettings } from './call-settings';
-import { CallStage, VIDEO_PENDING_TEXT, videoPending } from './call-stage';
+import { CallStage } from './call-stage';
+import { videoPending, videoPendingText } from './video-pending';
 import { END_UNDO_MS, useEndWithUndo } from './use-end-with-undo';
 import { storeTalkMode, useAnnounceCaptions, useCaptionSize, useCaptionsPreference } from './preferences';
 import { ConversationTimeline, clockLabel } from './timeline/ConversationTimeline';
@@ -142,13 +143,15 @@ export function CallLive({
   }, [headingRef]);
 
   // A video call whose face is not shown says so in the status line (the tile says it too, and offers a voice call
-  // when the face could not start or stopped: it never turns into a voice call by itself, owner round 3). Not while
-  // ending, nor over a held-back turn (its support comes first).
+  // when video is not available: it never turns into a voice call by itself, owner round 3). Not while ending, nor
+  // over a held-back turn (its support comes first).
   const callId = live ? (snapshot.call?.id ?? null) : null;
   const videoNote =
     kind === 'video' && !ending.pending && !snapshot.blocked
-      ? videoPending(true, face, veir.provider, callId, currentFace)
+      ? videoPending(true, face, veir.provider, currentFace, callId)
       : null;
+  // A video call waiting for its face: nothing has been said yet, so there is nothing to type, caption or interrupt.
+  const awaiting = snapshot.awaitingFace || (kind === 'video' && snapshot.phase === 'starting');
   useEffect(() => {
     if (live && typedOnly) typeRef.current?.focus();
   }, [live, typedOnly]);
@@ -235,7 +238,11 @@ export function CallLive({
     if (ending.pending) undoRef.current?.focus();
   }, [ending.pending]);
 
-  const status = ending.pending ? 'Call ended' : callStatusLabel(snapshot);
+  const status = ending.pending
+    ? 'Call ended'
+    : awaiting && videoNote !== null
+      ? videoPendingText(videoNote, veir.name)
+      : callStatusLabel(snapshot);
   const speaking =
     !ending.pending &&
     live &&
@@ -311,7 +318,7 @@ export function CallLive({
           <p className="flex items-center gap-2 text-small text-muted-foreground">
             <span role="status" aria-live="polite">
               {status}
-              {videoNote ? ` · ${VIDEO_PENDING_TEXT[videoNote]}` : ''}
+              {videoNote && !awaiting ? ` · ${videoPendingText(videoNote, veir.name)}` : ''}
             </span>
             {speaking && !halfDuplexInterrupt ? (
               <>
@@ -381,7 +388,7 @@ export function CallLive({
               setReview(null);
             }}
           />
-        ) : captions || onScreenOnly ? (
+        ) : awaiting ? null : captions || onScreenOnly ? (
           <CallCaptions
             name={veir.name}
             veir={veirLine}
@@ -411,7 +418,7 @@ export function CallLive({
             }}
           />
         ) : null}
-        {typing ? (
+        {typing && !awaiting ? (
           <TypeLine
             inputRef={typeRef}
             name={veir.name}
@@ -430,7 +437,7 @@ export function CallLive({
             }
           />
         ) : null}
-        {voice && pushToTalk && live && !ending.pending ? (
+        {voice && pushToTalk && live && !ending.pending && !awaiting ? (
           <HoldToTalk
             talking={snapshot.talking}
             onChange={(pressed) => {

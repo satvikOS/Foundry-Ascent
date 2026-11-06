@@ -10,6 +10,7 @@ import {
   acknowledgeNotices,
   appWithinBudget,
   callScreen,
+  callStartup,
   errorName,
   hangUp,
   startCall,
@@ -420,7 +421,13 @@ function watchAvatarSession(page: Page): FaceSessionSeen[] {
 
 const videoTile = (page: Page) => callScreen(page).locator('[data-slot="call-tile"][data-face="video"]');
 const presenceTile = (page: Page) =>
-  callScreen(page).locator('[data-slot="call-tile"]:is([data-face="presence"], [data-face="character"])');
+  callScreen(page).locator('[data-slot="call-tile"][data-face="presence"]');
+/** A video call whose face cannot come back (the server stopped it, or no session is offered now). */
+const unavailableTile = (page: Page) =>
+  callScreen(page).locator('[data-slot="call-tile"][data-face="video-unavailable"]');
+/** A video call replacing its face with a new session (the vendor ended the last one). */
+const reconnectingTile = (page: Page) =>
+  callScreen(page).locator('[data-slot="call-tile"][data-face="video-reconnecting"]');
 
 /** Each turn: page time sent, first face speak_started / audio onset / app playback after it, and the units said. */
 interface TurnTiming {
@@ -1147,11 +1154,13 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
     let started = false;
     try {
       await acknowledgeNotices(page);
-      const call = await startCall(page);
+      const call = await startCall(page, 'video');
       started = true;
       result.input_mode = call.inputMode;
       await expect(videoTile(page)).toBeVisible({ timeout: 30_000 });
       const live = await pageNow(page);
+      // The face first, then the conversation: Start call → first frame → first word (the intro, said by the face).
+      result.startup = await callStartup(page);
       const label = videoTile(page).locator('[data-slot="call-ai-avatar-label"]');
       result.label_visible = await label.isVisible();
       result.label_text_ok = ((await label.textContent()) ?? '').trim() === 'AI avatar';
@@ -1177,8 +1186,9 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
       result.user_transcriptions = inEvents(lab, 'user.transcription').length;
       // Whether the avatar's voice and video arrive in one remote stream (WebRTC's lip sync), runbook §8.5.
       result.av_same_stream = sameStream(lab.remoteTracks);
-      // The sandbox ends the session by itself (about a minute): the call goes on with the presence, quietly. The
-      // stand-in never ends by itself: in the dry run its video track is ended instead (a dropped face).
+      // The sandbox ends the session by itself (about a minute): a new session of the same call replaces the face (the
+      // tile says "Reconnecting…" meanwhile), and the call goes on. The stand-in never ends by itself: in the dry run
+      // its video track is ended instead (a dropped face).
       if (FACE !== 'heygen') {
         await videoTile(page)
           .locator('video')
@@ -1187,16 +1197,24 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
             for (const track of stream.getVideoTracks()) track.dispatchEvent(new Event('ended'));
           });
       }
-      const fellBack = await presenceTile(page)
+      const reconnecting = await reconnectingTile(page)
         .waitFor({ state: 'visible', timeout: 120_000 })
         .then(() => true)
         .catch(() => false);
+      const gone = await pageNow(page);
+      const reconnected =
+        reconnecting &&
+        (await videoTile(page)
+          .waitFor({ state: 'visible', timeout: 30_000 })
+          .then(() => true)
+          .catch(() => false));
       const back = await pageNow(page);
       lab = await readLab(page);
       const stopped = inEvents(lab, 'session.stopped', live)[0] ?? null;
       result.fallback = {
-        presence_back: fellBack,
-        seconds_live: fellBack ? Math.round((back - live) / 100) / 10 : null,
+        reconnected,
+        seconds_to_reconnect: reconnected ? Math.round((back - gone) / 100) / 10 : null,
+        seconds_live: reconnecting ? Math.round((gone - live) / 100) / 10 : null,
         session_stopped_event: stopped !== null,
         end_reason: stopped?.reason ?? null,
         typed_line_editable: await callScreen(page)
@@ -1236,7 +1254,7 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
     let started = false;
     try {
       await acknowledgeNotices(page);
-      await startCall(page);
+      await startCall(page, 'video');
       started = true;
       await expect(videoTile(page)).toBeVisible({ timeout: 30_000 });
       const live = await pageNow(page);
@@ -1247,7 +1265,8 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
       const injected = await until(page, (lab) => lab.injected.length > 0, 60_000);
       let lab = await readLab(page);
       const at = lab.injected[0]?.at ?? null;
-      const ended = await presenceTile(page)
+      // The server stopped the face: it never comes back in this call, and the tile says video is not available.
+      const ended = await unavailableTile(page)
         .waitFor({ state: 'visible', timeout: (3 * HEARTBEAT_SECONDS + 15) * 1000 })
         .then(() => true)
         .catch(() => false);
@@ -1333,13 +1352,15 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
     let step: LiteStep = 'start_call';
     try {
       await acknowledgeNotices(page);
-      const call = await startCall(page);
+      const call = await startCall(page, 'video');
       started = true;
       result.input_mode = call.inputMode;
       step = 'face_join';
       await expect(videoTile(page)).toBeVisible({ timeout: 30_000 });
       result.face_shown = true;
       const live = await pageNow(page);
+      // The face first, then the conversation: Start call → first frame → first word (the intro, said by the face).
+      result.startup = await callStartup(page);
       const micAtLive = (await readLab(page)).mic.length;
       // The greeting (the call's intro), when there is one, is said first.
       step = 'greeting';

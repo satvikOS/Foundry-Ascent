@@ -519,19 +519,19 @@ test.describe('vEIR calls · a FULL stock face (the vendor’s stock voice speak
         expect(await microphoneAsked(page)).toBe(micAtStart);
       });
 
-      await test.step('the face drops: the tile says so, the call goes on and offers a voice call', async () => {
+      await test.step('the face drops: a new session of the call replaces it, and the call goes on', async () => {
         await tile.locator('video').evaluate((element: HTMLVideoElement) => {
           const stream = element.srcObject as MediaStream;
           for (const track of stream.getVideoTracks()) track.dispatchEvent(new Event('ended'));
         });
-        await expect(tile).toHaveCount(0);
-        await expect(screen.locator('[data-slot="call-tile"][data-face="video-stopped"]')).toBeVisible();
-        await expect(screen.locator('[data-slot="call-video-pending"]')).toContainText('Video stopped.');
-        await expect(line).toBeEditable();
         await expect.poll(() => faceEnds.length).toBe(1);
-        // The server is told which trigger ended the face (audited with its end).
+        // The server is told which trigger ended the face (audited with its end), then opens the next session.
         expect(faceEnds[0]?.status).toBe(204);
         expect(JSON.parse(faceEnds[0]?.body ?? '{}')).toEqual({ reason: 'video_ended' });
+        await expect.poll(() => sessions.length, { timeout: 15_000 }).toBe(2);
+        expect(sessions[1]).toMatchObject({ provider: 'fake', voicing: 'text', stockFace: true });
+        await expect(tile).toBeVisible({ timeout: 15_000 });
+        await expect(line).toBeEditable();
       });
     } finally {
       if (callId) {

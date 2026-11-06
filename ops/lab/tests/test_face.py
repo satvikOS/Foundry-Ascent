@@ -308,8 +308,10 @@ def measured(private: Path) -> None:
             "audio_senders": 0,
             "user_transcriptions": 0,
             "av_same_stream": True,
+            "startup": {"press_to_first_frame_ms": 3120, "press_to_first_word_ms": 4380},
             "fallback": {
-                "presence_back": True,
+                "reconnected": True,
+                "seconds_to_reconnect": 3.9,
                 "seconds_live": 58.7,
                 "session_stopped_event": True,
                 "end_reason": "MAX_DURATION_REACHED",
@@ -417,6 +419,9 @@ def test_public_result_grades_every_sandbox_check_with_numbers_only(tmp_path: Pa
     assert checks["e9_lite_token_cannot_publish"] is True
     assert checks["e10_injection_ends_face_in_a_heartbeat"] is True
     assert checks["e11_max_duration_enforced"] is True
+    # A session the vendor ended is replaced by a new one of the same call; the start is timed to the first word.
+    assert checks["reconnects_after_session_end"] is True
+    assert result["call"]["startup"] == {"press_to_first_frame_ms": 3120, "press_to_first_word_ms": 4380}
     assert checks["instruments_ok"] is True
     # Every check is graded but the LITE arm's, which this pass did not run (not measured, never failed).
     assert result["run"] == len([name for name in checks if not name.startswith("lite_")])

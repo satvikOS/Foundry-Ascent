@@ -407,10 +407,15 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
         out.append(
             f"- Avatar audio and video in one remote stream (WebRTC lip sync applies): {call.get('av_same_stream')}"
         )
+        startup = call.get("startup") or {}
         out.append(
-            f"- Session end: presence back {fallback.get('presence_back')} after {fallback.get('seconds_live')} s "
-            f"live, end_reason {fallback.get('end_reason')}, typed line still editable "
-            f"{fallback.get('typed_line_editable')}"
+            f"- Video call start: Start call → first frame {startup.get('press_to_first_frame_ms')} ms, → first word "
+            f"{startup.get('press_to_first_word_ms')} ms (the conversation waits for the face)"
+        )
+        out.append(
+            f"- Session end after {fallback.get('seconds_live')} s live (end_reason {fallback.get('end_reason')}): "
+            f"a new session replaced the face {fallback.get('reconnected')} in {fallback.get('seconds_to_reconnect')} s, "
+            f"typed line still editable {fallback.get('typed_line_editable')}"
             + (f"; error {call['error']}" if call.get("error") else "")
         )
         out.append("")
@@ -425,6 +430,11 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
             f"- Face: {session.get('provider')} / {session.get('voicing')}, stock {session.get('stock_face')}, "
             f"LiveKit host {session.get('livekit_host')}; shown {lite.get('face_shown')}; face reference "
             f"{face.get('lite_face_reference')}"
+        )
+        lite_startup = lite.get("startup") or {}
+        out.append(
+            f"- Video call start: Start call → first frame {lite_startup.get('press_to_first_frame_ms')} ms, → first "
+            f"word {lite_startup.get('press_to_first_word_ms')} ms (the conversation waits for the face)"
         )
         out.append(
             f"- Each unit, face/speak → answered {_p(lite.get('hand_over_to_done_ms'))}; → speak_started "

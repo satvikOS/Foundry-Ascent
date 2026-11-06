@@ -183,9 +183,14 @@ export function callScreen(page: Page): Locator {
   return page.getByRole('dialog', { name: /^(Voice|Video) call with / });
 }
 
-/** From New chat: ⌘K → Voice call, Remember (preselected), Start call. Returns the conversation and intro. */
+/**
+ * From New chat: ⌘K → Voice call (or Video call), Remember (preselected), Start call. Returns the conversation and
+ * intro. The press of Start call is marked on the page's performance timeline (`lab:press`), so a video call's first
+ * frame and first word (the engine's `fa:face-live`, `fa:first-word`) are timed from it ({@link callStartup}).
+ */
 export async function startCall(
   page: Page,
+  kind: 'voice' | 'video' = 'voice',
 ): Promise<{ sessionId: string; intro: string | null; inputMode: string }> {
   await openVenture(page);
   await dismissWelcome(page);
@@ -196,19 +201,63 @@ export async function startCall(
   await page.keyboard.press('ControlOrMeta+k');
   await page
     .getByRole('dialog')
-    .getByRole('option', { name: /^Voice call with / })
+    .getByRole('option', { name: kind === 'video' ? /^Video call with / : /^Voice call with / })
     .click();
   const screen = callScreen(page);
   const memory = screen.getByRole('button', { name: /: change memory for this call$/ });
   if ((await memory.count()) > 0) await expect(memory).toContainText('Remembered');
-  await screen.getByRole('button', { name: 'Start call' }).click();
-  await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=voice$/);
+  const start = screen.getByRole('button', { name: 'Start call' });
+  await start.evaluate((button) => {
+    button.addEventListener(
+      'click',
+      () => {
+        performance.clearMarks('lab:press');
+        performance.mark('lab:press');
+      },
+      { capture: true, once: true },
+    );
+  });
+  await start.click();
+  await page.waitForURL(
+    kind === 'video' ? /\/c\/[0-9a-f-]{36}\?call=video$/ : /\/c\/[0-9a-f-]{36}\?call=voice$/,
+  );
   const sessionId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
   const body = (await (await started).json()) as {
     call: { inputMode: string };
     intro: { text: string } | null;
   };
   return { sessionId, intro: body.intro?.text ?? null, inputMode: body.call.inputMode };
+}
+
+/**
+ * A video call's start, from the page's own performance marks: Start call pressed (`lab:press`) to the face's first
+ * frame with its speak channel open (`fa:face-live`) and to the vEIR's first word heard (`fa:first-word`, the intro said
+ * by the face). Waits up to `timeoutMs` for the first word; a mark that never came is null.
+ */
+export async function callStartup(
+  page: Page,
+  timeoutMs = 30_000,
+): Promise<{ press_to_first_frame_ms: number | null; press_to_first_word_ms: number | null }> {
+  const read = () =>
+    page.evaluate(() => {
+      const press = performance.getEntriesByName('lab:press', 'mark').at(-1)?.startTime ?? null;
+      // The first of each mark after the press (a later reconnect marks the face again).
+      const first = (name: string) =>
+        press === null
+          ? null
+          : (performance.getEntriesByName(name, 'mark').find((mark) => mark.startTime >= press)?.startTime ??
+            null);
+      return { press, frame: first('fa:face-live'), word: first('fa:first-word') };
+    });
+  const deadline = Date.now() + timeoutMs;
+  let marks = await read();
+  while (marks.word === null && Date.now() < deadline) {
+    await page.waitForTimeout(200);
+    marks = await read();
+  }
+  const since = (at: number | null) =>
+    at === null || marks.press === null ? null : Math.round(Math.max(0, at - marks.press));
+  return { press_to_first_frame_ms: since(marks.frame), press_to_first_word_ms: since(marks.word) };
 }
 
 /** Types a line on a typed call. */

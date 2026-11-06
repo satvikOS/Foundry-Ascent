@@ -10,7 +10,7 @@ import { IDS } from '@/lib/realtime/testing';
 
 import { callStatusLabel, CallLive, END_UNDO_MS } from './call-live';
 import { fakeEngine, LIVE, renderWithRouter } from './testing';
-import type { CallFaceController } from './use-call-face';
+import type { CallFace, CallFaceController } from './use-call-face';
 import type { CallVeir } from './use-call-veir';
 
 const CALL: CallView = {
@@ -529,47 +529,81 @@ describe('CallLive', () => {
   });
 
   /** A face this call asked for that is not shown (the controller's view of it). */
-  function faceNotShown(hadVideo: boolean): CallFaceController {
-    const presence = { status: 'presence' } as const;
+  function faceNotShown(face: CallFace): CallFaceController {
     return {
       subscribe: () => () => undefined,
-      getSnapshot: () => presence,
-      hasAsked: () => true,
-      hadVideo: () => hadVideo,
+      getSnapshot: () => face,
+      canAsk: () => true,
+      warm: vi.fn(),
       request: vi.fn(),
+      retry: vi.fn(),
     } as unknown as CallFaceController;
   }
 
-  it('says when video could not start and offers a voice call, never switching by itself', async () => {
+  it('starts a video call with “Connecting to Thomas…” and nothing to type or caption until the face is there', async () => {
+    renderLive(
+      { call: CALL, awaitingFace: true, activity: 'connecting' },
+      {
+        kind: 'video',
+        onSwitchKind: vi.fn(),
+        face: faceNotShown({ status: 'connecting' }),
+        veir: { ...VEIR, provider: 'heygen' },
+      },
+    );
+    expect(await screen.findByText(`Connecting to ${VEIR.name}…`, { selector: 'p' })).toBeVisible();
+    // The status line says the same, once (announced), and nothing else of a conversation is offered yet.
+    expect(liveText().join(' ')).toContain(`Connecting to ${VEIR.name}…`);
+    expect(liveText().join(' ')).not.toContain('Connecting… ·');
+    expect(screen.queryByRole('textbox', { name: /^Reply to / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Captions' })).not.toBeInTheDocument();
+    expect(document.querySelector('[data-slot="call-tile"]')).toHaveAttribute(
+      'data-face',
+      'video-connecting',
+    );
+    // No sphere, no stand-in.
+    expect(document.querySelector('[data-slot="call-stage"]')).toBeNull();
+    expect(screen.getByRole('button', { name: /^End call/ })).toBeEnabled();
+  });
+
+  it('says when video is not available and offers a voice call, never switching by itself', async () => {
     const onSwitchKind = vi.fn();
     renderLive(
       { call: CALL },
-      { kind: 'video', onSwitchKind, face: faceNotShown(false), veir: { ...VEIR, provider: 'heygen' } },
+      {
+        kind: 'video',
+        onSwitchKind,
+        face: faceNotShown({ status: 'unavailable', hadVideo: false }),
+        veir: { ...VEIR, provider: 'heygen' },
+      },
     );
-    expect(await screen.findByText('Video couldn’t start. You can carry on as a voice call.')).toBeVisible();
+    expect(await screen.findByText('Video isn’t available right now')).toBeVisible();
+    expect(
+      screen.getByText(`Your conversation with ${VEIR.name} is kept. You can carry on as a voice call.`),
+    ).toBeVisible();
     // The status line says it as well, so it is announced.
-    expect(liveText().join(' ')).toContain('Video couldn’t start');
+    expect(liveText().join(' ')).toContain('Video isn’t available right now');
     // The tile says it too, in place of the face (never the sphere as a stand-in).
     expect(document.querySelector('[data-slot="call-tile"]')).toHaveAttribute(
       'data-face',
       'video-unavailable',
     );
     expect(onSwitchKind).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole('button', { name: 'Voice call' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Voice call$/ }));
     expect(onSwitchKind).toHaveBeenLastCalledWith('voice');
   });
 
-  it('says the video stopped once a face that showed is gone', async () => {
+  it('says it is reconnecting while a new session replaces the face, the conversation going on', async () => {
     renderLive(
       { call: CALL },
       {
         kind: 'video',
         onSwitchKind: vi.fn(),
-        face: faceNotShown(true),
+        face: faceNotShown({ status: 'reconnecting', still: null }),
         veir: { ...VEIR, provider: 'heygen' },
       },
     );
-    expect(await screen.findByText('Video stopped. You can carry on as a voice call.')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Voice call' })).toBeVisible();
+    expect(await screen.findByText('Reconnecting…', { selector: 'p' })).toBeVisible();
+    expect(liveText().join(' ')).toContain('Listening · Reconnecting…');
+    expect(screen.queryByRole('button', { name: /^Voice call$/ })).not.toBeInTheDocument();
   });
 });

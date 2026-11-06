@@ -385,6 +385,67 @@ describe('CallEngine · speaking over the greeting (LAB-R1)', () => {
   });
 });
 
+describe('CallEngine · a video call waits for its face (owner round 3)', () => {
+  it('opens the call but says nothing and hears nothing until the face is there, then the intro and the microphone', async () => {
+    const h = setup({ intro: true });
+    await h.engine.start({ ventureId: IDS.venture, sessionId: IDS.session, awaitFace: true });
+    await flush(10);
+    // The call is open on the server (its heartbeats run, the face can be minted for it), but waiting.
+    expect(h.state()).toMatchObject({ phase: 'live', awaitingFace: true, activity: 'connecting' });
+    expect(h.getUserMedia).toHaveBeenCalledTimes(1);
+    expect(h.speechRequests).toHaveLength(0);
+    expect(FakeWebSocket.instances).toHaveLength(0);
+    expect(h.context.worklets).toHaveLength(0);
+    // Nothing typed starts a turn yet.
+    h.engine.sendText('Hello?');
+    await flush();
+    expect(h.script.calls).toHaveLength(0);
+    // Unmuting does not open speech-to-text either.
+    h.engine.setMuted(true);
+    h.engine.setMuted(false);
+    await flush();
+    expect(FakeWebSocket.instances).toHaveLength(0);
+
+    h.engine.faceArrived();
+    h.engine.startConversation();
+    await flush(10);
+    expect(h.state().awaitingFace).toBe(false);
+    // The intro is said first, then the founder is heard.
+    expect(h.speechRequests[0]).toMatchObject({ turnId: null, seq: 0, sig: SIG });
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(h.context.worklets).toHaveLength(1);
+    const stages = h.engine.diagnostics().stages;
+    expect(stages.callToFirstFrame?.n).toBe(1);
+    // Once per call.
+    h.engine.startConversation();
+    await flush(10);
+    expect(h.speechRequests.filter((u) => u.turnId === null)).toHaveLength(1);
+  });
+
+  it('releases the microphone it held when the call ends before the face showed', async () => {
+    const h = setup({ intro: true });
+    await h.engine.start({ ventureId: IDS.venture, sessionId: IDS.session, awaitFace: true });
+    await flush(10);
+    await h.engine.end('user');
+    await flush(10);
+    expect(h.track.stop).toHaveBeenCalled();
+    expect(h.speechRequests).toHaveLength(0);
+    // A late start of the conversation does nothing.
+    h.engine.startConversation();
+    await flush(10);
+    expect(h.speechRequests).toHaveLength(0);
+    expect(FakeWebSocket.instances).toHaveLength(0);
+  });
+
+  it('a voice call starts talking at once, as before', async () => {
+    const h = setup({ intro: true });
+    await startLive(h);
+    expect(h.state().awaitingFace).toBe(false);
+    expect(h.speechRequests[0]).toMatchObject({ turnId: null, seq: 0 });
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+});
+
 describe('CallEngine · a call already live in another conversation', () => {
   it('asks to move the call here instead of failing, and starts again with replace', async () => {
     const h = setup({ grant: null });

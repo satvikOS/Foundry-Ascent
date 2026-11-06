@@ -12,7 +12,7 @@ import type {
 import type { FaceRenderer, FaceRendererOutput, FaceRenderHandlers, FaceUnitAudio } from '../playback';
 
 /**
- * The development stand-in for a vendor face (docs/architecture/calls.md §4): a face drawn on a canvas and
+ * The development stand-in for a vendor face (docs/architecture/calls.md §4): an abstract video drawn on a canvas and
  * captured as a `MediaStream`, exactly where a vendor's WebRTC video arrives, so the call tile, the hand-over
  * of the call's validated audio (voicing `audio`) and every fallback run without a vendor account. It draws no
  * one's likeness. The local API serves it with `EMBODIMENT_PROVIDER=fake`; its session token starts `fake.`.
@@ -61,14 +61,15 @@ const FPS = 30;
 const CONNECT_MS = 600;
 const RENDER_MS = 150;
 
-/** A dark video room whatever the theme, like a call tile. No likeness: a neutral silhouette. */
+/**
+ * A dark video room whatever the theme, like a call tile. No likeness and no drawn character (owner round 3: no
+ * cartoon avatar anywhere): an abstract ring that follows the voice, and a line saying it is the development stand-in.
+ */
 const PALETTE = {
   top: '#191c22',
   bottom: '#0b0c0f',
-  body: '#2b303a',
-  head: '#3b414d',
-  features: '#e6e8ec',
-  mouth: '#121418',
+  ring: '#9aa3b2',
+  text: '#6b7280',
 } as const;
 
 function abortError(): DOMException {
@@ -292,35 +293,21 @@ export class FakeFaceAvatar implements AvatarProvider {
     g.fillStyle = sky;
     g.fillRect(0, 0, WIDTH, HEIGHT);
 
+    // An abstract voice ring (no face, no character): it breathes slowly and widens with the vEIR's voice.
     const cx = WIDTH / 2;
-    const bob = still
-      ? 0
-      : Math.sin(t * 1.3) * 2.5 + (this.state === 'listening' ? Math.sin(t * 0.7) * 1.5 : 0);
-    const headY = HEIGHT * 0.44 + bob;
-
-    g.fillStyle = PALETTE.body;
+    const cy = HEIGHT / 2;
+    const breath = still || this.state === 'muted' ? 0 : Math.sin(t * 1.1) * 2;
+    const radius = 46 + breath + this.mouth * 22;
+    g.strokeStyle = PALETTE.ring;
+    g.globalAlpha = 0.35 + this.mouth * 0.5;
+    g.lineWidth = 3;
     g.beginPath();
-    g.ellipse(cx, HEIGHT + 30, 170, 120, 0, 0, Math.PI * 2);
-    g.fill();
-
-    g.fillStyle = PALETTE.head;
-    g.beginPath();
-    g.ellipse(cx, headY, 62, 76, 0, 0, Math.PI * 2);
-    g.fill();
-
-    // Eyes, with a blink every few seconds.
-    const blink = !still && t % 4.2 < 0.14;
-    g.fillStyle = PALETTE.features;
-    for (const dx of [-22, 22]) {
-      g.beginPath();
-      g.ellipse(cx + dx, headY - 10, 6, blink ? 1 : 6, 0, 0, Math.PI * 2);
-      g.fill();
-    }
-
-    // The mouth opens with the vEIR's voice.
-    g.fillStyle = PALETTE.mouth;
-    g.beginPath();
-    g.ellipse(cx, headY + 36, 16, 2 + this.mouth * 12, 0, 0, Math.PI * 2);
-    g.fill();
+    g.arc(cx, cy, radius, 0, Math.PI * 2);
+    g.stroke();
+    g.globalAlpha = 1;
+    g.fillStyle = PALETTE.text;
+    g.font = '13px system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.fillText('Development stand-in video', cx, HEIGHT - 24);
   }
 }
