@@ -22,8 +22,9 @@ request ─ session check ─ preflight (one transaction, two statements: the co
         …  annotations ─ validation ─ persist
 ```
 
-On a call the first validated sentence is also a signed `turn.speech` unit, which the browser sends to
-`POST /speech` (checks, a speech reservation, Polly) and plays as soon as the first audio bytes arrive.
+On a call the first validated sentence is also a signed `turn.speech` unit, which the server reserves and voices at
+once (ElevenLabs, Polly when it fails) and streams as `turn.audio` PCM frames in the same response; the browser plays
+them as they arrive (§5, "Speech inside the turn stream"). Units the server does not voice go to `POST /speech`.
 
 In production every database statement is an HTTPS call to the RDS Data API, and a transaction adds two more
 (BeginTransaction, CommitTransaction). A typed turn made **61 such round trips** (baseline; 43 now, a call's 64 → 46), so the
@@ -62,7 +63,7 @@ The API writes these lines (numbers and identifiers only, never content):
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `http.request`     | `latencyMs` (to the response headers), `authMs` (session check), `dbRoundTrips`, `dbTransactions`, `dbWaitMs` (until the headers), `inflightAtStart` / `inflightMax` (other requests the process served alongside), `awsConnectionsOpened` / `awsConnectionsReused` (AWS HTTPS connections, process-wide deltas)                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `turn.timing`      | ms since the request arrived: `acceptedMs`, `modelStartMs`, `firstDeltaMs` (first sentence), `firstSpeechMs` (first spoken unit), `totalMs`; stage durations: `authMs`, `admissionMs`, `retrievalMs` (embedding wait + queries), `embedMs`, `promptMs`, `modelFirstTokenMs`, `generationMs`, `structuredMs`, `finishMs`; the whole turn's `dbRoundTrips`, `dbWaitMs`, `voice`; `embedCalls`, `inflightAtStart`, `inflightMax`, `awsConnectionsOpened`, `awsConnectionsReused`; the turn's model calls: `inputTokens`, `cacheReadInputTokens`, `cacheWriteInputTokens` (Bedrock's prompt cache), and the streamed reply's call (the one `modelFirstTokenMs` measures): `streamInputTokens`, `streamCacheReadInputTokens` |
-| `speech.timing`    | ms since the speech request reached the service, cumulative: `verifiedMs`, `plannedMs` (checks), `capsCheckedMs`, `reservedMs`, `synthesizedMs` (Polly answered), `firstAudioMs` (first bytes handed to the response); `characters`. The bookkeeping (ledger, counters, audit) runs while the audio streams                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `speech.timing`    | `route` (`request`: `POST /speech`; `turn`: voiced in the turn stream, ms since the unit was written); ms since the speech request reached the service, cumulative: `verifiedMs`, `plannedMs` (checks), `capsCheckedMs`, `reservedMs`, `synthesizedMs` (Polly answered), `firstAudioMs` (first bytes handed to the response); `characters`. The bookkeeping (ledger, counters, audit) runs while the audio streams                                                                                                                                                                                                                                                                                                      |
 | `ai.model.attempt` | per model call: `latencyMs`, `inputTokens`, `cachedInputTokens` and `cacheWriteInputTokens` (read from and written to Bedrock's prompt cache, included in `inputTokens`), `cachePoints` (cache checkpoints the request carried), `outputTokens`, `outcome`                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 CloudWatch Logs Insights, log group `/aws/lambda/<api function>`:
@@ -493,6 +494,57 @@ pnpm --filter @foundry/api latency --profile production --set dbRoundTripMs=65 -
 - Not measured: the real vendor's time to first byte and speed from AWS, CloudFront's streaming of `audio/pcm`, and
   the browser's audible output. These are the first things to read in production (`speech.timing` with `voice: vendor`;
   the lab's end of speech → first audio).
+
+### Speech inside the turn stream (2026-11-06)
+
+What changed: a call's turn asks for its units' audio in its own stream (`speechAudio: 'pcm'`). Before, each signed
+unit reached the browser as `turn.speech`, then the browser sent `POST /speech`, which verified it again and made its
+checks (two transactions and the spend read, about 600 ms of database round trips at 65 ms) before calling
+ElevenLabs. Now the checks that hold for the whole turn run once, when the turn is accepted, while the model starts
+(`speech.prepareTurnVoice`; the vendor connection is warmed at the same moment), and each unit, the moment it is
+written to the stream, is reserved (one statement: its play and the speech budgets) and synthesized as raw PCM, the
+unit before it as `previous_text`, at most two units at once (`apps/api/src/http/turn-voice.ts`). Its audio follows
+it as base64 `turn.audio` frames in the same SSE stream (through CloudFront and Lambda response streaming like the
+deltas), the rate on the first frame and a closing frame (`done`, `failed`, `paused`); the stream ends after the last
+unit's audio. The page's player is unchanged: the call engine hands it each unit's frames as `POST /speech` would
+have (`apps/web/src/lib/realtime/turn-audio.ts`), so the jitter buffer, a LITE face fed from the same PCM and the
+barge-in stop work as before; a barge-in closes the stream, which aborts every synthesis on the server. Kept on
+`POST /speech`: the call intro, the crisis support line (Polly, its own plays, past the caps), stored-reply passages,
+a FULL face's fallback, a LITE face the server relays, and any unit the server could not voice (`failed`: its play is
+given back first). Metering, settlement, the audit (`speech.synthesized` with `inTurn`) and Polly in place of a
+vendor that fails are the `POST /speech` ones (`speakReserved`, shared).
+
+Measured with the harness, profile `production` recalibrated as above (database round trip 65 ms, model first token
+700 ms, embedding 155 ms), ElevenLabs stand-in behind the real adapter with its time to first byte uniform 150–250 ms
+and audio 4 times faster than real time, 10 voice turns per arm, warm, one process, Apple M4 Max, Node 24, no browser:
+
+```
+pnpm --filter @foundry/api latency --profile production --set dbRoundTripMs=65 --set modelFirstTokenMs=700 \
+  --set embedMs=155 --set speechFirstByteMs=100 --text 0 --voice 10 --voice-vendor elevenlabs-stub \
+  --stub-ttfb 150-250 --stub-speed 4 --pcm [--stream-audio]
+```
+
+| Voice turn, ms from sending the turn, p50 (p95)       | Before: `POST /speech` per unit | After: audio in the turn stream |
+| ----------------------------------------------------- | ------------------------------- | ------------------------------- |
+| First spoken unit (`turn.speech`)                     | 1,791 (1,859)                   | 1,776 (1,937)                   |
+| First audio bytes = first unit playable               | 2,647 (2,741)                   | **2,040 (2,220)**               |
+| First unit signed → its first audio bytes             | 846 (943)                       | **248 (296)**                   |
+| First unit, whole audio arrived                       | 3,155 (4,369)                   | 2,684 (3,831)                   |
+| `POST /speech` requests per turn                      | 2 (5); 28 in 10 turns           | **0**                           |
+| Server: unit reserved / first audio (`speech.timing`) | 669 / 846 after the request     | 67 / 247 after the unit         |
+
+- The first audio comes **607 ms sooner at p50 (521 ms at p95)**: what is left between a unit and its first sound is
+  its reservation (one round trip, 67 ms) and the vendor's time to first byte (the stand-in's 150–250 ms).
+- The reservation stays before the vendor call: overlapping them would let a unit the budget refuses be synthesized
+  and billed outside the ledger.
+- The pin: `apps/api/src/perf/latency.db.test.ts` (no `POST /speech` on a normal spoken turn, every unit voiced in
+  the stream, its first audio measured on both sides), `speech-in-turn.db.test.ts` (reserved, metered and audited
+  once; a unit voiced in the stream is refused by `POST /speech` as already spoken; the crisis line left to it; Polly
+  in place of a failing vendor in the same stream), `call-engine.test.ts` (the browser makes no `POST /speech` for a
+  unit voiced in the stream; a `failed` unit or one whose stream closed first is asked from it).
+- To read in production: `turn.timing` `firstAudioMs` against `firstSpeechMs`, `speech.timing` with `route = turn`
+  (`reservedMs`, `firstAudioMs`), `turn.stream_finished` `audioUnits` / `audioFailed`, and the client's
+  `submitToPlayback`. Not measured here: CloudFront's and Lambda's delivery of the frames, the real vendor from AWS.
 
 ## 6. Measured and not kept
 

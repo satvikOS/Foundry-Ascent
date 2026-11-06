@@ -3,7 +3,7 @@
  *                                      [--duplicate-memory N] [--gap-ms N] [--set dbRoundTripMs=45 …] [--cold]
  *                                      [--queries] [--skip-init-warm-up] [--face]
  *                                      [--voice-vendor polly|elevenlabs-stub] [--stub-ttfb 100-250] [--stub-speed 4]
- *                                      [--pcm]
+ *                                      [--pcm] [--stream-audio]
  *
  * The local latency harness (docs/runbooks/latency.md): the whole API in one process over a fresh seeded
  * database on the local cluster, with production-like latency added at the far ends (database round trips,
@@ -24,6 +24,8 @@
  * local stand-in for the vendor (`perf/elevenlabs-stub.ts`: time to first byte uniform in `--stub-ttfb`, audio streamed
  * `--stub-speed` times faster than real time). `--pcm` makes the call screen ask for raw PCM and count a unit playable
  * once its jitter buffer is in hand (as the browser's streaming player does), instead of once the whole unit arrived.
+ * `--stream-audio` makes a call's turns carry their units' audio in their own stream (`speechAudio: 'pcm'`, as the call
+ * screen asks): no `POST /speech` per unit; the first audio is the first `turn.audio` frame.
  */
 import { writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
@@ -59,6 +61,8 @@ async function main(): Promise<void> {
       'stub-speed': { type: 'string', default: '4' },
       // The call screen asks for raw PCM and plays it as it arrives (the player's jitter buffer, then streaming).
       pcm: { type: 'boolean', default: false },
+      // Each unit's audio inside the turn's own stream (no POST /speech per unit).
+      'stream-audio': { type: 'boolean', default: false },
       // One simulated latency changed from the profile's (calibration): `--set modelFirstTokenMs=1800`.
       set: { type: 'string', multiple: true, default: [] },
     },
@@ -79,6 +83,7 @@ async function main(): Promise<void> {
     skipInitWarmUp: values['skip-init-warm-up'],
     face: values.face,
     pcm: values.pcm,
+    streamAudio: values['stream-audio'],
     ...elevenLabsOptions(values['voice-vendor'], values['stub-ttfb'], values['stub-speed']),
   });
   try {

@@ -36,6 +36,7 @@ TURN_STREAM_EVENTS: tuple[str, ...] = (
     "turn.status",
     "turn.delta",
     "turn.speech",
+    "turn.audio",
     "turn.completed",
     "turn.blocked",
     "turn.error",

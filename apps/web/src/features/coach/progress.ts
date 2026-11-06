@@ -93,6 +93,7 @@ export function turnProgressReducer(state: TurnProgress, action: ProgressAction)
       return turnProgressReducer(state, { event: 'local.start' });
     case 'turn.delta':
     case 'turn.speech':
+    case 'turn.audio':
       return state;
     case 'turn.status': {
       if (state.outcome !== 'running' && state.outcome !== 'idle') return state;

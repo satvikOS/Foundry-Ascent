@@ -20,6 +20,7 @@ export class TurnTimeline {
   #validating: number | null = null;
   #firstDelta: number | null = null;
   #firstSpeech: number | null = null;
+  #firstAudio: number | null = null;
   #end: number | null = null;
   #voice = false;
 
@@ -48,6 +49,10 @@ export class TurnTimeline {
         this.#voice = true;
         this.#firstSpeech ??= at;
         break;
+      case 'turn.audio':
+        // A unit's audio voiced inside the turn's stream: its first bytes handed to the stream.
+        if (event.pcm !== undefined) this.#firstAudio ??= at;
+        break;
       case 'turn.completed':
       case 'turn.blocked':
       case 'turn.error':
@@ -75,6 +80,7 @@ export class TurnTimeline {
       modelFirstTokenMs: span(modelStart, m.stream.firstTokenAt),
       firstDeltaMs: ms(this.#firstDelta),
       firstSpeechMs: ms(this.#firstSpeech),
+      firstAudioMs: ms(this.#firstAudio),
       generationMs: span(this.#reasoning, this.#validating),
       structuredMs: m.structured.calls === 0 ? null : ms(m.structured.ms),
       finishMs: span(this.#validating, this.#end),

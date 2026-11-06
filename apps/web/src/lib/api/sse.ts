@@ -170,6 +170,10 @@ export function isTerminalTurnEvent(event: TurnStreamEventT): boolean {
  * Read an SSE response body and yield validated turn events until a terminal event
  * (`turn.completed` / `turn.blocked` / `turn.error`). Throws `stream_interrupted` if the stream ends
  * first. Cancels the underlying reader when the consumer stops early or the signal aborts.
+ *
+ * A spoken turn whose units the server voices in the stream (`turn.speech` `audio: true`) may send their audio
+ * (`turn.audio`) after the terminal event: the reader then goes on yielding those frames, and nothing else, until
+ * every such unit was closed (its `end` frame) or the stream ended.
  */
 export async function* readTurnStream(
   body: ReadableStream<Uint8Array>,
@@ -179,6 +183,9 @@ export async function* readTurnStream(
   const decoder = new TextDecoder('utf-8');
   const parser = new SseParser();
   let finished = false;
+  /** Units announced with their audio in the stream, not closed yet. */
+  const open = new Set<string>();
+  let ended = false;
   const onAbort = () => {
     void reader.cancel().catch(() => undefined);
   };
@@ -193,11 +200,22 @@ export async function* readTurnStream(
       for (const frame of frames) {
         const event = parseTurnStreamFrame(frame);
         if (!event) continue;
+        if (event.event === 'turn.speech' && event.audio === true)
+          open.add(`${event.turnId}:${String(event.seq)}`);
+        if (event.event === 'turn.audio' && event.end !== undefined)
+          open.delete(`${event.turnId}:${String(event.seq)}`);
+        if (ended && event.event !== 'turn.audio') continue;
         yield event;
-        if (isTerminalTurnEvent(event)) {
+        if (isTerminalTurnEvent(event)) ended = true;
+        if (ended && open.size === 0) {
           finished = true;
           return;
         }
+      }
+      if (done && ended) {
+        // The audio of a unit that never closed is asked for another way by the caller.
+        finished = true;
+        return;
       }
       if (done) break;
     }

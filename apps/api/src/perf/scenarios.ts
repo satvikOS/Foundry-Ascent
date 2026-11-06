@@ -24,7 +24,10 @@ export interface TurnSample {
   readonly firstDeltaMs: number | null;
   /** Voice: first signed spoken unit (`turn.speech`). */
   readonly firstSpeechMs: number | null;
-  /** Voice: first audio bytes of that unit, fetched from `POST /speech` as soon as it arrived. */
+  /**
+   * Voice: first audio bytes of that unit: from the turn's own stream (`turn.audio`, `--stream-audio`), else fetched from
+   * `POST /speech` as soon as the unit arrived.
+   */
   readonly firstAudioMs: number | null;
   /** Voice: the last audio byte of that unit (a player that decodes whole units can start only now). */
   readonly firstUnitWholeMs: number | null;
@@ -37,6 +40,13 @@ export interface TurnSample {
   readonly lastSpeechMs: number | null;
   /** Voice: signed spoken units of the reply. */
   readonly units: number;
+  /**
+   * Voice: `POST /speech` requests the turn's units needed (none when the server voiced every unit in the turn's stream,
+   * `LatencyRigOptions.streamAudio`).
+   */
+  readonly speechRequests: number;
+  /** Voice: units whose audio came in the turn's stream (`turn.audio`). */
+  readonly streamedUnits: number;
   /** The terminal event (`turn.completed`). */
   readonly completedMs: number | null;
   /** The response stream ended (the API is free for the next request; work after the response excluded). */
@@ -187,7 +197,15 @@ export async function turn(
   const voice = args.callId !== undefined;
   const started = performance.now();
   const res = await rig.request(`/sessions/${args.sessionId}/turns`, {
-    body: voice ? { text: args.text, channel: 'voice', callId: args.callId } : { text: args.text },
+    body: voice
+      ? {
+          text: args.text,
+          channel: 'voice',
+          callId: args.callId,
+          // As the call screen asks: each unit's audio inside this stream (`--stream-audio`).
+          ...(rig.streamAudio ? { speechAudio: 'pcm' } : {}),
+        }
+      : { text: args.text },
     cookie: args.cookie,
     idempotencyKey: `${requestId}-key`,
     headers: { 'x-request-id': requestId },
@@ -206,6 +224,14 @@ export async function turn(
   let firstAudio: Promise<{ ms: number; whole: number; playable: number; requestId: string } | null> =
     Promise.resolve(null);
   const speechFetches: Promise<unknown>[] = [];
+  let units = 0;
+  // Units voiced in the turn's stream: their first audio, playable (the player's jitter buffer in hand) and whole.
+  const streamed = new Map<
+    number,
+    { bytes: number; rate: number; first: number | null; playable: number | null }
+  >();
+  let firstSeq: number | null = null;
+  let firstStreamed: { ms: number; whole: number; playable: number } | null = null;
   await readEvents(res, started, (event, at) => {
     switch (event.event) {
       case 'turn.accepted':
@@ -214,8 +240,33 @@ export async function turn(
       case 'turn.delta':
         marks.firstDelta ??= at;
         break;
+      case 'turn.audio': {
+        const unit = streamed.get(event.seq);
+        if (unit === undefined) break;
+        if (event.pcm !== undefined) {
+          if (event.sampleRate !== undefined) unit.rate = event.sampleRate;
+          unit.first ??= at;
+          unit.bytes += Buffer.from(event.pcm, 'base64').byteLength;
+          const jitterBytes = Math.round((PLAYER_JITTER_MS / 1000) * unit.rate) * 2;
+          if (unit.playable === null && unit.bytes >= jitterBytes) unit.playable = at;
+        }
+        if (event.end !== undefined && event.seq === firstSeq && unit.first !== null) {
+          firstStreamed = { ms: unit.first, whole: at, playable: unit.playable ?? at };
+        }
+        break;
+      }
       case 'turn.speech': {
         marks.lastSpeech = at;
+        units += 1;
+        if (marks.firstSpeech === null) {
+          marks.firstSpeech = at;
+          firstSeq = event.seq;
+        }
+        // Voiced by the server in this stream: no request.
+        if (event.audio === true) {
+          streamed.set(event.seq, { bytes: 0, rate: 24_000, first: null, playable: null });
+          break;
+        }
         // The call screen asks for each unit's audio as soon as the unit arrives (pipelined playback).
         const speechId = nextRequestId('speech');
         const fetched = rig
@@ -257,10 +308,7 @@ export async function turn(
             };
           });
         speechFetches.push(fetched);
-        if (marks.firstSpeech === null) {
-          marks.firstSpeech = at;
-          firstAudio = fetched;
-        }
+        if (event.seq === firstSeq) firstAudio = fetched;
         break;
       }
       case 'turn.completed':
@@ -276,7 +324,9 @@ export async function turn(
     }
   });
   const streamEndMs = performance.now() - started;
-  const audio = await firstAudio;
+  const fetchedFirst = await firstAudio;
+  const audio: { ms: number; whole: number; playable: number; requestId?: string } | null =
+    fetchedFirst ?? firstStreamed;
   await Promise.all(speechFetches);
   const completedTurn = finished as TurnView | null;
   const prompt = completedTurn === null ? null : await promptSize(rig, completedTurn);
@@ -292,11 +342,14 @@ export async function turn(
     firstUnitWholeMs: audio?.whole ?? null,
     firstPlayableMs: audio?.playable ?? null,
     lastSpeechMs: marks.lastSpeech,
-    units: speechFetches.length,
+    units,
+    speechRequests: speechFetches.length,
+    streamedUnits: [...streamed.values()].filter((u) => u.first !== null).length,
     completedMs: marks.completed,
     streamEndMs,
     server: logLine(rig, requestId, 'turn.timing'),
-    speech: audio === null ? null : logLine(rig, audio.requestId, 'speech.timing'),
+    // The first unit's `speech.timing` line: its `/speech` request's, or the turn's own (voiced in the stream).
+    speech: audio === null ? null : logLine(rig, audio.requestId ?? requestId, 'speech.timing'),
     evidenceItems: completedTurn?.evidence.length ?? null,
     evidenceTokens: prompt?.evidenceTokens ?? null,
     inputTokens: prompt?.inputTokens ?? null,

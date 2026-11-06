@@ -56,6 +56,7 @@ export function registerSessionRoutes(
       handleTurnRequest(c, ctx, {
         ...turnOptions,
         orchestrator: distillAfterTurn(core.orchestrator, core.distill),
+        speech: core.speech,
       }),
     {
       idempotency: 'turn',

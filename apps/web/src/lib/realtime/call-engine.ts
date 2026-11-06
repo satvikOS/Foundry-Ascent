@@ -33,6 +33,7 @@ import {
 } from './playback';
 import { IDLE_CALL, type CallEnded, type CallSnapshot, type TalkMode, type TypedReason } from './call-state';
 import { openingText, speakableSentences } from './spoken-text';
+import { TurnAudioFeed } from './turn-audio';
 import { TranscribeStream, type TranscribeHandlers, type WebSocketFactory } from './transcribe';
 import { VoiceActivityDetector } from './vad';
 
@@ -52,7 +53,8 @@ export type {
  *
  *   mic → AudioWorklet (16 kHz PCM) → Transcribe WebSocket (presigned `sttGrant`) → partial captions
  *   → end of turn (stable transcript + silence) → POST /sessions/:id/turns {channel: 'voice', callId}
- *   → `turn.speech` units (signed) → POST /speech, pipelined → one AudioContext → speakers
+ *   → `turn.speech` units (signed), each voiced by the server in the same stream (`turn.audio` PCM frames; a unit it
+ *     does not voice → POST /speech) → one AudioContext → speakers
  *
  * Barge-in: voice while the vEIR speaks ducks it at once; the founder taking the floor stops the audio, aborts the
  * turn stream and POSTs /turns/:id/interrupt with the last unit actually heard. Taking the floor is a settled word
@@ -276,6 +278,8 @@ export class CallEngine {
   }
 
   private readonly stats = { bargeIns: 0, reconnects: 0, firstAudioMs: [] as number[] };
+  /** The audio of the units the server voices in the current turn's stream. */
+  private readonly turnAudio = new TurnAudioFeed();
 
   constructor(private readonly deps: CallEngineDeps) {
     this.tuning = { ...DEFAULT_TUNING, ...deps.tuning };
@@ -1116,21 +1120,14 @@ export class CallEngine {
       captions: { ...this.snapshot.captions, veir: null },
     });
     let settled: TurnView | null = null;
-    try {
-      const events = this.deps.api.streamTurn(
-        sessionId,
-        { text, channel: 'voice', callId: call.id },
-        { signal: turn.controller.signal, idempotencyKey: globalThis.crypto.randomUUID() },
-      );
-      for await (const event of events) {
-        if (epoch !== this.epoch || turn.interrupted) break;
-        settled = this.onTurnEvent(turn, event) ?? settled;
-      }
-    } catch (error) {
-      if (epoch === this.epoch && !turn.interrupted && !turn.controller.signal.aborted) {
-        this.set({ notice: { kind: 'turn_error', message: turnErrorLine(callErrorMessage(error)) } });
-      }
-    } finally {
+    // Units of an earlier reply never play now: their audio is dropped.
+    this.turnAudio.clear();
+    // The reply has ended (its terminal event, or the stream): every unit reached the player. Its units' audio may
+    // still be arriving in the stream.
+    let over = false;
+    const end = () => {
+      if (over) return;
+      over = true;
       turn.done = true;
       // Every unit of the reply has reached the player: a face that says a turn as one piece may close it.
       if (epoch === this.epoch && turn.turnId !== null && !turn.interrupted)
@@ -1139,6 +1136,32 @@ export class CallEngine {
         this.deps.onTurnSettled?.(sessionId, settled);
         if (this.turn === turn && !this.player?.busy) this.afterReply();
       }
+    };
+    try {
+      const events = this.deps.api.streamTurn(
+        sessionId,
+        // The server voices the reply's units in this stream (no request per unit before the first sound).
+        { text, channel: 'voice', callId: call.id, speechAudio: 'pcm' },
+        { signal: turn.controller.signal, idempotencyKey: globalThis.crypto.randomUUID() },
+      );
+      for await (const event of events) {
+        if (epoch !== this.epoch || turn.interrupted) break;
+        settled = this.onTurnEvent(turn, event) ?? settled;
+        if (
+          event.event === 'turn.completed' ||
+          event.event === 'turn.blocked' ||
+          event.event === 'turn.error'
+        )
+          end();
+      }
+    } catch (error) {
+      if (epoch === this.epoch && !turn.interrupted && !turn.controller.signal.aborted) {
+        this.set({ notice: { kind: 'turn_error', message: turnErrorLine(callErrorMessage(error)) } });
+      }
+    } finally {
+      // Units whose audio never closed in the stream are asked from POST /speech.
+      if (turn.turnId !== null) this.turnAudio.closeTurn(turn.turnId);
+      end();
     }
   }
 
@@ -1151,6 +1174,8 @@ export class CallEngine {
       case 'turn.speech':
         turn.turnId ??= event.turnId;
         turn.units += 1;
+        // Its audio follows in this stream (`turn.audio`).
+        if (event.audio === true) this.turnAudio.expect(event.turnId, event.seq);
         this.player?.enqueue({
           turnId: event.turnId,
           seq: event.seq,
@@ -1198,6 +1223,9 @@ export class CallEngine {
         if (event.turnId !== null) this.player?.withdrawFaceApproval(event.turnId);
         this.set({ notice: { kind: 'turn_error', message: turnErrorLine(event.message) } });
         return null;
+      case 'turn.audio':
+        this.turnAudio.frame(event);
+        return null;
       case 'turn.status':
       case 'turn.delta':
         return null;
@@ -1231,6 +1259,7 @@ export class CallEngine {
     this.bargeTimer = null;
     const stopStarted = this.deps.clock.now();
     this.player?.stop();
+    this.turnAudio.clear();
     this.timing.record('interruptToStopScheduled', this.deps.clock.now() - stopStarted);
     this.stats.bargeIns += 1;
     const call = this.snapshot.call;
@@ -1254,7 +1283,12 @@ export class CallEngine {
     const player: SpeechPlayer = new SpeechPlayer(
       {
         context,
-        fetchSpeech: (unit, signal, options) => api.fetchSpeech(sessionId, unit, signal, options),
+        // A unit the server voices in the turn's stream plays from there; any other (or one it could not voice) is
+        // asked from POST /speech.
+        fetchSpeech: (unit, signal, options) => {
+          const ask = () => api.fetchSpeech(sessionId, unit, signal, options);
+          return this.turnAudio.take(unit, signal, options, ask) ?? ask();
+        },
         synthesis: media.synthesis,
         createUtterance: (text) => media.createUtterance(text),
         setTimeout: (callback, ms) => clock.setTimeout(callback, ms),
@@ -1438,6 +1472,7 @@ export class CallEngine {
     this.micSilentTimer = null;
     this.turn?.controller.abort();
     this.turn = null;
+    this.turnAudio.clear();
     this.pendingLines.length = 0;
     this.closeStt();
     this.capture?.stop();

@@ -16,10 +16,11 @@ Call ─► POST /sessions/:id/calls ─────────► admission, c
 mic ─► AudioWorklet, 16 kHz PCM frames ─── presigned wss (seconds to open) ───────► Transcribe streaming
         ◄────────────────────────── partial / stable / final transcripts ──────────┘
 end of utterance ─► POST /sessions/:id/turns ─► admitVoiceTurn ─► orchestrator ─► validators
-                    { channel: 'voice', callId }
-        ◄─ SSE turn.speech { seq, text, sig } … turn.completed | turn.blocked
-each unit ─► POST /speech { sessionId, turnId, seq, text, sig } ─► verify, meter ─► Polly
-        ◄─ audio/mpeg (streamed), played in order; the next unit is fetched while one plays
+                    { channel: 'voice', callId, speechAudio: 'pcm' }
+        ◄─ SSE turn.speech { seq, text, sig, audio } … turn.completed | turn.blocked
+           turn.audio { seq, pcm, sampleRate, end }  ◄─ reserve, meter ─► ElevenLabs (Polly on failure)
+        each unit played as its PCM arrives, in order (the server voices the next while one is sent)
+a unit without `audio` (crisis line, a face, a failure) ─► POST /speech { sessionId, turnId, seq, text, sig }
 barge-in ─► stop audio, abort the turn, POST /turns/:id/interrupt { callId, heardSeq, heard }
 every 15 s ─► POST /calls/:id/heartbeat { state, micOpenSeconds } ─► { remainingSeconds, action, reason }
 end ─► POST /calls/:id/end ─► { call, summary }
@@ -39,7 +40,7 @@ now measurable stage by stage: [latency runbook](../runbooks/latency.md)):
 | Authorization, risk classification, retrieval        | 100–300 ms      |
 | Model time to first token                            | 500–1,100 ms    |
 | First sentence through the sentence gate             | 100–150 ms      |
-| `POST /speech` → first Polly bytes                   | 150–400 ms      |
+| Unit signed → first voice bytes in the turn stream   | 150–300 ms      |
 | Delivery and playback start                          | 30–80 ms        |
 | **Total**                                            | **≈ 1.3–2.8 s** |
 
@@ -181,6 +182,22 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
 
   It checks the kill switches, the active assignment, the voice consent, the call's time left, the
   platform's daily spend cap and the speech budgets, and only then reports 501 where no speech service runs.
+
+- **Speech inside the turn stream** (`speechAudio: 'pcm'`, what the call screen sends; latency runbook §5). The
+  checks of `POST /speech` that hold for a whole turn run once, when the turn is accepted, while its model starts
+  (`speech.prepareTurnVoice`: the conversation, write access, the assignment, the kill switches, the live call in
+  this conversation, the vEIR's status and voice consent, the call's time left, the platform's daily spend cap, the
+  voice). Each signed unit is then reserved like a `POST /speech` unit (`reserveCallSpeech`, one statement: its play
+  and the speech budgets) and synthesized as raw PCM the moment it is written (the unit before it as context, the
+  vendor connection warmed when the turn starts, at most two units at once), and its audio follows it in the same
+  SSE stream as base64 `turn.audio` frames; the stream ends after the last unit's audio. Metering, settlement,
+  the audit (`speech.synthesized`, `inTurn`) and Polly in place of a vendor that fails are those of `POST /speech`.
+  A unit voiced here is played: asked again at `POST /speech` it is refused as already spoken. Never voiced here:
+  the crisis support line, a call whose FULL face voices text or whose LITE face the server relays (a LITE face the
+  page feeds gets a copy of the same PCM), a turn any of those checks refuses: those units go through
+  `POST /speech` as before, which answers the refusal. A unit the server could not voice is closed with `failed`
+  (the page asks `POST /speech`) or `paused` (a speech budget is used up). A barge-in closes the turn's stream,
+  which aborts every synthesis at once.
 
 - **Speech budgets.** A person's own AI cap leaves call speech out, so `/speech` is bounded by what a call can
   say instead. Before Polly is called, one statement (`callsRepo.reserveCallSpeech`, under the call's row

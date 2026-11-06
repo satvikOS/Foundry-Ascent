@@ -138,3 +138,39 @@ describe('the latency harness', () => {
     for (const said of ['librarians', 'north campus', 'Quick question']) expect(joined).not.toContain(said);
   });
 });
+
+describe('the latency harness, speech inside the turn stream', () => {
+  let streamRig: LatencyRig;
+  let streamed: ScenarioResult;
+  beforeAll(async () => {
+    // As the call screen asks: each unit's audio in the turn's own stream; the ElevenLabs stand-in behind the real adapter.
+    streamRig = await createLatencyRig(LATENCY_PROFILES.local, {
+      streamAudio: true,
+      elevenLabs: { ttfbMs: [5, 10], speed: 50 },
+    });
+    streamed = await runScenario(streamRig, { textTurns: 0, voiceTurns: 2 });
+  }, 120_000);
+  afterAll(async () => {
+    await streamRig.cleanup();
+  });
+
+  it('makes no POST /speech on a normal spoken turn: every unit is voiced in the turn stream', () => {
+    const voice = streamed.turns.filter((t) => t.channel === 'voice');
+    expect(voice).toHaveLength(2);
+    for (const t of voice) {
+      expect(t.units).toBeGreaterThan(0);
+      expect(t.speechRequests).toBe(0);
+      expect(t.streamedUnits).toBe(t.units);
+      // The first audio comes after its unit, from the stream, and the server measured it.
+      expect(num(t.firstAudioMs)).toBeGreaterThanOrEqual(num(t.firstSpeechMs));
+      expect(num(t.firstPlayableMs)).toBeGreaterThanOrEqual(num(t.firstAudioMs));
+      expect(num(t.server?.firstAudioMs)).toBeGreaterThanOrEqual(num(t.server?.firstSpeechMs));
+      expect(t.speech?.route).toBe('turn');
+    }
+    const speechRequests = streamRig.logs
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((l) => l.event === 'http.request' && String(l.route).endsWith('/speech'));
+    // Only the call intro (no turn) is still asked from POST /speech.
+    expect(speechRequests).toHaveLength(1);
+  });
+});
