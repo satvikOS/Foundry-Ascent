@@ -14,8 +14,8 @@
  *   (`knowledgeRepo.listChunksMissingEmbeddings` / `setChunkEmbeddings`).
  * - Demo ventures are coached by vEIR personas built from the synthetic EIRs (`./veir.ts`); Foundry Guide
  *   stays the program's neutral guide for new ventures.
- * - Not demo data: the startup knowledge base (real, sourced reference material) is synced into the home tenant's
- *   common pool on every run, demo data or not (`../knowledge-pack/sync.ts`: inserted when absent, re-ingested when
+ * - Not demo data: the startup knowledge base (real, sourced reference material) is synced into every active
+ *   tenant's common pool on every run, demo data or not (`../knowledge-pack/sync.ts`: inserted when absent, re-ingested when
  *   its text changed, withdrawn when the JSON drops it; a person's withdrawal is kept).
  */
 import { col } from '../columns.js';
@@ -31,7 +31,7 @@ import {
   GUIDE_STYLE,
   PROGRAM_METHOD_SOURCE,
 } from './doctrine.js';
-import { syncKnowledgePack } from '../knowledge-pack/sync.js';
+import { syncKnowledgePackToTenants } from '../knowledge-pack/sync.js';
 import { seedId, ventureCanary } from './ids.js';
 import { bodyFromSections, insertRows, insertSourceWithChunks } from './insert.js';
 import { SEED_PATTERNS, SEED_RESOURCES } from './resources.js';
@@ -58,8 +58,8 @@ export interface SeedConfig {
   /** Clock for relative dates in demo data (tests). */
   readonly now?: Date;
   /**
-   * Sync the startup knowledge base into the home tenant's common pool (default true; production gets it on every
-   * deploy). Not demo data: it is real, sourced reference material (`../knowledge-pack/sync.ts`).
+   * Sync the startup knowledge base into every active tenant's common pool (default true; production gets it on
+   * every deploy). Not demo data: it is real, sourced reference material (`../knowledge-pack/sync.ts`).
    */
   readonly knowledgePack?: boolean;
 }
@@ -376,7 +376,8 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
   }
 
   // The startup knowledge base (shared reference library, scope `public`): needs the 0004 columns (kind, body).
-  if (veirSchema && (config.knowledgePack ?? true)) await syncKnowledgePack(sx, { tenantId });
+  // Every active tenant, not only the home one: a partner tenant's founders get the same library (idempotent).
+  if (veirSchema && (config.knowledgePack ?? true)) await syncKnowledgePackToTenants(sx);
 
   if (demo) {
     const now = config.now ?? new Date();

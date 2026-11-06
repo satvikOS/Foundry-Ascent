@@ -154,6 +154,21 @@ function withoutTitle(text: string): string {
   return text.replace(/^# [^\n]*\n\n/, '');
 }
 
+/**
+ * `text` with its paragraph starting `label` moved to position `at` (0: first). The coach reads a passage's first
+ * 600 characters (`EXCERPT_CHARS`): a framework's limitations and an account's evidence limits come before the
+ * method or the story, so they are never cut off. The viewer's text has the same order (it marks a cited passage
+ * by finding its text); the pack's RAG documents keep theirs ({@link ragTemplate}).
+ */
+function paragraphFirst(text: string, label: string, at: number): string {
+  const paragraphs = text.split('\n\n');
+  const index = paragraphs.findIndex((x) => x.startsWith(label));
+  if (index < 0) throw new Error(`knowledge pack: no "${label}" paragraph to put first`);
+  const [moved] = paragraphs.splice(index, 1);
+  paragraphs.splice(at, 0, moved ?? '');
+  return paragraphs.join('\n\n');
+}
+
 /** The References section: every source with its bibliographic details, URL and the audit's limitation. */
 function references(
   l: Lookup,
@@ -193,7 +208,8 @@ function frameworkItem(
   l: Lookup,
   f: PackFramework,
 ): Omit<PackItem, 'checksum' | 'ragDocId'> {
-  const summary = tidy(ragTemplate(pack, 'framework', f.framework_id));
+  // After the evidence-type line: what the method does not establish, then the method (passage and viewer alike).
+  const summary = paragraphFirst(tidy(ragTemplate(pack, 'framework', f.framework_id)), 'Limitations: ', 2);
   const scope = `Output: ${f.expected_output}\n\nEvidence scope: ${f.evidence_note}`;
   const body = [
     summary,
@@ -220,8 +236,11 @@ function frameworkItem(
 }
 
 function caseItem(pack: KnowledgePack, l: Lookup, s: PackScenario): Omit<PackItem, 'checksum' | 'ragDocId'> {
-  const text = tidy(ragTemplate(pack, 'case', s.scenario_id));
-  const [, documented = '', editorial = ''] = text.split(/\n\n## [^\n]*\n\n/);
+  const template = tidy(ragTemplate(pack, 'case', s.scenario_id));
+  const [, story = '', editorial = ''] = template.split(/\n\n## [^\n]*\n\n/);
+  // What the cited account does not establish comes first, then the account (passage and viewer alike).
+  const documented = paragraphFirst(story, 'Evidence limits: ', 0);
+  const text = template.replace(story, documented);
   const links = pack.scenario_framework_links.filter((x) => x.scenario_id === s.scenario_id);
   const options =
     `Possible solutions for a founder facing a similar problem (editorial, not company actions): ` +

@@ -376,6 +376,7 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
             personaId: persona.id,
             stage: null,
             query,
+            founderText: input.text,
             embedding,
             // What a venture assigned with the default ceiling sees.
             dataClassCeiling: 'venture_private',

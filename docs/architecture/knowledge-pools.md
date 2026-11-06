@@ -124,33 +124,62 @@ separate; this is the common pool's `public` scope.
   options, framework mapping), each headed as such; frameworks are method summaries; stages are editorial
   recommendations. A passage's heading names the publisher of its references and, for an account, the date its
   evidence is as of, so the evidence title carries the citation (title + publisher); the References section lists
-  title, authors, publisher, year, URL, review date and the audit's limitation. The pack's five RAG documents are
-  exactly the rendering of five items (`ragTemplate`, SHA-256 checked), so they are ingested once, not as
-  near-duplicates.
+  title, authors, publisher, year, URL, review date and the audit's limitation. The coach reads a passage's first
+  600 characters, so a framework summary puts its **limitations** right after its evidence-type line and a
+  documented account opens with its **evidence limits**; the viewer's text has the same order (it marks a cited
+  passage by finding its text). The pack's five RAG documents are exactly the rendering of five items
+  (`ragTemplate`, SHA-256 checked), so they are ingested once, not as near-duplicates.
 - **Validation.** `validateKnowledgePack` has the semantics of the pack's `validate_kb.py` (fields, types, dates,
   URLs, source eligibility, references, case/method separation and unions, coverage, RAG hashes, counts) and its
   seventeen self-test corruptions; `pnpm --filter @foundry/db knowledge-pack validate` prints the report.
-- **How production gets it.** The seed runs on every deploy (migrate custom resource) and syncs the home tenant
-  (`syncKnowledgePack`), and the deploy's embedding backfill embeds new passages. The sync is idempotent: absent items
-  are inserted, an item whose text changed is re-ingested (only its passages are replaced), an item the JSON drops is
-  withdrawn (and returns if a later JSON has it), a person's withdrawal is never undone. No migration:
-  `knowledge-pack sync [--tenant <slug>]` does the same for any tenant.
-- **Retrieval** (`searchSharedChunks`, `REFERENCE_GATE`). A reference passage is never a candidate by vector
-  proximity or one shared word: the founder's words must name its subject (at least two words that are distinctive
-  in the library, or a case's company named as written, covering at least a third of the query's distinctive
-  words); a distant embedding vetoes it; a question about the program itself (its stage gates, cohort, curriculum)
-  draws on the program’s guidance only. One passage per item, a documented account before editorial guidance, at
-  most two per typed turn and one per call, in slots of their own beside the shared budget. Authority 0.7 keeps
-  them below the program's guidance (0.9) and the vEIR's library (1.0). An unrelated turn retrieves none.
+- **How production gets it.** The seed runs on every deploy (migrate custom resource) and syncs **every active
+  tenant** (`syncKnowledgePackToTenants`: each tenant has its own copy in its own common pool; a suspended or
+  archived tenant is skipped and catches up on the first deploy after it is active again), and the deploy's
+  embedding backfill embeds new passages. The sync is idempotent: absent items are inserted, an item whose text
+  changed is re-ingested (only its passages are replaced), an item the JSON drops is withdrawn (and returns if a
+  later JSON has it), a person's withdrawal is never undone. No migration: `knowledge-pack sync [--tenant <slug>]`
+  does the same by hand.
+- **Retrieval** (`searchSharedChunks` with `reference`, `REFERENCE_GATE`; the gate is
+  `packages/db/src/knowledge-pack/gate.ts`). The coaching diagnosis (C1) traced fixation to library notes on almost
+  every turn. An earlier gate called a word distinctive when few of the library's ~99 passages had it, so everyday
+  words ("could", "work") qualified and a replay of a pilot's real student turns retrieved a passage on 22 % of them.
+  Now:
+  - the gate reads **the founder's own message only** (`RetrievalArgs.founderText`), never the composed retrieval
+    query with the vEIR's last question or the venture goal;
+  - an item is named only by its **curated vocabulary** (`vocabulary.ts`: framework, stage and case terms, e.g.
+    "lean canvas", "unit economics", "CAC", "TAM", "customer discovery", "MVP stage", companies by full name). No
+    single word among the 10,000 most frequent English words (`packages/db/knowledge/common-english`, from wordfreq,
+    CC BY-SA 4.0, licence alongside) names anything; a common word counts only inside a phrase or paired with a cue
+    in the same sentence ("scaling" with "mentor");
+  - a framework or stage term counts only in a sentence that **asks** something ("Our CAC went up to $40." retrieves
+    nothing; "…is that bad?" does); a case by its company's **full name** (or a short form that is not everyday
+    English), case-insensitive, as whole words, in an entrepreneurship context; a company whose name is everyday
+    English or an everyday product (Grove, Embrace, Station A, Dropbox, Duolingo…) needs a word that shows the company
+    is meant ("Grove Street has cheaper rent", "the deck is on Dropbox" retrieve nothing); a case's subject ("home
+    try-on") only when the founder asks for an example;
+  - a question about the program itself (its stage gates, cohort, curriculum, EIRs) draws on the program's guidance
+    only;
+  - **one item per turn**, unless the founder asks for several (examples, cases, frameworks, a comparison) or names
+    several themselves; then at most two on a typed turn, never more than one on a call;
+  - with a query embedding, a passage less similar than 0.2 is vetoed; similarity never admits one;
+  - an item **already cited in the conversation** (`turn_evidence` with source scope `public`) is never shown again;
+  - one passage per item (a documented account before editorial guidance), in slots of their own beside the shared
+    budget; authority 0.7 keeps them below the program's guidance (0.9) and the vEIR's library (1.0).
 - **Citing.** The evidence block marks them `source="reference"` and tells the coach to prefer the program's
   guidance, name whose account it is, keep a documented account to its date and limits, never present editorial
   guidance as fact, and say when something is not reported instead of estimating it. The app labels them
   "Reference library" and opens them in the viewer.
 - **Never venture memory.** A memory candidate resting only on reference passages is dropped unless the founder said
   it, and no memory item links a reference passage.
-- **Evaluation.** `knowledge-pack.db.test.ts` runs the pack's `rag_eval_questions.json` through the real retrieval:
-  Recall@3 1.00 on Q01–Q04, and Q05 (an interview-to-sale conversion rate the source does not report) retrieves no
-  figure and the account that states the gap.
+- **Isolation.** A founder reads no reference row of another tenant (by query or by retrieval) and cannot insert,
+  update or delete scope `public` (RLS: only a program lead writes the common pool); a venture's own document
+  search never returns a reference passage; a memory candidate resting only on a reference passage is dropped.
+- **Evaluation.** `gate.replay.test.ts` replays 129 everyday student lines and 68 genuine framework, case and stage
+  questions written in the style of the pilot's turns (no transcript text): at most 5 % of everyday lines may
+  retrieve anything (2 of 129 do: 1.6 %), at least 90 % of genuine questions must retrieve the item asked about
+  (68 of 68, each first). `knowledge-pack.db.test.ts` runs the pack's `rag_eval_questions.json` through the real
+  retrieval: every expected document for Q01–Q04, and Q05 (an interview-to-sale conversion rate the source does not
+  report) retrieves no figure and the account whose excerpt opens with that gap.
 
 ## 4. Specific pool
 

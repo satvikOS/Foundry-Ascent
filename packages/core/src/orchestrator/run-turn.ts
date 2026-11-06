@@ -1006,6 +1006,7 @@ export function createOrchestrator(
         personaId: active.persona.id,
         stage: pre.venture.stage,
         query: a.query,
+        founderText: input.text,
         embedding: vector,
         dataClassCeiling: active.assignment.dataClassCeiling,
         budgets: cfg.retrieval,

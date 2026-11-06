@@ -8,7 +8,7 @@
  *   pnpm --filter @foundry/db knowledge-pack sync [--tenant <slug>]
  *       Ingests the pack into the common pool of one tenant (default: every active tenant), idempotently. Uses the
  *       runtime database variables (DB_DRIVER, DATABASE_URL or the Data API ones). Deploys need not run it: the
- *       seed (migrate custom resource) syncs the home tenant on every deploy and the backfill embeds new passages.
+ *       seed (migrate custom resource) syncs every active tenant on every deploy and the backfill embeds new passages.
  *
  * To update the pack: replace the JSON (keep the owner's serialization), run `validate`, commit; the next deploy
  * re-ingests exactly the items whose text changed and withdraws the ones the JSON no longer has.
@@ -19,9 +19,8 @@ import { pathToFileURL } from 'node:url';
 import { createDbFromEnv } from '../db.js';
 import { loadKnowledgePack, rawKnowledgePack } from '../knowledge-pack/pack.js';
 import { packItems } from '../knowledge-pack/render.js';
-import { syncKnowledgePack } from '../knowledge-pack/sync.js';
+import { syncKnowledgePackToTenants } from '../knowledge-pack/sync.js';
 import { CORRUPTION_CASES, validateKnowledgePack } from '../knowledge-pack/validate.js';
-import { p } from '../params.js';
 
 export interface ValidationReport {
   readonly status: 'PASS' | 'FAIL';
@@ -69,19 +68,10 @@ export function validationReport(): ValidationReport {
 }
 
 async function sync(tenantSlug: string | null): Promise<void> {
-  const pack = loadKnowledgePack();
   const db = createDbFromEnv();
-  const tenants = await db.system((sx) =>
-    sx.query(
-      `SELECT id, slug FROM tenants WHERE status = 'active' AND (:slug IS NULL OR slug = :slug) ORDER BY slug`,
-      { slug: p.nullable.text(tenantSlug) },
-    ),
-  );
-  if (tenants.rows.length === 0) throw new Error(`no active tenant${tenantSlug ? ` "${tenantSlug}"` : ''}`);
-  for (const row of tenants.rows) {
-    const report = await db.system((sx) => syncKnowledgePack(sx, { tenantId: String(row.id), pack }));
-    process.stdout.write(`${String(row.slug)}: ${JSON.stringify(report)}\n`);
-  }
+  const reports = await db.system((sx) => syncKnowledgePackToTenants(sx, { slug: tenantSlug }));
+  if (reports.length === 0) throw new Error(`no active tenant${tenantSlug ? ` "${tenantSlug}"` : ''}`);
+  for (const { slug, report } of reports) process.stdout.write(`${slug}: ${JSON.stringify(report)}\n`);
 }
 
 async function main(argv: readonly string[]): Promise<number> {

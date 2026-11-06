@@ -1,6 +1,7 @@
 /**
- * Ingests the startup knowledge base into a tenant's common pool, idempotently. Run by the seed on every deploy
- * (so production gets it with the code that reads it) and by `pnpm --filter @foundry/db knowledge-pack sync`.
+ * Ingests the startup knowledge base into a tenant's common pool, idempotently. The seed runs it for every active
+ * tenant on every deploy ({@link syncKnowledgePackToTenants}: production gets it with the code that reads it, and a
+ * partner tenant gets its own copy), and `pnpm --filter @foundry/db knowledge-pack sync` does the same by hand.
  *
  * Where it lives: `knowledge_sources` of scope `public` (shared material the program did not write; the program's
  * own curriculum is scope `program`, the vEIR's library scope `persona`), kind `document`, classification
@@ -191,4 +192,27 @@ export async function syncKnowledgePack(
   const withdrawn = Number(gone.rows[0]?.n ?? 0);
 
   return { inserted: fresh.length, updated, withdrawn, unchanged, keptWithdrawn, passages };
+}
+
+/**
+ * Syncs every active tenant (or the one named by `slug`), each idempotently: what the seed runs on every deploy. A
+ * suspended or archived tenant is skipped; its copy catches up on the first deploy after it is active again.
+ */
+export async function syncKnowledgePackToTenants(
+  sx: SystemExecutor,
+  args: { readonly slug?: string | null; readonly pack?: KnowledgePack } = {},
+): Promise<{ readonly slug: string; readonly report: KnowledgePackSyncReport }[]> {
+  const pack = args.pack ?? loadKnowledgePack();
+  const tenants = await sx.query(
+    `SELECT id, slug FROM tenants WHERE status = 'active' AND (:slug IS NULL OR slug = :slug) ORDER BY slug`,
+    { slug: p.nullable.text(args.slug ?? null) },
+  );
+  const out: { slug: string; report: KnowledgePackSyncReport }[] = [];
+  for (const row of tenants.rows) {
+    out.push({
+      slug: String(row.slug),
+      report: await syncKnowledgePack(sx, { tenantId: String(row.id), pack }),
+    });
+  }
+  return out;
 }

@@ -20,6 +20,12 @@ export interface RetrievalArgs {
   readonly stage: string | null;
   /** Lexical query: the founder's message read in the conversation (`buildRetrievalQuery`). */
   readonly query: string;
+  /**
+   * The founder's own message, as they wrote or said it: the only text the reference library's relevance gate reads
+   * (`retrievalRepo.REFERENCE_GATE`). The vEIR's last question and the venture goal that `query` may add are the
+   * coach's words, never a request for a reference.
+   */
+  readonly founderText: string;
   /** Query embedding or null (lexical only). */
   readonly embedding: readonly number[] | null;
   readonly dataClassCeiling: 'public' | 'program_internal' | 'venture_private';
@@ -33,7 +39,8 @@ export interface RetrievalArgs {
   readonly privateOwnerId: string | null;
   /**
    * The turn's conversation: AI memory first learned in it is not retrieved (the history already holds it; see
-   * `VentureMemoryQuery.excludeSessionId`). Null or absent: none is left out (a test conversation).
+   * `VentureMemoryQuery.excludeSessionId`), nor a reference-library item already cited in it. Null or absent: none
+   * is left out (a test conversation).
    */
   readonly sessionId?: string | null;
   /**
@@ -104,8 +111,9 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
   const base = { tenantId: args.tenantId, query: args.query };
   const { ventureId } = args;
   const budgets = retrievalBudgets(args.budgets, args.channel ?? 'text');
-  // The reference library gives a call's turn its single best passage, a typed turn at most two, in slots of
-  // their own and only when the founder's words name their subject (`retrievalRepo.REFERENCE_GATE`).
+  // The reference library: only what the founder's own message names, one item (two on a typed turn when they ask
+  // for several, never more than one on a call), never an item already cited in this conversation, in slots of its
+  // own (`retrievalRepo.REFERENCE_GATE`).
   const referenceLimit =
     budgets.doctrine > 0 ? ((args.channel ?? 'text') === 'text' ? retrievalRepo.REFERENCE_GATE.limit : 1) : 0;
   const classifications = classificationsFor(args.dataClassCeiling);
@@ -134,7 +142,15 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
             personaId: args.personaId,
             ...(classifications === null ? {} : { classifications }),
             limit: budgets.doctrine,
-            referenceLimit,
+            ...(referenceLimit > 0
+              ? {
+                  reference: {
+                    founderText: args.founderText,
+                    limit: referenceLimit,
+                    sessionId: args.sessionId ?? null,
+                  },
+                }
+              : {}),
           },
         }
       : {}),
