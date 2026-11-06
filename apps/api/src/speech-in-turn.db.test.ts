@@ -127,7 +127,18 @@ describe('speech inside the turn stream', () => {
     const made = eleven.calls.slice(before);
     expect(made).toHaveLength(units.length);
     expect(made.every((c) => c.format === 'pcm_24000' && c.unit !== null)).toBe(true);
-    if (units.length > 1) expect(made[1]?.previousText).toBeTruthy();
+    // Up to VOICE_AHEAD units synthesize at once, each reserved on its own connection, so the vendor may be asked for
+    // unit 1 before unit 0 (CI did): the context is checked per unit, by seq, never by the order the vendor was asked.
+    expect(units.length).toBeGreaterThan(1);
+    const bySeq = [...made].sort((a, b) => (a.unit?.seq ?? 0) - (b.unit?.seq ?? 0));
+    expect(bySeq.map((c) => c.unit?.seq)).toEqual(units.map((u) => u.seq));
+    expect(bySeq[0]?.previousText).toBeUndefined();
+    for (let i = 1; i < bySeq.length; i += 1) {
+      // The words of the unit before it, as that unit was said (spoken form), its last NEIGHBOUR_CHARS (300).
+      const said = bySeq[i - 1]?.text ?? '';
+      expect(said).not.toBe('');
+      expect(bySeq[i]?.previousText).toBe(said.slice(-300).trimStart());
+    }
     expect(eleven.prewarms).toBeGreaterThan(prewarms);
 
     // Reserved and metered like POST /speech, audited as voiced in the turn.
