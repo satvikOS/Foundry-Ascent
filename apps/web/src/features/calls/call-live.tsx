@@ -316,7 +316,12 @@ export function CallLive({
             {readCaptions && veirLine ? `${veir.name}: ${veirLine}` : ''}
           </p>
           <p className="flex items-center gap-2 text-small text-muted-foreground">
-            <span role="status" aria-live="polite">
+            {/* Waiting for the face, the tile above already shows "Connecting to …": announced here, not shown twice. */}
+            <span
+              role="status"
+              aria-live="polite"
+              className={awaiting && videoNote !== null ? 'sr-only' : undefined}
+            >
               {status}
               {videoNote && !awaiting ? ` · ${videoPendingText(videoNote, veir.name)}` : ''}
             </span>
