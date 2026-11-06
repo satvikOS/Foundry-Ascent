@@ -292,8 +292,26 @@ export async function loadLeftOff(
         .map((x) => ({ founder: x.founderText, answer: x.answer })),
       said: exchanges.filter((x) => x.sessionId === c.id).map((x) => x.founderText),
       opener: c.opener,
+      replies: [
+        ...exchanges
+          .filter((x) => x.sessionId === c.id)
+          .sort((a, b) => a.fromEnd - b.fromEnd)
+          .map((x) => x.answer),
+        c.opener,
+      ].filter((t): t is string => t !== null && t.trim() !== ''),
     })),
   };
+}
+
+/**
+ * The vEIR's replies at the end of the person's own latest conversations with it, newest first (coaching v3): what
+ * the phrasing ledger and the name budget read beyond this conversation (prompts/phrasing.ts, validators/openers.ts).
+ * A teammate's conversation, or one with another coach, is not the person's own exchange with this vEIR.
+ */
+export function pastRepliesOf(leftOff: LeftOffData | null): string[] {
+  return (leftOff?.conversations ?? [])
+    .filter((c) => c.withCaller && c.withThisVeir)
+    .flatMap((c) => c.replies ?? []);
 }
 
 /** Open threads of the notebook the turn already loaded (open commitments and open questions). */
@@ -331,14 +349,16 @@ const TAKE_UP_EXCHANGES = 20;
  * 1. the notebook's next opener when a person wrote or rewrote it (they chose what to open with);
  * 2. when the notebook's opener is current (distillation drew it from the person's latest conversation, call or
  *    chat; for an opener of unknown origin, the notebook was written after that conversation's last turn with this
- *    vEIR): a line phrased afresh around the thread it noted to
- *    come back to (`nextTopic`: a topic, never a sentence to replay), else the stored sentence itself, unless it
- *    only repeats a question the vEIR asked at the end of that conversation (production: call 3 opened with call
- *    2's closing question, verbatim) or it already opened a conversation since in which nothing was said (it was
- *    said once; it is not said again word for word);
- * 3. a line that picks up the person's latest conversation itself, with any of the venture's vEIRs (when it was,
- *    what about), built without a model call from what was said, so it is right even before distillation ran
- *    (orchestrator/continuity-prompt.ts);
+ *    vEIR): the model-written line itself (coaching v3: written at distillation from what changed, so it costs no
+ *    model call here), unless it only repeats a question the vEIR asked at the end of that conversation
+ *    (production: call 3 opened with call 2's closing question, verbatim), it already opened a conversation since
+ *    in which nothing was said (it was said once; it is not said again word for word) or it opens the way that
+ *    conversation opened ({@link repeatsOpener}); else, as a fallback, a line phrased around the thread it noted to
+ *    come back to (`nextTopic`);
+ * 3. the deterministic fallback when there is no usable model line (distillation has not run yet, or failed): a line
+ *    that picks up the person's latest conversation itself, with any of the venture's vEIRs (when it was, what
+ *    about), built from what was said (orchestrator/continuity-prompt.ts), never the way that conversation opened
+ *    while another line is there;
  * 4. an older notebook opener.
  * A thread the person's latest conversation opened on and they never took up there (none of their messages holds two
  * of its words, nor did they answer it with a short yes: `@foundry/ai` `untakenThread`) is never opened on again,
@@ -487,6 +507,19 @@ export async function chooseOpener(
   // The notebook's line or thread comes back to what the founder left aside: neither is said.
   const leftAside = reopens(next) || reopens(topic);
   if (stored !== null && current && !fromSomeoneElse && namesNews && !leftAside) {
+    // The model's own line first (coaching v3, owner round 3: openers are model-written, never a template): the
+    // distillation wrote it from what changed in that conversation, after its own opener. It is said unless it was
+    // already said in a conversation opened since, only repeats the question that conversation ended on, or opens
+    // the way that conversation opened (never the same opener twice in a row). No model call here: the line was
+    // written ahead, so the greeting costs nothing at page load.
+    if (
+      since.withOpener === 0 &&
+      !repeatsOpener(stored, latest?.opener ?? null) &&
+      !(latest !== null && (await askedAtTheEnd(tx, latest.sessionId, stored)))
+    ) {
+      return found(drawn(stored));
+    }
+    // The deterministic fallback: a line phrased around the thread it noted.
     const around =
       topic === null
         ? null
@@ -502,23 +535,24 @@ export async function chooseOpener(
             guards,
           );
     const thread = topic === null ? null : threadSubject(topic, people);
-    if (around !== null)
+    if (around !== null && !repeatsOpener(around, latest?.opener ?? null))
       return found(drawn(around, thread === null ? null : { kind: 'thread', text: thread }));
-    if (since.withOpener === 0 && !(latest !== null && (await askedAtTheEnd(tx, latest.sessionId, stored)))) {
-      return found(drawn(stored));
-    }
   }
   if (latest !== null) {
     const lines = continuityOpener(latest, { now: args.now, seed, people, subject: pickUp });
     const subject = latest.withThisVeir ? subjectOf(latest, people, pickUp) : null;
+    const valid: ChosenOpener[] = [];
     for (const [candidate, about] of [
       [lines.withTopic, subject],
       [lines.generic, null],
     ] as const) {
       const text = candidate === null ? null : validatedOpener(candidate, guards);
       if (text !== null)
-        return found({ text, sourceSessionId: latest.sessionId, byPerson: false, subject: about });
+        valid.push({ text, sourceSessionId: latest.sessionId, byPerson: false, subject: about });
     }
+    // Never the way the latest conversation opened, while another line is there to say.
+    const fallback = valid.find((o) => !repeatsOpener(o.text, latest.opener ?? null)) ?? valid[0];
+    if (fallback !== undefined) return found(fallback);
   }
   return found(stored === null || fromSomeoneElse || leftAside ? null : drawn(stored));
 }
@@ -553,6 +587,28 @@ function untakenOpening(
   if (opener === null) return null;
   return untakenThread(opener, heard.complete ? heard.lines : ['', ...heard.lines], names);
 }
+
+/**
+ * Whether `candidate` says again the opener `previous` (the line the latest conversation opened with): a near-duplicate,
+ * or the same first words. A new conversation never opens the way the last one did.
+ */
+export function repeatsOpener(candidate: string, previous: string | null): boolean {
+  if (previous === null || previous.trim() === '') return false;
+  const start = (text: string): string =>
+    text
+      .toLowerCase()
+      .replace(/[‘’ʼ]/g, "'")
+      .replace(/[^\p{L}\p{N}' ]+/gu, ' ')
+      .split(/\s+/)
+      .filter((w) => w !== '')
+      .slice(0, OPENER_START_WORDS)
+      .join(' ');
+  const a = start(candidate);
+  return isNearDuplicate(candidate, previous, 0.6) || (a !== '' && a === start(previous));
+}
+
+/** First words of two openers that may not be the same (a greeting and its frame: "Good to talk again. Shall we pick up"). */
+const OPENER_START_WORDS = 8;
 
 /** Whether `opener` repeats a question the vEIR asked in one of the last answers of the conversation. */
 async function askedAtTheEnd(tx: AppExecutor, sessionId: string, opener: string): Promise<boolean> {

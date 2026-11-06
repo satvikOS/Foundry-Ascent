@@ -26,6 +26,11 @@ export interface DistillPromptInput {
   personaName: string;
   /** The persona's EIR display name ("Corin Halvorsen"), when it is a vEIR. */
   eirName?: string | null;
+  /**
+   * The persona is an AI mentor presented under its own name ("Thomas", ADR-0021): the notes speak as it, never as
+   * a twin of its EIR or "built from" anyone's approach (audit P0-3).
+   */
+  mentor?: boolean;
   /** The founder's first name, when known. */
   founderFirstName?: string | null;
   venture: PromptVentureContext;
@@ -95,9 +100,16 @@ function renderPreviousDigest(
   ].join('\n');
 }
 
-function identityLine(personaName: string, eirName: string | null | undefined): string {
-  const identity = resolvePersonaIdentity(personaName, eirName);
+function identityLine(personaName: string, eirName: string | null | undefined, mentor: boolean): string {
+  const identity = resolvePersonaIdentity(personaName, eirName, mentor);
   const persona = escapeInline(identity.personaName, 80);
+  if (identity.kind === 'mentor') {
+    return [
+      `You are ${persona}, an AI venture mentor in Foundry Ascent. You are software, not a person: never claim to be`,
+      'human, an Entrepreneur-in-Residence or any named person, never claim a past, career or ventures of your own,',
+      'and never say that anyone reviewed, approved or endorsed anything.',
+    ].join('\n');
+  }
   if (identity.kind === 'veir' && identity.eirFirstName !== null) {
     const first = escapeInline(identity.eirFirstName, 40);
     return [
@@ -173,7 +185,7 @@ export function buildDistillPrompt(input: DistillPromptInput): {
     : null;
   const who = founder ? `the founder (${founder})` : 'the founder';
   const system = [
-    identityLine(input.personaName, input.eirName),
+    identityLine(input.personaName, input.eirName, input.mentor === true),
     '',
     `Task: after a conversation with ${who}, write your notes as one JSON object (DistillDraft schema). Plain text`,
     'only (no Markdown, no HTML). Be brief and specific, and write about the founder and venture in the third person.',
@@ -205,16 +217,19 @@ export function buildDistillPrompt(input: DistillPromptInput): {
     '  - open_questions: up to 6 unknowns the venture still has to settle, or questions the founder asked that are',
     '    still open. Never a question you asked that they did not take up (drop any such entry), never one twice.',
     '  - last_advice: up to 5 short notes of advice you gave that the founder may act on.',
-    '  - next_opener: one fresh sentence that names the most important thread to come back to, a plan or a topic',
-    '    from what the founder said in THIS conversation (their news, decision or plan before your own advice), or',
-    '    null. Help they asked for in this conversation and did not fully get (preparing for a pitch, drafting',
-    '    questions) comes first. Never a thread they did not take up when you raised it (what <opened_with> raised',
-    '    when they talked about something else, a question of yours they left aside), never copy a question you',
-    '    asked in the transcript, and never keep the previous next_opener or its next_topic unless they took that',
-    '    thread up in this conversation.',
+    '  - next_opener: the line you will open your next conversation with, exactly as you would say it, or null. It',
+    '    picks up the most important thread from what the founder said in THIS conversation, what changed:',
+    '    their news, decision or plan before your own advice (help they asked for and did not fully get comes first).',
+    '    Short and natural: a few words of greeting in your own words, then one sentence that names the thread',
+    '    specifically, at most 30 words in all. Vary it: never the wording, greeting or shape of <opened_with> or the',
+    '    previous next_opener (no stock lines such as "Good to talk again" or "Shall we pick up…, or is something else',
+    '    on your mind?"). No dates or time words (it may be said days later), never their name.',
+    '    Never a thread they did not take up when you raised it (what <opened_with> raised when they talked about',
+    '    something else, a question of yours they left aside), never copy a question you asked in the transcript, and',
+    '    never keep the previous next_opener or its next_topic unless they took that thread up in this conversation.',
     '  - next_topic: that same thread as a short phrase of at most 12 words that reads after "we left off on", in',
     '    lower case except names (for example "the five library-staff interviews you planned"), or null with a',
-    '    null next_opener. The greeting is phrased around it afresh each time, so it is a topic, never a question.',
+    '    null next_opener. It is a topic, never a question (a fallback greeting is phrased around it).',
     '  - next_opener and next_topic are said TO the founder: "you" and "your", never their name or "the founder"',
     '    ("the budget numbers you will get", not "the budget numbers Maya will get"); other names keep their case.',
     '- memory_candidates: at most 3 durable things worth remembering about THIS venture and its founder, the',

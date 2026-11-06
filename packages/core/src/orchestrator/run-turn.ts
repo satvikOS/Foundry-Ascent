@@ -63,7 +63,13 @@ import { conversationGrounding } from '../services/memory-dedupe.js';
 import { historyAsHeard } from '../services/spoken-text.js';
 import { answerTurn, generationError } from './answer.js';
 import { blockedDetailOf, participantRiskLabel, participantTurnView, supportMessageFor } from './blocked.js';
-import { leftOffThreads, loadLeftOff, withoutLeftOff, type LoadedContinuity } from './continuity.js';
+import {
+  leftOffThreads,
+  loadLeftOff,
+  pastRepliesOf,
+  withoutLeftOff,
+  type LoadedContinuity,
+} from './continuity.js';
 import { renderLeftOffSection, type LeftOffData } from './continuity-prompt.js';
 import { candidateVisibility } from './evidence.js';
 import { type FaceApproval, generationTotals, SpeechStream } from './generate.js';
@@ -1007,6 +1013,14 @@ export function createOrchestrator(
         stage: pre.venture.stage,
         query: a.query,
         founderText: input.text,
+        // What the conversation is about: an item it keeps naming may be offered unasked, rate-limited (coaching v3).
+        conversation: {
+          earlierFounderTexts: [...coach.history].reverse().map((t) => t.founderText),
+          venture:
+            [pre.venture.oneLiner, pre.venture.currentGoal]
+              .filter((t) => (t ?? '').trim() !== '')
+              .join('. ') || null,
+        },
         embedding: vector,
         dataClassCeiling: active.assignment.dataClassCeiling,
         budgets: cfg.retrieval,
@@ -1094,6 +1108,7 @@ export function createOrchestrator(
       channel: pre.channel,
       continuity,
       leftOff: leftOffSection,
+      pastReplies: pastRepliesOf(leftOffData),
       evidence: pack.items,
       history: coach.heardHistory,
       opener: coach.opener,

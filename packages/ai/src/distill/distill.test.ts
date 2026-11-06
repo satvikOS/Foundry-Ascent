@@ -1099,3 +1099,48 @@ describe('similarity', () => {
     expect(repeatsNote('Anything', '!!!', common)).toBe(false);
   });
 });
+
+describe('a mentor under its own name (audit P0-3: Thomas, ADR-0021)', () => {
+  const MENTOR: DistillPromptInput = {
+    personaName: 'Thomas',
+    eirName: 'Corin Halvorsen',
+    mentor: true,
+    founderFirstName: 'Maya',
+    venture: { name: 'QuietQuad', stage: 'discovery', domain: 'software', currentGoal: 'Validate demand' },
+    turns: [{ founderText: 'We booked the pilot.', answer: 'Which two libraries?' }],
+    today: '2026-11-06',
+  };
+
+  it('is told it is Thomas, an AI mentor, never built from its EIR’s approach', () => {
+    const { system } = buildDistillPrompt(MENTOR);
+    expect(system.startsWith('You are Thomas, an AI venture mentor in Foundry Ascent.')).toBe(true);
+    expect(system).not.toContain("Corin's approach");
+    expect(system).not.toContain('Corin');
+    expect(system).toContain('never claim a past, career or ventures of your own');
+    // A twin persona keeps its own line.
+    expect(buildDistillPrompt({ ...MENTOR, personaName: "Corin's vEIR", mentor: false }).system).toContain(
+      "built with consent from Corin's approach",
+    );
+  });
+
+  it('rewrites a claim to be its EIR as Thomas, never as "Corin\'s digital twin"', () => {
+    const out = run(
+      draft({
+        notebook: { ...draft().notebook, summary: 'I am Corin Halvorsen. Maya is close to a pilot.' },
+      }),
+      ctx({ personaName: 'Thomas', personaEirName: 'Corin Halvorsen', mentor: true }),
+    );
+    expect(out.notebookDelta.summary).not.toContain('I am Corin Halvorsen');
+    expect(out.notebookDelta.summary).not.toContain('digital twin');
+    expect(out.stats.identityRewrites).toBe(1);
+  });
+
+  it('asks for a short, varied next opener written to be said, never a stock line', () => {
+    const { system } = buildDistillPrompt(MENTOR);
+    expect(system).toContain(
+      'the line you will open your next conversation with, exactly as you would say it',
+    );
+    expect(system).toContain('never the wording, greeting or shape of <opened_with> or the');
+    expect(system).toContain('No dates or time words');
+  });
+});

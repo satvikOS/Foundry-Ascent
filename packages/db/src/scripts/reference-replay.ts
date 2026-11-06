@@ -2,7 +2,9 @@
  * Replays the student turns of opened conversation-lab outputs through the reference library's relevance gate and
  * prints rates only (never a word of a transcript): how many turns, and how many runs, would get a reference
  * passage, as a turn would (the founder's own message; one call turn at most one item; an item already cited in the
- * conversation not again).
+ * conversation not again), and how many of them came in context, unasked (coaching v3: an item the message and the
+ * founder's last messages both name, at most one every `REFERENCE_GATE.contextGapTurns` turns after any reference;
+ * the venture's own words are not in a run file, so production can offer a little more than this counts).
  *
  *   pnpm --filter @foundry/db exec tsx src/scripts/reference-replay.ts <opened-dir> [<opened-dir>…]
  *
@@ -15,7 +17,7 @@ import { pathToFileURL } from 'node:url';
 
 import { z } from 'zod';
 
-import { selectReferences } from '../knowledge-pack/gate.js';
+import { CONTEXT_TURNS, selectContextualReference, selectReferences } from '../knowledge-pack/gate.js';
 import { REFERENCE_GATE } from '../repositories/retrieval.js';
 
 interface ReplayTurn {
@@ -30,6 +32,8 @@ export interface ReplayRates {
   readonly runs: number;
   readonly turns: number;
   readonly turnsWithReference: number;
+  /** Of `turnsWithReference`, the turns whose reference came in context, unasked. */
+  readonly contextualTurns: number;
   readonly passages: number;
   readonly runsWithReference: number;
   /** The highest share of one run's turns that got a reference. */
@@ -40,6 +44,7 @@ export interface ReplayRates {
 export function replayRates(runs: readonly ReplayRun[]): ReplayRates {
   let turns = 0;
   let turnsWithReference = 0;
+  let contextualTurns = 0;
   let passages = 0;
   let runsWithReference = 0;
   let worstRunShare = 0;
@@ -48,22 +53,46 @@ export function replayRates(runs: readonly ReplayRun[]): ReplayRates {
     let runHits = 0;
     for (const conversation of run) {
       const cited = new Set<string>();
-      for (const turn of conversation) {
+      // The index of the last turn that showed a reference passage (the database's `recent_ref`).
+      let lastShown = Number.NEGATIVE_INFINITY;
+      conversation.forEach((turn, i) => {
         runTurns += 1;
         const limit = turn.channel === 'text' ? REFERENCE_GATE.limit : 1;
         // As the database does: the gate's selection, without an item already cited in the conversation.
-        const shown = selectReferences(turn.student, { limit }).matches.filter((m) => !cited.has(m.key));
+        let shown = selectReferences(turn.student, { limit }).matches.filter((m) => !cited.has(m.key));
+        const asked = shown.length > 0;
+        if (!asked && i - lastShown > REFERENCE_GATE.contextGapTurns) {
+          const earlier = conversation
+            .slice(Math.max(0, i - CONTEXT_TURNS), i)
+            .map((t) => t.student)
+            .reverse();
+          shown = selectContextualReference(turn.student, { earlierFounderTexts: earlier }).matches.filter(
+            (m) => !cited.has(m.key),
+          );
+          if (shown.length > 0) contextualTurns += 1;
+        }
         for (const m of shown) cited.add(m.key);
-        if (shown.length > 0) runHits += 1;
+        if (shown.length > 0) {
+          runHits += 1;
+          lastShown = i;
+        }
         passages += shown.length;
-      }
+      });
     }
     turns += runTurns;
     turnsWithReference += runHits;
     if (runHits > 0) runsWithReference += 1;
     if (runTurns > 0) worstRunShare = Math.max(worstRunShare, runHits / runTurns);
   }
-  return { runs: runs.length, turns, turnsWithReference, passages, runsWithReference, worstRunShare };
+  return {
+    runs: runs.length,
+    turns,
+    turnsWithReference,
+    contextualTurns,
+    passages,
+    runsWithReference,
+    worstRunShare,
+  };
 }
 
 async function jsonFiles(dir: string): Promise<string[]> {

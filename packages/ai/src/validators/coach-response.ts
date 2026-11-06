@@ -30,9 +30,10 @@ import {
 } from './identity.js';
 import { sanitizeMarkdown, sanitizePlainText } from './markdown.js';
 import { contentWords, founderMoves, socialTurnOf, type SocialTurn } from '../prompts/conversation-state.js';
-import { inventedFigures, withoutExampleFigures } from './figures.js';
+import { questionFramesOf, withVariedQuestions } from '../prompts/phrasing.js';
+import { inventedFigures, withoutExampleFigures, withoutInventedFigures } from './figures.js';
 import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
-import { nameUsedRecently, withoutStockOpener, withoutVocativeName } from './openers.js';
+import { nameBudgetSpent, withoutStockOpener, withoutVocativeName } from './openers.js';
 import { cutMetaNarration } from './meta-narration.js';
 import {
   NEWS_FALLBACK,
@@ -137,10 +138,19 @@ export interface ValidateCoachResponseOptions {
    */
   earlierReplies?: readonly (string | null | undefined)[];
   /**
+   * The vEIR's replies at the end of its last conversations with this founder, newest first (see
+   * `SentenceGateOptions.pastReplies`): read for the founder's name and the forms of its questions only.
+   */
+  pastReplies?: readonly (string | null | undefined)[];
+  /**
    * The answer is text the sentence gate already released, unit by unit, as it was shown or said (a streamed reply that
    * was not written whole after all): its repeats were judged there, so it is never edited for repeats again here (the
    * gate judges whole units, this check sentences: the stored answer would lose part of what the founder read or
-   * heard, against the transcript reconciliation of calls and FULL face). Default false.
+   * heard, against the transcript reconciliation of calls and FULL face). The gate's edits inside a unit (a stock
+   * opener, the founder's name, an example figure, a question's form) are made here again, the same way, so the
+   * stored answer is what was shown and said: before coaching v3 they were not, and the stored replies (what the
+   * conversation shows once it is reloaded, the model's own history and the lab's transcripts) kept every stock opener
+   * and name the gate had left out (pilot v3: 97 stock openers, name overuse in 26 of 60 runs). Default false.
    */
   released?: boolean;
   /**
@@ -505,6 +515,12 @@ export function validateCoachResponse(
     (options.founderText !== undefined && asksToRepeat(options.founderText))
       ? null
       : earlier.join('\n\n');
+  // The forms of the questions asked lately: this conversation's replies and the end of the last ones.
+  const usedFrames: ReadonlySet<string> = new Set(
+    [...earlier, ...(options.pastReplies ?? [])].flatMap((t) =>
+      typeof t === 'string' ? questionFramesOf(t) : [],
+    ),
+  );
   // Their news comes first: a sentence that parks it for the vEIR's own agenda is left out (LAB-R8).
   const news = options.founderText !== undefined && founderMoves(options.founderText).includes('news');
   const crafted = (text: string, note: boolean): string => {
@@ -531,44 +547,54 @@ export function validateCoachResponse(
       if (trimmed !== out && note) notes.push('social_reply_trimmed');
       out = trimmed;
     }
-    // What the gate does to a streamed reply (validators/openers.ts, figures.ts), for a reply written whole.
-    if (options.released !== true) {
-      if (!identityAsked) {
-        const opener = withoutStockOpener(out, {
-          names: greetingNames,
-          ...(options.founderText === undefined ? {} : { founderText: options.founderText }),
-          flagged: options.preRisk.categories.length > 0 || forcedEscalationFor(options.preRisk) !== null,
-        });
-        if (opener.removed) {
-          if (note) notes.push('stock_opener_removed');
-          out = opener.text;
-        }
-      }
-      // Newest first: the previous reply, then the earlier ones from the latest back.
-      if (
-        nameUsedRecently(options.founderName, [
-          options.previousReply,
-          ...[...(options.earlierReplies ?? [])].reverse(),
-        ])
-      ) {
-        const named = withoutVocativeName(out, options.founderName, { spoken: !note });
-        if (named.removed > 0 && note) notes.push(`name_removed:${named.removed}`);
-        out = named.text;
-      }
-      if (options.knownFigures !== undefined) {
-        const figures = withoutExampleFigures(out, options.knownFigures);
-        if (figures.removed > 0 && note) notes.push(`example_figure_removed:${figures.removed}`);
-        out = figures.text;
-      }
-      if (options.noQuestions === true) {
-        const sentences = out.split(/(?<=[.!?…]["'”’)\]*_]*)\s+/u);
-        const statements = sentences.filter((x) => !/\?["'”’)\]*_]*$/u.test(x.trim()));
-        if (statements.length > 0 && statements.length < sentences.length) {
-          if (note) notes.push(`questions_removed:${sentences.length - statements.length}`);
-          out = statements.join(' ');
-        }
+    // What the gate does inside a streamed reply's units (validators/openers.ts, figures.ts, prompts/phrasing.ts), for
+    // a reply written whole, and again for one the gate released: the stored answer is what was shown and said.
+    if (!identityAsked) {
+      const opener = withoutStockOpener(out, {
+        names: greetingNames,
+        ...(options.founderText === undefined ? {} : { founderText: options.founderText }),
+        flagged: options.preRisk.categories.length > 0 || forcedEscalationFor(options.preRisk) !== null,
+      });
+      if (opener.removed) {
+        if (note) notes.push('stock_opener_removed');
+        out = opener.text;
       }
     }
+    // Newest first: the previous reply, the earlier ones from the latest back, then the end of the last conversations.
+    if (
+      nameBudgetSpent(options.founderName, [
+        options.previousReply,
+        ...[...(options.earlierReplies ?? [])].reverse(),
+        ...(options.pastReplies ?? []),
+      ])
+    ) {
+      const named = withoutVocativeName(out, options.founderName, { spoken: !note });
+      if (named.removed > 0 && note) notes.push(`name_removed:${named.removed}`);
+      out = named.text;
+    }
+    if (options.knownFigures !== undefined) {
+      const figures = withoutExampleFigures(out, options.knownFigures);
+      if (figures.removed > 0 && note) notes.push(`example_figure_removed:${figures.removed}`);
+      out = figures.text;
+      const invented = withoutInventedFigures(out, options.knownFigures);
+      if (invented.removed > 0 && note) notes.push(`invented_figure_removed:${invented.removed}`);
+      out = invented.text;
+    }
+    if (options.noQuestions === true) {
+      const sentences = out.split(/(?<=[.!?…]["'”’)\]*_]*)\s+/u);
+      // As the gate does: a question it released before anything else is the reply's start, and stays.
+      const statements = sentences.filter(
+        (x, i) => (options.released === true && i === 0) || !/\?["'”’)\]*_]*$/u.test(x.trim()),
+      );
+      if (statements.length > 0 && statements.length < sentences.length) {
+        if (note) notes.push(`questions_removed:${sentences.length - statements.length}`);
+        out = statements.join(' ');
+      }
+    }
+    // A question in a form the vEIR used lately is said in another form (coaching v3), never dropped.
+    const varied = withVariedQuestions(out, usedFrames);
+    if (varied.rephrased > 0 && note) notes.push(`question_rephrased:${varied.rephrased}`);
+    out = varied.text;
     return out;
   };
   r.answer = crafted(r.answer, true);

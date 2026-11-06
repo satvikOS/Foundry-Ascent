@@ -1339,7 +1339,10 @@ describe('conversation craft the lab still heard (wave 7)', () => {
         mode: 'coach',
         ...(channel === 'voice' ? { channel, callId: CALL_ID } : {}),
       });
-      const expected = 'Okay, Maya. Then book both chats for Thursday. Does that work?';
+      // The spoken run comes right after the typed one, whose last reply named Maya: the name is spent across
+      // conversations too (coaching v3, one reply in four), and the lead-in says "Okay." alone, shown and stored alike.
+      const lead = channel === 'text' ? 'Okay, Maya.' : 'Okay.';
+      const expected = `${lead} Then book both chats for Thursday. Does that work?`;
       expect(
         deltas(events)
           .map((d) => d.text)
@@ -1349,7 +1352,7 @@ describe('conversation craft the lab still heard (wave 7)', () => {
       expect(completed(events).response?.answer).toBe(expected);
       if (channel === 'voice') {
         expect(speechUnits(events).map((u) => u.text)).toEqual([
-          'Okay, Maya.',
+          lead,
           'Then book both chats for Thursday.',
           'Does that work?',
         ]);
@@ -1529,14 +1532,14 @@ describe('the first reply after an intro that said hello (wave 7)', () => {
   it('a chat opener that only welcomed them back leaves a hello its hello back', async () => {
     const gateway = new MockModelGateway({
       streamDelayMs: 0,
-      streamFixture: () => 'Hi Maya, good to see you.',
+      streamFixture: () => 'Hi there, good to see you.',
     });
     const { orchestrator } = coreWith(gateway);
     const sessionId = await openedWith(
       'Good to have you back. Last time, we talked about pricing. Want to pick that up?',
     );
     const { events } = await run(orchestrator, sessionId, { text: 'Hi!', mode: 'coach' });
-    expect(completed(events).response?.answer).toBe('Hi Maya, good to see you.');
+    expect(completed(events).response?.answer).toBe('Hi there, good to see you.');
   });
 });
 

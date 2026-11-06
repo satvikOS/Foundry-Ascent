@@ -26,7 +26,7 @@ import { type RequestContext } from '../context.js';
 import { createCore } from '../core.js';
 import { type CoreHarness, createCoreHarness } from '../testing/harness.js';
 import { LEFT_OFF_HEADING, LEFT_OFF_MAX_CHARS, renderLeftOffSection } from './continuity-prompt.js';
-import { loadLeftOff } from './continuity.js';
+import { loadLeftOff, pastRepliesOf } from './continuity.js';
 
 let h: CoreHarness;
 let maya: RequestContext;
@@ -287,6 +287,10 @@ describe('a second call minutes after the first', () => {
     // The second call is newer and Maya's own; the first is distilled.
     expect(state?.conversations[0]?.sessionId).toBe(second.id);
     expect(firstSeen === undefined || firstSeen.exchanges.length === 0).toBe(true);
+    // The vEIR's own replies there stay readable for its phrasing ledger (coaching v3), distilled or not, newest
+    // first: the reply to the recall question first.
+    expect(state?.conversations[0]?.replies?.[0]).toContain(question);
+    expect(pastRepliesOf(state)[0]).toContain(question);
   });
 });
 
@@ -1384,7 +1388,7 @@ describe('continuity keyed by the venture and the founder (review)', () => {
     expect(notes).toContain('never your own conversation');
   });
 
-  it('greets around the thread it noted, afresh each time; the thread goes with its opener', async () => {
+  it('opens with the line the model wrote, then greets around the thread it noted; never the same twice', async () => {
     await ageAll(8);
     const before = await scripted.sessions.create(maya, quietquad(), {});
     await say(maya, before.id, 'I will interview five library staff before Friday.');
@@ -1405,14 +1409,20 @@ describe('continuity keyed by the venture and the founder (review)', () => {
     const notebook = await scripted.notebook.get(maya, quietquad());
     expect(notebook.nextTopic).toBe('The five library-staff interviews you planned');
     const stored = notebook.nextOpener ?? '';
+    expect(stored).not.toBe('');
+    // Coaching v3: the model's own line opens the next conversation, as it wrote it (no template, no model call).
     const first = await scripted.sessions.create(maya, quietquad(), {});
+    expect(first.opener).toBe(stored);
+    // Opened again with nothing said, it is not said twice: the fallback greets around the thread it noted.
     const second = await scripted.sessions.create(maya, quietquad(), {});
-    for (const opened of [first, second]) {
+    const third = await scripted.sessions.create(maya, quietquad(), {});
+    for (const opened of [second, third]) {
       expect(opened.opener).toContain('the five library-staff interviews you planned');
       expect(opened.opener).not.toBe(stored);
     }
     // Opening one conversation after another never greets the same way twice.
     expect(second.opener).not.toBe(first.opener);
+    expect(third.opener).not.toBe(second.opener);
     // A person who rewrites the opener chose what to open with: the thread goes.
     await scripted.notebook.update(maya, quietquad(), {
       expectedVersion: notebook.version,
@@ -1501,9 +1511,12 @@ describe('continuity keyed by the venture and the founder (review)', () => {
     expect((await scripted.notebook.get(maya, quietquad())).nextTopic).toBe(
       'the facility budget numbers maya will get',
     );
+    // The model's own line first (said to them), then the fallback around the thread, said to them too.
+    const stored = (await scripted.notebook.get(maya, quietquad())).nextOpener;
     for (let i = 0; i < 3; i += 1) {
       const opened = await scripted.sessions.create(maya, quietquad(), {});
-      expect(opened.opener).toContain('the facility budget numbers you will get');
+      if (i === 0) expect(opened.opener).toBe(stored);
+      else expect(opened.opener).toContain('the facility budget numbers you will get');
       expect(opened.opener).not.toMatch(/maya|the founder/i);
     }
   });

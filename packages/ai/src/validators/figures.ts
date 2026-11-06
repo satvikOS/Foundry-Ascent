@@ -11,7 +11,11 @@
  *   messages, nor the sources shown, nor arithmetic on two of those numbers): counted on the turn record
  *   (`invented_figure:n`, `proposed_figure:n`), so the lab and production can see the rate;
  * - {@link withoutExampleFigures} leaves out an aside that only offers a made-up figure as an example ("(say, $10 a
- *   month)", "— e.g. 40 percent —"). The sentence around it stands; nothing else of the reply is touched.
+ *   month)", "— e.g. 40 percent —", "(even $5–$10)"). The sentence around it stands; nothing else of the reply is touched.
+ * - {@link withoutInventedFigures} (coaching v3: pilot v3 still stated 30 made-up figures) says a figure nobody gave by
+ *   what it is, where the sentence reads as well without the number: "a $10 gift card" → "a gift card", "a 10 percent
+ *   discount" → "a discount", "pay $2/month for it" → "pay a monthly price for it", "at $30 per unit" → "at a set price
+ *   per unit". Any other made-up figure stays as written (and counted): the sentence would not read without it.
  */
 
 /** A money or percentage figure ("$1,200", "$1.5k", "40%", "15 percent", "$2/month"). */
@@ -109,9 +113,9 @@ export function inventedFigures(answer: string, known: string): InventedFigures 
   return { unsourced, proposed };
 }
 
-/** An aside that offers an example: "(say, $10 a month)", "— e.g. 40% —". */
+/** An aside that offers an example: "(say, $10 a month)", "— e.g. 40% —", "(even $5–$10)". */
 const EXAMPLE_ASIDE =
-  /\s?\((?:say|e\.?g\.?|for example|for instance|something like|maybe|like|roughly|around|about)\b[^()\n]{0,120}\)|\s?[—–]\s?(?:say|e\.?g\.?|for example|for instance|something like|maybe)\b[^—–\n]{0,120}[—–]\s?/giu;
+  /\s?\((?:say|e\.?g\.?|for example|for instance|something like|maybe|like|roughly|around|about|even|just|only)\b[^()\n]{0,120}\)|\s?[—–]\s?(?:say|e\.?g\.?|for example|for instance|something like|maybe)\b[^—–\n]{0,120}[—–]\s?/giu;
 
 /**
  * `answer` without the asides that only offer a made-up figure as an example (see the module comment). An aside whose
@@ -134,4 +138,58 @@ export function withoutExampleFigures(
     return /^\s?[—–]/.test(aside) ? ' ' : '';
   });
   return removed === 0 ? { text: answer, removed: 0 } : { text: text.replace(/ {2,}/g, ' '), removed };
+}
+
+/** A money or percentage figure, or a range of two ("$5–$10", "10 to 15 percent"). */
+const FIGURE_OR_RANGE = String.raw`(?:[$€£]\s?\d[\d,]*(?:\.\d+)?(?:\s?(?:k|m|bn|million|billion|thousand))?|\d[\d,]*(?:\.\d+)?\s?(?:%|percent|per cent))(?:\s?(?:-|–|—|to)\s?(?:[$€£]\s?)?\d[\d,]*(?:\.\d+)?(?:\s?(?:k|m|%|percent|per cent))?)?`;
+
+/** "a $10 gift card", "an 8% cut": an article, the figure, then the thing it prices. */
+const PRICED_THING = new RegExp(
+  String.raw`\b([Aa]n?) (${FIGURE_OR_RANGE}) (?!(?:per|a|an|each|for|to|or|and|in|of|on|at|from|off|more|less|or)\b)(?=(\p{L}[\p{L}'’-]*))`,
+  'gu',
+);
+
+/** "$2/month", "$30 per unit", "$10 a session": a price per period or per item. */
+const PRICE_PER = new RegExp(
+  String.raw`(?<!\b(?:the|that|this|your|their|our|my|its|a|an) )(${FIGURE_OR_RANGE})\s?(?:/\s?|\ba |\bper |\beach )(month|week|year|seat|user|session|class|lesson|unit|order|head|person|student|household|customer|box|kit|test|visit|night|hour)\b`,
+  'giu',
+);
+
+const PERIOD: Readonly<Record<string, string>> = { month: 'monthly', week: 'weekly', year: 'yearly' };
+
+/** The article for a word ("a gift card", "an evening class"). */
+function articleFor(word: string, capital: boolean): string {
+  const an = /^(?:[aeio]|u(?!n[aeiou]|ni|s[aeiou]|r[aeiou]|tility)|hour|honest)/iu.test(word);
+  const article = an ? 'an' : 'a';
+  return capital ? `${article.charAt(0).toUpperCase()}${article.slice(1)}` : article;
+}
+
+/**
+ * `answer` with each figure nobody gave said by what it is where that reads as well (see the module comment): figures
+ * the founder or a source gave, arithmetic on theirs, and figures offered as an example, condition or target are left
+ * as they are (the last are counted as proposed). `removed` counts the figures taken out.
+ */
+export function withoutInventedFigures(
+  answer: string,
+  known: string,
+): { readonly text: string; readonly removed: number } {
+  const invented = new Set(inventedFigures(answer, known).unsourced.map((f) => f.replace(/\s+/g, ' ')));
+  if (invented.size === 0) return { text: answer, removed: 0 };
+  const madeUp = (figure: string): boolean => {
+    for (const m of figure.matchAll(FIGURE)) if (invented.has(m[0].trim().replace(/\s+/g, ' '))) return true;
+    return false;
+  };
+  let removed = 0;
+  let text = answer.replace(PRICED_THING, (whole, article: string, figure: string, next: string) => {
+    if (!madeUp(figure)) return whole;
+    removed += 1;
+    return `${articleFor(next, article.startsWith('A'))} `;
+  });
+  text = text.replace(PRICE_PER, (whole, figure: string, per: string) => {
+    if (!madeUp(figure)) return whole;
+    removed += 1;
+    const period = PERIOD[per.toLowerCase()];
+    return period === undefined ? `a set price per ${per}` : `a ${period} price`;
+  });
+  return removed === 0 ? { text: answer, removed: 0 } : { text, removed };
 }

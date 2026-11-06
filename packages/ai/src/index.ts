@@ -257,7 +257,7 @@ export {
 } from './validators/social.js';
 export {
   asksForVerdict,
-  nameUsedRecently,
+  nameBudgetSpent,
   withoutStockOpener,
   withoutVocativeName,
   type OpenerRewrite,

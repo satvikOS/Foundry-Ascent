@@ -44,14 +44,39 @@ describe('New chat’s greeting', () => {
     }
   });
 
-  it('keeps an opener without a greeting of its own whole, under a welcome', () => {
+  it('keeps an opener without a greeting of its own whole, under a welcome that changes with the line', () => {
     const opener = 'Last time you planned to call facilities about the library budget. How did it go?';
-    expect(newChatGreeting({ ...base, opener })).toEqual({ title: 'Welcome back, Maya', line: opener });
+    const shown = newChatGreeting({ ...base, opener });
+    expect(shown.line).toBe(opener);
+    expect(shown.title).toMatch(/^(?:Welcome back|Good to see you|Hello again|Nice to see you), Maya$/);
+    // The same line, the same heading (it never changes in front of them); other lines, other welcomes.
+    expect(newChatGreeting({ ...base, opener }).title).toBe(shown.title);
+    const titles = new Set(
+      [
+        'Did the second library answer about the trial?',
+        'How did the facilities call go?',
+        'Where did the pricing page land with the dean?',
+        'Any word from the landlord on the sensors?',
+        'The survey went out: how many replies so far?',
+        'You were about to book the study room; did it work out?',
+      ].map((line) => newChatGreeting({ ...base, opener: line }).title),
+    );
+    expect(titles.size).toBeGreaterThan(1);
     // A line a person wrote for a founder with no conversation yet.
     expect(newChatGreeting({ ...base, opener: 'Corin asked me to check in.', returning: false })).toEqual({
       title: 'Hi, Maya',
       line: 'Corin asked me to check in.',
     });
+  });
+
+  it('takes the vEIR’s own varied greeting as the heading (coaching v3: model-written openers)', () => {
+    for (const [line, title] of [
+      ['Hey. The two pilot quotes you were waiting on: did either come back?', 'Hey, Maya'],
+      ['Morning! You were about to send the landlord survey; how many replies so far?', 'Morning, Maya'],
+      ['Good afternoon. Where did the pricing call with the library land?', 'Good afternoon, Maya'],
+    ] as const) {
+      expect(newChatGreeting({ ...base, opener: line }).title).toBe(title);
+    }
   });
 
   it('greets by the time of day only with nothing to pick up, or in a private chat', () => {

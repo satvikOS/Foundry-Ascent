@@ -26,6 +26,15 @@ export interface RetrievalArgs {
    * coach's words, never a request for a reference.
    */
   readonly founderText: string;
+  /**
+   * What the conversation is about beyond the founder's message (coaching v3): their earlier messages in it, newest
+   * first, and the venture's own words. When the message asks for nothing, a reference item it and the conversation
+   * both name may be offered as optional background (`retrievalRepo.REFERENCE_GATE`). Absent: only what they ask for.
+   */
+  readonly conversation?: {
+    readonly earlierFounderTexts: readonly string[];
+    readonly venture: string | null;
+  };
   /** Query embedding or null (lexical only). */
   readonly embedding: readonly number[] | null;
   readonly dataClassCeiling: 'public' | 'program_internal' | 'venture_private';
@@ -148,6 +157,7 @@ export async function retrieveEvidence(tx: AppExecutor, args: RetrievalArgs): Pr
                     founderText: args.founderText,
                     limit: referenceLimit,
                     sessionId: args.sessionId ?? null,
+                    ...(args.conversation === undefined ? {} : { context: args.conversation }),
                   },
                 }
               : {}),

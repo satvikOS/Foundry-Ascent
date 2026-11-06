@@ -233,6 +233,11 @@ interface DistillSource {
   readonly consent: personasRepo.ConsentRecord | null;
   readonly release: personasRepo.PersonaReleaseRecord;
   readonly eirName: string | null;
+  /**
+   * The persona is an AI mentor under its own name ("Thomas", ADR-0021): the notes and the next opener speak as it,
+   * never as its EIR's twin or "built with consent from" anyone's approach (audit P0-3).
+   */
+  readonly mentor: boolean;
   readonly founderFirstName: string | null;
   /** Completed turns the distillation reads (crisis turns left out). */
   readonly turns: readonly turnsRepo.TurnRecord[];
@@ -382,6 +387,10 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         ? await eirRepo.getEirProfile(sx, persona.eirProfileId)
         : null;
     const founder = await principalsRepo.getPrincipal(sx, state.startedBy);
+    const presence = await personasRepo.getPersonaPresence(sx, {
+      personaId: persona.id,
+      assignedEirProfileId: null,
+    });
     const allTurns = await turnsRepo.listTurns(sx, state.id);
     // Crisis turns never feed notes, memory or lessons (their titles are never derived either).
     const turns = allTurns.filter((t) => t.status === 'completed' && t.riskLabel !== 'crisis');
@@ -410,6 +419,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       consent,
       release,
       eirName: eir?.displayName ?? null,
+      mentor: presence.mentor,
       founderFirstName: firstName(founder?.displayName),
       turns,
       turnIds: allTurns.map((t) => t.id),
@@ -440,6 +450,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       personaName: source.persona.name,
       eirNames: source.directory.eirNames,
       personaEirName: source.eirName,
+      ...(source.mentor ? { mentor: true } : {}),
       previousNotebook: notebook,
       // Where the thread the model started from came from: one kept from an earlier conversation that this one
       // never took up is stale (lab run 39780304879: a chat's distillation copied the previous opener word for word).
@@ -603,6 +614,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     const prompt = buildDistillPrompt({
       personaName: source.persona.name,
       eirName: source.eirName,
+      mentor: source.mentor,
       founderFirstName: source.founderFirstName,
       venture: {
         name: source.venture.name,

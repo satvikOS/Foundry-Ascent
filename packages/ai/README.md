@@ -293,6 +293,17 @@ true)` → kind `mentor`; ADR-0021, "Thomas"): `MENTOR_IDENTITY_RULES` (first pe
   (`validators/figures.ts`), and stated preferences hold (`statedPreferences`: "yes/no answers" and "short answers"
   budgets, "no questions" enforced by the gate). `<conversation_state>` reads rehearsal, stepping out of a role-play,
   "later", a fresh start, a summary request, a resend, a failure and a complaint, and the advice already given.
+- Coaching v3 (owner round 3; pilot v3 42143561959): the gate's edits inside a unit (stock opener, name, made-up
+  figure, question form) are made again on a released reply (`ValidateCoachResponseOptions.released`), so the stored
+  answer is what was shown and said (before, the history and the lab kept every opener and name the gate left out).
+  `nameBudgetSpent` holds the name to one reply in four over this conversation and the end of the last ones
+  (`pastReplies`); `withoutStockOpener` also reads any short grade of the founder's move ("That's a solid revision")
+  and "I hear you want…" (said back plainly); `withoutInventedFigures` names a made-up price by its role ("a gift
+  card", "a monthly price"). The phrasing ledger (`prompts/phrasing.ts`) counts the vEIR's question forms and openings
+  here and in its last conversations for `<conversation_state>`, and `withVariedQuestions` says a recently used
+  question form another way with the same substance (never dropped). A reference item is optional background
+  (`REFERENCE_RULES`); the distillation prompt speaks as a mentor under its own name (`DistillPromptInput.mentor`)
+  and asks for a short, varied next opener written to be said.
 - every text is plain, identity-rewritten and bounded (title ≤ 80, digest summary ≤ 1 200, 8 topics, 8
   commitments with valid dates, 6 open questions);
 - `notebookDelta` is the full next notebook, merged with the previous one: the model returns the full

@@ -46,6 +46,8 @@ export interface DistillSanitizeContext {
   eirNames: readonly string[];
   /** The persona's own EIR display name, when known (see `IdentityCheckOptions.personaEirName`). */
   personaEirName?: string | null;
+  /** The persona is an AI mentor under its own name (see `IdentityCheckOptions.mentor`; audit P0-3). */
+  mentor?: boolean;
   /** The notebook the model started from (null for the first conversation). */
   previousNotebook?: PreviousNotebook | null;
   /**
@@ -290,6 +292,7 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     personaName: ctx.personaName,
     eirNames: ctx.eirNames,
     ...(ctx.personaEirName !== undefined ? { personaEirName: ctx.personaEirName } : {}),
+    ...(ctx.mentor === true ? { mentor: true } : {}),
   };
   // Cut to the limit (plus a sentence of margin) before the identity check, so an over-long field cannot
   // make it expensive; the result is bounded again after the rewrite.

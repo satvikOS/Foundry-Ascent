@@ -13,9 +13,20 @@ export interface NewChatGreeting {
 }
 
 /** How an opener's own greeting sentence starts ("Welcome back.", "Good to talk again.", "Hi Maya!"). */
-const GREETING_START = /^(?:hi|hello|hey|welcome back|good to|nice to|great to|lovely to)\b/i;
+const GREETING_START =
+  /^(?:hi|hello|hey|hiya|welcome back|good to|nice to|great to|lovely to|good (?:morning|afternoon|evening)|morning|afternoon|evening)\b/i;
 /** Longest greeting sentence taken for a heading. */
 const GREETING_MAX_WORDS = 7;
+
+/** Welcomes over a returning founder's opener that has no greeting of its own. */
+const WELCOMES = ['Welcome back', 'Good to see you', 'Hello again', 'Nice to see you'] as const;
+
+/** The welcome for an opener's line: the same line always gets the same one, a new line most likely another. */
+function welcomeFor(line: string): string {
+  let hash = 0;
+  for (let i = 0; i < line.length; i += 1) hash = (Math.imul(hash, 31) + line.charCodeAt(i)) >>> 0;
+  return WELCOMES[hash % WELCOMES.length] ?? WELCOMES[0];
+}
 
 /** An opener split into its own greeting sentence, when it starts with one, and the rest. */
 export function splitOpener(opener: string): { readonly greeting: string | null; readonly rest: string } {
@@ -57,8 +68,11 @@ export function newChatGreeting(args: {
     };
   }
   const { greeting, rest } = splitOpener(opener);
-  if (greeting === null)
-    return { title: `${args.returning ? 'Welcome back' : 'Hi'}, ${firstName}`, line: rest };
+  // The vEIR's own line has no greeting sentence: a welcome that changes with the line (coaching v3: the opener is
+  // model-written and never the same twice in a row; one stock heading over it every time would undo that).
+  if (greeting === null) {
+    return { title: `${args.returning ? welcomeFor(rest) : 'Hi'}, ${firstName}`, line: rest };
+  }
   const bare = greeting.replace(/[.!]+$/, '');
   const named = firstName !== '' && bare.toLowerCase().includes(firstName.toLowerCase());
   return { title: named ? bare : `${bare}, ${firstName}`, line: rest };

@@ -104,6 +104,11 @@ export interface LeftOffConversationData {
    * conversation never opens again on a thread the founder did not take up there (continuity.ts `chooseOpener`).
    */
   readonly opener?: string | null;
+  /**
+   * The vEIR's own replies in its last exchanges, distilled or not, newest first (its opener last): read for how it
+   * asked and opened, and how often it named the founder, never shown as what was said (coaching v3).
+   */
+  readonly replies?: readonly string[];
 }
 
 export interface LeftOffData {

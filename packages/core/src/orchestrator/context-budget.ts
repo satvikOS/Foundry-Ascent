@@ -60,6 +60,8 @@ export function assembleContext(args: {
   readonly today?: string;
   /** The conversation's opener, when the history reaches back to the start of the conversation. */
   readonly opener?: string | null;
+  /** The vEIR's replies at the end of its last conversations, newest first (its phrasing ledger reads them). */
+  readonly pastReplies?: readonly string[];
 }): AssembledContext {
   const systemTokens = estimateTokens(args.system);
   const answered = args.history.filter(
@@ -83,6 +85,7 @@ export function assembleContext(args: {
             ...(args.today !== undefined ? { today: args.today } : {}),
             // The founder's first message answers the replayed opener (<conversation_state> says so).
             opener: replayOpener ? (args.opener ?? null) : null,
+            ...(args.pastReplies !== undefined ? { pastReplies: args.pastReplies } : {}),
           }),
         ],
         args.leftOff ?? '',

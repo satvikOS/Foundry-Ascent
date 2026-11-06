@@ -12,7 +12,7 @@ import {
 import { conversationCraftRules } from '../prompts/craft.js';
 import { validateCoachResponse, type ValidateCoachResponseOptions } from './coach-response.js';
 import { inventedFigures, withoutExampleFigures } from './figures.js';
-import { nameUsedRecently, withoutStockOpener, withoutVocativeName } from './openers.js';
+import { nameBudgetSpent, withoutStockOpener, withoutVocativeName } from './openers.js';
 import { SentenceGate, type GateUnit, type SentenceGateOptions } from './sentence-gate.js';
 
 /**
@@ -151,10 +151,14 @@ describe('canned openers: the reply starts with its substance', () => {
 });
 
 describe("the founder's name: at most one reply in four", () => {
-  it('is left out where it is said to them while one of the last three replies named them', () => {
-    expect(nameUsedRecently('Maya', ['Good luck Friday.', 'Thanks, Maya.'])).toBe(true);
-    expect(nameUsedRecently('Maya', ['a', 'b', 'c', 'Thanks, Maya.'])).toBe(false);
-    expect(nameUsedRecently('Maya', ["Maya's survey is done."])).toBe(false);
+  it('is left out where it is said to them while the latest replies already named them one time in four', () => {
+    expect(nameBudgetSpent('Maya', ['Good luck Friday.', 'Thanks, Maya.'])).toBe(true);
+    // Replies 1-3 after a named one: this would be the 2nd name in 5 replies.
+    expect(nameBudgetSpent('Maya', ['a', 'b', 'c', 'Thanks, Maya.'])).toBe(true);
+    // The 2nd name in 8 replies is one in four.
+    expect(nameBudgetSpent('Maya', ['a', 'b', 'c', 'd', 'e', 'f', 'Thanks, Maya.'])).toBe(false);
+    expect(nameBudgetSpent('Maya', ["Maya's survey is done."])).toBe(false);
+    expect(nameBudgetSpent('Maya', [])).toBe(false);
     for (const [reply, expected] of [
       [
         "You're very welcome, Maya. Good luck with the pitch!",
@@ -202,7 +206,7 @@ describe('figures nobody gave', () => {
 
   it('is counted on the turn record, and asked of the prompt in plain words', () => {
     const out = validateCoachResponse(
-      response('Ask if they would pay $2 a month. That is $140 a week now.'),
+      response('Ask if they would pay $2. That is $140 a week now.'),
       opts({ knownFigures: known }),
     );
     expect(out.results.notes).toContain('invented_figure:1');

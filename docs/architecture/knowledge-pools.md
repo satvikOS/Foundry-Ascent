@@ -170,8 +170,18 @@ separate; this is the common pool's `public` scope.
   - an item **already cited in the conversation** (`turn_evidence` with source scope `public`) is never shown again;
   - one passage per item (a documented account before editorial guidance), in slots of their own beside the shared
     budget; authority 0.7 keeps them below the program's guidance (0.9) and the vEIR's library (1.0).
-- **Citing.** The evidence block marks them `source="reference"` and tells the coach to prefer the program's
-  guidance, name whose account it is, keep a documented account to its date and limits, never present editorial
+  - **in context, unasked** (coaching v3, owner round 3: the vEIR may cite the library when it is relevant to what is
+    being discussed): when the message asks for nothing, `selectContextualReference` offers one item that the new
+    message names by the same curated vocabulary (or a case's subject as a phrase, or a word that is not everyday
+    English) **and** one of the founder's last three messages or the venture's own words (its one-liner and goal) name
+    too, never in a message about the program or of fewer than six words; the database shows it only when no
+    reference passage was shown in the conversation's last four turns (`REFERENCE_GATE.contextGapTurns`), and never
+    an item already shown in it. The evidence block tells the coach a reference is optional background, to use only
+    where it genuinely helps. `pnpm --filter @foundry/db exec tsx src/scripts/reference-replay.ts <opened-dir>…`
+    prints the rates (no text): on live pilot 42124259353's 583 student turns, 10 turns (1.7 %) get a reference, 9 of
+    them in context, in 5 of 60 runs (the busiest run 17.6 %, about one turn in six).
+- **Citing.** The evidence block marks them `source="reference"` and tells the coach they are optional background, to
+  prefer the program's guidance, name whose account it is, keep a documented account to its date and limits, never present editorial
   guidance as fact, and say when something is not reported instead of estimating it. The app labels them
   "Reference library" and opens them in the viewer.
 - **Never venture memory.** A memory candidate resting only on reference passages is dropped unless the founder said
