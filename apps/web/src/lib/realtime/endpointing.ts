@@ -413,22 +413,59 @@ export function classifyUtterance(text: string): { reason: EndpointReason; class
   return { reason: 'open', class: 'open' };
 }
 
+/** Edit distance between two short strings (characters). */
+function editDistance(a: string, b: string): number {
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) {
+      next[j] = Math.min(
+        (row[j] ?? 0) + 1,
+        (next[j - 1] ?? 0) + 1,
+        (row[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    row = next;
+  }
+  return row[b.length] ?? 0;
+}
+
 /**
- * The words of `text` past the first as many words as `used` has: what the founder said after the part of a
- * segment already sent ('' when nothing). Transcribe often revises a sent segment's last word as it goes on ("the
- * pilots" → "the pilot for small clinics"), so the words are counted, not matched: a revision of the sent words
- * themselves is not new speech, and a word past them is, whatever the revision did before it.
+ * The words of `text` that come after the part `used` already sent ('' when none). Transcribe often revises a sent
+ * segment's tail as the founder goes on ("the pilots" → "the pilot for small clinics", "cannot" → "can not"), so
+ * past the words both share, the revised tail is the shortest run of words closest in spelling to the sent tail,
+ * and only the words after it are new speech.
  */
 function wordsAfter(used: string, text: string): string {
-  const count = words(used).length;
+  const sent = words(used);
   const raw = text.trim().split(/\s+/).filter(Boolean);
-  let seen = 0;
-  for (let i = 0; i < raw.length; i++) {
-    if (words(raw[i] ?? '').length === 0) continue;
-    if (seen === count) return raw.slice(i).join(' ');
-    seen += 1;
+  // The raw tokens that are words (punctuation alone is not), with their position.
+  const tokens = raw.flatMap((token, at) => {
+    const word = words(token).join('');
+    return word === '' ? [] : [{ word, at }];
+  });
+  const from = (index: number): string =>
+    index >= tokens.length ? '' : raw.slice(tokens[index]?.at ?? raw.length).join(' ');
+  let shared = 0;
+  while (shared < sent.length && shared < tokens.length && tokens[shared]?.word === sent[shared]) shared += 1;
+  if (shared === sent.length) return from(shared);
+  const tail = sent.slice(shared).join('');
+  let end = shared;
+  let best = Number.POSITIVE_INFINITY;
+  for (let j = shared; j <= tokens.length; j++) {
+    const cost = editDistance(
+      tail,
+      tokens
+        .slice(shared, j)
+        .map((t) => t.word)
+        .join(''),
+    );
+    if (cost < best) {
+      best = cost;
+      end = j;
+    }
   }
-  return '';
+  return from(end);
 }
 
 /** The Transcribe result a segment id belongs to (`a#5`: the words of result `a` after its first 5). */

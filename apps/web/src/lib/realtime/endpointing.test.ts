@@ -98,6 +98,19 @@ describe('Endpointer (fixed: one silence for everything, the switch back)', () =
     // Transcribe takes the added words back.
     ep.onResult({ resultId: 'a', text: 'How do I price the pilot.', partial: false, stable: true });
     expect(ep.hasSpeech()).toBe(false);
+
+    // A word split or joined differently is a revision, not new speech.
+    ep.onResult({ resultId: 'b', text: 'We cannot afford it', partial: true, stable: false });
+    expect(ep.take()).toBe('We cannot afford it');
+    ep.onResult({ resultId: 'b', text: 'We can not afford it.', partial: false, stable: true });
+    expect(ep.hasSpeech()).toBe(false);
+    ep.onResult({
+      resultId: 'b',
+      text: 'We can not afford it. Not this year.',
+      partial: false,
+      stable: true,
+    });
+    expect(ep.text()).toBe('Not this year.');
   });
 
   it('gives back the latest take as Transcribe now has it, ahead of what followed', () => {

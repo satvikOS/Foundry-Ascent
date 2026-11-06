@@ -1103,7 +1103,7 @@ export class CallEngine {
       turn.firstAudioAt === null &&
       // The server classified the line as ordinary: a crisis line's support and escalation are never taken back.
       turn.risk === 'ordinary' &&
-      this.crisisTurnId === null &&
+      !this.sayingCrisisLine() &&
       s.talkMode === 'hands_free' &&
       s.activity === 'thinking' &&
       s.blocked === null &&
