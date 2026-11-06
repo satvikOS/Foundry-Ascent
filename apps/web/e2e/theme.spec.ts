@@ -95,6 +95,11 @@ test.describe('OLED dark and glass', () => {
   test('true black canvas, a floating frosted panel; a glass palette; solid dialogs and panel menus', async ({
     page,
   }) => {
+    // The glass is what is checked: the runner's core count and a busy frame sample must not swap it for solid.
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+      window.localStorage.setItem('fa.perf', JSON.stringify({ v: 'ok', at: Date.now() }));
+    });
     await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
     await openVenture(page);
     await useTheme(page, 'dark');

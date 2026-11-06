@@ -311,6 +311,8 @@ function alpha(css: string): number {
  */
 async function keepGlassOn(page: Page): Promise<void> {
   await page.addInitScript(() => {
+    // The hints are read before any stored verdict: pin them, so the runner's own core count never decides.
+    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
     window.localStorage.setItem('fa.perf', JSON.stringify({ v: 'ok', at: Date.now() }));
   });
 }

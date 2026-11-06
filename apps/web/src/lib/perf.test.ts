@@ -32,8 +32,10 @@ describe('device class', () => {
   });
 
   it('reads few cores or little memory as low, and never counts unknown values against a device', () => {
-    expect(lowFromHints({ hardwareConcurrency: 4 })).toBe(true);
+    expect(lowFromHints({ hardwareConcurrency: 2 })).toBe(true);
     expect(lowFromHints({ hardwareConcurrency: 8, deviceMemory: 2 })).toBe(true);
+    // Four cores and 4 GB are ordinary phones, tablets and CI runners: their frames decide, not the hint.
+    expect(lowFromHints({ hardwareConcurrency: 4, deviceMemory: 4 })).toBe(false);
     expect(lowFromHints({ hardwareConcurrency: 8, deviceMemory: 8 })).toBe(false);
     expect(lowFromHints({})).toBe(false);
     expect(lowFromHints({ hardwareConcurrency: 0 })).toBe(false);
