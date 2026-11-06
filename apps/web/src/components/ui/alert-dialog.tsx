@@ -5,14 +5,18 @@ import { cn } from '@/lib/utils';
 
 import { buttonVariants } from './button';
 import { modalPanelClasses, overlayClasses } from './dialog';
+import { useLayerEscape } from './layers';
 
 export const AlertDialog = AlertDialogPrimitive.Root;
 const AlertDialogPortal = AlertDialogPrimitive.Portal;
 
 export function AlertDialogContent({
   className,
+  onEscapeKeyDown,
   ...props
 }: ComponentProps<typeof AlertDialogPrimitive.Content>) {
+  // A dialog opened over this one takes Escape even in the moment before Radix ranks it on top (layers.ts).
+  const layer = useLayerEscape(onEscapeKeyDown);
   return (
     <AlertDialogPortal>
       <AlertDialogPrimitive.Overlay data-slot="alert-dialog-overlay" className={overlayClasses} />
@@ -24,7 +28,9 @@ export function AlertDialogContent({
           'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98] duration-150',
           className,
         )}
+        {...layer.layerProps}
         {...props}
+        onEscapeKeyDown={layer.onEscapeKeyDown}
       />
     </AlertDialogPortal>
   );

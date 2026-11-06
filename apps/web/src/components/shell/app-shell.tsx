@@ -6,6 +6,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNo
 
 import { Button } from '@/components/ui/button';
 import { OverGlassContext } from '@/components/ui/glass-context';
+import { useLayerEscape } from '@/components/ui/layers';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { useCallsAvailable } from '@/features/calls/calls-available';
 import { MiniCallBar } from '@/features/calls/mini-call-bar';
@@ -49,6 +50,10 @@ const CommandPalette = lazy(() => import('./command-palette').then((m) => ({ def
 const ShortcutsDialog = lazy(() =>
   import('./shortcuts-dialog').then((m) => ({ default: m.ShortcutsDialog })),
 );
+// The breathing ground behind a conversation window: loaded when a page first claims it (never part of first paint).
+const BreathingGround = lazy(() =>
+  import('./breathing-ground').then((m) => ({ default: m.BreathingGround })),
+);
 const DataUseDialog = lazy(() => import('./account-dialogs').then((m) => ({ default: m.DataUseDialog })));
 const ReportProblemDialog = lazy(() =>
   import('./account-dialogs').then((m) => ({ default: m.ReportProblemDialog })),
@@ -88,6 +93,8 @@ export function AppShell({ me, children }: AppShellProps) {
   const [mobileBarClaims, setMobileBarClaims] = useState(0);
   // The phone bar's slot for one page action (a page portals into it while the bar is shown).
   const [phoneBarActions, setPhoneBarActions] = useState<HTMLElement | null>(null);
+  // Pages that float a conversation window over the breathing ground (New chat, a conversation) claim it.
+  const [breathingClaims, setBreathingClaims] = useState(0);
   const chrome = useMemo<ShellChrome>(
     () => ({
       openNavigation: () => {
@@ -97,6 +104,12 @@ export function AppShell({ me, children }: AppShellProps) {
         setMobileBarClaims((count) => count + 1);
         return () => {
           setMobileBarClaims((count) => count - 1);
+        };
+      },
+      claimBreathingGround: () => {
+        setBreathingClaims((count) => count + 1);
+        return () => {
+          setBreathingClaims((count) => count - 1);
         };
       },
     }),
@@ -217,6 +230,11 @@ export function AppShell({ me, children }: AppShellProps) {
 
   return (
     <div className="app-ground min-h-dvh">
+      {breathingClaims > 0 ? (
+        <Suspense fallback={null}>
+          <BreathingGround />
+        </Suspense>
+      ) : null}
       <aside
         aria-label="Sidebar"
         data-collapsed={railed}
@@ -339,6 +357,8 @@ function PanelOverlay({
   onOpenChange: (open: boolean) => void;
   children: ReactNode;
 }) {
+  // A dialog opened from the sheet (a conversation's Rename) takes Escape, even before Radix ranks it on top.
+  const layer = useLayerEscape();
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
@@ -349,6 +369,8 @@ function PanelOverlay({
         <DialogPrimitive.Content
           data-slot="panel-sheet"
           aria-describedby={undefined}
+          {...layer.layerProps}
+          onEscapeKeyDown={layer.onEscapeKeyDown}
           className={cn(
             'glass-float fixed z-50 flex flex-col overflow-hidden text-sidebar-foreground outline-none [--glass-float-face:var(--glass-float-bg-over)]',
             // Phones: a floating sheet inside the safe areas.

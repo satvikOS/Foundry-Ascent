@@ -1,13 +1,17 @@
 import type { Me } from '@foundry/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { createLink } from '@tanstack/react-router';
-import { Phone, Search, SquarePen, type LucideIcon } from 'lucide-react';
-import { useMemo, type ComponentProps, type ReactNode } from 'react';
+import { Phone, Search, SquarePen, Video, type LucideIcon } from 'lucide-react';
+import { lazy, Suspense, useMemo, type ComponentProps, type ComponentType, type ReactNode } from 'react';
 
 import { VentureMark } from '@/components/faces/user-avatar';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
+import { Skeleton } from '@/components/ui/skeleton';
+import { toast } from '@/components/ui/toast';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { CallMenu, useCallEntry } from '@/features/calls/call-entry';
+import type { VideoAvailability } from '@/features/calls/call-kind';
+import { CallLink } from '@/features/calls/call-link';
 import { useLessonsToReview } from '@/lib/api/hooks/eir';
 import { ventureQueryOptions, useVentures } from '@/lib/api/hooks/ventures';
 import { canAccessVenture, canWrite, writesAnyVenture } from '@/lib/auth/roles';
@@ -16,10 +20,33 @@ import { cn, isMac } from '@/lib/utils';
 
 import { AccountMenu } from './account-menu';
 import { staffSections, ventureDestinations, type Workspace } from './nav';
-import { RecentConversations } from './recent-conversations';
+import type { RecentConversationsProps } from './recent-conversations';
 import { sidebarGroupLabelClasses, sidebarRowClasses } from './sidebar-styles';
 import { useVentureName } from './venture-name';
 import { WorkspaceSwitcher } from './workspace-switcher';
+
+/**
+ * The conversations list (its rows, menus and folding): loaded beside the shell rather than in the first page load,
+ * which has a script budget; its data arrives later anyway, so the first paint shows the placeholder its own loading
+ * state shows.
+ */
+const LazyRecentConversations = lazy(() =>
+  import('./recent-conversations').then((m) => ({ default: m.RecentConversations })),
+);
+
+function RecentsPlaceholder() {
+  return (
+    <div aria-busy="true" className="grid gap-2 px-2.5 pt-4">
+      <span className="sr-only" role="status">
+        Loading conversations…
+      </span>
+      <Skeleton className="h-3 w-16" />
+      <Skeleton className="h-4 w-11/12" />
+      <Skeleton className="h-4 w-4/5" />
+      <Skeleton className="h-4 w-3/4" />
+    </div>
+  );
+}
 
 interface SidebarAnchorProps extends ComponentProps<'a'> {
   icon?: LucideIcon;
@@ -104,6 +131,78 @@ function Tip({
   );
 }
 
+/**
+ * The two kinds of call side by side, one press each (owner, 2026-11-05: "separate voice call and video call"; a clear,
+ * consistent way to start one): each starts a new conversation on its own start screen, where Remember or Private is
+ * chosen (and a video call's disclosure is read). Video stays in place when it is not offered, quiet, and says why.
+ */
+function SidebarCallRow({
+  tenant,
+  ventureId,
+  name,
+  video,
+  onNavigate,
+}: {
+  tenant: string;
+  ventureId: string;
+  name: string;
+  video: VideoAvailability | null;
+  onNavigate?: (() => void) | undefined;
+}) {
+  const blocked = video?.available === false ? video.reason : null;
+  const half = cn(sidebarRowClasses, 'min-w-0 flex-1');
+  return (
+    <div role="group" aria-label={`Call ${name}`} data-testid="sidebar-call" className="flex gap-px">
+      <Tip show label={`Voice call with ${name}`} shortcut="g v">
+        <CallLink
+          tenant={tenant}
+          ventureId={ventureId}
+          sessionId={null}
+          kind="voice"
+          onClick={onNavigate}
+          aria-label={`Voice call with ${name}`}
+          className={half}
+        >
+          <Phone aria-hidden className="size-4 shrink-0 text-sidebar-muted" />
+          <span className="truncate">Voice</span>
+        </CallLink>
+      </Tip>
+      {blocked ? (
+        <Tip show label={blocked}>
+          <button
+            type="button"
+            aria-disabled
+            data-slot="sidebar-row"
+            aria-label={`Video call: ${blocked}`}
+            onClick={() => {
+              toast(blocked);
+            }}
+            className={cn(half, 'cursor-not-allowed opacity-50 hover:bg-transparent')}
+          >
+            <Video aria-hidden className="size-4 shrink-0 text-sidebar-muted" />
+            <span className="truncate">Video</span>
+          </button>
+        </Tip>
+      ) : (
+        <Tip show label={`Video call with ${name}`}>
+          <CallLink
+            tenant={tenant}
+            ventureId={ventureId}
+            sessionId={null}
+            kind="video"
+            onClick={onNavigate}
+            aria-label={`Video call with ${name}`}
+            className={half}
+          >
+            <Video aria-hidden className="size-4 shrink-0 text-sidebar-muted" />
+            <span className="truncate">Video</span>
+          </CallLink>
+        </Tip>
+      )}
+    </div>
+  );
+}
+
 export interface SidebarContentProps {
   me: Me;
   workspace: Workspace;
@@ -118,6 +217,11 @@ export interface SidebarContentProps {
   onOpenReportProblem: () => void;
   /** Collapse / close control shown next to the switcher. */
   headerAction?: ReactNode;
+  /**
+   * The conversations list, for a still picture of the panel that must show it at once (the landing page's device ad,
+   * itself loaded lazily); the app shell leaves it out and the list loads beside the shell.
+   */
+  recents?: ComponentType<RecentConversationsProps>;
 }
 
 /**
@@ -136,6 +240,7 @@ export function SidebarContent({
   onOpenDataUse,
   onOpenReportProblem,
   headerAction,
+  recents: Recents,
 }: SidebarContentProps) {
   const tenant = me.tenant.slug;
   const ventures = useVentures();
@@ -204,28 +309,37 @@ export function SidebarContent({
           </Tip>
         ) : null}
         {ventureId && calls.callable ? (
-          <CallMenu
-            tenant={tenant}
-            ventureId={ventureId}
-            name={calls.name}
-            video={calls.video}
-            onNavigate={onNavigate}
-            side={collapsed ? 'right' : 'bottom'}
-            tooltip={collapsed ? `Call ${calls.name}` : undefined}
-            trigger={
-              <button
-                type="button"
-                data-slot="sidebar-row"
-                data-testid="sidebar-call"
-                className={cn(sidebarRowClasses, collapsed && 'justify-center px-0')}
-              >
-                <Phone aria-hidden className="size-4 shrink-0 text-sidebar-muted" />
-                <span className={cn('min-w-0 flex-1 truncate text-left', collapsed && 'sr-only')}>
-                  Call {calls.name}
-                </span>
-              </button>
-            }
-          />
+          collapsed ? (
+            // The rail: one Call icon offering Voice call, Video call and what a call is.
+            <CallMenu
+              tenant={tenant}
+              ventureId={ventureId}
+              name={calls.name}
+              video={calls.video}
+              onNavigate={onNavigate}
+              side="right"
+              tooltip={`Call ${calls.name}`}
+              trigger={
+                <button
+                  type="button"
+                  data-slot="sidebar-row"
+                  data-testid="sidebar-call"
+                  className={cn(sidebarRowClasses, 'justify-center px-0')}
+                >
+                  <Phone aria-hidden className="size-4 shrink-0 text-sidebar-muted" />
+                  <span className="sr-only">Call {calls.name}</span>
+                </button>
+              }
+            />
+          ) : (
+            <SidebarCallRow
+              tenant={tenant}
+              ventureId={ventureId}
+              name={calls.name}
+              video={calls.video}
+              onNavigate={onNavigate}
+            />
+          )
         ) : null}
         {search}
       </div>
@@ -251,12 +365,23 @@ export function SidebarContent({
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2">
         {hasConversations && !collapsed ? (
-          <RecentConversations
-            tenant={tenant}
-            ventureNames={ventureNames}
-            onNavigate={onNavigate}
-            onViewAll={onViewAllConversations}
-          />
+          Recents ? (
+            <Recents
+              tenant={tenant}
+              ventureNames={ventureNames}
+              onNavigate={onNavigate}
+              onViewAll={onViewAllConversations}
+            />
+          ) : (
+            <Suspense fallback={<RecentsPlaceholder />}>
+              <LazyRecentConversations
+                tenant={tenant}
+                ventureNames={ventureNames}
+                onNavigate={onNavigate}
+                onViewAll={onViewAllConversations}
+              />
+            </Suspense>
+          )
         ) : null}
         {assigned.length > 0 && !collapsed ? (
           <div role="group" aria-labelledby="sidebar-assigned">

@@ -27,6 +27,7 @@ import { AttachButton, AttachmentTray, useComposerAttachments } from './attachme
 import { Composer, MAX_TURN_CHARS, modeToSend, type ComposerMode } from './composer';
 import { newConversationRequest, setPendingFirstMessage } from './first-message';
 import { newChatGreeting } from './greeting';
+import { ConversationWindow } from './conversation-window';
 import { useStartPrivacy } from './privacy-choice';
 import { VentureContext, type PromptSuggestion } from './venture-context';
 
@@ -252,102 +253,108 @@ function NewChat() {
   // the founder, and nothing moves under them.
   if (!ready) {
     return (
-      <div
-        // Keyed apart from the page: the page arrives as a new element, so nothing on screen "moves" (a reused
-        // node moving from the centred skeleton counted as a layout shift on a slow phone).
-        key="pending"
-        aria-busy="true"
-        className="mx-auto flex w-full max-w-(--content-width) flex-1 flex-col items-center justify-center gap-4 px-4"
-      >
-        <span className="sr-only" role="status">
-          Loading…
-        </span>
-        <Skeleton className="h-9 w-72" />
-        <Skeleton className="h-5 w-80 max-w-full" />
-        <Skeleton className="h-28 w-full rounded-2xl" />
-      </div>
+      <ConversationWindow>
+        <div
+          // Keyed apart from the page: the page arrives as a new element, so nothing on screen "moves" (a reused
+          // node moving from the centred skeleton counted as a layout shift on a slow phone).
+          key="pending"
+          aria-busy="true"
+          className="mx-auto flex w-full max-w-(--content-width) flex-1 flex-col items-center justify-center gap-4 px-4"
+        >
+          <span className="sr-only" role="status">
+            Loading…
+          </span>
+          <Skeleton className="h-9 w-72" />
+          <Skeleton className="h-5 w-80 max-w-full" />
+          <Skeleton className="h-28 w-full rounded-2xl" />
+        </div>
+      </ConversationWindow>
     );
   }
 
   return (
-    <div key="ready" className="relative flex flex-1 flex-col">
-      <PageCorner
-        calls={
-          available && calls.callable ? (
-            <CallButtons
-              tenant={tenant}
-              ventureId={ventureId}
-              sessionId={null}
-              name={calls.name}
-              video={calls.video}
-              // Remember or Private was in view in the context panel beside it: the call starts at once with that
-              // choice. With the panel closed, the call asks first.
-              choiceInView={contextInView}
-            />
-          ) : null
-        }
-      />
-      <div className="mx-auto flex w-full max-w-(--content-width) flex-1 flex-col justify-center px-4 pt-16 pb-[min(14vh,7rem)] sm:px-6">
-        <Greeting title={welcome.title}>
-          <p
-            data-testid="greeting-line"
-            className="mt-2 max-w-xl text-body text-pretty text-muted-foreground"
-          >
-            {welcome.line}
-          </p>
-        </Greeting>
-
-        <div className="mt-8">
-          <Composer
-            value={text}
-            onChange={setText}
-            personaName={name}
-            mode={mode}
-            onModeChange={setMode}
-            allowedModes={venture.data?.persona?.allowedModes}
-            counterpart={counterpart}
-            onCounterpartChange={setCounterpart}
-            streaming={false}
-            busy={createSession.isPending}
-            disabledReason={available ? null : (availability?.title ?? 'Unavailable')}
-            onSend={send}
-            onStop={() => undefined}
-            textareaRef={textareaRef}
-            top={
-              <AttachmentTray
-                items={attachments.items}
-                onCancel={attachments.cancel}
-                onRetry={attachments.retry}
-                onDismiss={attachments.dismiss}
+    <ConversationWindow className="relative">
+      <div key="ready" className="contents">
+        <PageCorner
+          calls={
+            available && calls.callable ? (
+              <CallButtons
+                tenant={tenant}
+                ventureId={ventureId}
+                sessionId={null}
+                name={calls.name}
+                video={calls.video}
+                // Remember or Private was in view in the context panel beside it: the call starts at once with that
+                // choice. With the panel closed, the call asks first.
+                choiceInView={contextInView}
               />
-            }
-            // Attached files go into the venture's Documents, which last: a private chat offers none.
-            tools={temporary ? null : <AttachButton onFiles={attachments.attach} disabled={!available} />}
-          />
-          {!available && availability?.reason ? (
-            <p className="mt-3 text-center text-small text-muted-foreground" role="status">
-              {availability.reason}
-            </p>
-          ) : temporary ? (
-            <p className="mt-3 text-center text-caption text-muted-foreground" data-testid="private-note">
-              Private: not kept.
-            </p>
-          ) : null}
-        </div>
-      </div>
-
-      <Inspector title="Context" remember="context" defaultOpen>
-        <VentureContext
-          tenant={tenant}
-          ventureId={ventureId}
-          veir={veir}
-          memory={
-            available ? { kind: 'choice', value: privacy, onChange: setPrivacy } : { kind: 'fixed', privacy }
+            ) : null
           }
-          onPrompt={available ? choose : undefined}
         />
-      </Inspector>
-    </div>
+        <div className="mx-auto flex w-full max-w-(--content-width) flex-1 flex-col justify-center px-4 pt-16 pb-[min(14vh,7rem)] sm:px-6">
+          <Greeting title={welcome.title}>
+            <p
+              data-testid="greeting-line"
+              className="mt-2 max-w-xl text-body text-pretty text-muted-foreground"
+            >
+              {welcome.line}
+            </p>
+          </Greeting>
+
+          <div className="mt-8">
+            <Composer
+              value={text}
+              onChange={setText}
+              personaName={name}
+              mode={mode}
+              onModeChange={setMode}
+              allowedModes={venture.data?.persona?.allowedModes}
+              counterpart={counterpart}
+              onCounterpartChange={setCounterpart}
+              streaming={false}
+              busy={createSession.isPending}
+              disabledReason={available ? null : (availability?.title ?? 'Unavailable')}
+              onSend={send}
+              onStop={() => undefined}
+              textareaRef={textareaRef}
+              top={
+                <AttachmentTray
+                  items={attachments.items}
+                  onCancel={attachments.cancel}
+                  onRetry={attachments.retry}
+                  onDismiss={attachments.dismiss}
+                />
+              }
+              // Attached files go into the venture's Documents, which last: a private chat offers none.
+              tools={temporary ? null : <AttachButton onFiles={attachments.attach} disabled={!available} />}
+            />
+            {!available && availability?.reason ? (
+              <p className="mt-3 text-center text-small text-muted-foreground" role="status">
+                {availability.reason}
+              </p>
+            ) : temporary ? (
+              <p className="mt-3 text-center text-caption text-muted-foreground" data-testid="private-note">
+                Private: not kept.
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <Inspector title="Context" remember="context" defaultOpen>
+          <VentureContext
+            tenant={tenant}
+            ventureId={ventureId}
+            veir={veir}
+            memory={
+              available
+                ? { kind: 'choice', value: privacy, onChange: setPrivacy }
+                : { kind: 'fixed', privacy }
+            }
+            onPrompt={available ? choose : undefined}
+          />
+        </Inspector>
+      </div>
+    </ConversationWindow>
   );
 }
 

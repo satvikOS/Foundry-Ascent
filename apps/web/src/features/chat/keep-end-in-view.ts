@@ -66,15 +66,17 @@ export function useKeepEndInView({
   const lastScrollY = useRef(0);
   const streamingNow = useRef(streaming);
 
-  /** Pixels of the conversation's end hidden below the dock (or the viewport, when there is no dock). */
+  /**
+   * Pixels of the conversation's end hidden below the dock (or the viewport, when there is no dock). What the dock
+   * covers runs from its top edge to the bottom of the viewport: its own height, and the gap the floating window
+   * leaves beneath it.
+   */
   const hidden = useCallback((): number => {
     const column = end.current;
     if (!column) return 0;
-    return hiddenBelowDock(
-      column.getBoundingClientRect().bottom,
-      window.innerHeight,
-      dock.current?.getBoundingClientRect().height ?? 0,
-    );
+    const box = dock.current?.getBoundingClientRect();
+    const covered = box ? Math.max(box.height, window.innerHeight - box.top) : 0;
+    return hiddenBelowDock(column.getBoundingClientRect().bottom, window.innerHeight, covered);
   }, []);
 
   const reveal = useCallback(() => {

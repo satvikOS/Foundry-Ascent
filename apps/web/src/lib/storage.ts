@@ -40,6 +40,8 @@ export const STORAGE_KEYS = {
   contextPanelOpen: 'fa.context-panel.open',
   /** Device class for costly effects ("low" swaps glass for solid surfaces): lib/perf.ts. */
   perf: 'fa.perf',
+  /** The side panels' sections the person folded or unfolded, by section id (components/ui/collapsible-section). */
+  panelSections: 'fa.panel.sections',
 } as const;
 
 /**

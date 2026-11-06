@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { OverGlassContext } from '@/components/ui/glass-context';
 import { InspectorPanel } from '@/components/ui/inspector-panel';
+import { useLayerEscape } from '@/components/ui/layers';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { BREAKPOINTS, useMediaQuery } from '@/lib/hooks/use-media-query';
 import { safeStorage, STORAGE_KEYS } from '@/lib/storage';
@@ -178,6 +179,8 @@ function MountTarget({ target }: { target: HTMLDivElement | null }) {
  */
 export function InspectorRegion() {
   const { target, meta, open, setOpen, isDesktop } = useInspectorContext();
+  // About (or any dialog) opened from the sheet takes Escape, even before Radix ranks it on top (layers.ts).
+  const layer = useLayerEscape();
   if (!meta) return null;
   const close = () => {
     setOpen(false);
@@ -217,6 +220,8 @@ export function InspectorRegion() {
         <DialogPrimitive.Content
           data-slot="context-sheet"
           aria-describedby={undefined}
+          {...layer.layerProps}
+          onEscapeKeyDown={layer.onEscapeKeyDown}
           className={cn(
             'glass-float fixed z-50 flex flex-col overflow-hidden outline-none [--glass-float-face:var(--glass-float-bg-over)]',
             'top-[calc(0.5rem+env(safe-area-inset-top))] right-[calc(0.5rem+env(safe-area-inset-right))] bottom-[calc(0.5rem+env(safe-area-inset-bottom))] w-[min(calc(100vw-3.5rem),var(--inspector-width))] rounded-(--radius-sheet)',

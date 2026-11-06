@@ -45,6 +45,7 @@ import { turnOutcomeAnnouncement } from './announcements';
 import { AttachButton, AttachmentTray, useComposerAttachments } from './attachments';
 import { Composer, MAX_TURN_CHARS, modeToSend, type ComposerMode } from './composer';
 import { ContextPanel } from './context-panel';
+import { ConversationWindow } from './conversation-window';
 import { DeleteConversationDialog, RenameConversationDialog } from './conversation-dialogs';
 import { ConversationHeader, type ConversationMenuAction } from './conversation-header';
 import { DigestView } from './digest-view';
@@ -110,13 +111,15 @@ function PrivateConversation() {
 
 function ConversationSkeleton() {
   return (
-    <div aria-busy="true" className="mx-auto grid w-full max-w-(--content-width) gap-8 px-4 py-10 sm:px-6">
-      <span className="sr-only" role="status">
-        Loading conversation…
-      </span>
-      <Skeleton className="ml-auto h-12 w-2/3 rounded-2xl" />
-      <SkeletonText lines={5} />
-    </div>
+    <ConversationWindow>
+      <div aria-busy="true" className="mx-auto grid w-full max-w-(--content-width) gap-8 px-4 py-10 sm:px-6">
+        <span className="sr-only" role="status">
+          Loading conversation…
+        </span>
+        <Skeleton className="ml-auto h-12 w-2/3 rounded-2xl" />
+        <SkeletonText lines={5} />
+      </div>
+    </ConversationWindow>
   );
 }
 
@@ -354,7 +357,7 @@ function Conversation() {
   };
 
   return (
-    <div ref={endInView.conversationRef} className="@container/conv flex flex-1 flex-col">
+    <ConversationWindow ref={endInView.conversationRef} className="@container/conv">
       <ConversationHeader
         tenant={tenant}
         ventureId={ventureId}
@@ -410,7 +413,8 @@ function Conversation() {
             />
           ))}
           {showLive ? (
-            <div ref={liveRef} className="scroll-mt-24">
+            // Brought to the top of the window, below its header (and the mini call bar, while one shows).
+            <div ref={liveRef} className="scroll-mt-[calc(var(--mini-call-height)+var(--window-gap)+5.5rem)]">
               <LiveExchange
                 state={state}
                 progress={progress}
@@ -583,6 +587,6 @@ function Conversation() {
           })
         }
       />
-    </div>
+    </ConversationWindow>
   );
 }

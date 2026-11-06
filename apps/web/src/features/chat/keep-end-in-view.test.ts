@@ -75,7 +75,7 @@ function mount(initial: Props = { changeKey: 'idle', streaming: false }) {
   const attach = (refs: KeepEndInView) => {
     act(() => {
       refs.conversationRef(element(() => ({ height: page.end })));
-      refs.dockRef(element(() => ({ height: page.dock })));
+      refs.dockRef(element(() => ({ height: page.dock, top: VIEWPORT - page.dock })));
       refs.endRef(element(() => ({ bottom: page.end - page.scrollY })));
     });
   };
@@ -120,6 +120,23 @@ describe('useKeepEndInView', () => {
     expect(hiddenNow()).toBe(0);
     grow({ end: 2100 });
     expect(hiddenNow()).toBe(0);
+  });
+
+  it('in the floating window, the end clears the gap beneath the dock too', () => {
+    const gap = 12;
+    const hook = renderHook((props: Props) => useKeepEndInView(props), {
+      initialProps: { changeKey: 'idle', streaming: false },
+    });
+    act(() => {
+      hook.result.current.conversationRef(element(() => ({ height: page.end })));
+      // The dock floats 12 px above the bottom of the viewport.
+      hook.result.current.dockRef(element(() => ({ height: page.dock, top: VIEWPORT - gap - page.dock })));
+      hook.result.current.endRef(element(() => ({ bottom: page.end - page.scrollY })));
+    });
+    hook.rerender({ changeKey: 'streaming', streaming: true });
+    grow({ end: 1400 });
+    // 1400 − (800 − 120 − 12): the end lands exactly above the floating dock.
+    expect(scrollBy).toHaveBeenCalledWith({ top: 732, behavior: 'instant' });
   });
 
   it('when it finishes, its end clears the composer grown by long chips', () => {
@@ -215,7 +232,7 @@ describe('useKeepEndInView', () => {
     act(() => {
       // React attaches the column's ref before the dock's (it comes first in the page).
       hook.result.current.endRef(element(() => ({ bottom: page.end - page.scrollY })));
-      hook.result.current.dockRef(element(() => ({ height: page.dock })));
+      hook.result.current.dockRef(element(() => ({ height: page.dock, top: VIEWPORT - page.dock })));
     });
     hook.rerender({ changeKey: 'streaming', streaming: true });
     grow({ end: 1400 });

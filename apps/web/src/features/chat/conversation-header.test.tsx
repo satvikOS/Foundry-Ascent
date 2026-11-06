@@ -44,7 +44,13 @@ async function renderHeader(privacy: 'standard' | 'ephemeral', phone = false) {
   );
   // On a phone the header is the only bar: the shell's chrome is there.
   const ui = phone ? (
-    <ShellChromeContext.Provider value={{ openNavigation: vi.fn(), claimMobileBar: () => () => undefined }}>
+    <ShellChromeContext.Provider
+      value={{
+        openNavigation: vi.fn(),
+        claimMobileBar: () => () => undefined,
+        claimBreathingGround: () => () => undefined,
+      }}
+    >
       {header}
     </ShellChromeContext.Provider>
   ) : (

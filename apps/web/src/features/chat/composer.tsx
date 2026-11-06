@@ -40,7 +40,7 @@ export const STOP_GRACE_MS = 600;
 interface ComposerProps {
   value: string;
   onChange: (value: string) => void;
-  /** The vEIR's name in text ("Corin · vEIR"): names the message box and its placeholder. */
+  /** The mentor's name in text ("Thomas"): names the message box and its placeholder. */
   personaName: string;
   mode: ComposerMode;
   onModeChange: (mode: ComposerMode) => void;

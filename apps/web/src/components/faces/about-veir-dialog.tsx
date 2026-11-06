@@ -1,3 +1,5 @@
+import type { ReactElement } from 'react';
+
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -6,26 +8,31 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from '@/components/ui/dialog';
 import { veirFacts, type VeirName } from '@/lib/veir';
 
 /**
  * About the mentor: the plain facts, calm and complete (what it is, that a call's face and voice are AI-generated,
  * what is remembered and the Private option, that a person from the program is there, and its limits). Reachable at
- * any time from the right context panel; the transcript itself never carries it.
+ * any time from the right context panel; the transcript itself never carries it. `trigger` is the control that opens
+ * it: closing the dialog (Done, Escape, a click outside) puts focus back on it.
  */
 export function AboutVeirDialog({
   veir,
   open,
   onOpenChange,
+  trigger,
 }: {
   veir: VeirName;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  trigger?: ReactElement;
 }) {
   const facts = veirFacts(veir);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
       <DialogContent data-slot="veir-about" className="max-w-md">
         <DialogHeader>
           <DialogTitle>About {veir.name}</DialogTitle>

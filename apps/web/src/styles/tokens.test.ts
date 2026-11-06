@@ -292,13 +292,21 @@ const CONTENTS = [
   ...FILLED_PAIRS.map(([, fill]) => fill),
 ] as const;
 
-/** The ground: the canvas, and the canvas under the atmosphere's two tints at their strongest. */
+/** The breathing ground's colour fields (behind a conversation window), each at its strongest. */
+const BREATH_FIELDS = ['--breath-1', '--breath-2', '--breath-3'] as const;
+
+/**
+ * The ground: the canvas, and the canvas under the atmosphere's two tints and the breathing ground's three fields,
+ * each at its strongest.
+ */
 function grounds(scheme: Scheme): { name: string; color: Rgba }[] {
   const canvas = resolve('--background', scheme);
   return [
     { name: '--background', color: canvas },
-    { name: '--atmosphere-1 over --background', color: over(resolve('--atmosphere-1', scheme), canvas) },
-    { name: '--atmosphere-2 over --background', color: over(resolve('--atmosphere-2', scheme), canvas) },
+    ...['--atmosphere-1', '--atmosphere-2', ...BREATH_FIELDS].map((tint) => ({
+      name: `${tint} over --background`,
+      color: over(resolve(tint, scheme), canvas),
+    })),
   ];
 }
 
@@ -416,6 +424,8 @@ describe('colour tokens (globals.css)', () => {
       '--control-glass-hover',
       '--atmosphere-1',
       '--atmosphere-2',
+      ...BREATH_FIELDS,
+      '--window-face',
     ]) {
       expect(tokens.has(name), name).toBe(true);
     }
@@ -433,6 +443,34 @@ describe('colour tokens (globals.css)', () => {
         );
         expect(pairs.length).toBeGreaterThan(200);
         expect(failures(pairs, 4.5)).toEqual([]);
+      });
+
+      it('text in the conversation window keeps 4.5:1 over the breathing ground at its strongest', () => {
+        // The window's face has no blur (what lies behind it is already soft): prose sits on the face composited
+        // over the canvas and each colour field at its centre.
+        const face = resolve('--window-face', scheme);
+        expect(face.a, 'the window is translucent').toBeLessThan(0.75);
+        const pairs = [...TEXT_TOKENS, ...STATUS_TEXT].flatMap((text) =>
+          grounds(scheme).map((ground) => {
+            const bg = over(face, ground.color);
+            return {
+              label: `${text} on --window-face over ${ground.name} (${hex(bg)})`,
+              fg: resolve(text, scheme),
+              bg,
+            };
+          }),
+        );
+        expect(pairs.length).toBeGreaterThan(60);
+        expect(failures(pairs, 4.5)).toEqual([]);
+      });
+
+      it('the breathing fields are faint: the ground stays the canvas', () => {
+        const canvas = resolve('--background', scheme);
+        for (const tint of BREATH_FIELDS) {
+          const peak = over(resolve(tint, scheme), canvas);
+          expect(contrast(peak, canvas), `${tint} at its strongest`).toBeLessThan(1.2);
+          if (scheme === 'dark') expect(luminance(peak), `${tint} at its strongest`).toBeLessThan(0.01);
+        }
       });
 
       it('text on the bars that text scrolls under keeps 4.5:1 over the worst content passing beneath', () => {
@@ -750,6 +788,17 @@ describe('colour tokens (globals.css)', () => {
       const ground = /\.app-ground::before \{([^}]*)\}/.exec(css)?.[1] ?? '';
       expect(ground).toContain('position: fixed');
       expect(ground).not.toMatch(/animation|transition/);
+    });
+
+    it('the breathing ground is cheap: a fixed canvas behind the window, whose pane has no blur of its own', () => {
+      const ground = /\.breathing-ground \{([^}]*)\}/.exec(css)?.[1] ?? '';
+      expect(ground).toContain('position: fixed');
+      expect(ground).toContain('pointer-events: none');
+      const frame = /\.conv-window-frame \{\s*display: block;([^}]*)\}/.exec(css)?.[1] ?? '';
+      expect(frame).toContain('position: sticky');
+      expect(frame).not.toMatch(/backdrop-filter|animation|transition/);
+      // Gone on a slow device, in forced colours and in print.
+      expect(css).toMatch(/:root\[data-perf='low'\] \.breathing-ground \{\s*display: none;/);
     });
 
     it('borders are low-alpha white hairlines', () => {
