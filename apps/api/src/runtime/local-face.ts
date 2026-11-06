@@ -34,6 +34,13 @@ export const LOCAL_FACE_KEY = 'LOCAL_MEDIA_FACE_API_KEY';
 /** Enables the lab's vendor probes on the local dev server; requests carry it in {@link PROBE_HEADER}. */
 export const LAB_FACE_PROBE_TOKEN = 'LAB_FACE_PROBE_TOKEN';
 export const PROBE_HEADER = 'x-lab-probe-token';
+/**
+ * The lab's own length for the call's sandbox sessions (seconds, {@link LAB_SESSION_SECONDS_MIN} to the sandbox's 60;
+ * unset: the sandbox's 60), so a session ends mid-call at a time the lab knows (the LITE arm's reconnect).
+ */
+export const LAB_FACE_SESSION_SECONDS = 'LAB_FACE_SESSION_SECONDS';
+/** The shortest the lab may ask for: a call's face is never offered for less (`MIN_FACE_SECONDS`). */
+export const LAB_SESSION_SECONDS_MIN = 15;
 /** Where the probes answer (under the API's own prefix, so the web preview's proxy reaches them too). */
 export const PROBE_PREFIX = '/api/v1/_lab/face/';
 /** Vendor calls remembered for the probe (method, path, status and the envelope's code only). */
@@ -145,6 +152,20 @@ export function localFaceFor(
   if (config.media.faceAudience !== 'admins') {
     throw new Error(`${LOCAL_FACE_KEY} needs MEDIA_FACE_AUDIENCE=admins`);
   }
+  const lengthText = env[LAB_FACE_SESSION_SECONDS]?.trim() ?? '';
+  const sessionSeconds = lengthText === '' ? null : Number(lengthText);
+  if (
+    sessionSeconds !== null &&
+    !(
+      Number.isInteger(sessionSeconds) &&
+      sessionSeconds >= LAB_SESSION_SECONDS_MIN &&
+      sessionSeconds <= LIVEAVATAR_SANDBOX_MAX_SECONDS
+    )
+  ) {
+    throw new Error(
+      `${LAB_FACE_SESSION_SECONDS} must be a whole number of seconds from ${String(LAB_SESSION_SECONDS_MIN)} to ${String(LIVEAVATAR_SANDBOX_MAX_SECONDS)}`,
+    );
+  }
   const calls: VendorCall[] = [];
   const inner = options.fetch ?? ((input, init) => fetch(input, init));
   const recorded = recordingFetch(inner, calls);
@@ -161,6 +182,7 @@ export function localFaceFor(
     adminsOnly: true,
     // The lab's local face is always the vendor's sandbox, which costs nothing.
     usdPerMinute: 0,
+    ...(sessionSeconds === null ? {} : { sandboxSessionSeconds: sessionSeconds }),
     fetch: recorded,
   });
   const token = env[LAB_FACE_PROBE_TOKEN]?.trim() ?? '';

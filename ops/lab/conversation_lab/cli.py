@@ -957,9 +957,11 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
     (apps/web/e2e/lab/face.lab.ts), as public numbers. One pass per face mode (``ctx.face_mode``; both: FULL with
     every check, then the API restarted in LITE for the call arm alone, with the same turns and meters)."""
     from conversation_lab.face import (
+        LITE_SESSION_SECONDS,
         PROBE_TOKEN_ENV,
         PRODUCTION_ORIGIN_ENV,
         PRODUCTION_ORIGIN_SOURCE_ENV,
+        SESSION_SECONDS_ENV,
         Probe,
         api_process_env,
         injection_audits,
@@ -1015,7 +1017,16 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
             specs=specs,
             config=LAB_CONFIG,
             report=ctx.private / "face" / ("playwright.json" if index == 0 else f"playwright-{mode}.json"),
-            extra_env={**extra, "LAB_FACE_APP_MODE": mode},
+            # The LITE pass's session length (face.LITE_SESSION_SECONDS), for the spec's reconnect wait.
+            extra_env={
+                **extra,
+                "LAB_FACE_APP_MODE": mode,
+                **(
+                    {SESSION_SECONDS_ENV: ctx.env[SESSION_SECONDS_ENV]}
+                    if SESSION_SECONDS_ENV in ctx.env
+                    else {}
+                ),
+            },
             timeout=30 * 60,
         )
         credits_after[mode] = probe.credits() if probe else None
@@ -1042,6 +1053,8 @@ def suite_face(ctx: Context, *, browser: dict[str, str], stack: Any = None, **_:
         server=server,
     )
     result["playwright_exits"] = exits
+    # The call's sandbox session length the LITE pass asked for (None: the sandbox's own minute, or no vendor).
+    result["lite_session_seconds"] = LITE_SESSION_SECONDS if "lite" in passes and not ctx.mock else None
     return {"face": result, "passed": result["passed"], "run": result["run"], "playwright_exit": rc}
 
 

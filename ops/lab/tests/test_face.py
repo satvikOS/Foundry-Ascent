@@ -633,8 +633,10 @@ def test_lite_face_env_is_the_sandbox_stock_face_fed_by_the_page_for_admins() ->
         "MEDIA_FACE_PROVIDER": "heygen-liveavatar",
         "MEDIA_FACE_SANDBOX": "true",
         "MEDIA_FACE_AVATAR_ID": face.SANDBOX_AVATAR,
+        "LAB_FACE_SESSION_SECONDS": str(face.LITE_SESSION_SECONDS),
         "LAB_FACE_PROBE_TOKEN": "t" * 43,
     }
+    # The vendor's sessions only: the stand-in face has no session length to ask for.
     assert face.face_env(mock=True, probe_token=None, mode="lite") == {
         "MEDIA_FACE_MODE": "lite",
         "MEDIA_FACE_AUDIENCE": "admins",
@@ -649,9 +651,12 @@ def test_lite_face_env_is_the_sandbox_stock_face_fed_by_the_page_for_admins() ->
     assert face.face_env(mock=False, probe_token="t" * 43, mode="lite-probe") == face.face_env(
         mock=False, probe_token="t" * 43, mode="full"
     )
-    # Switching modes leaves nothing of the other behind (LITE's route) and keeps everything else.
+    # Switching modes leaves nothing of the other behind (LITE's route and session length) and keeps everything else.
     full = {"A": "1", **face.face_env(mock=False, probe_token="t" * 43)}
+    assert "LAB_FACE_SESSION_SECONDS" not in full
     assert face.with_face_mode(full, mock=False, probe_token="t" * 43, mode="lite") == {"A": "1", **lite}
+    back = face.with_face_mode({"A": "1", **lite}, mock=False, probe_token="t" * 43, mode="full")
+    assert back == full
 
 
 def test_run_starts_the_api_in_the_first_pass_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -773,12 +778,14 @@ def test_both_runs_full_then_restarts_the_api_in_lite_for_the_call_arm_alone(
     assert restarted["LAB_FACE_PROBE_TOKEN"] == "t" * 43
     assert restarted["MEDIA_FACE_LITE_ROUTE"] == "browser"
     assert restarted["MEDIA_FACE_AVATAR_ID"] == face.SANDBOX_AVATAR
+    assert restarted["LAB_FACE_SESSION_SECONDS"] == str(face.LITE_SESSION_SECONDS)
     for p in passes:
         assert KEY not in json.dumps({k: v for k, v in p.items() if k != "report"}, default=str)
     result = out["face"]
     assert result["face_mode"] == "both"
     assert result["lite_face_reference"] == "ready"
     assert result["playwright_exits"] == {"full": 0, "lite": 0}
+    assert result["lite_session_seconds"] == face.LITE_SESSION_SECONDS
     # Each API process's vendor calls are its own pass's: FULL's grade E1, LITE's are reported beside them.
     assert result["vendor_calls"]["/v1/sessions/token"]["code"] == {"1000": 1}
     assert result["call_lite_vendor"]["vendor_calls"]["/v1/sessions/token"]["code"] == {"1000": 1}
@@ -1395,6 +1402,10 @@ def _lite_call(**changes: Any) -> dict[str, Any]:
             "interrupts": 0,
             "appendedOk": True,
             "committedOk": True,
+            "unackedChunks": 0,
+            "unackedOnClosedChannel": 0,
+            "unackedOnOpenChannel": 0,
+            "chunksBeforeWindow": 0,
             "firstChunkToStartedMs": [430, 470],
             "startedToAudioMs": [110, 115],
             "errors": 0,
@@ -1443,6 +1454,7 @@ def test_lite_browser_arm_reports_public_numbers_only_and_passes_when_healthy() 
     assert _graded(_lite_call()) == {
         "lite_ws_connected": True,
         "lite_one_utterance_per_turn": True,
+        "lite_no_audio_lost_on_replacement": True,
         "lite_acks_complete": True,
         "lite_first_audio_target": True,
         "lite_barge_in": True,
@@ -1540,3 +1552,56 @@ def test_a_lite_face_replaced_after_its_session_ended_counts_as_a_reconnect() ->
     assert checks(None) is None
     assert checks(None, {"reconnected": True}) is True
     assert checks(healthy, {"reconnected": False}) is False
+
+
+def test_a_chunk_left_on_a_replaced_channel_is_told_apart_from_the_labs_own_counting() -> None:
+    """Lab run 42202149133 reported appended_ok False with committed_ok True and the intro's first counted chunk at
+    48 000 bytes (an utterance's first is 9 600): the intro's 200 ms chunk went out before the face's tile was seen,
+    outside the old count's window. The follow-up places every unacknowledged chunk on its speak channel: one on a
+    channel that closed since (a face replaced before the vendor took the audio) is a product defect; one on a channel
+    still open is the vendor's silence (lite_acks_complete); a chunk sent before the window is only reported."""
+
+    def graded(**browser: Any) -> dict[str, bool | None]:
+        raw = _lite_call()
+        base = {
+            "unackedChunks": 0,
+            "unackedOnClosedChannel": 0,
+            "unackedOnOpenChannel": 0,
+            "chunksBeforeWindow": 1,
+        }
+        raw["lite_browser"] = {**raw["lite_browser"], **base, **browser}
+        return _graded(raw)
+
+    # The intro's earlier chunk alone: nothing lost, acks complete.
+    assert graded()["lite_no_audio_lost_on_replacement"] is True
+    assert graded()["lite_acks_complete"] is True
+    # A chunk the vendor never answered on a channel that closed: lost on replacement.
+    lost = graded(appendedOk=False, unackedChunks=1, unackedOnClosedChannel=1)
+    assert (lost["lite_no_audio_lost_on_replacement"], lost["lite_acks_complete"]) == (False, False)
+    # On a channel still open: the vendor's silence, not a replacement.
+    silent = graded(appendedOk=False, unackedChunks=1, unackedOnOpenChannel=1)
+    assert (silent["lite_no_audio_lost_on_replacement"], silent["lite_acks_complete"]) == (True, False)
+    # The reconnect step's own replacement counts too.
+    raw = _lite_call(reconnect={"reconnected": True, "unacked_on_closed_channel": 2})
+    raw["lite_browser"] = {**raw["lite_browser"], "unackedOnClosedChannel": 0}
+    assert _graded(raw)["lite_no_audio_lost_on_replacement"] is False
+    # A record from before the per-channel count: not measured.
+    old = _lite_call()
+    old["lite_browser"] = {k: v for k, v in old["lite_browser"].items() if k != "unackedOnClosedChannel"}
+    assert _graded(old)["lite_no_audio_lost_on_replacement"] is None
+    # The channel timeline is public numbers only.
+    raw = _lite_call()
+    raw["lite_browser"] = {
+        **raw["lite_browser"],
+        "channels": [
+            {"openedMs": -2310, "closedMs": 41200, "chunks": 12, "acked": 12, "url": "wss://x"},
+            {"openedMs": 43900.4, "closedMs": None, "chunks": 9, "acked": 9},
+            "not a channel",
+        ],
+    }
+    public = face.public_call_lite(raw)
+    assert public is not None
+    assert public["lite_browser"]["channels"] == [
+        {"opened_ms": -2310, "closed_ms": 41200, "chunks": 12, "acked": 12},
+        {"opened_ms": 43900, "closed_ms": None, "chunks": 9, "acked": 9},
+    ]

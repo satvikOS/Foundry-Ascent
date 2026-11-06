@@ -276,6 +276,20 @@ def _p(cell: Mapping[str, Any] | None) -> str:
     return f"p50 {cell['p50']} ms, p95 {cell['p95']} ms (n={cell['n']})"
 
 
+def _channels(channels: Any) -> str:
+    """Each speak channel as ``opened/closed chunks:acked`` (ms from the face's tile; ``-`` for none)."""
+    if not channels:
+        return "-"
+
+    def ms(value: Any) -> str:
+        return "-" if value is None else str(value)
+
+    return ", ".join(
+        f"{ms(c.get('opened_ms'))}/{ms(c.get('closed_ms'))} {c.get('chunks')}:{c.get('acked')}"
+        for c in channels
+    )
+
+
 def _face_tables(face: Mapping[str, Any]) -> list[str]:
     """The face suite's public numbers (conversation_lab/face.py public_result): checks, then each measurement."""
     out: list[str] = []
@@ -455,6 +469,13 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
                 f"{browser.get('uncommitted')}); keep-alives {browser.get('keep_alives')}; errors {browser.get('errors')}"
             )
             out.append(
+                f"- Unacknowledged chunks on a channel closed since (a face replaced before the vendor took them) "
+                f"{browser.get('unacked_on_closed_channel')}, on a channel still open "
+                f"{browser.get('unacked_on_open_channel')}; chunks of those utterances sent before the face's tile "
+                f"{browser.get('chunks_before_window')}; channels (opened / closed ms from the tile, chunks, acked) "
+                f"{_channels(browser.get('channels'))}"
+            )
+            out.append(
                 f"- First chunk → speak_started {_p(browser.get('first_chunk_to_started_ms'))}; speak_started → sound "
                 f"{_p(browser.get('started_to_audio_ms'))}; first face audio {_p(lite.get('first_face_audio_ms'))} "
                 f"against the voice alone {_p((face.get('polly') or {}).get('first_audio_ms'))} (same meter)"
@@ -478,7 +499,9 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
                 f"- Session end: reconnected {reconnect.get('reconnected')} after {reconnect.get('seconds_live_before')} s "
                 f"(why: {reconnect.get('end_reason')}), back in {reconnect.get('seconds_to_reconnect')} s; the next turn "
                 f"said by the face {reconnect.get('turn_spoken_by_face')}, on the new channel "
-                f"{reconnect.get('turn_on_new_channel')}, acks complete {reconnect.get('turn_acks_complete')}"
+                f"{reconnect.get('turn_on_new_channel')}, acks complete {reconnect.get('turn_acks_complete')}; "
+                f"chunks left unacknowledged on the replaced channel {reconnect.get('unacked_on_closed_channel')}; "
+                f"session length asked {face.get('lite_session_seconds')} s"
                 + (f"; error {reconnect['error']}" if reconnect.get("error") else "")
             )
         out.append(

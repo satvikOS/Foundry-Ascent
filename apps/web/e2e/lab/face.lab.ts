@@ -581,23 +581,62 @@ function maxOpenAtOnce(lab: FaceLab, end: number): number {
  * time and the channel: an utterance whose first chunk went out a moment before `after`, or a call whose face was
  * replaced since, is counted whole): every chunk by `agent.audio_buffer_appended` and its end by
  * `agent.audio_buffer_committed`.
+ *
+ * Where a gap is, so a run tells a product defect from the lab's own counting: `beforeWindow` is the chunks of those
+ * utterances sent before `after` (run 42202149133 counted from `after` alone: its intro's first 200 ms chunk went out
+ * before the face's tile was seen, the tile's first counted chunk was 48 000 bytes, never an utterance's first size,
+ * and the ack of that earlier chunk made the counts unequal). An unacknowledged chunk is placed on the speak channel it
+ * went over: `unackedOnClosed` sat on a channel that has closed since (a face replaced, or the vendor's end, before
+ * the vendor answered it: audio the page handed a face that went away, a product defect unless the call gave that
+ * unit back, see `fallbacks`), `unackedOnOpen` on a channel still open (the vendor never answered it, or not yet).
  */
 function liteAcks(lab: FaceLab, after: number) {
   const ids = [...new Set(liteOut(lab, 'agent.speak', after).map((f) => f.id))];
   const appended = liteIn(lab, 'agent.audio_buffer_appended');
   const committed = new Set(liteIn(lab, 'agent.audio_buffer_committed').map((f) => f.source));
   let unacked = 0;
+  let unackedOnClosed = 0;
+  let unackedOnOpen = 0;
+  let beforeWindow = 0;
   for (const id of ids) {
-    const chunks = liteOut(lab, 'agent.speak').filter((f) => f.id === id).length;
-    unacked += Math.max(0, chunks - appended.filter((f) => f.source === id).length);
+    const chunks = liteOut(lab, 'agent.speak').filter((f) => f.id === id);
+    beforeWindow += chunks.filter((f) => f.at < after).length;
+    const missing = Math.max(0, chunks.length - appended.filter((f) => f.source === id).length);
+    unacked += missing;
+    // The vendor answers a channel's chunks in order: the missing ones are the utterance's last.
+    for (const chunk of chunks.slice(chunks.length - missing)) {
+      if ((lab.lite.channels[chunk.socket]?.closed ?? null) !== null) unackedOnClosed += 1;
+      else unackedOnOpen += 1;
+    }
   }
   const ends = liteOut(lab, 'agent.speak_end', after).map((f) => f.id);
   return {
     appendedOk: unacked === 0,
     committedOk: ends.every((id) => committed.has(id)),
     unackedChunks: unacked,
+    unackedOnClosed,
+    unackedOnOpen,
+    beforeWindow,
     uncommitted: ends.filter((id) => !committed.has(id)).length,
   };
+}
+
+/**
+ * Each speak channel the page opened, as offsets from `live` (ms; negative: before the face's tile was seen) and the
+ * chunks it carried (from `live` on, and how many of those the vendor never acknowledged): the timeline a gap is read
+ * against. Numbers only.
+ */
+function liteChannels(lab: FaceLab, live: number) {
+  return lab.lite.channels.map((channel, index) => {
+    const chunks = liteOut(lab, 'agent.speak', live).filter((f) => f.socket === index);
+    const appended = liteIn(lab, 'agent.audio_buffer_appended').filter((f) => f.socket === index);
+    return {
+      openedMs: channel.opened === null ? null : Math.round(channel.opened - live),
+      closedMs: channel.closed === null ? null : Math.round(channel.closed - live),
+      chunks: chunks.length,
+      acked: Math.min(chunks.length, appended.filter((f) => chunks.some((c) => c.id === f.source)).length),
+    };
+  });
 }
 
 /**
@@ -670,7 +709,11 @@ function liteBrowserSummary(
     appendedOk: acks.appendedOk,
     committedOk: acks.committedOk,
     unackedChunks: acks.unackedChunks,
+    unackedOnClosedChannel: acks.unackedOnClosed,
+    unackedOnOpenChannel: acks.unackedOnOpen,
+    chunksBeforeWindow: acks.beforeWindow,
     uncommitted: acks.uncommitted,
+    channels: liteChannels(lab, live),
     firstChunkToStartedMs,
     startedToAudioMs,
     errors: liteIn(lab, 'error', live).length,
@@ -683,8 +726,13 @@ function liteBrowserSummary(
 /** The LITE arm's steps, in order: a failure records the one it stopped at. */
 type LiteStep = 'start_call' | 'face_join' | 'greeting' | 'turns' | 'barge_in' | 'reconnect';
 
-/** How long the LITE arm waits for its face's session to end and be replaced (the sandbox's last a minute). */
-const RECONNECT_WAIT_MS = 90_000;
+/**
+ * The call's sandbox session length the lab asked for (`LAB_FACE_SESSION_SECONDS`, ops/lab face.LITE_SESSION_SECONDS;
+ * unset: the sandbox's own minute), and how long the LITE arm waits for its face's session to end and be replaced:
+ * a whole session and 30 s more, so the wait never depends on the vendor's timing.
+ */
+const LAB_SESSION_SECONDS = Number(process.env.LAB_FACE_SESSION_SECONDS ?? '') || 60;
+const RECONNECT_WAIT_MS = LAB_SESSION_SECONDS * 1000 + 30_000;
 /** Said after the face came back: the call goes on, on the new session's channel. */
 const RECONNECT_LINE = 'Okay, and what should I do first tomorrow morning?';
 
@@ -720,6 +768,9 @@ async function liteReconnect(page: Page) {
     turn_spoken_by_face: null as boolean | null,
     turn_on_new_channel: null as boolean | null,
     turn_acks_complete: null as boolean | null,
+    // Chunks the page sent from the wait's start whose channel closed before the vendor acknowledged them: audio
+    // handed to the face being replaced (a product defect, see liteAcks), read again after the next turn.
+    unacked_on_closed_channel: liteAcks(lab, since).unackedOnClosed,
   };
   if (!back) return result;
   await waitForFaceQuiet(page, { timeoutMs: 20_000, pairedEvents: false });
@@ -729,6 +780,7 @@ async function liteReconnect(page: Page) {
   const acks = liteAcks(lab, turn.sentAt);
   return {
     ...result,
+    unacked_on_closed_channel: liteAcks(lab, since).unackedOnClosed,
     turn_spoken_by_face: turn.firstFaceAudioMs !== null && turn.firstAppPlaybackMs === null,
     turn_on_new_channel: chunks.length > 0 && chunks.every((f) => f.socket >= channelsBefore),
     turn_acks_complete: chunks.length > 0 && acks.appendedOk && acks.committedOk,

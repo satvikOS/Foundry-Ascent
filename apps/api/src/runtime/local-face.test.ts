@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { HeygenLiveAvatarFace, LIVEAVATAR_SANDBOX_AVATAR } from '../adapters/heygen-liveavatar.js';
+import {
+  HeygenLiveAvatarFace,
+  LIVEAVATAR_SANDBOX_AVATAR,
+  LIVEAVATAR_SANDBOX_MAX_SECONDS,
+} from '../adapters/heygen-liveavatar.js';
 import { ConfigError, loadApiConfig } from '../config.js';
 import {
   LAB_FACE_PROBE_TOKEN,
+  LAB_FACE_SESSION_SECONDS,
   LOCAL_FACE_KEY,
   PROBE_HEADER,
   fieldShape,
@@ -172,6 +177,30 @@ describe('localFaceFor (the dev server, the conversation lab face suite)', () =>
         expect(message).not.toContain(KEY);
         expect(seen, 'no vendor call was made').toEqual([]);
       }
+    }
+  });
+
+  it('asks the sandbox for the lab’s own session length (LAB_FACE_SESSION_SECONDS), only within its limits', async () => {
+    // The LITE arm's reconnect: the call's session ends mid-call at a time the lab knows, not the sandbox's minute.
+    const asked = async (env: Record<string, string>) => {
+      const { fetch, seen } = vendor(sandboxRoutes);
+      await face(env, fetch).embodiment?.createSession({
+        callId: 'c',
+        personaId: 'p',
+        avatarRef: null,
+        maxSeconds: 600,
+        requestId: 'r',
+      });
+      const token = seen.find((s) => s.url.endsWith('/v1/sessions/token'));
+      return (token?.body as Record<string, unknown> | undefined)?.max_session_duration;
+    };
+    expect(await asked({ ...lab, [LAB_FACE_SESSION_SECONDS]: '40' })).toBe(40);
+    // Unset: the sandbox's own limit.
+    expect(await asked(lab)).toBe(LIVEAVATAR_SANDBOX_MAX_SECONDS);
+    for (const bad of ['14', '61', '30.5', 'soon']) {
+      expect(() => face({ ...lab, [LAB_FACE_SESSION_SECONDS]: bad })).toThrow(
+        new RegExp(LAB_FACE_SESSION_SECONDS),
+      );
     }
   });
 

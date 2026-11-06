@@ -64,6 +64,13 @@ PRODUCTION_ORIGIN_ENV = "LAB_PRODUCTION_ORIGIN"
 #: Where that origin came from (``input``: the dispatch input; ``repository``: FA_SITE_URL), for the report.
 PRODUCTION_ORIGIN_SOURCE_ENV = "LAB_PRODUCTION_ORIGIN_SOURCE"
 _ORIGIN = re.compile(r"^https://[a-z0-9](?:[a-z0-9-]{0,62}\.)+[a-z0-9-]{1,62}(?::\d{1,5})?$")
+#: The LITE pass's own length for the call's sandbox sessions (apps/api runtime/local-face.ts LAB_FACE_SESSION_SECONDS),
+#: shorter than the sandbox's minute: the arm's face is replaced mid-call at a time the lab knows, and the reconnect
+#: step (face.lab.ts liteReconnect) waits for it from this length, not from the vendor's timing. 40 s leaves the
+#: page's quiet-moment refresh (25 s before the end) 15 s of each session, so the measured turns are not all spent
+#: reconnecting, and is above the shortest face a call is offered (15 s).
+LITE_SESSION_SECONDS = 40
+SESSION_SECONDS_ENV = "LAB_FACE_SESSION_SECONDS"
 #: The vendor sandbox's only avatar (docs.liveavatar.com, "Developing in Sandbox Mode").
 SANDBOX_AVATAR = "dd73ea75-1218-4ef3-92ce-606d5f7fbc0a"
 #: The LiveKit host the vendor's rooms were documented on (the CSP origins planned for the face).
@@ -274,6 +281,8 @@ def face_env(*, mock: bool, probe_token: str | None, mode: str = "full") -> dict
         "MEDIA_FACE_SANDBOX": "true",
         "MEDIA_FACE_AVATAR_ID": SANDBOX_AVATAR,
     }
+    if mode == "lite":
+        env[SESSION_SECONDS_ENV] = str(LITE_SESSION_SECONDS)
     if probe_token:
         env[PROBE_TOKEN_ENV] = probe_token
     return env
@@ -297,6 +306,7 @@ _FACE_KEYS = frozenset(
         "MEDIA_FACE_AVATAR_ID",
         "MEDIA_FACE_LITE_ROUTE",
         "EMBODIMENT_PROVIDER",
+        SESSION_SECONDS_ENV,
         PROBE_TOKEN_ENV,
     }
 )
@@ -747,7 +757,14 @@ def _lite_browser(raw: Any) -> dict[str, Any] | None:
         "appended_ok": _bool(raw.get("appendedOk")),
         "committed_ok": _bool(raw.get("committedOk")),
         "unacked_chunks": _int(raw.get("unackedChunks")),
+        # Where a gap sat (face.lab.ts liteAcks): on a channel closed since (a face replaced before the vendor
+        # answered: a product defect), on a channel still open (the vendor's own silence), and the chunks of the
+        # counted utterances sent before the window (run 42202149133's intro chunk, which its old count missed).
+        "unacked_on_closed_channel": _int(raw.get("unackedOnClosedChannel")),
+        "unacked_on_open_channel": _int(raw.get("unackedOnOpenChannel")),
+        "chunks_before_window": _int(raw.get("chunksBeforeWindow")),
         "uncommitted": _int(raw.get("uncommitted")),
+        "channels": _lite_channels(raw.get("channels")),
         "first_chunk_to_started_ms": percentile_ms(_ints(raw.get("firstChunkToStartedMs"))),
         "started_to_audio_ms": percentile_ms(_ints(raw.get("startedToAudioMs"))),
         "errors": _int(raw.get("errors")),
@@ -755,6 +772,23 @@ def _lite_browser(raw: Any) -> dict[str, Any] | None:
         "doubled_audio_overlaps": _int(doubled.get("overlaps")),
         "doubled_audio_ms": _int(doubled.get("ms")),
     }
+
+
+def _lite_channels(raw: Any) -> list[dict[str, int | None]] | None:
+    """Each speak channel's open and close (ms from the face's tile; negative: before it) and the chunks it carried
+    and had acknowledged: numbers only, at most 32."""
+    if not isinstance(raw, list):
+        return None
+    return [
+        {
+            "opened_ms": _int(c.get("openedMs")),
+            "closed_ms": _int(c.get("closedMs")),
+            "chunks": _int(c.get("chunks")),
+            "acked": _int(c.get("acked")),
+        }
+        for c in raw[:32]
+        if isinstance(c, dict)
+    ]
 
 
 def _lite_reconnect(raw: Any) -> dict[str, Any] | None:
@@ -769,6 +803,7 @@ def _lite_reconnect(raw: Any) -> dict[str, Any] | None:
         "turn_spoken_by_face": _bool(raw.get("turn_spoken_by_face")),
         "turn_on_new_channel": _bool(raw.get("turn_on_new_channel")),
         "turn_acks_complete": _bool(raw.get("turn_acks_complete")),
+        "unacked_on_closed_channel": _int(raw.get("unacked_on_closed_channel")),
         "error": _error(raw.get("error")),
     }
 
@@ -1152,6 +1187,9 @@ def lite_checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
         "lite_acks_complete": (
             bool(browser.get("appended_ok")) and bool(browser.get("committed_ok")) if measured else None
         ),
+        "lite_no_audio_lost_on_replacement": no_audio_lost_on_replacement(browser, lite.get("reconnect"))
+        if measured
+        else None,
         "lite_first_audio_target": (
             lite_p50 <= voice_p50 + LITE_FIRST_AUDIO_MARGIN_MS and lite_p50 <= LITE_FIRST_AUDIO_MAX_MS
             if lite_p50 is not None and voice_p50 is not None and measured
@@ -1167,6 +1205,20 @@ def lite_checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
         "lite_no_local_playback": browser.get("fallbacks") == 0 if measured else None,
         "lite_no_double_voice": browser.get("doubled_audio_overlaps") == 0 if measured else None,
     }
+
+
+def no_audio_lost_on_replacement(browser: Mapping[str, Any], reconnect: Any) -> bool | None:
+    """No chunk the page sent sat unacknowledged on a speak channel that then closed (a face replaced, or ended by the
+    vendor, before the vendor took the audio): over the measured turns and over the reconnect step. A gap on a channel
+    still open is the vendor's own silence (``lite_acks_complete`` grades it), never this. None for a record without
+    the per-channel count (before lab run 42202149133's follow-up)."""
+    gaps = [browser.get("unacked_on_closed_channel")]
+    if isinstance(reconnect, Mapping):
+        gaps.append(reconnect.get("unacked_on_closed_channel"))
+    known = [g for g in gaps if g is not None]
+    if gaps[0] is None:
+        return None
+    return all(g == 0 for g in known)
 
 
 def lite_channels_ok(browser: Mapping[str, Any]) -> bool:

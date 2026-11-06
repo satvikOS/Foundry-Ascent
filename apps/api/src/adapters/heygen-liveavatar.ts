@@ -101,6 +101,12 @@ export interface HeygenLiveAvatarOptions {
   readonly apiOrigin: string;
   /** Sandbox sessions: free, about a minute long, the sandbox avatar only (`MEDIA_FACE_SANDBOX`). */
   readonly sandbox: boolean;
+  /**
+   * Sandbox only: each session's length in seconds, shorter than the sandbox's own limit (the conversation lab's
+   * `LAB_FACE_SESSION_SECONDS`, runtime/local-face.ts), so a session ends mid-call at a time the lab knows and the
+   * call's reconnect is measured on purpose, not by the vendor's timing. Ignored outside the sandbox.
+   */
+  readonly sandboxSessionSeconds?: number;
   /** `lite` (default): the EIR's avatar renders our audio. `full`: a stock avatar voices admitted text. */
   readonly mode?: 'lite' | 'full';
   /**
@@ -405,7 +411,11 @@ export class HeygenLiveAvatarFace implements EmbodimentProvider {
         : request.avatarRef;
     if (avatarId === null) throw failure('needs an avatar');
     const asked = Math.max(1, Math.floor(request.maxSeconds));
-    const seconds = this.#options.sandbox ? Math.min(LIVEAVATAR_SANDBOX_MAX_SECONDS, asked) : asked;
+    const sandboxLimit = Math.min(
+      LIVEAVATAR_SANDBOX_MAX_SECONDS,
+      this.#options.sandboxSessionSeconds ?? LIVEAVATAR_SANDBOX_MAX_SECONDS,
+    );
+    const seconds = this.#options.sandbox ? Math.min(sandboxLimit, asked) : asked;
     const common = {
       avatar_id: avatarId,
       // 720p: higher resolutions add streaming latency (vendor docs).
