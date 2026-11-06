@@ -43,6 +43,10 @@ export function CommandDialog({
         <DialogDescription className="sr-only">{description}</DialogDescription>
         <Command
           loop
+          // cmdk's vim bindings take Ctrl+K as "previous item" and cancel it, so on Windows and Linux the app's own
+          // Ctrl+K (open or close the palette, ⌘K on a Mac) never reached it while focus was in the palette: not to
+          // close it, nor to open it again right after Escape (focus stays in the field while it fades out).
+          vimBindings={false}
           className="[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:pb-1.5 [&_[cmdk-group-heading]]:text-caption [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground"
           {...commandProps}
         >

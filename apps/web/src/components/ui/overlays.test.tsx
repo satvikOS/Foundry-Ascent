@@ -61,6 +61,35 @@ describe('overlay surfaces', () => {
     expect(overlay).not.toHaveClass('sm:backdrop-blur-xs');
   });
 
+  it('the command palette leaves Ctrl+K to the app (its toggle on Windows and Linux), arrows still move', async () => {
+    const user = userEvent.setup();
+    const seen: { key: string; ctrl: boolean; prevented: boolean }[] = [];
+    // The app's hotkeys listen on the window, after the palette had its turn (as in use-hotkeys).
+    const onKeyDown = (event: KeyboardEvent) => {
+      seen.push({ key: event.key, ctrl: event.ctrlKey, prevented: event.defaultPrevented });
+    };
+    window.addEventListener('keydown', onKeyDown);
+    try {
+      render(
+        <CommandDialog open title="Search">
+          <CommandInput placeholder="Search" />
+          <CommandList>
+            <CommandItem>Knowledge</CommandItem>
+            <CommandItem>Documents</CommandItem>
+          </CommandList>
+        </CommandDialog>,
+      );
+      await user.click(screen.getByPlaceholderText('Search'));
+      await user.keyboard('{Control>}k{/Control}');
+      expect(seen.find((e) => e.key === 'k' && e.ctrl)).toEqual({ key: 'k', ctrl: true, prevented: false });
+      expect(screen.getByRole('option', { name: 'Knowledge' })).toHaveAttribute('aria-selected', 'true');
+      await user.keyboard('{ArrowDown}');
+      expect(screen.getByRole('option', { name: 'Documents' })).toHaveAttribute('aria-selected', 'true');
+    } finally {
+      window.removeEventListener('keydown', onKeyDown);
+    }
+  });
+
   it('a menu is glass; its submenu, which overlaps it, is solid', async () => {
     const user = userEvent.setup();
     render(
