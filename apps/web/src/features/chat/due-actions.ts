@@ -14,6 +14,9 @@ const DATE_FIELD = { action: 'due', milestone: 'target_date' } as const;
 
 type DueType = keyof typeof DATE_FIELD;
 
+/** Done, Snooze and their Undo are all corrections (never an approve or reject: those review suggestions only). */
+type Correction = Extract<MemoryAction, { action: 'correct' }>;
+
 export function isDueType(type: string): type is DueType {
   return type === 'action' || type === 'milestone';
 }
@@ -38,7 +41,7 @@ export function canActOnDue(item: Pick<MemoryObjectView, 'type' | 'status'>): bo
 }
 
 /** The correction that marks a due item done (its other attributes are kept as they are). */
-export function doneAction(item: Pick<MemoryObjectView, 'attributes'>): MemoryAction {
+export function doneAction(item: Pick<MemoryObjectView, 'attributes'>): Correction {
   return {
     action: 'correct',
     patch: { attributes: { ...item.attributes, status: 'done' } },
@@ -51,7 +54,7 @@ export function snoozeAction(
   item: Pick<MemoryObjectView, 'type' | 'attributes'>,
   today: string = localIsoDay(),
   days: number = SNOOZE_DAYS,
-): MemoryAction | null {
+): Correction | null {
   if (!isDueType(item.type)) return null;
   const field = DATE_FIELD[item.type];
   const current = item.attributes[field];
@@ -65,6 +68,6 @@ export function snoozeAction(
 }
 
 /** The correction that puts a done or snoozed item back as it was (Undo, on the version the change made). */
-export function restoreAction(before: Pick<MemoryObjectView, 'attributes'>): MemoryAction {
+export function restoreAction(before: Pick<MemoryObjectView, 'attributes'>): Correction {
   return { action: 'correct', patch: { attributes: { ...before.attributes } }, reason: 'Undone' };
 }
