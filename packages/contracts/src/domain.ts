@@ -158,6 +158,12 @@ export const ResourceKind = z.enum([
   'other',
 ]);
 export const PersonaKind = z.enum(['neutral_guide', 'eir_persona']);
+/**
+ * How an EIR persona presents itself to founders (`personas.presentation`, migration 0028): `twin`, its EIR's digital
+ * twin named after them ("Corin's vEIR", ADR-0020); `mentor`, an AI mentor under its own name ("Thomas", ADR-0021).
+ */
+export const PersonaPresentation = z.enum(['twin', 'mentor']);
+export type PersonaPresentation = z.infer<typeof PersonaPresentation>;
 export const PersonaStatus = z.enum(['draft', 'active', 'suspended', 'retired']);
 export const PersonaReleaseStatus = z.enum(['draft', 'approved', 'superseded', 'withdrawn']);
 export const SessionPrivacy = z.enum(['standard', 'ephemeral']);
@@ -255,6 +261,8 @@ export const PersonaSummary = z.object({
   firstPerson: z.boolean().optional(),
   /** The persona's EIR is the venture's assigned EIR (see `VeirIdentity.eirSeesWork`). Additive. */
   eirSeesWork: z.boolean().optional(),
+  /** How it presents itself (see {@link PersonaPresentation}). Additive: absent means `twin`. */
+  presentation: PersonaPresentation.optional(),
 });
 export type PersonaSummary = z.infer<typeof PersonaSummary>;
 

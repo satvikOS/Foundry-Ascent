@@ -105,15 +105,17 @@ test.describe('landing page device ad', () => {
     await expect(page.locator('[data-slot="device-ad"] .ad-screen').first()).toBeVisible();
   });
 
-  test('says what Thomas is under the hero, and how the EIR made him, without claiming each answer', async ({
+  test('says what Thomas is under the hero, and who wrote his approach, without claiming each answer', async ({
     page,
   }) => {
     await page.goto('/');
     const note = page.getByRole('main').getByRole('note', { name: 'AI disclosure' });
     await expect(note).toContainText('Thomas is an AI mentor, not a person.');
     await note.getByRole('button', { name: 'More of the AI disclosure' }).press('Enter');
-    await expect(note).toContainText('released after their review');
-    await expect(note).not.toContainText(/wrote or approved|never speaks for/);
+    await expect(note).toContainText('written and approved by the program');
+    await expect(note).toContainText('no person writes or approves his individual replies');
+    // ADR-0021: no entrepreneur-in-residence wrote or reviewed Thomas's approach, so the page never says one did.
+    await expect(page.getByRole('main')).not.toContainText(/entrepreneur-in-residence|their review/);
     await expect(page.getByRole('main')).not.toContainText('vEIR');
   });
 

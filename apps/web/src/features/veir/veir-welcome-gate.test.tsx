@@ -60,7 +60,7 @@ describe('VeirWelcomeGate', () => {
     );
   });
 
-  it('welcomes them to their mentor by its name, built with its EIR’s consent', async () => {
+  it('welcomes them to a mentor by its own name, with the program as the author of its approach', async () => {
     persona = {
       ...PERSONA,
       name: 'Thomas',
@@ -68,10 +68,27 @@ describe('VeirWelcomeGate', () => {
       eirFirstName: 'Corin',
       firstPerson: true,
       eirSeesWork: true,
+      presentation: 'mentor',
     };
     renderWithProviders(<VeirWelcomeGate ventureId={VENTURE} />);
     expect(await screen.findByRole('dialog', { name: 'Meet Thomas' })).toHaveAccessibleDescription(
-      'Thomas is an AI mentor, built with Corin’s consent from their approved doctrine and style, and released after their review. Corin sees what you work on here, and a person from the program is there when you need one.',
+      'Thomas is an AI mentor, not a person. The program wrote and approved the coaching approach Thomas follows; no person writes or approves individual replies. Corin, your entrepreneur-in-residence, sees what you work on here, and a person from the program is there when you need one.',
+    );
+  });
+
+  it('welcomes them to a twin by its marked name, built with its EIR’s consent', async () => {
+    persona = {
+      ...PERSONA,
+      name: "Corin's vEIR",
+      kind: 'eir_persona',
+      eirFirstName: 'Corin',
+      firstPerson: true,
+      eirSeesWork: true,
+      presentation: 'twin',
+    };
+    renderWithProviders(<VeirWelcomeGate ventureId={VENTURE} />);
+    expect(await screen.findByRole('dialog', { name: 'Meet Corin · vEIR' })).toHaveAccessibleDescription(
+      'Corin · vEIR is an AI mentor, built with Corin’s consent from their approved doctrine and style, and released after their review. Corin sees what you work on here, and a person from the program is there when you need one.',
     );
   });
 });
@@ -79,6 +96,7 @@ describe('VeirWelcomeGate', () => {
 describe('inlineWelcome (a call opened before the welcome was read)', () => {
   const guide = {
     kind: 'neutral_guide',
+    presentation: 'twin',
     name: 'Foundry Guide',
     eirFirstName: null,
     eirSeesWork: false,

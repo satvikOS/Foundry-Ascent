@@ -8,6 +8,7 @@ import {
   Id,
   MemoryType,
   PersonaKind,
+  PersonaPresentation,
   RequestedRole,
   RiskCategory,
   Timestamp,
@@ -229,6 +230,8 @@ export const SessionView = z.object({
    * keeps its own name). Additive: older payloads parse as null.
    */
   personaKind: PersonaKind.nullable().default(null),
+  /** How that persona presents itself (`twin` or `mentor`, ADR-0021). Additive: older payloads parse as null. */
+  personaPresentation: PersonaPresentation.nullable().default(null),
   /** Time of the latest turn, or the start time. Additive. */
   lastActivityAt: Timestamp.nullable().default(null),
   /** Whether any turn of this conversation was spoken during a call. Additive. */

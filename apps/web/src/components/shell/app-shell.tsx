@@ -12,6 +12,7 @@ import { MiniCallBar } from '@/features/calls/mini-call-bar';
 import { canWrite } from '@/lib/auth/roles';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import { BREAKPOINTS, useMediaQuery } from '@/lib/hooks/use-media-query';
+import { STATUS_BANNERS_VAR, useHeightVariable } from '@/lib/hooks/use-docked-bottom';
 import { useKeyboardInset } from '@/lib/hooks/use-keyboard-inset';
 import { safeStorage, STORAGE_KEYS } from '@/lib/storage';
 import { cn } from '@/lib/utils';
@@ -74,6 +75,8 @@ export function AppShell({ me, children }: AppShellProps) {
   const docked = useMediaQuery(BREAKPOINTS.lg, true);
   // The on-screen keyboard (phones and iPads): the conversation's composer stays above it.
   useKeyboardInset();
+  // The status banners' height: the right panel, sticky beside the page, leaves room for them.
+  const bannersRef = useHeightVariable(STATUS_BANNERS_VAR);
   const [collapsed, setCollapsed] = useState(() => safeStorage.get(STORAGE_KEYS.sidebarCollapsed) === '1');
   // The panel as an overlay: the tablet rail's expanded state, and the phone's navigation sheet.
   const [overlayOpen, setOverlayOpen] = useState(false);
@@ -284,7 +287,7 @@ export function AppShell({ me, children }: AppShellProps) {
         )}
         <MiniCallBar />
 
-        <div data-print="hide">
+        <div ref={bannersRef} data-print="hide" data-slot="status-banners">
           <DbWakingBanner />
           <DbUnavailableBanner />
           <OfflineBanner />

@@ -1,6 +1,6 @@
 import type { TurnBlockedDetail } from '@foundry/contracts';
-import { ArrowUp, Info, Mic, Play, Volume2, VolumeX } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
+import { ArrowUp, Info, Mic, Phone, Play, Volume2, VolumeX } from 'lucide-react';
+import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { BlockedPanel } from '@/features/coach/blocked-panel';
@@ -13,7 +13,7 @@ import { CallDock, HoldToTalk } from './call-dock';
 import type { CallKind } from './call-kind';
 import { CallKindSwitch } from './call-kind-switch';
 import { CallSettings } from './call-settings';
-import { CallStage } from './call-stage';
+import { CallStage, videoPending } from './call-stage';
 import { END_UNDO_MS, useEndWithUndo } from './use-end-with-undo';
 import { storeTalkMode, useAnnounceCaptions, useCaptionSize, useCaptionsPreference } from './preferences';
 import { ConversationTimeline, clockLabel } from './timeline/ConversationTimeline';
@@ -119,7 +119,6 @@ export function CallLive({
   const [announceCaptions] = useAnnounceCaptions();
   const typedOnly = snapshot.input === 'typed';
   const [typingOpen, setTypingOpen] = useState(false);
-  const [video, setVideo] = useState(false);
   const [review, setReview] = useState<TimelineTurn | null>(null);
   const typing = typedOnly || typingOpen;
   const live = snapshot.phase === 'live';
@@ -127,7 +126,6 @@ export function CallLive({
   const pushToTalk = snapshot.talkMode === 'push_to_talk';
   const typeRef = useRef<HTMLInputElement | null>(null);
   const currentFace = useCallFace(face);
-  const [videoLost, setVideoLost] = useState(false);
   const endRef = useRef<HTMLButtonElement | null>(null);
   const undoRef = useRef<HTMLButtonElement | null>(null);
   const ending = useEndWithUndo(engine, snapshot);
@@ -143,26 +141,14 @@ export function CallLive({
     headingRef?.current?.focus();
   }, [headingRef]);
 
-  // A video call whose face could not show (or dropped) goes on as a voice call, and says so once, quietly.
-  const faceWas = useRef(currentFace.status);
-  useEffect(() => {
-    const was = faceWas.current;
-    faceWas.current = currentFace.status;
-    if (kind !== 'video' || currentFace.status !== 'presence' || was === 'presence') return;
-    // Ending, or a held-back turn (its support comes first): no word about the video.
-    if (snapshot.phase !== 'live' || snapshot.blocked) return;
-    setVideoLost(true);
-    onSwitchKind?.('voice');
-  }, [currentFace.status, kind, onSwitchKind, snapshot.phase, snapshot.blocked]);
-  useEffect(() => {
-    if (!videoLost) return undefined;
-    const timer = setTimeout(() => {
-      setVideoLost(false);
-    }, 8_000);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [videoLost]);
+  // A video call whose face could not start, or stopped, says so and offers a voice call (owner, round 3): it never
+  // turns into a voice call by itself. Not while ending, nor over a held-back turn (its support comes first).
+  const callId = live ? (snapshot.call?.id ?? null) : null;
+  const videoOff =
+    kind === 'video' && !ending.pending && !snapshot.blocked
+      ? videoPending(true, face, veir.provider, callId, currentFace)
+      : null;
+  const videoProblem = videoOff === 'starting' ? null : videoOff;
   useEffect(() => {
     if (live && typedOnly) typeRef.current?.focus();
   }, [live, typedOnly]);
@@ -192,9 +178,6 @@ export function CallLive({
   useEffect(() => {
     if (typingOpen) typeRef.current?.focus();
   }, [typingOpen]);
-  const onVideoChange = useCallback((shown: boolean) => {
-    setVideo(shown);
-  }, []);
 
   useHotkeys(
     {
@@ -278,7 +261,6 @@ export function CallLive({
             kind={kind}
             blockedReason={kind === 'voice' ? videoBlocked : null}
             onSwitch={() => {
-              setVideoLost(false);
               onSwitchKind(kind === 'voice' ? 'video' : 'voice');
             }}
           />
@@ -295,7 +277,6 @@ export function CallLive({
             voice,
             typing: typingOpen,
             disabled: !live || ending.pending,
-            video,
             onTyping: toggleTyping,
             onSwitchToChat,
           }}
@@ -310,10 +291,9 @@ export function CallLive({
             // The header names the vEIR; a face's video carries its name in its corner.
             nameTag={null}
             ventureId={snapshot.ventureId}
-            callId={live ? (snapshot.call?.id ?? null) : null}
+            callId={callId}
             face={face}
             video={kind === 'video'}
-            onVideoChange={onVideoChange}
           />
         )}
         <div className="-mt-2 flex flex-col items-center gap-1.5">
@@ -409,10 +389,30 @@ export function CallLive({
       </div>
 
       <div className="flex shrink-0 flex-col items-center gap-4 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:pb-5">
-        {videoLost && !ending.pending ? (
-          <p role="status" data-slot="video-lost" className="text-small text-muted-foreground">
-            Video stopped. The call goes on as voice.
-          </p>
+        {videoProblem ? (
+          <div
+            data-slot="video-off"
+            className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-small text-muted-foreground"
+          >
+            <p role="status">
+              {videoProblem === 'stopped' ? 'Video stopped.' : 'Video couldn’t start.'}
+              {onSwitchKind ? ' You can carry on as a voice call.' : ''}
+            </p>
+            {onSwitchKind ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="min-h-11 sm:min-h-9"
+                onClick={() => {
+                  onSwitchKind('voice');
+                }}
+              >
+                <Phone aria-hidden />
+                Voice call
+              </Button>
+            ) : null}
+          </div>
         ) : null}
         {live && snapshot.voice === 'captions' ? (
           <p role="status" className="flex max-w-xl items-start gap-2 text-small text-muted-foreground">

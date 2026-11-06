@@ -19,7 +19,7 @@ const STATUS: Record<AvatarState, string> = {
   connecting: 'Connecting',
   listening: 'Listening',
   thinking: 'Thinking',
-  speaking: `${AD_SESSION.eir.firstName} is speaking`,
+  speaking: `${AD_SESSION.mentor} is speaking`,
   muted: 'Muted',
 };
 

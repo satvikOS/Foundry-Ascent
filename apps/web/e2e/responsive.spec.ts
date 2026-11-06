@@ -81,6 +81,33 @@ async function noUserActivation(page: Page): Promise<void> {
   });
 }
 
+/**
+ * Safari's on-screen keyboard, emulated: a visual viewport the page can shrink (`window.__keyboard(height)`) while
+ * the layout viewport keeps its size, firing `resize` as the browser does. Chromium's own visual viewport cannot be
+ * shrunk without resizing the layout viewport too, which is not what a phone's keyboard does.
+ */
+async function emulateOverlayKeyboard(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const viewport = Object.assign(new EventTarget(), {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      offsetTop: 0,
+      offsetLeft: 0,
+      pageTop: 0,
+      pageLeft: 0,
+      scale: 1,
+      onresize: null,
+      onscroll: null,
+      onscrollend: null,
+    });
+    Object.defineProperty(window, 'visualViewport', { configurable: true, get: () => viewport });
+    (window as unknown as { __keyboard: (height: number) => void }).__keyboard = (height) => {
+      viewport.height = height;
+      viewport.dispatchEvent(new Event('resize'));
+    };
+  });
+}
+
 /** A call left open elsewhere (an earlier run) is moved here, so this one starts from its start screen. */
 async function takeOverCall(call: Locator): Promise<void> {
   const start = call.getByRole('button', { name: 'Start call' });
@@ -128,6 +155,29 @@ async function screen(page: Page, size: Size, name: string, options: { fullPage?
     });
   }
   await useTheme(page, 'dark');
+}
+
+/**
+ * The right panel (when shown) fits the screen below whatever sits above the page (the mini call bar, a status
+ * banner), 12 px in from the bottom like the left panel, and a page shorter than the screen does not scroll.
+ */
+async function expectPanelsFit(page: Page, options: { pageFits?: boolean } = {}): Promise<void> {
+  const fit = await page.evaluate(() => {
+    const panel = document.querySelector('[data-slot="context-panel"]')?.getBoundingClientRect() ?? null;
+    const side = document.querySelector('[data-slot="side-panel"]')?.getBoundingClientRect() ?? null;
+    return {
+      inner: window.innerHeight,
+      scroll: document.documentElement.scrollHeight,
+      panelBottom: panel ? panel.bottom : null,
+      sideBottom: side ? side.bottom : null,
+    };
+  });
+  expect(fit.panelBottom, 'the right panel is shown').not.toBeNull();
+  expect(fit.panelBottom ?? 0, 'the right panel ends 12 px above the bottom').toBeLessThanOrEqual(
+    fit.inner - 11.5,
+  );
+  if (fit.sideBottom !== null) expect(Math.round(fit.panelBottom ?? 0)).toBe(Math.round(fit.sideBottom));
+  if (options.pageFits) expect(fit.scroll, 'the page does not scroll by the banner').toBe(fit.inner);
 }
 
 /** Controls narrower or shorter than 44 px among these (touch sizes only). */
@@ -218,8 +268,20 @@ for (const size of sizes()) {
 
       test('New chat, a conversation with both panels, and the venture pages', async ({ page }) => {
         test.setTimeout(180_000);
+        if (size.mobile) await emulateOverlayKeyboard(page);
         const ventureId = await openVenture(page);
         await screen(page, size, 'new-chat');
+        if (size.width >= 1280) {
+          // With a status banner over the page, the right panel still fits the screen (12 px in from its bottom)
+          // and the page does not scroll by the banner's height.
+          await page.context().setOffline(true);
+          await expect(page.locator('[data-slot="status-banners"]')).toContainText('You’re offline.');
+          await settle(page);
+          await expectPanelsFit(page, { pageFits: true });
+          await screen(page, size, 'new-chat-banner');
+          await page.context().setOffline(false);
+          await expect(page.locator('[data-slot="status-banners"]')).not.toContainText('You’re offline.');
+        }
         if (size.touch) {
           const main = page.getByRole('main');
           expect(await smallTargets(main.getByRole('button', { name: /^Send/ }))).toEqual([]);
@@ -273,17 +335,40 @@ for (const size of sizes()) {
         }
 
         if (size.mobile) {
-          // The on-screen keyboard: the visual viewport shrinks by its height. The composer stays in view above it.
+          // The on-screen keyboard as Safari lays it over the page: only the visual viewport shrinks (the layout
+          // viewport keeps its height), and use-keyboard-inset.ts docks the composer above it.
+          const visible = Math.round(size.height * 0.55);
           await box.click();
-          await page.setViewportSize({ width: size.width, height: Math.round(size.height * 0.55) });
+          await page.evaluate((height) => {
+            (window as unknown as { __keyboard: (h: number) => void }).__keyboard(height);
+          }, visible);
           await box.fill('A first line');
+          await expect
+            .poll(() =>
+              page.evaluate(() =>
+                getComputedStyle(document.documentElement).getPropertyValue('--keyboard-inset').trim(),
+              ),
+            )
+            .toBe(`${String(size.height - visible)}px`);
+          expect(await page.evaluate(() => window.innerHeight), 'the layout viewport keeps its height').toBe(
+            size.height,
+          );
           await settle(page);
           const rect = await box.boundingBox();
           expect(rect, 'composer box').not.toBeNull();
-          if (rect) expect(rect.y + rect.height).toBeLessThanOrEqual(Math.round(size.height * 0.55) + 0.5);
+          if (rect) expect(rect.y + rect.height).toBeLessThanOrEqual(visible + 0.5);
           await screen(page, size, 'conversation-keyboard');
           await box.fill('');
-          await page.setViewportSize({ width: size.width, height: size.height });
+          await page.evaluate((height) => {
+            (window as unknown as { __keyboard: (h: number) => void }).__keyboard(height);
+          }, size.height);
+          await expect
+            .poll(() =>
+              page.evaluate(() =>
+                getComputedStyle(document.documentElement).getPropertyValue('--keyboard-inset').trim(),
+              ),
+            )
+            .toBe('0px');
         }
 
         for (const [name, path] of [
@@ -334,6 +419,21 @@ for (const size of sizes()) {
           });
           await screen(page, size, 'voice-call-live');
           if (size.touch) expect(await smallTargets(callControls(call))).toEqual([]);
+          if (size.width >= 1280) {
+            // Minimized over the conversation, with a status banner too: the right panel still fits the screen.
+            await call.getByRole('button', { name: 'Minimize call' }).click();
+            const bar = page.getByRole('region', { name: /^Call with / });
+            await expect(bar).toBeVisible();
+            await page.context().setOffline(true);
+            await expect(page.locator('[data-slot="status-banners"]')).toContainText('You’re offline.');
+            await settle(page);
+            await expectPanelsFit(page);
+            await screen(page, size, 'voice-call-minimized-banner');
+            await page.context().setOffline(false);
+            await expect(page.locator('[data-slot="status-banners"]')).not.toContainText('You’re offline.');
+            await bar.getByRole('button', { name: 'Return to call' }).click();
+            await expect(call).toBeVisible();
+          }
           await call.getByRole('button', { name: 'Call settings' }).click();
           const settings = page.getByRole('dialog', { name: 'Call settings' });
           await expect(settings).toBeVisible();
@@ -392,15 +492,22 @@ for (const size of sizes()) {
   });
 }
 
-// A video call with the development stand-in face (faces ship off: switched on for this and off again). Only in
-// the screenshot walk: e2e/video-calls.spec.ts checks the face itself.
+// A video call with the development stand-in face (faces ship off: switched on for this and off again), on a phone
+// (touch, mobile viewport) in the suite; with E2E_RESPONSIVE_DIR it is also shot at every size. e2e/video-calls.spec.ts
+// checks the face itself.
+const PHONE = ALL_SIZES.find((size) => size.name === '390x844') ?? ALL_SIZES[0];
 test.describe('responsive · video call', () => {
-  test.skip(!DIR, 'screenshots only');
-  test.use({ storageState: FOUNDER_STATE, deviceScaleFactor: 1 });
+  test.use({
+    storageState: FOUNDER_STATE,
+    viewport: { width: PHONE?.width ?? 390, height: PHONE?.height ?? 844 },
+    hasTouch: true,
+    isMobile: true,
+    deviceScaleFactor: 1,
+  });
 
-  test('before and live, at every size', async ({ page, baseURL }) => {
+  test('before and live, on a phone (and at every size for review)', async ({ page, baseURL }) => {
     test.setTimeout(300_000);
-    if (!baseURL) throw new Error('baseURL is required');
+    if (!baseURL || !PHONE) throw new Error('baseURL is required');
     await setFacesEnabled(baseURL, true);
     await setFaceAccess(baseURL, FOUNDER_NAME, true);
     try {
@@ -409,7 +516,6 @@ test.describe('responsive · video call', () => {
       await page.route('**/api/v1/speech', (route) =>
         route.fulfill({ status: 200, contentType: 'audio/wav', body: silentWav() }),
       );
-      await page.setViewportSize({ width: 1440, height: 900 });
       await noUserActivation(page);
       await openVenture(page);
       await startConversation(page, 'Can we talk through the pilot price?');
@@ -421,20 +527,32 @@ test.describe('responsive · video call', () => {
       const call = page.getByRole('dialog', { name: /^Video call with / });
       await takeOverCall(call);
       await expect(call.getByRole('button', { name: 'Start call' })).toBeVisible();
-      for (const size of sizes()) {
+      await screen(page, PHONE, 'video-call-before');
+      expect(await smallTargets(call.getByRole('button'))).toEqual([]);
+      for (const size of DIR ? sizes().filter((s) => s !== PHONE) : []) {
         await page.setViewportSize({ width: size.width, height: size.height });
         await screen(page, size, 'video-call-before');
       }
+      await page.setViewportSize({ width: PHONE.width, height: PHONE.height });
       await call.getByRole('button', { name: 'Start call' }).click();
-      await expect(call.locator('[data-slot="call-tile"][data-face="video"]')).toBeVisible({
-        timeout: 30_000,
-      });
-      for (const size of sizes()) {
+      const tile = call.locator('[data-slot="call-tile"][data-face="video"]');
+      await expect(tile).toBeVisible({ timeout: 30_000 });
+      // The face fits the phone, labelled for what it is, and every control is a full touch target.
+      await expect(tile.locator('[data-slot="call-ai-avatar-label"]')).toHaveText('AI avatar');
+      const box = await tile.locator('[data-slot="call-face"]').boundingBox();
+      expect(box, 'the face').not.toBeNull();
+      if (box) {
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(PHONE.width + 0.5);
+      }
+      await screen(page, PHONE, 'video-call-live');
+      expect(await smallTargets(callControls(call))).toEqual([]);
+      for (const size of DIR ? sizes().filter((s) => s !== PHONE) : []) {
         await page.setViewportSize({ width: size.width, height: size.height });
         await page.waitForTimeout(250);
         await screen(page, size, 'video-call-live');
       }
-      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.setViewportSize({ width: PHONE.width, height: PHONE.height });
       await call.getByRole('button', { name: 'End call' }).click();
       await expect(page.getByRole('region', { name: 'Call ended' })).toBeVisible({ timeout: 20_000 });
     } finally {

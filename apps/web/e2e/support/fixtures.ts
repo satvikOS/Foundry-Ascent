@@ -76,7 +76,7 @@ export async function pageShowsText(page: Page, text: string): Promise<boolean> 
   return page.evaluate((needle) => document.body.innerText.includes(needle), text);
 }
 
-/** The one-time welcome that introduces a founder's or teammate's vEIR ("Meet Corin’s vEIR"). */
+/** The one-time welcome that introduces a founder's or teammate's mentor ("Meet Thomas"). */
 export function veirWelcome(page: Page): Locator {
   return page.getByRole('dialog', { name: /^Meet / });
 }
@@ -217,7 +217,8 @@ export async function startConversation(page: Page, firstMessage: string): Promi
 /**
  * The mentor's disclosure (the presence policy, owner 2026-11-05): no "vEIR" badge beside its name and no
  * disclaimer line under the composer; what it is (an AI mentor, its AI face and voice, memory, people, limits) is one
- * click away in the context panel's About dialog. On a phone or tablet the panel is a sheet opened from its toggle.
+ * click away in the context panel's About dialog. On a phone or tablet the panel is a sheet opened from its toggle
+ * (on a phone, in a conversation, from the header's More menu).
  */
 export async function expectVeirBadgeInView(page: Page): Promise<void> {
   await expect(page.getByRole('note', { name: 'AI disclosure' })).toHaveCount(0);
@@ -227,9 +228,15 @@ export async function expectVeirBadgeInView(page: Page): Promise<void> {
     .locator('[data-slot="context-panel"], [data-slot="context-sheet"]')
     .filter({ visible: true })
     .first();
-  // The panel is open beside the content, or its toggle shows (closed, or a sheet on a smaller screen).
-  await expect(panel.or(show)).toBeVisible();
+  // The panel is open beside the content, or its toggle shows (closed, or a sheet on a smaller screen); in a
+  // conversation on a phone the toggle is in the header's More menu.
+  const more = page.getByRole('button', { name: 'Conversation options' }).filter({ visible: true }).first();
+  await expect(panel.or(show).or(more)).toBeVisible();
   if (await show.isVisible()) await show.click();
+  else if (!(await panel.isVisible())) {
+    await more.click();
+    await page.getByRole('menu').getByRole('menuitem', { name: 'Show context panel' }).click();
+  }
   await expect(panel).toBeVisible();
   // In a conversation the panel has tabs: About is on its Overview.
   const overview = panel.getByRole('tab', { name: 'Overview' });
@@ -477,46 +484,99 @@ export async function setFaceAccess(baseURL: string, displayName: string, enable
   }
 }
 
-/** The seeded EIR whose vEIR coaches QuietQuad (the founder's venture). */
+/**
+ * The seeded EIR whose persona coaches QuietQuad (the founder's venture): a person, shown by their full name
+ * ("Corin Halvorsen") or, beside the mentor's own name, introduced by their role.
+ */
 export const SEEDED_EIR_FIRST_NAME = 'Corin';
 
 /**
- * Naming invariant (owner, 2026-11-05): the mentor is shown by its persona's display name alone ("Thomas"; the
- * seeded persona "Corin's vEIR" shows as "Corin"), never "<name>'s vEIR", "<name> · vEIR" or a "vEIR" badge beside
- * the name. Checks the page's visible text and its accessible labels (aria-label, title, placeholder), leaving out
- * the AI disclosure in exports.
+ * The mentor that coaches QuietQuad, as production has it (ADR-0021): the e2e database applies the owner release
+ * production names (`SEED_OWNER_RELEASES`, from infra/cdk/config/production.json), which renames the persona built
+ * with Corin's consent to "Thomas" and presents it as a mentor.
+ */
+export const SEEDED_MENTOR_NAME = 'Thomas';
+
+/** The twin that coaches EmberLoop (Ruth's vEIR, ADR-0020): it keeps its AI marker in its name. */
+export const SEEDED_TWIN_EIR_FIRST_NAME = 'Ruth';
+
+/** Text and accessible labels on the page that match `pattern` (visible text only), less the AI disclosure notes. */
+async function labelsMatching(page: Page, pattern: { source: string; flags: string }, skip: string) {
+  return page.evaluate(
+    ({ source, flags, skip }) => {
+      const matches = new RegExp(source, flags);
+      const hits: string[] = [];
+      const skipped = (element: Element) => element.closest(skip) !== null;
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const parent = node.parentElement;
+        const text = node.textContent ?? '';
+        if (!parent || !matches.test(text) || skipped(parent)) continue;
+        // Only what is rendered: hidden and print-only text is not shown.
+        if (!parent.checkVisibility()) continue;
+        hits.push(text.trim().slice(0, 120));
+      }
+      for (const element of document.querySelectorAll('[aria-label], [title], [placeholder]')) {
+        if (skipped(element)) continue;
+        for (const attribute of ['aria-label', 'title', 'placeholder']) {
+          const value = element.getAttribute(attribute);
+          if (value && matches.test(value)) hits.push(`${attribute}="${value.slice(0, 120)}"`);
+        }
+      }
+      return hits;
+    },
+    { ...pattern, skip },
+  );
+}
+
+const DISCLOSURE_NOTE = '[role="note"][aria-label="AI disclosure"]';
+
+/**
+ * Naming invariant for a mentor (ADR-0021, owner 2026-11-05): the mentor is shown by its display name alone
+ * ("Thomas"), never "<name>'s vEIR", "<name> · vEIR" or a "vEIR" badge beside the name; and the AI is never called
+ * by the EIR's bare first name ("Corin" alone only ever means the person, and appears only where About and the
+ * welcome introduce them by role). Checks the page's visible text and its accessible labels (aria-label, title,
+ * placeholder), leaving out the AI disclosure notes.
  */
 export async function expectPlainMentorName(
   page: Page,
   where: string,
-  /** Content that carries the label on purpose (e.g. a library source's own title). */
+  /** Content that carries the words on purpose (e.g. a library source's own title about the EIR). */
   allow: readonly RegExp[] = [],
 ): Promise<void> {
-  const found = await page.evaluate(() => {
-    const labelled = /(?:['’]s\s+vEIR\b|·\s*vEIR\b|^\s*vEIR\s*$)/;
-    const hits: string[] = [];
-    const disclosure = (element: Element) =>
-      element.closest('[role="note"][aria-label="AI disclosure"]') !== null;
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const parent = node.parentElement;
-      const text = node.textContent ?? '';
-      if (!parent || !labelled.test(text) || disclosure(parent)) continue;
-      if (!parent.checkVisibility()) continue;
-      hits.push(text.trim().slice(0, 120));
-    }
-    for (const element of document.querySelectorAll('[aria-label], [title], [placeholder]')) {
-      if (disclosure(element)) continue;
-      for (const attribute of ['aria-label', 'title', 'placeholder']) {
-        const value = element.getAttribute(attribute);
-        if (value && labelled.test(value)) hits.push(`${attribute}="${value.slice(0, 120)}"`);
-      }
-    }
-    return hits;
-  });
-  const labels = found.filter((hit) => !allow.some((pattern) => pattern.test(hit)));
-  expect(labels, `the mentor is named plainly, with no vEIR label, on ${where}`).toEqual([]);
+  const labelled = await labelsMatching(
+    page,
+    { source: String.raw`(?:['’]s\s+vEIR\b|·\s*vEIR\b|^\s*vEIR\s*$)`, flags: '' },
+    DISCLOSURE_NOTE,
+  );
+  const bare = await labelsMatching(
+    page,
+    {
+      source: String.raw`\b${SEEDED_EIR_FIRST_NAME}\b(?! Halvorsen)(?!, your entrepreneur-in-residence)`,
+      flags: '',
+    },
+    DISCLOSURE_NOTE,
+  );
+  const found = [...labelled, ...bare].filter((hit) => !allow.some((pattern) => pattern.test(hit)));
+  expect(found, `the mentor is named plainly, never with a vEIR label or as the EIR, on ${where}`).toEqual(
+    [],
+  );
 }
 
-/** The older name of {@link expectPlainMentorName}, kept for specs that still call it. */
-export const expectNoBareEirName = expectPlainMentorName;
+/**
+ * Naming invariant for a twin (the presence policy, ADR-0020): the AI is "Ruth · vEIR" or "Ruth's vEIR"; a bare
+ * "Ruth" anywhere else only ever means the person ("Ruth Abernathy-Song"). Leaves out the AI disclosure notes and
+ * the welcome and About text, whose sentences name the EIR on purpose ("built with Ruth's consent").
+ */
+export async function expectTwinNamed(
+  page: Page,
+  where: string,
+  firstName = SEEDED_TWIN_EIR_FIRST_NAME,
+): Promise<void> {
+  const found = await labelsMatching(
+    page,
+    { source: String.raw`\b${firstName}\b(?!['’]s vEIR)(?! · vEIR)(?! Abernathy)(?!’s consent)`, flags: '' },
+    `${DISCLOSURE_NOTE}, [data-slot="veir-welcome"], [data-slot="veir-about"]`,
+  );
+  expect(found, `the twin is never called by the EIR's bare name on ${where}`).toEqual([]);
+}

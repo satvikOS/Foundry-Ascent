@@ -17,8 +17,6 @@ interface CallFaceVideoProps {
   /** Both voices' loudness (0–1); the corner tile follows the founder's microphone. */
   levels: () => { veir: number; founder: number };
   reducedMotion: boolean;
-  /** A vendor's stock avatar (no one's likeness): labelled "AI avatar" on the tile, so it is never taken for the EIR. */
-  stock?: boolean;
   className?: string;
 }
 
@@ -29,8 +27,9 @@ const VIDEO_CLASSES = 'absolute inset-0 size-full object-cover';
  * (initials, never a camera). A vendor face brings its own element (`media`), which plays its video and its voice
  * together, unmuted, so the browser keeps them in step; the tile only shows it, and while the tile is closed (the
  * call minimized) the element plays on in a hidden spot of the page, so the voice is never cut and never doubled.
- * Otherwise (the canvas stand-in, whose sound the call plays itself) the tile shows `stream` muted. A stock avatar
- * carries a visible "AI avatar" label in the corner.
+ * Otherwise (the canvas stand-in, whose sound the call plays itself) the tile shows `stream` muted. Every face
+ * carries a visible "AI avatar" label in the corner: a vendor's stock avatar and an EIR's consented likeness alike,
+ * so a lifelike face is never taken for a person.
  */
 export function CallFaceVideo({
   stream,
@@ -38,7 +37,6 @@ export function CallFaceVideo({
   you,
   levels,
   reducedMotion,
-  stock = false,
   className,
 }: CallFaceVideoProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -97,14 +95,12 @@ export function CallFaceVideo({
       ) : (
         <div ref={hostRef} data-slot="call-video-host" aria-hidden className="absolute inset-0" />
       )}
-      {stock ? (
-        <span
-          data-slot="call-ai-avatar-label"
-          className="absolute top-3 left-3 rounded-full bg-black/60 px-2.5 py-1 text-[0.6875rem] leading-none font-medium text-white ring-1 ring-white/20"
-        >
-          AI avatar
-        </span>
-      ) : null}
+      <span
+        data-slot="call-ai-avatar-label"
+        className="absolute top-3 left-3 rounded-full bg-black/60 px-2.5 py-1 text-[0.6875rem] leading-none font-medium text-white ring-1 ring-white/20"
+      >
+        AI avatar
+      </span>
       <div
         aria-hidden
         data-slot="call-you-tile"
@@ -126,20 +122,17 @@ export function CallFaceVideo({
 }
 
 /**
- * The face as a thumbnail (the mini call bar): the same live video, muted, in the place of the vEIR's monogram.
- * The bar shows the monogram instead when motion is reduced (it is decoration there; the call screen shows the
- * face itself).
+ * The face as a thumbnail (the mini call bar): the same live video, muted, in the place of the vEIR's monogram,
+ * named "AI avatar" (on hover and to assistive technology) like the tile. The bar shows the monogram instead when
+ * motion is reduced.
  */
 export function CallFaceThumbnail({
   stream,
   speaking,
-  stock = false,
   className,
 }: {
   stream: MediaStream | null;
   speaking: boolean;
-  /** A vendor's stock avatar: the thumbnail says "AI avatar" (on hover and to assistive technology). */
-  stock?: boolean;
   className?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -155,7 +148,9 @@ export function CallFaceThumbnail({
     <span
       data-slot="call-face-thumbnail"
       data-speaking={speaking || undefined}
-      {...(stock ? { role: 'img', 'aria-label': 'AI avatar', title: 'AI avatar' } : {})}
+      role="img"
+      aria-label="AI avatar"
+      title="AI avatar"
       className={cn(
         'relative inline-flex size-6 shrink-0 overflow-hidden rounded-full bg-black ring-1 ring-border',
         speaking && 'ring-2 ring-foreground/40',

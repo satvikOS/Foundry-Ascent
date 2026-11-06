@@ -18,6 +18,7 @@ const VEIR: CallVeir = {
   name: 'Thomas',
   shortName: 'Thomas',
   kind: 'eir_persona',
+  presentation: 'mentor',
   eirFirstName: 'Corin',
   firstPerson: true,
   eirSeesWork: true,

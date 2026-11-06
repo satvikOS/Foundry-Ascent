@@ -24,7 +24,7 @@ for (const [device, width, height] of [
   for (const theme of ['dark', 'light'] as const) {
     test.describe(`${device}, ${theme}: upgraded student journey`, () => {
       test.use({ storageState: FOUNDER_STATE, viewport: { width, height } });
-      test('context, student profile, reflection, automatic memory, and free avatar share one venture', async ({
+      test('context, student profile, reflection, automatic memory, and a voice call share one venture', async ({
         page,
       }) => {
         test.setTimeout(120_000);
@@ -135,22 +135,14 @@ for (const [device, width, height] of [
         await page.goto(`/${TENANT}/app/v/${ventureId}/c/${sessionId}?call=voice`);
         const call = page.getByRole('dialog', { name: /^(Voice|Video) call with / });
         await expect(call.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
-        // The sphere is the default presence; the character is chosen in the call settings, labelled AI avatar.
+        // The sphere is a voice call's presence; there is no drawn character to choose (owner, round 3).
         await expect(call.locator('[data-face="presence"] .fa-sphere')).toBeVisible();
         await call.getByRole('button', { name: 'Call settings', exact: true }).click();
         const settings = page.getByRole('dialog', { name: 'Call settings' });
-        await expect(settings.getByRole('button', { name: 'Sphere', exact: true })).toHaveAttribute(
-          'aria-pressed',
-          'true',
-        );
-        await settings.getByRole('button', { name: 'AI avatar', exact: true }).click();
-        await expect(call.locator('[data-face="character"] svg')).toBeVisible();
-        await expect(call.locator('[data-slot="ai-avatar-label"]')).toHaveText('AI avatar');
-        await expect(settings.getByRole('button', { name: 'AI avatar', exact: true })).toHaveAttribute(
-          'aria-pressed',
-          'true',
-        );
-        await page.screenshot({ path: `${root}/avatar-${device}-${theme}.png`, fullPage: false });
+        await expect(settings.getByRole('group', { name: 'Caption size' })).toBeVisible();
+        await expect(settings.getByRole('group', { name: 'Presentation' })).toHaveCount(0);
+        await expect(settings.getByRole('button', { name: 'AI avatar', exact: true })).toHaveCount(0);
+        await page.screenshot({ path: `${root}/voice-call-${device}-${theme}.png`, fullPage: false });
         // Trusted pointer input → React's pressed state → next paint, measured entirely in the browser.
         await page.evaluate(() => {
           const timing = { samples: [] as number[] };
@@ -171,11 +163,13 @@ for (const [device, width, height] of [
             { capture: true },
           );
         });
+        const small = settings.getByRole('button', { name: 'Small', exact: true });
+        const large = settings.getByRole('button', { name: 'Large', exact: true });
         for (let i = 0; i < 10; i++) {
-          await settings.getByRole('button', { name: 'Sphere', exact: true }).click();
-          await expect(call.locator('[data-face="presence"]')).toBeVisible();
-          await settings.getByRole('button', { name: 'AI avatar', exact: true }).click();
-          await expect(call.locator('[data-face="character"]')).toBeVisible();
+          await small.click();
+          await expect(small).toHaveAttribute('aria-pressed', 'true');
+          await large.click();
+          await expect(large).toHaveAttribute('aria-pressed', 'true');
         }
         await expect
           .poll(() =>
@@ -201,22 +195,16 @@ for (const [device, width, height] of [
             2,
           ),
         );
-        await settings.getByRole('button', { name: 'Sphere', exact: true }).focus();
+        await settings.getByRole('button', { name: 'Medium', exact: true }).focus();
         await page.keyboard.press('Enter');
-        await expect(settings.getByRole('button', { name: 'Sphere', exact: true })).toHaveAttribute(
+        await expect(settings.getByRole('button', { name: 'Medium', exact: true })).toHaveAttribute(
           'aria-pressed',
           'true',
         );
-        await settings.getByRole('button', { name: 'AI avatar', exact: true }).click();
         await page.keyboard.press('Escape');
         await expect(settings).toHaveCount(0);
         await page.emulateMedia({ reducedMotion: 'reduce' });
-        await expect(call.locator('.fa-character')).toHaveAttribute('data-motion', 'reduced');
-        expect(
-          await call
-            .locator('.fa-character__head')
-            .evaluate((element) => getComputedStyle(element).animationName),
-        ).toBe('none');
+        await expect(call.locator('.fa-sphere')).toHaveAttribute('data-motion', 'reduced');
         const violations = (
           await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze()
         ).violations;

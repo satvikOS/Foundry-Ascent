@@ -36,6 +36,7 @@ const CORIN: VeirDisplay = {
   name: 'Thomas',
   shortName: 'Thomas',
   kind: 'eir_persona',
+  presentation: 'mentor',
   eirFirstName: 'Corin',
   firstPerson: true,
   eirSeesWork: true,
@@ -52,12 +53,13 @@ describe('VeirWelcomeDialog', () => {
     const onAcknowledge = vi.fn();
     renderWithProviders(<VeirWelcomeDialog veir={CORIN} open onAcknowledge={onAcknowledge} />);
     const dialog = await screen.findByRole('dialog', { name: 'Meet Thomas' });
+    // A mentor (ADR-0021): the program wrote and approved his approach; no EIR is said to have written or reviewed it.
     expect(dialog).toHaveAccessibleDescription(
-      'Thomas is an AI mentor, built with Corin’s consent from their approved doctrine and style, and released after their review. Corin sees what you work on here, and a person from the program is there when you need one.',
+      'Thomas is an AI mentor, not a person. The program wrote and approved the coaching approach Thomas follows; no person writes or approves individual replies. Corin, your entrepreneur-in-residence, sees what you work on here, and a person from the program is there when you need one.',
     );
-    // Calm: one button, no close cross, no legal sentence.
+    // Calm: one button, no close cross.
     expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Continue']);
-    expect(dialog).not.toHaveTextContent(/not a person|No human wrote|vEIR/);
+    expect(dialog).not.toHaveTextContent(/consent|their review|No human wrote|vEIR/);
     await userEvent.setup().click(screen.getByRole('button', { name: 'Continue' }));
     expect(onAcknowledge).toHaveBeenCalledTimes(1);
   });

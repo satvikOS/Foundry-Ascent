@@ -651,7 +651,7 @@ describe('the mini call bar', () => {
       remaining: { seconds: 600, at: Date.now() },
     });
     await userEvent.click(await screen.findByRole('button', { name: 'Minimize call' }));
-    const bar = await screen.findByRole('region', { name: 'Call with Corin' });
+    const bar = await screen.findByRole('region', { name: "Call with Corin's vEIR" });
     return { ...app, bar };
   }
 
@@ -719,11 +719,11 @@ describe('the mini call bar', () => {
     });
     // In the call's own conversation the review closes the transcript, so the bar goes.
     expect(screen.getByRole('region', { name: 'Call ended' })).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Call with Corin' })).toBeNull();
+    expect(screen.queryByRole('region', { name: "Call with Corin's vEIR" })).toBeNull();
     expect(screen.getByRole('heading', { name: 'Call ended' })).not.toHaveFocus();
     // Elsewhere, the bar says it ended and why, and Review returns to that conversation (not the call screen).
     await userEvent.click(screen.getByRole('link', { name: 'Knowledge' }));
-    const after = await screen.findByRole('region', { name: 'Call with Corin' });
+    const after = await screen.findByRole('region', { name: "Call with Corin's vEIR" });
     expect(after).toHaveTextContent('Call ended');
     expect(within(after).getByRole('status')).toHaveTextContent(
       'Call ended. The call reached its time limit.',
@@ -761,7 +761,7 @@ describe('the mini call bar', () => {
       expect(heading).toHaveFocus();
     });
     // No bar beside the review, and no separate "Call ended" page.
-    expect(screen.queryByRole('region', { name: 'Call with Corin' })).toBeNull();
+    expect(screen.queryByRole('region', { name: "Call with Corin's vEIR" })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Call again' }));
     await waitFor(() => {
       expect(engine.start).toHaveBeenCalledTimes(1);
@@ -783,7 +783,7 @@ describe('the mini call bar', () => {
     expect(engine.resumeAudio).toHaveBeenCalledTimes(1);
     // The bar names the persona as it is named, and the kind of call (no badge: the disclosure said what it is).
     expect(bar.querySelector('[data-slot="veir-badge"]')).toBeNull();
-    expect(bar).toHaveTextContent('Corin · Voice call');
+    expect(bar).toHaveTextContent("Corin's vEIR · Voice call");
 
     act(() => {
       engine.set({ audioBlocked: false });

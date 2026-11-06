@@ -124,6 +124,8 @@ export function useInspector() {
       setOpen(!open);
     },
     hasContent: meta !== null,
+    /** How the page names its panel ("context panel"); null without one. */
+    label: meta?.label ?? null,
     isDesktop,
   };
 }
@@ -188,7 +190,7 @@ export function InspectorRegion() {
       <aside
         aria-label={meta.title}
         data-slot="context-panel"
-        className="glass-float sticky top-[calc(var(--mini-call-height)+var(--panel-inset))] my-(--panel-inset) mr-(--panel-inset) hidden h-[calc(100dvh_-_var(--mini-call-height)_-_2*var(--panel-inset))] w-(--inspector-width) shrink-0 self-start overflow-hidden rounded-(--radius-panel) xl:block"
+        className="glass-float sticky top-[calc(var(--mini-call-height)+var(--panel-inset))] my-(--panel-inset) mr-(--panel-inset) hidden h-[calc(100dvh_-_var(--mini-call-height)_-_var(--status-banners-height)_-_2*var(--panel-inset))] w-(--inspector-width) shrink-0 self-start overflow-hidden rounded-(--radius-panel) xl:block"
       >
         <OverGlassContext.Provider value>
           <InspectorPanel

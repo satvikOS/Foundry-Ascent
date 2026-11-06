@@ -39,6 +39,7 @@ const FALLBACK_VEIR: CallVeir = {
   name: 'your mentor',
   shortName: 'your mentor',
   kind: 'eir_persona',
+  presentation: 'mentor',
   eirFirstName: null,
   firstPerson: false,
   eirSeesWork: false,

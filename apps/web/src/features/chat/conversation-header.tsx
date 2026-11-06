@@ -1,6 +1,16 @@
 import type { SessionView } from '@foundry/contracts';
 import { Link } from '@tanstack/react-router';
-import { EyeOff, Flag, Menu, MoreHorizontal, Pencil, Square, SquarePen, Trash2 } from 'lucide-react';
+import {
+  EyeOff,
+  Flag,
+  Menu,
+  MoreHorizontal,
+  PanelRightOpen,
+  Pencil,
+  Square,
+  SquarePen,
+  Trash2,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { VeirName } from '@/components/faces/veir-name';
@@ -15,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { SimpleTooltip } from '@/components/ui/tooltip';
+import { BREAKPOINTS, useMediaQuery } from '@/lib/hooks/use-media-query';
 import { type VeirName as VeirNameView } from '@/lib/veir';
 
 export type ConversationMenuAction = 'rename' | 'end' | 'report' | 'delete';
@@ -39,7 +50,8 @@ interface ConversationHeaderProps {
  * The conversation's one header, on the shared glass surface: the mentor's name ("Thomas", no face and no badge),
  * the title, a quiet "Private" for a private conversation, then the call buttons (voice, video), the context panel's
  * toggle and a menu for everything rarer (rename, end, report, delete). On phones it is the only bar: the menu
- * button, the title over the name, the call buttons, New chat, the panel and the menu.
+ * button, the title over the name, then at most three icons (Voice call, Video call, More), so the title keeps its
+ * room; New chat and the context panel are the first items of More there.
  */
 export function ConversationHeader({
   tenant,
@@ -56,6 +68,8 @@ export function ConversationHeader({
   // The panel beside the content has its own close: the header toggles it only while it is not there.
   const inspector = useInspector();
   const panelBeside = inspector.open && inspector.isDesktop;
+  // Phones (the header is the only bar): New chat and the panel live in More, beside the two call buttons.
+  const phone = !useMediaQuery(BREAKPOINTS.md, true) && openNavigation !== null && canEdit;
   const active = session.status === 'active';
   // A private conversation (a one-off: nothing from it is remembered) says so while it lasts.
   const isPrivate = session.privacy === 'ephemeral';
@@ -111,16 +125,9 @@ export function ConversationHeader({
             <span className="hidden shrink-0 text-caption text-muted-foreground sm:inline">Ended</span>
           )}
         </div>
-        <div className="-mr-1.5 flex shrink-0 items-center gap-0.5 sm:mr-0">
+        <div data-slot="header-actions" className="-mr-1.5 flex shrink-0 items-center gap-0.5 sm:mr-0">
           {calls}
-          {openNavigation && canEdit ? (
-            <Button asChild variant="ghost" size="icon-sm" className="md:hidden">
-              <Link to="/$tenant/app/v/$ventureId" params={{ tenant, ventureId }} aria-label="New chat">
-                <SquarePen aria-hidden />
-              </Link>
-            </Button>
-          ) : null}
-          {panelBeside ? null : <InspectorToggle />}
+          {panelBeside || phone ? null : <InspectorToggle />}
           {canEdit ? (
             <DropdownMenu>
               <SimpleTooltip content="More">
@@ -131,6 +138,27 @@ export function ConversationHeader({
                 </DropdownMenuTrigger>
               </SimpleTooltip>
               <DropdownMenuContent align="end" className="w-56">
+                {phone ? (
+                  <>
+                    <DropdownMenuItem asChild>
+                      <Link to="/$tenant/app/v/$ventureId" params={{ tenant, ventureId }}>
+                        <SquarePen aria-hidden />
+                        New chat
+                      </Link>
+                    </DropdownMenuItem>
+                    {inspector.label ? (
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          inspector.setOpen(true);
+                        }}
+                      >
+                        <PanelRightOpen aria-hidden />
+                        Show {inspector.label}
+                      </DropdownMenuItem>
+                    ) : null}
+                    <DropdownMenuSeparator />
+                  </>
+                ) : null}
                 {session.privacy === 'standard' ? (
                   <DropdownMenuItem
                     onSelect={() => {

@@ -20,6 +20,8 @@ import {
  */
 
 const CORIN = 'Corin Halvorsen';
+/** Corin's persona as the studio lists it: the mentor Thomas (production's owner release, ADR-0021). */
+const CORIN_PERSONA = 'Thomas';
 const EIR_VENTURE = 'EmberLoop';
 const SEEDED_VEIR = "Ruth's vEIR";
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
@@ -90,11 +92,12 @@ test.describe('program lead', () => {
       await expect(dialog).toBeHidden();
     };
 
-    await assign("Corin's vEIR");
-    await expect(row).toContainText("Corin's vEIR");
+    // Corin's persona, presented as the mentor Thomas (ADR-0021: the e2e database has production's owner release).
+    await assign(CORIN_PERSONA);
+    await expect(row).toContainText(CORIN_PERSONA);
     await expect(row).toContainText(CORIN);
     // The filter chips count who coaches what.
-    await expect(page.getByRole('button', { name: /^Corin's vEIR\s*3$/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: new RegExp(`^${CORIN_PERSONA}\\s*3$`) })).toBeVisible();
 
     // Back to the seeded assignment.
     await assign(SEEDED_VEIR);
@@ -156,8 +159,8 @@ test.describe('EIR', () => {
     await signIn(page, corinCode);
     // An EIR without ventures lands in the EIR studio.
     await expect(page.getByRole('heading', { level: 1, name: 'Personas' })).toBeVisible();
-    await page.getByRole('link', { name: "Corin's vEIR" }).click();
-    await expect(page.getByRole('heading', { level: 1, name: "Corin's vEIR" })).toBeVisible();
+    await page.getByRole('link', { name: CORIN_PERSONA, exact: true }).click();
+    await expect(page.getByRole('heading', { level: 1, name: CORIN_PERSONA })).toBeVisible();
 
     await test.step('a library note', async () => {
       await page.getByRole('tab', { name: 'Knowledge library' }).click();
@@ -206,7 +209,7 @@ test.describe('EIR', () => {
       await expect(page.getByRole('list', { name: 'Lessons' }).getByText(lessonTitle)).toBeVisible();
     });
 
-    // Corin curates only his own vEIR.
+    // Corin curates only his own persona.
     await page.goto(`/${TENANT}/app/eir/personas`);
     await page.getByRole('link', { name: "Ruth's vEIR" }).click();
     await page.getByRole('tab', { name: 'Knowledge library' }).click();
@@ -400,8 +403,8 @@ for (const scheme of ['dark', 'light'] as const) {
     test('persona sections, lessons, assignments and the admin pages meet WCAG 2.2 AA', async ({ page }) => {
       await page.goto(`/${TENANT}/app/eir/personas`);
       await useTheme(page, scheme);
-      await page.getByRole('link', { name: "Corin's vEIR" }).click();
-      await expect(page.getByRole('heading', { level: 1, name: "Corin's vEIR" })).toBeVisible();
+      await page.getByRole('link', { name: CORIN_PERSONA, exact: true }).click();
+      await expect(page.getByRole('heading', { level: 1, name: CORIN_PERSONA })).toBeVisible();
       await expectNoSeriousA11yViolations(page, `persona overview (${scheme})`);
       for (const tab of ['Knowledge library', 'Lessons', 'Consent', 'Voice & face'] as const) {
         await page.getByRole('tab', { name: tab }).click();

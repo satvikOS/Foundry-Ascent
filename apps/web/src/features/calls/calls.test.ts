@@ -9,7 +9,6 @@ import { acknowledgeDisclosure, disclosureSeen } from './call-disclosure-store';
 import { callKindFrom, VIDEO_UNAVAILABLE, videoAvailability } from './call-kind';
 import { callBlocker } from './call-lobby';
 import { callClock, formatClock, spokenDuration } from './use-call-clock';
-import { personaDisplayName } from './use-call-veir';
 
 const VENTURE = '0b9d1f0e-6a0c-4f39-9d0e-5d3b8a1c2e01';
 const SESSION = '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e02';
@@ -78,9 +77,7 @@ describe('call kinds', () => {
     window.localStorage.clear();
   });
 
-  it('names the persona as it is named, and says every fact before a call', () => {
-    expect(personaDisplayName('  Thomas ')).toBe('Thomas');
-    expect(personaDisplayName("Corin's vEIR")).toBe('Corin');
+  it('says every fact before a call', () => {
     const video = disclosureFacts('Thomas', 'video')
       .map((fact) => fact.text)
       .join(' ');

@@ -28,7 +28,7 @@ import type { CallSnapshot } from '@/lib/realtime/call-state';
  * live: the API opens the vendor's session for this call, the adapter loads (its own chunk) and joins, and only
  * then does the call tile show its video and hand it the call's audio (through the server, which relays only
  * the audio it synthesized) or, for a FULL stock face, the validated units the server admits for the vendor to
- * say. A stock face is labelled "AI avatar" (`stock`). Anything that fails (no face offered, no adapter, a slow or refused join, the
+ * say. Every face is labelled "AI avatar" on its tile. Anything that fails (no face offered, no adapter, a slow or refused join, the
  * vendor dropping, the server saying stop) leaves the call on the presence and its own speakers, without a word
  * to the founder: the call itself never stops for its face.
  *
@@ -50,8 +50,6 @@ export type CallFace =
        * the voice is heard in step with the lips. Null: the tile shows `stream`, muted (the canvas stand-in).
        */
       readonly media: HTMLVideoElement | null;
-      /** A vendor's stock avatar (no one's likeness): the tile labels it "AI avatar". */
-      readonly stock: boolean;
     };
 
 export interface CallFaceDeps {
@@ -148,6 +146,8 @@ export class CallFaceController {
   private readonly listeners = new Set<() => void>();
   /** Calls that already asked for their face (once per call). */
   private readonly asked = new Set<string>();
+  /** Calls whose face showed (so a face no longer shown stopped, rather than never started). */
+  private readonly shown = new Set<string>();
   private current: {
     readonly callId: string;
     readonly controller: AbortController;
@@ -187,6 +187,11 @@ export class CallFaceController {
    */
   hasAsked(callId: string): boolean {
     return this.asked.has(callId);
+  }
+
+  /** Whether this call's face showed at some point (it may have stopped since). */
+  hadVideo(callId: string): boolean {
+    return this.shown.has(callId);
   }
 
   /** Asks for the face of this live call, once (a call that already asked, or has one, is left as it is). */
@@ -245,13 +250,13 @@ export class CallFaceController {
           this.engine.attachFace(loaded.renderer?.() ?? null);
         }
         this.engine.setFaceShown(true);
+        this.shown.add(callId);
         const media = loaded.media?.() ?? null;
         this.set({
           status: 'live',
           provider: loaded,
           stream: loaded.video?.() ?? null,
           media: media instanceof HTMLVideoElement ? media : null,
-          stock: session.stockFace,
         });
       } catch (err) {
         // Read before the close unmounts the adapter: how far its join got.

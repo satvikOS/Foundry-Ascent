@@ -8,7 +8,7 @@ type FrameListener = (levels: AudioLevels) => void;
 /**
  * A live call's one animation-frame loop and its conversation timeline. While the call is live and the page is
  * visible, each frame reads the engine's measured levels once and hands them to whatever presents the call (the
- * sphere, the character) and to the timeline recorder, so nothing else loops. The vEIR's bins are the playback
+ * sphere, or a face that follows the levels) and to the timeline recorder, so nothing else loops. The vEIR's bins are the playback
  * analyser's level while it is speaking; the founder's are the microphone's while their voice is detected (never
  * the vEIR's echo while it speaks). Everything stays in this page's memory and is dropped with the call.
  */

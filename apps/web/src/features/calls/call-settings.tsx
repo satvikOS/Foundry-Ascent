@@ -8,15 +8,13 @@ import { cn } from '@/lib/utils';
 
 import { PrivacyChoice, type ConversationPrivacy } from '../chat/privacy-choice';
 import { CallDisclosureDialog } from './call-disclosure';
-import { CAPTION_SIZES, useAnnounceCaptions, useCaptionSize, usePresentationPreference } from './preferences';
+import { CAPTION_SIZES, useAnnounceCaptions, useCaptionSize } from './preferences';
 
 /** The controls that exist only once the call is live. */
 export interface LiveCallSettings {
   voice: boolean;
   typing: boolean;
   disabled: boolean;
-  /** A vendor face is on screen: the presentation choice does not apply. */
-  video: boolean;
   onTyping: () => void;
   onSwitchToChat: () => void;
 }
@@ -134,8 +132,7 @@ function Section({ children }: { children: ReactNode }) {
 }
 
 /**
- * The call settings (the sliders glyph, top right, on the start screen and during the call): presentation (the
- * sphere by default, or the character, always labelled "AI avatar"), captions and their size, screen-reader
+ * The call settings (the sliders glyph, top right, on the start screen and during the call): captions and their size, screen-reader
  * captions, push to talk; before a call into a new conversation, Remember or Private; during the call, typing,
  * switching to chat and the timeline's legend; always, the call's disclosure to read again ("About calls
  * Thomas"). The face is solid over the call (globals.css), never glass over the captions. Choices are remembered in
@@ -153,7 +150,6 @@ export function CallSettings({
   onOpenChange,
   returnFocusRef,
 }: CallSettingsProps) {
-  const [presentation, setPresentation] = usePresentationPreference();
   const [size, setSize] = useCaptionSize();
   const [announce, setAnnounce] = useAnnounceCaptions();
   const [innerOpen, setInnerOpen] = useState(false);
@@ -194,19 +190,6 @@ export function CallSettings({
                 what="call"
                 disabled={memory.disabled}
                 className="items-start text-left sm:flex-col sm:items-start sm:justify-start"
-              />
-            </Section>
-          ) : null}
-          {!live?.video ? (
-            <Section>
-              <Segmented
-                label="Presentation"
-                value={presentation}
-                options={[
-                  { value: 'sphere', label: 'Sphere' },
-                  { value: 'character', label: 'AI avatar' },
-                ]}
-                onChange={setPresentation}
               />
             </Section>
           ) : null}

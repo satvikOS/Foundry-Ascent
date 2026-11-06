@@ -7,12 +7,13 @@ import { meQueryOptions } from '@/lib/api/hooks/auth';
 import { cn } from '@/lib/utils';
 
 /**
- * The disclosure on public pages, before anyone has signed in (no persona is known yet): what the mentor is
- * and how it is made. The EIR consents, approves the doctrine and style it is built from, and reviews each
- * release before it reaches students; it does not claim a person approved each answer.
+ * The disclosure on public pages, before anyone has signed in (no persona is known yet): what the mentor is and
+ * how it is made, true of every mentor a tenant can have. Its coaching approach is approved before each release
+ * (by the EIR for a twin, by the program for a mentor such as Thomas, ADR-0021); it never claims a person approved
+ * each answer, nor names who wrote the approach.
  */
 export const PUBLIC_DISCLOSURE =
-  'Your mentor here is an AI, not a person: built with an entrepreneur-in-residence’s consent from their approved doctrine and coaching style, and released after their review. A person from the program is there when you need one.';
+  'Your mentor here is an AI, not a person: built from an approved coaching approach and released only after review. No person writes or approves its individual replies. A person from the program is there when you need one.';
 
 interface DisclosureBannerProps {
   /**

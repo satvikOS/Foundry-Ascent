@@ -4,17 +4,19 @@ import {
   browserSpeechRequests,
   expectNoHorizontalScroll,
   expectNoSeriousA11yViolations,
+  expectPlainMentorName,
   expectReachable,
+  expectTwinNamed,
   FOUNDER_STATE,
-  OWNER_STATE,
   openVenture,
+  OWNER_STATE,
   runToken,
+  SEEDED_MENTOR_NAME,
   setCallsEnabled,
   signIn,
   startConversation,
   test,
   useTheme,
-  expectNoBareEirName,
 } from './support/fixtures';
 
 /*
@@ -367,7 +369,7 @@ test.describe('vEIR calls', () => {
       // A clear header: the persona's name as it is named, the kind of call and its time; no disclaimer line
       // (the disclosure came before the first call, and stays in the call settings).
       await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(0);
-      await expect(screen.locator('[data-slot="call-heading"]')).toHaveText('Corin');
+      await expect(screen.locator('[data-slot="call-heading"]')).toHaveText(SEEDED_MENTOR_NAME);
       await expect(screen.locator('[data-slot="call-kind"]')).toContainText(/Voice call\s*·\s*\d+:\d\d/);
       // The intro is the vEIR's first line. There is no server voice here (501), so it is on screen only,
       // and the call says so once.
@@ -384,7 +386,7 @@ test.describe('vEIR calls', () => {
       await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeFocused();
       await expect(screen.getByRole('button', { name: 'Mute' })).toHaveCount(0);
       await expectNoSeriousA11yViolations(page, 'call screen');
-      await expectNoBareEirName(page, 'the call screen');
+      await expectPlainMentorName(page, 'the call screen');
     });
 
     await test.step('a typed line is a voice turn; the validated reply is shown as it is spoken', async () => {
@@ -439,10 +441,10 @@ test.describe('vEIR calls', () => {
       const bar = page.getByRole('region', { name: /^Call with / });
       await expect(bar).toBeVisible();
       // The bar names the persona as it is named, and the kind of call.
-      await expect(bar).toContainText('Corin');
+      await expect(bar).toContainText(SEEDED_MENTOR_NAME);
       await expect(bar).toContainText('Voice call');
       await expect(bar.locator('[data-slot="veir-badge"]')).toHaveCount(0);
-      await expectNoBareEirName(page, 'the mini call bar over the conversation');
+      await expectPlainMentorName(page, 'the mini call bar over the conversation');
       await expect(page.getByRole('main').getByText(token).first()).toBeVisible();
       await bar.getByRole('button', { name: 'Return to call' }).click();
       await expect(callScreen(page)).toBeVisible();
@@ -459,7 +461,7 @@ test.describe('vEIR calls', () => {
       const response = await ended;
       expect(response.request().postDataJSON()).toMatchObject({ reason: 'user' });
       await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(0);
-      await expectNoBareEirName(page, 'the after-call summary');
+      await expectPlainMentorName(page, 'the after-call summary');
       // What the call learned goes to memory by itself, never as a proposal waiting for anyone.
       const { summary } = (await response.json()) as {
         summary: { memoryProposalIds: string[]; memoryKeptIds?: string[] };
@@ -648,7 +650,7 @@ test.describe('vEIR calls', () => {
         expect(intro).not.toMatch(
           /\b(?:how did|with|pick up|carry on with|land on) (?:where|what|when|how|who|they|we|it|email|call)\b/i,
         );
-        await expectNoBareEirName(page, 'the second call');
+        await expectPlainMentorName(page, 'the second call');
       });
 
       await test.step('"do you remember what we talked about last time?" is answered from the first call', async () => {
@@ -728,10 +730,14 @@ test.describe('vEIR calls', () => {
       await expect(disclosure).toContainText('A person from the program');
       await expect(disclosure).toContainText('legal, medical or financial advice');
       await expectNoSeriousA11yViolations(page, 'the call disclosure');
+      // EmberLoop's mentor is a twin (Ruth's vEIR, ADR-0020): it keeps its AI marker, never Ruth's bare name.
+      await expect(disclosure).toContainText(/Ruth(?:’s| ·) vEIR is an AI mentor, not a person/);
+      await expectTwinNamed(page, 'the first call’s disclosure (a twin)');
       // From ⌘K the call starts a new conversation: the disclosure leads to its Remember or Private first.
       await disclosure.getByRole('button', { name: 'Continue' }).click();
       await expect(disclosure).toHaveCount(0);
       await expect(callScreen(page).getByRole('button', { name: 'Start call' })).toBeVisible();
+      await expectTwinNamed(page, 'the call’s start screen (a twin)');
     });
 
     await test.step('Start call stores the voice notice with the person on the server', async () => {
@@ -781,7 +787,6 @@ test.describe('vEIR calls', () => {
     const start = screen.getByRole('button', { name: 'Start call' });
     await expect(start).toBeVisible();
     await expect(start).toBeFocused();
-    await expect(screen.getByTestId('voice-notice')).toHaveCount(0);
     const started = tab.waitForRequest(
       (request) => request.url().endsWith(`/sessions/${sessionId}/calls`) && request.method() === 'POST',
     );
@@ -1058,7 +1063,7 @@ test.describe('vEIR calls', () => {
       await expect(bar).toContainText('Sound is off');
       await expect(bar.getByRole('status')).toHaveText('Sound is off.');
       // The bar names the persona and the kind of call.
-      await expect(bar).toContainText('Corin');
+      await expect(bar).toContainText(SEEDED_MENTOR_NAME);
       await expect(bar).toContainText('Voice call');
       await turnOn.click();
       await expect(turnOn).toHaveCount(0);
@@ -1088,7 +1093,7 @@ test.describe('vEIR calls', () => {
       await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'New chat' }).click();
       await expect(bar).toContainText('Call ended');
       await expect(status).toHaveText('Call ended. Calls were paused by the program.');
-      await expectNoBareEirName(page, 'the mini call bar after the call ended');
+      await expectPlainMentorName(page, 'the mini call bar after the call ended');
       await bar.getByRole('button', { name: 'Review the call' }).click();
       await expect(callReview(page)).toBeVisible();
       await expect(bar).toHaveCount(0);
@@ -1146,7 +1151,7 @@ test.describe('vEIR calls', () => {
         await interruptCallAudio(page);
         const turnOn = bar.getByRole('button', { name: 'Turn on sound' });
         await expect(turnOn).toBeVisible();
-        await expect(bar).toContainText('Corin');
+        await expect(bar).toContainText(SEEDED_MENTOR_NAME);
         await expectNoHorizontalScroll(page);
         for (const name of ['Turn on sound', 'Return to call', 'End call']) {
           await expectReachable(page, bar.getByRole('button', { name }));

@@ -280,22 +280,25 @@
   --mini-call-height: 0px;
   /* The measured height of content docked to the bottom (the conversation's composer), 0 when there is none. */
   --docked-bottom-height: 0px;
+  /* The measured height of the status banners above the page (app-shell.tsx), 0 when none shows. */
+  --status-banners-height: 0px;
   /*
-   * The two floating panels (owner, 2026-11-05: "make both side panels wider"), widened per breakpoint below so
-   * the reading column between them stays at a comfortable measure (about 600–770 px of text):
+   * The two floating panels (owner, 2026-11-05: "make both side panels wider"), each wider than before (left
+   * 264 px, right 384 px) and widened per breakpoint below, while the reading column between them keeps a
+   * comfortable measure (about 520–770 px of text):
    *                 left panel   right panel   (the right panel is a sheet below 1280 px)
-   *   < 1280        280 px        320 px sheet
-   *   1280–1535     288 px        320 px        reading column ≈ 630 px at 1280
-   *   1536–1919     304 px        352 px
-   *   ≥ 1920        320 px        368 px        the column reaches its 768 px measure
-   *   ≥ 2560        336 px        416 px        monitors: the extra width goes to the panels, never the text
-   *   ≥ 3200        352 px        448 px        ultrawide
+   *   < 1280        280 px        384 px sheet
+   *   1280–1535     288 px        384 px        reading column ≈ 570 px at 1280
+   *   1536–1919     304 px        416 px
+   *   ≥ 1920        320 px        448 px        the column reaches its 768 px measure
+   *   ≥ 2560        336 px        480 px        monitors: the extra width goes to the panels, never the text
+   *   ≥ 3200        352 px        512 px        ultrawide
    * The collapsed rail stays 56 px, inset 12 px from the viewport.
    */
   --sidebar-width: 17.5rem;
   --sidebar-width-collapsed: 3.5rem;
   --panel-inset: 0.75rem;
-  --inspector-width: 20rem;
+  --inspector-width: 24rem;
   /* Reading column for conversations and prose. */
   --content-width: 48rem;
   /*
@@ -322,25 +325,25 @@
 @media (min-width: 96rem) {
   :root {
     --sidebar-width: 19rem;
-    --inspector-width: 22rem;
+    --inspector-width: 26rem;
   }
 }
 @media (min-width: 120rem) {
   :root {
     --sidebar-width: 20rem;
-    --inspector-width: 23rem;
+    --inspector-width: 28rem;
   }
 }
 @media (min-width: 160rem) {
   :root {
     --sidebar-width: 21rem;
-    --inspector-width: 26rem;
+    --inspector-width: 30rem;
   }
 }
 @media (min-width: 200rem) {
   :root {
     --sidebar-width: 22rem;
-    --inspector-width: 28rem;
+    --inspector-width: 32rem;
   }
 }
 

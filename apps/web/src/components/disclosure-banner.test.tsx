@@ -51,12 +51,12 @@ describe('DisclosureBanner line', () => {
     expect(within(note).getByText(PUBLIC_DISCLOSURE)).toBeVisible();
   });
 
-  it('describes the public mentor as the EIR made it: consented, approved doctrine, reviewed releases', () => {
-    expect(PUBLIC_DISCLOSURE).toMatch(/consent/);
-    expect(PUBLIC_DISCLOSURE).toMatch(/approved doctrine and coaching style/);
-    expect(PUBLIC_DISCLOSURE).toMatch(/released after their review/);
-    // It never claims a person approved each answer, nor that the mentor never speaks for its EIR.
-    expect(PUBLIC_DISCLOSURE).not.toMatch(/wrote or approved|never speaks for/i);
+  it('describes any mentor truthfully: an approved approach, reviewed releases, no per-reply approval', () => {
+    expect(PUBLIC_DISCLOSURE).toMatch(/built from an approved coaching approach/);
+    expect(PUBLIC_DISCLOSURE).toMatch(/released only after review/);
+    expect(PUBLIC_DISCLOSURE).toMatch(/No person writes or approves its individual replies/);
+    // True of a twin and of a mentor alike (ADR-0021): it never says an EIR wrote or reviewed the approach.
+    expect(PUBLIC_DISCLOSURE).not.toMatch(/entrepreneur-in-residence|their review|never speaks for/i);
   });
 
   it('names no one when the vEIR is unknown', () => {

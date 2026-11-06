@@ -37,8 +37,8 @@ export const AD_IDS = {
 export const AD_TENANT = 'example';
 const AT = '2026-11-05T15:42:00.000Z';
 const person = { id: AD_IDS.principal, displayName: session.founder, title: null, synthetic: true };
-/** The persona's display name, as the product shows it: just the name. */
-const veirName = session.eir.firstName;
+/** The mentor's display name, as the product shows it: just the name ("Thomas", presented as a mentor). */
+const veirName = session.mentor;
 
 export const AD_ME: Me = {
   principal: person,
@@ -76,11 +76,12 @@ export const AD_VENTURE: VentureDetail = {
     status: 'active',
     disclosure: `${veirName} is an AI.`,
     allowedModes: ['diagnose', 'coach'],
-    eirFirstName: session.eir.firstName,
+    eirFirstName: session.eir.split(' ')[0] ?? null,
     firstPerson: true,
     eirSeesWork: true,
+    presentation: 'mentor',
   },
-  assignedEir: { id: AD_IDS.eir, displayName: session.eir.fullName, synthetic: true },
+  assignedEir: { id: AD_IDS.eir, displayName: session.eir, synthetic: true },
   createdAt: AT,
 };
 
@@ -88,9 +89,9 @@ export const AD_CALL_CONFIG: CallConfigResponse = {
   veir: {
     personaId: AD_IDS.persona,
     name: veirName,
-    shortName: session.eir.firstName,
+    shortName: veirName,
     kind: 'eir_persona',
-    eirDisplayName: session.eir.fullName,
+    eirDisplayName: session.eir,
     tagline: null,
     disclosure: `${veirName} is an AI.`,
     embodiment: {
@@ -102,6 +103,7 @@ export const AD_CALL_CONFIG: CallConfigResponse = {
     },
     firstPerson: true,
     eirSeesWork: true,
+    presentation: 'mentor',
   },
   provider: 'builtin',
   maxMinutes: 30,
@@ -131,6 +133,7 @@ function conversation(index: number, title: string, minutesAgo: number): Session
     title,
     personaId: AD_IDS.persona,
     personaKind: 'eir_persona',
+    personaPresentation: 'mentor',
     lastActivityAt: at,
     hasCalls: index === 1,
     digestDeleted: false,

@@ -10,6 +10,7 @@ import { IDS } from '@/lib/realtime/testing';
 
 import { callStatusLabel, CallLive, END_UNDO_MS } from './call-live';
 import { fakeEngine, LIVE, renderWithRouter } from './testing';
+import type { CallFaceController } from './use-call-face';
 import type { CallVeir } from './use-call-veir';
 
 const CALL: CallView = {
@@ -31,6 +32,7 @@ const VEIR: CallVeir = {
   name: 'Thomas',
   shortName: 'Thomas',
   kind: 'eir_persona',
+  presentation: 'mentor',
   eirFirstName: 'Corin',
   firstPerson: true,
   eirSeesWork: true,
@@ -50,7 +52,9 @@ function Heading({ headingRef }: { headingRef: RefObject<HTMLHeadingElement | nu
 
 function renderLive(
   snapshot: Partial<CallSnapshot> = {},
-  props: Partial<Pick<ComponentProps<typeof CallLive>, 'kind' | 'onSwitchKind' | 'videoBlocked'>> = {},
+  props: Partial<
+    Pick<ComponentProps<typeof CallLive>, 'kind' | 'onSwitchKind' | 'videoBlocked' | 'face' | 'veir'>
+  > = {},
 ) {
   const { engine, asEngine } = fakeEngine();
   let switched = 0;
@@ -216,20 +220,14 @@ describe('CallLive', () => {
     expect(switched()).toBe(1);
   });
 
-  it('offers the sphere (the default) or the character, labelled AI avatar, in the call settings', async () => {
+  it('shows the sphere on a voice call, with no drawn character to choose (owner, round 3)', async () => {
     renderLive();
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Call settings' }));
+    expect(document.querySelector('[data-slot="call-tile"]')).toHaveAttribute('data-face', 'presence');
     const settings = await screen.findByRole('dialog', { name: 'Call settings' });
-    const presentation = within(settings).getByRole('group', { name: 'Presentation' });
-    expect(within(presentation).getByRole('button', { name: 'Sphere' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    await user.click(within(presentation).getByRole('button', { name: 'AI avatar' }));
-    expect(window.localStorage.getItem('fa.call.presentation')).toBe('character');
-    expect(await screen.findByText('AI avatar', { selector: '[data-slot="ai-avatar-label"]' })).toBeVisible();
-    expect(document.querySelector('[data-slot="call-tile"]')).toHaveAttribute('data-face', 'character');
+    expect(within(settings).queryByRole('group', { name: 'Presentation' })).toBeNull();
+    expect(within(settings).queryByRole('button', { name: 'AI avatar' })).toBeNull();
   });
 
   it('has keyboard shortcuts for mute, push-to-talk and captions', async () => {
@@ -528,5 +526,48 @@ describe('CallLive', () => {
     renderLive({}, { kind: 'video', onSwitchKind, videoBlocked: 'Video can’t restart in this call.' });
     await userEvent.click(await screen.findByRole('button', { name: 'Switch to voice' }));
     expect(onSwitchKind).toHaveBeenLastCalledWith('voice');
+  });
+
+  /** A face this call asked for that is not shown (the controller's view of it). */
+  function faceNotShown(hadVideo: boolean): CallFaceController {
+    const presence = { status: 'presence' } as const;
+    return {
+      subscribe: () => () => undefined,
+      getSnapshot: () => presence,
+      hasAsked: () => true,
+      hadVideo: () => hadVideo,
+      request: vi.fn(),
+    } as unknown as CallFaceController;
+  }
+
+  it('says when video could not start and offers a voice call, never switching by itself', async () => {
+    const onSwitchKind = vi.fn();
+    renderLive(
+      { call: CALL },
+      { kind: 'video', onSwitchKind, face: faceNotShown(false), veir: { ...VEIR, provider: 'heygen' } },
+    );
+    expect(await screen.findByText('Video couldn’t start. You can carry on as a voice call.')).toBeVisible();
+    // The tile says it too, in place of the face (never the sphere as a stand-in).
+    expect(document.querySelector('[data-slot="call-tile"]')).toHaveAttribute(
+      'data-face',
+      'video-unavailable',
+    );
+    expect(onSwitchKind).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Voice call' }));
+    expect(onSwitchKind).toHaveBeenLastCalledWith('voice');
+  });
+
+  it('says the video stopped once a face that showed is gone', async () => {
+    renderLive(
+      { call: CALL },
+      {
+        kind: 'video',
+        onSwitchKind: vi.fn(),
+        face: faceNotShown(true),
+        veir: { ...VEIR, provider: 'heygen' },
+      },
+    );
+    expect(await screen.findByText('Video stopped. You can carry on as a voice call.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Voice call' })).toBeVisible();
   });
 });

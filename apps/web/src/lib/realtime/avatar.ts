@@ -71,11 +71,6 @@ export interface SpokenUnit {
 export interface AvatarProvider {
   readonly id: EmbodimentProviderId;
   /**
-   * True when the provider draws the face itself (a vendor's video). The built-in sphere draws no
-   * face: the call stage shows the vEIR's monogram or consented portrait beside its name.
-   */
-  readonly drawsFace: boolean;
-  /**
    * How the vEIR is heard with this face. `engine`: the call plays its own audio and the face follows its
    * loudness (`setLevels`). `audio`: the face renders the call's validated audio itself (`renderer()`), and the
    * call plays a unit itself whenever the face cannot. `text`: the vendor voices each validated unit's words with

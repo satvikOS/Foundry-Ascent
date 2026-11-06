@@ -107,7 +107,6 @@ describe('SphereAvatar (the voice sphere)', () => {
   it('is the built-in provider for every persona', () => {
     expect(createAvatarProvider('builtin')).toBeInstanceOf(SphereAvatar);
     expect(createAvatarProvider('heygen').id).toBe('builtin');
-    expect(createAvatarProvider('builtin').drawsFace).toBe(false);
   });
 
   it('keeps the perceptual curve and the attack/release smoothing', () => {

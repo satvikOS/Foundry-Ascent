@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
-import { CoachMode, Doctrine, Id, PersonaStatus, PrincipalView, Style, Timestamp } from './domain.js';
+import {
+  CoachMode,
+  Doctrine,
+  Id,
+  PersonaPresentation,
+  PersonaStatus,
+  PrincipalView,
+  Style,
+  Timestamp,
+} from './domain.js';
 
 /**
  * vEIR knowledge pools (docs/architecture/knowledge-pools.md).
@@ -220,6 +229,11 @@ export const VeirIdentity = z.object({
    * Additive: absent means no.
    */
   eirSeesWork: z.boolean().optional(),
+  /**
+   * `mentor`: an AI mentor under its own name ("Thomas", ADR-0021), never named after its EIR; `twin`: the EIR's
+   * digital twin ("Corin's vEIR"). Additive: absent means `twin`.
+   */
+  presentation: PersonaPresentation.optional(),
 });
 export type VeirIdentity = z.infer<typeof VeirIdentity>;
 

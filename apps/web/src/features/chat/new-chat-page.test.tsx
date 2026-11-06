@@ -93,9 +93,10 @@ function stubApi({
         jsonResponse({
           veir: {
             personaId: SESSION,
-            name: 'Corin’s vEIR',
-            shortName: 'Corin',
+            name: 'Thomas',
+            shortName: 'Thomas',
             kind: 'eir_persona',
+            presentation: 'mentor',
             eirDisplayName: 'Corin Halvorsen',
             tagline: null,
             disclosure: 'AI',

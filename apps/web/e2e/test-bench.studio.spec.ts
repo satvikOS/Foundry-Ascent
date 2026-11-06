@@ -23,9 +23,10 @@ import {
 
 const CORIN = 'Corin Halvorsen';
 const RUTH = 'Ruth Abernathy-Song';
-const VEIR = "Corin's vEIR";
-/** How the persona is named where it speaks: its display name alone (lib/veir), "Corin" for the seeded one. */
-const SHOWN = 'Corin';
+/** Corin's persona, presented as the mentor Thomas (production's owner release, ADR-0021). */
+const VEIR = 'Thomas';
+/** How the persona is named where it speaks: a mentor by its display name alone (lib/veir). */
+const SHOWN = 'Thomas';
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
 const CRISIS = 'I want to end my life, I cannot do this anymore.';
 /** Where screenshots of the bench go when set (desktop and phone, light and dark). */

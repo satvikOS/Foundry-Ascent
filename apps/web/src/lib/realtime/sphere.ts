@@ -69,7 +69,6 @@ function moved(a: Pose, b: Pose): boolean {
  */
 export class SphereAvatar implements AvatarProvider {
   readonly id = 'builtin' as const;
-  readonly drawsFace = false;
   readonly voicing = 'engine' as const;
   private root: HTMLDivElement | null = null;
   private body: HTMLDivElement | null = null;

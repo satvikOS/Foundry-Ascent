@@ -9,10 +9,10 @@ export const PERSONA = 'Thomas';
 export const LANDING_DISCLOSURE_SUMMARY = `${PERSONA} is an AI mentor, not a person.`;
 
 /**
- * The disclosure in full ("More", and always for screen readers). The EIR consents, approves the doctrine and
- * style he is built from and reviews each release; it does not claim a person approved each answer.
+ * The disclosure in full ("More", and always for screen readers), as his release says it (ADR-0021): his coaching
+ * approach is the program's, written and approved before release; no person writes or approves each reply, and no
+ * entrepreneur-in-residence is said to have written or reviewed it.
  */
 export const LANDING_DISCLOSURE =
-  `${PERSONA} is an AI mentor, not a person. He is built with an Ain Foundry entrepreneur-in-residence’s ` +
-  'consent from their approved doctrine and coaching style, and released after their review. A person from the ' +
-  'program is there when you need one.';
+  `${PERSONA} is an AI mentor, not a person. His coaching approach was written and approved by the program; no ` +
+  'person writes or approves his individual replies. A person from the program is there when you need one.';

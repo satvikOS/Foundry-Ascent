@@ -63,7 +63,6 @@ export function MiniCallBarView() {
           <CallFaceThumbnail
             stream={current.stream}
             speaking={snapshot.phase === 'live' && snapshot.activity === 'speaking'}
-            stock={current.stock}
           />
         ) : null
       }

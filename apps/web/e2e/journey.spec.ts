@@ -18,7 +18,7 @@ import {
   TENANT,
   VENTURE_NAME,
   test,
-  expectNoBareEirName,
+  expectPlainMentorName,
 } from './support/fixtures';
 
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
@@ -152,7 +152,7 @@ test.describe('founder journey', () => {
       await expect(page.getByRole('main').getByRole('list', { name: 'Suggestions' })).toHaveCount(0);
       await expect(page.getByRole('combobox', { name: 'Mode for the next message' })).toHaveText(/Auto/);
       await expectVeirBadgeInView(page);
-      await expectNoBareEirName(page, 'New chat');
+      await expectPlainMentorName(page, 'New chat');
     });
 
     // A question only the venture's own records answer (the seeded seat-map experiment), so any model that
@@ -177,7 +177,7 @@ test.describe('founder journey', () => {
         .locator(`a[href$="/c/${conversationId}"]`);
       await expect(row).toHaveAttribute('aria-current', 'page');
       await expect(row).toContainText('How many repeat visitors');
-      await expectNoBareEirName(page, 'a conversation with an answer');
+      await expectPlainMentorName(page, 'a conversation with an answer');
     });
 
     await test.step('a citation opens the Sources panel on that source; reasoning expands in place', async () => {
@@ -308,7 +308,7 @@ test.describe('founder journey', () => {
       await expect(composer(page)).toHaveCount(0);
       // The summary holds the next steps now: the answers above no longer offer them a second time.
       await expect(page.getByRole('region', { name: 'Suggested next steps' })).toHaveCount(0);
-      await expectNoBareEirName(page, 'an ended conversation and its summary');
+      await expectPlainMentorName(page, 'an ended conversation and its summary');
     });
 
     await test.step('an old memory link lands on Knowledge with its search', async () => {

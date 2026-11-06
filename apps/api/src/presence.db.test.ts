@@ -8,6 +8,7 @@ import {
   ConsentView,
   Me,
   ProblemDetails,
+  SessionView,
   VentureDetail,
   VeirWelcomeAcknowledgement,
 } from '@foundry/contracts';
@@ -86,6 +87,43 @@ describe('the vEIR welcome', () => {
     expect(config.callNoticeAcknowledgedAt).toBeNull();
     // Signed out: refused.
     expect((await api.request('/me/veir-welcome/acknowledge', { method: 'POST' })).status).toBe(401);
+  });
+});
+
+describe('how the persona presents itself (ADR-0021)', () => {
+  it('is reported by the venture, the call settings and each conversation: a twin, then a mentor', async () => {
+    const persona = api.h.ventures.quietquad.personaId;
+    const present = (presentation: 'twin' | 'mentor') =>
+      api.h.t.db.system((sx) =>
+        sx.query('UPDATE personas SET presentation = :presentation WHERE id = :id', {
+          presentation: p.text(presentation),
+          id: p.uuid(persona),
+        }),
+      );
+    const read = async () => ({
+      venture: (await json(await api.request(`/ventures/${quietquad()}`, { cookie: maya }), VentureDetail))
+        .persona?.presentation,
+      call: (
+        await json(
+          await api.request(`/ventures/${quietquad()}/call-config`, { cookie: maya }),
+          CallConfigResponse,
+        )
+      ).veir.presentation,
+      session: (
+        await json(
+          await api.request(`/ventures/${quietquad()}/sessions`, { body: {}, cookie: maya }),
+          SessionView,
+          201,
+        )
+      ).personaPresentation,
+    });
+    expect(await read()).toEqual({ venture: 'twin', call: 'twin', session: 'twin' });
+    try {
+      await present('mentor');
+      expect(await read()).toEqual({ venture: 'mentor', call: 'mentor', session: 'mentor' });
+    } finally {
+      await present('twin');
+    }
   });
 });
 

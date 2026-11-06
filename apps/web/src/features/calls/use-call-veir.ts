@@ -4,7 +4,7 @@ import { queryOptions, useQuery } from '@tanstack/react-query';
 import { api, path } from '@/lib/api/client';
 import { ventureQueryOptions } from '@/lib/api/hooks/ventures';
 import { queryKeys } from '@/lib/api/query-keys';
-import { veirDisplay, veirFromIdentity, veirName, type VeirName } from '@/lib/veir';
+import { veirDisplay, veirFromIdentity, type VeirName } from '@/lib/veir';
 
 /**
  * `GET /ventures/:id/call-config`: the vEIR, its embodiment and today's call minutes. Keyed under the
@@ -32,24 +32,10 @@ export interface CallVeir extends VeirName {
 }
 
 /**
- * The name a call shows for the persona: its display name ("Thomas"), the same as every other surface shows it
- * (`veirName`: a name stored with a "vEIR" label is shown without it). The call UI never composes "…’s vEIR" or
- * "… · vEIR" around it, and puts no badge beside it.
- */
-export function personaDisplayName(personaName: string): string {
-  return veirName(personaName);
-}
-
-/** The call UI's naming: the persona's own display name in text and on screen, with no badge beside it. */
-function named<T extends VeirName>(veir: T, personaName: string): T {
-  const display = veir.kind === 'eir_persona' ? personaDisplayName(personaName) : veir.name;
-  return { ...veir, name: display, shortName: display };
-}
-
-/**
  * The vEIR of a venture for the call UI: from the call config when loaded, otherwise from the venture
- * (already cached by the sidebar), so the screen has a face and a name from its first frame. Named by the
- * persona's display name ("Thomas"); what it is (an AI mentor) is said in the call's disclosure and on its tile.
+ * (already cached by the sidebar), so the screen has a face and a name from its first frame. Named as every
+ * surface names it (lib/veir: a mentor by its own name, "Thomas"; a twin with its marker, "Corin · vEIR"); what it
+ * is (an AI mentor) is said in the call's disclosure and on its tile.
  */
 export function useCallVeir(
   ventureId: string | null,
@@ -59,12 +45,11 @@ export function useCallVeir(
   const venture = useQuery({ ...ventureQueryOptions(ventureId ?? ''), enabled: ventureId !== null });
   if (config) {
     return {
-      ...named(veirFromIdentity(config), config.name),
+      ...veirFromIdentity(config),
       provider: provider ?? config.embodiment.provider,
     };
   }
   const display = ventureId ? veirDisplay(venture.data) : null;
-  const persona = venture.data?.persona;
-  if (!display || !persona) return null;
-  return { ...named(display, persona.name), provider: 'builtin' };
+  if (!display) return null;
+  return { ...display, provider: 'builtin' };
 }

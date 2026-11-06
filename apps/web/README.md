@@ -232,8 +232,10 @@ your workspace…" banner; `locked_out` / `rate_limited` / `spend_cap_reached` (
 
 ## End-to-end tests (`e2e/`, Playwright)
 
-The CI `e2e` job (`.github/workflows/ci.yml`) resets a pgvector Postgres with `pnpm db:reset`, builds the
-SPA and runs `pnpm --filter @foundry/web e2e`. `playwright.config.ts` starts everything itself:
+The CI `e2e` job (`.github/workflows/ci.yml`) resets a pgvector Postgres with `pnpm db:reset` (with the owner
+releases production applies, `SEED_OWNER_RELEASES` from `infra/cdk/config/production.json`: QuietQuad is coached
+by the mentor Thomas, ADR-0021; EmberLoop keeps the twin Ruth's vEIR), builds the SPA and runs
+`pnpm --filter @foundry/web e2e`. `playwright.config.ts` starts everything itself:
 
 - the API dev server (`apps/api` `src/dev-server.ts`) on **:8787** with `DATABASE_URL`, `DB_DRIVER=pg` and
   `MODEL_PROVIDER=mock` from the environment (`SITE_ORIGIN` = the SPA origin; `CORE_TURN_RATE_LIMIT`
@@ -282,13 +284,13 @@ document upload, Knowledge and axe checks) and `mobile` (390 × 844 smoke). One 
   dark **and** light themes: zero serious or critical violations; the account menu by keyboard.
 - **Mobile** — landing, sign-in, the navigation sheet and New chat → conversation (with the sources sheet
   from a citation): no horizontal scroll, no text clipped at the right edge, primary controls inside the
-  viewport with ≥ 24 px targets; the conversation's header is the only bar (menu, Call, New chat,
-  options), and the whole disclosure summary is in view.
+  viewport with ≥ 24 px targets; the conversation's header is the only bar (menu, Voice call, Video call and
+  More, which holds New chat and the context panel), and the whole disclosure summary is in view.
 
 Run locally against a scratch database (never the shared `foundry` one):
 
 ```bash
-LOCAL_DB_NAME=e2e_local pnpm db:reset          # prints DATABASE_URL and a DEV owner code (local only)
+SEED_OWNER_RELEASES=thomas-2026-11-05 LOCAL_DB_NAME=e2e_local pnpm db:reset   # as CI; prints DATABASE_URL and a DEV owner code
 export DATABASE_URL='postgresql://fa_master:fa_master@localhost/e2e_local?host=/var/tmp&port=54329'
 export E2E_OWNER_ACCESS_CODE='…'                 # from the reset output; never commit or paste it
 pnpm --filter @foundry/web build && pnpm --filter @foundry/web e2e

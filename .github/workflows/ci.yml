@@ -246,10 +246,14 @@ jobs:
         run: pnpm --filter @foundry/web exec playwright install --with-deps chromium
 
       # Creates database "foundry", migrates it as fa_master and seeds synthetic data with a fresh
-      # owner access code. The code is masked and handed to the tests as E2E_OWNER_ACCESS_CODE.
+      # owner access code. The code is masked and handed to the tests as E2E_OWNER_ACCESS_CODE. The owner releases
+      # production applies (infra/cdk/config/production.json, ADR-0021: Thomas) are applied too, so the suite sees
+      # the mentor students meet.
       - name: Reset and seed the e2e database
         run: |
           out="$(mktemp)"
+          SEED_OWNER_RELEASES="$(jq -r '(.homeTenant.ownerReleases // []) | join(",")' infra/cdk/config/production.json)"
+          export SEED_OWNER_RELEASES
           if ! pnpm db:reset > "${out}"; then
             sed '/access code/d' "${out}"
             exit 1

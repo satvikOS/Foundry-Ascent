@@ -69,9 +69,8 @@ function LandingPage() {
             Think it through with someone who <em className="italic">remembers</em>.
           </h1>
           <p className="l-lead mx-auto mt-6 max-w-[40rem] text-pretty">
-            Meet {PERSONA}, an AI mentor built from an Ain Foundry entrepreneur-in-residence’s approved
-            doctrine and style. He asks before he advises, tests your claims against evidence, and brings in a
-            person when it matters.
+            Meet {PERSONA}, an AI mentor whose coaching approach the program wrote and approved. He answers
+            what you ask, tests your claims against evidence, and brings in a person when it matters.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <AccountPill me={me} size="lg" />

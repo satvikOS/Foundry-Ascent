@@ -106,5 +106,6 @@ export function toPersonaSummary(
     eirFirstName: eirFirstName === '' ? null : eirFirstName,
     firstPerson: veir && presence?.firstPerson === true,
     eirSeesWork: veir && presence?.eirSeesWork === true,
+    presentation: veir && presence?.mentor === true ? 'mentor' : 'twin',
   };
 }
