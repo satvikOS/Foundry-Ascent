@@ -59,12 +59,12 @@ re-run the insights workflow after this work deploys.
 
 The API writes these lines (numbers and identifiers only, never content):
 
-| Event              | Fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `http.request`     | `latencyMs` (to the response headers), `authMs` (session check), `dbRoundTrips`, `dbTransactions`, `dbWaitMs` (until the headers), `inflightAtStart` / `inflightMax` (other requests the process served alongside), `awsConnectionsOpened` / `awsConnectionsReused` (AWS HTTPS connections, process-wide deltas)                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `turn.timing`      | ms since the request arrived: `acceptedMs`, `modelStartMs`, `firstDeltaMs` (first sentence), `firstSpeechMs` (first spoken unit), `totalMs`; stage durations: `authMs`, `admissionMs`, `retrievalMs` (embedding wait + queries), `embedMs`, `promptMs`, `modelFirstTokenMs`, `generationMs`, `structuredMs`, `finishMs`; the whole turn's `dbRoundTrips`, `dbWaitMs`, `voice`; `embedCalls`, `inflightAtStart`, `inflightMax`, `awsConnectionsOpened`, `awsConnectionsReused`; the turn's model calls: `inputTokens`, `cacheReadInputTokens`, `cacheWriteInputTokens` (Bedrock's prompt cache), and the streamed reply's call (the one `modelFirstTokenMs` measures): `streamInputTokens`, `streamCacheReadInputTokens` |
+| Event              | Fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http.request`     | `latencyMs` (to the response headers), `authMs` (session check), `dbRoundTrips`, `dbTransactions`, `dbWaitMs` (until the headers), `inflightAtStart` / `inflightMax` (other requests the process served alongside), `awsConnectionsOpened` / `awsConnectionsReused` (AWS HTTPS connections, process-wide deltas)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `turn.timing`      | ms since the request arrived: `acceptedMs`, `modelStartMs`, `firstDeltaMs` (first sentence), `firstSpeechMs` (first spoken unit), `totalMs`; stage durations: `authMs`, `admissionMs`, `retrievalMs` (embedding wait + queries), `embedMs`, `promptMs`, `modelFirstTokenMs`, `generationMs`, `structuredMs`, `finishMs`; the whole turn's `dbRoundTrips`, `dbWaitMs`, `voice`; `embedCalls`, `inflightAtStart`, `inflightMax`, `awsConnectionsOpened`, `awsConnectionsReused`; the turn's model calls: `inputTokens`, `cacheReadInputTokens`, `cacheWriteInputTokens` (Bedrock's prompt cache), and the streamed reply's call (the one `modelFirstTokenMs` measures): `streamInputTokens`, `streamCacheReadInputTokens` ; a call's spoken turn adds the browser's end-of-speech decision (sent with the request, §5 "End of speech"): `endpointMs` (quiet after the last voiced frame when the turn was sent), `endpointWaitMs` (the quiet required), `endpointReason`, `endpointResumed` (times the line was taken back) |
 | `speech.timing`    | `route` (`request`: `POST /speech`; `turn`: voiced in the turn stream, ms since the unit was written); ms since the speech request reached the service, cumulative: `verifiedMs`, `plannedMs` (checks), `capsCheckedMs`, `reservedMs`, `synthesizedMs` (Polly answered), `firstAudioMs` (first bytes handed to the response); `characters`. The bookkeeping (ledger, counters, audit) runs while the audio streams                                                                                                                                                                                                                                                                                                      |
-| `ai.model.attempt` | per model call: `latencyMs`, `inputTokens`, `cachedInputTokens` and `cacheWriteInputTokens` (read from and written to Bedrock's prompt cache, included in `inputTokens`), `cachePoints` (cache checkpoints the request carried), `outputTokens`, `outcome`                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `ai.model.attempt` | per model call: `latencyMs`, `inputTokens`, `cachedInputTokens` and `cacheWriteInputTokens` (read from and written to Bedrock's prompt cache, included in `inputTokens`), `cachePoints` (cache checkpoints the request carried), `outputTokens`, `outcome`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 CloudWatch Logs Insights, log group `/aws/lambda/<api function>`:
 
@@ -556,6 +556,72 @@ pnpm --filter @foundry/api latency --profile production --set dbRoundTripMs=65 -
 - To read in production: `turn.timing` `firstAudioMs` against `firstSpeechMs`, `speech.timing` with `route = turn`
   (`reservedMs`, `firstAudioMs`), `turn.stream_finished` `audioUnits` / `audioFailed` / `audioWithdrawn`, and the client's
   `submitToPlayback`. Not measured here: CloudFront's and Lambda's delivery of the frames, the real vendor from AWS.
+
+### End of speech: adaptive endpointing (2026-11-06)
+
+What changed (latency plan C; `apps/web/src/lib/realtime/endpointing.ts`, `call-engine.ts`): a hands-free turn no
+longer waits one 600 ms silence after a stable transcript. The quiet it waits for follows what was heard: 300 ms after
+a finished sentence, a question (a question mark, or an auxiliary before its subject: "can we", "how do I"; never a
+question word alone, "when we launched last year") or a closed short answer ("yes", "no", "thank you", any short
+answer with its full stop), 500 ms after a line that reads as finished without either or an unpunctuated "yeah" or
+"okay", 950 ms after one left open ("um", "and", "the main thing is", "I mean", a trailing comma, a fragment), and the
+old 600 ms while the transcript lags the voice. Going on within 3 s of a send, before any unit of the reply arrived and
+once the server classified the line as ordinary, takes the line back: the turn is cancelled, the interrupt says nothing
+was heard, and the line's words go back to the endpointer as Transcribe now has them, sent again whole when the founder
+finishes (also when the words that took it back are retracted, or the founder went on inside the same Transcribe
+result). A backchannel while the vEIR speaks ("yeah", "mm-hmm") restores its volume at once and never counts as noise.
+Tuning `endpointing: 'fixed'` is the switch back.
+
+Measured with transcript fixtures replayed through the real call engine (`endpointing.test-fixtures.ts`: raw Transcribe
+`TranscriptEvent` payloads with partial-results stabilisation and 50 ms VAD frames, modelled on Transcribe's cadence;
+written for the test, not recorded from a person), frame by frame with fake timers. Decision latency is from the end of
+the founder's last voiced frame to the turn being sent; "before" is fixed 600 ms with no take-back (main before this
+change). `ENDPOINT_BENCH=1 pnpm --filter @foundry/web exec vitest run src/lib/realtime/call-engine.test.ts -t fixtures`
+prints the table.
+
+| Fixture (10)                               | before ms       | before: answered half the line | after ms            | after: why                 |
+| ------------------------------------------ | --------------- | ------------------------------ | ------------------- | -------------------------- |
+| fast question (question mark on a partial) | 600             | no                             | **300**             | question                   |
+| fast statement (full stop only on final)   | 600             | no                             | **500**             | open                       |
+| short answer ("Yes")                       | 600             | no                             | **300**             | short answer               |
+| open line, unpunctuated                    | 600             | no                             | **500**             | open                       |
+| slow speaker, 0.9 s pause mid-clause       | 700             | **yes**                        | **500**             | open (waited 950 at "is")  |
+| slow speaker, 1.2 s pause after a sentence | 600             | **yes**                        | **300**             | taken back once, then sent |
+| self-correction, "fifty, I mean" 0.7 s     | 600             | no                             | **300**             | sentence end               |
+| trailing "um", 0.8 s                       | 700             | **yes**                        | **450**             | sentence end               |
+| trailing "and", 0.65 s                     | 600             | no                             | **300**             | sentence end               |
+| transcript lagging the voice               | 600             | no                             | 600                 | catching up                |
+| **p50 / p90 / max**                        | 600 / 700 / 700 | 3 of 10                        | **300 / 500 / 600** | 0 of 10                    |
+
+- End of speech to the turn being sent: **p50 600 → 300 ms, p90 700 → 500 ms**. Against the production estimate of
+  ~678 ms (600 ms plus Transcribe's finalisation), the expected saving on a finished line is about 300 ms; an open
+  line saves about 100 ms.
+- Lines answered in half depend on how soon the reply starts, because a take-back only happens before any of it
+  arrives. The same replay with the fake server answering (accepted and classified after 100 ms, first spoken unit
+  after the time below; `-t fixtures` prints it):
+
+  | First unit after the request                           | before: answered in half | after: answered in half                             |
+  | ------------------------------------------------------ | ------------------------ | --------------------------------------------------- |
+  | never (the table above)                                | 3 of 10                  | **0 of 10**                                         |
+  | 2.5 s (today's production first audio ≈ 2.4–4.1 s p50) | 3 of 10                  | **0 of 10**                                         |
+  | 1.2 s (target)                                         | 3 of 10                  | **1 of 10** (1.2 s pause after a finished sentence) |
+  | 0.7 s (target)                                         | 3 of 10                  | **1 of 10** (the same line)                         |
+
+  The guarantee "a slower speaker is never answered on half a line" holds only while first audio is slower than the
+  founder's pause plus the words that take the line back; at the target latencies a pause of about a second after a
+  finished sentence is answered in half, as fixed endpointing answered it, and the founder's next words barge in.
+  The mid-clause pause and the trailing "um" still wait at every latency (950 ms classes, not take-backs).
+
+- The price: a line taken back is a cancelled turn request (the model may have started; it is metered as before), and
+  a line that ends on an ambiguous word ("that's how it is") waits 950 ms.
+- Not measured: real Transcribe partial timing and punctuation on partials across accents and microphones, and how
+  often production lines are taken back. Read them from `turn.timing` once deployed:
+
+```text
+filter event = "turn.timing" and ispresent(endpointReason)
+| stats count(*) as turns, pct(endpointMs, 50) as endP50, pct(endpointMs, 90) as endP90, sum(endpointResumed) as takenBack
+  by endpointReason
+```
 
 ## 6. Measured and not kept
 

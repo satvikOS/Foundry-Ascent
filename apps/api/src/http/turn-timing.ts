@@ -1,4 +1,4 @@
-import { type TurnStreamEvent } from '@foundry/contracts';
+import { type TurnEndpointing, type TurnStreamEvent } from '@foundry/contracts';
 
 import { type LogFields } from '../logging.js';
 import { ms, type RequestMetrics } from '../runtime/request-metrics.js';
@@ -94,4 +94,20 @@ export class TurnTimeline {
       ...m.connectionFields(),
     };
   }
+}
+
+/**
+ * How the browser found the end of a spoken turn (the request's `endpointing`, docs/runbooks/latency.md §1), as
+ * `turn.timing` fields: before the request existed, the quiet after the founder's last word until the turn was sent
+ * (`endpointMs`), the quiet what they said required, why, and how often the line was taken back to be finished.
+ * Numbers and a reason only.
+ */
+export function endpointFields(endpointing: TurnEndpointing | undefined): LogFields {
+  if (endpointing === undefined) return {};
+  return {
+    endpointMs: endpointing.decisionMs,
+    endpointWaitMs: endpointing.waitMs,
+    endpointReason: endpointing.reason,
+    endpointResumed: endpointing.resumed,
+  };
 }

@@ -2482,4 +2482,38 @@ describe('barge-in', () => {
       { founderText: 'Fourth?', answer: null },
     ]);
   });
+
+  it('says a line the call took back once: an unheard turn the next line repeats and goes on from is left out', () => {
+    const turns = [
+      {
+        id: 'a',
+        founderText: 'We talked to twelve clinics.',
+        response: { answer: 'An answer nobody heard.' },
+      },
+      {
+        id: 'b',
+        founderText: 'We talked to twelve clinics and three said yes.',
+        response: { answer: 'Good.' },
+      },
+      // Heard nothing of it, but the next line is something else: kept, its reply left out.
+      { id: 'd', founderText: 'Twelve.', response: { answer: 'Twelve what?' } },
+      { id: 'e', founderText: 'Clinics.', response: { answer: 'Thanks.' } },
+      // Taken back, and the line being answered now says it again with its last word revised.
+      { id: 'c', founderText: 'How do I price the pilots', response: { answer: 'Unheard too.' } },
+    ] as unknown as Parameters<typeof historyAsHeard>[0];
+    const heard = new Map([
+      ['a', { heardSeq: -1, heardText: null }],
+      ['c', { heardSeq: -1, heardText: null }],
+      ['d', { heardSeq: -1, heardText: null }],
+    ]);
+    expect(historyAsHeard(turns, heard, 'How do I price the pilot for small clinics?')).toEqual([
+      { founderText: 'We talked to twelve clinics and three said yes.', answer: 'Good.' },
+      { founderText: 'Twelve.', answer: null },
+      { founderText: 'Clinics.', answer: 'Thanks.' },
+    ]);
+    // Only a reply of which nothing was heard: one heard in part is a barge-in, kept with the words heard.
+    expect(
+      historyAsHeard(turns.slice(0, 2), new Map([['a', { heardSeq: 0, heardText: 'An answer' }]])).at(0),
+    ).toEqual({ founderText: 'We talked to twelve clinics.', answer: 'An answer' });
+  });
 });

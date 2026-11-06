@@ -3,6 +3,7 @@ export type VoiceStage =
   | 'sessionSetup'
   | 'transcriptAfterVadEnd'
   | 'endpointing'
+  | 'endpointDecision'
   | 'submitToPlayback'
   | 'vadEndToPlayback'
   | 'interruptToStopScheduled';
@@ -10,13 +11,22 @@ const STAGES: readonly VoiceStage[] = [
   'sessionSetup',
   'transcriptAfterVadEnd',
   'endpointing',
+  'endpointDecision',
   'submitToPlayback',
   'vadEndToPlayback',
   'interruptToStopScheduled',
 ];
 export const VOICE_TIMING_LIMIT = 128;
+/** Distinct counters kept (endpoint reasons and a few events): names are fixed categories, never content. */
+const COUNTER_LIMIT = 32;
 export class VoiceTimings {
   private readonly values = new Map<VoiceStage, number[]>();
+  private readonly counters = new Map<string, number>();
+  /** Counts an event of a fixed category (`endpoint.question`, `resumed`, `backchannel`). */
+  count(name: string): void {
+    if (!this.counters.has(name) && this.counters.size >= COUNTER_LIMIT) return;
+    this.counters.set(name, Math.min(1_000_000, (this.counters.get(name) ?? 0) + 1));
+  }
   record(stage: VoiceStage, ms: number): void {
     if (!Number.isFinite(ms) || ms < 0) return;
     const samples = this.values.get(stage) ?? [];
@@ -26,6 +36,7 @@ export class VoiceTimings {
   }
   clear(): void {
     this.values.clear();
+    this.counters.clear();
   }
   report() {
     return {
@@ -42,6 +53,7 @@ export class VoiceTimings {
           ];
         }),
       ),
+      counts: Object.fromEntries([...this.counters.entries()].sort(([a], [b]) => a.localeCompare(b))),
     };
   }
 }

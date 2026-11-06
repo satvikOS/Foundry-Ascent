@@ -2,7 +2,7 @@ import { type TurnStreamEvent } from '@foundry/contracts';
 import { describe, expect, it } from 'vitest';
 
 import { RequestMetrics } from '../runtime/request-metrics.js';
-import { TurnTimeline } from './turn-timing.js';
+import { endpointFields, TurnTimeline } from './turn-timing.js';
 
 const TURN = '11111111-1111-4111-8111-111111111111';
 
@@ -133,6 +133,18 @@ describe('TurnTimeline', () => {
       streamInputTokens: null,
       streamCacheReadInputTokens: null,
       dbRoundTrips: 0,
+    });
+  });
+});
+
+describe('endpointFields', () => {
+  it('logs how a spoken turn’s end was found, and nothing for a typed turn', () => {
+    expect(endpointFields(undefined)).toEqual({});
+    expect(endpointFields({ decisionMs: 312, waitMs: 300, reason: 'question', resumed: 1 })).toEqual({
+      endpointMs: 312,
+      endpointWaitMs: 300,
+      endpointReason: 'question',
+      endpointResumed: 1,
     });
   });
 });

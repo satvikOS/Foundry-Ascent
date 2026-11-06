@@ -623,7 +623,7 @@ export function createOrchestrator(
           release,
           allowedModes,
           history,
-          heardHistory: historyAsHeard(history, interruptions),
+          heardHistory: historyAsHeard(history, interruptions, input.text),
           // The opener is the conversation's first message: replayed while the history reaches back to it.
           opener:
             session.opener !== null && (history.length < cfg.turns.historyTurns || history[0]?.ordinal === 1)

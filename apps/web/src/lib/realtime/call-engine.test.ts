@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CreateTurnBody, StreamTurnOptions, TurnStreamEventT } from '../api/sse';
 import { ApiError } from '../api/errors';
 import type { HeartbeatResult, StartCallResult } from './call-api';
-import { CallEngine, type CallAudioContext, type CallEngineApi } from './call-engine';
+import { CallEngine, type CallAudioContext, type CallEngineApi, type CallTuning } from './call-engine';
 import { decodeMessage } from './event-stream';
 import type { FaceRenderer, FaceRenderHandlers, SpeechFetchResult, SpeechUnitToPlay } from './playback';
 import {
@@ -19,7 +19,9 @@ import {
   makeReply,
   makeVoiceTurn,
   transcriptEvent,
+  transcriptPayloadEvent,
 } from './testing';
+import { ENDPOINT_FIXTURES, type EndpointFixture } from './endpointing.test-fixtures';
 
 const CALL_ID = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c01';
 const TURN_ID = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c02';
@@ -108,6 +110,7 @@ interface SetupOptions {
   socketThrows?: string;
   /** The browser keeps the call's audio suspended until a gesture. */
   suspended?: boolean;
+  tuning?: Partial<CallTuning>;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -194,6 +197,7 @@ function setup(options: SetupOptions = {}) {
       },
     },
     onTurnSettled: (_sessionId, turn) => settled.push(turn),
+    ...(options.tuning === undefined ? {} : { tuning: options.tuning }),
   });
   const state = () => engine.getSnapshot();
   /** One 50 ms microphone frame at a level. */
@@ -447,16 +451,22 @@ describe('CallEngine · voice', () => {
       transcriptEvent('r1', 'We interviewed twelve clinics', { partial: true, stable: true }),
     );
 
-    // Quiet frames: the turn ends once 600 ms of silence follow the stable partial.
-    for (let i = 0; i < 11; i++) {
+    // Quiet frames: a line that reads as finished (no punctuation, no question) ends once 500 ms of quiet follow
+    // the stable partial.
+    for (let i = 0; i < 9; i++) {
       vi.advanceTimersByTime(50);
       h.frame(0.001);
     }
     expect(h.script.calls).toHaveLength(0);
-    vi.advanceTimersByTime(100);
+    vi.advanceTimersByTime(50);
     h.frame(0.001);
     await flush();
-    expect(h.script.calls[0]?.body.text).toBe('We interviewed twelve clinics');
+    expect(h.script.calls[0]?.body).toEqual({
+      text: 'We interviewed twelve clinics',
+      channel: 'voice',
+      callId: CALL_ID,
+      endpointing: { decisionMs: 500, waitMs: 500, reason: 'open', resumed: 0 },
+    });
     expect(h.state().activity).toBe('thinking');
   });
 
@@ -1720,5 +1730,548 @@ describe('CallEngine · limits and ending', () => {
     await starting;
     expect(h.api.endCall).toHaveBeenCalledWith(CALL_ID, { reason: 'user' });
     expect(h.state().phase).toBe('idle');
+  });
+});
+
+// End of speech (latency plan C) -----------------------------------------------------------------------------------
+
+/** Words only, lower case: what a line says, whatever punctuation Transcribe gave it. */
+function wordsOf(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}'\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+interface Replay {
+  /** When the engine took the line as finished (ms from the founder's first word), each time. */
+  readonly decisions: readonly number[];
+  /** Ms from the end of the founder's last voice to the decision that sent the whole line. */
+  readonly latencyMs: number;
+  /**
+   * Turns sent before the founder had finished that were not taken back: the vEIR answered half the line (its reply
+   * was heard, or would be once it came).
+   */
+  readonly cutOffs: number;
+  /** Turns taken back because the founder went on before any of the reply arrived (each a cancelled request). */
+  readonly resumed: number;
+  /** Turns whose reply the founder started hearing before they had finished. */
+  readonly heardEarly: number;
+  /** The words of the line the vEIR answers (a cut-off line answers only its first part). */
+  readonly answered: string;
+  readonly body: CreateTurnBody | undefined;
+}
+
+/**
+ * How the fake server answers each turn: accepted and classified 100 ms after the request, and its first spoken
+ * unit `firstUnitMs` after the request (null: never, the take-back window always open).
+ */
+interface ReplayServer {
+  readonly firstUnitMs: number | null;
+}
+
+/** A turn id per request of a replay. */
+function replayTurnId(n: number): string {
+  return `9a8b7c6d-5e4f-4a3b-8c2d-${(0x1e0f9a8b7d00 + n).toString(16)}`;
+}
+
+/** Plays a fixture into a live call frame by frame (50 ms) and reads when and what the engine sent. */
+async function replay(
+  fixture: EndpointFixture,
+  tuning: Partial<CallTuning>,
+  server: ReplayServer = { firstUnitMs: null },
+): Promise<Replay> {
+  const h = setup({ tuning });
+  // A unit's audio plays until the founder speaks over it.
+  h.setSpeechResult({ kind: 'audio', data: new ArrayBuffer(200_000) });
+  await startLive(h);
+  const socket = FakeWebSocket.last();
+  socket.serverOpen();
+  const decisions: number[] = [];
+  const counted = () =>
+    Object.entries(h.engine.diagnostics().counts)
+      .filter(([name]) => name.startsWith('endpoint.'))
+      .reduce((sum, [, n]) => sum + n, 0);
+  const scheduled: { at: number; call: number; events: TurnStreamEventT[] }[] = [];
+  const heardEarly = new Set<number>();
+  let requests = 0;
+  let next = 0;
+  for (let t = 0; t <= fixture.finishedAt + 2_500; t += 50) {
+    // The server's events for the request still open (a request taken back or barged over gets nothing more).
+    for (const item of scheduled.filter((entry) => entry.at <= t)) {
+      scheduled.splice(scheduled.indexOf(item), 1);
+      const call = h.script.calls[item.call];
+      if (item.call === h.script.calls.length - 1 && call?.options.signal?.aborted !== true) {
+        h.script.push(...item.events);
+      }
+    }
+    while (next < fixture.events.length && (fixture.events[next]?.at ?? Infinity) <= t) {
+      socket.serverSend(transcriptPayloadEvent(fixture.events[next]?.payload));
+      next += 1;
+    }
+    // The frame handed over at `t` holds the 50 ms of audio before it.
+    const voiced = fixture.voice.some(([from, to]) => t - 50 >= from && t - 50 < to);
+    const before = counted();
+    h.frame(voiced ? 0.08 : 0.001);
+    await flush(3);
+    if (counted() > before) decisions.push(t);
+    for (; requests < h.script.calls.length; requests++) {
+      const turnId = replayTurnId(requests);
+      scheduled.push({
+        at: t + 100,
+        call: requests,
+        events: [
+          { event: 'turn.accepted', turnId, ordinal: requests + 1 },
+          { event: 'turn.status', phase: 'classifying', detail: null, evidenceCount: null },
+        ],
+      });
+      if (server.firstUnitMs !== null) {
+        scheduled.push({
+          at: t + server.firstUnitMs,
+          call: requests,
+          events: [{ event: 'turn.speech', turnId, seq: 0, text: 'Start there.', sig: SIG, final: false }],
+        });
+      }
+    }
+    if (t < fixture.finishedAt && h.state().activity === 'speaking') heardEarly.add(h.script.calls.length);
+    vi.advanceTimersByTime(50);
+  }
+  const resumed = h.engine.diagnostics().counts.resumed ?? 0;
+  const early = decisions.filter((at) => at < fixture.finishedAt).length;
+  const live = h.script.calls.filter((call) => call.options.signal?.aborted !== true);
+  const first = live[0]?.body;
+  const last = decisions.at(-1) ?? Number.NaN;
+  return {
+    decisions,
+    latencyMs: last - fixture.finishedAt,
+    cutOffs: early - resumed,
+    resumed,
+    heardEarly: heardEarly.size,
+    answered: wordsOf(first?.text ?? ''),
+    body: h.script.calls.at(-1)?.body,
+  };
+}
+
+function distribution(values: readonly number[]) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const at = (p: number) => sorted[Math.max(0, Math.ceil(sorted.length * p) - 1)] ?? null;
+  return { n: sorted.length, min: sorted[0], p50: at(0.5), p90: at(0.9), max: sorted.at(-1) };
+}
+
+/** Before adaptive endpointing: one 600 ms silence, and a line sent was never taken back. */
+const BEFORE: Partial<CallTuning> = { endpointing: 'fixed', resumeWindowMs: 0 };
+
+describe('CallEngine · end of speech on transcript fixtures (before: fixed 600 ms; after: adaptive)', () => {
+  it('answers sooner when the line is finished and never cuts a slow speaker off while replies are slow', async () => {
+    interface Row {
+      readonly fixture: string;
+      readonly fixedMs: number;
+      readonly fixedCutOffs: number;
+      readonly fixedAnswered: boolean;
+      readonly adaptiveMs: number;
+      readonly adaptiveCutOffs: number;
+      readonly takenBack: number;
+      readonly reason: string | undefined;
+    }
+    const rows: Row[] = [];
+    const fixedLatency: number[] = [];
+    const adaptiveLatency: number[] = [];
+    for (const fixture of ENDPOINT_FIXTURES) {
+      const fixed = await replay(fixture, BEFORE);
+      FakeWebSocket.reset();
+      const adaptive = await replay(fixture, {});
+      FakeWebSocket.reset();
+      fixedLatency.push(fixed.latencyMs);
+      adaptiveLatency.push(adaptive.latencyMs);
+      rows.push({
+        fixture: fixture.name,
+        fixedMs: fixed.latencyMs,
+        fixedCutOffs: fixed.cutOffs,
+        fixedAnswered: fixed.answered === wordsOf(fixture.line),
+        adaptiveMs: adaptive.latencyMs,
+        adaptiveCutOffs: adaptive.cutOffs,
+        takenBack: adaptive.resumed,
+        reason: adaptive.body?.endpointing?.reason,
+      });
+      // The vEIR answers the whole line, sent once: never half of it.
+      expect(adaptive.cutOffs, fixture.name).toBe(0);
+      expect(adaptive.answered, fixture.name).toBe(wordsOf(fixture.line));
+      expect(adaptive.body?.endpointing?.resumed, fixture.name).toBe(adaptive.resumed);
+      expect(adaptive.latencyMs, fixture.name).toBeGreaterThan(0);
+      expect(adaptive.latencyMs, fixture.name).toBeLessThanOrEqual(fixed.latencyMs);
+    }
+    if (process.env.ENDPOINT_BENCH) {
+      process.stdout.write(
+        `${JSON.stringify({ rows, fixed: distribution(fixedLatency), adaptive: distribution(adaptiveLatency) })}\n`,
+      );
+    }
+    const byName: Partial<Record<string, Row>> = Object.fromEntries(rows.map((row) => [row.fixture, row]));
+    // A finished line goes about 300 ms after the voice stops; fixed endpointing took 600 ms or more.
+    for (const name of ['fast_question', 'short_answer']) {
+      expect(byName[name]?.adaptiveMs, name).toBeLessThanOrEqual(350);
+      expect(byName[name]?.fixedMs, name).toBeGreaterThanOrEqual(600);
+    }
+    // Fixed endpointing cut the slow speaker off mid-clause, after a finished sentence they added to, and after
+    // "um": the vEIR answered half the line.
+    for (const name of ['slow_speaker_mid_clause', 'slow_speaker_long_pause', 'trailing_um']) {
+      expect(byName[name]?.fixedCutOffs, name).toBe(1);
+      expect(byName[name]?.fixedAnswered, name).toBe(false);
+    }
+    // Adaptive waited through them, and took back the one line that only looked finished.
+    expect(byName.slow_speaker_long_pause?.takenBack).toBe(1);
+    expect(distribution(adaptiveLatency).p50 ?? Infinity).toBeLessThan(distribution(fixedLatency).p50 ?? 0);
+  });
+
+  it('with replies at today’s and the target first-audio latency: a take-back saves a line only while the reply is slower than the pause', async () => {
+    // First spoken unit after the request: today's production first audio is 2.4–4.1 s at p50 (latency plan), the
+    // targets are 1.2 s and 0.7 s.
+    const latencies = [2_500, 1_200, 700] as const;
+    const table: Record<string, Record<string, { fixed: number; adaptive: number; heard: number }>> = {};
+    const totals: Record<string, { fixed: number; adaptive: number }> = {};
+    for (const firstUnitMs of latencies) {
+      const key = String(firstUnitMs);
+      table[key] = {};
+      totals[key] = { fixed: 0, adaptive: 0 };
+      for (const fixture of ENDPOINT_FIXTURES) {
+        const fixed = await replay(fixture, BEFORE, { firstUnitMs });
+        FakeWebSocket.reset();
+        const adaptive = await replay(fixture, {}, { firstUnitMs });
+        FakeWebSocket.reset();
+        table[key][fixture.name] = {
+          fixed: fixed.cutOffs,
+          adaptive: adaptive.cutOffs,
+          heard: adaptive.heardEarly,
+        };
+        const total = totals[key];
+        total.fixed += fixed.cutOffs;
+        total.adaptive += adaptive.cutOffs;
+        // Adaptive never cuts off a line fixed endpointing let finish.
+        expect(adaptive.cutOffs, `${fixture.name} @${key}`).toBeLessThanOrEqual(fixed.cutOffs);
+        // A line cut off is one whose reply was heard (a take-back only happens before any of it arrives).
+        expect(adaptive.heardEarly, `${fixture.name} @${key}`).toBeLessThanOrEqual(adaptive.cutOffs);
+      }
+    }
+    if (process.env.ENDPOINT_BENCH) process.stdout.write(`${JSON.stringify({ cutOffs: table, totals })}\n`);
+    // Fixed endpointing cuts the same three slow lines off at every latency.
+    for (const key of Object.keys(totals)) expect(totals[key]?.fixed, key).toBe(3);
+    // Today's slow first audio: the take-back saves every line.
+    expect(totals['2500']?.adaptive).toBe(0);
+    // At the targets the reply starts before the slow speaker resumes after a finished sentence: that line is
+    // answered in half, like fixed endpointing answered it; the mid-clause pause and the "um" still wait.
+    expect(table['1200']?.slow_speaker_long_pause?.adaptive).toBe(1);
+    expect(table['700']?.slow_speaker_long_pause?.adaptive).toBe(1);
+    expect(totals['1200']?.adaptive).toBe(1);
+    expect(totals['700']?.adaptive).toBe(1);
+  });
+});
+
+describe('CallEngine · taking a line back when the founder goes on', () => {
+  async function live(h: ReturnType<typeof setup>) {
+    await startLive(h);
+    const socket = FakeWebSocket.last();
+    socket.serverOpen();
+    return socket;
+  }
+
+  /** 50 ms microphone frames: 'x' the founder's voice, '.' quiet. */
+  async function frames(h: ReturnType<typeof setup>, pattern: string): Promise<void> {
+    for (const c of pattern) {
+      vi.advanceTimersByTime(50);
+      h.frame(c === 'x' ? 0.2 : 0.001);
+    }
+    await flush();
+  }
+
+  /** The server accepted the line and classified it as ordinary (`sensitive`: a crisis or high-risk line). */
+  async function accepted(h: ReturnType<typeof setup>, detail: string | null = null): Promise<void> {
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      { event: 'turn.status', phase: 'classifying', detail, evidenceCount: null },
+    );
+    await flush();
+  }
+
+  it('cancels the turn sent before any of its reply, and sends the whole line once the founder finishes', async () => {
+    const h = setup();
+    const socket = await live(h);
+    await frames(h, 'xxxxxxxx');
+    socket.serverSend(transcriptEvent('a', 'We talked to twelve clinics.', { partial: true, stable: true }));
+    await frames(h, '......');
+    expect(h.script.calls).toHaveLength(1);
+    expect(h.script.calls[0]?.body.endpointing).toMatchObject({ reason: 'sentence_end', waitMs: 300 });
+    expect(h.state().activity).toBe('thinking');
+    await accepted(h);
+
+    // The founder goes on. A filler alone is not enough to take the line back.
+    await frames(h, 'xxxx');
+    socket.serverSend(transcriptEvent('b', 'um', { partial: true, stable: false }));
+    await flush();
+    expect(h.script.calls[0]?.options.signal?.aborted).toBe(false);
+    socket.serverSend(transcriptEvent('b', 'um and three', { partial: true, stable: false }));
+    await flush();
+    expect(h.script.calls[0]?.options.signal?.aborted).toBe(true);
+    // The server is told none of the reply was heard, whatever it made of the cancelled request.
+    expect(h.api.interruptTurn).toHaveBeenCalledWith(TURN_ID, { callId: CALL_ID, heardSeq: -1, heard: [] });
+    expect(h.state()).toMatchObject({ activity: 'listening', notice: null });
+    expect(h.state().captions).toMatchObject({
+      founder: 'We talked to twelve clinics. um and three',
+      founderLive: true,
+    });
+
+    await frames(h, 'xxxxxx');
+    socket.serverSend(transcriptEvent('b', 'um and three said yes.', { partial: false }));
+    await frames(h, '......');
+    expect(h.script.calls).toHaveLength(2);
+    expect(h.script.calls[1]?.body).toMatchObject({
+      text: 'We talked to twelve clinics. um and three said yes.',
+      endpointing: { reason: 'sentence_end', resumed: 1 },
+    });
+    expect(h.engine.diagnostics().counts).toMatchObject({ resumed: 1 });
+  });
+
+  it('still sends the line taken back when the words that took it back are retracted', async () => {
+    const h = setup();
+    const socket = await live(h);
+    await frames(h, 'xxxxxxxx');
+    socket.serverSend(transcriptEvent('a', 'We talked to twelve clinics.', { partial: false }));
+    await frames(h, '......');
+    await accepted(h);
+    // Two unsettled words (a breath Transcribe guessed at) take the line back...
+    await frames(h, 'xx');
+    socket.serverSend(transcriptEvent('b', 'three clinics', { partial: true, stable: false }));
+    await flush();
+    expect(h.script.calls[0]?.options.signal?.aborted).toBe(true);
+    // ...then Transcribe finalises them as nothing.
+    socket.serverSend(transcriptEvent('b', '', { partial: false }));
+    await flush();
+    expect(h.state().captions).toMatchObject({ founder: 'We talked to twelve clinics.' });
+    await frames(h, '......');
+    expect(h.script.calls).toHaveLength(2);
+    expect(h.script.calls[1]?.body).toMatchObject({
+      text: 'We talked to twelve clinics.',
+      endpointing: { reason: 'sentence_end', resumed: 1 },
+    });
+    expect(h.state().activity).toBe('thinking');
+  });
+
+  it('hears the founder going on inside the same Transcribe result, with a sent word revised', async () => {
+    const h = setup();
+    const socket = await live(h);
+    await frames(h, 'xxxxxxxx');
+    // Sent on a partial whose last word is not stable yet.
+    socket.serverSend(transcriptEvent('a', 'How do I price the pilots', { partial: true, stable: false }));
+    await frames(h, '......');
+    expect(h.script.calls[0]?.body).toMatchObject({
+      text: 'How do I price the pilots',
+      endpointing: { reason: 'question' },
+    });
+    await accepted(h);
+    // The founder goes on in the same result, and Transcribe corrects the word it had guessed.
+    await frames(h, 'xxxx');
+    socket.serverSend(
+      transcriptEvent('a', 'How do I price the pilot for small clinics', { partial: true, stable: false }),
+    );
+    await flush();
+    expect(h.script.calls[0]?.options.signal?.aborted).toBe(true);
+    expect(h.state().captions).toMatchObject({
+      founder: 'How do I price the pilot for small clinics',
+      founderLive: true,
+    });
+    await frames(h, 'xxxx');
+    socket.serverSend(
+      transcriptEvent('a', 'How do I price the pilot for small clinics in Ohio?', { partial: false }),
+    );
+    await frames(h, '......');
+    expect(h.script.calls).toHaveLength(2);
+    expect(h.script.calls[1]?.body).toMatchObject({
+      text: 'How do I price the pilot for small clinics in Ohio?',
+      endpointing: { reason: 'question', resumed: 1 },
+    });
+  });
+
+  it('never takes back a line once a unit of its reply arrived: it is heard, then spoken over', async () => {
+    const h = setup();
+    const socket = await live(h);
+    // The reply's first unit is still being fetched when the founder goes on.
+    h.api.fetchSpeech.mockImplementationOnce(() => new Promise<SpeechFetchResult>(() => undefined));
+    await frames(h, 'xxxxxxxx');
+    socket.serverSend(transcriptEvent('a', 'How do I price the pilot?', { partial: true, stable: true }));
+    await frames(h, '......');
+    await accepted(h);
+    h.script.push(speech(0, 'Start with what they pay today.'));
+    await flush(10);
+    expect(h.state().activity).toBe('thinking');
+
+    await frames(h, 'xxxx');
+    socket.serverSend(transcriptEvent('b', 'for small clinics', { partial: true, stable: true }));
+    await flush(10);
+    expect(h.script.calls[0]?.options.signal?.aborted).toBe(false);
+    expect(h.engine.diagnostics().counts.resumed).toBeUndefined();
+    // What follows waits for the reply.
+    await frames(h, 'xx............');
+    expect(h.script.calls).toHaveLength(1);
+    expect(h.state().queued).toBe(1);
+  });
+
+  it('never takes back a line the server classified as sensitive, nor one not classified yet', async () => {
+    for (const detail of ['sensitive', undefined] as const) {
+      FakeWebSocket.reset();
+      const h = setup();
+      const socket = await live(h);
+      await frames(h, 'xxxxxxxx');
+      socket.serverSend(transcriptEvent('a', 'I do not want to be here anymore.', { partial: false }));
+      await frames(h, '......');
+      if (detail === undefined) h.script.push({ event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 });
+      else await accepted(h, detail);
+      await flush();
+      await frames(h, 'xxxx');
+      socket.serverSend(transcriptEvent('b', 'and nobody would notice', { partial: false }));
+      await flush();
+      expect(h.script.calls[0]?.options.signal?.aborted, String(detail)).toBe(false);
+      expect(h.api.interruptTurn, String(detail)).not.toHaveBeenCalled();
+      expect(h.engine.diagnostics().counts.resumed, String(detail)).toBeUndefined();
+    }
+    // The crisis support still arrives and is handled on the turn sent.
+    const h = setup();
+    const socket = await live(h);
+    await frames(h, 'xxxxxxxx');
+    socket.serverSend(transcriptEvent('a', 'I do not want to be here anymore.', { partial: false }));
+    await frames(h, '......');
+    await accepted(h, 'sensitive');
+    await frames(h, 'xxxx');
+    socket.serverSend(transcriptEvent('b', 'and nobody would notice', { partial: false }));
+    await flush();
+    h.script.push({
+      event: 'turn.blocked',
+      turnId: TURN_ID,
+      reason: 'crisis_support',
+      escalationId: null,
+      supportMessage: 'You deserve support right now.',
+    });
+    await flush();
+    expect(h.state()).toMatchObject({ muted: true, blocked: { reason: 'crisis_support' } });
+  });
+
+  it('sends a line taken back when the founder mutes before finishing it', async () => {
+    const h = setup();
+    const socket = await live(h);
+    await frames(h, 'xxxxxxxx');
+    socket.serverSend(transcriptEvent('a', 'We talked to twelve clinics.', { partial: false }));
+    await frames(h, '......');
+    await accepted(h);
+    await frames(h, 'xx');
+    socket.serverSend(transcriptEvent('b', 'and three', { partial: true, stable: true }));
+    await flush();
+    expect(h.script.calls[0]?.options.signal?.aborted).toBe(true);
+    h.engine.setMuted(true);
+    await flush();
+    expect(h.script.calls).toHaveLength(2);
+    expect(h.script.calls[1]?.body.text).toBe('We talked to twelve clinics. and three');
+  });
+
+  it('leaves a reply alone once it is heard: words then are a barge-in, not a take-back', async () => {
+    const h = setup();
+    const socket = await live(h);
+    await frames(h, 'xxxxxxxx');
+    socket.serverSend(transcriptEvent('a', 'How do I price the pilot?', { partial: true, stable: true }));
+    await frames(h, '......');
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      speech(0, 'Start with what they pay today.'),
+    );
+    await flush(20);
+    expect(h.state().activity).toBe('speaking');
+    socket.serverSend(transcriptEvent('b', 'for small clinics', { partial: true, stable: true }));
+    await flush(10);
+    expect(h.api.interruptTurn).toHaveBeenCalledWith(TURN_ID, {
+      callId: CALL_ID,
+      heardSeq: -1,
+      heard: [],
+    });
+    expect(h.engine.diagnostics().counts.resumed).toBeUndefined();
+    await frames(h, '..........');
+    expect(h.script.calls[1]?.body).toMatchObject({ text: 'for small clinics', endpointing: { resumed: 0 } });
+  });
+
+  it('does not take a line back after the window: what follows waits for the reply', async () => {
+    const h = setup({ tuning: { resumeWindowMs: 1_000 } });
+    const socket = await live(h);
+    await frames(h, 'xxxxxxxx');
+    socket.serverSend(transcriptEvent('a', 'We talked to twelve clinics.', { partial: true, stable: true }));
+    await frames(h, '......');
+    await frames(h, '........................');
+    socket.serverSend(transcriptEvent('b', 'and three said yes', { partial: false }));
+    await frames(h, 'x..........');
+    expect(h.script.calls[0]?.options.signal?.aborted).toBe(false);
+    expect(h.state().queued).toBe(1);
+  });
+
+  it('waits out a trailing "um" and a dangling "and", and keeps the old fixed silence behind a switch', async () => {
+    const h = setup();
+    const socket = await live(h);
+    await frames(h, 'xxxxxxxx');
+    socket.serverSend(
+      transcriptEvent('a', 'I think the price is too high, um', { partial: true, stable: true }),
+    );
+    await frames(h, '.................');
+    expect(h.script.calls).toHaveLength(0);
+    await frames(h, '...');
+    expect(h.script.calls[0]?.body.endpointing).toMatchObject({ reason: 'filler', waitMs: 950 });
+
+    FakeWebSocket.reset();
+    const fixed = setup({ tuning: { endpointing: 'fixed' } });
+    const other = await live(fixed);
+    await frames(fixed, 'xxxxxxxx');
+    other.serverSend(transcriptEvent('a', 'How do I price the pilot?', { partial: true, stable: true }));
+    await frames(fixed, '...........');
+    expect(fixed.script.calls).toHaveLength(0);
+    await frames(fixed, '.');
+    expect(fixed.script.calls[0]?.body.endpointing).toMatchObject({ reason: 'fixed', waitMs: 600 });
+  });
+});
+
+describe('CallEngine · backchannels while the vEIR speaks', () => {
+  it('takes "yeah" and "mm-hmm" as listening: the reply comes back to full volume at once, never a hint', async () => {
+    const h = setup();
+    h.setSpeechResult({ kind: 'audio', data: new ArrayBuffer(20_000) });
+    await startLive(h);
+    const socket = FakeWebSocket.last();
+    socket.serverOpen();
+    h.engine.sendText('Tell me about pilots.');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      speech(0, 'Start with one library and a written success threshold.'),
+    );
+    await flush(20);
+    expect(h.state().activity).toBe('speaking');
+    const ducked = () => h.context.gains.some((gain) => gain.gain.value === 0.2);
+    for (const [i, said] of ['Yeah.', 'Mm-hmm.', 'Right.', 'Yeah.'].entries()) {
+      h.frame(0.2);
+      h.frame(0.2);
+      h.frame(0.2);
+      expect(ducked(), said).toBe(true);
+      h.frame(0.001);
+      socket.serverSend(transcriptEvent(`b${String(i)}`, said, { partial: false }));
+      await flush();
+      expect(ducked(), said).toBe(false);
+      await vi.advanceTimersByTimeAsync(1_500);
+    }
+    expect(h.state().activity).toBe('speaking');
+    expect(h.api.interruptTurn).not.toHaveBeenCalled();
+    expect(h.state().notice).toBeNull();
+    expect(h.engine.diagnostics().counts).toMatchObject({ backchannel: 4 });
+    // When the reply ends, none of it becomes a turn.
+    h.context.sources[0]?.finish();
+    h.script.push(completed());
+    h.script.close();
+    await flush(10);
+    for (let i = 0; i < 25; i++) {
+      vi.advanceTimersByTime(50);
+      h.frame(0.001);
+    }
+    await flush();
+    expect(h.script.calls).toHaveLength(1);
   });
 });
