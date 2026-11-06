@@ -69,7 +69,7 @@ export function MemorySection({
   createLabel,
   onEdit,
   onForget,
-  veirName = 'your vEIR',
+  veirName = 'your mentor',
 }: MemorySectionProps) {
   const [query, setQuery] = useState(search.q ?? '');
   const pushed = useRef(search.q);

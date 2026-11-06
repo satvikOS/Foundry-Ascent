@@ -1,10 +1,4 @@
-import {
-  OPEN_ESCALATION_STATUSES,
-  type EscalationView,
-  type NotebookEntry,
-  type SessionView,
-  type TurnView,
-} from '@foundry/contracts';
+import type { NotebookEntry, SessionView, TurnView } from '@foundry/contracts';
 import { Link } from '@tanstack/react-router';
 import { ArrowUpRight } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
@@ -13,39 +7,41 @@ import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/error-state';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { StatusBadge } from '@/components/ui/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useVentureEscalations } from '@/lib/api/hooks/escalations';
 import { useNotebook } from '@/lib/api/hooks/notebook';
-import { formatRelative, pluralize } from '@/lib/format';
-import { ESCALATION_CATEGORY_LABELS } from '@/lib/labels';
+import type { VeirName } from '@/lib/veir';
 import { formatIsoDate } from '@/features/memory/typed/attributes';
 
 import { EvidenceItemCard } from '../coach/evidence-item';
 import { usePanelState, type PanelTab } from './panel-state';
-
-const OPEN_ESCALATION: ReadonlySet<string> = new Set(OPEN_ESCALATION_STATUSES);
+import { VentureContext, type PromptSuggestion } from './venture-context';
 
 interface ContextPanelProps {
   session: SessionView;
   turns: TurnView[];
   personaName: string;
+  veir: VeirName | null;
   tenant: string;
   ventureId: string;
   onAskPerson?: (() => void) | undefined;
+  /** Fill the composer with a quick action (none once the conversation has ended or cannot take a message). */
+  onPrompt?: ((suggestion: PromptSuggestion) => void) | undefined;
 }
 
 /**
- * The conversation's right panel: Sources · Notebook · Human help. Memory has no queue here: what the vEIR
- * learns is kept automatically, and the founder edits or forgets it in Knowledge.
+ * The conversation's right panel: Overview (the venture's stage, what is due, tests, human help, the memory state
+ * and quick actions, as on New chat) · Sources · Notebook. Memory has no queue here: what the mentor learns is kept
+ * automatically, and the founder edits or forgets it in Knowledge.
  */
 export function ContextPanel({
   session,
   turns,
   personaName,
+  veir,
   tenant,
   ventureId,
   onAskPerson,
+  onPrompt,
 }: ContextPanelProps) {
   const { tab, setTab } = usePanelState();
   return (
@@ -54,26 +50,35 @@ export function ContextPanel({
       onValueChange={(value) => {
         setTab(value as PanelTab);
       }}
-      className="gap-0"
+      // The tabs stay put and each tab scrolls on its own beneath them (no opaque sticky strip over the glass).
+      className="absolute inset-0 flex min-h-0 flex-col gap-0"
     >
-      <div className="sticky top-0 z-10 border-b border-border bg-card px-4">
+      <div className="shrink-0 border-b border-border px-4">
         <TabsList
           variant="underline"
           className="h-11 gap-4 overflow-x-auto border-b-0 [scrollbar-width:none]"
         >
+          <TabsTrigger value="context">Overview</TabsTrigger>
           <TabsTrigger value="sources">Sources</TabsTrigger>
           <TabsTrigger value="notebook">Notebook</TabsTrigger>
-          <TabsTrigger value="help">Human help</TabsTrigger>
         </TabsList>
       </div>
-      <TabsContent value="sources">
+      <TabsContent value="context" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <VentureContext
+          tenant={tenant}
+          ventureId={ventureId}
+          veir={veir}
+          sessionId={session.id}
+          memory={{ kind: 'fixed', privacy: session.privacy }}
+          onPrompt={onPrompt}
+          onAskPerson={onAskPerson}
+        />
+      </TabsContent>
+      <TabsContent value="sources" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <SourcesTab turns={turns} personaName={personaName} tenant={tenant} ventureId={ventureId} />
       </TabsContent>
-      <TabsContent value="notebook">
+      <TabsContent value="notebook" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <NotebookTab personaName={personaName} tenant={tenant} ventureId={ventureId} />
-      </TabsContent>
-      <TabsContent value="help">
-        <HelpTab session={session} tenant={tenant} ventureId={ventureId} onAskPerson={onAskPerson} />
       </TabsContent>
     </Tabs>
   );
@@ -280,85 +285,6 @@ function NotebookTab({
           <ArrowUpRight aria-hidden />
         </Link>
       </Button>
-    </PanelBody>
-  );
-}
-
-function EscalationRow({
-  escalation,
-  tenant,
-  ventureId,
-}: {
-  escalation: EscalationView;
-  tenant: string;
-  ventureId: string;
-}) {
-  return (
-    <li className="grid gap-1.5 py-3">
-      <Link
-        to="/$tenant/app/v/$ventureId/help"
-        params={{ tenant, ventureId }}
-        search={{ id: escalation.id }}
-        className="text-small font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-      >
-        {ESCALATION_CATEGORY_LABELS[escalation.category]}
-      </Link>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <StatusBadge kind="escalationStatus" status={escalation.status} />
-        <span className="text-caption text-muted-foreground">{formatRelative(escalation.createdAt)}</span>
-      </div>
-    </li>
-  );
-}
-
-function HelpTab({
-  session,
-  tenant,
-  ventureId,
-  onAskPerson,
-}: {
-  session: SessionView;
-  tenant: string;
-  ventureId: string;
-  onAskPerson?: (() => void) | undefined;
-}) {
-  const escalations = useVentureEscalations(ventureId);
-  if (escalations.isPending) return <Loading />;
-  if (escalations.isError)
-    return <Failed error={escalations.error} onRetry={() => void escalations.refetch()} />;
-  const fromHere = escalations.data.filter((e) => e.sessionId === session.id);
-  const otherOpen = escalations.data.filter(
-    (e) => e.sessionId !== session.id && OPEN_ESCALATION.has(e.status),
-  );
-  return (
-    <PanelBody>
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-small text-muted-foreground">
-          {fromHere.length === 0 ? 'No requests yet.' : pluralize(fromHere.length, 'request')}
-        </p>
-        {onAskPerson ? (
-          <Button size="xs" variant="secondary" onClick={onAskPerson}>
-            Ask a person
-          </Button>
-        ) : null}
-      </div>
-      {fromHere.length > 0 ? (
-        <ul className="divide-y divide-border border-y border-border">
-          {fromHere.map((e) => (
-            <EscalationRow key={e.id} escalation={e} tenant={tenant} ventureId={ventureId} />
-          ))}
-        </ul>
-      ) : null}
-      {otherOpen.length > 0 ? (
-        <section className="grid gap-1.5">
-          <h3 className="section-label">Other open requests</h3>
-          <ul className="divide-y divide-border border-y border-border">
-            {otherOpen.map((e) => (
-              <EscalationRow key={e.id} escalation={e} tenant={tenant} ventureId={ventureId} />
-            ))}
-          </ul>
-        </section>
-      ) : null}
     </PanelBody>
   );
 }

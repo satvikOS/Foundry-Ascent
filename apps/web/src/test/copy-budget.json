@@ -114,9 +114,9 @@
       "after": 230,
       "budget": 270
     },
-    "Context review": {
-      "before": 0,
-      "after": 39,
+    "Context panel": {
+      "before": 39,
+      "after": 47,
       "budget": 50
     }
   }

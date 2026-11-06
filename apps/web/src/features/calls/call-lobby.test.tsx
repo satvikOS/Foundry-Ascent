@@ -11,9 +11,8 @@ import { fakeEngine, renderWithRouter } from './testing';
 import type { CallVeir } from './use-call-veir';
 
 const VEIR: CallVeir = {
-  name: 'Corin · vEIR',
-  shortName: 'Corin',
-  badge: 'vEIR',
+  name: 'Thomas',
+  shortName: 'Thomas',
   kind: 'eir_persona',
   eirFirstName: 'Corin',
   firstPerson: true,
@@ -27,7 +26,7 @@ const CONFIG = {
   veir: {
     personaId: IDS.persona,
     name: "Corin's vEIR",
-    shortName: 'Corin',
+    shortName: 'Thomas',
     kind: 'eir_persona',
     eirDisplayName: 'Corin Halvorsen',
     tagline: null,
@@ -82,6 +81,7 @@ describe('CallLobby', () => {
     expect(onRetry).not.toHaveBeenCalled();
     // No disclaimer line: the call's disclosure was read before the first call, and stays in the settings.
     expect(screen.queryByRole('note', { name: 'AI disclosure' })).toBeNull();
+    expect(screen.queryByText('vEIR')).toBeNull();
   });
 
   it('says what a vEIR is before a first meeting (how voice is handled is in the disclosure)', async () => {

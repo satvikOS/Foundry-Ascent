@@ -83,7 +83,7 @@ describe('TestBenchTab', () => {
     renderWithProviders(<TestBenchTab persona={withDraft()} displayName={NAME} />);
 
     expect(screen.getByRole('combobox', { name: 'Release' })).toHaveTextContent('Draft v2');
-    expect(screen.getByText('vEIR · AI')).toBeInTheDocument();
+    expect(screen.getByText('AI', { selector: '[data-slot="ai-badge"]' })).toBeInTheDocument();
     const disclosure = screen.getByRole('note', { name: 'AI disclosure' });
     expect(disclosure).toHaveTextContent(/is an AI, not a person/);
     // The chosen release's own disclosure, in full for screen readers.

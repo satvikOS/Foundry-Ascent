@@ -2,8 +2,8 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 
 import { useInspector } from '@/components/shell/inspector';
 
-/** The conversation's right panel: Sources · Notebook · Human help. */
-export type PanelTab = 'sources' | 'notebook' | 'help';
+/** The conversation's right panel: Overview (the venture's context, as on New chat) · Sources · Notebook. */
+export type PanelTab = 'context' | 'sources' | 'notebook';
 
 interface FocusedSource {
   turnId: string;
@@ -29,7 +29,7 @@ const PanelContext = createContext<PanelState | null>(null);
 /** Shared between the transcript and the right panel (a citation chip opens Sources on that source). */
 export function PanelStateProvider({ children }: { children: ReactNode }) {
   const { setOpen } = useInspector();
-  const [tab, setTab] = useState<PanelTab>('sources');
+  const [tab, setTab] = useState<PanelTab>('context');
   const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
   const [focused, setFocused] = useState<FocusedSource | null>(null);
 

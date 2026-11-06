@@ -113,7 +113,7 @@ test.describe('vEIR calls · a video face', () => {
         // Frames are flowing from the face, and the tile itself never plays sound.
         await expect.poll(() => videoState(video)).toEqual({ stream: true, muted: true, width: 640 });
         // The persona's name stays on the tile, over the face; the header names it and the kind of call.
-        await expect(tile.locator('[data-slot="call-name-tag"]')).toContainText('vEIR');
+        await expect(tile.locator('[data-slot="call-name-tag"]')).toContainText('Corin');
         await expect(screen.locator('[data-slot="call-kind"]')).toContainText('Video call');
         await expect(tile.locator('[data-slot="call-you-tile"]')).toBeVisible();
         await expectNoSeriousA11yViolations(page, 'video call');

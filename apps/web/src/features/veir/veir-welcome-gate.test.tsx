@@ -56,22 +56,22 @@ describe('VeirWelcomeGate', () => {
     renderWithProviders(<VeirWelcomeGate ventureId={VENTURE} />);
     const dialog = await screen.findByRole('dialog', { name: 'Meet Foundry Guide' });
     expect(dialog).toHaveAccessibleDescription(
-      'The program’s AI coach, built on its coaching doctrine. It isn’t a person.',
+      'Foundry Guide is the program’s AI mentor, built on its coaching doctrine. A person from the program is there whenever you need one.',
     );
   });
 
-  it('welcomes them to an EIR’s vEIR as its digital twin', async () => {
+  it('welcomes them to their mentor by its name, built with its EIR’s consent', async () => {
     persona = {
       ...PERSONA,
-      name: "Corin's vEIR",
+      name: 'Thomas',
       kind: 'eir_persona',
       eirFirstName: 'Corin',
       firstPerson: true,
       eirSeesWork: true,
     };
     renderWithProviders(<VeirWelcomeGate ventureId={VENTURE} />);
-    expect(await screen.findByRole('dialog', { name: 'Meet Corin’s vEIR' })).toHaveAccessibleDescription(
-      'Corin’s digital twin: an AI built with Corin’s consent from how Corin coaches. Corin sees what you work on here.',
+    expect(await screen.findByRole('dialog', { name: 'Meet Thomas' })).toHaveAccessibleDescription(
+      'Thomas is an AI mentor, built with Corin’s consent from their approved doctrine and style, and released after their review. Corin sees what you work on here, and a person from the program is there when you need one.',
     );
   });
 });
@@ -87,7 +87,10 @@ describe('inlineWelcome (a call opened before the welcome was read)', () => {
   it('says the neutral guide’s welcome too, and nothing once read, without the coach or for staff', () => {
     expect(inlineWelcome(false, true, guide)).toEqual({
       title: 'Meet Foundry Guide',
-      lines: ['The program’s AI coach, built on its coaching doctrine.', 'It isn’t a person.'],
+      lines: [
+        'Foundry Guide is the program’s AI mentor, built on its coaching doctrine.',
+        'A person from the program is there whenever you need one.',
+      ],
     });
     expect(inlineWelcome(true, true, guide)).toBeNull();
     expect(inlineWelcome(false, false, guide)).toBeNull();

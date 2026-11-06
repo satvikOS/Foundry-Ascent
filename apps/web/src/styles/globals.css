@@ -280,11 +280,20 @@
   --mini-call-height: 0px;
   /* The measured height of content docked to the bottom (the conversation's composer), 0 when there is none. */
   --docked-bottom-height: 0px;
-  /* The floating panel (spec §8): 264 px, a 56 px rail, inset 12 px from the viewport on desktop. */
-  --sidebar-width: 16.5rem;
+  /*
+   * The two floating panels (owner, 2026-11-05: "make both side panels wider"), widened per breakpoint below so
+   * the reading column between them stays at a comfortable measure (about 600–770 px of text):
+   *                 left panel   right panel   (the right panel is a sheet below 1280 px)
+   *   < 1280        280 px        320 px sheet
+   *   1280–1535     288 px        320 px        reading column ≈ 630 px at 1280
+   *   1536–1919     304 px        352 px
+   *   ≥ 1920        320 px        368 px        the column reaches its 768 px measure
+   * The collapsed rail stays 56 px, inset 12 px from the viewport.
+   */
+  --sidebar-width: 17.5rem;
   --sidebar-width-collapsed: 3.5rem;
   --panel-inset: 0.75rem;
-  --inspector-width: 24rem;
+  --inspector-width: 20rem;
   /* Reading column for conversations and prose. */
   --content-width: 48rem;
 }
@@ -295,6 +304,24 @@
 
 :root:has([data-mini-call-bar]) {
   --mini-call-height: var(--mini-call-bar-height);
+}
+
+@media (min-width: 80rem) {
+  :root {
+    --sidebar-width: 18rem;
+  }
+}
+@media (min-width: 96rem) {
+  :root {
+    --sidebar-width: 19rem;
+    --inspector-width: 22rem;
+  }
+}
+@media (min-width: 120rem) {
+  :root {
+    --sidebar-width: 20rem;
+    --inspector-width: 23rem;
+  }
 }
 
 :root.dark {
@@ -779,6 +806,33 @@
   .surface-raised {
     background-color: var(--card);
     box-shadow: var(--shadow-sm);
+  }
+
+  /*
+   * The mentor's mark where a visual is needed (components/faces/persona-avatar.tsx): the voice sphere in miniature,
+   * still, in the sphere's own palette (lib/realtime/sphere.css), with the light theme's hairline edge. Never a
+   * letter monogram. Forced colours: a plain outlined circle.
+   */
+  .persona-orb {
+    border-radius: 9999px;
+    background:
+      radial-gradient(72% 58% at 22% 96%, light-dark(#4d6bec, #5c79f5) 0%, rgb(92 121 245 / 0) 100%),
+      radial-gradient(60% 42% at 38% 18%, light-dark(#fffdee, #fdfef1) 0%, rgb(253 254 241 / 0) 100%),
+      linear-gradient(
+        180deg,
+        light-dark(#e1f0fc, #eaf7fd) 0%,
+        light-dark(#c2ddf8, #cfe7fb) 22%,
+        light-dark(#9cc0f4, #a6cbf6) 48%,
+        light-dark(#7d9ff3, #86a9f5) 72%,
+        light-dark(#4d6bec, #5c79f5) 100%
+      );
+    box-shadow: inset 0 0 0 1px light-dark(rgb(17 17 16 / 0.08), transparent);
+  }
+  @media (forced-colors: active) {
+    .persona-orb {
+      background: Canvas;
+      border: 1px solid CanvasText;
+    }
   }
 
   /*

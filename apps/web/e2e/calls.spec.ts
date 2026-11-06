@@ -367,7 +367,7 @@ test.describe('vEIR calls', () => {
       // A clear header: the persona's name as it is named, the kind of call and its time; no disclaimer line
       // (the disclosure came before the first call, and stays in the call settings).
       await expect(screen.getByRole('note', { name: 'AI disclosure' })).toHaveCount(0);
-      await expect(screen.locator('[data-slot="call-heading"]')).toHaveText("Corin's vEIR");
+      await expect(screen.locator('[data-slot="call-heading"]')).toHaveText('Corin');
       await expect(screen.locator('[data-slot="call-kind"]')).toContainText(/Voice call\s*·\s*\d+:\d\d/);
       // The intro is the vEIR's first line. There is no server voice here (501), so it is on screen only,
       // and the call says so once.
@@ -439,8 +439,9 @@ test.describe('vEIR calls', () => {
       const bar = page.getByRole('region', { name: /^Call with / });
       await expect(bar).toBeVisible();
       // The bar names the persona as it is named, and the kind of call.
-      await expect(bar).toContainText("Corin's vEIR");
+      await expect(bar).toContainText('Corin');
       await expect(bar).toContainText('Voice call');
+      await expect(bar.locator('[data-slot="veir-badge"]')).toHaveCount(0);
       await expectNoBareEirName(page, 'the mini call bar over the conversation');
       await expect(page.getByRole('main').getByText(token).first()).toBeVisible();
       await bar.getByRole('button', { name: 'Return to call' }).click();
@@ -1057,7 +1058,7 @@ test.describe('vEIR calls', () => {
       await expect(bar).toContainText('Sound is off');
       await expect(bar.getByRole('status')).toHaveText('Sound is off.');
       // The bar names the persona and the kind of call.
-      await expect(bar).toContainText("Corin's vEIR");
+      await expect(bar).toContainText('Corin');
       await expect(bar).toContainText('Voice call');
       await turnOn.click();
       await expect(turnOn).toHaveCount(0);
@@ -1109,6 +1110,11 @@ test.describe('vEIR calls', () => {
         .getByRole('link', { name: /^Voice call with / })
         .click();
       const screen = callScreen(page);
+      // On a phone the memory choice sits in the closed context sheet, not beside the Call button: the call asks
+      // Remember or Private on its own start screen first.
+      await expectNoHorizontalScroll(page);
+      await expectReachable(page, screen.getByRole('button', { name: 'Start call' }));
+      await screen.getByRole('button', { name: 'Start call' }).click();
       await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
       await expectNoHorizontalScroll(page);
       for (const name of ['Call settings', 'End call']) {
@@ -1140,7 +1146,7 @@ test.describe('vEIR calls', () => {
         await interruptCallAudio(page);
         const turnOn = bar.getByRole('button', { name: 'Turn on sound' });
         await expect(turnOn).toBeVisible();
-        await expect(bar).toContainText("Corin's vEIR");
+        await expect(bar).toContainText('Corin');
         await expectNoHorizontalScroll(page);
         for (const name of ['Turn on sound', 'Return to call', 'End call']) {
           await expectReachable(page, bar.getByRole('button', { name }));

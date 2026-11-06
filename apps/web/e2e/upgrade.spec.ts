@@ -30,20 +30,16 @@ for (const [device, width, height] of [
         test.setTimeout(120_000);
         const ventureId = await openVenture(page);
         await useTheme(page, theme);
-        const briefQueries: string[] = [];
-        page.on('request', (request) => {
-          const u = new URL(request.url());
-          if (u.pathname.endsWith('/memory') && u.searchParams.get('limit') === '3')
-            briefQueries.push(u.searchParams.get('limit') ?? '');
-        });
-        expect(briefQueries).toEqual([]);
-        await page.locator('[data-slot="context-brief"] summary').click();
-        // One read of what the vEIR remembered: no separate check for anything awaiting approval.
-        await expect.poll(() => briefQueries.length).toBe(1);
-        expect(briefQueries).toEqual(['3']);
-        await expect(page.getByRole('link', { name: 'Edit venture focus' })).toBeVisible();
+        // The venture's context is the right panel: beside New chat on a wide screen, a sheet from its toggle
+        // otherwise. Nothing in it waits for approval: memory is kept automatically.
+        const show = page.getByRole('button', { name: 'Show context panel' }).filter({ visible: true });
+        if ((await show.count()) > 0) await show.first().click();
+        const context = page.locator('[data-slot="venture-context"]').filter({ visible: true });
+        const focus = context.getByRole('link', { name: /^(?:Edit|Set one)$/ });
+        await expect(focus).toBeVisible();
+        await expect(context).not.toContainText(/approve|awaiting/i);
         await page.screenshot({ path: `${root}/context-${device}-${theme}.png`, fullPage: true });
-        await page.getByRole('link', { name: 'Edit venture focus' }).click();
+        await focus.click();
         await expect(page.getByRole('heading', { level: 1, name: 'Venture' })).toBeVisible();
         // The student's own development lives under Knowledge → You, apart from the venture's profile.
         await page.goto(`/${TENANT}/app/v/${ventureId}/knowledge?view=you`);

@@ -83,11 +83,7 @@ export function PersonasListPage({ tenant, canCreate }: { tenant: string; canCre
                 <TableRow key={persona.id} className="relative">
                   <TableCell className="min-w-48">
                     <div className="flex items-center gap-3">
-                      <PersonaAvatar
-                        name={veirName(persona.name, persona.kind, persona.eirProfile?.displayName)}
-                        size="md"
-                        decorative
-                      />
+                      <PersonaAvatar name={veirName(persona.name)} size="md" decorative />
                       <div className="min-w-0">
                         <Link
                           to="/$tenant/app/eir/personas/$personaId"

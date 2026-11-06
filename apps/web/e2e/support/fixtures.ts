@@ -215,21 +215,44 @@ export async function startConversation(page: Page, firstMessage: string): Promi
 }
 
 /**
- * The view's persistent disclosure (the presence policy): the vEIR badge beside its name, inside the viewport,
- * which explains in one short paragraph what the vEIR is; and no disclaimer line under the composer.
+ * The mentor's disclosure (the presence policy, owner 2026-11-05): no "vEIR" badge beside its name and no
+ * disclaimer line under the composer; what it is (an AI mentor, its AI face and voice, memory, people, limits) is one
+ * click away in the context panel's About dialog. On a phone or tablet the panel is a sheet opened from its toggle.
  */
 export async function expectVeirBadgeInView(page: Page): Promise<void> {
   await expect(page.getByRole('note', { name: 'AI disclosure' })).toHaveCount(0);
-  const badge = page.locator('[data-slot="veir-badge"]').filter({ visible: true }).first();
-  await expect(badge).toBeVisible();
-  await expect(badge).toHaveText(/^(?:vEIR|AI)$/);
-  await expect(badge).toBeInViewport({ ratio: 1 });
-  await badge.click();
-  const about = page.getByRole('dialog', { name: /^About / });
+  await expect(page.locator('[data-slot="veir-badge"]')).toHaveCount(0);
+  const show = page.getByRole('button', { name: 'Show context panel' }).filter({ visible: true }).first();
+  const panel = page
+    .locator('[data-slot="context-panel"], [data-slot="context-sheet"]')
+    .filter({ visible: true })
+    .first();
+  // The panel is open beside the content, or its toggle shows (closed, or a sheet on a smaller screen).
+  await expect(panel.or(show)).toBeVisible();
+  if (await show.isVisible()) await show.click();
+  await expect(panel).toBeVisible();
+  // In a conversation the panel has tabs: About is on its Overview.
+  const overview = panel.getByRole('tab', { name: 'Overview' });
+  if ((await overview.count()) > 0) await overview.click();
+  const about = panel.locator('[data-slot="about-veir"]');
+  await about.scrollIntoViewIfNeeded();
   await expect(about).toBeVisible();
-  await expect(about).toContainText(/digital twin: an AI|AI coach/);
+  await about.click();
+  const dialog = page.getByRole('dialog', { name: /^About / });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText(/AI mentor/);
+  await expect(dialog).toContainText('AI avatar');
+  await expect(dialog).toContainText(/A person from the program/);
+  // Escape closes it once focus has moved into it (the dialog opens over the sheet on a phone).
+  await expect(dialog.locator(':focus')).toHaveCount(1);
   await page.keyboard.press('Escape');
-  await expect(about).toBeHidden();
+  await expect(dialog).toBeHidden();
+  // A sheet (phones and tablets) closes again; a desktop panel stays open, as the person left it.
+  const sheet = page.getByRole('dialog', { name: 'Context' });
+  if ((await sheet.count()) > 0) {
+    await page.keyboard.press('Escape');
+    await expect(sheet).toBeHidden();
+  }
 }
 
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
@@ -458,31 +481,27 @@ export async function setFaceAccess(baseURL: string, displayName: string, enable
 export const SEEDED_EIR_FIRST_NAME = 'Corin';
 
 /**
- * Naming invariant (the presence policy): the AI is "Corin · vEIR" (the first name beside its vEIR badge, or that
- * text) or "Corin's vEIR"; a bare "Corin" anywhere else only ever means the person. Checks the page's visible text
- * and its accessible labels (aria-label, title, placeholder), leaving out the name beside its badge, the AI
- * disclosure, the badge's explanation and the welcome (whose sentences name the EIR on purpose) and the person's
- * full name ("Corin Halvorsen").
+ * Naming invariant (owner, 2026-11-05): the mentor is shown by its persona's display name alone ("Thomas"; the
+ * seeded persona "Corin's vEIR" shows as "Corin"), never "<name>'s vEIR", "<name> · vEIR" or a "vEIR" badge beside
+ * the name. Checks the page's visible text and its accessible labels (aria-label, title, placeholder), leaving out
+ * the AI disclosure in exports.
  */
-export async function expectNoBareEirName(
+export async function expectPlainMentorName(
   page: Page,
   where: string,
-  /** Content that names the person on purpose (e.g. a library source's own title about the EIR). */
+  /** Content that carries the label on purpose (e.g. a library source's own title). */
   allow: readonly RegExp[] = [],
 ): Promise<void> {
-  const found = await page.evaluate((name) => {
-    const bare = new RegExp(`\\b${name}\\b(?!['’]s vEIR)(?! Halvorsen)(?! · vEIR)`);
+  const found = await page.evaluate(() => {
+    const labelled = /(?:['’]s\s+vEIR\b|·\s*vEIR\b|^\s*vEIR\s*$)/;
     const hits: string[] = [];
     const disclosure = (element: Element) =>
-      element.closest(
-        '[role="note"][aria-label="AI disclosure"], [data-slot="veir-name"], [data-slot="veir-explanation"], [data-slot="veir-welcome"]',
-      ) !== null;
+      element.closest('[role="note"][aria-label="AI disclosure"]') !== null;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       const parent = node.parentElement;
       const text = node.textContent ?? '';
-      if (!parent || !bare.test(text) || disclosure(parent)) continue;
-      // Only what is rendered: hidden and print-only text is not shown.
+      if (!parent || !labelled.test(text) || disclosure(parent)) continue;
       if (!parent.checkVisibility()) continue;
       hits.push(text.trim().slice(0, 120));
     }
@@ -490,11 +509,14 @@ export async function expectNoBareEirName(
       if (disclosure(element)) continue;
       for (const attribute of ['aria-label', 'title', 'placeholder']) {
         const value = element.getAttribute(attribute);
-        if (value && bare.test(value)) hits.push(`${attribute}="${value.slice(0, 120)}"`);
+        if (value && labelled.test(value)) hits.push(`${attribute}="${value.slice(0, 120)}"`);
       }
     }
     return hits;
-  }, SEEDED_EIR_FIRST_NAME);
+  });
   const labels = found.filter((hit) => !allow.some((pattern) => pattern.test(hit)));
-  expect(labels, `the AI is never called by the EIR's bare name on ${where}`).toEqual([]);
+  expect(labels, `the mentor is named plainly, with no vEIR label, on ${where}`).toEqual([]);
 }
+
+/** The older name of {@link expectPlainMentorName}, kept for specs that still call it. */
+export const expectNoBareEirName = expectPlainMentorName;

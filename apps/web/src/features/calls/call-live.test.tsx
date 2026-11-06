@@ -30,7 +30,6 @@ const CALL: CallView = {
 const VEIR: CallVeir = {
   name: 'Thomas',
   shortName: 'Thomas',
-  badge: 'vEIR',
   kind: 'eir_persona',
   eirFirstName: 'Corin',
   firstPerson: true,

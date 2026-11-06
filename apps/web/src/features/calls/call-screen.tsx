@@ -38,7 +38,6 @@ import { useCallConfig, useCallVeir, type CallVeir } from './use-call-veir';
 const FALLBACK_VEIR: CallVeir = {
   name: 'your mentor',
   shortName: 'your mentor',
-  badge: 'AI',
   kind: 'eir_persona',
   eirFirstName: null,
   firstPerson: false,

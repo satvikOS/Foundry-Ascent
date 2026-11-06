@@ -4,7 +4,7 @@ import { queryOptions, useQuery } from '@tanstack/react-query';
 import { api, path } from '@/lib/api/client';
 import { ventureQueryOptions } from '@/lib/api/hooks/ventures';
 import { queryKeys } from '@/lib/api/query-keys';
-import { veirDisplay, veirFromIdentity, type VeirName } from '@/lib/veir';
+import { veirDisplay, veirFromIdentity, veirName, type VeirName } from '@/lib/veir';
 
 /**
  * `GET /ventures/:id/call-config`: the vEIR, its embodiment and today's call minutes. Keyed under the
@@ -22,7 +22,7 @@ export function useCallConfig(ventureId: string | null, enabled: boolean) {
   return useQuery({ ...callConfigQueryOptions(ventureId ?? ''), enabled: enabled && ventureId !== null });
 }
 
-/** Who the founder is calling, as the call screen and mini bar show it: the vEIR's name, badge and face. */
+/** Who the founder is calling, as the call screen and mini bar show it: the mentor's name and face. */
 export interface CallVeir extends VeirName {
   readonly disclosure: string;
   /** Only with likeness consent; otherwise the monogram is the face. */
@@ -32,16 +32,17 @@ export interface CallVeir extends VeirName {
 }
 
 /**
- * The name a call shows for the persona: its own display name, exactly as the persona carries it ("Thomas"). The
- * call UI never composes "…’s vEIR" or "… · vEIR" around it, and puts no badge beside it.
+ * The name a call shows for the persona: its display name ("Thomas"), the same as every other surface shows it
+ * (`veirName`: a name stored with a "vEIR" label is shown without it). The call UI never composes "…’s vEIR" or
+ * "… · vEIR" around it, and puts no badge beside it.
  */
 export function personaDisplayName(personaName: string): string {
-  return personaName.trim().replace(/\s+/g, ' ');
+  return veirName(personaName);
 }
 
 /** The call UI's naming: the persona's own display name in text and on screen, with no badge beside it. */
 function named<T extends VeirName>(veir: T, personaName: string): T {
-  const display = personaDisplayName(personaName);
+  const display = veir.kind === 'eir_persona' ? personaDisplayName(personaName) : veir.name;
   return { ...veir, name: display, shortName: display };
 }
 

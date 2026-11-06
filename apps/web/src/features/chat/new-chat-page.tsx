@@ -1,23 +1,22 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRouteApi, Link, useNavigate, useRouter } from '@tanstack/react-router';
-import { AlarmClock, FlaskConical, Lightbulb, LifeBuoy, Target, type LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
-import { PersonaAvatar } from '@/components/faces/persona-avatar';
-import { VeirName } from '@/components/faces/veir-name';
+import { Inspector, InspectorToggle, useInspector } from '@/components/shell/inspector';
+import { PhoneBarAction } from '@/components/shell/shell-chrome';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { errorMessage } from '@/lib/api/errors';
 import { memoryQueryOptions } from '@/lib/api/hooks/memory';
 import { conversationOpenerQueryOptions, useCreateSession } from '@/lib/api/hooks/sessions';
-import { useVenture, useVentureOverview } from '@/lib/api/hooks/ventures';
+import { useVenture } from '@/lib/api/hooks/ventures';
 import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
 import { greeting } from '@/lib/format';
 import { useHotkeys } from '@/lib/hooks/use-hotkeys';
-import { cn } from '@/lib/utils';
-import { veirDisplay } from '@/lib/veir';
+import { BREAKPOINTS, useMediaQuery } from '@/lib/hooks/use-media-query';
+import { NEUTRAL_MENTOR_NAME, veirDisplay } from '@/lib/veir';
 
 import { conversationOrigin, NEW_CHAT_ORIGIN } from '@/features/documents/upload-queue';
 
@@ -25,22 +24,13 @@ import { CallButtons } from '../calls/call-buttons';
 import { useCallEntry } from '../calls/call-entry';
 import { coachingAvailability } from '../coach/availability';
 import { AttachButton, AttachmentTray, useComposerAttachments } from './attachments';
-import { ContextBrief } from './context-brief';
 import { Composer, MAX_TURN_CHARS, modeToSend, type ComposerMode } from './composer';
 import { newConversationRequest, setPendingFirstMessage } from './first-message';
 import { newChatGreeting } from './greeting';
-import { PrivacyChoice, useStartPrivacy } from './privacy-choice';
-import { newChatSuggestions, type Suggestion, type SuggestionIcon } from './suggestions';
+import { useStartPrivacy } from './privacy-choice';
+import { VentureContext, type PromptSuggestion } from './venture-context';
 
 const routeApi = getRouteApi('/$tenant/app/v/$ventureId/');
-
-const SUGGESTION_ICONS: Record<SuggestionIcon, LucideIcon> = {
-  overdue: AlarmClock,
-  goal: Target,
-  assumption: FlaskConical,
-  help: LifeBuoy,
-  idea: Lightbulb,
-};
 
 function firstName(displayName: string): string {
   return displayName.trim().split(/\s+/)[0] ?? displayName;
@@ -60,8 +50,10 @@ interface ShownOpener {
 }
 
 /**
- * New chat: the vEIR's face and a greeting, the composer, whether the conversation is remembered (the default)
- * or private, and a few starting points from the venture's state. With something to pick up, the greeting is the
+ * New chat: a calm centre with only the greeting, one short line and the composer (owner, 2026-11-05: "too
+ * crowded"). The venture's context sits in the right panel beside it: its stage and focus, what is due, open help
+ * requests, whether the conversation is remembered (the default) or private, and quick actions that fill the
+ * composer. With something to pick up, the greeting is the
  * vEIR's opener ("Welcome back, Maya / Last time we were on per-library pricing. How did the facilities call
  * go?"), the line the conversation then opens with; else, and for a private chat, the time of day. The first
  * message creates the conversation and opens it, where that message is answered; there is no setup step.
@@ -78,7 +70,7 @@ export function NewChatPage() {
 function Greeting({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="flex flex-col items-center text-center">
-      <h1 data-page-title tabIndex={-1} className="mt-6 text-title font-semibold text-balance outline-none">
+      <h1 data-page-title tabIndex={-1} className="text-title font-semibold text-balance outline-none">
         {title}
       </h1>
       {children}
@@ -90,18 +82,9 @@ function ReadOnlyVenture() {
   const me = useRequiredMe();
   const { tenant, ventureId } = routeApi.useParams();
   const venture = useVenture(ventureId);
-  const veir = veirDisplay(venture.data);
   const name = venture.data?.name ?? 'this venture';
   return (
     <div className="mx-auto flex w-full max-w-(--content-width) flex-1 flex-col justify-center px-4 py-16 sm:px-6">
-      {veir ? (
-        <div className="flex flex-col items-center gap-3">
-          <PersonaAvatar name={veir.name} portraitUrl={veir.portraitUrl} size="xl" decorative />
-          <p className="flex items-center gap-2 text-small font-medium">
-            <VeirName veir={veir} />
-          </p>
-        </div>
-      ) : null}
       <Greeting title={`${greeting()}, ${firstName(me.principal.displayName)}`}>
         <p className="mt-3 max-w-xl text-pretty text-muted-foreground">
           Conversations are private to the team. You can read {name}’s knowledge and documents.
@@ -130,7 +113,6 @@ function NewChat() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const venture = useVenture(ventureId);
-  const overview = useVentureOverview(ventureId);
   const veir = veirDisplay(venture.data);
   const availability = venture.data ? coachingAvailability(me, venture.data) : null;
   // How the vEIR would open a conversation now. Never a greeting fetched before the last conversation (refetched
@@ -177,6 +159,9 @@ function NewChat() {
   useEffect(() => {
     setPrivacy('standard');
   }, [setPrivacy]);
+  // The choice is in view while the context panel is open beside the composer.
+  const inspector = useInspector();
+  const contextInView = inspector.open && inspector.isDesktop;
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Fetch the conversation screen's code while the person writes, so it opens the moment the first
@@ -242,7 +227,7 @@ function NewChat() {
     );
   };
 
-  const choose = (suggestion: Extract<Suggestion, { kind: 'prompt' }>) => {
+  const choose = (suggestion: PromptSuggestion) => {
     setText(suggestion.prompt.slice(0, MAX_TURN_CHARS));
     if (
       suggestion.mode &&
@@ -253,9 +238,8 @@ function NewChat() {
     focusComposer();
   };
 
-  const name = veir?.name ?? 'your vEIR';
+  const name = veir?.name ?? NEUTRAL_MENTOR_NAME;
   const available = availability?.available === true;
-  const suggestions = available && !temporary ? newChatSuggestions(overview.data ?? null) : [];
   const welcome = newChatGreeting({
     opener: shown?.opener ?? null,
     firstName: firstName(me.principal.displayName),
@@ -278,8 +262,8 @@ function NewChat() {
         <span className="sr-only" role="status">
           Loading…
         </span>
-        <Skeleton className="size-16 rounded-full" />
         <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-5 w-80 max-w-full" />
         <Skeleton className="h-28 w-full rounded-2xl" />
       </div>
     );
@@ -287,28 +271,27 @@ function NewChat() {
 
   return (
     <div key="ready" className="relative flex flex-1 flex-col">
-      {available && calls.callable ? (
-        // The page's header corner, where a conversation's call buttons are: voice and video.
-        <CallButtons
-          tenant={tenant}
-          ventureId={ventureId}
-          sessionId={null}
-          name={calls.name}
-          video={calls.video}
-          // Remember or Private is chosen right here, so the call starts at once with it.
-          choiceInView
-          className="absolute top-3 right-3 z-10 sm:right-5"
-        />
-      ) : null}
-      <div className="mx-auto flex w-full max-w-(--content-width) flex-1 flex-col justify-center px-4 pt-16 pb-[min(14vh,7rem)] sm:px-6">
-        {veir ? (
-          <div className="flex flex-col items-center gap-3">
-            <PersonaAvatar name={veir.name} portraitUrl={veir.portraitUrl} size="xl" decorative />
-            <p className="flex items-center gap-2 text-small font-medium">
-              <VeirName veir={veir} />
-            </p>
-          </div>
+      <div
+        className="absolute top-3 right-3 z-10 flex items-center gap-1 sm:right-5"
+        data-print="hide"
+        data-slot="new-chat-corner"
+      >
+        {available && calls.callable ? (
+          // The page's header corner, where a conversation's call buttons are: voice and video.
+          <CallButtons
+            tenant={tenant}
+            ventureId={ventureId}
+            sessionId={null}
+            name={calls.name}
+            video={calls.video}
+            // Remember or Private was in view in the context panel beside it: the call starts at once with that
+            // choice. With the panel closed, the call asks first.
+            choiceInView={contextInView}
+          />
         ) : null}
+        <PanelToggle />
+      </div>
+      <div className="mx-auto flex w-full max-w-(--content-width) flex-1 flex-col justify-center px-4 pt-16 pb-[min(14vh,7rem)] sm:px-6">
         <Greeting title={welcome.title}>
           <p
             data-testid="greeting-line"
@@ -318,9 +301,7 @@ function NewChat() {
           </p>
         </Greeting>
 
-        {!temporary ? <ContextBrief tenant={tenant} ventureId={ventureId} /> : null}
-
-        <div className="mt-7">
+        <div className="mt-8">
           <Composer
             value={text}
             onChange={setText}
@@ -351,70 +332,44 @@ function NewChat() {
             <p className="mt-3 text-center text-small text-muted-foreground" role="status">
               {availability.reason}
             </p>
-          ) : null}
-
-          {available ? <PrivacyChoice value={privacy} onChange={setPrivacy} className="mt-5" /> : null}
-
-          {suggestions.length > 0 ? (
-            <ul aria-label="Suggestions" className="mt-6 flex flex-wrap justify-center gap-2">
-              {suggestions.map((suggestion) => (
-                <li key={suggestion.id} className="max-w-full">
-                  <SuggestionChip
-                    suggestion={suggestion}
-                    tenant={tenant}
-                    ventureId={ventureId}
-                    onChoose={choose}
-                  />
-                </li>
-              ))}
-            </ul>
+          ) : temporary ? (
+            <p className="mt-3 text-center text-caption text-muted-foreground" data-testid="private-note">
+              Private: not kept.
+            </p>
           ) : null}
         </div>
       </div>
+
+      <Inspector title="Context" remember="context" defaultOpen>
+        <VentureContext
+          tenant={tenant}
+          ventureId={ventureId}
+          veir={veir}
+          memory={
+            available ? { kind: 'choice', value: privacy, onChange: setPrivacy } : { kind: 'fixed', privacy }
+          }
+          onPrompt={available ? choose : undefined}
+        />
+      </Inspector>
     </div>
   );
 }
 
-const chipClasses = cn(
-  'inline-flex h-9 max-w-full items-center gap-2 rounded-full border border-border bg-transparent px-3.5 text-small text-muted-foreground transition-colors',
-  'hover:border-border-strong hover:text-foreground',
-  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-);
-
-function SuggestionChip({
-  suggestion,
-  tenant,
-  ventureId,
-  onChoose,
-}: {
-  suggestion: Suggestion;
-  tenant: string;
-  ventureId: string;
-  onChoose: (suggestion: Extract<Suggestion, { kind: 'prompt' }>) => void;
-}) {
-  const Icon = SUGGESTION_ICONS[suggestion.icon];
-  const content = (
-    <>
-      <Icon aria-hidden className="size-4 shrink-0" />
-      <span className="truncate">{suggestion.label}</span>
-    </>
-  );
-  if (suggestion.kind === 'help') {
+/**
+ * The context panel's toggle on New chat (which has no header): in the phone bar on phones, else in the page's top
+ * right corner (beside the call buttons) while the panel is not beside the content (closed on desktop, or a sheet
+ * on a tablet). The open panel has its own close.
+ */
+function PanelToggle() {
+  const { open, isDesktop } = useInspector();
+  const phone = !useMediaQuery(BREAKPOINTS.md, true);
+  if (phone) {
     return (
-      <Link to="/$tenant/app/v/$ventureId/help" params={{ tenant, ventureId }} className={chipClasses}>
-        {content}
-      </Link>
+      <PhoneBarAction>
+        <InspectorToggle className="size-9" />
+      </PhoneBarAction>
     );
   }
-  return (
-    <button
-      type="button"
-      className={chipClasses}
-      onClick={() => {
-        onChoose(suggestion);
-      }}
-    >
-      {content}
-    </button>
-  );
+  if (open && isDesktop) return null;
+  return <InspectorToggle />;
 }

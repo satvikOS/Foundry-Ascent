@@ -1,6 +1,5 @@
 import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from '@tanstack/react-router';
-import { screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { InspectorProvider } from '@/components/shell/inspector';
@@ -19,9 +18,8 @@ async function renderHeader(privacy: 'standard' | 'ephemeral') {
         session={session}
         title="Pricing per library"
         veir={{
-          name: 'Corin · vEIR',
-          shortName: 'Corin',
-          badge: 'vEIR',
+          name: 'Thomas',
+          shortName: 'Thomas',
           kind: 'eir_persona',
           eirFirstName: 'Corin',
           firstPerson: true,
@@ -54,21 +52,14 @@ describe('ConversationHeader', () => {
     expect(screen.queryByText(/Private/)).toBeNull();
   });
 
-  it('shows the vEIR as its name with a badge that explains it, and no disclaimer line', async () => {
-    await renderHeader('standard');
-    const badges = screen.getAllByRole('button', { name: 'vEIR: what is Corin · vEIR?' });
-    expect(badges.length).toBeGreaterThan(0);
+  it('shows the mentor by its name alone: no face, no vEIR badge, no disclaimer line', async () => {
+    const heading = await renderHeader('standard');
+    const header = heading.closest('header');
+    if (!header) throw new Error('no header');
+    expect(within(header).getAllByText('Thomas').length).toBeGreaterThan(0);
+    expect(header).not.toHaveTextContent(/vEIR/);
+    expect(header.querySelector('[data-slot="persona-avatar"], [data-slot="veir-badge"]')).toBeNull();
     expect(screen.queryByRole('note', { name: 'AI disclosure' })).toBeNull();
-    const [badge] = badges;
-    if (!badge) throw new Error('no vEIR badge');
-    await userEvent.setup().click(badge);
-    const about = await screen.findByRole('dialog', { name: 'About Corin · vEIR' });
-    expect(about).toHaveTextContent(
-      'Corin’s digital twin: an AI built with Corin’s consent from how Corin coaches. Corin sees what you work on here.',
-    );
-    expect(about).toHaveTextContent(
-      'It isn’t Corin in person, and Corin doesn’t write or approve its replies.',
-    );
   });
 
   it('sits on the bars’ glass, dense enough for its text over the prose scrolling under it', async () => {

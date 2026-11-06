@@ -31,7 +31,7 @@ test('a founder uploads a document and it becomes searchable evidence', async ({
   // venture's vEIR, never a hard-coded persona.
   await expect(page.getByText('Private to this venture.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'About Documents' })).toHaveAccessibleDescription(
-    /^Files Corin(?:['’]s| ·) vEIR can cite\.$/,
+    /^Files Corin can cite\.$/,
   );
   await expectNoBareEirName(page, 'Documents');
 
@@ -67,7 +67,7 @@ test('a founder uploads a document and it becomes searchable evidence', async ({
     .getByRole('button', { name: /^Source \d+: / })
     .first()
     .click({ timeout: 30_000 });
-  const panel = page.getByRole('complementary', { name: 'Context inspector' });
+  const panel = page.getByRole('complementary', { name: 'Context' });
   const passage = panel.getByRole('article', { name: new RegExp(`^${filename.replace(/[.-]/g, '\\$&')}`) });
   await expect(passage).toContainText('Venture document');
   await passage.getByRole('link', { name: 'Open document' }).click();
@@ -948,7 +948,7 @@ test.describe('document viewer', () => {
       .getByRole('button', { name: /^Source \d+: / })
       .first()
       .click({ timeout: 30_000 });
-    const panel = page.getByRole('complementary', { name: 'Context inspector' });
+    const panel = page.getByRole('complementary', { name: 'Context' });
     const guidance = panel
       .getByRole('article')
       .filter({ hasText: 'Program guidance' })

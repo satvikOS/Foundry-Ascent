@@ -423,7 +423,7 @@ export function screenOf(file: string): string {
     ],
     [/^routes\/index\.tsx$|^components\/landing\//, 'Landing'],
     [/^routes\/sign-in\.tsx$|^components\/auth\//, 'Sign-in'],
-    [/^features\/chat\/context-brief\./, 'Context review'],
+    [/^features\/chat\/venture-context\./, 'Context panel'],
     [/^features\/chat\/(?:new-chat-page|privacy-choice|first-message)\./, 'New chat'],
     [/^features\/(?:chat|coach)\//, 'Conversation'],
     [/^features\/calls\//, 'Call'],

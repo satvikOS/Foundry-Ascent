@@ -80,6 +80,7 @@ describe('call kinds', () => {
 
   it('names the persona as it is named, and says every fact before a call', () => {
     expect(personaDisplayName('  Thomas ')).toBe('Thomas');
+    expect(personaDisplayName("Corin's vEIR")).toBe('Corin');
     const video = disclosureFacts('Thomas', 'video')
       .map((fact) => fact.text)
       .join(' ');

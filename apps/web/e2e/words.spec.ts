@@ -24,7 +24,9 @@ import {
  * Counted: every rendered word (text and empty-field placeholders) a sighted person can see, shell included.
  * Not counted: words read only by screen readers, the AI disclosure (never cut for brevity), what the vEIR
  * or the founder wrote (the answer, its follow-ups, its next steps' text, owner and date, call captions, the
- * founder's own message, conversation titles), toasts, and dialogs layered over the screen.
+ * founder's own message, conversation titles), toasts, dialogs layered over the screen, and the venture's context
+ * panel beside it (collapsible, and mostly the venture's own records; its copy is budgeted as "Context panel" in
+ * src/test/copy-budget.json).
  *
  * The call is measured as typed with no microphone found: the browser is told there is none, so the reason
  * line is the same on every host (a laptop whose headless browser refuses its microphone would otherwise
@@ -75,6 +77,7 @@ async function visibleWords(root: Locator, skipText: readonly string[] = []): Pr
       '[aria-label="Captions"]',
       '[aria-label="Recent conversations"]',
       '[data-sonner-toaster]',
+      '[data-slot="context-panel"]',
     ].join(', ');
     const layered = (node: Element) => {
       const dialog = node.closest('[role="dialog"], [role="alertdialog"]');
