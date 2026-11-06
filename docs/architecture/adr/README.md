@@ -6,7 +6,8 @@ confirmed, and the trigger that reopens it. The [system design](../system-design
 specification; where it deviates from the blueprints in [`docs/blueprints/`](../../blueprints/), the
 deviation and its reason live here. The system design cites these as `ADR-001` … `ADR-017`; ADR-0018 and
 ADR-0019 (2026-10-16) and the revision of ADR-0010 come from the owner's acceptance bar for knowledge
-pools, the console redesign and voice calls.
+pools, the console redesign and voice calls; ADR-0020 (2026-10-17) and ADR-0021 (2026-11-05) from the
+owner's decisions on how the vEIR presents itself, ending with Thomas, an AI mentor persona.
 
 Blueprints: **01** Capstone proposal and scope · **02** Product and operating blueprint · **03** Technical
 architecture specification · **04** Executive proposal · **05** Global university partnership and platform
@@ -16,7 +17,7 @@ blueprint.
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ----------------------- |
 | [0001](0001-own-the-brain-provider-adapters.md)               | Own orchestration, memory, evidence and policy; every model or media vendor sits behind an adapter (AWS service adapters in the API runtime)                        | Accepted (amended 2026-10-16)  | 03 ADR-001              |
 | [0002](0002-single-orchestrator-deterministic-validators.md)  | One testable orchestrator with deterministic pre-classification and output validators                                                                               | Accepted                       | 03 ADR-002              |
-| [0003](0003-typed-memory-with-approval.md)                    | Typed, source-linked venture memory; the vEIR keeps it automatically, people correct or delete it                                                                   | Accepted                       | 03 ADR-003              |
+| [0003](0003-typed-memory-with-approval.md)                    | Typed, source-linked venture memory; the vEIR keeps it automatically (no approval step), people correct or delete it                                                | Accepted (amended 2026-11-05)  | 03 ADR-003              |
 | [0004](0004-isolation-in-service-and-database.md)             | Venture isolation in the service layer and in PostgreSQL RLS (`app_rls`, SECURITY DEFINER helpers)                                                                  | Accepted                       | 03 ADR-004              |
 | [0005](0005-separable-persona-layers.md)                      | Persona doctrine, style, disclosure and likeness are separate, versioned, revocable layers                                                                          | Accepted (amended 2026-10-16)  | 03 ADR-005              |
 | [0006](0006-synthetic-and-authorized-data-only.md)            | Synthetic, public or expressly authorized data only                                                                                                                 | Accepted                       | 03 ADR-006              |
@@ -31,10 +32,15 @@ blueprint.
 | [0015](0015-cost-guardrails.md)                               | Cost guardrails: permissions boundary, daily AI spend caps, capacity ceilings, alarms, AWS Budget                                                                   | Accepted                       | 03 §14                  |
 | [0016](0016-staged-iam-github-oidc.md)                        | Staged IAM: bootstrap user, then GitHub OIDC; permissions boundary on every role                                                                                    | Accepted                       | 03 §8, §15              |
 | [0017](0017-cloudfront-oac-lambda-function-url-streaming.md)  | CloudFront with OAC in front of a streaming Lambda Function URL                                                                                                     | Accepted                       | 03 §11, §24             |
-| [0018](0018-veir-knowledge-pools.md)                          | vEIR knowledge pools: a common pool per persona, a specific pool per venture, grown by approval-gated distillation; AI notes visible, correctable, never cited      | Accepted (amended 2026-10-16)  | 02 §5, §6, §9           |
+| [0018](0018-veir-knowledge-pools.md)                          | vEIR knowledge pools: a common pool per persona, a specific pool per venture, grown by distillation; memory kept automatically (ADR-0003); AI notes never cited     | Accepted (amended 2026-10-16)  | 02 §5, §6, §9           |
 | [0019](0019-conversation-first-console-ui.md)                 | Conversation-first console: one sidebar shell for every role, the conversation as home, calls one click away                                                        | Accepted                       | 02 §4A, §8, §11         |
 | [0020](0020-veir-presence.md)                                 | vEIR presence: disclose once (a welcome stored with the person), a persistent badge, a twin that speaks as itself; first-name presentation by consent               | Accepted (amended 2026-11-05)  | 01 F-09, 02 §8          |
 | [0021](0021-thomas-mentor-persona.md)                         | Thomas: a stock-avatar mentor persona under its own name (owner-approved release of 2026-11-05), first person, honest when asked; the doctrine as how he thinks     | Accepted                       | 02 §8, owner 2026-11-05 |
+
+Since ADR-0010's revision, production calls speak with an ElevenLabs stock voice ("AI voice", Amazon Polly as
+fallback and for crisis lines) and show a HeyGen LiveAvatar LITE stock face ("AI avatar") to platform admins and
+people given face access, both behind its provider seams: [live voice](../../runbooks/elevenlabs-voice.md),
+[face and voice](../../runbooks/avatars.md).
 
 ## Writing a new ADR
 

@@ -1,5 +1,17 @@
 # Foundry Ascent upgrade — review and evidence
 
+> **Archived snapshot (superseded by `1cbce08` / migration 0026).** This report records the 2026-11-03 upgrade
+> as it stood before its merge and is kept for history only; it does not describe the current product. Since
+> then: memory is automatic again, with no approval step (`1cbce08`, migration 0026,
+> [ADR-0003](../architecture/adr/0003-typed-memory-with-approval.md)), so the memory-review screenshots under
+> `evidence/after/` show a review flow that no longer exists; the upgrade was merged and deployed; the
+> production persona is Thomas, an AI mentor
+> ([ADR-0021](../architecture/adr/0021-thomas-mentor-persona.md)), speaking with an ElevenLabs stock voice
+> (Amazon Polly as fallback) and, for admins and people given face access, a HeyGen LiveAvatar LITE stock
+> face; and live-model conversation evals have run, with results in the
+> [system design](../architecture/system-design.md#11-quality-security-and-evaluation). For the current
+> product read the [README](../../README.md).
+
 Working upgrade: [PR #35](https://github.com/satvikOS/Foundry-Ascent/pull/35), branch `codex/ascent-product-upgrade`. Runtime implementation `24ae653` includes all existing branch heads, updated dependencies and safeguards from the newly downloaded curriculum. Production was last verified at `04df967` before this release merge; deployment of the consolidated upgrade is pending. This is a reviewable application upgrade, **not a claim that every requested acceptance goal is complete**.
 
 This evidence artifact was prepared before the authorized main merge. The PR records subsequent CI, merge, deployment and branch-cleanup outcomes. Counts and provider-validation boundaries below refer to the recorded runs.

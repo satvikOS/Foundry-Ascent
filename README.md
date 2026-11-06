@@ -1,8 +1,10 @@
 # Foundry Ascent
 
-AI venture coaching for university founders. Each venture works with a **vEIR**: an AI coach built, with
-consent, from an Entrepreneur-in-Residence's approved frameworks and coaching style. Founders talk to it
-in chat or on a voice call, and it remembers their venture.
+AI venture coaching for university founders. Each venture works with a **vEIR** (virtual
+Entrepreneur-in-Residence), an AI coach. In production the Ain tenant's ventures meet **Thomas**, an AI mentor
+persona: he speaks in the first person as himself, and his coaching approach was written and approved by the
+platform's owner ([ADR-0021](docs/architecture/adr/0021-thomas-mentor-persona.md)). Founders talk to him in chat
+or on a voice call, and he remembers their venture by himself.
 
 **Live:** <https://d38hejyf9iw77e.cloudfront.net/> (sign in with an access code from the platform owner).
 
@@ -11,24 +13,39 @@ in chat or on a voice call, and it remembers their venture.
 [![Security](https://github.com/satvikOS/Foundry-Ascent/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/satvikOS/Foundry-Ascent/actions/workflows/security.yml)
 
 > **All data in this system is synthetic.** Ventures, founders, EIRs and documents are invented
-> ([ADR-0006](docs/architecture/adr/0006-synthetic-and-authorized-data-only.md)). A vEIR is an AI: it is
-> not the EIR it was built from, and no human EIR wrote or approved its responses.
+> ([ADR-0006](docs/architecture/adr/0006-synthetic-and-authorized-data-only.md)). Thomas is an AI, not a
+> person: no person writes or approves his individual replies, he claims no experiences of his own, and asked
+> sincerely he says he is an AI. His face and voice are labelled "AI avatar" and "AI voice". Other vEIRs (for
+> example Ruth's vEIR) are presented as AI twins of consenting, fictional EIRs and are not those EIRs
+> ([ADR-0020](docs/architecture/adr/0020-veir-presence.md)).
 
 ## What it does
 
 - **A conversation-first console.** New chat and Call are one click away; past conversations sit in the
   sidebar, as in ChatGPT, Claude or Gemini. EIRs, program leads and admins work in the same shell.
 - **Voice calls.** The founder's speech goes from the browser straight to Amazon Transcribe; the vEIR
-  answers with validated text spoken by Amazon Polly, with live captions and a typed fallback
-  ([ADR-0010](docs/architecture/adr/0010-realtime-webrtc-deferred.md)).
-- **Knowledge pools.** Each vEIR has a common pool (the EIR's doctrine, style, knowledge library and
-  published lessons) and a pool per venture (approved memory, documents, conversation digests and its
-  notebook), which grows from conversations so the vEIR picks up where the founder left off
-  ([ADR-0018](docs/architecture/adr/0018-veir-knowledge-pools.md)).
-- **Evidence before eloquence.** Substantive answers cite the venture's memory and documents or the
-  program's corpus, and label each claim as fact, inference, hypothesis or recommendation.
-- **Memory you can see and correct.** The vEIR proposes typed memory with source links; people approve,
-  correct, pin or delete it. Its notebook and digests are notes, never cited as facts.
+  answers with validated text spoken by an ElevenLabs stock voice (labelled "AI voice"), with Amazon Polly
+  saying any piece ElevenLabs fails on and every crisis line, plus live captions and a typed fallback
+  ([ADR-0010](docs/architecture/adr/0010-realtime-webrtc-deferred.md),
+  [live voice](docs/runbooks/elevenlabs-voice.md)). A HeyGen LiveAvatar stock face (LITE mode, labelled "AI
+  avatar") lip-syncs that voice; today it is shown to platform admins and people given face access, and
+  everyone else sees the built-in presence ([face and voice](docs/runbooks/avatars.md)).
+- **Knowledge pools.** Each vEIR has a common pool (its doctrine and style, its knowledge library and
+  published lessons) and a pool per venture (memory, documents, conversation digests and its notebook),
+  which grows from conversations so the vEIR picks up where the founder left off. It also draws on the
+  program's curriculum and on a **reference library** built from the owner's startup knowledge base (9
+  frameworks, 25 documented real startup cases, 6 lifecycle stages, each with its sources), used only when
+  the founder's own words name the subject ([ADR-0018](docs/architecture/adr/0018-veir-knowledge-pools.md),
+  [knowledge pools](docs/architecture/knowledge-pools.md#35-reference-library-the-startup-knowledge-base)).
+- **Evidence before eloquence.** Substantive answers cite the venture's memory and documents, the program's
+  corpus or the reference library, and label each claim as fact, inference, hypothesis or recommendation.
+- **Memory that keeps itself, which you can see and correct.** In every standard conversation (typed or
+  spoken) the vEIR keeps what the founder said or explicitly took up as typed memory with source links, at
+  once and with no approval step; its own advice is never kept as a fact. A conversation started as
+  **Private** keeps nothing. Founders and their team can correct, pin, delete and export anything it kept,
+  and what they delete stays forgotten
+  ([ADR-0003](docs/architecture/adr/0003-typed-memory-with-approval.md#amendment-2026-11-05-memory-is-automatic-owner-decision-of-2026-10-16-reconfirmed)).
+  Its notebook and digests are notes, never cited as facts.
 - **Escalation is a feature.** IP, legal, investment, clinical, safety and conflict topics get
   educational framing and a handoff packet the founder approves before it reaches a human.
 - **Venture-private by default.** Isolation is enforced in the service layer and by PostgreSQL row level
@@ -48,7 +65,10 @@ flowchart LR
   api -->|"RDS Data API"| db[("Aurora Serverless v2<br/>PostgreSQL 16 · pgvector · FTS · RLS")]
   api -->|"bedrock-runtime"| nova["Nova 2 Lite: us. profile (primary)<br/>global. profile (fallback)<br/>Titan embeddings v2"]
   api -.->|"bedrock-mantle, disabled"| luna["GPT-6 Luna<br/>(gated by AWS; models.luna.enabled = false)"]
-  api -->|"validated text"| polly["Amazon Polly<br/>call speech"]
+  api -->|"validated text"| voice["ElevenLabs stock voice<br/>call speech · AI voice"]
+  api -.->|"fallback · crisis lines"| polly["Amazon Polly<br/>call speech"]
+  api -->|"face session token"| face["HeyGen LiveAvatar, LITE<br/>stock face · AI avatar"]
+  user -.->|"admitted speech units<br/>(admins, face access)"| face
   api -->|"presigned PUT"| docs[("S3 documents")]
   api --> jobs["SQS jobs"] --> worker["Worker Lambda<br/>ingestion · distillation · maintenance"]
   worker --> db
@@ -84,9 +104,10 @@ config change ([ADR-0014](docs/architecture/adr/0014-bedrock-models-luna-nova-ti
 | [`packages/ai`](packages/ai)               | Model gateway (Nova, Titan, Luna, mock), prompts, risk classifier, validators, distillation                                                  |
 | [`packages/core`](packages/core)           | Domain services: auth, authorization, orchestrator, memory, knowledge pools, calls, escalation, usage, audit                                 |
 | [`infra/cdk`](infra/cdk)                   | AWS CDK app: Foundation, Data and App stacks, cdk-nag, tests                                                                                 |
-| [`infra/iam`](infra/iam)                   | The permissions boundary and the (retired) stage-0 IAM policies                                                                              |
+| [`infra/iam`](infra/iam)                   | The permissions boundary and the IAM bootstrap path (operator policy and scripts)                                                            |
 | [`evals`](evals)                           | Python scenario benchmark and red-team suite against a running API                                                                           |
-| [`ops/aws`](ops/aws)                       | Python ops tooling: inventory, access verification, legacy cleanup, policy upsert, HeyGen avatar catalogue                                   |
+| [`ops/aws`](ops/aws)                       | Python ops tooling: inventory, policy upsert, HeyGen avatar catalogue                                                                        |
+| [`ops/lab`](ops/lab)                       | The conversation lab: live conversation evals against a local stack on real Bedrock models                                                   |
 | [`scripts/smoke.mjs`](scripts/smoke.mjs)   | Post-deploy smoke test                                                                                                                       |
 | [`docs`](docs)                             | [Blueprints](docs/blueprints), [system design](docs/architecture/system-design.md), [ADRs](docs/architecture/adr), [runbooks](docs/runbooks) |
 
@@ -114,11 +135,32 @@ aloud.
 | Database integration: migrations, RLS for every table, authorization matrix, memory lifecycle, retrieval | `pnpm test:db`                                                                   | `database`                   |
 | Lambda bundles, CDK assertions, cdk-nag, snapshots, full synth                                           | `pnpm --filter @foundry/api check:bundles` · `pnpm --filter @foundry/infra test` | `infra`                      |
 | End-to-end founder journey with axe accessibility checks                                                 | `pnpm --filter @foundry/web e2e`                                                 | `e2e`                        |
-| Python ops tooling and evals (offline, toolchain pinned in each `requirements-dev.txt`)                  | `ruff check` · `pytest` in `ops/aws` and `evals`                                 | `python`                     |
+| Python ops tooling and evals (offline, toolchain pinned in each `requirements-dev.txt`)                  | `ruff check` · `pytest` in `ops/aws`, `ops/lab` and `evals`                      | `python`                     |
 | Secret scanning (blocking); dependency audits and CodeQL (reported, non-blocking)                        | —                                                                                | `security.yml`, `codeql.yml` |
 
 Generated files are checked in CI: the migrations bundle (`pnpm --filter @foundry/db gen:migrations`) and
 the web route tree (`pnpm --filter @foundry/web build`).
+
+**Live conversation evals.** The suites above run on a deterministic mock model, so they prove behaviour of
+the code, not the quality of the coaching. Coaching quality is measured by the manual
+[`ops-live-evals.yml`](.github/workflows/ops-live-evals.yml) workflow ([conversation
+lab](docs/runbooks/conversation-lab.md)): scripted founder scenarios (30 families × 20) played by a Llama 4
+Maverick student simulator against the app's coach on Bedrock, each graded by a judge model from another
+family. The release gate is a ≥ 95 % behavioural pass rate, naturalness and usefulness ≥ 4.5 of 5, no critical
+isolation failure and no fabrication. Latest results on a 60-scenario sample (2 per family), reported as run:
+
+| Run (UTC date)           | Persona         | Judge            | Passed         | Naturalness / usefulness | Isolation / fabrication |
+| ------------------------ | --------------- | ---------------- | -------------- | ------------------------ | ----------------------- |
+| 42099643194 (2026-11-05) | Corin's vEIR v1 | Claude Haiku 4.5 | 9 / 60 (15 %)  | 2.40 / 2.56 (53 judged)  | 3 / 3 (53 judged)       |
+| 42124259353 (2026-11-05) | Corin's vEIR v1 | Claude Haiku 4.5 | 8 / 60 (13 %)  | 2.81 / 2.84              | 0 / 7                   |
+| 42143561959 (2026-11-06) | Thomas v2       | Llama 4 Maverick | 44 / 60 (73 %) | 4.44 / 4.38              | 0 / 1                   |
+
+**No run has met the release gate.** The Thomas run was graded by a different judge (Llama 4 Maverick, also
+the student simulator's model) and a revised judge prompt, against newer code, than the two Corin pilots
+(Claude Haiku 4.5), so its rise from 13 % to 73 % is not a like-for-like measure of the persona change
+alone. It still recorded one fabrication, two memory corruptions and two false promises among its six severe
+outliers, and its weakest families were customer discovery, ambiguous language and conversation control (0,
+0 and 1 of 2 passed).
 
 ## Deployment
 
@@ -141,6 +183,8 @@ owner can do (alarm subscriptions, budgets, GitHub settings, model access, revie
 - **Data:** synthetic only until the University approves a data class. Venture content lives only in Aurora
   (encrypted at rest with AWS-managed keys) and the private documents bucket; models run on Amazon Bedrock
   in `us-east-1`. Call audio goes from the browser to Amazon Transcribe and is not stored by the platform.
+  ElevenLabs receives only the vEIR's validated words to speak, and the HeyGen face only that synthetic
+  speech; neither receives the founder's voice.
 - **Isolation:** service authorization on every request plus row level security under a dedicated
   `NOBYPASSRLS` role; retrieval always filters by venture before ranking; credential, ledger and audit
   tables are closed to request code.
@@ -149,8 +193,9 @@ owner can do (alarm subscriptions, budgets, GitHub settings, model access, revie
 - **Edge:** private origins behind CloudFront OAC, strict CSP, HSTS, `X-Frame-Options: DENY`; the
   microphone is allowed for this origin only and the camera never.
 - **Logging:** structured JSON with request ids; never prompts, model output, documents or memory content.
-- **AI safety:** deterministic risk pre-classifier, output validators, forced escalation for high-risk
-  topics, persistent AI disclosure, kill switches.
+- **AI safety:** deterministic risk pre-classifier, output validators (including identity rules: the vEIR
+  never claims to be a person, an EIR or a past of its own), forced escalation for high-risk topics, AI
+  disclosure before the first conversation and before every call, kill switches.
 - **Cost:** the permissions boundary denies cost hazards (NAT, EC2, customer KMS keys, provisioned
   capacity); daily AI spend caps (platform-wide and per person), call-minute caps and turn rate limits are
   checked before every model call and every spoken reply; alarms go to an SNS topic
