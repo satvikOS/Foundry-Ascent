@@ -291,7 +291,11 @@ export type MemoryAction = z.infer<typeof MemoryAction>;
 /** `PATCH /memory/:id` 200 body for every action except `delete` (204, no body). */
 export const MemoryActionResponse = MemoryObjectView;
 export const MemoryHistoryResponse = z.object({ items: z.array(MemoryEventView) });
-/** `POST /ventures/:id/memory/batch`: approve or reject several pending proposals at once (the "To review" queue). */
+/**
+ * `POST /ventures/:id/memory/batch`: keep (`approve`) or decline (`reject`) several pending suggestions at once (an
+ * assigned EIR's, or the vEIR's from before memory was kept automatically). The web keeps one this way when it is
+ * edited.
+ */
 export const BatchMemoryActionRequest = z.object({
   ids: z.array(Id).min(1).max(50),
   action: z.enum(['approve', 'reject']),

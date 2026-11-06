@@ -1,8 +1,8 @@
-import { DEFAULT_SPEECH_PRICES } from '@foundry/ai';
 import { DEFAULT_SPEECH_VOICE_ID, SPEECH_VOICE_IDS } from '@foundry/contracts';
 import { SEED_VEIRS } from '@foundry/db';
 import { describe, expect, it } from 'vitest';
 
+import catalog from '../../speech-voices.json' with { type: 'json' };
 import {
   DEFAULT_SPEECH_VOICE,
   SPEECH_PRICE_PER_MILLION_CHARS,
@@ -35,10 +35,9 @@ describe('speech voices (speech-voices.json, shared with infra/cdk)', () => {
     }
   });
 
-  it('prices characters as the ai package does', () => {
+  it('prices characters at the speech-voices.json rates (Polly list prices)', () => {
+    expect(SPEECH_PRICE_PER_MILLION_CHARS).toEqual(catalog.usdPerMillionCharacters);
     expect(SPEECH_PRICE_PER_MILLION_CHARS).toEqual({ neural: 16, generative: 30, standard: 4 });
-    expect(SPEECH_PRICE_PER_MILLION_CHARS.neural).toBe(DEFAULT_SPEECH_PRICES.neural);
-    expect(SPEECH_PRICE_PER_MILLION_CHARS.generative).toBe(DEFAULT_SPEECH_PRICES.generative);
     expect(speechCostUsd(1_000_000, 'generative')).toBe(30);
     expect(speechCostUsd(500, 'neural')).toBeCloseTo(0.008, 6);
     expect(speechCostUsd(-5, 'neural')).toBe(0);

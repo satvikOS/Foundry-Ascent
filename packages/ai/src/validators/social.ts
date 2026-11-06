@@ -408,8 +408,6 @@ export const STRESSED_HAND_BACKS = [
   'Want to take it one piece at a time?',
   'What would make this week lighter?',
 ] as const;
-/** The first stressed hand-back (kept for callers that name one). */
-export const STRESSED_HAND_BACK = STRESSED_HAND_BACKS[0];
 
 function plainLine(text: string): string {
   return text.replace(/[‘’ʼ]/g, "'").replace(/\s+/g, ' ').toLowerCase();

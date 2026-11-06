@@ -109,7 +109,7 @@ export type {
   ProviderStreamRequest,
   ProviderStreamResult,
 } from './gateway/provider.js';
-export { cosineSimilarity, hashEmbedding } from './gateway/hash-embedding.js';
+export { hashEmbedding } from './gateway/hash-embedding.js';
 export {
   CountingAgent,
   KEEP_ALIVE_MSECS,
@@ -121,20 +121,13 @@ export {
 // Pricing -------------------------------------------------------------------------------------------
 export {
   DEFAULT_MODEL_PRICES,
-  DEFAULT_SPEECH_PRICES,
   costFor,
   createPricingTable,
   normalizeModelId,
   priceFor,
-  speechAttempt,
-  speechCharacters,
-  speechCostFor,
-  speechModelId,
   sumUsd,
   type ModelPrice,
   type PricingTable,
-  type SpeechEngine,
-  type SpeechPricingTable,
 } from './pricing.js';
 
 // Prompts -------------------------------------------------------------------------------------------
@@ -247,7 +240,6 @@ export {
   SOCIAL_BUDGETS,
   SPOKEN_HAND_BACKS,
   YES_NO_BUDGET,
-  STRESSED_HAND_BACK,
   STRESSED_HAND_BACKS,
   asksToRepeat,
   endsWithHandBack,

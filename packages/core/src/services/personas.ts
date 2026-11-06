@@ -13,7 +13,8 @@ import {
 import { assignmentsRepo, eirRepo, personasRepo, principalsRepo, venturesRepo } from '@foundry/db';
 import { type z } from 'zod';
 
-import { hasAnyRole, loadPrincipalRoles, requireRole } from '../authz/roles.js';
+import { requirePersonaCurator } from '../authz/persona-curator.js';
+import { requireRole } from '../authz/roles.js';
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
@@ -73,27 +74,6 @@ function veirNameFor(eirDisplayName: string): string {
   return `${eirDisplayName.trim().split(/\s+/)[0] ?? eirDisplayName}'s vEIR`;
 }
 
-/** Program lead of the tenant, or the EIR whose profile the persona is built from (audited when refused). */
-export async function requirePersonaCurator(
-  scope: RequestScope,
-  persona: personasRepo.PersonaRecord,
-): Promise<'program_lead' | 'linked_eir'> {
-  const roles = await loadPrincipalRoles(scope.tx, scope.ctx);
-  if (hasAnyRole(roles, ['program_lead'])) return 'program_lead';
-  if (persona.eirProfileId !== null && hasAnyRole(roles, ['eir'])) {
-    const profile = await eirRepo.getEirProfile(scope.tx, persona.eirProfileId);
-    if (profile?.principalId === scope.ctx.principalId) return 'linked_eir';
-  }
-  scope.deferAudit({
-    action: 'authz.denied',
-    outcome: 'denied',
-    objectType: 'persona',
-    objectId: persona.id,
-    policyReason: 'requires_program_lead_or_linked_eir',
-  });
-  throw fail.forbidden('requires_program_lead_or_linked_eir');
-}
-
 export function createPersonaManagementService(
   kit: Kit,
   directory: DirectoryCache,
@@ -103,8 +83,6 @@ export function createPersonaManagementService(
     if (persona?.tenantId !== scope.ctx.tenantId) throw fail.notFound('Persona');
     return persona;
   }
-
-  const requireCurator = requirePersonaCurator;
 
   async function personaView(scope: RequestScope, personaId: string): Promise<PersonaView> {
     const view = await personasRepo.getPersonaView(scope.tx, personaId);
@@ -194,7 +172,7 @@ export function createPersonaManagementService(
       const personaId = requireId(rawPersonaId, 'Persona');
       return await kit.inRequest(ctx, async (scope) => {
         const persona = await loadPersona(scope, personaId);
-        await requireCurator(scope, persona);
+        await requirePersonaCurator(scope, persona);
         if (persona.eirProfileId === null) return [];
         const profile = await eirRepo.getEirProfile(scope.tx, persona.eirProfileId);
         if (profile?.principalId == null) return [];
@@ -217,7 +195,7 @@ export function createPersonaManagementService(
       const input = parseInput(CreateConsentRequest, rawInput);
       return await kit.inRequest(ctx, async (scope) => {
         const persona = await loadPersona(scope, personaId);
-        const via = await requireCurator(scope, persona);
+        const via = await requirePersonaCurator(scope, persona);
         if (persona.kind !== 'eir_persona' || persona.eirProfileId === null) {
           throw fail.conflict('Only EIR personas carry a consent record', 'not_eir_persona');
         }
@@ -333,7 +311,7 @@ export function createPersonaManagementService(
       const input = parseInput(UpdateEmbodimentRequest, rawInput);
       return await kit.inRequest(ctx, async (scope) => {
         const persona = await loadPersona(scope, personaId);
-        const via = await requireCurator(scope, persona);
+        const via = await requirePersonaCurator(scope, persona);
         if (input.provider !== undefined && input.provider !== 'builtin') {
           throw fail.validation('This avatar provider is not connected yet', [
             { path: 'provider', message: 'Only the built-in provider is available' },

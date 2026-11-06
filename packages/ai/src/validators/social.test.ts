@@ -4,7 +4,6 @@ import { directChoiceOf, socialTurnOf } from '../prompts/conversation-state.js';
 import {
   CLOSING_FALLBACK,
   SPOKEN_HAND_BACKS,
-  STRESSED_HAND_BACK,
   STRESSED_HAND_BACKS,
   asksToRepeat,
   NEWS_FALLBACK,
@@ -130,7 +129,7 @@ describe('a spoken reply hands the turn back (spoken_no_handback)', () => {
   it('none for a social turn; a question about what would help for someone stressed', () => {
     expect(spokenHandBackFor("Okay, thanks, that's helpful. Talk soon.", 't1')).toBeNull();
     expect(spokenHandBackFor("I'm so stressed, nothing is working this week.", 't1')).toBe(
-      STRESSED_HAND_BACK,
+      STRESSED_HAND_BACKS[0],
     );
     expect(SPOKEN_HAND_BACKS).toContain(spokenHandBackFor('How do we get the first ten users?', 't1'));
   });

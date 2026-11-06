@@ -19,7 +19,6 @@ import {
   notebooksRepo,
   personasRepo,
   principalsRepo,
-  readTogether,
   sessionsRepo,
   type AppExecutor,
   type ReadPart,
@@ -66,8 +65,9 @@ export interface ContinuityKeys {
 }
 
 /**
- * The reads of {@link loadContinuity}, for one statement (`readTogether`) with others: the founder, and unless the
- * chat is temporary the notebook and the earlier conversations' digests.
+ * The reads of what the vEIR remembers when a turn starts, made in one statement with the turn's other reads
+ * (`turn-context.ts`; {@link continuityFrom} assembles them): the founder, and unless the chat is temporary the
+ * notebook and the earlier conversations' digests.
  */
 export function continuityParts(args: ContinuityKeys): {
   readonly principal: ReadPart<principalsRepo.PrincipalRecord | null>;
@@ -129,11 +129,6 @@ export function continuityFrom(
     notebook: notebook !== null,
     digests: Math.min(MAX_PROMPT_DIGESTS, digests.length),
   };
-}
-
-/** What the vEIR remembers when a turn starts ({@link LoadedContinuity}), in one statement. */
-export async function loadContinuity(tx: AppExecutor, args: ContinuityKeys): Promise<LoadedContinuity> {
-  return continuityFrom(args, await readTogether(tx, continuityParts(args)));
 }
 
 /**
