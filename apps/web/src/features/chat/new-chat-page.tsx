@@ -271,26 +271,22 @@ function NewChat() {
 
   return (
     <div key="ready" className="relative flex flex-1 flex-col">
-      <div
-        className="absolute top-3 right-3 z-10 flex items-center gap-1 sm:right-5"
-        data-print="hide"
-        data-slot="new-chat-corner"
-      >
-        {available && calls.callable ? (
-          // The page's header corner, where a conversation's call buttons are: voice and video.
-          <CallButtons
-            tenant={tenant}
-            ventureId={ventureId}
-            sessionId={null}
-            name={calls.name}
-            video={calls.video}
-            // Remember or Private was in view in the context panel beside it: the call starts at once with that
-            // choice. With the panel closed, the call asks first.
-            choiceInView={contextInView}
-          />
-        ) : null}
-        <PanelToggle />
-      </div>
+      <PageCorner
+        calls={
+          available && calls.callable ? (
+            <CallButtons
+              tenant={tenant}
+              ventureId={ventureId}
+              sessionId={null}
+              name={calls.name}
+              video={calls.video}
+              // Remember or Private was in view in the context panel beside it: the call starts at once with that
+              // choice. With the panel closed, the call asks first.
+              choiceInView={contextInView}
+            />
+          ) : null
+        }
+      />
       <div className="mx-auto flex w-full max-w-(--content-width) flex-1 flex-col justify-center px-4 pt-16 pb-[min(14vh,7rem)] sm:px-6">
         <Greeting title={welcome.title}>
           <p
@@ -356,20 +352,31 @@ function NewChat() {
 }
 
 /**
- * The context panel's toggle on New chat (which has no header): in the phone bar on phones, else in the page's top
- * right corner (beside the call buttons) while the panel is not beside the content (closed on desktop, or a sheet
- * on a tablet). The open panel has its own close.
+ * New chat's header corner (it has no header): the call buttons, then the context panel's toggle while the panel is
+ * not beside the content (closed on desktop, or a sheet on a tablet; the open panel has its own close). On phones
+ * both sit in the phone bar, where a conversation's header has them.
  */
-function PanelToggle() {
+function PageCorner({ calls }: { calls: ReactNode }) {
   const { open, isDesktop } = useInspector();
   const phone = !useMediaQuery(BREAKPOINTS.md, true);
   if (phone) {
     return (
       <PhoneBarAction>
-        <InspectorToggle className="size-9" />
+        <div className="flex items-center" data-slot="new-chat-corner">
+          {calls}
+          <InspectorToggle className="size-9" />
+        </div>
       </PhoneBarAction>
     );
   }
-  if (open && isDesktop) return null;
-  return <InspectorToggle />;
+  return (
+    <div
+      className="absolute top-3 right-3 z-10 flex items-center gap-1 sm:right-5"
+      data-print="hide"
+      data-slot="new-chat-corner"
+    >
+      {calls}
+      {open && isDesktop ? null : <InspectorToggle />}
+    </div>
+  );
 }

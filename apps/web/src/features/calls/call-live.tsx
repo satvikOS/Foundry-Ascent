@@ -337,7 +337,8 @@ export function CallLive({
                     engine.interrupt();
                   }}
                   aria-keyshortcuts="Escape"
-                  className="fa-call-focus rounded-sm font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
+                  data-touch-target
+                  className="fa-call-focus relative rounded-sm font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
                 >
                   Interrupt
                 </button>

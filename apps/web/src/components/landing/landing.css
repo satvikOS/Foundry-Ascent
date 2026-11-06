@@ -606,3 +606,15 @@
     }
   }
 }
+
+/*
+ * Large monitors: the landing page scales up as a whole (type, rhythm, the device ad and the content width are all
+ * in rem), so a 2560 x 1440 screen shows the page as a 1920 x 1080 one does instead of a small column in a wide
+ * field. The scale follows the smaller of width and height (an ultrawide is as tall as a 1440p screen), never drops
+ * below the person's own font size, and stops at 125%. Only while the landing page is shown.
+ */
+@media (min-width: 120rem) and (min-height: 64rem) {
+  html:has(.landing) {
+    font-size: clamp(100%, min(0.8333vw, 1.4815vh), 125%);
+  }
+}

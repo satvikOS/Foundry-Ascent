@@ -70,7 +70,7 @@ function Segmented<T extends string>({
               onChange(option.value);
             }}
             className={cn(
-              'fa-call-focus min-h-9 flex-1 rounded-full px-3 text-small transition-colors duration-150',
+              'fa-call-focus min-h-9 flex-1 rounded-full px-3 text-small transition-colors duration-150 pointer-coarse:min-h-11',
               value === option.value
                 ? 'bg-secondary font-medium text-foreground'
                 : 'text-muted-foreground hover:text-foreground',

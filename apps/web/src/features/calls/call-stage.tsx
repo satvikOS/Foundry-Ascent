@@ -166,7 +166,9 @@ export function CallStage({
       {face.status === 'live' ? (
         <div
           className={cn(
-            'relative grid aspect-video w-full max-w-3xl max-h-[max(12rem,min(40dvh,calc(100dvh-30rem)))] place-items-center overflow-hidden rounded-3xl border bg-black shadow-sm transition-[box-shadow,border-color] duration-300',
+            // 16:9 at the largest size the screen allows: as wide as the stage (up to 768 px, 1024 px on a monitor)
+            // and as tall as leaves room for the captions and controls, never stretched out of shape.
+            'relative grid aspect-video w-[min(100%,calc(max(12rem,min(40dvh,calc(100dvh-30rem)))*16/9))] max-w-3xl min-[100rem]:max-w-5xl place-items-center overflow-hidden rounded-3xl border bg-black shadow-sm transition-[box-shadow,border-color] duration-300',
             speaking && 'border-foreground/30 ring-2 ring-foreground/20',
           )}
         >

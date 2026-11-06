@@ -52,7 +52,8 @@ describe('useDockedBottom', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const css = readFileSync(join(here, '..', '..', 'styles', 'globals.css'), 'utf8');
     const html = /\n {2}html \{([^}]*)\}/.exec(css)?.[1] ?? '';
-    expect(html).toContain(`scroll-padding-bottom: var(${DOCKED_BOTTOM_VAR});`);
+    // Plus the on-screen keyboard's inset (use-keyboard-inset.ts), which the dock rides on.
+    expect(html).toContain(`scroll-padding-bottom: calc(var(${DOCKED_BOTTOM_VAR}) + var(--keyboard-inset));`);
     expect(css).toContain(`${DOCKED_BOTTOM_VAR}: 0px;`);
   });
 });

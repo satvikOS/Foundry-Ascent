@@ -288,6 +288,8 @@
    *   1280–1535     288 px        320 px        reading column ≈ 630 px at 1280
    *   1536–1919     304 px        352 px
    *   ≥ 1920        320 px        368 px        the column reaches its 768 px measure
+   *   ≥ 2560        336 px        416 px        monitors: the extra width goes to the panels, never the text
+   *   ≥ 3200        352 px        448 px        ultrawide
    * The collapsed rail stays 56 px, inset 12 px from the viewport.
    */
   --sidebar-width: 17.5rem;
@@ -296,6 +298,12 @@
   --inspector-width: 20rem;
   /* Reading column for conversations and prose. */
   --content-width: 48rem;
+  /*
+   * How much of the layout viewport the on-screen keyboard covers (use-keyboard-inset.ts, from the visual
+   * viewport; 0 when it is closed or where the browser resizes the page for it instead). The conversation's composer
+   * sits this far up, so it stays above the keyboard while the person types.
+   */
+  --keyboard-inset: 0px;
 }
 
 :root:has([data-phone-bar]) {
@@ -321,6 +329,52 @@
   :root {
     --sidebar-width: 20rem;
     --inspector-width: 23rem;
+  }
+}
+@media (min-width: 160rem) {
+  :root {
+    --sidebar-width: 21rem;
+    --inspector-width: 26rem;
+  }
+}
+@media (min-width: 200rem) {
+  :root {
+    --sidebar-width: 22rem;
+    --inspector-width: 28rem;
+  }
+}
+
+/*
+ * A table wider than its screen (an iPad, a phone) scrolls sideways inside its container: a soft shade shows at the
+ * edge that has more columns beyond it, and goes once that edge is reached (the scroll-attached covers slide over
+ * the fixed shades). Nothing shows while the table fits.
+ */
+.table-scroll {
+  --table-shade: light-dark(rgb(17 17 16 / 0.14), rgb(255 255 255 / 0.12));
+  background:
+    linear-gradient(to right, var(--background) 40%, transparent) left / 2.5rem 100% no-repeat local,
+    linear-gradient(to left, var(--background) 40%, transparent) right / 2.5rem 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, var(--table-shade), transparent) left / 0.875rem 100% no-repeat
+      scroll,
+    radial-gradient(farthest-side at 100% 50%, var(--table-shade), transparent) right / 0.875rem 100%
+      no-repeat scroll;
+}
+@media (forced-colors: active) {
+  .table-scroll {
+    background: none;
+  }
+}
+
+/*
+ * Touch screens (phones, iPads): a control marked `data-touch-target` (positioned) gets a hit area of at least
+ * 44 x 44 px (--touch-target) without looking bigger: an invisible area centred on it, grown out to 44 px in each
+ * direction it falls short (percentages of its own box). Buttons get the same from `buttonVariants`.
+ */
+@media (pointer: coarse) {
+  [data-touch-target]::after {
+    content: '';
+    position: absolute;
+    inset: min(0px, calc((100% - var(--touch-target)) / 2));
   }
 }
 
@@ -537,7 +591,7 @@
     scrollbar-gutter: stable;
     font-optical-sizing: auto;
     /* Anything scrolled or focused into view lands above a docked composer (its height: useDockedBottom). */
-    scroll-padding-bottom: var(--docked-bottom-height);
+    scroll-padding-bottom: calc(var(--docked-bottom-height) + var(--keyboard-inset));
   }
 
   body {
@@ -847,6 +901,10 @@
     isolation: isolate;
     background-image: linear-gradient(to top, var(--background) 0.75rem, transparent 2.5rem);
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+  /* The on-screen keyboard is up: the composer rides on it (the home indicator is under the keyboard). */
+  :root[data-keyboard='open'] .composer-dock {
+    padding-bottom: 0.5rem;
   }
   .composer-dock::before {
     content: '';
