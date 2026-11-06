@@ -1,6 +1,6 @@
 # Implemented visual system
 
-Source of truth: `apps/web/src/styles/globals.css`; local rendering: `character.css`, `sphere.css` and the call timeline's `timeline.css`. The existing system was retained across auth, forms, settings, conversation, Knowledge and staff consoles. New UI uses the same semantic surfaces, type and controls. Existing variable fonts are self-hosted; no weights or external font hosts were added.
+Source of truth: `apps/web/src/styles/globals.css`; local rendering: `sphere.css` and the call timeline's `timeline.css` (the drawn character's `character.css` was removed with the character on 2026-11-06). The existing system was retained across auth, forms, settings, conversation, Knowledge and staff consoles. New UI uses the same semantic surfaces, type and controls. Existing variable fonts are self-hosted; no weights or external font hosts were added.
 
 | Foundation       | Tokens / values                                                                                                          | Application                                                                                   |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |

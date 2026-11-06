@@ -64,7 +64,8 @@ export function registerVentureRoutes(r: RouteBuilder, core: Core): void {
     const result = await core.memory.act(ctx, pathParam(c, 'id'), jsonBody(c, MemoryAction));
     return result === null ? c.body(null, 204) : c.json(result);
   });
-  // Approve or reject several pending proposals at once (the "To review" queue); `skippedIds` lists the rest.
+  // Keep (approve) or decline (reject) several pending suggestions at once (an assigned EIR's, or the vEIR's from
+  // before memory was kept automatically; the web keeps one when it is edited); `skippedIds` lists the rest.
   r.post('/ventures/:id/memory/batch', async (c, ctx) =>
     c.json(await core.memory.batch(ctx, pathParam(c, 'id'), jsonBody(c, BatchMemoryActionRequest))),
   );

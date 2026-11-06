@@ -58,16 +58,6 @@ export function notebookFingerprint(text: string): string {
   return createHash('sha256').update(words.join(' '), 'utf8').digest('hex').slice(0, 32);
 }
 
-/** Whether `text` in `section` was removed or corrected by a person (distillation must not write it back). */
-export function isSuppressed(
-  suppressed: readonly notebooksRepo.SuppressedLine[],
-  section: notebooksRepo.SuppressedLine['section'],
-  text: string,
-): boolean {
-  const fingerprint = notebookFingerprint(text);
-  return suppressed.some((line) => line.section === section && line.fingerprint === fingerprint);
-}
-
 export interface NotebookEditResult {
   readonly content: notebooksRepo.NotebookContent;
   readonly suppressed: notebooksRepo.SuppressedLine[];
@@ -178,7 +168,7 @@ const OPENER_PROBLEMS: Record<OpenerProblem, string> = {
   not_plain: 'Write the opening line as plain text on one line.',
   too_long: 'Keep the opening line to 300 characters or fewer.',
   identity:
-    'The vEIR says this line itself, so it can’t name an EIR, speak as a person, or say anyone reviewed or approved something.',
+    'Your mentor says this line itself, so it can’t name an EIR, speak as a person, or say anyone reviewed or approved something.',
   other_venture: 'The opening line can’t name another venture or its people.',
 };
 
@@ -297,7 +287,7 @@ export function createNotebookService(kit: Kit, directory: DirectoryCache): Note
               objectType: 'notebook',
               policyReason: `opener_${problem}`,
             });
-            throw fail.validation('The vEIR can’t say this opening line', [
+            throw fail.validation('Your mentor can’t say this opening line', [
               { path: 'edit.text', message: OPENER_PROBLEMS[problem] },
             ]);
           }

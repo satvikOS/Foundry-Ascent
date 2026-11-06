@@ -1,10 +1,10 @@
 /**
  * Persona releases the platform owner approved outside the studio, shipped by the seed (ADR-0021). Each one is applied
  * once per database, on the deploy whose seed configuration names it (`SEED_OWNER_RELEASES`, set for production in
- * infra/cdk/config/production.json → `seed.ownerReleases`): the same steps as the studio's (a draft release created
- * by the owner, approved by the owner, superseding the persona's approved release; `personasRepo.createRelease` and
- * `approveRelease`), audited like the studio's, plus what only the owner decides: the persona's display name and how
- * it presents itself (`personas.presentation`, migration 0028).
+ * infra/cdk/config/production.json → `homeTenant.ownerReleases`; a local `pnpm db:reset` reads the same list): the
+ * same steps as the studio's (a draft release created by the owner, approved by the owner, superseding the persona's
+ * approved release; `personasRepo.createRelease` and `approveRelease`), audited like the studio's, plus what only the
+ * owner decides: the persona's display name and how it presents itself (`personas.presentation`, migration 0028).
  *
  * - Idempotent: a release is applied only while its deterministic id is absent, so a later release, a withdrawal or a
  *   rename made in the product is never undone by a redeploy.
@@ -49,8 +49,9 @@ export interface OwnerRelease {
 }
 
 /**
- * Thomas (ADR-0021): the owner's decision of 2026-11-05. The vEIR every Ain venture coached by Corin's vEIR meets is
- * presented as Thomas, the stock avatar's name, a mentor speaking in the first person. His doctrine keeps the method
+ * Thomas (ADR-0021): the owner's decision of 2026-11-05. The persona seeded from Corin's profile, which coaches the Ain
+ * ventures assigned to it, is presented as Thomas, the stock avatar's name: an AI mentor speaking in the first person
+ * as himself, never as Corin or Corin's twin. His doctrine keeps the method
  * as how he thinks (diagnose before advising, the evidence ladder, calibrated challenge) and is conversation-first:
  * the live pilots (42099643194, 42124259353) showed Corin's v1 doctrine, a customer-discovery script ("the last time
  * it happened", a kill criterion, an owner and a date), run as the agenda of every conversation.

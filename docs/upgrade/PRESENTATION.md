@@ -1,6 +1,12 @@
 # Presentation boundary and HeyGen replacement
 
-Access/verification date: 2026-11-03. The local character is implemented. The amended remote adapter is contract-tested, **not live-validated on this branch**.
+Access/verification date: 2026-11-03. The amended remote adapter is contract-tested, **not live-validated on this branch**.
+
+> **Update 2026-11-06 (owner round 3):** the drawn local character described below was removed entirely
+> (`character.ts`, `character.css`, its setting and its media harness scripts are in git history). There is no
+> fallback presence for video: a video call loads the real avatar (Thomas) first, reconnects a new vendor session if
+> one ends, and when video cannot start it says so and offers a voice call, whose presence is the sphere. The
+> sections on the character are kept as the record of what was built and measured on 2026-11-03.
 
 ## Ownership
 
@@ -10,12 +16,12 @@ Foundry owns identities, consent, coaching prompts, retrieval, memory, session r
 
 | Presentation                  | Audio owner                                                                              | Synchronization                     | Extra transport                      | Status                                                              |
 | ----------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------ | ------------------------------------------------------------------- |
-| Local character               | Foundry SpeechPlayer                                                                     | Outgoing Web Audio RMS, no phonemes | None                                 | Implemented, unit/browser/audio-graph tested                        |
+| Local character               | Foundry SpeechPlayer                                                                     | Outgoing Web Audio RMS, no phonemes | None                                 | Removed 2026-11-06 (owner round 3)                                  |
 | Sphere                        | Foundry SpeechPlayer                                                                     | Outgoing RMS and actual state       | None                                 | Existing provider, corrected captions-only state                    |
 | LiveAvatar LITE / Avatar Only | One coordinated remote audio/video element; local playback suppressed for accepted units | Provider-rendered                   | Server control WSS + browser LiveKit | Existing integration amended; new ACK handling contract-tested only |
 | LiveAvatar FULL               | Vendor voices admitted text                                                              | Provider-rendered                   | LiveKit                              | Existing optional path retained; changes here do not select FULL    |
 
-## Free provider
+## Free provider (removed 2026-11-06)
 
 `character.ts` and `character.css` contain original inline SVG artwork and restrained breathing/blinking. It is a surrogate character, not an EIR's likeness. Mouth opening follows actual outgoing analyser RMS, with a silence threshold and immediate closure. It is amplitude animation, **not phoneme-level lip sync**. The renderer neither requests a microphone nor synthesizes speech. No additional dependency, download, expiring credits, metered avatar API or server inference is required. Existing Bedrock, Transcribe, Polly, hosting and transport still cost money.
 

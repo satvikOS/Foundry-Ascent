@@ -12,9 +12,9 @@ import { veirDisplay, veirWelcome, type VeirDisplay } from '@/lib/veir';
 import { useVeirWelcome } from './welcome';
 
 /**
- * The welcome a person sees the first time they meet their vEIR: one calm screen with its face, two short
- * sentences on what it is (the EIR's digital twin, built with their consent from how they coach; who sees the
- * work) and one button. It is the disclosure, said once: conversations then carry only the vEIR badge.
+ * The welcome a person sees the first time they meet their mentor: one calm screen with its face, two short
+ * sentences on what it is (an AI mentor; for a twin, the EIR's digital twin built with their consent; who sees the
+ * work) and one button. It is the disclosure, said once: conversations then carry only the mentor's name.
  */
 export function VeirWelcomeDialog({
   veir,
@@ -57,9 +57,11 @@ export function VeirWelcomeDialog({
 }
 
 /**
- * Shows the welcome over a venture to its founders and team the first time, while they have not read it: for an
- * EIR's vEIR ("Meet Corin's vEIR") and for the program's neutral guide ("Meet Foundry Guide") alike, since every
- * coach discloses what it is once, up front. A call screen opened first says the same in its start screen instead.
+ * Shows the welcome over a venture to its founders and team the first time they meet its mentor, while they have
+ * not read its introduction: for a mentor ("Meet Thomas"), an EIR's twin ("Meet Corin's vEIR") and the program's
+ * neutral guide ("Meet Foundry Guide") alike, since every coach discloses what it is once, up front; again when the
+ * mentor is presented differently (a twin who became Thomas). A call screen opened first says the same in its
+ * start screen instead.
  */
 export function VeirWelcomeGate({ ventureId }: { ventureId: string }) {
   const me = useRequiredMe();
@@ -67,8 +69,8 @@ export function VeirWelcomeGate({ ventureId }: { ventureId: string }) {
   const writer = canWrite(me, ventureId);
   // Only the venture's founders and team: staff who open its Team page never request the venture itself.
   const venture = useQuery({ ...ventureQueryOptions(ventureId), enabled: writer });
-  const [seen, acknowledge] = useVeirWelcome(me);
   const veir = writer ? veirDisplay(venture.data) : null;
+  const [seen, acknowledge] = useVeirWelcome(me, veir);
   if (veir === null) return null;
   return <VeirWelcomeDialog veir={veir} open={!seen && route?.open !== true} onAcknowledge={acknowledge} />;
 }

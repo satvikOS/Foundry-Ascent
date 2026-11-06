@@ -21,7 +21,7 @@ interface DisclosureBannerProps {
    * otherwise the signed-in principal's `Me.disclosure`, then DEFAULT_DISCLOSURE, is used.
    */
   text?: string | null;
-  /** The vEIR's full name ("Corin's vEIR"), for the line's always-visible summary. */
+  /** The mentor's display name ("Thomas", or a twin's "Corin's vEIR"), for the line's always-visible summary. */
   veirName?: string | null | undefined;
   /** The line's always-visible summary, when the page words it itself (otherwise {@link disclosureSummary}). */
   summary?: string | null | undefined;
@@ -35,15 +35,16 @@ interface DisclosureBannerProps {
 }
 
 /**
- * The line's visible text: short enough to stay whole on a phone, and complete on its own. It says the vEIR
- * is an AI, not a person, and that no human wrote or approved its answers (no endorsement).
+ * The line's visible text: short enough to stay whole on a phone, and complete on its own. It says the mentor
+ * is an AI, not a person, and that no person writes or approves its individual replies (no endorsement; its
+ * approach is approved before each release, which the full disclosure behind "More" says).
  */
 export function disclosureSummary(veirName?: string | null): string {
   const name = veirName?.trim();
   const subject = name
     ? `${name.charAt(0).toUpperCase()}${name.slice(1)} is an AI`
     : 'You are talking with an AI';
-  return `${subject}, not a person. No human wrote or approved its answers.`;
+  return `${subject}, not a person. No person writes or approves its individual replies.`;
 }
 
 /**

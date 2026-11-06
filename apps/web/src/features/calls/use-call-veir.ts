@@ -24,6 +24,8 @@ export function useCallConfig(ventureId: string | null, enabled: boolean) {
 
 /** Who the founder is calling, as the call screen and mini bar show it: the mentor's name and face. */
 export interface CallVeir extends VeirName {
+  /** The persona: which mentor's introduction a call's start screen gives (features/veir/welcome.ts). */
+  readonly personaId?: string;
   readonly disclosure: string;
   /** Only with likeness consent; otherwise the monogram is the face. */
   readonly portraitUrl: string | null;

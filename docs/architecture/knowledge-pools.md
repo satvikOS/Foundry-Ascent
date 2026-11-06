@@ -240,9 +240,9 @@ generated time), with `distilled_at` and `distill_version` (the number of comple
   a short yes right after the opener). Lab run 39780304879: an advisor session the founder ignored was the opener
   three times, and a chat's distillation copied the previous opener word for word.
 - **Corrections stick.** Editing or removing a line, or clearing the notebook, records the old line's
-  fingerprint (never its text) in `suppressed`. Distillation must skip any line whose fingerprint is
-  suppressed (`isSuppressed`) and writes with the version it read (`saveNotebook` returns null on a
-  conflict), so a founder's correction is never silently overwritten.
+  fingerprint (never its text) in `suppressed`. Distillation skips any line whose fingerprint is suppressed
+  (`dropSuppressed`, `core/services/distill-rules.ts`) and writes with the version it read (`saveNotebook`
+  returns null on a conflict), so a founder's correction is never silently overwritten.
 - **Sources.** Every line records the conversation it came from; a line a later distillation changed (an
   entry reworded, a commitment reworded, re-dated or closed) records that conversation and keeps the earlier
   ones (`sourceSessionIds`, at most 20): its words may carry theirs. The summary records the conversations it

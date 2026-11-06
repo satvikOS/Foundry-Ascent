@@ -166,9 +166,10 @@ export interface ReviewVariables {
 }
 
 /**
- * The one way to settle memory the vEIR saved as a suggestion before memory was kept automatically (editing
- * such an item keeps it), for one item or many: every cached memory list changes at once, only what failed
- * is rolled back, and the lists and counts refresh when it settles. No screen asks anyone to approve.
+ * The one way to settle pending suggestions (an assigned EIR's, or the vEIR's from before memory was kept
+ * automatically), for one item or many: editing such an item keeps it first. Every cached memory list changes at
+ * once, only what failed is rolled back, and the lists and counts refresh when it settles. There is no approve
+ * button: a suggestion is kept when a founder edits it.
  */
 export function useMemoryReview(ventureId: string) {
   const client = useQueryClient();

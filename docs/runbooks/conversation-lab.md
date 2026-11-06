@@ -109,7 +109,7 @@ gh api -X POST repos/satvikOS/Foundry-Ascent/environments/conversation-lab/deplo
 # numbers only
 gh workflow run ops-conversation-lab.yml -f suite=recall -f budget_usd=2
 # with sealed transcripts (key pair as in the insights runbook; the private key never leaves your machine)
-gh workflow run ops-conversation-lab.yml -f suite=all -f budget_usd=5 -f max_scenarios=14 \
+gh workflow run ops-conversation-lab.yml -f suite=all -f budget_usd=2 -f max_scenarios=14 \
   -f public_key="$(cat "$dir/public.b64")"
 gh run watch "$(gh run list --workflow ops-conversation-lab.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
 ```
@@ -183,13 +183,59 @@ Their census, notes, findings, app-log numbers, opener flags and greeting delay 
 the runs' sealed outputs. Issue codes were not logged then, so those counts are null.
 
 ```bash
-gh workflow run ops-conversation-lab.yml -f suite=matrix -f budget_usd=5 -f max_scenarios=40 \
+gh workflow run ops-conversation-lab.yml -f suite=matrix -f budget_usd=2 -f max_scenarios=40 \
   -f baseline_run_id=39084323076 -f public_key="$(cat "$dir/public.b64")"
 ```
 
 ## Spend
 
-`budget_usd` (default 5, at most 50) is a hard cap for the whole run, split by suite weight (recall 1, voice 1,
+### Spend cap
+
+The owner caps every paid run at **USD 2** (2026-11-06). `budget_usd` defaults to 2 in both `ops-conversation-lab.yml`
+and `ops-live-evals.yml`, and their first step refuses a budget above 2 unless the input `approved_over_cap` holds the
+owner's approval of that budget, made today:
+
+```text
+I approve USD <budget_usd> <code>
+```
+
+`<code>` is the first 20 hex characters of HMAC-SHA256(`OWNER_SPEND_KEY`,
+`foundry-ascent spend approval|USD <budget_usd>|<today, YYYY-MM-DD in UTC>`), with the budget written as it is typed in
+`budget_usd`. `OWNER_SPEND_KEY` is a repository secret that only the owner holds the value of, so nobody else can make
+a code: the text above is not the approval, the code is. One code approves one amount on one day: it never covers a
+larger budget (the code for 7 does not run `budget_usd=7.5`), it stops working at 00:00 UTC, and it never lifts the
+workflows' hard ceilings (50 for the lab, 200 for the live evaluation). The workflows read the input from the event,
+not from a step's environment, so the public log never shows it, and a refusal never prints the expected text. A run
+above the cap records in its job summary that the owner approved it. A live-evaluation dry run (`dry_run=true`, no
+model called) may estimate a larger budget without the approval. `ops/aws/test_lab_spend_cap.py` runs both workflows'
+validation steps against these rules.
+
+**Agents and other operators dispatch at most USD 2.** For more, they ask the owner, who sends back the approval line;
+they never make, guess or reuse one.
+
+The owner, once (keep the key in a password manager; it is never written to this repository or to the agents' machine):
+
+```bash
+openssl rand -hex 32        # the spend key: save it in the password manager
+gh secret set OWNER_SPEND_KEY --repo satvikOS/Foundry-Ascent   # paste it at the prompt
+```
+
+The owner, for each run above the cap (asks for the key without echoing it, prints the line for `approved_over_cap`):
+
+```bash
+scripts/approve-spend.sh 7
+```
+
+Without the secret every budget above 2 is refused. The rule binds a GitHub identity, not a person: a token that may
+set repository secrets (the owner's own `gh` login has that right) could replace the key, so agents should work with a
+token that cannot administer secrets, and a changed `OWNER_SPEND_KEY` (its "updated" date in the repository's secret
+settings) is the trace that someone did.
+
+The live evaluation defaults to `sample=20` (about USD 1.84 on production's models), which fits the cap.
+
+### Budget split
+
+`budget_usd` (default 2, at most 50; above 2 only with `approved_over_cap`) is a hard cap for the whole run, split by suite weight (recall 1, voice 1,
 matrix 2, ui 2; `agenda` and `safety` run alone, with all of it, and every call of `safety` is a screen call on the
 app's models: "Safety screen evaluation"). Within a suite:
 
@@ -206,17 +252,13 @@ app's models: "Safety screen evaluation"). Within a suite:
 
 Expected cost per run, from the prices (actual figures are in each summary): recall ≈ USD 0.10–0.20 (≈ 9 voice and
 chat turns with distillation and Polly, 4 judge calls), voice ≈ USD 0.05–0.10, matrix ≈ USD 0.30–0.60 for 14
-scenarios (≈ 35 turns, simulator and judge), ui ≈ USD 0.50–1.00 (the suite's ≈ 80 turns). A full `all` run stays
-well under the default USD 5.
+scenarios (≈ 35 turns, simulator and judge), ui ≈ USD 0.50–1.00 (the suite's ≈ 80 turns). A full `all` run costs
+about USD 1–2, inside the USD 2 cap.
 
 The evals matrix (`matrix_source=evals`) cost USD 0.45 for 12 scenarios (run 39093976745), so all of it (41
-scenarios plus the 8 remembered ones) is about USD 1.5–2. Its planner over-estimates turns, so give it a cap of
-about USD 3 to plan everything:
-
-```sh
-gh workflow run ops-conversation-lab.yml -f suite=matrix -f matrix_source=evals -f budget_usd=3 \
-  -f max_scenarios=40 -f public_key="$(cat "$dir/public.b64")"
-```
+scenarios plus the 8 remembered ones) is about USD 1.5–2. Its planner over-estimates turns, so planning everything
+takes a cap of about USD 3, which is above the cap: ask the owner for the approval of `budget_usd=3` ("Spend cap")
+and pass the line they send as `approved_over_cap`.
 
 ## Safety screen evaluation
 
@@ -544,7 +586,7 @@ Offline, no credentials:
 ```bash
 cd ops/lab
 python -m conversation_lab live-check                         # schema, distinctness, overlap (fails the build)
-python -m conversation_lab live-plan --sample 60 --budget-usd 7   # selection, estimate, shards
+python -m conversation_lab live-plan --sample 20 --budget-usd 2   # selection, estimate, shards
 python -m conversation_lab live-smoke --out /tmp/live-smoke   # infrastructure-only run on the in-process fake app
 ```
 
@@ -552,23 +594,21 @@ Dispatch (`dry_run` defaults to true: plan and estimate only):
 
 ```bash
 KEY="$(openssl pkey -pubin -in public.pem -outform DER | base64 | tr -d '\n')"
-# Pilot: 60 scenarios, 2 per family (estimate USD 5.09; USD 6.37 on Nova fallbacks)
-gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=60 -f seed=1 -f repeats=1 \
-  -f budget_usd=7 -f dry_run=false -f public_key="$KEY"
-# Full: all 600 (estimate USD 49.67; USD 62.23 on Nova fallbacks)
-gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=0 -f repeats=1 \
-  -f budget_usd=65 -f dry_run=false -f public_key="$KEY"
-# Repeat of the pilot's 60 (same seed, same scenarios; compare with the pilot for stability)
-gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=60 -f seed=1 -f repeats=1 \
-  -f budget_usd=7 -f dry_run=false -f public_key="$KEY"
+# Default: 20 scenarios inside the USD 2 cap (estimate USD 1.84)
+gh workflow run ops-live-evals.yml --ref main -f families=all -f seed=1 -f dry_run=false -f public_key="$KEY"
 ```
+
+Above the cap, only with the owner's approval of that budget ("Spend cap"; ask the owner, who sends the line for
+`approved_over_cap`): the 60-scenario pilot, 2 per family (`sample=60`, estimate USD 5.09, USD 6.37 on Nova
+fallbacks, so `budget_usd=7`), and all 600 (`sample=0`, estimate USD 49.67, USD 62.23 on Nova fallbacks, so
+`budget_usd=65`).
 
 `approve_memory=true` adds a student who approves every pending AI memory proposal between sessions; the default
 leaves them as the product does (compare both when memory continuity is the question; the summary counts approvals).
 
 The lab seeds the persona releases production's deploy applies (`infra/cdk/config/production.json`
 `homeTenant.ownerReleases`, read by both workflows into `SEED_OWNER_RELEASES` before `pnpm db:reset`): every live run
-measures Thomas (ADR-0021), not Corin's v1 doctrine. Locally: `SEED_OWNER_RELEASES=thomas-2026-11-05 pnpm db:reset`.
+measures Thomas (ADR-0021), not Corin's v1 doctrine. Locally `pnpm db:reset` reads the same list by default.
 
 ### Coach model A/B (the lab only)
 
@@ -609,8 +649,10 @@ gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=10 -f se
 # The two arms of an A/B on the same 10 scenarios (same seed), one judge for both, sealed
 gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=10 -f seed=1 -f budget_usd=1.5 \
   -f judge_model=ab -f dry_run=false -f public_key="$KEY"
+# The Haiku arm needs budget_usd=3, above the cap: APPROVAL is the owner's line for budget_usd=3 ("Spend cap")
 gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=10 -f seed=1 -f budget_usd=3 \
-  -f coach_model=us.anthropic.claude-haiku-4-5-20251001-v1:0 -f judge_model=ab -f dry_run=false -f public_key="$KEY"
+  -f approved_over_cap="$APPROVAL" -f coach_model=us.anthropic.claude-haiku-4-5-20251001-v1:0 -f judge_model=ab \
+  -f dry_run=false -f public_key="$KEY"
 # Compare the two merged summaries (b minus a): refused when the judges, judge prompt, dataset or selection differ
 python -m conversation_lab live-compare --out <dir> default/live-summary.json haiku/live-summary.json
 ```

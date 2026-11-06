@@ -56,6 +56,20 @@ jobs:
             exit 1
           fi
 
+      # An applied migration is never edited (migrate's checksum check would fail the next deploy, after the merge):
+      # compared with the pull request's base, and on main with the previous main. A branch push without a pull
+      # request is not compared (a migration new on the branch may still change; its pull request checks it).
+      - name: Applied migrations are unchanged
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ ! "${BASE_SHA}" =~ ^[0-9a-f]{40}$ ]] || [[ "${BASE_SHA}" =~ ^0+$ ]]; then
+            echo "::error::no base commit to compare the migrations with"; exit 1
+          fi
+          git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+          scripts/check-migrations-immutable.sh "${BASE_SHA}"
+
       - run: pnpm lint
 
       - run: pnpm format:check

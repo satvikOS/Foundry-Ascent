@@ -20,7 +20,6 @@ import {
   Quote,
   Route,
   Scale,
-  ShieldAlert,
   Sparkles,
   Swords,
   Target,
@@ -124,8 +123,6 @@ export const REQUESTED_ROLE_LABELS: Record<string, string> = {
   specialist: 'Specialist',
   university_support: 'University support',
 };
-
-export const SAFETY_ICON = ShieldAlert;
 
 /**
  * What a failed document's `failureReason` code means for the person who uploaded it: one line for every

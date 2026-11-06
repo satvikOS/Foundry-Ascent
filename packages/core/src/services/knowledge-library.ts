@@ -5,10 +5,11 @@ import {
   type PersonaKnowledgeSourceView,
   UpdatePersonaKnowledgeRequest,
 } from '@foundry/contracts';
-import { documentsRepo, eirRepo, knowledgeRepo, personasRepo, settingsRepo, usageRepo } from '@foundry/db';
+import { documentsRepo, knowledgeRepo, personasRepo, settingsRepo, usageRepo } from '@foundry/db';
 import { type z } from 'zod';
 
-import { hasAnyRole, loadPrincipalRoles, requireRole } from '../authz/roles.js';
+import { requirePersonaCurator } from '../authz/persona-curator.js';
+import { requireRole } from '../authz/roles.js';
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { chunkText, normalizeExtractedText } from '../ingestion/chunker.js';
@@ -98,23 +99,10 @@ export function createKnowledgeLibraryService(kit: Kit): KnowledgeLibraryService
   /** Program lead, or the EIR the persona is built from (the same rule RLS applies to the corpus). */
   async function requireCurator(scope: RequestScope, personaId: string): Promise<personasRepo.PersonaRecord> {
     const persona = await loadPersona(scope, personaId);
-    const roles = await loadPrincipalRoles(scope.tx, scope.ctx);
-    if (hasAnyRole(roles, ['program_lead'])) return persona;
-    if (persona.eirProfileId !== null && hasAnyRole(roles, ['eir'])) {
-      const profile = await eirRepo.getEirProfile(scope.tx, persona.eirProfileId);
-      if (profile?.principalId === scope.ctx.principalId) return persona;
-    }
-    scope.deferAudit({
-      action: 'authz.denied',
-      outcome: 'denied',
-      objectType: 'persona',
-      objectId: personaId,
-      policyReason: 'requires_persona_curator',
+    await requirePersonaCurator(scope, persona, {
+      message: 'Only program leads and this persona’s EIR curate its library',
     });
-    throw fail.forbidden(
-      'requires_persona_curator',
-      'Only program leads and this persona’s EIR curate its library',
-    );
+    return persona;
   }
 
   async function loadSource(

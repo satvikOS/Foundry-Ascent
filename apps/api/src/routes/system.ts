@@ -1,4 +1,4 @@
-import { type HealthResponse, SESSION_COOKIE } from '@foundry/contracts';
+import { type HealthResponse, SESSION_COOKIE, VeirWelcomeAcknowledgeRequest } from '@foundry/contracts';
 import { type Core, DomainError, isDomainError } from '@foundry/core';
 import { type Db, DatabaseResumingError } from '@foundry/db';
 import { getCookie } from 'hono/cookie';
@@ -128,7 +128,9 @@ export function registerSystemRoutes(r: RouteBuilder, deps: SystemRouteDeps): vo
   });
 
   r.get('/me', async (c, ctx) => c.json(await core.me.get(ctx)));
-  // The welcome that introduces the person's vEIR was read: stored with the person, once (idempotent, audited
-  // the first time).
-  r.post('/me/veir-welcome/acknowledge', async (c, ctx) => c.json(await core.me.acknowledgeVeirWelcome(ctx)));
+  // The welcome that introduces the person's mentor was read: stored with the person, once per mentor and
+  // presentation (idempotent, audited when new). An empty body counts every mentor the person meets today.
+  r.post('/me/veir-welcome/acknowledge', async (c, ctx) =>
+    c.json(await core.me.acknowledgeVeirWelcome(ctx, jsonBody(c, VeirWelcomeAcknowledgeRequest))),
+  );
 }

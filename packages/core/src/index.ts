@@ -71,7 +71,6 @@ export { type VenturesService } from './services/ventures.js';
 export { type SessionsService, type EndSessionResult, type SessionPageResult } from './services/sessions.js';
 export {
   applyNotebookEdit,
-  isSuppressed,
   notebookFingerprint,
   type NotebookEditResult,
   type NotebookService,

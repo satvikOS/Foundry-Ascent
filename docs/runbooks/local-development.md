@@ -43,7 +43,8 @@ pnpm dev             # API http://localhost:8787/api/v1 (mock model) + web http:
 `pnpm db:reset` prints `DATABASE_URL` and a **DEV owner access code** (shown once; run it again for a new
 one). With option B, export the printed `DATABASE_URL` before `pnpm dev`. Open
 <http://localhost:5173/sign-in> and sign in with the code: you are platform admin and program lead of the
-`ain` tenant with four synthetic ventures. Vite proxies `/api` to the API, so cookies and CSRF headers
+`ain` tenant with four synthetic ventures. The reset applies the persona releases production's deploy applies
+(ADR-0021), so the ventures' mentor is Thomas, as students see him in production; record demos from such a stack. Vite proxies `/api` to the API, so cookies and CSRF headers
 behave as in production.
 
 | Variable                  | Default (local)                                                               | Purpose                                                            |
@@ -55,6 +56,7 @@ behave as in production.
 | `LOCAL_DOWNLOAD_ORIGIN`   | the site origin                                                               | origin of local presigned GETs (the e2e suite: the API's own)      |
 | `TEST_DATABASE_ADMIN_URL` | `postgresql://postgres@localhost/postgres?host=/var/tmp&port=54329`           | superuser URL for `db:reset` and DB tests                          |
 | `LOCAL_DB_NAME`           | `foundry`                                                                     | database name used by `db:reset`                                   |
+| `SEED_OWNER_RELEASES`     | production's `homeTenant.ownerReleases` (`infra/cdk/config/production.json`)  | owner persona releases `db:reset` applies; empty = none (the twin) |
 
 Background jobs (document ingestion and the other worker jobs) run in-process instead of through SQS.
 Documents are stored on disk; nothing leaves the machine with the mock model. Calls work on the typed

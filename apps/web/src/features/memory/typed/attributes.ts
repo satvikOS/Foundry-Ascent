@@ -31,7 +31,6 @@ export type ExperimentStatus = (typeof EXPERIMENT_STATUSES)[number];
 export const MILESTONE_STATUSES = ['planned', 'in_progress', 'at_risk', 'done', 'missed'] as const;
 export type MilestoneStatus = (typeof MILESTONE_STATUSES)[number];
 export const ACTION_STATUSES = ['open', 'in_progress', 'done', 'dropped'] as const;
-export type ActionStatus = (typeof ACTION_STATUSES)[number];
 
 export const DecisionAttributes = z.object({
   owner: text,

@@ -16,7 +16,7 @@ describe('DisclosureBanner line', () => {
     const note = screen.getByRole('note', { name: 'AI disclosure' });
     const summary = note.querySelector('[data-slot="disclosure-summary"]');
     expect(summary).toHaveTextContent(
-      "Corin's vEIR is an AI, not a person. No human wrote or approved its answers.",
+      "Corin's vEIR is an AI, not a person. No person writes or approves its individual replies.",
     );
     // Nothing clips the visible line; it wraps instead.
     expect(summary?.parentElement).not.toHaveClass('truncate');
@@ -61,7 +61,7 @@ describe('DisclosureBanner line', () => {
 
   it('names no one when the vEIR is unknown', () => {
     expect(disclosureSummary(null)).toBe(
-      'You are talking with an AI, not a person. No human wrote or approved its answers.',
+      'You are talking with an AI, not a person. No person writes or approves its individual replies.',
     );
   });
 });

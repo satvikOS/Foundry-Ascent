@@ -6,7 +6,6 @@ import { encodeBody } from '../body';
 import { api, createIdempotencyKey, path } from '../client';
 import { queryKeys } from '../query-keys';
 
-export type TeamMember = z.infer<typeof TeamResponse>['items'][number];
 export type IssuedAccessCode = z.infer<typeof AccessCodeIssued>;
 
 /** GET /ventures/:id/team */

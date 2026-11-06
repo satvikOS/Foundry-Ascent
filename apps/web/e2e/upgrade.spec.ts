@@ -13,7 +13,13 @@ import {
 } from './support/fixtures';
 
 const headers = { 'x-requested-with': 'foundry-ascent' };
-const root = resolve(process.env.UPGRADE_VISUALS_DIR ?? '../../docs/upgrade/evidence/after');
+/**
+ * Where the journey's screenshots and feedback files go: an ignored folder (`test-results/`, which Playwright clears
+ * at the start of each run) unless UPGRADE_VISUALS_DIR asks for another. A run never rewrites the tracked review set
+ * in docs/upgrade/evidence on its own; to refresh it on purpose, run this spec alone with
+ * UPGRADE_VISUALS_DIR=../../docs/upgrade/evidence/after and review the diff.
+ */
+const root = resolve(process.env.UPGRADE_VISUALS_DIR ?? 'test-results/upgrade-evidence');
 mkdirSync(root, { recursive: true });
 
 for (const [device, width, height] of [

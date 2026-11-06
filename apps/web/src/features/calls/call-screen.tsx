@@ -161,7 +161,7 @@ export function CallScreen() {
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   // Stored with the person: someone who opens a call before meeting their coach (a vEIR or the program's guide)
   // reads the welcome here.
-  const [welcomeSeen, acknowledgeWelcome] = useVeirWelcome(me);
+  const [welcomeSeen, acknowledgeWelcome] = useVeirWelcome(me, knownVeir);
   const welcome = inlineWelcome(welcomeSeen, writable, knownVeir);
   const welcomeHere = welcome !== null;
   const [createError, setCreateError] = useState<string | null>(null);

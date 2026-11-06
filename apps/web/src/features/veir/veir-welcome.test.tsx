@@ -5,12 +5,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { jsonResponse, renderWithProviders, stubFetch } from '@/features/admin/shared/test-utils';
+import { jsonResponse, renderWithProviders, sentJson, stubFetch } from '@/features/admin/shared/test-utils';
 import { queryKeys } from '@/lib/api/query-keys';
 import type { VeirDisplay } from '@/lib/veir';
 
 import { VeirWelcomeDialog } from './veir-welcome';
-import { useVeirWelcome } from './welcome';
+import { useVeirWelcome, welcomeSeen } from './welcome';
 
 const AT = '2026-10-17T10:00:00.000Z';
 
@@ -73,6 +73,38 @@ describe('VeirWelcomeDialog', () => {
   });
 });
 
+describe('welcomeSeen', () => {
+  const twin = `${CORIN.personaId}:twin`;
+  const mentor = `${CORIN.personaId}:mentor`;
+
+  it('introduces each mentor once, and again when the same persona is presented differently', () => {
+    const read = { ...ME, veirWelcomeAcknowledgedAt: AT };
+    // Someone who read "Meet Corin's vEIR" (the persona as a twin) meets Thomas (the same persona, a mentor).
+    expect(welcomeSeen({ ...read, veirWelcomeIntroductions: [twin] }, CORIN)).toBe(false);
+    expect(welcomeSeen({ ...read, veirWelcomeIntroductions: [twin, mentor] }, CORIN)).toBe(true);
+    expect(
+      welcomeSeen({ ...read, veirWelcomeIntroductions: [twin] }, { ...CORIN, presentation: 'twin' }),
+    ).toBe(true);
+    // Another venture's mentor is introduced on its own.
+    expect(
+      welcomeSeen({ ...read, veirWelcomeIntroductions: [mentor] }, { ...CORIN, personaId: ME.tenant.id }),
+    ).toBe(false);
+  });
+
+  it('has nothing to introduce without a mentor, and falls back to the one acknowledgement of an older API', () => {
+    expect(welcomeSeen(ME, null)).toBe(true);
+    expect(welcomeSeen(ME, CORIN)).toBe(false);
+    expect(welcomeSeen({ ...ME, veirWelcomeAcknowledgedAt: AT }, CORIN)).toBe(true);
+    expect(welcomeSeen({ ...ME, veirWelcomeIntroductions: [] }, CORIN)).toBe(false);
+    // A placeholder without a persona id: only the one acknowledgement says.
+    const placeholder = { presentation: 'mentor' } as const;
+    expect(welcomeSeen({ ...ME, veirWelcomeIntroductions: [] }, placeholder)).toBe(false);
+    expect(
+      welcomeSeen({ ...ME, veirWelcomeAcknowledgedAt: AT, veirWelcomeIntroductions: [] }, placeholder),
+    ).toBe(true);
+  });
+});
+
 describe('useVeirWelcome', () => {
   function setup(me: Me) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -80,7 +112,7 @@ describe('useVeirWelcome', () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     );
-    return { client, ...renderHook(() => useVeirWelcome(me), { wrapper }) };
+    return { client, ...renderHook(() => useVeirWelcome(me, CORIN), { wrapper }) };
   }
 
   it('stores the welcome with the person on the server and closes it at once', async () => {
@@ -107,9 +139,33 @@ describe('useVeirWelcome', () => {
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     expect(url instanceof Request ? url.url : url?.toString()).toBe('/api/v1/me/veir-welcome/acknowledge');
     expect(init?.method).toBe('POST');
+    // This mentor's introduction, by persona.
+    expect(sentJson(init)).toEqual({ personaId: CORIN.personaId });
     // Already read: nothing more is sent.
     act(() => {
       result.current[1]();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the introductions the server reports, so Thomas is introduced once to someone who met the twin', async () => {
+    const fetchMock = stubFetch();
+    const introductions = [`${CORIN.personaId}:twin`, `${CORIN.personaId}:mentor`];
+    fetchMock.mockResolvedValue(jsonResponse({ acknowledgedAt: AT, introductions }));
+    const { client, result } = setup({
+      ...ME,
+      veirWelcomeAcknowledgedAt: AT,
+      veirWelcomeIntroductions: [`${CORIN.personaId}:twin`],
+    });
+    expect(result.current[0]).toBe(false);
+    act(() => {
+      result.current[1]();
+    });
+    await waitFor(() => {
+      expect(result.current[0]).toBe(true);
+    });
+    await waitFor(() => {
+      expect(client.getQueryData<Me>(queryKeys.me())?.veirWelcomeIntroductions).toEqual(introductions);
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

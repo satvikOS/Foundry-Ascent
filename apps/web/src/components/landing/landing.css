@@ -187,15 +187,6 @@
     background: color-mix(in oklab, var(--primary) 86%, var(--background));
   }
 
-  .pill--white {
-    background: #ffffff;
-    color: #111110;
-  }
-
-  .pill--white:hover {
-    background: #e9e9e6;
-  }
-
   .pill--outline {
     border: 1px solid var(--foreground);
     color: var(--foreground);

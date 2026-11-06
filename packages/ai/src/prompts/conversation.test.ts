@@ -18,7 +18,7 @@ import { parseControlBlock } from './control.js';
 import { MODE_INSTRUCTIONS, autoModeInstructions, autoModes } from './modes.js';
 import { buildEvidenceBlock } from './evidence.js';
 import { DECLINED_INSTRUCTION_NOTE, bringsOwnSubject, buildMessages } from './messages.js';
-import { buildVeirDisclosure, resolvePersonaIdentity, veirFirstName } from './persona.js';
+import { resolvePersonaIdentity, veirFirstName } from './persona.js';
 import { buildSystemPrompt, type SystemPromptInput } from './system.js';
 
 const STYLE = {
@@ -41,7 +41,10 @@ const DOCTRINE = {
   teachingPrinciples: [],
 };
 
-const CORIN_DISCLOSURE = buildVeirDisclosure({ personaName: "Corin's vEIR", eirName: 'Corin Halvorsen' });
+/** A twin release's disclosure, as the studio stores one for Corin's vEIR. */
+const CORIN_DISCLOSURE =
+  "You are talking with Corin's vEIR, an AI mentor built with consent from Corin Halvorsen's approach. It is not a " +
+  'person and it is not Corin, and no human EIR authored or approved these responses.';
 
 const BASE: SystemPromptInput = {
   release: {
@@ -833,7 +836,7 @@ describe('persona helpers', () => {
     });
   });
 
-  it('builds a vEIR disclosure that meets the persistent-disclosure checks', () => {
+  it("the twin fixture's disclosure meets the persistent-disclosure checks, as a stored release's must", () => {
     // Mirrors evals/foundry_evals/graders/disclosure.py.
     const text = CORIN_DISCLOSURE.toLowerCase();
     expect(text).toMatch(/\b(?:ai|a\.i\.|artificial intelligence)\b/);

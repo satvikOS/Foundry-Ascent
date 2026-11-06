@@ -173,7 +173,7 @@ export function CorrectMemoryDialog({
     if (values.title !== memory.title) patch.title = values.title;
     if (values.content !== memory.content) patch.content = values.content;
     if (values.visibility !== memory.visibility) patch.visibility = values.visibility;
-    // Saving nothing changes nothing: not even whether a suggestion is kept (there is no approving here).
+    // Saving nothing changes nothing: not even whether a pending suggestion is kept (only an edit keeps one).
     if (Object.keys(patch).length === 0) {
       setFormError('Nothing changed. Edit a field, or cancel.');
       return;

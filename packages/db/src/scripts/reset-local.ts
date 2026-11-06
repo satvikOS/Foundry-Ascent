@@ -7,7 +7,9 @@
  *
  * Environment: TEST_DATABASE_ADMIN_URL (superuser URL, default local unix socket cluster on port 54329),
  * LOCAL_DB_NAME (default `foundry`), HOME_TENANT_SLUG / HOME_TENANT_NAME, OWNER_DISPLAY_NAME, SEED_OWNER_RELEASES (the
- * owner-approved persona releases to apply, as production's deploy does: `thomas-2026-11-05`; none by default).
+ * owner-approved persona releases to apply; by default the ones production's deploy applies, read from
+ * infra/cdk/config/production.json `homeTenant.ownerReleases`, so a local stack presents Thomas as production does;
+ * set it empty to apply none and see the seeded twin).
  */
 import { createDb } from '../db.js';
 import { migrate } from '../migrate.js';
@@ -23,6 +25,7 @@ import {
   withClient,
   withDatabase,
 } from '../testing/test-database.js';
+import { localOwnerReleases } from './local-owner-releases.js';
 
 function isLocal(url: string): boolean {
   const u = new URL(url);
@@ -42,6 +45,9 @@ async function main(): Promise<void> {
   }
   const name = process.env.LOCAL_DB_NAME ?? 'foundry';
   if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new Error('LOCAL_DB_NAME must be a simple identifier');
+  // Read and validated before anything is dropped: a bad release key fails here, not after the reset.
+  const releases = localOwnerReleases(process.env);
+  const ownerReleases = parseOwnerReleases(releases.raw);
 
   // Say which database is about to be dropped before anything happens: the default is the one `pnpm dev`
   // uses, so resetting it rotates the owner access code everyone using it signed in with.
@@ -75,11 +81,14 @@ async function main(): Promise<void> {
         accessCodePrefix: accessCodePrefix(code),
         accessCodeHash: await hashAccessCode(code),
       },
-      ownerReleases: parseOwnerReleases(process.env.SEED_OWNER_RELEASES),
+      ownerReleases,
     });
     process.stdout.write(
       [
         `Local database "${name}" reset (${String(report.applied.length)} migrations, ${String(result.ventures.length)} synthetic ventures).`,
+        releases.source === 'production'
+          ? `Owner releases: production's (infra/cdk/config/production.json; SEED_OWNER_RELEASES= for none)`
+          : `Owner releases: SEED_OWNER_RELEASES`,
         ...result.ownerReleases.map((r) => `Owner release ${r.key}: ${r.outcome}`),
         `DB_DRIVER=pg`,
         `DATABASE_URL=${url}`,
