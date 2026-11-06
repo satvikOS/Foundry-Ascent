@@ -336,6 +336,12 @@ export interface ChosenOpener {
    * stored sentence (a person's, or the notebook's), which a greeting reads itself (`readOpener`).
    */
   readonly subject?: OpenerSubject | null;
+  /**
+   * The model-written line itself (the notebook's next opener, written at distillation with a greeting in its own
+   * words): a call says it as written, its greeting kept, never phrased again around a subject (calls.ts
+   * `ownGreetingLine`).
+   */
+  readonly modelLine?: true;
 }
 
 /** Exchanges read to tell whether a stored opener only repeats a question the vEIR already asked. */
@@ -389,7 +395,12 @@ export async function chooseOpener(
     /** Display names of the venture's people, so a name in a distilled line keeps its real case. */
     readonly team?: readonly string[];
   },
-): Promise<{ readonly opener: ChosenOpener | null; readonly latest: LeftOffConversationData | null }> {
+): Promise<{
+  readonly opener: ChosenOpener | null;
+  readonly latest: LeftOffConversationData | null;
+  /** The vEIR's replies at the end of the person's latest conversations with it, newest first ({@link pastRepliesOf}). */
+  readonly pastReplies: readonly string[];
+}> {
   const notebook = await notebooksRepo.getNotebook(tx, {
     ventureId: args.ventureId,
     personaId: args.persona.id,
@@ -430,7 +441,8 @@ export async function chooseOpener(
   // a person wrote it (the copy stays); a missing one means its origin is unknown, and deleting any conversation
   // of the venture erases the copy.
   const source = notebook?.content.nextOpenerSource;
-  const found = (opener: ChosenOpener | null) => ({ opener, latest });
+  const pastReplies = pastRepliesOf(last);
+  const found = (opener: ChosenOpener | null) => ({ opener, latest, pastReplies });
   // Drawn from a conversation someone else had (a teammate's plan): never said to this person as theirs.
   const fromSomeoneElse =
     source != null && (await sessionsRepo.getSession(tx, source))?.startedBy !== args.principalId;
@@ -517,7 +529,7 @@ export async function chooseOpener(
       !repeatsOpener(stored, latest?.opener ?? null) &&
       !askedAtTheEnd(heard, stored)
     ) {
-      return found(drawn(stored));
+      return found({ ...drawn(stored), modelLine: true });
     }
     // The deterministic fallback: a line phrased around the thread it noted.
     const when =

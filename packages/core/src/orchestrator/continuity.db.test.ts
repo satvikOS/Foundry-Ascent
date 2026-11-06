@@ -246,8 +246,9 @@ describe('a second call minutes after the first', () => {
 
     const call2 = await startCall(maya, second.id);
     // Maya has met her vEIR: it greets her (no self-introduction, no "an AI coach"), then picks up the first call,
-    // summarised (never the question quoted back: LAB-R3).
-    expect(call2.intro?.text).toMatch(/^Hi Maya, /);
+    // summarised (never the question quoted back: LAB-R3). Not by name: the first call already named her, and a
+    // greeting is held to one reply in four like every reply (the coach hand-off).
+    expect(call2.intro?.text).toMatch(/^Hi, /);
     expect(call2.intro?.text.length).toBeLessThanOrEqual(90);
     expect(call2.intro?.text).toContain('whether to price per library or per seat for the pilot');
 
@@ -310,7 +311,8 @@ describe('a second call after the first was distilled at once (the local server;
     expect(outcome.status).toBe('distilled');
     const second = await h.core.sessions.create(maya, quietquad(), {});
     const call2 = await startCall(maya, second.id);
-    expect(call2.intro?.text).toMatch(/^Hi Maya, .*pric/i);
+    // Not by name: the first call named her (one reply in four).
+    expect(call2.intro?.text).toMatch(/^Hi, .*pric/i);
     expect(call2.intro?.text).not.toContain('what would you like to work on?');
     await h.core.calls.end(maya, call2.call.id, { reason: 'user' });
     h.jobQueue.drain();
@@ -906,6 +908,45 @@ describe('how a new conversation opens', () => {
     h.jobQueue.drain();
   });
 
+  it('a call says the model-written opener with its own greeting, never a fixed "Hi Maya, …" (the coach hand-off)', async () => {
+    await ageEverything(3);
+    const last = await h.core.sessions.create(maya, quietquad(), {});
+    await talk(maya, last.id, 'We met the student union about promoting the pilot.');
+    const line = 'Good to see you again. What did the student union say about promoting the pilot?';
+    await h.t.db.system(async (sx) => {
+      const key = { ventureId: quietquad(), personaId: h.ventures.quietquad.personaId };
+      const current = await notebooksRepo.getNotebook(sx, key);
+      await notebooksRepo.saveNotebook(sx, {
+        tenantId: h.seed.tenantId,
+        ...key,
+        expectedVersion: current?.version ?? 0,
+        content: {
+          ...(current?.content ?? notebooksRepo.EMPTY_NOTEBOOK),
+          nextOpener: line,
+          nextTopic: 'the student union promoting the pilot',
+        },
+        suppressed: current?.suppressed ?? [],
+        editedBy: 'veir',
+        sourceSessionId: last.id,
+      });
+    });
+    const next = await h.core.sessions.create(maya, quietquad(), {});
+    expect(next.opener).toBe(line);
+    const call = await startCall(maya, next.id);
+    // The model's line as written: its greeting kept (her name in it only while one reply in four allows), never
+    // swapped for "Hi Maya," nor phrased again around its subject.
+    expect(call.intro?.text).toMatch(
+      /^Good to see you again(?:, Maya)?\. What did the student union say about promoting the pilot\?$/,
+    );
+    // The conversation keeps what the call said as its first message.
+    expect((await h.core.sessions.get(maya, next.id)).session.opener).toBe(call.intro?.text);
+    await h.core.calls.end(maya, call.call.id, { reason: 'user' });
+    h.jobQueue.drain();
+    // Leaves no thread behind for the tests after it.
+    await h.core.sessions.remove(maya, next.id);
+    await h.core.sessions.remove(maya, last.id);
+  });
+
   it('never opens by repeating the question the last conversation ended on', async () => {
     await ageEverything(3);
     const last = await h.core.sessions.create(maya, quietquad(), {});
@@ -1123,7 +1164,8 @@ describe('how a new conversation opens', () => {
       expect(ag3.opener ?? '').toContain("your cofounder's plan to go full-time in January");
       expect(ag3.opener ?? '').not.toMatch(/about January\b|advisor/);
       const ringing = await startCall(maya, ag3.id);
-      expect(ringing.intro?.text ?? '').toMatch(/^Hi Maya, .*your cofounder's plan to go full-time/);
+      // Her name only while the latest replies leave room for it (one reply in four).
+      expect(ringing.intro?.text ?? '').toMatch(/^Hi(?: Maya)?, .*your cofounder's plan to go full-time/);
       expect(ringing.intro?.text ?? '').not.toMatch(/with January\?|up January\?|advisor/);
       await h.core.calls.end(maya, ringing.call.id, { reason: 'user' });
       h.jobQueue.drain();

@@ -54,12 +54,6 @@ export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-export function sentJson(init: RequestInit | undefined): unknown {
-  const body = init?.body;
-  if (body && ArrayBuffer.isView(body)) return JSON.parse(new TextDecoder().decode(body)) as unknown;
-  return typeof body === 'string' ? (JSON.parse(body) as unknown) : undefined;
-}
-
 export const LIVE: CallSnapshot = {
   phase: 'live',
   ventureId: '0b9d1f0e-6a0c-4f39-9d0e-5d3b8a1c2e01',

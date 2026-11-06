@@ -228,7 +228,11 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
   Monday", then "for the pilot kickoff"), else the opener itself as one sentence, else "Hi Maya, what would you like
   to work on?" ("…where would you like to pick up?" on a conversation under way). An opener built around a clause
   cut from the founder's line ("we left off on They'll promote QuietQuad") is never said, and an opener a person
-  wrote that cannot be shortened is said whole rather than dropped. The opener is chosen afresh at call start for a
+  wrote that cannot be shortened is said whole rather than dropped. The model-written next opener (the notebook's
+  line, `ChosenOpener.modelLine`) greets in its own words: a call says it as written, its greeting kept ("Good to
+  see you again, Maya. What did the student union say?"), never swapped for a fixed "Hi Maya, …" (`ownGreetingLine`).
+  The founder's name is said in a greeting one reply in four at most, as in every reply (`greetedName`, read from the
+  vEIR's latest replies to them: this conversation's, or the end of the last ones). The opener is chosen afresh at call start for a
   conversation nobody has said anything in (`chooseOpener`, with what it is about: none for the generic invitation),
   phrased and kept in the same transaction: the intro becomes that conversation's first message
   (`coaching_sessions.opener`, replayed by the turn engine) when it says the opener, so the vEIR's history holds the

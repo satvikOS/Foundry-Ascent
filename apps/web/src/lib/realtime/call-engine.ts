@@ -53,16 +53,7 @@ import { TurnAudioFeed } from './turn-audio';
 import { TranscribeStream, type TranscribeHandlers, type WebSocketFactory } from './transcribe';
 import { VoiceActivityDetector } from './vad';
 
-export type {
-  CallActivity,
-  CallEnded,
-  CallFailure,
-  CallNotice,
-  CallPhase,
-  CallSnapshot,
-  TalkMode,
-  TypedReason,
-} from './call-state';
+export type { CallEnded, CallFailure, CallNotice, CallSnapshot, TalkMode, TypedReason } from './call-state';
 
 /**
  * CallEngine: one live call with a vEIR (docs/architecture/calls.md §3).

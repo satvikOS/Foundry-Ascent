@@ -1,4 +1,11 @@
-import { isEverydayWord, rewriteIdentity, textsContainOtherVenture, toSpeakable } from '@foundry/ai';
+import {
+  isEverydayWord,
+  nameBudgetSpent,
+  rewriteIdentity,
+  textsContainOtherVenture,
+  toSpeakable,
+  withoutRepeatedGreeting,
+} from '@foundry/ai';
 import {
   CallHeartbeatRequest,
   EndCallRequest,
@@ -281,6 +288,51 @@ function candidateSubjects(text: string): string[] {
   return [...new Set(out)];
 }
 
+/**
+ * The founder's first name as a greeting may say it: null when there is none, or when the latest replies (newest
+ * first) already named them as often as one reply in four allows (`nameBudgetSpent`, the voice rules every reply is
+ * held to: a call's greeting is a reply too).
+ */
+export function greetedName(
+  firstName: string | null,
+  pastReplies: readonly (string | null | undefined)[] | undefined,
+): string | null {
+  if (firstName === null) return null;
+  return nameBudgetSpent(firstName, pastReplies ?? []) ? null : firstName;
+}
+
+/** Bare hellos that take a name without a comma ("Hey Maya, …"). */
+const BARE_HELLO = /^(?:hi|hello|hey|hiya)(?: there| again)?$/i;
+
+/**
+ * `opener` as said when it opens with a greeting of its own ("Good to see you again. How did the pilot go?"; a
+ * model-written next opener greets in its own words): its words kept, with `name` said in its greeting ("Good to see
+ * you again, Maya. …", "Hey Maya, …") when there is one to say. Null when the opener does not open with a greeting,
+ * or is nothing but one.
+ */
+export function ownGreetingLine(opener: string, name: string | null): string | null {
+  const text = opener.trim();
+  const names = name === null ? [] : [name];
+  const rest = withoutRepeatedGreeting(text, names);
+  if (!rest.removed || rest.text.trim() === '') return null;
+  if (name === null) return text;
+  // The name goes into the first clause, when that clause is a greeting on its own ("Hey, good to have you back!").
+  const first = /^([^,.!?…\n]+?)\s*([,.!…])/u.exec(text);
+  if (first?.[1] === undefined || first[2] === undefined) return text;
+  const clause = first[1];
+  if (withoutRepeatedGreeting(`${clause}.`, names).text !== '') return text;
+  // A name already in the greeting is not said twice.
+  if (
+    new RegExp(`(?<![\\p{L}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, 'u').test(clause)
+  ) {
+    return text;
+  }
+  const after = text.slice(first[0].length);
+  const named =
+    first[2] === ',' && BARE_HELLO.test(clause) ? `${clause} ${name},` : `${clause}, ${name}${first[2]}`;
+  return `${named}${after}`;
+}
+
 /** A greeting line and whether it says what the opener picks up (`carriesOpener`), or only invites. */
 export interface CallGreeting {
   readonly text: string;
@@ -296,6 +348,12 @@ export interface CallGreeting {
  * nothing, so none is read from it), or undefined to read it from the stored sentence (`readOpener`); an opener built
  * around a clause fragment is never said (LAB-R3b). An opener none of this fits is said whole rather than dropped (a
  * person's own words). The phrasing varies with `seed` (the conversation).
+ *
+ * The model-written next opener (`modelLine`: "a few words of greeting in your own words, then one sentence", coaching
+ * v3), when it greets in its own words, is said as written, its own greeting kept, never swapped for a fixed "Hi
+ * Maya, …" nor phrased again around its subject ({@link ownGreetingLine}; the coach hand-off). The founder's name is
+ * said only while the latest replies (`pastReplies`, newest first) leave it room: one reply in four
+ * (`nameBudgetSpent`, as every reply is held to).
  */
 export function repeatGreetingOf(args: {
   readonly firstName: string | null;
@@ -303,8 +361,13 @@ export function repeatGreetingOf(args: {
   readonly subject?: OpenerSubject | null;
   readonly conversationStarted: boolean;
   readonly seed?: string;
+  /** The vEIR's latest replies to this person, newest first (this conversation's, then the last ones'). */
+  readonly pastReplies?: readonly (string | null | undefined)[];
+  /** The opener is the model-written line (`ChosenOpener.modelLine`): said as written when it greets in its own words. */
+  readonly modelLine?: boolean;
 }): CallGreeting {
-  const hi = args.firstName === null ? 'Hi' : `Hi ${args.firstName}`;
+  const name = greetedName(args.firstName, args.pastReplies);
+  const hi = name === null ? 'Hi' : `Hi ${name}`;
   const seed = seedOf(args.seed ?? '');
   const rotate = (lines: readonly string[]): string[] =>
     lines.map((_, i) => lines[(seed + i) % lines.length] ?? '');
@@ -317,6 +380,11 @@ export function repeatGreetingOf(args: {
     subject === null || isVenting(subject.text, args.firstName) ? [] : shorterSubjects(subject.text);
   // An opener chosen around words that are no subject was built around a fragment: neither is said.
   const fragment = read === 'fragment' || (subject !== null && forms.length === 0);
+  // The model's own line (a stored sentence with a greeting of its own): said as written, its greeting kept.
+  if (args.modelLine === true && args.opener !== null && !fragment) {
+    const own = ownGreetingLine(args.opener, name);
+    if (own !== null) return { text: own, carriesOpener: true };
+  }
   const candidates: string[] = [];
   if (subject !== null) {
     for (const t of forms) {
@@ -396,6 +464,10 @@ export function callIntro(args: {
   readonly conversationStarted: boolean;
   /** Varies a repeat greeting's phrasing (the conversation's id). */
   readonly seed?: string;
+  /** The vEIR's latest replies to this person, newest first: the name is said one reply in four at most. */
+  readonly pastReplies?: readonly (string | null | undefined)[];
+  /** The opener is the model-written line (`ChosenOpener.modelLine`). */
+  readonly modelLine?: boolean;
 }): CallGreeting {
   if (!args.firstMeeting) {
     return repeatGreetingOf({
@@ -404,9 +476,12 @@ export function callIntro(args: {
       ...(args.subject === undefined ? {} : { subject: args.subject }),
       conversationStarted: args.conversationStarted,
       seed: args.seed ?? '',
+      ...(args.pastReplies === undefined ? {} : { pastReplies: args.pastReplies }),
+      ...(args.modelLine === true ? { modelLine: true } : {}),
     });
   }
-  const hi = args.firstName === null ? 'Hi' : `Hi ${args.firstName}`;
+  const name = greetedName(args.firstName, args.pastReplies);
+  const hi = name === null ? 'Hi' : `Hi ${name}`;
   const hello =
     args.mentor === true
       ? `${hi}, I'm ${args.personaName}.`
@@ -426,11 +501,6 @@ export function callIntro(args: {
  */
 export function openerKept(intro: CallGreeting | null, opener: string | null): string | null {
   return intro?.carriesOpener === true ? intro.text : opener;
-}
-
-/** The words of {@link callIntro}. */
-export function callIntroText(args: Parameters<typeof callIntro>[0]): string {
-  return callIntro(args).text;
 }
 
 /** Next actions of a call's replies without repeats (by their words), at most {@link SUMMARY_MAX_ACTIONS}. */
@@ -557,6 +627,13 @@ interface Started {
   readonly conversationStarted: boolean;
   /** The caller started no other conversation of the venture: the vEIR introduces itself once. */
   readonly firstMeeting: boolean;
+  /**
+   * The vEIR's latest replies to the caller, newest first (this conversation's, or the end of the last ones when it
+   * opens one): the greeting says their name one reply in four at most. Undefined when not read.
+   */
+  readonly pastReplies?: readonly string[];
+  /** The opener is the model-written line chosen at call start (`ChosenOpener.modelLine`). */
+  readonly modelLine?: boolean;
   /** What the call's turns read their context by (turn-context.ts): known here, so the first turn reads it early. */
   readonly contextKeys: TurnContextKeys;
 }
@@ -721,6 +798,7 @@ export function createCallsService(
       firstMeeting: started.firstMeeting,
       seed: started.call.sessionId,
       conversationStarted: started.conversationStarted,
+      ...(started.pastReplies === undefined ? {} : { pastReplies: started.pastReplies }),
     };
     const candidates = [
       ...(opener === '' || mentionsEir(opener, guards.eirNames) || !safe(opener)
@@ -731,6 +809,7 @@ export function createCallsService(
               opener,
               // Chosen with the opener at call start (null: it names nothing), else read from the stored sentence.
               ...(started.subject === undefined ? {} : { subject: started.subject }),
+              ...(started.modelLine === true ? { modelLine: true } : {}),
             }),
           ]),
       callIntro({ ...base, opener: null }),
@@ -760,7 +839,7 @@ export function createCallsService(
         try {
           const team = await directory.addressees(ctx.tenantId, started.ventureId);
           words = await kit.inRequest(ctx, async ({ tx }) => {
-            const { opener: chosen } = await chooseOpener(tx, {
+            const { opener: chosen, pastReplies } = await chooseOpener(tx, {
               ventureId: started.ventureId,
               persona: { id: started.personaId, name: started.personaName },
               principalId: ctx.principalId,
@@ -778,6 +857,8 @@ export function createCallsService(
               ...started,
               opener: chosen?.text ?? null,
               ...(chosen === null ? { subject: null } : { subject: chosen.subject }),
+              pastReplies,
+              ...(chosen?.modelLine === true ? { modelLine: true } : {}),
             };
             const intro = introWords(opened, guards);
             const keep = openerKept(intro, opened.opener);
@@ -1089,6 +1170,17 @@ export function createCallsService(
         });
         const turnCount = await turnsRepo.countSessionTurns(tx, sessionId);
         const principal = await principalsRepo.getPrincipal(tx, ctx.principalId);
+        // A call in a conversation under way greets them by name only while its latest replies leave room (one reply
+        // in four); one that opens a conversation reads the last ones' with its opener (`chooseOpener`).
+        const pastReplies =
+          turnCount === 0
+            ? undefined
+            : [
+                ...(await sessionsRepo.listLastExchanges(tx, { sessionIds: [sessionId], perSession: 12 }))
+                  .map((x) => x.answer)
+                  .reverse(),
+                session.opener,
+              ].filter((t): t is string => t !== null && t.trim() !== '');
         return {
           call,
           vendorVoice: settings.vendorVoiceEnabled,
@@ -1116,6 +1208,7 @@ export function createCallsService(
           // message, so the call says exactly what the vEIR believes it opened with (none for temporary chats).
           opener: turnCount === 0 ? session.opener : null,
           conversationStarted: turnCount > 0,
+          ...(pastReplies === undefined ? {} : { pastReplies }),
           // A first meeting: nothing said yet here, and no earlier conversation. A call in a conversation already
           // under way picks it up instead of introducing the vEIR again.
           firstMeeting:

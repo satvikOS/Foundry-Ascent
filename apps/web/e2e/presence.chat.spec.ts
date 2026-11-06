@@ -265,7 +265,8 @@ test.describe('talking with the vEIR', () => {
         // Maya has met Thomas before: he greets her, he does not introduce himself or say "an AI coach".
         const body = (await (await intro).json()) as { intro: { text: string } | null };
         expect(body.intro, 'the call greets Maya').not.toBeNull();
-        expect(body.intro?.text).toMatch(/^Hi Maya, /);
+        // Her name only while one reply in four allows it.
+        expect(body.intro?.text).toMatch(/^Hi(?: Maya)?, /);
         expect(body.intro?.text).not.toMatch(/an AI coach|digital twin/);
         await expectPlainMentorName(page, 'the call tile');
         await screen.getByRole('button', { name: 'End call' }).click();

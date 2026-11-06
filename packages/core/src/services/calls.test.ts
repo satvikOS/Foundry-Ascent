@@ -23,8 +23,9 @@ import {
 import {
   REPEAT_GREETING_MAX_CHARS,
   callIntro,
-  callIntroText,
+  greetedName,
   openerKept,
+  ownGreetingLine,
   repeatGreeting,
   repeatGreetingOf,
   shorterSubjects,
@@ -54,6 +55,11 @@ import {
   type OpenerSubject,
 } from '../orchestrator/continuity-prompt.js';
 import { properNounsIn, readsAsSubject, topicOf } from '../orchestrator/opener-topic.js';
+
+/** The words of {@link callIntro}. */
+function callIntroText(args: Parameters<typeof callIntro>[0]): string {
+  return callIntro(args).text;
+}
 
 const CAPS = { maxCallMinutes: 30, dailyCallMinutesPerPrincipal: 60 };
 
@@ -795,6 +801,103 @@ describe('the names a call may say', () => {
     expect(introName(mentor)).toBe('Thomas');
     // The same persona as a twin is still renamed after its EIR.
     expect(introName({ ...mentor, mentor: false })).toBe("Corin's vEIR");
+  });
+
+  it('says the model-written opener with its own greeting, never swapped for "Hi Maya, …" (the coach hand-off)', () => {
+    const met = {
+      firstName: 'Maya',
+      personaName: 'Thomas',
+      eirFirstName: null,
+      mentor: true,
+      firstMeeting: false,
+      conversationStarted: false,
+      seed: 's1',
+      modelLine: true,
+    } as const;
+    const said = (opener: string, pastReplies?: readonly string[]): string =>
+      callIntroText({ ...met, opener, ...(pastReplies === undefined ? {} : { pastReplies }) });
+    // Before: "Hi Maya, how did the pilot booking with the two libraries go?" and "Hi Maya, hey, quick one: …".
+    expect(said('Good to see you again. How did the pilot booking with the two libraries go?')).toBe(
+      'Good to see you again, Maya. How did the pilot booking with the two libraries go?',
+    );
+    expect(said('Hey, quick one: did the Harbour Hall librarians agree to the evening pilot?')).toBe(
+      'Hey Maya, quick one: did the Harbour Hall librarians agree to the evening pilot?',
+    );
+    expect(said('Welcome back! Where did you land on pricing per seat versus per library?')).toBe(
+      'Welcome back, Maya! Where did you land on pricing per seat versus per library?',
+    );
+    // Its name already in the greeting is not said twice.
+    expect(ownGreetingLine('Hi Maya, did the pilot go ahead?', 'Maya')).toBe(
+      'Hi Maya, did the pilot go ahead?',
+    );
+    // A line that does not greet, or a stored sentence that is no model line, is phrased as before.
+    expect(said('Last time you planned five library-staff interviews. How did they go?')).toBe(
+      'Hi Maya, how did the five library-staff interviews go?',
+    );
+    expect(
+      callIntroText({
+        ...met,
+        modelLine: false,
+        opener: 'Good to see you again. How did the pilot booking with the two libraries go?',
+      }),
+    ).toMatch(/^Hi Maya, /);
+    expect(ownGreetingLine('Good to see you again.', 'Maya')).toBeNull();
+    expect(ownGreetingLine('What did the union say?', 'Maya')).toBeNull();
+  });
+
+  it('says the founder’s name in a greeting one reply in four at most, like every reply (the coach hand-off)', () => {
+    const named = ['Maya, that works.', 'Sounds good.', 'Hi Maya, how did it go?'];
+    const unnamed = Array.from({ length: 12 }, (_, i) => `Reply ${String(i)} without a name.`);
+    expect(greetedName('Maya', undefined)).toBe('Maya');
+    expect(greetedName('Maya', named)).toBeNull();
+    expect(greetedName('Maya', unnamed)).toBe('Maya');
+    expect(greetedName(null, [])).toBeNull();
+    const base = {
+      firstName: 'Maya',
+      personaName: 'Thomas',
+      eirFirstName: null,
+      mentor: true,
+      conversationStarted: false,
+      seed: 's1',
+    } as const;
+    // The model's line keeps its greeting, without the name.
+    expect(
+      callIntroText({
+        ...base,
+        firstMeeting: false,
+        modelLine: true,
+        opener: 'Good to see you again. How did the pilot booking go?',
+        pastReplies: named,
+      }),
+    ).toBe('Good to see you again. How did the pilot booking go?');
+    // A phrased greeting and the invitation say "Hi" alone.
+    expect(
+      callIntroText({
+        ...base,
+        firstMeeting: false,
+        opener: 'Last time you planned five library-staff interviews. How did they go?',
+        pastReplies: named,
+      }),
+    ).toBe('Hi, how did the five library-staff interviews go?');
+    expect(
+      callIntroText({
+        ...base,
+        firstMeeting: false,
+        conversationStarted: true,
+        opener: null,
+        pastReplies: named,
+      }),
+    ).toBe('Hi, where would you like to pick up?');
+    // Room for it again after enough replies without it.
+    expect(
+      callIntroText({
+        ...base,
+        firstMeeting: false,
+        conversationStarted: true,
+        opener: null,
+        pastReplies: unnamed,
+      }),
+    ).toBe('Hi Maya, where would you like to pick up?');
   });
 
   it('finds any mention of an EIR in an opener', () => {
