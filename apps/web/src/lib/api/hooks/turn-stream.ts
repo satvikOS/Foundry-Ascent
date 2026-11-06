@@ -153,7 +153,8 @@ export function turnStreamReducer(state: TurnStreamState, action: Action): TurnS
           return { ...state, turnId: event.turnId, units, streamedText: joinStreamUnits(units) };
         }
         case 'turn.speech':
-          // Spoken units belong to a call (the call engine reads them through `onEvent`).
+        case 'turn.audio':
+          // Spoken units and their audio belong to a call (the call engine reads them through `onEvent`).
           return state;
         case 'turn.completed':
           return {

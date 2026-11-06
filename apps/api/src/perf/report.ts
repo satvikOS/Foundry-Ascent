@@ -40,6 +40,14 @@ function turnRows(group: string, turns: readonly TurnSample[]): ReportRow[] {
     ['client: first unit, whole audio arrived', turns.map((t) => t.firstUnitWholeMs)],
     ['client: first unit playable (player can start)', turns.map((t) => t.firstPlayableMs)],
     ['client: last spoken unit', turns.map((t) => t.lastSpeechMs)],
+    [
+      'client: POST /speech requests (count)',
+      turns.map((t) => (t.channel === 'voice' ? t.speechRequests : null)),
+    ],
+    [
+      'client: units voiced in the turn stream (count)',
+      turns.map((t) => (t.channel === 'voice' ? t.streamedUnits : null)),
+    ],
     ['client: completed', turns.map((t) => t.completedMs)],
     ['client: stream end', turns.map((t) => t.streamEndMs)],
     ['server: auth', server('authMs')],
@@ -53,6 +61,7 @@ function turnRows(group: string, turns: readonly TurnSample[]): ReportRow[] {
     ['server: model first token', server('modelFirstTokenMs')],
     ['server: first sentence (turn.delta)', server('firstDeltaMs')],
     ['server: first spoken unit (turn.speech)', server('firstSpeechMs')],
+    ['server: first audio in the turn stream (turn.audio)', server('firstAudioMs')],
     ['server: generation (stream + annotations)', server('generationMs')],
     ['server: finish (validate + persist)', server('finishMs')],
     ['server: total', server('totalMs')],

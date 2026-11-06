@@ -300,6 +300,27 @@ export const TurnStreamEvent = z.discriminatedUnion('event', [
      * `face/say`, which answers 204 for a pre-approved unit.
      */
     face: z.literal(true).optional(),
+    /**
+     * Present (true) when the server voices this unit itself and sends its audio in this stream as `turn.audio`
+     * frames (the turn asked for `speechAudio: 'pcm'`): the page plays them and does not ask `POST /speech`. Additive.
+     */
+    audio: z.literal(true).optional(),
+  }),
+  /**
+   * The audio of a unit announced with `audio: true` (`turnId`, `seq`), streamed as it is synthesized: raw 16-bit mono
+   * little-endian PCM in base64 (`pcm`), its rate on the unit's first frame (`sampleRate`), and a closing frame (`end`):
+   * `done` (all of it was sent: a voice that broke part-way ends the unit where its audio stopped), `failed` (no audio:
+   * the page may ask `POST /speech` for the unit), `paused` (the call's or the day's speech budget is used up) or
+   * `refused` (the call's speech was refused, or the turn ended blocked or failed: its units are not spoken). Frames of the next unit may arrive while a unit's frames still do, and
+   * frames may follow the terminal event: the stream ends after the last unit's closing frame. Additive.
+   */
+  z.object({
+    event: z.literal('turn.audio'),
+    turnId: Id,
+    seq: z.number().int().min(0),
+    pcm: z.string().max(200_000).optional(),
+    sampleRate: z.number().int().min(8_000).max(48_000).optional(),
+    end: z.enum(['done', 'failed', 'paused', 'refused']).optional(),
   }),
   z.object({ event: z.literal('turn.completed'), turn: TurnView }),
   z.object({

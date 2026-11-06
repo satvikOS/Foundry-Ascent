@@ -273,6 +273,7 @@ describe('CallEngine · typed fallback', () => {
       text: 'We interviewed twelve clinics.',
       channel: 'voice',
       callId: CALL_ID,
+      speechAudio: 'pcm',
     });
     expect(h.state()).toMatchObject({ activity: 'thinking' });
     expect(h.state().captions.founder).toBe('We interviewed twelve clinics.');
@@ -934,6 +935,182 @@ describe('CallEngine · replies', () => {
     expect(h.context.sources[0]?.stopped).toBe(true);
     expect(h.state()).toMatchObject({ activity: 'listening', blocked: { reason: 'policy' } });
   });
+});
+
+/** A unit the server voices in the turn's stream, and frames of its PCM (base64), its rate on the first. */
+function voicedUnit(seq: number, text: string): TurnStreamEventT {
+  return { event: 'turn.speech', turnId: TURN_ID, seq, text, sig: SIG, final: false, audio: true };
+}
+function pcmFrame(seq: number, samples: number, first = false): TurnStreamEventT {
+  const bytes = new Uint8Array(samples * 2).fill(16);
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return {
+    event: 'turn.audio',
+    turnId: TURN_ID,
+    seq,
+    pcm: btoa(binary),
+    ...(first ? { sampleRate: 24_000 } : {}),
+  };
+}
+function audioEnd(seq: number, end: 'done' | 'failed' | 'paused' | 'refused' = 'done'): TurnStreamEventT {
+  return { event: 'turn.audio', turnId: TURN_ID, seq, end };
+}
+
+describe('CallEngine · speech inside the turn stream', () => {
+  it('plays a unit the server voiced from the turn’s own stream, with no POST /speech', async () => {
+    const h = setup({ grant: null });
+    await startLive(h);
+    h.engine.sendText('Hello');
+    await flush();
+    expect(h.script.calls[0]?.body.speechAudio).toBe('pcm');
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      voicedUnit(0, 'Twelve is a good start.'),
+      pcmFrame(0, 4_800, true),
+    );
+    await flush(20);
+    expect(h.state()).toMatchObject({ activity: 'speaking', voice: 'server' });
+    expect(h.state().captions.veir).toBe('Twelve is a good start.');
+    // Played from the stream as it arrives (PCM pieces scheduled on the call's context).
+    expect(h.context.buffers.length).toBeGreaterThan(0);
+    // Its audio may follow the terminal event: the turn is settled at once, the audio still plays.
+    h.script.push(completed(), pcmFrame(0, 4_800), audioEnd(0));
+    await flush(20);
+    expect(h.settled).toHaveLength(1);
+    h.script.close();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(h.state().activity).toBe('listening');
+    // The regression this pins: a turn whose units the server voiced makes no POST /speech.
+    expect(h.api.fetchSpeech).not.toHaveBeenCalled();
+    expect(h.speechRequests).toHaveLength(0);
+  });
+
+  it('asks POST /speech for a unit the server could not voice, or did not announce with audio', async () => {
+    const h = setup({ grant: null });
+    await startLive(h);
+    h.engine.sendText('Hello');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      voicedUnit(0, 'Twelve is a good start.'),
+      audioEnd(0, 'failed'),
+      speech(1, 'Test a pilot price.'),
+    );
+    await flush(20);
+    expect(h.speechRequests.map((u) => u.text)).toEqual(['Twelve is a good start.', 'Test a pilot price.']);
+    h.script.push(completed());
+    h.script.close();
+    await vi.advanceTimersByTimeAsync(10_000);
+  });
+
+  it('a unit whose stream closed before its audio is asked from POST /speech', async () => {
+    const h = setup({ grant: null });
+    await startLive(h);
+    h.engine.sendText('Hello');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      voicedUnit(0, 'Twelve is a start.'),
+    );
+    await flush(5);
+    expect(h.speechRequests).toHaveLength(0);
+    h.script.push(completed());
+    h.script.close();
+    await flush(20);
+    expect(h.speechRequests.map((u) => u.text)).toEqual(['Twelve is a start.']);
+  });
+
+  it('pauses the voice when the server says the speech budget is used up, without asking POST /speech', async () => {
+    const h = setup({ grant: null });
+    await startLive(h);
+    h.engine.sendText('Hello');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      voicedUnit(0, 'Twelve is a good start.'),
+      audioEnd(0, 'paused'),
+      completed(),
+    );
+    h.script.close();
+    await flush(20);
+    expect(h.state()).toMatchObject({ voicePaused: true, voice: 'captions' });
+    expect(h.speechRequests).toHaveLength(0);
+  });
+
+  it('a barge-in stops the streamed audio and closes the turn’s stream, so the server stops synthesizing', async () => {
+    const h = setup();
+    await startLive(h);
+    const socket = FakeWebSocket.last();
+    socket.serverOpen();
+    h.engine.sendText('Tell me about pilots.');
+    await flush();
+    h.script.push(
+      { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+      voicedUnit(0, 'Start with one library and a written success threshold.'),
+      pcmFrame(0, 24_000, true),
+    );
+    await flush(20);
+    expect(h.state().activity).toBe('speaking');
+    socket.serverSend(transcriptEvent('r1', 'wait, what about pricing', { partial: false }));
+    await flush(10);
+    expect(h.script.calls[0]?.options.signal?.aborted).toBe(true);
+    expect(h.state().activity).toBe('listening');
+    // Frames that were already on their way never reach the speakers.
+    const scheduled = h.context.buffers.length;
+    h.script.push(pcmFrame(0, 24_000), audioEnd(0));
+    await flush(10);
+    expect(h.context.buffers.length).toBe(scheduled);
+    expect(h.speechRequests).toHaveLength(0);
+  });
+
+  const terminals: [string, TurnStreamEventT][] = [
+    [
+      'failed',
+      {
+        event: 'turn.error',
+        turnId: TURN_ID,
+        code: 'model_unavailable',
+        message: 'Try again.',
+        retryable: true,
+      },
+    ],
+    [
+      'blocked',
+      {
+        event: 'turn.blocked',
+        turnId: TURN_ID,
+        reason: 'identity',
+        escalationId: null,
+        supportMessage: null,
+      },
+    ],
+  ];
+  it.each(terminals)(
+    'a %s reply stops its streamed audio at once: nothing more of it is played',
+    async (_, terminal) => {
+      const h = setup({ grant: null });
+      await startLive(h);
+      h.engine.sendText('Hello');
+      await flush();
+      h.script.push(
+        { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+        voicedUnit(0, 'Start with one library and a written success threshold.'),
+        pcmFrame(0, 24_000, true),
+      );
+      await flush(20);
+      expect(h.state().activity).toBe('speaking');
+      h.script.push(terminal);
+      await flush(10);
+      const scheduled = h.context.buffers.length;
+      // The server sends no more of it; a frame already on its way never reaches the speakers.
+      h.script.push(pcmFrame(0, 24_000), audioEnd(0, 'refused'));
+      h.script.close();
+      await flush(20);
+      expect(h.context.buffers.length).toBe(scheduled);
+      expect(h.speechRequests).toHaveLength(0);
+    },
+  );
 });
 
 describe('CallEngine · barge-in', () => {

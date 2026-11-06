@@ -56,6 +56,8 @@ export interface LatencyRig {
   readonly face: boolean;
   /** Whether the call screen asks for raw PCM (`LatencyRigOptions.pcm`). */
   readonly pcm: boolean;
+  /** Whether a call's turns carry their units' audio in their own stream (`LatencyRigOptions.streamAudio`). */
+  readonly streamAudio: boolean;
   /** The ElevenLabs stand-in, when calls speak with it (`LatencyRigOptions.elevenLabs`). */
   readonly elevenLabs: ElevenLabsStub | null;
   readonly ventureId: string;
@@ -137,6 +139,11 @@ export interface LatencyRigOptions {
   readonly elevenLabs?: ElevenLabsStubOptions;
   /** The call screen asks `POST /speech` for raw PCM and plays it as it arrives (`latency --pcm`). */
   readonly pcm?: boolean;
+  /**
+   * A call's turns ask for their units' audio inside the turn's own stream (`speechAudio: 'pcm'`, `turn.audio` frames),
+   * as the call screen does, instead of a `POST /speech` per unit (`latency --stream-audio`).
+   */
+  readonly streamAudio?: boolean;
 }
 
 /** What the rig labels a request with, for the round trips it makes. */
@@ -329,6 +336,7 @@ export async function createLatencyRig(
     queries,
     face,
     pcm: options.pcm === true,
+    streamAudio: options.streamAudio === true,
     elevenLabs,
     ventureId: venture.id,
     founderId,

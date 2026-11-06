@@ -52,6 +52,13 @@ describe('TurnTimeline', () => {
       { event: 'turn.speech', turnId: TURN, seq: 0, text: 'One.', sig: 'x'.repeat(20), final: false },
       at(1_201),
     );
+    // Its audio, voiced in the turn's stream: the first frame with bytes counts, not the announcement.
+    timeline.observe({ event: 'turn.audio', turnId: TURN, seq: 0, end: 'failed' }, at(1_300));
+    timeline.observe(
+      { event: 'turn.audio', turnId: TURN, seq: 1, pcm: 'AAAA', sampleRate: 24_000 },
+      at(1_420),
+    );
+    timeline.observe({ event: 'turn.audio', turnId: TURN, seq: 1, pcm: 'AAAA' }, at(1_480));
     timeline.observe(status('validating', 7), at(3_000));
     timeline.observe(
       { event: 'turn.error', turnId: TURN, code: 'internal', message: 'x', retryable: true, requestId: 'r' },
@@ -76,6 +83,7 @@ describe('TurnTimeline', () => {
       modelFirstTokenMs: 650,
       firstDeltaMs: 1_200,
       firstSpeechMs: 1_201,
+      firstAudioMs: 1_420,
       generationMs: 2_601,
       structuredMs: 1_400,
       finishMs: 300,

@@ -227,6 +227,41 @@ describe('readTurnStream', () => {
     }
   });
 
+  it('reads a voiced unit’s audio after the terminal event until every such unit closed, and nothing else', async () => {
+    const sig = 'c2lnbmF0dXJlLW9mLXRoZS11bml0LTAx';
+    const unit = (seq: number, audio: boolean) =>
+      `event: turn.speech\ndata: ${JSON.stringify({ turnId: TURN_ID, seq, text: 'Hi.', sig, final: false, ...(audio ? { audio: true } : {}) })}\n\n`;
+    const frame = (seq: number, extra: Record<string, unknown>) =>
+      `event: turn.audio\ndata: ${JSON.stringify({ turnId: TURN_ID, seq, ...extra })}\n\n`;
+    const stream = streamOf([
+      unit(0, true),
+      frame(0, { pcm: 'AAAA', sampleRate: 24000 }),
+      unit(1, false),
+      `event: turn.completed\ndata: ${JSON.stringify({ turn: completedTurn() })}\n\n`,
+      frame(0, { pcm: 'AAAA' }),
+      'event: turn.status\ndata: {"phase":"reasoning","detail":null,"evidenceCount":null}\n\n',
+      frame(0, { end: 'done' }),
+      frame(0, { pcm: 'AAAA' }),
+    ]);
+    expect((await collect(readTurnStream(stream))).map((e) => e.event)).toEqual([
+      'turn.speech',
+      'turn.audio',
+      'turn.speech',
+      'turn.completed',
+      'turn.audio',
+      'turn.audio',
+    ]);
+    // A stream that ends after the terminal event with a unit still open ends quietly (the unit is asked for again).
+    const cut = streamOf([
+      unit(0, true),
+      `event: turn.completed\ndata: ${JSON.stringify({ turn: completedTurn() })}\n\n`,
+    ]);
+    expect((await collect(readTurnStream(cut))).map((e) => e.event)).toEqual([
+      'turn.speech',
+      'turn.completed',
+    ]);
+  });
+
   it('throws stream_interrupted when the stream ends before a terminal event', async () => {
     const stream = streamOf([`event: turn.accepted\ndata: {"turnId":"${TURN_ID}","ordinal":1}\n\n`]);
     await expect(collect(readTurnStream(stream))).rejects.toMatchObject({ code: 'stream_interrupted' });

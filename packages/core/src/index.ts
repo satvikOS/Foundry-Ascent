@@ -83,7 +83,7 @@ export {
   type ResolvedVeir,
   type VeirService,
 } from './services/veir.js';
-export { type SpeechService } from './services/speech.js';
+export { type SpeechService, type TurnVoice, type TurnVoiceAudio } from './services/speech.js';
 export { type FaceService, MIN_FACE_SECONDS } from './services/face.js';
 export { type TwinService } from './services/twin.js';
 export {

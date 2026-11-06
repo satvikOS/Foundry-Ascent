@@ -193,6 +193,13 @@ export const CreateTurnRequest = z.object({
   channel: TurnChannel.optional(),
   /** The live call this spoken turn belongs to (required by the server when `channel` is `voice`). */
   callId: Id.optional(),
+  /**
+   * A spoken turn whose page plays raw PCM as it arrives: `pcm` asks the server to voice each signed unit as it is
+   * produced and send its audio in this same stream (`turn.speech` `audio: true`, then `turn.audio` frames), instead of
+   * the page asking `POST /speech` for it. The server still decides per unit (a unit without `audio` is asked for as
+   * before). Optional (additive): without it nothing changes.
+   */
+  speechAudio: z.literal('pcm').optional(),
 });
 export const EndSessionResponse = z.object({ session: SessionView, recap: SessionRecap.nullable() });
 export const TurnFeedbackRequest = z.object({

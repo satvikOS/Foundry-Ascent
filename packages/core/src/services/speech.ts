@@ -17,7 +17,7 @@ import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { requireId, type AuditEvent, type Kit, type RequestScope } from '../internal/kit.js';
 import { type FaceApproval } from '../orchestrator/generate.js';
-import { enforceSpendCaps, readSpendState } from '../orchestrator/guards.js';
+import { enforceSpendCaps, readSpendState, spendCapExceeded } from '../orchestrator/guards.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 import {
   FACE_SAMPLE_RATE,
@@ -249,7 +249,54 @@ export interface SpeechService {
     ctx: RequestContext,
     args: { readonly callId: string; readonly sessionId: string },
   ): Promise<FaceApproval | null>;
+  /**
+   * Speech inside a spoken turn's own stream (docs/runbooks/latency.md): the checks `POST /speech` makes that hold for
+   * the whole turn are made once, here, as the turn starts, in the order `synthesize` makes them: the conversation, write
+   * access and an active assignment, the kill switches, the caller's live call in this conversation (`callId`, not
+   * stale), its vEIR able to speak (status, voice consent), the call's time limits, the platform's daily spend cap, and
+   * the voice (the clone, the stock vendor voice or Amazon Polly). Null when any of them refuses, when no voice can speak
+   * here, or when the call's face takes its units another way (a FULL face voices text; a LITE face the server relays
+   * needs each unit's WAV and manifest): every unit then goes through `POST /speech` (and `face/say`) as before, which
+   * answers the refusal. Never throws.
+   */
+  prepareTurnVoice(
+    ctx: RequestContext,
+    args: { readonly sessionId: string; readonly callId: string },
+  ): Promise<TurnVoice | null>;
 }
+
+/**
+ * The voice of one spoken turn (`SpeechService.prepareTurnVoice`). Each signed unit is checked and reserved as
+ * `POST /speech` would (its signature, the call's speech budget and its plays: `reserveCallSpeech`, one statement), then
+ * synthesized as raw PCM with the same fallback (a vendor voice that fails before its first audio: Amazon Polly in its
+ * place, in the same stream) and the same metering, settlement and audit. A unit voiced here counts as played: asked for
+ * again at `POST /speech` it is refused as already spoken, unless its synthesis failed (its play is given back).
+ */
+export interface TurnVoice {
+  /**
+   * Whether this unit is voiced here (pure): never the crisis support line (`POST /speech` says it in a stock voice, a few
+   * times, whatever the caps).
+   */
+  voices(text: string): boolean;
+  /**
+   * Voices one signed unit of the turn: `previousText` is the validated words of the unit before it in the same reply
+   * (prosody context for a vendor voice, never spoken). Never throws.
+   */
+  speak(
+    unit: { readonly turnId: string; readonly seq: number; readonly text: string; readonly sig: string },
+    options: { readonly previousText?: string; readonly signal?: AbortSignal },
+  ): Promise<TurnVoiceAudio>;
+}
+
+/**
+ * A unit voiced in its turn's stream: raw 16-bit mono little-endian PCM at `sampleRateHertz` as it is synthesized (it
+ * ends once its bookkeeping is done; reading it to its end or cancelling it both finish that), or why there is none:
+ * `paused` (the call's or the day's speech budget is used up), `refused` (the call's speech was refused, e.g. the call
+ * ended), `failed` (no voice could say it now: the page may ask `POST /speech`, whose reservation was given back).
+ */
+export type TurnVoiceAudio =
+  | { readonly kind: 'audio'; readonly audio: ReadableStream<Uint8Array>; readonly sampleRateHertz: number }
+  | { readonly kind: 'paused' | 'refused' | 'failed' };
 
 interface SpeechPlan {
   readonly ventureId: string;
@@ -325,6 +372,10 @@ export function speechRefusal(reason: SpeechRefusal, crisis: boolean, now: Date)
         'Spoken replies reached today’s limit. Replies stay on screen; speech resets at midnight UTC.',
         { reason: 'daily_speech_limit', retryAfterSeconds: secondsUntilUtcMidnight(now) },
       );
+    case 'settings_changed':
+      // Only a turn's voice gates its reservations this way (`prepareTurnVoice`); never audited as a refusal: the
+      // unit is left to `POST /speech`, which decides on the settings of the moment.
+      return fail.conflict('Speech settings changed. Ask again.', 'speech_settings_changed');
   }
 }
 
@@ -510,6 +561,135 @@ export function createSpeechService(
     };
   }
 
+  /**
+   * Synthesizes a planned unit whose play and characters are reserved (`reserve`), and starts its bookkeeping beside
+   * the audio: metered like every model call (one usage-ledger row, purpose `speech`, priced per character, billed
+   * whether or not playback finishes), the call's speech counter as billed, and the audit (ids and counts only). None of
+   * it can change what is spoken, so the first audio bytes never wait for those writes; the returned audio ends only
+   * once they are done (a Lambda invocation is not frozen while its response is open). A synthesis that fails gives its
+   * reservation back (nothing was billed) and throws. `route`: the unit was asked for (`POST /speech`) or voiced inside
+   * its turn's stream (`turn`), for the `speech.timing` line.
+   */
+  async function speakReserved(
+    ctx: RequestContext,
+    plan: SpeechPlan,
+    reserved: number,
+    how: {
+      readonly signal: AbortSignal | undefined;
+      readonly pcm: boolean;
+      readonly signed: boolean;
+      readonly route: 'request' | 'turn';
+      readonly stages: Record<string, number>;
+      readonly stage: (name: string) => void;
+    },
+  ): Promise<SynthesizedSpeech> {
+    const { stage, stages, signed } = how;
+    let speech: SynthesizedSpeech;
+    let spokeWith: SpokenVoice;
+    try {
+      ({ speech, voice: spokeWith } = await synthesizePlan(ctx, plan, how.signal, how.pcm));
+      stage('synthesizedMs');
+    } catch (err) {
+      logger.warn('speech.synthesis_failed', {
+        requestId: ctx.requestId,
+        callId: plan.callId,
+        voice: plan.voice.kind,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+      // Nothing was billed (the service bills nothing for a request it refused): the play and the characters
+      // go back, so the client may ask again.
+      await settle(ctx, plan, reserved, null);
+      throw err;
+    }
+    const billed = speech;
+    const bookkeeping = Promise.all([
+      kit.recordUsage({
+        ctx,
+        ventureId: plan.ventureId,
+        purpose: 'speech',
+        attempts: [
+          spokeWith.kind !== 'polly'
+            ? {
+                modelId: `${spokeWith.provider.id}:${spokeWith.provider.model}`,
+                usage: { inputTokens: billed.characters, outputTokens: 0 },
+                costUsd: voiceCostUsd(billed.characters, spokeWith.provider.usdPer1kCharacters),
+              }
+            : {
+                modelId: `polly:${billed.engine}:${billed.voiceId}`,
+                usage: { inputTokens: billed.characters, outputTokens: 0 },
+                costUsd: speechCostUsd(
+                  billed.characters,
+                  billed.engine === 'clone' || billed.engine === 'vendor' ? 'neural' : billed.engine,
+                ),
+              },
+        ],
+      }),
+      settle(ctx, plan, reserved, billed.characters),
+      kit
+        .system(
+          (sx) =>
+            auditRepo.appendAudit(sx, {
+              action: 'speech.synthesized',
+              outcome: 'succeeded',
+              tenantId: ctx.tenantId,
+              ventureId: plan.ventureId,
+              actorId: ctx.principalId,
+              requestId: ctx.requestId,
+              objectType: plan.objectType,
+              objectId: plan.objectId,
+              ...(plan.crisis ? { policyReason: 'crisis_support' } : {}),
+              metadata: {
+                callId: plan.callId,
+                characters: billed.characters,
+                engine: billed.engine,
+                // A cloned voice is named by its vendor (its id at the vendor is the EIR's, not needed here); the
+                // stock vendor voice by its vendor's stock id (no one's).
+                voiceId:
+                  spokeWith.kind === 'clone'
+                    ? `${spokeWith.provider.id}:clone`
+                    : spokeWith.kind === 'vendor'
+                      ? `${spokeWith.provider.id}:stock:${spokeWith.ref}`
+                      : billed.voiceId,
+                signed,
+                face: billed.faceManifest !== undefined,
+                // Amazon Polly said a unit planned for a vendor voice (it failed, or is resting).
+                ...(plan.voice.kind !== spokeWith.kind ? { fallback: true } : {}),
+                // Voiced inside its turn's stream (no `POST /speech`).
+                ...(how.route === 'turn' ? { inTurn: true } : {}),
+              },
+            }),
+          { transaction: false },
+        )
+        .catch((err: unknown) => {
+          logger.error('speech.record_failed', {
+            requestId: ctx.requestId,
+            callId: plan.callId,
+            error: err instanceof Error ? err.name : 'unknown',
+          });
+        }),
+    ]).then(() => undefined);
+    return {
+      ...billed,
+      audio: observedAudio(billed.audio, {
+        onFirstChunk: () => {
+          stage('firstAudioMs');
+          logger.info('speech.timing', {
+            requestId: ctx.requestId,
+            callId: plan.callId,
+            signed,
+            route: how.route,
+            characters: billed.characters,
+            voice: spokeWith.kind,
+            fallback: plan.voice.kind !== spokeWith.kind,
+            pcm: billed.contentType === 'audio/pcm',
+            ...stages,
+          });
+        },
+        beforeClose: () => bookkeeping,
+      }),
+    };
+  }
+
   /** The validation error for text that is not this call's validated words. */
   function notValidatedText(reason: string): DomainError {
     return fail.validation('Only the vEIR’s validated words can be spoken', [
@@ -555,7 +735,13 @@ export function createSpeechService(
    * characters within the call's and the person's speech budget. A refusal is audited and thrown. Where no
    * speech service runs, a reservation that succeeded is rolled back with the 501 (the last check).
    */
-  async function reserve(ctx: RequestContext, plan: SpeechPlan, characters: number): Promise<void> {
+  async function reserve(
+    ctx: RequestContext,
+    plan: SpeechPlan,
+    characters: number,
+    /** What a turn's voice decided once and each of its units still requires (`callsRepo.SpeechGate`). */
+    gate?: callsRepo.SpeechGate,
+  ): Promise<void> {
     // Each reservation is one statement, atomic on its own (the call row is locked inside it), so where a
     // speech service runs it autocommits: a transaction around it would only add two Data API round trips
     // before the first audio. Without one, the transaction carries the 501 that rolls the reservation back.
@@ -579,6 +765,7 @@ export function createSpeechService(
             characters,
             maxPlays: plan.unit.kind === 'run' ? CALL_LIMITS.speechRunPlays : CALL_LIMITS.speechUnitPlays,
             budget: speechBudget(plan.settings),
+            gate,
           });
           if (!reservation.ok) refused = reservation.reason;
         }
@@ -590,6 +777,7 @@ export function createSpeechService(
     );
     if (refusal === null) return;
     const error = speechRefusal(refusal, plan.crisis, kit.now());
+    if (refusal === 'settings_changed') throw error;
     await kit.flushDeferred(ctx, [
       {
         action: 'speech.refused',
@@ -875,26 +1063,16 @@ export function createSpeechService(
       const reserved = plan.text.length;
       await reserve(ctx, plan, reserved);
       stage('reservedMs');
-      let speech: SynthesizedSpeech;
-      let spokeWith: SpokenVoice;
       try {
-        ({ speech, voice: spokeWith } = await synthesizePlan(
-          ctx,
-          plan,
-          options.signal,
-          options.pcm === true,
-        ));
-        stage('synthesizedMs');
-      } catch (err) {
-        logger.warn('speech.synthesis_failed', {
-          requestId: ctx.requestId,
-          callId: plan.callId,
-          voice: plan.voice.kind,
-          error: err instanceof Error ? err.name : 'unknown',
+        return await speakReserved(ctx, plan, reserved, {
+          signal: options.signal,
+          pcm: options.pcm === true,
+          signed,
+          route: 'request',
+          stages,
+          stage,
         });
-        // Nothing was billed (the service bills nothing for a request it refused): the play and the characters
-        // go back, so the client may ask again.
-        await settle(ctx, plan, reserved, null);
+      } catch (err) {
         if (err instanceof DomainError) throw err;
         if (err instanceof SpeechSynthesisError || (err instanceof Error && err.name === 'AbortError')) {
           throw new DomainError(
@@ -909,97 +1087,9 @@ export function createSpeechService(
         }
         throw err;
       }
-
-      // The bookkeeping of a synthesis that succeeded runs while its audio streams, and the response ends
-      // only once it is done (a Lambda invocation is not frozen while its response is open): metered like
-      // every model call (one usage-ledger row, purpose `speech`, priced per character, billed whether or
-      // not playback finishes), the call's speech counter as billed, and the audit (ids and counts only).
-      // None of it can change what is spoken, so the first audio bytes no longer wait for three writes.
-      const billed = speech;
-      const bookkeeping = Promise.all([
-        kit.recordUsage({
-          ctx,
-          ventureId: plan.ventureId,
-          purpose: 'speech',
-          attempts: [
-            spokeWith.kind !== 'polly'
-              ? {
-                  modelId: `${spokeWith.provider.id}:${spokeWith.provider.model}`,
-                  usage: { inputTokens: billed.characters, outputTokens: 0 },
-                  costUsd: voiceCostUsd(billed.characters, spokeWith.provider.usdPer1kCharacters),
-                }
-              : {
-                  modelId: `polly:${billed.engine}:${billed.voiceId}`,
-                  usage: { inputTokens: billed.characters, outputTokens: 0 },
-                  costUsd: speechCostUsd(
-                    billed.characters,
-                    billed.engine === 'clone' || billed.engine === 'vendor' ? 'neural' : billed.engine,
-                  ),
-                },
-          ],
-        }),
-        settle(ctx, plan, reserved, billed.characters),
-        kit
-          .system(
-            (sx) =>
-              auditRepo.appendAudit(sx, {
-                action: 'speech.synthesized',
-                outcome: 'succeeded',
-                tenantId: ctx.tenantId,
-                ventureId: plan.ventureId,
-                actorId: ctx.principalId,
-                requestId: ctx.requestId,
-                objectType: plan.objectType,
-                objectId: plan.objectId,
-                ...(plan.crisis ? { policyReason: 'crisis_support' } : {}),
-                metadata: {
-                  callId: plan.callId,
-                  characters: billed.characters,
-                  engine: billed.engine,
-                  // A cloned voice is named by its vendor (its id at the vendor is the EIR's, not needed here); the
-                  // stock vendor voice by its vendor's stock id (no one's).
-                  voiceId:
-                    spokeWith.kind === 'clone'
-                      ? `${spokeWith.provider.id}:clone`
-                      : spokeWith.kind === 'vendor'
-                        ? `${spokeWith.provider.id}:stock:${spokeWith.ref}`
-                        : billed.voiceId,
-                  signed,
-                  face: billed.faceManifest !== undefined,
-                  // Amazon Polly said a unit planned for a vendor voice (it failed, or is resting).
-                  ...(plan.voice.kind !== spokeWith.kind ? { fallback: true } : {}),
-                },
-              }),
-            { transaction: false },
-          )
-          .catch((err: unknown) => {
-            logger.error('speech.record_failed', {
-              requestId: ctx.requestId,
-              callId: plan.callId,
-              error: err instanceof Error ? err.name : 'unknown',
-            });
-          }),
-      ]).then(() => undefined);
-      return {
-        ...billed,
-        audio: observedAudio(billed.audio, {
-          onFirstChunk: () => {
-            stage('firstAudioMs');
-            logger.info('speech.timing', {
-              requestId: ctx.requestId,
-              callId: plan.callId,
-              signed,
-              characters: billed.characters,
-              voice: spokeWith.kind,
-              fallback: plan.voice.kind !== spokeWith.kind,
-              pcm: billed.contentType === 'audio/pcm',
-              ...stages,
-            });
-          },
-          beforeClose: () => bookkeeping,
-        }),
-      };
     },
+
+    prepareTurnVoice: (ctx, args) => prepareTurnVoice(ctx, args),
 
     authorizeFaceText: async (ctx, rawCallId, rawInput) => {
       const input = parseInput(FaceSayRequest, rawInput);
@@ -1210,6 +1300,233 @@ export function createSpeechService(
       }
     },
   };
+
+  /** `SpeechService.prepareTurnVoice`. */
+  async function prepareTurnVoice(
+    ctx: RequestContext,
+    args: { readonly sessionId: string; readonly callId: string },
+  ): Promise<TurnVoice | null> {
+    try {
+      const sessionId = requireId(args.sessionId, 'Session');
+      const callId = requireId(args.callId, 'Call');
+      // The vendor's connection is opened (or kept open) while the turn's model starts, so the first unit pays no new
+      // connection (a free request; never rejects).
+      void kit.deps.stockVoice?.provider.prewarm?.();
+      const verificationKeys = keys.verificationKeys();
+      verificationKeys.catch(() => undefined); // awaited by the first unit
+      // As `synthesize` reads them: the day's spend, and the caller's live call with its vEIR in a transaction of their
+      // own beside the conversation's checks; the call's face beside both.
+      const spend = readSpendState(kit, ctx, true);
+      spend.catch(() => undefined);
+      const twinWired = kit.deps.clonedVoice !== undefined || kit.deps.embodiment !== undefined;
+      const callSide = kit.inRequest(ctx, async ({ tx }) => {
+        const call = await callsRepo.getLiveCallOf(tx, ctx.principalId);
+        if (call === null) return null;
+        const persona = await personasRepo.getPersona(tx, call.personaId);
+        const assets = persona === null ? [] : await personasRepo.personaConsentAssets(tx, persona.id);
+        const twin = twinWired && persona !== null ? await twinRepo.personaTwin(tx, persona.id) : NO_TWIN;
+        return { call, persona, assets, twin, usedSecondsToday: await callSecondsToday(tx, ctx.principalId) };
+      });
+      callSide.catch(() => undefined);
+      const faceRead =
+        kit.deps.embodiment === undefined
+          ? Promise.resolve(null)
+          : kit.system((sx) => twinRepo.getCallFace(sx, callId), { transaction: false });
+      faceRead.catch(() => undefined);
+
+      const checked = await kit.inRequest(ctx, async (scope) => {
+        const found = await sessionsRepo.getSession(scope.tx, sessionId);
+        if (found === null) throw fail.notFound('Session');
+        await requireVentureAccess(scope, found.ventureId, 'write', {
+          objectType: 'session',
+          objectId: sessionId,
+        });
+        // The settings with their digest (one statement): each unit is reserved only while they are still these.
+        const { settings: current, fingerprint } = await readTogether(scope.tx, {
+          settings: settingsRepo.platformSettingsPart(),
+          fingerprint: settingsRepo.settingsFingerprintPart(),
+        });
+        if (!current.aiEnabled || !current.callsEnabled) return null;
+        return {
+          session: found,
+          settings: current,
+          fingerprint,
+          active: await requireAssignmentActive(scope, found.ventureId),
+        };
+      });
+      if (checked === null) return null;
+      const { session, settings, fingerprint, active } = checked;
+      const side = await callSide;
+      if (side === null) return null;
+      const { call } = side;
+      if (
+        call.id.toLowerCase() !== callId.toLowerCase() ||
+        call.sessionId !== sessionId ||
+        call.idleSeconds > CALL_LIMITS.staleSeconds
+      ) {
+        return null;
+      }
+      const { persona, assets } = side;
+      if (persona === null || active.persona.id !== call.personaId || !callCanSpeak(call, persona, assets))
+        return null;
+      const timeUp = timeLimitRefusal(
+        callTimeLeft({
+          elapsedSeconds: call.elapsedSeconds,
+          maxSeconds: call.maxSeconds,
+          usedSecondsToday: side.usedSecondsToday,
+          caps: settings,
+        }),
+      );
+      if (timeUp !== null) return null;
+      // A live face that takes its units another way: a FULL face voices their text (face/say, pre-approval), a LITE
+      // face the server relays renders each unit's WAV with its manifest (`POST /speech`). A LITE face the page feeds
+      // takes the same PCM as the speakers, so its units are voiced here.
+      const face = await faceRead;
+      if (face?.endedAt === null && !(face.mode === 'lite' && face.route === 'browser')) {
+        return null;
+      }
+      if (spendCapExceeded(await spend, settings) !== null) return null;
+      const voice = chooseVoice({
+        call,
+        persona,
+        assets,
+        clonedVoiceEnabled: settings.clonedVoiceEnabled,
+        provider: kit.deps.clonedVoice,
+        twinVoice: side.twin.voice,
+        verified: true,
+        crisis: false,
+        stockVoice: settings.vendorVoiceEnabled ? kit.deps.stockVoice : undefined,
+      });
+      if (voice.kind === 'polly' && kit.deps.speech === undefined) return null;
+      const vendor = voice.kind !== 'polly';
+      // What every unit still requires as it is reserved (`POST /speech` reads all of it again per unit): the settings
+      // unchanged (the kill switches, the voice switches, the caps), the platform's daily spend under its cap, and for
+      // a voice that is the EIR's own (the clone, or their Polly voice) the voice consent in force and the clone ready
+      // under it. One that no longer holds leaves the unit to `POST /speech`, which decides it on the state of the moment.
+      const ownVoice =
+        voice.kind === 'clone' ||
+        (voice.kind === 'polly' &&
+          voice.voiceId === call.voiceId &&
+          call.voiceId !== DEFAULT_SPEECH_VOICE &&
+          persona.kind !== 'neutral_guide');
+      const gate: callsRepo.SpeechGate = {
+        settingsFingerprint: fingerprint,
+        globalUsdCap: settings.dailyUsdCapGlobal,
+        principalUsdCap: settings.dailyUsdCapPerPrincipal,
+        personaId: persona.id,
+        voiceConsent: ownVoice,
+        cloneRef: voice.kind === 'clone' ? voice.ref : null,
+      };
+      const base = {
+        ventureId: session.ventureId,
+        callId: call.id,
+        voiceId: voice.kind === 'polly' ? voice.voiceId : call.voiceId,
+        settings,
+        objectType: 'turn' as const,
+        crisis: false,
+        voice,
+        stockVoiceId:
+          voice.kind === 'vendor' && kit.deps.stockVoice !== undefined
+            ? kit.deps.stockVoice.fallbackVoiceId
+            : voiceApproved(call.voiceId, persona, assets)
+              ? call.voiceId
+              : DEFAULT_SPEECH_VOICE,
+        face: null,
+      };
+      return {
+        voices: (text) => !isCrisisMessage(text),
+        speak: async (unit, options) => {
+          const started = performance.now();
+          const stages: Record<string, number> = {};
+          const stage = (name: string): void => {
+            stages[name] = Math.round(performance.now() - started);
+          };
+          try {
+            if (isCrisisMessage(unit.text)) return { kind: 'failed' };
+            const verified = verifiedSpeechUnit(
+              await verificationKeys,
+              { sessionId, turnId: unit.turnId, seq: unit.seq, text: unit.text },
+              unit.sig,
+            );
+            if (verified === null) {
+              logger.warn('speech.turn_unit_unverified', { requestId: ctx.requestId, callId: call.id });
+              return { kind: 'failed' };
+            }
+            stage('verifiedMs');
+            const text = speakableText(unit.text);
+            const previous =
+              vendor && options.previousText !== undefined
+                ? speechText(speakableText(options.previousText)).slice(-NEIGHBOUR_CHARS).trimStart()
+                : '';
+            const plan: SpeechPlan = {
+              ...base,
+              text: vendor ? speechText(text) : text,
+              neighbours: previous === '' ? {} : { previousText: previous },
+              unit: { kind: 'unit', turnId: unit.turnId, seq: unit.seq },
+              objectId: unit.turnId,
+              verified,
+            };
+            const reserved = plan.text.length;
+            try {
+              await reserve(ctx, plan, reserved, gate);
+            } catch (err) {
+              const reason = err instanceof DomainError ? err.reason : undefined;
+              return {
+                kind:
+                  reason === 'call_speech_limit' || reason === 'daily_speech_limit'
+                    ? 'paused'
+                    : reason === 'call_not_active'
+                      ? 'refused'
+                      : 'failed',
+              };
+            }
+            stage('reservedMs');
+            if (options.signal?.aborted === true) {
+              // Withdrawn (the turn was blocked or failed) or barged in while it was reserved: nothing is synthesized
+              // or billed, and its play and characters go back.
+              await settle(ctx, plan, reserved, null);
+              return { kind: 'failed' };
+            }
+            const speech = await speakReserved(ctx, plan, reserved, {
+              signal: options.signal,
+              pcm: true,
+              signed: true,
+              route: 'turn',
+              stages,
+              stage,
+            });
+            if (speech.contentType !== 'audio/pcm') {
+              await speech.audio.cancel().catch(() => undefined);
+              return { kind: 'failed' };
+            }
+            return {
+              kind: 'audio',
+              audio: speech.audio,
+              sampleRateHertz: speech.sampleRateHertz ?? (speech.engine === 'vendor' ? 24_000 : 16_000),
+            };
+          } catch (err) {
+            if (!(err instanceof Error && err.name === 'AbortError')) {
+              logger.warn('speech.turn_unit_failed', {
+                requestId: ctx.requestId,
+                callId: call.id,
+                error: err instanceof Error ? err.name : 'unknown',
+              });
+            }
+            return { kind: 'failed' };
+          }
+        },
+      };
+    } catch (err) {
+      // A refusal is answered by `POST /speech`, unit by unit, as before.
+      if (!(err instanceof DomainError)) {
+        logger.warn('speech.turn_voice_unavailable', {
+          requestId: ctx.requestId,
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+      }
+      return null;
+    }
+  }
 
   /** The pre-approval of one turn's units for the live FULL face `sessionRef` of `call` (`prepareFaceApproval`). */
   function faceApproval(

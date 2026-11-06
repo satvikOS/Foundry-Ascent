@@ -6,6 +6,8 @@ import {
   type RunTurnOutcome,
   RunTurnInput,
   type SessionContext,
+  type SpeechService,
+  type TurnVoice,
 } from '@foundry/core';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
@@ -27,10 +29,17 @@ import {
 } from './idempotency.js';
 import { jsonBody, pathParam } from './input.js';
 import { TurnTimeline } from './turn-timing.js';
+import { TurnAudio } from './turn-voice.js';
 import { type AppContext } from './types.js';
 
 export interface TurnStreamOptions {
   readonly orchestrator: Pick<Orchestrator, 'runTurn'>;
+  /**
+   * Speech inside the turn's stream (`speechAudio: 'pcm'` on a spoken turn): the turn's voice is prepared once the turn
+   * is accepted, and each unit it takes is voiced here and sent as `turn.audio` frames (`turn-voice.ts`). Absent: every
+   * unit goes through `POST /speech`.
+   */
+  readonly speech?: Pick<SpeechService, 'prepareTurnVoice'> | undefined;
   readonly idempotency: IdempotencyStore;
   readonly logger: Logger;
   readonly inflight?: InflightTracker | undefined;
@@ -104,6 +113,9 @@ const NOT_RESERVED = (): DomainError =>
  * response as they did when the reservation came first (the last replays the stored turn). The accepted turn is
  * stored against the key once the stream is open, and the stream ends only after it is: a retry meanwhile finds the
  * key still reserved (`IN_FLIGHT`), as it does while the turn is answered.
+ *
+ * A spoken turn that asks for it (`speechAudio: 'pcm'`) also carries its units' audio (`TurnAudio`): the stream then
+ * ends after the last unit's audio, which may come after the terminal event.
  */
 export async function handleTurnRequest(
   c: AppContext,
@@ -193,6 +205,12 @@ export async function handleTurnRequest(
   const started = performance.now();
   const counts = { deltas: 0, speech: 0, firstDeltaMs: null as number | null };
   const timeline = new TurnTimeline(currentRequestMetrics() ?? new RequestMetrics(started));
+  // The turn's voice, prepared once when the turn is accepted (its checks run while the model starts).
+  const voiceCallId =
+    options.speech !== undefined && input.channel === 'voice' && input.speechAudio === 'pcm'
+      ? (input.callId ?? null)
+      : null;
+  let voice: Promise<TurnVoice | null> | null = null;
   const start = (
     gate: Promise<unknown> | undefined,
   ): { run: Promise<RunTurnOutcome>; channel: EventChannel<TurnStreamEvent> } => {
@@ -205,7 +223,12 @@ export async function handleTurnRequest(
         input,
         (event) => {
           timeline.observe(event);
-          if (event.event === 'turn.accepted') acceptedTurnId = event.turnId;
+          if (event.event === 'turn.accepted') {
+            acceptedTurnId = event.turnId;
+            if (voiceCallId !== null && voice === null && options.speech !== undefined) {
+              voice = options.speech.prepareTurnVoice(ctx, { sessionId, callId: voiceCallId });
+            }
+          }
           if (event.event === 'turn.delta') {
             counts.deltas += 1;
             counts.firstDeltaMs ??= Math.round(performance.now() - started);
@@ -269,7 +292,48 @@ export async function handleTurnRequest(
       );
     }
   }
-  void run.finally(settle);
+  // The stream as written: the turn's events in order, each unit the turn voices followed by its audio
+  // (`turn.audio`), until the turn settled and the last unit's audio was sent.
+  const outbox = new EventChannel<TurnStreamEvent>();
+  const audio =
+    voiceCallId === null
+      ? null
+      : new TurnAudio({
+          voice: () => voice,
+          signal: controller.signal,
+          push: (event) => {
+            timeline.observe(event);
+            outbox.push(event);
+          },
+          logger,
+          requestId,
+        });
+  const sequenced = (async () => {
+    try {
+      for await (const event of channel) {
+        if (audio === null) {
+          outbox.push(event);
+          continue;
+        }
+        // A reply the whole-reply gate held back (not crisis support) or that failed is never voiced further, as
+        // `POST /speech` refuses its units (`turn_not_speakable`): withdrawn before its terminal event is written.
+        if (
+          (event.event === 'turn.blocked' && event.reason !== 'crisis_support') ||
+          event.event === 'turn.error'
+        ) {
+          audio.withdraw(event.turnId);
+        }
+        const { event: written, start } = await audio.announce(event);
+        outbox.push(written);
+        start?.();
+      }
+      await audio?.drained();
+    } finally {
+      outbox.close();
+    }
+  })();
+  void options.inflight?.track(sequenced);
+  void Promise.all([run, sequenced]).finally(settle);
   // Stored against the key once the stream is open; the stream ends after it (a retry meanwhile: IN_FLIGHT).
   let storing: Promise<void> = Promise.resolve();
   if (first.event === 'turn.accepted' && (await reservationOutcome()) === null && reserved.held !== null) {
@@ -299,7 +363,7 @@ export async function handleTurnRequest(
       });
     }, options.keepAliveMs);
     try {
-      for await (const event of channel) {
+      for await (const event of outbox) {
         if (clientGone) continue; // keep draining until the turn settles
         const ok = await within(
           stream.writeSSE({ event: event.event, data: JSON.stringify(event) }),
@@ -312,6 +376,7 @@ export async function handleTurnRequest(
       clearInterval(keepAlive);
     }
     const outcome = await run;
+    await sequenced;
     await storing;
     logger.info('turn.stream_finished', {
       requestId,
@@ -322,6 +387,15 @@ export async function handleTurnRequest(
       frames,
       deltas: counts.deltas,
       speechUnits: counts.speech,
+      ...(audio === null
+        ? {}
+        : {
+            audioUnits: audio.stats.units,
+            audioFrames: audio.stats.frames,
+            audioBytes: audio.stats.bytes,
+            audioFailed: audio.stats.failed,
+            audioWithdrawn: audio.stats.withdrawn,
+          }),
       firstDeltaMs: counts.firstDeltaMs,
       clientGone,
       durationMs: Math.round(performance.now() - started),
