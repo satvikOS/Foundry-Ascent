@@ -193,11 +193,15 @@ founder's personal cap.
 | **One EIR, face and voice**                   | **≈ $340** |
 | Two EIRs, face and voice (Scale)              | ≈ $640     |
 
-The app's own caps keep this bounded: 60 video minutes per founder per month and 20 per call, the daily platform cap,
-and one face per call. The per-call limit is enforced twice: the vendor session is opened with it
+The app's own caps keep this bounded: 60 video minutes per founder per month and 20 per call (every session of the
+call counted), the daily platform cap, and at most 12 vendor sessions per call (a session the vendor ends, the free
+plan's ~2 minute limit, is replaced by the next one; migration 0030). The per-call limit is enforced twice: the vendor
+session is opened with it
 (`max_session_duration`; if the vendor refuses the value, no session opens and calls keep the presence, so keep
 **per call** at or below the plan's session length: 20 on Essential), and the heartbeat ends the face there itself.
-A call left on hold (page hidden) for a minute gives its face up, since LITE bills idle minutes.
+A call left on hold (page hidden) for a minute gives its face up, since LITE bills idle minutes; it opens a new session
+when the call resumes. Each session is metered on its own (`call.avatar_session` audits `metadata.session` for a
+replacement).
 
 FULL mode (§9) costs twice as much per minute: **$0.19 a minute** of face (two credits a minute, metered as
 `heygen:liveavatar-full`). At presentation volume that still fits the Essential plan: §9.6.

@@ -670,6 +670,7 @@ def public_call(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
         },
         "label_visible": _bool(raw.get("label_visible")),
         "label_text_ok": _bool(raw.get("label_text_ok")),
+        "startup": _startup(raw.get("startup")),
         "turns": turns,
         # Two distributions, never mixed: the vendor's speak_started event, and the first sound the page's level
         # meter heard on the avatar's track (the one E5 compares, with Polly measured by the same meter).
@@ -694,14 +695,27 @@ def public_call(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
         "user_transcriptions": _int(raw.get("user_transcriptions")),
         # Whether the avatar's audio and video came in one remote stream (WebRTC keeps them in step only then).
         "av_same_stream": _bool(raw.get("av_same_stream")),
+        # The vendor ended the session (the sandbox's minute): a new session of the same call replaces the face.
         "fallback": {
-            "presence_back": _bool(fallback.get("presence_back")),
+            "reconnected": _bool(fallback.get("reconnected")),
+            "seconds_to_reconnect": _num(fallback.get("seconds_to_reconnect")),
             "seconds_live": _num(fallback.get("seconds_live")),
             "session_stopped_event": _bool(fallback.get("session_stopped_event")),
             "end_reason": _reason(fallback.get("end_reason")),
             "typed_line_editable": _bool(fallback.get("typed_line_editable")),
         },
         "error": _error(raw.get("error")),
+    }
+
+
+def _startup(raw: Any) -> dict[str, int | None]:
+    """A video call's start (owner round 3: the face first, then the conversation): from the press of Start call to the
+    face's first frame (its speak channel open) and to the vEIR's first word heard (the intro, said by the face), in ms
+    from the page's own performance marks."""
+    startup = raw if isinstance(raw, dict) else {}
+    return {
+        "press_to_first_frame_ms": _int(startup.get("press_to_first_frame_ms")),
+        "press_to_first_word_ms": _int(startup.get("press_to_first_word_ms")),
     }
 
 
@@ -813,6 +827,7 @@ def public_call_lite(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
             "control_url": _bool(session.get("controlUrl")),
         },
         "face_shown": _bool(raw.get("face_shown")),
+        "startup": _startup(raw.get("startup")),
         "turns": turns,
         "first_face_audio_ms": _turn_percentile(turns, "first_face_audio_ms"),
         "first_speak_started_ms": _turn_percentile(turns, "first_speak_started_ms"),
@@ -1073,7 +1088,7 @@ def checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
             else (False if max_duration else None)
         ),
         "label_ai_avatar_visible": call.get("label_visible"),
-        "falls_back_to_presence": fallback.get("presence_back"),
+        "reconnects_after_session_end": fallback.get("reconnected"),
         **lite_checks(result),
     }
 

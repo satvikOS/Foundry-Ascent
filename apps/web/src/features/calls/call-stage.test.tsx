@@ -157,7 +157,10 @@ async function presenceShown(): Promise<void> {
  * A video call's tile while its face is not shown: it says so in words, and never falls back to the sphere (owner,
  * round 3).
  */
-async function videoTileSays(text: string, face: 'starting' | 'stopped' | 'unavailable'): Promise<void> {
+async function videoTileSays(
+  text: string,
+  face: 'connecting' | 'reconnecting' | 'paused' | 'unavailable',
+): Promise<void> {
   await waitFor(() => {
     expect(document.querySelector('[data-slot="call-video-pending"]')).toHaveTextContent(text);
   });
@@ -206,12 +209,12 @@ describe('CallStage: the face of a call', () => {
     renderWithRouter(<Switchable />);
     await presenceShown();
     expect(faceDeps.startSession).not.toHaveBeenCalled();
-    expect(controller.hasAsked(CALL)).toBe(false);
+    expect(controller.getSnapshot().status).toBe('presence');
     await userEvent.click(screen.getByRole('button', { name: 'Video' }));
     await waitFor(() => {
       expect(faceDeps.startSession).toHaveBeenCalledTimes(1);
     });
-    expect(controller.hasAsked(CALL)).toBe(true);
+    expect(controller.getSnapshot().status).toBe('connecting');
   });
 
   it('becomes a video in the same tile once the vendor face shows its first frame, and hands it the call’s audio', async () => {
@@ -225,9 +228,11 @@ describe('CallStage: the face of a call', () => {
     expect(face.provider.connect.mock.calls[0]?.[0]).toEqual(SESSION);
     // The face's audio goes through the server for this call.
     expect(faceDeps.relayFor).toHaveBeenCalledWith(CALL);
-    // Until the first frame, the tile says the video is starting (no stand-in face).
-    await videoTileSays('Starting video…', 'starting');
+    // Until the first frame, the tile says the call is connecting to Thomas (no stand-in face), and the conversation
+    // waits for the face.
+    await videoTileSays('Connecting to Thomas…', 'connecting');
     expect(engine.attachFace).not.toHaveBeenCalledWith(face.renderer);
+    expect(engine.startConversation).not.toHaveBeenCalled();
 
     act(() => {
       face.connect();
@@ -244,6 +249,12 @@ describe('CallStage: the face of a call', () => {
     expect(engine.attachFace).toHaveBeenLastCalledWith(face.renderer);
     expect(engine.setFaceShown).toHaveBeenLastCalledWith(true);
     expect(face.provider.setState).toHaveBeenCalledWith('speaking');
+    // The face is there: its first frame is timed, and the conversation starts (the face says the intro).
+    expect(engine.faceArrived).toHaveBeenCalledTimes(1);
+    expect(engine.startConversation).toHaveBeenCalledTimes(1);
+    expect(engine.attachFace.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      engine.startConversation.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it('shows a vendor face’s own element (video and voice together, unmuted), and keeps it playing while minimized', async () => {
@@ -280,13 +291,14 @@ describe('CallStage: the face of a call', () => {
     await screen.findByRole('figure');
     expect(second.container.querySelector('[data-slot="call-video-host"]')?.contains(media)).toBe(true);
     expect(document.querySelectorAll('video')).toHaveLength(1);
-    // The face ends: the adapter takes its element off the page, and the tile never puts it back.
+    // The face ends: the adapter takes its element off the page, and the tile never puts it back (a new session
+    // replaces it).
     act(() => {
       media.srcObject = null;
       media.remove();
       face.lose();
     });
-    await videoTileSays('Video stopped', 'stopped');
+    await videoTileSays('Reconnecting…', 'reconnecting');
     expect(media.isConnected).toBe(false);
   });
 
@@ -344,7 +356,7 @@ describe('CallStage: the face of a call', () => {
     expect(faceDeps.startSession).toHaveBeenCalledTimes(1);
   });
 
-  it('says the video stopped when the face drops mid-call, and tells the server', async () => {
+  it('replaces a face the vendor ended with a new session of the call, holding its speech meanwhile', async () => {
     const face = vendorFace();
     const { asEngine, engine, controller, faceDeps } = controllerWith(face);
     renderWithRouter(stage({ controller, engine: asEngine }));
@@ -355,21 +367,115 @@ describe('CallStage: the face of a call', () => {
       face.connect();
     });
     await screen.findByRole('figure');
+    expect(engine.setFaceReplaceable).toHaveBeenCalledWith(true);
+    engine.holdForFace.mockClear();
     act(() => {
       face.lose({ reason: 'vendor_stopped', vendorReason: 'session_timeout' });
     });
-    await videoTileSays('Video stopped', 'stopped');
+    // At once: the call's speech waits for the next face, the old one is gone, and heartbeats report neither.
+    expect(engine.holdForFace).toHaveBeenCalledWith(true);
     expect(engine.attachFace).toHaveBeenLastCalledWith(null);
-    expect(engine.setFaceShown).toHaveBeenLastCalledWith(false);
+    expect(engine.setFaceShown).toHaveBeenLastCalledWith(null);
     expect(face.provider.unmount).toHaveBeenCalled();
-    // The server is told which trigger ended the face (audited with its end).
+    await videoTileSays('Reconnecting…', 'reconnecting');
+    // The server is told which trigger ended the face (audited with its end), then the next session is asked for.
     expect(faceDeps.endFace).toHaveBeenCalledWith(CALL, {
       reason: 'vendor_stopped',
       vendorReason: 'session_timeout',
     });
-    // Never asked for again in this call.
-    renderWithRouter(stage({ controller, engine: asEngine }));
+    await waitFor(() => {
+      expect(faceDeps.startSession).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(face.provider.connect).toHaveBeenCalledTimes(2);
+    });
+    act(() => {
+      face.connect();
+    });
+    await screen.findByRole('figure');
+    // The new face takes the call's speech, which goes on (the conversation was never restarted).
+    expect(engine.attachFace).toHaveBeenLastCalledWith(face.renderer);
+    expect(engine.holdForFace).toHaveBeenLastCalledWith(false);
+    expect(engine.setFaceShown).toHaveBeenLastCalledWith(true);
+    expect(controller.getSnapshot().status).toBe('live');
+  });
+
+  it('says video is not available when the face cannot come back, and offers the voice call', async () => {
+    const face = vendorFace();
+    const fake = fakeEngine(LIVE_CALL);
+    const faceDeps = deps(face);
+    // The first session opens; the next one is refused (credits used up, a cap): no face is offered.
+    faceDeps.startSession
+      .mockResolvedValueOnce(SESSION)
+      .mockResolvedValue({ ...SESSION, provider: 'builtin', token: null, voicing: 'engine' });
+    const controller = new CallFaceController(fake.asEngine, faceDeps);
+    const voice = vi.fn();
+    renderWithRouter(
+      <CallStage
+        veir={veir('fake')}
+        engine={fake.asEngine}
+        state="listening"
+        ventureId={VENTURE}
+        callId={CALL}
+        face={controller}
+        video
+        onVoiceInstead={voice}
+      />,
+    );
+    await waitFor(() => {
+      expect(face.provider.connect).toHaveBeenCalled();
+    });
+    act(() => {
+      face.connect();
+    });
+    await screen.findByRole('figure');
+    act(() => {
+      face.lose({ reason: 'room_disconnected' });
+    });
+    await videoTileSays('Video isn’t available right now', 'unavailable');
+    expect(controller.getSnapshot()).toEqual({ status: 'unavailable', hadVideo: true });
+    // Never a silent downgrade: the speech that waited goes on, and the tile says so with the voice call one tap away.
+    expect(fake.engine.holdForFace).toHaveBeenLastCalledWith(false);
+    expect(screen.getByText(/Your conversation with Thomas is kept/)).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: /^Voice call$/ }));
+    expect(voice).toHaveBeenCalledTimes(1);
+    // Another try asks the server again.
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => {
+      expect(faceDeps.startSession).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  it('replaces a session close to its end at a quiet moment, before the vendor ends it', async () => {
+    const face = vendorFace();
+    const fake = fakeEngine(LIVE_CALL);
+    let now = Date.parse('2026-10-17T12:00:00.000Z');
+    const faceDeps = { ...deps(face), refreshLeadMs: 25_000, wallNow: () => now };
+    const controller = new CallFaceController(fake.asEngine, faceDeps);
+    // The vendor ends this session at 12:01:00 (the free plan's limit).
+    controller.request({ provider: 'fake', ventureId: VENTURE, callId: CALL, reducedMotion: false });
+    await waitFor(() => {
+      expect(face.provider.connect).toHaveBeenCalled();
+    });
+    // The face shows 20 s before its session ends, while the vEIR speaks: not now. Then the founder's turn: replaced.
+    now += 40_000;
+    fake.setSnapshot({ ...LIVE_CALL, activity: 'speaking' });
+    act(() => {
+      face.connect();
+    });
+    await waitFor(() => {
+      expect(controller.getSnapshot().status).toBe('live');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 700));
     expect(faceDeps.startSession).toHaveBeenCalledTimes(1);
+    fake.setSnapshot({ ...LIVE_CALL, activity: 'listening' });
+    await waitFor(() => {
+      expect(faceDeps.endFace).toHaveBeenCalledWith(CALL, { reason: 'time_limit' });
+    });
+    await waitFor(() => {
+      expect(faceDeps.startSession).toHaveBeenCalledTimes(2);
+    });
+    expect(controller.getSnapshot().status).toBe('reconnecting');
   });
 
   it('drops the face when the server says stop, and for a crisis turn (a face never says the crisis line)', async () => {
@@ -387,10 +493,11 @@ describe('CallStage: the face of a call', () => {
       a.stopFace();
     });
     await waitFor(() => {
-      expect(a.controller.getSnapshot().status).toBe('presence');
+      expect(a.controller.getSnapshot()).toEqual({ status: 'unavailable', hadVideo: true });
     });
-    // The server already ended it.
+    // The server already ended it, and it does not come back in this call.
     expect(a.faceDeps.endFace).not.toHaveBeenCalled();
+    expect(a.controller.canAsk(CALL)).toBe(false);
 
     const crisis = vendorFace();
     const b = controllerWith(crisis);
@@ -432,10 +539,16 @@ describe('CallStage: the face of a call', () => {
     // Left on hold: the face ends, and the server ends the vendor session.
     fake.setSnapshot({ ...LIVE_CALL, held: true });
     await waitFor(() => {
-      expect(controller.getSnapshot().status).toBe('presence');
+      expect(controller.getSnapshot().status).toBe('paused');
     });
     expect(faceDeps.endFace).toHaveBeenCalledWith(CALL, { reason: 'on_hold' });
     expect(face.provider.unmount).toHaveBeenCalled();
+    // Back from hold: a new session of the call.
+    fake.setSnapshot({ ...LIVE_CALL, held: false });
+    await waitFor(() => {
+      expect(faceDeps.startSession).toHaveBeenCalledTimes(2);
+    });
+    expect(controller.getSnapshot().status).toBe('reconnecting');
   });
 
   it('says video couldn’t start when the API offers no face or the face cannot connect', async () => {
@@ -446,7 +559,7 @@ describe('CallStage: the face of a call', () => {
       expect(a.faceDeps.startSession).toHaveBeenCalled();
     });
     expect(a.faceDeps.loadProvider).not.toHaveBeenCalled();
-    await videoTileSays('Video couldn’t start', 'unavailable');
+    await videoTileSays('Video isn’t available right now', 'unavailable');
     first.unmount();
 
     const refused = vendorFace();
@@ -462,7 +575,7 @@ describe('CallStage: the face of a call', () => {
       expect(refused.provider.unmount).toHaveBeenCalled();
     });
     expect(screen.queryByRole('figure')).not.toBeInTheDocument();
-    await videoTileSays('Video couldn’t start', 'unavailable');
+    await videoTileSays('Video isn’t available right now', 'unavailable');
     // Where the join stopped (the adapter gave no stage: the room, the controller's own) and the page's plain code.
     expect(b.faceDeps.endFace).toHaveBeenCalledWith(CALL, {
       reason: 'connect_failed',
@@ -516,7 +629,7 @@ describe('CallStage: the face of a call', () => {
     act(() => {
       slow.connect();
     });
-    await videoTileSays('Video couldn’t start', 'unavailable');
+    await videoTileSays('Video isn’t available right now', 'unavailable');
     expect(screen.queryByRole('figure')).not.toBeInTheDocument();
     expect(fake.engine.attachFace).not.toHaveBeenCalledWith(slow.renderer);
     expect(faceDeps.endFace).toHaveBeenCalledWith(CALL, {
@@ -530,7 +643,7 @@ describe('CallStage: the face of a call', () => {
     const face = vendorFace();
     const { asEngine, engine, controller, faceDeps, setSnapshot } = controllerWith(face);
     const view = renderWithRouter(stage({ controller, engine: asEngine, callId: null, state: 'connecting' }));
-    await videoTileSays('Starting video…', 'starting');
+    await videoTileSays('Connecting to Thomas…', 'connecting');
     expect(faceDeps.startSession).not.toHaveBeenCalled();
     view.unmount();
 

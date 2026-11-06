@@ -174,6 +174,10 @@ const faceShape = {
   transcript_unchecked: col.int,
   /** Barge-ins the page reported for the face (0027). */
   interrupts: col.int,
+  /** Vendor sessions the call opened, this one included (0030: a face the vendor ended is replaced). */
+  sessions: col.int,
+  /** Billed seconds of the call's earlier sessions (0030). */
+  earlier_seconds: col.int,
 };
 const faceCodec = camelRow(faceShape);
 /** A call's face; `control` is the base64 ciphertext of the control channel (null once ended). */
@@ -188,7 +192,7 @@ const transcriptColumns = (f = ''): string =>
 const FACE_COLUMNS = `call_id, tenant_id, started_by, vendor, mode, route, session_ref,
   encode(control_ciphertext, 'base64') AS control, max_seconds, metered_seconds, started_at, ended_at, end_reason,
   ceil(extract(epoch FROM coalesce(ended_at, now()) - started_at))::integer AS lasted,
-  ${transcriptColumns()}, interrupts`;
+  ${transcriptColumns()}, interrupts, sessions, earlier_seconds`;
 
 export function getCallFace(sx: SystemExecutor, callId: string): Promise<CallFaceRecord | null> {
   return readPart(sx, callFacePart(callId));
@@ -321,21 +325,78 @@ export function endCallFace(
      RETURNING f.call_id, f.tenant_id, f.started_by, f.vendor, f.mode, f.route, f.session_ref, prev.control,
                f.max_seconds, f.metered_seconds, f.started_at, f.ended_at, f.end_reason,
                ceil(extract(epoch FROM f.ended_at - f.started_at))::integer AS lasted,
-               ${transcriptColumns('f.')}, f.interrupts`,
+               ${transcriptColumns('f.')}, f.interrupts, f.sessions, f.earlier_seconds`,
     { call: p.uuid(input.callId), reason: p.text(input.reason) },
     (r) => faceCodec.decode(r),
   );
 }
 
 /**
+ * Replaces a call's ended face with its next vendor session (0030), in the same row: only for the live call of
+ * `startedBy`, whose face the page dropped (`end_reason` `face_dropped`: the vendor ended its session, a dropped room,
+ * a call on hold), whose seconds are all billed (the caller meters the face first), and that opened fewer than
+ * `maxSessions` sessions. The ended session's billed seconds move to `earlier_seconds`; everything of the session
+ * itself starts afresh (its clock, limit, admitted units and transcript state), and the units the ended session was
+ * allowed to say are forgotten (its transcript was reconciled when it ended), so the new session can say a unit the
+ * founder never heard. Null when refused.
+ */
+export function restartCallFace(
+  sx: SystemExecutor,
+  input: {
+    readonly callId: string;
+    readonly startedBy: string;
+    readonly vendor: 'heygen' | 'fake';
+    readonly mode?: FaceMode;
+    readonly route?: FaceRoute;
+    readonly sessionRef: string;
+    readonly control: string | null;
+    readonly maxSeconds: number;
+    readonly maxSessions: number;
+  },
+): Promise<CallFaceRecord | null> {
+  return queryFirst(
+    sx,
+    `WITH prev AS (
+       SELECT f.call_id AS prev_id FROM call_faces f JOIN calls c ON c.id = f.call_id
+        WHERE f.call_id = :call AND f.started_by = :by AND c.status = 'live'
+          AND f.ended_at IS NOT NULL AND f.end_reason = 'face_dropped' AND f.sessions < :maxSessions
+          AND f.metered_seconds >= least(f.max_seconds, ceil(extract(epoch FROM f.ended_at - f.started_at))::integer)
+        FOR UPDATE OF f),
+     -- Runs to completion whatever reads it (a data-modifying CTE).
+     forgot AS (DELETE FROM call_face_texts t USING prev WHERE t.call_id = prev.prev_id RETURNING t.call_id)
+     UPDATE call_faces AS f
+        SET vendor = :vendor, mode = :mode, route = :route, session_ref = :ref,
+            control_ciphertext = decode(:control, 'base64'), max_seconds = :max,
+            earlier_seconds = least(1440000, f.earlier_seconds + f.metered_seconds), metered_seconds = 0,
+            sessions = f.sessions + 1, started_at = now(), ended_at = NULL, end_reason = NULL, speaking_unit = NULL,
+            said_turn = NULL, said_seq = NULL, transcript_verified = 0, transcript_pending_since = NULL,
+            transcript_cursor = NULL, transcript_skip = 0, transcript_checked_at = NULL, interrupts = 0
+       FROM prev WHERE f.call_id = prev.prev_id
+     RETURNING ${FACE_COLUMNS}`,
+    {
+      call: p.uuid(input.callId),
+      by: p.uuid(input.startedBy),
+      vendor: p.text(input.vendor),
+      mode: p.text(input.mode ?? 'lite'),
+      route: p.text(input.route ?? 'server'),
+      ref: p.text(input.sessionRef),
+      control: p.nullable.text(input.control),
+      max: p.int(Math.max(0, Math.min(14_400, Math.floor(input.maxSeconds)))),
+      maxSessions: p.int(input.maxSessions),
+    },
+    (r) => faceCodec.decode(r),
+  );
+}
+
+/**
  * Video seconds a person used this calendar month (UTC), from the server's clock: each face from its start to its
- * end (or now, while live), within its limit. It does not wait for the metering, so a face whose billing is still
- * due counts in full.
+ * end (or now, while live), within its limit, with the billed seconds of the call's earlier sessions (0030). It does
+ * not wait for the metering, so a face whose billing is still due counts in full.
  */
 export function faceSecondsThisMonth(ex: SystemExecutor, principalId: string): Promise<number> {
   return queryNumber(
     ex,
-    `SELECT coalesce(sum(least(f.max_seconds,
+    `SELECT coalesce(sum(f.earlier_seconds + least(f.max_seconds,
                                ceil(extract(epoch FROM coalesce(f.ended_at, now()) - f.started_at))::integer)),
                      0)::integer AS n
        FROM call_faces f

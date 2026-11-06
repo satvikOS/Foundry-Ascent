@@ -30,7 +30,7 @@ import { decryptControl, encryptControl, verifyFaceAudio } from '../orchestrator
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
 import { EmbodimentSessionError, type EmbodimentProvider, type FaceSessionHandle } from '../ports.js';
 import { CALL_LIMITS, callSecondsToday, callTimeLeft, remainingDailySeconds } from './call-usage.js';
-import { callVoiceFor } from './calls.js';
+import { callsPausedFor, callVoiceFor } from './calls.js';
 import {
   cursorAfter,
   FACE_TRANSCRIPT_PENDING_SECONDS,
@@ -103,6 +103,12 @@ export interface FaceService {
 
 /** Seconds a vendor session needs at least to be worth opening (a call about to end keeps the presence). */
 export const MIN_FACE_SECONDS = 15;
+/**
+ * Vendor sessions one call may open (0030): its first face and the faces that replace one the vendor ended (the free
+ * plan ends a session after about two minutes, so a 20-minute video call needs about ten). Every one is within the
+ * same caps and metered on its own.
+ */
+export const FACE_SESSIONS_PER_CALL = 12;
 /** Hand-overs of one unit to the face (a unit is heard once). */
 export const FACE_UNIT_PLAYS = 1;
 /**
@@ -189,6 +195,8 @@ export function faceAllowance(input: {
   readonly monthSecondsUsed: number;
   readonly callSecondsLeft: number;
   readonly spendCapReached: boolean;
+  /** Video seconds this call's earlier sessions used (0030): the per-call limit counts them. */
+  readonly callFaceSecondsUsed?: number;
 }):
   { readonly ok: true; readonly maxSeconds: number } | { readonly ok: false; readonly reason: FaceRefusal } {
   if (!input.settings.facesEnabled) return { ok: false, reason: 'faces_disabled' };
@@ -200,9 +208,8 @@ export function faceAllowance(input: {
   if (input.spendCapReached) return { ok: false, reason: 'spend_cap' };
   const monthLeft = Math.max(0, input.settings.faceMinutesPerPrincipalMonth * 60 - input.monthSecondsUsed);
   if (monthLeft < MIN_FACE_SECONDS) return { ok: false, reason: 'face_minutes' };
-  const maxSeconds = Math.floor(
-    Math.min(input.callSecondsLeft, input.settings.faceMinutesPerCall * 60, monthLeft),
-  );
+  const callFaceLeft = Math.max(0, input.settings.faceMinutesPerCall * 60 - (input.callFaceSecondsUsed ?? 0));
+  const maxSeconds = Math.floor(Math.min(input.callSecondsLeft, callFaceLeft, monthLeft));
   if (maxSeconds < MIN_FACE_SECONDS) return { ok: false, reason: 'too_short' };
   return { ok: true, maxSeconds };
 }
@@ -795,6 +802,22 @@ export function createFaceHooks(kit: Kit): FaceHooks {
   };
 }
 
+/**
+ * Why a call may not open a vendor session now, given its face so far (null: it may). A call without a face may open
+ * its first. A face still live is not opened twice. A face the page dropped (`face_dropped`: the vendor ended its
+ * session, the room dropped, the call was on hold) is replaced while the call opened fewer than
+ * {@link FACE_SESSIONS_PER_CALL}; a face the server ended (a cap, the switches, a failed or injected transcript, the
+ * call's end) is never opened again in that call.
+ */
+export function reconnectRefusal(
+  face: Pick<twinRepo.CallFaceRecord, 'endedAt' | 'endReason' | 'sessions'> | null,
+): 'face_already_used' | 'face_sessions' | null {
+  if (face === null) return null;
+  if (face.endedAt === null || face.endReason !== 'face_dropped') return 'face_already_used';
+  if (face.sessions >= FACE_SESSIONS_PER_CALL) return 'face_sessions';
+  return null;
+}
+
 /** Settings a face reads, with every optional field present. */
 function faceSettings(settings: settingsRepo.ResolvedPlatformSettings): FaceSettings {
   return {
@@ -918,13 +941,9 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
             ? null
             : callVoiceFor(persona, await personasRepo.personaConsentAssets(scope.tx, persona.id));
         if (voiceId === null) {
-          throw new DomainError(
-            'persona_suspended',
-            'This vEIR’s voice consent is not in force, so calls are paused.',
-            {
-              reason: 'voice_consent',
-            },
-          );
+          throw new DomainError('persona_suspended', callsPausedFor(persona?.name ?? null), {
+            reason: 'voice_consent',
+          });
         }
         const used = await callSecondsToday(scope.tx, ctx.principalId);
         if (
@@ -998,7 +1017,11 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
       const { presence, face } = plan;
       if (face === null || provider === undefined) return presence;
 
-      const record = async (outcome: 'succeeded' | 'failed' | 'denied', reason: string | null) => {
+      const record = async (
+        outcome: 'succeeded' | 'failed' | 'denied',
+        reason: string | null,
+        extra: { readonly session?: number } = {},
+      ) => {
         await kit.flushDeferred(ctx, [
           {
             action: 'call.avatar_session',
@@ -1013,19 +1036,44 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
               mode: provider.mode,
               voicing: provider.voicing,
               ...(provider.mode === 'lite' ? { route: faceRouteOf(provider) ?? 'refused' } : {}),
+              // A reconnect (0030): which of the call's vendor sessions this is; each is metered on its own.
+              ...(extra.session === undefined ? {} : { session: extra.session }),
             },
           },
         ]);
       };
 
-      const existing = await kit.system((sx) => twinRepo.getCallFace(sx, face.callId), {
+      let existing = await kit.system((sx) => twinRepo.getCallFace(sx, face.callId), {
         transaction: false,
       });
-      if (existing !== null) {
-        // One face per call: a face that dropped is not opened again (nothing bills unseen).
-        await record('denied', 'face_already_used');
+      const refusal = reconnectRefusal(existing);
+      if (refusal !== null) {
+        await record('denied', refusal);
         return presence;
       }
+      if (existing !== null) {
+        // A face the page dropped (the vendor ended its session) is replaced: its seconds are billed to its end first,
+        // so the replacement can count them and never bills a second twice. A metering that fails opens nothing.
+        try {
+          await meterFace(kit, face.callId, ctx.requestId);
+          existing = await kit.system((sx) => twinRepo.getCallFace(sx, face.callId), { transaction: false });
+        } catch (err) {
+          logger.error('call.face_meter_failed', {
+            requestId: ctx.requestId,
+            callId: face.callId,
+            error: err instanceof Error ? err.name : 'unknown',
+          });
+          await record('failed', 'face_unbilled');
+          return presence;
+        }
+        const again = reconnectRefusal(existing);
+        if (again !== null) {
+          await record('denied', again);
+          return presence;
+        }
+      }
+      /** Which of the call's vendor sessions this is (1: its first face). */
+      const sessionNo = existing === null ? 1 : existing.sessions + 1;
       // A real person's likeness is never fed by the browser (infra and the API config refuse it too).
       const route = faceRouteOf(provider);
       if (route === null) {
@@ -1041,6 +1089,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
         monthSecondsUsed: await faceSecondsThisMonth(kit, ctx.principalId),
         callSecondsLeft: face.callSecondsLeft,
         spendCapReached: face.spendCapReached,
+        callFaceSecondsUsed: existing === null ? 0 : existing.earlierSeconds + existing.meteredSeconds,
       });
       if (!allowance.ok) {
         await record('denied', allowance.reason);
@@ -1088,21 +1137,24 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
         return presence;
       }
       const key = await keys.signingKey();
+      const session = {
+        callId: face.callId,
+        startedBy: ctx.principalId,
+        vendor: provider.id,
+        mode: provider.mode,
+        route,
+        sessionRef: started.sessionRef,
+        control:
+          started.control === null
+            ? null
+            : encryptControl(key, started.control, controlAad(face.callId, started.sessionRef)),
+        maxSeconds: allowance.maxSeconds,
+      };
       const stored = await kit
         .system((sx) =>
-          twinRepo.startCallFace(sx, {
-            callId: face.callId,
-            startedBy: ctx.principalId,
-            vendor: provider.id,
-            mode: provider.mode,
-            route,
-            sessionRef: started.sessionRef,
-            control:
-              started.control === null
-                ? null
-                : encryptControl(key, started.control, controlAad(face.callId, started.sessionRef)),
-            maxSeconds: allowance.maxSeconds,
-          }),
+          existing === null
+            ? twinRepo.startCallFace(sx, session)
+            : twinRepo.restartCallFace(sx, { ...session, maxSessions: FACE_SESSIONS_PER_CALL }),
         )
         .catch(() => null);
       if (stored === null) {
@@ -1116,7 +1168,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
         await record('denied', 'call_not_active');
         return presence;
       }
-      await record('succeeded', null);
+      await record('succeeded', null, sessionNo > 1 ? { session: sessionNo } : {});
       return {
         provider: provider.id,
         token: started.browser.token,
@@ -1155,7 +1207,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
             policyReason: reason,
           },
         ]);
-        throw fail.validation('Only the vEIR’s validated speech can be shown', [
+        throw fail.validation('Only speech this call validated can be shown', [
           { path: 'audio', message: 'Not validated speech of this call' },
         ]);
       };

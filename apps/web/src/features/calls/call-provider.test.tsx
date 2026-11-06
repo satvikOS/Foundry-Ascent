@@ -671,8 +671,8 @@ describe('the mini call bar', () => {
       },
       getSnapshot: () => face,
       request: vi.fn(),
-      close: vi.fn(),
-      hasAsked: () => true,
+      warm: vi.fn(),
+      canAsk: () => false,
     };
     try {
       const { bar } = await minimized();

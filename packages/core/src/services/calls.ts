@@ -171,15 +171,19 @@ export function greetingName(displayName: string): string | null {
 }
 
 /**
- * The name the vEIR introduces itself with: the persona's name, unless that name presents it as an EIR; then
- * "{EIR's first name}'s vEIR" for an EIR persona, or "your vEIR".
+ * The name the vEIR introduces itself with: the persona's name, unless that name presents a twin as an EIR; then
+ * "{EIR's first name}'s vEIR" for an EIR persona, or "your vEIR". An AI mentor (ADR-0021: "Thomas") is always
+ * introduced under its own name: it is nobody's twin, so an EIR whose name shares a word with it never renames it.
  */
 export function introName(args: {
   readonly personaName: string;
   readonly personaKind: personasRepo.PersonaRecord['kind'];
   readonly eirDisplayName: string | null;
   readonly eirNames: readonly string[];
+  /** The persona is an AI mentor under its own name (`personas.presentation = 'mentor'`). */
+  readonly mentor?: boolean;
 }): string {
+  if (args.mentor === true) return args.personaName;
   if (!personaNameClaimsEir(args.personaName, args.eirNames)) return args.personaName;
   const first = args.eirDisplayName?.trim().split(/\s+/)[0] ?? '';
   return args.personaKind === 'eir_persona' && first !== '' ? `${first}'s vEIR` : 'your vEIR';
@@ -472,6 +476,15 @@ const AI_PAUSED = 'AI coaching is paused by the program. Please try again later.
 const CALLS_PAUSED = 'Calls are paused by the program. You can keep chatting.';
 const CALL_OVER = 'This call has ended.';
 
+/**
+ * Said to the founder when the persona's voice cannot be used for calls (its consent is not in force): in the persona's
+ * own name ("Thomas"), never "vEIR" (audit P1-3).
+ */
+export function callsPausedFor(personaName: string | null): string {
+  const name = personaName?.trim() ?? '';
+  return `Calls with ${name === '' ? 'your mentor' : name} are paused right now. You can keep chatting.`;
+}
+
 /** End reasons a client may give; the server's own causes (budget, time, switches) come from its checks. */
 const CLIENT_END_REASONS: ReadonlySet<CallEndReason> = new Set(['user', 'navigated', 'error']);
 
@@ -489,9 +502,13 @@ export function stopRefusal(cause: CallStopCause, now: Date): DomainError {
       return fail.forbidden(cause);
     case 'persona_unavailable':
     case 'voice_consent':
-      return new DomainError('persona_suspended', 'This vEIR cannot take calls right now.', {
-        reason: cause,
-      });
+      return new DomainError(
+        'persona_suspended',
+        'Your mentor can’t take calls right now. You can keep chatting.',
+        {
+          reason: cause,
+        },
+      );
     case 'stale_heartbeat':
     case 'max_duration':
       return fail.conflict(CALL_OVER, cause);
@@ -677,10 +694,14 @@ export function createCallsService(
       personaKind: started.personaKind,
       eirDisplayName: started.eirDisplayName,
       eirNames: guards.eirNames,
+      mentor: started.mentor,
     });
+    // A mentor speaks as itself and is nobody's twin: the identity rules check it as one (no EIR name of its own).
+    const identity = started.mentor
+      ? { personaName, eirNames: guards.eirNames, checkHumanClaims: true, mentor: true, personaEirName: null }
+      : { personaName, eirNames: guards.eirNames, checkHumanClaims: true };
     const safe = (text: string): boolean =>
-      rewriteIdentity(text, { personaName, eirNames: guards.eirNames, checkHumanClaims: true }).findings
-        .length === 0 &&
+      rewriteIdentity(text, identity).findings.length === 0 &&
       !textsContainOtherVenture(
         [text],
         guards.others.names,
@@ -962,13 +983,9 @@ export function createCallsService(
         const voiceId = callVoiceFor(persona, await personasRepo.personaConsentAssets(tx, persona.id));
         if (voiceId === null) {
           throw refuse(
-            new DomainError(
-              'persona_suspended',
-              'This vEIR’s voice consent is not in force, so calls are paused.',
-              {
-                reason: 'voice_consent',
-              },
-            ),
+            new DomainError('persona_suspended', callsPausedFor(persona.name), {
+              reason: 'voice_consent',
+            }),
           );
         }
         const spendCap = await turnsRepo.spendCapState(tx, {
@@ -1362,7 +1379,7 @@ export function createCallsService(
                 policyReason: unit.sig === undefined ? 'text_not_validated' : 'signature_invalid',
                 metadata: { callId, seq: unit.seq },
               });
-              throw fail.validation('Only the vEIR’s validated words can be recorded as heard', [
+              throw fail.validation('Only words this call said can be recorded as heard', [
                 { path: `heard.${String(unit.seq)}`, message: 'Not validated text of this reply' },
               ]);
             }

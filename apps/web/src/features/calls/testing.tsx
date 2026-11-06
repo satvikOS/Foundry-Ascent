@@ -74,6 +74,7 @@ export const LIVE: CallSnapshot = {
   talking: false,
   halfDuplex: false,
   reconnecting: false,
+  awaitingFace: false,
   audioBlocked: false,
   liveAt: Date.now(),
   remaining: { seconds: 1200, at: Date.now() },
@@ -121,6 +122,10 @@ export function fakeEngine(initial: CallSnapshot = LIVE) {
     founderVoiced: vi.fn(() => false),
     onSpeak: vi.fn(() => () => undefined),
     attachFace: vi.fn(),
+    startConversation: vi.fn(),
+    holdForFace: vi.fn(),
+    setFaceReplaceable: vi.fn(),
+    faceArrived: vi.fn(),
   };
   return {
     engine,

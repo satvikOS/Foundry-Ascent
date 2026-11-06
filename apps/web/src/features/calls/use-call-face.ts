@@ -8,6 +8,7 @@ import { useSyncExternalStore } from 'react';
 
 import {
   loadAvatarProvider,
+  warmAvatarAdapter,
   type AvatarProvider,
   type FaceLoss,
   type FaceRelay,
@@ -27,20 +28,44 @@ import type { CallSnapshot } from '@/lib/realtime/call-state';
  * The face of a live call (docs/architecture/calls.md §4): the API opens the vendor's session for this call, the
  * adapter loads (its own chunk) and joins, and only then does the call tile show its video and hand it the call's
  * audio (through the server, which relays only the audio it synthesized) or, for a FULL stock face, the validated
- * units the server admits for the vendor to say. Every face is labelled "AI avatar" on its tile. Anything that
- * fails (no face offered, no adapter, a slow or refused join, the vendor dropping, the server saying stop) gives the
- * face up (`presence`): the call goes on on its own speakers, the tile says the video could not start or stopped
- * (`hadVideo`), and the call screen offers a voice call; the call itself never stops for its face.
+ * units the server admits for the vendor to say. Every face is labelled "AI avatar" on its tile.
+ *
+ * A video call (owner round 3, 2026-11-06: "just load the actual avatar, then the conversation starts"):
+ * - **First the face.** The engine opens the call waiting for its face (`awaitingFace`): nothing is said or heard until
+ *   the face's first frame arrived and its speak channel is open; then the conversation starts
+ *   (`CallEngine.startConversation`) and the face says the intro. There is no stand-in presence meanwhile.
+ * - **Reconnects.** A vendor session that ends during the call (the free plan's ~2 minute limit, a dropped room, a
+ *   lost speak channel) is replaced by a new session of the same call (`reconnecting`): the call's speech waits for it
+ *   (`CallEngine.holdForFace`), a unit the old face gave back before a word of it was heard is said by the new face,
+ *   and the conversation and transcript go on. A session close to its end is replaced early, at a quiet moment (the
+ *   founder's turn), so the hand-over rarely waits on a reply. At most {@link FACE_SESSIONS_PER_CALL} sessions per call
+ *   (the server enforces the same bound, with every cap of a first face).
+ * - **Never a silent downgrade.** A face that cannot start, or cannot come back, is `unavailable`: the call screen says
+ *   so and offers the voice call (one tap) or another try; it never turns into a voice call by itself.
  *
  * The face belongs to the call, not to the screen: it lives in the call's controller (one per call engine), so
- * minimizing the call to the mini bar keeps it, and it ends with the call. One face per call: a face that
- * dropped is not asked for again (the server would refuse; nothing bills unseen). A call left on hold (the page
- * hidden) for longer than {@link FACE_HOLD_GRACE_MS} gives its face up, since the vendor bills an idle face by
- * the minute; a quick look at another tab keeps it.
+ * minimizing the call to the mini bar keeps it, and it ends with the call. A call left on hold (the page hidden) for
+ * longer than {@link FACE_HOLD_GRACE_MS} gives its face up (`paused`), since the vendor bills an idle face by the
+ * minute; it comes back when the call resumes. A crisis turn ends the face for the rest of the call (a human-looking
+ * face never says the crisis line), as does the server stopping it (faces off, a cap, a failed check).
  */
 export type CallFace =
+  /** No face: a voice call (or one switched to voice). */
   | { readonly status: 'presence' }
+  /** The face is joining; the conversation has not started yet (a new video call). */
   | { readonly status: 'connecting' }
+  /**
+   * A new vendor session replaces the one that ended (or the call is back from hold): speech waits for it. `still`:
+   * the last frame of the face that ended (a data URL), shown dimmed meanwhile, or null.
+   */
+  | { readonly status: 'reconnecting'; readonly still: string | null }
+  /** The call is on hold: its face was given up meanwhile and comes back when the call resumes. */
+  | { readonly status: 'paused' }
+  /**
+   * The face could not start (`hadVideo` false) or could not come back (true): the call screen says video is not
+   * available right now and offers the voice call.
+   */
+  | { readonly status: 'unavailable'; readonly hadVideo: boolean }
   | {
       readonly status: 'live';
       readonly provider: AvatarProvider;
@@ -61,20 +86,48 @@ export interface CallFaceDeps {
   ): Promise<AvatarProvider | null>;
   /** The server path of the face's audio for this call. */
   relayFor(callId: string): FaceRelay;
+  /** Starts loading a vendor's adapter ahead of its session (best effort). */
+  warm?(provider: EmbodimentProviderId): void;
   /** Tells the server the face is no longer shown (it ends the vendor session), and why (audited there). */
   endFace(callId: string, loss: FaceLoss): Promise<void>;
   /** A face that has not shown its first frame by then is given up for this call. */
   readonly connectTimeoutMs: number;
   /** A call on hold longer than this gives its face up (default {@link FACE_HOLD_GRACE_MS}). */
   readonly holdGraceMs?: number;
+  /**
+   * How long before a vendor session's end (`expiresAt`) a quiet moment is used to replace it (default
+   * {@link FACE_REFRESH_LEAD_MS}), and the clock it is read against (default `Date.now`).
+   */
+  readonly refreshLeadMs?: number;
+  readonly wallNow?: () => number;
 }
 
 /** How long a call may stay on hold (the page hidden) before its face is given up: the vendor bills idle faces. */
 export const FACE_HOLD_GRACE_MS = 60_000;
+/** Vendor sessions one call may open (the server's `FACE_SESSIONS_PER_CALL`, the same bound). */
+export const FACE_SESSIONS_PER_CALL = 12;
+/**
+ * A vendor session this close to its end is replaced at the next quiet moment (the founder's turn, nothing being
+ * said), so the new face is there before the next reply: a join takes a few seconds.
+ */
+export const FACE_REFRESH_LEAD_MS = 25_000;
+/** How often a session near its end looks for a quiet moment. */
+const REFRESH_POLL_MS = 500;
+/** Reasons a face that went away may be replaced by a new session of the same call. */
+const REPLACEABLE: ReadonlySet<FaceLoss['reason']> = new Set<FaceLoss['reason']>([
+  'video_ended',
+  'video_unsubscribed',
+  'room_disconnected',
+  'vendor_stopped',
+  'control_lost',
+  'speech_stalled',
+  'time_limit',
+]);
 
 export const BROWSER_FACE_DEPS: CallFaceDeps = {
   startSession: startAvatarSession,
   loadProvider: loadAvatarProvider,
+  warm: warmAvatarAdapter,
   relayFor: (callId) => ({
     speak: (audio, signal) => sendFaceAudio(callId, audio, signal),
     say: (unit, signal) => sayFaceText(callId, unit, signal),
@@ -96,7 +149,15 @@ export interface FaceRequest {
 
 type FaceEngine = Pick<
   CallEngine,
-  'attachFace' | 'setFaceShown' | 'onFaceStop' | 'subscribe' | 'getSnapshot'
+  | 'attachFace'
+  | 'setFaceShown'
+  | 'onFaceStop'
+  | 'subscribe'
+  | 'getSnapshot'
+  | 'startConversation'
+  | 'holdForFace'
+  | 'setFaceReplaceable'
+  | 'faceArrived'
 >;
 
 const PRESENCE: CallFace = { status: 'presence' };
@@ -141,34 +202,52 @@ function timeout(ms: number, signal: AbortSignal): Promise<never> {
   });
 }
 
+/** One join of the call's face (its first, or a session replacing one that ended). */
+interface Attempt {
+  readonly callId: string;
+  readonly ventureId: string;
+  readonly provider: EmbodimentProviderId;
+  readonly reducedMotion: boolean;
+  readonly controller: AbortController;
+  adapter: AvatarProvider | null;
+  offLost: (() => void) | null;
+  /** When the vendor session ends by itself (epoch ms), if it said. */
+  expiresAt: number | null;
+}
+
 export class CallFaceController {
   private face: CallFace = PRESENCE;
   private readonly listeners = new Set<() => void>();
-  /** Calls that already asked for their face (once per call). */
-  private readonly asked = new Set<string>();
+  /** Vendor sessions each call asked for (at most {@link FACE_SESSIONS_PER_CALL}). */
+  private readonly sessions = new Map<string, number>();
   /** Calls whose face showed (so a face no longer shown stopped, rather than never started). */
   private readonly shown = new Set<string>();
-  private current: {
-    readonly callId: string;
-    readonly controller: AbortController;
-    adapter: AvatarProvider | null;
-    offLost: (() => void) | null;
-  } | null = null;
+  /** Calls whose face ended for good (a crisis turn, the server stopping it): never asked for again. */
+  private readonly over = new Set<string>();
+  /** The face of the current call (joining or live), or null. */
+  private current: Attempt | null = null;
+  /** What the call asked for last: how a reconnect or another try asks again. */
+  private last: FaceRequest | null = null;
   /** Runs out when the call stayed on hold too long. */
   private holdTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Looks for a quiet moment to replace a session close to its end. */
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly engine: FaceEngine,
     private readonly deps: CallFaceDeps = BROWSER_FACE_DEPS,
   ) {
-    // The call ending (or moving to another call) ends its face; a crisis turn drops it to the presence: a
+    // The call ending (or moving to another call) ends its face; a crisis turn ends it for the rest of the call: a
     // human-looking face never says the crisis line.
     engine.subscribe(() => {
       this.follow(engine.getSnapshot());
     });
     engine.onFaceStop(() => {
-      // The server already ended it (faces off, likeness withdrawn, minutes used up).
-      this.close(false);
+      // The server already ended it (faces off, likeness withdrawn, minutes used up): it does not come back.
+      const callId = this.current?.callId ?? this.last?.callId ?? null;
+      if (callId !== null) this.over.add(callId);
+      if (this.current === null && this.face.status === 'presence') return;
+      this.unavailable(false);
     });
   }
 
@@ -182,45 +261,96 @@ export class CallFaceController {
   readonly getSnapshot = (): CallFace => this.face;
 
   /**
-   * Whether this call already asked for its face: a face is asked for once per call, so a call that gave its face
-   * up (switched to voice, or the face dropped) cannot turn video on again.
+   * Whether this call may ask for a face (again): it has vendor sessions left, and its face did not end for good (a
+   * crisis turn, the server stopping it).
    */
-  hasAsked(callId: string): boolean {
-    return this.asked.has(callId);
+  canAsk(callId: string): boolean {
+    return !this.over.has(callId) && (this.sessions.get(callId) ?? 0) < FACE_SESSIONS_PER_CALL;
   }
 
-  /** Whether this call's face showed at some point (it may have stopped since). */
-  hadVideo(callId: string): boolean {
-    return this.shown.has(callId);
-  }
-
-  /** Asks for the face of this live call, once (a call that already asked, or has one, is left as it is). */
-  request({ provider, ventureId, callId, reducedMotion }: FaceRequest): void {
-    if (provider === 'builtin' || this.asked.has(callId)) return;
+  /**
+   * Asks for the face of this live call (a video call, or a voice call switched to video). A call whose face is
+   * joining, live, paused or unavailable is left as it is (another try is {@link retry}).
+   */
+  request(request: FaceRequest): void {
+    const { provider, callId } = request;
+    if (provider === 'builtin' || this.face.status !== 'presence') return;
+    if (this.current !== null || !this.canAsk(callId)) return;
     const snapshot = this.engine.getSnapshot();
     if (snapshot.phase !== 'live' || snapshot.call?.id !== callId) return;
-    this.asked.add(callId);
+    this.last = request;
+    // A new video call's conversation waits for its face; a call already talking (switched to video) keeps talking on
+    // its speakers until the face is there.
+    this.join('connecting', false);
+  }
+
+  /**
+   * A video call is about to ask for its face: the vendor's adapter starts loading now, while the call and its avatar
+   * session are being opened (the join then waits on neither chunk).
+   */
+  warm(provider: EmbodimentProviderId): void {
+    if (provider === 'builtin') return;
+    this.deps.warm?.(provider);
+  }
+
+  /** Another try after the face could not start or come back (the call screen's Try again). */
+  retry(callId: string): void {
+    if (this.face.status !== 'unavailable' || this.last?.callId !== callId || !this.canAsk(callId)) return;
+    const snapshot = this.engine.getSnapshot();
+    if (snapshot.phase !== 'live' || snapshot.call?.id !== callId) return;
+    this.join('connecting', false);
+  }
+
+  /**
+   * Gives the face up for this call (the founder switched to a voice call): the server ends the vendor session, the
+   * call goes on as a voice call (its conversation starts now if it was still waiting for the face), and a later
+   * switch back to video asks for a new session.
+   */
+  switchedToVoice(): void {
+    this.giveUp(true, { reason: 'switched_to_voice' });
+    this.set(PRESENCE);
+    this.engine.startConversation();
+  }
+
+  /** Joins a vendor session for the last request: the call's first face, or one replacing a face that ended. */
+  private join(status: 'connecting' | 'reconnecting', hold: boolean, still: string | null = null): void {
+    const request = this.last;
+    if (request === null) return;
+    const { callId, ventureId, provider, reducedMotion } = request;
+    this.sessions.set(callId, (this.sessions.get(callId) ?? 0) + 1);
     const controller = new AbortController();
     const { signal } = controller;
     /** Read after every await: giving up or the call ending may have happened meanwhile. */
-    const stopped = () => signal.aborted;
-    const attempt = {
+    const stopped = () => signal.aborted || this.current !== attempt;
+    const attempt: Attempt = {
       callId,
+      ventureId,
+      provider,
+      reducedMotion,
       controller,
-      adapter: null as AvatarProvider | null,
-      offLost: null as (() => void) | null,
+      adapter: null,
+      offLost: null,
+      expiresAt: null,
     };
     this.current = attempt;
-    this.set({ status: 'connecting' });
+    // A face that may go away mid-call is replaced: units it gives back unheard wait for the next one.
+    this.engine.setFaceReplaceable(true);
+    if (hold) this.engine.holdForFace(true);
+    this.set(status === 'connecting' ? { status } : { status, still });
     /** Where the join is (the adapter's own stage once it is connecting). */
     let stage: FaceJoinStage = 'session';
     void (async () => {
       try {
-        const session = await this.deps.startSession(ventureId, callId, signal);
+        // Bounded like the join itself: a call whose speech waits for the face never waits on a slow API for long.
+        const session = await Promise.race([
+          this.deps.startSession(ventureId, callId, signal),
+          timeout(this.deps.connectTimeoutMs, signal),
+        ]);
         if (stopped()) return;
         stage = 'adapter';
         if (session.token === null || session.provider === 'builtin') {
-          this.close(false);
+          // Not offered now (credits, minutes, caps, the switches): nothing to end on the server.
+          this.unavailable(false);
           return;
         }
         const loaded = await this.deps.loadProvider(session.provider, session.voicing, {
@@ -231,10 +361,12 @@ export class CallFaceController {
           return;
         }
         if (loaded?.connect === undefined) {
-          this.close(true, { reason: 'no_adapter', stage });
+          this.unavailable(true, { reason: 'no_adapter', stage });
           return;
         }
         attempt.adapter = loaded;
+        const expires = session.expiresAt === null ? NaN : Date.parse(session.expiresAt);
+        attempt.expiresAt = Number.isFinite(expires) ? expires : null;
         stage = 'room';
         loaded.mount(document.createElement('div'), { reducedMotion });
         await Promise.race([
@@ -244,7 +376,7 @@ export class CallFaceController {
         if (stopped()) return;
         attempt.offLost =
           loaded.onLost?.((loss) => {
-            this.close(true, loss);
+            this.lost(attempt, loss);
           }) ?? null;
         if (presentationCapabilities(loaded).audioOwner === 'presentation') {
           this.engine.attachFace(loaded.renderer?.() ?? null);
@@ -258,58 +390,189 @@ export class CallFaceController {
           stream: loaded.video?.() ?? null,
           media: media instanceof HTMLVideoElement ? media : null,
         });
+        // The face is there: its first frame timed, the speech that waited for it goes on (to it), and a new call's
+        // conversation starts (the face says the intro).
+        this.engine.faceArrived();
+        this.engine.holdForFace(false);
+        this.engine.startConversation();
+        this.watchExpiry(attempt);
       } catch (err) {
-        // Read before the close unmounts the adapter: how far its join got.
-        if (!stopped()) this.close(true, joinFailure(err, attempt.adapter?.joinStage?.() ?? stage));
+        // Read before the face is given up (which unmounts the adapter): how far its join got.
+        if (!stopped()) this.unavailable(true, joinFailure(err, attempt.adapter?.joinStage?.() ?? stage));
       }
     })();
   }
 
   /**
-   * Gives the face up (the presence again). `tellServer`: the server does not know yet (the face dropped, or
-   * was given up while joining), so the vendor session is ended there too, with `loss`, why (audited there).
+   * The live face went away: a vendor session that ended (its limit, a dropped room or channel) is replaced at once,
+   * the call's speech waiting for the new face; anything else gives the face up.
    */
-  close(tellServer: false): void;
-  close(tellServer: true, loss: FaceLoss): void;
-  close(tellServer: boolean, loss?: FaceLoss): void {
+  private lost(attempt: Attempt, loss: FaceLoss): void {
+    if (this.current !== attempt) return;
+    const { callId } = attempt;
+    const snapshot = this.engine.getSnapshot();
+    const replace =
+      REPLACEABLE.has(loss.reason) &&
+      snapshot.phase === 'live' &&
+      snapshot.call?.id === callId &&
+      snapshot.blocked?.reason !== 'crisis_support' &&
+      !snapshot.held &&
+      this.canAsk(callId);
+    if (replace) {
+      this.replace(attempt, loss);
+      return;
+    }
+    if (snapshot.held && snapshot.phase === 'live' && REPLACEABLE.has(loss.reason) && this.canAsk(callId)) {
+      // Dropped while on hold: it comes back when the call resumes.
+      this.giveUp(true, loss);
+      this.set({ status: 'paused' });
+      return;
+    }
+    this.unavailable(true, loss);
+  }
+
+  /** Ends the current face on the server, then joins the next session of the call; speech waits meanwhile. */
+  private replace(attempt: Attempt, loss: FaceLoss): void {
+    // First, synchronously: the units the face is giving back wait for the next face (`holdForFace`).
+    this.engine.holdForFace(true);
+    const still = lastFrame(attempt.adapter);
+    this.release(attempt);
+    // Neither shown nor off: the old session is ended explicitly below, and a heartbeat reporting "off" meanwhile
+    // would end the new session as it joins.
+    this.engine.setFaceShown(null);
+    this.set({ status: 'reconnecting', still });
+    const { callId } = attempt;
+    void this.deps
+      .endFace(callId, loss)
+      .catch(() => undefined)
+      .then(() => {
+        // The call may have ended, or the founder switched to voice, while the server ended the old session.
+        if (this.face.status !== 'reconnecting' || this.current !== null) return;
+        const snapshot = this.engine.getSnapshot();
+        if (snapshot.phase !== 'live' || snapshot.call?.id !== callId) return;
+        this.join('reconnecting', true, still);
+      });
+  }
+
+  /**
+   * The face could not start or come back: the call screen says video is not available right now and offers the
+   * voice call. `tellServer`: the vendor session (if one opened) is ended there, with why. Speech that waited for the
+   * face goes on, on the speakers; a call still waiting for its face keeps waiting (for the founder's choice).
+   */
+  private unavailable(tellServer: false): void;
+  private unavailable(tellServer: true, loss: FaceLoss): void;
+  private unavailable(tellServer: boolean, loss?: FaceLoss): void {
+    const callId = this.current?.callId ?? this.last?.callId ?? null;
+    if (tellServer && loss !== undefined) this.giveUp(true, loss);
+    else this.giveUp(false);
+    this.set({ status: 'unavailable', hadVideo: callId !== null && this.shown.has(callId) });
+  }
+
+  /** Releases the current face: its adapter, the engine's hand-over to it, and (`tellServer`) its vendor session. */
+  private giveUp(tellServer: false): void;
+  private giveUp(tellServer: true, loss: FaceLoss): void;
+  private giveUp(tellServer: boolean, loss?: FaceLoss): void {
     this.clearHold();
     const attempt = this.current;
-    this.current = null;
     if (attempt !== null) {
-      attempt.controller.abort();
-      attempt.offLost?.();
-      attempt.adapter?.unmount();
-      this.engine.attachFace(null);
+      this.release(attempt);
       // Heartbeats say the face is gone, so the server stops a session it still holds.
       this.engine.setFaceShown(false);
       if (tellServer && loss !== undefined) {
         void this.deps.endFace(attempt.callId, loss).catch(() => undefined);
       }
     }
-    this.set(PRESENCE);
+    // Whatever waited for the face goes on without it.
+    this.engine.holdForFace(false);
+  }
+
+  private release(attempt: Attempt): void {
+    this.clearRefresh();
+    if (this.current === attempt) this.current = null;
+    attempt.controller.abort();
+    attempt.offLost?.();
+    attempt.offLost = null;
+    attempt.adapter?.unmount();
+    this.engine.attachFace(null);
+  }
+
+  /**
+   * A live session close to its end (`expiresAt`) is replaced at the first quiet moment in its last
+   * {@link FACE_REFRESH_LEAD_MS}: the founder's turn, nothing being said or prepared, so no reply waits on the join.
+   * Without a quiet moment, the face hands over when the vendor ends it.
+   */
+  private watchExpiry(attempt: Attempt): void {
+    this.clearRefresh();
+    if (attempt.expiresAt === null) return;
+    const now = this.deps.wallNow ?? Date.now;
+    const lead = this.deps.refreshLeadMs ?? FACE_REFRESH_LEAD_MS;
+    const check = () => {
+      this.refreshTimer = null;
+      if (this.current !== attempt || this.face.status !== 'live' || attempt.expiresAt === null) return;
+      const left = attempt.expiresAt - now();
+      if (left > lead) {
+        this.refreshTimer = setTimeout(check, Math.min(left - lead, 60_000));
+        return;
+      }
+      if (left <= 0) return;
+      const s = this.engine.getSnapshot();
+      const quiet =
+        s.phase === 'live' &&
+        !s.held &&
+        !s.awaitingFace &&
+        s.activity === 'listening' &&
+        s.queued === 0 &&
+        s.blocked === null;
+      if (quiet && this.canAsk(attempt.callId)) {
+        this.replace(attempt, { reason: 'time_limit' });
+        return;
+      }
+      this.refreshTimer = setTimeout(check, REFRESH_POLL_MS);
+    };
+    check();
+  }
+
+  private clearRefresh(): void {
+    if (this.refreshTimer === null) return;
+    clearTimeout(this.refreshTimer);
+    this.refreshTimer = null;
   }
 
   private follow(snapshot: CallSnapshot): void {
-    const attempt = this.current;
-    if (attempt === null) return;
-    if (snapshot.phase !== 'live' || snapshot.call?.id !== attempt.callId) {
+    const callId = this.current?.callId ?? this.last?.callId ?? null;
+    if (callId === null) return;
+    if (snapshot.phase !== 'live' || snapshot.call?.id !== callId) {
       // The call ended: its face ended with it on the server.
-      this.close(false);
-      this.engine.setFaceShown(null);
+      if (this.current !== null || this.face.status !== 'presence') {
+        this.giveUp(false);
+        this.engine.setFaceShown(null);
+        this.set(PRESENCE);
+      }
+      this.last = null;
       return;
     }
     if (snapshot.blocked?.reason === 'crisis_support') {
-      this.close(true, { reason: 'crisis' });
+      if (this.over.has(callId)) return;
+      this.over.add(callId);
+      if (this.current !== null) this.giveUp(true, { reason: 'crisis' });
+      else this.giveUp(false);
+      this.set(PRESENCE);
       return;
     }
     if (!snapshot.held) {
       this.clearHold();
+      // Back from hold: the face given up meanwhile comes back.
+      if (this.face.status === 'paused' && this.canAsk(callId)) this.join('reconnecting', false);
       return;
     }
+    if (this.current === null) return;
+    const attempt = this.current;
     // On hold nobody watches the face, and the vendor bills it by the minute: past the grace it ends there too.
     this.holdTimer ??= setTimeout(() => {
       this.holdTimer = null;
-      if (this.current === attempt) this.close(true, { reason: 'on_hold' });
+      if (this.current !== attempt) return;
+      this.giveUp(true, { reason: 'on_hold' });
+      this.set({ status: 'paused' });
     }, this.deps.holdGraceMs ?? FACE_HOLD_GRACE_MS);
   }
 
@@ -321,8 +584,32 @@ export class CallFaceController {
 
   private set(face: CallFace): void {
     if (face === this.face) return;
+    if (face.status === this.face.status && face.status !== 'live' && face.status !== 'unavailable') return;
     this.face = face;
     for (const listener of [...this.listeners]) listener();
+  }
+}
+
+/**
+ * The last frame a face showed (a small JPEG data URL), kept on its tile while a new session replaces it; null when
+ * there is none to read (no element of its own, no frame yet). Best effort.
+ */
+function lastFrame(adapter: AvatarProvider | null): string | null {
+  try {
+    const media = adapter?.media?.() ?? null;
+    if (!(media instanceof HTMLVideoElement) || media.videoWidth === 0 || media.videoHeight === 0)
+      return null;
+    const width = Math.min(640, media.videoWidth);
+    const height = Math.round((width * media.videoHeight) / media.videoWidth);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (context === null) return null;
+    context.drawImage(media, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', 0.7);
+  } catch {
+    return null;
   }
 }
 

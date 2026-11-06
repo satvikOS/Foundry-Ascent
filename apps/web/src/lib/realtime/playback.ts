@@ -224,6 +224,12 @@ type Prepared = (
       readonly stream: PcmStream;
       readonly face: FaceRenderer;
       readonly fed: boolean;
+      /**
+       * A third copy of the bytes the face was fed, kept unread while the face may be replaced (`replaceable`): a
+       * face that gives the unit back before a word of it was heard and is then replaced has its successor say it.
+       */
+      readonly spare?: ReadableStream<Uint8Array> | null;
+      readonly sampleRate?: number;
     }
   /** A text face voices it: no audio fetched (unless the face cannot say it). */
   | { readonly kind: 'text' }
@@ -242,6 +248,16 @@ interface Entry {
   unit: SpeechUnitToPlay;
   controller: AbortController;
   prepared: Promise<Prepared> | null;
+}
+
+/**
+ * What a face's unit becomes when the face gives it back before a word of it was heard and is being replaced (its
+ * vendor session ended): the entry that has the next face say it (`entry`), or nothing (`discard`, once the unit was
+ * heard, stopped, or played by the call itself).
+ */
+interface Replay {
+  entry(): Entry;
+  discard(): void;
 }
 
 /** Units being fetched ahead of the one playing. */
@@ -291,6 +307,17 @@ export class SpeechPlayer {
   private face: FaceRenderer | null = null;
   /** The face making the current unit heard, while it does (its own sound is outside the gain). */
   private rendering: FaceRenderer | null = null;
+  /**
+   * A face that goes away may be replaced (a video call reconnects its face when the vendor ends a session): a unit
+   * it gives back before a word was heard waits for the next face while the player is held (`holdForFace`).
+   */
+  private replaceable = false;
+  /** The face is joining: nothing new starts and nothing is prepared until it is attached (or given up). */
+  private holding = false;
+  /** The last unit of each turn that ended (`endTurn`): a replacement face is told where a replayed turn ends. */
+  private readonly endedTurns = new Map<string | null, number>();
+  /** The turns already closed on each face (`endTurn` told once per face). */
+  private readonly closedOn = new WeakMap<FaceRenderer, Set<string | null>>();
 
   constructor(
     private readonly audio: PlayerAudio,
@@ -354,7 +381,46 @@ export class SpeechPlayer {
     let last = -1;
     for (const unit of this.recent) if (unit.turnId === turnId) last = Math.max(last, unit.seq);
     for (const entry of this.queue) if (entry.unit.turnId === turnId) last = Math.max(last, entry.unit.seq);
-    if (last >= 0) this.face?.endTurn?.(turnId, last);
+    if (last < 0) return;
+    this.endedTurns.set(turnId, last);
+    if (this.endedTurns.size > RECENT_UNITS) {
+      const oldest = this.endedTurns.keys().next();
+      if (oldest.done !== true) this.endedTurns.delete(oldest.value);
+    }
+    const face = this.face;
+    if (face === null) return;
+    this.closedFor(face).add(turnId);
+    face.endTurn?.(turnId, last);
+  }
+
+  /**
+   * Whether a face that goes away may be replaced during this call: a unit it gives back before a word of it was
+   * heard then waits for the next face (while the player is held) instead of being said on the speakers.
+   */
+  setReplaceable(replaceable: boolean): void {
+    this.replaceable = replaceable;
+  }
+
+  /**
+   * Holds the vEIR's speech while a face joins (or rejoins): nothing new starts and nothing is prepared, so the next
+   * units, and a unit a leaving face gave back unheard, go to the face once it is attached. Released (false), they go
+   * on: to the face attached by then, else on the speakers. A unit already being heard is never stopped by it.
+   */
+  holdForFace(hold: boolean): void {
+    if (this.holding === hold) return;
+    this.holding = hold;
+    if (hold || this.disposed) return;
+    this.prefetch();
+    if (this.playing === null && this.queue.length > 0) void this.playNext();
+  }
+
+  private closedFor(face: FaceRenderer): Set<string | null> {
+    let closed = this.closedOn.get(face);
+    if (closed === undefined) {
+      closed = new Set();
+      this.closedOn.set(face, closed);
+    }
+    return closed;
   }
 
   /**
@@ -403,6 +469,8 @@ export class SpeechPlayer {
   }
 
   private prefetch(): void {
+    // While a face joins, units are prepared for it once it is there (their audio waits where it is).
+    if (this.holding) return;
     for (const entry of this.queue.slice(0, PREFETCH)) {
       entry.prepared ??= this.prepare(entry);
     }
@@ -437,8 +505,12 @@ export class SpeechPlayer {
           return { kind: 'stream', stream: new PcmStream(result.body, result.sampleRate) };
         }
         // Two copies of the same bytes: the face's, forwarded as they arrive, and the call's own, held (played only
-        // if the face gives the unit back before it was heard).
-        const [toFace, toCall] = result.body.tee();
+        // if the face gives the unit back before it was heard). A face that may be replaced gets a third, kept for
+        // its successor (said by the next face only if no word of it was heard).
+        const [toFace, ownCopy] = result.body.tee();
+        let toCall = ownCopy;
+        let spare: ReadableStream<Uint8Array> | null = null;
+        if (this.replaceable) [toCall, spare] = ownCopy.tee();
         const stream = new PcmStream(toCall, result.sampleRate);
         let fed: boolean;
         try {
@@ -446,8 +518,15 @@ export class SpeechPlayer {
         } catch {
           fed = false;
         }
-        if (!fed) void toFace.cancel().catch(() => undefined);
-        return { kind: 'faceStream', stream, face: streamFace, fed };
+        if (!fed) {
+          void toFace.cancel().catch(() => undefined);
+          void spare?.cancel().catch(() => undefined);
+          spare = null;
+        } else {
+          // A face that replaced another may take a turn the call already ended: it is told where it ends.
+          this.reopenTurn(streamFace, entry.unit.turnId);
+        }
+        return { kind: 'faceStream', stream, face: streamFace, fed, spare, sampleRate: result.sampleRate };
       }
       case 'unavailable': {
         const route = localEnglishVoice(this.audio.synthesis) ? 'browser' : 'captions';
@@ -504,7 +583,8 @@ export class SpeechPlayer {
 
   private async playNext(): Promise<void> {
     const entry = this.queue[0];
-    if (entry === undefined || this.disposed) return;
+    // Held while a face joins: the next unit starts once it is attached (or given up).
+    if (entry === undefined || this.disposed || this.holding) return;
     const generation = this.generation;
     entry.prepared ??= this.prepare(entry);
     const prepared = await entry.prepared;
@@ -572,8 +652,21 @@ export class SpeechPlayer {
     if (prepared.kind === 'buffer') {
       const face = this.face;
       if (face?.ready() === true) {
+        const replay: Replay = {
+          entry: () => ({ unit, controller: new AbortController(), prepared: Promise.resolve(prepared) }),
+          discard: () => undefined,
+        };
         return {
-          stop: this.renderOnFace(face, prepared.buffer, prepared.face ?? null, unit, settle, started),
+          stop: this.renderOnFace(
+            face,
+            prepared.buffer,
+            prepared.face ?? null,
+            unit,
+            settle,
+            started,
+            null,
+            replay,
+          ),
           deferred: true,
         };
       }
@@ -586,9 +679,59 @@ export class SpeechPlayer {
       const face = this.face;
       if (prepared.fed && face === prepared.face && face.ready()) {
         return {
-          stop: this.renderOnFace(face, null, null, unit, settle, started, prepared.stream),
+          stop: this.renderOnFace(
+            face,
+            null,
+            null,
+            unit,
+            settle,
+            started,
+            prepared.stream,
+            this.streamReplay(prepared, unit),
+          ),
           deferred: true,
         };
+      }
+      // A unit fed to a face that has been replaced since, nothing of it heard: the face now attached says it from the
+      // copy the call kept for it (`spare`).
+      const spare = prepared.spare ?? null;
+      if (
+        spare !== null &&
+        face !== null &&
+        face !== prepared.face &&
+        face.voicing === 'stream' &&
+        face.feed !== undefined &&
+        face.ready() &&
+        unit.sig !== undefined
+      ) {
+        const [toFace, kept] = spare.tee();
+        let fed: boolean;
+        try {
+          fed = face.feed(unit, toFace, prepared.sampleRate ?? 24_000);
+        } catch {
+          fed = false;
+        }
+        if (fed) {
+          this.reopenTurn(face, unit.turnId);
+          const again: Prepared = { ...prepared, face, fed: true, spare: kept };
+          return {
+            stop: this.renderOnFace(
+              face,
+              null,
+              null,
+              unit,
+              settle,
+              started,
+              prepared.stream,
+              this.streamReplay(again, unit),
+            ),
+            deferred: true,
+          };
+        }
+        void toFace.cancel().catch(() => undefined);
+        void kept.cancel().catch(() => undefined);
+      } else if (spare !== null) {
+        void spare.cancel().catch(() => undefined);
       }
       // Not the face's (not admitted, not signed, the face went away): the call plays its own copy. A face that
       // went away holds nothing that still sounds.
@@ -597,7 +740,17 @@ export class SpeechPlayer {
     if (prepared.kind === 'text') {
       const face = this.face;
       if (face?.ready() === true && face.voicing === 'text') {
-        return { stop: this.renderOnFace(face, null, null, unit, settle, started), deferred: true };
+        // Said again by a replacement face, the unit is admitted to that face's session afresh (`face/say`): the
+        // ended session's admission does not carry over.
+        const { faceApproved: _ended, ...fresh } = unit;
+        const replay: Replay = {
+          entry: () => ({ unit: fresh, controller: new AbortController(), prepared: null }),
+          discard: () => undefined,
+        };
+        return {
+          stop: this.renderOnFace(face, null, null, unit, settle, started, null, replay),
+          deferred: true,
+        };
       }
       // The face went away meanwhile: the call speaks the unit itself.
       return { stop: this.playFetched(unit, settle), deferred: false };
@@ -756,10 +909,15 @@ export class SpeechPlayer {
     started: () => void,
     /** The call's own copy of a unit a `stream` face was fed: played only if the face gives the unit back. */
     local: PcmStream | null = null,
+    /** How the next face says the unit, if this one gives it back unheard while it is being replaced. */
+    replay: Replay | null = null,
   ): () => void {
     let finished = false;
     let began = false;
     let fallback: (() => void) | null = null;
+    /** A give-back waiting a moment to learn whether the face is being replaced. */
+    let deciding: unknown = null;
+    const generation = this.generation;
     this.rendering = face;
     const done = () => {
       if (this.rendering === face) this.rendering = null;
@@ -793,6 +951,7 @@ export class SpeechPlayer {
           this.audio.clearTimeout(guard);
           if (outcome === 'cut' && local !== null) {
             // The face stopped partway: the rest of the unit from the call's own copy, from where it was heard.
+            replay?.discard();
             if (!began) started();
             local.skip(heardMs ?? 0);
             fallback = this.playRest(local, settle);
@@ -802,15 +961,37 @@ export class SpeechPlayer {
             // The face has gone quiet first (a text face interrupts the vendor before it reports the failure),
             // so two voices never overlap: the call speaks the unit itself (a streamed unit from its own copy,
             // from the unit's start: nothing of it was heard).
-            if (local !== null) {
-              fallback = this.playStream(local, unit, settle, started);
+            const sayItself = () => {
+              replay?.discard();
+              if (local !== null) {
+                fallback = this.playStream(local, unit, settle, started);
+                return;
+              }
+              started();
+              fallback = buffer === null ? this.playFetched(unit, settle) : this.playBuffer(buffer, settle);
+            };
+            if (!this.replaceable || replay === null) {
+              sayItself();
               return;
             }
-            started();
-            fallback = buffer === null ? this.playFetched(unit, settle) : this.playBuffer(buffer, settle);
+            // A face that may be replaced reports its loss right after it gives its units back, and the call then
+            // holds its speech for the next face (`holdForFace`): a moment later, a held player has the next face say
+            // the unit, nothing of which was heard; otherwise (a stall the face recovers from, a face given up for
+            // good) the call says it itself.
+            deciding = this.audio.setTimeout(() => {
+              deciding = null;
+              if (generation !== this.generation) return;
+              if (this.holding) {
+                this.queue.unshift(replay.entry());
+                settle(false);
+                return;
+              }
+              sayItself();
+            }, 0);
             return;
           }
           // Heard on the face: the call's own copy is never played.
+          replay?.discard();
           local?.stop();
           // A face that never reported the start still made the unit heard: announce it before its end.
           if (!began) started();
@@ -824,13 +1005,47 @@ export class SpeechPlayer {
       finished = true;
       done();
       this.audio.clearTimeout(guard);
+      if (deciding !== null) this.audio.clearTimeout(deciding);
+      deciding = null;
       stopFace();
       if (fallback) fallback();
       else {
+        replay?.discard();
         local?.stop();
         settle(false);
       }
     };
+  }
+
+  /** How a unit fed to a `stream` face is said by its successor (from the copy kept for it), if one was kept. */
+  private streamReplay(
+    prepared: Extract<Prepared, { kind: 'faceStream' }>,
+    unit: SpeechUnitToPlay,
+  ): Replay | null {
+    const spare = prepared.spare ?? null;
+    if (spare === null) return null;
+    let used = false;
+    return {
+      entry: () => {
+        used = true;
+        return { unit, controller: new AbortController(), prepared: Promise.resolve(prepared) };
+      },
+      discard: () => {
+        if (used) return;
+        used = true;
+        void spare.cancel().catch(() => undefined);
+      },
+    };
+  }
+
+  /** A replacement face takes a turn the call already ended: it is told where that turn ends (once per face). */
+  private reopenTurn(face: FaceRenderer, turnId: string | null): void {
+    const last = this.endedTurns.get(turnId);
+    if (last === undefined) return;
+    const closed = this.closedFor(face);
+    if (closed.has(turnId)) return;
+    closed.add(turnId);
+    face.endTurn?.(turnId, last);
   }
 
   /** The browser's voice or captions only. */

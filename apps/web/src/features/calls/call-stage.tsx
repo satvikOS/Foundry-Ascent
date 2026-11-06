@@ -1,4 +1,4 @@
-import { AudioLines, Phone, VideoOff } from 'lucide-react';
+import { AudioLines, Phone, RotateCw, VideoOff } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, type ReactNode, type Ref } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -30,11 +30,13 @@ interface CallStageProps {
   className?: string;
   /**
    * A video call: the vendor face is asked for once the call is live (when the call settings name one), and until it
-   * shows the tile says the video is starting (never a stand-in presence); if it cannot start or drops, the tile says
-   * so (the call screen offers a voice call). A voice call never asks for it: the sphere is its presence.
+   * shows the tile says the call is connecting to the vEIR (never a stand-in presence; the conversation waits for the
+   * face); a face the vendor ended is replaced (the tile says it is reconnecting); one that cannot start or come back
+   * makes the tile say video is not available right now, with the voice call one tap away. A voice call never asks for
+   * it: the sphere is its presence.
    */
   video?: boolean;
-  /** A video call whose face could not start or stopped offers this (switch to a voice call); null: no offer. */
+  /** A video call whose face is not available offers this (switch to a voice call); null: no offer. */
   onVoiceInstead?: (() => void) | null;
   /** The call's face (it outlives this screen: minimized, the call keeps it). Null: always the presence. */
   face?: CallFaceController | null;
@@ -69,9 +71,13 @@ export function CallStage({
   const face = useCallFace(controller);
   const video = face.status === 'live';
   const active = video ? face.provider : sphere;
-  const pending = videoPending(wantsVideo, controller, veir.provider, callId, face);
+  const pending = videoPending(wantsVideo, controller, veir.provider, face);
 
-  // Once a video call is live, ask for its face (once per call; the controller keeps it while minimized).
+  // A video call warms its face's adapter at once (while the call opens), then asks for the face once it is live (the
+  // controller keeps it while minimized).
+  useEffect(() => {
+    if (wantsVideo) controller?.warm(veir.provider);
+  }, [wantsVideo, controller, veir.provider]);
   useEffect(() => {
     if (!wantsVideo || controller === null || ventureId === null || callId === null) return;
     controller.request({ provider: veir.provider, ventureId, callId, reducedMotion });
@@ -161,42 +167,22 @@ export function CallStage({
           </div>
         </div>
       ) : pending !== null ? (
-        <div data-slot="call-video-pending" className={videoFrame}>
-          <div className="flex flex-col items-center gap-3 px-6 text-center text-small text-white/80">
-            {pending === 'starting' ? (
-              <span
-                aria-hidden
-                className={cn(
-                  'size-2.5 rounded-full bg-white/70',
-                  !reducedMotion && 'motion-safe:animate-pulse',
-                )}
-              />
-            ) : (
-              <VideoOff aria-hidden className="size-5 text-white/70" />
-            )}
-            {/* The call's status line announces the state; this is what the tile shows. */}
-            <p>
-              {VIDEO_PENDING_TEXT[pending]}
-              {pending !== 'starting' && onVoiceInstead ? '. You can carry on as a voice call.' : ''}
-            </p>
-            {pending !== 'starting' && onVoiceInstead ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                data-slot="video-off"
-                className="min-h-11 sm:min-h-9"
-                onClick={onVoiceInstead}
-              >
-                <Phone aria-hidden />
-                Voice call
-              </Button>
-            ) : null}
-          </div>
-          <div className="glass-strong absolute bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] items-center rounded-full border">
-            {videoTag}
-          </div>
-        </div>
+        <VideoPendingTile
+          pending={pending}
+          frameClass={videoFrame}
+          name={veir.name}
+          still={face.status === 'reconnecting' ? face.still : null}
+          reducedMotion={reducedMotion}
+          tag={videoTag}
+          onVoiceInstead={onVoiceInstead}
+          onRetry={
+            controller !== null && callId !== null && controller.canAsk(callId)
+              ? () => {
+                  controller.retry(callId);
+                }
+              : null
+          }
+        />
       ) : (
         <>
           <div
@@ -212,30 +198,143 @@ export function CallStage({
   );
 }
 
-/** What a video call's tile (and its status line) says while its face is not shown. */
-export const VIDEO_PENDING_TEXT = {
-  starting: 'Starting video…',
-  stopped: 'Video stopped',
-  unavailable: 'Video couldn’t start',
-} as const;
+/** A video call's face that is not shown: joining, being replaced, paused with the call, or not available now. */
+export type VideoPending = 'connecting' | 'reconnecting' | 'paused' | 'unavailable';
 
-export type VideoPending = keyof typeof VIDEO_PENDING_TEXT;
+/** What a video call's tile (and its status line) says while its face is not shown (`name`: the vEIR's). */
+export function videoPendingText(pending: VideoPending, name: string): string {
+  switch (pending) {
+    case 'connecting':
+      return `Connecting to ${name}…`;
+    case 'reconnecting':
+      return 'Reconnecting…';
+    case 'paused':
+      return 'Video paused';
+    case 'unavailable':
+      return 'Video isn’t available right now';
+  }
+}
 
 /**
  * A video call's face that is not shown (null when it is shown, or on a voice call, or with no vendor face to ask
- * for): `starting` until the face shows (or the call is live and asks for it), then `stopped` once a face that
- * showed is gone, or `unavailable` when it never showed. A call asks for its face once, so either is final.
+ * for): `connecting` until the face first shows (the conversation waits for it), `reconnecting` while a new vendor
+ * session replaces one that ended, `paused` while the call is on hold, `unavailable` when it could not start or come
+ * back (the call screen offers the voice call).
  */
 export function videoPending(
   wantsVideo: boolean,
   controller: CallFaceController | null,
   provider: CallVeir['provider'],
-  callId: string | null,
   face: ReturnType<typeof useCallFace>,
 ): VideoPending | null {
-  if (!wantsVideo || controller === null || provider === 'builtin' || face.status === 'live') return null;
-  if (face.status === 'connecting' || callId === null || !controller.hasAsked(callId)) return 'starting';
-  return controller.hadVideo(callId) ? 'stopped' : 'unavailable';
+  if (!wantsVideo || controller === null || provider === 'builtin') return null;
+  switch (face.status) {
+    case 'live':
+      return null;
+    case 'presence':
+    case 'connecting':
+      return 'connecting';
+    case 'reconnecting':
+    case 'paused':
+    case 'unavailable':
+      return face.status;
+  }
+}
+
+/**
+ * The 16:9 tile of a video call while its face is not shown. Connecting: a calm "Connecting to Thomas…" on black (no
+ * stand-in, no sphere). Reconnecting: the face's last frame, dimmed, under "Reconnecting…". Not available: says so,
+ * with the voice call one tap away (the conversation is kept) and another try.
+ */
+function VideoPendingTile({
+  pending,
+  frameClass,
+  name,
+  still,
+  reducedMotion,
+  tag,
+  onVoiceInstead,
+  onRetry,
+}: {
+  pending: VideoPending;
+  frameClass: string;
+  name: string;
+  /** The face's last frame (a data URL) while a new session replaces it. */
+  still: string | null;
+  reducedMotion: boolean;
+  tag: ReactNode;
+  onVoiceInstead: (() => void) | null;
+  onRetry: (() => void) | null;
+}) {
+  const waiting = pending === 'connecting' || pending === 'reconnecting';
+  const text = videoPendingText(pending, name);
+  return (
+    <div data-slot="call-video-pending" data-pending={pending} className={frameClass}>
+      {still !== null ? (
+        <img
+          src={still}
+          alt=""
+          aria-hidden
+          data-slot="call-video-still"
+          className="absolute inset-0 size-full scale-105 object-cover opacity-60 blur-[2px]"
+        />
+      ) : null}
+      <div className="relative flex max-w-md flex-col items-center gap-3 px-6 text-center text-small text-white/85">
+        {waiting ? (
+          <span
+            aria-hidden
+            data-slot="call-video-connecting"
+            className={cn('size-2.5 rounded-full bg-white/75', !reducedMotion && 'motion-safe:animate-pulse')}
+          />
+        ) : (
+          <VideoOff aria-hidden className="size-5 text-white/70" />
+        )}
+        {/* The call's status line announces the state; this is what the tile shows. */}
+        <p className={cn(waiting ? 'text-body text-white/90' : 'font-medium text-white')}>{text}</p>
+        {pending === 'unavailable' ? (
+          <p className="text-white/70">
+            Your conversation with {name} is kept.{onVoiceInstead ? ' You can carry on as a voice call.' : ''}
+          </p>
+        ) : null}
+        {pending === 'unavailable' && (onVoiceInstead || onRetry) ? (
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {onVoiceInstead ? (
+              <Button
+                type="button"
+                size="sm"
+                data-slot="video-off"
+                // The tile is black in both themes: its buttons are light on it.
+                className="min-h-11 bg-white text-black hover:bg-white/90 sm:min-h-9"
+                onClick={onVoiceInstead}
+              >
+                <Phone aria-hidden />
+                Voice call
+              </Button>
+            ) : null}
+            {onRetry ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                data-slot="video-retry"
+                className="min-h-11 border border-white/30 text-white hover:bg-white/10 hover:text-white sm:min-h-9"
+                onClick={onRetry}
+              >
+                <RotateCw aria-hidden />
+                Try again
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      {/* Not over the offer of a voice call (the header names the vEIR): a phone's tile has no room for both. */}
+      {pending === 'unavailable' ? null : (
+        <div className="glass-strong absolute bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] items-center rounded-full border">
+          {tag}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**

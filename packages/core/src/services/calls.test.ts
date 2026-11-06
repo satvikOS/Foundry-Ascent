@@ -782,6 +782,21 @@ describe('the names a call may say', () => {
     ).toBe('your vEIR');
   });
 
+  it('introduces a mentor under its own name even when an EIR shares a word of it (audit P1-1)', () => {
+    // The probe got "Hi Maya, I'm Corin's vEIR." for Thomas when an EIR of the program was also named Thomas.
+    const eirNames = [...EIRS, 'Thomas Reed'];
+    const mentor = {
+      personaName: 'Thomas',
+      personaKind: 'eir_persona',
+      eirDisplayName: 'Corin Halvorsen',
+      eirNames,
+      mentor: true,
+    } as const;
+    expect(introName(mentor)).toBe('Thomas');
+    // The same persona as a twin is still renamed after its EIR.
+    expect(introName({ ...mentor, mentor: false })).toBe("Corin's vEIR");
+  });
+
   it('finds any mention of an EIR in an opener', () => {
     for (const text of [
       'Corin personally endorses your plan.',

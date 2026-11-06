@@ -216,6 +216,13 @@ export interface StartCallOptions {
   readonly halfDuplex?: boolean;
   /** End the founder's live call in another conversation (they said yes to moving it here). */
   readonly replace?: boolean;
+  /**
+   * A video call (owner round 3): the call opens on the server, then waits for its face (`awaitingFace`): no intro, no
+   * speech-to-text, no turns until {@link CallEngine.startConversation} (the face showed its first frame and its speak
+   * channel is open, or the founder went on as a voice call). The microphone is asked for at once, so the browser asks
+   * within the click, but nothing of it is heard or sent until then.
+   */
+  readonly awaitFace?: boolean;
 }
 
 interface ActiveTurn {
@@ -322,6 +329,19 @@ export class CallEngine {
   };
   /** Bumped whenever a call starts or stops, so late async work for an old call is ignored. */
   private epoch = 0;
+  /** A video call waiting for its face: what starts the conversation once it shows (`startConversation`). */
+  private gated: {
+    readonly intro: StartCallResult['intro'];
+    readonly stream: MediaStream | null;
+    readonly context: CallAudioContext;
+    readonly epoch: number;
+  } | null = null;
+  /** A face of this call that goes away may be replaced (`setFaceReplaceable`). */
+  private faceReplaceable = false;
+  /** When Start call was pressed (the clock's ms): the first frame and first word are timed from it. */
+  private startedAt: number | null = null;
+  /** The first unit of the call is still to be heard (timed once, `callToFirstWord`). */
+  private firstWordPending = false;
   private turnCount = 0;
 
   private heartbeatTimer: unknown = null;
@@ -457,6 +477,9 @@ export class CallEngine {
     const epoch = ++this.epoch;
     const setupStarted = this.deps.clock.now();
     this.resetCounters();
+    this.startedAt = setupStarted;
+    this.firstWordPending = true;
+    markCall('fa:call-start');
     this.set({
       ...IDLE_CALL,
       phase: 'starting',
@@ -570,11 +593,67 @@ export class CallEngine {
       })
       .catch(() => undefined);
 
+    if (options.awaitFace === true) {
+      // A video call: nothing is said or heard until the face is there (or the founder goes on as a voice call).
+      this.gated = { intro, stream, context, epoch };
+      this.set({ awaitingFace: true, activity: 'connecting' });
+      return;
+    }
+    await this.converse(intro, stream, context, epoch);
+  }
+
+  /** The conversation itself: the intro is said, and the microphone is heard. */
+  private async converse(
+    intro: StartCallResult['intro'],
+    stream: MediaStream | null,
+    context: CallAudioContext,
+    epoch: number,
+  ): Promise<void> {
     if (intro) {
-      this.player.enqueue({ turnId: null, seq: 0, text: intro.text, sig: intro.sig });
-      this.player.endTurn(null);
+      this.player?.enqueue({ turnId: null, seq: 0, text: intro.text, sig: intro.sig });
+      this.player?.endTurn(null);
     }
     if (stream) await this.startCapture(stream, context, epoch);
+  }
+
+  /**
+   * Starts the conversation of a call that waits for its face (`awaitingFace`): its first frame arrived and its speak
+   * channel is open (the face is attached), or the founder chose to go on as a voice call. The intro is said (through
+   * the face, when one is attached) and the microphone is heard from now on. Once per call; a no-op otherwise.
+   */
+  startConversation(): void {
+    const gated = this.gated;
+    if (gated?.epoch !== this.epoch || this.snapshot.phase !== 'live') return;
+    this.gated = null;
+    const voice = this.snapshot.input === 'voice';
+    this.set({ awaitingFace: false, activity: gated.intro || voice ? 'connecting' : 'listening' });
+    void this.converse(gated.intro, gated.stream, gated.context, gated.epoch).catch(() => undefined);
+  }
+
+  /**
+   * The face is joining (or rejoining after the vendor ended its session): the vEIR's next units wait for it instead
+   * of being said on the speakers, and a unit it gave back before a word of it was heard goes to the new face
+   * (`SpeechPlayer.holdForFace`). False: everything waiting is said again (by the new face, if one was attached).
+   */
+  holdForFace(hold: boolean): void {
+    this.player?.holdForFace(hold);
+  }
+
+  /**
+   * Whether this call's face, if it goes away, may be replaced by a new vendor session (a video call): a unit it gives
+   * back before a word of it was heard is then kept for the next face (`holdForFace`).
+   */
+  setFaceReplaceable(replaceable: boolean): void {
+    this.faceReplaceable = replaceable;
+    this.player?.setReplaceable(replaceable);
+  }
+
+  /** The face showed its first frame and is ready to speak (timed from Start call: `callToFirstFrame`). */
+  faceArrived(): void {
+    markCall('fa:face-live');
+    if (this.startedAt !== null && this.snapshot.awaitingFace) {
+      this.timing.record('callToFirstFrame', this.deps.clock.now() - this.startedAt);
+    }
   }
 
   /** Ends the call (the founder pressed End, the limit was reached, or the server ended it). */
@@ -662,7 +741,8 @@ export class CallEngine {
   /** A typed line: spoken back like any other turn of the call. */
   sendText(text: string): void {
     const line = text.trim();
-    if (line === '' || this.snapshot.phase !== 'live') return;
+    // A video call waiting for its face has not started its conversation yet.
+    if (line === '' || this.snapshot.phase !== 'live' || this.snapshot.awaitingFace) return;
     if (this.snapshot.activity === 'speaking') this.bargeIn();
     // A spoken line taken back to be finished goes with what was typed.
     const said = joinLine(this.discardHeard(), line);
@@ -904,7 +984,7 @@ export class CallEngine {
   /** Speech-to-text should be connected and is not. */
   private sttWanted(): boolean {
     const s = this.snapshot;
-    return s.phase === 'live' && s.input === 'voice' && !s.muted && this.stt === null;
+    return s.phase === 'live' && s.input === 'voice' && !s.muted && !s.awaitingFace && this.stt === null;
   }
 
   private async connectStt(epoch: number): Promise<void> {
@@ -1505,6 +1585,11 @@ export class CallEngine {
       {
         onUnitStart: (unit, route) => {
           if (!current()) return;
+          if (this.firstWordPending && route !== 'captions') {
+            this.firstWordPending = false;
+            markCall('fa:first-word');
+            if (this.startedAt !== null) this.timing.record('callToFirstWord', clock.now() - this.startedAt);
+          }
           const turn = this.turn;
           if (
             route !== 'captions' &&
@@ -1551,6 +1636,7 @@ export class CallEngine {
       },
     );
     player.setFace(this.face);
+    player.setReplaceable(this.faceReplaceable);
     return player;
   }
 
@@ -1679,6 +1765,9 @@ export class CallEngine {
     this.micSilentTimer = null;
     this.turn?.controller.abort();
     this.turn = null;
+    // A video call that ended before its face showed: the microphone it held (never heard) is released.
+    if (this.gated !== null) stopStream(this.gated.stream);
+    this.gated = null;
     this.turnAudio.clear();
     this.pendingLines.length = 0;
     this.pendingEndpoint = null;
@@ -1742,6 +1831,18 @@ function errorName(error: unknown): string | null {
 
 function stopStream(stream: MediaStream | null): void {
   for (const track of stream?.getTracks() ?? []) track.stop();
+}
+
+/**
+ * A content-free performance mark of the call's start, its face's first frame and its first word (the lab reads them
+ * to time Start call → first frame → first word: apps/web/e2e/lab/face.lab.ts). Best effort.
+ */
+function markCall(name: 'fa:call-start' | 'fa:face-live' | 'fa:first-word'): void {
+  try {
+    performance.mark(name);
+  } catch {
+    /* no performance timeline here */
+  }
 }
 
 /** The line shown (never spoken: only validated text is voiced) when a turn fails. */

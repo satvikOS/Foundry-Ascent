@@ -606,13 +606,22 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
    admins: the owner's live checks and FULL presentations) and, for a real likeness, the persona's face is ready
    under `likeness` consent (`app.persona_twin`; a stock avatar needs none and is labelled "AI avatar"), with the
    video minutes left (`faceMinutesLeft`).
-2. Once the call is live the stage asks the call's `CallFaceController` for it; the controller asks
-   `POST /calls/avatar-session {ventureId, callId}` once per call. The server opens a vendor session only for the
-   caller's own live call in that venture with that persona, for at most the call's time left, the per-call video
-   limit (`face_minutes_per_call`, 20) and the person's video minutes this month (`face_minutes_per_principal_month`,
-   60), never above the platform spend cap, outside any transaction; one face per call (`call_faces`). The vendor
-   session carries that limit (`max_session_duration`); a vendor that refuses it opens no session. Anything else
-   answers the presence (no token); the audit names the provider and the reason, never a token.
+2. **A video call waits for its face** (owner round 3, 2026-11-06: "just load the actual avatar, then the
+   conversation starts"): the engine opens the call on the server (`awaitingFace`, the microphone asked for within the
+   click but nothing of it heard or sent), the call tile says "Connecting to Thomas…" (no sphere, no stand-in), and
+   only once the face's first frame arrived and its speak channel is open does the conversation start
+   (`CallEngine.startConversation`): the face says the intro, then the founder is heard. The call's
+   `CallFaceController` asks `POST /calls/avatar-session {ventureId, callId}`. The server opens a vendor session only
+   for the caller's own live call in that venture with that persona, for at most the call's time left, the per-call
+   video limit (`face_minutes_per_call`, 20, every session of the call counted) and the person's video minutes this
+   month (`face_minutes_per_principal_month`, 60), never above the platform spend cap, outside any transaction. A call
+   has one `call_faces` row holding its current session; a face the page dropped (`face_dropped`) is replaced in that
+   row by the next session (migration 0030: `sessions`, at most `FACE_SESSIONS_PER_CALL` = 12; `earlier_seconds`),
+   after the ended session was metered to its end, and each replacement is audited (`call.avatar_session`
+   `metadata.session`). A face the server stopped (a cap, the switches, a failed or injected transcript, the call's
+   end) is never opened again in that call. The vendor session carries its limit (`max_session_duration`); a vendor
+   that refuses it opens no session. Anything else answers the presence (no token); the audit names the provider and
+   the reason (`face_already_used`, `face_sessions`, a cap), never a token.
 3. The adapter (its own chunk) joins within 8 s; at the first frame the same tile shows the face, the name tag
    stays, the founder's initials sit in the corner, and the engine hands the face each unit (§4.2). A unit is
    announced at the face's first sound (the vendor's speak event, or its audio track's level); a unit the face
@@ -640,23 +649,38 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
      volume 0 while that route still plays the voice; only once its `play()` resolved with the element playing
      unmuted is it turned up and the route removed. A refused try mutes it again, keeps the route and waits for the
      next gesture, so a tap never cuts the voice. A paused element (the browser paused it) is played again.
-4. The face belongs to the call: minimizing keeps it (the mini bar shows it as a thumbnail, the video alone and
+4. **Reconnects.** A vendor session that ends during the call (the free plan's ~2 minute limit, a dropped room, video
+   track or speak channel, a stalled channel) is replaced at once by the next session of the same call: the tile shows
+   the face's last frame, dimmed, under "Reconnecting…"; the call's speech waits for the new face
+   (`SpeechPlayer.holdForFace`: nothing new starts and nothing is prepared, the turn stream's audio stays buffered);
+   a unit the old face gave back before a word of it was heard is said by the new face from a copy the call kept for it
+   (`spare`), a unit cut partway is finished on the call's own speakers from where it was heard (never doubled, never
+   lost); the turn's end is re-sent to the new face. A session within 25 s of its `expiresAt` is replaced early at a
+   quiet moment (the founder's turn, nothing being said or queued), so the next reply rarely waits on a join. If no
+   session comes back (the server offers none: credits, minutes, caps, the switches; or the join fails), or a video
+   call's first face cannot start, the tile says "Video isn't available right now", that the conversation is kept, and
+   offers **Voice call** (one tap; a call still waiting for its face starts its conversation then) and **Try again**;
+   the call never turns into a voice call by itself. Switching a voice call back to video asks for a new session too.
+   A server-relayed likeness face (LITE `server` route) does not replay a unit its ended session already took
+   (`call_speech.face_plays`): the call says it itself.
+5. The face belongs to the call: minimizing keeps it (the mini bar shows it as a thumbnail, the video alone and
    muted, or the monogram with reduced motion; the face's element plays on, still sounding, in a hidden 1 px spot
    of the page and returns to the tile when the call is shown again, so minimizing never cuts or doubles the voice);
    a face that drops, the stage giving it up, or a call left on hold (page hidden) for over a minute (the vendor
-   bills an idle face) tells the server (`POST /calls/:id/face/end`), with which trigger fired (`reason`: the
+   bills an idle face; a new session opens when the call resumes) tells the server (`POST /calls/:id/face/end`), with which trigger fired (`reason`: the
    vendor's video track ended or was unpublished, its room dropped, it stopped the session, with its own
    `vendorReason`, no first frame, a slow or failed join, no adapter, a crisis turn, the hold), and for a face that
    never showed the join stage it stopped at (`stage`: session, adapter, room, video, a LITE stock face's speak
    channel `control`) and a plain code (`detail`), recorded in the face's `call.face_ended` audit
    (`metadata.clientReason`, `clientStage`, `clientDetail`) and logged by the API (`call.face_failed` for a
    failure), so a face that left early, or never came, can be explained.
-5. Heartbeats report whether the face is shown and answer `face: stop` (and the server ends the vendor session,
+6. Heartbeats report whether the face is shown (neither while a session is being replaced, so the new one is not
+   ended as it joins) and answer `face: stop` (and the server ends the vendor session,
    asking twice if the first stop fails) when faces are switched off, likeness consent is withdrawn, the call's
    video limit or the month's video minutes are used up, the month's minutes cannot be read (the face never goes
    on unchecked), or the face is no longer shown. A crisis turn drops the face to the presence at once: a human-looking face never says the
-   crisis line. Ending the call ends its face (a database trigger erases the control channel; the vendor session is
-   stopped after commit).
+   crisis line (and no face comes back in that call). Ending the call ends its face (a database trigger erases the
+   control channel; the vendor session is stopped after commit).
 
 **Metering.** Face seconds come from the server's clock and go into the usage ledger as heartbeats come and when the
 face or the call ends, in the same transaction as the counter (`call_faces.metered_seconds`, never beyond the
@@ -688,9 +712,10 @@ clouds evenly; muted, on hold, sound off and disconnected are desaturated and st
 compositor-only transform and opacity writes from the call's one frame loop (`timeline/call-timeline.ts`), never a
 React render; it pauses with the page. With `prefers-reduced-motion` it is still and the state shows only in words.
 It implies no likeness. The sphere is a **voice** call's presence only (owner, 2026-11-06: the drawn in-browser
-character is removed, and video has no stand-in presence): a video call's 16:9 tile says "Starting video…" until the
-vendor face shows its first frame, and if the face cannot start or stops (a call asks for its face once), the tile
-says "Video couldn't start" or "Video stopped" and the call screen offers **Voice call**; the call never
+character is removed, and video has no stand-in presence): a video call's 16:9 tile says "Connecting to Thomas…" until
+the vendor face shows its first frame (the conversation waits for it), "Reconnecting…" while a new session replaces one
+the vendor ended, and if video cannot start or come back, "Video isn't available right now" with **Voice call** and
+**Try again** (§4.3); the call never
 turns into a voice call by itself. Every live face is labelled "AI avatar", a stock avatar and a consented likeness
 alike.
 

@@ -21,7 +21,7 @@ import {
  * (the same id on every chunk, a 200 ms first chunk, ~1 s after, one `agent.speak_end`), made only of units the
  * server admitted as it signed them; the call plays none of them on its own speakers while the face is healthy
  * (never both); barge-in interrupts the vendor and silences the element at once; and when the channel drops, the face
- * ends (`control_lost`), the tile says the video stopped and the call plays the next reply itself.
+ * ends (`control_lost`), a new session of the same call replaces it, and the new face says the next reply.
  */
 
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
@@ -89,7 +89,7 @@ function utterances(commands: readonly LiteCommand[], from = 0): Map<string, Lit
 test.describe('vEIR calls · a LITE stock face the page feeds (the ElevenLabs voice, lip-synced)', () => {
   test.use({ storageState: FOUNDER_STATE });
 
-  test('says each reply as one utterance of admitted units, never twice, and says when the face stops', async ({
+  test('says each reply as one utterance of admitted units, never twice, and replaces a face whose channel drops', async ({
     page,
     baseURL,
   }) => {
@@ -297,21 +297,27 @@ test.describe('vEIR calls · a LITE stock face the page feeds (the ElevenLabs vo
         expect(now.localStarts.filter((at) => at > liveAt)).toEqual([]);
       });
 
-      await test.step('the speak channel drops: the face ends, the tile says so and the call speaks itself', async () => {
+      await test.step('the speak channel drops: a new session of the call replaces the face, which says the next reply', async () => {
         await page.evaluate(() => window.dispatchEvent(new Event('foundry:face-lite-drop')));
-        await expect(tile).toHaveCount(0);
-        await expect(screen.locator('[data-slot="call-tile"][data-face="video-stopped"]')).toBeVisible();
-        await expect(screen.locator('[data-slot="call-video-pending"]')).toContainText('Video stopped.');
         await expect.poll(() => faceEnds.length).toBe(1);
         expect(faceEnds[0]?.status).toBe(204);
         expect(JSON.parse(faceEnds[0]?.body ?? '{}')).toEqual({ reason: 'control_lost' });
+        // The server opens the next session of this call, with a speak channel of its own.
+        await expect.poll(() => sessions.length, { timeout: 15_000 }).toBe(2);
+        expect(String(sessions[1]?.controlUrl)).toMatch(/^wss:\/\/lite\.stand-in\.invalid\//);
+        await expect(tile).toBeVisible({ timeout: 15_000 });
+        const from = (await record(page)).commands.length;
         const before = (await record(page)).localStarts.length;
         await expect(line).toBeEditable();
         await line.fill('Thanks, what next?');
         await line.press('Enter');
+        // Said by the new face (one utterance on its channel), never on the call's own speakers.
         await expect
-          .poll(async () => (await record(page)).localStarts.length, { timeout: 30_000 })
-          .toBeGreaterThan(before);
+          .poll(async () => (await record(page)).commands.slice(from).some((c) => c.type === 'agent.speak'), {
+            timeout: 30_000,
+          })
+          .toBe(true);
+        expect((await record(page)).localStarts.length).toBe(before);
       });
     } finally {
       if (callId) {

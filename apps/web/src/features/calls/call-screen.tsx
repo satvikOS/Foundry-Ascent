@@ -15,6 +15,7 @@ import { canWrite } from '@/lib/auth/roles';
 import { prefersHalfDuplex } from '@/lib/realtime/browser';
 import { discardConversation } from '@/lib/realtime/call-api';
 import type { CallEngine } from '@/lib/realtime/call-engine';
+import type { CallSnapshot } from '@/lib/realtime/call-state';
 import { cn } from '@/lib/utils';
 
 import { newConversationRequest } from '../chat/first-message';
@@ -100,7 +101,7 @@ function useLiveCallPage(engine: CallEngine, live: boolean): void {
 
 /** Said under the status when a video call was asked for but only voice is offered to this person. */
 const VOICE_INSTEAD = 'Video isn’t available, so this is a voice call.';
-/** Why a voice call cannot turn video on once it had a face (one face per call). */
+/** Why a voice call cannot turn video on again (its vendor sessions used up, or its face ended for good). */
 const VIDEO_USED = 'Video can’t restart in this call.';
 
 /**
@@ -208,6 +209,8 @@ export function CallScreen() {
         talkMode: storedTalkMode(),
         halfDuplex: prefersHalfDuplex(),
         replace,
+        // A video call: the face first, then the conversation (owner round 3); a voice call starts talking at once.
+        awaitFace: startKind === 'video',
       };
       setCreateError(null);
       acknowledgeNotice();
@@ -417,7 +420,7 @@ export function CallScreen() {
   const videoBlocked =
     video?.available === false
       ? video.reason
-      : live && callId !== null && face?.hasAsked(callId) === true
+      : live && callId !== null && face !== null && !face.canAsk(callId)
         ? VIDEO_USED
         : null;
   // The first call of this kind: its disclosure, over the start screen, before anything starts.
@@ -576,14 +579,15 @@ function CallHeader({
   kind: CallKind;
   headingRef: RefObject<HTMLHeadingElement | null>;
   live: boolean;
-  snapshot: Parameters<typeof useCallClock>[0];
+  snapshot: Parameters<typeof useCallClock>[0] & Pick<CallSnapshot, 'awaitingFace'>;
   /** A private call (a one-off) says so quietly while it lasts. */
   isPrivate: boolean;
   onClose: () => void;
 }) {
   const clock = useCallClock(snapshot);
   const KindIcon = kind === 'video' ? Video : Phone;
-  const timing = live && snapshot.liveAt !== null;
+  // A video call waiting for its face has not started its conversation: no clock yet, only "Connecting to …".
+  const timing = live && snapshot.liveAt !== null && !snapshot.awaitingFace;
   return (
     <header
       data-slot="call-header"

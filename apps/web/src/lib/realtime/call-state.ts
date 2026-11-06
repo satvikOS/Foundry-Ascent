@@ -64,6 +64,13 @@ export interface CallSnapshot {
   /** The microphone is closed while the vEIR speaks (devices without usable echo cancellation). */
   readonly halfDuplex: boolean;
   readonly reconnecting: boolean;
+  /**
+   * A video call waiting for its face (owner round 3: the avatar loads first, then the conversation starts): the call
+   * is open on the server, but nothing is said and nothing is heard (no intro, no speech-to-text, no turns) until the
+   * face showed its first frame and its speak channel is open (`CallEngine.startConversation`), or the founder chose to
+   * go on as a voice call.
+   */
+  readonly awaitingFace: boolean;
   /** The browser has not let the call's audio start yet: one tap (Turn on sound) unlocks it. */
   readonly audioBlocked: boolean;
   /** When the call went live (epoch ms; the timer counts from here). */
@@ -108,6 +115,7 @@ export const IDLE_CALL: CallSnapshot = {
   talking: false,
   halfDuplex: false,
   reconnecting: false,
+  awaitingFace: false,
   audioBlocked: false,
   liveAt: null,
   remaining: null,

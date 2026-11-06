@@ -885,3 +885,101 @@ describe('SpeechPlayer with a LITE stock face the page feeds (voicing stream)', 
     expect(face.turns.at(-1)).toEqual([null, 0]);
   });
 });
+
+describe('SpeechPlayer when a video call replaces its face (a new vendor session)', () => {
+  it('has the next face say a unit the leaving face gave back before a word of it was heard, never the speakers', async () => {
+    const { context, pending, player, log } = setup();
+    const first = new StreamFace();
+    player.setReplaceable(true);
+    player.setFace(first);
+    player.enqueue(unit(0));
+    player.endTurn(TURN);
+    const body = pcmBody();
+    pending[0]?.resolve({ kind: 'stream', body: body.body, sampleRate: 24_000 });
+    body.push(300);
+    await flush(10);
+    expect(first.renders.map((r) => r.unit?.seq)).toEqual([0]);
+    // The vendor ended the session: the face gives the unit back unheard, then the call holds its speech for the next.
+    first.live = false;
+    first.renders[0]?.handlers.onEnd('failed');
+    player.holdForFace(true);
+    player.setFace(null);
+    vi.advanceTimersByTime(1);
+    body.push(100);
+    body.end();
+    await flush(20);
+    // Nothing on the speakers while the next face joins, and the unit was not counted as heard.
+    expect(context.sources).toHaveLength(0);
+    expect(log).toEqual(['end 0 cut']);
+    // The new face is there: it is fed the whole unit (the copy the call kept) and told where the turn ends.
+    const second = new StreamFace();
+    player.setFace(second);
+    player.holdForFace(false);
+    await flush(30);
+    expect(second.fed.map((f) => f.unit.seq)).toEqual([0]);
+    expect(second.fed[0]?.bytes).toBe(19_200);
+    expect(second.turns).toEqual([[TURN, 0]]);
+    expect(second.renders.map((r) => r.unit?.seq)).toEqual([0]);
+    second.renders[0]?.handlers.onStart();
+    second.renders[0]?.handlers.onEnd('ended');
+    await flush(10);
+    expect(log).toEqual(['end 0 cut', 'start 0 server', 'end 0 done', 'idle']);
+    expect(context.sources).toHaveLength(0);
+  });
+
+  it('says the rest of a unit cut partway on the speakers at once: what was heard is never said twice', async () => {
+    const { context, pending, player, log } = setup();
+    const face = new StreamFace();
+    player.setReplaceable(true);
+    player.setFace(face);
+    player.enqueue(unit(0));
+    const body = pcmBody();
+    pending[0]?.resolve({ kind: 'stream', body: body.body, sampleRate: 24_000 });
+    body.push(400);
+    body.end();
+    await flush(10);
+    face.renders[0]?.handlers.onStart();
+    face.live = false;
+    face.renders[0]?.handlers.onEnd('cut', 300);
+    player.holdForFace(true);
+    await flush(20);
+    expect(log).toEqual(['start 0 server']);
+    const played = context.sources.reduce((n, s) => n + (s.buffer?.length ?? 0), 0);
+    expect(Math.abs(played - Math.round(0.1 * context.sampleRate))).toBeLessThanOrEqual(2);
+  });
+
+  it('starts nothing new while held, then gives what waited to the new face; given up, to the speakers', async () => {
+    const { context, pending, player, fetchSpeech } = setup();
+    player.setReplaceable(true);
+    player.holdForFace(true);
+    player.enqueue(unit(0));
+    // Not even asked for: its audio waits where it is until the face is there (or given up).
+    expect(fetchSpeech).not.toHaveBeenCalled();
+    player.holdForFace(false);
+    expect(fetchSpeech).toHaveBeenCalledTimes(1);
+    const body = pcmBody();
+    pending[0]?.resolve({ kind: 'stream', body: body.body, sampleRate: 24_000 });
+    body.push(200);
+    body.end();
+    await flush(20);
+    expect(context.sources.length).toBeGreaterThan(0);
+  });
+
+  it('leaves a unit to the call when the face is not being replaced (a stall it recovers from)', async () => {
+    const { context, pending, player, log } = setup();
+    const face = new StreamFace();
+    player.setReplaceable(true);
+    player.setFace(face);
+    player.enqueue(unit(0));
+    const body = pcmBody();
+    pending[0]?.resolve({ kind: 'stream', body: body.body, sampleRate: 24_000 });
+    body.push(300);
+    body.end();
+    await flush(10);
+    face.renders[0]?.handlers.onEnd('failed');
+    vi.advanceTimersByTime(1);
+    await flush(20);
+    expect(log).toEqual(['start 0 server']);
+    expect(context.sources.length).toBeGreaterThan(0);
+  });
+});

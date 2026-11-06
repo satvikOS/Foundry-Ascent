@@ -363,7 +363,7 @@ export function speechRefusal(reason: SpeechRefusal, crisis: boolean, now: Date)
     case 'call_budget':
       return new DomainError(
         'rate_limited',
-        'The vEIR has spoken as much as this call allows for now. Its replies stay on screen.',
+        'Your mentor has spoken as much as this call allows for now. Replies stay on screen.',
         { reason: 'call_speech_limit', retryAfterSeconds: CALL_LIMITS.heartbeatSeconds },
       );
     case 'daily_budget':
@@ -692,7 +692,7 @@ export function createSpeechService(
 
   /** The validation error for text that is not this call's validated words. */
   function notValidatedText(reason: string): DomainError {
-    return fail.validation('Only the vEIR’s validated words can be spoken', [
+    return fail.validation('Only validated words of this conversation can be spoken', [
       { path: reason === 'signature_invalid' ? 'sig' : 'text', message: 'Not validated text of this call' },
     ]);
   }
@@ -962,7 +962,7 @@ export function createSpeechService(
           active.persona.id !== call.personaId ||
           !callCanSpeak(call, persona, assets)
         ) {
-          throw new DomainError('persona_suspended', 'This vEIR cannot speak right now.', {
+          throw new DomainError('persona_suspended', 'Your mentor can’t speak right now.', {
             reason: 'voice_not_approved',
           });
         }

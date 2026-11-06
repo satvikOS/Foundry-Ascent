@@ -42,7 +42,7 @@ import { type SynthesizedSpeech } from '../ports.js';
 import { FACE_TEXT_PLAYS } from './speech.js';
 import { FakeEmbodimentProvider, FakeSpeechSynthesizer, FakeVoiceProvider } from '../testing/fakes.js';
 import { type CoreHarness, createCoreHarness } from '../testing/harness.js';
-import { MIN_FACE_SECONDS } from './face.js';
+import { FACE_SESSIONS_PER_CALL, MIN_FACE_SECONDS } from './face.js';
 import { DEFAULT_SPEECH_VOICE } from './voices.js';
 
 let h: CoreHarness;
@@ -541,6 +541,88 @@ describe('the face of a call: off by default, then the stand-in', () => {
       });
     } finally {
       await local.calls.end(ctx.maya, callId, { reason: 'user' }).catch(() => undefined);
+    }
+  });
+
+  it('replaces a face the vendor ended with the next session of the same call, each billed once (0030)', async () => {
+    const before = await usage('fake:face');
+    const started = await startCall(local);
+    const callId = started.call.id;
+    try {
+      await faceSession(local, callId);
+      await ageFace(callId, 100);
+      // The free plan ended the vendor session: the page drops it and asks for the next one.
+      await local.face.drop(ctx.maya, callId, { reason: 'vendor_stopped' });
+      const opened = standIn.sessions.length;
+      const next = await faceSession(local, callId);
+      expect(next).toMatchObject({ provider: 'fake', voicing: 'audio' });
+      expect(next.token).toMatch(/^fake\.session-\d+$/);
+      expect(standIn.sessions.length).toBe(opened + 1);
+      // The per-call video limit counts the first session's seconds (20 minutes less the 100 already used).
+      expect(standIn.sessions.at(-1)?.maxSeconds).toBeLessThanOrEqual(20 * 60 - 100);
+      expect(standIn.sessions.at(-1)?.maxSeconds).toBeGreaterThanOrEqual(20 * 60 - 102);
+      const row = await h.t.db.system((sx) => twinRepo.getCallFace(sx, callId));
+      expect(row).toMatchObject({ sessions: 2, endedAt: null, endReason: null, meteredSeconds: 0 });
+      expect(row?.earlierSeconds).toBeGreaterThanOrEqual(100);
+      const audited = await lastAudit('call.avatar_session');
+      expect(audited).toMatchObject({ outcome: 'succeeded', object_id: callId });
+      expect(JSON.parse(String((JSON.parse(audited.raw) as { metadata: unknown }).metadata))).toMatchObject({
+        session: 2,
+      });
+      // A second tab asking while the new face is live opens nothing.
+      expect(await faceSession(local, callId)).toMatchObject({ provider: 'builtin', token: null });
+      expect(await lastAudit('call.avatar_session')).toMatchObject({ policy_reason: 'face_already_used' });
+      // The second session is billed on its own; the ledger holds both sessions' seconds, once.
+      await ageFace(callId, 40);
+      await local.calls.end(ctx.maya, callId, { reason: 'user' });
+      const ended = await h.t.db.system((sx) => twinRepo.getCallFace(sx, callId));
+      expect(ended?.meteredSeconds).toBeGreaterThanOrEqual(40);
+      expect((await usage('fake:face')).units - before.units).toBe(
+        (ended?.earlierSeconds ?? 0) + (ended?.meteredSeconds ?? 0),
+      );
+    } finally {
+      await local.calls.end(ctx.maya, callId, { reason: 'user' }).catch(() => undefined);
+    }
+  });
+
+  it('never reopens a face the server stopped, and caps the sessions of one call', async () => {
+    const started = await startCall(local);
+    const callId = started.call.id;
+    try {
+      // Stopped by the server (the per-call limit): never opened again in this call.
+      await setting('face_minutes_per_call', '1');
+      await faceSession(local, callId);
+      await ageFace(callId, 75);
+      expect(await beat(local, callId, 'live')).toMatchObject({ face: 'stop' });
+      await setting('face_minutes_per_call', '20');
+      const opened = standIn.sessions.length;
+      expect(await faceSession(local, callId)).toMatchObject({ provider: 'builtin', token: null });
+      expect(standIn.sessions.length).toBe(opened);
+      expect(await lastAudit('call.avatar_session')).toMatchObject({
+        outcome: 'denied',
+        policy_reason: 'face_already_used',
+      });
+    } finally {
+      await setting('face_minutes_per_call', '20');
+      await local.calls.end(ctx.maya, callId, { reason: 'user' }).catch(() => undefined);
+    }
+
+    const capped = await startCall(local);
+    try {
+      await faceSession(local, capped.call.id);
+      for (let n = 2; n <= FACE_SESSIONS_PER_CALL; n += 1) {
+        await local.face.drop(ctx.maya, capped.call.id, { reason: 'vendor_stopped' });
+        expect((await faceSession(local, capped.call.id)).token).not.toBeNull();
+      }
+      await local.face.drop(ctx.maya, capped.call.id, { reason: 'vendor_stopped' });
+      const opened = standIn.sessions.length;
+      expect(await faceSession(local, capped.call.id)).toMatchObject({ provider: 'builtin', token: null });
+      expect(standIn.sessions.length).toBe(opened);
+      expect(await lastAudit('call.avatar_session')).toMatchObject({ policy_reason: 'face_sessions' });
+      const row = await h.t.db.system((sx) => twinRepo.getCallFace(sx, capped.call.id));
+      expect(row?.sessions).toBe(FACE_SESSIONS_PER_CALL);
+    } finally {
+      await local.calls.end(ctx.maya, capped.call.id, { reason: 'user' }).catch(() => undefined);
     }
   });
 

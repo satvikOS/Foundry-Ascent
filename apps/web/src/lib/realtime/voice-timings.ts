@@ -1,6 +1,10 @@
 /** Content-free, bounded call diagnostics. These are browser scheduling estimates, never acoustic proof. */
 export type VoiceStage =
   | 'sessionSetup'
+  /** A video call: from Start call to the face's first frame (its speak channel open). */
+  | 'callToFirstFrame'
+  /** From Start call to the vEIR's first word heard (the intro): through the face on a video call. */
+  | 'callToFirstWord'
   | 'transcriptAfterVadEnd'
   | 'endpointing'
   | 'endpointDecision'
@@ -9,6 +13,8 @@ export type VoiceStage =
   | 'interruptToStopScheduled';
 const STAGES: readonly VoiceStage[] = [
   'sessionSetup',
+  'callToFirstFrame',
+  'callToFirstWord',
   'transcriptAfterVadEnd',
   'endpointing',
   'endpointDecision',

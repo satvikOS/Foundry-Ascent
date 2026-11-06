@@ -87,7 +87,8 @@ export interface AvatarProvider {
 
   /**
    * Joins the vendor session with the API's room token (`POST /calls/avatar-session`); resolves once the first
-   * frame arrived, rejects when it cannot (the call keeps the presence). Audio for the face goes through `relay`.
+   * frame arrived (and a LITE stock face's speak channel is open), rejects when it cannot (the call screen says video
+   * is not available and offers the voice call). Audio for the face goes through `relay`.
    */
   connect?(session: AvatarSessionResponse, signal: AbortSignal, relay: FaceRelay): Promise<void>;
   /**
@@ -104,7 +105,10 @@ export interface AvatarProvider {
   media?(): FaceMediaElement | null;
   /** Voicing `audio` or `text`: where the call hands each validated unit. */
   renderer?(): FaceRenderer | null;
-  /** The face stopped (the vendor dropped, its video ended): the call goes on with the presence. */
+  /**
+   * The face stopped (the vendor dropped, its video ended): a video call replaces it with a new session of the call
+   * (`CallFaceController`), its speech waiting for the new face meanwhile.
+   */
   onLost?(listener: (loss: FaceLoss) => void): () => void;
 }
 
@@ -160,6 +164,20 @@ const VENDOR_FACES: Partial<
     });
   },
 };
+
+/**
+ * Starts loading a vendor face's adapter chunks ahead of its session (a video call warms them while the call and its
+ * avatar session are being opened), so the join does not wait on them. Best effort; loading twice costs nothing.
+ */
+export function warmAvatarAdapter(id: EmbodimentProviderId): void {
+  if (id === 'heygen') {
+    void Promise.all([import('./embodiment/liveavatar'), import('livekit-client')]).catch(() => undefined);
+  } else if (id === 'fake') {
+    void Promise.all([import('./embodiment/liveavatar'), import('./embodiment/fake-liveavatar-room')]).catch(
+      () => undefined,
+    );
+  }
+}
 
 /**
  * A vendor face's adapter for the session's voicing, or null when this build has none for it (the call keeps the
