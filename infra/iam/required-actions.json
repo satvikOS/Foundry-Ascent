@@ -1,5 +1,5 @@
 {
-  "description": "Every IAM action the stage-0 CI identity (IAM user Foundry-Ascent) needs after the CDK bootstrap, with representative resource ARNs, and what it must NOT be able to do. ops/aws/verify_access.py simulates each action against each resource with iam:SimulatePrincipalPolicy; a required entry that is not 'allowed' fails the run, and a required entry with \"expect\": \"denied\" fails the run when it IS allowed (privilege escalation, CDKToolkit or platform stack changes, deletion of platform data). Placeholders: {account} = caller account id (never printed), {region} = platform region (us-east-1). Literal regions are cross-region inference destinations. Resource '*' marks actions without resource-level scoping and legacy resources whose names are not known in advance. Optional 'policy' (a customer-managed policy name): the entry applies only while that policy is attached directly to the calling IAM user (iam:ListAttachedUserPolicies). Once it is detached (FoundryAscent-LegacyCleanup is detached after the legacy cleanup), the entry is skipped instead of failing; if attachment cannot be determined, the entry is checked as declared. Every 'aws' CLI call in .github/workflows and every boto3 call of the ops scripts run by the stage-0 workflows is listed here (ops/aws/test_policies.py checks the workflows against this file and the policy).",
+  "description": "Every IAM action the stage-0 CI identity (IAM user Foundry-Ascent) needs after the CDK bootstrap, with representative resource ARNs, and what it must NOT be able to do. ops/aws/test_policies.py (CI, offline) evaluates each action against each resource with the policy files in infra/iam/policies: a required entry that is not 'allowed' fails, and a required entry with \"expect\": \"denied\" fails when it IS allowed (privilege escalation, CDKToolkit or platform stack changes, deletion of platform data). Placeholders: {account} = caller account id (never printed), {region} = platform region (us-east-1). Literal regions are cross-region inference destinations. Resource '*' marks actions without resource-level scoping and legacy resources whose names are not known in advance. Optional 'policy' (FoundryAscent-LegacyCleanup, detached since the legacy cleanup closed on 2026-10-06): the entry is granted by that policy and is evaluated with it attached. Every 'aws' CLI call in .github/workflows is listed here (ops/aws/test_policies.py checks the workflows against this file and the policy). The stage-0 access key was deleted on 2026-10-06, so this file now records what the published stage-0 policies grant and deny; nothing runs as that identity.",
   "cdk_qualifier": "hnb659fds",
   "entries": [
     {
@@ -9,7 +9,7 @@
       "required": true
     },
     {
-      "purpose": "Self-introspection: verify_access.py and the retire-stage-0 plan",
+      "purpose": "Self-introspection: the stage-0 user reads its own policies, keys and login profile, and simulates its policies",
       "actions": [
         "iam:GetUser",
         "iam:ListAttachedUserPolicies",
@@ -64,7 +64,7 @@
       "required": true
     },
     {
-      "purpose": "CDK CLI (Deploy, Platform - deploy data stack): assume the bootstrap deploy, asset publishing and lookup roles",
+      "purpose": "CDK CLI (Deploy): assume the bootstrap deploy, asset publishing and lookup roles",
       "actions": ["sts:AssumeRole"],
       "resources": [
         "arn:aws:iam::{account}:role/cdk-hnb659fds-deploy-role-{account}-{region}",

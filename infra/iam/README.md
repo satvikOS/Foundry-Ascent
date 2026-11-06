@@ -18,11 +18,12 @@ secret `AWS_DEPLOY_ROLE_ARN`). The role trusts exactly
 `repo:satvikOS@228056784/Foundry-Ascent@1356439229:environment:production`: GitHub issues this
 repository's `sub` claim with the owner and repository pinned by immutable ids, and the name-only form
 (`repo:satvikOS/Foundry-Ascent:…`) is refused. Stage 0 is retired: the `Foundry-Ascent` access key was
-deleted by **Ops - retire stage-0 AWS access** and `FoundryAscent-LegacyCleanup` was detached. The
-workflows that need the stage-0 key (data-stack deploy, cleanup, inventory, verify access, Bedrock probe,
-retire) no longer run. They are not moved to OIDC on purpose: the deploy role has no Bedrock, Polly,
-S3 or Data API permissions, and widening a role every `production` job can assume is not justified for
-manual ops tasks. A probe that needs model access gets its own narrowly scoped role (see
+deleted and `FoundryAscent-LegacyCleanup` was detached. The workflows and scripts that needed the stage-0
+key (data-stack deploy, legacy cleanup, inventory, access check, Bedrock probe, retirement) are removed;
+`ops/aws/inventory.py` stays for a local run with read-only credentials. They were not moved to OIDC on
+purpose: the deploy role has no Bedrock, Polly, S3 or Data API permissions, and widening a role every
+`production` job can assume is not justified for manual ops tasks. A probe that needs model access gets
+its own narrowly scoped role (see
 [deploy and rollback](../../docs/runbooks/deploy-and-rollback.md#probing-bedrock-and-polly)).
 
 Left for the account owner (optional hygiene): delete the IAM user `Foundry-Ascent` (it still has
@@ -41,7 +42,8 @@ Everything that changes IAM is an **account-owner action in AWS CloudShell**. Th
 execution role also stops a template deployed with the key from granting the CI user more (no policies,
 groups or credentials for IAM users; no new versions of `FoundryAscent-Boundary`,
 `FoundryAscent-BootstrapOperator` or `FoundryAscent-LegacyCleanup`). What remains by design: whoever holds
-deploy access (the stage-0 key now, the OIDC role later) can deploy CloudFormation within the boundary.
+deploy access (the OIDC deploy role, the only path since the stage-0 key was deleted) can deploy
+CloudFormation within the boundary.
 
 ## Account owner: apply the policies (CloudShell)
 
@@ -59,13 +61,11 @@ publishes and attaches `FoundryAscent-BootstrapOperator`, puts the inline policy
 user, publishes the tightened `FoundryAscent-LegacyCleanup` if it exists and **detaches** it (pass
 `--with-legacy-cleanup` only while a legacy cleanup is still running), then prints what is attached.
 
-Run it again whenever one of the policy files changes in `main`; the CI user cannot publish them. Then
-run **Ops - verify AWS access**: it simulates every entry of
-[`required-actions.json`](required-actions.json) — what the CI user must be able to do **and** what it
-must not (`"expect": "denied"`: IAM changes, assuming other roles, direct CloudFormation changes to
-`CDKToolkit` or the platform stacks, deleting platform data) — and probes the Bedrock models: Nova 2 Lite
-and Titan must pass; the GPT-6 Luna probes only warn while `models.luna.enabled` is `false`
-(see [Models](#models-used-amazon-bedrock-us-east-1)).
+Run it again whenever one of the policy files changes in `main`; the CI user cannot publish them.
+[`required-actions.json`](required-actions.json) lists what the stage-0 user must be able to do **and**
+what it must not (`"expect": "denied"`: IAM changes, assuming other roles, direct CloudFormation changes
+to `CDKToolkit` or the platform stacks, deleting platform data); CI checks the policy files against it
+offline (see [Policies](#policies)).
 
 ### CDK bootstrap (account owner)
 
@@ -104,9 +104,8 @@ decides on every run, before `cdk deploy`:
 
 Passing the ARN while the stack manages the provider would remove the resource from the
 template, and CloudFormation would delete the provider every OIDC deploy depends on; the
-check prevents that. The stage-0 user lists providers with
-`iam:ListOpenIDConnectProviders` (read-only, kept in the post-bootstrap policy). The stage-1
-role has no IAM read permissions; under OIDC the workflow uses the provider's fixed ARN
+check prevents that. The workflow first tries `iam:ListOpenIDConnectProviders`; the OIDC deploy
+role has no IAM read permissions, so on AccessDenied it uses the provider's fixed ARN
 (`arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com`), which must
 exist because the role was just assumed through it. The provider itself is created by
 CloudFormation through the CDK execution role, never by the CI user.
@@ -128,20 +127,8 @@ not added, because IAM support for that claim as a condition key could not be ve
    `FoundryAscent-Foundation` and set it as the repository **variable**
    `AWS_DEPLOY_ROLE_ARN` (Settings → Secrets and variables → Actions → Secrets; a variable also works, but a secret keeps the account id masked in the public logs).
 2. Run **Deploy** manually. The job summary must show _AWS access: GitHub OIDC (stage 1)_.
-3. Retire stage 0 with **Ops - retire stage-0 AWS access**
-   ([`ops-aws-retire-stage0.yml`](../../.github/workflows/ops-aws-retire-stage0.yml)):
-   1. `mode = plan` (read-only): lists the user's policies, access keys (last four characters) and
-      whether it has a console password.
-   2. `mode = detach-legacy-cleanup` once the legacy cleanup is closed (if the policy is still attached).
-   3. `mode = retire`, `confirm = RETIRE-STAGE-0`: refused unless `AWS_DEPLOY_ROLE_ARN` is set and names
-      an existing `FoundryAscent-GitHubDeploy` role. It deletes every other access key, detaches
-      `FoundryAscent-LegacyCleanup` and `FoundryAscent-BootstrapOperator`, and deletes its own key last
-      (allowed by the inline `FoundryAscent-SelfRetirement` policy, which only lets the user detach its
-      own policies and delete its own keys).
-4. Delete the repository secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. The IAM user
-   (now without keys or managed policies) can then be deleted from the console.
-
-The same can be done by the account owner in CloudShell:
+3. Retire stage 0 (done 2026-10-06). The account owner does it in CloudShell: delete the user's access
+   keys and detach its managed policies.
 
 ```bash
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
@@ -153,8 +140,9 @@ for policy in FoundryAscent-BootstrapOperator FoundryAscent-LegacyCleanup; do
 done
 ```
 
-After stage 0 is retired, the workflows that ran as the IAM user (**Ops - …**,
-**Platform - deploy data stack**) are retired too: each stops at its first step with an explanation.
+4. Delete the repository secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. The IAM user
+   (now without keys or managed policies) can then be deleted from the console.
+
 **Deploy** updates every stack, and `ops/aws/inventory.py` can run locally with read-only credentials.
 
 ## Policies

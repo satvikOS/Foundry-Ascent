@@ -115,7 +115,3 @@ export class NotebookIntegrityError extends DbError {
     this.notebookId = notebookId;
   }
 }
-
-export function isDbError(err: unknown): err is DbError {
-  return err instanceof DbError;
-}

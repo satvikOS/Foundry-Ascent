@@ -2,4 +2,4 @@
 # graders come from evals/ (its own pins, included below); boto3 calls Bedrock and Polly with the
 # conversation-lab role. Keep boto3 at ops/aws/requirements.txt's version.
 -r ../../evals/requirements.txt
-boto3==1.43.108
+boto3==1.43.122

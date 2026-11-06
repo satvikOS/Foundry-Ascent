@@ -16,13 +16,12 @@ from typing import Any
 
 import pytest
 
-import verify_access as v
-
 REPO = Path(__file__).resolve().parents[2]
 POLICIES = REPO / "infra" / "iam" / "policies"
 WORKFLOWS = REPO / ".github" / "workflows"
 ACCOUNT = "123456789012"
 REGION = "us-east-1"
+MANIFEST = REPO / "infra" / "iam" / "required-actions.json"
 MAX_POLICY_CHARS = 6144  # IAM managed policy limit, whitespace excluded
 INLINE_MAX_CHARS = 2048  # IAM user inline policies, all together
 
@@ -87,12 +86,73 @@ def self_retirement() -> dict[str, Any]:
     return load("self-retirement.json")
 
 
-def manifest() -> list[v.Entry]:
-    return v.load_manifest()
+@dataclass(frozen=True)
+class Entry:
+    """One entry of infra/iam/required-actions.json."""
+
+    purpose: str
+    actions: tuple[str, ...]
+    resources: tuple[str, ...]
+    required: bool
+    policy: str | None = None  # granted by this managed policy (FoundryAscent-LegacyCleanup), evaluated with it
+    expect: str = "allowed"  # "denied": the stage-0 identity must not be able to do this
 
 
-def pairs(entry: v.Entry) -> list[tuple[str, str]]:
-    return [(a, v.render(r, ACCOUNT, REGION)) for a in entry.actions for r in entry.resources]
+ACTION_RE = re.compile(r"^[a-z0-9-]+:[A-Za-z0-9*]+$")
+PLACEHOLDERS = {"account", "region"}
+
+
+def entry_problems(where: str, item: Any) -> list[str]:
+    if not isinstance(item, dict):
+        return [f"{where}: not an object"]
+    missing = {"purpose", "actions", "resources", "required"} - set(item)
+    if missing:
+        return [f"{where}: missing {', '.join(sorted(missing))}"]
+    problems: list[str] = []
+    if not isinstance(item["purpose"], str) or not item["purpose"].strip():
+        problems.append(f"{where}: purpose must be a non-empty string")
+    if not isinstance(item["required"], bool):
+        problems.append(f"{where}: required must be true or false")
+    if "policy" in item and item["policy"] != "FoundryAscent-LegacyCleanup":
+        problems.append(f"{where}: policy must be FoundryAscent-LegacyCleanup, got {item['policy']!r}")
+    if item.get("expect", "allowed") not in ("allowed", "denied"):
+        problems.append(f"{where}: expect must be allowed or denied, got {item['expect']!r}")
+    actions, resources = item["actions"], item["resources"]
+    if not isinstance(actions, list) or not actions:
+        problems.append(f"{where}: actions must be a non-empty list")
+    else:
+        problems += [f"{where}: invalid action {a!r}" for a in actions if not isinstance(a, str) or not ACTION_RE.fullmatch(a)]
+        if len(set(map(str, actions))) != len(actions):
+            problems.append(f"{where}: duplicate actions")
+    if not isinstance(resources, list) or not resources:
+        problems.append(f"{where}: resources must be a non-empty list")
+    else:
+        for r in resources:
+            if not isinstance(r, str) or not (r == "*" or r.startswith("arn:aws:")):
+                problems.append(f"{where}: resource must be '*' or an arn:aws: template, got {r!r}")
+            elif unknown := set(re.findall(r"\{([^{}]*)\}", r)) - PLACEHOLDERS:
+                problems.append(f"{where}: unknown placeholder(s) {sorted(unknown)} in {r!r}")
+    return problems
+
+
+@cache
+def manifest() -> list[Entry]:
+    """The manifest's entries; fails listing every malformed one."""
+    raw = json.loads(MANIFEST.read_text(encoding="utf-8")).get("entries")
+    assert isinstance(raw, list) and raw, "expected a non-empty 'entries' list"
+    problems = [p for i, item in enumerate(raw) for p in entry_problems(f"entries[{i}]", item)]
+    assert problems == [], problems
+    return [Entry(e["purpose"].strip(), tuple(e["actions"]), tuple(e["resources"]), e["required"], e.get("policy"),
+                  e.get("expect", "allowed"))
+            for e in raw]
+
+
+def render(template: str) -> str:
+    return template.replace("{account}", ACCOUNT).replace("{region}", REGION)
+
+
+def pairs(entry: Entry) -> list[tuple[str, str]]:
+    return [(a, render(r)) for a in entry.actions for r in entry.resources]
 
 
 # --------------------------------------------------------------------------- documents
@@ -114,7 +174,7 @@ def test_policy_documents_are_valid_and_within_the_iam_size_limit(name: str) -> 
 
 
 def test_policies_contain_no_account_ids() -> None:
-    for path in [*POLICIES.glob("*.json"), REPO / "infra" / "iam" / "required-actions.json"]:
+    for path in [*POLICIES.glob("*.json"), MANIFEST]:
         # 12-digit runs, except the all-zero stack-id group of the manifest's example stack ARNs.
         assert not re.search(r"(?<![\d-])\d{12}(?!\d)", path.read_text(encoding="utf-8")), path.name
 
@@ -383,7 +443,7 @@ def test_every_aws_cli_call_in_the_workflows_is_in_the_manifest_and_allowed() ->
             continue
         for entry in relevant:
             for resource in entry.resources:
-                if decide([operator()], action, v.render(resource, ACCOUNT, REGION)) != "allowed":
+                if decide([operator()], action, render(resource)) != "allowed":
                     problems.append(f"{workflow}: {action} on {resource} is not allowed by bootstrap-operator.json")
     assert problems == []
 
@@ -682,8 +742,7 @@ def test_stage0_workflows_mask_the_account_id_and_do_not_persist_git_credentials
             continue
         assert "persist-credentials: false" in text, path.name
         masks = "::add-mask::" in text or "mask-aws-account-id: true" in text
-        python_masks = re.search(r"python ops/aws/(verify_access|cleanup|inventory|retire_stage0)\.py", text)
-        assert masks or python_masks, f"{path.name} must mask the account id"
+        assert masks, f"{path.name} must mask the account id"
 
 
 # --------------------------------------------------------------------------- permissions boundary

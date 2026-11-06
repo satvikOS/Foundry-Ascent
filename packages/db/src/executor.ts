@@ -152,18 +152,6 @@ export async function one<T>(
   return codec.decode(first);
 }
 
-/** The first row or `null`. */
-export async function maybeOne<T>(
-  ex: SqlConnection,
-  sql: string,
-  params: SqlParams,
-  codec: RowCodec<T>,
-): Promise<T | null> {
-  const result = await ex.query(sql, params);
-  const first = result.rows[0];
-  return first ? codec.decode(first) : null;
-}
-
 /** Executes a statement and returns the affected row count. */
 export async function exec(ex: SqlConnection, sql: string, params: SqlParams = {}): Promise<number> {
   const result = await ex.query(sql, params);

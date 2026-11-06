@@ -1,18 +1,18 @@
 # Runbook: legacy AWS cleanup (archived)
 
 > **Archived: one-time, closed.** On 2026-10-06 `FoundryAscent-LegacyCleanup` was detached and the
-> stage-0 access key deleted ([`infra/iam/README.md`](../../infra/iam/README.md)), so the workflow below
-> can no longer authenticate. This page is kept as the record of what the tool does and how to recover
-> from it. Another cleanup would need its own reviewed credentials
+> stage-0 access key deleted ([`infra/iam/README.md`](../../infra/iam/README.md)). The tool, its workflow
+> (**Ops - AWS legacy cleanup**) and its tests were then removed from the repository; they remain in git
+> history (last present at commit `fa71764`, `ops/aws/cleanup.py`). This page is kept as the record of
+> what the tool did and how to recover from it. Another cleanup would need its own reviewed credentials
 > ([ADR-0016](../architecture/adr/0016-staged-iam-github-oidc.md)).
 
-**Who:** platform owner with the stage-0 IAM user · **Workflow:** `.github/workflows/ops-aws-cleanup.yml`
-(**Ops - AWS legacy cleanup**) · **Code:** `ops/aws/cleanup.py`, tests `ops/aws/test_cleanup.py` ·
-**Policy:** `infra/iam/policies/legacy-cleanup.json`
+**Who:** platform owner with the stage-0 IAM user (retired) · **Policy:**
+`infra/iam/policies/legacy-cleanup.json` (kept, detached)
 
 The AWS account predates Foundry Ascent and contained billable resources from earlier projects. This
-one-time tool removes them so the account bill reflects only Foundry Ascent (about $1–3/month idle plus
-usage, [cost controls](cost-controls.md)). It is designed to be safe to run repeatedly: **plan** is read-only,
+one-time tool removed them so the account bill reflects only Foundry Ascent (about $1–3/month idle plus
+usage, [cost controls](cost-controls.md)). It was designed to be safe to run repeatedly: **plan** is read-only,
 **apply** deletes only what the plan lists, and everything belonging to Foundry Ascent or the CDK
 bootstrap is protected twice.
 
@@ -51,23 +51,14 @@ bootstrap is protected twice.
    `skipped` (with the refusal or skip reason) and `failed` (AWS error code) — summarised in the job summary
    and saved as artifact `cleanup-report-<mode>` (`cleanup-report.json`, 7 days).
 
-## Procedure
+## How it was run
 
-1. **Plan** — Actions → **Ops - AWS legacy cleanup** → _Run workflow_: `mode = plan`, `regions = all`.
-   Read the job summary: every row is a resource that apply would change. Check that nothing you need
-   (for example a kept domain's DNS zone) is listed; if it is, stop and add a protection in
-   `cleanup.py` with a test.
-2. **Apply** — run again with `mode = apply` and `confirm = DELETE-LEGACY-RESOURCES`. Without the exact
-   phrase the job fails before any AWS call.
-3. **Re-run apply after ~48 hours** for CloudFront distributions (disabled on the first run) and large
-   buckets (emptied by lifecycle rules).
-4. **Verify** with **Ops - AWS inventory (read-only)**: only Foundry Ascent, CDK bootstrap and the kept
-   domains remain; the next month's bill confirms it.
-5. **Close out:** detach `FoundryAscent-LegacyCleanup` from the IAM user `Foundry-Ascent` (**Ops - retire
-   stage-0 AWS access** with `mode = detach-legacy-cleanup`, or the account owner's
-   `infra/iam/apply-bootstrap-access.sh`, which detaches it by default). After that, the workflow fails
-   with AccessDenied by design. The policy file stays in the repository for the record; to run another
-   cleanup, the owner re-attaches it with `apply-bootstrap-access.sh --with-legacy-cleanup`.
+The procedure was: **plan** (read-only; every row of the job summary is a resource apply would change),
+then **apply** with the confirmation phrase `DELETE-LEGACY-RESOURCES`, apply again after about 48 hours
+for disabled CloudFront distributions and buckets emptied by lifecycle rules, a check with the read-only
+inventory, and a close-out that detached `FoundryAscent-LegacyCleanup` from the IAM user. The
+account owner's `infra/iam/apply-bootstrap-access.sh` still publishes the policy if it exists and keeps
+it detached unless `--with-legacy-cleanup` is given.
 
 ## Recovering something deleted by mistake
 
@@ -78,10 +69,3 @@ bootstrap is protected twice.
 | CloudFront distribution                 | Disabled first: re-enable it before the next apply run                                                      |
 | Route 53 zone                           | Recreate and re-enter records (name servers change; update the registrar)                                   |
 | S3 objects, Lambda functions, IAM roles | Not recoverable; redeploy from source                                                                       |
-
-## Extending the tool
-
-Add the resource type to a step in `cleanup.py`, route every delete through `self.m.call(...)` with a
-`reason`, add a unit test in `test_cleanup.py` (including a protected-name refusal), run
-`pip install -r requirements-dev.txt && ruff check . && python -m pytest` in `ops/aws` (the CI-pinned
-toolchain), and run **plan** before any apply.
