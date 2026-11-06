@@ -358,9 +358,10 @@ mic ─ getUserMedia (echo cancellation, noise suppression) ─ AudioWorklet /wo
   (its last word decides first: Transcribe's final result puts a full stop even after a dangling "and"). While
   the transcript lags the voice (its last result came more than 200 ms before the last voiced frame), the old
   600 ms applies. Tuning `endpointing: 'fixed'` switches back to one 600 ms silence. Updates of a segment already
-  sent only count for the words past as many as were sent (Transcribe revises a sent tail word as the founder goes
-  on: "the pilots" → "the pilot for small clinics" adds "for small clinics"); a revision that drops them drops
-  them. Push-to-talk sends silence until held and ends the turn 700 ms after release. Lines finished while the
+  sent only count for the words after the sent ones as revised (Transcribe revises a sent tail as the founder goes
+  on: past the shared words, the shortest run closest in spelling to the sent tail is its revision, so "the
+  pilots" → "the pilot for small clinics" adds "for small clinics" and "cannot" → "can not" adds nothing); a
+  revision that drops added words drops them. Push-to-talk sends silence until held and ends the turn 700 ms after release. Lines finished while the
   vEIR is still answering wait and go together after it.
 - **Taking a line back (a slower speaker).** When the founder goes on within 3 s of a hands-free line being
   sent (two words or a settled one that are neither a filler nor a backchannel), the line is taken back, but only
