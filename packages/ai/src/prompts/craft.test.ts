@@ -156,10 +156,12 @@ describe('conversation craft in the system prompt', () => {
     // Live pilot 42124259353: listed here by name, the stock openers still opened 133 of 600 replies (the list primed
     // them). The rule says what to do instead, and the reply's start is read on the way out (validators/openers.ts).
     expect(craft).toContain(
-      'Start with the substance (the answer, the pick, the draft), never a verdict on their',
+      'Start with the substance (the answer, the pick, the draft), never a verdict on their message',
     );
     for (const stock of ["That's a", 'Thanks for', 'Great question'])
       expect(craft).not.toContain(`"${stock}"`);
+    // The rest of the habits are described, not quoted (review: the measured families fell while these went unnamed).
+    expect(craft).toContain('or a preamble (it sounds like, I see, I remember, my honest read)');
     for (const habit of ['I see', "I understand you're asking", 'I remember', 'It sounds like']) {
       expect(STOCK_OPENERS).toContain(habit);
     }
@@ -263,7 +265,7 @@ describe('conversation craft in the system prompt', () => {
     const all = buildSystemPrompt({ ...INPUT, allowedModes: ['diagnose', 'challenge', 'coach'] });
     const mentions = all.match(/riskiest assumption|cheapest test/gi) ?? [];
     expect(mentions.length).toBeLessThanOrEqual(2);
-    expect(section(all, 'Conversation craft')).toContain('"the riskiest assumption", "the cheapest\n  test"');
+    expect(section(all, 'Conversation craft')).toContain('"the\n  riskiest assumption", "the cheapest test"');
   });
 
   it('stays within its token budget (every token is paid on every turn)', () => {
@@ -278,9 +280,10 @@ describe('conversation craft in the system prompt', () => {
     // 2026-11-05.2 adds ~45 for numbers (theirs, never one of its own: live pilot 42124259353's 43 figure findings) and
     // guidance first; the stock-opener list is gone (the output check does that work). Moves only some turns need
     // (rehearsal, a resend, "later", "no more questions") are said in <conversation_state> on those turns only.
-    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(1060);
-    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1120);
-    expect(tokens(craft)).toBeLessThanOrEqual(1070);
+    // Review of coaching v2 adds ~15: the preamble habits described (not quoted) and empathy kept when they struggle.
+    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(1080);
+    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1140);
+    expect(tokens(craft)).toBeLessThanOrEqual(1090);
   });
 
   it('is part of the versioned policy', () => {

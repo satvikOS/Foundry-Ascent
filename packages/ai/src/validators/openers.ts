@@ -50,9 +50,25 @@ const THANKS = String.raw`(?:(?:thanks|thank you)(?: so much| again| a lot)?(?: 
 /** "I hear you", "I hear the frustration", "I can hear how much…" kept short. */
 const I_HEAR = String.raw`(?:i (?:totally |really |completely )?(?:hear|get|feel) (?:you|that|ya|where you're coming from)|i hear (?:the|your) (?:frustration|worry|concern|stress|excitement))`;
 
+/**
+ * A preamble about the reply itself, as a whole clause ("I see.", "Here's my honest read:", "Good to talk again."):
+ * the rest of craft.ts `STOCK_OPENERS`, which the prompt no longer quotes. "It sounds like…" and "I remember…" lead
+ * into substance and are never a whole clause to leave out; the prompt describes them as habits instead.
+ */
+const PREAMBLE = String.raw`(?:i see|i understand|understood|here's (?:my|the) (?:honest |quick |short )?(?:read|take)(?: on (?:this|that|it))?|my (?:honest |quick )?(?:read|take)|good to (?:talk|chat|hear from you|see you) again)`;
+
 /** A whole clause that is only a stock opener (normalised, without the founder's name). */
 const STOCK_CLAUSE = new RegExp(
-  String.raw`^(?:(?:oh|ok|okay|so|well|and|alright|right|yes|yeah)[ ,]+)?(?:${PRAISE}|${GOOD_QUESTION}|${VERDICT}|${THANKS}|${I_HEAR})(?: (?:too|again|indeed|then|there|here|already|overall))?$`,
+  String.raw`^(?:(?:oh|ok|okay|so|well|and|alright|right|yes|yeah)[ ,]+)?(?:${PRAISE}|${GOOD_QUESTION}|${VERDICT}|${THANKS}|${I_HEAR}|${PREAMBLE})(?: (?:too|again|indeed|then|there|here|already|overall))?$`,
+  'u',
+);
+
+/**
+ * Empathy as a whole clause ("I hear you.", "Thanks for being honest.", "I understand."): kept on a turn of stress or
+ * hesitation, and on a flagged turn (review of coaching v2: "show empathy proportionately"); praise and verdicts still go.
+ */
+const EMPATHY_CLAUSE = new RegExp(
+  String.raw`^(?:(?:oh|ok|okay|so|well|and|alright|right|yes|yeah)[ ,]+)?(?:${THANKS}|${I_HEAR}|i understand|understood)(?: (?:too|again|indeed|then|there|here|already|overall))?$`,
   'u',
 );
 /** "Absolutely", "Definitely": an answer to a question they asked, else enthusiasm. */
@@ -122,7 +138,12 @@ export interface OpenerRewrite {
  */
 export function withoutStockOpener(
   text: string,
-  options: { readonly names?: readonly string[]; readonly founderText?: string } = {},
+  options: {
+    readonly names?: readonly string[];
+    readonly founderText?: string;
+    /** The turn is flagged (risk categories, a crisis, a forced escalation): empathy is never left out. */
+    readonly flagged?: boolean;
+  } = {},
 ): OpenerRewrite {
   const names = (options.names ?? []).filter((n) => n.trim() !== '');
   const founder = options.founderText;
@@ -137,6 +158,8 @@ export function withoutStockOpener(
     return { text, removed: false, onlyOpener: false };
   }
   const keepVerdict = asksForVerdict(founder);
+  // Distress, hesitation or a flagged matter: "I hear you." is the proportionate start, not a habit.
+  const keepEmpathy = options.flagged === true || moves.some((m) => m === 'stress' || m === 'hesitant');
   // News, or a report of what they did, gets a reaction first (LAB-R8): "That's big news." is no stock opener there.
   const keepReaction =
     moves.includes('news') || reportsCommitmentDone(founder) || REPORT_WORDS.test(normalise(founder));
@@ -155,6 +178,7 @@ export function withoutStockOpener(
       words === '' ||
       (STOCK_CLAUSE.test(words) &&
         !(keepVerdict && VERDICT_CLAUSE.test(words)) &&
+        !(keepEmpathy && EMPATHY_CLAUSE.test(words)) &&
         !(keepReaction && REACTION_CLAUSE.test(words))) ||
       (!asked && ANSWER_PRAISE.test(words));
     if (!stock) break;
@@ -203,6 +227,18 @@ export function nameUsedRecently(
 const ADDRESS_LEAD =
   '(?:hi|hey|hello|thanks|thank you|good luck|congrats|congratulations|okay|ok|sure|great|perfect|nice|well done|welcome back|morning|good morning|right|got it|of course|absolutely|exactly|you got it)';
 
+/** `source` (letters, spaces and groups only) matching in any case, under flags without `i`. */
+function anyCase(source: string): string {
+  return source.replace(/\p{L}/gu, (c) => {
+    const lower = c.toLowerCase();
+    const upper = c.toUpperCase();
+    return lower === upper ? c : `[${lower}${upper}]`;
+  });
+}
+
+/** {@link ADDRESS_LEAD} in any case, for a name matched case-sensitively. */
+const ADDRESS_LEAD_ANY_CASE = anyCase(ADDRESS_LEAD);
+
 /**
  * `text` without the founder's name where it is said to them: "Maya, the pilot…" → "The pilot…", "…, Maya." → "….",
  * "Thanks, Maya!" → "Thanks!", "Good luck Maya" → "Good luck". A name talked about ("Maya's pilot", "ask Maya") stays.
@@ -223,9 +259,13 @@ export function withoutVocativeName(
     removed += 1;
   };
   let out = text;
-  // A lead word then the name: "Thanks, Maya!", "Good luck Maya." (the name only).
+  // A lead word then the name ending its clause: "Thanks, Maya!", "Good luck Maya." (the name only). The lead word in
+  // any case, the name as `flags` say: a founder called Will keeps "Okay, will you send it?" (review of coaching v2).
   out = out.replace(
-    new RegExp(`(?<![\\p{L}])(${ADDRESS_LEAD})(?:,\\s*|\\s+)${n}(?![\\p{L}\\p{N}'’])`, 'giu'),
+    new RegExp(
+      `(?<![\\p{L}])(${ADDRESS_LEAD_ANY_CASE})(?:,\\s*|\\s+)${n}(?![\\p{L}\\p{N}'’])(?=\\s*(?:[.!?…,;:—–)]|$))`,
+      flags,
+    ),
     (_m, word: string) => {
       count();
       return word;

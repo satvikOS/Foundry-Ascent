@@ -11,7 +11,12 @@
  * - Scoped: it touches only the seeded persona of the home tenant it names (a deterministic id of that tenant), never
  *   another tenant or a persona created in the product.
  * - Consent stays the rule: like the studio, it is not applied when the persona's consent is not in force or does
- *   not cover doctrine, when the persona is retired, or without the deploy owner (the approver).
+ *   not cover doctrine, when the persona is retired, or without the deploy owner (the approver). The consent is the
+ *   legal basis for the persona and the assets it keeps (its EIR's library, cases, voice); an owner release's doctrine
+ *   is the owner's own, written and approved by the owner, and says so in its disclosure.
+ * - Reversible the same way (ADR-0021 "Rollback"): a later owner release with the earlier doctrine, name and
+ *   presentation (e.g. Corin's v1 content, `twin`) supersedes this one and withdraws it; withdrawn releases are never
+ *   re-approved, they are re-created.
  * - Conversations still on the persona's older releases move to the new one at their next message: those releases
  *   are withdrawn (the studio's "doctrine error" path), so no conversation keeps the scripted method.
  *
@@ -57,9 +62,10 @@ export const THOMAS_RELEASE: OwnerRelease = {
   presentation: 'mentor',
   approvedOn: '2026-11-05',
   tagline: 'A warm, direct founder-mentor for student ventures',
+  // Truthful about who wrote what: the doctrine is the platform owner's, approved by the owner; no EIR reviewed it.
   disclosure:
-    'Thomas is an AI mentor, not a person. He is built with an EIR’s consent from their approved doctrine and ' +
-    'coaching style and released after their review; no human EIR writes or approves his individual replies.',
+    'Thomas is an AI mentor, not a person. His coaching approach was written and approved by the platform’s owner; ' +
+    'no person writes or approves his individual replies.',
   doctrine: {
     summary:
       'Thomas answers the question the founder actually asked, first, from what they already told him: their ' +
@@ -229,12 +235,15 @@ export async function seedOwnerReleases(
     /** The deploy owner (platform admin): the approver. Null: nothing is applied. */
     readonly ownerId: string | null;
     readonly keys: readonly string[];
+    /** Where `keys` are looked up: the shipped releases (tests prove a rollback release with their own). */
+    readonly catalog?: readonly OwnerRelease[];
   },
 ): Promise<OwnerReleaseResult[]> {
   const results: OwnerReleaseResult[] = [];
+  const catalog = c.catalog ?? OWNER_RELEASES;
   const ready = c.keys.length > 0 && (await hasPresentation(sx));
   for (const key of c.keys) {
-    const release = OWNER_RELEASES.find((r) => r.key === key);
+    const release = catalog.find((r) => r.key === key);
     if (release === undefined) throw new SqlUsageError(`unknown owner release ${key.slice(0, 60)}`);
     const ids = ownerReleaseIds(release, c.id);
     const done = (outcome: OwnerReleaseOutcome): void => {
@@ -304,13 +313,14 @@ export async function seedOwnerReleases(
     );
     // Conversations pinned to an older release move to this one at their next message (run-turn's re-pin).
     const older = await sx.query(
-      `SELECT id FROM persona_releases WHERE persona_id = :personaId AND status = 'superseded' ORDER BY version`,
+      `SELECT id, version FROM persona_releases
+        WHERE persona_id = :personaId AND status = 'superseded' ORDER BY version`,
       { personaId: p.uuid(ids.personaId) },
     );
-    const withdrawn: string[] = [];
+    const withdrawn: { readonly id: string; readonly version: number }[] = [];
     for (const row of older.rows) {
       const olderId = col.uuid.decode(row.id, 'id');
-      if (await withdrawRelease(sx, olderId)) withdrawn.push(olderId);
+      if (await withdrawRelease(sx, olderId)) withdrawn.push({ id: olderId, version: Number(row.version) });
     }
     const common = {
       tenantId: c.tenantId,
@@ -337,6 +347,22 @@ export async function seedOwnerReleases(
         withdrawn: withdrawn.length,
       },
     });
+    // One event per withdrawn release, as the studio's withdrawal writes it (the trail matches either path).
+    for (const old of withdrawn) {
+      await appendAudit(sx, {
+        ...common,
+        objectId: old.id,
+        action: 'persona.release_withdrawn',
+        metadata: {
+          personaId: ids.personaId,
+          version: old.version,
+          from: 'superseded',
+          via: 'owner_release',
+          ownerRelease: release.key,
+          supersededBy: ids.releaseId,
+        },
+      });
+    }
     done('applied');
   }
   return results;

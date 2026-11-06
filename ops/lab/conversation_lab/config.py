@@ -150,6 +150,52 @@ def judges_for(coach_model: str, candidates: Sequence[str]) -> tuple[str, ...]:
     return other or tuple(candidates)
 
 
+#: ``judge_model`` choices: ``auto`` (independent of this run's coach; an A/B arm, any coach_model but default, is
+#: judged as ``ab``), ``ab`` (independent of every A/B arm: production's coach and every ``live.coach`` model, so both
+#: arms of a comparison are graded by the same model), or one ``live.judge`` id.
+JUDGE_AUTO = "auto"
+JUDGE_AB = "ab"
+
+
+def ab_arm_models(lab: LabModels, app: AppModels | None = None) -> tuple[str, ...]:
+    """Every coach an A/B compares: production's primary and each ``live.coach`` model."""
+    base = app or app_models()
+    return (base.primary, *lab.live_coach)
+
+
+def live_judges(
+    coach_choice: str, judge_choice: str, lab: LabModels, app: AppModels | None = None
+) -> tuple[str, str, tuple[str, ...]]:
+    """(policy, coach model, judge candidates in order) for a live run. An A/B pins a judge independent of every arm
+    (review of coaching v2: Claude Haiku grading the Nova arm and Llama grading the Claude arms mixed the coach with the
+    judge's calibration): with Nova and Claude arms that is Llama 4 Maverick alone, never a Nova fallback, and a run
+    whose pinned judge cannot answer stops instead of grading with another. Refuses a named judge of the coach's
+    family."""
+    base = app or app_models()
+    coach = coach_app_models(coach_choice, lab, base).primary
+    policy = judge_choice or JUDGE_AUTO
+    if policy == JUDGE_AUTO and coach_choice not in ("", DEFAULT_COACH):
+        policy = JUDGE_AB
+    if policy == JUDGE_AUTO:
+        return policy, coach, judges_for(coach, lab.live_judge)
+    if policy == JUDGE_AB:
+        arms = {model_family(m) for m in ab_arm_models(lab, base)}
+        judges = tuple(m for m in lab.live_judge if model_family(m) not in arms)
+        if not judges:
+            raise ValueError(
+                "no live.judge candidate is of another family than every A/B arm "
+                f"({', '.join(sorted(arms))}); add one to ops/lab/models.json"
+            )
+        return policy, coach, judges
+    if policy not in lab.live_judge:
+        raise ValueError(
+            f"judge_model must be {JUDGE_AUTO}, {JUDGE_AB} or one of {', '.join(lab.live_judge)}"
+        )
+    if model_family(policy) == model_family(coach):
+        raise ValueError(f"judge_model {policy} is of the coach's own family ({model_family(coach)})")
+    return policy, coach, (policy,)
+
+
 def model_family(model_id: str) -> str:
     """`us.anthropic.claude-…` -> `anthropic`; `mock` -> `mock` (the provider is the family that matters for
     evaluator independence)."""

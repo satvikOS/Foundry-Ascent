@@ -537,6 +537,7 @@ export function validateCoachResponse(
         const opener = withoutStockOpener(out, {
           names: greetingNames,
           ...(options.founderText === undefined ? {} : { founderText: options.founderText }),
+          flagged: options.preRisk.categories.length > 0 || forcedEscalationFor(options.preRisk) !== null,
         });
         if (opener.removed) {
           if (note) notes.push('stock_opener_removed');

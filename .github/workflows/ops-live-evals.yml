@@ -29,9 +29,10 @@ name: Ops - live conversation evals
 # coach_model (an A/B of the coach, docs/runbooks/conversation-lab.md "Coach model A/B"): `default` runs the app's coach
 # on production's models (infra/cdk/config/production.json); a model of ops/lab/models.json `live.coach` runs it on that
 # Bedrock model instead, as both primary and fallback, in the lab's API process only: production's configuration is
-# never changed. With a Claude coach the judge is of another family (Llama 4 Maverick, then Nova Premier), so the judge
-# stays independent of the coach; the plan prints the coach's estimated cost (about 3.5x Nova 2 Lite's per turn for
-# Haiku 4.5, about 10x for Sonnet 4.6, no cache discount assumed). The lab seeds the persona releases production runs
+# never changed. An A/B is graded by ONE judge independent of every arm (judge_model ab: Llama 4 Maverick, no fallback;
+# a coach_model other than default uses it on auto), so run the default arm of an A/B with judge_model ab too, and
+# compare the arms with `live-compare`, which refuses arms graded by different judges. The plan prints the coach's
+# estimated cost (about 3.5x Nova 2 Lite's per turn for Haiku 4.5, about 10x for Sonnet 4.6, no cache discount assumed). The lab seeds the persona releases production runs
 # (`homeTenant.ownerReleases`: Thomas, ADR-0021).
 on:
   workflow_dispatch:
@@ -80,6 +81,13 @@ on:
           - us.anthropic.claude-haiku-4-5-20251001-v1:0
           - us.anthropic.claude-sonnet-4-6
         default: default
+      judge_model:
+        description: Live judge - auto (another family than the coach; an A/B coach uses ab), ab (one judge for every A/B arm; run the default arm of an A/B with it)
+        type: choice
+        options:
+          - auto
+          - ab
+        default: auto
 
 permissions:
   contents: read
@@ -156,11 +164,12 @@ jobs:
           BUDGET: ${{ inputs.budget_usd }}
           CONCURRENCY: ${{ inputs.concurrency }}
           COACH_MODEL: ${{ inputs.coach_model }}
+          JUDGE_MODEL: ${{ inputs.judge_model }}
         run: |
           set -o pipefail
           python -m conversation_lab live-plan --families "${FAMILIES}" --sample "${SAMPLE}" --repeats "${REPEATS}" \
             --seed "${SEED}" --budget-usd "${BUDGET}" --concurrency "${CONCURRENCY}" --coach-model "${COACH_MODEL}" \
-            --github-output "${GITHUB_OUTPUT}" | tee "${RUNNER_TEMP}/plan.json"
+            --judge-model "${JUDGE_MODEL}" --github-output "${GITHUB_OUTPUT}" | tee "${RUNNER_TEMP}/plan.json"
           {
             echo "## Live evaluation plan (dry-run estimate; no model called)"
             echo '```json'
@@ -210,6 +219,7 @@ jobs:
       LIVE_SHARD: ${{ matrix.shard.index }}/${{ matrix.shard.of }}
       LIVE_SHARD_BUDGET: ${{ matrix.shard.budget }}
       LIVE_COACH_MODEL: ${{ inputs.coach_model }}
+      LIVE_JUDGE_MODEL: ${{ inputs.judge_model }}
     steps:
       - name: Validate the sealing key, set the output folder
         env:
@@ -310,7 +320,8 @@ jobs:
           python -m conversation_lab run --suite live --budget-usd "${LIVE_SHARD_BUDGET}" --out "${LAB_OUT}" \
             --live-families "${LIVE_FAMILIES}" --live-sample "${LIVE_SAMPLE}" --live-seed "${LIVE_SEED}" \
             --repeat "${LIVE_REPEATS}" --live-shard "${LIVE_SHARD}" --live-total-budget "${LIVE_TOTAL_BUDGET}" \
-            --concurrency "${LIVE_CONCURRENCY}" --coach-model "${LIVE_COACH_MODEL}" "${memory[@]}"
+            --concurrency "${LIVE_CONCURRENCY}" --coach-model "${LIVE_COACH_MODEL}" \
+            --judge-model "${LIVE_JUDGE_MODEL}" "${memory[@]}"
 
       - name: Seal the private outputs
         if: always() && env.LAB_PUBLIC_KEY != ''

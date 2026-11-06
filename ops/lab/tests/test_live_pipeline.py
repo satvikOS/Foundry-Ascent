@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import csv
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -411,6 +412,80 @@ def test_the_coach_model_ab_runs_the_lab_only_and_keeps_the_judge_independent(
     )
     _picks, selection = selection_from(ctx, dataset)
     assert selection["coach_model"] == haiku
+    assert selection["judge_policy"] == "ab"
+
+
+def test_an_ab_is_graded_by_one_judge_independent_of_every_arm() -> None:
+    """Review of coaching v2: Claude Haiku graded the Nova arm and Llama the Claude arms, so the score difference mixed
+    the coach with the judge's calibration."""
+    from conversation_lab.config import JUDGE_AB, JUDGE_AUTO, live_judges
+
+    lab = lab_models()
+    haiku = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    sonnet = "us.anthropic.claude-sonnet-4-6"
+    maverick = "us.meta.llama4-maverick-17b-instruct-v1:0"
+    # Every arm of an A/B, the default one included, gets the same judge, with no Nova or Claude fallback.
+    arms = {c: live_judges(c, JUDGE_AB, lab)[2] for c in ("default", haiku, sonnet)}
+    assert set(arms.values()) == {(maverick,)}
+    # A Claude arm on auto is an A/B arm: pinned the same way.
+    assert live_judges(haiku, JUDGE_AUTO, lab)[0] == JUDGE_AB
+    assert live_judges(haiku, JUDGE_AUTO, lab)[2] == (maverick,)
+    # A standalone default run keeps the pilots' judge (another family than Nova: Claude Haiku first).
+    policy, coach, judges = live_judges("default", JUDGE_AUTO, lab)
+    assert (policy, judges[0]) == (JUDGE_AUTO, haiku)
+    assert model_family(coach) == "amazon"
+    # A named judge of the coach's own family is refused, as is one the lab does not list.
+    with pytest.raises(ValueError, match="coach's own family"):
+        live_judges(haiku, haiku, lab)
+    with pytest.raises(ValueError, match="judge_model must be"):
+        live_judges("default", "us.example.judge-v1:0", lab)
+    # No candidate of a family no arm has: refused, never a confounded judge.
+    only_arms = replace(lab, live_judge=(haiku, "us.amazon.nova-premier-v1:0"))
+    with pytest.raises(ValueError, match="another family than every A/B arm"):
+        live_judges(haiku, JUDGE_AB, only_arms)
+
+
+def _arm(coach: str, judge: str, *, policy: str = "ab", seed: int = 1, nat: float = 4.0) -> dict:
+    s = aggregate(
+        [_row("LV-01-01", 1, True, nat, [1.0])],
+        {
+            "evidence": "live",
+            "models": {"coach": coach, "judge": judge, "judge_independent": True},
+            "versions": {"judge_prompt": "live-judge/x"},
+            "dataset_sha256": "d",
+            "selection": {
+                "families": "all",
+                "sample": 10,
+                "seed": seed,
+                "repeats": 1,
+                "ids": [],
+                "memory_review": "product_default",
+                "coach_model": coach,
+                "judge_policy": policy,
+            },
+        },
+    )
+    return {**s, "spend": {"total_usd": 1.0}}
+
+
+def test_live_compare_refuses_arms_graded_by_different_judges() -> None:
+    from conversation_lab.live.report import compare
+
+    maverick = "us.meta.llama4-maverick-17b-instruct-v1:0"
+    a = _arm("us.amazon.nova-2-lite-v1:0", maverick, nat=3.0)
+    b = _arm("us.anthropic.claude-haiku-4-5-20251001-v1:0", maverick, nat=4.0)
+    result = compare(a, b)
+    assert result["judge"] == maverick
+    assert result["delta"]["naturalness"] == 1.0
+    assert result["a"]["coach"].startswith("us.amazon")
+    with pytest.raises(MergeError, match="different judges"):
+        compare(_arm("nova", "us.anthropic.claude-haiku-4-5-20251001-v1:0"), b)
+    with pytest.raises(MergeError, match="selection seed"):
+        compare(_arm("nova", maverick, seed=2), b)
+    # An A/B arm's shards must share their judge; an auto run's fallback is still merged as mixed.
+    with pytest.raises(MergeError, match="different judges"):
+        merge([a, _arm("us.amazon.nova-2-lite-v1:0", "us.amazon.nova-premier-v1:0")])
+    assert "mixed" in merge([_arm("n", "x", policy="auto"), _arm("n", "y", policy="auto")])["models"]
 
 
 def test_live_check_passes_on_the_committed_dataset() -> None:
@@ -1042,3 +1117,26 @@ def test_the_summary_reports_figures_excused_by_kind() -> None:
     summary = aggregate([row], {"evidence": "live"})
     assert summary["checks"]["figures_excused"] == {"arithmetic": 2, "proposed": 1}
     assert "Figures excused from unsourced_figure: arithmetic 2, proposed 1" in render(summary)
+
+
+def test_the_opener_census_counts_the_other_stock_openers_and_repeated_openings() -> None:
+    """Review of coaching v2: canned_opener counts the families the app now strips; the rest of the app's stock openers
+    and openings repeated within a run are counted too, so a fall in one cannot hide a move to the others."""
+    replies = [
+        "It sounds like the buyer is the dean. Ask her office who signs.",
+        "I see. Start with the two cafés.",
+        "Start with the two cafés that open late.",
+        "Start with the department budget: price per seat.",
+        "That's a solid plan. Send it Friday.",
+    ]
+    turns = [Turn(f"s1.t{i}", "Next?", r, "chat") for i, r in enumerate(replies)]
+    result = run_checks(turns)
+    assert result.stock_openers == 1  # the pilots' measure, unchanged
+    assert result.preamble_openers == 2
+    assert result.repeated_openings == 1  # "start with the" twice
+    public = result.public()
+    assert (public["preamble_openers"], public["repeated_openings"]) == (2, 1)
+    row = {**_row("LV-01-01", 1, True, 4.0, [1.0]), "checks": public}
+    rates = aggregate([row], {"evidence": "live"})["checks"]["phrase_rate_per_100_replies"]
+    assert rates["(other stock opener)"] == 40.0
+    assert rates["(repeated opening)"] == 20.0

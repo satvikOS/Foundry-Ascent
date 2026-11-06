@@ -2,11 +2,14 @@
 
 live-check [--json]                       dataset schema, distinctness and overlap; exits 1 on any failure
 live-plan --families F --sample N --repeats R --seed S --budget-usd B [--concurrency C] [--ids ...]
-          [--coach-model default|<live.coach id>] [--github-output FILE]
+          [--coach-model default|<live.coach id>] [--judge-model auto|ab|<live.judge id>]
+          [--github-output FILE]
                                           the selection, the dry-run cost estimate (for the chosen coach, with a
                                           judge of another family) and the shard split; exits 3 when the estimate
                                           exceeds the budget
-live-merge --out DIR SUMMARY.json...      shards' public summaries into one (numbers only)
+live-merge --out DIR SUMMARY.json...      shards' public summaries into one (numbers only); refuses different judges
+live-compare --out DIR A.json B.json      two arms of an A/B (numbers only): refuses different judges, judge prompts,
+                                          datasets or selections
 live-calibration packet --private DIR... --out DIR [--size 60] [--seed N]
 live-calibration agreement --key key.json --form form.csv
 live-smoke --out DIR                      infrastructure-only run on the in-process fake app
@@ -59,7 +62,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
-    from conversation_lab.config import DEFAULT_COACH, app_models, coach_app_models, judges_for, lab_models
+    from conversation_lab.config import DEFAULT_COACH, JUDGE_AUTO, app_models, lab_models, live_judges
     from conversation_lab.live.dataset import load, overlap
     from conversation_lab.live.plan import estimate, parse_families, select, shard
 
@@ -80,10 +83,10 @@ def cmd_plan(args: argparse.Namespace) -> int:
         lab = lab_models()
         by = dataset.by_id()
         choice = getattr(args, "coach_model", None) or DEFAULT_COACH
-        coach = coach_app_models(choice, lab).primary
+        judge_choice = getattr(args, "judge_model", None) or JUDGE_AUTO
+        # The judge: of another family than the coach, and for an A/B one judge for every arm (live_judges).
+        policy, coach, judges = live_judges(choice, judge_choice, lab)
         coach_arg = None if choice == DEFAULT_COACH else choice
-        # The judge is of another model family than the coach (a Claude coach: Llama 4 Maverick, then Nova Premier).
-        judges = judges_for(coach, lab.live_judge)
         first = estimate(
             picks,
             by,
@@ -132,6 +135,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
             "model": coach,
             "production_model": production,
             "judges": list(judges),
+            "judge_policy": policy,
             "note": "the lab's API only; production's models are unchanged",
         },
         "estimate": first,
@@ -185,6 +189,22 @@ def cmd_merge(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_compare(args: argparse.Namespace) -> int:
+    from conversation_lab.live.report import MergeError, compare
+
+    a, b = (json.loads(Path(p).read_text(encoding="utf-8")) for p in (args.a, args.b))
+    try:
+        result = compare(a, b)
+    except MergeError as exc:
+        print(f"live-compare: {exc}", file=sys.stderr)
+        return 2
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "live-compare.json").write_text(json.dumps(result, indent=1), encoding="utf-8")
+    print(json.dumps(result, indent=1))
+    return 0
+
+
 def cmd_calibration(args: argparse.Namespace) -> int:
     from conversation_lab.live.calibration import agreement, build_packet
 
@@ -228,6 +248,12 @@ def add_commands(sub: Any) -> None:
     plan.add_argument("--concurrency", type=int, default=4)
     plan.add_argument("--github-output", default=None)
     plan.add_argument(
+        "--judge-model",
+        default="auto",
+        help="auto (another family than this coach; an A/B arm uses ab), ab (one judge independent of every A/B "
+        "arm: run the default arm with it too) or one of ops/lab/models.json live.judge",
+    )
+    plan.add_argument(
         "--coach-model",
         default="default",
         help="default (production's models) or one of ops/lab/models.json live.coach (the lab's API only)",
@@ -238,6 +264,12 @@ def add_commands(sub: Any) -> None:
     merge.add_argument("--out", required=True)
     merge.add_argument("summaries", nargs="+")
     merge.set_defaults(func=cmd_merge)
+
+    comp = sub.add_parser("live-compare", help="two A/B arms' summaries, b minus a (numbers only; one judge)")
+    comp.add_argument("--out", required=True)
+    comp.add_argument("a")
+    comp.add_argument("b")
+    comp.set_defaults(func=cmd_compare)
 
     cal = sub.add_parser("live-calibration", help="blinded human-calibration packet and agreement (private)")
     cal.add_argument("action", choices=("packet", "agreement"))

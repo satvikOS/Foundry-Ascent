@@ -6,9 +6,10 @@
 --   'twin'   (every persona before this migration, and the default): an EIR persona is that EIR's digital twin and is
 --            named after them ("Corin's vEIR", "Corin · vEIR" with the first-person consent); a guide keeps its name.
 --   'mentor' : an AI mentor presented under its own name (the platform owner's decision for a stock avatar's persona,
---            "Thomas"). It speaks in the first person as itself, never as the EIR or as their twin; its doctrine is
---            still an EIR's approved doctrine under that EIR's consent (the consent rules of 0001/0004/0016 are
---            unchanged), and its releases are approved like any other release. Only an EIR persona can be one.
+--            "Thomas"). It speaks in the first person as itself, never as the EIR or as their twin. The EIR's consent
+--            stays the basis for the persona and the assets it keeps (the consent rules of 0001/0004/0016 are
+--            unchanged); a release's doctrine is whoever wrote and approved it (for Thomas, the platform owner), and
+--            its releases are approved like any other release. Only an EIR persona can be one.
 --
 -- No row changes here: the owner-approved release that presents a persona as a mentor ships through the seed
 -- (packages/db/src/seed/owner-releases.ts, `SEED_OWNER_RELEASES`), which runs after the migrations on every deploy.

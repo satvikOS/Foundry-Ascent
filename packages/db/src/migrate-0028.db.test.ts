@@ -13,8 +13,14 @@ import { p } from './params.js';
 import { personasRepo } from './repositories/index.js';
 import { accessCodePrefix, generateAccessCode, hashAccessCode } from './seed/access-code.js';
 import { seedId } from './seed/ids.js';
-import { THOMAS_RELEASE, parseOwnerReleases } from './seed/owner-releases.js';
+import {
+  THOMAS_RELEASE,
+  parseOwnerReleases,
+  seedOwnerReleases,
+  type OwnerRelease,
+} from './seed/owner-releases.js';
 import { seedDatabase, type SeedConfig } from './seed/seed.js';
+import { CORIN_VEIR } from './seed/veir-content.js';
 import { splitStatements } from './sql-lexer.js';
 import { createTestDatabase, type TestDatabase } from './testing/test-database.js';
 
@@ -108,6 +114,9 @@ describe('migration 0028_persona_presentation and the Thomas owner release', () 
     expect(active?.approvedBy?.id).toBe(seed.ownerId);
     expect(active?.doctrine.summary).toContain('answers the question the founder actually asked');
     expect(active?.disclosureText).toMatch(/AI mentor, not a person/);
+    // Truthful about authorship: the owner wrote and approved it; no EIR reviewed it.
+    expect(active?.disclosureText).toMatch(/written and approved by the platform’s owner/);
+    expect(active?.disclosureText).not.toMatch(/EIR|review/);
     const v1 = await t.db.system((sx) => personasRepo.getRelease(sx, corinV1));
     expect(v1?.status).toBe('withdrawn');
     // Every venture coached by Corin's vEIR now runs on Thomas (its assignments are unchanged: same persona).
@@ -130,6 +139,26 @@ describe('migration 0028_persona_presentation and the Thomas owner release', () 
       approvedOn: '2026-11-05',
       presentation: 'mentor',
       withdrawn: 1,
+    });
+    // Each withdrawn release has its own event, as the studio writes it.
+    const withdrawal = await t.db.system((sx) =>
+      sx.query(
+        `SELECT actor_id, metadata FROM audit_events WHERE object_id = :id AND action = 'persona.release_withdrawn'`,
+        { id: p.text(corinV1) },
+      ),
+    );
+    expect(withdrawal.rows).toHaveLength(1);
+    expect(withdrawal.rows[0]?.actor_id).toBe(seed.ownerId);
+    const withdrawnMeta: unknown = withdrawal.rows[0]?.metadata;
+    expect(
+      typeof withdrawnMeta === 'string' ? (JSON.parse(withdrawnMeta) as unknown) : withdrawnMeta,
+    ).toMatchObject({
+      personaId: corin,
+      version: 1,
+      from: 'superseded',
+      via: 'owner_release',
+      ownerRelease: 'thomas-2026-11-05',
+      supersededBy: thomasRelease,
     });
   });
 
@@ -157,5 +186,50 @@ describe('migration 0028_persona_presentation and the Thomas owner release', () 
     expect(await persona(corin)).toMatchObject({ name: 'Thomas' });
     expect(() => parseOwnerReleases('thomas-2026-11-05, nobody')).toThrow(/unknown release/);
     expect(parseOwnerReleases(undefined)).toEqual([]);
+  });
+
+  it("rolls back the same way (ADR-0021): an owner release with Corin's v1 content restores the twin", async () => {
+    const restore: OwnerRelease = {
+      key: 'corin-restore-test',
+      eirKey: 'eir-corin',
+      name: CORIN_VEIR.name,
+      presentation: 'twin',
+      approvedOn: '2026-11-06',
+      tagline: CORIN_VEIR.tagline,
+      disclosure: CORIN_VEIR.disclosure,
+      doctrine: CORIN_VEIR.doctrine,
+      style: CORIN_VEIR.style,
+    };
+    const owner = await t.db.system(
+      async (sx) =>
+        (
+          await sx.query(`SELECT created_by FROM persona_releases WHERE id = :id`, {
+            id: p.uuid(thomasRelease),
+          })
+        ).rows[0]?.created_by,
+    );
+    const tenant = await t.db.system(
+      async (sx) => (await sx.query(`SELECT id FROM tenants WHERE slug = 'ain'`)).rows[0]?.id,
+    );
+    const results = await t.db.system((sx) =>
+      seedOwnerReleases(sx, {
+        tenantId: String(tenant),
+        id: (...parts) => seedId('ain', ...parts),
+        ownerId: String(owner),
+        keys: [restore.key],
+        catalog: [restore],
+      }),
+    );
+    expect(results.map((r) => r.outcome)).toEqual(['applied']);
+    expect(await persona(corin)).toMatchObject({ name: "Corin's vEIR", presentation: 'twin' });
+    const active = await t.db.system((sx) => personasRepo.getActiveRelease(sx, corin));
+    expect(active?.version).toBe(3);
+    expect(active?.doctrine).toEqual(CORIN_VEIR.doctrine);
+    const thomas = await t.db.system((sx) => personasRepo.getRelease(sx, thomasRelease));
+    expect(thomas?.status).toBe('withdrawn');
+    const presence = await t.db.system((sx) =>
+      personasRepo.getPersonaPresence(sx, { personaId: corin, assignedEirProfileId: null }),
+    );
+    expect(presence.mentor).toBe(false);
   });
 });

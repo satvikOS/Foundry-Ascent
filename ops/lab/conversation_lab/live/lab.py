@@ -261,12 +261,13 @@ def selection_from(ctx: Any, dataset: Dataset) -> tuple[list[Pick], dict[str, An
         ids=ctx.scenario_ids,
     )
     shard, of = ctx.live_shard
-    from conversation_lab.config import DEFAULT_COACH, coach_app_models, judges_for, lab_models
+    from conversation_lab.config import DEFAULT_COACH, JUDGE_AUTO, lab_models, live_judges
     from conversation_lab.live.plan import shard as split
 
     lab = lab_models()
     choice = getattr(ctx, "coach_model", DEFAULT_COACH) or DEFAULT_COACH
-    coach = coach_app_models(choice, lab).primary
+    judge_choice = getattr(ctx, "judge_model", JUDGE_AUTO) or JUDGE_AUTO
+    judge_policy, _, judges = live_judges(choice, judge_choice, lab)
     if of > 1:
         # The plan job's split, exactly: the same coach estimate and the same first judge (live/cli.py cmd_plan).
         shards = split(
@@ -274,7 +275,7 @@ def selection_from(ctx: Any, dataset: Dataset) -> tuple[list[Pick], dict[str, An
             dataset.by_id(),
             prices=lab.prices,
             student_model=lab.live_simulator[0],
-            judge_model=judges_for(coach, lab.live_judge)[0],
+            judge_model=judges[0],
             budget_usd=ctx.live_total_budget or ctx.budget_usd,
             concurrency=ctx.concurrency,
             coach_model=None if choice == DEFAULT_COACH else choice,
@@ -292,6 +293,7 @@ def selection_from(ctx: Any, dataset: Dataset) -> tuple[list[Pick], dict[str, An
         "ids": list(ctx.scenario_ids),
         "memory_review": "approve_all" if getattr(ctx, "live_approve_memory", False) else "product_default",
         "coach_model": choice,
+        "judge_policy": judge_policy,
     }
 
 

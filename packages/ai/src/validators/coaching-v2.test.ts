@@ -65,9 +65,19 @@ describe('canned openers: the reply starts with its substance', () => {
       'Per seat fits how departments budget.',
     ],
     [
-      "I'm worried the landlord says no.",
+      'The landlord might say no.',
       'I hear you. Ask for a three-month trial clause first.',
       'Ask for a three-month trial clause first.',
+    ],
+    [
+      'Can you look at the deck outline?',
+      'I see. Slide two should carry the cost of the workaround.',
+      'Slide two should carry the cost of the workaround.',
+    ],
+    [
+      'Which segment first?',
+      "Here's my honest read: start with the second-year societies.",
+      'Start with the second-year societies.',
     ],
     [
       'We kept the price at $12.',
@@ -212,7 +222,9 @@ describe('conversation control', () => {
       ["Let's start over from scratch.", 'restart'],
       ['Can you give me a summary of what we decided?', 'summary'],
       ['Your last reply got cut off halfway.', 'lost_reply'],
-      ['I got an error, sending it again.', 'lost_reply'],
+      ['I got an error on my side, sending it again.', 'lost_reply'],
+      ["Sorry, your message didn't come through.", 'lost_reply'],
+      ['Our call dropped, where were we?', 'lost_reply'],
       ['You keep repeating the same advice.', 'complaint'],
       ['Your replies seem generic today.', 'complaint'],
       ['hmm', 'hesitant'],
@@ -221,6 +233,49 @@ describe('conversation control', () => {
     ];
     for (const [text, move] of cases) expect(founderMoves(text), text).toContain(move);
     expect(founderMoves('I need to practice my pitch at some point')).not.toContain('rehearse');
+  });
+
+  // Review: each move injects a directive that takes over the reply, so everyday founder phrasing about their venture
+  // must not read as a move about this conversation.
+  it.each([
+    ['We ran the ad campaign and it failed. What now?', 'lost_reply'],
+    ['Something went wrong with our pilot launch.', 'lost_reply'],
+    ['I got an error in the checkout flow we built.', 'lost_reply'],
+    ['The sales call dropped the price objection on us.', 'lost_reply'],
+    ["I'm sending it again to the investor tomorrow.", 'lost_reply'],
+    ['Can you review my executive summary for the grant?', 'summary'],
+    ['Our summary slide is weak, how do I fix it?', 'summary'],
+    ['We rebuilt the onboarding from scratch, does it help retention?', 'restart'],
+    ['I had to restart the server twice during the demo.', 'restart'],
+    ['We need a fresh start with the brand.', 'restart'],
+    ['The customer feedback was vague, that is vague to me too.', 'complaint'],
+    ['this is slow', 'complaint'],
+    ['The onboarding is so generic, how do we stand out?', 'complaint'],
+    ['Are you vague with investors on purpose?', 'complaint'],
+    ["Let's talk about pricing", 'topic_shift'],
+    ['Could the hospital be a buyer for this?', 'rehearse'],
+    ['We have a mock interview with the dean next week.', 'rehearse'],
+    ['I want to drill down into churn.', 'rehearse'],
+    ['I want to run through the numbers with you.', 'rehearse'],
+    ['We will table it at the board meeting.', 'defer'],
+    ['Later, though, we will need to hire.', 'defer'],
+  ])('reads everyday phrasing as no move about the conversation: %s (not %s)', (text, move) => {
+    expect(founderMoves(text)).not.toContain(move);
+  });
+
+  it('renders no conversation-control directive for everyday phrasing', () => {
+    const history: StateTurn[] = [{ founderText: 'How should we price it?', answer: 'Per session first.' }];
+    for (const text of [
+      'We ran the ad campaign and it failed. What now?',
+      'Can you review my executive summary for the grant?',
+      'We rebuilt the onboarding from scratch, does it help retention?',
+      'The customer feedback was vague, that is vague to me too.',
+    ]) {
+      const state = renderConversationState(deriveConversationState(history, text));
+      expect(state, text).not.toMatch(
+        /Something failed on their side|They want a summary|fresh start|unhappy with your replies/,
+      );
+    }
   });
 
   it('keeps the stated preferences, the new "no questions" among them, until they change', () => {
@@ -386,3 +441,72 @@ function opts(overrides: Partial<ValidateCoachResponseOptions> = {}): ValidateCo
     ...overrides,
   };
 }
+
+describe('review of coaching v2: empathy and names', () => {
+  it('keeps "I hear you" on a distress turn, and thanks on a flagged turn; praise still goes', () => {
+    const distress = "I'm exhausted and honestly thinking of giving up on everything.";
+    expect(
+      withoutStockOpener('I hear you. That is a lot to carry right now. Are you safe?', {
+        founderText: distress,
+      }),
+    ).toEqual({
+      text: 'I hear you. That is a lot to carry right now. Are you safe?',
+      removed: false,
+      onlyOpener: false,
+    });
+    expect(withoutStockOpener('Great question! Rest comes first.', { founderText: distress }).text).toBe(
+      'Rest comes first.',
+    );
+    const flagged = 'Who owns the code my lab partner wrote?';
+    const thanks = 'Thanks for being honest. The tech transfer office decides that.';
+    expect(withoutStockOpener(thanks, { founderText: flagged, flagged: true }).removed).toBe(false);
+    expect(withoutStockOpener(thanks, { founderText: flagged }).removed).toBe(true);
+    // The same, written whole and streamed.
+    const whole = validateCoachResponse(
+      response('I hear you. That is a lot to carry right now.'),
+      opts({ founderText: distress }),
+    );
+    expect(whole.response.answer).toBe('I hear you. That is a lot to carry right now.');
+    const flaggedWhole = validateCoachResponse(
+      response(thanks),
+      opts({ founderText: flagged, preRisk: { categories: ['ip_licensing'] } }),
+    );
+    expect(flaggedWhole.response.answer.startsWith('Thanks for being honest')).toBe(true);
+    for (const chunks of chunkings('I hear you. That is a lot to carry right now.')) {
+      expect(shown(run(gate({ founderText: distress }), chunks)).trim()).toBe(
+        'I hear you. That is a lot to carry right now.',
+      );
+    }
+    expect(shown(run(gate({ founderText: flagged, keepReferrals: true }), [thanks])).trim()).toBe(thanks);
+  });
+
+  it.each(['Will', 'Mark', 'June', 'Grace', 'May', 'Hope', 'Bill'])(
+    'never cuts a common word for a founder called %s, typed or spoken',
+    (name) => {
+      const word = name.toLowerCase();
+      const text = `Okay, ${word} you send the deck? Sure, ${word} do. Right, ${word} it work?`;
+      expect(withoutVocativeName(text, name)).toEqual({ text, removed: 0 });
+      expect(withoutVocativeName(text, name, { spoken: true })).toEqual({ text, removed: 0 });
+      // Said to them, the name still goes.
+      expect(withoutVocativeName(`Thanks, ${name}. Send it Friday.`, name).text).toBe(
+        'Thanks. Send it Friday.',
+      );
+      expect(withoutVocativeName(`Good luck ${name}!`, name).text).toBe('Good luck!');
+    },
+  );
+});
+
+describe('review of coaching v2: no past of his own, streamed and whole', () => {
+  it('leaves a made-up anecdote out of the reply, and cuts "In my experience," keeping the advice', () => {
+    const reply =
+      'A founder I coached last year did exactly this. In my experience, five calls teach the most.';
+    for (const chunks of chunkings(reply)) {
+      expect(shown(run(gate({ founderText: 'How many interviews first?' }), chunks)).trim()).toBe(
+        'Five calls teach the most.',
+      );
+    }
+    const whole = validateCoachResponse(response(reply), opts({ founderText: 'How many interviews first?' }));
+    expect(whole.response.answer).toBe('Five calls teach the most.');
+    expect(whole.results.identityViolation).toBe(true);
+  });
+});

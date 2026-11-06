@@ -708,6 +708,8 @@ export class SentenceGate {
         const opener = withoutStockOpener(rawUnit, {
           names: this.#greetingNames,
           ...(this.#options.founderText === undefined ? {} : { founderText: this.#options.founderText }),
+          // A flagged turn (its referrals are protected) keeps its empathy too.
+          flagged: this.#options.keepReferrals === true,
         });
         if (opener.removed) {
           this.#openersDropped += 1;

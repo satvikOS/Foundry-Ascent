@@ -29,6 +29,7 @@ from conversation_lab.config import (
     DEFAULT_COACH,
     EXTRA_SUITES,
     FACE_MODES,
+    JUDGE_AUTO,
     LIVE_APP_SHARE_CLAUDE_COACH,
     MAX_BUDGET_USD,
     REPO,
@@ -37,8 +38,8 @@ from conversation_lab.config import (
     budget_parts,
     coach_app_models,
     face_passes,
-    judges_for,
     lab_models,
+    live_judges,
     model_family,
     polly_usd_per_million_characters,
     split_budget,
@@ -104,6 +105,8 @@ class Context:
     live_approve_memory: bool = False
     #: The app's coach model for this run: ``default`` (production's) or one of models.json ``live.coach`` (an A/B arm).
     coach_model: str = DEFAULT_COACH
+    #: The live judge policy (config.live_judges): ``auto``, ``ab`` (one judge for every A/B arm) or a live.judge id.
+    judge_model: str = JUDGE_AUTO
     live_picks: list[Any] = field(default_factory=list)
     live_selection: dict[str, Any] = field(default_factory=dict)
     live_seeded: dict[str, Any] = field(default_factory=dict)
@@ -226,6 +229,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         concurrency=int(args.concurrency),
         live_approve_memory=bool(args.live_approve_memory),
         coach_model=str(getattr(args, "coach_model", DEFAULT_COACH) or DEFAULT_COACH),
+        judge_model=str(getattr(args, "judge_model", JUDGE_AUTO) or JUDGE_AUTO),
     )
     ctx.private.mkdir(parents=True, exist_ok=True)
     ctx.public.mkdir(parents=True, exist_ok=True)
@@ -234,6 +238,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     try:
         # Production's models, or the A/B coach for the lab's API process only (never production's configuration).
         models = coach_app_models(ctx.coach_model, lab)
+        judge_policy, _, live_judge_candidates = live_judges(ctx.coach_model, ctx.judge_model, lab)
     except ValueError as exc:
         print(f"run: {exc}", file=sys.stderr)
         return 2
@@ -256,6 +261,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         "models": {
             "app": {"primary": models.primary, "fallback": models.fallback, "embeddings": models.embeddings},
             "coach_choice": ctx.coach_model,
+            "judge_policy": judge_policy,
         },
     }
     probes: dict[str, str] = {}
@@ -288,10 +294,18 @@ def cmd_run(args: argparse.Namespace) -> int:
             result = lab_client.probe(lab.live_simulator)
             probes.update(result.outcomes)
             simulator_model = result.chosen
-            # Evaluator independence: a judge of another family than the coach (a Claude coach: Maverick, then Nova).
-            result = lab_client.probe(judges_for(models.primary, lab.live_judge))
+            # Evaluator independence: a judge of another family than the coach, and in an A/B one judge for every arm
+            # (config.live_judges): a pinned judge that does not answer stops the run rather than grade with another.
+            result = lab_client.probe(live_judge_candidates)
             probes.update(result.outcomes)
             judge_model = result.chosen
+            if judge_model is None and judge_policy != JUDGE_AUTO:
+                print(
+                    f"run: no judge of {', '.join(live_judge_candidates)} answered a probe ({result.outcomes}); an A/B "
+                    "is never graded by another judge. Enable it in the Bedrock console (us-east-1)",
+                    file=sys.stderr,
+                )
+                return 2
     except BudgetExceededError as exc:
         summary["stopped_by"] = f"budget_{exc.side}"
     summary["models"].update({"simulator": simulator_model, "judge": judge_model, "probes": probes})
@@ -1164,6 +1178,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=DEFAULT_COACH,
         help="the app's coach model for this run: default (production's) or one of models.json live.coach; the "
         "lab's API process only. A Claude coach is judged by another family (live suite)",
+    )
+    run.add_argument(
+        "--judge-model",
+        default=JUDGE_AUTO,
+        help="live: auto (another family than the coach; an A/B arm uses ab), ab (one judge independent of every "
+        "A/B arm, for the default arm of an A/B too) or one of models.json live.judge",
     )
     run.add_argument(
         "--live-approve-memory",

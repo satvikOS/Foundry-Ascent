@@ -75,6 +75,17 @@ STOCK_OPENERS = re.compile(
     r"thanks for (sharing|that|the update|clarifying|asking|explaining|telling me|laying))",
     re.IGNORECASE,
 )
+#: The rest of the app's stock openers (packages/ai/src/prompts/craft.ts STOCK_OPENERS) that canned_opener does not
+#: count: counted separately so the pilots' canned_opener stays comparable, and so a fall in canned_opener cannot hide a
+#: move to openers nobody measures (review of coaching v2).
+PREAMBLE_OPENERS = re.compile(
+    r"^\s*(it sounds like\b|i see\b|here'?s (my|the) (honest |quick |short )?(read|take)\b|"
+    r"i understand (you'?re|that you'?re|you are) asking\b|i remember\b|good to (talk|chat|hear from you) again\b|"
+    r"great[!,.\u2014]|perfect[!,.\u2014]|absolutely[!,.\u2014]|got it[!,.\u2014])",
+    re.IGNORECASE,
+)
+#: Words of a reply's opening compared across one run's replies (the opener census independent of any phrase list).
+OPENING_WORDS = 3
 WATCH_PHRASES: tuple[str, ...] = (
     "riskiest assumption",
     "cheapest test",
@@ -180,6 +191,10 @@ class CheckResult:
     #: Replies containing each watch-list phrase, and replies opening with a stock opener (fixed labels, counts).
     phrases: dict[str, int] = field(default_factory=dict)
     stock_openers: int = 0
+    #: Replies opening with one of the other stock openers (PREAMBLE_OPENERS), and replies whose first words
+    #: (OPENING_WORDS) repeat an earlier reply's in the same run.
+    preamble_openers: int = 0
+    repeated_openings: int = 0
     #: Replies that use the student's first name (the name-overuse measure).
     named_replies: int = 0
     #: Figures excused from unsourced_figure, by kind ("arithmetic", "proposed"), for the summary.
@@ -203,6 +218,8 @@ class CheckResult:
             "replies": self.replies,
             "phrases": dict(self.phrases),
             "stock_openers": self.stock_openers,
+            "preamble_openers": self.preamble_openers,
+            "repeated_openings": self.repeated_openings,
             "named_replies": self.named_replies,
             "excused": dict(self.excused),
         }
@@ -359,6 +376,7 @@ def run_checks(
     said: list[tuple[set[tuple[str, ...]], set[str]]] = []
     watch_counts: dict[str, int] = dict.fromkeys(WATCH_PHRASES, 0)
     excused = {"arithmetic": 0, "proposed": 0}
+    openings: set[tuple[str, ...]] = set()
     for i, t in enumerate(turns):
         coach = (t.coach or "").translate(_APOSTROPHES)
         student = (t.student or "").translate(_APOSTROPHES)
@@ -390,6 +408,13 @@ def run_checks(
         if STOCK_OPENERS.search(coach):
             result.findings.append(Finding("canned_opener", MEDIUM, t.at))
             result.stock_openers += 1
+        elif PREAMBLE_OPENERS.search(coach):
+            result.preamble_openers += 1
+        opening = tuple(_words(coach)[:OPENING_WORDS])
+        if len(opening) == OPENING_WORDS:
+            if opening in openings:
+                result.repeated_openings += 1
+            openings.add(opening)
         lowered = coach.lower()
         for phrase in WATCH_PHRASES:
             if phrase in lowered:

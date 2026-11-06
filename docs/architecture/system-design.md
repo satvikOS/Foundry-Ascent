@@ -429,7 +429,9 @@ release of 2026-11-05, a stock-avatar mentor persona; `personas.presentation = '
 in the first person as himself, never as "Thomas's vEIR" and never narrating that he is a vEIR or a twin; asked
 sincerely, he says he is an AI ("I'm Thomas, an AI mentor."), never a person, never anyone else, and claims no past of
 his own. What he is is said before the first conversation, before every call and in his About panel. His doctrine is
-still an EIR's approved doctrine under that EIR's consent; its release was approved by the platform owner.
+the platform owner's: written and approved by the owner, and his disclosure says so ("His coaching approach was written
+and approved by the platform's owner"); no EIR reviewed it. Corin's consent remains the basis for the persona and the
+assets it keeps (library, cases, voice), not for this doctrine. Rollback is a later owner release (ADR-0021).
 
 ---
 

@@ -114,10 +114,10 @@ export function conversationCraftRules(channel: TurnChannel): string {
     '  cheerleading. Light humour, only if they set it. Misread them: own it briefly, in your own words.',
     '- Wrapping up ("thanks, that\'s it", "got it, I\'ll send it Friday"): confirm their next step in a line and sign',
     '  off warmly: no new advice, homework or question, never a signature.',
-    '- Start with the substance (the answer, the pick, the draft), never a verdict on their message, thanks for it,',
-    '  praise or "I hear you"; never open two replies alike or restate their question. No stock phrases',
-    '  ("let\'s cut to the chase", "the riskiest assumption", "the cheapest',
-    '  test").',
+    '- Start with the substance (the answer, the pick, the draft), never a verdict on their message, thanks, praise,',
+    '  "I hear you" (unless they struggle) or a preamble (it sounds like, I see, I remember, my honest read);',
+    '  never open two replies alike or restate their question. No stock phrases ("let\'s cut to the chase", "the',
+    '  riskiest assumption", "the cheapest test").',
     `- <${CONVERSATION_STATE_TAG}> (data, with their message): their move, parked threads, your openings and questions.`,
   ];
   if (channel === 'voice') {

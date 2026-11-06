@@ -195,7 +195,7 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
   ],
   [
     'topic_shift',
-    /(?:\b(?:by the way|btw|(?:a )?(?:different|another|unrelated|separate|random|new) (?:question|topic|thing|subject)|(?:talk|focus|move on) (?:about|on|to) something (?:else|different)|something else (?:entirely|now)|(?:let's|can we) (?:talk|move on) (?:about|to) (?!(?:it|that|this)\b)|on (?:another|a different|a separate) note|chang(?:e|ing) (?:the )?(?:topic|subject)|before i forget|switching gears|quick (?:question|one))\b|^(?:oh|also)[,.]? (?:and |also )?(?:what|how|can|could|should|one more)\b|^actually[,.]? (?:can|could|let's|i want|i'd like)\b)/,
+    /(?:\b(?:by the way|btw|(?:a )?(?:different|another|unrelated|separate|random|new) (?:question|topic|thing|subject)|(?:talk|focus|move on) (?:about|on|to) something (?:else|different)|something else (?:entirely|now)|(?:let's|can we|could we) (?:now )?(?:move on|switch|turn) to (?!(?:it|that|this)\b)|(?:let's|can we|could we) (?:now )?talk about [\w' -]{1,40} instead|on (?:another|a different|a separate) note|chang(?:e|ing) (?:the )?(?:topic|subject)|before i forget|switching gears|quick (?:question|one))\b|^(?:oh|also)[,.]? (?:and |also )?(?:what|how|can|could|should|one more)\b|^actually[,.]? (?:can|could|let's|i want|i'd like)\b)/,
   ],
   [
     'greeting',
@@ -230,7 +230,7 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
   // today" got more of the same.
   [
     'rehearse',
-    /\b(?:(?:let's|let us|can we|could we|i want to|i'd like to|help me|want to) (?:do (?:a |some )?)?(?:practi[cs]e|rehearse|role-?play|run through|drill|do a (?:mock|dry run|practice run))|(?:can|could) (?:you|we) (?:help me )?practi[cs]e\b|(?:mock|practice|dry) (?:pitch|interview|q ?& ?a|run|panel|meeting|call)|pretend (?:you(?:'re| are)|to be)|(?:play|be|act as) (?:a |an |the |my )?(?:\w+ )?(?:investor|vc|judge|panel(?:list)?|customer|buyer|landlord|board(?: member)?|reviewer|procurement|skeptic|sceptic|grant panel|dean|partner|cofounder)\b|role-?play)/,
+    /\b(?:(?:let's|let us|can we|could we|shall we|i want to|i'd like to|i wanna|help me) (?:do (?:a |an |some )?(?:quick )?)?(?:practi[cs]e|rehearse|role-?play|(?:mock|dry|practice) (?:run|pitch|interview|q ?& ?a|panel|meeting|call)|run through (?:my|the|our) (?:pitch|interview|meeting|call|presentation|demo))|(?:can|could|would|will) (?:you|we) (?:help me )?(?:practi[cs]e|rehearse|role-?play)|(?:do|run|try) (?:a |an )?(?:quick )?(?:mock|practice|dry) (?:pitch|interview|q ?& ?a|run|panel|meeting|call)|drill me|pretend (?:you(?:'re| are)|to be)|(?:(?:can|could|would|will) you (?:please )?|^(?:please |ok,? |okay,? |now )?)(?:play|be|act as) (?:a |an |the |my )?(?:\w+ )?(?:investor|vc|judge|panel(?:list)?|customer|buyer|landlord|board(?: member)?|reviewer|procurement|skeptic|sceptic|grant panel|dean|partner|cofounder)\b|you (?:play|be) (?:the |my |an? )(?:\w+ )?(?:investor|vc|judge|customer|buyer)\b|^role-?play\b)/,
   ],
   [
     'step_out',
@@ -238,23 +238,23 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
   ],
   [
     'defer',
-    /\b(?:(?:come|get|circle) back to (?:that|this|it) (?:later|another time|next time)|(?:park|shelve|table) (?:that|this|it)|(?:let's |can we )?leave (?:that|this|it) (?:for (?:now|later|another time)|aside)|not (?:right )?now,? (?:though|please)?|later,? (?:please|though)|save (?:that|this|it) for (?:later|another time|next time))\b/,
+    /(?:\b(?:come|get|circle) back to (?:that|this|it) (?:later|another time|next time)\b|(?:^|\b(?:let's|can we|could we|i'd like to|i want to|please) )(?:park|shelve|table) (?:that|this|it)\b|\b(?:let's |can we )?leave (?:that|this|it) (?:for (?:now|later|another time)|aside)\b|^(?:not (?:right )?now|later)(?:,? (?:though|please|thanks))?[.!]*$|\bsave (?:that|this|it) for (?:later|another time|next time)\b)/,
   ],
   [
     'restart',
-    /\b(?:start (?:over|again|from scratch|fresh)|(?:a )?fresh start|from scratch|(?:let's |can we )?(?:reset|restart)(?: (?:this|the conversation|everything))?|forget (?:everything|all (?:of )?that|what (?:i|we) said))\b/,
+    /(?:\b(?:let's|let us|can we|could we|i want to|i'd like to)(?: just)? (?:start (?:over|again|fresh|from scratch)|restart|reset|begin again)(?: (?:this|the conversation|our conversation|the chat|everything))?(?=[\s,.!?;]|$)|^(?:ok,? |okay,? )?(?:fresh start|start over|reset|restart)[.!?]*$|\bforget (?:everything|all (?:of )?(?:that|this))(?: (?:we|i|you)(?:'ve| have)? (?:said|discussed|talked about|covered))?\s*(?:[,.!;—–-]|$|and (?:let's|start)))/,
   ],
   [
     'summary',
-    /\b(?:summar(?:y|ise|ize)|recap|sum (?:it|this|that) up|what (?:did|have) we (?:decide|agree)d?(?: on)?(?: today| in this| so far)?|where did we land)\b/,
+    /(?:\b(?:can you |could you |please |pls )?(?:summari[sz]e|recap|sum up) (?:what we|this (?:conversation|chat|session|discussion|call)?|our (?:conversation|chat|session|discussion|call)|the (?:conversation|chat|session|discussion|call)|everything (?:we|so far)|where we|so far|it all|for me)|\b(?:give me|can i (?:get|have)|can you give me|let's have) (?:a |the )?(?:quick |short |brief )?(?:recap|summary)(?: of (?:what we (?:decided|agreed|covered|discussed|said)(?: on)?(?: today| so far)?|(?:this|our|the|today's) (?:conversation|chat|session|discussion|call)))?(?: please)?[.!?]*$|^(?:quick |short )?(?:summary|recap|tl;?dr)(?: please)?[.!?]*$|\bwhat (?:did|have) we (?:decide|agree)d?(?: on)?\b|\bwhere did we land\b)/,
   ],
   [
     'complaint',
-    /\b(?:you(?:'re| are) not (?:listening|getting it|helping)|you keep (?:saying|repeating|asking|telling)|you already (?:said|asked|told me)(?: that)?|that(?:'s| is| was) not (?:helpful|what i asked|an answer)|that doesn't (?:help|answer)|you didn't answer|answer my question|(?:this|that|you|your (?:replies|answers))(?:'re| are| is| seem| feel)? (?:so |really |pretty |a bit |kind of )?(?:generic|robotic|repetitive|useless|vague|canned|slow)|(?:replies|answers) (?:seem|are|feel) (?:generic|slow|off)|stop repeating)\b/,
+    /\b(?:you(?:'re| are) not (?:listening|getting it|helping)|you keep (?:saying|repeating|asking|telling)|you already (?:said|asked|told me)(?: that)?|(?:that|this)(?:'s| is| was) not (?:what i asked|an answer)|that doesn't answer (?:my|the) question|you didn't answer|(?:^|please |just )answer my question|(?:you(?:'re| are| seem| feel| sound)|your (?:replies|answers|responses)(?: are| seem| feel| sound)?) (?:so |really |pretty |a bit |kind of |very )?(?:generic|robotic|repetitive|useless|vague|canned|slow)|(?:your )?(?:replies|answers|responses) (?:seem|are|feel|sound) (?:so |really |pretty |a bit |kind of )?(?:generic|slow|off|robotic|canned)|stop repeating)\b/,
   ],
   [
     'lost_reply',
-    /\b(?:(?:your|the) (?:last )?(?:reply|message|answer|response)s? (?:got )?(?:cut off|didn't (?:come through|load|arrive)|was cut|stopped|broke)|cut off (?:halfway|mid)|(?:got|saw|had) an error|(?:it|that) (?:failed|errored|didn't send|didn't go through)|something went wrong|didn't get your (?:reply|message|answer)|(?:the )?(?:call|line|connection|audio|voice) (?:dropped|cut out|froze|died|stopped working)|lost (?:you|the connection|connection)|i only (?:heard|got) (?:half|part)|(?:sent|sending) (?:it|this|that) again)\b/,
+    /\b(?:(?:your|the) (?:last )?(?:reply|message|answer|response)s? (?:just )?(?:got )?(?:cut off|didn't (?:come through|load|arrive|send)|was cut|stopped|broke|failed)|you (?:got )?cut off|didn't (?:get|see) your (?:reply|message|answer|response)|(?:our|this) (?:call|line|connection|audio|video) (?:dropped|cut out|froze|died|stopped working|broke up)|(?:the|my) (?:connection|audio|wifi|wi-fi|internet) (?:dropped|cut out|froze|died|stopped working)|(?:i )?lost (?:you|the connection|connection)\b|i only (?:heard|got|saw) (?:half|part) of (?:that|it|your|what you)|(?:re-?posting|re-?sending) my (?:question|message)|got an error (?:here|just now|on (?:my|your|this) (?:side|end|reply|message))|(?:the |this )?(?:chat|app|page) (?:gave me an error|errored|crashed|froze))/,
   ],
   [
     'hesitant',
@@ -1323,7 +1323,8 @@ export function renderConversationState(state: ConversationState): string {
         : `- They parked ${quoted(parkedNow)} for later: drop it now; bring it back once, later, at a natural moment.`,
     );
   }
-  if (state.moves.includes('topic_shift')) {
+  // A first message has no subject to change from.
+  if (state.moves.includes('topic_shift') && state.earlierTurns > 0) {
     lines.push(
       '- They changed the subject: follow them fully. Do not steer back to the earlier thread unless they return to it.',
     );
