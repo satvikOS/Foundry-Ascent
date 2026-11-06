@@ -93,6 +93,12 @@ export interface AnswerSpec {
    * chat, a test conversation). Untrusted data at the start of the final user message.
    */
   readonly leftOff: string;
+  /**
+   * The vEIR's replies at the end of the person's own latest conversations with it, newest first
+   * (continuity.ts `pastRepliesOf`): read for its phrasing ledger, the forms of its questions and how often it named
+   * the founder, never as what was said. Absent: none (a test conversation, a temporary chat).
+   */
+  readonly pastReplies?: readonly string[];
   readonly evidence: readonly KeyedEvidence[];
   readonly history: readonly HistoryTurn[];
   readonly opener: string | null;
@@ -253,6 +259,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     leftOff: spec.leftOff,
     today,
     opener: spec.opener,
+    ...(spec.pastReplies === undefined ? {} : { pastReplies: spec.pastReplies }),
   });
   const shown: KeyedEvidence[] = spec.evidence.filter((k) => context.shownKeys.has(k.item.key));
   const evidenceKeys = new Set(shown.map((k) => k.item.key));
@@ -374,6 +381,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
             knownFigures,
             previousReply,
             earlierReplies,
+            pastReplies: spec.pastReplies ?? [],
             // A flagged turn never loses its referral as a repeat, and is never cut short for one.
             keepReferrals: forcedEscalationFor(risk) !== null,
             founderText: spec.founderText,
@@ -412,6 +420,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     greeted,
     previousReply,
     earlierReplies,
+    pastReplies: spec.pastReplies ?? [],
     // What the gate released was shown or said as it stands: never edited for repeats again.
     released: generation.stream !== null && generation.stream.fallback === null,
     // A streamed reply handed the turn back as it was said (generate.ts); a reply written whole gets it here.

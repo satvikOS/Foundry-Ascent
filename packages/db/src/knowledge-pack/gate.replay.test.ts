@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { EXCERPT_CHARS } from '../repositories/common.js';
-import { asks, gateTokens, isCommonEnglish, selectReferences, vocabularyKeys } from './gate.js';
+import {
+  asks,
+  gateTokens,
+  isCommonEnglish,
+  selectContextualReference,
+  selectReferences,
+  vocabularyKeys,
+} from './gate.js';
 import { EVERYDAY_LINES, GENUINE_LINES } from './gate-replay.fixture.js';
 import { knowledgePackEvalQuestions, loadKnowledgePack } from './pack.js';
 import { packItems } from './render.js';
@@ -301,5 +308,55 @@ describe('what the coach reads first', () => {
       );
       expect(account.startsWith('Evidence limits: ')).toBe(true);
     }
+  });
+});
+
+describe('in context, unasked (coaching v3: relevant to what is being discussed)', () => {
+  const ctx = (text: string, earlier: readonly string[], venture: string | null = null): string[] =>
+    selectContextualReference(text, { earlierFounderTexts: earlier, venture }).matches.map((m) => m.key);
+
+  it('offers an item the message and the conversation both name, one at most', () => {
+    expect(
+      ctx('So the unit economics only work for the office customers who order in bulk.', [
+        'I redid our unit economics with the courier quote.',
+      ]),
+    ).toEqual(['framework/F09']);
+    // The venture's own words corroborate too: a recycling venture talking about its recycling pickups.
+    expect(
+      ctx(
+        'We lost two of the recycling pickups this week because the van broke down.',
+        [],
+        'Recycling pickups for student halls',
+      ),
+    ).toEqual(['case/SC07']);
+  });
+
+  it('never on a passing word: the conversation must name it too, never an everyday word, never a short message', () => {
+    expect(ctx('So the unit economics only work for the office customers who order in bulk.', [])).toEqual(
+      [],
+    );
+    expect(
+      ctx('So the unit economics only work for bulk orders.', ['We talked to the landlord again.']),
+    ).toEqual([]);
+    expect(ctx('Unit economics?', ['Our unit economics are bad.'])).toEqual([]);
+    // "glasses" is everyday English: a case's subject in one word must not be.
+    expect(
+      ctx('I spilled two glasses of water on the prototype this morning, sadly.', ['More glasses broke.']),
+    ).toEqual([]);
+  });
+
+  it('never in a message about the program itself', () => {
+    expect(
+      ctx('The cohort session on unit economics was useful, can the EIR see my numbers?', [
+        'Our unit economics.',
+      ]),
+    ).toEqual([]);
+  });
+
+  it('keeps the everyday replay at the asked rate: an everyday line with everyday lines before it brings nothing', () => {
+    const offered = EVERYDAY_LINES.filter(
+      (line, i) => ctx(line, EVERYDAY_LINES.slice(Math.max(0, i - 3), i)).length > 0,
+    );
+    expect(offered.length / EVERYDAY_LINES.length).toBeLessThanOrEqual(0.05);
   });
 });

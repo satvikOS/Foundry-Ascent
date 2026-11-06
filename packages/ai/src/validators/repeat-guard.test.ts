@@ -235,7 +235,7 @@ describe('a streamed reply is stored as the gate released it', () => {
   it('is never edited for repeats again once released (the stored answer is what was shown and said)', () => {
     // Two short sentences the gate judged as one unit: as a unit it is new, while its second sentence alone repeats.
     const answer =
-      'Good. Bring the commit logs to the tech-transfer office and ask them to confirm the dates.';
+      'Right. Bring the commit logs to the tech-transfer office and ask them to confirm the dates.';
     const base = {
       evidenceKeys: new Set<string>(),
       preRisk: { categories: [] },
@@ -263,6 +263,49 @@ describe('a streamed reply is stored as the gate released it', () => {
     const released = validateCoachResponse(raw, { ...base, released: true });
     expect(released.response.answer).toBe(answer);
     expect(released.results.notes.some((n) => n.startsWith('repeated_sentences_removed'))).toBe(false);
+  });
+
+  it('loses what the gate took out inside a unit, the same way (coaching v3: pilot v3 stored 97 stock openers)', () => {
+    // The gate left "That's a solid plan." and the name out of what was shown and said; the stored answer (what a
+    // reload shows, the model's own history, the lab's transcript) did not, until v3.
+    const answer = "That's a solid plan, Maya. Book the room for Thursday and send the two invites tonight.";
+    const opts = {
+      evidenceKeys: new Set<string>(),
+      preRisk: { categories: [] },
+      otherVentureNames: [],
+      otherVentureCanaries: [],
+      personaName: 'Thomas',
+      coverageThreshold: 0.6,
+      founderName: 'Maya',
+      previousReply: 'Good luck with it, Maya.',
+      founderText: "I'll book the room and send the invites.",
+      released: true,
+    };
+    const raw = {
+      mode: 'coach' as const,
+      answer,
+      spoken: null,
+      claims: [],
+      uncertainty: [],
+      challenge: null,
+      next_actions: [],
+      escalation: { required: false, category: null, priority: null, reason: null, requested_role: null },
+      memory_candidates: [],
+      follow_up_questions: [],
+      rehearsal: null,
+    };
+    const stored = validateCoachResponse(raw, opts).response.answer;
+    expect(stored).toBe('Book the room for Thursday and send the two invites tonight.');
+    const g = new SentenceGate({
+      personaName: 'Thomas',
+      founderName: 'Maya',
+      previousReply: 'Good luck with it, Maya.',
+      founderText: "I'll book the room and send the invites.",
+      otherVentureNames: [],
+      otherVentureCanaries: [],
+    });
+    const shownUnits = [...g.push(answer).units, ...g.end().units].map((u) => u.text).join('');
+    expect(shownUnits.trim()).toBe(stored);
   });
 });
 

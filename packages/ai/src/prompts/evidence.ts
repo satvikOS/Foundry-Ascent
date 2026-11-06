@@ -21,8 +21,9 @@ function isReference(item: EvidenceItem): boolean {
  */
 export const REFERENCE_RULES: readonly string[] = [
   'Items with source="reference" come from a general startup reference library (university and academic sources),',
-  "not from this program's own guidance or this venture: prefer the program's guidance when both cover a question,",
-  'and use a reference item only where it helps with what the founder asked. Its title names its publisher: say',
+  "not from this program's own guidance or this venture: prefer the program's guidance when both cover a question.",
+  'A reference item is optional background: use it only where it genuinely helps with what the founder asked or is',
+  'discussing now, and otherwise leave it out without mentioning it. Its title names its publisher: say',
   'whose account it is in plain words ("MIT News reported…"). A "Documented account" is a dated historical report,',
   'true only as of its date and within its stated limits; passages headed editorial are suggestions, never facts',
   'about the company. If an item does not report what was asked (a figure, a rate, a result), say it is not',

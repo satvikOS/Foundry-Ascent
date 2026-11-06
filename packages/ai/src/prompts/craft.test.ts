@@ -281,9 +281,10 @@ describe('conversation craft in the system prompt', () => {
     // guidance first; the stock-opener list is gone (the output check does that work). Moves only some turns need
     // (rehearsal, a resend, "later", "no more questions") are said in <conversation_state> on those turns only.
     // Review of coaching v2 adds ~15: the preamble habits described (not quoted) and empathy kept when they struggle.
-    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(1080);
-    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1140);
-    expect(tokens(craft)).toBeLessThanOrEqual(1090);
+    // Coaching v3 adds ~8: a made-up figure is named by its role instead (pilot v3: 30 unsourced figures).
+    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(1090);
+    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1150);
+    expect(tokens(craft)).toBeLessThanOrEqual(1100);
   });
 
   it('is part of the versioned policy', () => {

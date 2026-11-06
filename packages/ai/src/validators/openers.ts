@@ -12,8 +12,9 @@
  *
  * The founder's name. Live pilot 42124259353: name overuse in 15 of 60 runs ("You're very welcome, Alessandro." five
  * replies running). A name said to the founder ("…, Maya.", "Maya, …", "Thanks, Maya") is left out of a reply while one
- * of the last three replies already named them ({@link nameUsedRecently}, {@link withoutVocativeName}): at most one reply
- * in four uses it, as the voice rules ask. A name the reply talks about rather than to ("Maya's pilot") stays.
+ * of the latest replies, this conversation's and the last ones', already named them as often as one reply in four
+ * allows ({@link nameBudgetSpent}, {@link withoutVocativeName}), as the voice rules ask. A name the reply talks about
+ * rather than to ("Maya's pilot") stays.
  */
 
 import { founderMoves, reportsCommitmentDone } from '../prompts/conversation-state.js';
@@ -39,13 +40,41 @@ const VERDICT_ADJ = String.raw`(?:solid|great|good|strong|smart|fair|valid|clear
 const VERDICT_NOUN = String.raw`(?:plan|start|step|first step|next step|question|point|move|instinct|idea|approach|call|insight|observation|catch|update|decision|choice|concern|foundation|signal|commitment signal|demand signal|result|sign|progress|win|milestone|direction|piece of evidence|data point|outcome|place to start|way to (?:think about|look at|frame) (?:it|this|that)|thing to (?:do|check|ask|notice)|read|framing|test|experiment|anchor|baseline|number|figure|goal|target|takeaway|realisation|realization|reflection|catch|breakthrough|structure|set of numbers|bit of news|news)`;
 
 /**
+ * Adjectives that only grade the founder's message or move ("solid", "smart", "clear"): with them any short noun phrase
+ * is a verdict ("That's a solid revision", "That's a clear and measurable signal", "That's a smart simplification"),
+ * where the other verdict adjectives ("real", "big", "key") need one of {@link VERDICT_NOUN}: "That's a real pain point"
+ * and "That's a big risk" judge their situation, which is substance. Pilot v3 (42143561959) still opened 97 replies with
+ * a stock line after coaching v2, most of them this grade with a noun the list did not hold.
+ */
+const PRAISE_ADJ = String.raw`(?:solid|great|good|strong|smart|clear|useful|excellent|fantastic|helpful|reasonable|sensible|promising|clever|thoughtful|wise|sharp|nice|encouraging|impressive|practical|concrete|fair|valid|interesting|brilliant|neat|tidy)`;
+
+/**
+ * Words that name the founder's situation rather than their message or move: "That's a clear risk for the pilot",
+ * "That's a good price for a library", "That's a sharp deadline", "That's a strong signal from the data", "That's a
+ * useful benchmark for your pricing" judge where they stand, which is substance (review of coaching v3: the broad grade
+ * left these out). A grade whose words hold one of them is never a stock opener by {@link GRADED_THING} alone; the
+ * listed verdicts ({@link VERDICT_NOUN}, "That's a strong signal.") are read as before, and a
+ * signal graded alone ("a clear and measurable signal") is a grade of their measure.
+ */
+const SITUATION_WORD = String.raw`(?:risk|danger|threat|price|pricing|cost|fee|rate|rent|wage|salary|budget|deadline|runway|cash|money|revenue|margin|loss|debt|benchmark|problem|issue|gap|constraint|limit|bottleneck|obstacle|hurdle|trade-?off|data|market|competitor|competition|demand|worry|fear|concern|stress|struggle|challenge|situation|position|spot|pain)(?:s|es)?`;
+
+/** One word of a graded phrase that is not a {@link SITUATION_WORD}. */
+const GRADED_WORD = String.raw` (?!${SITUATION_WORD}(?![\p{L}\p{N}'’-]))[\p{L}\p{N}'’-]+`;
+
+/** A short noun phrase after a grading adjective ("revision", "simplification", "one-page document"): one to three words. */
+const GRADED_THING = String.raw`(?:${GRADED_WORD}){1,3}`;
+
+/** What the grade is of, as a short tail ("…with the two letters", "…for Friday", "…from the libraries"). */
+const GRADE_TAIL = String.raw`(?: (?:with|for|from|on|in|about|there|here)(?:${GRADED_WORD}){1,4})?`;
+
+/**
  * A verdict on what they said ("That's a solid plan", "That sounds like a strong start", "This is a really good
  * instinct", "You're on the right track", "Smart move").
  */
-const VERDICT = String.raw`(?:(?:that|this|it)(?:'s| is| sounds| seems| looks| feels)(?: like)?(?: (?:a|an))?(?: (?:really|very|truly|super|pretty|such a|genuinely|definitely))? ${VERDICT_ADJ}(?: (?:first|next|early|real))?(?: ${VERDICT_NOUN})?|(?:a|an)?(?: really| very)? ${VERDICT_ADJ} ${VERDICT_NOUN}|you(?:'re| are) (?:on the right track|heading in the right direction|thinking about (?:this|it) the right way|asking the right question)|(?:smart|good|great|nice|solid) (?:move|call|thinking|catch)|(?:that|this) is (?:great|good|excellent|exciting|encouraging|promising) (?:news|to hear)|(?:that's|that is) (?:great|good|excellent|exciting|encouraging|promising)(?: news| to hear)?|(?:good|great|nice|glad|happy) to hear(?: (?:that|it|this))?|(?:i'm |i am )?glad (?:to hear (?:that|it|this)|you (?:asked|shared that|did that))|(?:that's|that is) (?:exactly )?(?:the right (?:question|move|call|instinct|idea|place to start))|(?:that's|that is) (?:huge|big|real) progress)`;
+const VERDICT = String.raw`(?:(?:that|this)(?:'s| is| sounds| seems| looks| feels)(?: like)? (?:a|an)(?: (?:really|very|truly|super|pretty|genuinely|definitely))? ${PRAISE_ADJ}(?:,? (?:and )?${PRAISE_ADJ})?${GRADED_THING}${GRADE_TAIL}|(?:that|this|it)(?:'s| is| sounds| seems| looks| feels)(?: like)?(?: (?:a|an))?(?: (?:really|very|truly|super|pretty|such a|genuinely|definitely))? ${VERDICT_ADJ}(?: (?:first|next|early|real))?(?: ${VERDICT_NOUN})?|(?:a|an)?(?: really| very)? ${VERDICT_ADJ} ${VERDICT_NOUN}|you(?:'re| are) (?:on the right track|heading in the right direction|thinking about (?:this|it) the right way|asking the right question)|(?:smart|good|great|nice|solid) (?:move|call|thinking|catch)|(?:that|this) is (?:great|good|excellent|exciting|encouraging|promising) (?:news|to hear)|(?:that's|that is) (?:great|good|excellent|exciting|encouraging|promising)(?: news| to hear)?|(?:good|great|nice|glad|happy) to hear(?: (?:that|it|this))?|(?:i'm |i am )?glad (?:to hear (?:that|it|this)|you (?:asked|shared that|did that))|(?:that's|that is) (?:exactly )?(?:the right (?:question|move|call|instinct|idea|place to start))|(?:that's|that is) (?:huge|big|real) progress)`;
 
 /** Thanks for their message ("Thanks for the update", "Thank you for sharing that"). */
-const THANKS = String.raw`(?:(?:thanks|thank you)(?: so much| again| a lot)?(?: for (?:sharing(?: (?:that|this|those|the \w+|your \w+))?|that|this|the (?:update|context|details?|clarification|info|information|question|numbers|background|follow-up|detail|rundown|recap)|your (?:update|question|honesty|patience)|clarifying|explaining|telling me|letting me know|laying (?:that|it|this|those) out|bringing (?:this|that|it) (?:up|to me)|walking me through (?:that|it|this|those)|being (?:so )?(?:honest|open|candid|clear)|the quick reply|getting back(?: to me)?|the heads[- ]up|coming back))?)`;
+const THANKS = String.raw`(?:(?:thanks|thank you)(?: so much| again| a lot)?(?: for (?:sharing(?: (?:that|this|those|the \w+|your \w+))?|(?:that|this|the|your|all the|those) [\p{L}'’-]+(?: [\p{L}'’-]+)?|that|this|the (?:update|context|details?|clarification|info|information|question|numbers|background|follow-up|detail|rundown|recap)|your (?:update|question|honesty|patience)|clarifying|explaining|telling me|letting me know|laying (?:that|it|this|those) out|bringing (?:this|that|it) (?:up|to me)|walking me through (?:that|it|this|those)|being (?:so )?(?:honest|open|candid|clear)|the quick reply|getting back(?: to me)?|the heads[- ]up|coming back))?)`;
 
 /** "I hear you", "I hear the frustration", "I can hear how much…" kept short. */
 const I_HEAR = String.raw`(?:i (?:totally |really |completely )?(?:hear|get|feel) (?:you|that|ya|where you're coming from)|i hear (?:the|your) (?:frustration|worry|concern|stress|excitement))`;
@@ -82,9 +111,16 @@ const SMALL_TALK =
 const REPORT_WORDS =
   /\b(?:update|news|done|did it|finished|it went|went (?:well|badly|ok|okay|great)|results? (?:are|came) in)\b/u;
 
-/** Praise or a verdict: kept as the reaction to news or to a report of what they did ("That's big news.", "Nice."). */
+/**
+ * A reaction to the news itself ("That's big news.", "Good to hear.", "Glad to hear it."): kept on news or a report.
+ * A grade of their move ("That's a solid step.") is no reaction to the news and goes even then (pilot v3: "That's a
+ * solid step forward." answered every progress report of a run).
+ */
+const NEWS_REACTION = String.raw`(?:(?:that|this)(?:'s| is) (?:(?:really |such )?(?:great|good|excellent|exciting|encouraging|promising|big|huge|wonderful|fantastic|real|sad|hard|tough|difficult|rough|bad|unexpected) (?:news|to hear)|(?:great|good|excellent|exciting|encouraging|promising|huge|wonderful|fantastic)|(?:huge|big|real) progress)|(?:good|great|nice|glad|happy) to hear(?: (?:that|it|this))?|(?:i'm |i am )?glad (?:to hear (?:that|it|this)|you did (?:that|it))|congrat(?:s|ulations)|well done|nice work|good work|great work|nice one)`;
+
+/** Praise or a reaction to the news: kept as the reaction to news or to a report of what they did ("Nice."). */
 const REACTION_CLAUSE = new RegExp(
-  String.raw`^(?:(?:oh|ok|okay|so|well|and|alright|right|yes|yeah)[ ,]+)?(?:${PRAISE}|${VERDICT})(?: (?:too|again|indeed|then|there|here|already|overall))?$`,
+  String.raw`^(?:(?:oh|ok|okay|so|well|and|alright|right|yes|yeah)[ ,]+)?(?:${PRAISE}|${NEWS_REACTION})(?: (?:too|again|indeed|then|there|here|already|overall))?$`,
   'u',
 );
 
@@ -105,6 +141,10 @@ export function asksForVerdict(founderText: string): boolean {
     t,
   );
 }
+
+/** "I hear (that) you're…", "I can hear you want…": the frame before what they said, said back. */
+const HEARD_YOU =
+  /^[*_]*I (?:can )?hear (?:that )?(you(?:'re|’re| are| want| need| feel| have|'ve|’ve| would|'d|’d| don't| don’t| do not| can't| can’t| think| mean| said)\b)/u;
 
 /** A clause of the reply's start: its text and everything up to the next clause (its punctuation and spaces). */
 const FIRST_CLAUSE = /^([^,.!?…;:\n—–]+?)\s*([,.!?…;:—–]+["'”’)\]*_]*\s*|\s+[—–-]\s+|$)/u;
@@ -165,6 +205,19 @@ export function withoutStockOpener(
     moves.includes('news') || reportsCommitmentDone(founder) || REPORT_WORDS.test(normalise(founder));
   const asked = founder.includes('?');
   const lead = /^\s*/.exec(text)?.[0] ?? '';
+  // "I hear you want ideas now, but…" says what they said back with a stock frame: "You want ideas now, but…" says
+  // it plainly (pilot v3). Kept on a turn of stress or hesitation, where "I hear you're worried" is the empathy.
+  if (!keepEmpathy) {
+    const heard = HEARD_YOU.exec(text.slice(lead.length));
+    if (heard?.[1] !== undefined) {
+      const rest = text.slice(lead.length + heard[0].length - heard[1].length);
+      return {
+        text: `${lead}${rest.charAt(0).toUpperCase()}${rest.slice(1)}`,
+        removed: true,
+        onlyOpener: false,
+      };
+    }
+  }
   // Emphasis around the opener ("**Great.**") goes with it.
   let rest = text.slice(lead.length);
   let removed = false;
@@ -199,28 +252,37 @@ export function withoutStockOpener(
 
 // The founder's name ------------------------------------------------------------------------------------------
 
-/** How many of the latest replies are read for the name (one reply in four may use it). */
-export const NAME_WINDOW = 3;
+/** How many of the latest replies are read for the name (this conversation's and the last conversations'). */
+const NAME_WINDOW = 12;
+
+/** At most one reply in this many says the founder's name to them (the voice rules; the lab's name_overuse). */
+const NAME_EVERY = 4;
 
 function namePattern(name: string): string {
   return escapeRegExp(name.trim());
 }
 
 /**
- * Whether one of the latest {@link NAME_WINDOW} replies (`replies`, newest first) names the founder (`firstName`):
- * then this reply leaves the name out.
+ * Whether this reply has used up the founder's name (`firstName`): the latest replies (`replies`, newest first, at most
+ * {@link NAME_WINDOW}: this conversation's and the end of the last ones) already name them as often as one reply in
+ * {@link NAME_EVERY} allows, counting this one. Then this reply leaves the name out where it is said to them.
+ *
+ * Pilot v3 (42143561959): name overuse in 26 of 60 runs. A window of the last three replies let replies 1, 5 and 9 of
+ * nine name them (a third: replayed on pilot 42124259353's replies, 5 runs stayed over a quarter after the v2 rule), and
+ * a new conversation started its count afresh. The first reply of all may greet them by name.
  */
-export function nameUsedRecently(
+export function nameBudgetSpent(
   firstName: string | null | undefined,
   replies: readonly (string | null | undefined)[],
 ): boolean {
   const name = firstName?.trim() ?? '';
   if (name.replace(/[^\p{L}]/gu, '').length < 2) return false;
   const re = new RegExp(`(?<![\\p{L}\\p{N}'’])${namePattern(name)}(?![\\p{L}\\p{N}]|['’]s\\b)`, 'u');
-  return replies
+  const window = replies
     .filter((r): r is string => typeof r === 'string' && r.trim() !== '')
-    .slice(0, NAME_WINDOW)
-    .some((r) => re.test(r));
+    .slice(0, NAME_WINDOW);
+  const named = window.filter((r) => re.test(r)).length;
+  return named > 0 && (named + 1) * NAME_EVERY > window.length + 1;
 }
 
 /** Words that may stand before a name said to the founder, and stay when it goes ("Thanks, Maya" → "Thanks"). */

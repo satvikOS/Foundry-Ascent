@@ -42,6 +42,11 @@ export const STORAGE_KEYS = {
   perf: 'fa.perf',
   /** The side panels' sections the person folded or unfolded, by section id (components/ui/collapsible-section). */
   panelSections: 'fa.panel.sections',
+  /**
+   * The welcome New chat put over the vEIR's last line without a greeting of its own, and a hash of that line (never
+   * its words): the next line gets another welcome (features/chat/greeting.ts).
+   */
+  newChatWelcome: 'fa.new-chat.welcome',
 } as const;
 
 /**

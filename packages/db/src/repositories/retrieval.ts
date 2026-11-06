@@ -28,7 +28,12 @@ import { type SqlExecutor } from '../executor.js';
 import { p, type SqlParam, type SqlParams } from '../params.js';
 import { rewritePlaceholders } from '../sql-lexer.js';
 import { clampLimit, excerptSql, orTsQuerySql, queryRows } from './common.js';
-import { selectReferences } from '../knowledge-pack/gate.js';
+import {
+  CONTEXT_GAP_TURNS,
+  selectContextualReference,
+  selectReferences,
+  type ConversationContext,
+} from '../knowledge-pack/gate.js';
 import { DOCUMENTED_ACCOUNT_HEADING } from '../knowledge-pack/render.js';
 import { type KnowledgeClassification } from './knowledge.js';
 import { ACTIVE_MEMORY_STATUSES, type MemoryStatusValue, type MemoryTypeValue } from './memory.js';
@@ -297,6 +302,13 @@ export interface ReferenceQuery {
   readonly limit?: number;
   /** The conversation: a library item already cited in it is never shown again. Null or absent: none left out. */
   readonly sessionId?: string | null;
+  /**
+   * What the conversation is about beyond the founder's message (their earlier messages, the venture's own words):
+   * when the message asks for nothing, an item they and the conversation both name may be offered as optional
+   * background (`selectContextualReference`), at most once every {@link REFERENCE_GATE}.contextGapTurns turns. Absent:
+   * only what they ask for.
+   */
+  readonly context?: ConversationContext;
 }
 
 /**
@@ -315,12 +327,22 @@ export interface ReferenceQuery {
  * - one passage per item: a case's documented account before its editorial guidance, else the item's first
  *   passage; at most `limit` (a call's turn: 1), in slots of their own beside the shared budget.
  *
+ * - **in context** (coaching v3): when the founder's message asks for nothing, an item both it and the conversation
+ *   name by its vocabulary (`selectContextualReference`: an earlier message of theirs or the venture's own words) is
+ *   offered, one item, and only when no reference passage was shown in the conversation's last `contextGapTurns`
+ *   turns; the prompt says a reference is optional background (`REFERENCE_RULES`).
+ *
  * They are ranked by the usual hybrid score, in which the library's authority (0.7; 0.63 for editorial guidance)
  * stays below the program's own guidance (0.9) and the vEIR's library (1.0).
  */
 export const REFERENCE_GATE = {
   minVector: 0.2,
   limit: 2,
+  /**
+   * Earlier turns of the conversation that must show no reference passage before one comes back unasked (coaching
+   * v3: at most one contextual reference every few turns). One the founder asks for is never held back.
+   */
+  contextGapTurns: CONTEXT_GAP_TURNS,
 } as const;
 
 /**
@@ -340,6 +362,11 @@ function sharedSearch(q: SharedChunkQuery): StoreSearch {
     AND (c.scope <> 'persona' OR c.persona_id = :personaId)`;
   const refLimit = q.reference ? Math.max(0, Math.min(q.reference.limit ?? REFERENCE_GATE.limit, 10)) : 0;
   const admitted = q.reference ? selectReferences(q.reference.founderText, { limit: refLimit }).matches : [];
+  // Nothing asked for: what the conversation is about may bring one item, rate-limited in SQL (`recent_ref`).
+  const contextual =
+    admitted.length === 0 && refLimit > 0 && q.reference?.context !== undefined
+      ? selectContextualReference(q.reference.founderText, q.reference.context).matches
+      : [];
   return {
     sql: `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      , ann AS (
@@ -352,7 +379,18 @@ function sharedSearch(q: SharedChunkQuery): StoreSearch {
        WHERE ${scopeFilter} AND c.scope <> 'public' AND c.tsv @@ q.tsq
        ORDER BY ts_rank_cd(c.tsv, q.tsq, 32) DESC, c.id
        LIMIT :candidates)
-     , gate AS (SELECT g.uri, g.rank FROM unnest(:refUris) WITH ORDINALITY AS g (uri, rank))
+     , recent_ref AS (
+       SELECT 1 FROM turn_evidence te
+       JOIN (SELECT t.id FROM turns t
+             WHERE :refSessionId IS NOT NULL AND t.session_id = :refSessionId
+             ORDER BY t.ordinal DESC
+             LIMIT :ctxGap) recent ON recent.id = te.turn_id
+       WHERE te.source_scope = 'public')
+     , gate AS (
+       SELECT g.uri, g.rank FROM unnest(:refUris) WITH ORDINALITY AS g (uri, rank)
+       UNION ALL
+       SELECT g.uri, g.rank FROM unnest(:ctxUris) WITH ORDINALITY AS g (uri, rank)
+       WHERE NOT EXISTS (SELECT 1 FROM recent_ref))
      , cited AS (
        SELECT te.source_id FROM turn_evidence te JOIN turns t ON t.id = te.turn_id
        WHERE :refSessionId IS NOT NULL AND t.session_id = :refSessionId
@@ -407,6 +445,9 @@ function sharedSearch(q: SharedChunkQuery): StoreSearch {
       classifications: p.nullable.textArray(q.classifications),
       candidates: p.int(clampLimit(q.candidates, 40, 400)),
       refUris: p.textArray(admitted.map((m) => m.uri)),
+      ctxUris: p.textArray(contextual.map((m) => m.uri)),
+      // The turn being answered is in the conversation already (with no evidence yet): one row more.
+      ctxGap: p.int(REFERENCE_GATE.contextGapTurns + 1),
       refSessionId: p.nullable.uuid(q.reference?.sessionId ?? null),
       refDocumented: p.text(DOCUMENTED_ACCOUNT_HEADING),
       refMinVector: p.num(REFERENCE_GATE.minVector),

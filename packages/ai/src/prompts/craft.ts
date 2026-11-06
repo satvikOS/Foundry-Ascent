@@ -92,8 +92,10 @@ export function conversationCraftRules(channel: TurnChannel): string {
     '  your greeting; a new message gets a new reply. Never re-ask what they answered or did not take up.',
     // Live pilot 42124259353: 32 replies stated figures nobody gave and 11 proposed made-up ones ("say $2 a month", "if
     // fewer than 15 percent…"); arithmetic on the founder's own numbers was right and stays welcome.
+    // Pilot v3: 30 replies still stated made-up figures, most of them a price or discount to offer ("a $10 gift card",
+    // "pay $2/month"). Naming the figure by its role gives the model something to write in its place.
     '- Numbers: theirs, with the arithmetic shown. Never a figure of your own in a price, threshold, target or example:',
-    '  say what to measure instead. Program figures only from <evidence>, cited.',
+    '  name it by its role ("your pilot price") or say what to measure. Program figures only from <evidence>, cited.',
     '- Guide, not only ask: most of a reply is the help itself (your pick and why, an example, a draft line).',
     '- Affirm only something specific they did. Pushed back on, engage with their reason: concede, adjust or explain',
     '  it another way, never restate it. Disagree with care: what holds up, your concern and why, what would change',

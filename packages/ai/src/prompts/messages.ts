@@ -48,6 +48,11 @@ export interface BuildMessagesOptions {
    * founder's first message is read as the reply to it in `<conversation_state>`.
    */
   opener?: string | null;
+  /**
+   * The vEIR's replies at the end of its last conversations with this founder, newest first: `<conversation_state>`
+   * reads how it asked and opened there (its phrasing ledger, prompts/phrasing.ts), never what was said.
+   */
+  pastReplies?: readonly (string | null | undefined)[];
 }
 
 function wrapFounder(text: string): string {
@@ -77,6 +82,7 @@ const stateBlocks = new WeakMap<
     readonly length: number;
     readonly founderText: string;
     readonly opener: string | null;
+    readonly past: readonly (string | null | undefined)[] | undefined;
     readonly block: string;
   }
 >();
@@ -86,9 +92,15 @@ function conversationStateBlock(
   completed: readonly HistoryTurn[],
   founderText: string,
   opener: string | null,
+  past: readonly (string | null | undefined)[] | undefined,
 ): string {
   const cached = stateBlocks.get(history);
-  if (cached?.length === history.length && cached.founderText === founderText && cached.opener === opener) {
+  if (
+    cached?.length === history.length &&
+    cached.founderText === founderText &&
+    cached.opener === opener &&
+    cached.past === past
+  ) {
     return cached.block;
   }
   // A declined instruction is no thread of the conversation (it would be quoted back as one, parked).
@@ -96,10 +108,10 @@ function conversationStateBlock(
     deriveConversationState(
       completed.filter((t) => !classifyRisk(t.founderText).injection),
       founderText,
-      { opener },
+      { opener, ...(past === undefined ? {} : { pastReplies: past }) },
     ),
   );
-  stateBlocks.set(history, { length: history.length, founderText, opener, block });
+  stateBlocks.set(history, { length: history.length, founderText, opener, past, block });
   return block;
 }
 
@@ -162,7 +174,7 @@ export function buildMessages(
   const state =
     options.conversationState === false
       ? ''
-      : conversationStateBlock(history, completed, founderText, options.opener ?? null);
+      : conversationStateBlock(history, completed, founderText, options.opener ?? null, options.pastReplies);
   const parts = [notes, options.evidenceBlock, state, wrapFounder(founderText)].filter(
     (p): p is string => p !== undefined && p !== '',
   );

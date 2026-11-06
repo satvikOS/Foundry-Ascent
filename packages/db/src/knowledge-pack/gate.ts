@@ -322,6 +322,8 @@ function caseHits(
   all: readonly string[],
   parts: readonly string[],
   clauses: readonly (readonly string[])[],
+  /** A case's subject asked for as an example counts too (the founder's own request); false: its name only. */
+  topics = true,
 ): Hit[] {
   const hits: Hit[] = [];
   const context = all.some((t) => CONTEXT_TOKENS.has(t)) || parts.some(asks);
@@ -350,6 +352,7 @@ function caseHits(
     }
     if (ok) hits.push({ key: c.key, strength: 3, matched: name.join(' '), named: true });
   }
+  if (!topics) return hits;
   for (const sentence of parts) {
     if (!asks(sentence)) continue;
     // A case's subject counts only near a genuine ask for an example ("any examples of startups that did home
@@ -368,10 +371,10 @@ function caseHits(
   return hits;
 }
 
-function subjectHits(c: Compiled, parts: readonly string[]): Hit[] {
+function subjectHits(c: Compiled, parts: readonly string[], requireAsk = true): Hit[] {
   const hits: Hit[] = [];
   for (const sentence of parts) {
-    if (!asks(sentence)) continue;
+    if (requireAsk && !asks(sentence)) continue;
     const tokens = gateTokens(sentence);
     for (const term of c.terms) {
       if (has(tokens, term)) {
@@ -456,6 +459,101 @@ export function selectReferences(
     matched: [...r.matched],
   }));
   return { matches, reason: matches.length > 1 ? 'several' : 'one' };
+}
+
+// Contextual references (coaching v3) -------------------------------------------------------------------------
+
+/**
+ * Founder messages before the new one read for what the conversation is about (newest first), as
+ * {@link selectContextualReference} reads them.
+ */
+export const CONTEXT_TURNS = 3;
+
+/**
+ * Turns of a conversation after a reference passage was shown during which no reference comes back unasked: at most one
+ * unasked reference every few turns (the database's `recent_ref`, and the replay's).
+ */
+export const CONTEXT_GAP_TURNS = 4;
+
+/** Fewest words a message needs before anything in it is read as the conversation's subject. */
+const CONTEXT_MIN_WORDS = 6;
+
+/** What the conversation is about beyond the new message (coaching v3; {@link selectContextualReference}). */
+export interface ConversationContext {
+  /** The founder's earlier messages in this conversation, newest first (the first {@link CONTEXT_TURNS} are read). */
+  readonly earlierFounderTexts: readonly string[];
+  /** The venture's own words (its one-liner, current goal and domain), or null. */
+  readonly venture?: string | null;
+}
+
+/** Item keys a text names by their own vocabulary, asked or not, with how strongly (see {@link Hit}). */
+function mentioned(text: string): Map<string, number> {
+  const out = new Map<string, number>();
+  const clipped = text.slice(0, MAX_CHARS);
+  const all = gateTokens(clipped);
+  if (all.length === 0) return out;
+  const parts = sentences(clipped);
+  const clauses = clipped
+    .split(/[,;:.!?()\n]+/)
+    .map(gateTokens)
+    .filter((c) => c.length > 0);
+  const hits = withoutContained(
+    COMPILED.flatMap((c) =>
+      c.kind === 'case' ? caseHits(c, all, parts, clauses, false) : subjectHits(c, parts, false),
+    ),
+  );
+  for (const h of hits) out.set(h.key, Math.max(out.get(h.key) ?? 0, h.strength));
+  // A case's subject, named outright ("our recycling pickups", "a robotic kitchen"): a phrase, or one word that is not
+  // everyday English, never an ask's idiom. Weakest of all, and only ever with the conversation naming it too.
+  for (const c of COMPILED) {
+    if (c.kind !== 'case' || out.has(c.key)) continue;
+    const named = c.topics.some(
+      (topic) => (topic.length > 1 || !isCommonEnglish(topic[0] ?? '')) && has(all, topic),
+    );
+    if (named) out.set(c.key, 1);
+  }
+  return out;
+}
+
+/**
+ * A reference item the conversation is about, offered without being asked for (coaching v3; owner round 3: "the vEIR
+ * may cite knowledge when relevant to what is being discussed, not only when the student asks"). Still strict: the
+ * new message must name the item by its own curated vocabulary (the same terms, acronyms, paired cues and company
+ * names as {@link selectReferences}, or a case's subject as a phrase or a word that is not everyday English, never an
+ * everyday word), and so must one of the founder's last {@link CONTEXT_TURNS} messages or the venture's own words, so
+ * a passing word never brings a passage.
+ * One item at most; never in a message about the program itself. The database adds what needs it: at most one
+ * unasked reference every {@link CONTEXT_GAP_TURNS} turns, never an item already cited in the conversation, the
+ * vector floor; the model is told a reference is optional background, to use only when it genuinely helps.
+ */
+export function selectContextualReference(
+  founderText: string,
+  context: ConversationContext,
+): ReferenceSelection {
+  const text = founderText.slice(0, MAX_CHARS);
+  const all = gateTokens(text);
+  if (all.length < CONTEXT_MIN_WORDS) return { matches: [], reason: 'none' };
+  if (all.some((t) => PROGRAM_TOKENS.has(t)) || PROGRAM_PHRASES.some((p) => has(all, p))) {
+    return { matches: [], reason: 'program' };
+  }
+  const now = mentioned(text);
+  if (now.size === 0) return { matches: [], reason: 'none' };
+  const before = [
+    ...context.earlierFounderTexts.slice(0, CONTEXT_TURNS),
+    ...(context.venture ? [context.venture] : []),
+  ].map(mentioned);
+  const corroborated = [...now.entries()]
+    .filter(([key]) => before.some((m) => m.has(key)))
+    .sort(
+      (a, b) =>
+        b[1] - a[1] || COMPILED.findIndex((c) => c.key === a[0]) - COMPILED.findIndex((c) => c.key === b[0]),
+    );
+  const top = corroborated[0];
+  if (top === undefined) return { matches: [], reason: 'none' };
+  return {
+    matches: [{ key: top[0], uri: `${PACK_URI_PREFIX}${top[0]}`, strength: top[1], matched: [] }],
+    reason: 'one',
+  };
 }
 
 /** Every item key the vocabulary covers (tests compare it with the pack's items). */

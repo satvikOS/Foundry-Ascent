@@ -1,6 +1,7 @@
 import { classifyRisk } from '../risk/classifier.js';
 import { CONVERSATION_STATE_TAG, OVERUSED_PHRASES } from './craft.js';
 import { escapeData, truncate } from './escape.js';
+import { phrasingLedger, renderPhrasingLedger, type PhrasingLedger } from './phrasing.js';
 
 /**
  * Where the conversation stands, derived deterministically from the turns already in the prompt (no model call,
@@ -137,6 +138,11 @@ export interface ConversationState {
    * which already picked up the last conversation): the reply must not say it again.
    */
   readonly afterOpener: boolean;
+  /**
+   * The vEIR's own phrasing lately (coaching v3): question forms and openings it used twice or more in this
+   * conversation, or at the end of its last conversations (prompts/phrasing.ts). Absent: none.
+   */
+  readonly phrasing?: PhrasingLedger;
 }
 
 /** Longest gist of a thread. */
@@ -970,6 +976,11 @@ export function deriveConversationState(
      * message it counts as the vEIR's last reply (its question, how it opened).
      */
     readonly opener?: string | null;
+    /**
+     * The vEIR's replies at the end of its last conversations with this founder, newest first: read for the phrasing
+     * ledger only (how it asked and opened), never quoted as what was said.
+     */
+    readonly pastReplies?: readonly (string | null | undefined)[];
   } = {},
 ): ConversationState {
   const turns = history.filter(
@@ -1120,7 +1131,16 @@ export function deriveConversationState(
     inRoleReplies,
     duplicate,
     adviceGiven: adviceGiven.slice(-MAX_ADVICE),
+    phrasing: phrasingLedger(
+      [...turns.map((t) => t.answer)].reverse().concat(opener === '' ? [] : [opener]),
+      options.pastReplies ?? [],
+    ),
   };
+}
+
+/** Whether the vEIR leaned on a phrasing worth naming (prompts/phrasing.ts). */
+function hasPhrasing(state: ConversationState): boolean {
+  return (state.phrasing?.questions.length ?? 0) + (state.phrasing?.openings.length ?? 0) > 0;
 }
 
 const MOVE_LABELS: Readonly<Record<FounderMove, string>> = {
@@ -1195,7 +1215,8 @@ export function renderConversationState(state: ConversationState): string {
     (state.escalatedEarlier ?? []).length > 0 ||
     (state.preferences ?? []).length > 0 ||
     state.duplicate === true ||
-    (state.inRoleReplies ?? 0) > 0;
+    (state.inRoleReplies ?? 0) > 0 ||
+    hasPhrasing(state);
   if (state.earlierTurns === 0 && !notable && !state.afterOpener) return '';
   const what = state.moves.map((m) => MOVE_LABELS[m]);
   const length =
@@ -1412,6 +1433,8 @@ export function renderConversationState(state: ConversationState): string {
   if (state.askedQuestions.length > 0) {
     lines.push(`- You already asked: ${state.askedQuestions.map(quoted).join(' | ')}`);
   }
+  const phrasing = state.phrasing === undefined ? '' : renderPhrasingLedger(state.phrasing);
+  if (phrasing !== '') lines.push(phrasing);
   if ((state.told ?? []).length > 0) {
     lines.push(
       `- They already told you: ${(state.told ?? []).map(quoted).join(' | ')}. Build on it; never ask for it again or`,

@@ -10,12 +10,56 @@ import { greeting as timeOfDay } from '@/lib/format';
 export interface NewChatGreeting {
   readonly title: string;
   readonly line: string;
+  /**
+   * The welcome put over a returning founder's line that has no greeting of its own ("Welcome back"), with the
+   * line's {@link lineKey}: New chat remembers it in this browser so the next new line gets another one.
+   */
+  readonly welcome?: ShownWelcome;
+}
+
+/** A welcome New chat showed over a line, and which line (its {@link lineKey}, never its words). */
+export interface ShownWelcome {
+  readonly lineKey: string;
+  readonly welcome: string;
 }
 
 /** How an opener's own greeting sentence starts ("Welcome back.", "Good to talk again.", "Hi Maya!"). */
-const GREETING_START = /^(?:hi|hello|hey|welcome back|good to|nice to|great to|lovely to)\b/i;
+const GREETING_START =
+  /^(?:hi|hello|hey|hiya|welcome back|good to|nice to|great to|lovely to|good (?:morning|afternoon|evening)|morning|afternoon|evening)\b/i;
 /** Longest greeting sentence taken for a heading. */
 const GREETING_MAX_WORDS = 7;
+
+/** Welcomes over a returning founder's opener that has no greeting of its own. */
+const WELCOMES = ['Welcome back', 'Good to see you', 'Hello again', 'Nice to see you'] as const;
+
+/** A short key for a line (a hash: what is kept in the browser is never the line itself). */
+export function lineKey(line: string): string {
+  let hash = 0;
+  for (let i = 0; i < line.length; i += 1) hash = (Math.imul(hash, 31) + line.charCodeAt(i)) >>> 0;
+  return hash.toString(36);
+}
+
+/**
+ * The welcome for an opener's line: the same line always gets the same one (it never changes in front of them, on a
+ * reload too), and a new line never gets the welcome the previous line had (review of coaching v3: one of four chosen
+ * by the line alone came back one time in four).
+ */
+function welcomeFor(line: string, previous: ShownWelcome | null): string {
+  const key = lineKey(line);
+  if (
+    previous !== null &&
+    previous.lineKey === key &&
+    (WELCOMES as readonly string[]).includes(previous.welcome)
+  ) {
+    return previous.welcome;
+  }
+  const start = Number.parseInt(key, 36) % WELCOMES.length;
+  for (let i = 0; i < WELCOMES.length; i += 1) {
+    const welcome = WELCOMES[(start + i) % WELCOMES.length] ?? WELCOMES[0];
+    if (welcome !== previous?.welcome) return welcome;
+  }
+  return WELCOMES[start] ?? WELCOMES[0];
+}
 
 /** An opener split into its own greeting sentence, when it starts with one, and the rest. */
 export function splitOpener(opener: string): { readonly greeting: string | null; readonly rest: string } {
@@ -45,6 +89,8 @@ export function newChatGreeting(args: {
   readonly returning: boolean;
   readonly privateChat: boolean;
   readonly now?: Date;
+  /** The welcome this browser showed last over a line without a greeting of its own (see {@link ShownWelcome}). */
+  readonly previousWelcome?: ShownWelcome | null;
 }): NewChatGreeting {
   const { firstName } = args;
   if (args.privateChat)
@@ -57,8 +103,14 @@ export function newChatGreeting(args: {
     };
   }
   const { greeting, rest } = splitOpener(opener);
-  if (greeting === null)
-    return { title: `${args.returning ? 'Welcome back' : 'Hi'}, ${firstName}`, line: rest };
+  // The vEIR's own line has no greeting sentence: a welcome that changes with the line, never the one the last line
+  // had (coaching v3: the opener is model-written and never the same twice in a row; one stock heading over it every
+  // time would undo that).
+  if (greeting === null) {
+    if (!args.returning) return { title: `Hi, ${firstName}`, line: rest };
+    const welcome = welcomeFor(rest, args.previousWelcome ?? null);
+    return { title: `${welcome}, ${firstName}`, line: rest, welcome: { lineKey: lineKey(rest), welcome } };
+  }
   const bare = greeting.replace(/[.!]+$/, '');
   const named = firstName !== '' && bare.toLowerCase().includes(firstName.toLowerCase());
   return { title: named ? bare : `${bare}, ${firstName}`, line: rest };

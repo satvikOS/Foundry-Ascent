@@ -17,7 +17,7 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown } from './markdown.js';
-import { withoutExampleFigures } from './figures.js';
+import { withoutExampleFigures, withoutInventedFigures } from './figures.js';
 import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
 import { findMetaNarration, isThinkingAloudOpener, type NarrationNames } from './meta-narration.js';
 import {
@@ -33,7 +33,8 @@ import {
   repeatsPrevious,
 } from './social.js';
 import { founderMoves } from '../prompts/conversation-state.js';
-import { nameUsedRecently, withoutStockOpener, withoutVocativeName } from './openers.js';
+import { questionFramesOf, withVariedQuestions } from '../prompts/phrasing.js';
+import { nameBudgetSpent, withoutStockOpener, withoutVocativeName } from './openers.js';
 import { clampWords, toSpeakable } from './speech.js';
 
 /**
@@ -168,6 +169,12 @@ export interface SentenceGateOptions {
    */
   earlierReplies?: readonly (string | null | undefined)[];
   /**
+   * The vEIR's replies at the end of its last conversations with this founder, newest first (coaching v3): never judged
+   * for repeats, but read for how often it named the founder ({@link nameBudgetSpent}) and for the forms its questions
+   * took ({@link withVariedQuestions}).
+   */
+  pastReplies?: readonly (string | null | undefined)[];
+  /**
    * The turn is flagged for a consequential matter (the risk classifier): a referral sentence is never left out as a
    * repeat, and a repeated list item never ends the reply early (validators/social.ts `isProtectedLine`). Default false.
    */
@@ -257,6 +264,8 @@ export interface GateTrace {
    * whole units, or the start of the first one.
    */
   readonly openersDropped: number;
+  /** Questions said in another form because their form was used recently (prompts/phrasing.ts). */
+  readonly questionsRephrased: number;
   /** The units left out, in order (only with `keepDropped`; empty otherwise). */
   readonly dropped: readonly DroppedUnit[];
 }
@@ -459,8 +468,11 @@ export class SentenceGate {
   #droppedGreeting = false;
   /** Stock openers left out of the reply's start (validators/openers.ts). */
   #openersDropped = 0;
-  /** One of the latest replies named the founder: this one leaves the name out where it is said to them. */
+  /** The latest replies named the founder as often as allowed: this one leaves the name out where it is said to them. */
   readonly #stripName: boolean;
+  /** Forms of the questions the vEIR asked lately (this conversation, the end of the last ones, this reply so far). */
+  readonly #usedFrames: Set<string>;
+  #questionsRephrased = 0;
   #reasksDropped = 0;
   readonly #dropped: DroppedUnit[] = [];
   /** The previous reply's four-word sequences (null: no repeat check). */
@@ -531,10 +543,16 @@ export class SentenceGate {
     // No repeat check for a sincere question about the coach: its honest answer is said however recently it was
     // said (the intro of a first meeting, or the last reply when they ask again; the presence policy).
     // Newest first: the previous reply, then the earlier ones from the latest back.
-    this.#stripName = nameUsedRecently(options.founderName, [
+    this.#stripName = nameBudgetSpent(options.founderName, [
       options.previousReply,
       ...[...(options.earlierReplies ?? [])].reverse(),
+      ...(options.pastReplies ?? []),
     ]);
+    this.#usedFrames = new Set(
+      [...said, ...(options.pastReplies ?? [])].flatMap((t) =>
+        typeof t === 'string' ? questionFramesOf(t) : [],
+      ),
+    );
     if (said.length === 0 || asksToRepeat(options.founderText ?? '') || this.#question !== null) {
       this.#previousGrams = null;
       this.#previousQuestions = [];
@@ -581,6 +599,7 @@ export class SentenceGate {
       agendaDropped: this.#agendaDropped,
       greetingDropped: this.#droppedGreeting,
       openersDropped: this.#openersDropped,
+      questionsRephrased: this.#questionsRephrased,
       dropped: [...this.#dropped],
     };
   }
@@ -735,6 +754,7 @@ export class SentenceGate {
       }
       if (this.#options.knownFigures !== undefined) {
         rawUnit = withoutExampleFigures(rawUnit, this.#options.knownFigures).text;
+        rawUnit = withoutInventedFigures(rawUnit, this.#options.knownFigures).text;
       }
       if (
         this.#options.noQuestions === true &&
@@ -813,6 +833,13 @@ export class SentenceGate {
           this.#full = true;
           break;
         }
+      }
+      // A question in a form the vEIR used lately is said in another form, never dropped (coaching v3).
+      if (rawUnit.includes('?')) {
+        const varied = withVariedQuestions(rawUnit, this.#usedFrames);
+        this.#questionsRephrased += varied.rephrased;
+        rawUnit = varied.text;
+        for (const frame of questionFramesOf(rawUnit)) this.#usedFrames.add(frame);
       }
       const unit = this.#process(rawUnit);
       this.#cursor = end;

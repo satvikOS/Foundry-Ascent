@@ -71,7 +71,13 @@ async function chunkState(tenantId: string): Promise<Map<string, { id: string; e
  */
 async function search(
   query: string,
-  options: { embedding?: number[]; limit?: number; founderText?: string; sessionId?: string } = {},
+  options: {
+    embedding?: number[];
+    limit?: number;
+    founderText?: string;
+    sessionId?: string;
+    context?: { earlierFounderTexts: readonly string[]; venture?: string | null };
+  } = {},
 ): Promise<retrievalRepo.RetrievedItem[]> {
   return t.db.withContext(makeContext(venture.founder, seed.tenantId), (tx) =>
     retrievalRepo.searchSharedChunks(tx, {
@@ -85,6 +91,7 @@ async function search(
         founderText: options.founderText ?? query,
         limit: options.limit ?? retrievalRepo.REFERENCE_GATE.limit,
         sessionId: options.sessionId ?? null,
+        ...(options.context === undefined ? {} : { context: options.context }),
       },
     }),
   );
@@ -393,6 +400,67 @@ describe('relevance gate: a reference passage only when the founder’s own mess
     expect(referenceKeys(await search(again))).toEqual(['case/SC15']);
     // Another item in the same conversation is still shown.
     expect(referenceKeys(await search('What is design thinking?', { sessionId }))).toEqual(['framework/F05']);
+  });
+
+  it('offers an item the conversation keeps naming unasked, at most once every few turns (coaching v3)', async () => {
+    const message = 'So the unit economics only work for the office customers who order in bulk.';
+    const context = { earlierFounderTexts: ['I redid our unit economics with the courier quote.'] };
+    // Nothing asked: without the conversation naming it too, nothing; with it, the one item.
+    expect(referenceKeys(await search(message))).toEqual([]);
+    expect(referenceKeys(await search(message, { context }))).toEqual(['framework/F09']);
+    // What the founder asks for wins over what the conversation is about.
+    expect(referenceKeys(await search('What is design thinking?', { context }))).toEqual(['framework/F05']);
+    // A conversation whose latest turn showed a reference passage: nothing unasked comes back yet.
+    const quietquad = seed.ventures.find((v) => v.key === 'quietquad');
+    if (!quietquad) throw new Error('venture missing');
+    const sessionId = await t.db.withContext(makeContext(venture.founder, seed.tenantId), async (tx) => {
+      const resolved = await assignmentsRepo.resolveActiveAssignment(tx, quietquad.id);
+      if (!resolved?.release) throw new Error('assignment missing');
+      const session = await sessionsRepo.createSession(tx, {
+        tenantId: seed.tenantId,
+        ventureId: quietquad.id,
+        assignmentId: resolved.assignment.id,
+        personaReleaseId: resolved.release.id,
+        startedBy: venture.founder,
+        mode: 'coach',
+        privacy: 'standard',
+        policyVersion: 'test',
+      });
+      const turn = await turnsRepo.createTurn(tx, {
+        tenantId: seed.tenantId,
+        ventureId: quietquad.id,
+        sessionId: session.id,
+        authorId: venture.founder,
+        mode: 'coach',
+        founderText: 'What is design thinking?',
+      });
+      const [shown] = (
+        await retrievalRepo.searchSharedChunks(tx, {
+          tenantId: seed.tenantId,
+          query: 'What is design thinking?',
+          embedding: null,
+          personaId: venture.personaId,
+          reference: { founderText: 'What is design thinking?', sessionId: session.id },
+        })
+      ).filter((r) => r.sourceScope === 'public');
+      if (!shown?.sourceId) throw new Error('nothing shown');
+      await turnsRepo.insertTurnEvidence(tx, turn.id, [
+        {
+          key: 'E1',
+          kind: 'chunk',
+          refId: shown.refId,
+          score: shown.score,
+          title: shown.title,
+          source: { id: shown.sourceId, scope: 'public' },
+        },
+      ]);
+      return session.id;
+    });
+    expect(referenceKeys(await search(message, { context, sessionId }))).toEqual([]);
+    // Asked for, it is never held back.
+    expect(referenceKeys(await search('What is customer discovery?', { context, sessionId }))).toEqual([
+      'framework/F04',
+    ]);
   });
 
   it('a question about the program draws on the program’s guidance only', async () => {
