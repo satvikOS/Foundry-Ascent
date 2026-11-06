@@ -245,6 +245,73 @@ test.describe('vEIR calls · a video face', () => {
     }
   });
 
+  test('after a crisis turn the face does not come back: the tile offers the voice call, and the server refuses a face', async ({
+    page,
+    baseURL,
+  }) => {
+    if (!baseURL) throw new Error('baseURL is required');
+    await setFacesEnabled(baseURL, true);
+    let callId: string | null = null;
+    try {
+      const notice = await page.request.post('/api/v1/calls/notice/acknowledge', { headers: WRITE_HEADERS });
+      expect(notice.status(), 'POST /calls/notice/acknowledge').toBe(200);
+      await openVenture(page);
+      const started = page.waitForResponse(
+        (response) => /\/sessions\/[0-9a-f-]{36}\/calls$/.test(response.url()) && response.status() === 201,
+      );
+      await page.keyboard.press('ControlOrMeta+k');
+      await page
+        .getByRole('dialog')
+        .getByRole('option', { name: /^Video call with / })
+        .click();
+      const screen = page.getByRole('dialog', { name: /^(Voice|Video) call with / });
+      await screen.getByRole('button', { name: 'Start call' }).click();
+      callId = ((await (await started).json()) as { call: { id: string } }).call.id;
+      const ventureId = new URL(page.url()).pathname.split('/')[4] ?? '';
+      const tile = screen.locator('[data-slot="call-tile"][data-face="video"]');
+      await expect(tile).toBeVisible({ timeout: 30_000 });
+
+      await test.step('a crisis turn: its support shows, and the face is given up', async () => {
+        const line = screen.getByRole('textbox', { name: /^Reply to / });
+        await line.fill("I don't want to be alive anymore and I keep thinking about ending it.");
+        await line.press('Enter');
+        await expect(screen.getByText('You deserve support from a person').first()).toBeVisible({
+          timeout: 30_000,
+        });
+        await expect(tile).toHaveCount(0);
+      });
+
+      await test.step('the next turn clears the support: video is not available, the voice call one tap away', async () => {
+        const line = screen.getByRole('textbox', { name: /^Reply to / });
+        await line.fill('Thank you. Can we talk about my pilot?');
+        await line.press('Enter');
+        const off = screen.locator('[data-slot="call-tile"][data-face="video-unavailable"]');
+        await expect(off).toBeVisible({ timeout: 30_000 });
+        await expect(off).toContainText('Video isn’t available right now');
+        await expect(screen.locator('[data-slot="call-tile"][data-face="video-connecting"]')).toHaveCount(0);
+        await expect(off.getByRole('button', { name: /^Voice call$/ })).toBeVisible();
+        await expect(off.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+        await shoot(page, 'video-call-after-crisis');
+      });
+
+      await test.step('the server opens no face in this call, whatever the page asks', async () => {
+        const asked = await page.request.post('/api/v1/calls/avatar-session', {
+          headers: WRITE_HEADERS,
+          data: { ventureId, callId },
+        });
+        expect(asked.status()).toBe(200);
+        expect(await asked.json()).toMatchObject({ provider: 'builtin', token: null });
+      });
+    } finally {
+      if (callId) {
+        await page.request
+          .post(`/api/v1/calls/${callId}/end`, { headers: WRITE_HEADERS, data: { reason: 'user' } })
+          .catch(() => undefined);
+      }
+      await setFacesEnabled(baseURL, false);
+    }
+  });
+
   test('with faces off (the default), the call tile is exactly the presence and no face is asked for', async ({
     page,
   }) => {
