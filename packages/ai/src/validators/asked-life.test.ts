@@ -16,6 +16,7 @@ import {
   saysOnlyLife,
 } from './asked-life.js';
 import { identityQuestionOf, rewriteIdentity, type IdentityRewriteOptions } from './identity.js';
+import { withoutStockOpener } from './openers.js';
 import { SentenceGate, type GateUnit, type SentenceGateOptions } from './sentence-gate.js';
 
 /**
@@ -51,6 +52,15 @@ function reply(text: string, founder: string, spoken: boolean, withFounder = tru
     ...(withFounder ? { founderText: founder } : {}),
   };
   return rewriteIdentity(text, options);
+}
+
+/**
+ * The reply as the gate shows it once a stock opener is left out (validators/openers.ts, a separate rule read against
+ * the founder's message): what the asked-life rule must leave alone is compared after it.
+ */
+function openerless(text: string, founder: string): string {
+  const out = withoutStockOpener(text, { names: ['Maya'], founderText: founder });
+  return out.removed ? out.text : text;
 }
 
 /** A model-like stream: two words (and their spacing) per chunk. */
@@ -200,7 +210,7 @@ describe('a life of its own told when the founder asks about it (shared with the
         `${asked} also what do I send Sam about the meetup?`,
       ]) {
         expect(reply(text, founder, false), text).toEqual(reply(text, founder, false, false));
-        expect(stream(text, founder, true), text).toEqual(stream(text, null, true));
+        expect(stream(text, founder, true), text).toEqual(stream(openerless(text, founder), null, true));
       }
       // A field (a claim, a next action, a memory) is never read with the founder's message.
       for (const disclaimers of ['field', undefined] as const) {
@@ -314,7 +324,9 @@ describe('what the asked-life rule once cut stays as main left it, or loses the 
       for (const spoken of [false, true]) {
         const streamed = stream(c.reply, c.founder, spoken);
         if (c.rewritten === undefined) {
-          expect(streamed, `${c.audit}: ${c.reply}`).toEqual(stream(c.reply, null, spoken));
+          expect(streamed, `${c.audit}: ${c.reply}`).toEqual(
+            stream(openerless(c.reply, c.founder), null, spoken),
+          );
         } else {
           expect(streamed.shown, `${c.audit}: ${c.reply}`).toBe(c.rewritten);
           if (spoken) expect(streamed.said, `${c.audit}: ${c.reply}`).toBe(c.rewritten);

@@ -202,7 +202,11 @@ describe('buildSystemPrompt', () => {
 
   it('rehearse mode plays the founder-named counterpart and scores with a rubric', () => {
     expect(MODE_INSTRUCTIONS.rehearse).toContain('Play the counterpart');
-    expect(MODE_INSTRUCTIONS.rehearse).toMatch(/Score .* rubric/);
+    expect(MODE_INSTRUCTIONS.rehearse).toMatch(/scores 3-5 rubric criteria/);
+    // Live pilot 42124259353 (pitch rehearsal 1.83): react in character, step out with focused points, never promise
+    // feedback later.
+    expect(MODE_INSTRUCTIONS.rehearse).toContain('cut in on\n  a vague, inflated or unsupported claim');
+    expect(MODE_INSTRUCTIONS.rehearse).toContain('Never promise feedback later.');
     expect(MODE_INSTRUCTIONS.rehearse).toContain('rehearsal.critique');
     const p = buildSystemPrompt({
       ...INPUT,

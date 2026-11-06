@@ -25,6 +25,15 @@ name: Ops - live conversation evals
 # Spend: budget_usd is a hard cap for the whole run, split across shards by estimated cost; within a shard the
 # app's share is enforced by the app itself (its daily platform cap) and the simulator and judge are metered and
 # refused before they could go over.
+#
+# coach_model (an A/B of the coach, docs/runbooks/conversation-lab.md "Coach model A/B"): `default` runs the app's coach
+# on production's models (infra/cdk/config/production.json); a model of ops/lab/models.json `live.coach` runs it on that
+# Bedrock model instead, as both primary and fallback, in the lab's API process only: production's configuration is
+# never changed. An A/B is graded by ONE judge independent of every arm (judge_model ab: Llama 4 Maverick, no fallback;
+# a coach_model other than default uses it on auto), so run the default arm of an A/B with judge_model ab too, and
+# compare the arms with `live-compare`, which refuses arms graded by different judges. The plan prints the coach's
+# estimated cost (about 3.5x Nova 2 Lite's per turn for Haiku 4.5, about 10x for Sonnet 4.6, no cache discount assumed). The lab seeds the persona releases production runs
+# (`homeTenant.ownerReleases`: Thomas, ADR-0021).
 on:
   workflow_dispatch:
     inputs:
@@ -64,6 +73,21 @@ on:
         description: RSA public key (3072+ bits) as the base64 of its DER SubjectPublicKeyInfo, one line; empty = numbers only, nothing sealed
         type: string
         default: ''
+      coach_model:
+        description: The app's coach model for this run (lab only; production unchanged) - default = production's models
+        type: choice
+        options:
+          - default
+          - us.anthropic.claude-haiku-4-5-20251001-v1:0
+          - us.anthropic.claude-sonnet-4-6
+        default: default
+      judge_model:
+        description: Live judge - auto (another family than the coach; an A/B coach uses ab), ab (one judge for every A/B arm; run the default arm of an A/B with it)
+        type: choice
+        options:
+          - auto
+          - ab
+        default: auto
 
 permissions:
   contents: read
@@ -139,11 +163,13 @@ jobs:
           SEED: ${{ inputs.seed }}
           BUDGET: ${{ inputs.budget_usd }}
           CONCURRENCY: ${{ inputs.concurrency }}
+          COACH_MODEL: ${{ inputs.coach_model }}
+          JUDGE_MODEL: ${{ inputs.judge_model }}
         run: |
           set -o pipefail
           python -m conversation_lab live-plan --families "${FAMILIES}" --sample "${SAMPLE}" --repeats "${REPEATS}" \
-            --seed "${SEED}" --budget-usd "${BUDGET}" --concurrency "${CONCURRENCY}" \
-            --github-output "${GITHUB_OUTPUT}" | tee "${RUNNER_TEMP}/plan.json"
+            --seed "${SEED}" --budget-usd "${BUDGET}" --concurrency "${CONCURRENCY}" --coach-model "${COACH_MODEL}" \
+            --judge-model "${JUDGE_MODEL}" --github-output "${GITHUB_OUTPUT}" | tee "${RUNNER_TEMP}/plan.json"
           {
             echo "## Live evaluation plan (dry-run estimate; no model called)"
             echo '```json'
@@ -192,6 +218,8 @@ jobs:
       LIVE_APPROVE_MEMORY: ${{ inputs.approve_memory }}
       LIVE_SHARD: ${{ matrix.shard.index }}/${{ matrix.shard.of }}
       LIVE_SHARD_BUDGET: ${{ matrix.shard.budget }}
+      LIVE_COACH_MODEL: ${{ inputs.coach_model }}
+      LIVE_JUDGE_MODEL: ${{ inputs.judge_model }}
     steps:
       - name: Validate the sealing key, set the output folder
         env:
@@ -228,9 +256,11 @@ jobs:
         run: python -m pip install -r ops/lab/requirements.txt
 
       # Creates database "foundry", migrates it and seeds the synthetic tenant with a fresh owner access code
-      # (masked; handed to the harness, never printed).
+      # (masked; handed to the harness, never printed), with the persona releases production's seed applies.
       - name: Reset and seed the lab database
         run: |
+          SEED_OWNER_RELEASES="$(jq -r '(.homeTenant.ownerReleases // []) | join(",")' infra/cdk/config/production.json)"
+          export SEED_OWNER_RELEASES
           out="$(mktemp)"
           if ! pnpm db:reset > "${out}"; then
             sed '/access code/d' "${out}"
@@ -290,7 +320,8 @@ jobs:
           python -m conversation_lab run --suite live --budget-usd "${LIVE_SHARD_BUDGET}" --out "${LAB_OUT}" \
             --live-families "${LIVE_FAMILIES}" --live-sample "${LIVE_SAMPLE}" --live-seed "${LIVE_SEED}" \
             --repeat "${LIVE_REPEATS}" --live-shard "${LIVE_SHARD}" --live-total-budget "${LIVE_TOTAL_BUDGET}" \
-            --concurrency "${LIVE_CONCURRENCY}" "${memory[@]}"
+            --concurrency "${LIVE_CONCURRENCY}" --coach-model "${LIVE_COACH_MODEL}" \
+            --judge-model "${LIVE_JUDGE_MODEL}" "${memory[@]}"
 
       - name: Seal the private outputs
         if: always() && env.LAB_PUBLIC_KEY != ''

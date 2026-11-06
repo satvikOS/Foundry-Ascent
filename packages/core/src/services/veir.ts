@@ -94,12 +94,16 @@ export async function resolveVeir(ex: SqlExecutor, ventureId: string): Promise<R
   const assets = await personasRepo.personaConsentAssets(ex, persona.id);
   const eirDisplayName = await veirEirName(ex, persona);
   const veir = persona.kind === 'eir_persona';
+  // A mentor under its own name ("Thomas", ADR-0021) is never shown under its EIR's first name.
+  const mentor =
+    veir &&
+    (await personasRepo.getPersonaPresence(ex, { personaId: persona.id, assignedEirProfileId: null })).mentor;
   return {
     assignment: resolved,
     identity: {
       personaId: persona.id,
       name: persona.name,
-      shortName: shortName(persona, eirDisplayName),
+      shortName: mentor ? persona.name : shortName(persona, eirDisplayName),
       kind: persona.kind,
       eirDisplayName,
       tagline: persona.tagline,

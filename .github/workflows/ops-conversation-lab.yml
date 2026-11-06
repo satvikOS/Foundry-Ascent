@@ -290,6 +290,8 @@ jobs:
       - name: Reset and seed the lab database
         if: matrix.suite != 'safety'
         run: |
+          SEED_OWNER_RELEASES="$(jq -r '(.homeTenant.ownerReleases // []) | join(",")' infra/cdk/config/production.json)"
+          export SEED_OWNER_RELEASES
           out="$(mktemp)"
           if ! pnpm db:reset > "${out}"; then
             sed '/access code/d' "${out}"

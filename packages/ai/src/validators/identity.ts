@@ -54,6 +54,11 @@ export interface IdentityCheckOptions {
    */
   personaEirName?: string | null;
   /**
+   * The persona is an AI mentor presented under its own name ("Thomas", ADR-0021): it says what it is as itself ("I'm
+   * Thomas, an AI mentor."), never as its EIR's twin. Its EIR (`personaEirName`) stays a name it never speaks as.
+   */
+  mentor?: boolean;
+  /**
    * The text is said aloud on a call (`CoachResponse.spoken`, or one sentence of it). Case means nothing
    * to text-to-speech, so every rule matches an EIR's first name in any case, and a text that is only the
    * name ("Corin.") is a sign-off. In typed text a first name counts only capitalised ("Corin", "CORIN"),
@@ -167,6 +172,35 @@ const BASE_PATTERNS: readonly IdentityPattern[] = [
     'in_my_career',
     `in my (?:own )?(?:experience|career|years|time) as an? (?:founder|investor|${EIR}|entrepreneur|mentor|operator|ceo|vc)`,
   ),
+  // A past of its own (ADR-0021: the coach has patterns, not a history): founders it coached, people it met, a round it
+  // raised. Live pilot 42124259353 had "a founder I coached…". The sentence goes (the anecdote is made up); a lead "In my
+  // experience," is cut from its sentence first (`withoutOwnExperience`), keeping the advice. Never a draft or a quote
+  // the founder will send, never hedged or asked ("if I had coached…").
+  {
+    ...p(
+      'claims_human',
+      'own_experience',
+      [
+        // "A founder I coached last year…", "one team we worked with…", "a client I advised"
+        `(?:a|one|another|some|the\\s+last)\\s+(?:(?:student|young|first[- ]time|solo|hardware|medtech|saas|b2b|other|former)\\s+)?(?:founders?|teams?|clients?|students?|startups?|compan(?:y|ies)|ceos?|mentees?|entrepreneurs?|portfolio\\s+compan(?:y|ies))\\s+(?:(?:that|who)\\s+)?(?:I|we)(?:${APOS}ve|${APOS}d|\\s+have|\\s+had)?\\s+(?:once\\s+|recently\\s+|personally\\s+)?(?:coached|worked\\s+with|advised|mentored|backed|invested\\s+in|met|helped|knew|supported|sat\\s+with)`,
+        // "I've worked with dozens of student teams", "I've seen 50 decks", "I have advised many founders"
+        `I(?:${APOS}ve|\\s+have)\\s+(?:personally\\s+|also\\s+)?(?:coached|worked\\s+with|advised|mentored|met(?:\\s+with)?|helped|seen|watched|backed|invested\\s+in|talked\\s+(?:to|with)|spoken\\s+(?:to|with)|reviewed|heard)\\s+(?:dozens|hundreds|scores|thousands|many|countless|lots|a\\s+lot|plenty|a\\s+(?:few|number|handful)|several|\\d+|so\\s+many)(?:\\s+of)?\\s+(?:(?:student|early[- ]stage|first[- ]time|other|startup)\\s+)?(?:founders|teams|startups|companies|students|clients|entrepreneurs|ventures|pitches|decks|investors|buyers)`,
+        // "I've seen this play out many times"
+        `I(?:${APOS}ve|\\s+have)\\s+(?:seen|watched)\\s+(?:this|that|it)(?:\\s+(?:pattern|mistake|play\\s+out|happen))?\\s+(?:many|countless|plenty\\s+of|dozens\\s+of|a\\s+(?:lot|few)\\s+of|so\\s+many|more)\\s+times`,
+        // "When I was raising my seed round…"
+        `(?:when|while|back\\s+when)\\s+I\\s+was\\s+(?:raising|building|running|starting|founding|pitching|selling|scaling|fundraising|hiring|a\\s+(?:founder|student|ceo|first[- ]time\\s+founder))`,
+        // "I met with a hospital buyer last week", never "I talked to you about this last week" (the conversation's own)
+        `I\\s+(?:met|spoke|talked|chatted|had\\s+(?:coffee|lunch|dinner|a\\s+call|a\\s+chat))\\s+(?:with|to)\\s+(?!you${E})[^.!?\\n]{1,60}?\\s+(?:last\\s+(?:week|month|year|night|quarter)|yesterday|this\\s+(?:morning|week|month)|recently|earlier\\s+today)`,
+        // "I remember a founder who…"
+        `I\\s+(?:remember|recall)\\s+(?:a|one)\\s+(?:founder|team|student|client|startup|company|ceo)`,
+        // Left after the lead was cut: "in my experience" mid-sentence.
+        `(?:in|from)\\s+my\\s+(?:own\\s+)?experience`,
+      ].join('|'),
+    ),
+    acceptIn: (text, m, ctx) =>
+      assertive(text, m.index, m.index + m[0].length) && !inDraft(text, m.index, ctx.addressees),
+    replacement: '',
+  },
   // Claims to be live, or that a person is on the other end.
   p(
     'claims_human',
@@ -1568,12 +1602,13 @@ export function identityReplacement(
   kind: IdentityViolationKind,
   personaName: string,
   eirFirstName: string | null = null,
+  mentor = false,
 ): string {
   if (kind === 'ai_disclaimer') return '';
   if (eirFirstName === null) {
     return kind === 'endorsement'
       ? "I can't speak for anyone in the program on that."
-      : honestLine(personaName);
+      : honestLine(personaName, null, mentor);
   }
   return kind === 'endorsement'
     ? `I can't speak for ${eirFirstName} on that.`
@@ -1590,10 +1625,11 @@ export function identityAnswer(
   question: Exclude<IdentityQuestion, 'open'>,
   personaName: string,
   eirFirstName: string | null = null,
+  mentor = false,
 ): string {
   const answer = question === 'machine' ? 'Yes' : 'No';
   return eirFirstName === null
-    ? `${answer} — I'm ${personaName}, the program's AI coach.`
+    ? `${answer} — I'm ${personaName}, ${mentor ? 'an AI mentor' : "the program's AI coach"}.`
     : `${answer} — I'm ${eirFirstName}'s digital twin, an AI built from how ${eirFirstName} coaches.`;
 }
 
@@ -1605,9 +1641,9 @@ export const DISCLAIMER_FALLBACK = "Let's keep the focus on you. What's on your 
  * just an AI." → "Honestly? I'm Corin's digital twin, built from how Corin coaches."), so the rewrite never takes the
  * honest answer away.
  */
-export function honestLine(personaName: string, eirFirstName: string | null = null): string {
+export function honestLine(personaName: string, eirFirstName: string | null = null, mentor = false): string {
   return eirFirstName === null
-    ? `I'm ${personaName}, the program's AI coach.`
+    ? `I'm ${personaName}, ${mentor ? 'an AI mentor' : "the program's AI coach"}.`
     : `I'm ${eirFirstName}'s digital twin, built from how ${eirFirstName} coaches.`;
 }
 
@@ -1764,6 +1800,8 @@ interface DisclaimerContext {
   readonly identified: boolean;
   readonly personaName: string;
   readonly eirFirstName: string | null;
+  /** An AI mentor under its own name (`IdentityCheckOptions.mentor`). */
+  readonly mentor: boolean;
 }
 
 /**
@@ -1787,7 +1825,7 @@ function withoutDisclaimers(
     ctx.identified ||
     saysWhatItIs(first.text, ctx.personaName, ctx.eirFirstName)
       ? first
-      : stripDisclaimers(text, ctx, honestLine(ctx.personaName, ctx.eirFirstName));
+      : stripDisclaimers(text, ctx, honestLine(ctx.personaName, ctx.eirFirstName, ctx.mentor));
   if (result.findings.length === 0) return { text, findings: [] };
   const out = result.text.trim();
   if (/\p{L}/u.test(out)) return { text: out, findings: result.findings };
@@ -1985,8 +2023,10 @@ function withoutIntroduction(
 }
 
 interface ResolvedNames {
-  /** The persona's own EIR first name, for vEIR personas. */
+  /** The persona's own EIR first name, for vEIR personas presented as the EIR's twin (null for a mentor). */
   eirFirstName: string | null;
+  /** An AI mentor under its own name: its EIR is guarded like any EIR, never the name it speaks under. */
+  mentor: boolean;
   specs: NameSpec[];
 }
 
@@ -2014,7 +2054,12 @@ function resolveNames(options: IdentityCheckOptions): ResolvedNames {
     seen.add(spec.full.toLowerCase());
     specs.push(spec);
   }
-  return { eirFirstName: personaEir === null ? null : firstNameOf(normalizeText(personaEir)), specs };
+  const mentor = options.mentor === true;
+  return {
+    eirFirstName: personaEir === null || mentor ? null : firstNameOf(normalizeText(personaEir)),
+    mentor,
+    specs,
+  };
 }
 
 /**
@@ -2022,12 +2067,15 @@ function resolveNames(options: IdentityCheckOptions): ResolvedNames {
  * `askedLifeOf`): the one name it may greet is the coach's own first name ("hey corin!").
  */
 export function askedLifeFor(founderText: string, options: IdentityCheckOptions): AskedLife | null {
-  return askedLifeOf(founderText, resolveNames(options).eirFirstName);
+  const names = resolveNames(options);
+  // The one name the founder may greet the coach by: its EIR's first name for a twin, its own for a mentor.
+  return askedLifeOf(founderText, names.mentor ? options.personaName : names.eirFirstName);
 }
 
 /** The sentence `rewriteIdentity` puts in place of a violation of `kind`, for these options. */
 export function identityReplacementFor(kind: IdentityViolationKind, options: IdentityCheckOptions): string {
-  return identityReplacement(kind, options.personaName, resolveNames(options).eirFirstName);
+  const names = resolveNames(options);
+  return identityReplacement(kind, options.personaName, names.eirFirstName, names.mentor);
 }
 
 /** Whether `text` says honestly what the coach is ("I'm Corin's digital twin", "I'm an AI", "not a person"). */
@@ -2372,11 +2420,12 @@ function wrongAnswer(
   question: IdentityQuestion | null | undefined,
   personaName: string,
   eirFirstName: string | null,
+  mentor = false,
 ): { start: number; rule: 'denies_ai' | 'answers_as_person'; right: string } | null {
   if (question === null || question === undefined || question === 'open') return null;
   const machine = question === 'machine';
   const rule = machine ? 'denies_ai' : 'answers_as_person';
-  const right = identityAnswer(question, personaName, eirFirstName);
+  const right = identityAnswer(question, personaName, eirFirstName, mentor);
   const strict = (machine ? DENIAL_OPENING : AFFIRMATION_OPENING).exec(text);
   if (strict !== null) return { start: strict[0].length - (strict.groups?.answer ?? '').length, rule, right };
   if (!(machine ? DENIES : AFFIRMS).test(text)) return null;
@@ -2428,17 +2477,26 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
     findings.push(...met.findings);
     if (!/\p{L}/u.test(current)) return { text: '', findings };
   }
+  const addressees = new Set(
+    (options.addressees ?? [])
+      .map((n) => firstNameOf(normalizeText(n)).toLowerCase())
+      .filter((n) => n !== ''),
+  );
+  // A past of its own said as a lead ("In my experience, founders who price low regret it."): the claim goes, the
+  // advice stays. What is left of such a claim is the `own_experience` rule's.
+  if (options.checkHumanClaims !== false) {
+    const cut = withoutOwnExperience(current, addressees);
+    current = cut.text;
+    for (let i = 0; i < cut.removed; i += 1) findings.push({ kind: 'claims_human', rule: 'own_experience' });
+    if (!/\p{L}/u.test(current)) return { text: '', findings };
+  }
   let persona = personaRanges(current, options.personaName);
   // A match that overlaps the persona's own name ("I'm Corin Bot" for a persona "Corin Bot") is not
   // about the EIR.
   const ctx: PatternContext = {
     exempt: (index, length) => persona.some((r) => r.start < index + length && index < r.end),
     spoken: options.spoken === true,
-    addressees: new Set(
-      (options.addressees ?? [])
-        .map((n) => firstNameOf(normalizeText(n)).toLowerCase())
-        .filter((n) => n !== ''),
-    ),
+    addressees,
     life,
     lifeAfterOpening: options.lifeAfterOpening === true,
     before: life === null ? '' : (options.lifeBefore ?? '').slice(-DRAFT_SCAN_CHARS),
@@ -2473,7 +2531,7 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
       .filter((word) => word !== '' && !eirFirstNames.has(word.replace(/'s$/, ''))),
   );
   const replacementFor = (kind: IdentityViolationKind): string =>
-    identityReplacement(kind, options.personaName, names.eirFirstName);
+    identityReplacement(kind, options.personaName, names.eirFirstName, names.mentor);
 
   // Every round replaces at least one sentence and a replacement never matches, so the number of sentences
   // bounds the rounds (no violation can outlast the loop).
@@ -2484,7 +2542,7 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
     // A wrong yes or no to a sincere question about the coach: read once, on the reply as written.
     const wrong =
       round === 0 && options.checkHumanClaims !== false
-        ? wrongAnswer(current, options.answers, options.personaName, names.eirFirstName)
+        ? wrongAnswer(current, options.answers, options.personaName, names.eirFirstName, names.mentor)
         : null;
     // The hit ends inside the sentence (before its own punctuation), so only the answer's sentence is replaced.
     if (wrong !== null)
@@ -2629,6 +2687,7 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
       identified: options.identified === true,
       personaName: options.personaName,
       eirFirstName: names.eirFirstName,
+      mentor: names.mentor,
     });
     current = plain.text;
     findings.push(...plain.findings);
@@ -2639,6 +2698,41 @@ export function rewriteIdentity(text: string, options: IdentityRewriteOptions): 
     current = finishLifeReply(current, life, lifeOpened);
   }
   return { text: current, findings };
+}
+
+/** "In my experience" and its kin: a past the coach does not have (ADR-0021). */
+const OWN_EXPERIENCE = `(?:(?:in|from)[ \\t]+my[ \\t]+(?:own[ \\t]+)?experience|(?:speaking[ \\t]+)?from[ \\t]+experience)`;
+/** As a sentence's lead, up to its comma ("In my experience as a founder, …", "Honestly, from experience, …"). */
+const OWN_EXPERIENCE_LEAD = new RegExp(
+  `(^|[.!?…:]["”’)]?[ \\t]+|\\n[ \\t]*(?:[-*•][ \\t]+)?)(?:(?:honestly|frankly|and|but|so)[ \\t]*,?[ \\t]+)?${OWN_EXPERIENCE}[^,.!?\\n]{0,50},[ \\t]*(\\p{L})`,
+  'giu',
+);
+/** As a tag at a sentence's end ("…, in my experience.") or in its middle ("…, in my experience, …"). */
+const OWN_EXPERIENCE_TAG = new RegExp(
+  `,[ \\t]*(?:at[ \\t]+least[ \\t]+)?${OWN_EXPERIENCE}(?:[ \\t]*(,)|(?=[ \\t]*[.!?…]))`,
+  'giu',
+);
+
+/**
+ * `text` without "In my experience," leads and tags (ADR-0021: the coach speaks from patterns, never a past of its
+ * own), the sentence it opened capitalised; never in a draft or quote the founder will send.
+ */
+export function withoutOwnExperience(
+  text: string,
+  addressees: ReadonlySet<string> = new Set(),
+): { text: string; removed: number } {
+  let removed = 0;
+  const lead = text.replace(OWN_EXPERIENCE_LEAD, (whole, before: string, first: string, offset: number) => {
+    if (inDraft(text, offset + before.length, addressees)) return whole;
+    removed += 1;
+    return `${before}${first.toUpperCase()}`;
+  });
+  const tagged = lead.replace(OWN_EXPERIENCE_TAG, (whole, comma: string | undefined, offset: number) => {
+    if (inDraft(lead, offset, addressees)) return whole;
+    removed += 1;
+    return comma ?? '';
+  });
+  return { text: tagged, removed };
 }
 
 /** Whether `text` thanks the founder for asking outside the made-up lives about to be taken out of it. */

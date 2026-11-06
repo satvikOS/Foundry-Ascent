@@ -28,6 +28,8 @@ import { type SqlExecutor } from '../executor.js';
 import { p, type SqlParam, type SqlParams } from '../params.js';
 import { rewritePlaceholders } from '../sql-lexer.js';
 import { clampLimit, excerptSql, orTsQuerySql, queryRows } from './common.js';
+import { selectReferences } from '../knowledge-pack/gate.js';
+import { DOCUMENTED_ACCOUNT_HEADING } from '../knowledge-pack/render.js';
 import { type KnowledgeClassification } from './knowledge.js';
 import { ACTIVE_MEMORY_STATUSES, type MemoryStatusValue, type MemoryTypeValue } from './memory.js';
 
@@ -278,13 +280,56 @@ export interface SharedChunkQuery extends BaseQuery {
   readonly classifications?: readonly KnowledgeClassification[];
   /** ANN / lexical candidate pool size (default 40 = HNSW ef_search default). */
   readonly candidates?: number;
+  /**
+   * The reference library (scope `public`, the startup knowledge base) for this turn; absent: none of it is
+   * returned. Its passages are never candidates by vector proximity or by the lexical query.
+   */
+  readonly reference?: ReferenceQuery;
 }
+
+export interface ReferenceQuery {
+  /**
+   * The founder's own message: the only text the relevance gate reads. Never the composed retrieval query, whose
+   * additions (the vEIR's last question, the venture goal) are not the founder asking for a reference.
+   */
+  readonly founderText: string;
+  /** Most passages (default {@link REFERENCE_GATE}.limit; a call's turn: 1). The gate gives one unless asked for more. */
+  readonly limit?: number;
+  /** The conversation: a library item already cited in it is never shown again. Null or absent: none left out. */
+  readonly sessionId?: string | null;
+}
+
+/**
+ * When a reference-library passage is shown (the startup knowledge base: general material the program did not
+ * write). The coaching diagnosis of 2026-11-05 (C1) traced fixation to library notes injected on almost every turn
+ * whatever was asked, so:
+ *
+ * - **the relevance gate** (`knowledge-pack/gate.ts`, `selectReferences`) reads the founder's own message and admits
+ *   an item only when that message names it with the item's curated vocabulary (never an everyday English word,
+ *   a framework or stage only in a sentence that asks about it, a case by its company's full name in an
+ *   entrepreneurship context); one item per turn unless the founder asks for several;
+ * - **the vector floor**: with a query embedding, a passage whose own embedding is less similar than `minVector` is
+ *   vetoed (the words may coincide while the meaning differs). Similarity never admits a passage;
+ * - **never twice in a conversation**: an item already cited in the conversation (`turn_evidence` with source scope
+ *   `public`) is not shown again; the history already holds what was said about it;
+ * - one passage per item: a case's documented account before its editorial guidance, else the item's first
+ *   passage; at most `limit` (a call's turn: 1), in slots of their own beside the shared budget.
+ *
+ * They are ranked by the usual hybrid score, in which the library's authority (0.7; 0.63 for editorial guidance)
+ * stays below the program's own guidance (0.9) and the vEIR's library (1.0).
+ */
+export const REFERENCE_GATE = {
+  minVector: 0.2,
+  limit: 2,
+} as const;
 
 /**
  * Shared-corpus chunks: candidates from the HNSW index (`ORDER BY embedding <=> :q LIMIT n` on the
  * `venture_id IS NULL` partial index) ∪ lexical candidates, rescored with the hybrid formula. Persona
  * chunks are returned as kind `doctrine`, others as `chunk`. authority: persona 1.0, program 0.9,
- * public 0.7 (× 0.5 when the source is stale).
+ * public 0.7 (× 0.9 for a passage that is not a documented account; × 0.5 when the source is stale). Public
+ * (reference-library) chunks come only through {@link REFERENCE_GATE}, never from the ANN or lexical candidates,
+ * and take up to `reference.limit` rows beyond `limit`.
  */
 export function searchSharedChunks(ex: SqlExecutor, q: SharedChunkQuery): Promise<RetrievedItem[]> {
   return run(ex, sharedSearch(q));
@@ -293,46 +338,79 @@ export function searchSharedChunks(ex: SqlExecutor, q: SharedChunkQuery): Promis
 function sharedSearch(q: SharedChunkQuery): StoreSearch {
   const scopeFilter = `c.venture_id IS NULL AND c.tenant_id = :tenantId AND c.scope = ANY (:scopes)
     AND (c.scope <> 'persona' OR c.persona_id = :personaId)`;
+  const refLimit = q.reference ? Math.max(0, Math.min(q.reference.limit ?? REFERENCE_GATE.limit, 10)) : 0;
+  const admitted = q.reference ? selectReferences(q.reference.founderText, { limit: refLimit }).matches : [];
   return {
     sql: `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      , ann AS (
        SELECT c.id FROM knowledge_chunks c
-       WHERE ${scopeFilter} AND :embedding IS NOT NULL
+       WHERE ${scopeFilter} AND c.scope <> 'public' AND :embedding IS NOT NULL
        ORDER BY c.embedding <=> :embedding
        LIMIT :candidates)
      , lexical AS (
        SELECT c.id FROM knowledge_chunks c CROSS JOIN q
-       WHERE ${scopeFilter} AND c.tsv @@ q.tsq
+       WHERE ${scopeFilter} AND c.scope <> 'public' AND c.tsv @@ q.tsq
        ORDER BY ts_rank_cd(c.tsv, q.tsq, 32) DESC, c.id
        LIMIT :candidates)
-     , cand AS (SELECT id FROM ann UNION SELECT id FROM lexical)
-     SELECT x.*, ${SCORE_SQL} AS score FROM (
-       SELECT c.id, NULL::uuid AS venture_id, c.source_id, c.scope AS source_scope, NULL::text AS memory_type,
-              NULL::text AS visibility,
-              CASE WHEN c.scope = 'persona' THEN 'doctrine' ELSE 'chunk' END AS kind,
-              CASE WHEN c.heading IS NULL OR c.heading = '' THEN s.title ELSE s.title || ' — ' || c.heading END AS title,
-              ${excerptSql('c.content')} AS excerpt, s.freshness_at, s.status,
-              ${vecSql('c.embedding')} AS vec,
-              ts_rank_cd(c.tsv, q.tsq, 32) AS lex,
-              ${recencySql('s.freshness_at')} AS recency,
-              (CASE c.scope WHEN 'persona' THEN 1.0 WHEN 'program' THEN 0.9 ELSE 0.7 END)
-                * (CASE s.status WHEN 'active' THEN 1.0 ELSE 0.5 END) AS authority
-       FROM cand
-       JOIN knowledge_chunks c ON c.id = cand.id
-       JOIN knowledge_sources s ON s.id = c.source_id
-       CROSS JOIN q
-       WHERE ${scopeFilter} AND s.status IN ('active', 'stale')
+     , gate AS (SELECT g.uri, g.rank FROM unnest(:refUris) WITH ORDINALITY AS g (uri, rank))
+     , cited AS (
+       SELECT te.source_id FROM turn_evidence te JOIN turns t ON t.id = te.turn_id
+       WHERE :refSessionId IS NOT NULL AND t.session_id = :refSessionId
+         AND te.source_scope = 'public' AND te.source_id IS NOT NULL)
+     , ref_passages AS (
+       SELECT c.id, g.rank,
+              row_number() OVER (PARTITION BY c.source_id
+                                 ORDER BY starts_with(coalesce(c.heading, ''), :refDocumented) DESC, c.ordinal, c.id)
+                AS pick
+       FROM gate g
+       JOIN knowledge_sources s ON s.uri = g.uri AND s.tenant_id = :tenantId AND s.scope = 'public'
+       JOIN knowledge_chunks c ON c.source_id = s.id
+       WHERE ${scopeFilter} AND c.scope = 'public' AND s.status IN ('active', 'stale')
          AND (:classifications IS NULL OR s.classification = ANY (:classifications))
-     ) x
-     WHERE ${SCORE_SQL} >= :minScore
-     ORDER BY score DESC, x.id
-     LIMIT :limit`,
+         AND NOT EXISTS (SELECT 1 FROM cited WHERE cited.source_id = s.id)
+         AND (:embedding IS NULL OR c.embedding IS NULL OR 1 - (c.embedding <=> :embedding) >= :refMinVector))
+     , reference AS (SELECT id FROM ref_passages WHERE pick = 1 ORDER BY rank LIMIT :refLimit)
+     , cand AS (SELECT id FROM ann UNION SELECT id FROM lexical UNION SELECT id FROM reference)
+     SELECT z.* FROM (
+       SELECT y.*, row_number() OVER (PARTITION BY y.source_scope = 'public' ORDER BY y.score DESC, y.id) AS scope_rank
+       FROM (
+         SELECT x.*, ${SCORE_SQL} AS score
+         FROM (
+           SELECT c.id, NULL::uuid AS venture_id, c.source_id, c.scope AS source_scope, NULL::text AS memory_type,
+                  NULL::text AS visibility,
+                  CASE WHEN c.scope = 'persona' THEN 'doctrine' ELSE 'chunk' END AS kind,
+                  CASE WHEN c.heading IS NULL OR c.heading = '' THEN s.title ELSE s.title || ' — ' || c.heading END AS title,
+                  ${excerptSql('c.content')} AS excerpt, s.freshness_at, s.status,
+                  ${vecSql('c.embedding')} AS vec,
+                  ts_rank_cd(c.tsv, q.tsq, 32) AS lex,
+                  ${recencySql('s.freshness_at')} AS recency,
+                  (CASE c.scope WHEN 'persona' THEN 1.0 WHEN 'program' THEN 0.9
+                     ELSE 0.7 * (CASE WHEN starts_with(coalesce(c.heading, ''), :refDocumented) THEN 1.0 ELSE 0.9 END)
+                   END)
+                    * (CASE s.status WHEN 'active' THEN 1.0 ELSE 0.5 END) AS authority
+           FROM cand
+           JOIN knowledge_chunks c ON c.id = cand.id
+           JOIN knowledge_sources s ON s.id = c.source_id
+           CROSS JOIN q
+           WHERE ${scopeFilter} AND s.status IN ('active', 'stale')
+             AND (:classifications IS NULL OR s.classification = ANY (:classifications))
+         ) x
+         WHERE ${SCORE_SQL} >= :minScore
+       ) y
+     ) z
+     WHERE z.source_scope = 'public' OR z.scope_rank <= :limit
+     ORDER BY z.score DESC, z.id`,
     params: {
       ...baseParams(q, 4),
       scopes: p.textArray(q.scopes ?? ['program', 'public', 'persona']),
       personaId: p.nullable.uuid(q.personaId),
       classifications: p.nullable.textArray(q.classifications),
       candidates: p.int(clampLimit(q.candidates, 40, 400)),
+      refUris: p.textArray(admitted.map((m) => m.uri)),
+      refSessionId: p.nullable.uuid(q.reference?.sessionId ?? null),
+      refDocumented: p.text(DOCUMENTED_ACCOUNT_HEADING),
+      refMinVector: p.num(REFERENCE_GATE.minVector),
+      refLimit: p.int(refLimit),
     },
     decode: (r) => decodeItem('from_row', r),
   };

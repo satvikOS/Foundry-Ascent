@@ -1,6 +1,15 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { BookOpen, Brain, FileText, Library, Lightbulb, ScrollText, type LucideIcon } from 'lucide-react';
+import {
+  BookOpen,
+  Brain,
+  FileText,
+  GraduationCap,
+  Library,
+  Lightbulb,
+  ScrollText,
+  type LucideIcon,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { EmptyState } from '@/components/ui/empty-state';
@@ -34,6 +43,8 @@ function programLabel(kind: ProgramSourceKind, veirName: string): { label: strin
   switch (kind) {
     case 'guidance':
       return { label: 'Program guidance', icon: BookOpen };
+    case 'reference':
+      return { label: 'Reference library', icon: GraduationCap };
     case 'library':
       return { label: `${veirName}’s library`, icon: ScrollText };
     case 'resource':
@@ -229,7 +240,10 @@ function SourceRow({
         {source.title}
       </Link>
     );
-  } else if (source.document || (source.programKind === 'guidance' && source.sourceId)) {
+  } else if (
+    source.document ||
+    ((source.programKind === 'guidance' || source.programKind === 'reference') && source.sourceId)
+  ) {
     // Documents and program or public material open in the document viewer (a vEIR's own library is read
     // in the studio, so its rows stay plain).
     const documentId = source.document?.id;

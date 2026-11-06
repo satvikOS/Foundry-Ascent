@@ -137,7 +137,12 @@ describe('migration 0016_veir_presence', () => {
         assignedEirProfileId: resolved.eir?.id ?? null,
       });
     });
-    expect(presence).toEqual({ eirName: 'Corin Halvorsen', firstPerson: true, eirSeesWork: true });
+    expect(presence).toEqual({
+      eirName: 'Corin Halvorsen',
+      firstPerson: true,
+      eirSeesWork: true,
+      mentor: false,
+    });
     // Another EIR assigned to review the venture: the persona's EIR does not see its work.
     const elsewhere = await t.db.withContext(ctx('maya'), (tx) =>
       personasRepo.getPersonaPresence(tx, { personaId: corin().personaId, assignedEirProfileId: null }),
@@ -156,7 +161,7 @@ describe('migration 0016_veir_presence', () => {
     const guide = await t.db.withContext(lead(), (tx) =>
       personasRepo.getPersonaPresence(tx, { personaId: seed.personaId, assignedEirProfileId: null }),
     );
-    expect(guide).toEqual({ eirName: null, firstPerson: false, eirSeesWork: false });
+    expect(guide).toEqual({ eirName: null, firstPerson: false, eirSeesWork: false, mentor: false });
   });
 
   it('starts everyone with the welcome unacknowledged', async () => {

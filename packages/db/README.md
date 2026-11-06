@@ -166,6 +166,9 @@ original error is `cause` — do not log it verbatim).
   and grant it to `app_rls` only where requests need them. Statements selected through the Data API must
   not return a `void` column (wrap `pg_advisory_xact_lock` in `SELECT count(*) … FROM (SELECT …)`).
 
+Migration 0028 (ADR-0021): `personas.presentation` (`twin` by default, `mentor` for an EIR persona the owner presents as
+an AI mentor under its own name); `personasRepo.getPersonaPresence` reports it (`mentor`). `migrate-0028.db.test.ts`.
+
 ## 6. Repositories
 
 All are namespaces exported from the package root: `import { memoryRepo } from '@foundry/db'`. The first
@@ -318,7 +321,8 @@ AI-origin items can never be confirmed without `approved_by` or `auto_kept_at` (
 
 - `seedDatabase(db, config) → SeedResult` / `seed(sx, config)`; `seedConfigFromEnv(env)` reads
   `HOME_TENANT_SLUG`, `HOME_TENANT_NAME`, `OWNER_DISPLAY_NAME`, `OWNER_ACCESS_CODE_PREFIX`,
-  `OWNER_ACCESS_CODE_HASH` (required when `APP_ENV=production`).
+  `OWNER_ACCESS_CODE_HASH` (required when `APP_ENV=production`) and `SEED_OWNER_RELEASES` (owner-approved persona
+  releases to apply, below).
 - Idempotent and safe on every deploy: deterministic UUIDv5 ids (`seedId(tenantSlug, …parts)`),
   `ON CONFLICT DO NOTHING` — product changes (suspended persona, deleted memory, revoked demo roles) are
   never overwritten. The owner principal always holds `platform_admin` + `program_lead` and is bound to the
@@ -345,6 +349,15 @@ AI-origin items can never be confirmed without `approved_by` or `auto_kept_at` (
   and the vEIR one created once, only while that original assignment is still the active one. Every venture × vEIR pair
   gets a notebook; QuietQuad's carries a past conversation with its digest. Foundry Guide stays the
   program's neutral guide for new ventures.
+- Owner releases (`./owner-releases.ts`, ADR-0021; once migration 0028 is applied): persona releases the platform
+  owner approved outside the studio, applied once each when `SeedConfig.ownerReleases` names them (production:
+  `infra/cdk/config/production.json` `homeTenant.ownerReleases` → `SEED_OWNER_RELEASES`). `thomas-2026-11-05`: Corin's
+  vEIR gets release v2 (Thomas's conversation-first doctrine), created and approved by the deploy owner through
+  `personasRepo.createRelease` / `approveRelease`, is renamed Thomas and presented as a mentor
+  (`personas.presentation = 'mentor'`), and its earlier releases are withdrawn (conversations move to Thomas at their
+  next message); audited (`persona.release_*`, `via: owner_release`). Applied only while the release's deterministic id
+  is absent, with a consent in force covering doctrine and the deploy owner; `SeedResult.ownerReleases` says what each
+  did (`applied`, `present`, `no_owner`, …). Without the setting (tests, CI, e2e) the demo personas stay as seeded.
 - Embeddings are backfilled by the migrate handler: `knowledgeRepo.listChunksMissingEmbeddings` →
   embed → `setChunkEmbeddings` (same for memory).
 - Access-code utilities (runtime-contract format): `generateAccessCode()`, `accessCodePrefix(code)`,

@@ -315,6 +315,7 @@ describe('FoundryAscent-Foundation', () => {
             'arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0',
             // The live evaluation's simulator and judge from other model families (ops/lab/models.json "live").
             'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+            'arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6',
             'arn:aws:bedrock:*::foundation-model/meta.llama4-maverick-17b-instruct-v1:0',
             // The global. fallback profile is authorized against the region-less foundation-model ARN.
             'arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0',
@@ -323,6 +324,7 @@ describe('FoundryAscent-Foundation', () => {
             profile('us.amazon.nova-premier-v1:0'),
             profile('us.amazon.nova-pro-v1:0'),
             profile('us.anthropic.claude-haiku-4-5-20251001-v1:0'),
+            profile('us.anthropic.claude-sonnet-4-6'),
             profile('us.meta.llama4-maverick-17b-instruct-v1:0'),
           ],
         },

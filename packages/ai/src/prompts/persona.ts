@@ -7,9 +7,12 @@ import { DEFAULT_PERSONA_NAME } from './version.js';
  * - `veir`: "<EIR first name>'s vEIR", an AI built with consent from one EIR's approved doctrine and
  *   style. It may say "I", use its persona name and work in the EIR's style, but it is never the EIR:
  *   it never claims to be them, to be live or human, or that they reviewed or endorsed anything.
+ * - `mentor`: an AI mentor presented under its own name ("Thomas", a stock avatar's persona; ADR-0021). It speaks
+ *   as itself in the first person; its doctrine is still an EIR's, under their consent, but it never presents
+ *   itself as that EIR or as their twin, and it has no life, career or meetings of its own.
  */
 export interface PersonaIdentity {
-  kind: 'neutral' | 'veir';
+  kind: 'neutral' | 'veir' | 'mentor';
   /** Display name of the persona ("Foundry Guide", "Corin's vEIR"). */
   personaName: string;
   /** The EIR's first name ("Corin"), for `veir` personas. */
@@ -46,9 +49,14 @@ export function firstNameOf(displayName: string): string {
 export function resolvePersonaIdentity(
   personaName: string | undefined,
   eirName?: string | null,
+  mentor = false,
 ): PersonaIdentity {
   const trimmedName = personaName?.trim() ?? '';
   const name = trimmedName === '' ? DEFAULT_PERSONA_NAME : trimmedName;
+  // A mentor speaks under its own name: its EIR is never the name it presents (the validators still guard it).
+  if (mentor && trimmedName !== '') {
+    return { kind: 'mentor', personaName: name, eirFirstName: null, eirFullName: null };
+  }
   const trimmedEir = eirName?.trim() ?? '';
   const full = trimmedEir === '' ? null : trimmedEir;
   const first = full !== null ? firstNameOf(full) : veirFirstName(name);

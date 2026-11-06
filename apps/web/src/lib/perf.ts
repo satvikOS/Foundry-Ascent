@@ -23,11 +23,15 @@ interface DeviceHints {
   deviceMemory?: number | undefined;
 }
 
-/** Few cores or little memory: low without sampling. Unknown values never count against the device. */
+/**
+ * Very few cores or very little memory: low without sampling. Unknown values never count against the device. Four
+ * cores is common on capable phones, tablets and laptops (and browsers round the count down for privacy), so only two
+ * or fewer cores, or 2 GB or less, decide alone; everything else is judged by its frames.
+ */
 export function lowFromHints({ hardwareConcurrency, deviceMemory }: DeviceHints): boolean {
   return (
-    (typeof hardwareConcurrency === 'number' && hardwareConcurrency > 0 && hardwareConcurrency <= 4) ||
-    (typeof deviceMemory === 'number' && deviceMemory > 0 && deviceMemory <= 4)
+    (typeof hardwareConcurrency === 'number' && hardwareConcurrency > 0 && hardwareConcurrency <= 2) ||
+    (typeof deviceMemory === 'number' && deviceMemory > 0 && deviceMemory <= 2)
   );
 }
 

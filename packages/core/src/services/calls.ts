@@ -377,8 +377,10 @@ export function repeatGreeting(args: Parameters<typeof repeatGreetingOf>[0]): st
 export function callIntro(args: {
   readonly firstName: string | null;
   readonly personaName: string;
-  /** The EIR's first name for a vEIR ("Corin"); null for the neutral guide. */
+  /** The EIR's first name for a vEIR ("Corin"); null for the neutral guide and for a mentor. */
   readonly eirFirstName: string | null;
+  /** An AI mentor under its own name ("Thomas", ADR-0021): "Hi Maya, I'm Thomas." and nothing about what it is. */
+  readonly mentor?: boolean;
   /** The person has never had a conversation with this vEIR in the venture. */
   readonly firstMeeting: boolean;
   readonly opener: string | null;
@@ -402,9 +404,11 @@ export function callIntro(args: {
   }
   const hi = args.firstName === null ? 'Hi' : `Hi ${args.firstName}`;
   const hello =
-    args.eirFirstName === null
-      ? `${hi}, I'm ${args.personaName}, the program's AI coach.`
-      : `${hi}, I'm ${args.personaName}, ${args.eirFirstName}'s digital twin.`;
+    args.mentor === true
+      ? `${hi}, I'm ${args.personaName}.`
+      : args.eirFirstName === null
+        ? `${hi}, I'm ${args.personaName}, the program's AI coach.`
+        : `${hi}, I'm ${args.personaName}, ${args.eirFirstName}'s digital twin.`;
   const next =
     args.opener ??
     (args.conversationStarted ? 'Where would you like to pick up?' : 'What would you like to work on?');
@@ -523,6 +527,8 @@ interface Started {
   readonly personaName: string;
   readonly personaKind: personasRepo.PersonaRecord['kind'];
   readonly eirDisplayName: string | null;
+  /** The persona is an AI mentor under its own name (ADR-0021): its intro names only itself. */
+  readonly mentor: boolean;
   readonly firstName: string | null;
   /** The conversation's stored opener (`coaching_sessions.opener`), offered only before its first turn. */
   readonly opener: string | null;
@@ -683,11 +689,14 @@ export function createCallsService(
       );
     const opener = started.opener === null ? '' : toSpeakable(started.opener).trim();
     const eirFirstName =
-      started.personaKind === 'eir_persona' ? (started.eirDisplayName?.trim().split(/\s+/)[0] ?? null) : null;
+      started.personaKind === 'eir_persona' && !started.mentor
+        ? (started.eirDisplayName?.trim().split(/\s+/)[0] ?? null)
+        : null;
     const base = {
       firstName: started.firstName,
       personaName,
       eirFirstName: eirFirstName === '' ? null : eirFirstName,
+      mentor: started.mentor,
       firstMeeting: started.firstMeeting,
       seed: started.call.sessionId,
       conversationStarted: started.conversationStarted,
@@ -1082,6 +1091,9 @@ export function createCallsService(
           personaKind: persona.kind,
           // The vEIR introduces itself after its own EIR, never after the venture's reviewing EIR.
           eirDisplayName: await veirEirName(tx, persona),
+          mentor: (
+            await personasRepo.getPersonaPresence(tx, { personaId: persona.id, assignedEirProfileId: null })
+          ).mentor,
           firstName: principal === null ? null : greetingName(principal.displayName),
           // The conversation's own opener, validated when it was created and replayed to the model as its first
           // message, so the call says exactly what the vEIR believes it opened with (none for temporary chats).

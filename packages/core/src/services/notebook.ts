@@ -220,7 +220,7 @@ export function createNotebookService(kit: Kit, directory: DirectoryCache): Note
     if (opener === null) return null;
     return validatedOpener(opener, {
       personaName: persona.name,
-      personaEirName: await personasRepo.getPersonaEirName(scope.tx, persona.id),
+      personaEirName: await personasRepo.getPersonaTwinEirName(scope.tx, persona.id),
       eirNames: guards.eirNames,
       otherVentureNames: guards.others.names,
       otherVentureCanaries: guards.others.canaries,
@@ -283,7 +283,7 @@ export function createNotebookService(kit: Kit, directory: DirectoryCache): Note
         if (input.edit.action === 'edit_opener') {
           const problem = openerProblem(input.edit.text, {
             personaName: persona.name,
-            personaEirName: await personasRepo.getPersonaEirName(scope.tx, persona.id),
+            personaEirName: await personasRepo.getPersonaTwinEirName(scope.tx, persona.id),
             eirNames: openerGuards.eirNames,
             otherVentureNames: openerGuards.others.names,
             otherVentureCanaries: openerGuards.others.canaries,

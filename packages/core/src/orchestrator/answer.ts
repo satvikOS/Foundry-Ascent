@@ -10,10 +10,13 @@ import {
   identityQuestionOf,
   isModelGatewayError,
   openerSaidHello,
+  SHORT_BUDGET,
   SOCIAL_BUDGETS,
+  YES_NO_BUDGET,
   socialTurnOf,
   spokenHandBackFor,
   validateCoachResponse,
+  statedPreferences,
   wrapUpOf,
   type CoachResponseValidation,
   type GateBlockReason,
@@ -71,7 +74,7 @@ export interface AnswerSpec {
    * How the vEIR is present (`personasRepo.getPersonaPresence`): it speaks in its EIR's own voice only with the
    * first-person consent, and says its EIR sees the work only when that EIR is the venture's. Default: neither.
    */
-  readonly presence?: Pick<personasRepo.PersonaPresence, 'firstPerson' | 'eirSeesWork'>;
+  readonly presence?: Pick<personasRepo.PersonaPresence, 'firstPerson' | 'eirSeesWork' | 'mentor'>;
   /** The fixed mode, or null when the model picks one (auto mode). */
   readonly mode: CoachMode | null;
   readonly allowedModes: readonly CoachMode[];
@@ -219,6 +222,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
       eirName: spec.personaEirName,
       firstPerson: spec.presence?.firstPerson === true,
       eirSeesWork: spec.presence?.eirSeesWork === true,
+      mentor: spec.presence?.mentor === true,
     },
     mode: spec.mode ?? AUTO_MODE,
     allowedModes: spec.allowedModes,
@@ -294,11 +298,33 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
       personaName: spec.personaName,
       eirNames: guards.eirNames,
       personaEirName: spec.personaEirName,
+      mentor: spec.presence?.mentor === true,
       addressees: guards.addressees,
     }) !== null
       ? null
       : { text: saidBefore.join('\n\n'), keepReferrals: forcedEscalationFor(risk) !== null };
   const wrapUp = risk.categories.length === 0 && !risk.crisis && wrapUpOf(spec.founderText);
+  // How they asked to be answered, kept until they change it (live pilot 42124259353: "yes or no answers only" and "no
+  // more questions" were dropped after a reply or two). Never on a flagged turn: its referral must be said whole.
+  const preferences = statedPreferences(
+    spec.history.map((t) => t.founderText),
+    spec.founderText,
+  );
+  const plainTurn = forcedEscalationFor(risk) === null && !risk.crisis;
+  const preferenceBudget = !plainTurn
+    ? null
+    : preferences.includes('yes/no answers')
+      ? YES_NO_BUDGET
+      : preferences.includes('short answers')
+        ? SHORT_BUDGET
+        : null;
+  const noQuestions = plainTurn && preferences.includes('no questions');
+  // The figures a reply may state: what the founder said in view, and the sources shown (validators/figures.ts).
+  const knownFigures = [
+    ...spec.history.map((t) => t.founderText),
+    spec.founderText,
+    ...shown.map((k) => `${k.item.title} ${k.item.excerpt}`),
+  ].join('\n');
 
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
   await emit({ event: 'turn.status', phase: 'reasoning', detail: null, evidenceCount: shown.length });
@@ -336,12 +362,16 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
             personaName: spec.personaName,
             eirNames: guards.eirNames,
             personaEirName: spec.personaEirName,
+            mentor: spec.presence?.mentor === true,
             addressees: guards.addressees,
             founderName: spec.continuity.founderFirstName ?? null,
             greeted,
             // A wrap-up ("got it, I'll send it Friday") is answered as briefly as a goodbye: no new homework. Never a
             // turn with any risk flag (the classifier's or the safety screen's): it needs the escalation, not a sign-off.
-            replyBudget: social !== null ? SOCIAL_BUDGETS[social] : wrapUp ? SOCIAL_BUDGETS.closing : null,
+            replyBudget:
+              social !== null ? SOCIAL_BUDGETS[social] : wrapUp ? SOCIAL_BUDGETS.closing : preferenceBudget,
+            noQuestions,
+            knownFigures,
             previousReply,
             earlierReplies,
             // A flagged turn never loses its referral as a repeat, and is never cut short for one.
@@ -376,6 +406,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     ...(spec.mode === null ? { allowedModes: spec.allowedModes } : { expectedMode: spec.mode }),
     eirNames: guards.eirNames,
     personaEirName: spec.personaEirName,
+    mentor: spec.presence?.mentor === true,
     addressees: guards.addressees,
     founderName: spec.continuity.founderFirstName ?? null,
     greeted,
@@ -386,6 +417,8 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     // A streamed reply handed the turn back as it was said (generate.ts); a reply written whole gets it here.
     handBack: generation.stream?.fallback === null ? null : handBack,
     social,
+    noQuestions,
+    knownFigures,
     founderText: spec.founderText,
     introduced,
     channel: spec.channel,

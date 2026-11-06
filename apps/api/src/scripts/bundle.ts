@@ -94,6 +94,7 @@ export const FAKE_ENV_VALUES: Readonly<Record<string, string>> = {
   OWNER_DISPLAY_NAME: 'Platform Owner',
   HOME_TENANT_SLUG: 'ain',
   HOME_TENANT_NAME: 'Ain Foundry',
+  SEED_OWNER_RELEASES: 'thomas-2026-11-05',
   SPEECH_ENABLED: 'true',
   SPEECH_ENGINE: 'neural',
   // Both digital-twin vendors wired: the bundle must import (and construct them) without any network or key.

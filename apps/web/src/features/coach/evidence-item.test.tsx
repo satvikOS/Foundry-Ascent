@@ -54,7 +54,8 @@ describe('evidenceKindLabel', () => {
     expect(label({ kind: 'chunk', source: { id: SOURCE, scope: 'venture' } })).toBe('Venture document');
     // A program handbook passage is a chunk too: it is never called a venture document.
     expect(label({ kind: 'chunk', source: { id: SOURCE, scope: 'program' } })).toBe('Program guidance');
-    expect(label({ kind: 'chunk', source: { id: SOURCE, scope: 'public' } })).toBe('Program guidance');
+    // The shared reference library is not the program's guidance.
+    expect(label({ kind: 'chunk', source: { id: SOURCE, scope: 'public' } })).toBe('Reference library');
     expect(label({ kind: 'doctrine', source: { id: SOURCE, scope: 'persona' } })).toBe(
       "Corin's vEIR’s library",
     );
@@ -99,6 +100,36 @@ describe('EvidenceItemCard', () => {
         venture={venture}
       />,
     );
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Read source' }));
+    expect(router.state.location.search).toEqual({ src: SOURCE, passage: PASSAGE });
+  });
+
+  it('cites a reference-library passage by its real source, and opens it with every reference URL', async () => {
+    const router = await renderOnPage(
+      <EvidenceItemCard
+        item={makeEvidence({
+          key: 'E4',
+          kind: 'chunk',
+          refId: PASSAGE,
+          title:
+            'NONA Technologies: Choosing a viable initial market — Documented account · MIT / J-WAFS, evidence as of 2024-10-02',
+          excerpt:
+            'Reported outcome: Crawford reported that the first 24 interviews ruled out those markets.\n\n' +
+            'Evidence limits: The article does not name that beachhead or disclose interview-to-sale conversion.',
+          source: { id: SOURCE, scope: 'public' },
+        })}
+        venture={venture}
+      />,
+    );
+    expect(screen.getByText('Reference library')).toBeInTheDocument();
+    expect(screen.queryByText('Program guidance')).toBeNull();
+    // Title and publisher, and the evidence date, are what the founder reads as the citation.
+    expect(
+      screen.getByRole('heading', {
+        name: /NONA Technologies.*Documented account · MIT \/ J-WAFS, evidence as of 2024-10-02/,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/does not name that beachhead/)).toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole('link', { name: 'Read source' }));
     expect(router.state.location.search).toEqual({ src: SOURCE, passage: PASSAGE });
   });

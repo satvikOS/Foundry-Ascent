@@ -130,7 +130,8 @@ describe('buildEvidenceSources', () => {
     expect(sources.map((s) => [s.programKind, s.title, s.sourceId, s.citations])).toEqual(
       expect.arrayContaining([
         ['guidance', 'Program handbook', SOURCE.handbook, 1],
-        ['guidance', 'Program handbook', SOURCE.other, 1],
+        // Public material is the shared reference library, listed as such.
+        ['reference', 'Program handbook', SOURCE.other, 1],
         ['resource', 'Library data office', null, 1],
         ['lesson', 'Free pilots teach nothing', null, 1],
       ]),

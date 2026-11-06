@@ -903,6 +903,35 @@ BASE_PATTERNS: tuple[_Pattern, ...] = (
         r"entrepreneur|mentor|operator|ceo|vc|coach)",
         human_claim=True,
     ),
+    # A past of its own (ADR-0021; mirrors packages/ai/src/validators/identity.ts `own_experience`): founders it
+    # coached, people it met, a round it raised, "in my experience". Never in a draft the founder will send.
+    _p(
+        "claims_human",
+        "own_experience",
+        r"(?:a|one|another|some|the\s+last)\s+(?:(?:student|young|first[- ]time|solo|hardware|medtech|saas|b2b|other|"
+        r"former)\s+)?(?:founders?|teams?|clients?|students?|startups?|compan(?:y|ies)|ceos?|mentees?|entrepreneurs?|"
+        r"portfolio\s+compan(?:y|ies))\s+(?:(?:that|who)\s+)?(?:i|we)"
+        rf"(?:{APOS}ve|{APOS}d|\s+have|\s+had)?\s+(?:once\s+|recently\s+|personally\s+)?(?:coached|worked\s+with|"
+        r"advised|mentored|backed|invested\s+in|met|helped|knew|supported|sat\s+with)|"
+        rf"i(?:{APOS}ve|\s+have)\s+(?:personally\s+|also\s+)?(?:coached|worked\s+with|advised|mentored|"
+        r"met(?:\s+with)?|helped|seen|watched|backed|invested\s+in|talked\s+(?:to|with)|spoken\s+(?:to|with)|"
+        r"reviewed|heard)\s+(?:dozens|hundreds|scores|thousands|many|countless|lots|a\s+lot|plenty|"
+        r"a\s+(?:few|number|handful)|several|\d+|so\s+many)(?:\s+of)?\s+(?:(?:student|early[- ]stage|first[- ]time|"
+        r"other|startup)\s+)?(?:founders|teams|startups|companies|students|clients|entrepreneurs|ventures|pitches|"
+        r"decks|investors|buyers)|"
+        rf"i(?:{APOS}ve|\s+have)\s+(?:seen|watched)\s+(?:this|that|it)(?:\s+(?:pattern|mistake|play\s+out|"
+        r"happen))?\s+(?:many|countless|plenty\s+of|dozens\s+of|a\s+(?:lot|few)\s+of|so\s+many|more)\s+times|"
+        r"(?:when|while|back\s+when)\s+i\s+was\s+(?:raising|building|running|starting|founding|pitching|selling|"
+        r"scaling|fundraising|hiring|a\s+(?:founder|student|ceo|first[- ]time\s+founder))|"
+        r"i\s+(?:met|spoke|talked|chatted|had\s+(?:coffee|lunch|dinner|a\s+call|a\s+chat))\s+(?:with|to)\s+"
+        r"(?!you\b)[^.!?\n]{1,60}?\s+(?:last\s+(?:week|month|year|night|quarter)|yesterday|this\s+(?:morning|week|"
+        r"month)|recently|earlier\s+today)|"
+        r"i\s+(?:remember|recall)\s+(?:a|one)\s+(?:founder|team|student|client|startup|company|ceo)|"
+        r"(?:in|from)\s+my\s+(?:own\s+)?experience(?!\s+as\s+an?\s)",
+        accept=_always,
+        accept_in=_coach_presence,
+        human_claim=True,
+    ),
     _p(
         "claims_human",
         "claims_live",

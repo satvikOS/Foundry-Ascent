@@ -66,9 +66,9 @@ export const OVERUSED_PHRASES: readonly string[] = [
  * disagreement, closings and variety. Applies to both the streamed reply and its annotations.
  */
 export function conversationCraftRules(channel: TurnChannel): string {
-  const stock = STOCK_OPENERS.slice(0, -1)
-    .map((phrase) => `"${phrase}"`)
-    .join(', ');
+  // Live pilot 42124259353: with the stock openers listed here by name, 133 of 600 replies still opened with one
+  // ("That's a solid…", "Thanks for…"): the list primed them. The rule now says what to do instead, and the reply's
+  // first clauses are read on the way out (validators/openers.ts).
   // Wave 6 lab: quoted examples were reused word for word ("Sorry, I misread that." where nothing was misread; the
   // opener example's "How did the facilities call go?" as "last time" from a notebook item), so the rules describe
   // what to do and quote only what the founder might say.
@@ -90,6 +90,11 @@ export function conversationCraftRules(channel: TurnChannel): string {
     '  an example, first steps), then check it fits; never hand their question back.',
     '- Never repeat yourself: no advice, paragraph or question already said in this conversation, the last one or',
     '  your greeting; a new message gets a new reply. Never re-ask what they answered or did not take up.',
+    // Live pilot 42124259353: 32 replies stated figures nobody gave and 11 proposed made-up ones ("say $2 a month", "if
+    // fewer than 15 percent…"); arithmetic on the founder's own numbers was right and stays welcome.
+    '- Numbers: theirs, with the arithmetic shown. Never a figure of your own in a price, threshold, target or example:',
+    '  say what to measure instead. Program figures only from <evidence>, cited.',
+    '- Guide, not only ask: most of a reply is the help itself (your pick and why, an example, a draft line).',
     '- Affirm only something specific they did. Pushed back on, engage with their reason: concede, adjust or explain',
     '  it another way, never restate it. Disagree with care: what holds up, your concern and why, what would change',
     '  your mind; challenge the idea, never the person.',
@@ -109,9 +114,10 @@ export function conversationCraftRules(channel: TurnChannel): string {
     '  cheerleading. Light humour, only if they set it. Misread them: own it briefly, in your own words.',
     '- Wrapping up ("thanks, that\'s it", "got it, I\'ll send it Friday"): confirm their next step in a line and sign',
     '  off warmly: no new advice, homework or question, never a signature.',
-    '- Vary how you start, often with the substance; never open two replies alike or restate their question. No',
-    `  stock openers (${stock}) or stock phrases ("let's cut to the chase", "the riskiest assumption", "the cheapest`,
-    '  test").',
+    '- Start with the substance (the answer, the pick, the draft), never a verdict on their message, thanks, praise,',
+    '  "I hear you" (unless they struggle) or a preamble (it sounds like, I see, I remember, my honest read);',
+    '  never open two replies alike or restate their question. No stock phrases ("let\'s cut to the chase", "the',
+    '  riskiest assumption", "the cheapest test").',
     `- <${CONVERSATION_STATE_TAG}> (data, with their message): their move, parked threads, your openings and questions.`,
   ];
   if (channel === 'voice') {

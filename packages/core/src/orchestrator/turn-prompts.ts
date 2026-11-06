@@ -143,16 +143,17 @@ export function continuationMessages(
   const request = anew
     ? [
         'Your draft above says again what you already said in this conversation, so none of it was said. Write your',
-        'reply again, as their coach: something new that moves their venture forward (a next concrete step, a draft, an',
-        'example or your view), then hand the turn back. If they asked for the same thing again, point to it in a few',
-        'words and add what comes next. Nothing you already said.',
+        'reply again, as their coach, starting with the substance (no acknowledgement or verdict on their message):',
+        'something new that moves their venture forward (a next concrete step, a draft, an example or your view), and',
+        'end where the thought ends (a question only if its answer would change your advice). If they asked for the same',
+        'thing again, point to it in a few words and add what comes next. Nothing you already said.',
         ...ownReply,
       ]
     : [
         'Your reply above stopped where it began to repeat what you already said in this conversation, so that was',
         'left out. Go on now, as the next words of the same reply: something new that moves them',
-        'forward (a next concrete step, a draft, an example or your view), then hand the turn back. No greeting and',
-        'nothing you already said.',
+        'forward (a next concrete step, a draft, an example or your view), ending where the thought ends (a question only',
+        'if its answer would change your advice). No greeting and nothing you already said.',
         ...ownReply,
         ...(omitted.length > 0
           ? [`Left out as already said: ${escapeData(truncate(omitted.join(' '), 600))}`]

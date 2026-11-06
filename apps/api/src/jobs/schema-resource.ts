@@ -130,7 +130,12 @@ export async function handleSchemaEvent(
   }
   // Idempotent (deterministic ids, ON CONFLICT DO NOTHING); binds the deploy owner's access code hash.
   const seed = await seedDatabase(deps.db, deps.seedConfig);
-  log.info('schema.seeded', { ventures: seed.ventures.length, owner: seed.ownerId !== null });
+  log.info('schema.seeded', {
+    ventures: seed.ventures.length,
+    owner: seed.ownerId !== null,
+    // Owner-approved releases (ADR-0021): key and outcome only ("thomas-2026-11-05:applied").
+    ownerReleases: seed.ownerReleases.map((r) => `${r.key}:${r.outcome}`).join(','),
+  });
 
   let backfill: BackfillReport | null = null;
   if (deps.backfill !== null) {

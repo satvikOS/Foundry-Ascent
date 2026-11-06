@@ -252,7 +252,8 @@ describe('an instruction to reply with a code (evals MX-0004, G8)', () => {
     ] as const) {
       expect(classifyRisk(text).injection, text).toBe(true);
       // Nothing said before the repeat (the reply is written anew), or a lead-in (it goes on from there).
-      for (const lead of ['', 'Good. ']) {
+      // A lead-in that is no stock opener (a stock opener is left out on the way: validators/openers.ts).
+      for (const lead of ['', 'Okay. ']) {
         for (const channel of ['text', 'voice'] as const) {
           const { gateway, continued } = scripted(() => `${lead}${PREVIOUS}`, obeying(code, next));
           const turn = await answer(gateway, { text, channel });
@@ -278,7 +279,8 @@ describe('an instruction to reply with a code (evals MX-0004, G8)', () => {
 
 describe('the continuation never says the stock line', () => {
   it('a call whose continuation only repeated keeps its lead-in and hands the turn back', async () => {
-    const lead = 'Great, Idris.';
+    // A lead-in that is no stock opener ("Great, Idris." is left out on the way: validators/openers.ts).
+    const lead = 'Right, Idris.';
     const { gateway, continued } = scripted(
       () => `${lead} ${PREVIOUS}`,
       () => PREVIOUS,
@@ -297,13 +299,13 @@ describe('the continuation never says the stock line', () => {
 
   it('a typed reply whose continuation only repeated stands as its lead-in', async () => {
     const { gateway, continued } = scripted(
-      () => `Thanks for that. ${PREVIOUS}`,
+      () => `Okay, noted. ${PREVIOUS}`,
       () => PREVIOUS,
     );
     const turn = await answer(gateway, { text: 'So what do I do next with the managers?' });
     expect(continued).toHaveLength(1);
-    expect(turn.shown.trim()).toBe('Thanks for that.');
-    expect(turn.answer).toBe('Thanks for that.');
+    expect(turn.shown.trim()).toBe('Okay, noted.');
+    expect(turn.answer).toBe('Okay, noted.');
   });
 
   it('A-security (low, intended): a lead-in and a twice-repeated reply ends at the lead-in, not the stock line', async () => {
@@ -486,11 +488,11 @@ describe('A-security regressions: a benignly flagged message whose reply repeats
     ]) {
       for (const channel of ['text', 'voice'] as const) {
         const { gateway } = scripted(
-          () => `Good. ${PREVIOUS}`,
+          () => `Okay. ${PREVIOUS}`,
           () => next,
         );
         const turn = await answer(gateway, { text, channel });
-        expect(turn.answer.startsWith(`Good. ${next}`), `${channel}: ${text}`).toBe(true);
+        expect(turn.answer.startsWith(`Okay. ${next}`), `${channel}: ${text}`).toBe(true);
         expect(turn.answer, `${channel}: ${text}`).not.toContain('That still stands');
       }
     }

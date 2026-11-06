@@ -382,7 +382,7 @@ export async function chooseOpener(
   const guards: OpenerGuards = {
     ...args.guards,
     personaName: args.persona.name,
-    personaEirName: await personasRepo.getPersonaEirName(tx, args.persona.id),
+    personaEirName: await personasRepo.getPersonaTwinEirName(tx, args.persona.id),
   };
   const principal = await principalsRepo.getPrincipal(tx, args.principalId);
   const last = await loadLeftOff(tx, {

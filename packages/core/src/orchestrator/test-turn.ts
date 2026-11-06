@@ -95,7 +95,7 @@ interface Admitted {
   readonly via: CuratorVia;
   readonly personaEirName: string | null;
   /** First-person consent; no venture, so its EIR sees no venture's work here. */
-  readonly presence: Pick<personasRepo.PersonaPresence, 'firstPerson' | 'eirSeesWork'>;
+  readonly presence: Pick<personasRepo.PersonaPresence, 'firstPerson' | 'eirSeesWork' | 'mentor'>;
   /** The fixed mode of this message, or null when the vEIR picks one. */
   readonly mode: CoachMode | null;
 }
@@ -376,6 +376,7 @@ export function createTestBench(kit: Kit, directory: DirectoryCache): TestBench 
             personaId: persona.id,
             stage: null,
             query,
+            founderText: input.text,
             embedding,
             // What a venture assigned with the default ceiling sees.
             dataClassCeiling: 'venture_private',

@@ -26,15 +26,21 @@ from pathlib import Path
 from typing import Any
 
 from conversation_lab.config import (
+    DEFAULT_COACH,
     EXTRA_SUITES,
     FACE_MODES,
+    JUDGE_AUTO,
+    LIVE_APP_SHARE_CLAUDE_COACH,
     MAX_BUDGET_USD,
     REPO,
     SUITES,
     app_models,
     budget_parts,
+    coach_app_models,
     face_passes,
     lab_models,
+    live_judges,
+    model_family,
     polly_usd_per_million_characters,
     split_budget,
     suites_for,
@@ -97,6 +103,10 @@ class Context:
     concurrency: int = 4
     #: The student approves every pending AI memory proposal between sessions (off: the product's default).
     live_approve_memory: bool = False
+    #: The app's coach model for this run: ``default`` (production's) or one of models.json ``live.coach`` (an A/B arm).
+    coach_model: str = DEFAULT_COACH
+    #: The live judge policy (config.live_judges): ``auto``, ``ab`` (one judge for every A/B arm) or a live.judge id.
+    judge_model: str = JUDGE_AUTO
     live_picks: list[Any] = field(default_factory=list)
     live_selection: dict[str, Any] = field(default_factory=dict)
     live_seeded: dict[str, Any] = field(default_factory=dict)
@@ -218,15 +228,26 @@ def cmd_run(args: argparse.Namespace) -> int:
         live_total_budget=float(args.live_total_budget or 0),
         concurrency=int(args.concurrency),
         live_approve_memory=bool(args.live_approve_memory),
+        coach_model=str(getattr(args, "coach_model", DEFAULT_COACH) or DEFAULT_COACH),
+        judge_model=str(getattr(args, "judge_model", JUDGE_AUTO) or JUDGE_AUTO),
     )
     ctx.private.mkdir(parents=True, exist_ok=True)
     ctx.public.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
-    app_budget, lab_budget = budget_parts(suite, budget)
+    lab = lab_models()
+    try:
+        # Production's models, or the A/B coach for the lab's API process only (never production's configuration).
+        models = coach_app_models(ctx.coach_model, lab)
+        judge_policy, _, live_judge_candidates = live_judges(ctx.coach_model, ctx.judge_model, lab)
+    except ValueError as exc:
+        print(f"run: {exc}", file=sys.stderr)
+        return 2
+    claude_coach = model_family(models.primary) == "anthropic"
+    app_budget, lab_budget = budget_parts(
+        suite, budget, LIVE_APP_SHARE_CLAUDE_COACH if suite == "live" and claude_coach else None
+    )
     ledger = Ledger(ctx.public / "lab-ledger.jsonl")
     guard = SpendGuard(app_budget=app_budget, lab_budget=lab_budget, ledger=ledger)
-    models = app_models()
-    lab = lab_models()
     session = boto3.Session(region_name=os.environ.get("AWS_REGION", "us-east-1"))
     retry = Config(retries={"mode": "standard", "max_attempts": 4}, read_timeout=120, connect_timeout=10)
     lab_client = LabModelClient(
@@ -238,7 +259,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         "max_scenarios": ctx.max_scenarios,
         "stopped_by": None,
         "models": {
-            "app": {"primary": models.primary, "fallback": models.fallback, "embeddings": models.embeddings}
+            "app": {"primary": models.primary, "fallback": models.fallback, "embeddings": models.embeddings},
+            "coach_choice": ctx.coach_model,
+            "judge_policy": judge_policy,
         },
     }
     probes: dict[str, str] = {}
@@ -255,14 +278,34 @@ def cmd_run(args: argparse.Namespace) -> int:
             result = lab_client.probe(lab.judge)
             probes.update(result.outcomes)
             judge_model = result.chosen
+        if suite == "live" and not args.mock and ctx.coach_model != DEFAULT_COACH:
+            # An A/B coach the account has not enabled would fail every turn: stop before anything runs.
+            result = lab_client.probe((models.primary,))
+            probes.update(result.outcomes)
+            if result.chosen is None:
+                print(
+                    f"run: the coach model {models.primary} did not answer a probe ({result.outcomes}); enable it "
+                    "in the Bedrock console (us-east-1) or run with --coach-model default",
+                    file=sys.stderr,
+                )
+                return 2
         if suite == "live" and not args.mock:
             # Other model families than the coach's first (ops/lab/models.json "live"); the summary says which ran.
             result = lab_client.probe(lab.live_simulator)
             probes.update(result.outcomes)
             simulator_model = result.chosen
-            result = lab_client.probe(lab.live_judge)
+            # Evaluator independence: a judge of another family than the coach, and in an A/B one judge for every arm
+            # (config.live_judges): a pinned judge that does not answer stops the run rather than grade with another.
+            result = lab_client.probe(live_judge_candidates)
             probes.update(result.outcomes)
             judge_model = result.chosen
+            if judge_model is None and judge_policy != JUDGE_AUTO:
+                print(
+                    f"run: no judge of {', '.join(live_judge_candidates)} answered a probe ({result.outcomes}); an A/B "
+                    "is never graded by another judge. Enable it in the Bedrock console (us-east-1)",
+                    file=sys.stderr,
+                )
+                return 2
     except BudgetExceededError as exc:
         summary["stopped_by"] = f"budget_{exc.side}"
     summary["models"].update({"simulator": simulator_model, "judge": judge_model, "probes": probes})
@@ -1043,7 +1086,7 @@ def suite_live(
         deadline_seconds=45 * 60,
     )
     results = runner.run(ctx.live_picks, dataset.by_id(), ctx.live_seeded)
-    coach = "mock" if ctx.mock else app_models().primary
+    coach = "mock" if ctx.mock else coach_app_models(ctx.coach_model, lab_models()).primary
     summary = aggregate(
         [r.public() for r in results],
         meta(
@@ -1130,6 +1173,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--live-total-budget", type=float, default=0.0, help="live: the whole run's budget (shard split)"
     )
     run.add_argument("--concurrency", type=int, default=4, help="live: scenario runs in parallel (1-6)")
+    run.add_argument(
+        "--coach-model",
+        default=DEFAULT_COACH,
+        help="the app's coach model for this run: default (production's) or one of models.json live.coach; the "
+        "lab's API process only. A Claude coach is judged by another family (live suite)",
+    )
+    run.add_argument(
+        "--judge-model",
+        default=JUDGE_AUTO,
+        help="live: auto (another family than the coach; an A/B arm uses ab), ab (one judge independent of every "
+        "A/B arm, for the default arm of an A/B too) or one of models.json live.judge",
+    )
     run.add_argument(
         "--live-approve-memory",
         action="store_true",

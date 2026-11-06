@@ -140,6 +140,7 @@ const FAKE_ENV: Readonly<Record<string, string>> = {
   OWNER_DISPLAY_NAME: 'Platform Owner',
   HOME_TENANT_SLUG: 'ain',
   HOME_TENANT_NAME: 'Ain Foundry',
+  SEED_OWNER_RELEASES: 'thomas-2026-11-05',
   SPEECH_ENABLED: 'true',
   SPEECH_ENGINE: 'neural',
   // Both digital-twin vendors wired: the API must import with them without a key or any network.

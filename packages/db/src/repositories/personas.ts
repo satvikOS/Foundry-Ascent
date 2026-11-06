@@ -95,6 +95,21 @@ export function getPersonaEirName(ex: SqlExecutor, personaId: string): Promise<s
   );
 }
 
+/**
+ * The EIR a persona speaks as the twin of, for its identity checks: {@link getPersonaEirName}, except null for a mentor
+ * under its own name (`presentation = 'mentor'`, ADR-0021), which never presents itself as its EIR's twin (its EIR stays
+ * guarded through the tenant's EIR names).
+ */
+export function getPersonaTwinEirName(ex: SqlExecutor, personaId: string): Promise<string | null> {
+  return queryFirst(
+    ex,
+    `SELECT e.display_name FROM personas pe JOIN eir_profiles e ON e.id = pe.eir_profile_id
+      WHERE pe.id = :id AND pe.presentation <> 'mentor'`,
+    { id: p.uuid(personaId) },
+    (r) => col.text.decode(r.display_name, 'display_name'),
+  );
+}
+
 /** Personas of a tenant with this name (case-insensitive, trimmed), for duplicate checks. */
 export function findPersonasByName(
   ex: SqlExecutor,
@@ -529,6 +544,11 @@ export interface PersonaPresence {
   readonly firstPerson: boolean;
   /** The persona's EIR is the EIR assigned to the venture, who can see its work. */
   readonly eirSeesWork: boolean;
+  /**
+   * The persona is presented as an AI mentor under its own name ("Thomas", `personas.presentation = 'mentor'`, migration
+   * 0028, ADR-0021), never as its EIR's twin: it speaks as itself, and its EIR stays a name it never speaks as.
+   */
+  readonly mentor: boolean;
 }
 
 /**
@@ -548,7 +568,7 @@ export function personaPresencePart(args: {
   assignedEirProfileId: string | null;
 }): ReadPart<PersonaPresence> {
   const part = firstPart(
-    `SELECT e.display_name, pe.eir_profile_id, pe.kind,
+    `SELECT e.display_name, pe.eir_profile_id, pe.kind, pe.presentation,
             'first_person' = ANY (app.persona_consent_assets(pe.id)) AS first_person
        FROM personas pe LEFT JOIN eir_profiles e ON e.id = pe.eir_profile_id
       WHERE pe.id = :id`,
@@ -558,17 +578,19 @@ export function personaPresencePart(args: {
       eirProfileId: col.uuid.nullable.decode(r.eir_profile_id, 'eir_profile_id'),
       veir: col.text.decode(r.kind, 'kind') === 'eir_persona',
       firstPerson: col.bool.nullable.decode(r.first_person, 'first_person') === true,
+      mentor: col.text.nullable.decode(r.presentation, 'presentation') === 'mentor',
     }),
   );
   return {
     ...part,
     decode: (rows) => {
       const row = part.decode(rows);
-      if (row === null) return { eirName: null, firstPerson: false, eirSeesWork: false };
+      if (row === null) return { eirName: null, firstPerson: false, eirSeesWork: false, mentor: false };
       return {
         eirName: row.eirName,
         firstPerson: row.veir && row.firstPerson,
         eirSeesWork: row.veir && row.eirProfileId !== null && row.eirProfileId === args.assignedEirProfileId,
+        mentor: row.veir && row.mentor,
       };
     },
   };

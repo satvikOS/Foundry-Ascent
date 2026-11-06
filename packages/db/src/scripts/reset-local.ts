@@ -6,11 +6,13 @@
  *   pnpm --filter @foundry/db db:reset
  *
  * Environment: TEST_DATABASE_ADMIN_URL (superuser URL, default local unix socket cluster on port 54329),
- * LOCAL_DB_NAME (default `foundry`), HOME_TENANT_SLUG / HOME_TENANT_NAME, OWNER_DISPLAY_NAME.
+ * LOCAL_DB_NAME (default `foundry`), HOME_TENANT_SLUG / HOME_TENANT_NAME, OWNER_DISPLAY_NAME, SEED_OWNER_RELEASES (the
+ * owner-approved persona releases to apply, as production's deploy does: `thomas-2026-11-05`; none by default).
  */
 import { createDb } from '../db.js';
 import { migrate } from '../migrate.js';
 import { accessCodePrefix, generateAccessCode, hashAccessCode } from '../seed/access-code.js';
+import { parseOwnerReleases } from '../seed/owner-releases.js';
 import { seedDatabase } from '../seed/seed.js';
 import {
   TEST_OWNER_PASSWORD,
@@ -73,10 +75,12 @@ async function main(): Promise<void> {
         accessCodePrefix: accessCodePrefix(code),
         accessCodeHash: await hashAccessCode(code),
       },
+      ownerReleases: parseOwnerReleases(process.env.SEED_OWNER_RELEASES),
     });
     process.stdout.write(
       [
         `Local database "${name}" reset (${String(report.applied.length)} migrations, ${String(result.ventures.length)} synthetic ventures).`,
+        ...result.ownerReleases.map((r) => `Owner release ${r.key}: ${r.outcome}`),
         `DB_DRIVER=pg`,
         `DATABASE_URL=${url}`,
         `DEV owner access code (local only, shown once): ${code}`,

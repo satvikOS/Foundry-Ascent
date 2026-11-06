@@ -10,7 +10,7 @@ import type { DocumentView, EvidenceItem, MemoryObjectView, TurnView } from '@fo
 export type EvidenceSourceKind = 'document' | 'memory' | 'program';
 
 /** Program-side sources, named for the person reading them. */
-export type ProgramSourceKind = 'guidance' | 'library' | 'resource' | 'lesson';
+export type ProgramSourceKind = 'guidance' | 'reference' | 'library' | 'resource' | 'lesson';
 
 export interface EvidenceSource {
   /** Stable row key. */
@@ -61,7 +61,8 @@ function citedAs(
         const document = documentsBySource.get(source.id);
         return document ? { key: `document:${document.id}`, programKind: null, sourceId: source.id } : null;
       }
-      const programKind = source.scope === 'persona' ? 'library' : 'guidance';
+      const programKind =
+        source.scope === 'persona' ? 'library' : source.scope === 'public' ? 'reference' : 'guidance';
       return { key: `program:${programKind}:${source.id}`, programKind, sourceId: source.id };
     }
   }

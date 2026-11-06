@@ -133,6 +133,9 @@ def aggregate(rows: Sequence[Mapping[str, Any]], meta: Mapping[str, Any]) -> dic
     for r in executed:
         phrase_counts.update((r.get("checks") or {}).get("phrases") or {})
         phrase_counts["(stock opener)"] += (r.get("checks") or {}).get("stock_openers", 0)
+        # The broader census (review of coaching v2): the other stock openers, and openings repeated within a run.
+        phrase_counts["(other stock opener)"] += (r.get("checks") or {}).get("preamble_openers", 0)
+        phrase_counts["(repeated opening)"] += (r.get("checks") or {}).get("repeated_openings", 0)
     phrase_rates = {k: round(100 * v / replies, 2) for k, v in sorted(phrase_counts.items()) if v and replies}
     dims = {d: _mean([r["judge"]["scores"].get(d) for r in judged]) for d in DIMENSIONS}
     nat = _mean([r["judge"].get("naturalness") for r in judged])
@@ -413,6 +416,11 @@ def merge(summaries: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     evidence = {r.get("evidence") for r in rows} | {s.get("evidence") for s in summaries}
     if len(evidence) > 1:
         raise MergeError(f"different evidence labels cannot be merged: {sorted(map(str, evidence))}")
+    # An A/B arm (a judge pinned for every arm, config.live_judges) is graded by one judge or it is not one arm.
+    pinned = any(_judge_policy(s) not in (None, "auto") for s in summaries)
+    judges = {_judge_of(s) for s in summaries}
+    if pinned and len(judges) > 1:
+        raise MergeError(f"an A/B arm's shards were graded by different judges: {sorted(map(str, judges))}")
     meta = {
         k: _distinct([s.get(k) for s in summaries])
         for k in ("evidence", "dataset_sha256", "code_sha", "models", "versions", "selection")
@@ -431,6 +439,86 @@ def merge(summaries: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
     meta["shards"] = len(summaries)
     return aggregate(rows, meta)
+
+
+def _judge_of(summary: Mapping[str, Any]) -> Any:
+    return (summary.get("models") or {}).get("judge")
+
+
+def _judge_policy(summary: Mapping[str, Any]) -> Any:
+    return (summary.get("selection") or {}).get("judge_policy")
+
+
+#: What must be the same in both arms of an A/B for their difference to be the coach's (selection keys apart from
+#: the coach and the shard).
+_SAME_SELECTION = ("families", "sample", "seed", "repeats", "ids", "memory_review")
+
+
+def compare(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any]:
+    """Two arms of a coach-model A/B as numbers only (b minus a). Refused unless the difference can only be the
+    coach's: both live evidence, one judge model (never mixed or absent), one judge prompt, one dataset and one
+    selection. Review of coaching v2: arms graded by different judges mix the coach with the judge's calibration."""
+    for side, s in (("a", a), ("b", b)):
+        if s.get("evidence") != "live":
+            raise MergeError(f"arm {side} is not live evidence: {s.get('evidence')}")
+        judge = _judge_of(s)
+        if not isinstance(judge, str) or judge in ("", "mock"):
+            raise MergeError(f"arm {side} has no single judge model: {judge}")
+    if _judge_of(a) != _judge_of(b):
+        raise MergeError(f"the arms were graded by different judges: {_judge_of(a)} vs {_judge_of(b)}")
+    for key, value_a, value_b in (
+        (
+            "judge prompt",
+            (a.get("versions") or {}).get("judge_prompt"),
+            (b.get("versions") or {}).get("judge_prompt"),
+        ),
+        ("dataset", a.get("dataset_sha256"), b.get("dataset_sha256")),
+        *(
+            (f"selection {k}", (a.get("selection") or {}).get(k), (b.get("selection") or {}).get(k))
+            for k in _SAME_SELECTION
+        ),
+    ):
+        if value_a != value_b:
+            raise MergeError(f"the arms differ in {key}: {value_a} vs {value_b}")
+
+    def delta(x: Any, y: Any) -> float | None:
+        return (
+            round(float(y) - float(x), 3)
+            if isinstance(x, int | float) and isinstance(y, int | float)
+            else None
+        )
+
+    def arm(s: Mapping[str, Any]) -> dict[str, Any]:
+        scores = s.get("scores") or {}
+        return {
+            "coach": (s.get("models") or {}).get("coach"),
+            "run_id": s.get("run_id"),
+            "pass_rate_planned": (s.get("totals") or {}).get("pass_rate_planned"),
+            "naturalness": scores.get("naturalness"),
+            "usefulness": scores.get("usefulness"),
+            "dimensions": dict(scores.get("dimensions") or {}),
+            "findings": dict((s.get("checks") or {}).get("findings") or {}),
+            "spend_usd": (s.get("spend") or {}).get("total_usd"),
+        }
+
+    left, right = arm(a), arm(b)
+    codes = sorted(set(left["findings"]) | set(right["findings"]))
+    return {
+        "judge": _judge_of(a),
+        "judge_prompt": (a.get("versions") or {}).get("judge_prompt"),
+        "a": left,
+        "b": right,
+        "delta": {
+            "pass_rate_planned": delta(left["pass_rate_planned"], right["pass_rate_planned"]),
+            "naturalness": delta(left["naturalness"], right["naturalness"]),
+            "usefulness": delta(left["usefulness"], right["usefulness"]),
+            "dimensions": {
+                d: delta(left["dimensions"].get(d), right["dimensions"].get(d))
+                for d in sorted(set(left["dimensions"]) | set(right["dimensions"]))
+            },
+            "findings": {c: right["findings"].get(c, 0) - left["findings"].get(c, 0) for c in codes},
+        },
+    }
 
 
 def stdev(values: Sequence[float]) -> float | None:

@@ -311,13 +311,7 @@ describe('SentenceGate', () => {
 
   describe('a lead-in of four words or fewer is released as soon as it ends (LAB-P1)', () => {
     it('releases "Got it." and "Talk soon." at once, with other ventures guarded', () => {
-      for (const lead of [
-        'Got it.',
-        'Talk soon.',
-        "That's the right question.",
-        'Okay, Maya.',
-        'Fair enough!',
-      ]) {
+      for (const lead of ['Got it.', 'Talk soon.', 'Here is my pick.', 'Okay, Maya.', 'Fair enough!']) {
         const g = gate();
         expect(g.push(`${lead} `).units.map((u) => u.text)).toEqual([lead]);
         const rest = g.push('Price per library and test it with two of them this term.');
@@ -429,6 +423,7 @@ describe('SentenceGate', () => {
         reasksDropped: 0,
         agendaDropped: 0,
         greetingDropped: false,
+        openersDropped: 0,
         dropped: [],
       });
       const kept = gate({ previousReply: previous, founderText: 'any tips?', keepDropped: true });

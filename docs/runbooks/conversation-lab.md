@@ -566,10 +566,65 @@ gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=60 -f se
 `approve_memory=true` adds a student who approves every pending AI memory proposal between sessions; the default
 leaves them as the product does (compare both when memory continuity is the question; the summary counts approvals).
 
+The lab seeds the persona releases production's deploy applies (`infra/cdk/config/production.json`
+`homeTenant.ownerReleases`, read by both workflows into `SEED_OWNER_RELEASES` before `pnpm db:reset`): every live run
+measures Thomas (ADR-0021), not Corin's v1 doctrine. Locally: `SEED_OWNER_RELEASES=thomas-2026-11-05 pnpm db:reset`.
+
+### Coach model A/B (the lab only)
+
+`coach_model` (workflow input of `ops-live-evals.yml`; `--coach-model` of `live-plan` and `run`) runs the app's coach
+on another Bedrock model for one run, to separate model limits from prompt and state effects (coaching diagnosis fix
+12). Production is never changed: the choice sets `MODEL_PRIMARY_ID` and `MODEL_FALLBACK_ID` of the lab's own API
+process only (`conversation_lab/stack.py`), both to the chosen model, so the arm is that model alone (a failure counts,
+it is never answered by Nova).
+
+| `coach_model`                                 | Coach (primary = fallback)                                       | Judge, `judge_model=auto`               | Judge, `judge_model=ab`    |
+| --------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------- | -------------------------- |
+| `default`                                     | production's (`us.amazon.nova-2-lite-v1:0`, fallback `global.…`) | Claude Haiku 4.5, then Llama 4 Maverick | Llama 4 Maverick, no other |
+| `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Claude Haiku 4.5 (us. profile)                                   | as `ab`                                 | Llama 4 Maverick, no other |
+| `us.anthropic.claude-sonnet-4-6`              | Claude Sonnet 4.6 (us. profile)                                  | as `ab`                                 | Llama 4 Maverick, no other |
+
+The choices are `ops/lab/models.json` `live.coach`, which the lab role may invoke (`infra/cdk/src/lib/lab-models.ts`;
+deploy main once after adding a model, and enable it in the Bedrock console). The judge is never of the coach's family.
+**An A/B is graded by one judge for every arm** (`judge_model`, `--judge-model`; `config.live_judges`): `ab` takes the
+first `live.judge` candidate of a family that is none of the arms' (production's Nova and every `live.coach` model:
+today Llama 4 Maverick), with no fallback: a run whose pinned judge does not answer its probe stops rather than be
+graded by another. Any `coach_model` but `default` uses `ab` on `auto`; **run the default arm of an A/B with
+`judge_model=ab` too** (on `auto` it is graded by Claude Haiku, comparable with the earlier pilots but not with the
+Claude arms). Llama 4 Maverick is also the student simulator, in every arm alike, so it does not tilt the comparison.
+The summary records `models.coach`, `models.judge`, `judge_independent` and `selection.judge_policy`. With
+a Claude coach the app's share of a shard's budget is 0.9 (its turns are most of the cost). The plan (`dry_run`)
+estimates the coach at ~15.9k input and ~330 output tokens a turn on the chosen model's us. price, with no prompt-cache
+discount (an upper bound):
+
+| Selection                  | `default`, `judge_model=auto` | `default`, `judge_model=ab` | Claude Haiku 4.5 | Claude Sonnet 4.6 |
+| -------------------------- | ----------------------------- | --------------------------- | ---------------- | ----------------- |
+| 10 scenarios (`sample=10`) | USD 0.92                      | USD 0.86                    | USD 2.53         | USD 7.25          |
+| 60 scenarios (`sample=60`) | USD 5.17                      | USD 4.79                    | USD 14.26        | USD 40.93         |
+
+```bash
+# Plan only (no model called): the estimate for a 10-scenario Haiku arm
+gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=10 -f seed=1 \
+  -f coach_model=us.anthropic.claude-haiku-4-5-20251001-v1:0 -f budget_usd=3
+# The two arms of an A/B on the same 10 scenarios (same seed), one judge for both, sealed
+gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=10 -f seed=1 -f budget_usd=1.5 \
+  -f judge_model=ab -f dry_run=false -f public_key="$KEY"
+gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=10 -f seed=1 -f budget_usd=3 \
+  -f coach_model=us.anthropic.claude-haiku-4-5-20251001-v1:0 -f judge_model=ab -f dry_run=false -f public_key="$KEY"
+# Compare the two merged summaries (b minus a): refused when the judges, judge prompt, dataset or selection differ
+python -m conversation_lab live-compare --out <dir> default/live-summary.json haiku/live-summary.json
+```
+
+Production's coach model is configuration too: `infra/cdk/config/production.json` `models.primary` / `models.fallback`
+become `MODEL_PRIMARY_ID` / `MODEL_FALLBACK_ID` of every function (`infra/cdk/src/lib/models.ts`; the API's Bedrock
+grant follows them, and `packages/ai` prices Claude for the cost caps). Switching it is a config change and a normal
+deploy, after an A/B here; nothing switches it now.
+
 The merged public summary (artifact `live-evals-merged-<run>`, and the job summary) holds numbers, ids and codes
 only. Gates are computed over the planned runs and read "NOT met (incomplete)" while any planned run lacks a verdict
 (skipped by the deadline or a budget, stopped part-way, a simulator failure, a judge error). `live-merge` refuses
-summaries with different evidence labels and keeps models that differ between shards as `models.mixed`. To compare two runs, download both merged `live-summary.json` files and run
+summaries with different evidence labels, and an A/B arm's shards graded by different judges; otherwise it keeps models
+that differ between shards as `models.mixed`. To compare two runs, download both merged `live-summary.json` files and run
 `python -m conversation_lab live-merge --out <dir> a.json b.json` (stability is reported for scenarios seen twice).
 Open the sealed shards with `lab-seal.ts open`, then build the blinded human-calibration packet locally (private;
 never commit it):

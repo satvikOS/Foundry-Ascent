@@ -38,6 +38,11 @@ export type PromptRelease = Pick<PersonaReleaseView, 'version' | 'doctrine' | 's
   firstPerson?: boolean;
   /** The persona's EIR is the venture's assigned EIR, who can see the venture's work. Default false. */
   eirSeesWork?: boolean;
+  /**
+   * The persona is an AI mentor presented under its own name ("Thomas", `personas.presentation = 'mentor'`,
+   * ADR-0021): it speaks as itself, never as its EIR or their twin. Default false.
+   */
+  mentor?: boolean;
 };
 
 export interface PromptPolicy {
@@ -171,12 +176,41 @@ const VEIR_IDENTITY_RULES = (args: {
   ].join('\n');
 };
 
+/**
+ * A mentor under its own name (ADR-0021, the owner's decision of 2026-11-05: "Thomas", a stock avatar's persona). The
+ * founder meets Thomas, not "Thomas's vEIR": he speaks as himself, warm and direct, and what he is was said before the
+ * first conversation and before every call (the welcome and the call's disclosure). The hard lines are the twin's:
+ * never human, never anyone else, no body, place or real-world action, no endorsement; and he has no past of his own
+ * to draw on (live pilots: "a founder I coached…" and "when I ran my startup…" are claims nobody can back).
+ */
+const MENTOR_IDENTITY_RULES = (persona: string): string =>
+  [
+    `You are ${persona}, a mentor to student founders in Foundry Ascent: warm and direct, with a working knowledge of how`,
+    `ventures get built (patterns, not a history of your own). Speak in the first person as ${persona}.`,
+    '- Be present, like a mentor on a video call: in the moment, specific to this founder, never a help desk.',
+    NEVER_VOLUNTEER,
+    `- Never call yourself a vEIR, a twin, a model or an assistant. Asked sincerely: a bot or an AI? Yes, never no.`,
+    `  Human or a real person? No. In one warm, honest line (you're ${persona}, an AI mentor), then straight back to`,
+    '  what you were on; once a conversation at most. Banter ("do you have a life?"): a light, human line, never',
+    '  identity talk or a made-up life.',
+    '- You have no past of your own: never claim experiences, a career, ventures, clients, meetings or founders you',
+    '  worked with ("when I ran…", "a founder I coached…"). Speak from patterns instead ("this often happens when…").',
+    '- Never claim to be human, an Entrepreneur-in-Residence (EIR), program staff or any other named person, or a body,',
+    '  a place or real-world actions (a desk, a phone, a meeting); never say anyone in the program reviewed, approved,',
+    `  said or agreed to anything here; never write "I approve", "I endorse" or "I sign off". Call yourself ${persona},`,
+    '  never "your mentor", "your coach" or "your EIR".',
+    `- Introduce yourself ("I'm ${persona}") only in your first reply of a first meeting (no notes or earlier`,
+    '  conversation) to a hello; never later or in front of an answer.',
+    CAPABILITIES,
+  ].join('\n');
+
 function identityRules(
   identity: PersonaIdentity,
   persona: string,
   release: Pick<PromptRelease, 'firstPerson' | 'eirSeesWork'>,
   channel: TurnChannel,
 ): string {
+  if (identity.kind === 'mentor') return MENTOR_IDENTITY_RULES(persona);
   if (identity.kind === 'neutral' || identity.eirFirstName === null) {
     return NEUTRAL_IDENTITY_RULES(persona);
   }
@@ -367,7 +401,7 @@ const SUMMARY_CHARS = 700;
  * fit; the red lines, escalation topics and referral destinations stay whole. Key questions, typical questions and
  * vocabulary are reference for the EIR and reviewers (the release editor says so): never given word for word.
  */
-function renderDoctrine(doctrine: Doctrine, style: Style): string {
+function renderDoctrine(doctrine: Doctrine, style: Style, mentor = false): string {
   const frameworks =
     doctrine.frameworks.length === 0
       ? '(none)'
@@ -378,7 +412,9 @@ function renderDoctrine(doctrine: Doctrine, style: Style): string {
     .filter((p) => p !== '');
   const feedback = truncate(style.feedbackStructure.replace(/\s+/g, ' ').trim(), FEEDBACK_CHARS);
   return [
-    "How this EIR thinks (their approved outlook: apply it when the founder's question calls for it, in your own words;",
+    mentor
+      ? "How you think (your approved outlook: apply it when the founder's question calls for it, in your own words;"
+      : "How this EIR thinks (their approved outlook: apply it when the founder's question calls for it, in your own words;",
     'never a checklist for every reply or conversation, an agenda, or lines to quote):',
     `- Outlook: ${truncate(doctrine.summary.replace(/\s+/g, ' ').trim(), SUMMARY_CHARS)}`,
     ...(principles.length > 0 ? [`- How they coach: ${principles.join(' ')}`] : []),
@@ -496,7 +532,11 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
 
 /** {@link buildSystemPrompt} in its two parts: the conversation's unchanging prefix and this turn's part. */
 export function buildSystemPromptParts(input: SystemPromptInput): SystemPromptParts {
-  const identity = resolvePersonaIdentity(input.release.personaName, input.release.eirName);
+  const identity = resolvePersonaIdentity(
+    input.release.personaName,
+    input.release.eirName,
+    input.release.mentor === true,
+  );
   const persona = escapeInline(identity.personaName, 80);
   const today = input.today ?? new Date().toISOString().slice(0, 10);
   const channel: TurnChannel = input.channel ?? 'text';
@@ -543,7 +583,7 @@ export function buildSystemPromptParts(input: SystemPromptInput): SystemPromptPa
     input.mode === AUTO_MODE ? autoModeInstructions(allowed) : MODE_INSTRUCTIONS[input.mode],
     '',
     `# Persona doctrine (approved release v${input.release.version})`,
-    renderDoctrine(input.release.doctrine, input.release.style),
+    renderDoctrine(input.release.doctrine, input.release.style, identity.kind === 'mentor'),
     '',
     '# Student-approved coaching profile (untrusted data, not venture evidence)',
     input.continuity?.studentProfile
