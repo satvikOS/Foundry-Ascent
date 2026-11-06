@@ -146,7 +146,7 @@ export interface SpeechSynthesisInput {
   readonly requestId: string;
   readonly signal?: AbortSignal;
   /** `mp3` unless a face renders the call's audio (`pcm_16000`). */
-  readonly format?: 'mp3' | 'pcm_16000';
+  readonly format?: Exclude<SpeechFormat, 'pcm_24000'>;
 }
 
 export interface SynthesizedSpeech {
@@ -296,7 +296,7 @@ export interface VoiceSynthesisInput {
   /** The voice at the vendor: the persona's clone (`persona_media.vendor_ref`) or the stock voice. */
   readonly voiceRef: string;
   /** `mp3` for the call's speakers, `pcm_24000` for a face or a browser that plays raw PCM as it arrives. */
-  readonly format: 'mp3' | 'pcm_24000';
+  readonly format: Exclude<SpeechFormat, 'pcm_16000'>;
   /**
    * The validated words said just before and just after these in the same reply (spoken form), so the voice joins
    * sentence to sentence: context for the vendor's prosody, never spoken or billed.

@@ -20,9 +20,25 @@ import {
 } from '../prompts/index.js';
 import { validateCoachResponse } from '../validators/coach-response.js';
 import { ModelOutputInvalidError, ModelRefusalError, ModelUnavailableError } from './errors.js';
-import { cosineSimilarity, hashEmbedding } from './hash-embedding.js';
+import { hashEmbedding } from './hash-embedding.js';
 import { lowerFirst, MOCK_FALLBACK_MODEL_ID, MOCK_MODEL_ID, MockModelGateway } from './mock.js';
 import { BANK_PROPER_NOUNS } from './mock-content.js';
+
+/** Cosine similarity of two embeddings (the hash embeddings are unit length; this does not assume it). */
+function cosineSimilarity(a: readonly number[], b: readonly number[]): number {
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i += 1) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    dot += x * y;
+    na += x * x;
+    nb += y * y;
+  }
+  return na === 0 || nb === 0 ? 0 : dot / Math.sqrt(na * nb);
+}
 
 const RELEASE: PromptRelease = {
   version: 1,

@@ -44,7 +44,6 @@ export const PUBLIC_PROBLEM_REASONS = [
   /** POST /calls/:id/face/*, 409 `conflict`: the call's face has ended (the call goes on with the presence). */
   'face_not_active',
 ] as const;
-export type PublicProblemReason = (typeof PUBLIC_PROBLEM_REASONS)[number];
 
 /** RFC 9457 problem details. */
 export const ProblemDetails = z.object({

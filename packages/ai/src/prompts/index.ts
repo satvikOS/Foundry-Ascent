@@ -28,7 +28,7 @@ export type {
   PromptNotebook,
   RetrievalQueryInput,
 } from './continuity.js';
-export { buildVeirDisclosure, firstNameOf, resolvePersonaIdentity, veirFirstName } from './persona.js';
+export { firstNameOf, resolvePersonaIdentity, veirFirstName } from './persona.js';
 export type { PersonaIdentity } from './persona.js';
 export { MODE_INSTRUCTIONS, autoModeInstructions, autoModes } from './modes.js';
 export { AUTO_MODE, controlValue, parseControlBlock, renderControlBlock } from './control.js';

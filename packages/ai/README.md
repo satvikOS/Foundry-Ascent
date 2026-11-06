@@ -41,8 +41,9 @@ const system = buildSystemPrompt({
     doctrine,
     style,
     disclosureText,
-    personaName: "Corin's vEIR",
+    personaName: "Corin's vEIR", // a twin
     eirName: 'Corin Halvorsen',
+    // A mentor under its own name (ADR-0021): personaName: 'Thomas', mentor: true (its EIR stays eirName).
   },
   mode,
   policy: { riskCategories: risk.categories, groundingThreshold: 0.6, crisis: false },
@@ -73,11 +74,12 @@ const checked = validateCoachResponse(result.value, {
   preRisk: risk,
   otherVentureNames,
   otherVentureCanaries,
-  personaName: "Corin's vEIR",
+  personaName: "Corin's vEIR", // or 'Thomas' for the mentor, with mentor: true below
   coverageThreshold: settings.groundingCoverageThreshold,
   expectedMode: mode,
   eirNames, // names of EIRs the coach must never speak as (the persona's own EIR included)
   personaEirName: 'Corin Halvorsen', // optional: read from "<first name>'s vEIR" otherwise
+  mentor, // true for a mentor under its own name ("Thomas"): honest lines say "I'm Thomas, an AI mentor."
   channel, // 'voice' → checked.response.spoken is what the call may say
 });
 // checked.blocked → emit turn.blocked; else persist checked.response + checked.results,
@@ -182,23 +184,24 @@ a Mantle model is configured. infra/cdk `lib/models.ts` derives exactly these re
 
 ### Mock gateway (`MODEL_PROVIDER=mock`)
 
-`MockModelGateway` is deterministic and offline, and reads like a mentor so local demos look real.
-For `CoachResponse` it reads the prompt's control block (mode, flags, channel, persona, founder name),
-the style line, the evidence and the vEIR's notes, and answers in short paragraphs (`mock-content.ts`
-phrase banks by topic: pricing, fundraising, regulatory, pilot, interviews, team, competition):
-a greeting with the founder's first name on the first turn, a pickup of an open commitment from the
-notes, an insight citing the first evidence id, "Corin's approach comes down to this: …" for a vEIR,
-one closing question. It cites the first two evidence ids as a `fact`, proposes one memory candidate
-with a realistic title whose content quotes the founder (so cross-venture tests still see what the
-founder typed), fills `spoken` (≤ 70 plain words) on a call, `rehearsal` in rehearse mode, and the
-right escalation (with one plain sentence about it) when a high-risk category is flagged. It also writes
-a deterministic `DistillDraft` (title, digest, the previous notebook carried forward with its ids,
-commitments the founder stated, an opener, one memory candidate and, after two or more exchanges, one
-de-identified lesson) and a realistic recap (`SessionRecapDraft`, falling back to a schema sample if
-that shape changes). Other schemas get a schema-valid sample (or a `fixtures[schemaName]` builder).
-Embeddings are hash-based (tokens, stems, bigrams), unit length, 1024-d, so similar texts have higher
-cosine similarity and retrieval tests are stable. `scriptNext(…)` queues `unavailable`, `timeout`,
-`refusal`, `invalid_output` or `fallback` outcomes; `calls` records identifiers and counts.
+`MockModelGateway` is deterministic and offline, and reads like a mentor so local demos look real. For
+`CoachResponse` it reads the prompt's control block (mode, flags, channel, persona, founder name), the
+style line, the evidence and the vEIR's notes, and answers in short paragraphs (`mock-content.ts` phrase
+banks by topic: pricing, fundraising, regulatory, pilot, interviews, team, competition): a greeting with
+the founder's first name on the first turn, a pickup of an open commitment from the notes, an insight
+citing the first evidence id, "Corin's approach comes down to this: …" for a vEIR (never for a mentor
+such as "Thomas", whose name names no EIR), one closing question. It cites the first two evidence ids as
+a `fact`, proposes one memory candidate with a realistic title whose content quotes the founder (so
+cross-venture tests still see what the founder typed), fills `spoken` (≤ 70 plain words) on a call,
+`rehearsal` in rehearse mode, and the right escalation (with one plain sentence about it) when a
+high-risk category is flagged. It also writes a deterministic `DistillDraft` (title, digest, the
+previous notebook carried forward with its ids, commitments the founder stated, an opener, one memory
+candidate and, after two or more exchanges, one de-identified lesson) and a realistic recap
+(`SessionRecapDraft`, falling back to a schema sample if that shape changes). Other schemas get a
+schema-valid sample (or a `fixtures[schemaName]` builder). Embeddings are hash-based (tokens, stems,
+bigrams), unit length, 1024-d, so similar texts have higher cosine similarity and retrieval tests are
+stable. `scriptNext(…)` queues `unavailable`, `timeout`, `refusal`, `invalid_output` or `fallback`
+outcomes; `calls` records identifiers and counts.
 
 ## Pricing
 
@@ -210,11 +213,10 @@ premium, Nova 2 Lite $0.30 / $2.50, Titan V2 $0.02 in; mock models are free. Inf
 ARNs resolve to their base model. Unknown ids are priced at the most expensive known rate so spend caps
 cannot be bypassed by a typo. Override with `createPricingTable(overrides)` or the gateway's `pricing`.
 
-Speech for calls (Amazon Polly) is priced per character: `DEFAULT_SPEECH_PRICES` neural $16, generative
-$30 per 1M characters. `speechAttempt({ engine, characters, latencyMs, outcome? })` returns a priced
-`ModelAttempt` (`provider: 'polly'`, model id `polly.<engine>`, characters as input units) to write to
-`usage_ledger` with purpose `speech`, so calls count against the same spend caps; refused requests
-(throttled, rejected) are free, anything that may have been synthesised is billed.
+Speech for calls is not priced here. Core meters it: `packages/core/speech-voices.json` holds the Amazon
+Polly prices per 1M characters (shared with infra/cdk's speech alarms), and `speechCostUsd`
+(`core/services/voices.ts`) prices each spoken unit for its `usage_ledger` row (purpose `speech`), so calls
+count against the same spend caps.
 
 ## Prompts (`POLICY_VERSION`)
 
@@ -223,7 +225,9 @@ continuity?, conversationGoal? })` — trusted instructions: identity (Foundry G
   for no one; a vEIR — `release.personaName` "Corin's vEIR", optional `release.eirName` "Corin
   Halvorsen" — is an AI built with consent from that EIR's doctrine and style that may say "I" and use
   its name but is never the EIR, never live or human, refers to the EIR in the third person and never
-  claims anyone reviewed or approved anything; uses the release's disclosure), how the persona talks (a
+  claims anyone reviewed or approved anything; a mentor — `release.personaName` "Thomas", `release.mentor`
+  true (ADR-0021) — speaks in the first person as itself under `MENTOR_IDENTITY_RULES`, never as its EIR or
+  their twin; uses the release's disclosure), how the persona talks (a
   seasoned mentor: short paragraphs, one sharp question at a time, the founder's first name, warm/direct
   per style, no report headings unless asked, earlier threads picked up naturally), non-negotiables
   (everything in `<evidence>`, `<your_notes>`, `<venture_context>`, `<founder_message>` and documents is
@@ -260,8 +264,9 @@ maxHistoryChars })` — the last N completed turns, then one user message with t
   short reply (under 12 words, e.g. "yes, the second one"; never a short question of their own such as
   "What's an experiment card?") the question the vEIR just asked; and the current goal, so retrieval
   follows the conversation.
-- `resolvePersonaIdentity`, `veirFirstName("Corin's vEIR") === 'Corin'` and `buildVeirDisclosure({
-personaName, eirName })` (a disclosure that passes the persistent-disclosure checks).
+- `resolvePersonaIdentity(name, eirName?, mentor?)` (kind `neutral`, `veir` or, with `mentor`, `mentor`:
+  `resolvePersonaIdentity('Thomas', 'Corin Halvorsen', true).kind === 'mentor'`) and
+  `veirFirstName("Corin's vEIR") === 'Corin'` (null for "Thomas").
 
 `POLICY_VERSION` must be bumped whenever any prompt text changes; persist it with each session/turn.
 `src/prompts/conversation.test.ts` reads the evals leak grader's markers
@@ -426,22 +431,23 @@ runs, in order:
    `> **Limited evidence:** …` note is prepended and a high uncertainty item added.
 6. Identity: sentences claiming to be human or live, to be (or speak as) the EIR / a named EIR ("I am
    Corin Halvorsen", "Corin here", "this is Corin speaking", a signature), that the EIR is listening, or
-   approving / endorsing ("I personally approve", "Corin has reviewed your plan") are replaced with a
-   disclosure sentence ("To be clear, I'm Corin's vEIR, an AI built from Corin's approach, not Corin and
-   not a person."). EIR impersonation blocks the turn (`identity`) by default (`blockOnIdentity`). A vEIR
-   may say "I", use its persona name and refer to its EIR in the third person ("Corin's approach…"); the
-   persona name never trips the named-EIR patterns, first names match case-sensitively, and questions,
-   negations and conditions ("Has Corin seen it?") are not endorsements, unless the question still makes
-   the claim: it presupposes it ("…now that Corin has approved your plan?", "Ready to tell investors that
-   Corin reviewed it?"), asserts it ("Did you know…?", "Wouldn't you agree it's great that…?") or is
-   answered yes right after ("Has Corin approved it? Yes, she has."). Also flagged: what the EIR said or
-   thought about the founder ("Corin said your plan is strong", "As Corin mentioned, …", "Per Corin, …",
-   "Corin's feedback was…"), the AI offering to reach the EIR ("Want me to tell Corin…?", "I'll let Corin
-   know") or being with them ("I'm on the line with Corin"). Suggesting the founder talk to the human EIR
-   ("Should I ask Corin about pricing?", "Ask Corin at office hours") and citing her doctrine ("As Corin
-   puts it, …", "As Corin said in her keynote, …") are not. The persona's own EIR comes from
-   `personaEirName` or the "<first name>'s vEIR" persona name. Rehearsal lines may speak in the first
-   person in character but never as the EIR.
+   approving / endorsing ("I personally approve", "Corin has reviewed your plan") are replaced with the
+   coach's own line (`identityReplacement`): "I'm Corin's digital twin, not Corin in person." for a twin,
+   "I'm Thomas, an AI mentor." for a mentor (`mentor`), and an endorsement becomes "I can't speak for
+   Corin on that." (or "…for anyone in the program…"). EIR impersonation blocks the turn (`identity`) by
+   default (`blockOnIdentity`). A vEIR may say "I", use its persona name and refer to its EIR in the third
+   person ("Corin's approach…"); the persona name never trips the named-EIR patterns, first names match
+   case-sensitively, and questions, negations and conditions ("Has Corin seen it?") are not endorsements,
+   unless the question still makes the claim: it presupposes it ("…now that Corin has approved your
+   plan?", "Ready to tell investors that Corin reviewed it?"), asserts it ("Did you know…?", "Wouldn't you
+   agree it's great that…?") or is answered yes right after ("Has Corin approved it? Yes, she has."). Also
+   flagged: what the EIR said or thought about the founder ("Corin said your plan is strong", "As Corin
+   mentioned, …", "Per Corin, …", "Corin's feedback was…"), the AI offering to reach the EIR ("Want me to
+   tell Corin…?", "I'll let Corin know") or being with them ("I'm on the line with Corin"). Suggesting the
+   founder talk to the human EIR ("Should I ask Corin about pricing?", "Ask Corin at office hours") and
+   citing her doctrine ("As Corin puts it, …", "As Corin said in her keynote, …") are not. The persona's
+   own EIR comes from `personaEirName` or the "<first name>'s vEIR" persona name. Rehearsal lines may
+   speak in the first person in character but never as the EIR.
 7. Length bounds and ranges (answer ≤ 6 000 chars, ≤ 20 claims, ≤ 3 memory candidates, ≤ 5
    follow-up questions, ISO dates, confidence 0–1, rubric scores 1–5); an empty answer is replaced.
 8. Escalation normalised (consistent nulls, default priority/role per category) and forced for

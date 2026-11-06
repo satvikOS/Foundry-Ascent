@@ -74,9 +74,10 @@ export interface MemoryService {
     action: z.input<typeof MemoryAction>,
   ): Promise<MemoryObjectView | null>;
   /**
-   * Approves or rejects several pending proposals of one venture at once (founder/team, the "To review"
-   * queue), with the same authorization and audit as single actions. Ids that are not pending proposals of
-   * this venture visible to the caller are reported in `skippedIds`; the others change.
+   * Keeps (approve) or declines (reject) several pending suggestions of one venture at once (founder/team): an
+   * assigned EIR's, or the vEIR's from before memory was kept automatically; the web keeps one this way when it is
+   * edited. Same authorization and audit as single actions. Ids that are not pending suggestions of this venture
+   * visible to the caller are reported in `skippedIds`; the others change.
    */
   batch(
     ctx: RequestContext,

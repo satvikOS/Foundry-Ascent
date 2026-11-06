@@ -9,11 +9,11 @@ import {
 import { eirRepo, personasRepo, principalsRepo, settingsRepo, twinRepo } from '@foundry/db';
 import { type z } from 'zod';
 
+import { requirePersonaCurator } from '../authz/persona-curator.js';
 import { requireRole } from '../authz/roles.js';
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
-import { requirePersonaCurator } from './personas.js';
 
 /**
  * The vEIR's digital twin in the EIR studio (docs/runbooks/avatars.md): the vendor face (a HeyGen LiveAvatar avatar
