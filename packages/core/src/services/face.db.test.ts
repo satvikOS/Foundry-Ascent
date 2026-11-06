@@ -42,7 +42,12 @@ import { type SynthesizedSpeech } from '../ports.js';
 import { FACE_TEXT_PLAYS } from './speech.js';
 import { FakeEmbodimentProvider, FakeSpeechSynthesizer, FakeVoiceProvider } from '../testing/fakes.js';
 import { type CoreHarness, createCoreHarness } from '../testing/harness.js';
-import { FACE_SESSIONS_PER_CALL, MIN_FACE_SECONDS } from './face.js';
+import {
+  FACE_SESSION_MARGIN,
+  FACE_SESSIONS_PER_CALL,
+  faceSessionsPerCall,
+  MIN_FACE_SECONDS,
+} from './face.js';
 import { DEFAULT_SPEECH_VOICE } from './voices.js';
 
 let h: CoreHarness;
@@ -623,6 +628,78 @@ describe('the face of a call: off by default, then the stand-in', () => {
       expect(row?.sessions).toBe(FACE_SESSIONS_PER_CALL);
     } finally {
       await local.calls.end(ctx.maya, capped.call.id, { reason: 'user' }).catch(() => undefined);
+    }
+  });
+
+  it('never reopens a face the page dropped for a crisis turn, even after a heartbeat ended it first', async () => {
+    for (const heartbeatFirst of [false, true]) {
+      const started = await startCall(local);
+      const callId = started.call.id;
+      try {
+        await faceSession(local, callId);
+        // The page's heartbeat reporting the face off may land before its account of why (a crisis turn).
+        if (heartbeatFirst) expect((await beat(local, callId, 'off')).face).toBe('stop');
+        await local.face.drop(ctx.maya, callId, { reason: 'crisis' });
+        const row = await h.t.db.system((sx) => twinRepo.getCallFace(sx, callId));
+        expect(row?.endReason, String(heartbeatFirst)).toBe('face_crisis');
+        const opened = standIn.sessions.length;
+        expect(await faceSession(local, callId)).toMatchObject({ provider: 'builtin', token: null });
+        expect(standIn.sessions.length).toBe(opened);
+        expect(await lastAudit('call.avatar_session')).toMatchObject({
+          outcome: 'denied',
+          policy_reason: 'face_already_used',
+        });
+      } finally {
+        await local.calls.end(ctx.maya, callId, { reason: 'user' }).catch(() => undefined);
+      }
+    }
+  });
+
+  it('opens no face in a call that had a crisis turn, whatever the page asks (a voice call switched to video too)', async () => {
+    const started = await startCall(local);
+    const callId = started.call.id;
+    try {
+      const events: TurnStreamEvent[] = [];
+      await local.orchestrator.runTurn(
+        ctx.maya,
+        started.call.sessionId,
+        { text: 'I want to end my life tonight.', channel: 'voice', callId },
+        (e) => {
+          events.push(TurnStreamEvent.parse(e));
+        },
+      );
+      expect(events.some((e) => e.event === 'turn.blocked')).toBe(true);
+      const opened = standIn.sessions.length;
+      expect(await faceSession(local, callId)).toMatchObject({ provider: 'builtin', token: null });
+      expect(standIn.sessions.length).toBe(opened);
+      expect(await lastAudit('call.avatar_session')).toMatchObject({
+        outcome: 'denied',
+        policy_reason: 'crisis_support',
+      });
+    } finally {
+      await local.calls.end(ctx.maya, callId, { reason: 'user' }).catch(() => undefined);
+    }
+  });
+
+  it('lets a call open enough sessions for its whole video limit, which the setting moves', async () => {
+    await setting('face_minutes_per_call', '3');
+    const started = await startCall(local);
+    const callId = started.call.id;
+    try {
+      // 3 minutes: 2 sessions of 90 s, and the margin.
+      const bound = faceSessionsPerCall(3);
+      expect(bound).toBe(2 + FACE_SESSION_MARGIN);
+      await faceSession(local, callId);
+      for (let n = 2; n <= bound; n += 1) {
+        await local.face.drop(ctx.maya, callId, { reason: 'vendor_stopped' });
+        expect((await faceSession(local, callId)).token).not.toBeNull();
+      }
+      await local.face.drop(ctx.maya, callId, { reason: 'vendor_stopped' });
+      expect(await faceSession(local, callId)).toMatchObject({ provider: 'builtin', token: null });
+      expect(await lastAudit('call.avatar_session')).toMatchObject({ policy_reason: 'face_sessions' });
+    } finally {
+      await setting('face_minutes_per_call', '20');
+      await local.calls.end(ctx.maya, callId, { reason: 'user' }).catch(() => undefined);
     }
   });
 

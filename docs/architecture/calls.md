@@ -616,10 +616,14 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
    video limit (`face_minutes_per_call`, 20, every session of the call counted) and the person's video minutes this
    month (`face_minutes_per_principal_month`, 60), never above the platform spend cap, outside any transaction. A call
    has one `call_faces` row holding its current session; a face the page dropped (`face_dropped`) is replaced in that
-   row by the next session (migration 0030: `sessions`, at most `FACE_SESSIONS_PER_CALL` = 12; `earlier_seconds`),
+   row by the next session (migration 0030: `sessions`, at most `faceSessionsPerCall(face_minutes_per_call)`: enough
+   90 s sessions for the call's whole video limit plus 6, so 20 at the default 20 minutes, never above 100;
+   `earlier_seconds`),
    after the ended session was metered to its end, and each replacement is audited (`call.avatar_session`
    `metadata.session`). A face the server stopped (a cap, the switches, a failed or injected transcript, the call's
-   end) is never opened again in that call. The vendor session carries its limit (`max_session_duration`); a vendor
+   end) is never opened again in that call, and neither is one the page dropped for a crisis turn (`face_crisis`) nor
+   any face of a call that had a crisis turn (`crisis_support`, read from the call's turns): the server enforces it,
+   not only the page. The vendor session carries its limit (`max_session_duration`); a vendor
    that refuses it opens no session. Anything else answers the presence (no token); the audit names the provider and
    the reason (`face_already_used`, `face_sessions`, a cap), never a token.
 3. The adapter (its own chunk) joins within 8 s; at the first frame the same tile shows the face, the name tag
@@ -665,8 +669,10 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
    (`call_speech.face_plays`): the call says it itself.
 5. The face belongs to the call: minimizing keeps it (the mini bar shows it as a thumbnail, the video alone and
    muted, or the monogram with reduced motion; the face's element plays on, still sounding, in a hidden 1 px spot
-   of the page and returns to the tile when the call is shown again, so minimizing never cuts or doubles the voice);
-   a face that drops, the stage giving it up, or a call left on hold (page hidden) for over a minute (the vendor
+   of the page and returns to the tile when the call is shown again, so minimizing never cuts or doubles the voice).
+   The call screen (mounted for the whole call, minimized or not) asks for the face as well as the tile, so a video
+   call minimized while it was still starting still gets its face and its conversation; the mini bar says
+   "Connecting to Thomas…", "Reconnecting…" or that video is not available meanwhile. A face that drops, the stage giving it up, or a call left on hold (page hidden) for over a minute (the vendor
    bills an idle face; a new session opens when the call resumes) tells the server (`POST /calls/:id/face/end`), with which trigger fired (`reason`: the
    vendor's video track ended or was unpublished, its room dropped, it stopped the session, with its own
    `vendorReason`, no first frame, a slow or failed join, no adapter, a crisis turn, the hold), and for a face that
@@ -678,8 +684,9 @@ logged, never sent to the browser. The local API runs stand-ins with `EMBODIMENT
    ended as it joins) and answer `face: stop` (and the server ends the vendor session,
    asking twice if the first stop fails) when faces are switched off, likeness consent is withdrawn, the call's
    video limit or the month's video minutes are used up, the month's minutes cannot be read (the face never goes
-   on unchecked), or the face is no longer shown. A crisis turn drops the face to the presence at once: a human-looking face never says the
-   crisis line (and no face comes back in that call). Ending the call ends its face (a database trigger erases the
+   on unchecked), or the face is no longer shown. A crisis turn drops the face at once: a human-looking face never says
+   the crisis line, and no face comes back in that call (once the support is read, the video tile says video is not
+   available and offers the voice call; the server refuses another face, step 2). Ending the call ends its face (a database trigger erases the
    control channel; the vendor session is stopped after commit).
 
 **Metering.** Face seconds come from the server's clock and go into the usage ledger as heartbeats come and when the

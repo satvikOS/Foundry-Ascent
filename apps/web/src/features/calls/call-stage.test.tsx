@@ -513,8 +513,123 @@ describe('CallStage: the face of a call', () => {
       ...LIVE_CALL,
       blocked: { reason: 'crisis_support', message: 'Support is available.', resources: [] } as never,
     });
-    expect(b.controller.getSnapshot().status).toBe('presence');
+    // Never back to "connecting": the face is over for this call, so video is not available (the voice call offered).
+    expect(b.controller.getSnapshot()).toEqual({ status: 'unavailable', hadVideo: true });
     expect(b.faceDeps.endFace).toHaveBeenCalledWith(CALL, { reason: 'crisis' });
+  });
+
+  it('after a crisis turn, once its support is read, the tile offers the voice call, never "Connecting"', async () => {
+    const face = vendorFace();
+    const { asEngine, setSnapshot, controller, faceDeps } = controllerWith(face);
+    const voice = vi.fn();
+    const blocked = { reason: 'crisis_support', message: 'Support is available.', resources: [] } as never;
+    function Live() {
+      // As CallLive: the stage is not shown over the crisis support.
+      const [shown, setShown] = useState(true);
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setShown((now) => !now);
+            }}
+          >
+            toggle
+          </button>
+          {shown ? (
+            <CallStage
+              veir={veir('fake')}
+              engine={asEngine}
+              state="listening"
+              ventureId={VENTURE}
+              callId={CALL}
+              face={controller}
+              video
+              onVoiceInstead={voice}
+            />
+          ) : null}
+        </>
+      );
+    }
+    renderWithRouter(<Live />);
+    await waitFor(() => {
+      expect(face.provider.connect).toHaveBeenCalled();
+    });
+    act(() => {
+      face.connect();
+    });
+    await screen.findByRole('figure');
+    await userEvent.click(screen.getByRole('button', { name: 'toggle' }));
+    act(() => {
+      setSnapshot({ ...LIVE_CALL, blocked });
+    });
+    // The founder's next turn clears the support: the stage is back.
+    act(() => {
+      setSnapshot({ ...LIVE_CALL, blocked: null });
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'toggle' }));
+    await videoTileSays('Video isn’t available right now', 'unavailable');
+    expect(screen.getByRole('button', { name: /^Voice call$/ })).toBeVisible();
+    // No Try again: the face does not come back in this call.
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+    expect(faceDeps.startSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('a voice call keeps its sphere through a crisis turn; switched to video afterwards, video is not available', async () => {
+    const face = vendorFace();
+    const { asEngine, setSnapshot, controller, faceDeps } = controllerWith(face);
+    const blocked = { reason: 'crisis_support', message: 'Support is available.', resources: [] } as never;
+    function Switchable() {
+      const [video, setVideo] = useState(false);
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setVideo(true);
+            }}
+          >
+            to video
+          </button>
+          {stage({ controller, engine: asEngine, video })}
+        </>
+      );
+    }
+    renderWithRouter(<Switchable />);
+    await presenceShown();
+    act(() => {
+      setSnapshot({ ...LIVE_CALL, blocked });
+    });
+    act(() => {
+      setSnapshot({ ...LIVE_CALL, blocked: null });
+    });
+    expect(controller.getSnapshot().status).toBe('presence');
+    await presenceShown();
+    await userEvent.click(screen.getByRole('button', { name: 'to video' }));
+    await videoTileSays('Video isn’t available right now', 'unavailable');
+    expect(faceDeps.startSession).not.toHaveBeenCalled();
+  });
+
+  it('counts only the sessions the server opened: a refused ask does not use one up', async () => {
+    const face = vendorFace();
+    const fake = fakeEngine(LIVE_CALL);
+    const faceDeps = deps(face, { ...SESSION, provider: 'builtin', token: null, voicing: 'engine' });
+    const controller = new CallFaceController(fake.asEngine, faceDeps);
+    controller.request({ provider: 'fake', ventureId: VENTURE, callId: CALL, reducedMotion: false });
+    await waitFor(() => {
+      expect(controller.getSnapshot().status).toBe('unavailable');
+    });
+    // Another 150 refused tries (far past any bound) still leave the call able to ask.
+    for (let n = 0; n < 150; n += 1) {
+      controller.retry(CALL);
+      await waitFor(() => {
+        expect(faceDeps.startSession).toHaveBeenCalledTimes(n + 2);
+      });
+      await waitFor(() => {
+        expect(controller.getSnapshot().status).toBe('unavailable');
+      });
+    }
+    expect(controller.canAsk(CALL)).toBe(true);
   });
 
   it('gives the face up when the call stays on hold (the vendor bills idle faces); a short hold keeps it', async () => {

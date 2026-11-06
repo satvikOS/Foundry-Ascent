@@ -332,6 +332,22 @@ export function endCallFace(
 }
 
 /**
+ * Marks a call's face, already ended by the page (`face_dropped`: a heartbeat reporting it off may land before the
+ * page's own account of a crisis turn), as ended for a crisis turn (`face_crisis`), so it is never replaced in that
+ * call ({@link restartCallFace} replaces only `face_dropped`). True when it changed the face.
+ */
+export async function markFaceCrisis(sx: SystemExecutor, callId: string): Promise<boolean> {
+  const marked = await queryFirst(
+    sx,
+    `UPDATE call_faces SET end_reason = 'face_crisis'
+      WHERE call_id = :call AND ended_at IS NOT NULL AND end_reason = 'face_dropped' RETURNING call_id`,
+    { call: p.uuid(callId) },
+    (r) => col.uuid.decode(r.call_id, 'call_id'),
+  );
+  return marked !== null;
+}
+
+/**
  * Replaces a call's ended face with its next vendor session (0030), in the same row: only for the live call of
  * `startedBy`, whose face the page dropped (`end_reason` `face_dropped`: the vendor ended its session, a dropped room,
  * a call on hold), whose seconds are all billed (the caller meters the face first), and that opened fewer than

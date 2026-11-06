@@ -477,6 +477,68 @@ describe('voice and video calls, and the disclosure before the first of each', (
   });
 });
 
+describe('a video call minimized while it starts', () => {
+  it('still gets its face once live (the conversation waits for it), and the mini bar says it is connecting', async () => {
+    fetchMock.mockImplementation((input) => {
+      const target = urlOf(input);
+      if (target.endsWith('/call-config')) return Promise.resolve(json({ ...CALL_CONFIG, provider: 'fake' }));
+      return Promise.resolve(json({ code: 'not_found' }, 404));
+    });
+    const request = vi.fn();
+    const connecting = { status: 'connecting' };
+    engines.face = {
+      subscribe: () => () => undefined,
+      getSnapshot: () => connecting,
+      request,
+      warm: vi.fn(),
+      canAsk: () => true,
+      switchedToVoice: vi.fn(),
+    };
+    try {
+      const { engine } = renderApp([`${BASE}/c/${SESSION}?call=video`]);
+      expect(await screen.findByRole('dialog', { name: /^Video call with / })).toBeInTheDocument();
+      const start = screen.queryByRole('button', { name: /^Start (video )?call$/i });
+      if (start) await userEvent.click(start);
+      await waitFor(() => {
+        expect(engine.start).toHaveBeenCalledWith(expect.objectContaining({ awaitFace: true }));
+      });
+      act(() => {
+        engine.set({ phase: 'starting', ventureId: VENTURE, sessionId: SESSION });
+      });
+      // Closed while still starting: the call goes on out of view, no call tile mounted.
+      await userEvent.click(await screen.findByRole('button', { name: 'Minimize call' }));
+      const bar = await screen.findByRole('region', { name: /^Call with / });
+      expect(screen.queryByRole('dialog', { name: /^Video call with / })).not.toBeInTheDocument();
+      expect(request).not.toHaveBeenCalled();
+      const call = { ...liveCall(SESSION), inputMode: 'transcribe' as const };
+      act(() => {
+        engine.set({
+          phase: 'live',
+          ventureId: VENTURE,
+          sessionId: SESSION,
+          call,
+          input: 'voice',
+          activity: 'connecting',
+          awaitingFace: true,
+          liveAt: Date.now(),
+          remaining: { seconds: 600, at: Date.now() },
+        });
+      });
+      await waitFor(() => {
+        expect(request).toHaveBeenCalledWith({
+          provider: 'fake',
+          ventureId: VENTURE,
+          callId: call.id,
+          reducedMotion: false,
+        });
+      });
+      expect(bar.querySelector('[data-slot="mini-video-note"]')).toHaveTextContent(/Connecting to .+…/);
+    } finally {
+      engines.face = null;
+    }
+  });
+});
+
 describe('Remember or Private for a call from New chat', () => {
   it('remembers the call’s conversation by default', async () => {
     renderApp([BASE]);

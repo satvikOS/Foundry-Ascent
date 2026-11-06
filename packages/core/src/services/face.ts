@@ -104,11 +104,28 @@ export interface FaceService {
 /** Seconds a vendor session needs at least to be worth opening (a call about to end keeps the presence). */
 export const MIN_FACE_SECONDS = 15;
 /**
- * Vendor sessions one call may open (0030): its first face and the faces that replace one the vendor ended (the free
- * plan ends a session after about two minutes, so a 20-minute video call needs about ten). Every one is within the
- * same caps and metered on its own.
+ * The shortest vendor session a call plans for: the free plan ends a session after 120 s, and the page hands a session
+ * that close to its end over early, at a quiet moment (up to 25 s before), so a session lasts about 95-120 s.
  */
-export const FACE_SESSIONS_PER_CALL = 12;
+export const FACE_SESSION_PLAN_SECONDS = 90;
+/** Sessions a call may open beyond what its video minutes need: a join that failed, a hold, a switch back to video. */
+export const FACE_SESSION_MARGIN = 6;
+/** The most sessions any call may open, whatever its video minutes (the database's own bound, 0030). */
+export const FACE_SESSIONS_MAX = 100;
+
+/**
+ * Vendor sessions one call may open (0030): its first face and the faces that replace one the vendor ended, enough to
+ * cover the call's whole video limit (`face_minutes_per_call`) in the shortest sessions, plus a margin. Every one is
+ * within the same caps and metered on its own; the video minutes still bound the call however many sessions are left.
+ */
+export function faceSessionsPerCall(faceMinutesPerCall: number): number {
+  const minutes = Number.isFinite(faceMinutesPerCall) ? Math.max(0, faceMinutesPerCall) : 0;
+  const need = Math.ceil((minutes * 60) / FACE_SESSION_PLAN_SECONDS);
+  return Math.min(FACE_SESSIONS_MAX, need + FACE_SESSION_MARGIN);
+}
+
+/** The sessions of a call at the default video limit of 20 minutes: 14 sessions of 90 s, plus the margin (20). */
+export const FACE_SESSIONS_PER_CALL = faceSessionsPerCall(20);
 /** Hand-overs of one unit to the face (a unit is heard once). */
 export const FACE_UNIT_PLAYS = 1;
 /**
@@ -223,6 +240,8 @@ export type FaceStopCause =
   | 'face_check_failed'
   | 'spend_cap'
   | 'face_dropped'
+  /** The page dropped the face for a crisis turn: it never comes back in that call (never replaced like `face_dropped`). */
+  | 'face_crisis'
   | 'face_injection';
 
 /**
@@ -717,13 +736,15 @@ export function createFaceHooks(kit: Kit): FaceHooks {
           return 'continue';
         }
         const cause: FaceStopCause = stopCause;
+        /** The page stopped showing the face (for any reason, a crisis turn too), rather than the server stopping it. */
+        const byPage = cause === 'face_dropped' || cause === 'face_crisis';
         const ended = await kit.system((sx) => twinRepo.endCallFace(sx, { callId: call.id, reason: cause }));
         if (ended !== null) {
           await meter(ctx, call.id);
-          await stopVendor(ctx.requestId, ended, cause === 'face_dropped' ? 'face_dropped' : 'face_stopped');
+          await stopVendor(ctx.requestId, ended, byPage ? 'face_dropped' : 'face_stopped');
           events.push({
             action: 'call.face_ended',
-            outcome: cause === 'face_dropped' ? 'succeeded' : 'blocked',
+            outcome: byPage ? 'succeeded' : 'blocked',
             ventureId: call.ventureId,
             objectType: 'call',
             objectId: call.id,
@@ -805,16 +826,18 @@ export function createFaceHooks(kit: Kit): FaceHooks {
 /**
  * Why a call may not open a vendor session now, given its face so far (null: it may). A call without a face may open
  * its first. A face still live is not opened twice. A face the page dropped (`face_dropped`: the vendor ended its
- * session, the room dropped, the call was on hold) is replaced while the call opened fewer than
- * {@link FACE_SESSIONS_PER_CALL}; a face the server ended (a cap, the switches, a failed or injected transcript, the
- * call's end) is never opened again in that call.
+ * session, the room dropped, the call was on hold, the founder switched to voice) is replaced while the call opened
+ * fewer than `maxSessions` ({@link faceSessionsPerCall}); a face the server ended (a cap, the switches, a failed or
+ * injected transcript, the call's end) or the page dropped for a crisis turn (`face_crisis`) is never opened again in
+ * that call.
  */
 export function reconnectRefusal(
   face: Pick<twinRepo.CallFaceRecord, 'endedAt' | 'endReason' | 'sessions'> | null,
+  maxSessions: number = FACE_SESSIONS_PER_CALL,
 ): 'face_already_used' | 'face_sessions' | null {
   if (face === null) return null;
   if (face.endedAt === null || face.endReason !== 'face_dropped') return 'face_already_used';
-  if (face.sessions >= FACE_SESSIONS_PER_CALL) return 'face_sessions';
+  if (face.sessions >= maxSessions) return 'face_sessions';
   return null;
 }
 
@@ -1011,6 +1034,8 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
             callSecondsLeft: left.seconds,
             // Only the platform's cap stops a face (speech never counts against a person's AI budget).
             spendCapReached: spendCap === 'global',
+            // A call that had a crisis turn opens no face for the rest of it (whatever the page asks).
+            crisis: await callsRepo.callHadCrisis(scope.tx, call.id),
           },
         };
       });
@@ -1043,10 +1068,16 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
         ]);
       };
 
+      if (face.crisis) {
+        await record('denied', 'crisis_support');
+        return presence;
+      }
       let existing = await kit.system((sx) => twinRepo.getCallFace(sx, face.callId), {
         transaction: false,
       });
-      const refusal = reconnectRefusal(existing);
+      /** The sessions this call may open: enough for its whole video limit (`face_minutes_per_call`). */
+      const maxSessions = faceSessionsPerCall(face.settings.faceMinutesPerCall);
+      const refusal = reconnectRefusal(existing, maxSessions);
       if (refusal !== null) {
         await record('denied', refusal);
         return presence;
@@ -1066,7 +1097,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
           await record('failed', 'face_unbilled');
           return presence;
         }
-        const again = reconnectRefusal(existing);
+        const again = reconnectRefusal(existing, maxSessions);
         if (again !== null) {
           await record('denied', again);
           return presence;
@@ -1154,7 +1185,7 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
         .system((sx) =>
           existing === null
             ? twinRepo.startCallFace(sx, session)
-            : twinRepo.restartCallFace(sx, { ...session, maxSessions: FACE_SESSIONS_PER_CALL }),
+            : twinRepo.restartCallFace(sx, { ...session, maxSessions }),
         )
         .catch(() => null);
       if (stored === null) {
@@ -1288,12 +1319,22 @@ export function createFaceService(kit: Kit, keys: PlatformKeyCache, hooks: FaceH
       } else {
         logger.info('call.face_dropped', fields);
       }
-      // Idempotent: a face already gone (or none) is fine.
+      // Idempotent: a face already gone (or none) is fine. A face dropped for a crisis turn ends as `face_crisis`, which
+      // is never reopened in that call (the server enforces it, not only the page); every other drop may be replaced.
       await hooks.heartbeat(
         ctx,
         { id: call.id, ventureId: call.ventureId },
-        { stopCause: 'face_dropped', monthMinutes: null, ...(client === undefined ? {} : { client }) },
+        {
+          stopCause: client?.reason === 'crisis' ? 'face_crisis' : 'face_dropped',
+          monthMinutes: null,
+          ...(client === undefined ? {} : { client }),
+        },
       );
+      if (client?.reason === 'crisis') {
+        // The page's heartbeat (face off) may have ended the face as an ordinary drop just before this account of
+        // why: the crisis still holds for the rest of the call.
+        await kit.system((sx) => twinRepo.markFaceCrisis(sx, call.id), { transaction: false });
+      }
     },
   };
 }

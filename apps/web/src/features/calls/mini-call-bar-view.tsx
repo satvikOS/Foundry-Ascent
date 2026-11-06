@@ -14,7 +14,8 @@ import { useEndWithUndo } from './use-end-with-undo';
 import { CallFaceThumbnail } from './call-video-tile';
 import { formatClock, spokenDuration, useCallClock } from './use-call-clock';
 import { useCallFace } from './use-call-face';
-import { useCallVeir } from './use-call-veir';
+import { useCallConfig, useCallVeir } from './use-call-veir';
+import { videoPending, videoPendingText } from './video-pending';
 import { sphereState, VoiceSphere } from './voice-sphere';
 
 /**
@@ -45,18 +46,28 @@ function barAnnouncement(snapshot: CallSnapshot): string {
  */
 export function MiniCallBarView() {
   const { engine, face, snapshot, showCall, kind } = useCall();
-  const veir = useCallVeir(snapshot.ventureId);
+  // The call's settings as the call screen read them (cached, never fetched here): the vEIR's face provider too.
+  const config = useCallConfig(snapshot.ventureId, false);
+  const veir = useCallVeir(snapshot.ventureId, config.data?.veir, config.data?.provider);
   const clock = useCallClock(snapshot);
   const current = useCallFace(face);
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const ended = snapshot.phase === 'ended';
   if (!engine || !veir) return null;
+  // A video call minimized while its face is not shown says so here too ("Connecting to Thomas…": the conversation
+  // waits for the face; "Reconnecting…"; "Video isn't available right now"), as the call screen's status line does.
+  const callId = snapshot.phase === 'live' ? (snapshot.call?.id ?? null) : null;
+  const pending =
+    kind === 'video' && callId !== null && snapshot.blocked === null
+      ? videoPending(true, face, veir.provider, current, callId)
+      : null;
   return (
     <Bar
       engine={engine}
       snapshot={snapshot}
       name={veir.name}
       kind={kind}
+      videoNote={pending === null ? null : videoPendingText(pending, veir.name)}
       clock={clock}
       faceThumb={
         current.status === 'live' && !ended && !reducedMotion ? (
@@ -76,6 +87,7 @@ function Bar({
   snapshot,
   name,
   kind,
+  videoNote,
   clock,
   faceThumb,
   showCall,
@@ -84,6 +96,8 @@ function Bar({
   snapshot: CallSnapshot;
   name: string;
   kind: ReturnType<typeof useCall>['kind'];
+  /** What a video call's tile would say while its face is not shown, or null. */
+  videoNote: string | null;
   clock: ReturnType<typeof useCallClock>;
   faceThumb: ReactNode;
   showCall: () => void;
@@ -143,6 +157,12 @@ function Bar({
           )}
           {!ended && clock.warning && clock.leftLabel ? (
             <span className="font-medium text-warning"> · {clock.leftLabel}</span>
+          ) : null}
+          {!ended && !ending.pending && videoNote ? (
+            <span className="text-muted-foreground" data-slot="mini-video-note">
+              {' · '}
+              {videoNote}
+            </span>
           ) : null}
           {micLost ? <span className="text-warning"> · Microphone disconnected</span> : null}
           {soundOff ? <span className="text-warning"> · Sound is off</span> : null}

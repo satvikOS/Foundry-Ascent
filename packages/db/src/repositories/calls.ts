@@ -583,6 +583,23 @@ export interface SpokenTurn {
   readonly ageSeconds: number;
 }
 
+/**
+ * Whether a turn of this call was answered with the fixed crisis support message: such a call never opens (or
+ * reopens) a face (a human-looking face never says the crisis line, nor comes back after it).
+ */
+export async function callHadCrisis(ex: SqlExecutor, callId: string): Promise<boolean> {
+  const found = await queryFirst(
+    ex,
+    `SELECT 1 AS hit FROM turns t
+      WHERE t.call_id = :call AND jsonb_typeof(t.validator_results -> 'notes') = 'array'
+        AND (t.validator_results -> 'notes') @> '["crisis_support"]'::jsonb
+      LIMIT 1`,
+    { call: p.uuid(callId) },
+    (r) => col.int.decode(r.hit, 'hit'),
+  );
+  return found !== null;
+}
+
 export function getSpokenTurn(ex: SqlExecutor, turnId: string): Promise<SpokenTurn | null> {
   return queryFirst(
     ex,

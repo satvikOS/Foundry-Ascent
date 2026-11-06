@@ -13,6 +13,7 @@ import { CallFaceVideo } from './call-video-tile';
 import { callTimeline } from './timeline/call-timeline';
 import { useCallFace, type CallFaceController } from './use-call-face';
 import type { CallVeir } from './use-call-veir';
+import { videoPending, videoPendingText, type VideoPending } from './video-pending';
 
 interface CallStageProps {
   veir: CallVeir;
@@ -71,10 +72,10 @@ export function CallStage({
   const face = useCallFace(controller);
   const video = face.status === 'live';
   const active = video ? face.provider : sphere;
-  const pending = videoPending(wantsVideo, controller, veir.provider, face);
+  const pending = videoPending(wantsVideo, controller, veir.provider, face, callId);
 
   // A video call warms its face's adapter at once (while the call opens), then asks for the face once it is live (the
-  // controller keeps it while minimized).
+  // controller keeps it while minimized; the call screen asks too, so a call minimized while starting gets its face).
   useEffect(() => {
     if (wantsVideo) controller?.warm(veir.provider);
   }, [wantsVideo, controller, veir.provider]);
@@ -196,49 +197,6 @@ export function CallStage({
       )}
     </div>
   );
-}
-
-/** A video call's face that is not shown: joining, being replaced, paused with the call, or not available now. */
-export type VideoPending = 'connecting' | 'reconnecting' | 'paused' | 'unavailable';
-
-/** What a video call's tile (and its status line) says while its face is not shown (`name`: the vEIR's). */
-export function videoPendingText(pending: VideoPending, name: string): string {
-  switch (pending) {
-    case 'connecting':
-      return `Connecting to ${name}…`;
-    case 'reconnecting':
-      return 'Reconnecting…';
-    case 'paused':
-      return 'Video paused';
-    case 'unavailable':
-      return 'Video isn’t available right now';
-  }
-}
-
-/**
- * A video call's face that is not shown (null when it is shown, or on a voice call, or with no vendor face to ask
- * for): `connecting` until the face first shows (the conversation waits for it), `reconnecting` while a new vendor
- * session replaces one that ended, `paused` while the call is on hold, `unavailable` when it could not start or come
- * back (the call screen offers the voice call).
- */
-export function videoPending(
-  wantsVideo: boolean,
-  controller: CallFaceController | null,
-  provider: CallVeir['provider'],
-  face: ReturnType<typeof useCallFace>,
-): VideoPending | null {
-  if (!wantsVideo || controller === null || provider === 'builtin') return null;
-  switch (face.status) {
-    case 'live':
-      return null;
-    case 'presence':
-    case 'connecting':
-      return 'connecting';
-    case 'reconnecting':
-    case 'paused':
-    case 'unavailable':
-      return face.status;
-  }
 }
 
 /**

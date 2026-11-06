@@ -38,8 +38,9 @@ import type { CallSnapshot } from '@/lib/realtime/call-state';
  *   lost speak channel) is replaced by a new session of the same call (`reconnecting`): the call's speech waits for it
  *   (`CallEngine.holdForFace`), a unit the old face gave back before a word of it was heard is said by the new face,
  *   and the conversation and transcript go on. A session close to its end is replaced early, at a quiet moment (the
- *   founder's turn), so the hand-over rarely waits on a reply. At most {@link FACE_SESSIONS_PER_CALL} sessions per call
- *   (the server enforces the same bound, with every cap of a first face).
+ *   founder's turn), so the hand-over rarely waits on a reply. The server bounds the sessions of a call (enough for its
+ *   whole video limit, with every cap of a first face); the page only stops a runaway at
+ *   {@link FACE_SESSIONS_PER_CALL}, counting the sessions the server actually opened.
  * - **Never a silent downgrade.** A face that cannot start, or cannot come back, is `unavailable`: the call screen says
  *   so and offers the voice call (one tap) or another try; it never turns into a voice call by itself.
  *
@@ -47,7 +48,8 @@ import type { CallSnapshot } from '@/lib/realtime/call-state';
  * minimizing the call to the mini bar keeps it, and it ends with the call. A call left on hold (the page hidden) for
  * longer than {@link FACE_HOLD_GRACE_MS} gives its face up (`paused`), since the vendor bills an idle face by the
  * minute; it comes back when the call resumes. A crisis turn ends the face for the rest of the call (a human-looking
- * face never says the crisis line), as does the server stopping it (faces off, a cap, a failed check).
+ * face never says the crisis line; the server refuses to reopen it too), as does the server stopping it (faces off, a
+ * cap, a failed check): the tile then says video is not available, with the voice call one tap away.
  */
 export type CallFace =
   /** No face: a voice call (or one switched to voice). */
@@ -104,8 +106,12 @@ export interface CallFaceDeps {
 
 /** How long a call may stay on hold (the page hidden) before its face is given up: the vendor bills idle faces. */
 export const FACE_HOLD_GRACE_MS = 60_000;
-/** Vendor sessions one call may open (the server's `FACE_SESSIONS_PER_CALL`, the same bound). */
-export const FACE_SESSIONS_PER_CALL = 12;
+/**
+ * The most vendor sessions the page opens for one call: a backstop against a runaway, never the real bound. The server's
+ * bound (`faceSessionsPerCall`: enough for the call's whole video limit, 20 for the default 20 minutes) refuses first,
+ * and this is the most it can ever allow (`FACE_SESSIONS_MAX`, the database's own bound).
+ */
+export const FACE_SESSIONS_PER_CALL = 100;
 /**
  * A vendor session this close to its end is replaced at the next quiet moment (the founder's turn, nothing being
  * said), so the new face is there before the next reply: a join takes a few seconds.
@@ -218,7 +224,7 @@ interface Attempt {
 export class CallFaceController {
   private face: CallFace = PRESENCE;
   private readonly listeners = new Set<() => void>();
-  /** Vendor sessions each call asked for (at most {@link FACE_SESSIONS_PER_CALL}). */
+  /** Vendor sessions the server opened for each call (at most {@link FACE_SESSIONS_PER_CALL}). */
   private readonly sessions = new Map<string, number>();
   /** Calls whose face showed (so a face no longer shown stopped, rather than never started). */
   private readonly shown = new Set<string>();
@@ -245,7 +251,10 @@ export class CallFaceController {
     engine.onFaceStop(() => {
       // The server already ended it (faces off, likeness withdrawn, minutes used up): it does not come back.
       const callId = this.current?.callId ?? this.last?.callId ?? null;
-      if (callId !== null) this.over.add(callId);
+      if (callId === null) return;
+      this.over.add(callId);
+      // No face (a voice call, or one switched to voice): it stays as it is; switched back to video, its tile says video
+      // is not available (`canAsk` is false now, `videoPending`), never that it is connecting.
       if (this.current === null && this.face.status === 'presence') return;
       this.unavailable(false);
     });
@@ -317,7 +326,6 @@ export class CallFaceController {
     const request = this.last;
     if (request === null) return;
     const { callId, ventureId, provider, reducedMotion } = request;
-    this.sessions.set(callId, (this.sessions.get(callId) ?? 0) + 1);
     const controller = new AbortController();
     const { signal } = controller;
     /** Read after every await: giving up or the call ending may have happened meanwhile. */
@@ -346,13 +354,15 @@ export class CallFaceController {
           this.deps.startSession(ventureId, callId, signal),
           timeout(this.deps.connectTimeoutMs, signal),
         ]);
-        if (stopped()) return;
-        stage = 'adapter';
         if (session.token === null || session.provider === 'builtin') {
-          // Not offered now (credits, minutes, caps, the switches): nothing to end on the server.
-          this.unavailable(false);
+          // Not offered now (credits, minutes, caps, the switches): nothing opened, nothing to end on the server.
+          if (!stopped()) this.unavailable(false);
           return;
         }
+        // A session the server opened (and meters): counted, whether or not it joins.
+        this.sessions.set(callId, (this.sessions.get(callId) ?? 0) + 1);
+        if (stopped()) return;
+        stage = 'adapter';
         const loaded = await this.deps.loadProvider(session.provider, session.voicing, {
           liteSocket: session.controlUrl !== null,
         });
@@ -539,8 +549,14 @@ export class CallFaceController {
   }
 
   private follow(snapshot: CallSnapshot): void {
-    const callId = this.current?.callId ?? this.last?.callId ?? null;
-    if (callId === null) return;
+    // The call's face, else the live call itself: a voice call that never asked for a face still keeps a crisis turn
+    // (switched to video later, it gets no face).
+    const live = snapshot.phase === 'live' ? (snapshot.call?.id ?? null) : null;
+    const callId = this.current?.callId ?? this.last?.callId ?? live;
+    if (callId === null) {
+      if (this.face.status !== 'presence') this.set(PRESENCE);
+      return;
+    }
     if (snapshot.phase !== 'live' || snapshot.call?.id !== callId) {
       // The call ended: its face ended with it on the server.
       if (this.current !== null || this.face.status !== 'presence') {
@@ -554,9 +570,12 @@ export class CallFaceController {
     if (snapshot.blocked?.reason === 'crisis_support') {
       if (this.over.has(callId)) return;
       this.over.add(callId);
+      // A call that had (or was getting) a face: once the crisis support is read, its tile says video is not available
+      // and offers the voice call (no Try again: `canAsk` is false now). A voice call stays a voice call.
+      const hadFace = this.current !== null || this.face.status !== 'presence';
       if (this.current !== null) this.giveUp(true, { reason: 'crisis' });
       else this.giveUp(false);
-      this.set(PRESENCE);
+      this.set(hadFace ? { status: 'unavailable', hadVideo: this.shown.has(callId) } : PRESENCE);
       return;
     }
     if (!snapshot.held) {

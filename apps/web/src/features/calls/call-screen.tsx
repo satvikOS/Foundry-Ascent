@@ -12,6 +12,7 @@ import { errorMessage } from '@/lib/api/errors';
 import { sessionQueryOptions, useCreateSession } from '@/lib/api/hooks/sessions';
 import { queryKeys } from '@/lib/api/query-keys';
 import { canWrite } from '@/lib/auth/roles';
+import { useMediaQuery } from '@/lib/hooks/use-media-query';
 import { prefersHalfDuplex } from '@/lib/realtime/browser';
 import { discardConversation } from '@/lib/realtime/call-api';
 import type { CallEngine } from '@/lib/realtime/call-engine';
@@ -134,7 +135,9 @@ export function CallScreen() {
   const active = snapshot.phase !== 'idle';
   const ventureId = (active ? snapshot.ventureId : null) ?? routeVenture;
   const writable = ventureId !== null && canWrite(me, ventureId);
-  const config = useCallConfig(routeVenture, open && writable && !active);
+  // The call's own venture once there is a call (read from the cache, never fetched again meanwhile): minimized onto
+  // another page, the screen still knows the call's vEIR and its face (it asks for the face, below).
+  const config = useCallConfig(ventureId, open && writable && !active);
   const knownVeir = useCallVeir(ventureId, config.data?.veir, config.data?.provider);
   const veir = knownVeir ?? FALLBACK_VEIR;
   const createSession = useCreateSession(routeVenture ?? '');
@@ -168,6 +171,17 @@ export function CallScreen() {
   }, [route]);
 
   useLiveCallPage(engine, snapshot.phase === 'live');
+
+  // A live video call asks for its face here as well as on its tile: this screen stays mounted for the whole call,
+  // minimized or not, so a call minimized while it was still starting still gets its face, and with it its
+  // conversation (which waits for the face). Asking again is a no-op while the face is joining, live or unavailable.
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const liveCallId = snapshot.phase === 'live' ? (snapshot.call?.id ?? null) : null;
+  const liveVenture = snapshot.phase === 'live' ? snapshot.ventureId : null;
+  useEffect(() => {
+    if (kind !== 'video' || face === null || liveCallId === null || liveVenture === null) return;
+    face.request({ provider: veir.provider, ventureId: liveVenture, callId: liveCallId, reducedMotion });
+  }, [kind, face, liveCallId, liveVenture, veir.provider, reducedMotion]);
 
   const blocker = callBlocker({
     writable,

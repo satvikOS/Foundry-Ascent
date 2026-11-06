@@ -13,7 +13,8 @@ import { CallDock, HoldToTalk } from './call-dock';
 import type { CallKind } from './call-kind';
 import { CallKindSwitch } from './call-kind-switch';
 import { CallSettings } from './call-settings';
-import { CallStage, videoPending, videoPendingText } from './call-stage';
+import { CallStage } from './call-stage';
+import { videoPending, videoPendingText } from './video-pending';
 import { END_UNDO_MS, useEndWithUndo } from './use-end-with-undo';
 import { storeTalkMode, useAnnounceCaptions, useCaptionSize, useCaptionsPreference } from './preferences';
 import { ConversationTimeline, clockLabel } from './timeline/ConversationTimeline';
@@ -147,7 +148,7 @@ export function CallLive({
   const callId = live ? (snapshot.call?.id ?? null) : null;
   const videoNote =
     kind === 'video' && !ending.pending && !snapshot.blocked
-      ? videoPending(true, face, veir.provider, currentFace)
+      ? videoPending(true, face, veir.provider, currentFace, callId)
       : null;
   // A video call waiting for its face: nothing has been said yet, so there is nothing to type, caption or interrupt.
   const awaiting = snapshot.awaitingFace || (kind === 'video' && snapshot.phase === 'starting');

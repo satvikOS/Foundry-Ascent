@@ -3,12 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { FakeVoiceProvider } from '../testing/fakes.js';
 import { callCanSpeak, callVoiceVendor } from './calls.js';
 import {
+  FACE_SESSION_MARGIN,
+  FACE_SESSIONS_MAX,
   FACE_SESSIONS_PER_CALL,
   MIN_FACE_SECONDS,
   faceAdmitsText,
   faceAllowance,
   faceRouteOf,
   faceMinutesCause,
+  faceSessionsPerCall,
   faceModelId,
   faceOfferedTo,
   faceStopCause,
@@ -345,6 +348,21 @@ describe('who feeds a LITE face, and which faces the server admits units to as t
 });
 
 describe('reconnectRefusal: when a call may open its next vendor session (0030)', () => {
+  it('allows enough sessions to cover the call’s whole video limit in the free plan’s shortest sessions', () => {
+    // 20 minutes in sessions of about 95-120 s (the free plan's 120 s, handed over up to 25 s early) is up to 13.
+    expect(FACE_SESSIONS_PER_CALL).toBe(faceSessionsPerCall(20));
+    expect(FACE_SESSIONS_PER_CALL).toBeGreaterThanOrEqual(Math.ceil((20 * 60) / 95) + 4);
+    expect(faceSessionsPerCall(3)).toBe(2 + FACE_SESSION_MARGIN);
+    expect(faceSessionsPerCall(60)).toBe(40 + FACE_SESSION_MARGIN);
+    expect(faceSessionsPerCall(0)).toBe(FACE_SESSION_MARGIN);
+    expect(faceSessionsPerCall(Number.NaN)).toBe(FACE_SESSION_MARGIN);
+    expect(faceSessionsPerCall(100_000)).toBe(FACE_SESSIONS_MAX);
+    // The bound the call's setting gives is the one applied.
+    const ended = { endedAt: '2026-11-06T00:00:00.000Z', endReason: 'face_dropped', sessions: 30 };
+    expect(reconnectRefusal(ended, faceSessionsPerCall(60))).toBeNull();
+    expect(reconnectRefusal(ended, faceSessionsPerCall(20))).toBe('face_sessions');
+  });
+
   const ended = { endedAt: '2026-11-06T00:00:00.000Z', endReason: 'face_dropped', sessions: 1 };
 
   it('opens a first face, and replaces one the page dropped while the call has sessions left', () => {
@@ -354,9 +372,16 @@ describe('reconnectRefusal: when a call may open its next vendor session (0030)'
     expect(reconnectRefusal({ ...ended, sessions: FACE_SESSIONS_PER_CALL })).toBe('face_sessions');
   });
 
-  it('never opens a second face beside a live one, nor reopens a face the server stopped', () => {
+  it('never opens a second face beside a live one, nor reopens a face the server stopped or a crisis ended', () => {
     expect(reconnectRefusal({ ...ended, endedAt: null, endReason: null })).toBe('face_already_used');
-    for (const reason of ['face_injection', 'face_limit', 'face_minutes', 'spend_cap', 'call_ended']) {
+    for (const reason of [
+      'face_injection',
+      'face_limit',
+      'face_minutes',
+      'spend_cap',
+      'call_ended',
+      'face_crisis',
+    ]) {
       expect(reconnectRefusal({ ...ended, endReason: reason }), reason).toBe('face_already_used');
     }
   });
