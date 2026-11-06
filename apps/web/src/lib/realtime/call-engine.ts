@@ -155,8 +155,9 @@ export interface CallTuning {
   /** Adaptive: the quiet after a line left open ("um", "and", "I mean", a trailing comma, a fragment). */
   readonly endpointIncompleteMs: number;
   /**
-   * After a hands-free line is sent, the founder going on speaking within this long, before any of the reply was
-   * heard, takes the turn back: it is cancelled and their words join the line, sent again when they finish.
+   * After a hands-free line is sent, the founder going on speaking within this long, before any unit of the reply
+   * arrived and once the server classified the line as ordinary, takes the turn back: it is cancelled and the line
+   * is heard again with what followed, sent whole when they finish.
    */
   readonly resumeWindowMs: number;
   readonly heartbeatMs: number;
@@ -228,9 +229,15 @@ interface ActiveTurn {
   readonly submittedAt: number;
   readonly estimatedVoiceEndAt: number | null;
   firstAudioAt: number | null;
-  /** The line sent, and how its end was found (null: typed, push to talk, or queued behind a reply). */
-  readonly text: string;
+  /** How the end of the line sent was found (null: typed, push to talk, or queued behind a reply). */
   readonly endpointing: TurnEndpointing | null;
+  /** The endpointer's take that is this line, whole (null: typed, or joined with another line). */
+  readonly take: number | null;
+  /**
+   * What the server's classification said (its `classifying` status): `ordinary`, or `sensitive` (a crisis or a
+   * high-risk message, never taken back: its support line and escalation are under way). Null until it arrives.
+   */
+  risk: 'ordinary' | 'sensitive' | null;
 }
 
 /** Two parts of what the founder said, in order. */
@@ -289,13 +296,12 @@ export class CallEngine {
   private silentBargeTimer: unknown = null;
   private endpointer: Endpointer;
   /**
-   * A hands-free line taken back because the founder went on speaking before its reply started: the words the
-   * server will not keep (its turn was cancelled before any unit was sent), sent again ahead of what follows, and how
-   * many times the line was taken back.
+   * How many times the line the founder is saying was taken back (0: none). Its words are back in the endpointer
+   * (`Endpointer.untake`), ahead of what followed, and go again when the founder finishes.
    */
-  private carried: { readonly text: string; readonly resumed: number } | null = null;
-  /** How the end of the line waiting in `pendingLines` was found (sent with it). */
-  private pendingEndpoint: TurnEndpointing | null = null;
+  private takenBack = 0;
+  /** How the end of the line waiting in `pendingLines` was found, and its endpointer take (sent with it). */
+  private pendingEndpoint: { readonly endpointing: TurnEndpointing; readonly take: number } | null = null;
   private turn: ActiveTurn | null = null;
   /** The crisis turn whose fixed support line is being said (never cut off). */
   private crisisTurnId: string | null = null;
@@ -654,9 +660,10 @@ export class CallEngine {
     const line = text.trim();
     if (line === '' || this.snapshot.phase !== 'live') return;
     if (this.snapshot.activity === 'speaking') this.bargeIn();
-    this.discardHeard();
-    this.setCaptions({ founder: line, founderLive: false });
-    this.utterance(line);
+    // A spoken line taken back to be finished goes with what was typed.
+    const said = joinLine(this.discardHeard(), line);
+    this.setCaptions({ founder: said, founderLive: false });
+    this.utterance(said);
   }
 
   setMuted(muted: boolean): void {
@@ -673,10 +680,11 @@ export class CallEngine {
       this.stopWatchingSilentMic();
       if (this.releaseTimer !== null) this.deps.clock.clearTimeout(this.releaseTimer);
       this.releaseTimer = null;
-      this.discardHeard();
+      const said = this.discardHeard();
       this.vad.reset();
       this.founderLevel = 0;
-      this.setCaptions({ founder: null, founderLive: false });
+      this.setCaptions({ founder: said === '' ? null : said, founderLive: false });
+      this.utterance(said);
     } else {
       if (this.capture?.sourceMuted) this.watchSilentMic();
       void this.connectStt(this.epoch);
@@ -732,9 +740,10 @@ export class CallEngine {
 
   setTalkMode(talkMode: TalkMode): void {
     if (talkMode === this.snapshot.talkMode) return;
-    this.discardHeard();
+    const said = this.discardHeard();
     const notice = this.snapshot.notice?.kind === 'barge_hint' ? null : this.snapshot.notice;
     this.set({ talkMode, talking: false, notice });
+    this.utterance(said);
   }
 
   /** Push-to-talk held (true) or released (false). Releasing ends the turn. */
@@ -986,7 +995,7 @@ export class CallEngine {
     this.stopWatchingSilentMic();
     this.capture?.stop();
     this.capture = null;
-    this.discardHeard();
+    const said = this.discardHeard();
     this.founderLevel = 0;
     this.set({
       input: 'typed',
@@ -996,8 +1005,9 @@ export class CallEngine {
       talking: false,
       held: false,
       activity: this.snapshot.activity === 'connecting' ? 'listening' : this.snapshot.activity,
-      captions: { ...this.snapshot.captions, founder: null, founderLive: false },
+      captions: { ...this.snapshot.captions, founder: said === '' ? null : said, founderLive: false },
     });
+    this.utterance(said);
   }
 
   private onFrame(pcm: Int16Array, rms: number): void {
@@ -1039,8 +1049,7 @@ export class CallEngine {
       // Between the sentences of a reply, the last one may still be coming back through the speakers.
       this.forgetNonWords();
       if (!this.endpointer.hasSpeech()) {
-        const carried = this.carried?.text ?? '';
-        this.setCaptions({ founder: carried === '' ? null : carried, founderLive: false });
+        this.setCaptions({ founder: null, founderLive: false });
         return;
       }
     }
@@ -1049,32 +1058,32 @@ export class CallEngine {
 
   /** The founder finished a hands-free line: it is sent (with what was taken back before it) or queued. */
   private endOfSpeech(decision: EndpointDecision): void {
-    const carried = this.carried;
-    this.carried = null;
-    const line = joinLine(carried?.text ?? '', this.endpointer.take());
+    const resumed = this.takenBack;
+    this.takenBack = 0;
+    const line = this.endpointer.take();
     if (line === '') return;
     const clamp = (ms: number) => Math.min(60_000, Math.max(0, Math.round(ms)));
     const endpointing: TurnEndpointing = {
       decisionMs: decision.quietMs === null ? null : clamp(decision.quietMs),
       waitMs: clamp(decision.waitMs),
       reason: decision.reason,
-      resumed: Math.min(100, carried?.resumed ?? 0),
+      resumed: Math.min(100, resumed),
     };
     if (decision.quietMs !== null) this.timing.record('endpointDecision', decision.quietMs);
     this.timing.count(`endpoint.${decision.reason}`);
     this.setCaptions({ founder: line, founderLive: false });
-    this.utterance(line, endpointing);
+    this.utterance(line, { endpointing, take: this.endpointer.takeGeneration() });
   }
 
-  /** Drops what was heard and not sent, and any line taken back (mute, typing, switching how to talk). */
-  private discardHeard(): void {
+  /**
+   * Drops what was heard and not sent (mute, typing, switching how to talk), except a line taken back to be
+   * finished: the founder had already said it, so it is returned for the caller to send ('' when there is none).
+   */
+  private discardHeard(): string {
+    const said = this.takenBack > 0 ? this.endpointer.text() : '';
     this.endpointer.discard();
-    this.carried = null;
-  }
-
-  /** What the founder is saying, after the words of a line taken back. */
-  private heardLine(): string {
-    return joinLine(this.carried?.text ?? '', this.endpointer.text());
+    this.takenBack = 0;
+    return said;
   }
 
   /**
@@ -1085,8 +1094,16 @@ export class CallEngine {
     const s = this.snapshot;
     return (
       turn.endpointing !== null &&
+      turn.take !== null &&
+      turn.take === this.endpointer.takeGeneration() &&
       !turn.interrupted &&
+      // Nothing of the reply has arrived: no unit can be cut off or played, and the server keeps no part of it
+      // the founder could have heard.
+      turn.units === 0 &&
       turn.firstAudioAt === null &&
+      // The server classified the line as ordinary: a crisis line's support and escalation are never taken back.
+      turn.risk === 'ordinary' &&
+      this.crisisTurnId === null &&
       s.talkMode === 'hands_free' &&
       s.activity === 'thinking' &&
       s.blocked === null &&
@@ -1096,26 +1113,24 @@ export class CallEngine {
   }
 
   /**
-   * Takes back the line just sent so the founder can finish it: the turn is cancelled (its stream aborted, any of
-   * its units dropped before a sound of them is played) and their words join the line, sent again when they finish.
-   * A turn cancelled before any unit was sent fails on the server, so its words are sent again; one that already
-   * sent units is kept with the founder's words and none of the reply heard (the interrupt says so), so only the
-   * new words follow it.
+   * Takes back the line just sent so the founder can finish it: the turn is cancelled (its stream aborted before any
+   * unit of it arrived) and the line's words go back to the endpointer, each as Transcribe now has it, ahead of what
+   * followed; the whole line is sent again when the founder finishes. The server is told the reply was not heard
+   * (heardSeq -1) whatever became of the turn there: one it kept because a unit was already on its way, or because
+   * it noticed the disconnect late, is then left out of the history in favour of the line sent again
+   * (`historyAsHeard`).
    */
   private takeBack(turn: ActiveTurn): void {
     const call = this.snapshot.call;
     turn.interrupted = true;
     turn.controller.abort();
-    this.player?.stop();
-    if (turn.turnId !== null && turn.units > 0 && call) {
+    if (turn.turnId !== null && call) {
       void this.deps.api
         .interruptTurn(turn.turnId, { callId: call.id, heardSeq: -1, heard: [] })
         .catch(() => undefined);
     }
-    this.carried = {
-      text: turn.units === 0 ? turn.text : '',
-      resumed: (turn.endpointing?.resumed ?? 0) + 1,
-    };
+    if (turn.take !== null) this.endpointer.untake(turn.take);
+    this.takenBack = (turn.endpointing?.resumed ?? 0) + 1;
     this.timing.count('resumed');
     this.turn = null;
     this.set({ activity: 'listening', captions: { ...this.snapshot.captions, veir: null } });
@@ -1158,7 +1173,7 @@ export class CallEngine {
       this.bargeIn();
       this.forgetNonWords();
     }
-    const line = this.heardLine();
+    const line = this.endpointer.text();
     if (line !== '') this.setCaptions({ founder: line, founderLive: true });
   }
 
@@ -1232,7 +1247,10 @@ export class CallEngine {
    * is not a reply: a line typed or said while it is still on its way or being said stops it and is sent at once
    * (the lab: every call's first line waited 11–14 s for the greeting to play out).
    */
-  private utterance(text: string, endpointing: TurnEndpointing | null = null): void {
+  private utterance(
+    text: string,
+    endpointing: { readonly endpointing: TurnEndpointing; readonly take: number } | null = null,
+  ): void {
     if (text === '') return;
     if (this.greeting()) this.bargeIn();
     this.pendingLines.push(text);
@@ -1241,10 +1259,19 @@ export class CallEngine {
       this.set({ queued: this.pendingLines.length });
       return;
     }
-    void this.submit(this.pendingLines.splice(0).join(' '));
+    this.submitWaiting();
   }
 
-  private async submit(text: string): Promise<void> {
+  /** Sends the lines waiting in `pendingLines` as one turn. */
+  private submitWaiting(): void {
+    const lines = this.pendingLines.splice(0);
+    if (lines.length === 0) return;
+    // A line sent on its own can be taken back (its words given back to the endpointer); lines joined cannot.
+    const take = lines.length === 1 ? (this.pendingEndpoint?.take ?? null) : null;
+    void this.submit(lines.join(' '), take);
+  }
+
+  private async submit(text: string, take: number | null = null): Promise<void> {
     const sessionId = this.snapshot.sessionId;
     const call = this.snapshot.call;
     if (!sessionId || !call) return;
@@ -1260,8 +1287,9 @@ export class CallEngine {
       submittedAt: this.deps.clock.now(),
       estimatedVoiceEndAt: this.snapshot.input === 'voice' ? this.lastVoicedAt : null,
       firstAudioAt: null,
-      text,
-      endpointing: this.pendingEndpoint,
+      endpointing: this.pendingEndpoint?.endpointing ?? null,
+      take,
+      risk: null,
     };
     this.pendingEndpoint = null;
     if (turn.estimatedVoiceEndAt !== null)
@@ -1366,6 +1394,9 @@ export class CallEngine {
         this.set({ notice: { kind: 'turn_error', message: turnErrorLine(event.message) } });
         return null;
       case 'turn.status':
+        // The server's risk classification of the line (a participant-safe label: `sensitive` or none).
+        if (event.phase === 'classifying') turn.risk = event.detail === null ? 'ordinary' : 'sensitive';
+        return null;
       case 'turn.delta':
         return null;
     }
@@ -1380,9 +1411,8 @@ export class CallEngine {
       this.forgetNonWords();
       if (!this.endpointer.hasSpeech()) this.setCaptions({ founder: null, founderLive: false });
     }
-    const waiting = this.pendingLines.splice(0);
     this.set({ activity: 'listening', queued: 0 });
-    if (waiting.length > 0) void this.submit(waiting.join(' '));
+    this.submitWaiting();
   }
 
   /** Only the call's greeting is being fetched or said (no reply of a turn, never the crisis support line). */
@@ -1584,7 +1614,7 @@ export class CallEngine {
     this.stats.firstAudioMs = [];
     this.pendingLines.length = 0;
     this.endpointer = new Endpointer(this.deps.clock.now, endpointerOptions(this.tuning));
-    this.carried = null;
+    this.takenBack = 0;
     this.pendingEndpoint = null;
     this.vad.reset();
   }
@@ -1609,7 +1639,7 @@ export class CallEngine {
     this.turn = null;
     this.pendingLines.length = 0;
     this.pendingEndpoint = null;
-    this.carried = null;
+    this.takenBack = 0;
     this.closeStt();
     this.capture?.stop();
     this.capture = null;

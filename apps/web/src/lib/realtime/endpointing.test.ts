@@ -80,6 +80,45 @@ describe('Endpointer (fixed: one silence for everything, the switch back)', () =
     expect(ep.hasSpeech()).toBe(false);
   });
 
+  it('hears words added to a sent result even when Transcribe revised a sent word, and drops ones it retracts', () => {
+    const time = clock();
+    const ep = new Endpointer(time.now);
+    ep.onResult({ resultId: 'a', text: 'How do I price the pilots', partial: true, stable: false });
+    expect(ep.take()).toBe('How do I price the pilots');
+    // A revision of the sent words alone is not new speech.
+    ep.onResult({ resultId: 'a', text: 'How do I price the pilot', partial: true, stable: false });
+    expect(ep.hasSpeech()).toBe(false);
+    ep.onResult({
+      resultId: 'a',
+      text: 'How do I price the pilot for small clinics',
+      partial: true,
+      stable: false,
+    });
+    expect(ep.text()).toBe('for small clinics');
+    // Transcribe takes the added words back.
+    ep.onResult({ resultId: 'a', text: 'How do I price the pilot.', partial: false, stable: true });
+    expect(ep.hasSpeech()).toBe(false);
+  });
+
+  it('gives back the latest take as Transcribe now has it, ahead of what followed', () => {
+    const time = clock();
+    const ep = new Endpointer(time.now);
+    ep.onResult({ resultId: 'a', text: 'How do I price the pilots', partial: true, stable: false });
+    const take = (ep.take(), ep.takeGeneration());
+    ep.onResult({ resultId: 'a', text: 'How do I price the pilot for', partial: true, stable: false });
+    ep.onResult({ resultId: 'b', text: 'small clinics', partial: true, stable: false });
+    expect(ep.text()).toBe('for small clinics');
+    expect(ep.untake(take)).toBe(true);
+    expect(ep.text()).toBe('How do I price the pilot for small clinics');
+    // Only once, and only the latest take.
+    expect(ep.untake(take)).toBe(false);
+    ep.onResult({ resultId: 'a', text: 'How do I price the pilot for', partial: false, stable: true });
+    expect(ep.take()).toBe('How do I price the pilot for small clinics');
+    const sent = ep.takeGeneration();
+    ep.discard();
+    expect(ep.untake(sent)).toBe(false);
+  });
+
   it('discards what was heard (mute, typing instead)', () => {
     const ep = new Endpointer(clock().now);
     ep.onResult({ resultId: 'a', text: 'never mind', partial: true, stable: false });
@@ -102,9 +141,39 @@ describe('classifyUtterance', () => {
       reason: 'question',
       class: 'complete',
     });
-    for (const answer of ['Yes', 'No.', 'yeah sure', 'Thank you', 'Of course', 'I think so.']) {
+    for (const answer of ['Yes', 'No.', 'Yeah.', 'yeah sure.', 'Thank you', 'Of course', 'I think so.']) {
       expect(classifyUtterance(answer).class, answer).toBe('complete');
     }
+    for (const question of [
+      'can we raise this year',
+      'is it worth it',
+      'what should we charge',
+      "what's the plan",
+    ]) {
+      expect(classifyUtterance(question), question).toEqual({ reason: 'question', class: 'complete' });
+    }
+  });
+
+  it('never reads a statement that opens with a question word as a question', () => {
+    for (const statement of [
+      'When we launched last year',
+      'How we got here was mostly luck',
+      'Any clinic that signs up',
+      'What I want to say is that',
+      'Which clinics pay the most',
+      'Do that first',
+    ]) {
+      expect(classifyUtterance(statement).class, statement).not.toBe('complete');
+    }
+    expect(classifyUtterance('When we launched last year')).toEqual({ reason: 'open', class: 'open' });
+  });
+
+  it('waits after a lone unpunctuated "yeah", "okay", "well" or "so": people often go on after it', () => {
+    for (const lone of ['Yeah', 'Okay', 'Probably', 'You', 'not really', 'yeah sure']) {
+      expect(classifyUtterance(lone), lone).toEqual({ reason: 'short_answer', class: 'open' });
+    }
+    expect(classifyUtterance('well').class).toBe('incomplete');
+    expect(classifyUtterance('so').class).toBe('incomplete');
   });
 
   it('reads a line with no punctuation and no question as open', () => {

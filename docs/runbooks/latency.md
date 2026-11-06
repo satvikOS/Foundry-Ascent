@@ -498,11 +498,15 @@ pnpm --filter @foundry/api latency --profile production --set dbRoundTripMs=65 -
 
 What changed (latency plan C; `apps/web/src/lib/realtime/endpointing.ts`, `call-engine.ts`): a hands-free turn no
 longer waits one 600 ms silence after a stable transcript. The quiet it waits for follows what was heard: 300 ms after
-a finished sentence, a question or a short answer, 500 ms after a line that reads as finished without either, 950 ms
-after one left open ("um", "and", "the main thing is", "I mean", a trailing comma, a fragment), and the old 600 ms while
-the transcript lags the voice. A slower speaker is never answered on half a line: going on within 3 s of a send, before
-any of the reply was heard, takes the line back (the turn is cancelled, its unheard units dropped) and the words join
-it. A backchannel while the vEIR speaks ("yeah", "mm-hmm") restores its volume at once and never counts as noise.
+a finished sentence, a question (a question mark, or an auxiliary before its subject: "can we", "how do I"; never a
+question word alone, "when we launched last year") or a closed short answer ("yes", "no", "thank you", any short
+answer with its full stop), 500 ms after a line that reads as finished without either or an unpunctuated "yeah" or
+"okay", 950 ms after one left open ("um", "and", "the main thing is", "I mean", a trailing comma, a fragment), and the
+old 600 ms while the transcript lags the voice. Going on within 3 s of a send, before any unit of the reply arrived and
+once the server classified the line as ordinary, takes the line back: the turn is cancelled, the interrupt says nothing
+was heard, and the line's words go back to the endpointer as Transcribe now has them, sent again whole when the founder
+finishes (also when the words that took it back are retracted, or the founder went on inside the same Transcribe
+result). A backchannel while the vEIR speaks ("yeah", "mm-hmm") restores its volume at once and never counts as noise.
 Tuning `endpointing: 'fixed'` is the switch back.
 
 Measured with transcript fixtures replayed through the real call engine (`endpointing.test-fixtures.ts`: raw Transcribe
@@ -526,9 +530,25 @@ prints the table.
 | transcript lagging the voice               | 600             | no                             | 600                 | catching up                |
 | **p50 / p90 / max**                        | 600 / 700 / 700 | 3 of 10                        | **300 / 500 / 600** | 0 of 10                    |
 
-- End of speech to the turn being sent: **p50 600 → 300 ms, p90 700 → 500 ms**, and no line answered in half (3 of 10
-  before). Against the production estimate of ~678 ms (600 ms plus Transcribe's finalisation), the expected saving on
-  a finished line is about 300 ms; an open line saves about 100 ms.
+- End of speech to the turn being sent: **p50 600 → 300 ms, p90 700 → 500 ms**. Against the production estimate of
+  ~678 ms (600 ms plus Transcribe's finalisation), the expected saving on a finished line is about 300 ms; an open
+  line saves about 100 ms.
+- Lines answered in half depend on how soon the reply starts, because a take-back only happens before any of it
+  arrives. The same replay with the fake server answering (accepted and classified after 100 ms, first spoken unit
+  after the time below; `-t fixtures` prints it):
+
+  | First unit after the request                           | before: answered in half | after: answered in half                             |
+  | ------------------------------------------------------ | ------------------------ | --------------------------------------------------- |
+  | never (the table above)                                | 3 of 10                  | **0 of 10**                                         |
+  | 2.5 s (today's production first audio ≈ 2.4–4.1 s p50) | 3 of 10                  | **0 of 10**                                         |
+  | 1.2 s (target)                                         | 3 of 10                  | **1 of 10** (1.2 s pause after a finished sentence) |
+  | 0.7 s (target)                                         | 3 of 10                  | **1 of 10** (the same line)                         |
+
+  The guarantee "a slower speaker is never answered on half a line" holds only while first audio is slower than the
+  founder's pause plus the words that take the line back; at the target latencies a pause of about a second after a
+  finished sentence is answered in half, as fixed endpointing answered it, and the founder's next words barge in.
+  The mid-clause pause and the trailing "um" still wait at every latency (950 ms classes, not take-backs).
+
 - The price: a line taken back is a cancelled turn request (the model may have started; it is metered as before), and
   a line that ends on an ambiguous word ("that's how it is") waits 950 ms.
 - Not measured: real Transcribe partial timing and punctuation on partials across accents and microphones, and how

@@ -121,24 +121,59 @@ export function isCrisisMessage(text: string): boolean {
   return comparable(speakableText(text)) === comparable(CRISIS_SPOKEN_MESSAGE);
 }
 
+/** A line's words, lower case, without punctuation: what it says, however Transcribe punctuated it. */
+function lineWords(text: string): string[] {
+  return comparable(text)
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}'\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/**
+ * Whether `line` starts by saying `earlier` again and goes on: it repeats the words of `earlier` in order, apart
+ * from its last two of four or more (Transcribe revises a line's last words as the founder goes on: "the pilots" →
+ * "the pilot for small clinics"), and is longer.
+ */
+function goesOnFrom(earlier: string, line: string): boolean {
+  const first = lineWords(earlier);
+  const next = lineWords(line);
+  if (first.length === 0 || next.length <= first.length) return false;
+  let shared = 0;
+  while (shared < first.length && first[shared] === next[shared]) shared += 1;
+  return shared >= first.length - (first.length >= 4 ? 2 : 0);
+}
+
 /**
  * The conversation history as the founder heard it (docs/architecture/calls.md §2.6): a reply they spoke over
  * is replayed as the words of the units they heard (verified when recorded), and left out when they heard none
  * of it or its words were not recorded; other turns as answered.
+ *
+ * A turn of which the founder heard nothing (heard_seq -1) whose words the next line repeats and goes on from is a
+ * line the call took back so the founder could finish it, sent again whole (`call-engine.ts` take-back): it is left
+ * out, so the conversation says it once. `next` is the line being answered now (the last such repeat).
  */
 export function historyAsHeard(
   turns: readonly Pick<turnsRepo.TurnRecord, 'id' | 'founderText' | 'response'>[],
-  interruptions: ReadonlyMap<string, Pick<callsRepo.TurnInterruption, 'heardText'>>,
+  interruptions: ReadonlyMap<
+    string,
+    Pick<callsRepo.TurnInterruption, 'heardText'> & { readonly heardSeq?: number }
+  >,
+  next?: string,
 ): HistoryTurn[] {
-  return turns.map((turn) => {
+  return turns.flatMap((turn, i) => {
     const cut = interruptions.get(turn.id);
+    const following = i + 1 < turns.length ? turns[i + 1]?.founderText : next;
+    if (cut?.heardSeq === -1 && following !== undefined && goesOnFrom(turn.founderText, following)) return [];
     // The escalation the reply made, for the conversation state's "already referred" (escalate once, then help).
     const escalation = turn.response?.escalation;
     const escalated = escalation?.required === true ? (escalation.category ?? null) : null;
-    return {
-      founderText: turn.founderText,
-      answer: cut === undefined ? (turn.response?.answer ?? null) : cut.heardText,
-      ...(escalated === null ? {} : { escalated }),
-    };
+    return [
+      {
+        founderText: turn.founderText,
+        answer: cut === undefined ? (turn.response?.answer ?? null) : cut.heardText,
+        ...(escalated === null ? {} : { escalated }),
+      },
+    ];
   });
 }

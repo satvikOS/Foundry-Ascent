@@ -349,23 +349,36 @@ mic ─ getUserMedia (echo cancellation, noise suppression) ─ AudioWorklet /wo
   all marked stable, or a partial that stopped changing (for 250 ms at most); plus the quiet what was heard needs,
   counted from the last voiced frame of the energy VAD (adaptive noise floor, two-frame onset; no WASM, so no
   `wasm-unsafe-eval`): **300 ms** after a finished sentence (Transcribe's full stop), a question (its question
-  mark, or a question word leading three words or more) or a short answer ("yes", "no", "sure", "thank you");
-  **500 ms** after a line that reads as finished without either; **950 ms** after one left open: a trailing filler
+  mark, or the shape of one: an auxiliary before its subject, "can we", "how do I", "what's the"; a question word
+  alone opens statements as often, "when we launched last year") or a short answer that closes a turn ("yes",
+  "no", "thank you", or any short answer with its full stop); **500 ms** after a line that reads as finished
+  without either, or an unpunctuated "yeah", "okay", "probably"; **950 ms** after one left open: a trailing filler
   ("um", "uh"), a conjunction, article, subject pronoun, copula or "to"/"of" ("and", "so", "because", "the",
   "is"), a self-correction ("I mean", "sorry"), a trailing comma or ellipsis, or a fragment of one or two words
   (its last word decides first: Transcribe's final result puts a full stop even after a dangling "and"). While
   the transcript lags the voice (its last result came more than 200 ms before the last voiced frame), the old
   600 ms applies. Tuning `endpointing: 'fixed'` switches back to one 600 ms silence. Updates of a segment already
-  sent only count for new trailing words. Push-to-talk sends silence until held and ends the turn 700 ms after
-  release. Lines finished while the vEIR is still answering wait and go together after it.
+  sent only count for the words past as many as were sent (Transcribe revises a sent tail word as the founder goes
+  on: "the pilots" → "the pilot for small clinics" adds "for small clinics"); a revision that drops them drops
+  them. Push-to-talk sends silence until held and ends the turn 700 ms after release. Lines finished while the
+  vEIR is still answering wait and go together after it.
 - **Taking a line back (a slower speaker).** When the founder goes on within 3 s of a hands-free line being
-  sent and before any of its reply was heard (two words or a settled one that are neither a filler nor a
-  backchannel), the line is taken back: its turn stream is aborted, any of its units already received are
-  dropped before a sound of them plays, and their words join the line, sent again when they finish. A turn
-  cancelled before any unit was sent fails on the server, so its words are sent again; one that had sent units
-  is kept as interrupted with `heardSeq: -1` (the interrupt is posted), so only the new words follow it. Once
-  the reply is heard, the founder's words are a barge-in as before. The turn request carries
-  `endpointing {decisionMs, waitMs, reason, resumed}` (numbers and a reason, logged in `turn.timing`).
+  sent (two words or a settled one that are neither a filler nor a backchannel), the line is taken back, but only
+  while nothing of its reply has arrived (no unit) and only once the server classified it as ordinary (its
+  `classifying` status carries no `sensitive` label: a crisis line's support and escalation are never taken back;
+  a line not classified yet is not either). Its turn stream is aborted, the interrupt is posted with
+  `heardSeq: -1` whenever the turn id is known, and the line's words go back to the endpointer as Transcribe now
+  has them (a revised word, a word added to the same result, a retracted one), ahead of what followed: the whole
+  line is sent again when the founder finishes, even when the words that took it back are retracted. Whatever
+  the server made of the cancelled turn (failed, or kept because a unit was already on its way or the disconnect
+  was noticed late), the conversation history says the line once: a turn of which nothing was heard whose words
+  the next line repeats and goes on from is left out (`historyAsHeard`). Muting, typing or switching how to talk
+  sends a line taken back instead of dropping it. Once a unit has arrived, the founder's words wait for the reply
+  or barge in as before. The turn request carries `endpointing {decisionMs, waitMs, reason, resumed}` (numbers
+  and a reason, logged in `turn.timing`). The take-back saves a line only while the reply is slower than the
+  founder's pause: with first audio at the 0.7–1.2 s target, a line that pauses ~1 s after a finished sentence
+  is answered in half, as fixed endpointing answered it ([latency runbook](../runbooks/latency.md), "End of
+  speech").
 - **Playback.** Units play in order through the call's one AudioContext, which the Start/Call click
   unlocks (or Turn on sound, when the browser kept it suspended; `statechange` is watched for the whole
   call). Calls speak only validated text: signed `turn.speech` units, the signed intro (`turnId: null`,
