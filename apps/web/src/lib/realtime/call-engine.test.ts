@@ -465,6 +465,7 @@ describe('CallEngine · voice', () => {
       text: 'We interviewed twelve clinics',
       channel: 'voice',
       callId: CALL_ID,
+      speechAudio: 'pcm',
       endpointing: { decisionMs: 500, waitMs: 500, reason: 'open', resumed: 0 },
     });
     expect(h.state().activity).toBe('thinking');
