@@ -67,7 +67,7 @@ export async function dismissWelcome(page: Page): Promise<void> {
   const dialog = page
     .getByRole('dialog')
     .filter({ hasText: /vEIR/ })
-    .filter({ hasNotText: /^Call with / });
+    .filter({ hasNotText: /call with / });
   if ((await dialog.count()) === 0) return;
   const button = dialog
     .getByRole('button', { name: /^(Got it|Continue|OK|I understand|Start|Let's go)/i })
@@ -180,10 +180,10 @@ export async function waitForQuiet(
 }
 
 export function callScreen(page: Page): Locator {
-  return page.getByRole('dialog', { name: /^Call with / });
+  return page.getByRole('dialog', { name: /^(Voice|Video) call with / });
 }
 
-/** From New chat: ⌘K → Start a call, Remember (preselected), Start call. Returns the conversation and intro. */
+/** From New chat: ⌘K → Voice call, Remember (preselected), Start call. Returns the conversation and intro. */
 export async function startCall(
   page: Page,
 ): Promise<{ sessionId: string; intro: string | null; inputMode: string }> {
@@ -196,13 +196,13 @@ export async function startCall(
   await page.keyboard.press('ControlOrMeta+k');
   await page
     .getByRole('dialog')
-    .getByRole('option', { name: /^Start a call/ })
+    .getByRole('option', { name: /^Voice call with / })
     .click();
   const screen = callScreen(page);
   const memory = screen.getByRole('button', { name: /: change memory for this call$/ });
   if ((await memory.count()) > 0) await expect(memory).toContainText('Remembered');
   await screen.getByRole('button', { name: 'Start call' }).click();
-  await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=1$/);
+  await page.waitForURL(/\/c\/[0-9a-f-]{36}\?call=voice$/);
   const sessionId = /\/c\/([0-9a-f-]{36})/.exec(page.url())?.[1] ?? '';
   const body = (await (await started).json()) as {
     call: { inputMode: string };

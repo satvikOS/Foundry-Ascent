@@ -181,6 +181,14 @@ export class CallFaceController {
 
   readonly getSnapshot = (): CallFace => this.face;
 
+  /**
+   * Whether this call already asked for its face: a face is asked for once per call, so a call that gave its face
+   * up (switched to voice, or the face dropped) cannot turn video on again.
+   */
+  hasAsked(callId: string): boolean {
+    return this.asked.has(callId);
+  }
+
   /** Asks for the face of this live call, once (a call that already asked, or has one, is left as it is). */
   request({ provider, ventureId, callId, reducedMotion }: FaceRequest): void {
     if (provider === 'builtin' || this.asked.has(callId)) return;

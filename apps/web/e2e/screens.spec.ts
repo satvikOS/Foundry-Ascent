@@ -222,8 +222,8 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
           await shoot(page, 'conversation-menu', device, scheme);
           await page.keyboard.press('Escape');
           await expect(options).toBeHidden();
-          await page.goto(`${page.url()}?call=1`);
-          const call = page.getByRole('dialog', { name: /^Call with / });
+          await page.goto(`${page.url()}?call=voice`);
+          const call = page.getByRole('dialog', { name: /^(Voice|Video) call with / });
           const start = call.getByRole('button', { name: 'Start call' });
           await expect(start).toBeVisible();
           await shoot(page, 'call-idle', device, scheme);
@@ -264,8 +264,8 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
           await review.getByRole('button', { name: 'Dismiss call review' }).click();
           // A call into a new conversation from elsewhere waits on the start screen with Remember or Private.
           const ventureUrl = new URL(page.url()).pathname.replace(/\/c\/[^/]+$/, '');
-          await page.goto(`${ventureUrl}?call=1`);
-          const fresh = page.getByRole('dialog', { name: /^Call with / });
+          await page.goto(`${ventureUrl}?call=voice`);
+          const fresh = page.getByRole('dialog', { name: /^(Voice|Video) call with / });
           await expect(fresh.getByRole('button', { name: /: change memory for this call$/ })).toBeVisible();
           await shoot(page, 'call-idle-new', device, scheme);
           await fresh.getByRole('button', { name: /: change memory for this call$/ }).click();
@@ -315,10 +315,10 @@ for (const [device, options] of Object.entries(VIEWPORTS)) {
           // A call minimized to the mini bar, over the same prose.
           await page
             .getByRole('main')
-            .getByRole('link', { name: /^Call / })
+            .getByRole('link', { name: /^Voice call with / })
             .first()
             .click();
-          const call = page.getByRole('dialog', { name: /^Call with / });
+          const call = page.getByRole('dialog', { name: /^(Voice|Video) call with / });
           await expect(call.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
           await call.getByRole('button', { name: 'Minimize call' }).click();
           const bar = page.getByRole('region', { name: /^Call with / });

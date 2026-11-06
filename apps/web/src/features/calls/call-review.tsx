@@ -34,7 +34,7 @@ import { VoiceSphere } from './voice-sphere';
  * it links to, forgets the call.
  */
 export function CallReviewView() {
-  const { me, engine, snapshot } = useCall();
+  const { me, engine, snapshot, kind } = useCall();
   const navigate = useNavigate();
   const [focusOnMount] = useState(wantsReviewFocus);
   useEffect(() => {
@@ -61,7 +61,8 @@ export function CallReviewView() {
         void navigate({
           to: '/$tenant/app/v/$ventureId/c/$sessionId',
           params: { tenant, ventureId, sessionId },
-          search: { call: 1 },
+          // The same kind of call again.
+          search: { call: kind },
         });
       }}
       onDismiss={() => {

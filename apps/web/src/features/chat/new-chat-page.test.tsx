@@ -428,15 +428,20 @@ describe('New chat', () => {
     expect(create?.body).not.toHaveProperty('openerShownAt');
   });
 
-  it('starts a call at once from its own Call button, beside the choice (and only that opening)', async () => {
+  it('starts a call at once from its own Call buttons, beside the choice (and only that opening)', async () => {
     stubApi({ calls: true });
     const router = renderNewChat(A);
-    const call = await screen.findByRole('link', { name: /^Call / });
-    expect(call).toHaveAttribute('href', `/ain/app/v/${A}?call=1`);
+    const group = await screen.findByRole('group', { name: 'Call' });
+    const call = within(group).getByRole('link', { name: /^Voice call with / });
+    expect(call).toHaveAttribute('href', `/ain/app/v/${A}?call=voice`);
+    // No face offered to this person: Video stays in place and says why.
+    expect(
+      within(group).getByRole('button', { name: /^Video call with .*: Video isn’t available/ }),
+    ).toHaveAttribute('aria-disabled', 'true');
     expect(takeChoiceInView(A)).toBe(false);
     await userEvent.setup().click(call);
     await waitFor(() => {
-      expect(router.state.location.searchStr).toBe('?call=1');
+      expect(router.state.location.searchStr).toBe('?call=voice');
     });
     // The call screen takes the mark when it opens; it is good for that one opening only.
     expect(takeChoiceInView(A)).toBe(true);

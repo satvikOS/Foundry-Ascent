@@ -79,15 +79,15 @@ test.describe('mobile 390×844', () => {
       await expectNoHorizontalScroll(page);
       await expectReachable(page, composer(page));
       await expectVeirBadgeInView(page);
-      // One bar on a phone: the conversation's header carries the menu, its title and New chat. Calls start
-      // from the composer's voice button, as on New chat.
+      // One bar on a phone: the conversation's header carries the menu, its title, the two call buttons (voice,
+      // video), New chat and the options.
       const bar = page.locator('header').filter({ has: page.getByRole('heading', { level: 1 }) });
       await expect(page.locator('header:visible')).toHaveCount(1);
       await expectReachable(page, bar.getByRole('button', { name: 'Open navigation' }));
       // The vEIR's name and badge ("Corin · vEIR") under the title.
       await expect(bar.locator('[data-slot="veir-badge"]').filter({ visible: true })).toHaveText('vEIR');
-      await expect(bar.getByRole('link', { name: /^Call / })).toHaveCount(0);
-      await expectReachable(page, page.getByRole('main').getByRole('link', { name: /^Call / }));
+      await expectReachable(page, bar.getByRole('link', { name: /^Voice call with / }));
+      await expect(bar.getByRole('group', { name: 'Call' }).getByLabel(/^Video call with /)).toBeVisible();
       await expectReachable(page, bar.getByRole('link', { name: 'New chat' }));
       await expectReachable(page, page.getByRole('button', { name: 'Conversation options' }));
 

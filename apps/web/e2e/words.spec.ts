@@ -7,6 +7,7 @@ import { expect, type APIRequestContext, type Locator, type Page } from '@playwr
 import {
   composer,
   issueAccessCodeViaApi,
+  markCallDisclosuresSeen,
   openVenture,
   OWNER_STATE,
   runToken,
@@ -153,6 +154,8 @@ test.describe('word budgets', () => {
     const code = await issueAccessCodeViaApi(owner.request, FOUNDER);
     await owner.close();
     await signIn(page, code);
+    // She has read the call's disclosure before (its own budget is not one of these screens).
+    await markCallDisclosuresSeen(page.context());
     const ventureId = await openVenture(page);
     // From the second run on, Priya has an older code too, so the shell says a new one was issued: a one-time
     // notice she would dismiss, not part of any screen (dismissed for the rest of this browser's visit).
@@ -223,10 +226,10 @@ test.describe('word budgets', () => {
       await test.step('Call (typed, as in a browser without a microphone)', async () => {
         await page
           .getByRole('main')
-          .getByRole('link', { name: /^Call / })
+          .getByRole('link', { name: /^Voice call with / })
           .first()
           .click();
-        const screen = page.getByRole('dialog', { name: /^Call with / });
+        const screen = page.getByRole('dialog', { name: /^(Voice|Video) call with / });
         await expect(screen.getByRole('textbox', { name: /^Reply to / })).toBeVisible();
         // Measured on one footing: no microphone found (never the longer "blocked" line some hosts give).
         await expect(screen.getByText(/^No microphone/)).toBeVisible();

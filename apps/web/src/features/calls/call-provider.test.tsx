@@ -24,6 +24,7 @@ import { IDS } from '@/lib/realtime/testing';
 
 import { markChoiceInView, setStartPrivacy, takeChoiceInView } from '../chat/privacy-choice';
 import { CallProvider } from './call-context';
+import { acknowledgeDisclosure } from './call-disclosure-store';
 import { CallReviewSlot } from './call-review-slot';
 import { MiniCallBar } from './mini-call-bar';
 import { json, stubFetch, urlOf } from './testing';
@@ -180,7 +181,7 @@ function Page() {
         <Link
           to="/$tenant/app/v/$ventureId/c/$sessionId"
           params={{ tenant: 'ain', ventureId: VENTURE, sessionId: SESSION }}
-          search={{ call: 1 }}
+          search={{ call: 'voice' }}
         >
           Call
         </Link>
@@ -188,7 +189,7 @@ function Page() {
         <Link
           to="/$tenant/app/v/$ventureId"
           params={{ tenant: 'ain', ventureId: VENTURE }}
-          search={{ call: 1 }}
+          search={{ call: 'voice' }}
           onClick={() => {
             markChoiceInView(VENTURE);
           }}
@@ -199,7 +200,7 @@ function Page() {
         <Link
           to="/$tenant/app/v/$ventureId"
           params={{ tenant: 'ain', ventureId: VENTURE }}
-          search={{ call: 1 }}
+          search={{ call: 'voice' }}
         >
           Call from the sidebar
         </Link>
@@ -265,6 +266,9 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  // This person read the call's disclosure for both kinds already (its own tests below start without).
+  acknowledgeDisclosure(ME.principal.id, 'voice');
+  acknowledgeDisclosure(ME.principal.id, 'video');
   signOutNow = null;
   fetchMock = stubFetch();
   fetchMock.mockImplementation((input) => {
@@ -305,9 +309,9 @@ async function memoryChoice(): Promise<HTMLElement> {
 
 describe('starting a call', () => {
   it('starts when the founder clicks Call, never when history comes back to the call’s URL', async () => {
-    // An earlier call's ?call=1 entry, then the conversation, then another page.
+    // An earlier call's ?call=voice entry, then the conversation, then another page.
     const { engine, router, url } = renderApp([
-      `${BASE}/c/${SESSION}?call=1`,
+      `${BASE}/c/${SESSION}?call=voice`,
       `${BASE}/c/${SESSION}`,
       `${BASE}/knowledge`,
     ]);
@@ -326,7 +330,7 @@ describe('starting a call', () => {
     await waitFor(() => {
       expect(start).toBeEnabled();
     });
-    expect(url()).toBe(`${BASE}/c/${SESSION}?call=1`);
+    expect(url()).toBe(`${BASE}/c/${SESSION}?call=voice`);
     expect(engine.start).not.toHaveBeenCalled();
     // Forward and Back again: still nothing.
     act(() => {
@@ -357,7 +361,7 @@ describe('starting a call', () => {
     await waitFor(() => {
       expect(url()).toBe(`${BASE}/c/${SESSION}`);
     });
-    // The call screen's entry was replaced: Back goes through the conversation, never to ?call=1.
+    // The call screen's entry was replaced: Back goes through the conversation, never to ?call=voice.
     for (const expected of [`${BASE}/c/${SESSION}`, `${BASE}/knowledge`]) {
       act(() => {
         router.history.back();
@@ -402,6 +406,77 @@ describe('starting a call', () => {
   });
 });
 
+describe('voice and video calls, and the disclosure before the first of each', () => {
+  it('shows the disclosure before the first voice call; Start call stores it and starts', async () => {
+    window.localStorage.clear();
+    const { engine } = renderApp([`${BASE}/c/${SESSION}`]);
+    await userEvent.click(await screen.findByRole('link', { name: 'Call' }));
+    const disclosure = await screen.findByRole('alertdialog', { name: /^Before your voice call with / });
+    expect(disclosure).toHaveTextContent('is an AI mentor, not a person');
+    expect(disclosure).toHaveTextContent('Amazon Transcribe');
+    expect(disclosure).toHaveTextContent('A person from the program');
+    expect(disclosure).toHaveTextContent('legal, medical or financial advice');
+    expect(engine.start).not.toHaveBeenCalled();
+    await userEvent.click(within(disclosure).getByRole('button', { name: 'Start call' }));
+    await waitFor(() => {
+      expect(engine.start).toHaveBeenCalledTimes(1);
+    });
+    expect(window.localStorage.getItem(`fa.call.disclosure.v1.voice.${ME.principal.id}`)).not.toBeNull();
+    expect(window.localStorage.getItem(`fa.call.disclosure.v1.video.${ME.principal.id}`)).toBeNull();
+  });
+
+  it('Cancel closes the call screen and starts nothing', async () => {
+    window.localStorage.clear();
+    const { engine, url } = renderApp([`${BASE}/c/${SESSION}`]);
+    await userEvent.click(await screen.findByRole('link', { name: 'Call' }));
+    const disclosure = await screen.findByRole('alertdialog');
+    await userEvent.click(within(disclosure).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(url()).toBe(`${BASE}/c/${SESSION}`);
+    });
+    expect(engine.start).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('from the sidebar, the disclosure leads to the start screen, where Remember or Private is chosen', async () => {
+    window.localStorage.clear();
+    const { engine } = renderApp([`${BASE}/knowledge`]);
+    await userEvent.click(await screen.findByRole('link', { name: 'Call from the sidebar' }));
+    const disclosure = await screen.findByRole('alertdialog');
+    await userEvent.click(within(disclosure).getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('button', { name: /: change memory for this call$/ })).toBeInTheDocument();
+    expect(engine.start).not.toHaveBeenCalled();
+    expect(sessionCreated()).toBe(false);
+  });
+
+  it('a video link asks for video; without a face offered it says so and the call is a voice call', async () => {
+    const { url } = renderApp([`${BASE}/c/${SESSION}?call=video`]);
+    expect(await screen.findByRole('dialog', { name: /^Voice call with / })).toBeInTheDocument();
+    expect(await screen.findByText('Video isn’t available, so this is a voice call.')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {
+        name: 'Switch to video: Video isn’t available for you yet. Voice works.',
+      }),
+    ).toHaveAttribute('aria-disabled', 'true');
+    expect(url()).toBe(`${BASE}/c/${SESSION}?call=video`);
+  });
+
+  it('with a face offered, a video link opens a video call, and the start screen can switch it to voice', async () => {
+    fetchMock.mockImplementation((input) => {
+      const target = urlOf(input);
+      if (target.endsWith('/call-config')) return Promise.resolve(json({ ...CALL_CONFIG, provider: 'fake' }));
+      return Promise.resolve(json({ code: 'not_found' }, 404));
+    });
+    const { url } = renderApp([`${BASE}/c/${SESSION}?call=video`]);
+    expect(await screen.findByRole('dialog', { name: /^Video call with / })).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Switch to voice' }));
+    await waitFor(() => {
+      expect(url()).toBe(`${BASE}/c/${SESSION}?call=voice`);
+    });
+    expect(await screen.findByRole('dialog', { name: /^Voice call with / })).toBeInTheDocument();
+  });
+});
+
 describe('Remember or Private for a call from New chat', () => {
   it('remembers the call’s conversation by default', async () => {
     renderApp([BASE]);
@@ -437,7 +512,7 @@ describe('Remember or Private for a call from New chat', () => {
       }
       return Promise.resolve(json({ code: 'not_found' }, 404));
     });
-    renderApp([`${BASE}?call=1`]);
+    renderApp([`${BASE}?call=voice`]);
     const start = await screen.findByRole('button', { name: 'Start call' });
     await waitFor(() => {
       expect(start).toBeEnabled();
@@ -524,7 +599,7 @@ describe('Remember or Private for a call from New chat', () => {
   });
 
   it('offers no choice for a call in an existing conversation', async () => {
-    renderApp([`${BASE}/c/${SESSION}?call=1`]);
+    renderApp([`${BASE}/c/${SESSION}?call=voice`]);
     await screen.findByRole('button', { name: 'Start call' });
     expect(screen.queryByRole('group', { name: /Memory for this/ })).toBeNull();
   });
@@ -532,7 +607,7 @@ describe('Remember or Private for a call from New chat', () => {
 
 describe('signing out during a call', () => {
   it('ends the call on the server before the session is revoked', async () => {
-    const { engine, log } = renderApp([`${BASE}/c/${SESSION}?call=1`], {
+    const { engine, log } = renderApp([`${BASE}/c/${SESSION}?call=voice`], {
       phase: 'live',
       ventureId: VENTURE,
       sessionId: SESSION,
@@ -565,7 +640,7 @@ describe('signing out during a call', () => {
 describe('the mini call bar', () => {
   /** A live call, minimized: the conversation with the mini bar. */
   async function minimized() {
-    const app = renderApp([`${BASE}/c/${SESSION}?call=1`], {
+    const app = renderApp([`${BASE}/c/${SESSION}?call=voice`], {
       phase: 'live',
       ventureId: VENTURE,
       sessionId: SESSION,
@@ -597,6 +672,7 @@ describe('the mini call bar', () => {
       getSnapshot: () => face,
       request: vi.fn(),
       close: vi.fn(),
+      hasAsked: () => true,
     };
     try {
       const { bar } = await minimized();
@@ -660,7 +736,7 @@ describe('the mini call bar', () => {
   });
 
   it('a call ended on its screen returns to the conversation, whose review takes focus; Call again starts anew', async () => {
-    const { engine, url } = renderApp([`${BASE}/c/${SESSION}?call=1`], {
+    const { engine, url } = renderApp([`${BASE}/c/${SESSION}?call=voice`], {
       phase: 'live',
       ventureId: VENTURE,
       sessionId: SESSION,
@@ -691,7 +767,7 @@ describe('the mini call bar', () => {
       expect(engine.start).toHaveBeenCalledTimes(1);
     });
     expect(engine.reset).toHaveBeenCalled();
-    expect(url()).toBe(`${BASE}/c/${SESSION}?call=1`);
+    expect(url()).toBe(`${BASE}/c/${SESSION}?call=voice`);
   });
 
   it('offers Turn on sound when the browser stopped the call’s sound, keeping the AI marker', async () => {
@@ -705,8 +781,9 @@ describe('the mini call bar', () => {
     expect(within(bar).getByRole('status')).toHaveTextContent('Sound is off.');
     await userEvent.click(within(bar).getByRole('button', { name: 'Turn on sound' }));
     expect(engine.resumeAudio).toHaveBeenCalledTimes(1);
-    // The vEIR keeps its badge in the bar (the call settings here carry no first-person consent: "AI").
-    expect(bar.querySelector('[data-slot="veir-badge"]')).toHaveTextContent('AI');
+    // The bar names the persona as it is named, and the kind of call (no badge: the disclosure said what it is).
+    expect(bar.querySelector('[data-slot="veir-badge"]')).toBeNull();
+    expect(bar).toHaveTextContent("Corin's vEIR · Voice call");
 
     act(() => {
       engine.set({ audioBlocked: false });

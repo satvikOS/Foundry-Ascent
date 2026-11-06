@@ -18,6 +18,7 @@ import {
 import type { CallEngine } from '@/lib/realtime/call-engine';
 import { IDLE_CALL, type CallSnapshot } from '@/lib/realtime/call-state';
 
+import { callKindFrom, type CallKind } from './call-kind';
 import type { CallFaceController } from './use-call-face';
 
 /**
@@ -35,20 +36,22 @@ const idleSnapshot = () => IDLE_CALL;
 
 /**
  * The call lives in the app shell, not in a page: one CallEngine for the signed-in person, so a call keeps
- * going while they move between conversations and venture pages. The call screen opens on `?call=1` of a
- * venture's New chat (a new conversation) or of a conversation (this conversation); without it, a live
- * call shows as the mini call bar.
+ * going while they move between conversations and venture pages. The call screen opens on `?call=voice` or
+ * `?call=video` (the older `?call=1` is a voice call) of a venture's New chat (a new conversation) or of a
+ * conversation (this conversation); without it, a live call shows as the mini call bar.
  */
 
 export interface CallRoute {
   readonly ventureId: string;
   /** Null on New chat: the call creates its conversation first. */
   readonly sessionId: string | null;
-  /** `?call=1`: the call screen is open. */
+  /** `?call=voice|video`: the call screen is open. */
   readonly open: boolean;
+  /** The kind of call the URL asks for (voice when it names none). */
+  readonly kind: CallKind;
 }
 
-/** Reads the call screen's place from the URL (`/<tenant>/app/v/<venture>[/c/<session>][?call=1]`). */
+/** Reads the call screen's place from the URL (`/<tenant>/app/v/<venture>[/c/<session>][?call=voice|video]`). */
 export function callRouteFrom(pathname: string, search: unknown, tenant: string): CallRoute | null {
   const prefix = `/${tenant}/app/v/`;
   if (!pathname.startsWith(prefix)) return null;
@@ -57,12 +60,13 @@ export function callRouteFrom(pathname: string, search: unknown, tenant: string)
   if (!ventureId) return null;
   const isNewChat = parts.length === 1;
   const isConversation = parts.length === 3 && section === 'c' && Boolean(sessionId);
-  if (!isNewChat && !isConversation) return { ventureId, sessionId: null, open: false };
-  const value = (search as { call?: unknown } | null)?.call;
+  if (!isNewChat && !isConversation) return { ventureId, sessionId: null, open: false, kind: 'voice' };
+  const kind = callKindFrom((search as { call?: unknown } | null)?.call);
   return {
     ventureId,
     sessionId: isConversation ? (sessionId ?? null) : null,
-    open: value === 1 || value === '1' || value === true,
+    open: kind !== undefined,
+    kind: kind ?? 'voice',
   };
 }
 
@@ -74,6 +78,18 @@ interface CallContextValue {
   readonly face: CallFaceController | null;
   readonly snapshot: CallSnapshot;
   readonly route: CallRoute | null;
+  /**
+   * The kind of the person's call: the call's own while there is one (it may switch while live), otherwise the
+   * kind the URL asks for.
+   */
+  readonly kind: CallKind;
+  /** Sets the kind of the call about to start (the call screen, as it starts one). */
+  readonly setKind: (kind: CallKind) => void;
+  /**
+   * Switches the live call: to voice (its face, if any, is given up for the rest of the call) or to video (the
+   * face is asked for, once per call). The call screen's URL follows.
+   */
+  readonly switchKind: (kind: CallKind) => void;
   /** Opens the call screen of the live call (or the conversation of an ended one, where its review is). */
   readonly showCall: () => void;
   /** Closes the call screen; a live call continues in the mini bar. */
@@ -219,6 +235,8 @@ export function CallProvider({ me, children }: { me: Me; children: ReactNode }) 
     engine?.getSnapshot ?? idleSnapshot,
     engine?.getSnapshot ?? idleSnapshot,
   );
+  const [callKind, setKind] = useState<CallKind>('voice');
+  const kind: CallKind = snapshot.phase === 'idle' ? (route?.kind ?? 'voice') : callKind;
 
   // The microphone is released and the server call ended when the tab closes or the shell unmounts
   // (signing out, leaving the app).
@@ -241,9 +259,26 @@ export function CallProvider({ me, children }: { me: Me; children: ReactNode }) 
       to: '/$tenant/app/v/$ventureId/c/$sessionId',
       params: { tenant, ventureId, sessionId },
       // An ended call's review is in its conversation, not on the call screen.
-      search: phase === 'ended' ? {} : { call: 1 },
+      search: phase === 'ended' ? {} : { call: callKind },
     });
-  }, [engine, navigate, tenant]);
+  }, [callKind, engine, navigate, tenant]);
+
+  const switchKind = useCallback(
+    (next: CallKind) => {
+      setKind(next);
+      // A face given up is not asked for again in this call (the vendor bills per session; the server refuses).
+      if (next === 'voice') face?.close(true, { reason: 'switched_to_voice' });
+      const { ventureId, sessionId } = engine?.getSnapshot() ?? IDLE_CALL;
+      if (route?.open !== true || !ventureId || !sessionId) return;
+      void navigate({
+        to: '/$tenant/app/v/$ventureId/c/$sessionId',
+        params: { tenant, ventureId, sessionId },
+        search: { call: next },
+        replace: true,
+      });
+    },
+    [engine, face, navigate, route?.open, tenant],
+  );
 
   const hideCall = useCallback(
     (options: { replace?: boolean } = {}) => {
@@ -287,13 +322,29 @@ export function CallProvider({ me, children }: { me: Me; children: ReactNode }) 
       face,
       snapshot,
       route,
+      kind,
+      setKind,
+      switchKind,
       showCall,
       hideCall,
       switchToChat,
       quietEnd,
       arrivedByHistory,
     }),
-    [me, engine, face, snapshot, route, showCall, hideCall, switchToChat, quietEnd, arrivedByHistory],
+    [
+      me,
+      engine,
+      face,
+      snapshot,
+      route,
+      kind,
+      switchKind,
+      showCall,
+      hideCall,
+      switchToChat,
+      quietEnd,
+      arrivedByHistory,
+    ],
   );
 
   return (

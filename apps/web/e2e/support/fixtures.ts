@@ -356,13 +356,34 @@ export function browserSpeechRequests(page: Page): Promise<number> {
 }
 
 /**
+ * The person of this browser context has read the call's disclosure for both kinds (call-disclosure.tsx: shown
+ * before their first voice and first video call, remembered per person in the browser). Signed in already (a
+ * stored session); a context without one is left as it is.
+ */
+export async function markCallDisclosuresSeen(context: BrowserContext): Promise<void> {
+  const response = await context.request.get('/api/v1/me').catch(() => null);
+  if (!response?.ok()) return;
+  const id = ((await response.json()) as { principal?: { id?: string } }).principal?.id;
+  if (!id) return;
+  await context.addInitScript((principalId: string) => {
+    for (const kind of ['voice', 'video']) {
+      const key = `fa.call.disclosure.v1.${kind}.${principalId}`;
+      if (window.localStorage.getItem(key) === null) window.localStorage.setItem(key, 'e2e');
+    }
+  }, id);
+}
+
+/**
  * The suite's `test`: every browser context it creates, the default one and any a test opens itself
  * (`browser.newContext()`, a second tab), has the silent speech synthesis above, so no spec can make the
- * runner's speakers talk.
+ * runner's speakers talk. In the default context the signed-in person has read the call's disclosure already
+ * (`callDisclosuresSeen`, on unless a test is about the disclosure); contexts a test opens itself start without.
  */
-export const test = base.extend({
-  context: async ({ context }, use) => {
+export const test = base.extend<{ callDisclosuresSeen: boolean }>({
+  callDisclosuresSeen: [true, { option: true }],
+  context: async ({ context, callDisclosuresSeen }, use) => {
     await silenceBrowserVoice(context);
+    if (callDisclosuresSeen) await markCallDisclosuresSeen(context);
     await use(context);
   },
   browser: [

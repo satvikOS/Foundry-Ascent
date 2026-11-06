@@ -1,14 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRouteApi, Link, useNavigate, useRouter } from '@tanstack/react-router';
-import {
-  AlarmClock,
-  AudioLines,
-  FlaskConical,
-  Lightbulb,
-  LifeBuoy,
-  Target,
-  type LucideIcon,
-} from 'lucide-react';
+import { AlarmClock, FlaskConical, Lightbulb, LifeBuoy, Target, type LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { PersonaAvatar } from '@/components/faces/persona-avatar';
@@ -16,7 +8,6 @@ import { VeirName } from '@/components/faces/veir-name';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
-import { SimpleTooltip } from '@/components/ui/tooltip';
 import { errorMessage } from '@/lib/api/errors';
 import { memoryQueryOptions } from '@/lib/api/hooks/memory';
 import { conversationOpenerQueryOptions, useCreateSession } from '@/lib/api/hooks/sessions';
@@ -30,14 +21,15 @@ import { veirDisplay } from '@/lib/veir';
 
 import { conversationOrigin, NEW_CHAT_ORIGIN } from '@/features/documents/upload-queue';
 
-import { useCallsAvailable } from '../calls/calls-available';
+import { CallButtons } from '../calls/call-buttons';
+import { useCallEntry } from '../calls/call-entry';
 import { coachingAvailability } from '../coach/availability';
 import { AttachButton, AttachmentTray, useComposerAttachments } from './attachments';
 import { ContextBrief } from './context-brief';
 import { Composer, MAX_TURN_CHARS, modeToSend, type ComposerMode } from './composer';
 import { newConversationRequest, setPendingFirstMessage } from './first-message';
 import { newChatGreeting } from './greeting';
-import { markChoiceInView, PrivacyChoice, useStartPrivacy } from './privacy-choice';
+import { PrivacyChoice, useStartPrivacy } from './privacy-choice';
 import { newChatSuggestions, type Suggestion, type SuggestionIcon } from './suggestions';
 
 const routeApi = getRouteApi('/$tenant/app/v/$ventureId/');
@@ -171,8 +163,8 @@ function NewChat() {
       setShown({ opener: null, at: null, returning: false });
     }
   }
-  // New chat is for the venture team; its Call entry shows only while calls are on.
-  const callsAvailable = useCallsAvailable(ventureId, true);
+  // New chat is for the venture team; its Call entries show only while calls are on.
+  const calls = useCallEntry(ventureId, true);
   const createSession = useCreateSession(ventureId);
   const attachments = useComposerAttachments(ventureId, NEW_CHAT_ORIGIN);
 
@@ -295,6 +287,19 @@ function NewChat() {
 
   return (
     <div key="ready" className="relative flex flex-1 flex-col">
+      {available && calls.callable ? (
+        // The page's header corner, where a conversation's call buttons are: voice and video.
+        <CallButtons
+          tenant={tenant}
+          ventureId={ventureId}
+          sessionId={null}
+          name={calls.name}
+          video={calls.video}
+          // Remember or Private is chosen right here, so the call starts at once with it.
+          choiceInView
+          className="absolute top-3 right-3 z-10 sm:right-5"
+        />
+      ) : null}
       <div className="mx-auto flex w-full max-w-(--content-width) flex-1 flex-col justify-center px-4 pt-16 pb-[min(14vh,7rem)] sm:px-6">
         {veir ? (
           <div className="flex flex-col items-center gap-3">
@@ -341,26 +346,6 @@ function NewChat() {
             }
             // Attached files go into the venture's Documents, which last: a private chat offers none.
             tools={temporary ? null : <AttachButton onFiles={attachments.attach} disabled={!available} />}
-            actions={
-              available && callsAvailable && veir ? (
-                <SimpleTooltip content={`Call ${name}`}>
-                  <Button asChild variant="subtle" size="icon-sm" className="rounded-full">
-                    <Link
-                      to="/$tenant/app/v/$ventureId"
-                      params={{ tenant, ventureId }}
-                      search={{ call: 1 }}
-                      aria-label={`Call ${name}`}
-                      // Remember or Private is chosen right here, so the call starts at once with it.
-                      onClick={() => {
-                        markChoiceInView(ventureId);
-                      }}
-                    >
-                      <AudioLines aria-hidden />
-                    </Link>
-                  </Button>
-                </SimpleTooltip>
-              ) : null
-            }
           />
           {!available && availability?.reason ? (
             <p className="mt-3 text-center text-small text-muted-foreground" role="status">
