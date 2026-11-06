@@ -315,6 +315,14 @@ export async function handleTurnRequest(
           outbox.push(event);
           continue;
         }
+        // A reply the whole-reply gate held back (not crisis support) or that failed is never voiced further, as
+        // `POST /speech` refuses its units (`turn_not_speakable`): withdrawn before its terminal event is written.
+        if (
+          (event.event === 'turn.blocked' && event.reason !== 'crisis_support') ||
+          event.event === 'turn.error'
+        ) {
+          audio.withdraw(event.turnId);
+        }
         const { event: written, start } = await audio.announce(event);
         outbox.push(written);
         start?.();
@@ -386,6 +394,7 @@ export async function handleTurnRequest(
             audioFrames: audio.stats.frames,
             audioBytes: audio.stats.bytes,
             audioFailed: audio.stats.failed,
+            audioWithdrawn: audio.stats.withdrawn,
           }),
       firstDeltaMs: counts.firstDeltaMs,
       clientGone,

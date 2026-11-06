@@ -308,7 +308,7 @@ export const TurnStreamEvent = z.discriminatedUnion('event', [
    * little-endian PCM in base64 (`pcm`), its rate on the unit's first frame (`sampleRate`), and a closing frame (`end`):
    * `done` (all of it was sent: a voice that broke part-way ends the unit where its audio stopped), `failed` (no audio:
    * the page may ask `POST /speech` for the unit), `paused` (the call's or the day's speech budget is used up) or
-   * `refused` (the call's speech was refused). Frames of the next unit may arrive while a unit's frames still do, and
+   * `refused` (the call's speech was refused, or the turn ended blocked or failed: its units are not spoken). Frames of the next unit may arrive while a unit's frames still do, and
    * frames may follow the terminal event: the stream ends after the last unit's closing frame. Additive.
    */
   z.object({

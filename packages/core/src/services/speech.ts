@@ -372,6 +372,10 @@ export function speechRefusal(reason: SpeechRefusal, crisis: boolean, now: Date)
         'Spoken replies reached today’s limit. Replies stay on screen; speech resets at midnight UTC.',
         { reason: 'daily_speech_limit', retryAfterSeconds: secondsUntilUtcMidnight(now) },
       );
+    case 'settings_changed':
+      // Only a turn's voice gates its reservations this way (`prepareTurnVoice`); never audited as a refusal: the
+      // unit is left to `POST /speech`, which decides on the settings of the moment.
+      return fail.conflict('Speech settings changed. Ask again.', 'speech_settings_changed');
   }
 }
 
@@ -731,7 +735,13 @@ export function createSpeechService(
    * characters within the call's and the person's speech budget. A refusal is audited and thrown. Where no
    * speech service runs, a reservation that succeeded is rolled back with the 501 (the last check).
    */
-  async function reserve(ctx: RequestContext, plan: SpeechPlan, characters: number): Promise<void> {
+  async function reserve(
+    ctx: RequestContext,
+    plan: SpeechPlan,
+    characters: number,
+    /** What a turn's voice decided once and each of its units still requires (`callsRepo.SpeechGate`). */
+    gate?: callsRepo.SpeechGate,
+  ): Promise<void> {
     // Each reservation is one statement, atomic on its own (the call row is locked inside it), so where a
     // speech service runs it autocommits: a transaction around it would only add two Data API round trips
     // before the first audio. Without one, the transaction carries the 501 that rolls the reservation back.
@@ -755,6 +765,7 @@ export function createSpeechService(
             characters,
             maxPlays: plan.unit.kind === 'run' ? CALL_LIMITS.speechRunPlays : CALL_LIMITS.speechUnitPlays,
             budget: speechBudget(plan.settings),
+            gate,
           });
           if (!reservation.ok) refused = reservation.reason;
         }
@@ -766,6 +777,7 @@ export function createSpeechService(
     );
     if (refusal === null) return;
     const error = speechRefusal(refusal, plan.crisis, kit.now());
+    if (refusal === 'settings_changed') throw error;
     await kit.flushDeferred(ctx, [
       {
         action: 'speech.refused',
@@ -1329,16 +1341,21 @@ export function createSpeechService(
           objectType: 'session',
           objectId: sessionId,
         });
-        const current = await settingsRepo.getPlatformSettings(scope.tx);
+        // The settings with their digest (one statement): each unit is reserved only while they are still these.
+        const { settings: current, fingerprint } = await readTogether(scope.tx, {
+          settings: settingsRepo.platformSettingsPart(),
+          fingerprint: settingsRepo.settingsFingerprintPart(),
+        });
         if (!current.aiEnabled || !current.callsEnabled) return null;
         return {
           session: found,
           settings: current,
+          fingerprint,
           active: await requireAssignmentActive(scope, found.ventureId),
         };
       });
       if (checked === null) return null;
-      const { session, settings, active } = checked;
+      const { session, settings, fingerprint, active } = checked;
       const side = await callSide;
       if (side === null) return null;
       const { call } = side;
@@ -1382,6 +1399,24 @@ export function createSpeechService(
       });
       if (voice.kind === 'polly' && kit.deps.speech === undefined) return null;
       const vendor = voice.kind !== 'polly';
+      // What every unit still requires as it is reserved (`POST /speech` reads all of it again per unit): the settings
+      // unchanged (the kill switches, the voice switches, the caps), the platform's daily spend under its cap, and for
+      // a voice that is the EIR's own (the clone, or their Polly voice) the voice consent in force and the clone ready
+      // under it. One that no longer holds leaves the unit to `POST /speech`, which decides it on the state of the moment.
+      const ownVoice =
+        voice.kind === 'clone' ||
+        (voice.kind === 'polly' &&
+          voice.voiceId === call.voiceId &&
+          call.voiceId !== DEFAULT_SPEECH_VOICE &&
+          persona.kind !== 'neutral_guide');
+      const gate: callsRepo.SpeechGate = {
+        settingsFingerprint: fingerprint,
+        globalUsdCap: settings.dailyUsdCapGlobal,
+        principalUsdCap: settings.dailyUsdCapPerPrincipal,
+        personaId: persona.id,
+        voiceConsent: ownVoice,
+        cloneRef: voice.kind === 'clone' ? voice.ref : null,
+      };
       const base = {
         ventureId: session.ventureId,
         callId: call.id,
@@ -1433,7 +1468,7 @@ export function createSpeechService(
             };
             const reserved = plan.text.length;
             try {
-              await reserve(ctx, plan, reserved);
+              await reserve(ctx, plan, reserved, gate);
             } catch (err) {
               const reason = err instanceof DomainError ? err.reason : undefined;
               return {
@@ -1446,6 +1481,12 @@ export function createSpeechService(
               };
             }
             stage('reservedMs');
+            if (options.signal?.aborted === true) {
+              // Withdrawn (the turn was blocked or failed) or barged in while it was reserved: nothing is synthesized
+              // or billed, and its play and characters go back.
+              await settle(ctx, plan, reserved, null);
+              return { kind: 'failed' };
+            }
             const speech = await speakReserved(ctx, plan, reserved, {
               signal: options.signal,
               pcm: true,

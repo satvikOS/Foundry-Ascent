@@ -1206,7 +1206,11 @@ export class CallEngine {
         // Crisis support is said first (the fixed support line arrives as signed units of this turn), so
         // it keeps playing to its end; any other held-back reply stops at once.
         if (event.reason === 'crisis_support') this.crisisTurnId = event.turnId;
-        else this.player?.stop();
+        else {
+          this.player?.stop();
+          // Its audio in the stream stops too (the server sends no more of it).
+          this.turnAudio.clear();
+        }
         // The founder reads the support; nothing more is listened to until they unmute.
         this.setMuted(true);
         this.set({
@@ -1221,6 +1225,9 @@ export class CallEngine {
       case 'turn.error':
         // The server takes back a failed turn's face pre-approvals: its queued units ask face/say again.
         if (event.turnId !== null) this.player?.withdrawFaceApproval(event.turnId);
+        // A failed reply is not spoken further: its audio in the stream stops at once (the server withdrew it), and a
+        // unit still queued asks POST /speech, which refuses a failed turn's units.
+        this.turnAudio.clear();
         this.set({ notice: { kind: 'turn_error', message: turnErrorLine(event.message) } });
         return null;
       case 'turn.audio':

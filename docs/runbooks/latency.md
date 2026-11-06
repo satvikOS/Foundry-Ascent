@@ -502,11 +502,19 @@ unit reached the browser as `turn.speech`, then the browser sent `POST /speech`,
 checks (two transactions and the spend read, about 600 ms of database round trips at 65 ms) before calling
 ElevenLabs. Now the checks that hold for the whole turn run once, when the turn is accepted, while the model starts
 (`speech.prepareTurnVoice`; the vendor connection is warmed at the same moment), and each unit, the moment it is
-written to the stream, is reserved (one statement: its play and the speech budgets) and synthesized as raw PCM, the
+written to the stream, is reserved (one statement: its play, the speech budgets, and what the turn's checks decided
+still holding: the platform settings unchanged, the daily spend under its cap, the EIR's voice consent and clone
+when the voice is theirs; otherwise the unit is closed `failed` and `POST /speech` decides it on the settings of the
+moment) and synthesized as raw PCM, the
 unit before it as `previous_text`, at most two units at once (`apps/api/src/http/turn-voice.ts`). Its audio follows
 it as base64 `turn.audio` frames in the same SSE stream (through CloudFront and Lambda response streaming like the
-deltas), the rate on the first frame and a closing frame (`done`, `failed`, `paused`); the stream ends after the last
-unit's audio. The page's player is unchanged: the call engine hands it each unit's frames as `POST /speech` would
+deltas), the rate on the first frame and a closing frame (`done`, `failed`, `paused`, `refused`); the stream ends after
+the last unit's audio. A reply that ends blocked (not crisis support) or failed is withdrawn before its terminal event
+is written: what is not yet synthesized never is (its reservation given back), a synthesis in flight is aborted, no
+PCM of it follows the terminal event, and its open units close `refused` (the page drops their audio, as
+`POST /speech` refuses them). The stream waits for the turn's checks at most once per turn (400 ms, the first unit
+that finds them unfinished): a unit written while they are still running goes to `POST /speech`, and the units after
+them are voiced in the stream, so a slow prepare (an Aurora resume) never holds every unit back. The page's player is unchanged: the call engine hands it each unit's frames as `POST /speech` would
 have (`apps/web/src/lib/realtime/turn-audio.ts`), so the jitter buffer, a LITE face fed from the same PCM and the
 barge-in stop work as before; a barge-in closes the stream, which aborts every synthesis on the server. Kept on
 `POST /speech`: the call intro, the crisis support line (Polly, its own plays, past the caps), stored-reply passages,
@@ -540,10 +548,13 @@ pnpm --filter @foundry/api latency --profile production --set dbRoundTripMs=65 -
 - The pin: `apps/api/src/perf/latency.db.test.ts` (no `POST /speech` on a normal spoken turn, every unit voiced in
   the stream, its first audio measured on both sides), `speech-in-turn.db.test.ts` (reserved, metered and audited
   once; a unit voiced in the stream is refused by `POST /speech` as already spoken; the crisis line left to it; Polly
-  in place of a failing vendor in the same stream), `call-engine.test.ts` (the browser makes no `POST /speech` for a
-  unit voiced in the stream; a `failed` unit or one whose stream closed first is asked from it).
+  in place of a failing vendor in the same stream; a reply blocked or failed after its units were announced voices,
+  bills and sends nothing more of them; a setting changed mid-reply leaves the next unit to `POST /speech`),
+  `calls.db.test.ts` (the gated reservation), `turn-voice.test.ts` (withdrawal; one bounded wait per turn),
+  `call-engine.test.ts` (the browser makes no `POST /speech` for a unit voiced in the stream; a `failed` unit or one
+  whose stream closed first is asked from it; a failed or blocked reply's streamed audio stops at once).
 - To read in production: `turn.timing` `firstAudioMs` against `firstSpeechMs`, `speech.timing` with `route = turn`
-  (`reservedMs`, `firstAudioMs`), `turn.stream_finished` `audioUnits` / `audioFailed`, and the client's
+  (`reservedMs`, `firstAudioMs`), `turn.stream_finished` `audioUnits` / `audioFailed` / `audioWithdrawn`, and the client's
   `submitToPlayback`. Not measured here: CloudFront's and Lambda's delivery of the frames, the real vendor from AWS.
 
 ## 6. Measured and not kept

@@ -953,7 +953,7 @@ function pcmFrame(seq: number, samples: number, first = false): TurnStreamEventT
     ...(first ? { sampleRate: 24_000 } : {}),
   };
 }
-function audioEnd(seq: number, end: 'done' | 'failed' | 'paused' = 'done'): TurnStreamEventT {
+function audioEnd(seq: number, end: 'done' | 'failed' | 'paused' | 'refused' = 'done'): TurnStreamEventT {
   return { event: 'turn.audio', turnId: TURN_ID, seq, end };
 }
 
@@ -1063,6 +1063,54 @@ describe('CallEngine · speech inside the turn stream', () => {
     expect(h.context.buffers.length).toBe(scheduled);
     expect(h.speechRequests).toHaveLength(0);
   });
+
+  const terminals: [string, TurnStreamEventT][] = [
+    [
+      'failed',
+      {
+        event: 'turn.error',
+        turnId: TURN_ID,
+        code: 'model_unavailable',
+        message: 'Try again.',
+        retryable: true,
+      },
+    ],
+    [
+      'blocked',
+      {
+        event: 'turn.blocked',
+        turnId: TURN_ID,
+        reason: 'identity',
+        escalationId: null,
+        supportMessage: null,
+      },
+    ],
+  ];
+  it.each(terminals)(
+    'a %s reply stops its streamed audio at once: nothing more of it is played',
+    async (_, terminal) => {
+      const h = setup({ grant: null });
+      await startLive(h);
+      h.engine.sendText('Hello');
+      await flush();
+      h.script.push(
+        { event: 'turn.accepted', turnId: TURN_ID, ordinal: 1 },
+        voicedUnit(0, 'Start with one library and a written success threshold.'),
+        pcmFrame(0, 24_000, true),
+      );
+      await flush(20);
+      expect(h.state().activity).toBe('speaking');
+      h.script.push(terminal);
+      await flush(10);
+      const scheduled = h.context.buffers.length;
+      // The server sends no more of it; a frame already on its way never reaches the speakers.
+      h.script.push(pcmFrame(0, 24_000), audioEnd(0, 'refused'));
+      h.script.close();
+      await flush(20);
+      expect(h.context.buffers.length).toBe(scheduled);
+      expect(h.speechRequests).toHaveLength(0);
+    },
+  );
 });
 
 describe('CallEngine · barge-in', () => {

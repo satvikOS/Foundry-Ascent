@@ -29,6 +29,7 @@ import {
   rowsPart,
   type ReadPart,
 } from './common.js';
+import { SETTINGS_FINGERPRINT_SQL } from './settings.js';
 
 type CallEndReasonValue = z.infer<typeof CallEndReason>;
 
@@ -650,9 +651,11 @@ export type SpeechReservation =
       readonly ok: false;
       /**
        * `call_not_active`: not a live call of this person; `already_played`: the unit used its plays;
-       * `call_budget` / `daily_budget`: the characters would exceed the call's or the person's day's budget.
+       * `call_budget` / `daily_budget`: the characters would exceed the call's or the person's day's budget;
+       * `settings_changed`: a {@link SpeechGate} no longer holds (the caller decides anew, on the state of the moment).
        */
-      readonly reason: 'call_not_active' | 'already_played' | 'call_budget' | 'daily_budget';
+      readonly reason:
+        'call_not_active' | 'already_played' | 'call_budget' | 'daily_budget' | 'settings_changed';
     };
 
 export const TODAY_UTC = `date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
@@ -663,6 +666,46 @@ export const CALL_BUDGET_OK = `c.speech_characters + :n
 export const DAY_BUDGET_OK = `c.speech_characters + :n
        + (SELECT coalesce(sum(o.speech_characters), 0)::integer FROM calls o
           WHERE o.started_by = c.started_by AND o.id <> c.id AND o.started_at >= ${TODAY_UTC}) <= :daily`;
+
+/**
+ * What a caller that decided once for many reservations (a spoken turn's voice, `prepareTurnVoice`) still requires of
+ * each: the platform settings unchanged since it read them (`settingsRepo.SETTINGS_FINGERPRINT_SQL`: the kill switches,
+ * the voice switches, the caps), the platform's daily spend under its cap, and, for the voice it chose, the persona's
+ * voice consent still in force (`voiceConsent`) and its cloned voice still ready under it (`cloneRef`, the vendor id
+ * it speaks with; null: no clone). Checked in the reservation's own statement, so it costs no round trip.
+ */
+export interface SpeechGate {
+  readonly settingsFingerprint: string;
+  readonly globalUsdCap: number;
+  readonly principalUsdCap: number;
+  readonly personaId: string;
+  readonly voiceConsent: boolean;
+  readonly cloneRef: string | null;
+}
+
+/** The SQL of a {@link SpeechGate} (its parameters: {@link speechGateParams}). */
+const SPEECH_GATE_OK = `(${SETTINGS_FINGERPRINT_SQL} = :gSettings
+   AND (SELECT coalesce(sum(u.cost_usd), 0) FROM usage_ledger u WHERE u.at >= ${TODAY_UTC}) < :gGlobalCap
+   AND 0 < :gPrincipalCap
+   AND (NOT :gConsent OR EXISTS (
+         SELECT 1 FROM personas pe JOIN consents cs ON cs.id = pe.consent_id
+          WHERE pe.id = :gPersona AND cs.revoked_at IS NULL AND (cs.expires_at IS NULL OR cs.expires_at > now())
+            AND 'voice' = ANY (cs.asset_types)))
+   AND (:gClone = '' OR EXISTS (
+         SELECT 1 FROM persona_media m JOIN personas pe ON pe.id = m.persona_id
+          WHERE m.persona_id = :gPersona AND pe.kind = 'eir_persona' AND m.kind = 'voice' AND m.status = 'ready'
+            AND m.vendor_ref = :gClone)))`;
+
+function speechGateParams(gate: SpeechGate): SqlParams {
+  return {
+    gSettings: p.text(gate.settingsFingerprint),
+    gGlobalCap: p.num(gate.globalUsdCap),
+    gPrincipalCap: p.num(gate.principalUsdCap),
+    gConsent: p.bool(gate.voiceConsent || gate.cloneRef !== null),
+    gPersona: p.uuid(gate.personaId),
+    gClone: p.text(gate.cloneRef ?? ''),
+  };
+}
 
 /**
  * Reserves one synthesis of `unit` on the live call `callId` of `principalId`, before the speech service is
@@ -681,9 +724,13 @@ export async function reserveCallSpeech(
     readonly characters: number;
     readonly maxPlays: number;
     readonly budget: SpeechBudget;
+    /** Required of this reservation too (`SpeechGate`); absent: none. */
+    readonly gate?: SpeechGate | undefined;
   },
 ): Promise<SpeechReservation> {
+  const gate = input.gate;
   const params = {
+    ...(gate === undefined ? {} : speechGateParams(gate)),
     call: p.uuid(input.callId),
     principal: p.uuid(input.principalId),
     unit: p.text(speechUnitKey(input.unit)),
@@ -700,6 +747,7 @@ export async function reserveCallSpeech(
        WHERE c.id = :call AND c.started_by = :principal AND c.status = 'live'
          AND ${CALL_BUDGET_OK}
          AND ${DAY_BUDGET_OK}
+         ${gate === undefined ? '' : `AND ${SPEECH_GATE_OK}`}
        FOR UPDATE OF c),
      play AS (
        INSERT INTO call_speech AS s (call_id, unit, plays, characters)
@@ -721,16 +769,19 @@ export async function reserveCallSpeech(
     `SELECT (c.started_by = :principal AND c.status = 'live') AS live,
             coalesce((SELECT s.plays FROM call_speech s WHERE s.call_id = c.id AND s.unit = :unit), 0) >= :max
               AS played,
-            ${CALL_BUDGET_OK} AS call_ok
+            ${CALL_BUDGET_OK} AS call_ok,
+            ${gate === undefined ? 'true' : SPEECH_GATE_OK} AS gate_ok
      FROM calls c WHERE c.id = :call`,
     params,
     (r) => ({
       live: col.bool.decode(r.live, 'live'),
       played: col.bool.decode(r.played, 'played'),
       callOk: col.bool.decode(r.call_ok, 'call_ok'),
+      gateOk: col.bool.decode(r.gate_ok, 'gate_ok'),
     }),
   );
   if (why?.live !== true) return { ok: false, reason: 'call_not_active' };
+  if (!why.gateOk) return { ok: false, reason: 'settings_changed' };
   if (why.played) return { ok: false, reason: 'already_played' };
   return { ok: false, reason: why.callOk ? 'daily_budget' : 'call_budget' };
 }

@@ -188,7 +188,10 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
   (`speech.prepareTurnVoice`: the conversation, write access, the assignment, the kill switches, the live call in
   this conversation, the vEIR's status and voice consent, the call's time left, the platform's daily spend cap, the
   voice). Each signed unit is then reserved like a `POST /speech` unit (`reserveCallSpeech`, one statement: its play
-  and the speech budgets) and synthesized as raw PCM the moment it is written (the unit before it as context, the
+  and the speech budgets, and a gate on what was decided once: the platform settings unchanged since the turn read
+  them, so a kill switch, a voice switch or a cap changed mid-reply stops the next unit; the platform's daily spend
+  under its cap; for the EIR's own voice, their voice consent still in force and the clone still ready under it; a
+  gate that no longer holds closes the unit `failed`, and `POST /speech` decides it anew) and synthesized as raw PCM the moment it is written (the unit before it as context, the
   vendor connection warmed when the turn starts, at most two units at once), and its audio follows it in the same
   SSE stream as base64 `turn.audio` frames; the stream ends after the last unit's audio. Metering, settlement,
   the audit (`speech.synthesized`, `inTurn`) and Polly in place of a vendor that fails are those of `POST /speech`.
@@ -196,8 +199,11 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
   the crisis support line, a call whose FULL face voices text or whose LITE face the server relays (a LITE face the
   page feeds gets a copy of the same PCM), a turn any of those checks refuses: those units go through
   `POST /speech` as before, which answers the refusal. A unit the server could not voice is closed with `failed`
-  (the page asks `POST /speech`) or `paused` (a speech budget is used up). A barge-in closes the turn's stream,
-  which aborts every synthesis at once.
+  (the page asks `POST /speech`) or `paused` (a speech budget is used up). A reply that ends blocked (other than
+  crisis support) or failed is withdrawn before its terminal event is written: nothing more of it is synthesized,
+  billed or sent, a synthesis in flight is aborted (its reservation given back), and its open units close `refused`;
+  the page drops their audio (as `POST /speech` refuses them: `turn_not_speakable`). A barge-in closes the turn's
+  stream, which aborts every synthesis at once.
 
 - **Speech budgets.** A person's own AI cap leaves call speech out, so `/speech` is bounded by what a call can
   say instead. Before Polly is called, one statement (`callsRepo.reserveCallSpeech`, under the call's row

@@ -12,10 +12,12 @@ import { DbError } from '../errors.js';
 import { p } from '../params.js';
 import { type SeedResult } from '../seed/seed.js';
 import { createTestDatabase, makeContext, type TestDatabase } from '../testing/test-database.js';
+import { readPart } from './common.js';
 import * as assignmentsRepo from './assignments.js';
 import * as callsRepo from './calls.js';
 import * as memoryRepo from './memory.js';
 import * as sessionsRepo from './sessions.js';
+import * as settingsRepo from './settings.js';
 import * as turnsRepo from './turns.js';
 
 let t: TestDatabase;
@@ -792,6 +794,82 @@ describe('what a call synthesizes', () => {
     await endCall(priya, theirs.id);
     await endCall(ctx, next.id);
   }, 180_000);
+
+  it('a gated reservation (a turn’s voice) also requires the settings, the spend cap and the voice it decided on', async () => {
+    const ctx = tomasz();
+    const session = await newSession(ctx, 'benchtally');
+    const call = await startCall(ctx, session, 'benchtally');
+    const turnId = randomUUID();
+    const unit = (seq: number): callsRepo.SpeechUnitKey => ({ kind: 'unit', turnId, seq });
+    const fingerprint = await t.db.system((sx) => readPart(sx, settingsRepo.settingsFingerprintPart()));
+    // A persona whose consent in force covers its voice, and its ready cloned voice when the seed has one.
+    const consented = await t.db.system(async (sx) => {
+      const r = await sx.query(
+        `SELECT pe.id FROM personas pe JOIN consents cs ON cs.id = pe.consent_id
+          WHERE cs.revoked_at IS NULL AND (cs.expires_at IS NULL OR cs.expires_at > now())
+            AND 'voice' = ANY (cs.asset_types) LIMIT 1`,
+      );
+      return r.rows[0]?.id as string | undefined;
+    });
+    const gate: callsRepo.SpeechGate = {
+      settingsFingerprint: fingerprint,
+      globalUsdCap: 1_000_000,
+      principalUsdCap: 10,
+      personaId: venture('benchtally').personaId,
+      voiceConsent: false,
+      cloneRef: null,
+    };
+    const gated = (seq: number, g: callsRepo.SpeechGate) =>
+      t.db.system((sx) =>
+        callsRepo.reserveCallSpeech(sx, {
+          callId: call.id,
+          principalId: ctx.principalId,
+          unit: unit(seq),
+          characters: 10,
+          maxPlays: 1,
+          budget,
+          gate: g,
+        }),
+      );
+    const refused = { ok: false, reason: 'settings_changed' };
+    expect(await gated(0, gate)).toEqual({ ok: true, plays: 1 });
+    expect(await spoken(call.id)).toBe(10);
+    // Settings other than those decided on (any key: the switches, the caps), the platform's spend at its cap, a
+    // person's cap of zero: refused, with nothing reserved.
+    expect(await gated(1, { ...gate, settingsFingerprint: 'stale' })).toEqual(refused);
+    expect(await gated(1, { ...gate, globalUsdCap: 0 })).toEqual(refused);
+    expect(await gated(1, { ...gate, principalUsdCap: 0 })).toEqual(refused);
+    // The EIR's own voice: its consent must still cover the voice, and a clone must still be ready under it.
+    expect(await gated(1, { ...gate, personaId: randomUUID(), voiceConsent: true })).toEqual(refused);
+    expect(await gated(1, { ...gate, cloneRef: 'not-a-ready-clone' })).toEqual(refused);
+    expect(await spoken(call.id)).toBe(10);
+    expect(await t.db.system((sx) => callsRepo.speechPlays(sx, { callId: call.id, unit: unit(1) }))).toBe(0);
+    if (consented !== undefined) {
+      expect(await gated(1, { ...gate, personaId: consented, voiceConsent: true })).toEqual({
+        ok: true,
+        plays: 1,
+      });
+    }
+    // A setting changed after the decision (a kill switch thrown): the next unit is refused.
+    await t.db.system((sx) =>
+      sx.query(
+        `INSERT INTO platform_settings (key, value) VALUES ('calls_enabled', 'false'::jsonb)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      ),
+    );
+    try {
+      expect(await gated(2, gate)).toEqual(refused);
+      // Without a gate (POST /speech, which reads the settings itself) the statement is as before.
+      expect(await reserve(ctx, call.id, unit(2), 10)).toEqual({ ok: true, plays: 1 });
+    } finally {
+      await t.db.system((sx) =>
+        sx.query(`UPDATE platform_settings SET value = 'true'::jsonb WHERE key = 'calls_enabled'`),
+      );
+    }
+    await endCall(ctx, call.id);
+    // A call no longer live says so first.
+    expect(await gated(3, gate)).toEqual({ ok: false, reason: 'call_not_active' });
+  }, 60_000);
 
   it('serialises concurrent requests on two connections: a unit is not replayed and a budget not overrun', async () => {
     const ctx = tomasz();

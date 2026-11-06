@@ -6,6 +6,7 @@
  * failure is said by Polly in the same stream; a turn that does not ask for it is unchanged.
  */
 import { SessionView, StartCallResponse, TurnStreamEvent } from '@foundry/contracts';
+import { type SynthesizedSpeech, type VoiceProvider, type VoiceSynthesisInput } from '@foundry/core';
 import { FakeSpeechSynthesizer, FakeVoiceProvider } from '@foundry/core/testing';
 import { p } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -229,5 +230,265 @@ describe('speech inside the turn stream', () => {
     expect(polly.calls.length - pollyBefore).toBe(units.length);
     const audited = await audits(units[0]?.turnId ?? '');
     expect(audited.filter((m) => m.fallback === true)).toHaveLength(units.length);
+  });
+});
+
+/**
+ * A vendor voice that holds every synthesis until it is released or aborted (it honours the request's signal, as the
+ * ElevenLabs adapter does): the units of a reply are still being voiced when its terminal event comes.
+ */
+class HeldVoice implements VoiceProvider {
+  readonly id = 'elevenlabs' as const;
+  readonly model = 'test_model';
+  readonly usdPer1kCharacters = 0.04;
+  readonly inner = new FakeVoiceProvider('elevenlabs', 0.04);
+  readonly calls: VoiceSynthesisInput[] = [];
+  aborted = 0;
+  #held: (() => void)[] = [];
+  hold = true;
+
+  synthesize(input: VoiceSynthesisInput): Promise<SynthesizedSpeech> {
+    this.calls.push(input);
+    if (!this.hold) return this.inner.synthesize(input);
+    return new Promise<SynthesizedSpeech>((resolve, reject) => {
+      input.signal?.addEventListener(
+        'abort',
+        () => {
+          this.aborted += 1;
+          reject(new DOMException('Aborted', 'AbortError'));
+        },
+        { once: true },
+      );
+      this.#held.push(() => {
+        resolve(this.inner.synthesize(input));
+      });
+    });
+  }
+
+  release(): void {
+    this.hold = false;
+    for (const go of this.#held.splice(0)) go();
+  }
+}
+
+describe('speech inside the turn stream: a reply blocked or failed after its units were announced', () => {
+  let held: ApiHarness;
+  let cookie: string;
+  const vendor = new HeldVoice();
+  let reply = '';
+  // Every sentence passes the sentence gate and is released as it is written; the last names the EIR, so the whole
+  // reply is blocked after the units before it were announced (identity).
+  const NAMES_THE_EIR =
+    'Start with the door counts this week. Then count the seats at lunch every day. ' +
+    'Then ask the manager about the busy hours. Then compare the two weeks side by side. ' +
+    'corin here, by the way.';
+  const LONG =
+    'Start with the door counts this week. Then count the seats at lunch every day. ' +
+    'Then ask the manager about the busy hours. Then compare the two weeks side by side. ' +
+    'Then write down what surprised you most. Then bring the numbers to our next call. ' +
+    'Then pick the one hour that matters most. Then test a sign at the door for a week. ' +
+    'Then count again with the sign up. Then tell me which number moved and by how much.';
+
+  beforeAll(async () => {
+    held = await createApiHarness({
+      speech: new FakeSpeechSynthesizer(),
+      stockVoice: { provider: vendor, voiceRef: 'AaOhDHYJ1XLZk74lXhdE', fallbackVoiceId: 'Matthew' },
+      gatewayOptions: { streamDelayMs: 0, streamFixture: () => reply },
+    });
+    cookie = await held.signInAs(held.h.people.maya);
+  });
+  afterAll(async () => {
+    await held.cleanup();
+  });
+
+  async function heldCall(): Promise<{ sessionId: string; callId: string }> {
+    const session = SessionView.parse(
+      await (
+        await held.request(`/ventures/${held.h.ventures.quietquad.id}/sessions`, { body: {}, cookie })
+      ).json(),
+    );
+    const started = StartCallResponse.parse(
+      await (
+        await held.request(`/sessions/${session.id}/calls`, {
+          body: { inputMode: 'typed', replace: true },
+          cookie,
+        })
+      ).json(),
+    );
+    return { sessionId: session.id, callId: started.call.id };
+  }
+
+  async function heldTurn(call: { sessionId: string; callId: string }, key: string) {
+    const requestId = `speech-in-turn-held-${key}`;
+    const res = await held.request(`/sessions/${call.sessionId}/turns`, {
+      body: { text: 'Where do we start?', channel: 'voice', callId: call.callId, speechAudio: 'pcm' },
+      cookie,
+      idempotencyKey: `${requestId}-key`,
+      headers: { 'x-request-id': requestId },
+    });
+    expect(res.status).toBe(200);
+    const events = parseSse(await res.text()).frames.map((f) => TurnStreamEvent.parse(JSON.parse(f.data)));
+    return { events, requestId };
+  }
+
+  async function heldSpeech(callId: string, requestId: string) {
+    const ledger = await held.h.t.db.system((sx) =>
+      sx.query("SELECT count(*)::int AS n FROM usage_ledger WHERE purpose = 'speech' AND request_id = :id", {
+        id: p.text(requestId),
+      }),
+    );
+    const plays = await held.h.t.db.system((sx) =>
+      sx.query(
+        `SELECT coalesce(sum(s.plays), 0)::int AS plays, (SELECT speech_characters FROM calls WHERE id = :call) AS chars
+           FROM call_speech s WHERE s.call_id = :call AND s.unit LIKE 'unit.%'`,
+        { call: p.uuid(callId) },
+      ),
+    );
+    return {
+      usage: ledger.rows[0]?.n as number,
+      plays: plays.rows[0]?.plays as number,
+      characters: Number(plays.rows[0]?.chars ?? 0),
+    };
+  }
+
+  function expectWithdrawn(events: TurnStreamEvent[], terminal: 'turn.blocked' | 'turn.error') {
+    const at = events.findIndex((e) => e.event === terminal);
+    expect(at).toBeGreaterThan(0);
+    const units = unitsOf(events.slice(0, at)).filter((u) => u.audio === true);
+    expect(units.length).toBeGreaterThanOrEqual(2);
+    // No PCM of the reply after its terminal event (none at all here: every synthesis was still held).
+    expect(events.slice(at).filter((e) => e.event === 'turn.audio' && e.pcm !== undefined)).toEqual([]);
+    // Each unit closed once, refused (the page never asks POST /speech for it).
+    for (const unit of units) {
+      expect(audioOf(events, unit.seq).map((f) => f.end)).toEqual(['refused']);
+    }
+    return units;
+  }
+
+  it('a reply blocked by the whole-reply gate: its announced units are never synthesized, billed or sent', async () => {
+    const call = await heldCall();
+    reply = NAMES_THE_EIR;
+    const before = vendor.calls.length;
+    const abortedBefore = vendor.aborted;
+    const { events, requestId } = await heldTurn(call, 'blocked');
+    expect(events.find((e) => e.event === 'turn.blocked')).toMatchObject({ event: 'turn.blocked' });
+    expect(events.find((e) => e.event === 'turn.blocked')).not.toMatchObject({ reason: 'crisis_support' });
+    const units = expectWithdrawn(events, 'turn.blocked');
+    // The syntheses in flight were aborted; nothing billed, every play and character given back.
+    const started = vendor.calls.length - before;
+    expect(started).toBeGreaterThan(0);
+    expect(started).toBeLessThanOrEqual(units.length);
+    expect(vendor.aborted - abortedBefore).toBe(started);
+    expect(await heldSpeech(call.callId, requestId)).toEqual({ usage: 0, plays: 0, characters: 0 });
+    // POST /speech refuses them as before.
+    const first = units[0];
+    if (first === undefined) throw new Error('no unit');
+    const asked = await held.request('/speech', {
+      body: {
+        sessionId: call.sessionId,
+        turnId: first.turnId,
+        seq: first.seq,
+        text: first.text,
+        sig: first.sig,
+      },
+      cookie,
+      headers: { accept: 'audio/pcm, audio/mpeg, application/problem+json' },
+    });
+    expect(asked.status).toBe(409);
+    expect(((await asked.json()) as { detail?: string }).detail).toBe('This reply can no longer be spoken.');
+  });
+
+  it('a completed reply is voiced in full once its syntheses go ahead (the gate in each reservation holds)', async () => {
+    const call = await heldCall();
+    reply = 'Start with the door counts this week. Then count the seats at lunch every day.';
+    vendor.release();
+    try {
+      const { events, requestId } = await heldTurn(call, 'completed');
+      expect(events.some((e) => e.event === 'turn.completed')).toBe(true);
+      const units = unitsOf(events);
+      expect(units.length).toBeGreaterThan(0);
+      for (const unit of units) expect(audioOf(events, unit.seq).at(-1)?.end).toBe('done');
+      expect((await heldSpeech(call.callId, requestId)).usage).toBe(units.length);
+    } finally {
+      vendor.hold = true;
+    }
+  });
+
+  it('a setting changed mid-reply (a kill switch, a voice switch, a cap) leaves its next units to POST /speech', async () => {
+    const call = await heldCall();
+    reply = 'Start with the door counts this week. Then count the seats at lunch every day.';
+    vendor.release();
+    // Signed units of a reply (asked without speechAudio: nothing voiced in its stream).
+    const res = await held.request(`/sessions/${call.sessionId}/turns`, {
+      body: { text: 'Where do we start?', channel: 'voice', callId: call.callId },
+      cookie,
+      idempotencyKey: 'speech-in-turn-held-settings-key',
+    });
+    const units = unitsOf(
+      parseSse(await res.text()).frames.map((f) => TurnStreamEvent.parse(JSON.parse(f.data))),
+    );
+    const [first, second] = units;
+    if (first === undefined || second === undefined) throw new Error('expected two units');
+    const ctx = await held.h.ctxFor(held.h.people.maya);
+    const before = vendor.calls.length;
+    try {
+      // The turn's voice decided with the settings of its start.
+      const voice = await held.h.core.speech.prepareTurnVoice(ctx, call);
+      if (voice === null) throw new Error('expected a voice');
+      const one = await voice.speak(first, {});
+      expect(one.kind).toBe('audio');
+      if (one.kind === 'audio') await new Response(one.audio).arrayBuffer();
+      // The vendor voice switched off mid-reply: the next unit is not reserved, synthesized or billed here.
+      await held.h.t.db.system((sx) =>
+        sx.query(
+          `INSERT INTO platform_settings (key, value) VALUES ('vendor_voice_enabled', 'false'::jsonb)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          {},
+        ),
+      );
+      expect(await voice.speak(second, { previousText: first.text })).toEqual({ kind: 'failed' });
+      expect(vendor.calls.length - before).toBe(1);
+      const plays = await held.h.t.db.system((sx) =>
+        sx.query(
+          'SELECT count(*)::int AS n FROM call_speech WHERE call_id = :call AND unit = :unit AND plays > 0',
+          {
+            call: p.uuid(call.callId),
+            unit: p.text(`unit.${second.turnId.toLowerCase()}.${String(second.seq)}`),
+          },
+        ),
+      );
+      expect(plays.rows[0]?.n).toBe(0);
+      // POST /speech decides it on the settings of the moment: Polly, not the vendor.
+      const asked = await held.request('/speech', {
+        body: {
+          sessionId: call.sessionId,
+          turnId: second.turnId,
+          seq: second.seq,
+          text: second.text,
+          sig: second.sig,
+        },
+        cookie,
+        headers: { accept: 'audio/pcm, audio/mpeg, application/problem+json' },
+      });
+      expect(asked.status).toBe(200);
+      await asked.arrayBuffer();
+      expect(vendor.calls.length - before).toBe(1);
+    } finally {
+      vendor.hold = true;
+      await held.h.t.db.system((sx) =>
+        sx.query(`UPDATE platform_settings SET value = 'true'::jsonb WHERE key = 'vendor_voice_enabled'`, {}),
+      );
+    }
+  });
+
+  // Last: the mock's scripted outcomes this leaves unused would fail a later turn.
+  it('a reply that failed after its units were announced is withdrawn the same way', async () => {
+    const call = await heldCall();
+    reply = LONG;
+    held.h.gateway.scriptStream('fail_midway');
+    held.h.gateway.scriptNext('fallback', 'unavailable', 'unavailable', 'unavailable', 'unavailable');
+    const { events, requestId } = await heldTurn(call, 'failed');
+    expectWithdrawn(events, 'turn.error');
+    expect(await heldSpeech(call.callId, requestId)).toEqual({ usage: 0, plays: 0, characters: 0 });
   });
 });
