@@ -59,9 +59,9 @@ updates:
       github-actions:
         patterns: ['*']
 
-  # Python ops tooling and the evaluation harness.
+  # Python ops tooling, the evaluation harness and the conversation lab.
   - package-ecosystem: pip
-    directories: [/ops/aws, /evals]
+    directories: [/ops/aws, /evals, /ops/lab]
     schedule:
       interval: weekly
       day: monday

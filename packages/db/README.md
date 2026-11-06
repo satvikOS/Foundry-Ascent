@@ -107,7 +107,7 @@ Bulk inserts use one JSON parameter: `INSERT … SELECT … FROM jsonb_to_record
 Every codec has `.nullable`. Build row codecs with `row(shape)` (snake_case keys) or **`camelRow(shape)`**
 (opt-in `created_at → createdAt`); a column missing from the result is a `DbDecodeError` (schema drift).
 `camelizeKeys(raw)` converts keys without decoding. Helpers: `all(ex, sql, params, codec)`,
-`one(…)` (throws `NoRowsError`), `maybeOne(…)`, `exec(ex, sql, params) → rowCount`.
+`one(…)` (throws `NoRowsError`), `exec(ex, sql, params) → rowCount`.
 **Never select `vector`/`tsvector` columns** (the Data API cannot return them) — select
 `embedding IS NOT NULL` instead; `bytea` is selected as `encode(…, 'base64')`.
 

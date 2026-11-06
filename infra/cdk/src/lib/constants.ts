@@ -5,7 +5,6 @@ import { SPEECH_VOICES, type SpeechEngine } from './speech-voices.js';
 export const PROJECT_TAG = 'foundry-ascent';
 export const ENVIRONMENT_NAME = 'production';
 export const STACK_PREFIX = 'FoundryAscent';
-export const PERMISSIONS_BOUNDARY_NAME = 'FoundryAscent-Boundary';
 
 /** Physical names (resources referenced by ops tooling, runbooks and the GitHub deploy role). */
 export const NAMES = {

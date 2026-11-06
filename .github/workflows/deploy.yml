@@ -4,11 +4,11 @@ name: Deploy
 # input it redeploys the tip of main; with `sha` it redeploys an older main commit (rollback, see
 # docs/runbooks/deploy-and-rollback.md).
 #
-# AWS access is staged (infra/iam/README.md, ADR-0016):
-#   stage 1: AWS_DEPLOY_ROLE_ARN set -> GitHub OIDC, role FoundryAscent-GitHubDeploy. Store it as a repository
-#            secret (masked in logs, so the account id in the ARN never reaches this public log); a repository
-#            variable is also accepted.
-#   stage 0: variable unset -> secrets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (IAM user Foundry-Ascent)
+# AWS access (infra/iam/README.md, ADR-0016): GitHub OIDC with role FoundryAscent-GitHubDeploy, named by
+# AWS_DEPLOY_ROLE_ARN. Store it as a repository secret (masked in logs, so the account id in the ARN never reaches
+# this public log); a repository variable is also accepted. This is the only working path: the stage-0 access key
+# (IAM user Foundry-Ascent) was deleted on 2026-10-06, and the fallback to secrets AWS_ACCESS_KEY_ID /
+# AWS_SECRET_ACCESS_KEY below stays only until the owner deletes those secrets.
 # The repository is public: the account id is masked before any AWS call can print it, the job summary
 # contains only the site URL and the commit, and stack outputs are never uploaded.
 on:
@@ -281,11 +281,11 @@ jobs:
           arn_re="^arn:aws:iam::[0-9]{12}:oidc-provider/${OIDC_HOST//./\\.}\$"
           one_line() { tr -s '\r\n\t' '   ' < "${err}" | head -c 300; }
 
-          # a) Providers in the account. The stage-0 user may list them (bootstrap-operator policy). The
-          #    stage-1 deploy role may not (least privilege: the Foundation stack grants it no IAM reads), so
-          #    under OIDC an AccessDenied falls back to the provider's fixed ARN: it must exist, because STS
-          #    has just accepted a GitHub token for a role that trusts it, and its ARN depends only on the
-          #    account and the host. Any other failure stops the deploy rather than guess.
+          # a) Providers in the account. The OIDC deploy role may not list them (least privilege: the
+          #    Foundation stack grants it no IAM reads), so an AccessDenied falls back to the provider's fixed
+          #    ARN: it must exist, because STS has just accepted a GitHub token for a role that trusts it, and
+          #    its ARN depends only on the account and the host. Any other failure stops the deploy rather
+          #    than guess.
           existing=""
           if providers="$(aws iam list-open-id-connect-providers \
             --query 'OpenIDConnectProviderList[].Arn' --output text 2>"${err}")"; then
@@ -296,7 +296,7 @@ jobs:
             existing="arn:aws:iam::${account}:oidc-provider/${OIDC_HOST}"
             source="derived (iam:ListOpenIDConnectProviders is not granted to the OIDC deploy role)"
           else
-            echo "::error title=OIDC provider lookup failed::iam:ListOpenIDConnectProviders failed ($(one_line)). The stage-0 user needs it (infra/iam/policies/bootstrap-operator.json)."
+            echo "::error title=OIDC provider lookup failed::iam:ListOpenIDConnectProviders failed ($(one_line)). Only an AccessDenied under the OIDC deploy role falls back to the provider's fixed ARN; any other error stops the deploy."
             exit 1
           fi
 

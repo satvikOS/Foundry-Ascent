@@ -50,10 +50,10 @@ push to main ──► CI (quality · database · infra · python · e2e) ──
 
 Stage 1 (GitHub OIDC). All three stacks are deployed and every deploy assumes
 `FoundryAscent-GitHubDeploy` through OIDC (the job summary shows _AWS access: GitHub OIDC (stage 1)_).
-The stage-0 access key was deleted on 2026-10-06, so the workflows that used it (**Platform - deploy
-data stack**, **Ops - AWS inventory**, **Ops - AWS cleanup**, **Ops - verify AWS access**, **Ops - retire
-stage-0 AWS access**, **Ops - Bedrock live probe**) are retired: a dispatched run stops at its first step
-and says what to use instead. History: [ADR-0016](../architecture/adr/0016-staged-iam-github-oidc.md).
+The stage-0 access key was deleted on 2026-10-06, and the workflows that used it (data-stack deploy, AWS
+inventory, legacy cleanup, access check, stage-0 retirement, Bedrock live probe) are removed. Run
+`ops/aws/inventory.py` locally with read-only credentials for the account report
+([cost controls](cost-controls.md)). History: [ADR-0016](../architecture/adr/0016-staged-iam-github-oidc.md).
 Changes to the Data stack ship with the normal **Deploy**; review its diff first so the cluster, secret
 and buckets are updated, never replaced:
 
@@ -66,7 +66,7 @@ pnpm --filter @foundry/infra exec cdk diff FoundryAscent-Data -c appVersion=$(gi
 
 The deploy role cannot call models or synthesize speech, by design: it only assumes the CDK bootstrap
 roles and reads CloudFormation, platform Lambda logs and Cost Explorer, and any job in the `production`
-environment can assume it. So **Ops - Bedrock live probe** is retired rather than moved to OIDC. What
+environment can assume it. So the stage-0 Bedrock live probe was removed rather than moved to OIDC. What
 exercises the live paths:
 
 - every deploy's migrate resource backfills Titan embeddings (counts only in

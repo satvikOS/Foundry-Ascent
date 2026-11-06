@@ -149,16 +149,13 @@ export function clampLimit(limit: number | undefined, fallback: number, max: num
 }
 
 /**
- * Rows of large tables (turns with their response, escalation packets, session recaps) are read in
- * batches of ids, so no single statement's result approaches the RDS Data API's 1 MB response limit
- * however many rows a caller lists. Each batch must stay well below it (see the batch sizes at the call
- * sites, sized for the largest row a table can hold).
- */
-export const DATA_API_RESULT_LIMIT_BYTES = 1_000_000;
-
-/**
  * Fetches `ids` in batches of `batchSize` with `fetch` and returns the rows in the order of `ids` (ids
  * without a row, e.g. hidden by RLS, are skipped). `idOf` extracts a row's id.
+ *
+ * Rows of large tables (turns with their response, escalation packets, session recaps) are read this way,
+ * so no single statement's result approaches the RDS Data API's 1 MB response limit however many rows a
+ * caller lists. Each batch must stay well below it (see the batch sizes at the call sites, sized for the
+ * largest row a table can hold).
  */
 export async function fetchByIdsInBatches<T>(
   ids: readonly string[],
