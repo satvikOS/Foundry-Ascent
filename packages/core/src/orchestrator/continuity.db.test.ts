@@ -933,10 +933,10 @@ describe('how a new conversation opens', () => {
     const next = await h.core.sessions.create(maya, quietquad(), {});
     expect(next.opener).toBe(line);
     const call = await startCall(maya, next.id);
-    // The model's line as written: its greeting kept (her name in it only while one reply in four allows), never
-    // swapped for "Hi Maya," nor phrased again around its subject.
+    // The model's line as written: its greeting kept, with her name (no reply named her lately; one reply in four),
+    // never swapped for "Hi Maya," nor phrased again around its subject.
     expect(call.intro?.text).toMatch(
-      /^Good to see you again(?:, Maya)?\. What did the student union say about promoting the pilot\?$/,
+      /^Good to see you again, Maya\. What did the student union say about promoting the pilot\?$/,
     );
     // The conversation keeps what the call said as its first message.
     expect((await h.core.sessions.get(maya, next.id)).session.opener).toBe(call.intro?.text);
@@ -1164,8 +1164,8 @@ describe('how a new conversation opens', () => {
       expect(ag3.opener ?? '').toContain("your cofounder's plan to go full-time in January");
       expect(ag3.opener ?? '').not.toMatch(/about January\b|advisor/);
       const ringing = await startCall(maya, ag3.id);
-      // Her name only while the latest replies leave room for it (one reply in four).
-      expect(ringing.intro?.text ?? '').toMatch(/^Hi(?: Maya)?, .*your cofounder's plan to go full-time/);
+      // Not by name: the latest replies named her already (one reply in four).
+      expect(ringing.intro?.text ?? '').toMatch(/^Hi, .*your cofounder's plan to go full-time/);
       expect(ringing.intro?.text ?? '').not.toMatch(/with January\?|up January\?|advisor/);
       await h.core.calls.end(maya, ringing.call.id, { reason: 'user' });
       h.jobQueue.drain();

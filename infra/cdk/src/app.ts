@@ -91,7 +91,7 @@ export function buildApp(options: BuildOptions = {}): FoundryApp {
     githubRepositoryId: config.githubRepositoryId,
     githubBranch: config.githubBranch,
     githubEnvironment: ENVIRONMENT_NAME,
-    conversationLabModels: conversationLabAccess(effectiveModels(config.models), LAB_MODELS),
+    conversationLabModels: conversationLabAccess(effectiveModels(config.models), LAB_MODELS, config.region),
     ...(existingOidcProviderArn ? { existingOidcProviderArn } : {}),
   });
 

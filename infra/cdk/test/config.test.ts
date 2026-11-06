@@ -1,8 +1,9 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ConfigError, loadConfig, parseConfig } from '../src/config.js';
+import { BACKGROUND_PURPOSES, ConfigError, loadConfig, parseConfig } from '../src/config.js';
+import { REPO_ROOT } from '../src/paths.js';
 import { migrationsChecksum } from '../src/lib/migrations.js';
 import { PLACEHOLDER_OWNER } from './helpers.js';
 
@@ -417,6 +418,36 @@ describe('config', () => {
       accessCodeHash: PLACEHOLDER_OWNER.hash,
     });
     expect(config.models.luna).toEqual({ modelId: 'openai.gpt-6-luna', enabled: false });
+  });
+
+  it('reads the background route: its own primary and fallback for the purposes it names, never a turn', () => {
+    const background = {
+      primary: 'us.amazon.nova-2-lite-v1:0',
+      fallback: 'global.amazon.nova-2-lite-v1:0',
+      purposes: ['classification', 'eval'],
+    };
+    expect(parseConfig(withChange(['models', 'background'], background)).models.background).toEqual(
+      background,
+    );
+    expect(parseConfig(valid()).models.background).toBeUndefined();
+    const refused = (value: unknown) => () => parseConfig(withChange(['models', 'background'], value));
+    expect(refused({ ...background, purposes: [] })).toThrow(
+      /models.background.purposes must be a non-empty/,
+    );
+    expect(refused({ ...background, purposes: ['speech'] })).toThrow(
+      /models.background.purposes\[0\] must be one of/,
+    );
+    expect(refused({ ...background, purposes: ['eval', 'eval'] })).toThrow(/must not repeat/);
+    expect(refused({ ...background, purposes: ['turn'] })).toThrow(/must not include turn/);
+    expect(refused({ ...background, primary: 'Nova Lite' })).toThrow(/models.background.primary/);
+  });
+
+  it('lists as background purposes exactly the gateway’s model purposes but speech', () => {
+    const types = readFileSync(join(REPO_ROOT, 'packages', 'ai', 'src', 'gateway', 'types.ts'), 'utf8');
+    const list = /export const MODEL_PURPOSES = \[([^\]]*)\]/.exec(types)?.[1] ?? '';
+    const gateway = [...list.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+    expect(gateway.length).toBeGreaterThan(5);
+    expect([...BACKGROUND_PURPOSES].sort()).toEqual(gateway.filter((p) => p !== 'speech').sort());
   });
 
   it('treats the Luna block as optional', () => {

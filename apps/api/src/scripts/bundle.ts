@@ -83,9 +83,14 @@ export const FAKE_ENV_VALUES: Readonly<Record<string, string>> = {
   JOBS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123456789012/FoundryAscent-Jobs',
   JOBS_MAX_RECEIVE_COUNT: '3',
   MODEL_PROVIDER: 'bedrock',
-  MODEL_PRIMARY_ID: 'us.amazon.nova-2-lite-v1:0',
-  MODEL_FALLBACK_ID: 'global.amazon.nova-2-lite-v1:0',
+  // The production shape (infra/cdk/config/production.json): the coach on Claude Haiku 4.5 with Nova 2 Lite behind it,
+  // the background purposes on Nova.
+  MODEL_PRIMARY_ID: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+  MODEL_FALLBACK_ID: 'us.amazon.nova-2-lite-v1:0',
   MODEL_EMBEDDINGS_ID: 'amazon.titan-embed-text-v2:0',
+  MODEL_BACKGROUND_PRIMARY_ID: 'us.amazon.nova-2-lite-v1:0',
+  MODEL_BACKGROUND_FALLBACK_ID: 'global.amazon.nova-2-lite-v1:0',
+  MODEL_BACKGROUND_PURPOSES: 'classification,eval,ingestion,seed,embedding',
   BEDROCK_REGION: 'us-east-1',
   // The documented placeholder owner code FA-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ and its hashAccessCode() hash.
   OWNER_ACCESS_CODE_PREFIX: 'ZZZZZ',

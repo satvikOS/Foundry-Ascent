@@ -1,7 +1,7 @@
 /**
  * Bedrock prompt caching (docs/runbooks/latency.md): the cache checkpoints a Nova Converse request carries where the
  * request's unchanging prefix ends, the cache usage Converse reports and its price, the `MODEL_PROMPT_CACHE` switch,
- * and every provider that must ignore the hint (Claude ids, prompt caching off, the mock).
+ * and every provider that must ignore the hint (models without priced cache rates, prompt caching off, the mock).
  */
 import type {
   ConverseCommandInput,
@@ -30,6 +30,8 @@ import type { ChatMessage, PromptCacheHint, StreamTextRequest } from './types.js
 
 const NOVA_US = 'us.amazon.nova-2-lite-v1:0';
 const NOVA_GLOBAL = 'global.amazon.nova-2-lite-v1:0';
+/** The production coach. */
+const HAIKU_US = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
 const CACHE_POINT = { cachePoint: { type: 'default' } };
 
 /** The turn system prompt's shape: the rules every turn shares, then this turn's part (`buildSystemPromptParts`). */
@@ -226,7 +228,7 @@ describe('NovaProvider with prompt caching', () => {
     });
   });
 
-  it('sends no cache point when prompt caching is off, without a hint, or to a Claude model', async () => {
+  it('sends no cache point when prompt caching is off, without a hint, or to a model without cache rates', async () => {
     const cases = [
       { model: NOVA_US, promptCache: false, hint: HINT },
       { model: NOVA_US, promptCache: undefined, hint: HINT },
@@ -291,13 +293,34 @@ describe('NovaProvider with prompt caching', () => {
     expect(plain.converseInputs).toHaveLength(1);
   });
 
-  it('takes cache points for Amazon Nova ids only', () => {
+  it('takes cache points for Amazon Nova and Claude Haiku 4.5 ids only (the models with priced cache rates)', () => {
     expect(usesCachePoints('amazon.nova-2-lite-v1:0')).toBe(true);
     expect(usesCachePoints(NOVA_US)).toBe(true);
     expect(usesCachePoints(NOVA_GLOBAL)).toBe(true);
+    expect(usesCachePoints(HAIKU_US)).toBe(true);
+    expect(usesCachePoints('global.anthropic.claude-haiku-4-5-20251001-v1:0')).toBe(true);
     expect(usesCachePoints('amazon.titan-embed-text-v2:0')).toBe(false);
     expect(usesCachePoints('us.anthropic.claude-haiku-5-5')).toBe(false);
+    expect(usesCachePoints('global.anthropic.claude-sonnet-5-5')).toBe(false);
     expect(usesCachePoints('openai.gpt-6-luna')).toBe(false);
+  });
+
+  it('marks a Claude Haiku 4.5 request the same way, without sampling parameters or a forced tool', async () => {
+    const { provider, streamInputs, converseInputs } = nova(HAIKU_US, true);
+    const streamed = await provider.streamText(streamRequest(HINT));
+    await provider.generate(
+      providerRequest(Answer, { system: SYSTEM, messages: MESSAGES, promptCache: HINT }),
+    );
+    for (const input of [streamInputs[0], converseInputs[0]]) {
+      expect(input?.modelId).toBe(HAIKU_US);
+      expect(input?.system).toEqual([{ text: STABLE }, CACHE_POINT, { text: TURN }]);
+      expect(pointsIn(input?.messages)).toEqual(['2:1', '4:1']);
+      expect(input?.inferenceConfig).not.toHaveProperty('temperature');
+    }
+    // Claude caches `tools` too, before `system`: the system checkpoint covers the tool, which carries none itself.
+    expect(converseInputs[0]?.toolConfig?.toolChoice).toEqual({ auto: {} });
+    expect(converseInputs[0]?.toolConfig?.tools?.every((t) => !('cachePoint' in t))).toBe(true);
+    expect(streamed.rawAttempts[0]).toMatchObject({ cachePoints: 3, modelId: HAIKU_US });
   });
 });
 
@@ -334,6 +357,27 @@ describe('cache usage and its price', () => {
     expect(
       costFor(NOVA_GLOBAL, { inputTokens: 1_000, outputTokens: 0, cacheReadInputTokens: 5_000 }),
     ).toBeCloseTo((1_000 * 0.075) / M, 9);
+  });
+
+  it('prices Claude Haiku 4.5’s cache reads at a tenth of its input rate and its writes at 1.25 times it', () => {
+    const M = 1_000_000;
+    const usage = {
+      inputTokens: M,
+      outputTokens: M,
+      cacheReadInputTokens: 600_000,
+      cacheWriteInputTokens: 300_000,
+    };
+    const global = 'global.anthropic.claude-haiku-4-5-20251001-v1:0';
+    // Global: 100,000 uncached at $1.00, 600,000 read at $0.10, 300,000 written at $1.25, output at $5.00.
+    expect(costFor(global, usage)).toBeCloseTo((100_000 * 1 + 600_000 * 0.1 + 300_000 * 1.25 + M * 5) / M, 9);
+    // The `us.` profile production calls: the AWS price list's regional rates, $1.10 / $0.11 / $1.375 / $5.50.
+    expect(costFor(HAIKU_US, usage)).toBeCloseTo(
+      (100_000 * 1.1 + 600_000 * 0.11 + 300_000 * 1.375 + M * 5.5) / M,
+      9,
+    );
+    expect(costFor(HAIKU_US, { inputTokens: M, outputTokens: 0, cacheWriteInputTokens: M })).toBeGreaterThan(
+      costFor(HAIKU_US, { inputTokens: M, outputTokens: 0 }),
+    );
   });
 
   it('prices cached tokens at the input rate for a model without cache rates, so the caps never under-count', () => {

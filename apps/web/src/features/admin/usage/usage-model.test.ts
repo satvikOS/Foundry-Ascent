@@ -41,11 +41,15 @@ describe('usage model', () => {
   });
 
   it('names the configured Bedrock models', () => {
+    expect(describeModel('us.anthropic.claude-haiku-4-5-20251001-v1:0')).toEqual({
+      name: 'Claude Haiku 4.5',
+      role: 'Conversations',
+    });
     expect(describeModel('us.amazon.nova-2-lite-v1:0')).toEqual({
       name: 'Nova 2 Lite (US profile)',
-      role: 'Primary reasoning',
+      role: 'Fallback and background work',
     });
-    expect(describeModel('global.amazon.nova-2-lite-v1:0').role).toBe('Fallback reasoning');
+    expect(describeModel('global.amazon.nova-2-lite-v1:0').role).toBe('Background fallback');
     expect(describeModel('openai.gpt-6-luna').role).toMatch(/disabled/);
     expect(describeModel('amazon.titan-embed-text-v2:0').role).toBe('Embeddings');
     expect(describeModel('mock-fallback').name).toBe('Mock provider (fallback)');

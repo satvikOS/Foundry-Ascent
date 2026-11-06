@@ -210,7 +210,7 @@ INSTRUMENT_FLAGS = (
 _REASON = re.compile(r"^[A-Z][A-Z_]{0,39}$")
 #: The LITE arm's steps (face.lab.ts LiteStep), the page's face-end reasons and join stages (contracts FaceEndReason,
 #: FaceJoinStage), and the page's plain failure code (FaceEndRequest.detail: never a URL or words).
-_LITE_STEPS = frozenset({"start_call", "face_join", "greeting", "turns", "barge_in"})
+_LITE_STEPS = frozenset({"start_call", "face_join", "greeting", "turns", "barge_in", "reconnect"})
 _FACE_END_REASONS = frozenset(
     {
         "video_ended",
@@ -730,6 +730,12 @@ def _lite_browser(raw: Any) -> dict[str, Any] | None:
     doubled = raw.get("doubledAudio") if isinstance(raw.get("doubledAudio"), dict) else {}
     return {
         "sockets": _int(raw.get("sockets")),
+        # One speak channel per vendor session (a call replaces a face whose session ends): the sessions the page joined
+        # with a channel, the channels it tried and opened, and the most open at once.
+        "sessions": _int(raw.get("sessions")),
+        "channel_attempts": _int(raw.get("channelAttempts")),
+        "channels_opened": _int(raw.get("channelsOpened")),
+        "max_open_at_once": _int(raw.get("maxOpenAtOnce")),
         "utterances": _int(raw.get("utterances")),
         "utterances_per_turn": _ints(raw.get("utterancesPerTurn")),
         "chunks": _int(raw.get("chunks")),
@@ -740,12 +746,30 @@ def _lite_browser(raw: Any) -> dict[str, Any] | None:
         "interrupts": _int(raw.get("interrupts")),
         "appended_ok": _bool(raw.get("appendedOk")),
         "committed_ok": _bool(raw.get("committedOk")),
+        "unacked_chunks": _int(raw.get("unackedChunks")),
+        "uncommitted": _int(raw.get("uncommitted")),
         "first_chunk_to_started_ms": percentile_ms(_ints(raw.get("firstChunkToStartedMs"))),
         "started_to_audio_ms": percentile_ms(_ints(raw.get("startedToAudioMs"))),
         "errors": _int(raw.get("errors")),
         "fallbacks": _int(raw.get("fallbacks")),
         "doubled_audio_overlaps": _int(doubled.get("overlaps")),
         "doubled_audio_ms": _int(doubled.get("ms")),
+    }
+
+
+def _lite_reconnect(raw: Any) -> dict[str, Any] | None:
+    """The LITE arm's face replaced after its session ended (the sandbox's last a minute), and the turn after it."""
+    if not isinstance(raw, dict):
+        return None
+    return {
+        "reconnected": _bool(raw.get("reconnected")),
+        "seconds_live_before": _num(raw.get("seconds_live_before")),
+        "seconds_to_reconnect": _num(raw.get("seconds_to_reconnect")),
+        "end_reason": _one_of(raw.get("end_reason"), _FACE_END_REASONS),
+        "turn_spoken_by_face": _bool(raw.get("turn_spoken_by_face")),
+        "turn_on_new_channel": _bool(raw.get("turn_on_new_channel")),
+        "turn_acks_complete": _bool(raw.get("turn_acks_complete")),
+        "error": _error(raw.get("error")),
     }
 
 
@@ -846,6 +870,7 @@ def public_call_lite(raw: Mapping[str, Any] | None) -> dict[str, Any] | None:
         "audio_senders": _int(raw.get("audio_senders")),
         "lite_browser": _lite_browser(raw.get("lite_browser")),
         "barge_in": _barge_in(raw.get("barge_in")),
+        "reconnect": _lite_reconnect(raw.get("reconnect")),
         "error": _error(raw.get("error")),
         "failure": _lite_failure(raw.get("failure")),
     }
@@ -1088,9 +1113,27 @@ def checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
             else (False if max_duration else None)
         ),
         "label_ai_avatar_visible": call.get("label_visible"),
-        "reconnects_after_session_end": fallback.get("reconnected"),
+        "reconnects_after_session_end": reconnects_after_session_end(fallback, result),
         **lite_checks(result),
     }
+
+
+def reconnects_after_session_end(full: Mapping[str, Any], result: Mapping[str, Any]) -> bool | None:
+    """A face whose session ended mid-call is replaced and the call goes on: the FULL arm's (the tile came back), and
+    the LITE arm's (the tile came back and the next turn was said by the new face over the new session's own speak
+    channel, every chunk acknowledged). Each arm that measured it must pass; None when neither did."""
+    reconnect = (result.get("call_lite") or {}).get("reconnect") or {}
+    verdicts: list[bool] = []
+    if full.get("reconnected") is not None:
+        verdicts.append(bool(full.get("reconnected")))
+    if reconnect.get("reconnected") is not None:
+        verdicts.append(
+            bool(reconnect.get("reconnected"))
+            and bool(reconnect.get("turn_spoken_by_face"))
+            and bool(reconnect.get("turn_on_new_channel"))
+            and bool(reconnect.get("turn_acks_complete"))
+        )
+    return all(verdicts) if verdicts else None
 
 
 def lite_checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
@@ -1104,7 +1147,7 @@ def lite_checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
     silence = barge.get("interrupt_to_silence_ms")
     measured = bool(browser) and (browser.get("chunks") or 0) > 0
     return {
-        "lite_ws_connected": browser.get("sockets") == 1 if measured else None,
+        "lite_ws_connected": lite_channels_ok(browser) if measured else None,
         "lite_one_utterance_per_turn": all(n == 1 for n in per_turn) if measured and per_turn else None,
         "lite_acks_complete": (
             bool(browser.get("appended_ok")) and bool(browser.get("committed_ok")) if measured else None
@@ -1124,6 +1167,20 @@ def lite_checks(result: Mapping[str, Any]) -> dict[str, bool | None]:
         "lite_no_local_playback": browser.get("fallbacks") == 0 if measured else None,
         "lite_no_double_voice": browser.get("doubled_audio_overlaps") == 0 if measured else None,
     }
+
+
+def lite_channels_ok(browser: Mapping[str, Any]) -> bool:
+    """The page's speak channel followed the call's vendor sessions: every channel it tried opened, one channel per
+    session that carried frames (a call replaces a face whose session ends, and the new session has its own), and never
+    two open at once. A record without the session counts (before lab run 42202149133's fix) is held to one socket."""
+    sessions = browser.get("sessions")
+    if sessions is None:
+        return browser.get("sockets") == 1
+    return (
+        (browser.get("channel_attempts") or 0) == (browser.get("channels_opened") or 0)
+        and 1 <= (browser.get("sockets") or 0) <= sessions
+        and browser.get("max_open_at_once") == 1
+    )
 
 
 def public_credits(

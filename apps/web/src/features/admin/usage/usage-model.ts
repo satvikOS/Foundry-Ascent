@@ -64,14 +64,16 @@ export function capState(spent: number, cap: number): CapState {
 }
 
 /**
- * Production routing (infra/cdk/config/production.json): Amazon Nova 2 Lite through the US inference
- * profile is the primary reasoning model and the global profile is its fallback; Titan Text Embeddings V2
- * embeds. GPT-6 Luna is configured but disabled (`models.luna.enabled=false`) because Bedrock gates it for
- * this account; it only appears here if it is ever enabled and used.
+ * Production routing (infra/cdk/config/production.json): Claude Haiku 4.5 through its US inference profile writes
+ * what founders read (conversations, recaps, the notes and openers), with Amazon Nova 2 Lite (US profile) behind it;
+ * Nova 2 Lite also runs the background work (risk checks, evaluations, document processing), with its global profile
+ * behind that. Titan Text Embeddings V2 embeds. GPT-6 Luna is configured but disabled (`models.luna.enabled=false`)
+ * because Bedrock gates it for this account; it only appears here if it is ever enabled and used.
  */
 const MODEL_NAMES: [RegExp, string, string][] = [
-  [/^us\.amazon\.nova-2-lite/i, 'Nova 2 Lite (US profile)', 'Primary reasoning'],
-  [/^global\.amazon\.nova-2-lite/i, 'Nova 2 Lite (global profile)', 'Fallback reasoning'],
+  [/claude-haiku-4-5/i, 'Claude Haiku 4.5', 'Conversations'],
+  [/^us\.amazon\.nova-2-lite/i, 'Nova 2 Lite (US profile)', 'Fallback and background work'],
+  [/^global\.amazon\.nova-2-lite/i, 'Nova 2 Lite (global profile)', 'Background fallback'],
   [/nova-2-lite/i, 'Nova 2 Lite', 'Reasoning'],
   [/gpt-6-luna/i, 'GPT-6 Luna', 'Reasoning (disabled: not available for this account)'],
   [/titan-embed/i, 'Titan Text Embeddings V2', 'Embeddings'],

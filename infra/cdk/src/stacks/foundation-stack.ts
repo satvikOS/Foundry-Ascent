@@ -330,8 +330,9 @@ export class FoundationStack extends Stack {
       }),
     });
     const models = props.conversationLabModels;
-    // Profiles in the invoking region; the foundation models behind them in every region (cross-region `us.`
-    // profiles route to other US regions), plus the region-less ARN `global.` profiles are authorized against.
+    // Profiles in the invoking region; the foundation models behind them where those profiles route (a checked
+    // geography profile's destination regions, every region otherwise: lib/models.ts `runtimeAccess`), plus the
+    // region-less ARN `global.` profiles are authorized against.
     const foundationModelArns = models.foundationModels.map((id) =>
       this.formatArn({
         service: 'bedrock',
@@ -343,6 +344,17 @@ export class FoundationStack extends Stack {
     );
     const labModelArns = [
       ...foundationModelArns,
+      ...models.regionalFoundationModels.flatMap(({ modelId, regions }) =>
+        regions.map((region) =>
+          this.formatArn({
+            service: 'bedrock',
+            region,
+            account: '',
+            resource: 'foundation-model',
+            resourceName: modelId,
+          }),
+        ),
+      ),
       ...models.globalFoundationModels.map((id) =>
         this.formatArn({
           service: 'bedrock',

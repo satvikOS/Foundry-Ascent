@@ -111,10 +111,35 @@ export function withoutRepeatedGreeting(
 }
 
 /**
- * Whether the conversation's opening line said hello (a call's intro: "Hi Maya, …", "Hello, I'm…"): then its first
- * reply must not greet again. A chat opener that only welcomes them back ("Good to have you back. …") leaves a hello
- * a warm hello back.
+ * A hello, as the whole of a clause (lower case, names and a trailing "again"/"there"/"too" removed): the bare
+ * hellos and the time-of-day ones, and the "good to see you" family a model-written opener greets with ("Good to see
+ * you again", "Nice to see you", "Great to hear from you", "Good to talk again"). Not a welcome ("Welcome back",
+ * "Good to have you back", "Glad you're back"): that receives them, and leaves a hello a warm hello back.
  */
-export function openerSaidHello(opener: string | null): boolean {
-  return opener !== null && /^(?:hi|hello|hey|hiya)\b/i.test(opener.trim());
+const HELLO_CLAUSE = new RegExp(
+  String.raw`^(?:` +
+    [
+      String.raw`(?:hi|hello|hey|hiya|howdy)(?:\s+(?:there|again))?`,
+      String.raw`(?:good\s+)?(?:morning|afternoon|evening)`,
+      String.raw`(?:it'?s\s+)?(?:so\s+|really\s+)?(?:good|great|nice|lovely)\s+to\s+(?:see|hear\s+from|hear|talk\s+(?:to|with)|speak\s+(?:to|with)|catch\s+up\s+with)\s+you(?:\s+(?:again|here|too))?`,
+      String.raw`(?:good|great|nice|lovely)\s+to\s+(?:talk|speak|catch\s+up)(?:\s+again)?`,
+      String.raw`(?:glad|happy)\s+to\s+(?:see|hear\s+from)\s+you(?:\s+again)?`,
+    ].join('|') +
+    String.raw`)(?:\s+again)?$`,
+  'u',
+);
+
+/**
+ * Whether the conversation's opening line said hello: a call's intro ("Hi Maya, …", "Hello, I'm…") or a
+ * model-written opener that greets in its own words ("Good to see you again, Maya. …", "Nice to see you! …"; a call
+ * says it as written, and a chat shows it as the first message). Then its first reply must not greet again. An opener
+ * that only welcomes them back ("Good to have you back. …", "Welcome back! …") leaves a hello a warm hello back, as
+ * before. `names`: the founder's, which the hello may carry ("Good to see you, Maya.").
+ */
+export function openerSaidHello(opener: string | null, names: readonly string[] = []): boolean {
+  if (opener === null) return false;
+  const text = opener.trim();
+  if (/^(?:hi|hello|hey|hiya)\b/i.test(text)) return true;
+  const clause = /^([^,.!?…\n]+)/u.exec(text)?.[1];
+  return clause !== undefined && HELLO_CLAUSE.test(withoutNames(clause, names));
 }

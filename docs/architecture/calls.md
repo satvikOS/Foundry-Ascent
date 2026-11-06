@@ -232,7 +232,12 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
   line, `ChosenOpener.modelLine`) greets in its own words: a call says it as written, its greeting kept ("Good to
   see you again, Maya. What did the student union say?"), never swapped for a fixed "Hi Maya, …" (`ownGreetingLine`).
   The founder's name is said in a greeting one reply in four at most, as in every reply (`greetedName`, read from the
-  vEIR's latest replies to them: this conversation's, or the end of the last ones). The opener is chosen afresh at call start for a
+  vEIR's latest replies to them: this conversation's, or the end of the last ones), never twice in one line (a model
+  line that names them already, after its greeting's comma or later, is said as written), and a model line that calls
+  them by name when the budget is spent is said without it ("Good to see you again. What did …"; `withoutVocative`),
+  or phrased again when it cannot be. A greeting the opening line said ("Hi …", and a model line's own: "Good to see
+  you again", "Nice to see you"; `openerSaidHello`) means the first reply does not greet again; a line that only
+  welcomes them back ("Good to have you back") still leaves a hello a hello back. The opener is chosen afresh at call start for a
   conversation nobody has said anything in (`chooseOpener`, with what it is about: none for the generic invitation),
   phrased and kept in the same transaction: the intro becomes that conversation's first message
   (`coaching_sessions.opener`, replayed by the turn engine) when it says the opener, so the vEIR's history holds the

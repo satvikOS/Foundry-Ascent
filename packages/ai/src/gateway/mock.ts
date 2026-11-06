@@ -1461,6 +1461,7 @@ export class MockModelGateway implements ModelGateway {
     provider: 'mock',
     primaryModelId: MOCK_MODEL_ID,
     fallbackModelId: MOCK_FALLBACK_MODEL_ID,
+    background: null,
     embeddingsModelId: MOCK_EMBEDDINGS_MODEL_ID,
     embeddingDimensions: EMBEDDING_DIMENSIONS,
   };

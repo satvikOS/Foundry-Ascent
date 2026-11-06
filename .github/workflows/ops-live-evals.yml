@@ -24,18 +24,22 @@ name: Ops - live conversation evals
 #
 # Spend: budget_usd is a hard cap for the whole run, split across shards by estimated cost; within a shard the
 # app's share is enforced by the app itself (its daily platform cap) and the simulator and judge are metered and
-# refused before they could go over. The owner caps a paid run at USD 2 (the default; sample defaults to 20, about
-# USD 1.84 on production's models): a budget_usd above 2 is refused unless approved_over_cap holds the owner's
+# refused before they could go over. The owner caps a paid run at USD 2 (the default; sample defaults to 8, estimated
+# USD 1.70 on production's coach, Claude Haiku 4.5, USD 1.91 on the fallback simulator and judge; the estimate takes
+# no prompt-cache discount): a budget_usd above 2 is refused unless approved_over_cap holds the owner's
 # approval code for that budget, made today with the owner's spend key (scripts/approve-spend.sh;
 # docs/runbooks/conversation-lab.md "Spend cap"); a dry run (no model called) may estimate a larger budget without it.
 #
 # coach_model (an A/B of the coach, docs/runbooks/conversation-lab.md "Coach model A/B"): `default` runs the app's coach
-# on production's models (infra/cdk/config/production.json); a model of ops/lab/models.json `live.coach` runs it on that
+# on production's models (infra/cdk/config/production.json: Claude Haiku 4.5 since 2026-11-06, ADR-0022; judged on auto
+# by another family, Llama 4 Maverick then Nova Premier, never Claude); a model of ops/lab/models.json `live.coach` (Nova
+# 2 Lite, the coach before; Claude Sonnet 4.6) runs it on that
 # Bedrock model instead, as both primary and fallback, in the lab's API process only: production's configuration is
 # never changed. An A/B is graded by ONE judge independent of every arm (judge_model ab: Llama 4 Maverick, no fallback;
 # a coach_model other than default uses it on auto), so run the default arm of an A/B with judge_model ab too, and
 # compare the arms with `live-compare`, which refuses arms graded by different judges. The plan prints the coach's
-# estimated cost (about 3.5x Nova 2 Lite's per turn for Haiku 4.5, about 10x for Sonnet 4.6, no cache discount assumed). The lab seeds the persona releases production runs
+# estimated cost (Haiku 4.5, production's, about 3.5x Nova 2 Lite's per turn; Sonnet 4.6 about 10x; no cache discount
+# assumed). The lab seeds the persona releases production runs
 # (`homeTenant.ownerReleases`: Thomas, ADR-0021).
 on:
   workflow_dispatch:
@@ -47,7 +51,7 @@ on:
       sample:
         description: Stratified sample size across the chosen families (0 = every scenario in them)
         type: string
-        default: '20'
+        default: '8'
       repeats:
         description: Run each chosen scenario this many times (1 to 5; 2+ reports run-to-run stability)
         type: string
@@ -85,7 +89,7 @@ on:
         type: choice
         options:
           - default
-          - us.anthropic.claude-haiku-4-5-20251001-v1:0
+          - us.amazon.nova-2-lite-v1:0
           - us.anthropic.claude-sonnet-4-6
         default: default
       judge_model:

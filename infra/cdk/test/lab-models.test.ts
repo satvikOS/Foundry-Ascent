@@ -45,11 +45,17 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
       'amazon.nova-premier-v1:0',
       'amazon.nova-pro-v1:0',
       'amazon.titan-embed-text-v2:0',
-      'anthropic.claude-haiku-4-5-20251001-v1:0',
       'anthropic.claude-sonnet-4-6',
       'meta.llama4-maverick-17b-instruct-v1:0',
     ]);
     expect(access.globalFoundationModels).toEqual(['amazon.nova-2-lite-v1:0']);
+    // Claude Haiku 4.5 (the coach, and a judge) is reached only through its US profile: granted where it routes.
+    expect(access.regionalFoundationModels).toEqual([
+      {
+        modelId: 'anthropic.claude-haiku-4-5-20251001-v1:0',
+        regions: ['us-east-1', 'us-east-2', 'us-west-2'],
+      },
+    ]);
     expect(access.inferenceProfiles.slice().sort()).toEqual([
       'global.amazon.nova-2-lite-v1:0',
       'us.amazon.nova-2-lite-v1:0',
@@ -62,10 +68,8 @@ describe('conversation lab models (ops/lab/models.json, shared with the lab harn
   });
 
   it('grants the A/B coach candidates (live.coach) to the lab only, priced, and never to the app', () => {
-    expect(LAB_MODELS.live.coach).toEqual([
-      'us.anthropic.claude-haiku-4-5-20251001-v1:0',
-      'us.anthropic.claude-sonnet-4-6',
-    ]);
+    // Nova 2 Lite (the coach before 2026-11-06) and Claude Sonnet 4.6; production's coach is Claude Haiku 4.5.
+    expect(LAB_MODELS.live.coach).toEqual(['us.amazon.nova-2-lite-v1:0', 'us.anthropic.claude-sonnet-4-6']);
     expect(LAB_MODELS.usdPerMillionTokens['anthropic.claude-sonnet-4-6']).toEqual({
       input: 3.3,
       output: 16.5,

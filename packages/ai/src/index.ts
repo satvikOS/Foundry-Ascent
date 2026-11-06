@@ -4,8 +4,10 @@
 export {
   EMBEDDING_DIMENSIONS,
   MODEL_PURPOSES,
+  modelsForPurpose,
   noopLogger,
   type AttemptKind,
+  type BackgroundModels,
   type AttemptOutcome,
   type ChatMessage,
   type EmbedOptions,

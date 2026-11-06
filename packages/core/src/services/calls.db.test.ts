@@ -297,8 +297,8 @@ describe('starting a call', () => {
     const intro = started.intro;
     if (intro === null) throw new Error('expected an intro');
     // Maya has met her vEIR (the seeded conversation): one sentence of at most 90 characters, greeting her around
-    // the opener's thread (the seeded notebook's five library-staff interviews).
-    expect(intro.text).toMatch(/^Hi(?: Maya)?, .*five library-staff interviews.*\?$/);
+    // the opener's thread (the seeded notebook's five library-staff interviews). By name: no reply named her lately.
+    expect(intro.text).toMatch(/^Hi Maya, .*five library-staff interviews.*\?$/);
     expect(intro.text.length).toBeLessThanOrEqual(90);
     expect(intro.text.split(/(?<=[.!?])\s+/)).toHaveLength(1);
     // What the call said is the conversation's first message: the vEIR's history holds the greeting it gave.
@@ -340,8 +340,9 @@ describe('starting a call', () => {
     await storeOpenerUnchecked(h, h.ventures.quietquad, text);
     const sessionId = await newSession('maya', 'quietquad');
     const started = await startCall('maya', sessionId);
-    // Never the stored line: the call picks up Maya's last conversation (the test above) instead.
-    expect(started.intro?.text).toMatch(/^Hi(?: Maya)?, /);
+    // Never the stored line: the call picks up Maya's last conversation (the test above) instead. Not by name: that
+    // conversation's call greeted her by name a reply ago (one reply in four).
+    expect(started.intro?.text).toMatch(/^Hi, /);
     expect(started.intro?.text).toContain('whether you can test the seat map this week?');
     expect(started.intro?.text).not.toMatch(/Corin here|myself/);
     await endCall('maya', started.call.id);
@@ -360,7 +361,8 @@ describe('starting a call', () => {
     try {
       const sessionId = await newSession('maya', 'quietquad');
       const started = await startCall('maya', sessionId);
-      expect(started.intro?.text).toMatch(/^Hi(?: Maya)?, /);
+      // Not by name: the calls before it named her (one reply in four).
+      expect(started.intro?.text).toMatch(/^Hi, /);
       expect(started.intro?.text).not.toMatch(/Corin Halvorsen|Corin asked/);
       await endCall('maya', started.call.id);
     } finally {
@@ -1821,8 +1823,8 @@ describe('the turn engine and the calls service together', () => {
     const started = await startCall('maya', session.id, 'typed');
     const intro = started.intro;
     if (intro === null) throw new Error('expected an intro');
-    // Her name only while the latest replies leave room for it (one reply in four; earlier tests talked to her).
-    expect(intro.text).toMatch(/^Hi(?: Maya)?, what did the second library say about the seat counts\?$/);
+    // Not by name: the calls of the earlier tests named her, and the name is said one reply in four at most.
+    expect(intro.text).toBe('Hi, what did the second library say about the seat counts?');
     // What the vEIR believes it opened with (its first history message) is what the call said.
     expect((await h.core.sessions.get(ctx.maya, session.id)).session.opener).toBe(intro.text);
     expect(

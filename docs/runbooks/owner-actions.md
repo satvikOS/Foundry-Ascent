@@ -144,10 +144,13 @@ to see the plan and characters left), [the live voice runbook](elevenlabs-voice.
 
 **Verify:** the persona's consent lists each asset in use, and its release approval succeeds.
 
-## 8. Enable Anthropic models on Bedrock (only if Claude is wanted)
+## 8. Enable Anthropic models on Bedrock (production's coach is Claude Haiku 4.5)
 
-Production runs Amazon Nova 2 Lite. Anthropic models on Bedrock need one-time account-level steps that
-the platform roles cannot take:
+Production's coach is Claude Haiku 4.5 (ADR-0022, 2026-11-06), with Amazon Nova 2 Lite behind it. Anthropic models on
+Bedrock need one-time account-level steps that the platform roles cannot take; this account took them before the
+conversation lab's first Claude runs (2026-11-05, the same account and region), so for production only step 3 is left:
+check it before the deploy that switches the coach. A model that is not available makes every turn fall back to Nova
+(logged as `ai.model.fallback`, reason `client_error`), never fail.
 
 1. As the account administrator, in the Bedrock console (us-east-1) open an Anthropic model in the model
    catalog and submit the **first-time use (use case) form** (or `aws bedrock put-use-case-for-model-access`).
@@ -159,6 +162,6 @@ the platform roles cannot take:
 3. Check: `aws bedrock get-foundation-model-availability --model-id <model id>` reports
    `agreementAvailability.status = AVAILABLE`.
 
-Using Claude in the product is then a reviewed code and config change (model adapter, pricing table,
-`infra/cdk/config/production.json` → `models`), as [ADR-0014](../architecture/adr/0014-bedrock-models-luna-nova-titan.md)
-describes for model changes.
+Another Claude model in the product is then a reviewed config change (`infra/cdk/config/production.json` → `models`,
+its prices and cache rates in `packages/ai/src/pricing.ts`, and its cache checkpoints in the Converse adapter), as
+[ADR-0022](../architecture/adr/0022-coach-on-claude-haiku.md) did for Claude Haiku 4.5.

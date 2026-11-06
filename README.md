@@ -63,7 +63,7 @@ flowchart LR
   cf -->|"/api/* via OAC (SigV4)"| url["Lambda Function URL<br/>response streaming (SSE)"]
   url --> api["API Lambda<br/>Hono · core · ai · db"]
   api -->|"RDS Data API"| db[("Aurora Serverless v2<br/>PostgreSQL 16 · pgvector · FTS · RLS")]
-  api -->|"bedrock-runtime"| nova["Nova 2 Lite: us. profile (primary)<br/>global. profile (fallback)<br/>Titan embeddings v2"]
+  api -->|"bedrock-runtime"| nova["Claude Haiku 4.5: the coach (us. profile)<br/>Nova 2 Lite: its fallback, background work<br/>Titan embeddings v2"]
   api -.->|"bedrock-mantle, disabled"| luna["GPT-6 Luna<br/>(gated by AWS; models.luna.enabled = false)"]
   api -->|"validated text"| voice["ElevenLabs stock voice<br/>call speech · AI voice"]
   api -.->|"fallback · crisis lines"| polly["Amazon Polly<br/>call speech"]
@@ -87,9 +87,12 @@ health check never touches the database, so monitoring cannot keep it awake. Eve
 the `FoundryAscent-Boundary` permissions boundary. Details: [system design](docs/architecture/system-design.md)
 and [`infra/cdk/README.md`](infra/cdk/README.md).
 
-**Models.** Amazon Nova 2 Lite is the primary reasoning model (`us.amazon.nova-2-lite-v1:0`), with the
-`global.amazon.nova-2-lite-v1:0` profile as fallback and Titan Text Embeddings V2 for retrieval. GPT-6 Luna
-is wired in but gated by AWS for this account, so it is disabled behind `models.luna.enabled = false` in
+**Models.** The coach is Claude Haiku 4.5 (`us.anthropic.claude-haiku-4-5-20251001-v1:0`), with Amazon Nova 2 Lite
+(`us.amazon.nova-2-lite-v1:0`) as its fallback: it writes every reply, recap, notebook and next opener, with Bedrock
+prompt caching on its prompt's unchanging prefix. Nova 2 Lite (`global.` profile behind it) does the background work
+(the safety screen, evaluations, ingestion), and Titan Text Embeddings V2 embeds for retrieval
+([ADR-0022](docs/architecture/adr/0022-coach-on-claude-haiku.md)). GPT-6 Luna is wired in but gated by AWS for this
+account, so it is disabled behind `models.luna.enabled = false` in
 [`infra/cdk/config/production.json`](infra/cdk/config/production.json); enabling it later is a reviewed
 config change ([ADR-0014](docs/architecture/adr/0014-bedrock-models-luna-nova-titan.md#enabling-luna-later)).
 

@@ -57,20 +57,66 @@ MAX_BUDGET_USD = 50.0
 
 
 @dataclass(frozen=True)
+class BackgroundModels:
+    """The background purposes' own models (``models.background``): the safety screen, evaluations, ingestion and
+    seeding, on a cheaper model than the coach's."""
+
+    primary: str
+    fallback: str
+    purposes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class AppModels:
-    """The app's effective models, exactly as infra/cdk/src/lib/models.ts `effectiveModels` derives them."""
+    """The app's effective models, exactly as infra/cdk/src/lib/models.ts `effectiveModels` derives them: the coach
+    (``primary``, ``fallback``: every purpose a founder reads) and the background route, when there is one."""
 
     primary: str
     fallback: str
     embeddings: str
+    background: BackgroundModels | None = None
+
+    def env(self) -> dict[str, str]:
+        """The gateway's runtime-contract variables (packages/ai router.ts ``modelGatewayConfigFromEnv``)."""
+        background = self.background
+        return {
+            "MODEL_PRIMARY_ID": self.primary,
+            "MODEL_FALLBACK_ID": self.fallback,
+            "MODEL_EMBEDDINGS_ID": self.embeddings,
+            "MODEL_BACKGROUND_PRIMARY_ID": background.primary if background else "",
+            "MODEL_BACKGROUND_FALLBACK_ID": background.fallback if background else "",
+            "MODEL_BACKGROUND_PURPOSES": ",".join(background.purposes) if background else "",
+        }
+
+    def for_purpose(self, purpose: str) -> tuple[str, str]:
+        """(primary, fallback) the app serves ``purpose`` with."""
+        if self.background is not None and purpose in self.background.purposes:
+            return self.background.primary, self.background.fallback
+        return self.primary, self.fallback
 
 
 def app_models(path: Path = PRODUCTION_CONFIG) -> AppModels:
     models = json.loads(path.read_text(encoding="utf-8"))["models"]
+    raw = models.get("background")
+    background = (
+        BackgroundModels(primary=raw["primary"], fallback=raw["fallback"], purposes=tuple(raw["purposes"]))
+        if isinstance(raw, dict)
+        else None
+    )
     luna = models.get("luna") or {}
     if luna.get("enabled") is True:
-        return AppModels(primary=luna["modelId"], fallback=models["primary"], embeddings=models["embeddings"])
-    return AppModels(primary=models["primary"], fallback=models["fallback"], embeddings=models["embeddings"])
+        return AppModels(
+            primary=luna["modelId"],
+            fallback=models["primary"],
+            embeddings=models["embeddings"],
+            background=background,
+        )
+    return AppModels(
+        primary=models["primary"],
+        fallback=models["fallback"],
+        embeddings=models["embeddings"],
+        background=background,
+    )
 
 
 @dataclass(frozen=True)
@@ -129,8 +175,9 @@ DEFAULT_COACH = "default"
 
 def coach_app_models(choice: str, lab: LabModels, app: AppModels | None = None) -> AppModels:
     """The app's models for a lab run: production's (``default``), or one of ``live.coach`` in models.json as both
-    primary and fallback, so the A/B arm is that model alone (a failure is counted, never answered by Nova). Production
-    is never changed: this is the lab's API process environment only (conversation_lab/stack.py)."""
+    primary and fallback, so the A/B arm is that model alone (a failure is counted, never answered by another model);
+    the background route stays production's (the safety screen is no part of the coach). Production is never changed:
+    this is the lab's API process environment only (conversation_lab/stack.py)."""
     base = app or app_models()
     if choice in ("", DEFAULT_COACH):
         return base
@@ -138,7 +185,7 @@ def coach_app_models(choice: str, lab: LabModels, app: AppModels | None = None) 
         raise ValueError(
             f"coach_model must be {DEFAULT_COACH} or one of {', '.join(lab.live_coach) or '(none listed)'}"
         )
-    return AppModels(primary=choice, fallback=choice, embeddings=base.embeddings)
+    return AppModels(primary=choice, fallback=choice, embeddings=base.embeddings, background=base.background)
 
 
 def judges_for(coach_model: str, candidates: Sequence[str]) -> tuple[str, ...]:

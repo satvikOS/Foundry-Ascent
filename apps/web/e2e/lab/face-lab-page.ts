@@ -55,15 +55,19 @@ export interface FaceLab {
    * the `event_id`, the decoded size of `audio`) and got (type, `source_event_id`), and how many such sockets the
    * page opened. Never the URL, never the audio. `sockets` counts those that carried a LITE frame; `attempts`,
    * `opened` and `closeCodes` follow every socket the page made to the vendor's speak-channel path, so a channel that
-   * never opened, or closed at once, shows as such.
+   * never opened, or closed at once, shows as such. `channels` times each of those sockets (opened, closed, whether it
+   * carried a LITE frame): a call replaces its face when the vendor session ends (avatar first, then the
+   * conversation; a new session, never a downgrade), and each session has its own channel. Every frame records the
+   * index of the channel it went over (`socket`; -1 for a socket that is no speak channel).
    */
   lite: {
     sockets: number;
     attempts: number;
     opened: number;
     closeCodes: number[];
-    out: { at: number; type: string; id: string | null; bytes: number }[];
-    in: { at: number; type: string; source: string | null }[];
+    channels: { opened: number | null; closed: number | null; carried: boolean }[];
+    out: { at: number; type: string; id: string | null; bytes: number; socket: number }[];
+    in: { at: number; type: string; source: string | null; socket: number }[];
   };
   /**
    * The page's own account of each face it gave up (`POST /calls/:id/face/end`): its reason, the join stage it
@@ -103,7 +107,7 @@ export function faceLabInit(): void {
     injectNext: false,
     level: 0,
     remoteTracks: [],
-    lite: { sockets: 0, attempts: 0, opened: 0, closeCodes: [], out: [], in: [] },
+    lite: { sockets: 0, attempts: 0, opened: 0, closeCodes: [], channels: [], out: [], in: [] },
     faceEnds: [],
   };
   (window as unknown as { __faceLab: FaceLab }).__faceLab = lab;
@@ -120,6 +124,8 @@ export function faceLabInit(): void {
     }
   };
   // No `#private` field (nor any other syntax Babel compiles to a helper call) in here: see pageScript.
+  // A socket's speak-channel index, by the socket (a WeakMap: no field on the class, see pageScript).
+  const channelOf = new WeakMap<WebSocket, number>();
   class TappedSocket extends NativeSocket {
     constructor(url: string | URL, protocols?: string | string[]) {
       super(url, protocols);
@@ -130,13 +136,20 @@ export function faceLabInit(): void {
       } catch {
         /* never in the way of the app */
       }
+      const index = speakChannel ? lab.lite.channels.length : -1;
       if (speakChannel) {
         lab.lite.attempts += 1;
+        lab.lite.channels.push({ opened: null, closed: null, carried: false });
+        channelOf.set(this, index);
         this.addEventListener('open', () => {
           lab.lite.opened += 1;
+          const channel = lab.lite.channels[index];
+          if (channel) channel.opened = now();
         });
         this.addEventListener('close', (event: CloseEvent) => {
           lab.lite.closeCodes.push(event.code);
+          const channel = lab.lite.channels[index];
+          if (channel) channel.closed = now();
         });
       }
       let counted = false;
@@ -146,11 +159,14 @@ export function faceLabInit(): void {
         if (!counted) {
           counted = true;
           lab.lite.sockets += 1;
+          const channel = lab.lite.channels[index];
+          if (channel) channel.carried = true;
         }
         lab.lite.in.push({
           at: now(),
           type: String(frame.type),
           source: typeof frame.source_event_id === 'string' ? frame.source_event_id : null,
+          socket: index,
         });
       });
     }
@@ -165,6 +181,7 @@ export function faceLabInit(): void {
           type: String(frame.type),
           id: typeof frame.event_id === 'string' ? frame.event_id : null,
           bytes: audio === '' ? 0 : Math.floor((audio.length * 3) / 4) - padding,
+          socket: channelOf.get(this) ?? -1,
         });
       }
       super.send(data);

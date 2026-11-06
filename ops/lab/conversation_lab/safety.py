@@ -48,9 +48,7 @@ def safety_env(
             "MODEL_PROVIDER": "mock" if mock else "bedrock",
             "BEDROCK_REGION": region,
             "AWS_REGION": region,
-            "MODEL_PRIMARY_ID": models.primary,
-            "MODEL_FALLBACK_ID": models.fallback,
-            "MODEL_EMBEDDINGS_ID": models.embeddings,
+            **models.env(),
         }
     )
     return env

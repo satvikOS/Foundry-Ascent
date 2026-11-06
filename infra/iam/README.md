@@ -179,12 +179,21 @@ in `.github/workflows` is listed and allowed.
 
 ## Models used (Amazon Bedrock, `us-east-1`)
 
-| Role               | Model ID                                             | Endpoint                        | IAM action (platform roles)                                    |
-| ------------------ | ---------------------------------------------------- | ------------------------------- | -------------------------------------------------------------- |
-| Primary reasoning  | `us.amazon.nova-2-lite-v1:0` (inference profile)     | `bedrock-runtime` (Converse)    | `bedrock:InvokeModel`, `bedrock:InvokeModelWithResponseStream` |
-| Fallback reasoning | `global.amazon.nova-2-lite-v1:0` (inference profile) | `bedrock-runtime` (Converse)    | `bedrock:InvokeModel`, `bedrock:InvokeModelWithResponseStream` |
-| Embeddings         | `amazon.titan-embed-text-v2:0`                       | `bedrock-runtime`               | `bedrock:InvokeModel`                                          |
-| Disabled (gated)   | `openai.gpt-6-luna`                                  | `bedrock-mantle` (`/openai/v1`) | `bedrock-mantle:CreateInference`, granted only when enabled    |
+| Role                               | Model ID                                                          | Endpoint                        | IAM action (platform roles)                                    |
+| ---------------------------------- | ----------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------- |
+| Coach (primary reasoning)          | `us.anthropic.claude-haiku-4-5-20251001-v1:0` (inference profile) | `bedrock-runtime` (Converse)    | `bedrock:InvokeModel`, `bedrock:InvokeModelWithResponseStream` |
+| Coach fallback, background primary | `us.amazon.nova-2-lite-v1:0` (inference profile)                  | `bedrock-runtime` (Converse)    | `bedrock:InvokeModel`, `bedrock:InvokeModelWithResponseStream` |
+| Background fallback                | `global.amazon.nova-2-lite-v1:0` (inference profile)              | `bedrock-runtime` (Converse)    | `bedrock:InvokeModel`, `bedrock:InvokeModelWithResponseStream` |
+| Embeddings                         | `amazon.titan-embed-text-v2:0`                                    | `bedrock-runtime`               | `bedrock:InvokeModel`                                          |
+| Disabled (gated)                   | `openai.gpt-6-luna`                                               | `bedrock-mantle` (`/openai/v1`) | `bedrock-mantle:CreateInference`, granted only when enabled    |
+
+The coach (ADR-0022) serves every purpose a founder reads; the background route (`models.background`) the safety
+screen, evaluations, ingestion and seeding. The app roles get each inference profile in `us-east-1` and the foundation
+model behind it where the profile routes: Claude Haiku 4.5 only in `us-east-1`, `us-east-2` and `us-west-2` (its US
+profile's destination regions from `us-east-1`, per its Bedrock model card); Nova 2 Lite in every region and
+region-less, because its `global.` profile routes anywhere (`infra/cdk/src/lib/models.ts`). Claude is an AWS
+Marketplace model: the account's one-time subscription to it is in place (the conversation lab has invoked it since
+2026-11-05), so the app roles need no `aws-marketplace` action.
 
 AWS lists GPT-6 Luna for this account but answers 401 "not available for this account",
 so `infra/cdk/config/production.json` sets `models.luna.enabled = false` and the platform

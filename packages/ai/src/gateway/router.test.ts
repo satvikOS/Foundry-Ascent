@@ -27,7 +27,13 @@ import {
   jsonResponse,
   scriptedFetch,
 } from './test-helpers.js';
-import { MODEL_PURPOSES, type LogFields, type ModelLogger, type RawModelAttempt } from './types.js';
+import {
+  MODEL_PURPOSES,
+  modelsForPurpose,
+  type LogFields,
+  type ModelLogger,
+  type RawModelAttempt,
+} from './types.js';
 
 type Behaviour = (request: ProviderRequest<unknown>) => Promise<ProviderResult<unknown>>;
 
@@ -313,9 +319,127 @@ describe('model router — primary/fallback policy', () => {
       provider: 'bedrock',
       primaryModelId: LUNA,
       fallbackModelId: NOVA,
+      background: null,
       embeddingsModelId: DEFAULT_MODEL_IDS.embeddings,
       embeddingDimensions: 1024,
     });
+  });
+});
+
+describe('model router — the background route (MODEL_BACKGROUND_*)', () => {
+  const HAIKU = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
+  const NOVA_US = 'us.amazon.nova-2-lite-v1:0';
+  const NOVA_GLOBAL = 'global.amazon.nova-2-lite-v1:0';
+
+  /** Production's shape: the conversation on Claude Haiku 4.5 (Nova behind it), the background purposes on Nova. */
+  function routed(failFirst: readonly string[] = []) {
+    const modelIds: string[] = [];
+    const failing = new Set(failFirst);
+    const converse: ConverseFn = (input) => {
+      const id = input.modelId ?? '';
+      modelIds.push(id);
+      if (failing.delete(id)) return Promise.reject(awsError('ThrottlingException', 'slow down', 429));
+      return Promise.resolve({
+        $metadata: {},
+        output: {
+          message: {
+            role: 'assistant',
+            content: [{ toolUse: { toolUseId: 't1', name: 'submit_response', input: VALID_ANSWER } }],
+          },
+        },
+        stopReason: 'tool_use',
+        usage: { inputTokens: 600, outputTokens: 80, totalTokens: 680 },
+        metrics: { latencyMs: 5 },
+      });
+    };
+    const gw = createModelGateway({
+      provider: 'bedrock',
+      region: 'us-east-1',
+      primaryModelId: HAIKU,
+      fallbackModelId: NOVA_US,
+      background: {
+        primaryModelId: NOVA_US,
+        fallbackModelId: NOVA_GLOBAL,
+        purposes: ['classification', 'eval', 'ingestion', 'seed', 'embedding'],
+      },
+      embeddingsModelId: DEFAULT_MODEL_IDS.embeddings,
+      credentials: STATIC_CREDENTIALS,
+      transports: {
+        converse,
+        converseStream: () => Promise.reject(new Error('unused')),
+        invokeModel: () => Promise.reject(new Error('unused')),
+      },
+    });
+    return { gw, modelIds };
+  }
+
+  it('serves every student-facing purpose on the primary and each background purpose on its own model', async () => {
+    const { gw, modelIds } = routed();
+    for (const purpose of ['turn', 'recap', 'distill', 'test_bench'] as const) {
+      expect((await gw.generateStructured({ ...request, purpose })).modelId, purpose).toBe(HAIKU);
+    }
+    for (const purpose of ['classification', 'eval'] as const) {
+      expect((await gw.generateStructured({ ...request, purpose })).modelId, purpose).toBe(NOVA_US);
+    }
+    expect(modelIds).toEqual([HAIKU, HAIKU, HAIKU, HAIKU, NOVA_US, NOVA_US]);
+    expect(gw.info).toMatchObject({
+      primaryModelId: HAIKU,
+      fallbackModelId: NOVA_US,
+      background: { primaryModelId: NOVA_US, fallbackModelId: NOVA_GLOBAL },
+    });
+    expect(modelsForPurpose(gw.info, 'classification')).toEqual({
+      primaryModelId: NOVA_US,
+      fallbackModelId: NOVA_GLOBAL,
+    });
+    expect(modelsForPurpose(gw.info, 'distill')).toEqual({ primaryModelId: HAIKU, fallbackModelId: NOVA_US });
+  });
+
+  it('falls back within the purpose’s own route', async () => {
+    const turn = routed([HAIKU]);
+    const answered = await turn.gw.generateStructured(request);
+    expect([answered.modelId, answered.fallbackUsed]).toEqual([NOVA_US, true]);
+    expect(turn.modelIds).toEqual([HAIKU, NOVA_US]);
+    const screen = routed([NOVA_US]);
+    const screened = await screen.gw.generateStructured({ ...request, purpose: 'classification' });
+    expect([screened.modelId, screened.fallbackUsed]).toEqual([NOVA_GLOBAL, true]);
+    expect(screen.modelIds).toEqual([NOVA_US, NOVA_GLOBAL]);
+  });
+
+  it('is read from the environment: all three variables or none, known purposes only', () => {
+    const base = {
+      APP_ENV: 'production',
+      MODEL_PROVIDER: 'bedrock',
+      MODEL_PRIMARY_ID: HAIKU,
+      MODEL_FALLBACK_ID: NOVA_US,
+    };
+    expect(
+      modelGatewayConfigFromEnv({
+        ...base,
+        MODEL_BACKGROUND_PRIMARY_ID: NOVA_US,
+        MODEL_BACKGROUND_FALLBACK_ID: NOVA_GLOBAL,
+        MODEL_BACKGROUND_PURPOSES: 'classification, eval,eval',
+      }),
+    ).toMatchObject({
+      primaryModelId: HAIKU,
+      fallbackModelId: NOVA_US,
+      background: {
+        primaryModelId: NOVA_US,
+        fallbackModelId: NOVA_GLOBAL,
+        purposes: ['classification', 'eval'],
+      },
+    });
+    expect(modelGatewayConfigFromEnv(base)).not.toHaveProperty('background');
+    expect(() => modelGatewayConfigFromEnv({ ...base, MODEL_BACKGROUND_PRIMARY_ID: NOVA_US })).toThrow(
+      /go together/,
+    );
+    expect(() =>
+      modelGatewayConfigFromEnv({
+        ...base,
+        MODEL_BACKGROUND_PRIMARY_ID: NOVA_US,
+        MODEL_BACKGROUND_FALLBACK_ID: NOVA_GLOBAL,
+        MODEL_BACKGROUND_PURPOSES: 'classification,chitchat',
+      }),
+    ).toThrow(/MODEL_BACKGROUND_PURPOSES$/);
   });
 });
 

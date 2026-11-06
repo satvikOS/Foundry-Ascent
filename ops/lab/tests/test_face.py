@@ -1473,3 +1473,70 @@ def test_lite_browser_checks_fail_on_a_second_utterance_doubled_audio_a_fallback
     # Not measured (the dry run's in-page channel, or no LITE arm): never a failure.
     assert set(_graded(_lite_call(lite_browser={"chunks": 0})).values()) == {None}
     assert set(face.lite_checks({}).values()) == {None}
+
+
+def test_lite_speak_channel_follows_the_calls_sessions() -> None:
+    """Lab run 42202149133 (free sandbox, LITE): the face's session lasts a minute and the call replaces it (the
+    avatar first, then the conversation; a new session, never a downgrade), so the arm met 3 sessions and 3 speak
+    channels, and the check, which expected one socket for the whole call, failed a healthy call."""
+
+    def channels(**browser: Any) -> dict[str, Any]:
+        raw = _lite_call()
+        base = {"sessions": 3, "channelAttempts": 3, "channelsOpened": 3, "maxOpenAtOnce": 1, "sockets": 3}
+        raw["lite_browser"] = {**raw["lite_browser"], **base, **browser}
+        return raw
+
+    # One channel per session, one at a time: connected.
+    assert _graded(channels())["lite_ws_connected"] is True
+    assert face.public_call_lite(channels())["lite_browser"]["sessions"] == 3
+    # Two open at once (a doubled channel), a channel that never opened, or more channels than sessions: not.
+    assert _graded(channels(maxOpenAtOnce=2))["lite_ws_connected"] is False
+    assert _graded(channels(channelsOpened=2))["lite_ws_connected"] is False
+    assert _graded(channels(sockets=4))["lite_ws_connected"] is False
+    assert _graded(channels(sockets=0, chunks=4))["lite_ws_connected"] is False
+    # A record from before the session counts is held to one socket, as it was.
+    assert _graded(_lite_call())["lite_ws_connected"] is True
+    old = _lite_call()
+    old["lite_browser"] = {**old["lite_browser"], "sockets": 3}
+    assert _graded(old)["lite_ws_connected"] is False
+
+
+def test_lite_acks_are_counted_per_utterance_and_reported() -> None:
+    raw = _lite_call()
+    raw["lite_browser"] = {**raw["lite_browser"], "appendedOk": True, "unackedChunks": 0, "uncommitted": 0}
+    public = face.public_call_lite(raw)
+    assert public is not None
+    assert (public["lite_browser"]["unacked_chunks"], public["lite_browser"]["uncommitted"]) == (0, 0)
+    assert _graded(raw)["lite_acks_complete"] is True
+    raw["lite_browser"] = {**raw["lite_browser"], "committedOk": False, "uncommitted": 1}
+    assert _graded(raw)["lite_acks_complete"] is False
+
+
+def test_a_lite_face_replaced_after_its_session_ended_counts_as_a_reconnect() -> None:
+    healthy = {
+        "reconnected": True,
+        "seconds_live_before": 31.4,
+        "seconds_to_reconnect": 2.8,
+        "end_reason": "time_limit",
+        "turn_spoken_by_face": True,
+        "turn_on_new_channel": True,
+        "turn_acks_complete": True,
+    }
+
+    def checks(reconnect: dict[str, Any] | None, full: dict[str, Any] | None = None) -> bool | None:
+        call_lite = _lite_call(**({} if reconnect is None else {"reconnect": reconnect}))
+        result = {"call_lite": face.public_call_lite(call_lite)}
+        return face.reconnects_after_session_end(full or {}, result)
+
+    assert checks(healthy) is True
+    public = face.public_call_lite(_lite_call(reconnect={**healthy, "end_reason": "not a reason"}))
+    assert public is not None
+    assert public["reconnect"]["end_reason"] is None
+    # The face came back but the next turn was said on the call's own speakers, or on the old channel: not.
+    assert checks({**healthy, "turn_spoken_by_face": False}) is False
+    assert checks({**healthy, "turn_on_new_channel": False}) is False
+    assert checks({**healthy, "reconnected": False}) is False
+    # Measured by neither arm: not measured. Each arm that measured it must pass.
+    assert checks(None) is None
+    assert checks(None, {"reconnected": True}) is True
+    assert checks(healthy, {"reconnected": False}) is False

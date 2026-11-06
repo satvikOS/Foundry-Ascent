@@ -26,6 +26,7 @@ import {
   greetedName,
   openerKept,
   ownGreetingLine,
+  withoutVocative,
   repeatGreeting,
   repeatGreetingOf,
   shorterSubjects,
@@ -826,9 +827,23 @@ describe('the names a call may say', () => {
     expect(said('Welcome back! Where did you land on pricing per seat versus per library?')).toBe(
       'Welcome back, Maya! Where did you land on pricing per seat versus per library?',
     );
-    // Its name already in the greeting is not said twice.
+    // Its name already in the greeting is not said twice: before it, or after the greeting's comma (audit-final
+    // review: "Good to see you again, Maya, Maya. …").
     expect(ownGreetingLine('Hi Maya, did the pilot go ahead?', 'Maya')).toBe(
       'Hi Maya, did the pilot go ahead?',
+    );
+    expect(said('Good to see you again, Maya. How did the pilot booking go?')).toBe(
+      'Good to see you again, Maya. How did the pilot booking go?',
+    );
+    expect(said('Nice to see you, Maya! Did the librarians reply?')).toBe(
+      'Nice to see you, Maya! Did the librarians reply?',
+    );
+    expect(said('Hey, Maya, quick one: did the librarians reply?')).toBe(
+      'Hey, Maya, quick one: did the librarians reply?',
+    );
+    // Nor when the line says it after the greeting.
+    expect(said('Good to see you again. Maya, how did the pilot booking go?')).toBe(
+      'Good to see you again. Maya, how did the pilot booking go?',
     );
     // A line that does not greet, or a stored sentence that is no model line, is phrased as before.
     expect(said('Last time you planned five library-staff interviews. How did they go?')).toBe(
@@ -860,16 +875,31 @@ describe('the names a call may say', () => {
       conversationStarted: false,
       seed: 's1',
     } as const;
-    // The model's line keeps its greeting, without the name.
+    // The model's line keeps its greeting, without the name, also when the line itself named her (audit-final review:
+    // the limit was skipped for a model line that said the name).
+    const modelLine = (opener: string): string =>
+      callIntroText({ ...base, firstMeeting: false, modelLine: true, opener, pastReplies: named });
+    expect(modelLine('Good to see you again. How did the pilot booking go?')).toBe(
+      'Good to see you again. How did the pilot booking go?',
+    );
+    expect(modelLine('Good to see you again, Maya. How did the pilot booking go?')).toBe(
+      'Good to see you again. How did the pilot booking go?',
+    );
+    expect(modelLine('Hey Maya, quick one: did the librarians reply?')).toBe(
+      'Hey, quick one: did the librarians reply?',
+    );
+    expect(modelLine('Good to see you again. Maya, how did the pilot booking go?')).toBe(
+      'Good to see you again. How did the pilot booking go?',
+    );
+    // A line that cannot be said without her name is not said as written: the greeting is phrased again, without
+    // calling her by it ("Hi, how did Maya's pilot booking go?", the subject's own words).
     expect(
-      callIntroText({
-        ...base,
-        firstMeeting: false,
-        modelLine: true,
-        opener: 'Good to see you again. How did the pilot booking go?',
-        pastReplies: named,
-      }),
-    ).toBe('Good to see you again. How did the pilot booking go?');
+      ownGreetingLine("Good to see you again. How did Maya's pilot booking go?", null, 'Maya'),
+    ).toBeNull();
+    expect(modelLine("Good to see you again. How did Maya's pilot booking go?")).toMatch(/^Hi, /);
+    expect(withoutVocative('Welcome back, Maya! Maya, where did you land?', 'Maya')).toBe(
+      'Welcome back! Where did you land?',
+    );
     // A phrased greeting and the invitation say "Hi" alone.
     expect(
       callIntroText({

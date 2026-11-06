@@ -1541,6 +1541,24 @@ describe('the first reply after an intro that said hello (wave 7)', () => {
     const { events } = await run(orchestrator, sessionId, { text: 'Hi!', mode: 'coach' });
     expect(completed(events).response?.answer).toBe('Hi there, good to see you.');
   });
+
+  it('a model-written opener that greeted in its own words is a hello: the first reply does not greet again', async () => {
+    // Audit-final review: a call says the notebook's model line as written ("Good to see you again, Maya. …"), and
+    // the guard only knew "Hi …"; the first reply then opened "Hi Maya, good to see you." on top of it.
+    for (const opener of [
+      'Good to see you again, Maya. How did the five library-staff interviews go?',
+      'Nice to see you! How did the five library-staff interviews go?',
+    ]) {
+      const gateway = new MockModelGateway({
+        streamDelayMs: 0,
+        streamFixture: () => 'Hi Maya, good to see you. Five interviews is a solid start.',
+      });
+      const { orchestrator } = coreWith(gateway);
+      const sessionId = await openedWith(opener);
+      const { events } = await run(orchestrator, sessionId, { text: 'Hi! They went well.', mode: 'coach' });
+      expect(completed(events).response?.answer, opener).toBe('Five interviews is a solid start.');
+    }
+  });
 });
 
 describe('the honest one-liner survives every wave 7 filter, end to end (LAB-M15/M16 × wave 7 craft)', () => {

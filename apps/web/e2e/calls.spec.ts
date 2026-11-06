@@ -640,8 +640,8 @@ test.describe('vEIR calls', () => {
         const { sessionId, intro } = await callFromPalette();
         expect(sessionId).not.toBe(first);
         // Met before: one sentence that greets her and picks the first call up (no self-introduction, no "an AI
-        // coach"), at most 90 characters; her name only while one reply in four allows it (the first call named her).
-        expect(intro).toMatch(/^Hi(?: Maya)?, /);
+        // coach"), at most 90 characters; not by name: the first call named her a reply ago (one reply in four).
+        expect(intro).toMatch(/^Hi, /);
         expect(intro.length).toBeLessThanOrEqual(90);
         expect(intro).not.toContain('what would you like to work on?');
         // It names what the first call was about (pricing), in a sentence that reads right: never a clause spliced

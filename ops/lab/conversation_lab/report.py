@@ -445,11 +445,14 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
         browser = lite.get("lite_browser") or {}
         if browser:
             out.append(
-                f"- Speak channel: sockets {browser.get('sockets')}; utterances per turn "
+                f"- Speak channel: sockets {browser.get('sockets')} for {browser.get('sessions')} sessions (opened "
+                f"{browser.get('channels_opened')} of {browser.get('channel_attempts')}, at most "
+                f"{browser.get('max_open_at_once')} at once); utterances per turn "
                 f"{browser.get('utterances_per_turn')} (must be 1 each); chunks {browser.get('chunks')} (first "
                 f"{browser.get('first_chunk_bytes')} bytes, largest {browser.get('max_chunk_bytes')}); speak_end "
-                f"{browser.get('speak_ends')}; acks appended ok {browser.get('appended_ok')}, committed ok "
-                f"{browser.get('committed_ok')}; keep-alives {browser.get('keep_alives')}; errors {browser.get('errors')}"
+                f"{browser.get('speak_ends')}; acks appended ok {browser.get('appended_ok')} (unacknowledged chunks "
+                f"{browser.get('unacked_chunks')}), committed ok {browser.get('committed_ok')} (uncommitted "
+                f"{browser.get('uncommitted')}); keep-alives {browser.get('keep_alives')}; errors {browser.get('errors')}"
             )
             out.append(
                 f"- First chunk → speak_started {_p(browser.get('first_chunk_to_started_ms'))}; speak_started → sound "
@@ -468,6 +471,15 @@ def _face_tables(face: Mapping[str, Any]) -> list[str]:
                 f"agent.interrupt → cleared {barge.get('interrupt_to_cleared_ms')} ms, → silence on the avatar's track "
                 f"{barge.get('interrupt_to_silence_ms')} ms; server told {barge.get('server_told')}"
                 + (f"; error {barge['error']}" if barge.get("error") else "")
+            )
+        reconnect = lite.get("reconnect") or {}
+        if reconnect:
+            out.append(
+                f"- Session end: reconnected {reconnect.get('reconnected')} after {reconnect.get('seconds_live_before')} s "
+                f"(why: {reconnect.get('end_reason')}), back in {reconnect.get('seconds_to_reconnect')} s; the next turn "
+                f"said by the face {reconnect.get('turn_spoken_by_face')}, on the new channel "
+                f"{reconnect.get('turn_on_new_channel')}, acks complete {reconnect.get('turn_acks_complete')}"
+                + (f"; error {reconnect['error']}" if reconnect.get("error") else "")
             )
         out.append(
             f"- Microphone requests after the face joined {lite.get('mic_requests_after_live')}; audio tracks "

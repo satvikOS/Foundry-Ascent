@@ -276,9 +276,12 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "MEDIA_VOICE_MODEL": "eleven_flash_v2_5",
             "MEDIA_VOICE_PROVIDER": "elevenlabs-stock",
             "MEDIA_VOICE_ZERO_RETENTION": "false",
+            "MODEL_BACKGROUND_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
+            "MODEL_BACKGROUND_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_BACKGROUND_PURPOSES": "classification,eval,ingestion,seed,embedding",
             "MODEL_EMBEDDINGS_ID": "amazon.titan-embed-text-v2:0",
-            "MODEL_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
-            "MODEL_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_FALLBACK_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_PRIMARY_ID": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             "MODEL_PROVIDER": "bedrock",
             "NODE_OPTIONS": "--enable-source-maps",
             "SPEECH_ENABLED": "true",
@@ -514,6 +517,58 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                         "Ref": "AWS::AccountId",
                       },
                       ":inference-profile/us.amazon.nova-2-lite-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
                     ],
                   ],
                 },
@@ -1323,9 +1378,12 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             },
             "HOME_TENANT_SLUG": "ain",
             "LOG_LEVEL": "info",
+            "MODEL_BACKGROUND_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
+            "MODEL_BACKGROUND_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_BACKGROUND_PURPOSES": "classification,eval,ingestion,seed,embedding",
             "MODEL_EMBEDDINGS_ID": "amazon.titan-embed-text-v2:0",
-            "MODEL_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
-            "MODEL_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_FALLBACK_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_PRIMARY_ID": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             "MODEL_PROVIDER": "bedrock",
             "NODE_OPTIONS": "--enable-source-maps",
           },
@@ -1520,9 +1578,12 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "HOME_TENANT_NAME": "Ain Foundry",
             "HOME_TENANT_SLUG": "ain",
             "LOG_LEVEL": "info",
+            "MODEL_BACKGROUND_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
+            "MODEL_BACKGROUND_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_BACKGROUND_PURPOSES": "classification,eval,ingestion,seed,embedding",
             "MODEL_EMBEDDINGS_ID": "amazon.titan-embed-text-v2:0",
-            "MODEL_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
-            "MODEL_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_FALLBACK_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_PRIMARY_ID": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             "MODEL_PROVIDER": "bedrock",
             "NODE_OPTIONS": "--enable-source-maps",
             "OWNER_ACCESS_CODE_HASH": "scrypt$N=32768,r=8,p=1$3EVOFO9pqROC_L4H7mo98g$RtIal90yLMyXBPUP_M2t51rYP2irq5D3k3DB6iweVY8",
@@ -2272,9 +2333,12 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "HOME_TENANT_SLUG": "ain",
             "JOBS_MAX_RECEIVE_COUNT": "3",
             "LOG_LEVEL": "info",
+            "MODEL_BACKGROUND_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
+            "MODEL_BACKGROUND_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_BACKGROUND_PURPOSES": "classification,eval,ingestion,seed,embedding",
             "MODEL_EMBEDDINGS_ID": "amazon.titan-embed-text-v2:0",
-            "MODEL_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
-            "MODEL_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_FALLBACK_ID": "us.amazon.nova-2-lite-v1:0",
+            "MODEL_PRIMARY_ID": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             "MODEL_PROVIDER": "bedrock",
             "NODE_OPTIONS": "--enable-source-maps",
           },
@@ -2505,6 +2569,58 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                         "Ref": "AWS::AccountId",
                       },
                       ":inference-profile/us.amazon.nova-2-lite-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:us-east-1:",
+                      {
+                        "Ref": "AWS::AccountId",
+                      },
+                      ":inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+                    ],
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
                     ],
                   ],
                 },
@@ -3748,10 +3864,12 @@ exports[`template snapshots > FoundryAscent-Foundation 1`] = `
                 "arn:aws:bedrock:*::foundation-model/amazon.nova-premier-v1:0",
                 "arn:aws:bedrock:*::foundation-model/amazon.nova-pro-v1:0",
                 "arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0",
-                "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
                 "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6",
                 "arn:aws:bedrock:*::foundation-model/meta.llama4-maverick-17b-instruct-v1:0",
                 "arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0",
+                "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+                "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+                "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
                 {
                   "Fn::Join": [
                     "",

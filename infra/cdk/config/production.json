@@ -16,13 +16,19 @@
     "accessCodeHash": "scrypt$N=32768,r=8,p=1$3EVOFO9pqROC_L4H7mo98g$RtIal90yLMyXBPUP_M2t51rYP2irq5D3k3DB6iweVY8"
   },
   "models": {
-    "primary": "us.amazon.nova-2-lite-v1:0",
-    "fallback": "global.amazon.nova-2-lite-v1:0",
+    "primary": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "fallback": "us.amazon.nova-2-lite-v1:0",
+    "background": {
+      "primary": "us.amazon.nova-2-lite-v1:0",
+      "fallback": "global.amazon.nova-2-lite-v1:0",
+      "purposes": ["classification", "eval", "ingestion", "seed", "embedding"]
+    },
     "embeddings": "amazon.titan-embed-text-v2:0",
+    "note": "Owner decision 2026-11-06 (ADR-0022): the coach is Claude Haiku 4.5 through its US inference profile, with Amazon Nova 2 Lite behind it. primary and fallback serve every purpose a founder reads: a turn (its streamed reply and its fields), a recap, the distillation (it writes the notebook and the next opener) and a studio test conversation. background serves the rest on Nova 2 Lite: the safety screen (classification), evaluations, ingestion and seeding. Haiku costs about 3.3 times Nova per input token and 2.2 times per output token (packages/ai/src/pricing.ts); prompt caching (cache reads at a tenth of the input rate) takes about half of that back on a conversation's turns (docs/runbooks/latency.md). The spend caps are unchanged. A later switch to another provider's model changes these ids and the gateway adapter (packages/ai), nothing else.",
     "luna": {
       "modelId": "openai.gpt-6-luna",
       "enabled": false,
-      "note": "Listed for this account but invocation returns 401 'not available for this account' (account-level gating by AWS, verified 2026-10-05). Set enabled=true after AWS grants access; Luna then becomes primary with Nova 2 Lite as fallback."
+      "note": "Listed for this account but invocation returns 401 'not available for this account' (account-level gating by AWS, verified 2026-10-05). Set enabled=true after AWS grants access; Luna then becomes primary with the configured primary as its fallback."
     }
   },
   "aurora": {

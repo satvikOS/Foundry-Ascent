@@ -347,12 +347,15 @@ An operator with credentials allowed to invoke the app's models can run the scri
 
 ```bash
 MODEL_PROVIDER=bedrock BEDROCK_REGION=us-east-1 \
-MODEL_PRIMARY_ID=us.amazon.nova-2-lite-v1:0 MODEL_FALLBACK_ID=global.amazon.nova-2-lite-v1:0 \
+MODEL_PRIMARY_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0 MODEL_FALLBACK_ID=us.amazon.nova-2-lite-v1:0 \
+MODEL_BACKGROUND_PRIMARY_ID=us.amazon.nova-2-lite-v1:0 MODEL_BACKGROUND_FALLBACK_ID=global.amazon.nova-2-lite-v1:0 \
+MODEL_BACKGROUND_PURPOSES=classification,eval,ingestion,seed,embedding \
 MODEL_EMBEDDINGS_ID=amazon.titan-embed-text-v2:0 \
 pnpm --filter @foundry/api exec tsx src/scripts/lab-safety-screen.ts --budget-usd 1 --out /tmp/safety-screen
 ```
 
-(copy the model ids from `infra/cdk/config/production.json`). It prints the whole report (ids included) and writes
+(copy the model ids from `infra/cdk/config/production.json`). The screen is a background purpose: it runs on the
+background route's Nova 2 Lite, as production's `classification` calls do, and the report names those models. It prints the whole report (ids included) and writes
 every line's outcome, reason and text to `<out>/private/safety-screen.json`, for the operator only. `--scope all` also
 screens the lines the prefilter lets pass (the screen's recall without the prefilter, when deciding to widen or narrow
 it); `--limit N` and `--concurrency N` (default 4) bound a run. Without `MODEL_PROVIDER=bedrock` it runs on the mock
@@ -390,13 +393,14 @@ in the lab's own database (local Postgres only), so the lab calls as an admin of
 Playwright (`apps/web/e2e/lab/face.lab.ts`, project `face`, `--disable-audio-output`, no fake microphone: the call is
 typed and the face must never ask for one) then runs these tests:
 
-| Test        | What it measures                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `probe`     | Raw sandbox rooms opened through the dev server's lab probe; the page joins them with livekit-client and commands the avatar itself. Session A: `speak_text` exact words vs `avatar.transcription` (E3), three texts back to back, queued or cut, with the gaps (E4), the transcript endpoint during the session (E10), then idle until the vendor ends it (E11). Session B (`max_session_duration` 30 s): `avatar.interrupt` time to silence and whether it cleared a queued text (E6), `avatar.speak_response` ignored in restricted mode (E8), whether the session stops at its maximum (E11). Session C: whether a LITE room token may publish data (E9). |
-| `warm-up`   | One typed turn on a call with faces off, before any measured arm and in every pass (the LITE pass's API was restarted): not measured. The first turn an API process serves pays the turn engine's first-run cost (run 41235680528: the model started ~0.5 s after the request on the run's first turn, ~0.05 s on the next ones), which would otherwise land on whichever arm runs first. Its own server timing is reported apart.                                                                                                                                                                                                                            |
-| `call`      | A call with the face: the session the app opened (provider, voicing, stock, LiveKit host: E1), the "AI avatar" label, two typed turns with the time from the turn sent to the face's first `speak_started` and first sound, and from each published `speak_text` to `speak_started` (E5), microphone requests and audio tracks published after the face joined and `user.transcription` events (E7), then the sandbox ending the session and the call falling back to the presence.                                                                                                                                                                           |
-| `injection` | A tampered page: the next `avatar.speak_text` the app publishes is rewritten in the page's data channel with other words of the same length, after the server admitted the original. The server's transcript check must end the face within a heartbeat (15 s) and audit `call.face_injection` from a heartbeat check (`metadata.atEnd` false, read from the lab database by `apps/api/src/scripts/lab-face-audits.ts`), with a vendor `end_reason` other than `MAX_DURATION_REACHED` (E10).                                                                                                                                                                  |
-| `polly`     | The same turns on a call with faces off (Amazon Polly only): the A/B arm for the first audio (E5), measured by the same level meter on the app's output.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Test        | What it measures                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `probe`     | Raw sandbox rooms opened through the dev server's lab probe; the page joins them with livekit-client and commands the avatar itself. Session A: `speak_text` exact words vs `avatar.transcription` (E3), three texts back to back, queued or cut, with the gaps (E4), the transcript endpoint during the session (E10), then idle until the vendor ends it (E11). Session B (`max_session_duration` 30 s): `avatar.interrupt` time to silence and whether it cleared a queued text (E6), `avatar.speak_response` ignored in restricted mode (E8), whether the session stops at its maximum (E11). Session C: whether a LITE room token may publish data (E9).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `warm-up`   | One typed turn on a call with faces off, before any measured arm and in every pass (the LITE pass's API was restarted): not measured. The first turn an API process serves pays the turn engine's first-run cost (run 41235680528: the model started ~0.5 s after the request on the run's first turn, ~0.05 s on the next ones), which would otherwise land on whichever arm runs first. Its own server timing is reported apart.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `call`      | A call with the face: the session the app opened (provider, voicing, stock, LiveKit host: E1), the "AI avatar" label, two typed turns with the time from the turn sent to the face's first `speak_started` and first sound, and from each published `speak_text` to `speak_started` (E5), microphone requests and audio tracks published after the face joined and `user.transcription` events (E7), then the sandbox ending the session and the call falling back to the presence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `injection` | A tampered page: the next `avatar.speak_text` the app publishes is rewritten in the page's data channel with other words of the same length, after the server admitted the original. The server's transcript check must end the face within a heartbeat (15 s) and audit `call.face_injection` from a heartbeat check (`metadata.atEnd` false, read from the lab database by `apps/api/src/scripts/lab-face-audits.ts`), with a vendor `end_reason` other than `MAX_DURATION_REACHED` (E10).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `polly`     | The same turns on a call with faces off (Amazon Polly only): the A/B arm for the first audio (E5), measured by the same level meter on the app's output.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `call LITE` | The same turns with the app's face in LITE, the page feeding the avatar's speak channel (`face_mode` `lite` or `both`): one utterance per turn, first face audio against Polly's, barge-in, no local playback and no doubled voice; the speak channel follows the call's vendor sessions (`lite_ws_connected`: every channel it tried opened, one channel per session, never two open at once; the sandbox's sessions last a minute and the call replaces its face before or as one ends, so an arm meets two or three sessions, each with its own channel: run 42202149133's three sockets were three sessions, not a fault); every chunk and end of each utterance acknowledged by its own id (`lite_acks_complete`, whatever the channel or the moment the arm started counting). Then the arm waits (at most 90 s) for the face's session to end and be replaced, and one more turn must be said by the new face, over the new session's channel, fully acknowledged (`reconnects_after_session_end`, which the FULL pass's `call` measures too; the summary's "Session end" line says why the old face ended: `time_limit` when the page replaced it at a quiet moment before the vendor's end). |
 
 The pages read the vendor's room events by tapping their own WebRTC data channels (the JSON inside each packet), on the
 page clock; nothing in the app is changed for the test. One level meter (an analyser polled every 20 ms; an onset
@@ -578,15 +582,16 @@ Before the first live run (owner actions, once):
 1. Deploy main after this change: the lab role's Bedrock grant now includes the live simulator and judge
    (`ops/lab/models.json` `live`; `infra/cdk/src/lib/lab-models.ts`).
 2. In the Bedrock console (us-east-1), make sure Claude Haiku 4.5 (Anthropic's first-use form) and Llama 4 Maverick
-   are enabled for the account. Without them the probe falls back to Nova and the summary says
-   `judge_independent: false`; the run still works.
+   are enabled for the account. Claude Haiku 4.5 is production's coach (ADR-0022), so the app's own turns need it; the
+   judge on `auto` is of another family (Llama 4 Maverick, then Nova Premier). Without Llama the probe falls back to
+   Nova Premier; the summary says which judge ran and `judge_independent`.
 
 Offline, no credentials:
 
 ```bash
 cd ops/lab
 python -m conversation_lab live-check                         # schema, distinctness, overlap (fails the build)
-python -m conversation_lab live-plan --sample 20 --budget-usd 2   # selection, estimate, shards
+python -m conversation_lab live-plan --sample 8 --budget-usd 2    # selection, estimate, shards
 python -m conversation_lab live-smoke --out /tmp/live-smoke   # infrastructure-only run on the in-process fake app
 ```
 
@@ -594,14 +599,16 @@ Dispatch (`dry_run` defaults to true: plan and estimate only):
 
 ```bash
 KEY="$(openssl pkey -pubin -in public.pem -outform DER | base64 | tr -d '\n')"
-# Default: 20 scenarios inside the USD 2 cap (estimate USD 1.84)
+# Default: 8 scenarios inside the USD 2 cap (estimate USD 1.70 on production's Claude Haiku 4.5 coach, USD 1.91 on the
+# fallback simulator and judge; no prompt-cache discount in the estimate)
 gh workflow run ops-live-evals.yml --ref main -f families=all -f seed=1 -f dry_run=false -f public_key="$KEY"
 ```
 
 Above the cap, only with the owner's approval of that budget ("Spend cap"; ask the owner, who sends the line for
-`approved_over_cap`): the 60-scenario pilot, 2 per family (`sample=60`, estimate USD 5.09, USD 6.37 on Nova
-fallbacks, so `budget_usd=7`), and all 600 (`sample=0`, estimate USD 49.67, USD 62.23 on Nova fallbacks, so
-`budget_usd=65`).
+`approved_over_cap`): the 60-scenario pilot, 2 per family (`sample=60`, estimate USD 14.26, USD 15.93 on the
+fallbacks, so `budget_usd=16`), and all 600 (`sample=0`, estimate USD 139.27, USD 155.63 on the fallbacks: above the
+workflow's USD 50 limit, so in shards of runs). These are upper bounds: the coach's prompt cache reads most of a
+conversation's later turns at a tenth of the input rate (docs/runbooks/latency.md), which the estimate leaves out.
 
 `approve_memory=true` adds a student who approves every pending AI memory proposal between sessions; the default
 leaves them as the product does (compare both when memory continuity is the question; the summary counts approvals).
@@ -616,13 +623,15 @@ measures Thomas (ADR-0021), not Corin's v1 doctrine. Locally `pnpm db:reset` rea
 on another Bedrock model for one run, to separate model limits from prompt and state effects (coaching diagnosis fix
 12). Production is never changed: the choice sets `MODEL_PRIMARY_ID` and `MODEL_FALLBACK_ID` of the lab's own API
 process only (`conversation_lab/stack.py`), both to the chosen model, so the arm is that model alone (a failure counts,
-it is never answered by Nova).
+it is never answered by another model); the background route (the safety screen) stays production's. Production's
+coach is Claude Haiku 4.5 since 2026-11-06 (ADR-0022), so the A/B candidates are the coach before it (Nova 2 Lite)
+and Claude Sonnet 4.6.
 
-| `coach_model`                                 | Coach (primary = fallback)                                       | Judge, `judge_model=auto`               | Judge, `judge_model=ab`    |
-| --------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------- | -------------------------- |
-| `default`                                     | production's (`us.amazon.nova-2-lite-v1:0`, fallback `global.…`) | Claude Haiku 4.5, then Llama 4 Maverick | Llama 4 Maverick, no other |
-| `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Claude Haiku 4.5 (us. profile)                                   | as `ab`                                 | Llama 4 Maverick, no other |
-| `us.anthropic.claude-sonnet-4-6`              | Claude Sonnet 4.6 (us. profile)                                  | as `ab`                                 | Llama 4 Maverick, no other |
+| `coach_model`                    | Coach (primary = fallback)                                                                | Judge, `judge_model=auto`           | Judge, `judge_model=ab`    |
+| -------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------- | -------------------------- |
+| `default`                        | production's (`us.anthropic.claude-haiku-4-5-20251001-v1:0`, fallback `us.amazon.nova-…`) | Llama 4 Maverick, then Nova Premier | Llama 4 Maverick, no other |
+| `us.amazon.nova-2-lite-v1:0`     | Nova 2 Lite (us. profile; production's coach until 2026-11-06)                            | as `ab`                             | Llama 4 Maverick, no other |
+| `us.anthropic.claude-sonnet-4-6` | Claude Sonnet 4.6 (us. profile)                                                           | as `ab`                             | Llama 4 Maverick, no other |
 
 The choices are `ops/lab/models.json` `live.coach`, which the lab role may invoke (`infra/cdk/src/lib/lab-models.ts`;
 deploy main once after adding a model, and enable it in the Bedrock console). The judge is never of the coach's family.
@@ -630,37 +639,36 @@ deploy main once after adding a model, and enable it in the Bedrock console). Th
 first `live.judge` candidate of a family that is none of the arms' (production's Nova and every `live.coach` model:
 today Llama 4 Maverick), with no fallback: a run whose pinned judge does not answer its probe stops rather than be
 graded by another. Any `coach_model` but `default` uses `ab` on `auto`; **run the default arm of an A/B with
-`judge_model=ab` too** (on `auto` it is graded by Claude Haiku, comparable with the earlier pilots but not with the
-Claude arms). Llama 4 Maverick is also the student simulator, in every arm alike, so it does not tilt the comparison.
+`judge_model=ab` too** (on `auto` its judge may fall back to Nova Premier, which an A/B never uses). With the Claude
+Haiku coach, a default run on `auto` is judged by Llama 4 Maverick like the A/B runs of 2026-11-05 (42143561959,
+42146119067), not by Claude Haiku like the earlier pilots (42099643194, 42124259353, 42202174715): compare it with the
+former. Llama 4 Maverick is also the student simulator, in every arm alike, so it does not tilt the comparison.
 The summary records `models.coach`, `models.judge`, `judge_independent` and `selection.judge_policy`. With
-a Claude coach the app's share of a shard's budget is 0.9 (its turns are most of the cost). The plan (`dry_run`)
-estimates the coach at ~15.9k input and ~330 output tokens a turn on the chosen model's us. price, with no prompt-cache
-discount (an upper bound):
+a Claude coach (production's included) the app's share of a shard's budget is 0.9 (its turns are most of the cost). The
+plan (`dry_run`) estimates the coach at ~15.9k input and ~330 output tokens a turn on the coach's us. price
+(production's Claude Haiku 4.5 for `default`), with no prompt-cache discount (an upper bound):
 
-| Selection                  | `default`, `judge_model=auto` | `default`, `judge_model=ab` | Claude Haiku 4.5 | Claude Sonnet 4.6 |
-| -------------------------- | ----------------------------- | --------------------------- | ---------------- | ----------------- |
-| 10 scenarios (`sample=10`) | USD 0.92                      | USD 0.86                    | USD 2.53         | USD 7.25          |
-| 60 scenarios (`sample=60`) | USD 5.17                      | USD 4.79                    | USD 14.26        | USD 40.93         |
+| Selection                  | `default` (Claude Haiku 4.5), `auto` | `default`, `judge_model=ab` | Nova 2 Lite | Claude Sonnet 4.6 |
+| -------------------------- | ------------------------------------ | --------------------------- | ----------- | ----------------- |
+| 8 scenarios (the default)  | USD 1.70                             | USD 1.70                    | USD 0.57    | USD 4.89          |
+| 10 scenarios (`sample=10`) | USD 2.53                             | USD 2.53                    | USD 0.86    | USD 7.25          |
+| 60 scenarios (`sample=60`) | USD 14.26                            | USD 14.26                   | USD 4.79    | USD 40.93         |
 
 ```bash
-# Plan only (no model called): the estimate for a 10-scenario Haiku arm
-gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=10 -f seed=1 \
-  -f coach_model=us.anthropic.claude-haiku-4-5-20251001-v1:0 -f budget_usd=3
-# The two arms of an A/B on the same 10 scenarios (same seed), one judge for both, sealed
-gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=10 -f seed=1 -f budget_usd=1.5 \
+# The two arms of an A/B on the same 8 scenarios (same seed), one judge for both, sealed: production's Claude Haiku
+# coach, then the Nova 2 Lite arm
+gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=8 -f seed=1 -f budget_usd=2 \
   -f judge_model=ab -f dry_run=false -f public_key="$KEY"
-# The Haiku arm needs budget_usd=3, above the cap: APPROVAL is the owner's line for budget_usd=3 ("Spend cap")
-gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=10 -f seed=1 -f budget_usd=3 \
-  -f approved_over_cap="$APPROVAL" -f coach_model=us.anthropic.claude-haiku-4-5-20251001-v1:0 -f judge_model=ab \
-  -f dry_run=false -f public_key="$KEY"
+gh workflow run ops-live-evals.yml --ref main -f families=all -f sample=8 -f seed=1 -f budget_usd=1 \
+  -f coach_model=us.amazon.nova-2-lite-v1:0 -f judge_model=ab -f dry_run=false -f public_key="$KEY"
 # Compare the two merged summaries (b minus a): refused when the judges, judge prompt, dataset or selection differ
-python -m conversation_lab live-compare --out <dir> default/live-summary.json haiku/live-summary.json
+python -m conversation_lab live-compare --out <dir> nova/live-summary.json default/live-summary.json
 ```
 
 Production's coach model is configuration too: `infra/cdk/config/production.json` `models.primary` / `models.fallback`
 become `MODEL_PRIMARY_ID` / `MODEL_FALLBACK_ID` of every function (`infra/cdk/src/lib/models.ts`; the API's Bedrock
-grant follows them, and `packages/ai` prices Claude for the cost caps). Switching it is a config change and a normal
-deploy, after an A/B here; nothing switches it now.
+grant follows them, and `packages/ai` prices them for the cost caps). It was switched from Nova 2 Lite to Claude Haiku
+4.5 on 2026-11-06 after the A/B here (ADR-0022); switching it again is a config change and a normal deploy.
 
 The merged public summary (artifact `live-evals-merged-<run>`, and the job summary) holds numbers, ids and codes
 only. Gates are computed over the planned runs and read "NOT met (incomplete)" while any planned run lacks a verdict

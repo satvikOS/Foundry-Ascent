@@ -5,7 +5,9 @@
  * docs/runbooks/conversation-lab.md, "Safety screen evaluation".
  *
  *   MODEL_PROVIDER=bedrock BEDROCK_REGION=us-east-1 \
- *   MODEL_PRIMARY_ID=us.amazon.nova-2-lite-v1:0 MODEL_FALLBACK_ID=global.amazon.nova-2-lite-v1:0 \
+ *   MODEL_PRIMARY_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0 MODEL_FALLBACK_ID=us.amazon.nova-2-lite-v1:0 \
+ *   MODEL_BACKGROUND_PRIMARY_ID=us.amazon.nova-2-lite-v1:0 MODEL_BACKGROUND_FALLBACK_ID=global.amazon.nova-2-lite-v1:0 \
+ *   MODEL_BACKGROUND_PURPOSES=classification,eval,ingestion,seed,embedding \
  *   MODEL_EMBEDDINGS_ID=amazon.titan-embed-text-v2:0 \
  *   pnpm --filter @foundry/api exec tsx src/scripts/lab-safety-screen.ts [--scope screened|all] \
  *     [--limit N] [--concurrency 4] [--budget-usd 1] [--out DIR]
@@ -40,6 +42,7 @@ import {
   ideationPrefilter,
   isModelGatewayError,
   modelGatewayConfigFromEnv,
+  modelsForPurpose,
   safetyScreenOutcome,
   safetyScreenReason,
   type ModelGateway,
@@ -437,17 +440,20 @@ async function main(argv: readonly string[]): Promise<void> {
   const rows = await loadCorpus(args.corpus);
   const selected = args.limit === null ? rows : rows.slice(0, args.limit);
   const gateway = createModelGateway(modelGatewayConfigFromEnv(process.env));
+  // The models the screen runs on: production's background route (the screen's `classification` and this script's
+  // `eval` are background purposes), or the coach's models when there is no background route.
+  const screenModels = modelsForPurpose(gateway.info, 'eval');
   const started = performance.now();
   const { results, budgetReached } = await evaluateSafetyScreen(gateway, selected, {
     scope: args.scope,
     concurrency: args.concurrency,
     budgetUsd: args.budgetUsd,
-    worstCaseUsd: screenWorstCaseUsd(gateway.info.primaryModelId, gateway.info.fallbackModelId),
+    worstCaseUsd: screenWorstCaseUsd(screenModels.primaryModelId, screenModels.fallbackModelId),
   });
   const report = {
     provider: gateway.info.provider,
-    primaryModelId: gateway.info.primaryModelId,
-    fallbackModelId: gateway.info.fallbackModelId,
+    primaryModelId: screenModels.primaryModelId,
+    fallbackModelId: screenModels.fallbackModelId,
     scope: args.scope,
     budgetUsd: args.budgetUsd,
     budgetReached,

@@ -8,12 +8,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT } from '../paths.js';
 import {
-  embeddingsAccess,
   foundationModelId,
-  isGlobalInferenceProfile,
-  isInferenceProfile,
   isMantleModel,
   reasoningAccess,
+  reasoningModelIds,
+  runtimeAccess,
   type BedrockRuntimeAccess,
   type EffectiveModels,
 } from './models.js';
@@ -107,24 +106,23 @@ export const LAB_MODELS: LabModels = parseLabModels(
 /**
  * Every Bedrock resource the lab invokes: the app's effective reasoning and embeddings models (it runs the app
  * with the production model configuration) and the lab's simulator and judge models, the live evaluation's included,
- * and the alternative coach models a lab run may run the app's coach on (`live.coach`: an A/B, the lab only).
+ * and the alternative coach models a lab run may run the app's coach on (`live.coach`: an A/B, the lab only). Each
+ * foundation model is granted where its profiles route (lib/models.ts `runtimeAccess`), the widest of its ways in.
  */
-export function conversationLabAccess(app: EffectiveModels, lab: LabModels): BedrockRuntimeAccess {
-  const own = [
-    ...new Set([...lab.simulator, ...lab.judge, ...lab.live.simulator, ...lab.live.judge, ...lab.live.coach]),
-  ];
-  const parts = [reasoningAccess(app), embeddingsAccess(app)];
-  const ownAccess: BedrockRuntimeAccess = {
-    foundationModels: own.map(foundationModelId),
-    globalFoundationModels: own.filter(isGlobalInferenceProfile).map(foundationModelId),
-    inferenceProfiles: own.filter(isInferenceProfile),
-  };
-  const merge = (pick: (access: BedrockRuntimeAccess) => readonly string[]): string[] => [
-    ...new Set([...parts, ownAccess].flatMap(pick)),
-  ];
+export function conversationLabAccess(
+  app: EffectiveModels,
+  lab: LabModels,
+  region = 'us-east-1',
+): BedrockRuntimeAccess {
+  const own = [...lab.simulator, ...lab.judge, ...lab.live.simulator, ...lab.live.judge, ...lab.live.coach];
+  const appAccess = reasoningAccess(app, region);
+  const all = runtimeAccess(
+    [...reasoningModelIds(app).filter((id) => !isMantleModel(id)), app.embeddings, ...own],
+    region,
+  );
   return {
-    foundationModels: merge((a) => a.foundationModels),
-    globalFoundationModels: merge((a) => a.globalFoundationModels),
-    inferenceProfiles: merge((a) => a.inferenceProfiles),
+    ...all,
+    // A bare reasoning id's `us.` retry profile (reasoningAccess) comes with it.
+    inferenceProfiles: [...new Set([...all.inferenceProfiles, ...appAccess.inferenceProfiles])],
   };
 }

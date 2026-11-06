@@ -52,6 +52,28 @@ describe('withoutRepeatedGreeting: the first reply after an intro that said hell
       openerSaidHello('Good to have you back. Last time, we talked about pricing. Want to pick that up?'),
     ).toBe(false);
     expect(openerSaidHello(null)).toBe(false);
+    // A model-written opener greets in its own words (the coach hand-off): a hello, so the first reply does not greet
+    // again (audit-final review: after a call's model-line intro the guard no longer fired).
+    for (const opener of [
+      'Good to see you again, Mina. How did the pilot go?',
+      'Nice to see you! Did the librarians reply?',
+      'Great to hear from you again. What came of the union meeting?',
+      'Good to talk again, Mina. Where did pricing land?',
+      'Lovely to see you, Mina! How were the interviews?',
+      'Good morning, Mina. Ready for the numbers?',
+      'Good to see you Mina! How did it go?',
+    ]) {
+      expect(openerSaidHello(opener, MINA), opener).toBe(true);
+    }
+    // A welcome is not a hello (pinned above): it still leaves a warm hello back.
+    for (const opener of [
+      'Welcome back! Where did pricing land?',
+      'Good to have you back, Mina. How did it go?',
+      "Glad you're back. Shall we look at the pilot?",
+      'Good to hear the pilot went well. What next?',
+    ]) {
+      expect(openerSaidHello(opener, MINA), opener).toBe(false);
+    }
     expect(REPEATED_GREETING_FALLBACK).not.toMatch(/\b(?:hi|hello|hey|welcome|good to)\b/i);
   });
 });

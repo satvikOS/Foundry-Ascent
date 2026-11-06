@@ -4,8 +4,10 @@ import {
   effectiveModels,
   embeddingsAccess,
   foundationModelId,
+  geoDestinations,
   isInferenceProfile,
   reasoningAccess,
+  runtimeAccess,
   usesMantle,
 } from '../src/lib/models.js';
 import { functionPolicyStatements, resourcesOfType, synthesize } from './helpers.js';
@@ -24,6 +26,8 @@ const LUNA_MODELS: PlatformConfig['models'] = {
 const join = (...parts: unknown[]): unknown => ({ 'Fn::Join': ['', parts] });
 const foundationModel = (id: string): unknown =>
   join('arn:', { Ref: 'AWS::Partition' }, `:bedrock:*::foundation-model/${id}`);
+const regionalFoundationModel = (id: string, region: string): unknown =>
+  join('arn:', { Ref: 'AWS::Partition' }, `:bedrock:${region}::foundation-model/${id}`);
 const regionlessFoundationModel = (id: string): unknown =>
   join('arn:', { Ref: 'AWS::Partition' }, `:bedrock:::foundation-model/${id}`);
 const profile = (id: string): unknown =>
@@ -71,11 +75,13 @@ describe('model selection', () => {
     expect(access).toEqual({
       foundationModels: ['amazon.nova-2-lite-v1:0'],
       globalFoundationModels: [],
+      regionalFoundationModels: [],
       inferenceProfiles: ['us.amazon.nova-2-lite-v1:0'],
     });
     expect(embeddingsAccess(effectiveModels(NOVA_MODELS))).toEqual({
       foundationModels: ['amazon.titan-embed-text-v2:0'],
       globalFoundationModels: [],
+      regionalFoundationModels: [],
       inferenceProfiles: [],
     });
   });
@@ -84,8 +90,56 @@ describe('model selection', () => {
     expect(reasoningAccess(effectiveModels(NOVA_MODELS))).toEqual({
       foundationModels: ['amazon.nova-2-lite-v1:0'],
       globalFoundationModels: ['amazon.nova-2-lite-v1:0'],
+      regionalFoundationModels: [],
       inferenceProfiles: ['us.amazon.nova-2-lite-v1:0', 'global.amazon.nova-2-lite-v1:0'],
     });
+  });
+
+  it('grants a model reached only through a checked US profile in that profile’s destination regions alone', () => {
+    const production = effectiveModels(loadConfig().models);
+    expect(production).toEqual({
+      primary: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      fallback: 'us.amazon.nova-2-lite-v1:0',
+      embeddings: 'amazon.titan-embed-text-v2:0',
+      background: {
+        primary: 'us.amazon.nova-2-lite-v1:0',
+        fallback: 'global.amazon.nova-2-lite-v1:0',
+        purposes: ['classification', 'eval', 'ingestion', 'seed', 'embedding'],
+      },
+    });
+    expect(reasoningAccess(production)).toEqual({
+      // Nova is also reached through its global profile (the background fallback): the widest grant wins.
+      foundationModels: ['amazon.nova-2-lite-v1:0'],
+      globalFoundationModels: ['amazon.nova-2-lite-v1:0'],
+      regionalFoundationModels: [
+        {
+          modelId: 'anthropic.claude-haiku-4-5-20251001-v1:0',
+          regions: ['us-east-1', 'us-east-2', 'us-west-2'],
+        },
+      ],
+      inferenceProfiles: [
+        'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+        'us.amazon.nova-2-lite-v1:0',
+        'global.amazon.nova-2-lite-v1:0',
+      ],
+    });
+    // A profile whose destinations were not checked keeps its model granted in every region; so does another source.
+    expect(geoDestinations('us.anthropic.claude-sonnet-4-6', 'us-east-1')).toBeNull();
+    expect(geoDestinations('us.anthropic.claude-haiku-4-5-20251001-v1:0', 'us-west-2')).toBeNull();
+    expect(runtimeAccess(['us.anthropic.claude-sonnet-4-6'], 'us-east-1').foundationModels).toEqual([
+      'anthropic.claude-sonnet-4-6',
+    ]);
+  });
+
+  it('never lets Luna move the background route', () => {
+    const models = loadConfig().models;
+    const luna = effectiveModels({ ...models, luna: { modelId: 'openai.gpt-6-luna', enabled: true } });
+    expect(luna).toMatchObject({
+      primary: 'openai.gpt-6-luna',
+      fallback: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      background: models.background,
+    });
+    expect(usesMantle(luna)).toBe(true);
   });
 });
 
@@ -105,6 +159,10 @@ describe.each([
         MODEL_PRIMARY_ID: effective.primary,
         MODEL_FALLBACK_ID: effective.fallback,
         MODEL_EMBEDDINGS_ID: 'amazon.titan-embed-text-v2:0',
+        // These configurations have no background route: all three empty.
+        MODEL_BACKGROUND_PRIMARY_ID: '',
+        MODEL_BACKGROUND_FALLBACK_ID: '',
+        MODEL_BACKGROUND_PURPOSES: '',
       });
     }
   });
@@ -115,12 +173,15 @@ describe.each([
       const runtime = statements.find((s) => s.Sid === 'BedrockRuntimeModels');
       expect(runtime?.Action).toEqual(['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream']);
       const expected = [
-        foundationModel('amazon.nova-2-lite-v1:0'),
         foundationModel('amazon.titan-embed-text-v2:0'),
         profile('us.amazon.nova-2-lite-v1:0'),
         ...(mantle
-          ? []
+          ? // Nova only behind Luna, through its US profile: granted where that profile routes.
+            ['us-east-1', 'us-east-2', 'us-west-2'].map((region) =>
+              regionalFoundationModel('amazon.nova-2-lite-v1:0', region),
+            )
           : [
+              foundationModel('amazon.nova-2-lite-v1:0'),
               profile('global.amazon.nova-2-lite-v1:0'),
               regionlessFoundationModel('amazon.nova-2-lite-v1:0'),
             ]),
@@ -170,7 +231,7 @@ describe('Bedrock permissions in production (config/production.json)', () => {
   };
 
   it.each(['FoundryAscent-Api', 'FoundryAscent-Worker'])(
-    '%s may invoke (incl. streaming) both Nova profiles, the Nova model in every region and region-less, and Titan',
+    '%s may invoke (incl. streaming) the Claude Haiku 4.5 profile and its model where it routes, both Nova profiles, the Nova model in every region and region-less, and Titan',
     (name) => {
       const runtime = functionPolicyStatements(templates.app, name).find(
         (s) => s.Sid === 'BedrockRuntimeModels',
@@ -178,6 +239,10 @@ describe('Bedrock permissions in production (config/production.json)', () => {
       expect(runtime?.Action).toEqual(['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream']);
       expect(((runtime?.Resource as unknown[] | undefined) ?? []).map(render).sort()).toEqual(
         [
+          `arn:aws:bedrock:us-east-1:${account}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0`,
+          'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+          'arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+          'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
           `arn:aws:bedrock:us-east-1:${account}:inference-profile/us.amazon.nova-2-lite-v1:0`,
           `arn:aws:bedrock:us-east-1:${account}:inference-profile/global.amazon.nova-2-lite-v1:0`,
           'arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0',

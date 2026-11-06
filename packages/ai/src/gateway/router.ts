@@ -19,8 +19,10 @@ import { TitanEmbedder } from './titan.js';
 import {
   MODEL_PURPOSES,
   noopLogger,
+  type BackgroundModels,
   type EmbedOptions,
   type EmbedResult,
+  type GatewayPurpose,
   type GenerateStructuredRequest,
   type GenerateStructuredResult,
   type ModelAttempt,
@@ -51,6 +53,11 @@ export interface BedrockGatewayConfig {
   region: string;
   primaryModelId: string;
   fallbackModelId: string;
+  /**
+   * The background purposes' own primary and fallback (`MODEL_BACKGROUND_*`), or absent: every purpose then uses
+   * `primaryModelId` and `fallbackModelId`.
+   */
+  background?: BackgroundModels;
   embeddingsModelId: string;
   /** Budget for the primary model (incl. its repair retry) when a request does not set one. Default 25 s. */
   primaryTimeoutMs?: number;
@@ -63,9 +70,9 @@ export interface BedrockGatewayConfig {
   embeddingConcurrency?: number;
   lunaReasoningEffort?: LunaReasoningEffort;
   /**
-   * Bedrock prompt caching (`MODEL_PROMPT_CACHE`): Converse requests to an Amazon Nova model carry cache checkpoints
-   * where the request's `promptCache` hint says its unchanging prefix ends. Default true (Nova 2 Lite supports it on
-   * Converse and ConverseStream: docs/runbooks/latency.md).
+   * Bedrock prompt caching (`MODEL_PROMPT_CACHE`): Converse requests to a model with priced cache rates (Amazon Nova,
+   * Claude Haiku 4.5: nova.ts `usesCachePoints`) carry cache checkpoints where the request's `promptCache` hint says
+   * its unchanging prefix ends. Default true (docs/runbooks/latency.md).
    */
   promptCache?: boolean;
   /** Test seams: replace the network transports. */
@@ -131,10 +138,19 @@ function shouldFallback(error: unknown): boolean {
   return !(error instanceof ModelUnavailableError && error.reason === 'aborted');
 }
 
+/** The primary and fallback provider a purpose is served by. */
+interface Route {
+  readonly primary: StructuredProvider;
+  readonly fallback: StructuredProvider;
+}
+
 class BedrockModelGateway implements ModelGateway {
   readonly info: ModelGatewayInfo;
-  readonly #primary: StructuredProvider;
-  readonly #fallback: StructuredProvider;
+  /** Every purpose not in `#backgroundPurposes`. */
+  readonly #route: Route;
+  /** The background purposes' route, or null when there is none. */
+  readonly #background: Route | null;
+  readonly #backgroundPurposes: ReadonlySet<GatewayPurpose>;
   readonly #embedder: TitanEmbedder;
   readonly #pricing: PricingTable;
   readonly #logger: ModelLogger;
@@ -152,7 +168,10 @@ class BedrockModelGateway implements ModelGateway {
 
     const usesConverse =
       (!config.providers?.primary && reasoningAdapterFor(config.primaryModelId) === 'converse') ||
-      (!config.providers?.fallback && reasoningAdapterFor(config.fallbackModelId) === 'converse');
+      (!config.providers?.fallback && reasoningAdapterFor(config.fallbackModelId) === 'converse') ||
+      [config.background?.primaryModelId, config.background?.fallbackModelId].some(
+        (id) => id !== undefined && reasoningAdapterFor(id) === 'converse',
+      );
     const needsRuntime =
       (usesConverse && (!config.transports?.converse || !config.transports.converseStream)) ||
       (!config.providers?.embedder && !config.transports?.invokeModel);
@@ -170,7 +189,17 @@ class BedrockModelGateway implements ModelGateway {
     const converse = config.transports?.converse ?? runtime?.converse;
     const converseStream = config.transports?.converseStream ?? runtime?.converseStream;
 
-    const reasoningProvider = (modelId: string): StructuredProvider =>
+    // One provider per model id: the same id on two routes shares its instance (and what it learned, such as an
+    // inference-profile retry or a refused cache checkpoint).
+    const providers = new Map<string, StructuredProvider>();
+    const reasoningProvider = (modelId: string): StructuredProvider => {
+      const known = providers.get(modelId);
+      if (known) return known;
+      const created = newReasoningProvider(modelId);
+      providers.set(modelId, created);
+      return created;
+    };
+    const newReasoningProvider = (modelId: string): StructuredProvider =>
       reasoningAdapterFor(modelId) === 'mantle'
         ? new LunaProvider({
             modelId,
@@ -187,8 +216,19 @@ class BedrockModelGateway implements ModelGateway {
             ...(converseStream ? { converseStream } : {}),
             promptCache: config.promptCache !== false,
           });
-    this.#primary = config.providers?.primary ?? reasoningProvider(config.primaryModelId);
-    this.#fallback = config.providers?.fallback ?? reasoningProvider(config.fallbackModelId);
+    this.#route = {
+      primary: config.providers?.primary ?? reasoningProvider(config.primaryModelId),
+      fallback: config.providers?.fallback ?? reasoningProvider(config.fallbackModelId),
+    };
+    const background = config.background;
+    this.#background =
+      background === undefined
+        ? null
+        : {
+            primary: reasoningProvider(background.primaryModelId),
+            fallback: reasoningProvider(background.fallbackModelId),
+          };
+    this.#backgroundPurposes = new Set(background?.purposes ?? []);
     const invokeModel = config.transports?.invokeModel ?? runtime?.invokeModel;
     this.#embedder =
       config.providers?.embedder ??
@@ -202,8 +242,16 @@ class BedrockModelGateway implements ModelGateway {
 
     this.info = {
       provider: 'bedrock',
-      primaryModelId: this.#primary.modelId,
-      fallbackModelId: this.#fallback.modelId,
+      primaryModelId: this.#route.primary.modelId,
+      fallbackModelId: this.#route.fallback.modelId,
+      background:
+        this.#background === null || background === undefined
+          ? null
+          : {
+              primaryModelId: this.#background.primary.modelId,
+              fallbackModelId: this.#background.fallback.modelId,
+              purposes: [...background.purposes],
+            },
       embeddingsModelId: this.#embedder.modelId,
       embeddingDimensions: this.#embedder.dimensions,
     };
@@ -211,6 +259,13 @@ class BedrockModelGateway implements ModelGateway {
 
   async prewarm(): Promise<void> {
     await this.#prewarm?.();
+  }
+
+  /** The providers a purpose is served by. */
+  #routeFor(purpose: GatewayPurpose): Route {
+    return this.#background !== null && this.#backgroundPurposes.has(purpose)
+      ? this.#background
+      : this.#route;
   }
 
   #logAttempts(attempts: readonly ModelAttempt[], requestId: string, purpose: string): void {
@@ -243,6 +298,7 @@ class BedrockModelGateway implements ModelGateway {
       throw new TypeError(`Unknown model purpose: ${request.purpose}`);
     }
     const started = performance.now();
+    const route = this.#routeFor(request.purpose);
     const strict = toStrictJsonSchema(request.zodSchema);
     const maxOutputTokens = request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
     const raw: RawModelAttempt[] = [];
@@ -296,7 +352,7 @@ class BedrockModelGateway implements ModelGateway {
 
     let primaryError: unknown;
     try {
-      const result = await run(this.#primary, request.timeoutMs ?? this.#primaryTimeoutMs);
+      const result = await run(route.primary, request.timeoutMs ?? this.#primaryTimeoutMs);
       return finish(result.value, result.modelId, false);
     } catch (error) {
       if (!shouldFallback(error)) return failWith(error);
@@ -306,15 +362,15 @@ class BedrockModelGateway implements ModelGateway {
     this.#logger.warn('ai.model.fallback', {
       requestId: request.requestId,
       purpose: request.purpose,
-      from: this.#primary.modelId,
-      to: this.#fallback.modelId,
+      from: route.primary.modelId,
+      to: route.fallback.modelId,
       reason:
         primaryError instanceof ModelUnavailableError
           ? primaryError.reason
           : (primaryError as ModelGatewayError).code,
     });
     try {
-      const result = await run(this.#fallback, this.#fallbackTimeoutMs);
+      const result = await run(route.fallback, this.#fallbackTimeoutMs);
       return finish(result.value, result.modelId, true);
     } catch (error) {
       return failWith(error);
@@ -326,6 +382,7 @@ class BedrockModelGateway implements ModelGateway {
       throw new TypeError(`Unknown model purpose: ${request.purpose}`);
     }
     const started = performance.now();
+    const route = this.#routeFor(request.purpose);
     const maxOutputTokens = request.maxOutputTokens ?? DEFAULT_STREAM_MAX_OUTPUT_TOKENS;
     const raw: RawModelAttempt[] = [];
     // An object, not a `let`: the handler sets it while the provider runs (control-flow analysis cannot see that).
@@ -386,7 +443,7 @@ class BedrockModelGateway implements ModelGateway {
 
     let primaryError: unknown;
     try {
-      return finish(await run(this.#primary, request.timeoutMs ?? this.#primaryTimeoutMs), false);
+      return finish(await run(route.primary, request.timeoutMs ?? this.#primaryTimeoutMs), false);
     } catch (error) {
       // Once text has been shown, another model's answer would contradict it: no fallback.
       if (timing.firstTokenAt !== null || !shouldFallback(error)) return failWith(error);
@@ -395,15 +452,15 @@ class BedrockModelGateway implements ModelGateway {
     this.#logger.warn('ai.model.fallback', {
       requestId: request.requestId,
       purpose: request.purpose,
-      from: this.#primary.modelId,
-      to: this.#fallback.modelId,
+      from: route.primary.modelId,
+      to: route.fallback.modelId,
       reason:
         primaryError instanceof ModelUnavailableError
           ? primaryError.reason
           : (primaryError as ModelGatewayError).code,
     });
     try {
-      return finish(await run(this.#fallback, this.#fallbackTimeoutMs), true);
+      return finish(await run(route.fallback, this.#fallbackTimeoutMs), true);
     } catch (error) {
       return failWith(error);
     }
@@ -453,9 +510,10 @@ class BedrockModelGateway implements ModelGateway {
 /**
  * Creates the model gateway. Primary and fallback each get the adapter their model id calls for
  * ({@link reasoningAdapterFor}): `openai.*` → Luna on Mantle (strict JSON schema, one repair retry),
- * anything else → Converse with a submit tool (Nova 2 Lite, also through `us.`/`global.` inference
- * profiles; Claude ids ready). The fallback runs when the primary is unavailable (timeout, throttling,
- * 5xx, access), refuses or returns invalid output; for streamed text only while no text was delivered.
+ * anything else → Converse with a submit tool (Claude Haiku 4.5 and Nova 2 Lite, also through `us.`/`global.`
+ * inference profiles). With `background`, the purposes it names use its own primary and fallback. The fallback runs
+ * when the primary is unavailable (timeout, throttling, 5xx, access), refuses or returns invalid output; for streamed
+ * text only while no text was delivered.
  * Titan V2 embeddings. `provider: 'mock'` returns the deterministic {@link MockModelGateway}.
  */
 export function createModelGateway(config: ModelGatewayConfig): ModelGateway {
@@ -473,14 +531,54 @@ const EnvSchema = z.object({
     .string()
     .regex(/^[a-z]{2}(?:-gov)?-[a-z]+-\d$/)
     .default('us-east-1'),
-  /** Bedrock prompt caching for Nova (cache checkpoints after each turn's unchanging prefix). */
+  /** Bedrock prompt caching (cache checkpoints after each turn's unchanging prefix, for models with cache rates). */
   MODEL_PROMPT_CACHE: z.enum(['on', 'off']).default('on'),
+  /** The background purposes' own models (all three, or none): see {@link BackgroundModels}. */
+  // Empty is unset (the deployed functions always receive the three; empty when there is no background route).
+  MODEL_BACKGROUND_PRIMARY_ID: z.string().optional(),
+  MODEL_BACKGROUND_FALLBACK_ID: z.string().optional(),
+  /** Comma-separated purposes (`MODEL_PURPOSES`). */
+  MODEL_BACKGROUND_PURPOSES: z.string().optional(),
 });
+
+/** `MODEL_BACKGROUND_*`: all three set, or none; the purposes known and never empty. */
+function backgroundFromEnv(e: z.infer<typeof EnvSchema>): BackgroundModels | null {
+  const set = [
+    e.MODEL_BACKGROUND_PRIMARY_ID,
+    e.MODEL_BACKGROUND_FALLBACK_ID,
+    e.MODEL_BACKGROUND_PURPOSES,
+  ].filter((value) => value !== undefined && value.trim() !== '').length;
+  if (set === 0) return null;
+  if (set !== 3) {
+    throw new Error(
+      'Invalid model gateway environment: MODEL_BACKGROUND_PRIMARY_ID, MODEL_BACKGROUND_FALLBACK_ID and MODEL_BACKGROUND_PURPOSES go together',
+    );
+  }
+  const purposes = [
+    ...new Set(
+      (e.MODEL_BACKGROUND_PURPOSES ?? '')
+        .split(',')
+        .map((p) => p.trim())
+        .filter((p) => p !== ''),
+    ),
+  ];
+  const unknown = purposes.filter((p) => !(MODEL_PURPOSES as readonly string[]).includes(p));
+  if (purposes.length === 0 || unknown.length > 0) {
+    throw new Error('Invalid model gateway environment: MODEL_BACKGROUND_PURPOSES');
+  }
+  return {
+    primaryModelId: (e.MODEL_BACKGROUND_PRIMARY_ID ?? '').trim(),
+    fallbackModelId: (e.MODEL_BACKGROUND_FALLBACK_ID ?? '').trim(),
+    purposes: purposes as GatewayPurpose[],
+  };
+}
 
 /**
  * Reads gateway configuration from the runtime contract's environment variables
- * (`MODEL_PROVIDER`, `MODEL_PRIMARY_ID`, `MODEL_FALLBACK_ID`, `MODEL_EMBEDDINGS_ID`, `BEDROCK_REGION`), and the
- * optional `MODEL_PROMPT_CACHE` (`on` by default, `off` sends no cache checkpoints; the mock ignores it).
+ * (`MODEL_PROVIDER`, `MODEL_PRIMARY_ID`, `MODEL_FALLBACK_ID`, `MODEL_EMBEDDINGS_ID`, `BEDROCK_REGION`), the
+ * optional `MODEL_PROMPT_CACHE` (`on` by default, `off` sends no cache checkpoints; the mock ignores it), and the
+ * optional background route (`MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID`,
+ * `MODEL_BACKGROUND_PURPOSES`: all three or none).
  * `MODEL_PROVIDER` defaults to `mock` outside production and is mandatory in production.
  */
 export function modelGatewayConfigFromEnv(
@@ -495,12 +593,14 @@ export function modelGatewayConfigFromEnv(
   const e = parsed.data;
   const provider = e.MODEL_PROVIDER ?? (e.APP_ENV === 'production' ? null : 'mock');
   if (provider === null) throw new Error('MODEL_PROVIDER must be set in production');
+  const background = backgroundFromEnv(e);
   if (provider === 'mock') return { provider: 'mock' };
   return {
     provider: 'bedrock',
     region: e.BEDROCK_REGION,
     primaryModelId: e.MODEL_PRIMARY_ID,
     fallbackModelId: e.MODEL_FALLBACK_ID,
+    ...(background === null ? {} : { background }),
     embeddingsModelId: e.MODEL_EMBEDDINGS_ID,
     promptCache: e.MODEL_PROMPT_CACHE === 'on',
     ...(extras.logger ? { logger: extras.logger } : {}),

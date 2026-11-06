@@ -116,11 +116,27 @@ filter event = "turn.timing" and outcome = "completed"
   by voice, awsConnectionsOpened > 0
 ```
 
-### Prompt caching (Bedrock, Nova 2 Lite)
+### Prompt caching (Bedrock: the Claude Haiku 4.5 coach, Nova 2 Lite)
 
-Converse and ConverseStream requests to Nova carry cache checkpoints (`cachePoint`) where the prompt stops being the
+Converse and ConverseStream requests carry cache checkpoints (`cachePoint`) where the prompt stops being the
 same as on the conversation's previous turn (`MODEL_PROMPT_CACHE`, on by default; `off` sends none; the mock and
-Luna ignore it). What AWS documents for Nova 2 Lite (prompt-caching user guide and the model card, checked
+Luna ignore it), for the models whose cache rates `pricing.ts` carries (`nova.ts` `usesCachePoints`): Nova and, since
+the coach moved to it (ADR-0022), Claude Haiku 4.5.
+
+What AWS documents for Claude Haiku 4.5 (its Bedrock model card, checked 2026-11-06): explicit caching on Converse and
+ConverseStream; checkpoints in `system`, `messages` and `tools`; at least **4,096 tokens** before a checkpoint (a
+shorter prefix is simply not cached: no error, no write); at most 4 checkpoints; a 5-minute TTL (1 hour on request,
+not used). Prices (AWS price list, us-east-1, the `us.` profile): input $1.10, cache write $1.375, cache read $0.11
+per million (`pricing.ts`). Bedrock reads `tools`, then `system`, then `messages`, so phase B's checkpoint after the
+system prefix also caches its tool. Thomas's unchanging prefix is about 18,000 characters, about 4,500 tokens at four
+characters a token (Claude's tokenizer counts more), so it caches on its own; a much shorter persona would cache only
+from the conversation's checkpoints on. Measured with the real gateway and a stand-in for Bedrock's cache
+(`packages/core/src/orchestrator/prompt-cache-hit-rate.test.ts`: the Thomas release, eight voice turns 20 s apart,
+both calls of each turn): the first turn writes (each call its own prefix), and from the second turn on **0.88 of
+phase A's and 0.87 of phase B's input is read from the cache** (0.77 over the eight turns); a turn whose own part
+changes (a flagged topic) reads back the system prefix alone, and so does the next one. The meter prices those tokens
+at the cache rates: USD 0.059 for the eight turns against USD 0.132 uncached (55 % less). A conversation idle for over
+5 minutes writes again. Nova, below: What AWS documents for Nova 2 Lite (prompt-caching user guide and the model card, checked
 2026-10-22): explicit caching on Converse and ConverseStream; checkpoints in `system` and `messages` only (not
 `tools`); at least 1K tokens before a checkpoint, counted over everything before it; at most 4 checkpoints; at most
 20K cached tokens; a 5-minute TTL that every hit resets; usage reports `cacheReadInputTokens` and
@@ -629,6 +645,37 @@ filter event = "turn.timing" and ispresent(endpointReason)
   by endpointReason
 ```
 
+### The coach on Claude Haiku 4.5 (2026-11-06)
+
+What changed: the coach (every turn's streamed reply and its fields) runs on Claude Haiku 4.5 instead of Nova 2 Lite
+(ADR-0022), with prompt caching (above). Nobody has measured Haiku's time to first token from this account yet, so
+the harness ran with an assumption: profile `production` recalibrated as in "Speech inside the turn stream", the
+ElevenLabs stand-in, audio in the turn stream, 4 typed and 8 voice turns per arm, warm, one process, Apple M4 Max,
+Node 24. Nova's arm is that section's figures (first token 700 ms, 5 ms a word, structured call 2,400 ms); Haiku's
+assumes **1,000 ms to the first token** (an uncached ~9.6k-token prompt; a cache read should be faster), 10 ms a word
+(about 100 words a second, half Nova's) and 3,600 ms for phase B's structured call (≈ 400 output tokens):
+
+```
+pnpm --filter @foundry/api latency --profile production --set dbRoundTripMs=65 --set modelFirstTokenMs=1000 \
+  --set modelWordMs=10 --set structuredMs=3600 --set embedMs=155 --set speechFirstByteMs=100 --text 4 --voice 8 \
+  --voice-vendor elevenlabs-stub --stub-ttfb 150-250 --stub-speed 4 --pcm --stream-audio
+```
+
+| ms from sending the turn, p50 (p95)      | Nova 2 Lite (700 ms first token) | Claude Haiku 4.5 (1,000 ms, assumed) |
+| ---------------------------------------- | -------------------------------- | ------------------------------------ |
+| Voice: first spoken unit (`turn.speech`) | 1,762 (1,870)                    | 2,124 (2,410)                        |
+| Voice: first audio bytes = playable      | 2,014 (2,120)                    | **2,362 (2,685)**                    |
+| Voice: turn completed (with its fields)  | 5,011 (5,280)                    | 6,699 (7,082)                        |
+| Typed: first sentence (`turn.delta`)     | 1,700 (1,769)                    | 2,019 (2,467)                        |
+| Typed: turn completed                    | 5,370 (5,583)                    | 7,353 (7,867)                        |
+
+- The first sound comes about **350 ms later at p50** (565 ms at p95): the 300 ms slower first token and the slower
+  words before the first sentence is complete. Every 100 ms of Haiku's real first token moves it by about as much.
+- A turn completes about 1.7 s later (phase B's fields on the slower model), but nothing the founder hears waits for
+  them: the reply is spoken as it streams, and the next turn may start before they arrive.
+- Not measured: Haiku's real first token and speed from us-east-1 (§8), and how much a cache read shortens the first
+  token on a conversation's later turns.
+
 ## 6. Measured and not kept
 
 | Tried                                                                                                                 | Result                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -688,8 +735,11 @@ filter event = "turn.timing" and ispresent(endpointReason)
 - Whether the first turn of every call now streams: `turn.completed` audits with `stream = structured_output`
   should be rare, and notes `stream_structured_json` / `stream_structured_labelled` show the replies the
   extractor took out of structured output (§7 proposes removing the cause).
-- How much a 1 k-token smaller prompt shortens Nova 2 Lite's time to first token on a call
+- How much a 1 k-token smaller prompt shortens the coach's time to first token on a call
   (`modelFirstTokenMs` by `voice`).
+- Claude Haiku 4.5's real time to first token and words per second from us-east-1, with and without a cache read
+  (`modelFirstTokenMs`, `streamCacheReadInputTokens`), against the harness's assumption (§5, "The coach on Claude
+  Haiku 4.5"), and its real cache hit rate (`cachedInputTokens` against `inputTokens` of `ai.model.attempt`).
 - The Data API round trip (`dbWaitMs / dbRoundTrips`), and so the real weight of every round trip saved above.
 - Nova 2 Lite's time to first token with and without a cache read, and the cache's share of the streamed reply's
   prompt (`modelFirstTokenMs`, `streamCacheReadInputTokens`, `streamInputTokens`; the query in §3).

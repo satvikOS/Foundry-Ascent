@@ -151,6 +151,10 @@ export class AppStack extends Stack {
       MODEL_PRIMARY_ID: models.primary,
       MODEL_FALLBACK_ID: models.fallback,
       MODEL_EMBEDDINGS_ID: models.embeddings,
+      // The background purposes' own models: all three, or all three empty (the gateway reads empty as unset).
+      MODEL_BACKGROUND_PRIMARY_ID: models.background?.primary ?? '',
+      MODEL_BACKGROUND_FALLBACK_ID: models.background?.fallback ?? '',
+      MODEL_BACKGROUND_PURPOSES: models.background?.purposes.join(',') ?? '',
       BEDROCK_REGION: config.region,
       OWNER_ACCESS_CODE_PREFIX: config.owner.accessCodePrefix,
       OWNER_ACCESS_CODE_HASH: config.owner.accessCodeHash,
@@ -279,25 +283,29 @@ export class AppStack extends Stack {
     );
 
     // Bedrock: only the effective models (lib/models.ts). Converse/ConverseStream authorize through
-    // InvokeModel/InvokeModelWithResponseStream. Profiles are granted in the invoking region; the
-    // foundation model behind them in every region (cross-region `us.` profiles route to other US
-    // regions), plus the region-less ARN that `global.` profiles are authorized against.
-    const foundationModelArn = (modelId: string): string =>
-      `arn:${Aws.PARTITION}:bedrock:*::foundation-model/${modelId}`;
+    // InvokeModel/InvokeModelWithResponseStream. Profiles are granted in the invoking region; the foundation model
+    // behind them where the profile routes: the destination regions of a geography profile whose model card was
+    // checked (Claude Haiku 4.5's `us.` profile: us-east-1, us-east-2, us-west-2), every region otherwise, plus the
+    // region-less ARN that `global.` profiles are authorized against.
+    const foundationModelArn = (modelId: string, region = '*'): string =>
+      `arn:${Aws.PARTITION}:bedrock:${region}::foundation-model/${modelId}`;
     const regionlessFoundationModelArn = (modelId: string): string =>
       `arn:${Aws.PARTITION}:bedrock:::foundation-model/${modelId}`;
     const profileArn = (profileId: string): string =>
       `arn:${Aws.PARTITION}:bedrock:${config.region}:${Aws.ACCOUNT_ID}:inference-profile/${profileId}`;
     const runtimeResources = (access: BedrockRuntimeAccess): string[] => [
-      ...access.foundationModels.map(foundationModelArn),
+      ...access.foundationModels.map((id) => foundationModelArn(id)),
+      ...access.regionalFoundationModels.flatMap(({ modelId, regions }) =>
+        regions.map((region) => foundationModelArn(modelId, region)),
+      ),
       ...access.globalFoundationModels.map(regionlessFoundationModelArn),
       ...access.inferenceProfiles.map(profileArn),
     ];
     const reasoningResources = [
-      ...runtimeResources(reasoningAccess(models)),
-      ...runtimeResources(embeddingsAccess(models)),
+      ...runtimeResources(reasoningAccess(models, config.region)),
+      ...runtimeResources(embeddingsAccess(models, config.region)),
     ];
-    const embeddingResources = runtimeResources(embeddingsAccess(models));
+    const embeddingResources = runtimeResources(embeddingsAccess(models, config.region));
 
     const reasoningStatements = [
       new iam.PolicyStatement({

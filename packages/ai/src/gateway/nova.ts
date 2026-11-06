@@ -51,8 +51,9 @@ export interface NovaProviderOptions {
   /** Repair re-asks after invalid tool input. Default 1. */
   maxRepairAttempts?: number;
   /**
-   * Bedrock prompt caching: mark the unchanging prefix a request names (`promptCache`) with cache checkpoints, for an
-   * Amazon Nova model ({@link usesCachePoints}). Default false: requests are sent without checkpoints.
+   * Bedrock prompt caching: mark the unchanging prefix a request names (`promptCache`) with cache checkpoints, for a
+   * model whose cache Bedrock bills and pricing.ts prices ({@link usesCachePoints}: Amazon Nova, Claude Haiku 4.5).
+   * Default false: requests are sent without checkpoints.
    */
   promptCache?: boolean;
 }
@@ -62,25 +63,36 @@ const PROFILE_REQUIRED = /on-demand throughput|inference profile/i;
 
 /**
  * Anthropic Claude ids on Bedrock (`anthropic.…`, also behind `us.`/`global.` inference profiles). Current
- * Claude models reject sampling parameters and a forced tool choice, so Converse requests for them send
- * neither: the structured call asks for the tool in its description and relies on validation and repair.
+ * Claude models reject sampling parameters and newer ones a forced tool choice, so Converse requests for any Claude id
+ * send neither: the structured call asks for the tool in its description and relies on validation and repair. This
+ * and {@link usesCachePoints} are the only places that tell model families apart: nothing outside this adapter knows
+ * which family the coach is.
  */
 export function isClaudeModelId(modelId: string): boolean {
   return /^(?:[a-z-]+\.)?anthropic\./.test(modelId);
 }
 
 /**
- * Model ids whose Converse requests carry prompt-cache checkpoints when prompt caching is on: Amazon Nova (Nova 2 Lite
- * and the Nova 1 models, also behind `us.`/`global.` inference profiles). Bedrock caches their `system` and
- * `messages` fields (not `tools`), at least 1K tokens before a checkpoint, at most 4 checkpoints, 5 minutes after the
- * last hit, and bills cache writes at $0 and reads at a quarter of the input rate (pricing.ts). Claude also takes
- * checkpoints through Converse, but bills writes above the input rate, which the pricing table does not model: not yet.
+ * Model ids whose Converse requests carry prompt-cache checkpoints when prompt caching is on, each one a model whose
+ * cache rates pricing.ts carries (a cached token is never metered below what Bedrock bills for it):
+ *
+ * - Amazon Nova (Nova 2 Lite and the Nova 1 models, also behind `us.`/`global.` inference profiles). Bedrock caches
+ *   their `system` and `messages` fields (not `tools`), at least 1K tokens before a checkpoint, at most 4 checkpoints,
+ *   5 minutes after the last hit; cache writes are billed at $0 and reads at a quarter of the input rate.
+ * - Anthropic Claude Haiku 4.5 (`anthropic.claude-haiku-4-5-20251001-v1:0`, behind its `us.`/`global.` profiles: the
+ *   production coach). Bedrock's model card (checked 2026-11-06): explicit caching on Converse, checkpoints in
+ *   `system`, `messages` and `tools`, at least 4,096 tokens before a checkpoint (a shorter prefix is simply not
+ *   cached), at most 4 checkpoints, a 5-minute TTL; writes are billed at 1.25 times the input rate and reads at a
+ *   tenth of it. Bedrock reads `tools`, then `system`, then `messages`, so the system checkpoint also covers a
+ *   structured call's tool.
+ *
+ * Other Claude models take checkpoints too, but their cache rates are not in the pricing table yet: not until they are.
  */
 export function usesCachePoints(modelId: string): boolean {
-  return /^(?:[a-z-]+\.)?amazon\.nova-/.test(modelId);
+  return /^(?:[a-z-]+\.)?(?:amazon\.nova-|anthropic\.claude-haiku-4-5-20251001-v1:0$)/.test(modelId);
 }
 
-/** Bedrock's cache checkpoint (the default 5-minute TTL; Nova accepts no other). */
+/** Bedrock's cache checkpoint (the default 5-minute TTL: Nova accepts no other, and a turn comes well within it). */
 const CACHE_POINT = { cachePoint: { type: 'default' } } as const;
 
 /** Converse stream events that carry a modelled service exception. */
@@ -222,9 +234,10 @@ function isProfileRequiredError(error: unknown): boolean {
 }
 
 /**
- * Bedrock Converse reasoning models: Amazon Nova 2 Lite today, Anthropic Claude ready. Structured output
- * is obtained through a single tool (`submit_response`) whose input schema is the response schema, forced
- * for Nova and requested (tool choice `auto`) for Claude, which rejects a forced tool. Plain text streams
+ * Bedrock Converse reasoning models: Amazon Nova 2 Lite and Anthropic Claude (Claude Haiku 4.5 is the production
+ * coach). Structured output is obtained through a single tool (`submit_response`) whose input schema is the response
+ * schema, forced for Nova and requested (tool choice `auto`) for Claude, whose newer models reject a forced tool
+ * (one request shape for every Claude id; a reply written as text is still read, and repaired). Plain text streams
  * through ConverseStream. If the base model id requires an inference profile, the provider retries once
  * with the geographic profile id and remembers that choice for the lifetime of the instance.
  */

@@ -215,12 +215,39 @@ export interface EmbedResult {
   latencyMs: number;
 }
 
+/**
+ * A second pair of reasoning models for the purposes nobody reads directly (`MODEL_BACKGROUND_*`): the safety screen,
+ * evaluations, ingestion and seeding, on a cheaper model than the conversation's. Every other purpose (a turn, a
+ * recap, the distillation that writes the notebook and the next opener, a studio test conversation) is served by the
+ * gateway's primary and fallback models.
+ */
+export interface BackgroundModels {
+  readonly primaryModelId: string;
+  readonly fallbackModelId: string;
+  readonly purposes: readonly GatewayPurpose[];
+}
+
 export interface ModelGatewayInfo {
   provider: 'bedrock' | 'mock';
+  /** The conversation's models: every purpose not in `background`. */
   primaryModelId: string;
   fallbackModelId: string;
+  /** The background purposes' own models, or null when every purpose uses the primary and fallback. */
+  background: BackgroundModels | null;
   embeddingsModelId: string;
   embeddingDimensions: number;
+}
+
+/** The primary and fallback model a purpose is served by. */
+export function modelsForPurpose(
+  info: Pick<ModelGatewayInfo, 'primaryModelId' | 'fallbackModelId' | 'background'>,
+  purpose: GatewayPurpose,
+): { readonly primaryModelId: string; readonly fallbackModelId: string } {
+  const background = info.background;
+  if (background?.purposes.includes(purpose)) {
+    return { primaryModelId: background.primaryModelId, fallbackModelId: background.fallbackModelId };
+  }
+  return { primaryModelId: info.primaryModelId, fallbackModelId: info.fallbackModelId };
 }
 
 /** Provider-neutral model access used by packages/core. */

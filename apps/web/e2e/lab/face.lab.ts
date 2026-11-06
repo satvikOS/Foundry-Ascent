@@ -557,13 +557,67 @@ function intervals(onsets: readonly number[], offsets: readonly number[], after:
   return out;
 }
 
+/** The most speak channels open at the same time (each from its open to its close, or to `end`). */
+function maxOpenAtOnce(lab: FaceLab, end: number): number {
+  const edges = lab.lite.channels
+    .filter((c) => c.opened !== null)
+    .flatMap((c) => [
+      { at: c.opened ?? 0, delta: 1 },
+      { at: c.closed ?? end, delta: -1 },
+    ])
+    // A close and an open at the same moment: the close first (a replacement, not two at once).
+    .sort((a, b) => a.at - b.at || a.delta - b.delta);
+  let open = 0;
+  let most = 0;
+  for (const edge of edges) {
+    open += edge.delta;
+    most = Math.max(most, open);
+  }
+  return most;
+}
+
+/**
+ * Whether every utterance the page opened from `after` on was acknowledged in full, each by its own id (whatever the
+ * time and the channel: an utterance whose first chunk went out a moment before `after`, or a call whose face was
+ * replaced since, is counted whole): every chunk by `agent.audio_buffer_appended` and its end by
+ * `agent.audio_buffer_committed`.
+ */
+function liteAcks(lab: FaceLab, after: number) {
+  const ids = [...new Set(liteOut(lab, 'agent.speak', after).map((f) => f.id))];
+  const appended = liteIn(lab, 'agent.audio_buffer_appended');
+  const committed = new Set(liteIn(lab, 'agent.audio_buffer_committed').map((f) => f.source));
+  let unacked = 0;
+  for (const id of ids) {
+    const chunks = liteOut(lab, 'agent.speak').filter((f) => f.id === id).length;
+    unacked += Math.max(0, chunks - appended.filter((f) => f.source === id).length);
+  }
+  const ends = liteOut(lab, 'agent.speak_end', after).map((f) => f.id);
+  return {
+    appendedOk: unacked === 0,
+    committedOk: ends.every((id) => committed.has(id)),
+    unackedChunks: unacked,
+    uncommitted: ends.filter((id) => !committed.has(id)).length,
+  };
+}
+
 /**
  * A LITE stock face the page feeds, from its own speak channel and the same meters as every arm: the sockets it
  * opened, the utterances of each turn (must be one), chunk sizes, acknowledgements, first chunk → speak_started →
  * sound on the avatar's track, keep-alives, the units the call played itself while the face was live (fallbacks), and
  * the doubled-audio detector: the avatar's track and the call's own output sounding at the same time.
+ *
+ * The speak channel: one per vendor session, never two open at once. A call replaces its face when the session nears
+ * its end or the vendor ends it (owner round 3: the avatar first, then the conversation; a new session, never a
+ * downgrade), and the sandbox's sessions last a minute: an arm of a few turns meets two or three sessions, each with
+ * its own channel (lab run 42202149133: 3 sessions, 3 sockets; the check expected one socket for the whole call).
  */
-function liteBrowserSummary(lab: FaceLab, live: number, turnsSentAt: readonly number[], end: number) {
+function liteBrowserSummary(
+  lab: FaceLab,
+  live: number,
+  turnsSentAt: readonly number[],
+  end: number,
+  sessions: readonly FaceSessionSeen[],
+) {
   const speaks = liteOut(lab, 'agent.speak', live);
   const utterancesPerTurn = turnsSentAt.map((sentAt, i) => {
     const until = turnsSentAt[i + 1] ?? end;
@@ -583,8 +637,7 @@ function liteBrowserSummary(lab: FaceLab, live: number, turnsSentAt: readonly nu
     const sound = firstAfter(lab.onsets, started.at);
     if (sound !== null) startedToAudioMs.push(Math.round(sound - started.at));
   }
-  const appended = liteIn(lab, 'agent.audio_buffer_appended', live).length;
-  const committed = liteIn(lab, 'agent.audio_buffer_committed', live).length;
+  const acks = liteAcks(lab, live);
   const face = intervals(lab.onsets, lab.offsets, live, end);
   const own = intervals(lab.appOnsets, lab.appOffsets, live, end);
   let overlaps = 0;
@@ -600,6 +653,12 @@ function liteBrowserSummary(lab: FaceLab, live: number, turnsSentAt: readonly nu
   }
   return {
     sockets: lab.lite.sockets,
+    // The vendor sessions the page joined with a speak channel, the channels it tried and opened, and the most open
+    // at once.
+    sessions: sessions.filter((x) => x.controlUrl === true).length,
+    channelAttempts: lab.lite.attempts,
+    channelsOpened: lab.lite.opened,
+    maxOpenAtOnce: maxOpenAtOnce(lab, end),
     utterances: ids.length,
     utterancesPerTurn,
     chunks: speaks.length,
@@ -608,8 +667,10 @@ function liteBrowserSummary(lab: FaceLab, live: number, turnsSentAt: readonly nu
     speakEnds: liteOut(lab, 'agent.speak_end', live).length,
     keepAlives: liteOut(lab, 'session.keep_alive', live).length,
     interrupts: liteOut(lab, 'agent.interrupt', live).length,
-    appendedOk: appended === speaks.length,
-    committedOk: committed === liteOut(lab, 'agent.speak_end', live).length,
+    appendedOk: acks.appendedOk,
+    committedOk: acks.committedOk,
+    unackedChunks: acks.unackedChunks,
+    uncommitted: acks.uncommitted,
     firstChunkToStartedMs,
     startedToAudioMs,
     errors: liteIn(lab, 'error', live).length,
@@ -620,7 +681,59 @@ function liteBrowserSummary(lab: FaceLab, live: number, turnsSentAt: readonly nu
 }
 
 /** The LITE arm's steps, in order: a failure records the one it stopped at. */
-type LiteStep = 'start_call' | 'face_join' | 'greeting' | 'turns' | 'barge_in';
+type LiteStep = 'start_call' | 'face_join' | 'greeting' | 'turns' | 'barge_in' | 'reconnect';
+
+/** How long the LITE arm waits for its face's session to end and be replaced (the sandbox's last a minute). */
+const RECONNECT_WAIT_MS = 90_000;
+/** Said after the face came back: the call goes on, on the new session's channel. */
+const RECONNECT_LINE = 'Okay, and what should I do first tomorrow morning?';
+
+/**
+ * A session that ends mid-call is replaced (owner round 3): from the moment the arm starts waiting, the tile says
+ * "Reconnecting…" once the face's session nears its end or the vendor ends it, then the face is back on a new session;
+ * the next turn is said by the new face over the new session's own speak channel, its chunks acknowledged. Why the
+ * old face ended is the page's own account (`face/end`: `time_limit` when the page replaced it at a quiet moment
+ * before the vendor's end, the vendor's reason otherwise).
+ */
+async function liteReconnect(page: Page) {
+  const since = await pageNow(page);
+  const channelsBefore = (await readLab(page)).lite.channels.length;
+  const reconnecting = await reconnectingTile(page)
+    .waitFor({ state: 'visible', timeout: RECONNECT_WAIT_MS })
+    .then(() => true)
+    .catch(() => false);
+  const gone = await pageNow(page);
+  const back =
+    reconnecting &&
+    (await videoTile(page)
+      .waitFor({ state: 'visible', timeout: 30_000 })
+      .then(() => true)
+      .catch(() => false));
+  const backAt = await pageNow(page);
+  let lab = await readLab(page);
+  const ended = lab.faceEnds.find((e) => e.at >= since) ?? null;
+  const result = {
+    reconnected: back,
+    seconds_live_before: reconnecting ? Math.round((gone - since) / 100) / 10 : null,
+    seconds_to_reconnect: back ? Math.round((backAt - gone) / 100) / 10 : null,
+    end_reason: ended?.reason ?? null,
+    turn_spoken_by_face: null as boolean | null,
+    turn_on_new_channel: null as boolean | null,
+    turn_acks_complete: null as boolean | null,
+  };
+  if (!back) return result;
+  await waitForFaceQuiet(page, { timeoutMs: 20_000, pairedEvents: false });
+  const turn = await measuredTurn(page, RECONNECT_LINE, { pairedEvents: false });
+  lab = await readLab(page);
+  const chunks = liteOut(lab, 'agent.speak', turn.sentAt);
+  const acks = liteAcks(lab, turn.sentAt);
+  return {
+    ...result,
+    turn_spoken_by_face: turn.firstFaceAudioMs !== null && turn.firstAppPlaybackMs === null,
+    turn_on_new_channel: chunks.length > 0 && chunks.every((f) => f.socket >= channelsBefore),
+    turn_acks_complete: chunks.length > 0 && acks.appendedOk && acks.committedOk,
+  };
+}
 
 /** A message's first line with colours, URLs and long id-like runs removed (private files only, still never a URL). */
 function scrubbed(message: string): string {
@@ -1333,14 +1446,15 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
   // The same call arm with the app's face as a LITE stock face the page feeds (the lab restarted the API with
   // MEDIA_FACE_MODE=lite and MEDIA_FACE_LITE_ROUTE=browser; the sandbox's Wayne, admins only): the same founder turns
   // and meters as the FULL call and the voice alone. The page holds the avatar's speak channel and forwards each
-  // admitted unit's ElevenLabs PCM as it arrives, one utterance per turn; then one barge-in turn.
+  // admitted unit's ElevenLabs PCM as it arrives, one utterance per turn; then one barge-in turn; then the face's
+  // session ends (the sandbox's last a minute) and is replaced, and one more turn is said by the new face.
   test("call LITE: the stock face lip-syncs the call's own voice, the same turns", async ({
     page,
     baseURL,
   }) => {
     if (!baseURL) throw new Error('baseURL is required');
     test.skip(APP_MODE !== 'lite', 'the LITE pass only (the app runs its face in FULL)');
-    test.setTimeout(6 * 60_000);
+    test.setTimeout(8 * 60_000);
     test.skip(!(await appWithinBudget(baseURL, 0.1)), 'the app reached its share of the budget');
     const result: Record<string, unknown> = { vendor: FACE, mode: 'lite' };
     await page.addInitScript(pageScript(faceLabInit));
@@ -1379,10 +1493,16 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
         live,
         turns.map((t) => t.sentAt),
         measuredEnd,
+        sessions,
       );
       step = 'barge_in';
       result.barge_in = await liteBargeIn(page, BARGE_IN_LINE).catch((err: unknown) => ({
         measured: false,
+        error: errorName(err),
+      }));
+      step = 'reconnect';
+      result.reconnect = await liteReconnect(page).catch((err: unknown) => ({
+        reconnected: false,
         error: errorName(err),
       }));
       result.speak_requests = posts.length;

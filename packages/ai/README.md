@@ -127,9 +127,16 @@ cancellation, which never falls back).
 The adapter is chosen **per model id** (`reasoningAdapterFor`), for the primary and the fallback alike:
 ids starting with `openai.` go to Bedrock Mantle (the Luna adapter below); every other id goes to Bedrock
 Runtime `Converse` (the Nova adapter), and inference-profile ids (`us.…`, `global.…`) are passed through
-unchanged. Production today (GPT-6 Luna is gated for the account) runs **primary
-`us.amazon.nova-2-lite-v1:0` → fallback `global.amazon.nova-2-lite-v1:0`**, both on Converse; with Luna
-enabled it is `openai.gpt-6-luna` → `us.amazon.nova-2-lite-v1:0`.
+unchanged. Production today (ADR-0022; GPT-6 Luna is gated for the account) runs the coach on **primary
+`us.anthropic.claude-haiku-4-5-20251001-v1:0` → fallback `us.amazon.nova-2-lite-v1:0`**, both on Converse; with Luna
+enabled it is `openai.gpt-6-luna` → Claude Haiku 4.5.
+
+**Background route** (`background` in the config, `MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID`,
+`MODEL_BACKGROUND_PURPOSES` in the environment: all three or none): the purposes it lists get its own primary and
+fallback (production: `classification`, `eval`, `ingestion`, `seed`, `embedding` on `us.amazon.nova-2-lite-v1:0` →
+`global.amazon.nova-2-lite-v1:0`); every other purpose (`turn`, `recap`, `distill`, `test_bench`) the coach's.
+`modelsForPurpose(info, purpose)` says which two a purpose gets. A model id used on both routes shares one provider
+instance.
 
 - **Mantle adapter — e.g. `openai.gpt-6-luna`** via the OpenAI Node SDK at
   `https://bedrock-mantle.<region>.api.aws/openai/v1`, Chat Completions with
@@ -142,8 +149,14 @@ enabled it is `openai.gpt-6-luna` → `us.amazon.nova-2-lite-v1:0`.
   timeouts (default 25 s via `AbortSignal`, including the repair) and fallback.
 - **Repair** — on invalid JSON/schema the validation problems (paths and messages, never logged) are
   sent back once; if the remaining budget is under 1.5 s the repair is skipped.
-- **Converse adapter — e.g. `us.amazon.nova-2-lite-v1:0`** via Bedrock Runtime `Converse` with one
-  forced tool, `submit_response`, whose `inputSchema.json` is the same strict schema. If a _bare_
+- **Converse adapter — e.g. `us.anthropic.claude-haiku-4-5-20251001-v1:0` or `us.amazon.nova-2-lite-v1:0`** via
+  Bedrock Runtime `Converse` with one tool, `submit_response`, whose `inputSchema.json` is the same strict schema:
+  forced for Nova, requested (`auto`) for Claude, whose newer models refuse a forced tool and sampling parameters (a
+  reply written as text is still read and repaired). Prompt caching (`MODEL_PROMPT_CACHE`, on by default): for the
+  models whose cache rates are priced (Nova, Claude Haiku 4.5: `usesCachePoints`), a `cachePoint` after the system
+  prompt's unchanging prefix and after the conversation's last two earlier founder messages (the request's
+  `promptCache` hint); Claude caches only a prefix of at least 4,096 tokens, Nova 1,024. These are the only places
+  the adapter tells model families apart. If a _bare_
   foundation-model id is rejected with a `ValidationException` about on-demand throughput / inference
   profiles, the call is retried once with the geographic profile (`us.amazon.nova-2-lite-v1:0`) and that
   choice is cached for the gateway's lifetime; profile ids are never rewritten. Primary and fallback get
@@ -207,9 +220,10 @@ outcomes; `calls` records identifiers and counts.
 
 `costFor(modelId, usage, table?)` returns USD rounded **up** to the micro-dollar (`numeric(10, 6)`).
 Input tokens read from or written to a prompt cache are priced at the model's `cacheReadPerMillionUsd` /
-`cacheWritePerMillionUsd` (Nova 2 Lite: $0.075 and $0, from the AWS price list), or at its input rate when it has
-none. Defaults (`DEFAULT_MODEL_PRICES`, per 1M tokens): Luna $0.10 in / $0.50 out with a +10 % in-region
-premium, Nova 2 Lite $0.30 / $2.50, Titan V2 $0.02 in; mock models are free. Inference-profile ids and
+`cacheWritePerMillionUsd` (Nova 2 Lite: $0.075 and $0; Claude Haiku 4.5: $0.10 and $1.25; from the AWS price list),
+or at its input rate when it has none. Defaults (`DEFAULT_MODEL_PRICES`, per 1M tokens, global; the `us.` profiles add
+10 %): Luna $0.10 in / $0.50 out with a +10 % in-region premium, Claude Haiku 4.5 $1.00 / $5.00, Nova 2 Lite
+$0.30 / $2.50, Titan V2 $0.02 in; mock models are free. Inference-profile ids and
 ARNs resolve to their base model. Unknown ids are priced at the most expensive known rate so spend caps
 cannot be bypassed by a typo. Override with `createPricingTable(overrides)` or the gateway's `pricing`.
 

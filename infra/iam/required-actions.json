@@ -123,7 +123,18 @@
       "required": true
     },
     {
-      "purpose": "Fallback reasoning: Amazon Nova 2 Lite via Converse / ConverseStream (base id and us./global. profiles)",
+      "purpose": "The coach: Claude Haiku 4.5 via Converse / ConverseStream (its us. profile and the regions it routes to)",
+      "actions": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+      "resources": [
+        "arn:aws:bedrock:{region}:{account}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "arn:aws:bedrock:{region}::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+        "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+        "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0"
+      ],
+      "required": true
+    },
+    {
+      "purpose": "Coach fallback and background reasoning: Amazon Nova 2 Lite via Converse / ConverseStream (base id and us./global. profiles)",
       "actions": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
       "resources": [
         "arn:aws:bedrock:{region}::foundation-model/amazon.nova-2-lite-v1:0",

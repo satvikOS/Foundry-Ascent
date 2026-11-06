@@ -150,8 +150,10 @@ def test_the_default_budget_is_the_owner_cap(workflow: str) -> None:
     assert input_default(workflow, "approved_over_cap") == ""
 
 
-def test_the_live_evaluation_samples_20_scenarios_by_default() -> None:
-    assert input_default(LIVE, "sample") == "20"
+def test_the_live_evaluation_samples_8_scenarios_by_default() -> None:
+    # On production's Claude Haiku 4.5 coach (ADR-0022) 8 scenarios fit the USD 2 cap (estimate USD 1.70, USD 1.91 on the
+    # fallback simulator and judge); 20 did on Nova 2 Lite.
+    assert input_default(LIVE, "sample") == "8"
 
 
 @pytest.mark.parametrize("workflow", [LAB, LIVE])

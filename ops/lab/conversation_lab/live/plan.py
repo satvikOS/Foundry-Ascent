@@ -14,7 +14,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from conversation_lab.config import MAX_BUDGET_USD, Price, foundation_model_id
+from conversation_lab.config import MAX_BUDGET_USD, Price, app_models, foundation_model_id
 from conversation_lab.live.dataset import FAMILIES, Scenario
 from conversation_lab.live.judge import scenario_brief, system_prompt
 from conversation_lab.live.student import SYSTEM as STUDENT_SYSTEM
@@ -26,9 +26,10 @@ from conversation_lab.live.student import persona_card
 COACH_USD_PER_TURN = 0.006
 #: Distillation and digest at the end of each standard session, on top of the per-turn figure (conservative).
 COACH_USD_PER_SESSION = 0.003
-#: The model those two figures were measured on (production's coach), and the tokens one coach turn sends and receives
-#: (live pilot 42099643194's API log: a median of ~15.9k prompt tokens a turn, both calls; ~330 out). An alternative coach
-#: (``coach_model``) is estimated at those tokens on its own prices, with no prompt-cache discount (conservative).
+#: The model those two figures were measured on (the coach until 2026-11-06), and the tokens one coach turn sends and
+#: receives (live pilot 42099643194's API log: a median of ~15.9k prompt tokens a turn, both calls; ~330 out). Any other
+#: coach, production's own (Claude Haiku 4.5 since 2026-11-06) or an A/B one (``coach_model``), is estimated at those
+#: tokens on its own prices, with no prompt-cache discount (conservative: the hard caps never under-count it).
 COACH_BASELINE_MODEL = "amazon.nova-2-lite-v1:0"
 COACH_INPUT_TOKENS_PER_TURN = 15_900
 COACH_OUTPUT_TOKENS_PER_TURN = 330
@@ -148,10 +149,13 @@ def _price(prices: Mapping[str, Price], model: str) -> Price:
     return prices[foundation_model_id(model)]
 
 
-def coach_cost_factor(prices: Mapping[str, Price], coach_model: str | None) -> float:
-    """How much an alternative coach costs per turn against the measured baseline (1.0 for production's coach)."""
+def coach_cost_factor(
+    prices: Mapping[str, Price], coach_model: str | None, production: str | None = None
+) -> float:
+    """How much a coach costs per turn against the measured baseline (never less than 1.0): ``coach_model``, or
+    production's coach (``production``, by default infra/cdk/config/production.json's) for the default arm."""
     if coach_model is None or coach_model in ("", "default"):
-        return 1.0
+        coach_model = production or app_models().primary
     base = prices[COACH_BASELINE_MODEL]
     other = _price(prices, coach_model)
 

@@ -35,9 +35,22 @@ export interface PlatformConfig {
     readonly accessCodeHash: string;
   };
   readonly models: {
-    /** Reasoning model while Luna is disabled (a Bedrock inference profile id, e.g. `us.amazon.nova-2-lite-v1:0`). */
+    /**
+     * The conversation's reasoning model while Luna is disabled (a Bedrock inference profile id: the coach, Claude
+     * Haiku 4.5 through `us.anthropic.claude-haiku-4-5-20251001-v1:0`), and its fallback. Every purpose not in
+     * `background` uses them: a turn, a recap, the distillation (which writes the next opener), a test conversation.
+     */
     readonly primary: string;
     readonly fallback: string;
+    /**
+     * The background purposes' own primary and fallback (the safety screen, evaluations, ingestion, seeding): a
+     * cheaper model nobody reads directly. Absent: those purposes use `primary` and `fallback` too.
+     */
+    readonly background?: {
+      readonly primary: string;
+      readonly fallback: string;
+      readonly purposes: readonly BackgroundPurpose[];
+    };
     readonly embeddings: string;
     /** GPT-6 Luna on Bedrock Mantle, gated per account by AWS. See lib/models.ts for how it is applied. */
     readonly luna?: { readonly modelId: string; readonly enabled: boolean };
@@ -220,6 +233,23 @@ const CROCKFORD_GROUP = /^[0-9ABCDEFGHJKMNPQRSTVWXYZ]{5}$/;
 const SCRYPT_HASH = /^scrypt\$N=32768,r=8,p=1\$[A-Za-z0-9_-]{16,}\$[A-Za-z0-9_-]{43}$/;
 const SLUG = /^[a-z][a-z0-9-]{1,62}$/;
 const MODEL_ID = /^[a-z0-9][a-z0-9.:-]{2,127}$/;
+
+/**
+ * The model gateway's purposes (packages/ai `MODEL_PURPOSES`) a background route may take: every one but `speech`
+ * (text-to-speech, never a reasoning model). infra/cdk/test/config.test.ts pins the list against the gateway's.
+ */
+export const BACKGROUND_PURPOSES = [
+  'turn',
+  'recap',
+  'classification',
+  'embedding',
+  'ingestion',
+  'eval',
+  'seed',
+  'distill',
+  'test_bench',
+] as const;
+export type BackgroundPurpose = (typeof BACKGROUND_PURPOSES)[number];
 const GITHUB_REPO = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/;
 const GIT_REF_NAME = /^[A-Za-z0-9._/-]+$/;
 const GITHUB_ID = /^[1-9][0-9]{0,19}$/;
@@ -299,6 +329,32 @@ function bool(parent: Json, key: string, path: string): boolean {
   const value = parent[key];
   if (typeof value !== 'boolean') throw new ConfigError(`${path}.${key}`, 'must be a boolean');
   return value;
+}
+
+function parseBackground(raw: unknown): NonNullable<PlatformConfig['models']['background']> {
+  const path = '$.models.background';
+  const background = obj(raw, path);
+  const purposes = background.purposes;
+  if (!Array.isArray(purposes) || purposes.length === 0) {
+    throw new ConfigError(`${path}.purposes`, 'must be a non-empty array of model purposes');
+  }
+  purposes.forEach((purpose, i) => {
+    if (!(BACKGROUND_PURPOSES as readonly unknown[]).includes(purpose)) {
+      throw new ConfigError(
+        `${path}.purposes[${String(i)}]`,
+        `must be one of ${BACKGROUND_PURPOSES.join(', ')}`,
+      );
+    }
+  });
+  if (new Set(purposes).size !== purposes.length)
+    throw new ConfigError(`${path}.purposes`, 'must not repeat a purpose');
+  // The conversation itself is never a background purpose: a turn on the cheap model would be a silent downgrade.
+  if (purposes.includes('turn')) throw new ConfigError(`${path}.purposes`, 'must not include turn');
+  return {
+    primary: str(background, 'primary', path, MODEL_ID),
+    fallback: str(background, 'fallback', path, MODEL_ID),
+    purposes: purposes as BackgroundPurpose[],
+  };
 }
 
 function parseLuna(raw: unknown): { modelId: string; enabled: boolean } {
@@ -634,6 +690,7 @@ export function parseConfig(raw: unknown): PlatformConfig {
     models: {
       primary: str(models, 'primary', '$.models', MODEL_ID),
       fallback: str(models, 'fallback', '$.models', MODEL_ID),
+      ...(models.background === undefined ? {} : { background: parseBackground(models.background) }),
       embeddings: str(models, 'embeddings', '$.models', MODEL_ID),
       ...(models.luna === undefined ? {} : { luna: parseLuna(models.luna) }),
     },

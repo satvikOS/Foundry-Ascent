@@ -3,7 +3,9 @@
 - **Status:** Accepted (amended 2026-10-05: AWS gates GPT-6 Luna for this account, so production runs
   Nova 2 Lite as primary and keeps Luna disabled behind `models.luna.enabled`; amended 2026-10-16: the
   **Ops - verify AWS access** workflow is retired with the stage-0 key, so models are probed with the
-  probe script instead)
+  probe script instead; amended 2026-11-06 by [ADR-0022](0022-coach-on-claude-haiku.md): the coach is Claude
+  Haiku 4.5 with Nova 2 Lite (`us.`) behind it, and the background purposes run on Nova 2 Lite with its `global.`
+  profile as fallback)
 - **Date:** 2026-10-05
 - **Deciders:** Platform owner
 - **Blueprint basis:** 03 §8 "Data minimization" and "Vendor", §14 "Model memorization / retention",

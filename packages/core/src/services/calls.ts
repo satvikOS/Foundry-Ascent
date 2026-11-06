@@ -304,29 +304,65 @@ export function greetedName(
 /** Bare hellos that take a name without a comma ("Hey Maya, …"). */
 const BARE_HELLO = /^(?:hi|hello|hey|hiya)(?: there| again)?$/i;
 
+/** A whole-word, case-sensitive match of `name` (a person's name is never an everyday word here). */
+function nameWord(name: string, flags = 'u'): RegExp {
+  return new RegExp(
+    `(?<![\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`,
+    flags,
+  );
+}
+
+/**
+ * `text` without the times it calls `name` by name (a vocative: "Good to see you again, Maya." → "Good to see you
+ * again.", "Hey Maya, quick one" → "Hey, quick one", "Maya, how did it go?" → "How did it go?"). Null when the name
+ * is still in it after that (it is said some other way, "Maya's pilot"): such a line cannot be said without it.
+ */
+export function withoutVocative(text: string, name: string): string | null {
+  const word = nameWord(name).source;
+  const out = text
+    // ", Maya" before the clause ends (or before another comma).
+    .replace(new RegExp(`\\s*,\\s*${word}(?=\\s*[,.!?…;:]|\\s*$)`, 'gu'), '')
+    // "Hey Maya, …" / "Hi Maya!": the name after a bare hello.
+    .replace(new RegExp(`^((?:hi|hello|hey|hiya)(?: there| again)?)\\s+${word}(?=\\s*[,.!?…])`, 'iu'), '$1')
+    // "Maya, …" opening a sentence: the sentence starts after it.
+    .replace(
+      new RegExp(`(^|[.!?…]\\s+)${word}\\s*,\\s*(\\p{L})`, 'gu'),
+      (_m, lead: string, c: string) => `${lead}${c.toUpperCase()}`,
+    )
+    .replace(/\s+([,.!?…])/gu, '$1')
+    .replace(/,([.!?…])/gu, '$1');
+  return nameWord(name).test(out) ? null : out;
+}
+
 /**
  * `opener` as said when it opens with a greeting of its own ("Good to see you again. How did the pilot go?"; a
  * model-written next opener greets in its own words): its words kept, with `name` said in its greeting ("Good to see
- * you again, Maya. …", "Hey Maya, …") when there is one to say. Null when the opener does not open with a greeting,
- * or is nothing but one.
+ * you again, Maya. …", "Hey Maya, …") when there is one to say and the line does not say it already. With `name`
+ * null (no name, or the latest replies already said it as often as one reply in four allows: {@link greetedName}),
+ * the line is said without `founderName` wherever it calls them by it, so the limit holds for model lines too. Null
+ * when the opener does not open with a greeting, is nothing but one, or cannot be said without a name it may not say.
  */
-export function ownGreetingLine(opener: string, name: string | null): string | null {
+export function ownGreetingLine(
+  opener: string,
+  name: string | null,
+  founderName: string | null = name,
+): string | null {
   const text = opener.trim();
-  const names = name === null ? [] : [name];
+  const names = founderName === null ? [] : [founderName];
   const rest = withoutRepeatedGreeting(text, names);
   if (!rest.removed || rest.text.trim() === '') return null;
-  if (name === null) return text;
+  if (founderName === null) return text;
+  if (name === null) {
+    // The budget is spent: the line keeps its greeting and words, and loses the name.
+    return withoutVocative(text, founderName);
+  }
+  // The line names them already, in its greeting ("Good to see you again, Maya.") or after it: never twice.
+  if (nameWord(name).test(text)) return text;
   // The name goes into the first clause, when that clause is a greeting on its own ("Hey, good to have you back!").
   const first = /^([^,.!?…\n]+?)\s*([,.!…])/u.exec(text);
   if (first?.[1] === undefined || first[2] === undefined) return text;
   const clause = first[1];
   if (withoutRepeatedGreeting(`${clause}.`, names).text !== '') return text;
-  // A name already in the greeting is not said twice.
-  if (
-    new RegExp(`(?<![\\p{L}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, 'u').test(clause)
-  ) {
-    return text;
-  }
   const after = text.slice(first[0].length);
   const named =
     first[2] === ',' && BARE_HELLO.test(clause) ? `${clause} ${name},` : `${clause}, ${name}${first[2]}`;
@@ -382,7 +418,7 @@ export function repeatGreetingOf(args: {
   const fragment = read === 'fragment' || (subject !== null && forms.length === 0);
   // The model's own line (a stored sentence with a greeting of its own): said as written, its greeting kept.
   if (args.modelLine === true && args.opener !== null && !fragment) {
-    const own = ownGreetingLine(args.opener, name);
+    const own = ownGreetingLine(args.opener, name, args.firstName);
     if (own !== null) return { text: own, carriesOpener: true };
   }
   const candidates: string[] = [];

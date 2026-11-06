@@ -86,10 +86,12 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
     ([platform insights](../../docs/runbooks/insights.md)).
   - Bedrock access follows the effective models (see [Models](#models)): `bedrock:InvokeModel` and
     `bedrock:InvokeModelWithResponseStream` (Converse and ConverseStream authorize through these) on the
-    inference profiles in `us-east-1` (`…:inference-profile/us.amazon.nova-2-lite-v1:0` and
-    `…/global.amazon.nova-2-lite-v1:0`), the Nova foundation model in every region
-    (`arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0`), its region-less ARN for the global
-    profile (`arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0`) and Titan;
+    inference profiles in `us-east-1` (`…:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0`,
+    `…/us.amazon.nova-2-lite-v1:0` and `…/global.amazon.nova-2-lite-v1:0`), the Claude Haiku 4.5 foundation model only
+    where its US profile routes from `us-east-1` (`arn:aws:bedrock:{us-east-1,us-east-2,us-west-2}::foundation-model/…`,
+    from its Bedrock model card: `src/lib/models.ts` `GEO_DESTINATIONS`), the Nova foundation model in every region
+    (`arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0`, since its global profile routes anywhere), its
+    region-less ARN for the global profile (`arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0`) and Titan;
     `bedrock-mantle:CreateInference` on `*` only while GPT-6 Luna is enabled.
 - `Custom::FoundryMigrations` with properties `{ version: appVersion, migrationsChecksum }`, so it runs on
   every deploy. **The API, worker and site deployments depend on it**: new code goes live only after its migrations applied,
@@ -191,13 +193,16 @@ Set a number once the account quota allows (it must leave 10 unreserved).
 
 `config/production.json` → `models` is mapped to the runtime contract by `src/lib/models.ts`:
 
-| `models.luna.enabled`                             | `MODEL_PRIMARY_ID`                              | `MODEL_FALLBACK_ID`                                  | Mantle permission                |
-| ------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------- | -------------------------------- |
-| `false` (current: AWS gates Luna for the account) | `models.primary` (`us.amazon.nova-2-lite-v1:0`) | `models.fallback` (`global.amazon.nova-2-lite-v1:0`) | none                             |
-| `true`                                            | `models.luna.modelId` (`openai.gpt-6-luna`)     | `models.primary` (in-geography Nova profile)         | `bedrock-mantle:CreateInference` |
+| `models.luna.enabled`                             | `MODEL_PRIMARY_ID`                                               | `MODEL_FALLBACK_ID`                              | Mantle permission                |
+| ------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------ | -------------------------------- |
+| `false` (current: AWS gates Luna for the account) | `models.primary` (`us.anthropic.claude-haiku-4-5-20251001-v1:0`) | `models.fallback` (`us.amazon.nova-2-lite-v1:0`) | none                             |
+| `true`                                            | `models.luna.modelId` (`openai.gpt-6-luna`)                      | `models.primary` (Claude Haiku 4.5)              | `bedrock-mantle:CreateInference` |
 
-`MODEL_EMBEDDINGS_ID` is always `models.embeddings` (`amazon.titan-embed-text-v2:0`). Flipping the flag is a
-config change plus a normal deploy.
+`MODEL_EMBEDDINGS_ID` is always `models.embeddings` (`amazon.titan-embed-text-v2:0`). `models.background` (primary,
+fallback, purposes: Nova 2 Lite `us.` then `global.` for `classification`, `eval`, `ingestion`, `seed`, `embedding`)
+becomes `MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID` and `MODEL_BACKGROUND_PURPOSES` of every function
+(all three empty without it; a `turn` is never a background purpose), and Luna never moves it (ADR-0022). Flipping
+the flag is a config change plus a normal deploy.
 
 Production's coach model is this configuration: an A/B on another Bedrock model runs in the conversation lab first
 (`coach_model`, docs/runbooks/conversation-lab.md), never by changing production; the lab role may invoke the A/B

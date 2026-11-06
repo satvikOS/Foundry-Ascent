@@ -20,10 +20,25 @@ export interface ModelPrice {
 
 export type PricingTable = Readonly<Record<string, ModelPrice>>;
 
-/** Claude on Bedrock: list price at the global endpoint, +10 % at regional ones (Claude 4.5 and later). */
-function claude(inputPerMillionUsd: number, outputPerMillionUsd: number): ModelPrice {
-  return { inputPerMillionUsd, outputPerMillionUsd, regionalPremium: 0.1 };
+/**
+ * Claude on Bedrock: list price at the global endpoint, +10 % at regional ones (Claude 4.5 and later), and the
+ * prompt-cache rates where they were checked.
+ */
+function claude(
+  inputPerMillionUsd: number,
+  outputPerMillionUsd: number,
+  cache?: { readonly read: number; readonly write: number },
+): ModelPrice {
+  return {
+    inputPerMillionUsd,
+    outputPerMillionUsd,
+    ...(cache ? { cacheReadPerMillionUsd: cache.read, cacheWritePerMillionUsd: cache.write } : {}),
+    regionalPremium: 0.1,
+  };
 }
+
+/** Claude Haiku 4.5's cache rates (global): reads a tenth of the input rate, 5-minute writes 1.25 times it. */
+const HAIKU_4_5_CACHE = { read: 0.1, write: 1.25 } as const;
 
 /**
  * List prices (Amazon Bedrock, us-east-1) at the time of writing. Operators override them through
@@ -38,6 +53,21 @@ function claude(inputPerMillionUsd: number, outputPerMillionUsd: number): ModelP
  * `Nova2.0Lite-cache-read-input-token-count-cross-region-global` $0.000075 and `…-cache-write-…` $0.00 per 1K tokens;
  * the gateway sends Nova its cache checkpoints, nova.ts). A model without cache rates counts every cached token at
  * its input rate, so the caps never under-count it.
+ *
+ * Claude Haiku 4.5, the production coach (us-east-1, AWS Price List API offer `AmazonBedrockFoundationModels`,
+ * "Claude Haiku 4.5 (Amazon Bedrock Edition)", published 2026-10-12; the Amazon Bedrock pricing page,
+ * https://aws.amazon.com/bedrock/pricing/, lists the same, checked 2026-11-06), USD per million tokens:
+ *
+ * | Tokens                    | Global (`global.`) | Regional (`us.`, what production calls) |
+ * | ------------------------- | ------------------ | ---------------------------------------- |
+ * | Input                     | 1.00               | 1.10                                     |
+ * | Output                    | 5.00               | 5.50                                     |
+ * | Cache write (5-minute)    | 1.25               | 1.375                                    |
+ * | Cache read                | 0.10               | 0.11                                     |
+ *
+ * The regional column is the global one plus the 10 % regional premium, so the row below holds the global rates. The
+ * gateway sends Haiku 4.5 cache checkpoints (nova.ts `usesCachePoints`); other Claude rows have no cache rates yet, so
+ * they get none.
  *
  * Bedrock serves Opus 4.6, Sonnet 4.6 and Haiku 4.5 through Converse with the ARN-versioned ids; later models use the
  * short `anthropic.claude-…` ids.
@@ -55,8 +85,8 @@ export const DEFAULT_MODEL_PRICES: PricingTable = {
   'amazon.titan-embed-text-v2:0': { inputPerMillionUsd: 0.02, outputPerMillionUsd: 0 },
   'anthropic.claude-opus-4-6-v1': claude(5, 25),
   'anthropic.claude-sonnet-4-6': claude(3, 15),
-  'anthropic.claude-haiku-4-5-20251001-v1:0': claude(1, 5),
-  'anthropic.claude-haiku-4-5': claude(1, 5),
+  'anthropic.claude-haiku-4-5-20251001-v1:0': claude(1, 5, HAIKU_4_5_CACHE),
+  'anthropic.claude-haiku-4-5': claude(1, 5, HAIKU_4_5_CACHE),
   'anthropic.claude-opus-4-7': claude(5, 25),
   'anthropic.claude-opus-4-8': claude(5, 25),
   'anthropic.claude-opus-5': claude(5, 25),
