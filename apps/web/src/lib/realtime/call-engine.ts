@@ -1,5 +1,12 @@
 import { VoiceTimings } from './voice-timings';
-import type { CallEndReason, CallState, SttGrant, TurnBlockedDetail, TurnView } from '@foundry/contracts';
+import type {
+  CallEndReason,
+  CallState,
+  SttGrant,
+  TurnBlockedDetail,
+  TurnEndpointing,
+  TurnView,
+} from '@foundry/contracts';
 
 import type { CreateTurnBody, StreamTurnOptions, TurnStreamEventT } from '../api/sse';
 import type { AvatarState, SpokenUnit } from './avatar';
@@ -22,7 +29,16 @@ import {
   type CaptureAudio,
   type TrackChange,
 } from './capture';
-import { BARGE_SUSTAIN_MS, BARGE_WORD_SUSTAIN_MS, Endpointer, VoiceRun, floorWords } from './endpointing';
+import {
+  BARGE_SUSTAIN_MS,
+  BARGE_WORD_SUSTAIN_MS,
+  Endpointer,
+  VoiceRun,
+  backchannelOnly,
+  floorWords,
+  type EndpointDecision,
+  type EndpointerOptions,
+} from './endpointing';
 import {
   SpeechPlayer,
   type FaceRenderer,
@@ -51,7 +67,8 @@ export type {
  * CallEngine: one live call with a vEIR (docs/architecture/calls.md §3).
  *
  *   mic → AudioWorklet (16 kHz PCM) → Transcribe WebSocket (presigned `sttGrant`) → partial captions
- *   → end of turn (stable transcript + silence) → POST /sessions/:id/turns {channel: 'voice', callId}
+ *   → end of turn (stable transcript + the quiet what was heard needs: adaptive endpointing, endpointing.ts)
+ *   → POST /sessions/:id/turns {channel: 'voice', callId, endpointing}
  *   → `turn.speech` units (signed) → POST /speech, pipelined → one AudioContext → speakers
  *
  * Barge-in: voice while the vEIR speaks ducks it at once; the founder taking the floor stops the audio, aborts the
@@ -124,8 +141,24 @@ export interface CallClock {
 }
 
 export interface CallTuning {
-  /** Quiet time that ends a hands-free turn. */
+  /**
+   * How a hands-free turn's end is found: `adaptive` (the quiet required follows what was heard, below) or `fixed`
+   * (`silenceMs` whatever was heard; the switch back).
+   */
+  readonly endpointing: 'adaptive' | 'fixed';
+  /** Fixed endpointing's quiet time that ends a hands-free turn (and adaptive's when the transcript lags the voice). */
   readonly silenceMs: number;
+  /** Adaptive: the quiet after a finished sentence, a question or a short answer. */
+  readonly endpointCompleteMs: number;
+  /** Adaptive: the quiet after a line that reads as finished without punctuation or a question. */
+  readonly endpointOpenMs: number;
+  /** Adaptive: the quiet after a line left open ("um", "and", "I mean", a trailing comma, a fragment). */
+  readonly endpointIncompleteMs: number;
+  /**
+   * After a hands-free line is sent, the founder going on speaking within this long, before any of the reply was
+   * heard, takes the turn back: it is cancelled and their words join the line, sent again when they finish.
+   */
+  readonly resumeWindowMs: number;
   readonly heartbeatMs: number;
   /** Give up reconnecting speech-to-text after this long (then the call continues by typing). */
   readonly reconnectWindowMs: number;
@@ -144,7 +177,12 @@ export interface CallTuning {
 }
 
 export const DEFAULT_TUNING: CallTuning = {
+  endpointing: 'adaptive',
   silenceMs: 600,
+  endpointCompleteMs: 300,
+  endpointOpenMs: 500,
+  endpointIncompleteMs: 950,
+  resumeWindowMs: 3_000,
   heartbeatMs: 15_000,
   reconnectWindowMs: 30_000,
   bargeConfirmMs: 1_200,
@@ -190,6 +228,24 @@ interface ActiveTurn {
   readonly submittedAt: number;
   readonly estimatedVoiceEndAt: number | null;
   firstAudioAt: number | null;
+  /** The line sent, and how its end was found (null: typed, push to talk, or queued behind a reply). */
+  readonly text: string;
+  readonly endpointing: TurnEndpointing | null;
+}
+
+/** Two parts of what the founder said, in order. */
+function joinLine(first: string, second: string): string {
+  return `${first} ${second}`.replace(/\s+/g, ' ').trim();
+}
+
+function endpointerOptions(tuning: CallTuning): Partial<EndpointerOptions> {
+  return {
+    mode: tuning.endpointing,
+    silenceMs: tuning.silenceMs,
+    completeMs: tuning.endpointCompleteMs,
+    openMs: tuning.endpointOpenMs,
+    incompleteMs: tuning.endpointIncompleteMs,
+  };
 }
 
 /** After voice alone stopped the vEIR, how long a word may take to follow before the sound counts as not the founder. */
@@ -232,6 +288,14 @@ export class CallEngine {
   private sustainBargeOff = false;
   private silentBargeTimer: unknown = null;
   private endpointer: Endpointer;
+  /**
+   * A hands-free line taken back because the founder went on speaking before its reply started: the words the
+   * server will not keep (its turn was cancelled before any unit was sent), sent again ahead of what follows, and how
+   * many times the line was taken back.
+   */
+  private carried: { readonly text: string; readonly resumed: number } | null = null;
+  /** How the end of the line waiting in `pendingLines` was found (sent with it). */
+  private pendingEndpoint: TurnEndpointing | null = null;
   private turn: ActiveTurn | null = null;
   /** The crisis turn whose fixed support line is being said (never cut off). */
   private crisisTurnId: string | null = null;
@@ -279,7 +343,7 @@ export class CallEngine {
 
   constructor(private readonly deps: CallEngineDeps) {
     this.tuning = { ...DEFAULT_TUNING, ...deps.tuning };
-    this.endpointer = new Endpointer(deps.clock.now, { silenceMs: this.tuning.silenceMs });
+    this.endpointer = new Endpointer(deps.clock.now, endpointerOptions(this.tuning));
     this.voiceRun = new VoiceRun(deps.clock.now);
   }
 
@@ -590,7 +654,7 @@ export class CallEngine {
     const line = text.trim();
     if (line === '' || this.snapshot.phase !== 'live') return;
     if (this.snapshot.activity === 'speaking') this.bargeIn();
-    this.endpointer.discard();
+    this.discardHeard();
     this.setCaptions({ founder: line, founderLive: false });
     this.utterance(line);
   }
@@ -609,7 +673,7 @@ export class CallEngine {
       this.stopWatchingSilentMic();
       if (this.releaseTimer !== null) this.deps.clock.clearTimeout(this.releaseTimer);
       this.releaseTimer = null;
-      this.endpointer.discard();
+      this.discardHeard();
       this.vad.reset();
       this.founderLevel = 0;
       this.setCaptions({ founder: null, founderLive: false });
@@ -668,7 +732,7 @@ export class CallEngine {
 
   setTalkMode(talkMode: TalkMode): void {
     if (talkMode === this.snapshot.talkMode) return;
-    this.endpointer.discard();
+    this.discardHeard();
     const notice = this.snapshot.notice?.kind === 'barge_hint' ? null : this.snapshot.notice;
     this.set({ talkMode, talking: false, notice });
   }
@@ -922,7 +986,7 @@ export class CallEngine {
     this.stopWatchingSilentMic();
     this.capture?.stop();
     this.capture = null;
-    this.endpointer.discard();
+    this.discardHeard();
     this.founderLevel = 0;
     this.set({
       input: 'typed',
@@ -968,19 +1032,93 @@ export class CallEngine {
     }
     // While the vEIR speaks, only a barge-in hands the floor over: what is heard meanwhile is its echo or a
     // backchannel, and never completes a turn.
-    if (s.talkMode === 'hands_free' && s.activity !== 'speaking' && this.endpointer.isComplete()) {
-      if (this.turn !== null) {
-        // Between the sentences of a reply, the last one may still be coming back through the speakers.
-        this.forgetNonWords();
-        if (!this.endpointer.hasSpeech()) {
-          this.setCaptions({ founder: null, founderLive: false });
-          return;
-        }
+    if (s.talkMode !== 'hands_free' || s.activity === 'speaking') return;
+    const decision = this.endpointer.decide();
+    if (decision === null) return;
+    if (this.turn !== null) {
+      // Between the sentences of a reply, the last one may still be coming back through the speakers.
+      this.forgetNonWords();
+      if (!this.endpointer.hasSpeech()) {
+        const carried = this.carried?.text ?? '';
+        this.setCaptions({ founder: carried === '' ? null : carried, founderLive: false });
+        return;
       }
-      const line = this.endpointer.take();
-      this.setCaptions({ founder: line, founderLive: false });
-      this.utterance(line);
     }
+    this.endOfSpeech(decision);
+  }
+
+  /** The founder finished a hands-free line: it is sent (with what was taken back before it) or queued. */
+  private endOfSpeech(decision: EndpointDecision): void {
+    const carried = this.carried;
+    this.carried = null;
+    const line = joinLine(carried?.text ?? '', this.endpointer.take());
+    if (line === '') return;
+    const clamp = (ms: number) => Math.min(60_000, Math.max(0, Math.round(ms)));
+    const endpointing: TurnEndpointing = {
+      decisionMs: decision.quietMs === null ? null : clamp(decision.quietMs),
+      waitMs: clamp(decision.waitMs),
+      reason: decision.reason,
+      resumed: Math.min(100, carried?.resumed ?? 0),
+    };
+    if (decision.quietMs !== null) this.timing.record('endpointDecision', decision.quietMs);
+    this.timing.count(`endpoint.${decision.reason}`);
+    this.setCaptions({ founder: line, founderLive: false });
+    this.utterance(line, endpointing);
+  }
+
+  /** Drops what was heard and not sent, and any line taken back (mute, typing, switching how to talk). */
+  private discardHeard(): void {
+    this.endpointer.discard();
+    this.carried = null;
+  }
+
+  /** What the founder is saying, after the words of a line taken back. */
+  private heardLine(): string {
+    return joinLine(this.carried?.text ?? '', this.endpointer.text());
+  }
+
+  /**
+   * The founder went on speaking after a hands-free line was sent, before any of its reply was heard: whether
+   * that line is still theirs to finish (sent from what they said, its reply not started, within the window).
+   */
+  private resumable(turn: ActiveTurn): boolean {
+    const s = this.snapshot;
+    return (
+      turn.endpointing !== null &&
+      !turn.interrupted &&
+      turn.firstAudioAt === null &&
+      s.talkMode === 'hands_free' &&
+      s.activity === 'thinking' &&
+      s.blocked === null &&
+      this.pendingLines.length === 0 &&
+      this.deps.clock.now() - turn.submittedAt <= this.tuning.resumeWindowMs
+    );
+  }
+
+  /**
+   * Takes back the line just sent so the founder can finish it: the turn is cancelled (its stream aborted, any of
+   * its units dropped before a sound of them is played) and their words join the line, sent again when they finish.
+   * A turn cancelled before any unit was sent fails on the server, so its words are sent again; one that already
+   * sent units is kept with the founder's words and none of the reply heard (the interrupt says so), so only the
+   * new words follow it.
+   */
+  private takeBack(turn: ActiveTurn): void {
+    const call = this.snapshot.call;
+    turn.interrupted = true;
+    turn.controller.abort();
+    this.player?.stop();
+    if (turn.turnId !== null && turn.units > 0 && call) {
+      void this.deps.api
+        .interruptTurn(turn.turnId, { callId: call.id, heardSeq: -1, heard: [] })
+        .catch(() => undefined);
+    }
+    this.carried = {
+      text: turn.units === 0 ? turn.text : '',
+      resumed: (turn.endpointing?.resumed ?? 0) + 1,
+    };
+    this.timing.count('resumed');
+    this.turn = null;
+    this.set({ activity: 'listening', captions: { ...this.snapshot.captions, veir: null } });
   }
 
   private onTranscript(result: Parameters<Endpointer['onResult']>[0]): void {
@@ -993,15 +1131,26 @@ export class CallEngine {
     this.endpointer.onResult(result);
     const heard = this.endpointer.text();
     if (heard === '') return;
+    const settled = result.stable || !result.partial;
+    const turn = this.turn;
+    if (turn !== null && this.resumable(turn)) {
+      // Words after the line was sent: the founder had not finished. A filler or a backchannel ("um", "yeah") is
+      // not enough, nor one unsettled word (a breath Transcribe guessed at).
+      const going = floorWords(heard, '').length;
+      const stableWord = floorWords(result.stableText ?? '', '').length > 0;
+      if (going >= (settled ? 1 : 2) || stableWord) this.takeBack(turn);
+    }
     if (s.activity === 'speaking' && s.talkMode === 'hands_free') {
       // Barge-in needs the founder taking the floor: a settled word that is neither the vEIR's echo nor a
       // backchannel ("yeah", "mm-hmm"), one such word Transcribe already marked stable, one while the voice runs
       // on, or two such words while the transcript is still changing.
       const taking = floorWords(heard, this.spokenSoFar).length;
-      const settled = result.stable || !result.partial;
       const stableWord = floorWords(result.stableText ?? '', this.spokenSoFar).length > 0;
       const voiced = !this.sustainBargeOff && this.voiceRun.duration() >= BARGE_WORD_SUSTAIN_MS;
       if (taking < (settled ? 1 : 2) && !stableWord && !(taking >= 1 && voiced)) {
+        // A backchannel ("yeah", "mm-hmm") said while the vEIR speaks: the founder is listening, so the reply
+        // comes back to full volume at once and the sound never counts as noise pausing it.
+        if (settled && backchannelOnly(heard, this.spokenSoFar)) this.backchannelHeard();
         // A settled echo or backchannel is not a turn either (a revision that adds words is heard afresh).
         if (settled) this.forgetNonWords();
         return;
@@ -1009,8 +1158,17 @@ export class CallEngine {
       this.bargeIn();
       this.forgetNonWords();
     }
-    const line = this.endpointer.text();
+    const line = this.heardLine();
     if (line !== '') this.setCaptions({ founder: line, founderLive: true });
+  }
+
+  /** A backchannel while the vEIR speaks: undo the duck its sound caused, without counting it as noise. */
+  private backchannelHeard(): void {
+    if (this.bargeTimer === null) return;
+    this.deps.clock.clearTimeout(this.bargeTimer);
+    this.bargeTimer = null;
+    this.player?.unduck();
+    this.timing.count('backchannel');
   }
 
   /** Drops what was only the vEIR's echo or a backchannel from what the founder is saying. */
@@ -1074,10 +1232,11 @@ export class CallEngine {
    * is not a reply: a line typed or said while it is still on its way or being said stops it and is sent at once
    * (the lab: every call's first line waited 11–14 s for the greeting to play out).
    */
-  private utterance(text: string): void {
+  private utterance(text: string, endpointing: TurnEndpointing | null = null): void {
     if (text === '') return;
     if (this.greeting()) this.bargeIn();
     this.pendingLines.push(text);
+    if (endpointing !== null) this.pendingEndpoint = endpointing;
     if ((this.turn !== null && !this.turn.done) || this.player?.busy) {
       this.set({ queued: this.pendingLines.length });
       return;
@@ -1101,7 +1260,10 @@ export class CallEngine {
       submittedAt: this.deps.clock.now(),
       estimatedVoiceEndAt: this.snapshot.input === 'voice' ? this.lastVoicedAt : null,
       firstAudioAt: null,
+      text,
+      endpointing: this.pendingEndpoint,
     };
+    this.pendingEndpoint = null;
     if (turn.estimatedVoiceEndAt !== null)
       this.timing.record('endpointing', turn.submittedAt - turn.estimatedVoiceEndAt);
     this.lastVoicedAt = null;
@@ -1119,7 +1281,12 @@ export class CallEngine {
     try {
       const events = this.deps.api.streamTurn(
         sessionId,
-        { text, channel: 'voice', callId: call.id },
+        {
+          text,
+          channel: 'voice',
+          callId: call.id,
+          ...(turn.endpointing === null ? {} : { endpointing: turn.endpointing }),
+        },
         { signal: turn.controller.signal, idempotencyKey: globalThis.crypto.randomUUID() },
       );
       for await (const event of events) {
@@ -1416,7 +1583,9 @@ export class CallEngine {
     this.stats.reconnects = 0;
     this.stats.firstAudioMs = [];
     this.pendingLines.length = 0;
-    this.endpointer = new Endpointer(this.deps.clock.now, { silenceMs: this.tuning.silenceMs });
+    this.endpointer = new Endpointer(this.deps.clock.now, endpointerOptions(this.tuning));
+    this.carried = null;
+    this.pendingEndpoint = null;
     this.vad.reset();
   }
 
@@ -1439,6 +1608,8 @@ export class CallEngine {
     this.turn?.controller.abort();
     this.turn = null;
     this.pendingLines.length = 0;
+    this.pendingEndpoint = null;
+    this.carried = null;
     this.closeStt();
     this.capture?.stop();
     this.capture = null;

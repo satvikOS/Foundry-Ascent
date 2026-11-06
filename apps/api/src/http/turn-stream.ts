@@ -26,7 +26,7 @@ import {
   routeKey,
 } from './idempotency.js';
 import { jsonBody, pathParam } from './input.js';
-import { TurnTimeline } from './turn-timing.js';
+import { endpointFields, TurnTimeline } from './turn-timing.js';
 import { type AppContext } from './types.js';
 
 export interface TurnStreamOptions {
@@ -332,6 +332,7 @@ export async function handleTurnRequest(
       turnId: outcome.turnId,
       outcome: outcome.status,
       ...timeline.fields(),
+      ...endpointFields(input.endpointing),
     });
   });
   // Hop-by-hop headers are invalid over HTTP/2 and in Lambda streaming metadata; the runtime frames

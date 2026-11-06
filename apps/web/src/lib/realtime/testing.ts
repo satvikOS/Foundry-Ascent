@@ -150,6 +150,14 @@ export function transcriptEvent(
   );
 }
 
+/** A raw `TranscriptEvent` payload (as a fixture holds it), framed as AWS frames it. */
+export function transcriptPayloadEvent(payload: unknown): Uint8Array {
+  return encodeMessage(
+    { ':content-type': 'application/json', ':event-type': 'TranscriptEvent', ':message-type': 'event' },
+    text.encode(JSON.stringify(payload)),
+  );
+}
+
 export function exceptionEvent(type: string, message: string): Uint8Array {
   return encodeMessage(
     { ':content-type': 'application/json', ':exception-type': type, ':message-type': 'exception' },

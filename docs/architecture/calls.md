@@ -32,16 +32,16 @@ SSE, with no always-on infrastructure.
 **Latency budget** (end of the founder's speech to the first audible word; P50, warm; estimates to measure,
 now measurable stage by stage: [latency runbook](../runbooks/latency.md)):
 
-| Stage                                                | Budget          |
-| ---------------------------------------------------- | --------------- |
-| End of speech → turn sent (stable partial + silence) | 400–700 ms      |
-| Browser → CloudFront → warm Lambda                   | 50–100 ms       |
-| Authorization, risk classification, retrieval        | 100–300 ms      |
-| Model time to first token                            | 500–1,100 ms    |
-| First sentence through the sentence gate             | 100–150 ms      |
-| `POST /speech` → first Polly bytes                   | 150–400 ms      |
-| Delivery and playback start                          | 30–80 ms        |
-| **Total**                                            | **≈ 1.3–2.8 s** |
+| Stage                                              | Budget          |
+| -------------------------------------------------- | --------------- |
+| End of speech → turn sent (stable partial + quiet) | 300–950 ms      |
+| Browser → CloudFront → warm Lambda                 | 50–100 ms       |
+| Authorization, risk classification, retrieval      | 100–300 ms      |
+| Model time to first token                          | 500–1,100 ms    |
+| First sentence through the sentence gate           | 100–150 ms      |
+| `POST /speech` → first Polly bytes                 | 150–400 ms      |
+| Delivery and playback start                        | 30–80 ms        |
+| **Total**                                          | **≈ 1.3–2.8 s** |
 
 The call opens warm: the start request resumes the database and the Lambda while the microphone starts,
 and the heartbeats keep both warm. Clients report first-audio p50/p95, barge-ins and reconnects at the end
@@ -345,11 +345,27 @@ mic ─ getUserMedia (echo cancellation, noise suppression) ─ AudioWorklet /wo
   Transcribe host, or the browser blocks it) continues by typing at once; any other failure to connect is
   retried like a dropped socket. `start()` never rejects: whatever throws, the call ends in `failed` with
   the microphone released.
-- **End of turn (hands-free).** A segment Transcribe finalised, a partial whose words are all marked stable,
-  or a partial unchanged for the silence window; plus ~600 ms without a voiced frame from the energy VAD
-  (adaptive noise floor, two-frame onset; no WASM, so no `wasm-unsafe-eval`). Updates of a segment already
-  sent only count for new trailing words. Push-to-talk sends silence until held and ends the turn 700 ms
-  after release. Lines finished while the vEIR is still answering wait and go together after it.
+- **End of turn (hands-free, adaptive endpointing).** A segment Transcribe finalised, a partial whose words are
+  all marked stable, or a partial that stopped changing (for 250 ms at most); plus the quiet what was heard needs,
+  counted from the last voiced frame of the energy VAD (adaptive noise floor, two-frame onset; no WASM, so no
+  `wasm-unsafe-eval`): **300 ms** after a finished sentence (Transcribe's full stop), a question (its question
+  mark, or a question word leading three words or more) or a short answer ("yes", "no", "sure", "thank you");
+  **500 ms** after a line that reads as finished without either; **950 ms** after one left open: a trailing filler
+  ("um", "uh"), a conjunction, article, subject pronoun, copula or "to"/"of" ("and", "so", "because", "the",
+  "is"), a self-correction ("I mean", "sorry"), a trailing comma or ellipsis, or a fragment of one or two words
+  (its last word decides first: Transcribe's final result puts a full stop even after a dangling "and"). While
+  the transcript lags the voice (its last result came more than 200 ms before the last voiced frame), the old
+  600 ms applies. Tuning `endpointing: 'fixed'` switches back to one 600 ms silence. Updates of a segment already
+  sent only count for new trailing words. Push-to-talk sends silence until held and ends the turn 700 ms after
+  release. Lines finished while the vEIR is still answering wait and go together after it.
+- **Taking a line back (a slower speaker).** When the founder goes on within 3 s of a hands-free line being
+  sent and before any of its reply was heard (two words or a settled one that are neither a filler nor a
+  backchannel), the line is taken back: its turn stream is aborted, any of its units already received are
+  dropped before a sound of them plays, and their words join the line, sent again when they finish. A turn
+  cancelled before any unit was sent fails on the server, so its words are sent again; one that had sent units
+  is kept as interrupted with `heardSeq: -1` (the interrupt is posted), so only the new words follow it. Once
+  the reply is heard, the founder's words are a barge-in as before. The turn request carries
+  `endpointing {decisionMs, waitMs, reason, resumed}` (numbers and a reason, logged in `turn.timing`).
 - **Playback.** Units play in order through the call's one AudioContext, which the Start/Call click
   unlocks (or Turn on sound, when the browser kept it suspended; `statechange` is watched for the whole
   call). Calls speak only validated text: signed `turn.speech` units, the signed intro (`turnId: null`,
@@ -380,8 +396,9 @@ mic ─ getUserMedia (echo cancellation, noise suppression) ─ AudioWorklet /wo
   `POST /turns/:id/interrupt {callId, heardSeq, heard}`, where `heardSeq` is the last unit heard to its end
   (-1 for none) and `heard` the units 0…heardSeq as played (signed units with their `sig`, stored passages
   as text). Echo and
-  backchannels never become a turn, also when heard between the reply's sentences. A duck no word confirms
-  restores the volume; after three, the call suggests push to talk. Typing while it speaks, Esc and
+  backchannels never become a turn, also when heard between the reply's sentences. A settled backchannel
+  restores the volume at once and never counts as noise; a duck no word confirms restores the volume; after
+  three, the call suggests push to talk. Typing while it speaks, Esc and
   Interrupt do the same.
 - **Half duplex** (iOS and iPadOS, where echo cancellation does not reliably keep the vEIR out of the
   microphone): the microphone sends silence and transcripts are ignored while the vEIR speaks; a large

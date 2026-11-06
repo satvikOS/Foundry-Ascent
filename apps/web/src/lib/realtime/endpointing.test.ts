@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { BARGE_SUSTAIN_MS, Endpointer, VoiceRun, floorWords } from './endpointing';
+import {
+  BARGE_SUSTAIN_MS,
+  Endpointer,
+  VoiceRun,
+  backchannelOnly,
+  classifyUtterance,
+  floorWords,
+} from './endpointing';
 import { VoiceActivityDetector } from './vad';
 
 function clock(start = 1_000) {
@@ -13,10 +20,10 @@ function clock(start = 1_000) {
   };
 }
 
-describe('Endpointer', () => {
+describe('Endpointer (fixed: one silence for everything, the switch back)', () => {
   it('waits for a stable transcript and the silence window before ending a turn', () => {
     const time = clock();
-    const ep = new Endpointer(time.now, { silenceMs: 600 });
+    const ep = new Endpointer(time.now, { mode: 'fixed', silenceMs: 600 });
     ep.onVoice();
     ep.onResult({ resultId: 'a', text: 'We interviewed', partial: true, stable: false });
     expect(ep.isComplete()).toBe(false);
@@ -34,7 +41,7 @@ describe('Endpointer', () => {
 
   it('treats a partial that stopped changing as stable', () => {
     const time = clock();
-    const ep = new Endpointer(time.now, { silenceMs: 600 });
+    const ep = new Endpointer(time.now, { mode: 'fixed', silenceMs: 600 });
     ep.onResult({ resultId: 'a', text: 'Hello there', partial: true, stable: false });
     time.advance(400);
     ep.onResult({ resultId: 'a', text: 'Hello there', partial: true, stable: false });
@@ -54,7 +61,7 @@ describe('Endpointer', () => {
 
   it('ignores late updates of a segment already sent, but keeps words added after it', () => {
     const time = clock();
-    const ep = new Endpointer(time.now, { silenceMs: 600 });
+    const ep = new Endpointer(time.now, { mode: 'fixed', silenceMs: 600 });
     ep.onResult({ resultId: 'a', text: 'Can we talk pricing', partial: true, stable: true });
     time.advance(700);
     expect(ep.take()).toBe('Can we talk pricing');
@@ -83,6 +90,116 @@ describe('Endpointer', () => {
   });
 });
 
+describe('classifyUtterance', () => {
+  it('reads a finished sentence, a question and a short answer as complete', () => {
+    expect(classifyUtterance('We interviewed twelve clinics.')).toEqual({
+      reason: 'sentence_end',
+      class: 'complete',
+    });
+    expect(classifyUtterance('How do I price the pilot?')).toEqual({ reason: 'question', class: 'complete' });
+    // A question without its question mark yet (a partial).
+    expect(classifyUtterance('so how do I price the pilot')).toEqual({
+      reason: 'question',
+      class: 'complete',
+    });
+    for (const answer of ['Yes', 'No.', 'yeah sure', 'Thank you', 'Of course', 'I think so.']) {
+      expect(classifyUtterance(answer).class, answer).toBe('complete');
+    }
+  });
+
+  it('reads a line with no punctuation and no question as open', () => {
+    expect(classifyUtterance('The clinics pay monthly today')).toEqual({ reason: 'open', class: 'open' });
+  });
+
+  it('reads fillers, conjunctions, self-corrections, trailing commas and fragments as incomplete', () => {
+    const cases: [string, string][] = [
+      ['I think the price is too high, um', 'filler'],
+      ['and uh', 'filler'],
+      ['We built the dashboard and', 'continuation'],
+      // Transcribe's final result puts a full stop even after a dangling conjunction.
+      ['We built the dashboard and.', 'continuation'],
+      ['It failed because', 'continuation'],
+      ['So the main thing is', 'continuation'],
+      ['We should talk to the', 'continuation'],
+      ['We need about fifty, I mean', 'self_correction'],
+      ['twelve, sorry', 'self_correction'],
+      ['We need about fifty,', 'trailing_comma'],
+      ['Well...', 'trailing_comma'],
+      ['The thing', 'fragment'],
+      ['Twelve', 'fragment'],
+      ['', 'fragment'],
+    ];
+    for (const [text, reason] of cases) {
+      expect(classifyUtterance(text), text).toEqual({ reason, class: 'incomplete' });
+    }
+    // "so" closes "I think so"; elsewhere it carries on.
+    expect(classifyUtterance('and the pilot so').reason).toBe('continuation');
+    // A two-word line with its full stop is a whole answer.
+    expect(classifyUtterance('Twelve clinics.').class).toBe('complete');
+  });
+});
+
+describe('Endpointer (adaptive)', () => {
+  it('waits about 300 ms after a finished line, 500 ms after an open one and 950 ms after an unfinished one', () => {
+    const cases: [string, number][] = [
+      ['How do I price the pilot?', 300],
+      ['The clinics pay monthly today', 500],
+      ['I think the price is too high, um', 950],
+    ];
+    for (const [text, wait] of cases) {
+      const time = clock();
+      const ep = new Endpointer(time.now);
+      ep.onVoice();
+      ep.onResult({ resultId: 'a', text, partial: true, stable: true });
+      time.advance(wait - 1);
+      expect(ep.decide(), text).toBeNull();
+      time.advance(1);
+      expect(ep.decide(), text).toMatchObject({ waitMs: wait, quietMs: wait });
+    }
+  });
+
+  it('waits for an unsettled partial to stop changing (250 ms at most)', () => {
+    const time = clock();
+    const ep = new Endpointer(time.now);
+    ep.onVoice();
+    ep.onResult({ resultId: 'a', text: 'How do I price', partial: true, stable: false });
+    time.advance(200);
+    ep.onResult({ resultId: 'a', text: 'How do I price it?', partial: true, stable: false });
+    time.advance(200);
+    expect(ep.decide(), 'changed 200 ms ago').toBeNull();
+    time.advance(50);
+    expect(ep.decide()).toMatchObject({ reason: 'question', quietMs: 450 });
+  });
+
+  it('keeps the fixed silence while the transcript is behind the voice', () => {
+    const time = clock();
+    const ep = new Endpointer(time.now);
+    ep.onResult({ resultId: 'a', text: 'Our churn is eight percent', partial: true, stable: true });
+    time.advance(600);
+    ep.onVoice(); // words the transcript has not shown yet
+    time.advance(500);
+    expect(ep.decide()).toBeNull();
+    time.advance(100);
+    expect(ep.decide()).toMatchObject({ reason: 'catching_up', waitMs: 600 });
+  });
+
+  it('starts over when the founder speaks again within the wait', () => {
+    const time = clock();
+    const ep = new Endpointer(time.now);
+    ep.onVoice();
+    ep.onResult({ resultId: 'a', text: 'So the main thing is', partial: true, stable: true });
+    time.advance(900);
+    expect(ep.decide()).toBeNull();
+    ep.onVoice();
+    ep.onResult({ resultId: 'a', text: 'So the main thing is budget.', partial: false, stable: true });
+    time.advance(299);
+    expect(ep.decide()).toBeNull();
+    time.advance(1);
+    expect(ep.decide()).toMatchObject({ reason: 'sentence_end' });
+    expect(ep.take()).toBe('So the main thing is budget.');
+  });
+});
+
 describe('floorWords', () => {
   it('keeps only words that are neither the vEIR’s own echo nor a backchannel', () => {
     const spoken = 'Twelve is a good start. What did they say?';
@@ -93,6 +210,15 @@ describe('floorWords', () => {
     expect(floorWords('yeah but price', spoken)).toEqual(['but', 'price']);
     expect(floorWords('twelve', '')).toEqual(['twelve']);
     expect(floorWords('  ', spoken)).toEqual([]);
+  });
+
+  it('tells a backchannel apart from the vEIR’s echo and from words that take the floor', () => {
+    const spoken = 'Start with one library.';
+    expect(backchannelOnly('Mm-hmm.', spoken)).toBe(true);
+    expect(backchannelOnly('yeah, right', spoken)).toBe(true);
+    expect(backchannelOnly('one library', spoken)).toBe(false);
+    expect(backchannelOnly('yeah but', spoken)).toBe(false);
+    expect(backchannelOnly('', spoken)).toBe(false);
   });
 
   it('never takes "sorry", "wait" or "actually" for a backchannel: they open a turn (LAB-V4)', () => {

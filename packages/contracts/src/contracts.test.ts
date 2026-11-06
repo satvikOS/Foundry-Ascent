@@ -96,6 +96,17 @@ describe('CreateTurnRequest', () => {
     });
   });
 
+  it('carries a spoken turn’s end-of-speech decision: numbers and a known reason only', () => {
+    const endpointing = { decisionMs: 310, waitMs: 300, reason: 'question', resumed: 0 } as const;
+    expect(CreateTurnRequest.parse({ text: 'hi', endpointing }).endpointing).toEqual(endpointing);
+    expect(
+      CreateTurnRequest.safeParse({ text: 'hi', endpointing: { ...endpointing, reason: 'because' } }).success,
+    ).toBe(false);
+    expect(
+      CreateTurnRequest.safeParse({ text: 'hi', endpointing: { ...endpointing, decisionMs: -1 } }).success,
+    ).toBe(false);
+  });
+
   it('carries the expected ordinal for idempotent retries', () => {
     expect(CreateTurnRequest.parse({ text: 'hi', expectedOrdinal: 3 }).expectedOrdinal).toBe(3);
     expect(CreateTurnRequest.safeParse({ text: 'hi', expectedOrdinal: 0 }).success).toBe(false);

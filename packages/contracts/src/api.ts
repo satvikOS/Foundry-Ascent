@@ -179,6 +179,42 @@ export const ConversationOpenerResponse = z.object({
 });
 export type ConversationOpenerResponse = z.infer<typeof ConversationOpenerResponse>;
 export const SessionDetailResponse = z.object({ session: SessionView, turns: z.array(TurnView) });
+/**
+ * Why a call's turn was taken as finished (docs/runbooks/latency.md, end of speech): the sentence ended (`sentence_end`),
+ * it reads as a question or a short answer, it reads as finished without either (`open`), the transcript was still
+ * catching up with the voice, or it was left open (a filler, a conjunction, a self-correction, a trailing comma, a
+ * fragment). `fixed`: adaptive endpointing was off (one silence for everything).
+ */
+export const EndpointReason = z.enum([
+  'sentence_end',
+  'question',
+  'short_answer',
+  'open',
+  'catching_up',
+  'filler',
+  'continuation',
+  'self_correction',
+  'trailing_comma',
+  'fragment',
+  'fixed',
+]);
+export type EndpointReason = z.infer<typeof EndpointReason>;
+
+/** How the browser decided a spoken turn was finished: numbers and a reason only, never words. */
+export const TurnEndpointing = z.object({
+  /** Quiet after the founder's last voiced microphone frame when the turn was sent (ms, browser estimate). */
+  decisionMs: z.number().int().min(0).max(60_000).nullable(),
+  /** The quiet the endpointer required for what it heard. */
+  waitMs: z.number().int().min(0).max(60_000),
+  reason: EndpointReason,
+  /**
+   * Earlier sends of this line taken back because the founder went on speaking before the reply started (each was
+   * cancelled, and its words are part of this turn).
+   */
+  resumed: z.number().int().min(0).max(100),
+});
+export type TurnEndpointing = z.infer<typeof TurnEndpointing>;
+
 export const CreateTurnRequest = z.object({
   text: z.string().trim().min(1).max(8000),
   mode: CoachMode.optional(),
@@ -193,6 +229,8 @@ export const CreateTurnRequest = z.object({
   channel: TurnChannel.optional(),
   /** The live call this spoken turn belongs to (required by the server when `channel` is `voice`). */
   callId: Id.optional(),
+  /** A spoken turn's end-of-speech decision, for the `turn.timing` log only (the turn ignores it). Optional. */
+  endpointing: TurnEndpointing.optional(),
 });
 export const EndSessionResponse = z.object({ session: SessionView, recap: SessionRecap.nullable() });
 export const TurnFeedbackRequest = z.object({
