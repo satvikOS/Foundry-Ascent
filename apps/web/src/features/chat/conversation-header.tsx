@@ -47,7 +47,8 @@ interface ConversationHeaderProps {
 }
 
 /**
- * The conversation's one header, on the shared glass surface: the mentor's name ("Thomas", no face and no badge),
+ * The conversation's one header, the top edge of its window (conversation-window.tsx), spanning the window: the
+ * mentor's name ("Thomas", no face and no badge),
  * the title, a quiet "Private" for a private conversation, then the call buttons (voice, video), the context panel's
  * toggle and a menu for everything rarer (rename, end, report, delete). On phones it is the only bar: the menu
  * button, the title over the name, then at most three icons (Voice call, Video call, More), so the title keeps its
@@ -76,8 +77,12 @@ export function ConversationHeader({
   const phoneStatus = [isPrivate ? 'Private' : null, active ? null : 'Ended'].filter(Boolean).join(' · ');
   const name = veir?.name ?? session.personaName;
   return (
-    <header className="glass-bar sticky top-(--mini-call-height) z-20 border-b" data-print="hide">
-      <div className="mx-auto flex h-14 w-full max-w-(--content-width) items-center gap-2.5 px-4 sm:px-6">
+    <header
+      data-slot="conversation-header"
+      className="glass-bar sticky top-(--mini-call-height) z-20 border-b"
+      data-print="hide"
+    >
+      <div className="flex h-14 w-full items-center gap-2.5 px-4 sm:px-5">
         {openNavigation ? (
           <Button
             variant="ghost"
@@ -202,9 +207,7 @@ export function ConversationHeader({
           ) : null}
         </div>
       </div>
-      {children ? (
-        <div className="mx-auto w-full max-w-(--content-width) px-4 pb-2.5 sm:px-6">{children}</div>
-      ) : null}
+      {children ? <div className="w-full px-4 pb-2.5 sm:px-5">{children}</div> : null}
     </header>
   );
 }

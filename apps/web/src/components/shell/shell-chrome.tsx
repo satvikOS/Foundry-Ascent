@@ -10,6 +10,8 @@ export interface ShellChrome {
   openNavigation: () => void;
   /** Hides the shell's phone bar until the returned release is called. */
   claimMobileBar: () => () => void;
+  /** Shows the breathing ground behind the page (a conversation window) until the returned release is called. */
+  claimBreathingGround: () => () => void;
 }
 
 export const ShellChromeContext = createContext<ShellChrome | null>(null);
@@ -34,4 +36,13 @@ export function usePageMobileBar(): (() => void) | null {
 export function PhoneBarAction({ children }: { children: ReactNode }) {
   const slot = useContext(PhoneBarSlotContext);
   return slot ? createPortal(children, slot) : null;
+}
+
+/**
+ * Shows the shell's breathing ground behind the calling page while it is mounted (the conversation window); nothing
+ * outside the app shell (tests).
+ */
+export function useBreathingGround(): void {
+  const chrome = useContext(ShellChromeContext);
+  useLayoutEffect(() => chrome?.claimBreathingGround(), [chrome]);
 }

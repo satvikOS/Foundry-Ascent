@@ -4,7 +4,11 @@ import type { ComponentProps } from 'react';
 
 import { cn } from '@/lib/utils';
 
+import { useLayerEscape } from './layers';
+
 export const Dialog = DialogPrimitive.Root;
+/** The control that opens a dialog: Radix names it for the dialog and puts focus back on it when the dialog closes. */
+export const DialogTrigger = DialogPrimitive.Trigger;
 const DialogPortal = DialogPrimitive.Portal;
 
 /**
@@ -46,8 +50,11 @@ export function DialogContent({
   children,
   hideClose = false,
   surface = 'solid',
+  onEscapeKeyDown,
   ...props
 }: DialogContentProps) {
+  // A dialog opened over this one takes Escape even in the moment before Radix ranks it on top (layers.ts).
+  const layer = useLayerEscape(onEscapeKeyDown);
   return (
     <DialogPortal>
       <DialogOverlay
@@ -64,7 +71,9 @@ export function DialogContent({
           'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98] duration-150',
           className,
         )}
+        {...layer.layerProps}
         {...props}
+        onEscapeKeyDown={layer.onEscapeKeyDown}
       >
         {children}
         {hideClose ? null : (

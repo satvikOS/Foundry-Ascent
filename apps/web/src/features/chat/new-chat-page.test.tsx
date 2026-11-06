@@ -18,10 +18,11 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { jsonResponse, stubFetch } from '@/features/admin/shared/test-utils';
 import { conversationOrigin } from '@/features/documents/upload-queue';
 import { VentureUploadsProvider } from '@/features/documents/venture-uploads';
-import { makeMemory, makeSession, makeVenture } from '@/features/knowledge/testing';
+import { makeDocument, makeMemory, makeSession, makeVenture } from '@/features/knowledge/testing';
 import { meQueryOptions } from '@/lib/api/hooks/auth';
 
 import { AttachmentTray, useComposerAttachments } from './attachments';
+import { addDays, localIsoDay } from './due-actions';
 import { NewChatPage } from './new-chat-page';
 import { startPrivacy, takeChoiceInView } from './privacy-choice';
 
@@ -85,7 +86,8 @@ function stubApi({
       method,
       url,
       signal,
-      body: method === 'POST' && !url.endsWith('/documents') ? bodyOf(init) : undefined,
+      body:
+        (method === 'POST' || method === 'PATCH') && !url.endsWith('/documents') ? bodyOf(init) : undefined,
     });
     // Call settings with calls on (the composer then offers Call).
     if (callsOn && method === 'GET' && url.endsWith('/call-config')) {
@@ -143,6 +145,24 @@ function stubApi({
       if (method === 'GET' && url === `/api/v1/ventures/${id}/opener`) {
         return opener ?? Promise.resolve(jsonResponse(preview));
       }
+      if (method === 'GET' && url === `/api/v1/ventures/${id}/escalations`) {
+        return Promise.resolve(
+          jsonResponse({ items: [escalationOf(id, 'legal'), escalationOf(id, 'expert_judgment')] }),
+        );
+      }
+      if (method === 'GET' && url.startsWith(`/api/v1/ventures/${id}/memory?`)) {
+        return Promise.resolve(jsonResponse({ items: [REMEMBERED], nextCursor: null }));
+      }
+      if (method === 'GET' && url === `/api/v1/ventures/${id}/documents`) {
+        return Promise.resolve(jsonResponse({ items: [makeDocument({ ventureId: id })] }));
+      }
+      if (method === 'GET' && url === `/api/v1/ventures/${id}/sessions`) {
+        return Promise.resolve(
+          jsonResponse({
+            items: [makeSession({ ventureId: id, hasCalls: true, title: 'Pricing call with Thomas' })],
+          }),
+        );
+      }
       if (method === 'POST' && url === `/api/v1/ventures/${id}/sessions`) {
         return Promise.resolve(
           jsonResponse(makeSession({ id: SESSION, ventureId: id, status: 'active', endedAt: null }), 201),
@@ -157,11 +177,51 @@ function stubApi({
         });
       }
     }
+    // A correction of a due item (Done, Snooze): answered with its new version.
+    if (method === 'PATCH' && url === `/api/v1/memory/${OVERDUE_ID}`) {
+      return Promise.resolve(
+        jsonResponse(makeMemory({ id: SESSION, type: 'action', title: 'Call the facilities manager' })),
+      );
+    }
     return Promise.resolve(
       jsonResponse({ type: 'about:blank', title: 'Not found', status: 404, code: 'not_found' }, 404),
     );
   });
   return calls;
+}
+
+const OVERDUE_ID = '7a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c12';
+
+/** The newest thing the venture's memory holds (the panel's Memory section lists it, with Edit). */
+const REMEMBERED = makeMemory({
+  id: '7a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c13',
+  type: 'decision',
+  title: 'Price per seat, not per library',
+});
+
+/** An open request for human help (the panel lists the venture's open ones). */
+function escalationOf(ventureId: string, category: 'legal' | 'expert_judgment') {
+  const person = { id: ME.principal.id, displayName: 'Maya Example', title: null, synthetic: true };
+  return {
+    id:
+      category === 'legal' ? '8a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c01' : '8a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c02',
+    ventureId,
+    ventureName: 'QuietQuad',
+    sessionId: null,
+    turnId: null,
+    category,
+    priority: 'P2',
+    status: 'routed',
+    requestedRole: 'eir',
+    packet: null,
+    sharingConsentAt: null,
+    assignee: null,
+    dueAt: null,
+    resolution: null,
+    createdBy: person,
+    createdAt: '2026-10-15T12:00:00.000Z',
+    updatedAt: '2026-10-15T12:00:00.000Z',
+  };
 }
 
 /** The venture's state as the context panel reads it: one overdue action, a goal, an open assumption, help. */
@@ -180,8 +240,9 @@ function overviewOf(venture: ReturnType<typeof makeVenture>) {
     ],
     overdueActions: [
       makeMemory({
-        id: '7a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c12',
+        id: OVERDUE_ID,
         type: 'action',
+        status: 'confirmed',
         title: 'Call the facilities manager',
         attributes: { due: '2026-10-01', status: 'open' },
       }),
@@ -519,18 +580,86 @@ describe('New chat', () => {
     expect(composer()).toHaveAttribute('placeholder', 'Message Thomas');
 
     const panel = screen.getByRole('complementary', { name: 'Context' });
-    expect(await within(panel).findByText('Validation stage')).toBeVisible();
+    // Where the venture stands: its stage, what needs attention, its focus.
+    expect(await within(panel).findByText('Validation')).toBeVisible();
+    expect(within(panel).getByText('1 overdue')).toBeVisible();
     expect(panel).toHaveTextContent('Prove four libraries will pay per seat');
-    expect(within(panel).getByRole('button', { name: /Call the facilities manager/ })).toHaveTextContent(
+    expect(within(panel).getByRole('button', { name: /^Call the facilities manager/ })).toHaveTextContent(
       /Overdue/,
     );
     expect(within(panel).getByRole('button', { name: /Librarians sign off/ })).toBeVisible();
-    expect(within(panel).getByRole('link', { name: '2 open requests' })).toHaveAttribute(
+    // The open requests for human help, each opening its request.
+    const requests = await within(panel).findByRole('list', { name: 'Requests for help' });
+    expect(within(requests).getAllByRole('link')).toHaveLength(2);
+    expect(within(requests).getAllByRole('link')[0]).toHaveAttribute(
       'href',
-      `/ain/app/v/${A}/help`,
+      expect.stringMatching(new RegExp(`^/ain/app/v/${A}/help\\?id=`)),
     );
     expect(within(panel).getByRole('radio', { name: 'Remember this conversation' })).toBeChecked();
+    // The newest memory, editable in place; the venture's documents; its calls.
+    const remembered = await within(panel).findByRole('list', { name: 'Recently remembered' });
+    expect(remembered).toHaveTextContent('Price per seat, not per library');
+    expect(
+      within(remembered).getByRole('button', { name: 'Edit memory: Price per seat, not per library' }),
+    ).toBeInTheDocument();
+    expect(await within(panel).findByRole('link', { name: /exam-week-interviews\.md/ })).toBeVisible();
+    expect(await within(panel).findByRole('link', { name: /Pricing call with Thomas/ })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/c/'),
+    );
     expect(within(panel).getByRole('button', { name: 'About Thomas' })).toBeVisible();
+  });
+
+  it('marks what is due done, or snoozes it a week, as a correction of the item', async () => {
+    const calls = stubApi();
+    renderNewChat(A);
+    const panel = await screen.findByRole('complementary', { name: 'Context' });
+    const user = userEvent.setup();
+    await user.click(
+      await within(panel).findByRole('button', { name: 'Mark done: Call the facilities manager' }),
+    );
+    await waitFor(() => {
+      expect(calls.some((c) => c.method === 'PATCH')).toBe(true);
+    });
+    const patches = () =>
+      calls.filter((c) => c.method === 'PATCH' && c.url.endsWith(`/memory/${OVERDUE_ID}`));
+    expect(patches()).toHaveLength(1);
+    await user.click(
+      within(panel).getByRole('button', { name: 'Snooze 7 days: Call the facilities manager' }),
+    );
+    await waitFor(() => {
+      expect(patches()).toHaveLength(2);
+    });
+    const requests = patches().map((call) => call.body);
+    expect(requests[0]).toEqual({
+      action: 'correct',
+      patch: { attributes: { due: '2026-10-01', status: 'done' } },
+      reason: 'Marked done',
+    });
+    // Overdue: a week from today, not from its past date.
+    expect(requests[1]).toEqual({
+      action: 'correct',
+      patch: { attributes: { due: addDays(localIsoDay(), 7), status: 'open' } },
+      reason: 'Snoozed 7 days',
+    });
+  });
+
+  it('folds a section away and keeps it folded', async () => {
+    stubApi();
+    renderNewChat(A);
+    const panel = await screen.findByRole('complementary', { name: 'Context' });
+    const user = userEvent.setup();
+    const toggle = within(panel).getByRole('button', { name: /^Documents/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(await within(panel).findByRole('list', { name: 'Venture documents' })).toBeVisible();
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(within(panel).queryByRole('list', { name: 'Venture documents' })).toBeNull();
+    expect(JSON.parse(window.localStorage.getItem('fa.panel.sections') ?? '{}')).toEqual({ documents: '0' });
+    // The keyboard unfolds it again.
+    toggle.focus();
+    await user.keyboard('{Enter}');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('fills the composer from a quick action in the panel, ready to edit', async () => {
@@ -544,7 +673,9 @@ describe('New chat', () => {
     );
     expect(composer()).toHaveFocus();
     // What is due starts a conversation about it too.
-    await userEvent.setup().click(within(panel).getByRole('button', { name: /Call the facilities manager/ }));
+    await userEvent
+      .setup()
+      .click(within(panel).getByRole('button', { name: /^Call the facilities manager/ }));
     expect(composer()).toHaveValue('“Call the facilities manager” is overdue. Help me get it back on track.');
   });
 
@@ -559,6 +690,10 @@ describe('New chat', () => {
     expect(about).toHaveTextContent('AI avatar');
     expect(about).toHaveTextContent('A person from the program');
     await user.click(within(about).getByRole('button', { name: 'Done' }));
+    // Closing About puts focus back on what opened it.
+    await waitFor(() => {
+      expect(within(panel).getByRole('button', { name: 'About Thomas' })).toHaveFocus();
+    });
     await user.click(within(panel).getByRole('button', { name: 'Hide context panel' }));
     expect(screen.queryByRole('complementary', { name: 'Context' })).toBeNull();
     expect(window.localStorage.getItem('fa.context-panel.open')).toBe('0');

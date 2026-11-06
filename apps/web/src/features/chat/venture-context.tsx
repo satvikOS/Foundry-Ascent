@@ -1,9 +1,4 @@
-import {
-  OPEN_ESCALATION_STATUSES,
-  type EscalationView,
-  type MemoryObjectView,
-  type VentureOverview,
-} from '@foundry/contracts';
+import type { MemoryObjectView, VentureOverview } from '@foundry/contracts';
 import { Link } from '@tanstack/react-router';
 import {
   AlarmClock,
@@ -17,20 +12,29 @@ import {
   Target,
   type LucideIcon,
 } from 'lucide-react';
-import { useId, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { AboutVeirDialog } from '@/components/faces/about-veir-dialog';
-import { Button } from '@/components/ui/button';
+import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { Skeleton } from '@/components/ui/skeleton';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { useVentureEscalations } from '@/lib/api/hooks/escalations';
+import { StageChip } from '@/components/ui/stage-chip';
 import { useVentureOverview } from '@/lib/api/hooks/ventures';
-import { pluralize } from '@/lib/format';
-import { ESCALATION_CATEGORY_LABELS, STAGE_LABELS } from '@/lib/labels';
+import { formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { VeirName } from '@/lib/veir';
 import { actionAttributes, formatIsoDate, milestoneAttributes } from '@/features/memory/typed/attributes';
 
+import {
+  CallsSection,
+  DocumentsSection,
+  DueActions,
+  HelpSection,
+  ItemLine,
+  MAX_ITEMS,
+  QUIET_LINK,
+  RecentMemory,
+  ROW,
+} from './venture-context-sections';
 import { PrivacyChoice, type ConversationPrivacy } from './privacy-choice';
 import {
   assumptionPrompt,
@@ -42,8 +46,6 @@ import {
 } from './suggestions';
 
 export type { PromptSuggestion } from './suggestions';
-
-const OPEN_ESCALATION: ReadonlySet<string> = new Set(OPEN_ESCALATION_STATUSES);
 
 const ACTION_ICONS: Record<SuggestionIcon, LucideIcon> = {
   goal: Target,
@@ -63,7 +65,7 @@ interface VentureContextProps {
   /** The mentor ("Thomas"), for the About dialog; null while unknown. */
   veir: VeirName | null;
   memory: ContextMemory;
-  /** The open conversation (its own help requests are listed first); none on New chat. */
+  /** The open conversation (its own help requests and calls are marked); none on New chat. */
   sessionId?: string | undefined;
   /** Fill the composer with a quick action's words. Without it (or while coaching is unavailable) none show. */
   onPrompt?: ((suggestion: PromptSuggestion) => void) | undefined;
@@ -71,10 +73,12 @@ interface VentureContextProps {
 }
 
 /**
- * The venture's context beside the conversation (owner, 2026-11-05: "a short panel on the right instead of chips
- * piled in the centre"): the venture's stage and focus, what is due or overdue, what is being tested, open requests
- * for human help, the memory choice, and a few quick actions. Short and calm: each section shows a handful of items
- * and says nothing when it has none. The same content on New chat and in a conversation.
+ * The venture's context beside the conversation, the same on New chat and in a conversation (owner, 2026-11-05: "a
+ * short panel on the right instead of chips piled in the centre"; 2026-11-06: "the features that make them useful"):
+ * where the venture stands, then sections that each fold away (remembered per browser) and each act on what they
+ * show: what is due (Done, Snooze), what is being tested, human help (Ask a person), quick starts, memory (Remember or
+ * Private, and the newest memory with Edit), documents (open in the viewer) and calls. Each lists a handful of items
+ * and links to its page for the rest; every control is a button or a link in reading order.
  */
 export function VentureContext({
   tenant,
@@ -89,7 +93,7 @@ export function VentureContext({
   const [aboutOpen, setAboutOpen] = useState(false);
 
   return (
-    <div data-slot="venture-context" className="grid gap-6 px-4 pt-4 pb-5">
+    <div data-slot="venture-context" className="grid gap-5 px-4 pt-4 pb-5">
       {overview.isPending ? (
         <ContextSkeleton />
       ) : overview.isError ? (
@@ -108,70 +112,55 @@ export function VentureContext({
           overview={overview.data}
           tenant={tenant}
           ventureId={ventureId}
-          sessionId={sessionId}
           onPrompt={onPrompt}
-          onAskPerson={onAskPerson}
         />
       )}
 
-      <ContextSection title="Memory">
-        {memory.kind === 'choice' ? (
-          <PrivacyChoice value={memory.value} onChange={memory.onChange} align="start" />
-        ) : (
-          <p className="text-small text-muted-foreground">
-            {memory.privacy === 'ephemeral' ? 'Private: not kept.' : 'Remembered for next time.'}
-          </p>
-        )}
-        {memory.kind === 'fixed' && memory.privacy === 'ephemeral' ? null : (
-          <Link
-            to="/$tenant/app/v/$ventureId/knowledge"
-            params={{ tenant, ventureId }}
-            className={cn(QUIET_LINK, 'mt-2 inline-block')}
-          >
-            Review or correct memory
-          </Link>
-        )}
-      </ContextSection>
+      <HelpSection tenant={tenant} ventureId={ventureId} sessionId={sessionId} onAskPerson={onAskPerson} />
+
+      {overview.data && onPrompt ? <QuickStarts overview={overview.data} onPrompt={onPrompt} /> : null}
+
+      <CollapsibleSection id="memory" title="Memory">
+        <div className="grid gap-3">
+          {memory.kind === 'choice' ? (
+            <PrivacyChoice value={memory.value} onChange={memory.onChange} align="start" />
+          ) : (
+            <p className="text-small text-muted-foreground">
+              {memory.privacy === 'ephemeral' ? 'Private: not kept.' : 'Remembered for next time.'}
+            </p>
+          )}
+          <RecentMemory
+            tenant={tenant}
+            ventureId={ventureId}
+            showLink={!(memory.kind === 'fixed' && memory.privacy === 'ephemeral')}
+          />
+        </div>
+      </CollapsibleSection>
+
+      <DocumentsSection tenant={tenant} ventureId={ventureId} />
+      <CallsSection tenant={tenant} ventureId={ventureId} sessionId={sessionId} />
 
       {veir ? (
         <div className="border-t border-border pt-4">
-          <button
-            type="button"
-            data-slot="about-veir"
-            onClick={() => {
-              setAboutOpen(true);
-            }}
-            className={cn(QUIET_LINK, 'inline-flex items-center gap-1.5')}
-          >
-            <Info aria-hidden className="size-3.5" />
-            About {veir.name}
-          </button>
-          <AboutVeirDialog veir={veir} open={aboutOpen} onOpenChange={setAboutOpen} />
+          <AboutVeirDialog
+            veir={veir}
+            open={aboutOpen}
+            onOpenChange={setAboutOpen}
+            // The dialog's trigger: closing it (Done, Escape) puts focus back here.
+            trigger={
+              <button
+                type="button"
+                data-slot="about-veir"
+                className={cn(QUIET_LINK, 'inline-flex items-center gap-1.5')}
+              >
+                <Info aria-hidden className="size-3.5" />
+                About {veir.name}
+              </button>
+            }
+          />
         </div>
       ) : null}
     </div>
-  );
-}
-
-const QUIET_LINK =
-  'rounded-sm text-small text-muted-foreground underline decoration-border-strong underline-offset-4 hover:text-foreground hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-ring';
-
-const ROW =
-  'group flex min-h-9 w-full min-w-0 items-start gap-2.5 rounded-md px-2 py-1.5 text-left text-small transition-colors duration-(--dur-hover) hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11';
-
-/** How many items a section lists before "more in Knowledge". */
-const MAX_ITEMS = 3;
-
-function ContextSection({ title, meta, children }: { title: string; meta?: ReactNode; children: ReactNode }) {
-  const id = useId();
-  return (
-    <section aria-labelledby={id} className="grid gap-2">
-      <h3 id={id} className="section-label flex items-center gap-1.5">
-        {title}
-        {meta ? <span className="tabular">{meta}</span> : null}
-      </h3>
-      <div>{children}</div>
-    </section>
   );
 }
 
@@ -208,37 +197,47 @@ function dueItems(overview: VentureOverview): DueItem[] {
   return [...overdue, ...upcoming];
 }
 
+/** One line under the venture's name: what needs attention first, then when they last talked. */
+function statusLine(overview: VentureOverview): { text: string; attention: boolean } {
+  const overdue = overview.overdueActions.length;
+  const parts: string[] = [];
+  if (overdue > 0) parts.push(`${String(overdue)} overdue`);
+  else if (overview.upcomingMilestones.length > 0) parts.push('On track');
+  const last = overview.sinceLastSession.lastSessionAt;
+  if (last) parts.push(`last talked ${formatRelative(last)}`);
+  return { text: parts.join(' · '), attention: overdue > 0 };
+}
+
 function OverviewSections({
   overview,
   tenant,
   ventureId,
-  sessionId,
   onPrompt,
-  onAskPerson,
 }: {
   overview: VentureOverview;
   tenant: string;
   ventureId: string;
-  sessionId: string | undefined;
   onPrompt: ((suggestion: PromptSuggestion) => void) | undefined;
-  onAskPerson: (() => void) | undefined;
 }) {
   const venture = overview.venture;
   const goal =
     [overview.currentGoal, venture.currentGoal].map((g) => g?.trim() ?? '').find((g) => g !== '') ?? null;
   const due = dueItems(overview);
   const testing = overview.openAssumptions;
-  const actions = onPrompt ? quickActions(goal) : [];
+  const status = statusLine(overview);
 
   return (
     <>
-      <div className="grid gap-1.5">
-        <p className="flex min-w-0 items-baseline gap-2">
-          <span className="truncate text-body font-medium">{venture.name}</span>
-          <span className="shrink-0 text-caption text-muted-foreground">
-            {STAGE_LABELS[venture.stage]} stage
-          </span>
-        </p>
+      <div className="grid gap-1.5" data-slot="venture-status">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate text-body font-medium">{venture.name}</span>
+          <StageChip stage={venture.stage} />
+        </div>
+        {status.text ? (
+          <p className={cn('text-caption', status.attention ? 'text-warning' : 'text-muted-foreground')}>
+            {status.text}
+          </p>
+        ) : null}
         <p className="line-clamp-3 text-small text-pretty text-muted-foreground">
           {goal ? (
             <>
@@ -254,15 +253,15 @@ function OverviewSections({
         </p>
       </div>
 
-      <ContextSection title="Due" meta={due.length > 0 ? due.length : undefined}>
+      <CollapsibleSection id="due" title="Due" meta={due.length > 0 ? due.length : undefined}>
         {due.length === 0 ? (
           <p className="text-small text-muted-foreground">Nothing due.</p>
         ) : (
-          <ul className="-mx-2 grid gap-px">
+          <ul aria-label="Due and overdue" className="-mx-2 grid gap-px">
             {due.slice(0, MAX_ITEMS).map(({ item, date, overdue }) => {
               const Icon = overdue ? AlarmClock : CalendarClock;
               return (
-                <li key={item.id}>
+                <ItemLine key={item.id} actions={<DueActions ventureId={ventureId} item={item} />}>
                   <ItemRow
                     tenant={tenant}
                     ventureId={ventureId}
@@ -292,15 +291,24 @@ function OverviewSections({
                       </span>
                     </span>
                   </ItemRow>
-                </li>
+                </ItemLine>
               );
             })}
           </ul>
         )}
-      </ContextSection>
+        {due.length > MAX_ITEMS ? (
+          <Link
+            to="/$tenant/app/v/$ventureId/knowledge"
+            params={{ tenant, ventureId }}
+            className={cn(QUIET_LINK, 'mt-1.5 inline-block')}
+          >
+            {`All ${String(due.length)} in Knowledge`}
+          </Link>
+        ) : null}
+      </CollapsibleSection>
 
       {testing.length > 0 ? (
-        <ContextSection title="Testing" meta={testing.length}>
+        <CollapsibleSection id="testing" title="Testing" meta={testing.length}>
           <ul className="-mx-2 grid gap-px">
             {testing.slice(0, 2).map((item) => (
               <li key={item.id}>
@@ -323,45 +331,51 @@ function OverviewSections({
               </li>
             ))}
           </ul>
-        </ContextSection>
-      ) : null}
-
-      <HelpSection
-        tenant={tenant}
-        ventureId={ventureId}
-        openCount={overview.openEscalations}
-        sessionId={sessionId}
-        onAskPerson={onAskPerson}
-      />
-
-      {actions.length > 0 && onPrompt ? (
-        <ContextSection title="Start with">
-          <ul aria-label="Quick actions" className="-mx-2 grid gap-px">
-            {actions.map((action) => {
-              const Icon = ACTION_ICONS[action.icon];
-              return (
-                <li key={action.id}>
-                  <button
-                    type="button"
-                    className={ROW}
-                    onClick={() => {
-                      onPrompt(action);
-                    }}
-                  >
-                    <Icon aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                    <span className="line-clamp-2 min-w-0 flex-1">{action.label}</span>
-                    <ChevronRight
-                      aria-hidden
-                      className="mt-0.5 size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-                    />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </ContextSection>
+        </CollapsibleSection>
       ) : null}
     </>
+  );
+}
+
+/** Ways to start (they fill the composer, ready to edit): only where the founder can send a message. */
+function QuickStarts({
+  overview,
+  onPrompt,
+}: {
+  overview: VentureOverview;
+  onPrompt: (suggestion: PromptSuggestion) => void;
+}) {
+  const goal =
+    [overview.currentGoal, overview.venture.currentGoal].map((g) => g?.trim() ?? '').find((g) => g !== '') ??
+    null;
+  const actions = quickActions(goal);
+  if (actions.length === 0) return null;
+  return (
+    <CollapsibleSection id="start" title="Start with">
+      <ul aria-label="Quick actions" className="-mx-2 grid gap-px">
+        {actions.map((action) => {
+          const Icon = ACTION_ICONS[action.icon];
+          return (
+            <li key={action.id}>
+              <button
+                type="button"
+                className={ROW}
+                onClick={() => {
+                  onPrompt(action);
+                }}
+              >
+                <Icon aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <span className="line-clamp-2 min-w-0 flex-1">{action.label}</span>
+                <ChevronRight
+                  aria-hidden
+                  className="mt-0.5 size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </CollapsibleSection>
   );
 }
 
@@ -406,65 +420,5 @@ function ItemRow({
     >
       {children}
     </Link>
-  );
-}
-
-function HelpSection({
-  tenant,
-  ventureId,
-  openCount,
-  sessionId,
-  onAskPerson,
-}: {
-  tenant: string;
-  ventureId: string;
-  openCount: number;
-  sessionId: string | undefined;
-  onAskPerson: (() => void) | undefined;
-}) {
-  // The conversation's own requests (with their status) are read only in a conversation.
-  const escalations = useVentureEscalations(ventureId, { enabled: sessionId !== undefined });
-  const fromHere: EscalationView[] = sessionId
-    ? (escalations.data ?? []).filter((e) => e.sessionId === sessionId)
-    : [];
-  const otherOpen = sessionId
-    ? (escalations.data ?? []).filter((e) => e.sessionId !== sessionId && OPEN_ESCALATION.has(e.status))
-        .length
-    : openCount;
-
-  return (
-    <ContextSection title="Human help">
-      {fromHere.length > 0 ? (
-        <ul aria-label="Requests from this conversation" className="-mx-2 mb-2 grid gap-px">
-          {fromHere.map((e) => (
-            <li key={e.id}>
-              <Link
-                to="/$tenant/app/v/$ventureId/help"
-                params={{ tenant, ventureId }}
-                search={{ id: e.id }}
-                className={cn(ROW, 'items-center justify-between')}
-              >
-                <span className="truncate">{ESCALATION_CATEGORY_LABELS[e.category]}</span>
-                <StatusBadge kind="escalationStatus" status={e.status} />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        {otherOpen > 0 ? (
-          <Link to="/$tenant/app/v/$ventureId/help" params={{ tenant, ventureId }} className={QUIET_LINK}>
-            {pluralize(otherOpen, sessionId ? 'other open request' : 'open request')}
-          </Link>
-        ) : (
-          <p className="text-small text-muted-foreground">No open requests.</p>
-        )}
-        {onAskPerson ? (
-          <Button size="xs" variant="secondary" onClick={onAskPerson}>
-            Ask a person
-          </Button>
-        ) : null}
-      </div>
-    </ContextSection>
   );
 }

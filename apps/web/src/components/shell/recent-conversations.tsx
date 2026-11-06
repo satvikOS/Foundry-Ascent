@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useRecentConversations } from '@/lib/api/hooks/sessions';
 import { conversationTitle, groupByRecency } from '@/lib/conversations';
@@ -25,7 +26,7 @@ const DeleteConversationDialog = lazy(() =>
   import('@/features/chat/conversation-dialogs').then((m) => ({ default: m.DeleteConversationDialog })),
 );
 
-interface RecentConversationsProps {
+export interface RecentConversationsProps {
   tenant: string;
   /** Venture names by id, so a conversation from another venture says where it belongs. */
   ventureNames: ReadonlyMap<string, string>;
@@ -40,7 +41,7 @@ type RowDialog = { kind: 'rename' | 'delete'; session: SessionView; title: strin
  * The person's conversations across their ventures, newest first, grouped Today / Previous 7 days / Older
  * (one that is still empty shows only while it is open).
  * Calls are marked with a phone, private chats with a closed eye. Each row has a menu: rename, open the
- * summary (ended conversations) and delete.
+ * summary (ended conversations) and delete. The list folds away under its heading (remembered per browser).
  */
 export function RecentConversations({
   tenant,
@@ -89,113 +90,124 @@ export function RecentConversations({
 
   return (
     <>
-      <nav aria-label="Recent conversations" className="grid grid-cols-[minmax(0,1fr)] gap-1">
-        {groups.map((group) => (
-          <div key={group.id} role="group" aria-labelledby={`recents-${group.id}`}>
-            <h2 id={`recents-${group.id}`} className={sidebarGroupLabelClasses}>
-              {group.label}
-            </h2>
-            <ul className="grid grid-cols-[minmax(0,1fr)] gap-px">
-              {group.items.map((session) => {
-                const title = conversationTitle(session);
-                const venture = ventureNames.get(session.ventureId);
-                return (
-                  <li key={session.id} className="group/row relative">
-                    <Link
-                      to="/$tenant/app/v/$ventureId/c/$sessionId"
-                      params={{ tenant, ventureId: session.ventureId, sessionId: session.id }}
-                      onClick={onNavigate}
-                      title={venture ? `${title} · ${venture}` : title}
-                      data-slot="sidebar-row"
-                      className={cn(sidebarRowClasses, 'gap-2 pr-8')}
-                    >
-                      <span className="min-w-0 flex-1 truncate">{title}</span>
-                      {session.hasCalls ? (
-                        <>
-                          <Phone aria-hidden className="size-3.5 shrink-0 text-sidebar-muted" />
-                          <span className="sr-only">, includes a call</span>
-                        </>
-                      ) : null}
-                      {session.privacy === 'ephemeral' ? (
-                        <>
-                          <EyeOff aria-hidden className="size-3.5 shrink-0 text-sidebar-muted" />
-                          <span className="sr-only">, private chat</span>
-                        </>
-                      ) : null}
-                    </Link>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        aria-label={`Options for ${title}`}
-                        className={cn(
-                          'absolute top-1 right-1 flex size-6 items-center justify-center rounded-sm text-sidebar-muted transition-opacity pointer-coarse:top-2.5',
-                          'hover:bg-sidebar-hover hover:text-sidebar-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sidebar-ring',
-                          'opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100',
-                        )}
-                      >
-                        <MoreHorizontal aria-hidden className="size-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" side="right" className="w-48">
-                        {session.privacy === 'standard' ? (
-                          <DropdownMenuItem
-                            onSelect={() => {
-                              setDialog({ kind: 'rename', session, title });
-                            }}
-                          >
-                            <Pencil aria-hidden />
-                            Rename
-                          </DropdownMenuItem>
-                        ) : null}
-                        {session.status === 'ended' && session.privacy === 'standard' ? (
-                          <DropdownMenuItem
-                            onSelect={() => {
-                              onNavigate?.();
-                              void navigate({
-                                to: '/$tenant/app/v/$ventureId/c/$sessionId',
-                                params: { tenant, ventureId: session.ventureId, sessionId: session.id },
-                                search: { view: 'digest' },
-                              });
-                            }}
-                          >
-                            <FileText aria-hidden />
-                            Open summary
-                          </DropdownMenuItem>
-                        ) : null}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          destructive
-                          onSelect={() => {
-                            setDialog({ kind: 'delete', session, title });
-                          }}
+      {/* The navigation holds its own heading, which folds the list away (remembered per browser). */}
+      <nav aria-label="Recent conversations" className="pt-3">
+        <CollapsibleSection
+          id="sidebar-conversations"
+          title="Conversations"
+          tone="sidebar"
+          headingLevel={2}
+          className="gap-0 [&>div:first-child]:px-2.5"
+        >
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-1">
+            {groups.map((group) => (
+              <div key={group.id} role="group" aria-labelledby={`recents-${group.id}`}>
+                <h3 id={`recents-${group.id}`} className={sidebarGroupLabelClasses}>
+                  {group.label}
+                </h3>
+                <ul className="grid grid-cols-[minmax(0,1fr)] gap-px">
+                  {group.items.map((session) => {
+                    const title = conversationTitle(session);
+                    const venture = ventureNames.get(session.ventureId);
+                    return (
+                      <li key={session.id} className="group/row relative">
+                        <Link
+                          to="/$tenant/app/v/$ventureId/c/$sessionId"
+                          params={{ tenant, ventureId: session.ventureId, sessionId: session.id }}
+                          onClick={onNavigate}
+                          title={venture ? `${title} · ${venture}` : title}
+                          data-slot="sidebar-row"
+                          className={cn(sidebarRowClasses, 'gap-2 pr-8')}
                         >
-                          <Trash2 aria-hidden />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </li>
-                );
-              })}
-            </ul>
+                          <span className="min-w-0 flex-1 truncate">{title}</span>
+                          {session.hasCalls ? (
+                            <>
+                              <Phone aria-hidden className="size-3.5 shrink-0 text-sidebar-muted" />
+                              <span className="sr-only">, includes a call</span>
+                            </>
+                          ) : null}
+                          {session.privacy === 'ephemeral' ? (
+                            <>
+                              <EyeOff aria-hidden className="size-3.5 shrink-0 text-sidebar-muted" />
+                              <span className="sr-only">, private chat</span>
+                            </>
+                          ) : null}
+                        </Link>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            aria-label={`Options for ${title}`}
+                            className={cn(
+                              'absolute top-1 right-1 flex size-6 items-center justify-center rounded-sm text-sidebar-muted transition-opacity pointer-coarse:top-2.5',
+                              'hover:bg-sidebar-hover hover:text-sidebar-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-sidebar-ring',
+                              'opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100',
+                            )}
+                          >
+                            <MoreHorizontal aria-hidden className="size-4" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" side="right" className="w-48">
+                            {session.privacy === 'standard' ? (
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  setDialog({ kind: 'rename', session, title });
+                                }}
+                              >
+                                <Pencil aria-hidden />
+                                Rename
+                              </DropdownMenuItem>
+                            ) : null}
+                            {session.status === 'ended' && session.privacy === 'standard' ? (
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  onNavigate?.();
+                                  void navigate({
+                                    to: '/$tenant/app/v/$ventureId/c/$sessionId',
+                                    params: { tenant, ventureId: session.ventureId, sessionId: session.id },
+                                    search: { view: 'digest' },
+                                  });
+                                }}
+                              >
+                                <FileText aria-hidden />
+                                Open summary
+                              </DropdownMenuItem>
+                            ) : null}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              destructive
+                              onSelect={() => {
+                                setDialog({ kind: 'delete', session, title });
+                              }}
+                            >
+                              <Trash2 aria-hidden />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+            {onViewAll ? (
+              <button
+                type="button"
+                onClick={onViewAll}
+                className={cn(sidebarRowClasses, 'mt-1 text-sidebar-muted hover:text-sidebar-foreground')}
+              >
+                View all
+              </button>
+            ) : recents.hasNextPage ? (
+              <button
+                type="button"
+                onClick={() => void recents.fetchNextPage()}
+                disabled={recents.isFetchingNextPage}
+                className={cn(sidebarRowClasses, 'mt-1 text-sidebar-muted hover:text-sidebar-foreground')}
+              >
+                {recents.isFetchingNextPage ? 'Loading…' : 'Show more'}
+              </button>
+            ) : null}
           </div>
-        ))}
-        {onViewAll ? (
-          <button
-            type="button"
-            onClick={onViewAll}
-            className={cn(sidebarRowClasses, 'mt-1 text-sidebar-muted hover:text-sidebar-foreground')}
-          >
-            View all
-          </button>
-        ) : recents.hasNextPage ? (
-          <button
-            type="button"
-            onClick={() => void recents.fetchNextPage()}
-            disabled={recents.isFetchingNextPage}
-            className={cn(sidebarRowClasses, 'mt-1 text-sidebar-muted hover:text-sidebar-foreground')}
-          >
-            {recents.isFetchingNextPage ? 'Loading…' : 'Show more'}
-          </button>
-        ) : null}
+        </CollapsibleSection>
       </nav>
       {dialog ? (
         <Suspense fallback={null}>

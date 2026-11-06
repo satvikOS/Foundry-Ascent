@@ -81,8 +81,8 @@
     },
     "Shell": {
       "before": 601,
-      "after": 507,
-      "budget": 540
+      "after": 543,
+      "budget": 559
     },
     "Sign-in": {
       "before": 111,
@@ -116,8 +116,8 @@
     },
     "Context panel": {
       "before": 39,
-      "after": 47,
-      "budget": 50
+      "after": 98,
+      "budget": 101
     }
   }
 }

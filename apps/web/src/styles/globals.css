@@ -256,6 +256,23 @@
   --atmosphere-1: light-dark(rgb(92 121 245 / 0.07), rgb(92 121 245 / 0.14));
   --atmosphere-2: light-dark(rgb(127 163 122 / 0.07), rgb(127 163 122 / 0.08));
   /*
+   * The breathing ground behind a conversation with the mentor (owner, 2026-11-06: "breathing blur gradients, very
+   * delicate and light, soothing, not distracting"): three large soft colour fields, at most these strengths at their
+   * centres, drifting and breathing over 20-40 s (components/shell/breathing.ts). Blue and sage from the voice palette,
+   * with a warm sand on off-white and a dusk violet on black. As faint as the atmosphere: OLED black stays dominant
+   * (tokens.test.ts), and long text never sits on them directly, only on the conversation window's face.
+   */
+  --breath-1: light-dark(rgb(92 121 245 / 0.1), rgb(92 121 245 / 0.16));
+  --breath-2: light-dark(rgb(127 163 122 / 0.11), rgb(127 163 122 / 0.11));
+  --breath-3: light-dark(rgb(214 168 132 / 0.12), rgb(150 112 196 / 0.12));
+  /*
+   * The conversation window: a floating pane of glass over the breathing ground, translucent enough for the fields to
+   * show through it and dense enough that prose on it keeps its contrast over their strongest centres
+   * (tokens.test.ts). No backdrop blur: what lies behind it is already soft (a blur would only cost GPU time on every
+   * frame of the breathing); solid where transparency is reduced or the device is slow.
+   */
+  --window-face: light-dark(rgb(255 255 255 / 0.6), rgb(16 16 18 / 0.6));
+  /*
    * The scrim behind modals (dims and lightly blurs the page), the lighter one under the side panel over the
    * content, and the faintest, under the command palette: its glass is what sets it apart, so the page beneath
    * is dimmed only a little and still shows through the frost.
@@ -307,6 +324,8 @@
    * sits this far up, so it stays above the keyboard while the person types.
    */
   --keyboard-inset: 0px;
+  /* The gap around the floating conversation window (from 768 px, while a conversation is open), else 0. */
+  --window-gap: 0px;
 }
 
 :root:has([data-phone-bar]) {
@@ -315,6 +334,12 @@
 
 :root:has([data-mini-call-bar]) {
   --mini-call-height: var(--mini-call-bar-height);
+}
+
+@media (width >= 48rem) {
+  :root:has([data-slot='conversation-window']) {
+    --window-gap: var(--panel-inset);
+  }
 }
 
 @media (min-width: 80rem) {
@@ -854,15 +879,9 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-  /* On glass (or art, or the call's black) a focus ring needs its own backdrop to hold: two tones. */
-  .glass-float :focus-visible,
-  .focus-two-tone:focus-visible {
+  /* On glass a focus ring needs its own backdrop to hold: two tones. */
+  .glass-float :focus-visible {
     box-shadow: 0 0 0 4px var(--fa-canvas);
-  }
-
-  .surface-raised {
-    background-color: var(--card);
-    box-shadow: var(--shadow-sm);
   }
 
   /*
@@ -937,6 +956,156 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     background-color: var(--background);
+  }
+
+  /*
+   * The conversation window (owner, 2026-11-06: "larger, floating, with a glassy touch") around New chat and a
+   * conversation (features/chat/conversation-window.tsx). On a phone it is the whole page: a sheet of the window's face
+   * over the breathing ground. From 768 px it floats, inset 12 px from the side panels and the viewport, with the
+   * panels' 22 px corners, a lit edge and a soft shadow, and takes all the room between the panels (the reading
+   * column inside keeps its measure). The page still scrolls as a whole, so the reading position, the keyboard and
+   * every link into the transcript behave as before: the pane is a sticky layer behind the content, the header rides
+   * its top edge and the composer dock its bottom edge, and the window's caps (`.ground-caps`, above the content)
+   * hide the transcript in the gaps above and below the window.
+   */
+  .conv-window {
+    --conv-window-radius: var(--radius-panel);
+    background-color: var(--window-face);
+  }
+  .conv-window .composer-dock {
+    background-image: none;
+  }
+  .conv-window-frame {
+    display: none;
+  }
+  @media (width >= 48rem) {
+    .conv-window {
+      --conv-window-height: calc(
+        100dvh - var(--mini-call-height) - var(--status-banners-height) - var(--keyboard-inset) - 2 *
+          var(--panel-inset)
+      );
+      /* No margin below: the composer dock reaches the bottom of the viewport and draws the gap itself. */
+      margin: var(--panel-inset) var(--panel-inset) 0 0;
+      background-color: transparent;
+    }
+    .conv-window-frame {
+      display: block;
+      position: sticky;
+      top: calc(var(--mini-call-height) + var(--panel-inset));
+      z-index: -1;
+      flex-shrink: 0;
+      height: var(--conv-window-height);
+      margin-bottom: calc(-1 * var(--conv-window-height));
+      border: 1px solid var(--glass-float-border);
+      border-radius: var(--conv-window-radius);
+      background-color: var(--window-face);
+      box-shadow: var(--shadow-glass);
+      pointer-events: none;
+    }
+    /*
+     * The header is the pane's top edge and the composer its bottom edge: each lies exactly over the pane and draws
+     * the pane's hairline itself, so nothing scrolling beneath shows between the edge and the caps.
+     */
+    .conv-window > [data-slot='conversation-header'] {
+      top: calc(var(--mini-call-height) + var(--panel-inset));
+      border-width: 1px;
+      border-color: var(--glass-float-border);
+      border-radius: var(--conv-window-radius) var(--conv-window-radius) 0 0;
+    }
+    /*
+     * The dock still reaches the bottom of the viewport (its box is what the page's scroll padding and the end of the
+     * conversation measure against), with the window's gap inside it; its frosted pane, the ::before, ends that gap
+     * above, with the window's bottom edge and corners.
+     */
+    .conv-window .composer-dock {
+      padding-bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + var(--panel-inset));
+    }
+    :root[data-keyboard='open'] .conv-window .composer-dock {
+      padding-bottom: calc(0.5rem + var(--panel-inset));
+    }
+    .conv-window .composer-dock::before {
+      bottom: var(--panel-inset);
+      border: 1px solid var(--glass-float-border);
+      border-top-width: 0;
+      border-radius: 0 0 var(--conv-window-radius) var(--conv-window-radius);
+    }
+  }
+  /* Solid where transparency is reduced or the device is slow; system colours when colours are forced. */
+  @media (prefers-reduced-transparency: reduce) {
+    .conv-window {
+      --window-face: var(--surface-1);
+    }
+  }
+  :root[data-perf='low'] .conv-window {
+    --window-face: var(--surface-1);
+  }
+
+  /*
+   * The breathing ground (components/shell/breathing-ground.tsx): a small canvas, drawn at a tenth of the screen's size a
+   * dozen times a second and smoothed up to fill it, fixed behind everything on the app's ground while a conversation
+   * window is open. Its border colours carry the fields' colours to the canvas (computed, so the theme decides them).
+   * Static under reduced motion (the script draws one frame), and never on a slow device, in forced colours or in print.
+   * The static atmosphere gives way to it.
+   */
+  .breathing-ground {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    border: 0 solid;
+    border-top-color: var(--breath-1);
+    border-right-color: var(--breath-2);
+    border-bottom-color: var(--breath-3);
+  }
+  /*
+   * The window's caps: the ground again, over the content, shown only in the gaps above and below the floating window,
+   * so what scrolls out of the window disappears into the ground instead of showing in the gap. Two layers: the plain
+   * caps (`.window-caps`, the app shell's), the ground's colour and its static atmosphere, always there while the
+   * window is; and over them the breathing ground's moving copy (`.breathing-caps`) wherever that is drawn. So a slow
+   * device, forced colours or the moment before the breathing ground loads never let the transcript through. The status
+   * banners and the mini call bar sit above them (app-shell.tsx).
+   */
+  .ground-caps {
+    --cap-top: calc(var(--mini-call-height) + var(--panel-inset));
+    --cap-bottom: calc(var(--keyboard-inset) + var(--panel-inset));
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    clip-path: polygon(
+      0 0,
+      100% 0,
+      100% var(--cap-top),
+      0 var(--cap-top),
+      0 calc(100% - var(--cap-bottom)),
+      100% calc(100% - var(--cap-bottom)),
+      100% 100%,
+      0 100%
+    );
+  }
+  .window-caps {
+    z-index: 15;
+    background:
+      radial-gradient(30rem 52rem at 0% 55%, var(--atmosphere-1), transparent 72%),
+      radial-gradient(48rem 34rem at 100% 100%, var(--atmosphere-2), transparent 72%), var(--background);
+  }
+  .breathing-caps {
+    z-index: 16;
+    background-color: var(--background);
+  }
+  @media (width < 48rem) {
+    .ground-caps {
+      display: none;
+    }
+  }
+  :root[data-perf='low'] .breathing-ground {
+    display: none;
+  }
+  :root:not([data-perf='low']) .app-ground:has(> .breathing-ground)::before {
+    opacity: 0;
   }
 
   /*
@@ -1050,8 +1219,19 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-  .app-ground::before {
+  .app-ground::before,
+  .breathing-ground {
     display: none;
+  }
+  .conv-window {
+    --window-face: Canvas;
+  }
+  .window-caps {
+    background: Canvas;
+  }
+  .conv-window-frame {
+    border-color: CanvasText;
+    box-shadow: none;
   }
   /* The selected row's fill disappears in forced colours: mark it with the system highlight instead. */
   [data-slot='sidebar-row'][data-status='active'],
@@ -1068,8 +1248,14 @@
     background: #fff;
     color: #000;
   }
-  .app-ground::before {
+  .app-ground::before,
+  .breathing-ground,
+  .conv-window-frame {
     display: none;
+  }
+  .conv-window {
+    margin: 0;
+    background: none;
   }
   [data-print='hide'] {
     display: none !important;

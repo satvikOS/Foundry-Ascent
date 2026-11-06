@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 
+import { RecentConversations } from '@/components/shell/recent-conversations';
 import { SidebarContent } from '@/components/shell/sidebar';
 import { Composer } from '@/features/chat/composer';
 import { FounderMessage, LiveExchange, OpenerMessage, VeirMessage } from '@/features/chat/exchange';
@@ -63,6 +64,8 @@ export function LaptopScreen({ frame }: { frame: Frame }) {
           onOpenShortcuts={noop}
           onOpenDataUse={noop}
           onOpenReportProblem={noop}
+          // A still picture: the list shows at once (the app shell loads it beside the shell instead).
+          recents={RecentConversations}
         />
       </aside>
       <div className="ad-main">
