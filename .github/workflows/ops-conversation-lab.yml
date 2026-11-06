@@ -58,8 +58,8 @@ name: Ops - conversation lab
 # Spend: `budget_usd` is a hard cap for the whole run, split across the suites; within a suite the app's share is
 # enforced by the app itself (its daily platform cap is set to it) and the lab's own calls are metered and refused
 # before they could go over. The summary prints what was spent. The owner caps a paid run at USD 2 (the default): a
-# budget_usd above 2 is refused unless approved_over_cap is exactly "I approve USD <budget_usd>" with the budget as
-# typed (e.g. "I approve USD 5"), which only the owner types (docs/runbooks/conversation-lab.md "Spend cap").
+# budget_usd above 2 is refused unless approved_over_cap holds the owner's approval code for that budget, made today
+# with the owner's spend key (scripts/approve-spend.sh; docs/runbooks/conversation-lab.md "Spend cap").
 on:
   workflow_dispatch:
     inputs:
@@ -73,7 +73,7 @@ on:
         type: string
         default: '2'
       approved_over_cap:
-        description: Owner only - a budget_usd above USD 2 runs only when this is exactly "I approve USD <budget_usd>" (the budget as typed); empty otherwise
+        description: Owner only - a budget_usd above USD 2 runs only with the owner's approval of that budget, made today (scripts/approve-spend.sh); empty otherwise
         type: string
         default: ''
       max_scenarios:
@@ -136,7 +136,7 @@ jobs:
         env:
           SUITE: ${{ inputs.suite }}
           BUDGET: ${{ inputs.budget_usd }}
-          APPROVED_OVER_CAP: ${{ inputs.approved_over_cap }}
+          OWNER_SPEND_KEY: ${{ secrets.OWNER_SPEND_KEY }}
           MAX_SCENARIOS: ${{ inputs.max_scenarios }}
           PUBLIC_KEY: ${{ inputs.public_key }}
           BASELINE_RUN_ID: ${{ inputs.baseline_run_id }}
@@ -151,13 +151,29 @@ jobs:
             echo "::error::budget_usd must be a number from 0.5 to 50."
             exit 1
           fi
-          # The owner's cap on a paid run (USD 2): more only with the owner's typed approval of this exact budget.
+          # The owner's cap on a paid run (USD 2). More needs the owner's approval code for this budget, today (UTC):
+          # "I approve USD <budget_usd> <code>", the code an HMAC of the budget and the day under OWNER_SPEND_KEY, a
+          # secret only the owner holds (scripts/approve-spend.sh). The approval is read from the event, never from
+          # this step's env, so the public log does not show it; neither the code nor the expected text is printed.
           if awk -v b="${BUDGET}" 'BEGIN { exit !(b > 2) }'; then
-            if [ "${APPROVED_OVER_CAP}" != "I approve USD ${BUDGET}" ]; then
-              echo "::error::budget_usd above USD 2 needs the owner's approval: approved_over_cap must be exactly \"I approve USD ${BUDGET}\"."
-              exit 1
-            fi
-            echo "Budget USD ${BUDGET} is above the USD 2 cap: approved by approved_over_cap." >> "${GITHUB_STEP_SUMMARY}"
+            python3 - "${BUDGET}" <<'PY'
+          import datetime, hashlib, hmac, json, os, sys
+          budget = sys.argv[1]
+          key = os.environ.get("OWNER_SPEND_KEY", "").strip()
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as event:
+              given = (json.load(event).get("inputs") or {}).get("approved_over_cap") or ""
+          guide = 'ask the owner (docs/runbooks/conversation-lab.md "Spend cap").'
+          if len(key) < 32:
+              print("::error::budget_usd above USD 2 needs the owner's approval, and the owner's spend key (secret OWNER_SPEND_KEY) is not set: " + guide)
+              sys.exit(1)
+          day = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+          message = f"foundry-ascent spend approval|USD {budget}|{day}".encode()
+          code = hmac.new(key.encode(), message, hashlib.sha256).hexdigest()[:20]
+          if not hmac.compare_digest(str(given).encode(), f"I approve USD {budget} {code}".encode()):
+              print("::error::budget_usd above USD 2 needs the owner's approval code for this budget, made today (UTC), in approved_over_cap: " + guide)
+              sys.exit(1)
+          PY
+            echo "Budget USD ${BUDGET} is above the USD 2 cap: approved by the owner's code for this budget and day." >> "${GITHUB_STEP_SUMMARY}"
           fi
           if [[ ! "${MAX_SCENARIOS}" =~ ^[0-9]{1,2}$ ]] || (( 10#${MAX_SCENARIOS} < 1 || 10#${MAX_SCENARIOS} > 40 )); then
             echo "::error::max_scenarios must be a whole number from 1 to 40."
