@@ -408,11 +408,11 @@ def run_channel(
         reserve(len(conversation["turns"]))
         result = ConversationResult(id=f"{conversation['id']}-{channel}", channel=channel)
         result.notebook_before = _notebook(client, venture_id)
-        if not voice:
-            # New chat previews the opener first (and has it written when the notebook's line is missing); a call writes
-            # it at its start.
-            with contextlib.suppress(Exception):
-                client.request("GET", f"/ventures/{venture_id}/opener")
+        # New chat previews the opener (a link's hover: nothing is written) and, once open, has a missing line written;
+        # a call started from there finds it (a call's start never waits for the writer).
+        with contextlib.suppress(Exception):
+            if client.request("GET", f"/ventures/{venture_id}/opener").json().get("missing") is True:
+                client.request("POST", f"/ventures/{venture_id}/opener")
         session = client.create_session(venture_id, mode="coach", privacy="standard")
         result.opener = session.opener or ""
         call_id: str | None = None

@@ -176,6 +176,41 @@ class _Client:
         return _Response()
 
 
+def test_the_runner_has_a_missing_opener_written_as_new_chat_does() -> None:
+    """New chat's preview writes nothing; once open, it has a missing line written (POST), on chat and on a call."""
+
+    class _Missing(_Client):
+        def __init__(self) -> None:
+            super().__init__()
+            self.sent: list[tuple[str, str]] = []
+
+        def request(self, method: str, path: str) -> Any:
+            self.sent.append((method, path))
+            if path.endswith("/opener"):
+
+                class _Preview:
+                    def json(self) -> dict[str, Any]:
+                        return {"opener": "Welcome back. What can I help you prepare for?", "missing": True}
+
+                return _Preview()
+            return super().request(method, path)
+
+    client = _Missing()
+    run_channel(
+        client=client,
+        venture_id="v1",
+        channel="call",
+        conversations=load()["conversations"][:1],
+        heard=lambda outcome, voice: outcome.text,
+        judge=None,
+        founder_context="Idris",
+        reserve=lambda _: None,
+        sleep=lambda _: None,
+    )
+    assert ("GET", "/ventures/v1/opener") in client.sent
+    assert ("POST", "/ventures/v1/opener") in client.sent
+
+
 def test_the_runner_plays_remembered_conversations_in_order_and_ends_each() -> None:
     client = _Client()
     reserved: list[int] = []
