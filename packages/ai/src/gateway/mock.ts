@@ -1,6 +1,11 @@
 import type { CoachMode, CoachResponse, CommitmentStatus, MemoryCandidate } from '@foundry/contracts';
 
-import { DISTILL_SCHEMA_NAME, type DistillDraft } from '../distill/schema.js';
+import {
+  DISTILL_SCHEMA_NAME,
+  OPENER_SCHEMA_NAME,
+  type DistillDraft,
+  type NotebookOpenerDraft,
+} from '../distill/schema.js';
 import { AUTO_MODE, parseControlBlock, type PromptControl } from '../prompts/control.js';
 import {
   asksForNumber,
@@ -1382,6 +1387,28 @@ export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
   };
 }
 
+/**
+ * Deterministic `NotebookOpener` from an opener prompt (`buildOpenerPrompt`): a greeting and an offer to help with the
+ * notebook's first open thread (an open commitment, then an open question, then advice), or null for both without one.
+ */
+export function mockNotebookOpener(context: MockGenerateContext): NotebookOpenerDraft {
+  const notebook = sectionIn(context.messages.map((m) => m.content).join('\n'), 'notebook');
+  const commitment = /<commitment id="[^"]+" status="open"[^>]*>([\s\S]*?)<\/commitment>/.exec(notebook)?.[1];
+  const thread =
+    commitment === undefined
+      ? (entriesIn(sectionIn(notebook, 'open_questions'))[0]?.text ??
+        entriesIn(sectionIn(notebook, 'last_advice'))[0]?.text ??
+        null)
+      : unescapeData(commitment);
+  if (thread === null) return { next_opener: null, next_topic: null };
+  const topic = withoutFinalStop(thread.trim());
+  const lower = `${topic.charAt(0).toLowerCase()}${topic.slice(1)}`;
+  return {
+    next_opener: `Good to see you. I can help you get ready for this one: ${lower}.`,
+    next_topic: lower.split(/\s+/).slice(0, 12).join(' '),
+  };
+}
+
 /** Deterministic end-of-session recap (core's `RecapDraft`) from the recap prompt. */
 export function mockRecapDraft(context: MockGenerateContext): unknown {
   const user = context.messages.map((m) => m.content).join('\n');
@@ -1519,6 +1546,7 @@ interface BuiltIn {
 const BUILT_IN: Readonly<Record<string, BuiltIn>> = {
   [COACH_RESPONSE_SCHEMA_NAME]: { build: mockCoachResponse, sampleOnMismatch: false },
   [DISTILL_SCHEMA_NAME]: { build: mockDistillDraft, sampleOnMismatch: false },
+  [OPENER_SCHEMA_NAME]: { build: mockNotebookOpener, sampleOnMismatch: false },
   [MOCK_RECAP_SCHEMA_NAME]: { build: mockRecapDraft, sampleOnMismatch: true },
   [SAFETY_SCREEN_SCHEMA_NAME]: { build: mockSafetyScreen, sampleOnMismatch: false },
 };

@@ -438,6 +438,101 @@ describe('asking the vEIR to do it (production, 2026-10-20)', () => {
   });
 });
 
+describe('a founder with no answer, and a goal ahead of them (production, 2026-11-07)', () => {
+  // Synthetic wording, the call's shape: a returning founder names a goal, gives a vague answer, then has none.
+  const asked =
+    'Walk me through where things are with the device class and how clinics would pay. What did the advisor tell you?';
+  const history = [{ founderText: 'taking the insole to market', answer: asked }];
+
+  it.each([
+    "I didn't do that.",
+    "I haven't asked them yet.",
+    'Not yet.',
+    'No idea.',
+    "They didn't say.",
+    "Honestly I don't know.",
+    "We haven't booked the clinic visit yet.",
+    "I didn't get to it.",
+    "I can't remember what they said.",
+  ])('hears %j as no answer yet, never as one', (text) => {
+    const state = deriveConversationState(history, text);
+    expect(state.moves).toContain('unknown');
+    expect(state.openQuestion).toBe(true);
+    const block = renderConversationState(state);
+    expect(block).toContain('says they do not know, have not done it or have no answer yet');
+    expect(block).toContain('Never ask it again, in any words.');
+    expect(block).toContain('then say what the answer most likely is or how it');
+  });
+
+  it.each([
+    "I didn't think the price was too high.",
+    "We didn't get the grant, sadly.",
+    'Not sure. Does it matter who pays?',
+    'I never said that.',
+    'They said it needs sign-off from the department heads.',
+  ])('does not hear %j as no answer', (text) => {
+    expect(founderMoves(text)).not.toContain('unknown');
+  });
+
+  it('names the question with no answer, so the reply answers it rather than asking it again', () => {
+    const block = renderConversationState(deriveConversationState(history, "I didn't do that."));
+    expect(block).toContain(
+      '- Your question "What did the advisor tell you?" has no answer yet: answer it yourself from how it usually goes.',
+    );
+  });
+
+  it.each([
+    'taking the device to market',
+    'We need to raise a seed round.',
+    'I want to find our first clinics.',
+    'My main goal right now is getting regulatory clearance.',
+    'Getting our first paying customers',
+    'We are preparing for the grant panel.',
+  ])('hears %j as a goal to teach and prepare for', (text) => {
+    expect(founderMoves(text)).toContain('goal');
+    const block = renderConversationState(deriveConversationState([], text));
+    expect(block).toContain('names a goal or a step ahead of them');
+    expect(block).toContain('teach and prepare. Most of the reply is how it usually works');
+    expect(block).toContain('at most one question, after it.');
+  });
+
+  it.each([
+    'How do I get to market?',
+    'The market is crowded.',
+    'We launched a survey last week and got 40 replies.',
+  ])('does not hear %j as a goal statement', (text) => {
+    expect(founderMoves(text)).not.toContain('goal');
+  });
+
+  it('reads the first reply to an invitation as what they want to work on', () => {
+    const state = deriveConversationState([], 'the clinic rollout', {
+      opener: 'Good to see you. What are you working on?',
+    });
+    expect(state.goal).toBe(true);
+    // A hello or a short yes to the opener names nothing.
+    expect(
+      deriveConversationState([], 'hi', { opener: 'Good to see you. What are you working on?' }).goal,
+    ).toBe(false);
+    expect(
+      deriveConversationState([], 'yes', { opener: 'Good to see you. What are you working on?' }).goal,
+    ).toBe(false);
+  });
+
+  it('after two replies that ended in a question, asks for substance and no question', () => {
+    const two = [
+      { founderText: 'taking the insole to market', answer: asked },
+      {
+        founderText: 'there are a few layers of sign-off',
+        answer: 'Who is in those layers, and what does each one need?',
+      },
+    ];
+    const block = renderConversationState(deriveConversationState(two, 'department heads mostly'));
+    expect(block).toContain(
+      '- Your last 2 replies all ended with a question: this one gives substance (a teaching point,\n  a draft or your view) and ends without a question.',
+    );
+  });
+});
+
 describe('renderConversationState', () => {
   it('says nothing on a plain first message', () => {
     expect(renderConversationState(deriveConversationState([], 'How should we price per library?'))).toBe('');

@@ -6,11 +6,19 @@ import {
   MAX_DISTILL_TURNS,
   NOTEBOOK_OPENER_PIN,
   NOTEBOOK_SUMMARY_PIN,
+  NotebookOpenerDraft,
+  OPENER_MAX_OUTPUT_TOKENS,
+  OPENER_SCHEMA_NAME,
   buildDistillPrompt,
+  buildOpenerPrompt,
   isModelGatewayError,
   isNearDuplicate,
   ModelUnavailableError,
+  notebookThreads,
+  isAboutThread,
   sanitizeDistill,
+  sanitizeOpener,
+  threadWords,
   type DistillSanitizeContext,
   type SanitizedDistill,
 } from '@foundry/ai';
@@ -127,7 +135,100 @@ export interface DistillService {
     readonly requestId: string;
     readonly deadline?: number;
   }): Promise<DistillBackstopReport>;
+  /**
+   * Writes a notebook's next opener with the model, from the notebook alone (purpose `distill`, metered within the
+   * caps): for a notebook with open threads whose line is missing or was written before the person's latest
+   * conversation (`replace`), so the conversation starting now opens on its live thread and offers help (production,
+   * 2026-11-07). Never over a person's line or a notebook with a person's edits pending; audited. Never throws.
+   */
+  writeOpener(request: OpenerWriteRequest): Promise<OpenerWriteOutcome>;
+  /**
+   * The one-time backfill (daily maintenance, and the `distill_sweep` message): writes the opener of up to
+   * {@link OPENER_BACKFILL_BATCH} notebooks with open threads and none (`notebooksRepo.listNotebooksWithoutOpener`),
+   * while the deadline leaves time. Idempotent: a notebook with a line is never listed again. Never throws.
+   */
+  backfillOpeners(options: {
+    readonly requestId: string;
+    readonly deadline?: number;
+  }): Promise<OpenerBackfillReport>;
 }
+
+export interface OpenerWriteRequest {
+  readonly tenantId: string;
+  readonly ventureId: string;
+  readonly personaId: string;
+  /** Who the model call is billed to: the person whose conversation starts. */
+  readonly principalId: string;
+  readonly requestId: string;
+  /** The conversation the line is drawn from (the person's latest): deleting it erases the line. */
+  readonly sourceSessionId: string;
+  /** What that conversation opened with: never said again. */
+  readonly lastOpener: string | null;
+  /** Threads the founder left aside (`MissingOpener.leftAside`): the line is never about one of them. */
+  readonly leftAside: readonly string[];
+  /** Also replace a line of the model's (else only a missing one is written). */
+  readonly replace: boolean;
+  /** The model call's budget. */
+  readonly timeoutMs: number;
+}
+
+/**
+ * `written`; `present`: a line is there (or a person wrote it); `person_edits`: a person's edits wait for the next
+ * distillation; `no_threads`: nothing to open on; `skipped`: paused, over the caps, the persona inactive or the notebook
+ * changed meanwhile; `dropped`: the model's line failed the opener checks; `failed`: the model gave none.
+ */
+export type OpenerWriteOutcome =
+  'written' | 'present' | 'person_edits' | 'no_threads' | 'skipped' | 'dropped' | 'failed';
+
+export interface OpenerBackfillReport {
+  readonly candidates: number;
+  readonly written: number;
+  /** Candidates not written (dropped, failed or skipped); tried again on a later run while they have no line. */
+  readonly notWritten: number;
+  /** Candidates left for a later run because the deadline was near. */
+  readonly deferred: number;
+}
+
+/**
+ * The model's budget for an opener written while a conversation starts. The start waits for it only up to
+ * {@link OPENER_WAIT_MS} and lets it finish for the next start.
+ */
+export const OPENER_MODEL_TIMEOUT_MS = 10_000;
+/**
+ * How long a conversation's start waits for an opener being written (`writeOpener`): about what a call's voice takes to
+ * come up. A line written later is kept for the next start; this one opens with the greeting that names nothing.
+ */
+export const OPENER_WAIT_MS = 2_000;
+
+/**
+ * The outcome of an opener being written, or `waiting` when it takes longer than {@link OPENER_WAIT_MS}: the write goes
+ * on after the response (`afterResponse`) and its line is there for the next start. Without a host to keep it alive
+ * (tests, scripts) the write is waited for.
+ */
+export async function openerWithin(
+  kit: Kit,
+  writing: Promise<OpenerWriteOutcome>,
+): Promise<OpenerWriteOutcome | 'waiting'> {
+  const after = kit.deps.afterResponse;
+  if (after === undefined) return writing;
+  after(writing);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const waited = new Promise<'waiting'>((resolve) => {
+    timer = setTimeout(() => {
+      resolve('waiting');
+    }, OPENER_WAIT_MS);
+  });
+  try {
+    return await Promise.race([writing, waited]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Notebooks one backfill run writes an opener for at most (one small model call each). */
+export const OPENER_BACKFILL_BATCH = 20;
+/** Time an opener backfill needs left before the next notebook starts. */
+const OPENER_BACKFILL_BUDGET_MS = 20_000;
 
 export interface DistillJobInput {
   readonly sessionId: string;
@@ -1005,6 +1106,181 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     }
   }
 
+  /** {@link DistillService.writeOpener}: read, call the model, write against the version read (see the interface). */
+  async function writeOpener(request: OpenerWriteRequest): Promise<OpenerWriteOutcome> {
+    const { requestId } = request;
+    const scope = { ventureId: request.ventureId, personaId: request.personaId };
+    const source = await kit.system(
+      async (sx) => {
+        const notebook = await notebooksRepo.getNotebook(sx, scope);
+        if (notebook === null) return null;
+        const [marks, venture, persona, presence, founder] = await Promise.all([
+          notebooksRepo.getNotebookMarks(sx, scope),
+          venturesRepo.getVenture(sx, request.ventureId),
+          personasRepo.getPersona(sx, request.personaId),
+          personasRepo.getPersonaPresence(sx, { personaId: request.personaId, assignedEirProfileId: null }),
+          principalsRepo.getPrincipal(sx, request.principalId),
+        ]);
+        if (venture === null || persona === null) return null;
+        const consent =
+          persona.consentId === null ? null : await personasRepo.getConsent(sx, persona.consentId);
+        const eir =
+          persona.kind === 'eir_persona' && persona.eirProfileId !== null
+            ? await eirRepo.getEirProfile(sx, persona.eirProfileId)
+            : null;
+        return {
+          notebook,
+          marks,
+          venture,
+          persona,
+          consent,
+          presence,
+          founder,
+          eirName: eir?.displayName ?? null,
+        };
+      },
+      { transaction: false },
+    );
+    const content = source?.notebook.content ?? null;
+    if (source === null || content === null || notebookThreads(content).length === 0) return 'no_threads';
+    // A person's line, or any line when only a missing one is written, stays.
+    if (content.nextOpener !== null && (!request.replace || content.nextOpenerSource === null))
+      return 'present';
+    // A write of the vEIR's clears the marks of a person's edits: those wait for the distillation that merges them.
+    if (source.marks.personEdits.length > 0 || !source.notebook.intact) return 'person_edits';
+    if (!personaCanDistill(source.persona, source.consent, kit.now())) return 'skipped';
+    const settings = await kit.system((sx) => settingsRepo.getPlatformSettings(sx), { transaction: false });
+    if (!settings.aiEnabled) return 'skipped';
+    const ctx: RequestContext = {
+      principalId: request.principalId,
+      tenantId: request.tenantId,
+      roles: [],
+      requestId,
+    };
+    try {
+      await assertWithinSpendCaps(kit, ctx, settings, { ventureId: request.ventureId, operation: 'distill' });
+    } catch (err) {
+      if (isDomainError(err) && err.code === 'spend_cap_reached') return 'skipped';
+      throw err;
+    }
+    const prompt = buildOpenerPrompt({
+      personaName: source.persona.name,
+      eirName: source.eirName,
+      mentor: source.presence.mentor,
+      venture: {
+        name: source.venture.name,
+        stage: source.venture.stage,
+        domain: source.venture.domain,
+        currentGoal: source.venture.currentGoal,
+      },
+      notebook: { ...content, updatedAt: source.notebook.updatedAt },
+      lastOpener: request.lastOpener,
+      leftAside: request.leftAside,
+      today: kit.now().toISOString().slice(0, 10),
+    });
+    let draft: NotebookOpenerDraft;
+    try {
+      const result = await meteredStructured(
+        kit,
+        { ctx, ventureId: request.ventureId, purpose: 'distill' },
+        {
+          system: prompt.system,
+          messages: prompt.messages,
+          schemaName: OPENER_SCHEMA_NAME,
+          zodSchema: NotebookOpenerDraft,
+          maxOutputTokens: OPENER_MAX_OUTPUT_TOKENS,
+          timeoutMs: request.timeoutMs,
+        },
+      );
+      draft = result.value;
+    } catch (err) {
+      if (!isModelGatewayError(err)) throw err;
+      logger.warn('distill.opener_failed', { requestId, personaId: request.personaId, code: err.code });
+      return 'failed';
+    }
+    const directoryNow = await directory.get(request.tenantId);
+    const others = await directory.others(request.tenantId, request.ventureId);
+    const names = [
+      firstName(source.founder?.displayName),
+      source.persona.name,
+      source.eirName,
+      ...directoryNow.eirNames,
+    ].filter((n): n is string => n !== null && n !== '');
+    const checked = sanitizeOpener(draft, {
+      personaName: source.persona.name,
+      eirNames: directoryNow.eirNames,
+      personaEirName: source.eirName,
+      ...(source.presence.mentor ? { mentor: true } : {}),
+      notebook: content,
+      names,
+      otherVentureNames: others.names,
+      otherVentureCanaries: others.canaries,
+      otherVentureMemberNames: others.memberNames,
+    });
+    // Never a thread the founder left aside, however the model words it (the prompt names them too).
+    const line =
+      checked === null ||
+      request.leftAside.some((aside) =>
+        [checked.nextOpener, checked.nextTopic].some(
+          (text) => text !== null && isAboutThread(text, threadWords(aside, names), names),
+        ),
+      )
+        ? null
+        : checked;
+    const outcome = await kit.system(async (sx): Promise<OpenerWriteOutcome> => {
+      if (line === null) {
+        await auditRepo.appendAudit(sx, {
+          action: 'notebook.opener_written',
+          outcome: 'failed',
+          tenantId: request.tenantId,
+          ventureId: request.ventureId,
+          objectType: 'notebook',
+          requestId,
+          metadata: { personaId: request.personaId, reason: 'dropped' },
+        });
+        return 'dropped';
+      }
+      // Written against the version read: anything written meanwhile (a distillation, a person) stands.
+      const current = await notebooksRepo.getNotebook(sx, scope);
+      if (current?.version !== source.notebook.version) return 'skipped';
+      const next = dropSuppressed(
+        { ...current.content, nextOpener: line.nextOpener, nextTopic: line.nextTopic },
+        current.suppressed,
+      );
+      if (next.content.nextOpener === null) return 'dropped';
+      const saved = await notebooksRepo.saveNotebook(sx, {
+        tenantId: request.tenantId,
+        ...scope,
+        expectedVersion: current.version,
+        content: next.content,
+        suppressed: current.suppressed,
+        editedBy: 'veir',
+        principalId: null,
+        sourceSessionId: request.sourceSessionId,
+      });
+      if (saved === null) return 'skipped';
+      await auditRepo.appendAudit(sx, {
+        action: 'notebook.opener_written',
+        outcome: 'succeeded',
+        tenantId: request.tenantId,
+        ventureId: request.ventureId,
+        objectType: 'notebook',
+        objectId: saved.id,
+        requestId,
+        metadata: {
+          personaId: request.personaId,
+          notebookVersion: saved.version,
+          sourceSessionId: request.sourceSessionId,
+          replaced: content.nextOpener !== null,
+          topic: line.nextTopic !== null,
+        },
+      });
+      return 'written';
+    });
+    logger.info('distill.opener', { requestId, personaId: request.personaId, outcome });
+    return outcome;
+  }
+
   return {
     afterTurn: (ctx, sessionId) =>
       trigger(ctx, sessionId, 'turn', async () => {
@@ -1127,6 +1403,70 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       await Promise.all(running.values());
       report.deferred = queue.length;
       logger.info('distill.backstop_done', { requestId, ...report });
+      return report;
+    },
+
+    writeOpener: async (request) => {
+      try {
+        return await writeOpener(request);
+      } catch (err) {
+        logger.warn('distill.opener_failed', {
+          requestId: request.requestId,
+          personaId: request.personaId,
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+        return 'failed';
+      }
+    },
+
+    backfillOpeners: async ({ requestId, deadline }) => {
+      const report = { candidates: 0, written: 0, notWritten: 0, deferred: 0 };
+      try {
+        const settings = await kit.system((sx) => settingsRepo.getPlatformSettings(sx), {
+          transaction: false,
+        });
+        if (!settings.aiEnabled) return report;
+        const candidates = await kit.system(
+          (sx) => notebooksRepo.listNotebooksWithoutOpener(sx, { limit: OPENER_BACKFILL_BATCH }),
+          { transaction: false },
+        );
+        report.candidates = candidates.length;
+        for (const [index, candidate] of candidates.entries()) {
+          if (deadline !== undefined && deadline - Date.now() < OPENER_BACKFILL_BUDGET_MS) {
+            report.deferred = candidates.length - index;
+            break;
+          }
+          const outcome = await writeOpener({
+            tenantId: candidate.tenantId,
+            ventureId: candidate.ventureId,
+            personaId: candidate.personaId,
+            principalId: candidate.startedBy,
+            requestId,
+            sourceSessionId: candidate.sessionId,
+            lastOpener: candidate.opener,
+            leftAside: [],
+            replace: false,
+            timeoutMs: OPENER_MODEL_TIMEOUT_MS,
+          }).catch(() => 'failed' as const);
+          if (outcome === 'written') report.written += 1;
+          else report.notWritten += 1;
+        }
+        await kit.system((sx) =>
+          auditRepo.appendAudit(sx, {
+            action: 'maintenance.notebook_openers',
+            outcome: 'succeeded',
+            requestId,
+            objectType: 'notebook',
+            metadata: { ...report },
+          }),
+        );
+      } catch (err) {
+        logger.warn('distill.opener_backfill_failed', {
+          requestId,
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+      }
+      logger.info('distill.opener_backfill_done', { requestId, ...report });
       return report;
     },
   };

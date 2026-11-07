@@ -8,6 +8,12 @@ Synthetic only: two lab ventures with that notebook (packages/db lab-agenda-vent
 conversations and one on calls, three remembered conversations each with fixed founder lines
 (``scenarios/agenda.json``). Every reply is checked deterministically; each conversation is also judged.
 Public output: counts, rates and codes. The conversations themselves go to the sealed private folder.
+
+The owner's call of 2026-11-07 (AG-4; the opener checks of every conversation): a returning founder heard "Nice to see
+you. What feels most pressing right now?" though the notebook held open threads; a goal got a question; a vague answer
+got a question; "I don't know" and "I didn't do that" got the first question again in other words; and the notebook
+gained a note judging the founder. So: an opener with the notebook's threads open names one and offers help; no reply
+asks again on a question's subject after the founder said they have no answer; no profile note judges them.
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +53,15 @@ FOLLOW_UP = re.compile(
 #: Sending the founder to book the session again after they said it happened.
 BOOK_AGAIN = re.compile(
     r"\bbook (?:the|that|your|an?) (?:advisor |adviser )?(?:session|meeting|call)\b", re.IGNORECASE
+)
+#: An opener's offer of help, and the notebook's threads it may name (the suite's venture: a regulated sleeve).
+OPENER_HELP = re.compile(
+    r"\b(?:help|prepare|prep|walk you through|draft|get (?:you )?ready|work through|go through)\b",
+    re.IGNORECASE,
+)
+OPENER_THREAD = re.compile(
+    r"\b(?:advis[oe]r|device|class\w*|reimburs\w*|clinic\w*|regulat\w*|billing|pay\w*|sleeve|pitch|cofounder|budget)\b",
+    re.IGNORECASE,
 )
 _SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
 _LIST_ITEM = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+\S", re.MULTILINE)
@@ -122,6 +138,21 @@ def _similar(a: str, b: str) -> bool:
     return len(x & y) / min(len(x), len(y)) >= 0.6
 
 
+def _same_subject(a: str, b: str) -> bool:
+    """A question back on the same subject, the product's strict reading after the founder had no answer: two shared
+    content words said together in both, or 40% of the shorter question's."""
+    wa, wb = (
+        [w for w in _WORD.findall(a.lower()) if w not in _STOP and len(w) > 2],
+        [w for w in _WORD.findall(b.lower()) if w not in _STOP and len(w) > 2],
+    )
+    x, y = set(wa), set(wb)
+    shared = len(x & y)
+    if shared < 2:
+        return False
+    pairs = set(pairwise(wa)) & set(pairwise(wb))
+    return bool(pairs) or shared / min(len(x), len(y)) >= 0.4
+
+
 @dataclass
 class ReplyCheck:
     """What one reply did, as booleans and counts (no text)."""
@@ -138,6 +169,8 @@ class ReplyCheck:
     question_back_only: bool
     steer_back: bool
     reask: bool
+    #: After the founder said they have no answer (``unknown``), a question back on an earlier question's subject.
+    reask_after_unknown: bool
     stale: bool
     follows_up: bool
     opening: str
@@ -173,6 +206,8 @@ def check_reply(
             question_back_only=bool(said) and not statements and items < 2 and marks <= 2,
             steer_back=turn.get("topic") == "other" and bool(AGENDA_TERMS.search(reply or "")),
             reask=any(_similar(q, e) for q in asked for e in earlier_questions),
+            reask_after_unknown=bool(turn.get("unknown"))
+            and any(_same_subject(q, e) for q in asked for e in earlier_questions),
             stale=bool(STALE.search(reply or "")),
             follows_up=bool(FOLLOW_UP.search(reply or "")),
             opening=opening,
@@ -197,6 +232,10 @@ class ConversationResult:
     founder_took_up_opener: bool | None = None
     opener_reopens: bool = False
     opener_stale: bool = False
+    #: The notebook held open threads before the conversation and the opener named none or offered no help.
+    opener_bare: bool = False
+    #: Founder-profile notes judging the founder in the notebook after the conversation (count; the notes are private).
+    judgmental_notes: int = 0
     error: str | None = None
     verdict: dict[str, Any] | None = None
 
@@ -213,12 +252,18 @@ class ConversationResult:
                 out.append(f"t{c.turn}:steer_back")
             if c.reask:
                 out.append(f"t{c.turn}:reask")
+            if c.reask_after_unknown:
+                out.append(f"t{c.turn}:reask_after_unknown")
             if c.stale:
                 out.append(f"t{c.turn}:stale_commitment")
             if c.raises and not c.follows_up:
                 out.append(f"t{c.turn}:no_follow_up")
         if self.opener_stale:
             out.append("opener:stale_commitment")
+        if self.opener_bare:
+            out.append("opener:no_thread_or_help")
+        if self.judgmental_notes > 0:
+            out.append("notebook:judgmental_profile_note")
         return out
 
     @property
@@ -283,6 +328,15 @@ def grade_conversation(result: ConversationResult, conversation: Mapping[str, An
     earlier: list[str] = [s for s in sentences(result.opener) if s.endswith("?")]
     result.opener_reopens = bool(AGENDA_TERMS.search(result.opener))
     result.opener_stale = bool(STALE.search(result.opener))
+    before = result.notebook_before or {}
+    threads = any(c.get("status") == "open" for c in before.get("commitments") or []) or bool(
+        before.get("openQuestions")
+    )
+    result.opener_bare = (
+        threads
+        and result.opener != ""
+        and not (OPENER_HELP.search(result.opener) and OPENER_THREAD.search(result.opener))
+    )
     result.founder_took_up_opener = took_up(result.opener, [f for f, _ in result.turns])
     result.checks = []
     done = False  # the founder said the commitment happened
@@ -323,6 +377,9 @@ def summarize(results: Sequence[ConversationResult]) -> dict[str, Any]:
             "otherTopicTurns": len(other),
             "steerBack": sum(1 for c in other if c.steer_back),
             "reasks": sum(1 for c in checks if c.reask),
+            "reasksAfterUnknown": sum(1 for c in checks if c.reask_after_unknown),
+            "openersWithoutThreadOrHelp": sum(1 for r in rs if r.opener_bare),
+            "judgmentalProfileNotes": sum(r.judgmental_notes for r in rs),
             "staleMentions": sum(1 for c in checks if c.stale) + sum(1 for r in rs if r.opener_stale),
             "followUpWhenRaised": f"{sum(1 for c in raises if c.follows_up)}/{len(raises)}",
             "openersReopeningCommitment": sum(1 for r in rs if r.opener_reopens),
@@ -353,6 +410,7 @@ def run_channel(
 ) -> list[ConversationResult]:
     """Plays the conversations in order as remembered conversations (each ends, so the next one meets it)."""
     from conversation_lab.judge import transcript_text
+    from conversation_lab.live.checks import judgmental_notes
     from conversation_lab.smoke import turn_detail
     from foundry_evals.client import ApiError, ApiUnreachableError
 
@@ -362,6 +420,11 @@ def run_channel(
         reserve(len(conversation["turns"]))
         result = ConversationResult(id=f"{conversation['id']}-{channel}", channel=channel)
         result.notebook_before = _notebook(client, venture_id)
+        if not voice:
+            # New chat previews the opener first (and has it written when the notebook's line is missing); a call writes
+            # it at its start.
+            with contextlib.suppress(Exception):
+                client.request("GET", f"/ventures/{venture_id}/opener")
         session = client.create_session(venture_id, mode="coach", privacy="standard")
         result.opener = session.opener or ""
         call_id: str | None = None
@@ -413,6 +476,13 @@ def run_channel(
                 break
             sleep(3.0)
             waited += 3.0
+        # What the distillation wrote of the founder: how they like to work, never a verdict on them.
+        profile = [
+            str(e.get("text", ""))
+            for e in (_notebook(client, venture_id) or {}).get("founderProfile") or []
+            if isinstance(e, Mapping)
+        ]
+        result.judgmental_notes = len(judgmental_notes(profile))
     return out
 
 
@@ -425,7 +495,16 @@ def _notebook(client: Any, venture_id: str) -> dict[str, Any] | None:
         return None
     if not isinstance(data, dict):
         return None
-    keys = ("version", "updatedAt", "nextOpener", "nextTopic", "commitments", "openQuestions", "summary")
+    keys = (
+        "version",
+        "updatedAt",
+        "nextOpener",
+        "nextTopic",
+        "commitments",
+        "openQuestions",
+        "summary",
+        "founderProfile",
+    )
     return {k: data.get(k) for k in keys}
 
 

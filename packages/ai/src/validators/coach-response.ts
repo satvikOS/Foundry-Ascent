@@ -49,6 +49,8 @@ import {
   wrapsUp,
   withinSocialBudget,
   withoutAgendaPush,
+  asksOnly,
+  stuckOn,
   withoutRepeats,
   announcedCountGap,
 } from './social.js';
@@ -539,6 +541,7 @@ export function validateCoachResponse(
       const unrepeated = withoutRepeats(out, previous, {
         keepReferrals: forcedEscalationFor(options.preRisk) !== null,
         signOffs: social === null && !welcomesSignOff(options.founderText),
+        strictQuestions: stuckOn(options.founderText),
       });
       // A reply that only signed off again keeps its sign-off: never a stock line in its place.
       const instead =
@@ -619,6 +622,8 @@ export function validateCoachResponse(
   }
   // A reply that announces more steps than it gives, or skips a number (counted, for the turn record and the lab).
   if (announcedCountGap(r.answer) !== null) notes.push('announced_count_gap');
+  // A reply that only asks where the founder brought something to answer (counted, as the lab's question_only).
+  if (social === null && options.founderText !== undefined && asksOnly(r.answer)) notes.push('question_only');
   if (md.htmlRemoved > 0) notes.push(`html_removed:${md.htmlRemoved}`);
   if (md.unsafeLinksRemoved > 0) notes.push(`unsafe_links_removed:${md.unsafeLinksRemoved}`);
   if (md.imagesRemoved > 0) notes.push(`images_removed:${md.imagesRemoved}`);

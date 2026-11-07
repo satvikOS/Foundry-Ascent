@@ -39,7 +39,9 @@ export type FounderMove =
   | 'summary'
   | 'complaint'
   | 'lost_reply'
-  | 'hesitant';
+  | 'hesitant'
+  | 'unknown'
+  | 'goal';
 
 /** A completed earlier exchange (the shape of `HistoryTurn`). */
 export interface StateTurn {
@@ -138,6 +140,13 @@ export interface ConversationState {
    * which already picked up the last conversation): the reply must not say it again.
    */
   readonly afterOpener: boolean;
+  /**
+   * The message names a goal or a step ahead of the founder (the `goal` move), or is their first reply to the opener and
+   * names what they want to work on (a statement, not a question or a hello): the reply teaches the usual path and
+   * prepares them for it (production, 2026-11-07: a goal of bringing the product to market got a request to walk the
+   * coach through where they were).
+   */
+  readonly goal?: boolean;
   /**
    * The vEIR's own phrasing lately (coaching v3): question forms and openings it used twice or more in this
    * conversation, or at the end of its last conversations (prompts/phrasing.ts). Absent: none.
@@ -304,6 +313,55 @@ const HELP_REQUEST = new RegExp(
 /** A sentence that only says they don't know ("I don't know.", "idk", "No idea what to ask"). */
 const DONT_KNOW =
   /^(?:(?:honestly|um+|uh+|well|that's the thing|thats the thing)[,.]? )*(?:i (?:really |honestly |just )?(?:don't|do not|dont) know|idk|dunno|no idea|not sure|i'm not sure|i have no idea|no clue)(?: (?:what|how|where|which)\b.*)?$/;
+
+/**
+ * A sentence that says the founder has no answer yet: they did not do it, it has not happened, nobody told them
+ * (production, 2026-11-07: "I didn't do that" and "I don't know" were answered with the question they had just said
+ * they could not answer, in other words, two replies later). Never a question of its own.
+ */
+const NO_ANSWER = new RegExp(
+  [
+    String.raw`^(?:(?:no|nope|honestly|um+|uh+|well|sorry|so)[,.]? )*(?:i|we) (?:really |honestly |just |actually )?(?:didn't|did not|haven't|have not|never|couldn't|could not) (?:(?:really|actually|yet|even|get to|got to|manage to|managed to|get around to|got around to) )*(?:do|done|did|ask|asked|book|booked|call|called|talk|talked|speak|spoke|try|tried|hear|heard|check|checked|look|looked|follow|followed|reach|reached|find|found|meet|met|write|wrote|written|send|sent)\b(?:(?: (?:that|it|this|them|him|her|one|anything|up|out|back|yet|either|so far|to (?:them|him|her|anyone)))*$|\b.* yet$)`,
+    String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:i|we) (?:didn't|did not|haven't|have not|never) (?:get|got|gotten) (?:around )?to (?:it|that|this|them)$`,
+    String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:i|we) (?:didn't|did not|haven't|have not)(?: yet)?$`,
+    String.raw`^(?:(?:no|nope|well|so)[,.]? )*(?:not yet|nothing yet|not so far|no clue|no idea|not really sure|no one (?:told|said)|nobody (?:told|said))\b`,
+    String.raw`^(?:(?:no|nope|well|so)[,.]? )*(?:they|he|she|it|the \w+) (?:didn't|did not|never|wouldn't|would not) (?:really )?(?:say|tell|mention|specify|explain|answer|give|cover|get into)\b`,
+    String.raw`\b(?:i|we) (?:can't|cannot|don't|do not) (?:really )?remember\b`,
+  ].join('|'),
+);
+
+/**
+ * Whether `text` says the founder does not know, has not done it or has no answer yet ({@link DONT_KNOW},
+ * {@link NO_ANSWER}), and asks nothing of its own ("Not sure. Does it matter who pays?": that question is what to
+ * answer).
+ */
+function hasNoAnswer(text: string): boolean {
+  if (text.includes('?')) return false;
+  // Clause by clause: "I don't know, I didn't do that" says it twice in one sentence.
+  return text
+    .split(/(?<=[.!,;])\s+/)
+    .map((clause) => clause.replace(/[.!,;…]+$/, '').trim())
+    .some((clause) => DONT_KNOW.test(clause) || NO_ANSWER.test(clause));
+}
+
+/**
+ * A goal or a step ahead of the founder, said as theirs ("taking the device to market", "we need to raise a seed round",
+ * "I want to find our first clinics"): production, 2026-11-07, a goal of bringing the product to market was answered
+ * with a request to walk the coach through where they were, where the founder needed the usual path laid out and the
+ * prep for it.
+ */
+const GOAL = new RegExp(
+  [
+    String.raw`\b(?:get(?:ting)?|bring(?:ing)?|tak(?:e|ing)|go(?:ing)?) (?:(?:the|our|my|this|it|product|device|app|platform)\s+){0,2}(?:to|into) (?:the )?market\b|\bgo[- ]to[- ]market\b`,
+    String.raw`\b(?:launch(?:ing)?|ship(?:ping)?) (?:the|our|my|a|it|first)\b`,
+    String.raw`\b(?:rais(?:e|ing)|secur(?:e|ing)|land(?:ing)?) (?:(?:a|our|my|the|some|more|first|pre-?seed|seed|angel)\s+){0,2}(?:money|funding|capital|round|investment|grant|investors?)\b|\bfundrais(?:e|ing)\b`,
+    String.raw`\b(?:find(?:ing)?|land(?:ing)?|sign(?:ing)?|get(?:ting)?|win(?:ning)?) (?:(?:my|our|the|a|more|some|first|paying|real)\s+){0,3}(?:customers?|clients?|users?|pilots?|investors?|co-?founders?|clinics?|hospitals?|schools?|buyers?|distributors?|partners?)\b`,
+    String.raw`\b(?:get(?:ting)?|obtain(?:ing)?|apply(?:ing)? for|go(?:ing)? through) (?:(?:the|a|an|our|my|regulatory|fda|ce)\s+){0,2}(?:approval|clearance|certification|patent|licen[cs]e|accreditation)\b`,
+    String.raw`\b(?:my|our|the) (?:main |big |next |biggest )?(?:goal|aim|priority|focus|next step)(?: right now| now| this (?:week|month|term|year))? (?:is|would be)\b`,
+    String.raw`\b(?:i|we) (?:want|need|have|plan|hope|'d like|would like|am trying|are trying|'m trying|'re trying) to (?:get|launch|raise|find|build|ship|sell|start|scale|grow|hire|pitch|apply|prepare|figure out|work out)\b`,
+    String.raw`\b(?:prepar(?:e|ing) for|get(?:ting)? ready for)\b`,
+  ].join('|'),
+);
 
 /** Whether `text` hands the work to the vEIR or says the founder is stuck ({@link HELP_REQUEST}, {@link DONT_KNOW}). */
 function asksForHelp(text: string): boolean {
@@ -510,6 +568,8 @@ export function founderMoves(text: string): FounderMove[] {
   const moves: FounderMove[] = MOVE_CUES.filter(([, cue]) => cue.test(t)).map(([move]) => move);
   if (bringsNews(t)) moves.push('news');
   if (asksForHelp(t)) moves.push('help');
+  if (hasNoAnswer(t)) moves.push('unknown');
+  if (GOAL.test(t) && !t.endsWith('?')) moves.push('goal');
   const words = wordCount(t);
   if (words <= 5 && SHORT_REPLY.test(t) && !moves.includes('thanks')) moves.push('short_reply');
   if (t.endsWith('?') || (QUESTION_START.test(t) && words > 2)) moves.push('question');
@@ -941,8 +1001,9 @@ function onlyGreets(text: string, moves: readonly FounderMove[]): boolean {
 function takesUp(question: string, text: string, moves: readonly FounderMove[]): boolean {
   // A hello is not an answer: "Hi!" after "How did the facilities call go?" leaves the question open.
   if (onlyGreets(text, moves)) return false;
-  // "I don't know. You tell me." says something, but hands the question back: it is still open.
-  if (moves.includes('help')) return false;
+  // "I don't know. You tell me." says something, but hands the question back: it is still open. So does "I didn't do
+  // that": there is no answer to take up.
+  if (moves.includes('help') || moves.includes('unknown')) return false;
   if (moves.includes('short_reply')) return true;
   if (moves.some((m) => m === 'topic_shift' || m === 'recall' || m === 'resume' || m === 'closing'))
     return false;
@@ -1118,6 +1179,14 @@ export function deriveConversationState(
     if (line !== null && !adviceGiven.includes(line)) adviceGiven.push(line);
   }
 
+  // Their first reply to the opener's invitation names what they want to work on ("taking the device to market").
+  const namesWork =
+    afterOpener &&
+    !moves.includes('question') &&
+    !moves.includes('short_reply') &&
+    !moves.includes('unknown') &&
+    socialTurnOf(founderText) === null &&
+    substantive(founderText, moves);
   const prev: Thread | null = previous;
   const open = parked.filter((p) => p !== current).slice(0, MAX_PARKED);
   const said = [...turns.map((t) => t.answer ?? ''), opener].join('\n').replace(/[‘’ʼ]/g, "'").toLowerCase();
@@ -1146,6 +1215,7 @@ export function deriveConversationState(
     openQuestion: lastAsked !== null && !takesUp(lastAsked, founderText, moves),
     earlierTurns: turns.length,
     afterOpener,
+    goal: moves.includes('goal') || namesWork,
     inRoleReplies,
     duplicate,
     adviceGiven: adviceGiven.slice(-MAX_ADVICE),
@@ -1195,6 +1265,8 @@ const MOVE_LABELS: Readonly<Record<FounderMove, string>> = {
   complaint: 'is unhappy with your replies',
   lost_reply: 'says a reply or the connection failed',
   hesitant: 'sounds unsure',
+  unknown: 'says they do not know, have not done it or have no answer yet',
+  goal: 'names a goal or a step ahead of them',
 };
 
 /** Moves worth reporting even on the first message of a conversation. */
@@ -1219,6 +1291,8 @@ const NOTABLE: ReadonlySet<FounderMove> = new Set([
   'complaint',
   'lost_reply',
   'hesitant',
+  'unknown',
+  'goal',
 ]);
 
 function quoted(text: string): string {
@@ -1244,6 +1318,7 @@ export function renderConversationState(state: ConversationState): string {
     (state.escalatedEarlier ?? []).length > 0 ||
     (state.preferences ?? []).length > 0 ||
     state.duplicate === true ||
+    state.goal === true ||
     (state.inRoleReplies ?? 0) > 0 ||
     hasPhrasing(state);
   if (state.earlierTurns === 0 && !notable && !state.afterOpener) return '';
@@ -1334,6 +1409,28 @@ export function renderConversationState(state: ConversationState): string {
         `- They handed your question back (${quoted(handedBack)}): answer it yourself now, concretely.`,
       );
     }
+  }
+  // Production, 2026-11-07: "I didn't do that" and "I don't know" were met by the question they had just said they could
+  // not answer, two replies later and in other words.
+  if (state.moves.includes('unknown')) {
+    lines.push(
+      '- They do not know, have not done it or have no answer yet, and that is fine. Never ask it again, in any words.',
+      '  Acknowledge it in a few plain words, without judgement; then say what the answer most likely is or how it',
+      '  usually works, the fastest way to find out, and the next step.',
+    );
+    const unanswered = state.openQuestion ? (state.askedQuestions[0] ?? null) : null;
+    if (unanswered !== null && !state.moves.includes('help')) {
+      lines.push(
+        `- Your question ${quoted(unanswered)} has no answer yet: answer it yourself from how it usually goes.`,
+      );
+    }
+  }
+  if (state.goal === true) {
+    lines.push(
+      '- They name a goal or a step ahead of them: teach and prepare. Most of the reply is how it usually works (the',
+      '  usual path, its steps, what the terms mean, what good looks like) and the prep they will need (questions to ask,',
+      '  a checklist or a first plan), specific to their venture; at most one question, after it.',
+    );
   }
   if (state.duplicate === true) {
     lines.push(
@@ -1452,7 +1549,10 @@ export function renderConversationState(state: ConversationState): string {
     lines.push(`- Parked, left before it was settled: ${quoted(p.gist)} (${ago(p.messagesAgo)}).`);
   }
   if (state.questionStreak >= 2) {
-    lines.push(`- Your last ${state.questionStreak} replies all ended with a question.`);
+    lines.push(
+      `- Your last ${state.questionStreak} replies all ended with a question: this one gives substance (a teaching point,`,
+      '  a draft or your view) and ends without a question.',
+    );
   } else if (state.questionStreak === 1) {
     lines.push('- Your last reply ended with a question.');
   }

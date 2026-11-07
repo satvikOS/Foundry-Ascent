@@ -104,7 +104,7 @@ export function createCore(deps: CoreDeps): Core {
     me: createMeService(kit),
     student: createStudentService(kit),
     ventures: createVenturesService(kit, directory),
-    sessions: createSessionsService(kit, directory),
+    sessions: createSessionsService(kit, directory, distill),
     // One key cache signs the turn engine's speech units and verifies them for calls and /speech. A spoken turn on
     // a call with a live FULL face admits each unit to the face as it signs it (the speech service's checks).
     orchestrator: createOrchestrator(kit, directory, { speechKeys, facePreapproval: speech, turnContexts }),

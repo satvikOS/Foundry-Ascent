@@ -144,6 +144,8 @@ class RunResult:
     reason: str = ""
     sessions: list[SessionLog] = field(default_factory=list)
     memory_after: list[dict[str, Any]] | None = None
+    #: The notebook's founder-profile notes after the run (checked for notes that judge the founder; private).
+    profile_after: list[str] | None = None
     checks: CheckResult = field(default_factory=CheckResult)
     verdict: Verdict | None = None
     passed: bool | None = None
@@ -219,6 +221,7 @@ class RunResult:
             **self.public(),
             "transcript": [sess.for_judge() for sess in self.sessions],
             "memory_after": self.memory_after,
+            "profile_after": self.profile_after,
             "check_matches": self.checks.private_matches,
             "judge_rationale": self.verdict.rationale if self.verdict else None,
             "judge_expected": self.verdict.expected if self.verdict else None,
@@ -288,6 +291,12 @@ def _escalated(outcome: Any) -> bool:
     response = getattr(turn, "response", None)
     esc = getattr(response, "escalation", None)
     return bool(getattr(esc, "required", False))
+
+
+def _profile_notes(notebook: Any) -> list[str]:
+    """The founder-profile notes of a notebook view (empty when it has none, or the view is not one)."""
+    entries = notebook.get("founderProfile") if isinstance(notebook, dict) else None
+    return [str(e["text"]) for e in entries or [] if isinstance(e, dict) and isinstance(e.get("text"), str)]
 
 
 def _memory_rows(items: Sequence[Any]) -> list[dict[str, Any]]:
@@ -434,6 +443,10 @@ class LiveRunner:
                 result.status = "completed"
             with contextlib.suppress(Exception):
                 result.memory_after = _memory_rows(client.list_memory(seed.venture_id))
+            with contextlib.suppress(Exception):
+                result.profile_after = _profile_notes(
+                    client.request("GET", f"/ventures/{seed.venture_id}/notebook").json()
+                )
         finally:
             with contextlib.suppress(Exception):
                 client.close()
@@ -805,6 +818,7 @@ class LiveRunner:
             known_sources=[own_text(s.raw)],
             neighbour=s.raw.get("neighbour"),
             student_name=s.raw["student"]["name"],
+            profile_notes=result.profile_after or (),
         )
         if result.status == "completed":
             # A budget stop here propagates: the run is "stopped", not a coach failure with a missing verdict.

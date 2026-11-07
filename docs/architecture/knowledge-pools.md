@@ -382,7 +382,10 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   history, never as this vEIR's own), when it was
   ("about 20 minutes ago", "yesterday"), on a call or not, ended or left open, its digest when distilled and
   otherwise its last six exchanges as they were said (a reply the founder spoke over as they heard it), plus the
-  notebook's open threads; escaped, untrusted
+  notebook's open threads, held to the notes' own rule: once the conversation is under way, a message with a subject
+  of the founder's own carries none of them, and one already raised in this conversation is marked so (production,
+  2026-11-07: the notes left their agenda out of every turn of a call while this section still listed it, and the
+  third reply asked the first one's question again; `leftOffThreads`); escaped, untrusted
   data within 4 000 characters. It is read in two indexed statements in a transaction of its own, alongside
   retrieval, so it never waits for the distillation worker: a second call a minute after the first knows
   what was said in it. Temporary and deleted conversations and other ventures are never read; a temporary
@@ -401,8 +404,25 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   `isPersonalOpener`), and a line that names nothing the founder said, the digest or the notebook holds
   (`namesAThread`: "How have you been?"); the opener checks both again, and a call never says a stored line that
   fails the first. A previous line the conversation never said is no thread the founder left aside: only one it
-  opened on and they let go is dropped. Otherwise the conversation opens with a short, warm greeting that names
-  nothing ("Hello again. What feels most pressing right now?"; `plainOpeners`), phrased for that conversation and never with a greeting or
+  opened on and they let go is dropped. **A notebook with open threads always gets a line** (production, 2026-11-07:
+  a notebook distilled from a small-talk call before the next-opener rule held kept none, and the next call opened
+  "Nice to see you. What feels most pressing right now?" to a founder with an open commitment and three open
+  questions): when the person's latest conversation was distilled and the notebook leaves a thread open (an open
+  commitment, an open question, advice) but has no sound, current line of the model's, `chooseOpener` says so
+  (`missing`) and the model writes one from the notebook alone (`DistillService.writeOpener`, purpose `distill`, the
+  caps and the kill switch; `buildOpenerPrompt`, `sanitizeOpener`): the live thread named specifically, with an offer
+  of concrete help (to walk them through it, prepare it with them), never a bare question, never a thread the founder
+  left aside (`leftAside`: what the latest conversation opened on unanswered, and a stale line's thread). It is
+  written into the notebook against the version read (`notebook.opener_written`), drawn from the person's latest
+  conversation, never over a person's line or edits still waiting for a distillation, and the opener is chosen again.
+  The preview for New chat (`GET /ventures/:id/opener`) and a call that starts a conversation wait for it
+  `OPENER_WAIT_MS` (2 s); a line later than that is kept for the next start (the host keeps the write alive) and this
+  one greets as below. A conversation not distilled yet writes its own line when it is (a call a minute after a chat
+  greets, and its first reply reads that chat here). Notebooks distilled before this rule are given their line once by
+  daily maintenance and the `distill_sweep` message (`backfillOpeners`: up to 20 a run, idempotent, audited
+  `maintenance.notebook_openers`). Otherwise (no thread anywhere) the conversation opens with a short, warm greeting
+  that names nothing and offers help ("Welcome back. What can I help you prepare for?"; `plainOpeners`), phrased for
+  that conversation and never with a greeting or
   invitation the person's last conversations opened with, and never "since we last spoke" (it may be said seconds
   after a call); nothing the founder said is ever read by rule for what to open on (production 2026-11-06: "hows
   your perosnal life going on.." became "Hi, want to carry on with your perosnal life?"). Every distilled line is
@@ -417,11 +437,37 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   shown) opens the conversation without one. A hello
   right after the opener is answered with a hello, never the recall again (`<conversation_state>` reads the
   founder's first message as the reply to the replayed opener).
+- **Teach and prepare, never a loop** (production, 2026-11-07; policy `fa-coach-policy/2026-11-07.1`). The call that
+  prompted it: a returning founder named a goal and got "walk me through where you are…", a vague answer got a
+  question, a short answer got the first question again in other words, and a founder with no answer was asked again.
+  Prompt rules saying "follow the founder" had lost to context that was mostly one topic, so each turn now carries:
+  - `<conversation_state>` reads two more moves (`founderMoves`): `goal` (a goal or a step ahead of them, or their
+    first reply to the opener's invitation naming what they want to work on: "teach and prepare", the usual path,
+    what the terms mean, the prep itself, at most one question after it) and `unknown` ("I don't know", "I didn't do
+    that", "not yet", "they didn't say": never asked again in any words; acknowledged without judgement, then what the
+    answer most likely is, the fastest way to find out and the next step). Two replies in a row that ended in a
+    question make the next one give substance and ask nothing.
+  - Conversation craft says the same for every turn (help, stuck or no answer: do the work; teach how such things
+    generally work, hedged: device classes, reimbursement codes, approval committees), rule 5 makes general education
+    on high-risk topics explicit (never their own class, cost or timeline), DIAGNOSE gives its read before any
+    question, `founder_profile` preferences ("prefers direct answers") are how the reply is shaped, open questions are
+    unknowns to help settle, never a quiz, and a spoken reply starts with a short sentence that says something.
+  - A question asked again in other words is left out where it is said (the sentence gate, the whole-reply validator
+    and the whole reply's rewrite: `reasksQuestion`): besides the shared-words test, a longer question sharing three
+    content words, two of them said together ("device class"), with any earlier question of the conversation; after a
+    founder with no answer or "you tell me" (`stuckOn`), any question back on that subject. A reply that only asks
+    where the founder brought something is counted (validator note `question_only`; the lab reads the same).
 - **Distillation** (purpose `distill`, the daily caps and the kill switch) runs from jobs only the API
   enqueues (the worker has no `sqs:SendMessage`):
   - after each completed turn, delayed 540 s (the backstop of a conversation left open); the worker skips
     while the conversation is active (a turn in the last 480 s), and a job whose conversation has more turns
     since is `superseded`;
+  - what it writes of the founder is how they like to work, never a verdict on them: a founder-profile note that judges
+    them (what they fail to do, how vague they seem, "even when pressed") is never written (`isJudgmentalNote`,
+    `distill/judgment.ts`) nor shown to the model from an older notebook; threads are said plainly, never as pressure
+    ("urgent", "cannot wait", "blocks the go-to-market": `withoutPressure` cuts such clauses from summaries and open
+    questions); a question the vEIR asked that the founder could not answer is never kept as an open question
+    (production, 2026-11-07, policy `fa-coach-policy/2026-11-07.1`);
   - when a conversation ends, and when a call in it ends however it ends (hang-up, a server stop, a
     replacement from another conversation; calls the daily maintenance closes are distilled inline),
     immediately and `settled`: never skipped as active;

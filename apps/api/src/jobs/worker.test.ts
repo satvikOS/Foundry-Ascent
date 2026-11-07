@@ -5,6 +5,7 @@ import {
   type DistillRunOptions,
   type IngestionResult,
   type MaintenanceReport,
+  type OpenerBackfillReport,
   RetryableDistillError,
   RetryableIngestionError,
 } from '@foundry/core';
@@ -89,6 +90,7 @@ function deps(lines: string[] = []) {
         recordings: { abandoned: 0, expired: 0, purged: 2, failed: 0 },
         pendingProposals: { kept: 1, duplicates: 0, notTheFounders: 0 },
         distillation: sweep,
+        openers: { candidates: 1, written: 1, notWritten: 0, deferred: 0 },
       }),
   );
   const distillSession = vi.fn(
@@ -110,9 +112,13 @@ function deps(lines: string[] = []) {
     (_options: { readonly requestId: string; readonly deadline?: number }): Promise<DistillBackstopReport> =>
       Promise.resolve(sweep),
   );
+  const backfillOpeners = vi.fn(
+    (_options: { readonly requestId: string; readonly deadline?: number }): Promise<OpenerBackfillReport> =>
+      Promise.resolve({ candidates: 1, written: 1, notWritten: 0, deferred: 0 }),
+  );
   const value: WorkerDeps = {
     ingestion: { process },
-    distill: { distillSession, backstop },
+    distill: { distillSession, backstop, backfillOpeners },
     backfill,
     maintenance,
     logger: createJsonLogger({ level: 'debug', write: (l) => lines.push(l) }),
@@ -251,6 +257,7 @@ describe('daily maintenance message (EventBridge schedule → jobs queue)', () =
         recordings: { abandoned: 0, expired: 0, purged: 0, failed: 0 },
         pendingProposals: { kept: 0, duplicates: 0, notTheFounders: 0 },
         distillation: { candidates: 50, distilled: 12, skipped: 0, dropped: 0, failed: 0, deferred: 38 },
+        openers: { candidates: 0, written: 0, notWritten: 0, deferred: 0 },
       });
     maintenance.mockImplementation(left);
     const body = JSON.stringify(DAILY_MAINTENANCE_MESSAGE);

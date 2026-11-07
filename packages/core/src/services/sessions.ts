@@ -33,9 +33,10 @@ import { type DirectoryCache, type OtherVentures } from '../internal/directory.j
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { meteredStructured } from '../internal/metered.js';
 import { participantTurnView, supportMessageFor } from '../orchestrator/blocked.js';
-import { chooseOpener } from '../orchestrator/continuity.js';
+import { chooseOpener, type MissingOpener } from '../orchestrator/continuity.js';
 import { assertWithinSpendCaps } from '../orchestrator/guards.js';
 import { RECAP_SCHEMA_NAME, RecapDraft, buildRecapPrompt, sanitizeRecap } from '../orchestrator/recap.js';
+import { OPENER_MODEL_TIMEOUT_MS, openerWithin, type DistillService } from './distill.js';
 import { persistMemoryCandidates } from './memory.js';
 import { conversationGrounding } from './memory-dedupe.js';
 import { purgeRecordings } from './recordings.js';
@@ -113,7 +114,11 @@ export interface SessionsService {
   getTurnEvidence(ctx: RequestContext, turnId: string): Promise<EvidenceItem[]>;
 }
 
-export function createSessionsService(kit: Kit, directory: DirectoryCache): SessionsService {
+export function createSessionsService(
+  kit: Kit,
+  directory: DirectoryCache,
+  openers: Pick<DistillService, 'writeOpener'>,
+): SessionsService {
   const { logger } = kit.deps;
 
   async function sessionView(
@@ -148,6 +153,35 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
       },
       team: guards.team,
     });
+  }
+
+  /**
+   * Has the model write the notebook's opener when the chosen one was the greeting that names nothing although the
+   * notebook leaves threads open (`chooseOpener`'s `missing`; production, 2026-11-07), waiting at most `OPENER_WAIT_MS`.
+   * Whether a line was written (the caller then chooses again).
+   */
+  async function writeMissing(
+    ctx: RequestContext,
+    ventureId: string,
+    personaId: string,
+    missing: MissingOpener,
+  ): Promise<boolean> {
+    const written = await openerWithin(
+      kit,
+      openers.writeOpener({
+        tenantId: ctx.tenantId,
+        ventureId,
+        personaId,
+        principalId: ctx.principalId,
+        requestId: ctx.requestId,
+        sourceSessionId: missing.sourceSessionId,
+        lastOpener: missing.lastOpener,
+        leftAside: missing.leftAside,
+        replace: true,
+        timeoutMs: OPENER_MODEL_TIMEOUT_MS,
+      }),
+    );
+    return written === 'written';
   }
 
   /** The opener's guards, from the tenant directory (owner role, cached): read before a request transaction. */
@@ -258,28 +292,30 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
       const ventureId = requireId(rawVentureId, 'Venture');
       const guards = await openerGuards(ctx, ventureId);
       const at = kit.now();
-      return kit.inRequest(ctx, async (scope) => {
-        await requireVentureAccess(scope, ventureId, 'write', { objectType: 'session' });
-        const { opener, latest } = await openerFor(
-          scope,
-          ventureId,
-          await requireAssignmentActive(scope, ventureId),
-          guards,
-        );
-        return {
-          opener: opener?.text ?? null,
-          at: at.toISOString(),
-          lastConversation:
-            latest === null
-              ? null
-              : {
-                  sessionId: latest.sessionId,
-                  lastActivityAt: latest.lastActivityAt,
-                  channel: latest.channel,
-                  title: latest.title,
-                },
-        };
-      });
+      const choose = (): Promise<Awaited<ReturnType<typeof openerFor>> & { readonly personaId: string }> =>
+        kit.inRequest(ctx, async (scope) => {
+          await requireVentureAccess(scope, ventureId, 'write', { objectType: 'session' });
+          const active = await requireAssignmentActive(scope, ventureId);
+          return { personaId: active.persona.id, ...(await openerFor(scope, ventureId, active, guards)) };
+        });
+      const first = await choose();
+      // New chat shows this line as the conversation's first: a missing one is written now, and chosen again.
+      const written =
+        first.missing !== null && (await writeMissing(ctx, ventureId, first.personaId, first.missing));
+      const { opener, latest } = written ? await choose() : first;
+      return {
+        opener: opener?.text ?? null,
+        at: at.toISOString(),
+        lastConversation:
+          latest === null
+            ? null
+            : {
+                sessionId: latest.sessionId,
+                lastActivityAt: latest.lastActivityAt,
+                channel: latest.channel,
+                title: latest.title,
+              },
+      };
     },
 
     list: async (ctx, rawVentureId) => {

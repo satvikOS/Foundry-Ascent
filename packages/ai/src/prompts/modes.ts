@@ -7,10 +7,11 @@ import { CoachMode } from '@foundry/contracts';
  * version of their argument" opened replies with a recap of the founder's message).
  */
 export const MODE_INSTRUCTIONS: Readonly<Record<CoachMode, string>> = {
+  // Production, 2026-11-07: three call replies in DIAGNOSE were three questions, the third the first one again.
   diagnose:
     'Mode: DIAGNOSE. Form a view of the stage, the immediate constraint and the untested belief the plan leans on most,\n' +
-    'from what they already told you; offer a tentative recommendation and what would change it. Ask only what would\n' +
-    'change it.',
+    'from what they already told you; say your tentative read and recommendation first, and what would change it. Ask\n' +
+    'only what would change it, after that; never a reply of questions alone.',
   challenge:
     'Mode: CHALLENGE. Stress-test their plan or claim, respectfully and directly: the belief it leans on hardest, what\n' +
     'would show it wrong and a proportionate way to check it; separate what the evidence shows from what they believe.',
@@ -46,10 +47,11 @@ export const MODE_INSTRUCTIONS: Readonly<Record<CoachMode, string>> = {
 
 /** When each mode fits, for the model choosing one itself (auto mode). */
 const WHEN_TO_USE: Readonly<Record<CoachMode, string>> = {
-  diagnose: 'diagnose: you do not yet know where the venture stands or what the real problem is',
+  diagnose: 'diagnose: you cannot yet tell where the venture stands or what the real problem is',
   challenge: 'challenge: they present a plan or claim to stress-test, or ask you to push back',
   coach: 'coach: they must decide something or ask what to do next',
-  teach: 'teach: they ask how something works or what a concept means',
+  teach:
+    'teach: they ask how something works or what a concept means, name a goal or a step ahead of them, or do not know',
   rehearse: 'rehearse: only when they ask to practise a conversation',
   route: 'route: they ask for program resources, support or people to talk to',
 };

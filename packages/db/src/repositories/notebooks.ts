@@ -20,7 +20,7 @@ import { col, type RawRow } from '../columns.js';
 import { NotebookIntegrityError } from '../errors.js';
 import { type SqlExecutor } from '../executor.js';
 import { p } from '../params.js';
-import { firstPart, queryFirst, readPart, type ReadPart } from './common.js';
+import { firstPart, queryFirst, queryRows, readPart, type ReadPart } from './common.js';
 
 /** At most this many conversations are recorded as the sources of the summary (oldest dropped first). */
 export const MAX_SUMMARY_SOURCES = 50;
@@ -170,6 +170,62 @@ export function notebookPart(args: {
      WHERE n.venture_id = :ventureId AND n.persona_id = :personaId`,
     { ventureId: p.uuid(args.ventureId), personaId: p.uuid(args.personaId) },
     (r) => decode(r, col.text.decode(r.persona_name, 'persona_name')),
+  );
+}
+
+/** A notebook with open threads and no next opener, and the conversation an opener for it is drawn from. */
+export interface NotebookWithoutOpener {
+  readonly tenantId: string;
+  readonly ventureId: string;
+  readonly personaId: string;
+  /** The venture's latest standard conversation with this persona that has a completed turn. */
+  readonly sessionId: string;
+  /** Who had it (the opener's model call is billed to them). */
+  readonly startedBy: string;
+  /** What it opened with. */
+  readonly opener: string | null;
+}
+
+/**
+ * Notebooks that hold an open thread (an open commitment, an open question or advice) and no next opener, with no edit
+ * of a person's pending (a distillation must merge those first), least recently written first: the ones a notebook
+ * opener is written for once (services/distill.ts `backfillOpeners`; production, 2026-11-07: notebooks distilled before
+ * the next-opener rule held kept no line). System role; at most `limit`.
+ */
+export function listNotebooksWithoutOpener(
+  ex: SqlExecutor,
+  args: { readonly limit: number },
+): Promise<NotebookWithoutOpener[]> {
+  const array = (key: string) =>
+    `CASE WHEN jsonb_typeof(n.content -> '${key}') = 'array' THEN n.content -> '${key}' ELSE '[]'::jsonb END`;
+  return queryRows(
+    ex,
+    `SELECT n.tenant_id, n.venture_id, n.persona_id, s.id AS session_id, s.started_by, s.opener
+     FROM veir_notebooks n
+     JOIN LATERAL (
+       SELECT cs.id, cs.started_by, cs.opener FROM coaching_sessions cs
+       JOIN persona_releases r ON r.id = cs.persona_release_id
+       WHERE cs.venture_id = n.venture_id AND r.persona_id = n.persona_id AND cs.deleted_at IS NULL
+         AND cs.privacy = 'standard'
+         AND EXISTS (SELECT 1 FROM turns t WHERE t.session_id = cs.id AND t.status = 'completed')
+       ORDER BY cs.last_activity_at DESC, cs.id DESC
+       LIMIT 1) s ON true
+     WHERE jsonb_typeof(n.content -> 'nextOpener') IS DISTINCT FROM 'string'
+       AND n.person_edits = '[]'::jsonb
+       AND (EXISTS (SELECT 1 FROM jsonb_array_elements(${array('commitments')}) c (item) WHERE c.item ->> 'status' = 'open')
+            OR jsonb_array_length(${array('openQuestions')}) > 0
+            OR jsonb_array_length(${array('lastAdvice')}) > 0)
+     ORDER BY n.updated_at ASC NULLS FIRST, n.id
+     LIMIT :limit`,
+    { limit: p.int(args.limit) },
+    (r) => ({
+      tenantId: col.uuid.decode(r.tenant_id, 'tenant_id'),
+      ventureId: col.uuid.decode(r.venture_id, 'venture_id'),
+      personaId: col.uuid.decode(r.persona_id, 'persona_id'),
+      sessionId: col.uuid.decode(r.session_id, 'session_id'),
+      startedBy: col.uuid.decode(r.started_by, 'started_by'),
+      opener: col.text.nullable.decode(r.opener, 'opener'),
+    }),
   );
 }
 

@@ -693,6 +693,27 @@ pnpm --filter @foundry/api latency --profile production --set dbRoundTripMs=65 -
 - Not measured: Haiku's real first token and speed from us-east-1 (§8), and how much a cache read shortens the first
   token on a conversation's later turns.
 
+### A production call on Claude Haiku 4.5 (2026-11-07)
+
+Read from the Ops - insights export of the owner's call (three voice turns; aggregates only):
+
+| Per turn                                                      | Turn 1 | Turn 2 | Turn 3 |
+| ------------------------------------------------------------- | ------ | ------ | ------ |
+| Model's first token after it started (`modelFirstTokenMs`)    | 630    | 570    | 559    |
+| Phase A in all (`modelMs`)                                    | 1,225  | 1,305  | 1,453  |
+| First validated words after the request (`firstTokenMs`)      | 2,723  | 3,428  | 3,667  |
+| Phase B's structured call (`ai.model.attempt`, ~1,000 tokens) | 7,386  | 6,205  | 5,280  |
+
+The call's own numbers: first audio p50 4.1 s (p95 4.4 s); its "turn latency" p50 7.5 s is the turn record's, which
+ends with phase B, and nothing the founder waits on waits for phase B (above). The model is not the slow part: its
+first token came 0.56–0.63 s after it started (as fast as the lab's cached turns; the export carries no cache fields).
+Of the 2.7–3.7 s to the first validated words, about 1.8–2.6 s come before the model starts (the request's Data API
+round trips, retrieval, the face's pre-approval; the export carries no per-stage fields, so `turn.timing` in
+CloudWatch, §3, is the next read), and the rest is the time to finish the first sentence, which a call says whole or
+not at all. Each reply's first sentence was a long question (25–40 words, about 0.3–0.4 s of Haiku's output before the
+gate could release it); the spoken register now asks for a short first sentence that says something (policy
+`fa-coach-policy/2026-11-07.1`).
+
 ## 6. Measured and not kept
 
 | Tried                                                                                                                 | Result                                                                                                                                                                                                                                                                                                                                                                                         |

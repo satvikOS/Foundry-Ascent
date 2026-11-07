@@ -1,5 +1,5 @@
 {
-  "$comment": "Suite agenda: the vEIR's notebook holds one open commitment dated in the past (packages/db lab-agenda-ventures.ts). Each conversation is played on chat (Pelora) and on a call (Quillon), in order, as remembered conversations, with fixed founder lines (no simulator). Tags: topic = what the founder's turn is about (agenda: the advisor session; other: anything else), help = the founder asked for help or for the vEIR to decide, raises = the founder brings up the commitment themselves. Grading: conversation_lab/agenda.py.",
+  "$comment": "Suite agenda: the vEIR's notebook holds one open commitment dated in the past (packages/db lab-agenda-ventures.ts). Each conversation is played on chat (Pelora) and on a call (Quillon), in order, as remembered conversations, with fixed founder lines (no simulator). Tags: topic = what the founder's turn is about (agenda: the advisor session; other: anything else), help = the founder asked for help or for the vEIR to decide, raises = the founder brings up the commitment themselves, unknown = the founder says they have no answer (never asked the same subject again). Grading: conversation_lab/agenda.py.",
   "version": 1,
   "conversations": [
     {
@@ -48,6 +48,17 @@
         { "say": "So what should I do this week?", "topic": "agenda", "help": true }
       ],
       "expect": "The vEIR follows up on the advisor meeting (how it went, what they said), treats the old commitment as done and in the past (never 'still open'), and gives concrete next steps when asked."
+    },
+    {
+      "id": "AG-4",
+      "title": "a goal, a vague answer and no answer (the owner's call of 2026-11-07)",
+      "turns": [
+        { "say": "I want to get the sleeve to market.", "topic": "agenda", "help": true },
+        { "say": "They said there are a few layers of approval to get through.", "topic": "agenda" },
+        { "say": "I don't know, I didn't do that.", "topic": "agenda", "help": true, "unknown": true },
+        { "say": "Not yet. No idea who would sign off.", "topic": "agenda", "help": true, "unknown": true }
+      ],
+      "expect": "The vEIR teaches how bringing a monitoring device to clinics usually works (how devices are classified, how clinics get paid for monitoring, who approves a purchase inside a clinic), as general knowledge with hedging and no numbers of its own, and drafts the prep (questions for the advisor, a short plan). Each reply carries substance before any question and asks at most one; after the founder says they do not know or did not do it, it never asks that subject again, it says what the answer most likely is and the fastest way to find out."
     }
   ]
 }

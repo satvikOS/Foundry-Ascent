@@ -1,4 +1,5 @@
 import {
+  RAISED_NOTE,
   WHERE_YOU_LEFT_OFF_HEADING,
   escapeData,
   escapeInline,
@@ -111,6 +112,8 @@ export interface LeftOffData {
 export interface LeftOffThreads {
   readonly commitments: readonly { readonly text: string; readonly due: string | null }[];
   readonly questions: readonly string[];
+  /** Of them, the texts the vEIR already raised in this conversation: marked so, and not pushed again. */
+  readonly raised?: readonly string[];
 }
 
 const MINUTE = 60_000;
@@ -283,13 +286,16 @@ function renderConversation(
 
 function threadLines(threads: LeftOffThreads | null): string[] {
   if (threads === null) return [];
+  const raised = new Set(threads.raised ?? []);
+  const note = (text: string): string => (raised.has(text) ? ` [${RAISED_NOTE}]` : '');
   const lines = [
     ...threads.commitments
       .slice(0, 3)
       .map(
-        (c) => `- planned: ${line(c.text, LINE_CHARS)}${c.due ? ` (due ${escapeInline(c.due, 10)})` : ''}`,
+        (c) =>
+          `- planned: ${line(c.text, LINE_CHARS)}${c.due ? ` (due ${escapeInline(c.due, 10)})` : ''}${note(c.text)}`,
       ),
-    ...threads.questions.slice(0, 3).map((q) => `- open question: ${line(q, LINE_CHARS)}`),
+    ...threads.questions.slice(0, 3).map((q) => `- open question: ${line(q, LINE_CHARS)}${note(q)}`),
   ];
   return lines.length === 0 ? [] : ['<open_threads>', ...lines, '</open_threads>'];
 }
@@ -385,22 +391,27 @@ const GREETINGS_AGAIN = [
 /** Greetings to someone whose last conversation here was with another coach of the venture (never "again"). */
 const GREETINGS_NEW = ['Good to have you here.', 'Welcome.', 'Glad you’re here.'];
 
-/** Invitations that name nothing: the founder chooses what the conversation is about. */
+/**
+ * Invitations that name nothing and offer help: the founder chooses what the conversation is about, and hears that the
+ * vEIR is there to prepare it with them (production, 2026-11-07: "What feels most pressing right now?" asked and offered
+ * nothing).
+ */
 const INVITATIONS = [
-  'What’s on your mind today?',
-  'Where would you like to start?',
-  'What would you like to work on?',
-  'What feels most pressing right now?',
-  'What shall we dig into?',
-  'What would be most useful to talk through?',
-  'What would you like to tackle first?',
+  'What can I help you prepare for?',
+  'What can I walk you through today?',
+  'What are you working on that I can help with?',
+  'What’s coming up that I can help you prep for?',
+  'What next step can I help you plan?',
+  'What would you like a hand with today?',
+  'What can I help you get done today?',
 ];
 
 /**
  * The topic-free opening lines of a new conversation, in the order this `seed` (the conversation) tries them: a
- * greeting, then an invitation that names nothing ("Welcome back. What feels most pressing right now?"). Said when the
- * notebook holds no line the model wrote for this conversation (distillation has not run yet, wrote none because nothing
- * about the venture was said, or its line cannot be said): no subject, none of the founder's words, no name (a call
+ * greeting, then an invitation that names nothing and offers help ("Welcome back. What can I help you prepare for?").
+ * Said when the notebook holds no line the model wrote for this conversation (distillation has not run yet, wrote none
+ * because nothing about the venture was said, or its line cannot be said and none could be written in time:
+ * services/opener-writer.ts): no subject, none of the founder's words, no name (a call
  * adds it within the name budget), no time words (never "since we last spoke": it may be said seconds after the last
  * conversation, before its distillation ran). `met`: the person talked with this vEIR before (else their last
  * conversation was with another coach of the venture). Every greeting and invitation comes up in turn, so a caller can
@@ -420,13 +431,13 @@ export function plainOpeners(seed: string, met: boolean): string[] {
   return [...new Set(out)];
 }
 
-/** Invitations that name nothing, said mid-sentence after a call's hello ("Hi Maya, what's on your mind today?"). */
+/** Invitations that name nothing, said mid-sentence after a call's hello ("Hi Maya, what can I help you prepare for?"). */
 const CALL_INVITATIONS = INVITATIONS.map((i) => `${i.charAt(0).toLowerCase()}${i.slice(1)}`);
 /** The same, for a conversation already under way (a call joins it). */
 const CALL_CONTINUATIONS = [
-  'where would you like to pick up?',
-  'where shall we carry on?',
-  'what would you like to look at next?',
+  'where can I help you pick up?',
+  'what shall we work through next?',
+  'what can I help you with next?',
 ];
 
 /**

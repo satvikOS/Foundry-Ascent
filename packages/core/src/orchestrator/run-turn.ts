@@ -1099,7 +1099,11 @@ export function createOrchestrator(
     const leftOffData = await coach.leftOff;
     const leftOffSection = renderLeftOffSection(leftOffData, {
       now: kit.now(),
-      threads: leftOffThreads(coach.memory.continuity),
+      threads: leftOffThreads(coach.memory.continuity, {
+        founderText: input.text,
+        said: [...coach.heardHistory.map((t) => t.answer), coach.opener],
+        started: coach.heardHistory.length > 0 || (coach.opener ?? '').trim() !== '',
+      }),
     });
     // The notes' earlier conversations, without the ones "Where you left off" already shows.
     const continuity = withoutLeftOff(coach.memory.continuity, leftOffData);

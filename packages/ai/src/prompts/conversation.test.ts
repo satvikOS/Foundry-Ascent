@@ -354,7 +354,9 @@ describe('auto mode', () => {
   it('lets the model choose among the allowed modes and lists their instructions', () => {
     const p = buildSystemPrompt({ ...BASE, mode: 'auto', allowedModes: ['coach', 'diagnose', 'teach'] });
     expect(p).toContain('Mode: AUTO. Pick the one mode that fits their latest message (diagnose: ');
-    expect(p).toContain('teach: they ask how something works or what a concept means),');
+    expect(p).toContain(
+      'teach: they ask how something works or what a concept means, name a goal or a step ahead of them, or do not know)',
+    );
     expect(p).toContain(MODE_INSTRUCTIONS.diagnose);
     expect(p).toContain(MODE_INSTRUCTIONS.coach);
     expect(p).toContain(MODE_INSTRUCTIONS.teach);
@@ -884,5 +886,41 @@ describe('evals system-prompt leak markers', () => {
       .toLowerCase()
       .replace(/\s+/g, ' ');
     for (const marker of markers) expect(all, marker).toContain(marker.replace(/\\"/g, '"'));
+  });
+});
+
+describe('the notes never carry a verdict on the founder (production, 2026-11-07)', () => {
+  it('leaves a judging profile note out of the notes, and keeps how they like to work', () => {
+    const at = '2026-11-01T00:00:00.000Z';
+    const block = buildContinuityBlock(
+      {
+        notebook: {
+          summary: 'Building a clinic insole.',
+          founderProfile: [
+            {
+              id: 'fp-1',
+              text: 'Prefers direct answers and actionable steps',
+              sourceSessionId: null,
+              createdAt: at,
+            },
+            {
+              id: 'fp-2',
+              text: 'Does not report what experts told them; stays vague even when pressed',
+              sourceSessionId: null,
+              createdAt: at,
+            },
+          ],
+          commitments: [],
+          openQuestions: [],
+          lastAdvice: [],
+          nextOpener: null,
+          nextTopic: null,
+          updatedAt: at,
+        },
+      },
+      { today: '2026-11-07' },
+    );
+    expect(block).toContain('- Prefers direct answers and actionable steps');
+    expect(block).not.toContain('even when pressed');
   });
 });

@@ -251,6 +251,8 @@ export {
   withoutUnits,
   announcedCountGap,
   isProtectedLine,
+  asksOnly,
+  stuckOn,
   type WithoutRepeats,
   type WithoutRepeatsOptions,
 } from './validators/social.js';

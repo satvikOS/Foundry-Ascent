@@ -118,8 +118,8 @@ function conversationStateBlock(
 /**
  * Whether the founder's message, once the conversation is under way, brings a subject of their own that no open item
  * of the notes is about ("Help me prepare for the pitch next week"): then the notes leave their agenda out of this turn
- * (`ownSubject`). A short reply, "you tell me" or a question about what the vEIR remembers is about the conversation so
- * far, and keeps it; so does a report of having done what they committed to ("I did the thing I said I'd do, with the
+ * (`ownSubject`). A short reply, "you tell me", a message with no answer ("I didn't do that") or a question about what
+ * the vEIR remembers is about the conversation so far, and keeps it; so does a report of having done what they committed to ("I did the thing I said I'd do, with the
  * five librarians", "Done!"): the reply names which commitment it was (evals G12).
  */
 export function bringsOwnSubject(
@@ -129,7 +129,9 @@ export function bringsOwnSubject(
   if (reportsCommitmentDone(founderText)) return false;
   if (contentWords(founderText).size < 2) return false;
   const moves = founderMoves(founderText);
-  if (moves.some((m) => m === 'recall' || m === 'resume' || m === 'short_reply')) return false;
+  // "I don't know, I didn't do that" brings no subject: it answers the conversation so far.
+  if (moves.some((m) => m === 'recall' || m === 'resume' || m === 'short_reply' || m === 'unknown'))
+    return false;
   const open = [
     ...(continuity ? openCommitmentsOf(continuity).map((c) => c.text) : []),
     ...(continuity?.notebook?.openQuestions ?? []).map((q) => q.text),

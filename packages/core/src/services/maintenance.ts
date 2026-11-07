@@ -2,7 +2,7 @@ import { auditRepo, callsRepo, documentsRepo, sessionsRepo, twinRepo } from '@fo
 
 import { type Kit } from '../internal/kit.js';
 import { CALL_LIMITS } from './call-usage.js';
-import { type DistillBackstopReport, type DistillService } from './distill.js';
+import { type DistillBackstopReport, type DistillService, type OpenerBackfillReport } from './distill.js';
 import { type FaceHooks, meterFace } from './face.js';
 import { settlePendingAiProposals, type PendingSettleResult } from './memory.js';
 import { maintainRecordings } from './recordings.js';
@@ -36,6 +36,8 @@ export interface MaintenanceReport {
   readonly pendingProposals: PendingSettleResult;
   /** The distillation backstop: idle conversations that no trigger distilled yet. */
   readonly distillation: DistillBackstopReport;
+  /** Notebooks with open threads and no next opener, given one (`DistillService.backfillOpeners`). */
+  readonly openers: OpenerBackfillReport;
 }
 
 export interface MaintenanceService {
@@ -45,7 +47,8 @@ export interface MaintenanceService {
    * ephemeral session's turns, closes calls whose client went away and distils their conversations, fails
    * document uploads nobody finished, settles the AI memory proposals left from before automatic memory (kept
    * or retired with the checks new memory goes through: none waits for a person any more), then runs the bounded
-   * distillation backstop while `deadline` (epoch ms) leaves time. Each step commits on its own, the privacy
+   * distillation backstop and the notebook-opener backfill while `deadline` (epoch ms) leaves time. Each step commits
+   * on its own, the privacy
    * erasure first, so a later step failing never undoes it. One audit event per step, with counts. Idempotent.
    */
   runDaily(options: { readonly requestId: string; readonly deadline?: number }): Promise<MaintenanceReport>;
@@ -94,7 +97,7 @@ export function staleUploadSeconds(presignTtlSeconds: number): number {
 
 export function createMaintenanceService(
   kit: Kit,
-  distill: Pick<DistillService, 'backstop' | 'distillSettled'>,
+  distill: Pick<DistillService, 'backstop' | 'distillSettled' | 'backfillOpeners'>,
   face: Pick<FaceHooks, 'afterCallsReaped'>,
 ): MaintenanceService {
   return {
@@ -174,6 +177,11 @@ export function createMaintenanceService(
         requestId,
         ...(deadline === undefined ? {} : { deadline }),
       });
+      // After the backstop, so a notebook it just distilled is not given a line of its own as well.
+      const openers = await distill.backfillOpeners({
+        requestId,
+        ...(deadline === undefined ? {} : { deadline }),
+      });
       kit.deps.logger.info('maintenance.daily_done', {
         requestId,
         ephemeralSessionsEnded: cleanup.sessionsEnded,
@@ -186,6 +194,7 @@ export function createMaintenanceService(
         proposalsRetired: pendingProposals.duplicates + pendingProposals.notTheFounders,
         distilled: distillation.distilled,
         distillDeferred: distillation.deferred,
+        openersWritten: openers.written,
       });
       return {
         ephemeralSessionsEnded: cleanup.sessionsEnded,
@@ -196,6 +205,7 @@ export function createMaintenanceService(
         recordings,
         pendingProposals,
         distillation,
+        openers,
       };
     },
   };

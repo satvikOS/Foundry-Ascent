@@ -142,6 +142,9 @@ export {
   type DistillOutcome,
   type DistillRunOptions,
   type DistillService,
+  type OpenerBackfillReport,
+  type OpenerWriteOutcome,
+  type OpenerWriteRequest,
 } from './services/distill.js';
 export { documentKey, storageFilename, type DocumentsService } from './services/documents.js';
 export { type EscalationsService } from './services/escalations.js';

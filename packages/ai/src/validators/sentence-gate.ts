@@ -33,6 +33,8 @@ import {
   questionsOf,
   reasksQuestion,
   repeatsPrevious,
+  stuckOn,
+  type QuestionTerms,
 } from './social.js';
 import { asksForNumber, founderMoves } from '../prompts/conversation-state.js';
 import { questionFramesOf, withVariedQuestions } from '../prompts/phrasing.js';
@@ -482,7 +484,9 @@ export class SentenceGate {
   /** The previous reply's four-word sequences (null: no repeat check). */
   readonly #previousGrams: ReadonlySet<string> | null;
   /** The previous reply's questions, as content words: never asked again in other words. */
-  readonly #previousQuestions: readonly ReadonlySet<string>[];
+  readonly #previousQuestions: readonly QuestionTerms[];
+  /** The founder said they do not know or handed the work back: questions are read strictly (`stuckOn`). */
+  readonly #stuck: boolean;
   /** Units left out because they said the previous reply again. */
   #repeatsDropped = 0;
   /** Those units, as written: a reply that only signed off again keeps its sign-off (`repeatFallbackFor`). */
@@ -547,6 +551,7 @@ export class SentenceGate {
     this.#question =
       options.founderText === undefined ? null : identityQuestionOf(options.founderText, this.#identity);
     this.#news = founderMoves(options.founderText ?? '').includes('news');
+    this.#stuck = stuckOn(options.founderText);
     this.#life = options.founderText === undefined ? null : askedLifeFor(options.founderText, this.#identity);
     this.#keepReferrals = options.keepReferrals === true;
     this.#signOffWelcome = welcomesSignOff(options.founderText);
@@ -921,7 +926,7 @@ export class SentenceGate {
     if (this.#previousGrams === null) return null;
     if (isProtectedLine(unit, this.#keepReferrals)) return null;
     if (repeatsPrevious(unit, this.#previousGrams, { signOffs: !this.#signOffWelcome })) return 'repeat';
-    return reasksQuestion(unit.trim(), this.#previousQuestions) ? 'reask' : null;
+    return reasksQuestion(unit.trim(), this.#previousQuestions, { strict: this.#stuck }) ? 'reask' : null;
   }
 
   /** Ends the reply where an earlier reply would have been said again (`GateCutReason` `repeat`). */

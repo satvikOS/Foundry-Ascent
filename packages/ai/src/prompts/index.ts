@@ -13,12 +13,14 @@ export type { BuildMessagesOptions, HistoryTurn } from './messages.js';
 export {
   MAX_PROMPT_DIGESTS,
   PAST_DUE_NOTE,
+  RAISED_NOTE,
   SHORT_REPLY_WORDS,
   buildContinuityBlock,
   buildRetrievalQuery,
   hasContinuity,
   lastQuestionOf,
   openCommitmentsOf,
+  raisedIn,
 } from './continuity.js';
 export type {
   ContinuityBlockOptions,

@@ -350,7 +350,7 @@ describe('the call intro', () => {
       conversationStarted: false,
       seed: 'a',
     });
-    expect(intro.text).toBe("Hi Mina, I'm Thomas. What would you like to work on?");
+    expect(intro.text).toBe("Hi Mina, I'm Thomas. What can I help you work on?");
     expect(intro.text).not.toMatch(/vEIR|digital twin|AI coach/);
   });
 
@@ -364,7 +364,7 @@ describe('the call intro', () => {
         opener: null,
         conversationStarted: false,
       }),
-    ).toBe("Hi Priya, I'm Ruth's vEIR, Ruth's digital twin. What would you like to work on?");
+    ).toBe("Hi Priya, I'm Ruth's vEIR, Ruth's digital twin. What can I help you work on?");
     expect(
       callIntroText({
         firstName: 'Priya',
@@ -374,7 +374,7 @@ describe('the call intro', () => {
         opener: null,
         conversationStarted: false,
       }),
-    ).toBe("Hi Priya, I'm Foundry Guide, the program's AI coach. What would you like to work on?");
+    ).toBe("Hi Priya, I'm Foundry Guide, the program's AI coach. What can I help you work on?");
   });
 
   it('passes the identity rules for every persona, met or not', () => {
@@ -515,7 +515,7 @@ describe('the names a call may say', () => {
         opener: null,
         conversationStarted: false,
       });
-      expect(text).toBe("Hi Maya, I'm Corin's vEIR, Corin's digital twin. What would you like to work on?");
+      expect(text).toBe("Hi Maya, I'm Corin's vEIR, Corin's digital twin. What can I help you work on?");
       expect(
         rewriteIdentity(text, { personaName: name, eirNames: EIRS, checkHumanClaims: true }).findings,
       ).toEqual([]);

@@ -77,6 +77,23 @@ export const DistillDraft = z.object({
 });
 export type DistillDraft = z.infer<typeof DistillDraft>;
 
+/** Name of the structured output schema of a notebook opener written on its own (`buildOpenerPrompt`). */
+export const OPENER_SCHEMA_NAME = 'NotebookOpener';
+
+/** Output bound of an opener call: one line of at most 30 words and its thread. */
+export const OPENER_MAX_OUTPUT_TOKENS = 400;
+
+/**
+ * A notebook's next opener and its thread written on their own (`buildOpenerPrompt`): for a notebook with open threads
+ * whose last distillation left no opener (production, 2026-11-07: a notebook distilled from a small-talk call before
+ * the opener rule held, and the next call opened "Nice to see you. What feels most pressing right now?").
+ */
+export const NotebookOpenerDraft = z.object({
+  next_opener: z.string().nullable(),
+  next_topic: z.string().nullable(),
+});
+export type NotebookOpenerDraft = z.infer<typeof NotebookOpenerDraft>;
+
 /** Bounds applied by `sanitizeDistill` (they match the notebook, digest and lesson contracts). */
 export const DISTILL_LIMITS = {
   titleMaxChars: 80,

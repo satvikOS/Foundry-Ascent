@@ -8,6 +8,7 @@ import type {
   VeirNotebook,
 } from '@foundry/contracts';
 
+import { isJudgmentalNote } from '../distill/judgment.js';
 import { contentWords } from './conversation-state.js';
 import { escapeData, escapeInline, truncate } from './escape.js';
 
@@ -271,8 +272,15 @@ export function buildContinuityBlock(
     .slice(0, MAX_ENTRIES.commitments)
     .map((c) => commitmentLine(c, today, said.length > 0 && raisedIn(c.text, said)));
 
-  // Optional parts in the order they are given up when the block is too long (last dropped first).
-  const profile = section('founder_profile', entries(nb?.founderProfile, MAX_ENTRIES.founderProfile));
+  // Optional parts in the order they are given up when the block is too long (last dropped first). A note that judges
+  // the founder, stored before distillation refused them, is never shown (distill/judgment.ts).
+  const profile = section(
+    'founder_profile',
+    entries(
+      nb?.founderProfile?.filter((e) => !isJudgmentalNote(e.text)),
+      MAX_ENTRIES.founderProfile,
+    ),
+  );
   const questions = agenda
     ? section('open_questions', entries(nb?.openQuestions, MAX_ENTRIES.openQuestions, said))
     : [];

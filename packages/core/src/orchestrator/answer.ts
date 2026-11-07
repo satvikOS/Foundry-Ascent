@@ -16,6 +16,7 @@ import {
   socialTurnOf,
   validateCoachResponse,
   statedPreferences,
+  stuckOn,
   wrapUpOf,
   type CoachResponseValidation,
   type GateBlockReason,
@@ -329,7 +330,11 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
       addressees: guards.addressees,
     }) !== null
       ? null
-      : { text: saidBefore.join('\n\n'), keepReferrals: forcedEscalationFor(risk) !== null };
+      : {
+          text: saidBefore.join('\n\n'),
+          keepReferrals: forcedEscalationFor(risk) !== null,
+          strictQuestions: stuckOn(spec.founderText),
+        };
   const wrapUp = risk.categories.length === 0 && !risk.crisis && wrapUpOf(spec.founderText);
   // How they asked to be answered, kept until they change it (live pilot 42124259353: "yes or no answers only" and "no
   // more questions" were dropped after a reply or two). Never on a flagged turn: its referral must be said whole.

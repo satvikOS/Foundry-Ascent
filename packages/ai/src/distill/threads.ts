@@ -33,6 +33,9 @@ const FRAME_TEXT = [
   'Where did you land on it? Want to pick that up, or is something else on your mind? Shall we carry on from there, or start somewhere new? How has it gone since? How is it going? Where are things now?',
   'Want to pick up where we left off, or start on something new? Want to pick up where your last conversation here left off, or start on something new? Your last conversation here was about.',
   'Where would you like to pick up? What would you like to work on?',
+  // The invitations that offer help, and the help an opener offers around its thread (coaching, 2026-11-07).
+  "What can I help you prepare for? What can I walk you through today? What are you working on that I can help with? What's coming up that I can help you prep for? What next step can I help you plan? What would you like a hand with today? What can I help you get done today? Where can I help you pick up? What shall we work through next? What can I help you with next? What can I help you work on?",
+  'I can help you prepare, prep, walk you through, draft it with you, get ready for, work through it together. Want me to help you?',
   // The shapes around a thread.
   // Inverted-question subjects add "whether"; it must not manufacture topic overlap.
   'Whether to. Whether you. Whether the.',

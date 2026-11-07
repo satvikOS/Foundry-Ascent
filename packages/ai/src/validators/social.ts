@@ -1,6 +1,7 @@
 import {
   asksToRepeat,
   contentWords,
+  founderMoves,
   socialTurnOf,
   wrapUpOf,
   type SocialTurn,
@@ -252,31 +253,100 @@ export function repeatsPrevious(
 }
 
 /**
- * The questions of a text (its sentences that end in a question mark), as content words: the questions a previous
- * reply asked, which the next reply never asks again in other words (item 20: "do you have a written agreement on
- * what success looks like…?" was asked two turns running, the second time in reply to the founder's SSO worry).
+ * A question's terms: its content words, each cut to a root ("reimbursement" and "reimbursable" meet), and the pairs of
+ * them it says one after another ("device class").
  */
-export function questionsOf(text: string): ReadonlySet<string>[] {
+export interface QuestionTerms {
+  readonly words: ReadonlySet<string>;
+  readonly pairs: ReadonlySet<string>;
+}
+
+/** Endings a root leaves out, beyond the stem `contentWords` already cut (only while four letters or more remain). */
+const ROOT_ENDING = /(?:ments?|abl|ibl|ation|ition|ity|ive|ical|al)$/;
+
+function questionTerms(sentence: string): QuestionTerms {
+  const words = [...contentWords(sentence)].map((word) => {
+    const root = word.replace(ROOT_ENDING, '');
+    const cut = root.length >= 4 ? root : word;
+    return cut.length > 3 && cut.endsWith('e') ? cut.slice(0, -1) : cut;
+  });
+  const pairs = new Set<string>();
+  for (let i = 1; i < words.length; i += 1) pairs.add(`${words[i - 1] ?? ''} ${words[i] ?? ''}`);
+  return { words: new Set(words), pairs };
+}
+
+/**
+ * The questions of a text (its sentences that end in a question mark), as their terms: the questions a previous reply
+ * asked, which the next reply never asks again in other words (item 20: "do you have a written agreement on what success
+ * looks like…?" was asked two turns running, the second time in reply to the founder's SSO worry).
+ */
+export function questionsOf(text: string): QuestionTerms[] {
   return sentenceSpans(text)
     .map((s) => text.slice(s.start, s.end))
     .filter((sentence) => /\?["'”’)\]*_]*$/.test(sentence))
-    .map((sentence) => contentWords(sentence))
-    .filter((words) => words.size >= 3);
+    .map((sentence) => questionTerms(sentence))
+    .filter((terms) => terms.words.size >= 2);
+}
+
+export interface ReaskOptions {
+  /**
+   * The founder just said they do not know, have not done it, or handed the work back (`stuckOn`): any question that
+   * comes back to the same subject is asked again, however it is worded (two shared terms in a pair, or 40% of them).
+   */
+  readonly strict?: boolean;
 }
 
 /**
  * Whether `sentence` asks again one of `asked` (see {@link questionsOf}) in other words: a question that shares three
- * content words or more with it, and most of its own (60%, or of the shorter one).
+ * terms or more with it and most of its own (60%, or of the shorter one); or three or more and 30%, two of them said
+ * together in both (production, 2026-11-07: a question about what the advisor said of the device class and how clinics
+ * would pay came back two replies later, longer and reworded, about the advisor, the device class and reimbursable
+ * monitoring time); `strict`, see {@link ReaskOptions}.
  */
-export function reasksQuestion(sentence: string, asked: readonly ReadonlySet<string>[]): boolean {
+export function reasksQuestion(
+  sentence: string,
+  asked: readonly QuestionTerms[],
+  options: ReaskOptions = {},
+): boolean {
   if (asked.length === 0 || !/\?["'”’)\]*_]*\s*$/.test(sentence)) return false;
-  const words = contentWords(sentence);
-  if (words.size < 3) return false;
+  const terms = questionTerms(sentence);
+  const strict = options.strict === true;
+  if (terms.words.size < (strict ? 2 : 3)) return false;
   return asked.some((question) => {
     let shared = 0;
-    for (const w of words) if (question.has(w)) shared += 1;
-    return shared >= 3 && shared / Math.min(words.size, question.size) >= 0.6;
+    for (const w of terms.words) if (question.words.has(w)) shared += 1;
+    const share = shared / Math.min(terms.words.size, question.words.size);
+    if (shared >= 3 && share >= 0.6) return true;
+    const pair = [...terms.pairs].some((p) => question.pairs.has(p));
+    if (shared >= 3 && share >= 0.3 && pair) return true;
+    return strict && shared >= 2 && (pair || share >= 0.4);
   });
+}
+
+/**
+ * Whether the founder's message says they do not know, have not done it or have no answer yet, or hands the work back
+ * ("you tell me"): a question of the vEIR's that comes back to the same subject is then read strictly
+ * ({@link ReaskOptions}).
+ */
+export function stuckOn(founderText: string | undefined): boolean {
+  if (founderText === undefined || founderText.trim() === '') return false;
+  const moves = founderMoves(founderText);
+  return moves.includes('unknown') || moves.includes('help');
+}
+
+/** A line in character in a role-play ("**Investor:** …", a quoted line): its question is the counterpart's. */
+const IN_ROLE_LINE = /^\s*(?:\*\*|__)?\p{Lu}[\p{L}'.-]*(?: [\p{L}'.-]+){0,4}:(?:\*\*|__)?\s|^\s*["“]/u;
+
+/**
+ * Whether a reply only asks: it has a question and no statement of eight words or more, nor a list (a line in character
+ * in a role-play is the counterpart's, never counted). Production, 2026-11-07: three call replies in a row were a
+ * question each and taught nothing. The lab reads the same (ops/lab live/checks.py `question_only`).
+ */
+export function asksOnly(text: string): boolean {
+  if (!text.includes('?') || IN_ROLE_LINE.test(text)) return false;
+  const sentences = sentenceSpans(text).map((s) => text.slice(s.start, s.end).trim());
+  if (sentences.filter((s) => isListItem(s)).length >= 2) return false;
+  return !sentences.some((s) => s !== '' && !/\?["'”’)\]*_]*$/.test(s) && s.split(/\s+/).length >= 8);
 }
 
 /** A line that is an item of a list ("1. …", "- …"). */
@@ -320,6 +390,8 @@ export interface WithoutRepeatsOptions {
    * left out for its kind alone ({@link repeatsPrevious}). Default true.
    */
   readonly signOffs?: boolean;
+  /** Questions are read strictly ({@link ReaskOptions}): the founder said they do not know ({@link stuckOn}). */
+  readonly strictQuestions?: boolean;
 }
 
 export interface WithoutRepeats {
@@ -355,7 +427,7 @@ export function withoutRepeats(
     const sentence = text.slice(s.start, s.end);
     const repeat =
       repeatsPrevious(sentence, said, { signOffs: options.signOffs !== false }) ||
-      reasksQuestion(sentence, asked);
+      reasksQuestion(sentence, asked, { strict: options.strictQuestions === true });
     if (!repeat || isProtectedLine(sentence, options.keepReferrals === true)) {
       lastKept = s;
       continue;

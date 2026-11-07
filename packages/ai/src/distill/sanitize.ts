@@ -22,8 +22,10 @@ import {
   type DistillDraft,
   type DistillNote,
   type LessonCandidate,
+  type NotebookOpenerDraft,
 } from './schema.js';
 import { isNearDuplicate, repeatsNote, textKey } from './similarity.js';
+import { isJudgmentalNote } from './judgment.js';
 import { isAboutThread, mentions, threadWords, tookUp, untakenThread } from './threads.js';
 
 /** Text kept past a field's limit for the identity check, so a sentence that crosses the limit is judged whole. */
@@ -138,6 +140,10 @@ export interface DistillStats {
    * ({@link namesAThread}).
    */
   personalOpenerDropped: number;
+  /** Founder-profile notes left out because they judge the founder ({@link isJudgmentalNote}). */
+  judgmentalDropped: number;
+  /** Texts whose pressure framing was cut ({@link withoutPressure}): summaries and open questions. */
+  pressureRemoved: number;
 }
 
 export interface SanitizedDistill {
@@ -291,6 +297,121 @@ export function namesAThread(
 }
 
 /**
+ * The threads a notebook leaves open, as their texts: its open commitments, open questions and advice the founder may
+ * act on (what a next opener picks up, in that order). None: the notebook has nothing to open on.
+ */
+export function notebookThreads(
+  notebook: Pick<PreviousNotebook, 'commitments' | 'openQuestions' | 'lastAdvice'>,
+): string[] {
+  return [
+    ...notebook.commitments.filter((c) => c.status === 'open').map((c) => c.text),
+    ...notebook.openQuestions.map((q) => q.text),
+    ...notebook.lastAdvice.map((a) => a.text),
+  ].filter((text) => text.trim() !== '');
+}
+
+/** What {@link sanitizeOpener} checks a written opener against. */
+export interface OpenerSanitizeContext {
+  personaName: string;
+  eirNames: readonly string[];
+  personaEirName?: string | null;
+  mentor?: boolean;
+  /** The notebook the line was written from. */
+  notebook: PreviousNotebook;
+  /** Names that are no thread (the founder's, the persona's, the EIR's). */
+  names?: readonly string[];
+  /** Texts the founder's team removed from the notebook: never written back. */
+  suppressed?: readonly string[];
+  otherVentureNames: readonly string[];
+  otherVentureCanaries: readonly string[];
+  otherVentureMemberNames?: readonly string[];
+}
+
+export interface SanitizedOpener {
+  readonly nextOpener: string;
+  readonly nextTopic: string | null;
+}
+
+/**
+ * The checks of a distillation's next opener (`sanitizeDistill`), for one written on its own from the notebook
+ * (`buildOpenerPrompt`): plain, identity-rewritten and bounded; never what a person removed; never personal, small talk
+ * or the scripted frame; always naming a thread the notebook leaves open; never another venture. Null when the line
+ * cannot be kept.
+ */
+export function sanitizeOpener(
+  draft: NotebookOpenerDraft,
+  ctx: OpenerSanitizeContext,
+): SanitizedOpener | null {
+  const L = DISTILL_LIMITS;
+  const identity = {
+    personaName: ctx.personaName,
+    eirNames: ctx.eirNames,
+    ...(ctx.personaEirName !== undefined ? { personaEirName: ctx.personaEirName } : {}),
+    ...(ctx.mentor === true ? { mentor: true } : {}),
+  };
+  const clean = (value: string, max: number): string => {
+    const plain = sanitizePlainText(value).text.replace(/\s+/g, ' ').trim();
+    return truncate(rewriteIdentity(truncate(plain, max + IDENTITY_MARGIN_CHARS), identity).text, max);
+  };
+  const suppressed = (ctx.suppressed ?? []).map((t) => t.trim()).filter((t) => t !== '');
+  const removed = (text: string): boolean =>
+    suppressed.some((t) => repeatsNote(text, t, (word) => COMMON_WORDS.has(word)));
+  const opener =
+    draft.next_opener === null ? '' : withoutPressure(clean(draft.next_opener, L.nextOpenerMaxChars));
+  if (opener === '' || removed(opener) || isPersonalOpener(opener)) return null;
+  const names = ctx.names ?? [];
+  if (!namesAThread(opener, [ctx.notebook.summary, ...notebookThreads(ctx.notebook)], names)) return null;
+  const raw =
+    draft.next_topic === null
+      ? ''
+      : clean(draft.next_topic, L.nextTopicMaxChars)
+          .replace(/[.!]+$/, '')
+          .trim();
+  const topic = raw === '' || raw.endsWith('?') || removed(raw) || isPersonalOpener(raw) ? null : raw;
+  const fresh = topic === null ? [opener] : [opener, topic];
+  if (
+    textsContainOtherVenture(
+      fresh,
+      ctx.otherVentureNames,
+      ctx.otherVentureCanaries,
+      ctx.otherVentureMemberNames ?? [],
+    )
+  ) {
+    return null;
+  }
+  return { nextOpener: opener, nextTopic: topic };
+}
+
+/** A clause that frames a thread as pressure ("…, which cannot wait", "(urgent)", "blocks the go-to-market strategy"). */
+const PRESSURE = new RegExp(
+  String.raw`\b(?:cannot wait|can'?t wait|urgent(?:ly)?(?! care)|overdue|asap|as soon as possible|right away|immediately|critical(?:ly)?|must be (?:resolved|settled|answered|done) (?:now|first|before)|blocks? (?:everything|all|the (?:whole|entire)? ?(?:go-to-market|launch|plan|strategy|venture|progress))|blocking (?:everything|all progress|the (?:launch|go-to-market|plan|strategy)))\b`,
+  'i',
+);
+
+/**
+ * `text` without the clauses that frame it as pressure ({@link PRESSURE}): the threads a notebook keeps are what to help
+ * with, never an agenda to push (production, 2026-11-07: the digest wrote the open unknowns as blocking the
+ * go-to-market plan and unable to wait, and the call came back to them every turn). Clauses are cut at commas, semicolons, dashes and
+ * brackets; a sentence that is nothing but pressure goes whole. '' when nothing is left.
+ */
+export function withoutPressure(text: string): string {
+  if (!PRESSURE.test(text.replace(/[‘’ʼ]/g, "'"))) return text;
+  const kept = sentencesOf(text)
+    .map((sentence) => {
+      const parts = sentence.split(/(?=[,;(—–])|(?<=[)])|\s(?=-\s)|\s(?=and (?:which|that|it|they)\b)/u);
+      const clean = parts.filter((part) => !PRESSURE.test(part.replace(/[‘’ʼ]/g, "'"))).join('');
+      return clean
+        .replace(/\(\s*\)/g, '')
+        .replace(/\s+([.!?…])/gu, '$1')
+        .replace(/[\s,;:—–-]+([.!?…]?)$/u, '$1')
+        .trim();
+    })
+    .filter((sentence) => /[\p{L}\p{N}]/u.test(sentence))
+    .map((sentence) => (/[.!?…]$/u.test(sentence) ? sentence : `${sentence}.`));
+  return kept.join(' ');
+}
+
+/**
  * The threads a conversation raised that the founder did not take up ({@link untakenThread}): what it opened with;
  * each question the vEIR asked that no later founder message took up (the last answer's question had no reply yet,
  * so it is not counted); and the previous notebook's thread when it was drawn from an earlier conversation (or a
@@ -379,6 +500,8 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     identityRewrites: 0,
     untakenOpenerDropped: 0,
     personalOpenerDropped: 0,
+    judgmentalDropped: 0,
+    pressureRemoved: 0,
   };
   const identity = {
     personaName: ctx.personaName,
@@ -393,6 +516,13 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     const rewrite = rewriteIdentity(truncate(plain, max + IDENTITY_MARGIN_CHARS), identity);
     stats.identityRewrites += rewrite.findings.length;
     return truncate(rewrite.text, max);
+  };
+  // A thread kept is what to help with, never pressure (production, 2026-11-07: open unknowns written as blocking the
+  // go-to-market plan and unable to wait).
+  const calm = (text: string): string => {
+    const out = withoutPressure(text);
+    if (out !== text) stats.pressureRemoved += 1;
+    return out;
   };
   const suppressed = (ctx.suppressed ?? []).map((s) => s.trim()).filter((s) => s !== '');
   const isCommonWord = (word: string): boolean => COMMON_WORDS.has(word);
@@ -424,10 +554,15 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
   const title = titleText(clean(draft.title, L.titleMaxChars * 2), L.titleMaxChars);
   if (title !== '') fresh.push(title);
 
-  const uniqueTexts = (values: readonly string[], max: number, maxChars: number): string[] => {
+  const uniqueTexts = (
+    values: readonly string[],
+    max: number,
+    maxChars: number,
+    plain = (text: string): string => text,
+  ): string[] => {
     const out: string[] = [];
     for (const value of values) {
-      const text = clean(value, maxChars);
+      const text = plain(clean(value, maxChars));
       if (text === '' || out.some((o) => isNearDuplicate(o, text))) continue;
       out.push(text);
     }
@@ -441,10 +576,15 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     digestCommitments.push({ text, due: isIsoDate(due) ? due : null });
   }
   const digest: ConversationDigest = {
-    summary: clean(draft.digest.summary, L.digestSummaryMaxChars),
+    summary: calm(clean(draft.digest.summary, L.digestSummaryMaxChars)),
     topics: uniqueTexts(draft.digest.topics, L.topicsMax, L.topicMaxChars),
     commitments: digestCommitments.slice(0, L.digestCommitmentsMax),
-    openQuestions: uniqueTexts(draft.digest.open_questions, L.digestOpenQuestionsMax, L.openQuestionMaxChars),
+    openQuestions: uniqueTexts(
+      draft.digest.open_questions,
+      L.digestOpenQuestionsMax,
+      L.openQuestionMaxChars,
+      calm,
+    ),
     generatedAt: ctx.now,
   };
   fresh.push(
@@ -465,8 +605,14 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     const out: NotebookEntry[] = kept.map((e) => ({ ...e }));
     stats.pinnedKept += out.length;
     for (const note of proposed) {
-      const text = clean(note.text, L.entryMaxChars);
+      const cleaned = clean(note.text, L.entryMaxChars);
+      const text = prefix === 'oq' ? calm(cleaned) : cleaned;
       if (text === '') continue;
+      // How the founder likes to work, never a verdict on them (production, 2026-11-07); a person's own note stays.
+      if (prefix === 'fp' && isJudgmentalNote(text) && !kept.some((e) => e.id === note.id)) {
+        stats.judgmentalDropped += 1;
+        continue;
+      }
       const key = textKey(text);
       // A person's edit is final: the model may neither reword it (same id) nor restate it. Echoing it
       // unchanged is expected and not counted.
@@ -603,11 +749,13 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
   if (pinned.has(NOTEBOOK_SUMMARY_PIN) && previous !== null) {
     summary = previous.summary;
   } else {
-    const kept = sentencesOf(clean(draft.notebook.summary, L.notebookSummaryMaxChars * 2)).filter((s) => {
-      if (!mentionsSuppressed(s)) return true;
-      stats.suppressedDropped += 1;
-      return false;
-    });
+    const kept = sentencesOf(calm(clean(draft.notebook.summary, L.notebookSummaryMaxChars * 2))).filter(
+      (s) => {
+        if (!mentionsSuppressed(s)) return true;
+        stats.suppressedDropped += 1;
+        return false;
+      },
+    );
     summary = truncate(kept.join(' '), L.notebookSummaryMaxChars);
     if (summary !== '' && summary !== previous?.summary) fresh.push(summary);
   }

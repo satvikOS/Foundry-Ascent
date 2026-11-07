@@ -50,7 +50,7 @@ import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
 import { plainInvitation } from '../orchestrator/continuity-prompt.js';
 import { chooseOpener } from '../orchestrator/continuity.js';
-import { type DistillService } from './distill.js';
+import { OPENER_MODEL_TIMEOUT_MS, openerWithin, type DistillService } from './distill.js';
 import { mentionsEir, personaNameClaimsEir, veirEirName } from '../internal/eir-names.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
@@ -375,7 +375,7 @@ export function callIntro(args: {
         : `${hi}, I'm ${args.personaName}, ${args.eirFirstName}'s digital twin.`;
   const next =
     args.opener ??
-    (args.conversationStarted ? 'Where would you like to pick up?' : 'What would you like to work on?');
+    (args.conversationStarted ? 'Where can I help you pick up?' : 'What can I help you work on?');
   return { text: `${hello} ${next}`, carriesOpener: args.opener !== null };
 }
 
@@ -520,7 +520,7 @@ export function createCallsService(
   kit: Kit,
   directory: DirectoryCache,
   keys: PlatformKeyCache,
-  distill: Pick<DistillService, 'afterCallEnd'>,
+  distill: Pick<DistillService, 'afterCallEnd' | 'writeOpener'>,
   face: FaceHooks,
   turnContexts?: TurnContextKeyring,
 ): CallsService {
@@ -697,9 +697,11 @@ export function createCallsService(
    * the vEIR's history holds the greeting it gave: its first reply never greets again or re-asks it (wave 7;
    * production: "Hi Mina…" then "Hello Mina, nice to hear from you."). An intro that does not say the opener (only
    * "what would you like to work on?") never replaces a substantive one: the conversation keeps the opener. Chosen,
-   * phrased and kept in one transaction, before the call responds. Drawn from the same conversation as the opener it
-   * says, so deleting that conversation erases this copy too. Unchanged for a temporary conversation or one already
-   * under way; on any failure the stored opener stands and the call still opens.
+   * phrased and kept in one transaction, before the call responds; when the notebook leaves threads open and has no
+   * line of the model's for them, the model writes one first, waited for up to `OPENER_WAIT_MS` (`writeOpener`). Drawn
+   * from the same conversation as the opener it says, so deleting that conversation erases this copy too. Unchanged
+   * for a temporary conversation or one already under way; on any failure the stored opener stands and the call still
+   * opens.
    */
   async function openCall(ctx: RequestContext, started: Started): Promise<SpeechUnit | null> {
     try {
@@ -710,8 +712,8 @@ export function createCallsService(
       if (started.standard && !started.conversationStarted) {
         try {
           const team = await directory.addressees(ctx.tenantId, started.ventureId);
-          words = await kit.inRequest(ctx, async ({ tx }) => {
-            const { opener: chosen, pastReplies } = await chooseOpener(tx, {
+          const choose = (tx: Parameters<typeof chooseOpener>[0]): ReturnType<typeof chooseOpener> =>
+            chooseOpener(tx, {
               ventureId: started.ventureId,
               persona: { id: started.personaId, name: started.personaName },
               principalId: ctx.principalId,
@@ -724,19 +726,54 @@ export function createCallsService(
               sessionId: started.call.sessionId,
               team,
             });
+          const keep = async (
+            tx: Parameters<typeof chooseOpener>[0],
+            { opener: chosen, pastReplies }: Awaited<ReturnType<typeof chooseOpener>>,
+          ): Promise<CallGreeting | null> => {
             const opened: Started = { ...started, opener: chosen?.text ?? null, pastReplies };
             const intro = introWords(opened, guards);
-            const keep = openerKept(intro, opened.opener);
-            if (keep === started.opener) return intro;
+            const kept = openerKept(intro, opened.opener);
+            if (kept === started.opener) return intro;
             const stored = await sessionsRepo.setSessionOpener(tx, {
               sessionId: started.call.sessionId,
-              opener: keep,
+              opener: kept,
               sourceSessionId: chosen?.sourceSessionId ?? null,
               byPerson: chosen?.byPerson ?? false,
             });
             // Someone spoke in the conversation meanwhile: the stored opener stands.
             return stored ? intro : introWords(started, guards);
+          };
+          const first = await kit.inRequest(ctx, async ({ tx }) => {
+            const chosen = await choose(tx);
+            return chosen.missing === null
+              ? { chosen, missing: null, words: await keep(tx, chosen) }
+              : { chosen, missing: chosen.missing, words: null };
           });
+          if (first.missing === null) {
+            words = first.words;
+          } else {
+            // The notebook leaves threads open and has no line of the model's for them (production, 2026-11-07: "Nice to
+            // see you. What feels most pressing right now?"): the model writes one now, within what the call's voice
+            // takes to come up; a line later than that opens the next call.
+            const written = await openerWithin(
+              kit,
+              distill.writeOpener({
+                tenantId: ctx.tenantId,
+                ventureId: started.ventureId,
+                personaId: started.personaId,
+                principalId: ctx.principalId,
+                requestId: ctx.requestId,
+                sourceSessionId: first.missing.sourceSessionId,
+                lastOpener: first.missing.lastOpener,
+                leftAside: first.missing.leftAside,
+                replace: true,
+                timeoutMs: OPENER_MODEL_TIMEOUT_MS,
+              }),
+            );
+            words = await kit.inRequest(ctx, async ({ tx }) =>
+              keep(tx, written === 'written' ? await choose(tx) : first.chosen),
+            );
+          }
         } catch (err) {
           logger.warn('call.opener_refresh_failed', {
             requestId: ctx.requestId,

@@ -2,7 +2,18 @@
 
 * repeated_question: the coach re-asks a question it asked before, unless the student asked for a repeat or said
   they lost the reply. Paraphrase-tolerant: two questions match on word overlap or on their stemmed content words
-  ("Who is your customer right now?" and "So who exactly is the customer you are selling to?");
+  ("Who is your customer right now?" and "So who exactly is the customer you are selling to?"), or, longer and
+  reworded, on three shared content words two of which they say together (the product's reading, validators/social.ts
+  ``reasksQuestion``: production, 2026-11-07, a question about the advisor and the device class came back two replies
+  later in other words);
+* reasked_after_unknown (high): after the student says they do not know, did not do it, have no answer yet or hands
+  the work back ("you tell me"), the coach asks again on the subject of a question it asked before (two shared content
+  words said together, or 40% of them: the product's strict reading);
+* question_only: a reply that only asks (no statement of eight words or more, no list) where the student brought
+  something to answer: a goal, a request, a report or no answer (never a hello, thanks or a goodbye);
+* judgmental_profile_note (high): a note in the notebook's founder profile after the run that judges the founder
+  (what they fail to do, how vague they are, "even when pressed") instead of how they like to work (the product's
+  distill/judgment.ts);
 * semantic_repetition: a substantive sentence that largely repeats an earlier coach sentence (4-gram overlap, or the
   same stemmed content words in another order);
 * canned_phrase: a stock opener ("Great question", "Absolutely!") or a watch-list phrase used in three or more
@@ -47,6 +58,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import Any
 
 CRITICAL, HIGH, MEDIUM, LOW = "critical", "high", "medium", "low"
@@ -83,6 +95,36 @@ PREAMBLE_OPENERS = re.compile(
     r"^\s*(it sounds like\b|i see\b|here'?s (my|the) (honest |quick |short )?(read|take)\b|"
     r"i understand (you'?re|that you'?re|you are) asking\b|i remember\b|good to (talk|chat|hear from you) again\b|"
     r"great[!,.\u2014]|perfect[!,.\u2014]|absolutely[!,.\u2014]|got it[!,.\u2014])",
+    re.IGNORECASE,
+)
+#: The student has no answer yet or hands the work back (the product's ``founderMoves`` ``unknown`` and ``help``, in short).
+NO_ANSWER = re.compile(
+    r"(?:^|[.!,;]\s*)(?:(?:no|nope|honestly|um+|uh+|well|so|sorry)[,.]?\s+)*(?:i (?:really |honestly |just )?"
+    r"(?:don'?t|do not) know\b(?! (?:if|whether|that)\b)|idk\b|dunno\b|no idea\b|no clue\b|not sure\b(?![^?]*\?)|not yet\b|"
+    r"nothing yet\b|(?:i|we) (?:didn'?t|did not|haven'?t|have not|never) (?:\w+ ){0,2}?(?:do|done|did|ask|asked|book|"
+    r"booked|call|called|talk|talked|try|tried|hear|heard|check|checked|follow|followed|reach|reached|meet|met|send|"
+    r"sent)\b|(?:they|he|she) (?:didn'?t|did not|never) (?:say|tell|mention|specify)\b|you tell me\b|just tell me\b)",
+    re.IGNORECASE,
+)
+#: A message that is only social: a hello, thanks or a goodbye (a reply to it may be a question alone).
+SOCIAL_ONLY = re.compile(
+    r"^\s*(?:hi|hey|hello|hiya|good (?:morning|afternoon|evening)|thanks?(?: you)?(?: so much)?|thank you|cheers|ok(?:ay)?|"
+    r"bye|goodbye|see you|talk soon)\b[\s,.!]*(?:\w+[\s,.!]*){0,3}$",
+    re.IGNORECASE,
+)
+#: A line in character in a role-play ("**Investor:** ...", a quoted line): its question is the counterpart's.
+IN_ROLE = re.compile(r"^\s*(?:\*\*|__)?[A-Z][\w'.-]*(?: [A-Za-z][\w'.-]*){0,4}:(?:\*\*|__)?\s|^\s*[\"“]")
+#: A founder-profile note that judges the founder (the product's distill/judgment.ts ``JUDGMENTAL``).
+JUDGMENTAL = re.compile(
+    r"\b(?:vague(?:ly)?|evasive(?:ly)?|deflects?|deflecting|unprepared|disorgani[sz]ed|careless(?:ly)?|lazy|"
+    r"defensive(?:ly)?|superficial(?:ly)?|sloppy|unfocused|unreliable|uncooperative|dismissive(?:ly)?|stubborn(?:ly)?|"
+    r"scattered|clueless|naive(?:ly)?|unrealistic(?:ally)?|lacks? (?:clarity|focus|depth|rigou?r|follow-through|"
+    r"preparation|understanding|initiative))\b"
+    r"|\b(?:does ?n[o']t|did ?n[o']t|never|rarely|seldom|fails? to|failed to|unable to|struggles? to|can'?t|cannot|"
+    r"won'?t|refuses? to|avoids?|neglects? to)\s+(?:\w+\s+){0,2}?(?:extract|report|follow (?:up|through)|prepare|"
+    r"answer|engage|share|commit|listen|focus|deliver|retain|recall|remember|explain|articulate|specify|complete|"
+    r"finish|take notes|think (?:through|ahead)|do (?:the|their|his|her) homework|learn)\b"
+    r"|\beven when (?:pressed|asked|prompted|pushed|challenged)\b",
     re.IGNORECASE,
 )
 #: Words of a reply's opening compared across one run's replies (the opener census independent of any phrase list).
@@ -287,10 +329,72 @@ def _question_clauses(text: str) -> list[str]:
     return [c for c in clauses if _words(c) and " ".join(_words(c)) not in _TAG_QUESTIONS]
 
 
+#: Words a question's subject is read without (the product's stop words include them): "what did the advisor say"
+#: and "which class did the advisor give" are about the same advisor whatever the question word.
+_GLUE = frozenset(
+    [
+        "what",
+        "which",
+        "how",
+        "where",
+        "when",
+        "why",
+        "who",
+        "whom",
+        "whether",
+        "through",
+        "into",
+        "under",
+        "over",
+        "than",
+        "but",
+    ]
+)
+
+
+def _subject_seq(text: str) -> list[str]:
+    """The stemmed words a question is about, in order (for the pairs it says together)."""
+    words = (w.strip("'") for w in _words(text))
+    return [_stem(w) for w in words if w not in _STOP and w not in _GLUE and len(w) > 1]
+
+
+def _pairs(text: str) -> set[tuple[str, str]]:
+    return set(pairwise(_subject_seq(text)))
+
+
 def _same_question(a: list[str], b: list[str], ca: set[str], cb: set[str]) -> bool:
     if _jaccard(a, b) >= 0.6:
         return True
     return min(len(ca), len(cb)) >= 2 and _jaccard(ca, cb) >= 0.6
+
+
+def _same_subject(qa: str, qb: str, *, strict: bool = False) -> bool:
+    """The product's reading of a question asked again (validators/social.ts ``reasksQuestion``): three shared content
+    words or more and 60% of the shorter, or three and 30% with two said together in both; ``strict`` (after the student
+    had no answer): two shared words said together, or 40%."""
+    ca, cb = set(_subject_seq(qa)), set(_subject_seq(qb))
+    shared = len(ca & cb)
+    if not ca or not cb:
+        return False
+    share = shared / min(len(ca), len(cb))
+    pair = bool(_pairs(qa) & _pairs(qb))
+    if shared >= 3 and (share >= 0.6 or (share >= 0.3 and pair)):
+        return True
+    return strict and shared >= 2 and (pair or share >= 0.4)
+
+
+def judgmental_notes(notes: Iterable[str]) -> list[str]:
+    """Founder-profile notes that judge the founder (see ``JUDGMENTAL``)."""
+    return [n for n in notes if JUDGMENTAL.search(n.translate(_APOSTROPHES))]
+
+
+def question_only(coach: str) -> bool:
+    """A reply that asks and says nothing of substance: no statement of eight words or more and no list (a line in
+    character in a role-play is the counterpart's, never counted)."""
+    if "?" not in coach or IN_ROLE.search(coach) or len(_ANY_ITEM.findall(coach)) >= 2:
+        return False
+    statements = [s for s in _SENTENCES.split(coach) if s.strip() and not s.strip().endswith("?")]
+    return not any(len(_words(s)) >= 8 for s in statements)
 
 
 def _jaccard(a: Iterable[Any], b: Iterable[Any]) -> float:
@@ -390,6 +494,7 @@ def run_checks(
     known_sources: Sequence[str] = (),
     neighbour: Mapping[str, Any] | None = None,
     student_name: str = "",
+    profile_notes: Sequence[str] = (),
 ) -> CheckResult:
     result = CheckResult()
     first_name = _first_name(student_name)
@@ -406,15 +511,35 @@ def run_checks(
             continue
         result.replies += 1
         repeat_ok = bool(REPEAT_REQUEST.search(student))
-        # repeated questions
+        # repeated questions; after a student with no answer, any question back on the same subject
+        no_answer = bool(NO_ANSWER.search(student))
+        reasked = False
         for q in _questions(coach):
             words, content = _words(q), _content(q)
             for at, earlier, earlier_content in asked:
-                if at != t.at and not repeat_ok and _same_question(words, earlier, content, earlier_content):
+                if at == t.at or repeat_ok:
+                    continue
+                text = " ".join(earlier)
+                if _same_question(words, earlier, content, earlier_content) or _same_subject(q, text):
                     result.findings.append(Finding("repeated_question", MEDIUM, t.at))
                     result.private_matches.append({"code": "repeated_question", "at": t.at, "text": q})
                     break
+            if (
+                no_answer
+                and not reasked
+                and any(
+                    at != t.at and _same_subject(q, " ".join(earlier), strict=True)
+                    for at, earlier, _ in asked
+                )
+            ):
+                reasked = True
+                result.findings.append(Finding("reasked_after_unknown", HIGH, t.at))
+                result.private_matches.append({"code": "reasked_after_unknown", "at": t.at, "text": q})
             asked.append((t.at, words, content))
+        # a reply that only asks, where the student brought something to answer
+        if student.strip() and not SOCIAL_ONLY.search(student) and question_only(coach):
+            result.findings.append(Finding("question_only", MEDIUM, t.at))
+            result.private_matches.append({"code": "question_only", "at": t.at, "text": coach[:200]})
         # semantic repetition of substantive sentences (same 4-grams, or the same content reordered)
         sentences = [s for s in _SENTENCES.split(coach) if len(_words(s)) >= 8]
         for sentence in sentences:
@@ -514,6 +639,9 @@ def run_checks(
             result.private_matches.append({"code": "canned_phrase_repeated", "at": "*", "text": phrase})
     if result.stacked_replies >= 2:
         result.findings.append(Finding("stacked_questions", MEDIUM, "*"))
+    for note in judgmental_notes(profile_notes):
+        result.findings.append(Finding("judgmental_profile_note", HIGH, "*"))
+        result.private_matches.append({"code": "judgmental_profile_note", "at": "*", "text": note[:200]})
     result.named_replies = named
     result.excused = excused
     if result.replies >= 4 and named * 4 > result.replies:

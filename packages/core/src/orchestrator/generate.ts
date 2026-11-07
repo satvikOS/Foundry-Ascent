@@ -282,9 +282,15 @@ export interface GenerateArgs {
    * The conversation's earlier replies (and opener) a reply never says again, or null when it may (the founder asked to
    * hear it again, or sincerely asked who or what the coach is). A whole reply that says one again is written once more
    * with what was already said (`repeat_regenerated`): left out by the validator alone, the sentences around it would
-   * lean on a hole. `keepReferrals`: a flagged turn keeps its referral (validators/social.ts `isProtectedLine`).
+   * lean on a hole. `keepReferrals`: a flagged turn keeps its referral (validators/social.ts `isProtectedLine`);
+   * `strictQuestions`: the founder said they do not know, so a question on the same subject counts as asked again
+   * (validators/social.ts `stuckOn`).
    */
-  readonly alreadySaid?: { readonly text: string; readonly keepReferrals: boolean } | null;
+  readonly alreadySaid?: {
+    readonly text: string;
+    readonly keepReferrals: boolean;
+    readonly strictQuestions: boolean;
+  } | null;
 }
 
 export interface StreamArgs extends GenerateArgs {
@@ -407,6 +413,7 @@ export async function generateWhole(
       if (round === 0 && a.alreadySaid && a.signal?.aborted !== true) {
         const repeated = withoutRepeats(result.value.answer, a.alreadySaid.text, {
           keepReferrals: a.alreadySaid.keepReferrals,
+          strictQuestions: a.alreadySaid.strictQuestions,
         });
         // A sign-off said again is only left out (the validator does it): never worth writing the reply again for.
         const substance = repeated.removed.filter((sentence) => !signsOff(sentence));

@@ -8,17 +8,32 @@ import { describe, expect, it } from 'vitest';
 
 import { toStrictJsonSchema, type JsonObject } from '../gateway/json-schema.js';
 import { expectLinearTime } from '../testing/linear-time.js';
-import { MAX_DISTILL_TURNS, buildDistillPrompt, type DistillPromptInput } from './prompt.js';
+import { isJudgmentalNote } from './judgment.js';
+import {
+  MAX_DISTILL_TURNS,
+  buildDistillPrompt,
+  buildOpenerPrompt,
+  type DistillPromptInput,
+} from './prompt.js';
 import {
   NOTEBOOK_OPENER_PIN,
   NOTEBOOK_SUMMARY_PIN,
   isPersonalOpener,
   namesAThread,
+  notebookThreads,
   sanitizeDistill,
+  sanitizeOpener,
+  withoutPressure,
   type DistillSanitizeContext,
+  type OpenerSanitizeContext,
   type PreviousNotebook,
 } from './sanitize.js';
-import { DistillDraft, type DistillDraft as DistillDraftT, type LessonCandidate } from './schema.js';
+import {
+  DistillDraft,
+  NotebookOpenerDraft,
+  type DistillDraft as DistillDraftT,
+  type LessonCandidate,
+} from './schema.js';
 import { isNearDuplicate, jaccardSimilarity, repeatsNote } from './similarity.js';
 
 const SESSION = '00000000-0000-4000-8000-0000000000aa';
@@ -1349,5 +1364,187 @@ describe('a mentor under its own name (audit P0-3: Thomas, ADR-0021)', () => {
     expect(system).toContain('Vary the greeting, the wording and the shape every time: never those of');
     expect(system).toContain('"Want to carry on with…?"');
     expect(system).toContain('No dates or time words');
+  });
+});
+
+describe('no verdict on the founder and no pressure in the notes (production, 2026-11-07)', () => {
+  it('reads a note that judges the founder, and leaves how they like to work alone', () => {
+    for (const note of [
+      'Does not report specific learnings from expert sessions; stays vague even when pressed',
+      'Fails to prepare for advisor meetings',
+      'Evasive about numbers',
+      'Struggles to articulate the customer',
+    ]) {
+      expect(isJudgmentalNote(note), note).toBe(true);
+    }
+    for (const note of [
+      'Prefers direct answers and actionable steps',
+      'Does not like long answers',
+      'Thinks in terms of shipping the product',
+      'Likes to see the arithmetic',
+    ]) {
+      expect(isJudgmentalNote(note), note).toBe(false);
+    }
+  });
+
+  it('never writes a judging profile note, and keeps one a person wrote', () => {
+    const d = draft();
+    d.notebook.founder_profile = [
+      { id: 'fp-1', text: 'Prefers short answers' },
+      { id: null, text: 'Summarises vaguely even when pressed about the advisor session' },
+    ];
+    const kept = sanitizeDistill(d, ctx());
+    expect(kept?.notebookDelta.founderProfile.map((e) => e.text)).toEqual(['Prefers short answers']);
+    expect(kept?.stats.judgmentalDropped).toBe(1);
+    const pinned = sanitizeDistill(d, {
+      ...ctx({
+        previousNotebook: {
+          ...PREVIOUS,
+          founderProfile: [entry('fp-9', 'Rarely follows up with advisors')],
+        },
+      }),
+      pinnedEntryIds: ['fp-9'],
+    });
+    expect(pinned?.notebookDelta.founderProfile.map((e) => e.text)).toContain(
+      'Rarely follows up with advisors',
+    );
+  });
+
+  it('cuts the pressure out of summaries and open questions, keeping the thread', () => {
+    expect(withoutPressure('Which device class applies, which blocks the go-to-market plan.')).toBe(
+      'Which device class applies.',
+    );
+    expect(withoutPressure('Which device class applies.')).toBe('Which device class applies.');
+    expect(withoutPressure('Which device class applies (this cannot wait).')).toBe(
+      'Which device class applies.',
+    );
+    expect(withoutPressure('Who owns the budget, urgently.')).toBe('Who owns the budget.');
+    expect(withoutPressure('These unknowns cannot wait. The founder met an advisor.')).toBe(
+      'The founder met an advisor.',
+    );
+    const d = draft();
+    d.digest.summary = 'Maya asked how to price the pilot. The open questions are urgent and cannot wait.';
+    d.digest.open_questions = ['Who holds the budget? This cannot wait.'];
+    d.notebook.open_questions = [{ id: null, text: 'Will libraries share occupancy data (urgent)' }];
+    const out = sanitizeDistill(d, ctx());
+    expect(out?.digest.summary).toBe('Maya asked how to price the pilot.');
+    expect(out?.digest.openQuestions).toEqual(['Who holds the budget?']);
+    // Without its pressure it is the entry the notebook already had, kept as it was.
+    expect(out?.notebookDelta.openQuestions.map((q) => q.text)).toEqual([
+      'Will libraries share occupancy data?',
+    ]);
+    expect(out?.stats.pressureRemoved).toBeGreaterThanOrEqual(3);
+  });
+
+  it('asks the model for neither, and for an opener that offers help', () => {
+    const { system } = buildDistillPrompt({
+      personaName: 'Thomas',
+      mentor: true,
+      venture: { name: 'QuietQuad', stage: 'discovery', domain: 'software', currentGoal: null },
+      turns: [{ founderText: 'Hi', answer: 'Hello.' }],
+      today: '2026-11-07',
+    });
+    expect(system).toContain(
+      'never a judgement of them (what they fail to do, how vague, slow or unprepared they seem)',
+    );
+    expect(system).toContain('never as pressure ("urgent", "cannot wait", "blocks everything")');
+    expect(system).toContain(
+      'offers concrete help with it (to walk them through it, prepare it with them, draft it)',
+    );
+  });
+});
+
+describe('an opener written from the notebook alone (production, 2026-11-07)', () => {
+  // A notebook distilled before the opener rule held: open threads, no opener.
+  const NOTEBOOK: PreviousNotebook = {
+    summary: 'Noor is bringing a pressure-sensing insole to foot clinics.',
+    founderProfile: [entry('fp-1', 'Prefers direct answers and actionable steps')],
+    commitments: [
+      commitment(
+        'cm-1',
+        'Follow up with the clinical advisor on device class and the billing route',
+        '2026-11-01',
+      ),
+    ],
+    openQuestions: [entry('oq-1', 'Who in a clinic owns the budget for monitoring tools')],
+    lastAdvice: [],
+    nextOpener: null,
+  };
+  const opener = (overrides: Partial<OpenerSanitizeContext> = {}): OpenerSanitizeContext => ({
+    personaName: 'Thomas',
+    eirNames: ['Corin Halvorsen'],
+    mentor: true,
+    notebook: NOTEBOOK,
+    names: ['Noor'],
+    otherVentureNames: ['BenchTally'],
+    otherVentureCanaries: ['CANARY::benchtally::R4T8Z1HC'],
+    ...overrides,
+  });
+
+  it('lists the threads a notebook leaves open, commitments first', () => {
+    expect(notebookThreads(NOTEBOOK)).toEqual([
+      'Follow up with the clinical advisor on device class and the billing route',
+      'Who in a clinic owns the budget for monitoring tools',
+    ]);
+    expect(notebookThreads({ ...NOTEBOOK, commitments: [], openQuestions: [] })).toEqual([]);
+  });
+
+  it('builds a prompt with the open threads only, as untrusted data', () => {
+    const { system, messages } = buildOpenerPrompt({
+      personaName: 'Thomas',
+      mentor: true,
+      venture: { name: 'Stepwise', stage: 'business_model', domain: 'medtech', currentGoal: null },
+      notebook: {
+        ...NOTEBOOK,
+        commitments: [...NOTEBOOK.commitments, commitment('cm-2', 'Old step', null, 'done')],
+        updatedAt: NOW,
+      },
+      lastOpener: 'Nice to see you. What feels most pressing right now?',
+      today: '2026-11-07',
+    });
+    expect(system).toContain('You are Thomas, an AI venture mentor');
+    expect(system).toContain('offers concrete help with it');
+    expect(system).toContain('never a bare question');
+    const user = messages[0]?.content ?? '';
+    expect(user).toContain('device class and the billing route');
+    expect(user).toContain('past_due="true"');
+    expect(user).not.toContain('Old step');
+    expect(user).not.toContain('Prefers direct answers');
+    expect(user).toContain('<opened_with note="what your last conversation with them opened with">');
+    expect(toStrictJsonSchema(NotebookOpenerDraft)).toBeTruthy();
+  });
+
+  it('keeps a line that names an open thread and offers help', () => {
+    expect(
+      sanitizeOpener(
+        {
+          next_opener:
+            'Good to see you. I can help you prep the follow-up with your clinical advisor on device class.',
+          next_topic: 'the advisor follow-up on device class.',
+        },
+        opener(),
+      ),
+    ).toEqual({
+      nextOpener:
+        'Good to see you. I can help you prep the follow-up with your clinical advisor on device class.',
+      nextTopic: 'the advisor follow-up on device class',
+    });
+  });
+
+  it('drops small talk, a line that names no thread, another venture and what a person removed', () => {
+    const line = (next_opener: string) => sanitizeOpener({ next_opener, next_topic: null }, opener());
+    expect(line('Good to see you. How has your week been?')).toBeNull();
+    expect(line('Welcome back. What would you like to work on?')).toBeNull();
+    expect(line('Good to see you. BenchTally did this too; want to compare device class notes?')).toBeNull();
+    expect(
+      sanitizeOpener(
+        {
+          next_opener: 'Hi again. Want help preparing the advisor follow-up on device class?',
+          next_topic: null,
+        },
+        opener({ suppressed: ['Want help preparing the advisor follow-up on device class'] }),
+      ),
+    ).toBeNull();
+    expect(sanitizeOpener({ next_opener: null, next_topic: null }, opener())).toBeNull();
   });
 });

@@ -192,9 +192,9 @@ def test_the_runner_plays_remembered_conversations_in_order_and_ends_each() -> N
         reserve=reserved.append,
         sleep=slept.append,
     )
-    assert [r.id for r in results] == ["AG-1-call", "AG-2-call", "AG-3-call"]
-    assert client.ended == ["s1", "s2", "s3"]
-    assert client.calls_ended == ["c-s1", "c-s2", "c-s3"]
+    assert [r.id for r in results] == ["AG-1-call", "AG-2-call", "AG-3-call", "AG-4-call"]
+    assert client.ended == ["s1", "s2", "s3", "s4"]
+    assert client.calls_ended == ["c-s1", "c-s2", "c-s3", "c-s4"]
     assert reserved == [len(c["turns"]) for c in suite["conversations"]]
     assert slept  # waits for each conversation's distillation
     assert results[0].notebook_before == {
@@ -205,6 +205,7 @@ def test_the_runner_plays_remembered_conversations_in_order_and_ends_each() -> N
         "commitments": [{"status": "open"}],
         "openQuestions": None,
         "summary": None,
+        "founderProfile": None,
     }
     assert results[1].notebook_before["version"] == 2
     assert results[0].public()["notebookBefore"] == {"version": 1, "hasNextTopic": True, "openCommitments": 1}
@@ -233,6 +234,8 @@ def test_the_scenarios_cover_every_requested_founder_move() -> None:
         "make a lot of money",
         "My cofounder wants to quit his job",
         "I met the advisor last week",
+        "I want to get the sleeve to market.",
+        "I don't know, I didn't do that.",
     ):
         assert any(needed in line for line in lines), needed
 
@@ -260,3 +263,47 @@ def test_the_same_question_in_other_words_and_booking_what_already_happened() ->
     ]
     grade_conversation(result, suite["conversations"][2])
     assert "t3:stale_commitment" in result.failures
+
+
+def test_the_owners_call_of_2026_11_07_no_answer_is_never_asked_again() -> None:
+    """Synthetic wording, the call's shape: after "I don't know, I didn't do that", a question back on the subject of an
+    earlier one fails; teaching what the answer most likely is passes; a bare opener over open threads fails; a profile
+    note that judges the founder fails."""
+    unknown = {"topic": "agenda", "help": True, "unknown": True}
+    first = "What did the advisor tell you about the device class?"
+    again, _ = check_reply("Fair. Did the advisor mention the class at all?", unknown, 3, [first])
+    assert again.reask_after_unknown
+    taught, _ = check_reply(
+        "That's normal at this stage. A sleeve that only records swelling usually sits in a lower-risk class. "
+        "Ask the advisor for the class and the closest cleared devices; I can draft the email.",
+        unknown,
+        3,
+        [first],
+    )
+    assert not taught.reask_after_unknown
+    assert taught.substance
+    suite = load()
+    ag4 = next(c for c in suite["conversations"] if c["id"] == "AG-4")
+    result = ConversationResult(
+        id="AG-4-call", channel="call", opener="Nice to see you. What feels most pressing right now?"
+    )
+    result.notebook_before = {"commitments": [{"status": "open"}], "openQuestions": []}
+    result.turns = [(t["say"], first) for t in ag4["turns"]]
+    result.judgmental_notes = 1
+    grade_conversation(result, ag4)
+    assert "opener:no_thread_or_help" in result.failures
+    assert "t3:reask_after_unknown" in result.failures
+    assert "notebook:judgmental_profile_note" in result.failures
+    numbers = summarize([result])
+    assert numbers["all"]["reasksAfterUnknown"] >= 1
+    assert numbers["all"]["openersWithoutThreadOrHelp"] == 1
+    assert numbers["all"]["judgmentalProfileNotes"] == 1
+    helpful = ConversationResult(
+        id="AG-4-chat",
+        channel="chat",
+        opener="Good to see you. I can help you prepare the advisor follow-up on the sleeve's device class.",
+    )
+    helpful.notebook_before = result.notebook_before
+    helpful.turns = []
+    grade_conversation(helpful, ag4)
+    assert "opener:no_thread_or_help" not in helpful.failures

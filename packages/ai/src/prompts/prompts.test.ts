@@ -469,8 +469,12 @@ describe('live pilot 42099643194 prompt regressions', () => {
     expect(prompt).toContain(
       'never take a message to them. Decline in one sentence and help with their own case.',
     );
-    expect(prompt).toContain('no class, cost, timeline, terms or legal effect even when pressed');
-    expect(prompt).toContain('Say once who\n   can help and why, then help them prepare');
+    expect(prompt).toContain(
+      'no class, cost, timeline, terms or legal effect for their case even when pressed',
+    );
+    expect(prompt).toContain('Say once who can help and\n   why, then help them prepare');
+    // Production, 2026-11-07: how such things generally work is taught (hedged), never withheld.
+    expect(prompt).toContain('general education only (how it usually');
     const flagged = buildSystemPrompt({
       ...INPUT,
       policy: { riskCategories: ['ip_licensing'], groundingThreshold: 0.6 },

@@ -73,9 +73,11 @@ export function conversationCraftRules(channel: TurnChannel): string {
   // opener example's "How did the facilities call go?" as "last time" from a notebook item), so the rules describe
   // what to do and quote only what the founder might say.
   const lines = [
+    // Production, 2026-11-07: a returning founder heard "Nice to see you. What feels most pressing right now?".
     `- Opening: greet briefly, then pick up the most specific thing from "${WHERE_YOU_LEFT_OFF_HEADING}" in your own`,
-    '  words (what you were on, how their plan went). Never open the way the last conversation did; if they start',
-    '  elsewhere, follow. After your own opener, never repeat its question; if it said hi, never greet again.',
+    '  words (what you were on, how their plan went) and offer help with it. Never open the way the last',
+    '  conversation did; if they start elsewhere, follow. After your own opener, never repeat its question; if it',
+    '  said hi, never greet again.',
     '- "Do you remember…?": answer only from that section or a dated <conversation> in your notes. Notebook lines and',
     '  venture facts are older notes, never "last time". With nothing there, say so; never invent a past conversation.',
     // Live pilot 42099643194: a founder with 70% of 200 sales in two sizes was sent to run interviews about sizes; 500
@@ -85,9 +87,16 @@ export function conversationCraftRules(channel: TurnChannel): string {
     '  reasoned range. Ask a question only when its answer would change your advice. Act at once on what they say',
     '  about their time, mood or how they want answers (short, yes/no), and keep to it. Their news comes first.',
     // Production, 2026-10-20: "You tell me" twice and "help me prepare for the pitch" got the same question back
-    // five replies in a row; the doctrine's "one sharp question at a time" was read as "only questions".
-    '- Asked for help or stuck ("you tell me", "I don\'t know"): do the work. Give the thing itself (a draft, options,',
-    '  an example, first steps), then check it fits; never hand their question back.',
+    // five replies in a row; the doctrine's "one sharp question at a time" was read as "only questions". Production,
+    // 2026-11-07: a founder with no answer ("I didn't do that") got the first question again, in other words.
+    '- Asked for help, stuck or with no answer ("you tell me", "I don\'t know", "not yet", a vague reply): do the work.',
+    '  Give the thing itself (a draft, options, first steps), or what the answer most likely is and the fastest way to',
+    '  find out, without judgement; never ask it again in any words, never hand it back.',
+    // Production, 2026-11-07: a goal of bringing the product to market got a request to walk the coach through where
+    // they were, and every reply after it was a question.
+    '- Teach and prepare: a goal or a step ahead of them gets how it usually works (the usual path, what the terms mean,',
+    '  what good looks like) and the prep itself (questions to ask, a script, a checklist). How such things generally',
+    '  work (device classes, reimbursement codes, approval committees) is yours to teach, hedged.',
     '- Never repeat yourself: no advice, paragraph or question already said in this conversation, the last one or',
     '  your greeting; a new message gets a new reply. Never re-ask what they answered or did not take up.',
     // Live pilot 42124259353: 32 replies stated figures nobody gave and 11 proposed made-up ones ("say $2 a month", "if
@@ -142,9 +151,12 @@ export function conversationCraftRules(channel: TurnChannel): string {
  * emotion.acknowledged: "before any advice").
  */
 export const SPOKEN_REGISTER =
-  'Write it as speech, not cut from a longer answer: short sentences with contractions, the answer first (when they ' +
+  // Production, 2026-11-07: three call replies in a row were a question each, the first sentence of each a long
+  // question the call could only say once it was written whole (each sentence is said whole or not at all).
+  'Write it as speech, not cut from a longer answer: short sentences with contractions, a short first sentence that ' +
+  'says something (never a question), the answer first (when they ' +
   'asked for something, most of the reply is that thing). Ask a follow-up only if its answer would materially ' +
   'change the next recommendation; a complete answer can end naturally without a question. Asked for help or advice ("help me…", "how do I…?"), your first ' +
   'sentence or two are the help itself (a concrete suggestion, a line they could say, two or three points or a first ' +
   'step; a feeling they name gets a word first) and the hand-back comes after it, about it: a question or an ' +
-  'invitation never takes its place.';
+  'invitation never takes its place. One teaching point and a next step beats a question.';

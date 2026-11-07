@@ -1,6 +1,7 @@
 import type { StudentProfile } from '@foundry/contracts';
 import {
   MAX_PROMPT_DIGESTS,
+  bringsOwnSubject,
   firstNameOf,
   isAboutThread,
   isNearDuplicate,
@@ -8,6 +9,8 @@ import {
   lastQuestionOf,
   mentions,
   namesAThread,
+  notebookThreads,
+  raisedIn,
   rewriteIdentity,
   sanitizePlainText,
   textsContainOtherVenture,
@@ -310,14 +313,53 @@ export function pastRepliesOf(leftOff: LeftOffData | null): string[] {
     .flatMap((c) => c.replies ?? []);
 }
 
-/** Open threads of the notebook the turn already loaded (open commitments and open questions). */
-export function leftOffThreads(continuity: PromptContinuity): LeftOffThreads | null {
+/**
+ * Open threads of the notebook the turn already loaded (open commitments and open questions), for "Where you left off",
+ * held to the rules the notes keep (prompts/messages.ts `buildMessages`): once the conversation is under way, a message
+ * with a subject of the founder's own gets none of them (`bringsOwnSubject`), and one the vEIR already raised in this
+ * conversation is marked so (`raisedIn`). Production, 2026-11-07: the notes left their agenda out of every turn of a
+ * call while this section still listed it, and the third reply asked the first one's question again. `turn`: the
+ * founder's message, what the vEIR said in this conversation (its replies and the opener) and whether it is under way;
+ * absent, every open thread is listed.
+ */
+export function leftOffThreads(
+  continuity: PromptContinuity,
+  turn?: {
+    readonly founderText: string;
+    readonly said: readonly (string | null | undefined)[];
+    readonly started: boolean;
+  },
+): LeftOffThreads | null {
   const nb = continuity.notebook ?? null;
   if (nb === null) return null;
+  if (turn !== undefined && turn.started && bringsOwnSubject(turn.founderText, continuity)) return null;
+  const commitments = nb.commitments
+    .filter((c) => c.status === 'open')
+    .map((c) => ({ text: c.text, due: c.due }));
+  const questions = nb.openQuestions.map((q) => q.text);
+  const said = turn?.said ?? [];
   return {
-    commitments: nb.commitments.filter((c) => c.status === 'open').map((c) => ({ text: c.text, due: c.due })),
-    questions: nb.openQuestions.map((q) => q.text),
+    commitments,
+    questions,
+    raised: [...commitments.map((c) => c.text), ...questions].filter((text) => raisedIn(text, said)),
   };
+}
+
+/**
+ * What a notebook lacks for an opener: a line the model wrote for this conversation, while it holds open threads (its
+ * line is missing, cannot be said, or was written before the person's latest conversation). The caller has the model
+ * write one (services/distill.ts `writeOpener`) and chooses again.
+ */
+export interface MissingOpener {
+  /** The person's latest conversation: the line is drawn from it (deleting it erases the line). */
+  readonly sourceSessionId: string;
+  /** What that conversation opened with: never said again. */
+  readonly lastOpener: string | null;
+  /**
+   * Threads the founder left aside, never opened on again: what that conversation opened with when they did not take it
+   * up, and the notebook's line and thread when that conversation never touched them (lab run 39780304879).
+   */
+  readonly leftAside: readonly string[];
 }
 
 /** The opening line of a new conversation, and where it came from (`coaching_sessions.opener` and its source). */
@@ -358,7 +400,10 @@ const TAKE_UP_EXCHANGES = 20;
  * teammate's plan, MX-0005). A preview (no conversation yet) says what the next one opens with, and a call starting
  * in that conversation (`sessionId`, left out of the count) says it too. Every line must pass the opener checks
  * (identity, cross-venture): one that fails is skipped. `opener` is null when there is none (a first conversation
- * without a notebook line); `latest` is the person's latest conversation.
+ * without a notebook line); `latest` is the person's latest conversation. `missing` says when the greeting that names
+ * nothing was chosen although the notebook holds open threads and has no current line of the model's
+ * ({@link MissingOpener}; production, 2026-11-07: a notebook distilled from a small-talk call before the next-opener
+ * rule held opened the next call with "Nice to see you. What feels most pressing right now?").
  */
 export async function chooseOpener(
   tx: AppExecutor,
@@ -377,6 +422,7 @@ export async function chooseOpener(
   readonly latest: LeftOffConversationData | null;
   /** The vEIR's replies at the end of the person's latest conversations with it, newest first ({@link pastRepliesOf}). */
   readonly pastReplies: readonly string[];
+  readonly missing: MissingOpener | null;
 }> {
   const notebook = await notebooksRepo.getNotebook(tx, {
     ventureId: args.ventureId,
@@ -418,7 +464,12 @@ export async function chooseOpener(
   // of the venture erases the copy.
   const source = notebook?.content.nextOpenerSource;
   const pastReplies = pastRepliesOf(last);
-  const found = (opener: ChosenOpener | null) => ({ opener, latest, pastReplies });
+  const found = (opener: ChosenOpener | null, missing: MissingOpener | null = null) => ({
+    opener,
+    latest,
+    pastReplies,
+    missing,
+  });
   // Drawn from a conversation someone else had (a teammate's plan): never said to this person as theirs.
   const fromSomeoneElse =
     source != null && (await sessionsRepo.getSession(tx, source))?.startedBy !== args.principalId;
@@ -478,23 +529,26 @@ export async function chooseOpener(
       Date.parse(notebook.updatedAt) > Date.parse(latest.lastActivityAt));
   // The notebook's line or thread comes back to what the founder left aside: neither is said.
   const leftAside = reopens(next) || reopens(topic);
+  // A line stored before the distillation's check (or that slipped past it): never personal, small talk or the
+  // scripted frame, and always about a thread the venture still has.
+  const sound =
+    stored !== null &&
+    !isPersonalOpener(stored) &&
+    namesAThread(
+      stored,
+      openThreads(notebook?.content ?? null, latest?.digest ?? null, heard?.lines ?? []),
+      names,
+    );
   // The model's own line (coaching v3, owner round 3: openers are model-written, never a template), said unless it was
   // already said in a conversation opened since, only repeats the question that conversation ended on, or opens the
   // way that conversation opened (never the same opener twice in a row). No model call here: the line was written
   // ahead, so the greeting costs nothing at page load or call start.
   if (
     stored !== null &&
+    sound &&
     current &&
     !fromSomeoneElse &&
     !leftAside &&
-    // A line stored before the distillation's check (or that slipped past it): never personal, small talk or the
-    // scripted frame, and always about a thread the venture still has.
-    !isPersonalOpener(stored) &&
-    namesAThread(
-      stored,
-      openThreads(notebook?.content ?? null, latest?.digest ?? null, heard?.lines ?? []),
-      names,
-    ) &&
     since.withOpener === 0 &&
     !repeatsOpener(stored, latest?.opener ?? null) &&
     !askedAtTheEnd(heard, stored)
@@ -502,6 +556,26 @@ export async function chooseOpener(
     return found({ text: stored, sourceSessionId: source ?? null, byPerson: false });
   }
   if (latest === null) return found(null);
+  // A line the model may write now: the latest conversation was distilled (the notebook knows it), and no line is stored,
+  // it is no line to open on (personal, small talk, no thread) or it was written before that conversation, while the
+  // notebook leaves threads open. A conversation not distilled yet writes its own line when it is (a call a minute after
+  // a chat opens with the greeting, and its first reply reads that chat in "Where you left off"). A sound, current line
+  // that was not said (it repeats or comes back to a thread left aside) is the model's choice already made.
+  const missing =
+    latestDistilled &&
+    latest.withThisVeir &&
+    (!sound || !current) &&
+    notebook !== null &&
+    notebookThreads(notebook.content).length > 0
+      ? {
+          sourceSessionId: latest.sessionId,
+          lastOpener: latest.opener ?? null,
+          leftAside: [
+            ...(untaken !== null && latest.opener != null ? [latest.opener] : []),
+            ...(leftAside || !keptByLatest ? [next, topic] : []),
+          ].filter((text): text is string => text !== null && text.trim() !== ''),
+        }
+      : null;
   // No line the model wrote for this conversation: a greeting that names nothing, never a greeting or an invitation
   // one of the person's last conversations opened with (when every line reuses one, only the latest's is avoided).
   // Each conversation they open since without a word takes the next line of the same order, so two in a row never
@@ -516,6 +590,7 @@ export async function chooseOpener(
   const fresh = pool.length > 0 ? pool[since.opened % pool.length] : plain[0];
   return found(
     fresh === undefined ? null : { text: fresh, sourceSessionId: latest.sessionId, byPerson: false },
+    missing,
   );
 }
 

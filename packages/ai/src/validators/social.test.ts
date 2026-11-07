@@ -7,7 +7,9 @@ import {
   NEWS_FALLBACK,
   parksTheirNews,
   questionsOf,
+  asksOnly,
   reasksQuestion,
+  stuckOn,
   withoutAgendaPush,
   withinSocialBudget,
   withoutRepeats,
@@ -188,5 +190,67 @@ describe('a question is never asked again in the next reply, in other words (ite
       text: "That's a real risk: SSO can stall a library pilot for months. Ask their IT lead now what SSO they need.",
       dropped: 1,
     });
+  });
+});
+
+describe('the same question two replies later, longer and reworded (production, 2026-11-07)', () => {
+  // Synthetic wording, the call's shape: the first reply asked what the advisor said of the device class and payment;
+  // after a vague answer and a short one, the third reply asked it again, longer, about the same advisor and class.
+  const first =
+    'Got it. Walk me through where you are with the regulatory route and reimbursement: what did the advisor session tell you about the device class and how clinics would pay?';
+  const second = 'So there is a process, not a quick yes. Who sits in those approval layers?';
+  const asked = [...questionsOf(first), ...questionsOf(second)];
+
+  it('reads the reworded question as asked again', () => {
+    expect(
+      reasksQuestion(
+        'But here is what matters: did the advisor actually say which device class the insole falls into, and whether monitoring time is reimbursable under existing codes?',
+        asked,
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a question that builds on the subject without asking it again', () => {
+    expect(reasksQuestion('Want me to draft the questions for your next advisor call?', asked)).toBe(false);
+    expect(reasksQuestion('Which of the department heads controls the budget?', asked)).toBe(false);
+  });
+
+  it('after "I don\'t know", any question back on the same subject is asked again', () => {
+    expect(stuckOn("I don't know.")).toBe(true);
+    expect(stuckOn("I didn't do that.")).toBe(true);
+    expect(stuckOn('you tell me')).toBe(true);
+    expect(stuckOn('Department heads, mostly.')).toBe(false);
+    const short = 'Did the advisor mention the class at all?';
+    expect(reasksQuestion(short, asked)).toBe(false);
+    expect(reasksQuestion(short, asked, { strict: true })).toBe(true);
+    expect(
+      reasksQuestion('Want me to draft the questions for your next advisor call?', asked, { strict: true }),
+    ).toBe(false);
+  });
+
+  it('leaves the question out of the reply and keeps the teaching around it', () => {
+    const reply =
+      'That is normal at this stage. Did the advisor actually say which device class the insole falls into, and whether monitoring time is reimbursable under existing codes? Most foot-pressure monitors sit in a low-risk class, so the route is usually lighter.';
+    const out = withoutRepeats(reply, `${first}\n\n${second}`, { strictQuestions: true });
+    expect(out.dropped).toBe(1);
+    expect(out.text).toBe(
+      'That is normal at this stage. Most foot-pressure monitors sit in a low-risk class, so the route is usually lighter.',
+    );
+  });
+});
+
+describe('a reply that only asks (production, 2026-11-07)', () => {
+  it('reads a reply of questions alone, and one with substance or a role-play line as more', () => {
+    expect(
+      asksOnly('So there is a process. Who sits in those layers, and what does each one sign off on?'),
+    ).toBe(true);
+    expect(asksOnly('Got it. What did the advisor tell you?')).toBe(true);
+    expect(
+      asksOnly(
+        'Most clinics route a new device through a purchasing committee that meets monthly. I can draft your one-page case. Want that?',
+      ),
+    ).toBe(false);
+    expect(asksOnly('**Investor:** What does a clinic pay you today?')).toBe(false);
+    expect(asksOnly('Here is the plan for this week.')).toBe(false);
   });
 });

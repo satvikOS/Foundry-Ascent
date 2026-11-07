@@ -107,6 +107,27 @@ describe('every earlier reply in view is guarded, not only the previous one', ()
     expect(g.trace.reasksDropped).toBe(1);
   });
 
+  it('leaves out a reworded question from two replies back, as a call says it (production, 2026-11-07)', () => {
+    // Synthetic wording, the call's shape: the third reply asked the first reply's question again, longer.
+    const first =
+      'Got it. Walk me through where you are with the regulatory route and reimbursement: what did the advisor session tell you about the device class and how clinics would pay?';
+    const second = 'So there is a process, not a quick yes. Who sits in those approval layers?';
+    const reply =
+      'Department heads, then. Did the advisor actually say which device class the insole falls into, and whether monitoring time is reimbursable under existing codes? ';
+    const g = gate({
+      previousReply: second,
+      earlierReplies: [first],
+      founderText: 'department heads mostly',
+    });
+    expect(joined(run(g, [reply])).trim()).toBe('Department heads, then.');
+    expect(g.trace.reasksDropped).toBe(1);
+    // After "I didn't do that", a shorter question on the same subject is left out too.
+    const after = gate({ previousReply: second, earlierReplies: [first], founderText: "I didn't do that." });
+    expect(joined(run(after, ['Fair enough. Did the advisor mention the class at all? '])).trim()).toBe(
+      'Fair enough.',
+    );
+  });
+
   it('lets the founder ask for it again, or rerun a drill (diff3-A3)', () => {
     for (const text of [
       'Can you say that again?',
@@ -506,5 +527,29 @@ describe('phrases and closing lines said again (lab run 42238272157, long sessio
       const units = run(gate({ previousReply: earlier, spoken: true }), chunks);
       expect(joined(units).trim()).toBe('Book the dean for Tuesday.');
     }
+  });
+});
+
+describe('a reply that only asks is counted (production, 2026-11-07)', () => {
+  it('notes a reply of questions alone where the founder brought something, never on a social turn', () => {
+    const asked = validateCoachResponse(
+      { ...BASE_RESPONSE, answer: 'Got it. What did the advisor tell you?' },
+      { ...BASE_OPTIONS, founderText: 'taking the insole to market' },
+    );
+    expect(asked.results.notes).toContain('question_only');
+    const taught = validateCoachResponse(
+      {
+        ...BASE_RESPONSE,
+        answer:
+          'Most clinics route a new device through a purchasing committee. I can draft your one-page case.',
+      },
+      { ...BASE_OPTIONS, founderText: 'taking the insole to market' },
+    );
+    expect(taught.results.notes).not.toContain('question_only');
+    const hello = validateCoachResponse(
+      { ...BASE_RESPONSE, answer: 'Good to see you. What are you working on?' },
+      { ...BASE_OPTIONS, founderText: 'Hi!', social: 'greeting' },
+    );
+    expect(hello.results.notes).not.toContain('question_only');
   });
 });

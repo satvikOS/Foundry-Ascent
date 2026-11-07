@@ -14,7 +14,7 @@ import pytest
 from conversation_lab.budget import BudgetExceededError
 from conversation_lab.config import MAX_BUDGET_USD, lab_models, model_family, suites_for
 from conversation_lab.live.calibration import agreement, build_packet
-from conversation_lab.live.checks import BLOCKING, Turn, reply_hole, run_checks
+from conversation_lab.live.checks import BLOCKING, Turn, judgmental_notes, reply_hole, run_checks
 from conversation_lab.live.cli import cmd_check, cmd_plan
 from conversation_lab.live.dataset import DatasetError, load, own_text, validate_scenario
 from conversation_lab.live.fake import FakeApp
@@ -212,9 +212,65 @@ def test_paraphrased_questions_reordered_advice_and_short_stacked_questions() ->
         T("1.2", "students", "What do students pay for it today?"),
         T("1.3", "nothing", "How many of them have you talked to?"),
     ]
-    assert run_checks(distinct).codes() == []
+    # Distinct questions, none asked again; replies that only ask are their own finding (coaching, 2026-11-07).
+    assert run_checks(distinct).codes() == ["question_only"]
     assert run_checks([T("1.1", "hi", "Who pays? And when? Why?")]).stacked_replies == 1
     assert run_checks([T("1.1", "hi", "That's the plan, right? Let's test it.")]).stacked_replies == 0
+
+
+def test_the_production_call_of_2026_11_07_teach_and_prepare() -> None:
+    """Synthetic wording, the call's shape: a goal got a question, a vague answer got a question, and the third reply
+    asked the first one again, longer; a student with no answer got the question back."""
+    call = [
+        T(
+            "1.1",
+            "taking the insole to market",
+            "Got it. Walk me through where you are with the regulatory route: what did the advisor tell you about the "
+            "device class and how clinics would pay?",
+        ),
+        T(
+            "1.2",
+            "there are a few layers of sign-off",
+            "So there is a process. Who sits in those approval layers?",
+        ),
+        T(
+            "1.3",
+            "department heads mostly",
+            "Okay. But did the advisor actually say which device class the insole falls into, and whether monitoring "
+            "time is billable under existing codes?",
+        ),
+    ]
+    codes = run_checks(call).codes()
+    assert "repeated_question" in codes
+    assert "question_only" in codes
+    stuck = [
+        T("1.1", "taking the insole to market", "What did the advisor say about the device class?"),
+        T("1.2", "I don't know, I didn't do that", "Fair. Did the advisor mention the class at all?"),
+    ]
+    assert "reasked_after_unknown" in run_checks(stuck).codes()
+    taught = [
+        T("1.1", "taking the insole to market", "What did the advisor say about the device class?"),
+        T(
+            "1.2",
+            "I don't know, I didn't do that",
+            "That's normal at this stage. Most pressure monitors sit in a lower-risk class, so the usual route is "
+            "lighter. Ask the advisor for the class and the predicate devices; I can draft the email.",
+        ),
+    ]
+    assert run_checks(taught).codes() == ["question_only"]
+    # A hello answered with a question is no finding; nor is a counterpart's line in a role-play.
+    assert run_checks([T("1.1", "hi", "Good to see you. What are you working on?")]).codes() == []
+    assert run_checks([T("1.1", "go on", "**Investor:** What does a clinic pay you today?")]).codes() == []
+
+
+def test_a_profile_note_that_judges_the_founder_is_found() -> None:
+    notes = [
+        "Prefers direct answers and actionable steps",
+        "Does not report what experts told them; stays vague even when pressed",
+    ]
+    assert judgmental_notes(notes) == [notes[1]]
+    assert "judgmental_profile_note" in run_checks([], profile_notes=notes).codes()
+    assert run_checks([], profile_notes=notes[:1]).codes() == []
 
 
 def test_watch_phrases_are_rated_per_100_replies_across_the_run() -> None:

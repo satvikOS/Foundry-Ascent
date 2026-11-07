@@ -72,7 +72,9 @@ describe('conversation craft in the system prompt', () => {
       `pick up the most specific thing from "${WHERE_YOU_LEFT_OFF_HEADING}" in your own`,
     );
     expect(craft).toContain('words (what you were on, how their plan went)');
-    expect(craft).toContain('Never open the way the last conversation did');
+    expect(craft).toContain('Never open the way the last\n  conversation did');
+    // Production, 2026-11-07: a returning founder heard a bare "What feels most pressing right now?".
+    expect(craft).toContain('and offer help with it.');
     // The wave 6 lab (LAB-R6, LAB-U4): the quoted example "How did the facilities call go?" came back as "last
     // time" from a seeded notebook item. Examples are described, never quoted as lines to reuse (LAB-M7).
     expect(craft).not.toMatch(/facilities call|per-library pricing|Sorry, I misread that|Talk\s+soon/);
@@ -82,7 +84,7 @@ describe('conversation craft in the system prompt', () => {
     // Integration: the opener said "Last time you planned to call facilities… How did it go?" and the reply to
     // "Hi!" said "When we talked a moment ago, we were on pricing." all over again.
     expect(craft).toContain(
-      'After your own opener, never repeat its question; if it said hi, never greet again.',
+      'After your own opener, never repeat its question; if it\n  said hi, never greet again.',
     );
   });
 
@@ -284,9 +286,12 @@ describe('conversation craft in the system prompt', () => {
     // Coaching v3 adds ~8: a made-up figure is named by its role instead (pilot v3: 30 unsourced figures).
     // 2026-11-06.1 adds ~26: no local rate, market size or statistic of its own, even as an example (lab 42238272157:
     // "a local tutor at, say, 50–100 cedis an hour").
-    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(1116);
-    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1176);
-    expect(tokens(craft)).toBeLessThanOrEqual(1126);
+    // 2026-11-07.1 adds ~130 for teaching and preparing, and for a founder with no answer (production, 2026-11-07: a
+    // goal got questions back, and "I didn't do that" got the first question again in other words). The prefix stays
+    // cached on every turn after the first (docs/runbooks/latency.md).
+    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(1250);
+    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1310);
+    expect(tokens(craft)).toBeLessThanOrEqual(1260);
   });
 
   it('is part of the versioned policy', () => {
@@ -306,7 +311,9 @@ describe('conversation craft in the system prompt', () => {
     // 2026-11-06.1: the bug sweep (lab 42238272157 on Haiku, production): no local rate, market size or statistic of
     // its own, even as an example; a personal question answered warmly as himself, then back to them; the phrasing
     // ledger names the closing lines and the phrases said twice.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-06.1');
+    // 2026-11-07.1: teach and prepare (production, 2026-11-07): a goal gets the usual path and the prep, a founder with
+    // no answer is never asked again, an opener offers help, and distillation keeps no verdict or pressure.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.1');
   });
 });
 

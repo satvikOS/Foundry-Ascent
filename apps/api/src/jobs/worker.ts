@@ -55,7 +55,7 @@ export type WorkerJob = z.infer<typeof WorkerJob>;
 
 export interface WorkerDeps {
   readonly ingestion: Pick<IngestionProcessor, 'process'>;
-  readonly distill: Pick<DistillService, 'distillSession' | 'backstop'>;
+  readonly distill: Pick<DistillService, 'distillSession' | 'backstop' | 'backfillOpeners'>;
   readonly backfill: (options: Omit<BackfillOptions, 'purpose'>) => Promise<BackfillReport>;
   readonly maintenance: (options: {
     readonly requestId: string;
@@ -122,6 +122,8 @@ export async function dispatchJob(
           distilled: report.distillation.distilled,
           distillFailed: report.distillation.failed,
           distillDeferred: report.distillation.deferred,
+          openersWritten: report.openers.written,
+          openersNotWritten: report.openers.notWritten,
         });
         // The backstop ran out of time with conversations left: the message comes back after the visibility
         // timeout and the backlog keeps draining, without the sweep schedule (every step is idempotent). The
@@ -140,7 +142,8 @@ export async function dispatchJob(
     case 'distill_sweep':
       try {
         const report = await deps.distill.backstop({ requestId, deadline });
-        log.info('worker.distill_sweep_done', { ...report });
+        const openers = await deps.distill.backfillOpeners({ requestId, deadline });
+        log.info('worker.distill_sweep_done', { ...report, openersWritten: openers.written });
         return { outcome: 'done', ingested: false };
       } catch (err) {
         log.warn('worker.distill_sweep_failed', errorFields(err));
