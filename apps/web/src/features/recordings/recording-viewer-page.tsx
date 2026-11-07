@@ -76,7 +76,7 @@ export function RecordingViewerPage() {
                   }}
                 >
                   <Trash2 aria-hidden />
-                  Delete
+                  <span className="max-sm:sr-only">Delete</span>
                 </Button>
               </>
             }

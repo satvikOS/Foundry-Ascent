@@ -3,10 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { AudioLines, Captions, CaptionsOff } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Kbd } from '@/components/ui/kbd';
-
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/error-state';
+import { Kbd } from '@/components/ui/kbd';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useOptionalCall } from '@/features/calls/call-context';
 import { formatClock } from '@/features/calls/use-call-clock';
@@ -186,7 +185,7 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
     if (list === null || currentKey === null || Date.now() - ownScrollAt.current < OWN_SCROLL_MS) return;
     const line = list.querySelector<HTMLElement>(`[data-cue="${currentKey}"]`);
     if (line === null) return;
-    const top = line.offsetTop - list.offsetTop - list.clientHeight / 3;
+    const top = line.offsetTop - list.clientHeight / 3;
     if (Math.abs(list.scrollTop - top) < line.offsetHeight) return;
     list.scrollTo({ top, behavior: scrollBehavior() });
   }, [currentKey]);
@@ -294,7 +293,8 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
                   {showing.map((cue) => (
                     <p
                       key={`${String(cue.startMs)}-${cue.speaker}`}
-                      className="max-w-[46rem] rounded-md bg-black/75 px-2.5 py-1 text-sm leading-snug text-pretty text-white sm:text-base"
+                      // On a phone only the latest line, so the picture stays visible (the transcript is below).
+                      className="max-w-[46rem] rounded-md bg-black/75 px-2.5 py-1 text-sm leading-snug text-pretty text-white not-last:max-sm:hidden sm:text-base"
                     >
                       {cue.name ? <span className="font-semibold">{cue.name}: </span> : null}
                       {cue.text}
@@ -344,7 +344,7 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
               onTouchMove={() => {
                 ownScrollAt.current = Date.now();
               }}
-              className="grid max-h-[22rem] gap-0.5 overflow-y-auto overscroll-contain lg:max-h-[calc(100dvh-14rem)]"
+              className="relative grid max-h-[22rem] gap-0.5 overflow-y-auto overscroll-contain lg:max-h-[calc(100dvh-14rem)]"
             >
               {cues.map((cue) => {
                 const key = `${String(cue.startMs)}-${cue.speaker}`;
