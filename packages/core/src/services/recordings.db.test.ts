@@ -271,8 +271,10 @@ describe('replaying and deleting', () => {
     const saved = RecordingDownloadResponse.parse(
       await h.core.recordings.download(maya, ready.id, { name: 'Thomas', timeZone: 'UTC' }),
     );
-    const day = ready.createdAt.slice(0, 10);
-    expect(saved.filename).toMatch(new RegExp(`^Thomas call ${day} \\d\\d-\\d\\d\\.webm$`));
+    // Named after when it began: its registration less its length.
+    expect(Date.parse(ready.createdAt) - Date.parse(ready.startedAt)).toBe(20_000);
+    const begun = ready.startedAt.slice(0, 16).replace('T', ' ').replace(':', '-');
+    expect(saved.filename).toBe(`Thomas call ${begun}.webm`);
     expect(h.recordingStore.gets.at(-1)).toEqual({
       key: keys.media,
       contentType: 'video/webm',
@@ -298,6 +300,19 @@ describe('replaying and deleting', () => {
     expect(
       (await refusal(h.core.recordings.download(maya, ready.id, { file: 'video' as 'recording' }))).code,
     ).toBe('validation_failed');
+    // A file no longer stored is refused before the browser is sent to it; a URL that cannot be signed is not issued.
+    // Neither is recorded as a download, nor a replay that cannot be signed as played.
+    h.recordingStore.objects.delete(keys.media);
+    expect((await refusal(h.core.recordings.download(maya, ready.id, {}))).code).toBe('not_found');
+    h.recordingStore.put(keys.media, 48_000);
+    h.recordingStore.failGets = true;
+    try {
+      await expect(h.core.recordings.download(maya, ready.id, {})).rejects.toThrow('cannot sign');
+      await expect(h.core.recordings.playback(maya, ready.id)).rejects.toThrow('cannot sign');
+    } finally {
+      h.recordingStore.failGets = false;
+    }
+    expect(await audits('recording.played', ready.id)).toEqual([]);
 
     const downloads = await h.t.db.system((sx) =>
       sx.query(
@@ -312,6 +327,24 @@ describe('replaying and deleting', () => {
     ]);
     // Ids and the file's kind only: never a URL or the name it was saved under.
     expect(JSON.stringify(downloads.rows)).not.toMatch(/Thomas|https?:/);
+  });
+
+  it('lists a page at a time, latest first, and refuses a cursor it did not issue', async () => {
+    const { sessionId, callId } = await call(maya);
+    const older = await recorded(maya, callId);
+    await h.core.recordings.complete(maya, older.recording.id);
+    const newer = await recorded(maya, callId);
+    await h.core.recordings.complete(maya, newer.recording.id);
+    const first = RecordingListResponse.parse(await h.core.recordings.list(maya, { sessionId, limit: 1 }));
+    expect(first.items.map((r) => r.id)).toEqual([newer.recording.id]);
+    expect(first.nextCursor).not.toBeNull();
+    const second = RecordingListResponse.parse(
+      await h.core.recordings.list(maya, { sessionId, limit: 1, cursor: first.nextCursor ?? '' }),
+    );
+    expect(second).toMatchObject({ items: [{ id: older.recording.id }], nextCursor: null });
+    expect((await refusal(h.core.recordings.list(maya, { cursor: 'not-a-cursor' }))).code).toBe(
+      'validation_failed',
+    );
   });
 
   it('deleting a recording removes its files at once', async () => {
@@ -456,7 +489,11 @@ describe('without a recordings store', () => {
         code: 'recording_unavailable',
         reason: 'recording_store_missing',
       });
-      expect(await bare.core.recordings.list(who, {})).toEqual({ items: [], available: false });
+      expect(await bare.core.recordings.list(who, {})).toEqual({
+        items: [],
+        nextCursor: null,
+        available: false,
+      });
     } finally {
       await bare.cleanup();
     }

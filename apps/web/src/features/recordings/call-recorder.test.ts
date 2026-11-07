@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CallRecorder,
   canRecordCalls,
+  canShareScreen,
   pickFormat,
   requestScreen,
+  sharesThisTab,
   type RecordingAudio,
   type RecorderBrowser,
 } from './call-recorder';
@@ -36,7 +38,14 @@ describe('requestScreen', () => {
   it('asks for this tab, without its sound, at a bounded size and frame rate', async () => {
     const stream = {} as MediaStream;
     const getDisplayMedia = vi.fn(() => Promise.resolve(stream));
-    await expect(requestScreen({ getDisplayMedia })).resolves.toBe(stream);
+    const setCaptureHandleConfig = vi.fn();
+    await expect(requestScreen({ getDisplayMedia, setCaptureHandleConfig })).resolves.toBe(stream);
+    // The page marks itself first, so a capture of it can be told from any other.
+    expect(setCaptureHandleConfig).toHaveBeenCalledWith({
+      handle: expect.stringMatching(/^[0-9a-f-]{36}$/) as unknown,
+      exposeOrigin: false,
+      permittedOrigins: [window.location.origin],
+    });
     expect(getDisplayMedia).toHaveBeenCalledWith({
       video: {
         displaySurface: 'browser',
@@ -53,10 +62,44 @@ describe('requestScreen', () => {
     });
   });
 
-  it('is null where a screen cannot be shared (iOS Safari, most phones)', () => {
+  it('is null where a screen cannot be shared (iOS Safari, most phones) or this tab could not be told apart', () => {
     expect(requestScreen({})).toBeNull();
     // jsdom, like an insecure page, has no mediaDevices at all.
     expect(requestScreen()).toBeNull();
+    expect(canShareScreen()).toBe(false);
+    // Firefox and Safari: windows and screens, never just this tab. Nothing is asked for.
+    const getDisplayMedia = vi.fn(() => Promise.resolve({} as MediaStream));
+    expect(canShareScreen({ getDisplayMedia })).toBe(false);
+    expect(requestScreen({ getDisplayMedia })).toBeNull();
+    expect(getDisplayMedia).not.toHaveBeenCalled();
+  });
+});
+
+describe('sharesThisTab', () => {
+  /** What was shared: its surface and the capture handle it carries. */
+  function shared(displaySurface: string, handle: string | null) {
+    const track = {
+      getSettings: () => ({ displaySurface }),
+      getCaptureHandle: () => (handle === null ? null : { handle }),
+    };
+    return { getVideoTracks: () => [track] } as unknown as MediaStream;
+  }
+
+  it('accepts only a browser tab that carries this page’s capture handle', async () => {
+    let handle = '';
+    await requestScreen({
+      getDisplayMedia: () => Promise.resolve({} as MediaStream),
+      setCaptureHandleConfig: (config) => {
+        handle = config.handle;
+      },
+    });
+    expect(sharesThisTab(shared('browser', handle))).toBe(true);
+    // Another tab, a window, a whole screen.
+    expect(sharesThisTab(shared('browser', 'another-page'))).toBe(false);
+    expect(sharesThisTab(shared('browser', null))).toBe(false);
+    expect(sharesThisTab(shared('window', handle))).toBe(false);
+    expect(sharesThisTab(shared('monitor', handle))).toBe(false);
+    expect(sharesThisTab({ getVideoTracks: () => [] } as unknown as MediaStream)).toBe(false);
   });
 });
 
@@ -72,12 +115,13 @@ describe('CallRecorder', () => {
   });
 
   /** A video track that stops, and says it ended as a browser does when sharing stops. */
-  function fakeTrack(kind: 'video' | 'audio' = 'video') {
+  function fakeTrack(kind: 'video' | 'audio' = 'video', size: { width?: number; height?: number } = {}) {
     const ended = new Set<() => void>();
     return {
       kind,
       readyState: 'live',
       contentHint: '',
+      getSettings: () => size,
       stop: vi.fn(),
       addEventListener: (_type: string, listener: () => void) => ended.add(listener),
       removeEventListener: (_type: string, listener: () => void) => ended.delete(listener),
@@ -93,7 +137,13 @@ describe('CallRecorder', () => {
    */
   function fakeRecorder(
     microphoneOpen: boolean,
-    options: { video?: boolean; canvas?: boolean; display?: MediaStream | null } = {},
+    options: {
+      video?: boolean;
+      canvas?: boolean;
+      display?: MediaStream | null;
+      onScreen?: () => boolean;
+      now?: () => number;
+    } = {},
   ) {
     const gates: { gain: { value: number }; connect: () => void; disconnect: () => void }[] = [];
     const node = () => ({ connect: vi.fn(), disconnect: vi.fn() });
@@ -132,6 +182,11 @@ describe('CallRecorder', () => {
     const canvasTrack = fakeTrack();
     const canvases: { width: number; height: number }[] = [];
     const drawn: string[] = [];
+    /** What each drawImage drew (the shared tab's element, or a face). */
+    const images: unknown[] = [];
+    /** The shared tab as it plays (ready to be drawn). */
+    const tab = { videoWidth: 1280, videoHeight: 720, readyState: 4, srcObject: null as unknown };
+    const frames: (() => void)[] = [];
     const microphone = { getAudioTracks: () => [{ kind: 'audio' }] } as unknown as MediaStream;
     const audio = {
       context: context as unknown as RecordingAudio['context'],
@@ -149,6 +204,7 @@ describe('CallRecorder', () => {
           {
             measureText: (text: string) => ({ width: text.length * 10 }),
             fillText: (text: string) => drawn.push(text),
+            drawImage: (image: unknown) => images.push(image),
           },
           {
             get: (target, key) =>
@@ -168,9 +224,9 @@ describe('CallRecorder', () => {
         } as unknown as HTMLCanvasElement;
       },
       createStream: (tracks) => ({ tracks }) as unknown as MediaStream,
-      playStream: () => ({}) as HTMLVideoElement,
-      now: () => 0,
-      setInterval: () => 0,
+      playStream: () => tab as unknown as HTMLVideoElement,
+      now: options.now ?? (() => 0),
+      setInterval: (callback) => frames.push(callback),
       clearInterval: () => undefined,
     };
     const recorder = new CallRecorder(
@@ -185,15 +241,20 @@ describe('CallRecorder', () => {
           { speaker: 'founder', text: 'We ran the pilot', live: true },
         ],
         display: options.display ?? null,
+        onScreen: options.onScreen ?? (() => true),
       },
       browser,
     );
-    return { recorder, audio, gates, recorded, canvases, canvasTrack, mixed, drawn };
+    /** Draws the next frame, as the browser's timer would. */
+    const frame = () => {
+      for (const draw of frames) draw();
+    };
+    return { recorder, audio, gates, recorded, canvases, canvasTrack, mixed, drawn, images, tab, frame };
   }
 
-  /** A shared screen: one live video track, no sound. */
-  function sharedScreen() {
-    const track = fakeTrack();
+  /** A shared tab: one live video track of its size, no sound. */
+  function sharedScreen(size: { width?: number; height?: number } = { width: 1280, height: 720 }) {
+    const track = fakeTrack('video', size);
     const stream = {
       getVideoTracks: () => [track],
       getTracks: () => [track],
@@ -201,27 +262,78 @@ describe('CallRecorder', () => {
     return { track, stream };
   }
 
-  it('records the shared screen with the call’s own sound, and no canvas', () => {
+  it('records the shared tab through one canvas at its size, with the call’s own sound', () => {
     const screen = sharedScreen();
-    const { recorder, recorded, canvases, mixed } = fakeRecorder(true, {
+    const { recorder, recorded, canvases, canvasTrack, mixed, images, tab } = fakeRecorder(true, {
       video: true,
+      canvas: true,
       display: screen.stream,
     });
     recorder.start();
     expect(recorder.capture).toBe('screen');
-    expect(canvases).toEqual([]);
-    // One picture (the screen, kept sharp for its text) and one sound (the call's mix): nothing heard twice.
-    expect(recorded[0]?.tracks).toEqual([screen.track, mixed]);
-    expect(screen.track.contentHint).toBe('detail');
+    expect(canvases).toEqual([{ width: 1280, height: 720 }]);
+    // One picture (the canvas the tab is drawn on, kept sharp for its text) and one sound (the call's mix): nothing
+    // heard twice, and the tab's own track never reaches the recording.
+    expect(recorded[0]?.tracks).toEqual([canvasTrack, mixed]);
+    expect(canvasTrack.contentHint).toBe('detail');
+    expect(images).toEqual([tab]);
     expect(recorded[0]?.options).toMatchObject({
       mimeType: 'video/webm;codecs=vp8,opus',
       videoBitsPerSecond: 1_500_000,
     });
   });
 
+  it('records the call view, never the tab, while the call is minimized; the tab again a moment after it opens', () => {
+    let open = true;
+    let now = 0;
+    const screen = sharedScreen();
+    const { recorder, images, tab, drawn, frame } = fakeRecorder(true, {
+      video: true,
+      canvas: true,
+      display: screen.stream,
+      onScreen: () => open,
+      now: () => now,
+    });
+    recorder.start();
+    expect(images).toEqual([tab]);
+    // Minimized: the tab shows other pages (a private chat, say), and none of it is drawn.
+    open = false;
+    images.length = 0;
+    drawn.length = 0;
+    for (let i = 0; i < 5; i += 1) {
+      now += 66;
+      frame();
+    }
+    expect(images).toEqual([]);
+    expect(drawn).toEqual(expect.arrayContaining(['Thomas', 'What changed this week?', 'We ran the pilot']));
+    // Opened again: the tab's late frames may still show that page, so the call view stays a moment longer.
+    open = true;
+    now += 66;
+    frame();
+    now += 400;
+    frame();
+    expect(images).toEqual([]);
+    now += 100;
+    frame();
+    expect(images).toEqual([tab]);
+  });
+
+  it('draws a large tab scaled down to 1080p, and a tab of unknown size at 1080p', () => {
+    const large = fakeRecorder(true, {
+      video: true,
+      canvas: true,
+      display: sharedScreen({ width: 3840, height: 2400 }).stream,
+    });
+    large.recorder.start();
+    expect(large.canvases).toEqual([{ width: 1728, height: 1080 }]);
+    const unknown = fakeRecorder(true, { video: true, canvas: true, display: sharedScreen({}).stream });
+    unknown.recorder.start();
+    expect(unknown.canvases).toEqual([{ width: 1920, height: 1080 }]);
+  });
+
   it('stops when the person stops sharing from the browser, and lets the screen go when it stops', async () => {
     const screen = sharedScreen();
-    const { recorder } = fakeRecorder(true, { video: true, display: screen.stream });
+    const { recorder, tab } = fakeRecorder(true, { video: true, canvas: true, display: screen.stream });
     const ended = vi.fn();
     recorder.onScreenEnded = ended;
     recorder.start();
@@ -229,6 +341,7 @@ describe('CallRecorder', () => {
     expect(ended).toHaveBeenCalledOnce();
     await expect(recorder.stop()).rejects.toThrow('Nothing was recorded.');
     expect(screen.track.stop).toHaveBeenCalled();
+    expect(tab.srcObject).toBeNull();
   });
 
   it('composes the call view when no screen was shared: face or presence, its name and time, the conversation', () => {
@@ -240,6 +353,8 @@ describe('CallRecorder', () => {
     expect(recorder.capture).toBe('view');
     expect(canvases).toEqual([{ width: 1280, height: 720 }]);
     expect(recorded[0]?.tracks).toEqual([canvasTrack, mixed]);
+    // Fewer bits than a shared tab: a phone holds the whole take in memory.
+    expect(recorded[0]?.options).toMatchObject({ videoBitsPerSecond: 1_000_000 });
     // The first frame: who, how long, and both speakers' lines under their names.
     expect(drawn).toEqual(
       expect.arrayContaining([

@@ -168,12 +168,15 @@ describe('call recordings (0031)', () => {
       cues: 3,
       recordedBy: maya.principalId,
     });
-    expect(recordingsRepo.toRecordingView(created)).toMatchObject({ kind: 'video', hasCaptions: true });
+    const view = recordingsRepo.toRecordingView(created);
+    expect(view).toMatchObject({ kind: 'video', hasCaptions: true });
+    // Registered as its save began: it began its length (12 s) earlier.
+    expect(Date.parse(view.createdAt) - Date.parse(view.startedAt)).toBe(12_000);
 
     // Pending recordings are never listed.
     expect(
       await t.db.withContext(maya, (tx) => recordingsRepo.listRecordings(tx, { sessionId: session })),
-    ).toEqual([]);
+    ).toEqual({ items: [], nextCursor: null });
     const ready = must(await t.db.withContext(maya, (tx) => recordingsRepo.markReady(tx, created.id)));
     expect(ready.status).toBe('ready');
     expect(ready.completedAt).not.toBeNull();
@@ -183,11 +186,12 @@ describe('call recordings (0031)', () => {
     const listed = await t.db.withContext(maya, (tx) =>
       recordingsRepo.listRecordings(tx, { sessionId: session }),
     );
-    expect(listed.map((r) => r.id)).toEqual([created.id]);
+    expect(listed.items.map((r) => r.id)).toEqual([created.id]);
+    expect(listed.nextCursor).toBeNull();
     expect(
       (
         await t.db.withContext(maya, (tx) => recordingsRepo.listRecordings(tx, { ventureId: quietquad().id }))
-      ).map((r) => r.id),
+      ).items.map((r) => r.id),
     ).toContain(created.id);
     expect(await t.db.withContext(maya, (tx) => recordingsRepo.recordingsToday(tx, maya.principalId))).toBe(
       1,
@@ -196,11 +200,51 @@ describe('call recordings (0031)', () => {
     // Nobody else: the venture's team member, its EIR, the program lead.
     for (const other of [devin, corin, lead]) {
       expect(await t.db.withContext(other, (tx) => recordingsRepo.getRecording(tx, created.id))).toBeNull();
-      expect(await t.db.withContext(other, (tx) => recordingsRepo.listRecordings(tx))).toEqual([]);
+      expect(await t.db.withContext(other, (tx) => recordingsRepo.listRecordings(tx))).toEqual({
+        items: [],
+        nextCursor: null,
+      });
       expect(
         await t.db.withContext(other, (tx) => recordingsRepo.softDeleteRecording(tx, created.id, 'founder')),
       ).toBe(null);
     }
+  });
+
+  it('lists past the first page: every recording once, latest first, the same instant kept in order by id', async () => {
+    const session = await newSession(maya);
+    const call = await callIn(maya, session);
+    // One transaction: every one registered at the same instant, so only the id orders them.
+    const ids = await t.db.withContext(maya, async (tx) => {
+      const made: string[] = [];
+      for (let i = 0; i < 55; i += 1) {
+        const created = await recordingsRepo.createRecording(tx, input(maya, call));
+        must(await recordingsRepo.markReady(tx, created.id));
+        made.push(created.id);
+      }
+      return made;
+    });
+    const first = await t.db.withContext(maya, (tx) =>
+      recordingsRepo.listRecordings(tx, { sessionId: session }),
+    );
+    expect(first.items).toHaveLength(50);
+    const cursor = must(first.nextCursor);
+    const second = await t.db.withContext(maya, (tx) =>
+      recordingsRepo.listRecordings(tx, { sessionId: session, cursor }),
+    );
+    expect(second.items).toHaveLength(5);
+    expect(second.nextCursor).toBeNull();
+    const listed = [...first.items, ...second.items].map((r) => r.id);
+    expect(listed).toEqual([...ids].sort().reverse());
+    // A page of exactly what is left has no next page.
+    const exact = await t.db.withContext(maya, (tx) =>
+      recordingsRepo.listRecordings(tx, { sessionId: session, cursor, limit: 5 }),
+    );
+    expect(exact.nextCursor).toBeNull();
+    expect(recordingsRepo.decodeRecordingCursor(cursor)).toMatchObject({ id: first.items[49]?.id });
+    expect(recordingsRepo.decodeRecordingCursor('not a cursor')).toBeNull();
+    expect(
+      recordingsRepo.decodeRecordingCursor(Buffer.from(`2026-11-07|${randomUUID()}`).toString('base64url')),
+    ).toBeNull();
   });
 
   it('refuses someone else’s call, a private conversation, a deleted one and an unsupported container', async () => {
@@ -386,7 +430,7 @@ describe('call recordings (0031)', () => {
     expect(after.map((r) => r?.deletedReason)).toEqual(['conversation', 'conversation']);
     expect(
       await t.db.withContext(maya, (tx) => recordingsRepo.listRecordings(tx, { sessionId: session })),
-    ).toEqual([]);
+    ).toEqual({ items: [], nextCursor: null });
     const purgeable = await t.db.system((sx) =>
       recordingsRepo.listPurgeable(sx, { limit: 10, sessionId: session }),
     );

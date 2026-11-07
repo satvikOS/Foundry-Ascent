@@ -94,7 +94,8 @@ export class MemoryObjectStore implements ObjectStore {
 
 /**
  * In-memory RecordingStore: presigned URLs are fake; tests `put` the bytes the browser would upload. `failDeletes`
- * makes every delete fail (purge retries), `unavailable`-style tests omit the store instead.
+ * makes every delete fail (purge retries), `failGets` every presigned GET (a store that cannot sign),
+ * `unavailable`-style tests omit the store instead.
  */
 export class MemoryRecordingStore implements RecordingStore {
   readonly objects = new Map<string, number>();
@@ -102,6 +103,7 @@ export class MemoryRecordingStore implements RecordingStore {
   readonly gets: RecordingGetInput[] = [];
   readonly deleted: string[] = [];
   failDeletes = false;
+  failGets = false;
 
   presignPut(input: RecordingPutInput): Promise<PresignedUpload> {
     this.puts.push(input);
@@ -113,6 +115,7 @@ export class MemoryRecordingStore implements RecordingStore {
   }
 
   presignGet(input: RecordingGetInput): Promise<PresignedDownload> {
+    if (this.failGets) return Promise.reject(new Error('recordings store cannot sign'));
     this.gets.push(input);
     return Promise.resolve({
       url: `https://recordings.test/${encodeURI(input.key)}?get=1&signature=fake`,

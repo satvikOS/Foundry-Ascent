@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type Dialog, type Locator, type Page } from '@playwright/test';
 
 import {
   expectNoHorizontalScroll,
@@ -22,8 +22,9 @@ import {
  * goes on typed and its replies show as captions. The recording is the shared screen (or, when it is not shared, the
  * composed call view) with the call's sound, uploaded, watched in its viewer with its transcript in step, downloaded
  * (an attachment, under a readable name) and deleted. A headless browser has no screen to share, so the screen the
- * founder shares is a stand-in: getDisplayMedia answers with a canvas "tab" of its own size, or refuses as a founder
- * who declines would. Every media element is muted, so the test browser never makes a sound.
+ * founder shares is a stand-in: getDisplayMedia answers with a canvas "tab" of its own size that says it is this tab
+ * (or a window), or refuses as a founder who declines would. Every media element is muted, so the test browser never
+ * makes a sound.
  */
 
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
@@ -78,14 +79,44 @@ async function muteMedia(page: Page): Promise<void> {
 const SHARED = { width: 640, height: 360 };
 
 /**
- * The screen the founder shares: getDisplayMedia answers with a canvas of its own (`share`), or refuses as a founder
- * who declines the browser's prompt (`decline`). What it was asked for, and the tracks it gave, are kept to inspect.
+ * The screen the founder shares: getDisplayMedia answers with a canvas of its own, this tab as Chromium shares it
+ * (`share`: a browser surface carrying the page's capture handle) or a window (`window`), or refuses as a founder who
+ * declines the browser's prompt (`decline`). What it was asked for, the tracks it gave and how often the recording drew
+ * the shared tab (`drawn`) are kept to inspect.
  */
-async function shareScreen(page: Page, answer: 'share' | 'decline'): Promise<void> {
+async function shareScreen(page: Page, answer: 'share' | 'window' | 'decline'): Promise<void> {
   await page.addInitScript(
     ({ answer: mode, size }) => {
-      const shared = { asked: [] as unknown[], tracks: [] as MediaStreamTrack[] };
+      const shared = {
+        asked: [] as unknown[],
+        tracks: [] as MediaStreamTrack[],
+        streams: [] as MediaStream[],
+        handle: null as string | null,
+        drawn: 0,
+      };
       (window as unknown as { __screen: typeof shared }).__screen = shared;
+      const devices = navigator.mediaDevices as MediaDevices & {
+        setCaptureHandleConfig?: (config: { handle: string }) => void;
+      };
+      devices.setCaptureHandleConfig = (config) => {
+        shared.handle = config.handle;
+      };
+      // Every frame the recording draws from the shared tab's own element.
+      const drawImage = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'drawImage')
+        ?.value as (...args: unknown[]) => void;
+      Object.defineProperty(CanvasRenderingContext2D.prototype, 'drawImage', {
+        configurable: true,
+        writable: true,
+        value: function (this: CanvasRenderingContext2D, ...args: unknown[]) {
+          const [source] = args;
+          if (
+            source instanceof HTMLVideoElement &&
+            shared.streams.some((stream) => stream === source.srcObject)
+          )
+            shared.drawn += 1;
+          drawImage.apply(this, args);
+        },
+      });
       navigator.mediaDevices.getDisplayMedia = (options) => {
         shared.asked.push(JSON.parse(JSON.stringify(options ?? {})));
         if (mode === 'decline')
@@ -105,12 +136,29 @@ async function shareScreen(page: Page, answer: 'share' | 'decline'): Promise<voi
         draw();
         window.setInterval(draw, 100);
         const stream = canvas.captureStream(15);
-        shared.tracks.push(...stream.getVideoTracks());
+        for (const track of stream.getVideoTracks()) {
+          const settings = track.getSettings();
+          Object.assign(track, {
+            getSettings: () => ({
+              ...settings,
+              ...size,
+              displaySurface: mode === 'window' ? 'window' : 'browser',
+            }),
+            getCaptureHandle: () => (mode === 'share' && shared.handle ? { handle: shared.handle } : null),
+          });
+          shared.tracks.push(track);
+        }
+        shared.streams.push(stream);
         return Promise.resolve(stream);
       };
     },
     { answer, size: SHARED },
   );
+}
+
+/** How many frames the recording has drawn from the shared tab so far. */
+function tabFrames(page: Page): Promise<number> {
+  return page.evaluate(() => (window as unknown as { __screen: { drawn: number } }).__screen.drawn);
 }
 
 /** The founder presses Stop sharing in the browser's own bar: the shared track ends. */
@@ -244,6 +292,7 @@ test.describe('call recordings', () => {
     await screen.getByRole('button', { name: 'Record' }).click();
     const notice = page.getByRole('alertdialog', { name: 'Record this call?' });
     await expect(notice).toContainText('This tab is recorded as you see it, with both voices.');
+    await expect(notice).toContainText('Minimized, only the call view is.');
     await expect(notice).toContainText('Only you can watch it.');
     await expect(notice).toContainText('Deleting the conversation deletes it too');
     await notice.getByRole('button', { name: 'Start recording' }).click();
@@ -256,8 +305,9 @@ test.describe('call recordings', () => {
     expect(asked).toEqual([
       expect.objectContaining({ audio: false, preferCurrentTab: true, surfaceSwitching: 'exclude' }),
     ]);
-    // A tab was shared, as asked: nothing to say about it.
+    // This tab was shared, as asked: nothing to say about it, and its frames are what is recorded.
     await expect(screen.locator('[data-slot="recording-note"]')).toHaveCount(0);
+    await expect.poll(() => tabFrames(page)).toBeGreaterThan(0);
     const stop = screen.getByRole('button', { name: /Stop recording$/ });
     await expect(stop).toHaveAttribute('aria-pressed', 'true');
     // Its name starts with what it shows (label in name); the whole call screen passes while it records.
@@ -322,11 +372,14 @@ test.describe('call recordings', () => {
       await video.evaluate((v: HTMLVideoElement) => `${String(v.videoWidth)}x${String(v.videoHeight)}`),
     ).toBe(`${String(SHARED.width)}x${String(SHARED.height)}`);
     expect(await video.evaluate((v: HTMLVideoElement) => v.muted)).toBe(true);
-    // A transcript line jumps the recording to it; the line is marked as the one heard, its caption over the picture.
+    // A transcript line jumps the recording to it; the line is marked as the one heard. The recorded tab already shows
+    // the call's lines, so the caption box over the picture is off until turned on.
     const said = transcript.getByRole('button', {
       name: new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
     });
     await said.click();
+    await expect(player.locator('[data-slot="recording-captions"]')).toHaveCount(0);
+    await player.getByRole('button', { name: 'Captions' }).click();
     await expect(player.locator('[data-slot="recording-captions"]')).toContainText(line, { timeout: 10_000 });
     await expect(said).toHaveAttribute('aria-current', 'true');
     await expect
@@ -496,9 +549,36 @@ test.describe('call recordings', () => {
     // Recording again, then minimized: the bar says it is still recording and stops it there.
     await bar.getByRole('button', { name: 'Return to call' }).click();
     await expect(screen.getByRole('button', { name: 'End call' })).toBeVisible();
+    const before = await tabFrames(page);
     await screen.getByRole('button', { name: 'Record' }).click();
     await expect(screen.getByTestId('recording-indicator')).toBeVisible();
+    await expect.poll(() => tabFrames(page)).toBeGreaterThan(before);
     await screen.getByRole('button', { name: 'Minimize call' }).click();
+    await expect(bar.getByTestId('recording-indicator')).toContainText('REC');
+    // Minimized, the tab shows other pages: the recording draws the call view, never a frame of the tab.
+    const minimized = await tabFrames(page);
+    await page.waitForTimeout(1_000);
+    expect(await tabFrames(page), 'frames of the tab drawn while minimized').toBe(minimized);
+    // A download while a take is held never asks about leaving the page (the file comes as an attachment).
+    const dialogs: string[] = [];
+    const onDialog = (dialog: Dialog) => {
+      dialogs.push(dialog.type());
+      void dialog.dismiss();
+    };
+    page.on('dialog', onDialog);
+    const here = page.url();
+    const heldDownload = page.waitForEvent('download');
+    await page
+      .getByRole('list', { name: 'Recordings of this conversation' })
+      .getByRole('button', { name: /^Download the recording from / })
+      .first()
+      .click();
+    await page.getByRole('menuitem', { name: /^Recording/ }).click();
+    expect((await heldDownload).suggestedFilename()).toMatch(/^Thomas call .+\.webm$/);
+    expect(dialogs).toEqual([]);
+    page.off('dialog', onDialog);
+    // The page stayed where it was, and so did the call and its recording.
+    expect(page.url()).toBe(here);
     await expect(bar.getByTestId('recording-indicator')).toContainText('REC');
     const savedFromBar = page.waitForResponse(
       (response) =>
@@ -569,6 +649,41 @@ test.describe('call recordings', () => {
     await expect(screen.getByRole('button', { name: 'End call' })).toBeVisible();
     const [saved] = await recordingsOf(page, sessionId);
     expect(saved).toMatchObject({ status: 'ready', hasCaptions: true });
+    await endCall(page);
+    await page.request.delete(`/api/v1/sessions/${sessionId}`, {
+      headers: { ...WRITE_HEADERS, 'idempotency-key': runToken() },
+    });
+  });
+
+  test('a window or whole screen is never recorded: sharing stops and the call view is recorded, said plainly', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await muteMedia(page);
+    await shareScreen(page, 'window');
+    await voiceNoticeSeen(page);
+    await openVenture(page);
+    const sessionId = await startConversation(page, `Who opens the reading room? ${runToken()}`);
+    await expect(page.getByRole('article', { name: 'Exchange 1' })).toBeVisible({ timeout: 30_000 });
+    const { screen } = await openCall(page);
+    await record(page, screen);
+    const note = screen.locator('[data-slot="recording-note"]');
+    await expect(note).toHaveText(/Only this tab can be recorded, so the call view is recorded\./);
+    // The window is no longer shared, and none of it was drawn.
+    expect(
+      await page.evaluate(() =>
+        (window as unknown as { __screen: { tracks: MediaStreamTrack[] } }).__screen.tracks.map(
+          (track) => track.readyState,
+        ),
+      ),
+    ).toEqual(['ended']);
+    expect(await tabFrames(page)).toBe(0);
+    const completed = page.waitForResponse(
+      (response) =>
+        /\/recordings\/[0-9a-f-]{36}\/complete$/.test(response.url()) && response.status() === 200,
+    );
+    await screen.getByRole('button', { name: /Stop recording$/ }).click();
+    await completed;
     await endCall(page);
     await page.request.delete(`/api/v1/sessions/${sessionId}`, {
       headers: { ...WRITE_HEADERS, 'idempotency-key': runToken() },

@@ -43,7 +43,7 @@ export interface RecordingsService {
   ): Promise<CreateRecordingResponse>;
   /** The files arrived (exactly the declared sizes): the recording is ready. Idempotent. */
   complete(ctx: RequestContext, recordingId: string): Promise<RecordingView>;
-  /** The caller's ready recordings, latest first (one conversation's, one venture's, or all). */
+  /** The caller's ready recordings, latest first, a page at a time (one conversation's, one venture's, or all). */
   list(ctx: RequestContext, query: z.input<typeof RecordingListQuery>): Promise<RecordingListResponse>;
   /** Presigned GETs of a ready recording and its captions, long enough to watch it to its end. Audited. */
   playback(ctx: RequestContext, recordingId: string): Promise<RecordingPlaybackResponse>;
@@ -103,13 +103,14 @@ function knownTimeZone(timeZone: string | undefined): string {
 }
 
 /**
- * The name a downloaded file is saved under, as the person would name it: whose call it was and when, in their time
- * zone ("Thomas call 2026-11-07 14-22.webm", its transcript "… transcript.vtt"). Characters a file system refuses
- * never reach it; the header encodes the rest (content-disposition in the stores).
+ * The name a downloaded file is saved under, as the person would name it: whose call it was and when it began, in their
+ * time zone ("Thomas call 2026-11-07 14-22.webm", its transcript "… transcript.vtt"). Characters a file system refuses,
+ * and invisible formatting characters (a right-to-left override that would disguise the extension, zero-width
+ * spaces), never reach it; the header encodes the rest (content-disposition in the stores).
  */
 export function recordingFilename(args: {
   readonly name: string | undefined;
-  readonly createdAt: string;
+  readonly startedAt: string;
   readonly timeZone: string | undefined;
   readonly mimeType: RecordingMimeType;
   readonly file: RecordingDownloadFile;
@@ -124,13 +125,14 @@ export function recordingFilename(args: {
       minute: '2-digit',
       hourCycle: 'h23',
     })
-      .formatToParts(new Date(args.createdAt))
+      .formatToParts(new Date(args.startedAt))
       .map((part) => [part.type, part.value]),
   );
   const when = `${parts.year ?? ''}-${parts.month ?? ''}-${parts.day ?? ''} ${parts.hour ?? ''}-${parts.minute ?? ''}`;
   const name = (args.name ?? '')
     // eslint-disable-next-line no-control-regex -- control characters are exactly what is removed
     .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, ' ')
+    .replace(/\p{Cf}+/gu, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 60)
@@ -451,15 +453,22 @@ export function createRecordingsService(kit: Kit): RecordingsService {
 
     list: async (ctx, rawQuery) => {
       const query = parseInput(RecordingListQuery, rawQuery);
-      const items = await kit.inRequest(ctx, (scope) =>
+      if (query.cursor !== undefined && recordingsRepo.decodeRecordingCursor(query.cursor) === null) {
+        throw fail.validation('The page cursor is not valid', [
+          { path: 'cursor', message: 'Invalid cursor' },
+        ]);
+      }
+      const page = await kit.inRequest(ctx, (scope) =>
         recordingsRepo.listRecordings(scope.tx, {
           sessionId: query.sessionId ?? null,
           ventureId: query.ventureId ?? null,
+          cursor: query.cursor ?? null,
           limit: query.limit,
         }),
       );
       return {
-        items: items.map(recordingsRepo.toRecordingView),
+        items: page.items.map(recordingsRepo.toRecordingView),
+        nextCursor: page.nextCursor,
         available: kit.deps.recordingStore !== undefined,
       };
     },
@@ -467,10 +476,22 @@ export function createRecordingsService(kit: Kit): RecordingsService {
     playback: async (ctx, rawRecordingId) => {
       const recordingId = requireId(rawRecordingId, 'Recording');
       const files = store();
-      const recording = await kit.inRequest(ctx, async (scope) => {
+      return kit.inRequest(ctx, async (scope) => {
         const own = await ownRecording(scope, recordingId, 'read');
         if (own.status !== 'ready')
           throw fail.conflict('This recording is still being saved.', 'recording_pending');
+        const expiresInSeconds = playbackSeconds(own.durationMs);
+        const [media, captions] = await Promise.all([
+          files.presignGet({ key: own.storageKey, contentType: own.mimeType, expiresInSeconds }),
+          own.captionsKey === null
+            ? Promise.resolve(null)
+            : files.presignGet({
+                key: own.captionsKey,
+                contentType: RECORDING_CAPTIONS_TYPE,
+                expiresInSeconds,
+              }),
+        ]);
+        // Audited once its URLs exist: a replay that could not be signed is not recorded as played.
         await audit(scope, {
           action: 'recording.played',
           outcome: 'succeeded',
@@ -479,32 +500,38 @@ export function createRecordingsService(kit: Kit): RecordingsService {
           objectId: recordingId,
           metadata: { callId: own.callId },
         });
-        return own;
+        return { recording: recordingsRepo.toRecordingView(own), media, captions };
       });
-      const expiresInSeconds = playbackSeconds(recording.durationMs);
-      const [media, captions] = await Promise.all([
-        files.presignGet({ key: recording.storageKey, contentType: recording.mimeType, expiresInSeconds }),
-        recording.captionsKey === null
-          ? Promise.resolve(null)
-          : files.presignGet({
-              key: recording.captionsKey,
-              contentType: RECORDING_CAPTIONS_TYPE,
-              expiresInSeconds,
-            }),
-      ]);
-      return { recording: recordingsRepo.toRecordingView(recording), media, captions };
     },
 
     download: async (ctx, rawRecordingId, rawQuery) => {
       const recordingId = requireId(rawRecordingId, 'Recording');
       const query = parseInput(RecordingDownloadQuery, rawQuery);
       const files = store();
-      const { recording, key } = await kit.inRequest(ctx, async (scope) => {
+      return kit.inRequest(ctx, async (scope) => {
         const own = await ownRecording(scope, recordingId, 'read');
         if (own.status !== 'ready')
           throw fail.conflict('This recording is still being saved.', 'recording_pending');
-        const file = query.file === 'transcript' ? own.captionsKey : own.storageKey;
-        if (file === null) throw fail.notFound('Transcript');
+        const key = query.file === 'transcript' ? own.captionsKey : own.storageKey;
+        if (key === null) throw fail.notFound('Transcript');
+        // The browser follows the URL as a link: a file no longer stored would answer with an error page in place of
+        // the app, so it is checked first.
+        if ((await files.size(key)) === null)
+          throw fail.notFound(query.file === 'transcript' ? 'Transcript' : 'Recording');
+        const filename = recordingFilename({
+          name: query.name,
+          startedAt: recordingsRepo.toRecordingView(own).startedAt,
+          timeZone: query.timeZone,
+          mimeType: own.mimeType,
+          file: query.file,
+        });
+        const presigned = await files.presignGet({
+          key,
+          contentType: query.file === 'transcript' ? RECORDING_CAPTIONS_TYPE : own.mimeType,
+          expiresInSeconds: DOWNLOAD_URL_SECONDS,
+          downloadAs: filename,
+        });
+        // Audited once its URL exists: a download that could not be signed is not recorded as one.
         await audit(scope, {
           action: 'recording.downloaded',
           outcome: 'succeeded',
@@ -513,22 +540,8 @@ export function createRecordingsService(kit: Kit): RecordingsService {
           objectId: recordingId,
           metadata: { callId: own.callId, file: query.file },
         });
-        return { recording: own, key: file };
+        return { ...presigned, filename };
       });
-      const filename = recordingFilename({
-        name: query.name,
-        createdAt: recording.createdAt,
-        timeZone: query.timeZone,
-        mimeType: recording.mimeType,
-        file: query.file,
-      });
-      const presigned = await files.presignGet({
-        key,
-        contentType: query.file === 'transcript' ? RECORDING_CAPTIONS_TYPE : recording.mimeType,
-        expiresInSeconds: DOWNLOAD_URL_SECONDS,
-        downloadAs: filename,
-      });
-      return { ...presigned, filename };
     },
 
     remove: async (ctx, rawRecordingId) => {

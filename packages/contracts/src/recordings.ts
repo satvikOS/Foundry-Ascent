@@ -23,7 +23,7 @@ export type RecordingMimeType = z.infer<typeof RecordingMimeType>;
 export const RECORDING_CAPTIONS_TYPE = 'text/vtt';
 
 export const RECORDING_LIMITS = {
-  /** Largest recording file (about 70 minutes at the bit rate the call screen records with). */
+  /** Largest recording file (about 44 minutes of a shared tab, about 65 of the composed call view). */
   maxBytes: 512 * 1024 * 1024,
   /** Largest captions file. */
   maxCaptionsBytes: 2 * 1024 * 1024,
@@ -60,7 +60,10 @@ export const RecordingView = z.object({
   /** Whether a captions transcript was saved with it. */
   hasCaptions: z.boolean(),
   status: RecordingStatus,
+  /** When it was registered: as the save began, once recording stopped. */
   createdAt: Timestamp,
+  /** When recording began (its registration less its length): what the lists show and a download is named after. */
+  startedAt: Timestamp,
   completedAt: Timestamp.nullable(),
 });
 export type RecordingView = z.infer<typeof RecordingView>;
@@ -95,16 +98,22 @@ export const CreateRecordingResponse = z.object({
 });
 export type CreateRecordingResponse = z.infer<typeof CreateRecordingResponse>;
 
-/** `GET /recordings` — the caller's own recordings, latest first: one conversation's, one venture's, or all. */
+/**
+ * `GET /recordings` — the caller's own recordings, latest first: one conversation's, one venture's, or all, a page at a
+ * time (pass the previous page's `nextCursor` as `cursor`).
+ */
 export const RecordingListQuery = z.object({
   sessionId: Id.optional(),
   ventureId: Id.optional(),
+  cursor: z.string().trim().min(1).max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 export type RecordingListQuery = z.infer<typeof RecordingListQuery>;
 
 export const RecordingListResponse = z.object({
   items: z.array(RecordingView),
+  /** The next (older) page's cursor; null on the last page. */
+  nextCursor: z.string().nullable(),
   /** Whether recordings can be saved in this environment (the recordings store is wired). */
   available: z.boolean(),
 });

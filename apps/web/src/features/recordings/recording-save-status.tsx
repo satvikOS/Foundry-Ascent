@@ -10,10 +10,10 @@ const action =
 
 /**
  * The recording's note and its save, in the call screen above its controls (a toast says the save once the screen is
- * closed: useCallRecordingLifecycle). While it records, what the founder should know about what is recorded (the
- * screen was not shared so the call view is, a whole screen is shared), with OK. Then saving with its progress; then "Recording saved" with Watch (the call goes on,
- * minimized, while the recording opens), which goes by itself after a moment; or why it was not saved, with Try again
- * and Discard. Inside the screen, so it can be clicked, and above the controls, so it never covers End.
+ * closed: useCallRecordingLifecycle). While it records, what the founder should know about what is recorded (this tab
+ * was not shared, so the call view is), with OK. Then saving with its progress; then "Recording saved" with Watch (the
+ * call goes on, minimized, while the recording opens), which goes by itself after a moment; or why it was not saved,
+ * with Try again and Discard. Inside the screen, so it can be clicked, and above the controls, so it never covers End.
  */
 export function RecordingSaveStatus({ session, tenant }: { session: RecordingSession; tenant: string }) {
   const state = useRecordingState(session);

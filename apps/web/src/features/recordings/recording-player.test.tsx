@@ -29,6 +29,7 @@ const RECORDING: RecordingView = {
   hasCaptions: false,
   status: 'ready',
   createdAt: '2026-11-06T12:00:00.000Z',
+  startedAt: '2026-11-06T11:57:55.000Z',
   completedAt: '2026-11-06T12:00:05.000Z',
 };
 
@@ -188,6 +189,11 @@ describe('RecordingPlayer: the transcript follows the replay', () => {
     });
     expect(maya).toHaveAttribute('aria-current', 'true');
     expect(thomas).not.toHaveAttribute('aria-current');
+    // A video already shows the call's own lines: the caption box over it is off until turned on.
+    expect(document.querySelector('[data-slot="recording-captions"]')).toBeNull();
+    const toggle = screen.getByRole('button', { name: 'Captions' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await user.click(toggle);
     expect(document.querySelector('[data-slot="recording-captions"]')).toHaveTextContent(
       'Maya: We ran the pilot.',
     );

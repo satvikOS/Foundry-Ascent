@@ -31,7 +31,7 @@ export function RecordingsList({ items, showConversation = false, label }: Recor
     <>
       <ul aria-label={label} className="grid divide-y divide-border">
         {items.map((recording) => {
-          const when = formatDateTime(recording.createdAt);
+          const when = formatDateTime(recording.startedAt);
           const KindIcon = recording.kind === 'video' ? Video : AudioLines;
           const title = showConversation
             ? (recording.conversationTitle ?? 'Untitled conversation')
@@ -49,7 +49,7 @@ export function RecordingsList({ items, showConversation = false, label }: Recor
                 <span className="flex flex-wrap gap-x-1.5 text-caption text-muted-foreground">
                   {showConversation ? (
                     <>
-                      <time dateTime={isoString(recording.createdAt)}>{when}</time>
+                      <time dateTime={isoString(recording.startedAt)}>{when}</time>
                       <span aria-hidden>·</span>
                     </>
                   ) : null}

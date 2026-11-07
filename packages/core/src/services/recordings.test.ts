@@ -5,13 +5,13 @@ import { recordingFilename } from './recordings.js';
 describe('a downloaded recording’s name', () => {
   const base = {
     name: 'Thomas',
-    createdAt: '2026-11-07T19:22:41.000Z',
+    startedAt: '2026-11-07T19:22:41.000Z',
     timeZone: 'America/New_York',
     mimeType: 'video/webm',
     file: 'recording',
   } as const;
 
-  it('says whose call it was and when, in the person’s time zone', () => {
+  it('says whose call it was and when it began, in the person’s time zone', () => {
     expect(recordingFilename(base)).toBe('Thomas call 2026-11-07 14-22.webm');
     expect(recordingFilename({ ...base, mimeType: 'video/mp4' })).toBe('Thomas call 2026-11-07 14-22.mp4');
     expect(recordingFilename({ ...base, mimeType: 'audio/mp4' })).toBe('Thomas call 2026-11-07 14-22.m4a');
@@ -40,6 +40,12 @@ describe('a downloaded recording’s name', () => {
     );
     expect(recordingFilename({ ...base, name: 'a'.repeat(200) })).toBe(
       `${'a'.repeat(60)} call 2026-11-07 14-22.webm`,
+    );
+  });
+
+  it('drops invisible formatting characters: a right-to-left override cannot disguise the extension', () => {
+    expect(recordingFilename({ ...base, name: 'Thomas\u202Ecod.exe\u200B' })).toBe(
+      'Thomascod.exe call 2026-11-07 14-22.webm',
     );
   });
 });

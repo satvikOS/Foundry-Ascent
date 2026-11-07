@@ -18,6 +18,7 @@ import { testQueryClient } from '@/features/knowledge/test-utils';
 import { IDS } from '@/features/knowledge/testing';
 
 import { RecordingsList } from './recordings-list';
+import { RecordingsPage } from './recordings-page';
 
 const RECORDING: RecordingView = {
   id: '55555555-5555-4555-8555-555555555555',
@@ -32,6 +33,7 @@ const RECORDING: RecordingView = {
   hasCaptions: true,
   status: 'ready',
   createdAt: '2026-11-06T12:00:00.000Z',
+  startedAt: '2026-11-06T11:57:55.000Z',
   completedAt: '2026-11-06T12:00:05.000Z',
 };
 
@@ -161,5 +163,41 @@ describe('RecordingsList', () => {
     const [input, init] = fetchMock.mock.calls[0] ?? [];
     expect(input === undefined ? '' : urlOf(input)).toContain(`/recordings/${RECORDING.id}`);
     expect(init?.method).toBe('DELETE');
+  });
+});
+
+describe('RecordingsPage', () => {
+  it('reaches recordings past the first page: Show older loads the next until there are none', async () => {
+    const rows = (from: number, count: number): RecordingView[] =>
+      Array.from({ length: count }, (_, i) => ({
+        ...RECORDING,
+        id: `55555555-5555-4555-8555-${String(from + i).padStart(12, '0')}`,
+        conversationTitle: `Conversation ${String(from + i)}`,
+      }));
+    const fetchMock = stubFetch();
+    fetchMock.mockImplementation((input) => {
+      const asked = new URL(urlOf(input), 'http://localhost');
+      const older = asked.searchParams.get('cursor') === 'page-2';
+      return Promise.resolve(
+        jsonResponse({
+          items: older ? rows(50, 3) : rows(0, 50),
+          nextCursor: older ? null : 'page-2',
+          available: true,
+        }),
+      );
+    });
+    const user = userEvent.setup();
+    await renderOnRecordings(<RecordingsPage />);
+    const list = await screen.findByRole('list', { name: 'Your recordings' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(50);
+    const first = new URL(urlOf(fetchMock.mock.calls[0]?.[0] ?? ''), 'http://localhost');
+    expect(Object.fromEntries(first.searchParams)).toEqual({ ventureId: IDS.venture, limit: '50' });
+
+    await user.click(screen.getByRole('button', { name: 'Show older recordings' }));
+    await waitFor(() => {
+      expect(within(list).getAllByRole('listitem')).toHaveLength(53);
+    });
+    expect(within(list).getAllByRole('listitem').at(-1)).toHaveTextContent('Conversation 52');
+    expect(screen.queryByRole('button', { name: 'Show older recordings' })).toBeNull();
   });
 });

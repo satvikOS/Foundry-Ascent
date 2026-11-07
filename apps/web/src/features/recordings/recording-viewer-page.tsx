@@ -82,7 +82,7 @@ export function RecordingViewerPage() {
             }
           >
             <p className="-mt-3 flex flex-wrap gap-x-1.5 text-small text-muted-foreground">
-              <span>{formatDateTime(recording.createdAt)}</span>
+              <span>{formatDateTime(recording.startedAt)}</span>
               <span aria-hidden>·</span>
               <span className="tabular" aria-hidden>
                 {formatClock(recording.durationMs / 1000)}

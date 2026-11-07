@@ -59,6 +59,8 @@ export const queryKeys = {
   recordings: {
     all: () => [ROOT, 'recordings'] as const,
     list: (filters: { sessionId?: string; ventureId?: string }) => [ROOT, 'recordings', filters] as const,
+    /** One venture's, a page at a time (the Recordings page). */
+    pages: (ventureId: string) => [ROOT, 'recordings', 'pages', ventureId] as const,
   },
   conversations: {
     all: () => [ROOT, 'conversations'] as const,

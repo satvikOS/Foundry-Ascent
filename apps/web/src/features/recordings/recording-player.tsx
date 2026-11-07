@@ -19,9 +19,10 @@ import { cuesAt, parseWebVtt, type ShownCue } from './captions';
 
 /*
  * Replays a recording with its captions in step (ADR-0023). The files come straight from the recordings store through
- * presigned GETs issued for this replay; nothing here calls the vEIR or any model. The captions show over the picture
- * and as a transcript beside it that follows the replay (the line being heard is marked and kept in view), where a
- * line jumps the recording to it. K plays or pauses it, J and L go back or forward ten seconds.
+ * presigned GETs issued for this replay; nothing here calls the vEIR or any model. The captions show as a transcript
+ * beside it that follows the replay (the line being heard is marked and kept in view), where a line jumps the recording
+ * to it, and over the picture of a sound-only recording (a video already shows the call's own lines, so there they
+ * are off until turned on). K plays or pauses it, J and L go back or forward ten seconds.
  *
  * A replay never plays over a live call: while one goes on, a replay does not start by itself (the founder would hear
  * two of the vEIR). On a voice call, playing it also puts the call on hold (the call's own hold: microphone off, resumed
@@ -167,13 +168,13 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
     retry: 1,
   });
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
-  const [showCaptions, setShowCaptions] = useState(true);
+  const [showCaptions, setShowCaptions] = useState(recording.kind === 'audio');
   const resumeAt = useRef<number | null>(null);
   const playhead = usePlayhead(video);
   const { onCall, onVoiceCall } = useReplayHoldsCall(video);
   const cues = useMemo(() => captions.data ?? [], [captions.data]);
   const showing = cuesAt(cues, playhead);
-  const label = `Recording of the call on ${formatDateTime(recording.createdAt)}`;
+  const label = `Recording of the call on ${formatDateTime(recording.startedAt)}`;
   const transcriptRef = useRef<HTMLOListElement | null>(null);
   const ownScrollAt = useRef(0);
   const current = showing.at(-1) ?? null;

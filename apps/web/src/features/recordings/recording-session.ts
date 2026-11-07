@@ -16,9 +16,10 @@ import {
 
 /*
  * The recording of a live call (ADR-0023): one per call engine, so it carries on while the call is minimized and
- * ends with the call. Record starts it: where the browser can share a screen it first asks for this tab (the call as
- * the founder sees it), and records the composed call view where it cannot or the founder did not share it, saying
- * so. Stop, the browser's own Stop sharing, hanging up or the call ending any other way stops it and saves it (the
+ * ends with the call. Record starts it: where the browser can share this tab it first asks for it (the call as the
+ * founder sees it, recorded while the call screen is open; minimized, the composed call view is recorded instead), and
+ * records the composed call view where it cannot or the founder did not share this tab, saying so. Stop (Cancel while
+ * the browser asks), the browser's own Stop sharing, hanging up or the call ending any other way stops it and saves it (the
  * file and its captions go to the recordings store, then it shows in the conversation and under Recordings). A save
  * that fails keeps the file in this page so it can be tried again; nothing is kept anywhere else. While it is kept, a
  * new recording cannot start: the founder saves it (Try again) or lets it go (Discard) first, so a take is never lost
@@ -37,7 +38,7 @@ export type RecordingState =
       readonly startedAt: number;
       /** What the picture is: the shared screen, the composed call view, or none. */
       readonly capture: RecordingCapture;
-      /** What the founder should know about it (the screen was not shared, a whole screen is), until they close it. */
+      /** What the founder should know about it (this tab was not shared, so the call view is), until they close it. */
       readonly note: string | null;
     }
   | { readonly status: 'saving'; readonly percent: number | null }
@@ -76,10 +77,15 @@ type Recorder = Pick<CallRecorder, 'start' | 'stop' | 'sync' | 'onLimit' | 'onSc
 export interface RecordingSessionDeps {
   createRecorder(input: CallRecorderInput): Recorder;
   /**
-   * Asks to share the screen (the browser's prompt), in the Record press itself; null where no screen can be shared.
+   * Asks to share this tab (the browser's prompt), in the Record press itself; null where it cannot be shared.
    * {@link requestScreen} in the browser.
    */
   requestScreen?(): Promise<MediaStream> | null;
+  /**
+   * Whether a shared screen is this tab (sharesThisTab in the browser): anything else, or anything when this is not
+   * given, is not recorded.
+   */
+  isThisTab?(display: MediaStream): boolean;
   save(
     recording: RecordedCall,
     options: { readonly onProgress?: (progress: UploadProgress) => void },
@@ -88,7 +94,7 @@ export interface RecordingSessionDeps {
   now(): number;
   /**
    * Makes leaving the page ask first (a take exists only in this page) until the returned release is called. The
-   * browser's own `beforeunload` prompt: {@link guardPageUnload}.
+   * browser's own `beforeunload` prompt: guardPageUnload (page-unload.ts).
    */
   guardUnload?(): () => void;
 }
@@ -113,20 +119,20 @@ function stopTracks(stream: MediaStream | null): void {
 }
 
 /**
- * What the founder should know about what is recorded, or null when it is what they expect: `declined`, a screen was
- * asked for and not shared (declined, or the browser could not capture it).
+ * Why this tab is not recorded when it was asked for: the person declined, the browser could not share it, or what
+ * was shared is not this tab (another tab, a window, a whole screen: refused, it is never recorded).
  */
-export function captureNote(
-  capture: RecordingCapture,
-  display: MediaStream | null,
-  declined: boolean,
-): string | null {
+export type UnsharedReason = 'declined' | 'failed' | 'elsewhere';
+
+/** What the founder should know about what is recorded, or null when it is what they expect. */
+export function captureNote(capture: RecordingCapture, unshared: UnsharedReason | null): string | null {
   if (capture === 'sound') return 'This browser records the sound only.';
-  if (capture === 'view') return declined ? 'The screen wasn’t shared, so the call view is recorded.' : null;
-  const surface = display?.getVideoTracks()[0]?.getSettings().displaySurface;
-  return surface === 'monitor' || surface === 'window'
-    ? `The whole ${surface === 'monitor' ? 'screen' : 'window'} is recorded, not just this tab.`
-    : null;
+  if (capture === 'screen' || unshared === null) return null;
+  return {
+    declined: 'The screen wasn’t shared, so the call view is recorded.',
+    failed: 'The browser couldn’t share this tab, so the call view is recorded.',
+    elsewhere: 'Only this tab can be recorded, so the call view is recorded.',
+  }[unshared];
 }
 
 export class RecordingSession {
@@ -147,7 +153,9 @@ export class RecordingSession {
   /** Releases the leave-the-page prompt, while a take exists only in this page. */
   private releaseUnload: (() => void) | null = null;
   /** The screen asked for and not answered yet (Stop meanwhile forgets it, and stops it once it comes). */
-  private asking: object | null = null;
+  private asking: { readonly release: () => void } | null = null;
+  /** Whether the call screen is open (the shared tab shows the call only then). */
+  private onScreen = true;
   onSaved: ((recording: RecordingView) => void) | null = null;
 
   constructor(
@@ -167,6 +175,11 @@ export class RecordingSession {
   /** Who and what the recording shows (the call screen keeps it current). */
   attach(subject: RecordingSubject): void {
     this.subject = subject;
+  }
+
+  /** The call screen opened or closed (minimized, or the call over): while it is closed the call view is recorded. */
+  showing(open: boolean): void {
+    this.onScreen = open;
   }
 
   private set(state: RecordingState): void {
@@ -201,14 +214,15 @@ export class RecordingSession {
   }
 
   /**
-   * Starts recording the live call: asks to share the screen first where the browser can (called from the Record
-   * press, so the browser may ask), then records it, or the composed call view when it was not shared. When it cannot
-   * record (no live call, a browser that cannot) the state says why (`failed`, nothing to retry). Does nothing while
+   * Starts recording the live call: asks to share this tab first where the browser can (called from the Record press,
+   * so the browser may ask), then records it, or the composed call view when it was not shared. When it cannot record
+   * (no live call, a browser that cannot) the state says why (`failed`, nothing to retry). Does nothing while
    * {@link canStart} is false.
    */
   start(): void {
     if (!this.canStart()) return;
-    if (!this.isLive()) {
+    const callId = this.liveCallId();
+    if (callId === null) {
       this.set({ status: 'failed', title: START_FAILED, message: NOT_LIVE, canRetry: false });
       return;
     }
@@ -216,51 +230,78 @@ export class RecordingSession {
     try {
       asked = this.deps.requestScreen?.() ?? null;
     } catch {
-      this.launch(null, true);
+      this.launch(null, 'failed');
       return;
     }
     if (asked === null) {
-      this.launch(null, false);
+      this.launch(null, null);
       return;
     }
-    const token = {};
+    // The call that was live at the press: when it ends while the browser asks, nothing is recorded (not even for a
+    // call that starts meanwhile, which nobody pressed Record in), and Record is offered again at once.
+    const offEngine = this.engine.subscribe(() => {
+      if (this.asking !== null && this.liveCallId() !== callId) this.forgetAsking();
+    });
+    const token = { release: offEngine };
     this.asking = token;
     this.set({ status: 'starting' });
-    const answered = (display: MediaStream | null) => {
+    const answered = (display: MediaStream | null, unshared: UnsharedReason | null) => {
       if (this.asking !== token) {
         stopTracks(display);
         return;
       }
       this.asking = null;
-      // The call ended while the browser asked: nothing to record.
-      if (!this.isLive()) {
+      offEngine();
+      if (this.liveCallId() !== callId) {
         stopTracks(display);
         this.set(IDLE);
         return;
       }
-      this.launch(display, display === null);
+      if (display !== null && this.deps.isThisTab?.(display) !== true) {
+        stopTracks(display);
+        this.launch(null, 'elsewhere');
+        return;
+      }
+      this.launch(display, unshared);
     };
-    asked.then(answered, () => {
-      answered(null);
-    });
+    asked.then(
+      (display) => {
+        answered(display, null);
+      },
+      (error: unknown) => {
+        // Declining the browser's prompt is a NotAllowedError; anything else is the browser not managing it.
+        const declined = error instanceof DOMException && error.name === 'NotAllowedError';
+        answered(null, declined ? 'declined' : 'failed');
+      },
+    );
   }
 
-  private isLive(): boolean {
+  /** The live call's id, while it can be recorded (its sound is there), else null. */
+  private liveCallId(): string | null {
     const snapshot = this.engine.getSnapshot();
-    return snapshot.phase === 'live' && snapshot.call !== null && this.engine.recordingSources() !== null;
+    return snapshot.phase === 'live' && this.engine.recordingSources() !== null
+      ? (snapshot.call?.id ?? null)
+      : null;
   }
 
-  /** Records `display` (the shared screen), or the call view when there is none (`declined`: one was asked for). */
-  private launch(display: MediaStream | null, declined: boolean): void {
+  /** Stops waiting for the browser's answer: nothing started (a screen shared after all is stopped once it comes). */
+  private forgetAsking(): void {
+    this.asking?.release();
+    this.asking = null;
+    this.set(IDLE);
+  }
+
+  /** Records `display` (this tab), or the call view when there is none (`unshared`: why, when it was asked for). */
+  private launch(display: MediaStream | null, unshared: UnsharedReason | null): void {
     try {
-      this.begin(display, declined);
+      this.begin(display, unshared);
     } catch (error) {
       stopTracks(display);
       this.set({ status: 'failed', title: START_FAILED, message: messageOf(error), canRetry: false });
     }
   }
 
-  private begin(display: MediaStream | null, declined: boolean): void {
+  private begin(display: MediaStream | null, unshared: UnsharedReason | null): void {
     const snapshot = this.engine.getSnapshot();
     const callId = snapshot.call?.id ?? null;
     const audio = this.engine.recordingSources();
@@ -280,6 +321,7 @@ export class RecordingSession {
       picture,
       transcript: () => captions.recent(TRANSCRIPT_LINES),
       display,
+      onScreen: () => this.onScreen,
     });
     recorder.start();
     const startedAt = this.deps.now();
@@ -321,7 +363,7 @@ export class RecordingSession {
       callId,
       startedAt,
       capture: recorder.capture,
-      note: captureNote(recorder.capture, display, declined),
+      note: captureNote(recorder.capture, unshared),
     });
   }
 
@@ -333,12 +375,12 @@ export class RecordingSession {
 
   /**
    * Stops recording (Stop, the browser's Stop sharing, hanging up, the call ending) and saves it. While the browser
-   * still asks which screen to share, nothing has started: it is forgotten (a screen shared after all is stopped).
+   * still asks which screen to share (Cancel), nothing has started: it is forgotten (a screen shared after all is
+   * stopped).
    */
   async stop(): Promise<void> {
     if (this.asking !== null) {
-      this.asking = null;
-      this.set(IDLE);
+      this.forgetAsking();
       return;
     }
     const active = this.active;
@@ -442,20 +484,6 @@ export function recordingSessionFor(engine: RecordedEngine, deps: RecordingSessi
     sessions.set(engine, session);
   }
   return session;
-}
-
-/**
- * The browser asks before the page is closed, reloaded or left for another site (a take held only in this page would
- * be lost). Moving between the app's own pages keeps it, and needs no prompt.
- */
-export function guardPageUnload(): () => void {
-  const ask = (event: BeforeUnloadEvent) => {
-    event.preventDefault();
-  };
-  window.addEventListener('beforeunload', ask);
-  return () => {
-    window.removeEventListener('beforeunload', ask);
-  };
 }
 
 /** The recording that runs in the browser (MediaRecorder on the shared screen or the call view, and the call's sound). */

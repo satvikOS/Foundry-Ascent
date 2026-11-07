@@ -4,8 +4,8 @@ import { safeStorage } from '@/lib/storage';
 
 /*
  * The notice read before a person's first recording (what is recorded, where it is kept, how to delete it),
- * remembered per person in this browser: a versioned key, so new facts are shown again once (2: the screen is
- * recorded).
+ * remembered per person in this browser: a versioned key, so new facts are shown again once (2: this tab is
+ * recorded while the call is open).
  */
 const NOTICE_VERSION = 2;
 

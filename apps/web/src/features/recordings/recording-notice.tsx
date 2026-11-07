@@ -19,7 +19,8 @@ interface Fact {
 
 /**
  * What a person reads before their first recording: what is recorded, where it is kept, how to delete it. `screen`:
- * the browser can share this tab, and asks which to share once they start (else the call view is recorded).
+ * the browser can share this tab and asks to once they start (else the call view is recorded). Only this tab is ever
+ * recorded, and only while the call is open: minimized, the call view is.
  */
 export function recordingFacts(name: string, video: boolean, screen: boolean): readonly Fact[] {
   const picture = video ? `${name}’s AI avatar` : 'the call’s sphere';
@@ -28,7 +29,7 @@ export function recordingFacts(name: string, video: boolean, screen: boolean): r
       id: 'what',
       icon: MonitorPlay,
       text: screen
-        ? 'This tab is recorded as you see it, with both voices. Your browser asks you to share it first.'
+        ? 'This tab is recorded as you see it, with both voices. Minimized, only the call view is. Your browser asks you to share the tab first.'
         : `The call view is recorded: ${picture}, the conversation and both voices.`,
     },
     {

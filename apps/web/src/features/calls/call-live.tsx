@@ -212,8 +212,10 @@ export function CallLive({
       r: () => {
         if (recording === null) return;
         const { session } = recording;
-        // As on the control: stopping is never blocked; starting needs a call that can be recorded now.
-        if (session.getSnapshot().status === 'recording') void session.stop();
+        // As on the control: stopping (or cancelling while the browser asks) is never blocked; starting needs a call
+        // that can be recorded now.
+        const { status } = session.getSnapshot();
+        if (status === 'recording' || status === 'starting') void session.stop();
         else if (recording.blocker === null && session.canStart())
           document.querySelector<HTMLButtonElement>('[data-slot="record-control"]')?.click();
       },

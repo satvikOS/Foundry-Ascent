@@ -65,6 +65,9 @@ function setup(
     Promise.resolve({ id: 'r1', callId: recorded.callId } as RecordingView),
   ),
   requestScreen?: () => Promise<MediaStream> | null,
+  // As the browser decides it (sharesThisTab): here, any browser tab is this one.
+  isThisTab = (display: MediaStream) =>
+    display.getVideoTracks()[0]?.getSettings().displaySurface === 'browser',
 ) {
   let now = 1_000_000;
   const recorder = {
@@ -92,6 +95,7 @@ function setup(
       return recorder;
     },
     ...(requestScreen ? { requestScreen } : {}),
+    isThisTab,
     save,
     now: () => now,
     guardUnload: () => {
@@ -257,6 +261,12 @@ describe('RecordingSession: the screen', () => {
     expect(inputs[0]?.display).toBe(screen.stream);
     expect(inputs[0]).toMatchObject({ name: 'Thomas', founderName: 'Maya' });
     expect(unload.held()).toBe(true);
+    // The recorder draws the tab only while the call screen is open: minimized, the call view.
+    expect(inputs[0]?.onScreen()).toBe(true);
+    session.showing(false);
+    expect(inputs[0]?.onScreen()).toBe(false);
+    session.showing(true);
+    expect(inputs[0]?.onScreen()).toBe(true);
   });
 
   it('stops and saves when the person stops sharing from the browser', async () => {
@@ -290,34 +300,56 @@ describe('RecordingSession: the screen', () => {
     expect(session.getSnapshot()).toMatchObject({ status: 'recording', note: null });
   });
 
-  it('records the call view when the browser could not capture the screen, or refused to ask', async () => {
+  it('records the call view when the browser could not capture the screen, or refused to ask, without blaming the person', async () => {
     const failed = setup(undefined, () => Promise.reject(new DOMException('No source', 'NotReadableError')));
     failed.session.start();
     await vi.waitFor(() => {
       expect(failed.session.getSnapshot()).toMatchObject({
         status: 'recording',
         capture: 'view',
-        note: 'The screen wasn’t shared, so the call view is recorded.',
+        note: 'The browser couldn’t share this tab, so the call view is recorded.',
       });
     });
     const refused = setup(undefined, () => {
       throw new TypeError('getDisplayMedia needs a user gesture');
     });
     refused.session.start();
-    expect(refused.session.getSnapshot()).toMatchObject({ status: 'recording', capture: 'view' });
+    expect(refused.session.getSnapshot()).toMatchObject({
+      status: 'recording',
+      capture: 'view',
+      note: 'The browser couldn’t share this tab, so the call view is recorded.',
+    });
     expect(refused.inputs[0]?.display).toBeNull();
   });
 
-  it('says when a whole screen is recorded rather than this tab', async () => {
-    const { session } = setup(undefined, () => Promise.resolve(sharedScreen('monitor').stream));
-    session.start();
-    await vi.waitFor(() => {
-      expect(session.getSnapshot()).toMatchObject({
-        status: 'recording',
-        capture: 'screen',
-        note: 'The whole screen is recorded, not just this tab.',
+  it('never records a window, a whole screen or another tab: it stops sharing it and records the call view', async () => {
+    // A surface the browser did not report ('') is not known to be this tab either.
+    for (const surface of ['window', 'monitor', '']) {
+      const screen = sharedScreen(surface);
+      const { session, inputs } = setup(undefined, () => Promise.resolve(screen.stream));
+      session.start();
+      await vi.waitFor(() => {
+        expect(session.getSnapshot()).toMatchObject({
+          status: 'recording',
+          capture: 'view',
+          note: 'Only this tab can be recorded, so the call view is recorded.',
+        });
       });
+      expect(screen.track.stop).toHaveBeenCalled();
+      expect(inputs[0]?.display).toBeNull();
+    }
+    // Another tab: a browser tab, but not carrying this page's capture handle.
+    const other = sharedScreen();
+    const elsewhere = setup(
+      undefined,
+      () => Promise.resolve(other.stream),
+      () => false,
+    );
+    elsewhere.session.start();
+    await vi.waitFor(() => {
+      expect(elsewhere.session.getSnapshot()).toMatchObject({ status: 'recording', capture: 'view' });
     });
+    expect(other.track.stop).toHaveBeenCalled();
   });
 
   it('records nothing when Stop or the call’s end comes while the browser asks, and stops a screen shared late', async () => {
@@ -337,16 +369,39 @@ describe('RecordingSession: the screen', () => {
     });
     expect(recorder.start).not.toHaveBeenCalled();
 
-    // The call ends while the browser asks.
+    // The call ends while the browser asks: Record is offered again at once, before the browser answers.
     const late = sharedScreen();
     session.start();
     call.set({ phase: 'ended' });
+    expect(session.getSnapshot()).toEqual({ status: 'idle' });
     share(late.stream);
     await vi.waitFor(() => {
       expect(late.track.stop).toHaveBeenCalled();
     });
     expect(session.getSnapshot()).toEqual({ status: 'idle' });
     expect(recorder.start).not.toHaveBeenCalled();
+    expect(call.listeners.size).toBe(0);
+  });
+
+  it('never records a call nobody pressed Record in: one that started while the browser asked about another', async () => {
+    const screen = sharedScreen();
+    let share: (stream: MediaStream) => void = () => undefined;
+    const asked = () =>
+      new Promise<MediaStream>((resolve) => {
+        share = resolve;
+      });
+    const { session, recorder, call } = setup(undefined, asked);
+    session.start();
+    // That call ended and the next began on the same engine before the answer came.
+    call.set({ call: { ...CALL, id: '99999999-9999-4999-8999-999999999999' } });
+    expect(session.getSnapshot()).toEqual({ status: 'idle' });
+    share(screen.stream);
+    await vi.waitFor(() => {
+      expect(screen.track.stop).toHaveBeenCalled();
+    });
+    expect(recorder.start).not.toHaveBeenCalled();
+    // The new call records once someone presses Record in it.
+    expect(session.canStart()).toBe(true);
   });
 
   it('stops the shared screen when the recording cannot start after all', async () => {

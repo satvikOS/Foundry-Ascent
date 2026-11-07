@@ -53,9 +53,10 @@ interface RecordControlProps {
 }
 
 /**
- * The call's Record control, between the microphone and End: Record (after a short notice the first time), then a red
- * dot with the recording's time and Stop. Hanging up stops and saves it too. A call that cannot be recorded (a private
- * call, a browser that cannot) keeps the control, disabled, with the reason as its description.
+ * The call's Record control, between the microphone and End: Record (after a short notice the first time), Cancel while
+ * the browser asks which screen to share, then a red dot with the recording's time and Stop. Hanging up stops and saves
+ * it too. A call that cannot be recorded (a private call, a browser that cannot) keeps the control, disabled, with the
+ * reason as its description.
  */
 export function RecordControl({
   session,
@@ -88,23 +89,31 @@ export function RecordControl({
           ? DAILY_LIMIT_TEXT
           : null;
 
-  const busy = saving || starting;
   const toggle = () => {
-    if (blocked || disabled || busy) return;
-    if (recording) void session.stop();
+    if (blocked || disabled || saving) return;
+    // Stop saves the take; Cancel, while the browser asks, records nothing.
+    if (recording || starting) void session.stop();
     else start.request();
   };
 
   return (
     <>
-      <SimpleTooltip content={recording ? 'Stop and save the recording' : (reason ?? 'Record this call')}>
+      <SimpleTooltip
+        content={
+          recording
+            ? 'Stop and save the recording'
+            : starting
+              ? 'Cancel the recording'
+              : (reason ?? 'Record this call')
+        }
+      >
         <button
           type="button"
           data-slot="record-control"
           data-recording={recording || undefined}
           onClick={toggle}
           aria-pressed={recording}
-          aria-disabled={blocked || disabled || busy || undefined}
+          aria-disabled={blocked || disabled || saving || undefined}
           aria-describedby={blocked ? reasonId : undefined}
           aria-keyshortcuts="R"
           // While it records, the name is what the button shows ("0:42 Stop", then "recording" for a screen reader):
@@ -115,13 +124,13 @@ export function RecordControl({
               : saving
                 ? 'Saving the recording'
                 : starting
-                  ? 'Starting the recording'
+                  ? 'Cancel the recording'
                   : 'Record'
           }
           aria-description={recording ? `${spokenDuration(seconds)} recorded` : undefined}
           className={cn(
             'fa-call-control fa-call-focus relative inline-flex h-12 min-w-28 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-full px-5 text-sm font-medium transition-colors duration-150',
-            (blocked || disabled || busy) && 'cursor-not-allowed opacity-50',
+            (blocked || disabled || saving) && 'cursor-not-allowed opacity-50',
           )}
         >
           {recording ? (
@@ -136,7 +145,7 @@ export function RecordControl({
           ) : saving ? (
             <span aria-hidden>Saving…</span>
           ) : starting ? (
-            <span aria-hidden>Starting…</span>
+            <span aria-hidden>Cancel</span>
           ) : (
             <>
               <Circle aria-hidden className="size-3.5 fill-current text-destructive" />

@@ -1,17 +1,25 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import type { RecordingView } from '@foundry/contracts';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
 import { toast } from '@/components/ui/toast';
 import { queryKeys } from '@/lib/api/query-keys';
 import { saveRecording } from '@/lib/api/hooks/recording-upload';
 
-import { canRecordCalls, requestScreen } from './call-recorder';
+import { canRecordCalls, requestScreen, sharesThisTab } from './call-recorder';
+import { guardPageUnload } from './page-unload';
 import {
   browserRecorder,
-  guardPageUnload,
   recordingSessionFor,
   type RecordedEngine,
   type RecordedFace,
@@ -33,6 +41,7 @@ const SAVE_TOAST = 'call-recording-save';
 const BROWSER_DEPS = {
   createRecorder: browserRecorder,
   requestScreen,
+  isThisTab: sharesThisTab,
   save: saveRecording,
   now: () => Date.now(),
   guardUnload: guardPageUnload,
@@ -84,12 +93,13 @@ export function useWatchRecording(tenant: string): (recording: RecordingView) =>
 }
 
 /**
- * Keeps the call's recording in step with the call screen (who it shows, the face) and says what happens to it. While
- * the call screen is open (`inCall`) the screen itself shows the save (RecordingSaveStatus, above the controls): the
- * screen is a modal, so nothing outside it can be clicked, and a toast over it would hide End and pass its clicks
- * through to it. Once the screen is closed (minimized, or the call ended and it returned to the conversation) a toast
- * says it instead: Saving, then Watch (its conversation's list and Recordings are refreshed), or why it failed with
- * Try again and Discard. Mounted once, by the call screen, which stays mounted for the whole call.
+ * Keeps the call's recording in step with the call screen (who it shows, the face, whether the screen is open: a
+ * recording of this tab records it only then) and says what happens to it. While the call screen is open (`inCall`)
+ * the screen itself shows the save (RecordingSaveStatus, above the controls): the screen is a modal, so nothing outside
+ * it can be clicked, and a toast over it would hide End and pass its clicks through to it. Once the screen is closed
+ * (minimized, or the call ended and it returned to the conversation) a toast says it instead: Saving, then Watch (its
+ * conversation's list and Recordings are refreshed), or why it failed with Try again and Discard. Mounted once, by the
+ * call screen, which stays mounted for the whole call.
  */
 export function useCallRecordingLifecycle(
   session: RecordingSession,
@@ -110,6 +120,11 @@ export function useCallRecordingLifecycle(
   useEffect(() => {
     session.attach({ veirName, founderName, face });
   }, [session, veirName, founderName, face]);
+
+  // Before the browser paints the page under a minimized call, so no frame of it reaches a recording of this tab.
+  useLayoutEffect(() => {
+    session.showing(inCall);
+  }, [session, inCall]);
 
   useEffect(() => {
     session.onSaved = () => {

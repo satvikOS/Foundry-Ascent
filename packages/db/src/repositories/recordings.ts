@@ -10,6 +10,7 @@ import { col, type RawRow } from '../columns.js';
 import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
 import { clampLimit, queryFirst, queryNumber, queryRows } from './common.js';
+import { microsToIso } from './sessions.js';
 
 export const RECORDING_DELETE_REASONS = ['founder', 'conversation', 'abandoned', 'expired'] as const;
 export type RecordingDeleteReason = (typeof RECORDING_DELETE_REASONS)[number];
@@ -85,6 +86,8 @@ export function toRecordingView(recording: RecordingRecord): RecordingView {
     hasCaptions: recording.captionsKey !== null,
     status: recording.status,
     createdAt: recording.createdAt,
+    // Registered as its save began, so it began its length earlier.
+    startedAt: new Date(Date.parse(recording.createdAt) - recording.durationMs).toISOString(),
     completedAt: recording.completedAt,
   };
 }
@@ -194,32 +197,77 @@ export function softDeleteRecording(
 export interface ListRecordingsOptions {
   readonly sessionId?: string | null;
   readonly ventureId?: string | null;
+  /** Opaque cursor from the previous page. */
+  readonly cursor?: string | null;
   readonly limit?: number;
 }
 
+export interface RecordingPage {
+  readonly items: RecordingRecord[];
+  /** The next (older) page's cursor; null on the last page. */
+  readonly nextCursor: string | null;
+}
+
 /**
- * The caller's ready recordings, latest first (one conversation's, one venture's, or all of them), of ventures the
- * caller still has: a membership revoked or expired takes that venture's recordings off the list at once.
+ * Exact keyset position: the registration in microseconds since the epoch (JS dates keep milliseconds only), as a
+ * number, so the SQL text carries no time-format literal (see sessions' ACTIVITY_MICROS_SQL).
  */
-export function listRecordings(
+const CREATED_MICROS_SQL = `(extract(epoch FROM r.created_at) * 1000000)::bigint::text`;
+const MICROS = /^\d{1,16}$/;
+const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Encodes a keyset position (registration in microseconds since the epoch, id) as an opaque cursor. */
+export function encodeRecordingCursor(createdMicros: string, id: string): string {
+  return Buffer.from(`${createdMicros}|${id}`, 'utf8').toString('base64url');
+}
+
+/** Decodes a cursor; null when it is malformed. */
+export function decodeRecordingCursor(cursor: string): { createdMicros: string; id: string } | null {
+  const [position, id] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
+  if (position === undefined || id === undefined || !MICROS.test(position) || !UUID_TEXT.test(id))
+    return null;
+  return { createdMicros: position, id: id.toLowerCase() };
+}
+
+/**
+ * The caller's ready recordings, latest first (one conversation's, one venture's, or all of them), one keyset page at
+ * a time, of ventures the caller still has: a membership revoked or expired takes that venture's recordings off the
+ * list at once.
+ */
+export async function listRecordings(
   ex: SqlExecutor,
   options: ListRecordingsOptions = {},
-): Promise<RecordingRecord[]> {
-  return queryRows(
+): Promise<RecordingPage> {
+  const limit = clampLimit(options.limit, 50, 100);
+  const cursor = options.cursor ? decodeRecordingCursor(options.cursor) : null;
+  const rows = await queryRows(
     ex,
-    `SELECT ${COLUMNS} FROM ${FROM}
+    `SELECT ${COLUMNS}, ${CREATED_MICROS_SQL} AS created_micros FROM ${FROM}
      WHERE r.deleted_at IS NULL AND r.status = 'ready' AND app.can_read_venture(r.venture_id)
        AND (:session IS NULL OR r.session_id = :session)
        AND (:venture IS NULL OR r.venture_id = :venture)
-     ORDER BY r.created_at DESC, r.id
+       AND (:cursorAt IS NULL OR (r.created_at, r.id) < ((:cursorAt)::timestamptz, :cursorId))
+     ORDER BY r.created_at DESC, r.id DESC
      LIMIT :limit`,
     {
       session: p.nullable.uuid(options.sessionId ?? null),
       venture: p.nullable.uuid(options.ventureId ?? null),
-      limit: p.int(clampLimit(options.limit, 50, 100)),
+      cursorAt: p.nullable.text(cursor ? microsToIso(cursor.createdMicros) : null),
+      cursorId: p.nullable.uuid(cursor?.id),
+      limit: p.int(limit + 1),
     },
-    decodeRecording,
+    (r) => ({
+      recording: decodeRecording(r),
+      createdMicros: col.text.decode(r.created_micros, 'created_micros'),
+    }),
   );
+  const page = rows.slice(0, limit);
+  const last = page[page.length - 1];
+  return {
+    items: page.map((row) => row.recording),
+    nextCursor:
+      rows.length > limit && last ? encodeRecordingCursor(last.createdMicros, last.recording.id) : null,
+  };
 }
 
 // ------------------------------------------------------------------------------------------------

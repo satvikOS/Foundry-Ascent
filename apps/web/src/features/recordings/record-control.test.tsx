@@ -77,10 +77,11 @@ describe('RecordControl', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
-  it('says the tab is recorded where the browser can share it, and waits while the browser asks', async () => {
+  it('says the tab is recorded where the browser can share it, and cancels while the browser asks', async () => {
+    // A browser that can share this tab and tell it is this tab once shared (Chromium, Edge).
     Object.defineProperty(navigator, 'mediaDevices', {
       configurable: true,
-      value: { getDisplayMedia: vi.fn() },
+      value: { getDisplayMedia: vi.fn(), setCaptureHandleConfig: vi.fn() },
     });
     try {
       const user = userEvent.setup();
@@ -90,7 +91,7 @@ describe('RecordControl', () => {
       );
       await user.click(screen.getByRole('button', { name: 'Record' }));
       expect(await screen.findByRole('alertdialog', { name: 'Record this call?' })).toHaveTextContent(
-        'This tab is recorded as you see it, with both voices. Your browser asks you to share it first.',
+        'This tab is recorded as you see it, with both voices. Minimized, only the call view is. Your browser asks you to share the tab first.',
       );
       await user.click(screen.getByRole('button', { name: 'Not now' }));
       expect(start).not.toHaveBeenCalled();
@@ -106,11 +107,34 @@ describe('RecordControl', () => {
           video={false}
         />,
       );
-      const control = screen.getByRole('button', { name: 'Starting the recording' });
-      expect(control).toHaveAttribute('aria-disabled', 'true');
+      // Cancel: nothing has started, and nothing will (a prompt left unanswered never holds Record).
+      const control = screen.getByRole('button', { name: 'Cancel the recording' });
+      expect(control).not.toHaveAttribute('aria-disabled');
+      expect(control).toHaveTextContent('Cancel');
       await user.click(control);
+      expect(asking.stop).toHaveBeenCalledOnce();
       expect(asking.start).not.toHaveBeenCalled();
-      expect(asking.stop).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(navigator, 'mediaDevices');
+    }
+  });
+
+  it('says the call view is recorded where the browser shares windows and screens but never just this tab', async () => {
+    // Firefox and Safari: getDisplayMedia, but no way to tell a capture of this tab, so no screen is asked for.
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getDisplayMedia: vi.fn() },
+    });
+    try {
+      const user = userEvent.setup();
+      const { session } = fakeSession();
+      renderWithProviders(
+        <RecordControl session={session} blocker={null} principalId="p-window" name="Thomas" video={false} />,
+      );
+      await user.click(screen.getByRole('button', { name: 'Record' }));
+      expect(await screen.findByRole('alertdialog', { name: 'Record this call?' })).toHaveTextContent(
+        'The call view is recorded: the call’s sphere, the conversation and both voices.',
+      );
     } finally {
       Reflect.deleteProperty(navigator, 'mediaDevices');
     }

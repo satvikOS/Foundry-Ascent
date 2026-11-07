@@ -19,26 +19,36 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
 
 ## Decision
 
-1. **The browser records the screen, and the call itself where it cannot.** `MediaRecorder` on one composed stream
-   (`apps/web/src/features/recordings/call-recorder.ts`):
-   - **Picture, the screen:** the Record press (or the notice's Start recording: a person's gesture, which the browser
-     requires) asks to share the screen with `getDisplayMedia`: this tab preferred and offered alone where the browser
-     can (`preferCurrentTab`, `displaySurface: 'browser'`, `selfBrowserSurface: 'include'`,
-     `surfaceSwitching: 'exclude'`, `monitorTypeSurfaces: 'exclude'`), no sound of its own (`audio: false`,
-     `systemAudio: 'exclude'`), at most 1920×1080 at 15 frames a second, its track hinted `detail` (text stays sharp).
-     The recording is then the call as the founder sees it: the face or the voice visual, the captions, the
-     conversation lines of both speakers and the call's controls. The browser's own Stop sharing ends the track, which
-     stops the recording and saves it. A whole screen or a window shared instead of the tab (Firefox offers no tabs)
-     is recorded as shared, and the call screen says so ("The whole screen is recorded, not just this tab.").
-   - **Picture, the call view:** where a screen cannot be shared (iOS and iPadOS Safari, most phones), or the founder
-     declined (or the browser could not capture it), one 1280×720 canvas redrawn 24 times a second composes the call
-     view instead: the face's own video element while a face shows (a vendor face's WebRTC track, or the stand-in's
-     stream), labelled "AI avatar" as on the call tile, otherwise the call's presence (a sphere that follows the vEIR's
-     measured voice, "AI voice"); the vEIR's name and the recording's time; and the conversation's latest lines from
-     both speakers under their names (`CaptionRecorder.recent`: finished lines and those still being heard). A declined
-     screen is said in the call screen ("The screen wasn't shared, so the call view is recorded.", with OK). Either
-     way it is one video track for the whole recording, so switching between voice and video mid-recording never
-     changes the recorded track.
+1. **The browser records this tab while the call is on it, and the call itself otherwise.** `MediaRecorder` on one
+   canvas and one sound mix (`apps/web/src/features/recordings/call-recorder.ts`); the canvas's track is the only
+   picture, so switching between voice and video, or minimizing the call, never changes the recorded track:
+   - **Picture, this tab:** where the browser can share this tab and tell, once shared, that it is this tab (Chromium
+     and Edge on a computer: `getDisplayMedia` and the Capture Handle API), the Record press (or the notice's Start
+     recording: a person's gesture, which the browser requires) marks the page with a random capture handle
+     (`setCaptureHandleConfig`, visible to this origin only) and asks to share the screen: this tab preferred
+     (`preferCurrentTab`, `displaySurface: 'browser'`, `selfBrowserSurface: 'include'`, `surfaceSwitching: 'exclude'`,
+     `monitorTypeSurfaces: 'exclude'`), no sound of its own (`audio: false`, `systemAudio: 'exclude'`), at most
+     1920×1080 at 15 frames a second. Only a browser surface carrying that handle is recorded (`sharesThisTab`):
+     another tab, a window or a whole screen is stopped at once and the call view is recorded instead ("Only this tab
+     can be recorded, so the call view is recorded."), so nothing outside the call (other pages, other apps,
+     notifications) can reach a recording. The tab's frames are drawn onto a canvas of its size (scaled to fit
+     1920×1080), its track hinted `detail` (text stays sharp), **only while the call screen is open**: the recording
+     is then the call as the founder sees it, the face or the voice visual, the captions, the conversation lines of
+     both speakers and the call's controls. While the call is minimized the tab shows other pages (a private chat
+     among them, which is never kept), so the composed call view below is drawn instead, from the moment the screen
+     closes (before the browser paints the page under it) until half a second after it opens again (the tab's frames
+     arrive a little late). The browser's own Stop sharing ends the track, which stops the recording and saves it.
+   - **Picture, the call view:** while the call is minimized, and for the whole recording where this tab cannot be
+     shared (iOS and iPadOS Safari, most phones; Firefox and desktop Safari, which share windows and screens but never
+     just this tab, so no screen is asked for there) or was not (declined, refused, or the browser could not share
+     it), a 1280×720 composition redrawn 24 times a second (15 within a shared tab's canvas, scaled to it): the face's
+     own video element while a face shows (a vendor face's WebRTC track, or the stand-in's stream), labelled "AI
+     avatar" as on the call tile, otherwise the call's presence (a sphere that follows the vEIR's measured voice, "AI
+     voice"); the vEIR's name and the recording's time; and the conversation's latest lines from both speakers under
+     their names (`CaptionRecorder.recent`: finished lines and those still being heard). Where this tab was asked for
+     and not recorded the call screen says why, with OK: declined ("The screen wasn't shared, so the call view is
+     recorded."), the browser failing ("The browser couldn't share this tab, so the call view is recorded.") or
+     something else shared ("Only this tab can be recorded, …").
    - **Sound:** a WebAudio mix on the call's own AudioContext into a `MediaStreamAudioDestinationNode`: the speech
      player's output (what the speakers get, after ducking), a vendor face's voice from its element's audio track, and
      the founder's microphone through a gain the call's own gating drives (`microphoneOpen`): silent while muted, on
@@ -48,20 +58,24 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
      The shared screen's own sound is never taken, so nothing is heard twice.
    - **Container:** the first `isTypeSupported` of webm (VP8/VP9 + Opus: Chromium, Firefox) or mp4 (H.264 + AAC:
      Safari), sound only (webm/Opus or mp4/AAC) where no picture can be captured (a screen shared for it is stopped at
-     once); 1.5 Mbit/s video (a 30-minute call is about 340 MB, under the 512 MB cap), 96 kbit/s audio.
+     once); 96 kbit/s audio and 1.5 Mbit/s video for a shared tab (mostly still text: a 30-minute call is about 340 MB)
+     or 1 Mbit/s for the composed view (about 235 MB, held in memory on the phones that record it), both under the
+     512 MB cap (about 44 and 65 minutes).
    - **Captions:** a timed transcript recorded from the call's own captions as they change (each validated unit of
      the vEIR's reply as it is heard, each finished line of the founder's), never from the audio, saved beside the
      recording as WebVTT with one voice span per cue (`<v.veir Thomas>`, `<v.founder Maya>`).
 2. **Controls.** Record sits in the call's dock between the microphone and End (keyboard `R`); while it records, a
    red dot, "REC" and its time show beside the call's time in the header, and the dock shows the time with Stop. While
-   the browser asks which screen to share the control says Starting… and nothing records; Stop or the call ending
-   meanwhile records nothing (a screen shared after all is stopped at once). Stop saves it; the browser's Stop sharing
-   and hanging up (or the call ending any other way) stop and save it too. Before a person's first recording a short
-   notice says what is recorded (this tab as they see it, with both voices, and that the browser asks to share it
-   first; where no screen can be shared, the call view: the AI avatar or the sphere, the conversation and both voices),
+   the browser asks which screen to share the control says Cancel (as does `R`) and nothing records; Cancel, or the
+   call ending meanwhile, records nothing and offers Record again at once (a screen shared after all is stopped once it
+   comes), and a screen shared after the call that Record was pressed in ended is never recorded for another call.
+   Stop saves it; the browser's Stop sharing and hanging up (or the call ending any other way) stop and save it too.
+   Before a person's first recording a short notice says what is recorded (this tab as they see it, with both voices;
+   minimized, only the call view; and that the browser asks to share the tab first; where this tab cannot be shared,
+   the call view: the AI avatar or the sphere, the conversation and both voices),
    where it is kept (privately, in the conversation and under Recordings, only they can watch it) and how to delete it
    (there, any time; with the conversation; otherwise after a year); it is remembered per person in the browser, like
-   the call disclosure (version 2 since the screen is recorded, so everyone reads it again once). A
+   the call disclosure (version 2 since this tab is recorded, so everyone reads it again once). A
    private call keeps the control, disabled, with "Private calls aren't recorded." as its description. The save is
    shown in the call screen above the controls while the screen is open (Saving with its progress; "Recording saved"
    with Watch, which opens it while the call goes on minimized, waiting to be played; or why it failed, with Try
@@ -89,11 +103,17 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
    length twice plus 10 minutes (15 minutes to 4 hours), so the player can stream and seek it with range requests;
    the player asks again if a long replay outlives them. `GET /recordings/:id/download?file=recording|transcript`
    returns one presigned GET (5 minutes) whose response is `Content-Disposition: attachment` with a readable name:
-   whose call and when, in the person's time zone (`name` and `timeZone` from the browser: "Thomas call 2026-11-07
-   14-22.webm", "… transcript.vtt"; "Call …" in UTC without them; characters a file system refuses removed). The
-   browser follows it as a link, a navigation the bucket answers with the file, so it needs no CORS and the CSP no new
-   origin. `GET /recordings` lists one conversation's, one venture's or all of the caller's ready recordings.
-   `DELETE /recordings/:id` deletes it.
+   whose call and when it began, in the person's time zone (`name` and `timeZone` from the browser: "Thomas call
+   2026-11-07 14-22.webm", "… transcript.vtt"; "Call …" in UTC without them; characters a file system refuses and
+   invisible formatting characters such as a right-to-left override removed). It is signed only once the file is
+   confirmed stored (HeadObject), and audited only once signed, so a download that could not be issued is never
+   recorded as one (a replay likewise). The browser follows it as a link, a navigation the bucket answers with the
+   file, so it needs no CORS and the CSP no new origin; the page's leave-the-page prompt (§2's `beforeunload`) lets
+   that one navigation through (`followDownload`), so downloading while a take is held asks nothing. When a recording
+   began (`startedAt`) is its registration, made as its save begins, less its length: what the lists show and a
+   download is named after. `GET /recordings` lists one conversation's, one venture's or all of the caller's ready
+   recordings, latest first, a page at a time (`limit`, at most 100; `nextCursor` → `cursor`, a keyset on the
+   registration and id). `DELETE /recordings/:id` deletes it.
 5. **Only the person who recorded it.** `call_recordings` (migration 0031) is visible and writable only where
    `recorded_by = app.current_principal()`: not the venture's team, not its EIR, not a program lead or platform admin.
    Listing, replaying, downloading and completing it also need the venture still (a revoked or expired membership loses its
@@ -135,22 +155,38 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
    answered, a download's token naming the file it is sent as, `Content-Disposition: attachment`), at the API's own
    origin in the suite, so the recording is uploaded, replayed and downloaded cross-origin under the production CSP as
    it is from S3. A headless browser has no screen to share: the suite's founder shares a stand-in (`getDisplayMedia`
-   answering with a canvas "tab", or refusing as a founder who declines).
+   answering with a canvas "tab" that carries the page's capture handle, or a window, or refusing as a founder who
+   declines), and the suite counts the frames drawn from it (none while the call is minimized). Real tab capture was
+   checked in Chromium's new headless mode (`--auto-accept-this-tab-capture`): the shared track reports
+   `displaySurface: 'browser'`, the tab's size, and the page's capture handle at once.
 10. **Recordings, a section with a viewer.** Recordings in the venture's side panel (`g r`, `/v/:id/recordings`) lists
-    the person's recordings latest first: date, conversation, length, video or sound only, size, with Watch, Download
-    (the recording, or its transcript when it has one) and Delete; a conversation lists its own the same way at the
-    end of its transcript. Watch opens the viewer (`/v/:id/recordings/:recordingId`, its own route chunk, off the first
-    page load): the player large, the transcript beside it (below it on a phone) marking the line being heard and
-    keeping it in view unless the person scrolls it, a line seeking to it, `K` play or pause, `J` and `L` ten seconds
-    back or forward; Download, Open conversation and Delete. The call screen's Watch after a save opens it too.
+    the person's recordings latest first, 50 at a time with Show older recordings until every kept one is reached:
+    date, conversation, length, video or sound only, size, with Watch, Download (the recording, or its transcript when
+    it has one) and Delete; a conversation lists its own the same way at the end of its transcript. Watch opens the
+    viewer (`/v/:id/recordings/:recordingId`, its own route chunk, off the first page load): the player large, the
+    transcript beside it (below it on a phone) marking the line being heard and keeping it in view unless the person
+    scrolls it, a line seeking to it, `K` play or pause, `J` and `L` ten seconds back or forward; captions over the
+    picture of a sound-only recording (a video already shows the call's own lines, so there they are off until turned
+    on); Download, Open conversation and Delete. The call screen's Watch after a save opens it too.
 
 ## Options rejected
 
 - **`getDisplayMedia` alone (2026-11-06; amended 2026-11-07):** unavailable on iOS, so a phone could not record at all.
   The first decision recorded only the composed call (face or presence) for that reason; the owner asked for the screen
-  (what the founder sees, the conversation with it), so the screen is now the picture where it can be shared, the
-  tab preferred and without its sound (the call's own mix is the sound, so nothing is doubled), and the composed call
-  view, now with the conversation's lines, where it cannot.
+  (what the founder sees, the conversation with it), so this tab is now the picture where it can be shared, without
+  its sound (the call's own mix is the sound, so nothing is doubled), and the composed call view, now with the
+  conversation's lines, where it cannot.
+- **The shared track recorded as it is:** it records whatever the tab shows, so minimizing the call and opening a
+  private chat would burn that chat into a kept recording of another conversation. Drawing the tab through the canvas
+  only while the call screen is open keeps the recording to the call, and keeps it going while minimized.
+- **Recording any surface the person picks** (a window, a whole screen; Firefox and desktop Safari offer nothing else):
+  it records other apps and notifications, and a notice could not honestly promise less. Only a capture known to be
+  this tab is recorded; elsewhere the call view is.
+- **Stopping the recording when the call is minimized:** the call carries on minimized (Watch after a save relies on
+  it), and so does its recording, as the call view.
+- **A hidden iframe for downloads** (no navigation of the page): needs a `frame-src` origin in the CSP, and is refused
+  by `X-Frame-Options`/`frame-ancestors` on the local store; letting the one download navigation past the
+  leave-the-page prompt is enough.
 - **The screen's own sound (`audio: true`):** tab audio would carry the vEIR's voice a second time beside the mix, and
   never the microphone; the mix has both, gated as the call hears them.
 - **Server-side recording** (the API or a media server joining the call): the founder's audio never passes through
@@ -173,12 +209,13 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
   (nothing is kept anywhere else). While it records, saves or waits for Try again, leaving the page asks first
   (`beforeunload`). A save that fails keeps it in the page with Try again.
 - Bad: a WebM from `MediaRecorder` has no duration in its header; the player seeks to the end once to measure it.
-- Bad: the browser asks which screen to share every time Record is pressed, and records whatever that tab shows (a
-  replay opened there, another page if the founder navigates away in that tab). Drawing the call view where no screen
-  is shared costs a little CPU (1280×720 at 24 fps).
+- Bad: the browser asks which screen to share every time Record is pressed. Drawing the tab onto a canvas (up to
+  1920×1080 at 15 fps) or composing the call view (1280×720 at 24 fps) costs a little CPU, and a hidden tab's timers
+  may be slowed by the browser, freezing the picture (never the sound) until it is shown again. Firefox and desktop
+  Safari record the call view, never the screen.
 
 ## Revisit when
 
 - The owner wants recordings shared with a team member or an EIR (a consent and a sharing model, not a policy tweak).
-- A recording longer than about 70 minutes is needed (the 512 MB cap), or storage cost per month passes USD 5
-  (`RecordingsBucket` size in the cost runbook).
+- A recording longer than about 44 minutes of a shared tab is needed (the 512 MB cap), or storage cost per month passes
+  USD 5 (`RecordingsBucket` size in the cost runbook).

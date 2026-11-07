@@ -5,12 +5,15 @@ import type { CaptionSpeaker } from './captions';
 /*
  * Records a call as the founder experiences it (ADR-0023), in the browser:
  *
- *   picture  the screen the founder shared for it (this tab, from getDisplayMedia on the Record press: the call as
- *            they see it, captions, conversation and controls), or, where a screen cannot be shared (iOS, most phones)
- *            or was not, one canvas composing the call view about 24 times a second: the vEIR's face while it shows
- *            (labelled "AI avatar" as on the call tile) or the call's presence (a sphere that follows the vEIR's
- *            voice), its name, the recording's time and the conversation's latest lines from both speakers. Either
- *            way one video track for the whole recording, so switching between voice and video never changes it.
+ *   picture  one canvas, captured as the recording's only video track (switching between voice and video, or
+ *            minimizing the call, never changes it). It shows this tab as the founder sees it (shared from
+ *            getDisplayMedia on the Record press: the call, its captions, conversation and controls) while the call
+ *            screen is open, and the composed call view otherwise: while the call is minimized (the tab then shows
+ *            other pages, which are never recorded), and for the whole recording where this tab cannot be shared
+ *            (iOS, most phones, Firefox and Safari, which share windows and screens, never just this tab) or was
+ *            not. The composed view is the vEIR's face while it shows (labelled "AI avatar" as on the call tile) or
+ *            the call's presence (a sphere that follows the vEIR's voice), its name, the recording's time and the
+ *            conversation's latest lines from both speakers.
  *   sound    a WebAudio mix on the call's own AudioContext: the vEIR's voice as the speakers get it, a vendor face's
  *            voice from its element, and the founder's microphone, silent whenever the call does not hear it (muted,
  *            on hold, or push to talk released: what is said off-mic is never recorded). The shared screen brings
@@ -102,9 +105,9 @@ export function canRecordCalls(browser: Pick<RecorderBrowser, 'MediaRecorder'> =
 }
 
 /**
- * How a recording asks to share the screen: this tab, offered first and alone where the browser can (Chromium, Edge),
- * without its sound (the recording mixes the call's own), at most 1080p and 15 frames a second. Options a browser does
- * not know are ignored by it (Firefox offers windows and screens).
+ * How a recording asks to share the screen: this tab, offered first (Chromium, Edge), without its sound (the recording
+ * mixes the call's own), at most 1080p and 15 frames a second. Whatever else the person picks is refused once shared
+ * ({@link sharesThisTab}).
  */
 const SCREEN_OPTIONS: DisplayMediaStreamOptions & Record<string, unknown> = {
   video: {
@@ -121,25 +124,65 @@ const SCREEN_OPTIONS: DisplayMediaStreamOptions & Record<string, unknown> = {
   monitorTypeSurfaces: 'exclude',
 };
 
+/** What this page says about itself to a capture of it (the Capture Handle API, Chromium and Edge). */
+interface CaptureHandleConfig {
+  readonly handle: string;
+  readonly exposeOrigin: boolean;
+  readonly permittedOrigins: readonly string[];
+}
+
+/** The screen-sharing parts of the browser's media devices. */
+export interface ScreenDevices {
+  readonly getDisplayMedia?: (options: DisplayMediaStreamOptions) => Promise<MediaStream>;
+  readonly setCaptureHandleConfig?: (config: CaptureHandleConfig) => void;
+}
+
 /** The browser's media devices: none outside a secure context, whatever the types say. */
-function mediaDevices(): Partial<Pick<MediaDevices, 'getDisplayMedia'>> | undefined {
+function mediaDevices(): ScreenDevices | undefined {
   return (navigator as Partial<Navigator>).mediaDevices;
 }
 
+/** This page's capture handle: a capture of a tab that carries it is a capture of this tab. */
+let pageHandle: string | null = null;
+
 /**
- * Asks to share the screen for a recording (the browser's own prompt), or null where a screen cannot be shared (iOS
- * and iPadOS Safari, most phones). Called in the Record press itself: a browser asks only from a person's gesture.
+ * Whether this tab can be shared for a recording, and known to be this tab once shared: only where the page can tell a
+ * capture of itself (Chromium and Edge on a computer). Firefox and Safari share windows and screens only, and phones
+ * nothing, so there the call view is composed instead and no screen is asked for.
+ */
+export function canShareScreen(devices: ScreenDevices | undefined = mediaDevices()): boolean {
+  return devices?.getDisplayMedia !== undefined && devices.setCaptureHandleConfig !== undefined;
+}
+
+/**
+ * Asks to share this tab for a recording (the browser's own prompt), or null where it cannot be shared
+ * ({@link canShareScreen}). Called in the Record press itself: a browser asks only from a person's gesture.
  */
 export function requestScreen(
-  devices: Partial<Pick<MediaDevices, 'getDisplayMedia'>> | undefined = mediaDevices(),
+  devices: ScreenDevices | undefined = mediaDevices(),
 ): Promise<MediaStream> | null {
-  if (devices?.getDisplayMedia === undefined) return null;
+  if (devices?.getDisplayMedia === undefined || devices.setCaptureHandleConfig === undefined) return null;
+  pageHandle ??= crypto.randomUUID();
+  devices.setCaptureHandleConfig({
+    handle: pageHandle,
+    exposeOrigin: false,
+    permittedOrigins: [window.location.origin],
+  });
   return devices.getDisplayMedia(SCREEN_OPTIONS);
 }
 
-/** Whether this browser can share the screen for a recording (else the call view is composed instead). */
-export function canShareScreen(): boolean {
-  return mediaDevices()?.getDisplayMedia !== undefined;
+/**
+ * Whether `display` is this tab: a browser tab carrying this page's capture handle. Another tab, a window or a whole
+ * screen would record what is outside the call (other pages, other apps, notifications), so it is not recorded.
+ */
+export function sharesThisTab(display: MediaStream): boolean {
+  // The page a capture shows, as that page described itself (Chromium and Edge).
+  const track: (MediaStreamTrack & { getCaptureHandle?: () => { handle: string } | null }) | undefined =
+    display.getVideoTracks()[0];
+  if (track === undefined || pageHandle === null) return false;
+  return (
+    track.getSettings().displaySurface === 'browser' && track.getCaptureHandle?.()?.handle === pageHandle
+  );
 }
 
 /** The audio graph a recording taps (CallEngine.recordingSources()). */
@@ -181,13 +224,18 @@ export interface CallRecorderInput {
   /** The conversation's latest lines, both speakers, oldest first (read on every frame of a composed view). */
   readonly transcript: () => readonly TranscriptLine[];
   /**
-   * The screen shared for this recording (getDisplayMedia), or null: the call view is composed instead. The recorder
-   * owns it from here: its tracks stop when the recording does.
+   * This tab, shared for this recording (getDisplayMedia, {@link sharesThisTab}), or null: the call view is composed
+   * instead. The recorder owns it from here: its tracks stop when the recording does.
    */
   readonly display: MediaStream | null;
+  /**
+   * Whether the call screen is open, read on every frame: only then does the shared tab show the call. Otherwise
+   * (minimized, the tab showing other pages) the composed call view is recorded.
+   */
+  readonly onScreen: () => boolean;
 }
 
-/** What the picture is: the shared screen, the composed call view, or none (sound only). */
+/** What the picture is: this tab (the composed call view while minimized), the composed call view, or none. */
 export type RecordingCapture = 'screen' | 'view' | 'sound';
 
 export interface FinishedRecording {
@@ -199,8 +247,21 @@ export interface FinishedRecording {
 const WIDTH = 1280;
 const HEIGHT = 720;
 const FPS = 24;
-/** A shared screen is mostly still text: this keeps it sharp and a 30-minute call well under the size limit. */
-const VIDEO_BITS = 1_500_000;
+/** The largest picture of a shared tab (its own size, scaled down to fit). */
+const SCREEN_MAX = { width: 1920, height: 1080 } as const;
+/** As often as the tab is shared (SCREEN_OPTIONS). */
+const SCREEN_FPS = 15;
+/**
+ * After the call screen opens again, how long the composed view stays: the shared tab's frames arrive a little late,
+ * and the first of them may still show the page the call was minimized over.
+ */
+const SCREEN_SETTLE_MS = 500;
+/**
+ * A shared tab is mostly still text, which needs more bits to stay sharp (about 340 MB for a 30-minute call); the
+ * composed view is drawn larger and holds less (about 235 MB), which matters most on the phones that record it.
+ */
+const SCREEN_BITS = 1_500_000;
+const VIEW_BITS = 1_000_000;
 const AUDIO_BITS = 96_000;
 /** Stop before the file reaches the largest recording the API takes. */
 const SIZE_MARGIN = 8 * 1024 * 1024;
@@ -247,6 +308,29 @@ function roundRect(ctx: Context2D, rect: Rect, radius: number): void {
   ctx.beginPath();
   if (typeof ctx.roundRect === 'function') ctx.roundRect(rect.x, rect.y, rect.w, rect.h, radius);
   else ctx.rect(rect.x, rect.y, rect.w, rect.h);
+}
+
+/** `track`'s picture size, scaled down to fit {@link SCREEN_MAX} (even numbers, as encoders want them). */
+function screenSize(track: MediaStreamTrack): { width: number; height: number } {
+  const { width, height } = track.getSettings();
+  if (width === undefined || height === undefined || width <= 0 || height <= 0) return { ...SCREEN_MAX };
+  const scale = Math.min(1, SCREEN_MAX.width / width, SCREEN_MAX.height / height);
+  const even = (value: number) => Math.max(2, Math.round((value * scale) / 2) * 2);
+  return { width: even(width), height: even(height) };
+}
+
+/** Draws `source` whole in a `width`×`height` canvas, centred (a tab resized while it records keeps its shape). */
+function drawContain(ctx: Context2D, source: HTMLVideoElement, width: number, height: number): boolean {
+  const sourceWidth = source.videoWidth;
+  const sourceHeight = source.videoHeight;
+  if (!sourceWidth || !sourceHeight || source.readyState < 2) return false;
+  const scale = Math.min(width / sourceWidth, height / sourceHeight);
+  const w = sourceWidth * scale;
+  const h = sourceHeight * scale;
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(source, (width - w) / 2, (height - h) / 2, w, h);
+  return true;
 }
 
 /** Draws `source` to cover `rect` (as the call tile shows it: `object-fit: cover`). */
@@ -340,8 +424,8 @@ interface LaidOutLine {
 /**
  * One recording of a live call. `start` begins at once; `sync` re-taps sources that changed (the microphone
  * reconnected, the face's voice arrived or came back); `stop` resolves with the file. A recording that nears the
- * largest file the API takes stops by itself (`onLimit`), and so does one whose shared screen the person stopped
- * sharing from the browser's own controls (`onScreenEnded`).
+ * largest file the API takes stops by itself (`onLimit`), and so does one whose shared tab the person stopped sharing
+ * from the browser's own controls (`onScreenEnded`).
  */
 export class CallRecorder {
   private recorder: MediaRecorder | null = null;
@@ -350,6 +434,14 @@ export class CallRecorder {
   private startedAt = 0;
   private timer: unknown = null;
   private videoTrack: MediaStreamTrack | null = null;
+  /** The canvas's size: the shared tab's, or the composed view's. */
+  private size: { width: number; height: number } = { width: WIDTH, height: HEIGHT };
+  /**
+   * The shared tab: its track, the element its frames are drawn from, and since when (ms) the call screen has been open
+   * (null: it is not, so the composed view is drawn).
+   */
+  private screen: { track: MediaStreamTrack; video: HTMLVideoElement; openSince: number | null } | null =
+    null;
   private destination: MediaStreamAudioDestinationNode | null = null;
   private veir: AudioNode | null = null;
   private microphone: { stream: MediaStream; node: AudioNode; gate: GainNode } | null = null;
@@ -377,11 +469,12 @@ export class CallRecorder {
       this.stopDisplay();
       throw new Error(CANNOT_RECORD);
     }
-    const screen = this.input.display?.getVideoTracks().find((track) => track.readyState === 'live') ?? null;
-    const canvas = screen === null ? this.browser.createCanvas(WIDTH, HEIGHT) : null;
-    const ctx =
-      canvas !== null && typeof canvas.captureStream === 'function' ? canvas.getContext('2d') : null;
-    const format = pickFormat((type) => Recorder.isTypeSupported(type), screen !== null || ctx !== null);
+    const display = this.input.display;
+    const screen = display?.getVideoTracks().find((track) => track.readyState === 'live') ?? null;
+    this.size = screen === null ? { width: WIDTH, height: HEIGHT } : screenSize(screen);
+    const canvas = this.browser.createCanvas(this.size.width, this.size.height);
+    const ctx = typeof canvas.captureStream === 'function' ? canvas.getContext('2d') : null;
+    const format = pickFormat((type) => Recorder.isTypeSupported(type), ctx !== null);
     if (format === null) {
       this.stopDisplay();
       throw new Error(CANNOT_RECORD);
@@ -390,25 +483,25 @@ export class CallRecorder {
     this.destination = destination;
     this.format = format;
     const tracks = [...destination.stream.getAudioTracks()];
-    if (format.mimeType.startsWith('video/')) {
-      if (screen !== null) {
-        // Text on a screen: the encoder keeps it sharp rather than smooth.
-        screen.contentHint = 'detail';
+    if (format.mimeType.startsWith('video/') && ctx !== null) {
+      const fps = screen === null ? FPS : SCREEN_FPS;
+      if (display && screen !== null) {
         screen.addEventListener('ended', this.screenEnded);
-        this.videoTrack = screen;
-        this.capture = 'screen';
-        tracks.unshift(screen);
-      } else if (canvas !== null && ctx !== null) {
-        this.draw(ctx);
-        const [video] = canvas.captureStream(FPS).getVideoTracks();
-        if (video) {
-          this.videoTrack = video;
-          this.capture = 'view';
-          tracks.unshift(video);
-          this.timer = this.browser.setInterval(() => {
-            this.draw(ctx);
-          }, 1000 / FPS);
-        }
+        // Open now (Record was pressed in it): the tab shows the call from the first frame.
+        const openSince = this.input.onScreen() ? -Infinity : null;
+        this.screen = { track: screen, video: this.browser.playStream(display), openSince };
+      }
+      this.frame(ctx);
+      const [video] = canvas.captureStream(fps).getVideoTracks();
+      if (video) {
+        // Text on a screen: the encoder keeps it sharp rather than smooth.
+        if (this.screen !== null) video.contentHint = 'detail';
+        this.videoTrack = video;
+        this.capture = this.screen === null ? 'view' : 'screen';
+        tracks.unshift(video);
+        this.timer = this.browser.setInterval(() => {
+          this.frame(ctx);
+        }, 1000 / fps);
       }
     }
     // A screen shared for a recording that can only be sound is not kept shared.
@@ -416,7 +509,7 @@ export class CallRecorder {
     this.sync();
     const recorder = new Recorder(this.browser.createStream(tracks), {
       mimeType: format.recorderType,
-      videoBitsPerSecond: VIDEO_BITS,
+      videoBitsPerSecond: this.capture === 'screen' ? SCREEN_BITS : VIEW_BITS,
       audioBitsPerSecond: AUDIO_BITS,
     });
     recorder.ondataavailable = (event) => {
@@ -508,6 +601,32 @@ export class CallRecorder {
   private readonly screenEnded = (): void => {
     this.onScreenEnded?.();
   };
+
+  /** One frame: the shared tab while it shows the call, else the composed call view. */
+  private frame(ctx: Context2D): void {
+    const { width, height } = this.size;
+    const screen = this.screen;
+    if (screen !== null && this.showsCall(screen) && drawContain(ctx, screen.video, width, height)) return;
+    // The composed view at its own size, scaled to fit the canvas and centred on its background.
+    const scale = Math.min(width / WIDTH, height / HEIGHT);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = COLORS.top;
+    ctx.fillRect(0, 0, width, height);
+    ctx.setTransform(scale, 0, 0, scale, (width - WIDTH * scale) / 2, (height - HEIGHT * scale) / 2);
+    this.draw(ctx);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  /** Whether the shared tab shows the call now: the call screen is open, and has been for a moment. */
+  private showsCall(screen: { openSince: number | null }): boolean {
+    if (!this.input.onScreen()) {
+      screen.openSince = null;
+      return false;
+    }
+    const now = this.browser.now();
+    screen.openSince ??= now;
+    return now - screen.openSince >= SCREEN_SETTLE_MS;
+  }
 
   /** The composed call view: header (name, kind, time), stage (face or presence), conversation. */
   private draw(ctx: Context2D): void {
@@ -603,9 +722,13 @@ export class CallRecorder {
   private release(): void {
     if (this.timer !== null) this.browser.clearInterval(this.timer);
     this.timer = null;
-    this.videoTrack?.removeEventListener('ended', this.screenEnded);
     this.videoTrack?.stop();
     this.videoTrack = null;
+    if (this.screen !== null) {
+      this.screen.track.removeEventListener('ended', this.screenEnded);
+      this.screen.video.srcObject = null;
+    }
+    this.screen = null;
     this.stopDisplay();
     if (this.destination !== null) this.disconnect(this.veir, this.destination);
     this.veir = null;
