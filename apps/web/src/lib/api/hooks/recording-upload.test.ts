@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Client from '../client';
 import { api } from '../client';
 import { uploadToPresignedUrl } from './documents';
-import { saveRecording } from './recordings';
+import { saveRecording } from './recording-upload';
 
 vi.mock('./documents', () => ({ uploadToPresignedUrl: vi.fn() }));
 vi.mock('../client', async (importOriginal) => {

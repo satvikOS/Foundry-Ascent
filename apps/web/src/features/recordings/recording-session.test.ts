@@ -1,7 +1,7 @@
 import type { RecordingView } from '@foundry/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { RecordedCall } from '@/lib/api/hooks/recordings';
+import type { RecordedCall } from '@/lib/api/hooks/recording-upload';
 import { ApiError } from '@/lib/api/errors';
 import { IDLE_CALL, type CallSnapshot } from '@/lib/realtime/call-state';
 

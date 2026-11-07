@@ -1,6 +1,6 @@
 import type { RecordingView } from '@foundry/contracts';
 
-import type { RecordedCall } from '@/lib/api/hooks/recordings';
+import type { RecordedCall } from '@/lib/api/hooks/recording-upload';
 import type { UploadProgress } from '@/lib/api/hooks/documents';
 import { errorMessage, isApiError } from '@/lib/api/errors';
 import type { CallSnapshot } from '@/lib/realtime/call-state';

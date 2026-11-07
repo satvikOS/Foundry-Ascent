@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { announce } from '@/components/a11y/live-announcer';
 import { toast } from '@/components/ui/toast';
 import { queryKeys } from '@/lib/api/query-keys';
-import { saveRecording } from '@/lib/api/hooks/recordings';
+import { saveRecording } from '@/lib/api/hooks/recording-upload';
 
 import { canRecordCalls } from './call-recorder';
 import {

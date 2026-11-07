@@ -1,20 +1,12 @@
-import {
-  CreateRecordingResponse,
-  RecordingListResponse,
-  RecordingPlaybackResponse,
-  RecordingView,
-  type CreateRecordingRequest,
-  type RecordingMimeType,
-} from '@foundry/contracts';
+import { RecordingListResponse, RecordingPlaybackResponse } from '@foundry/contracts';
 import { queryOptions, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { api, createIdempotencyKey, path } from '../client';
 import { queryKeys } from '../query-keys';
-import { uploadToPresignedUrl, type UploadProgress } from './documents';
 
 /*
  * Call recordings (ADR-0023): the person's own recordings, saved from the call screen and replayed without the vEIR.
- * Files go straight to the recordings store with presigned URLs; the API only signs them and keeps the record.
+ * Saving one is in recording-upload.ts, which only the call screen loads.
  */
 
 export interface RecordingFilters {
@@ -60,55 +52,4 @@ export async function deleteRecording(client: QueryClient, recordingId: string):
 export function useDeleteRecording() {
   const client = useQueryClient();
   return useMutation({ mutationFn: (recordingId: string) => deleteRecording(client, recordingId) });
-}
-
-/** A finished recording of a call, as the call screen hands it over to be saved. */
-export interface RecordedCall {
-  readonly callId: string;
-  readonly media: Blob;
-  readonly mimeType: RecordingMimeType;
-  readonly durationMs: number;
-  /** The WebVTT transcript, or null when nobody said anything while it recorded. */
-  readonly captions: { readonly vtt: string; readonly cues: number } | null;
-}
-
-/**
- * Saves a recording: registers it for the call (POST /calls/:id/recordings), uploads its captions and then the
- * recording to their presigned URLs, then completes it (POST /recordings/:id/complete). Resolves with the ready
- * recording. Both URLs are signed together and must be used within minutes, while the recording of a long call can
- * take longer than that to upload: the small captions file goes first, so neither upload starts after its URL expired.
- */
-export async function saveRecording(
-  recording: RecordedCall,
-  options: { readonly onProgress?: (progress: UploadProgress) => void; readonly signal?: AbortSignal } = {},
-): Promise<RecordingView> {
-  const captions =
-    recording.captions === null ? null : new Blob([recording.captions.vtt], { type: 'text/vtt' });
-  const body: CreateRecordingRequest = {
-    mimeType: recording.mimeType,
-    bytes: recording.media.size,
-    durationMs: Math.max(1, Math.round(recording.durationMs)),
-    captions:
-      captions === null || recording.captions === null
-        ? null
-        : { bytes: captions.size, cues: recording.captions.cues },
-  };
-  const ticket = await api.post(path`/calls/${recording.callId}/recordings`, CreateRecordingResponse, body, {
-    idempotencyKey: createIdempotencyKey(),
-    ...(options.signal ? { signal: options.signal } : {}),
-  });
-  if (ticket.upload.captions !== null && captions !== null) {
-    await uploadToPresignedUrl(
-      ticket.upload.captions,
-      captions,
-      options.signal ? { signal: options.signal } : {},
-    );
-  }
-  await uploadToPresignedUrl(ticket.upload.media, recording.media, {
-    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
-    ...(options.signal ? { signal: options.signal } : {}),
-  });
-  return api.post(path`/recordings/${ticket.recording.id}/complete`, RecordingView, undefined, {
-    idempotencyKey: createIdempotencyKey(),
-  });
 }
