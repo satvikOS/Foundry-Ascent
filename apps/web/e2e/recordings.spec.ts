@@ -5,6 +5,7 @@ import {
   FOUNDER_STATE,
   openVenture,
   runToken,
+  setFacesEnabled,
   startConversation,
   TENANT,
   test,
@@ -73,7 +74,9 @@ async function enforceProductionCsp(page: Page): Promise<() => Promise<string[]>
     const seen: string[] = [];
     (window as unknown as { __cspViolations: string[] }).__cspViolations = seen;
     document.addEventListener('securitypolicyviolation', (event) => {
-      seen.push(`${event.effectiveDirective} ${event.blockedURI}`);
+      seen.push(
+        `${event.effectiveDirective} ${event.blockedURI} ${new URL(event.sourceFile || '/', location.href).pathname}`,
+      );
     });
   });
   await page.route(
@@ -112,16 +115,29 @@ async function openCall(page: Page): Promise<{ screen: Locator; reply: Locator }
   return { screen, reply };
 }
 
-/** Types a line to the vEIR and waits until its reply has shown as captions. */
-async function say(page: Page, reply: Locator, text: string): Promise<void> {
-  const answered = page.waitForResponse(
-    (response) =>
-      /\/sessions\/[0-9a-f-]{36}\/turns$/.test(response.url()) && response.request().method() === 'POST',
-  );
+/** Types a line to the vEIR and waits until its reply is stored and shows as captions. */
+async function say(page: Page, reply: Locator, sessionId: string, text: string): Promise<void> {
+  const before = await answeredTurns(page, sessionId);
   await reply.fill(text);
   await reply.press('Enter');
-  await answered;
-  await expect(callScreen(page).getByText('Replying on screen')).toBeVisible({ timeout: 30_000 });
+  await expect.poll(() => answeredTurns(page, sessionId), { timeout: 30_000 }).toBeGreaterThan(before);
+  await expect
+    .poll(
+      async () =>
+        ((await callScreen(page).getByRole('region', { name: 'Captions' }).textContent()) ?? '').trim(),
+      {
+        timeout: 15_000,
+      },
+    )
+    .not.toBe('');
+}
+
+/** How many turns of the conversation have a reply. */
+async function answeredTurns(page: Page, sessionId: string): Promise<number> {
+  const response = await page.request.get(`/api/v1/sessions/${sessionId}`);
+  expect(response.status(), 'GET /sessions/:id').toBe(200);
+  const { turns } = (await response.json()) as { turns: { response: unknown }[] };
+  return turns.filter((turn) => turn.response !== null && turn.response !== undefined).length;
 }
 
 /** Ends the call from its screen (End, then its short Undo window) and dismisses the review. */
@@ -179,7 +195,7 @@ test.describe('call recordings', () => {
     await expect(stop).toHaveAttribute('aria-pressed', 'true');
 
     const line = `Footfall at the east wing, ${runToken()}`;
-    await say(page, reply, line);
+    await say(page, reply, sessionId, line);
     await expect(indicator).toContainText(/0:0[2-9]|0:[1-5]\d/, { timeout: 15_000 });
 
     const completed = page.waitForResponse(
@@ -243,7 +259,15 @@ test.describe('call recordings', () => {
     const gone = await page.request.get(`/api/v1/recordings/${recordingId}/playback`);
     expect(gone.status(), 'GET /recordings/:id/playback after delete').toBe(404);
 
-    expect(await violations()).toEqual([]);
+    // Everything above ran under the production CSP. The only report allowed is zod's own `Function('')` probe (it
+    // catches the refusal and parses without compiling), recognised by its code in the chunk that reported it.
+    const unexpected: string[] = [];
+    for (const violation of await violations()) {
+      const source = /^script-src eval (\/assets\/[\w.-]+\.js)$/.exec(violation)?.[1];
+      const code = source === undefined ? '' : await (await page.request.get(source)).text();
+      if (!(code.includes('jitless') && /Function\((?:``|""|'')\)/.test(code))) unexpected.push(violation);
+    }
+    expect(unexpected).toEqual([]);
   });
 
   test('hanging up stops and saves the recording; deleting the conversation deletes it', async ({ page }) => {
@@ -255,7 +279,7 @@ test.describe('call recordings', () => {
     await expect(page.getByRole('article', { name: 'Exchange 1' })).toBeVisible({ timeout: 30_000 });
     const { screen, reply } = await openCall(page);
     await record(page, screen);
-    await say(page, reply, `The librarian books it, ${runToken()}`);
+    await say(page, reply, sessionId, `The librarian books it, ${runToken()}`);
     const completed = page.waitForResponse(
       (response) =>
         /\/recordings\/[0-9a-f-]{36}\/complete$/.test(response.url()) && response.status() === 200,
@@ -288,7 +312,8 @@ test.describe('call recordings', () => {
     const control = screen.getByRole('button', { name: 'Record' });
     await expect(control).toHaveAttribute('aria-disabled', 'true');
     await expect(control).toHaveAccessibleDescription('Private calls aren’t recorded.');
-    await control.click();
+    // Pressed anyway (it stays focusable, so its reason is read): nothing happens.
+    await control.click({ force: true });
     await expect(page.getByRole('alertdialog', { name: 'Record this call?' })).toHaveCount(0);
     await expect(screen.getByTestId('recording-indicator')).toHaveCount(0);
     await endCall(page);
@@ -298,5 +323,68 @@ test.describe('call recordings', () => {
       headers: { ...WRITE_HEADERS, 'idempotency-key': runToken() },
     });
     expect([204, 404]).toContain(response.status());
+  });
+  test('one recording through a switch to video: the AI avatar is in it, as one video', async ({
+    page,
+    baseURL,
+  }) => {
+    if (!baseURL) throw new Error('baseURL is required');
+    test.setTimeout(90_000);
+    await muteMedia(page);
+    await voiceNoticeSeen(page);
+    // Faces ship off: on for this test (the development stand-in face, a canvas, no one's likeness).
+    await setFacesEnabled(baseURL, true);
+    let sessionId = '';
+    try {
+      await openVenture(page);
+      sessionId = await startConversation(page, `Where do students sit first? ${runToken()}`);
+      await expect(page.getByRole('article', { name: 'Exchange 1' })).toBeVisible({ timeout: 30_000 });
+      const { screen } = await openCall(page);
+      await record(page, screen);
+      await screen.getByRole('button', { name: 'Switch to video' }).click();
+      await page.waitForURL(/\?call=video$/);
+      const video = callScreen(page);
+      await expect(video.locator('[data-slot="call-tile"][data-face="video"]')).toBeVisible({
+        timeout: 15_000,
+      });
+      // Still the same recording, still running.
+      const indicator = video.getByTestId('recording-indicator');
+      await expect(indicator).toBeVisible();
+      await expect(indicator).toContainText(/0:0[3-9]|0:[1-5]\d/, { timeout: 15_000 });
+      const completed = page.waitForResponse(
+        (response) =>
+          /\/recordings\/[0-9a-f-]{36}\/complete$/.test(response.url()) && response.status() === 200,
+      );
+      await video.getByRole('button', { name: /^Stop recording, / }).click();
+      await completed;
+      await endCall(page);
+      const [saved] = await recordingsOf(page, sessionId);
+      expect(saved?.status).toBe('ready');
+      const listed = (await (await page.request.get(`/api/v1/recordings?sessionId=${sessionId}`)).json()) as {
+        items: { kind: string; mimeType: string }[];
+      };
+      expect(listed.items[0]).toMatchObject({ kind: 'video', mimeType: 'video/webm' });
+      // Replayed, it is one video track at the recording's size.
+      await page
+        .getByRole('list', { name: 'Recordings of this conversation' })
+        .getByRole('button', { name: /^Play the recording from / })
+        .click();
+      const replay = page.locator('[data-slot="recording-player"] video[data-slot="recording-video"]');
+      await expect
+        .poll(
+          () => replay.evaluate((v: HTMLVideoElement) => `${String(v.videoWidth)}x${String(v.videoHeight)}`),
+          {
+            timeout: 20_000,
+          },
+        )
+        .toBe('960x540');
+    } finally {
+      await setFacesEnabled(baseURL, false);
+      if (sessionId) {
+        await page.request.delete(`/api/v1/sessions/${sessionId}`, {
+          headers: { ...WRITE_HEADERS, 'idempotency-key': runToken() },
+        });
+      }
+    }
   });
 });

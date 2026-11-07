@@ -529,6 +529,8 @@ describe('RLS coverage', () => {
       'usage_ledger',
       'audit_events',
       'call_faces',
+      // Owner-only rows (the person who recorded the call): repositories/recordings.db.test.ts covers its policies.
+      'call_recordings',
     ].sort();
     expect(discovered).toEqual(covered);
   });
@@ -983,6 +985,7 @@ describe('role visibility', () => {
         ...TENANT_TABLES,
         'student_profiles',
         'learning_log',
+        'call_recordings',
         'tenants',
         'platform_settings',
         'persona_releases',

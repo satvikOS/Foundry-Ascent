@@ -680,6 +680,7 @@ function CallHeader({
               <span className="sr-only">, call time {spokenDuration(clock.elapsed)}</span>
             </>
           ) : null}
+          {live ? <RecordingMark session={recording} separator /> : null}
           {timing && clock.leftLabel ? (
             <span className={cn('truncate', clock.warning && 'font-medium text-warning')}>
               <span aria-hidden>· </span>
@@ -692,7 +693,6 @@ function CallHeader({
               <PrivateMark />
             </>
           ) : null}
-          {live ? <RecordingMark session={recording} separator /> : null}
         </p>
       </div>
       {/* The switch and the call settings sit in this corner (CallLive, CallLobby). */}

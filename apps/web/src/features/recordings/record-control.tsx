@@ -109,10 +109,7 @@ export function RecordControl({
 
   return (
     <>
-      <SimpleTooltip
-        content={recording ? 'Stop and save the recording' : (reason ?? 'Record this call')}
-        disabled={false}
-      >
+      <SimpleTooltip content={recording ? 'Stop and save the recording' : (reason ?? 'Record this call')}>
         <button
           type="button"
           data-slot="record-control"

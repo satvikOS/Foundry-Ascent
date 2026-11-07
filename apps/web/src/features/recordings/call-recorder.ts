@@ -287,7 +287,7 @@ export class CallRecorder {
       this.veir = audio.veir;
     }
     if (audio.microphone !== (this.microphone?.stream ?? null)) {
-      this.microphone?.node.disconnect();
+      this.disconnect(this.microphone?.node ?? null);
       this.microphone = null;
       if (audio.microphone !== null && audio.microphone.getAudioTracks().length > 0) {
         const node = context.createMediaStreamSource(audio.microphone);
@@ -295,11 +295,14 @@ export class CallRecorder {
         this.microphone = { stream: audio.microphone, node };
       }
     }
+    // A vendor face plays its voice in its own element. When the browser refused that element's sound, the face routes
+    // its voice into the call's output instead (muted at full volume), which the recording already taps: never twice.
     const media = this.input.picture().media;
     const source = media?.srcObject;
-    const track = source instanceof MediaStream ? (source.getAudioTracks()[0] ?? null) : null;
+    const refused = media !== null && media.muted && media.volume > 0;
+    const track = source instanceof MediaStream && !refused ? (source.getAudioTracks()[0] ?? null) : null;
     if (track !== (this.faceVoice?.track ?? null)) {
-      this.faceVoice?.node.disconnect();
+      this.disconnect(this.faceVoice?.node ?? null);
       this.faceVoice = null;
       if (track !== null) {
         const node = context.createMediaStreamSource(this.browser.createStream([track]));
@@ -356,11 +359,12 @@ export class CallRecorder {
     drawPresence(ctx, this.input.name, this.input.level(), this.browser.now());
   }
 
-  private disconnect(node: AudioNode | null, destination: AudioNode): void {
+  private disconnect(node: AudioNode | null, destination?: AudioNode): void {
     try {
-      node?.disconnect(destination);
+      if (destination === undefined) node?.disconnect();
+      else node?.disconnect(destination);
     } catch {
-      // Already disconnected (the call's audio closed first).
+      // Already disconnected, or the call's audio closed first (the call ended).
     }
   }
 
@@ -371,9 +375,9 @@ export class CallRecorder {
     this.canvasTrack = null;
     if (this.destination !== null) this.disconnect(this.veir, this.destination);
     this.veir = null;
-    this.microphone?.node.disconnect();
+    this.disconnect(this.microphone?.node ?? null);
     this.microphone = null;
-    this.faceVoice?.node.disconnect();
+    this.disconnect(this.faceVoice?.node ?? null);
     this.faceVoice = null;
     if (this.faceStream) this.faceStream.video.srcObject = null;
     this.faceStream = null;
