@@ -245,6 +245,7 @@ export {
   isOnlyLeadIn,
   fourGramsOf,
   repeatsPrevious,
+  signsOff,
   withinSocialBudget,
   withoutRepeats,
   withoutUnits,

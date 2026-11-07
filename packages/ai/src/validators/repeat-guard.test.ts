@@ -355,3 +355,44 @@ describe('escalation source telemetry (classifier, model or both)', () => {
     expect(notes(false, []).some((n) => n.startsWith('escalation_source'))).toBe(false);
   });
 });
+
+describe('phrases and closing lines said again (lab run 42238272157, long sessions on Haiku)', () => {
+  // Paraphrased: "shape the proposal around what you learn instead of what you assumed" closed two replies, inside
+  // sentences that were otherwise new; "You're set … go get those answers" closed three.
+  const earlier =
+    'Run the five interviews first. Then shape the proposal around what you learn instead of what you assumed. ' +
+    "You're set, Amara. Go get those answers.";
+
+  it('leaves out the phrase said again with a new lead-in; a mostly new sentence keeps what is new', () => {
+    const reply =
+      'Book the dean for Tuesday. Once the calls are done, shape the proposal around what you learn instead of what you assumed.';
+    expect(withoutRepeats(reply, earlier)).toMatchObject({ text: 'Book the dean for Tuesday.', dropped: 1 });
+    // Leaving this one out would lose its new half: the ledger names the phrase back to the model instead.
+    const mostlyNew =
+      "Book the dean for Tuesday. Once Friday's calls with both branch managers are done and the counts are in, shape the proposal around what you learn instead of what you assumed.";
+    expect(withoutRepeats(mostlyNew, earlier).dropped).toBe(0);
+  });
+
+  it('leaves out a sign-off the conversation already closed on, in other words too', () => {
+    for (const closing of [
+      "You're all set — go get those answers!",
+      "You're set. Go and get those answers.",
+      'Go get those answers, Amara.',
+    ]) {
+      const out = withoutRepeats(`Book the dean for Tuesday. ${closing}`, earlier);
+      expect(out.text, closing).toBe('Book the dean for Tuesday.');
+    }
+    // A new sign-off, or a sentence that only shares a few everyday words, stays.
+    expect(withoutRepeats('Book the dean for Tuesday. Good luck with the dean.', earlier).dropped).toBe(0);
+    expect(withoutRepeats('Tell me what you learn from the dean on Tuesday.', earlier).dropped).toBe(0);
+  });
+
+  it('the gate leaves them out of a streamed reply as it is said', () => {
+    for (const chunks of chunkings(
+      "Book the dean for Tuesday. Then shape the proposal around what you learn instead of what you assumed. You're all set — go get those answers!",
+    )) {
+      const units = run(gate({ previousReply: earlier, spoken: true }), chunks);
+      expect(joined(units).trim()).toBe('Book the dean for Tuesday.');
+    }
+  });
+});

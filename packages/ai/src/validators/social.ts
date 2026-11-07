@@ -91,27 +91,94 @@ export function asksToRepeat(founderText: string): boolean {
 }
 
 /** Four-word sequences of a text (lower case, citation keys and punctuation out), the evals' repetition unit. */
-export function fourGramsOf(text: string): Set<string> {
-  const words = text
+/** The words a repeat is read on: lower case, citations and punctuation out (apostrophes kept). */
+function repeatWords(text: string): string[] {
+  return text
     .replace(/\s*\[E\d+(?:,\s*E\d+)*\]/gi, '')
+    .replace(/[‘’ʼ]/g, "'")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s']/gu, ' ')
     .split(/\s+/)
     .filter((w) => w !== '');
-  const out = new Set<string>();
-  for (let i = 0; i + 4 <= words.length; i += 1) out.add(words.slice(i, i + 4).join(' '));
+}
+
+/** The four-word sequences of `words`, in order. */
+function gramList(words: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i + 4 <= words.length; i += 1) out.push(words.slice(i, i + 4).join(' '));
   return out;
+}
+
+export function fourGramsOf(text: string): Set<string> {
+  return new Set(gramList(repeatWords(text)));
+}
+
+/**
+ * How a reply signs off ("You're set.", "Go get those answers!", "Good luck with the dean.", "You've got this."): the
+ * line long sessions closed on again and again (lab run 42238272157 on Haiku: "You're set… go get those answers" closed
+ * three replies). Too short for the four-word share, so a sign-off is compared by its kind ({@link signOffKind}).
+ */
+const SIGN_OFF =
+  /^(?:you(?:'re| are) (?:all )?set|good luck|best of luck|go (?:and )?(?:get|grab|nail|crush|land|win|make)|you(?:'ve| have) got this|let me know how|come back (?:and|to)|talk soon|over to you|go for it|knock (?:it|'em|them) out|off you go|onward)\b/u;
+
+/** The kind of sign-off a sentence is ("you're set", "go get"), or null for any other sentence. */
+function signOffKind(sentence: string): string | null {
+  const text = repeatWords(sentence).join(' ');
+  const m = SIGN_OFF.exec(text);
+  if (m === null) return null;
+  // "You're all set" is "you're set"; "go and get" is "go get".
+  return m[0]
+    .replace(/\b(?:all|and) /gu, '')
+    .replace(/^you are/u, "you're")
+    .replace(/^you have/u, "you've");
+}
+
+/** Whether a sentence only signs off ("You're set.", "Good luck with the dean."): left out when said again, never more. */
+export function signsOff(sentence: string): boolean {
+  return signOffKind(sentence) !== null;
+}
+
+/** Marks that live in a repeat-key set beside the four-word sequences: never words, so never a sequence. */
+const SIGN_OFF_KEY = '\u0000signoff:';
+const SIGN_OFF_WORD = '\u0000signoff-word:';
+
+/**
+ * What a later reply is checked against for repeats (`withoutRepeats`, the sentence gate): the four-word sequences of
+ * `text`, and the kinds and content words of its sign-offs.
+ */
+export function repeatKeysOf(text: string): Set<string> {
+  const keys = fourGramsOf(text);
+  for (const span of sentenceSpans(text)) {
+    const sentence = text.slice(span.start, span.end);
+    const kind = signOffKind(sentence);
+    if (kind === null) continue;
+    keys.add(`${SIGN_OFF_KEY}${kind}`);
+    for (const word of contentWords(sentence)) keys.add(`${SIGN_OFF_WORD}${word}`);
+  }
+  return keys;
 }
 
 /** Fewest four-word sequences a sentence needs before it is compared (a short acknowledgement repeats safely). */
 export const REPEAT_MIN_GRAMS = 4;
 /** A sentence repeats the previous reply when this share of its four-word sequences was said there. */
 export const REPEAT_SENTENCE_SHARE = 0.6;
-
-/** Whether one sentence (or unit) mostly repeats `previous` (its four-word sequences). */
+/**
+ * Whether one sentence (or unit) repeats `previous` (from {@link repeatKeysOf}, or {@link fourGramsOf}): most of its
+ * four-word sequences were said there, or it is a sign-off of a kind already said, or one that shares two content words
+ * with one. A sentence that is mostly new keeps a phrase said before (leaving it out would lose what is new); the
+ * phrasing ledger names such phrases back to the model so it does not say them (prompts/phrasing.ts).
+ */
 export function repeatsPrevious(sentence: string, previous: ReadonlySet<string>): boolean {
+  if (previous.size === 0) return false;
+  const kind = signOffKind(sentence);
+  if (kind !== null) {
+    if (previous.has(`${SIGN_OFF_KEY}${kind}`)) return true;
+    let shared = 0;
+    for (const word of contentWords(sentence)) if (previous.has(`${SIGN_OFF_WORD}${word}`)) shared += 1;
+    if (shared >= 2) return true;
+  }
   const grams = fourGramsOf(sentence);
-  if (grams.size < REPEAT_MIN_GRAMS || previous.size === 0) return false;
+  if (grams.size < REPEAT_MIN_GRAMS) return false;
   let seen = 0;
   for (const g of grams) if (previous.has(g)) seen += 1;
   return seen / grams.size >= REPEAT_SENTENCE_SHARE;
@@ -205,7 +272,7 @@ export function withoutRepeats(
   previous: string,
   options: WithoutRepeatsOptions = {},
 ): WithoutRepeats {
-  const said = fourGramsOf(previous);
+  const said = repeatKeysOf(previous);
   if (said.size === 0) return { text, dropped: 0, removed: [] };
   const asked = questionsOf(previous);
   const spans = sentenceSpans(text);

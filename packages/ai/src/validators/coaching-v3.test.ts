@@ -384,3 +384,23 @@ describe('figures nobody gave, said by what they are (pilot v3: 30)', () => {
     expect(inventedFigures('Ask if they would pay $2.', known).unsourced).toEqual(['$2']);
   });
 });
+
+describe('the ledger names the lines it closed on and the phrases it said twice (lab run 42238272157)', () => {
+  it('says the closing lines of the latest replies, and the whole phrases two of them shared', () => {
+    const ledger = phrasingLedger([
+      "Book the dean. Shape the proposal around what you learn instead of what you assumed. You're set, go get those answers.",
+      'Run the survey first. Then shape the proposal around what you learn instead of what you assumed.',
+    ]);
+    expect(ledger.closings).toEqual([
+      "You're set, go get those answers.",
+      'Then shape the proposal around what you learn instead of what you assumed.',
+    ]);
+    expect(ledger.phrases).toEqual(['shape the proposal around what you learn instead of what you assumed']);
+    const line = renderPhrasingLedger(ledger);
+    expect(line).toContain('closing lines "You\'re set, go get those answers."');
+    expect(line).toContain(
+      'phrases said twice "shape the proposal around what you learn instead of what you assumed"',
+    );
+    expect(line).toContain('never say them again');
+  });
+});

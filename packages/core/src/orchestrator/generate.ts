@@ -9,6 +9,7 @@ import {
   cutMetaNarration,
   isOnlyLeadIn,
   isModelGatewayError,
+  signsOff,
   withoutRepeats,
   withoutUnits,
   type ChatMessage,
@@ -402,9 +403,11 @@ export async function generateWhole(
         const repeated = withoutRepeats(result.value.answer, a.alreadySaid.text, {
           keepReferrals: a.alreadySaid.keepReferrals,
         });
-        if (repeated.dropped > 0) {
+        // A sign-off said again is only left out (the validator does it): never worth writing the reply again for.
+        const substance = repeated.removed.filter((sentence) => !signsOff(sentence));
+        if (substance.length > 0) {
           notes.push('repeat_regenerated');
-          retry = repeatRetryBrief(repeated.removed);
+          retry = repeatRetryBrief(substance);
           continue;
         }
       }

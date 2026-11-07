@@ -304,7 +304,8 @@ describe('conversation craft in the system prompt', () => {
     // output check), the founder's numbers only, rehearsal that reacts and steps out, conversation control and recovery
     // in the conversation state, the stated preferences enforced.
     // 2026-11-06.1: the bug sweep (lab 42238272157 on Haiku, production): no local rate, market size or statistic of
-    // its own, even as an example; a personal question answered warmly as himself, then back to them.
+    // its own, even as an example; a personal question answered warmly as himself, then back to them; the phrasing
+    // ledger names the closing lines and the phrases said twice.
     expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-06.1');
   });
 });

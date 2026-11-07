@@ -1140,7 +1140,14 @@ export function deriveConversationState(
 
 /** Whether the vEIR leaned on a phrasing worth naming (prompts/phrasing.ts). */
 function hasPhrasing(state: ConversationState): boolean {
-  return (state.phrasing?.questions.length ?? 0) + (state.phrasing?.openings.length ?? 0) > 0;
+  const p = state.phrasing;
+  return (
+    (p?.questions.length ?? 0) +
+      (p?.openings.length ?? 0) +
+      (p?.closings.length ?? 0) +
+      (p?.phrases.length ?? 0) >
+    0
+  );
 }
 
 const MOVE_LABELS: Readonly<Record<FounderMove, string>> = {

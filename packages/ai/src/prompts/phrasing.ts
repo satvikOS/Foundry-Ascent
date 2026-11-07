@@ -10,6 +10,10 @@
  * - {@link phrasingLedger} counts the forms and the openings of the vEIR's own replies in this conversation and at the
  *   end of its last conversations, and {@link renderPhrasingLedger} says them compactly in `<conversation_state>`, so
  *   the model varies wording and manner while the substance stays consistent.
+ * - Lab run 42238272157 (Haiku, long sessions): replies closed on the same line again ("shape the proposal around what
+ *   you learn instead of what you assumed" twice, "You're set… go get those answers" three times). The ledger also
+ *   names the closing lines of the latest replies and the whole phrases two of them shared, so the model says neither
+ *   again; the repeat guard leaves out a sentence that does (validators/social.ts `repeatsPrevious`).
  * - {@link rephraseQuestion} is the generation-time backstop: a question whose form was used recently is said in
  *   another form with the same substance ("Of the steps you could take this week, which is the smallest?"), never
  *   dropped. Only forms with a known, grammatical alternative are rephrased; any other question stands as written.
@@ -27,6 +31,23 @@ const LEDGER_PAST_REPLIES = 12;
 const LEDGER_MAX_QUESTIONS = 4;
 /** Most openings the ledger reports. */
 const LEDGER_MAX_OPENINGS = 3;
+/** Closing lines the ledger reports: the last statement of the latest replies of this conversation. */
+const LEDGER_MAX_CLOSINGS = 3;
+/** Most phrases said twice the ledger reports. */
+const LEDGER_MAX_PHRASES = 3;
+/** Words of a closing line the ledger quotes. */
+const CLOSING_WORDS = 16;
+/** Words in a row two replies share that make a phrase said twice, with at least {@link PHRASE_CONTENT} content words. */
+const PHRASE_WORDS = 7;
+const PHRASE_CONTENT = 3;
+/** Short function words: a phrase of nothing but these is no phrase worth naming. */
+const FUNCTION_WORDS = new Set(
+  (
+    "a an the and or but so to of in on at for with from by as is are was were be been it it's this that these those " +
+    "you you're your i i'm we our they their he she his her what what's how who when where which if then than there " +
+    'here about into out up down over just also can could would should will do does did have has had not no'
+  ).split(' '),
+);
 
 /** Discourse words before the question proper ("So,", "And now", "Okay —"). */
 const LEAD =
@@ -105,6 +126,10 @@ export interface PhrasingLedger {
   readonly questions: readonly PhrasingForm[];
   /** Openings used twice or more, or in an earlier conversation; most used first. */
   readonly openings: readonly PhrasingForm[];
+  /** How the latest replies of this conversation closed: each one's last statement, as written (newest first). */
+  readonly closings: readonly string[];
+  /** Whole phrases ({@link PHRASE_WORDS} words or more) two replies of this conversation both said, lower case. */
+  readonly phrases: readonly string[];
 }
 
 function tally(
@@ -147,6 +172,8 @@ export function phrasingLedger(
   const current = texts(replies, LEDGER_REPLIES);
   const earlier = texts(past, LEDGER_PAST_REPLIES);
   return {
+    closings: closingLines(current),
+    phrases: sharedPhrases(current),
     questions: tally(current, earlier, questionFramesOf, LEDGER_MAX_QUESTIONS),
     openings: tally(
       current,
@@ -160,6 +187,72 @@ export function phrasingLedger(
   };
 }
 
+/** Sentences of a reply, as written. */
+function sentencesOf(text: string): string[] {
+  return straight(text)
+    .split(/(?<=[.!?…]["'”’)\]*_]*)\s+|\n+/u)
+    .map((s) => s.trim())
+    .filter((s) => /[\p{L}\p{N}]/u.test(s));
+}
+
+/** The last statement of each of the latest replies (a closing question is read as a form instead), clipped. */
+function closingLines(replies: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const reply of replies.slice(0, LEDGER_MAX_CLOSINGS)) {
+    const last = sentencesOf(reply).at(-1);
+    if (last === undefined || /\?["'”’)\]*_]*$/u.test(last)) continue;
+    const words = last.split(/\s+/);
+    // A short close ("Fine.", "Good luck!") is no line worth naming.
+    if (words.length < 4) continue;
+    const line = words.length > CLOSING_WORDS ? `${words.slice(0, CLOSING_WORDS).join(' ')} …` : last;
+    if (!out.includes(line)) out.push(line);
+  }
+  return out;
+}
+
+/** Words of a reply read for shared phrases (a pasted wall of text stays bounded). */
+const PHRASE_SCAN_WORDS = 400;
+
+/**
+ * Whole phrases two replies share: runs of {@link PHRASE_WORDS} words or more with content in them, longest first. Linear
+ * in the words read: each reply's {@link PHRASE_WORDS}-word sequences are looked up in the others' sets, and a run is
+ * consecutive sequences found in the same reply.
+ */
+function sharedPhrases(replies: readonly string[]): string[] {
+  const lists = replies.map((r) => wordsOf(r).slice(0, PHRASE_SCAN_WORDS));
+  const grams = (words: readonly string[]): string[] => {
+    const out: string[] = [];
+    for (let i = 0; i + PHRASE_WORDS <= words.length; i += 1)
+      out.push(words.slice(i, i + PHRASE_WORDS).join(' '));
+    return out;
+  };
+  const sets = lists.map((words) => new Set(grams(words)));
+  const found: string[] = [];
+  for (let a = 0; a < lists.length; a += 1) {
+    const words = lists[a] ?? [];
+    const own = grams(words);
+    for (let b = a + 1; b < lists.length; b += 1) {
+      const other = sets[b] ?? new Set<string>();
+      let i = 0;
+      while (i < own.length) {
+        if (!other.has(own[i] ?? '')) {
+          i += 1;
+          continue;
+        }
+        let last = i;
+        while (last + 1 < own.length && other.has(own[last + 1] ?? '')) last += 1;
+        const run = words.slice(i, last + PHRASE_WORDS);
+        if (run.filter((w) => !FUNCTION_WORDS.has(w)).length >= PHRASE_CONTENT) {
+          const phrase = run.join(' ');
+          if (!found.some((f) => f.includes(phrase))) found.push(phrase);
+        }
+        i = last + 1;
+      }
+    }
+  }
+  return found.sort((x, y) => y.length - x.length).slice(0, LEDGER_MAX_PHRASES);
+}
+
 function said(form: PhrasingForm): string {
   const times = form.count >= 2 ? ` ×${form.count}` : '';
   return `"${escapeData(form.form.replace(/"/g, "'"))} …"${times}${form.earlier ? ' (also last time)' : ''}`;
@@ -171,14 +264,25 @@ function said(form: PhrasingForm): string {
  * founder's.
  */
 export function renderPhrasingLedger(ledger: PhrasingLedger): string {
+  const quote = (text: string): string => `"${escapeData(text.replace(/"/g, "'"))}"`;
   const parts: string[] = [];
   if (ledger.questions.length > 0) parts.push(`questions shaped ${ledger.questions.map(said).join(', ')}`);
   if (ledger.openings.length > 0) parts.push(`replies opening ${ledger.openings.map(said).join(', ')}`);
-  if (parts.length === 0) return '';
-  return [
-    `- Your own phrasing lately: ${parts.join('; ')}. Keep the substance consistent, but word this reply`,
-    '  afresh: another way into a question (or none), another opening, the manner of a person talking.',
-  ].join('\n');
+  const lines = parts.length === 0 ? [] : [`- Your own phrasing lately: ${parts.join('; ')}.`];
+  const already: string[] = [];
+  if (ledger.closings.length > 0) already.push(`closing lines ${ledger.closings.map(quote).join(', ')}`);
+  if (ledger.phrases.length > 0) already.push(`phrases said twice ${ledger.phrases.map(quote).join(', ')}`);
+  if (already.length > 0) {
+    lines.push(
+      `- Already said in this conversation: ${already.join('; ')}; never say them again, nor a variant.`,
+    );
+  }
+  if (lines.length === 0) return '';
+  lines.push(
+    '  Keep the substance consistent, but word this reply afresh: another way into a question (or none), another',
+    '  opening, another close (or none), the manner of a person talking.',
+  );
+  return lines.join('\n');
 }
 
 // Rephrasing ----------------------------------------------------------------------------------------------------

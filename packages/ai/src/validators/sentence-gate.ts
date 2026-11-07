@@ -24,7 +24,7 @@ import {
   NEWS_FALLBACK,
   REPEAT_FALLBACK,
   asksToRepeat,
-  fourGramsOf,
+  repeatKeysOf,
   isListItem,
   isProtectedLine,
   parksTheirNews,
@@ -560,7 +560,7 @@ export class SentenceGate {
       this.#previousQuestions = [];
     } else {
       const grams = new Set<string>();
-      for (const text of said) for (const g of fourGramsOf(text)) grams.add(g);
+      for (const text of said) for (const g of repeatKeysOf(text)) grams.add(g);
       this.#previousGrams = grams;
       this.#previousQuestions = said.flatMap((text) => questionsOf(text));
     }

@@ -978,3 +978,78 @@ describe('live pilot 42099643194: the whole conversation is guarded, and a repea
     expect(seen[0]).not.toContain('[mode]');
   });
 });
+
+describe('a long session never says a sentence-level phrase twice (lab run 42238272157 on Haiku)', () => {
+  /** Every run of seven words two answers share (lower case, punctuation out). */
+  const sharedRuns = (a: string, b: string): string[] => {
+    const words = (t: string) =>
+      t
+        .replace(/[‘’]/g, "'")
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s']/gu, ' ')
+        .split(/\s+/)
+        .filter((w) => w !== '');
+    const other = ` ${words(b).join(' ')} `;
+    const own = words(a);
+    const out: string[] = [];
+    for (let i = 0; i + 7 <= own.length; i += 1) {
+      const run = own.slice(i, i + 7).join(' ');
+      if (other.includes(` ${run} `)) out.push(run);
+    }
+    return out;
+  };
+
+  it('ten turns of a model that closes every reply the same way, typed and on a call', async () => {
+    const advice = [
+      'Book the dean for Tuesday and bring the one-page plan.',
+      'Ask the librarian how many seats sit empty at nine.',
+      'Send the facilities team the sensor spec before Thursday.',
+      'Price the pilot per branch rather than per student.',
+      'Write down the three questions you will ask the dean.',
+      'Put the term dates on the first line of the page.',
+      'Count the replies you get by Monday evening.',
+      'Ask the second branch who else signs off the spend.',
+      'Keep the pilot to two branches for the first term.',
+      'Tell the dean what the sensors never store.',
+    ];
+    for (const channel of ['text', 'voice'] as const) {
+      const history: HistoryTurn[] = [];
+      let turn = 0;
+      const gateway = new MockModelGateway({
+        streamDelayMs: 0,
+        // Paraphrased from the lab: every reply closes on the same phrase and the same sign-off.
+        streamFixture: (context) =>
+          isContinuation(context)
+            ? ''
+            : `${advice[turn] ?? ''} Then shape the proposal around what you learn instead of what you assumed. You're set — go get those answers!`,
+      });
+      for (turn = 0; turn < advice.length; turn += 1) {
+        const out = await answer(gateway, {
+          text: `Okay, what next after step ${String(turn + 1)}?`,
+          channel,
+          history: [...history],
+        });
+        // The new advice always stands.
+        expect(out.answer, `${channel} ${String(turn)}`).toContain(advice[turn] ?? '');
+        history.push({ founderText: `Okay, what next after step ${String(turn + 1)}?`, answer: out.answer });
+      }
+      const answers = history.map((h) => h.answer ?? '');
+      for (let a = 0; a < answers.length; a += 1) {
+        for (let b = a + 1; b < answers.length; b += 1) {
+          expect(
+            sharedRuns(answers[a] ?? '', answers[b] ?? ''),
+            `${channel}: ${String(a)} and ${String(b)}`,
+          ).toEqual([]);
+        }
+      }
+      expect(
+        answers.filter((t) => /go get those answers/i.test(t)),
+        channel,
+      ).toHaveLength(1);
+      expect(
+        answers.filter((t) => /shape the proposal/i.test(t)),
+        channel,
+      ).toHaveLength(1);
+    }
+  });
+});
