@@ -692,8 +692,11 @@ describe('useTurnStream after a turn completed (its fields arrive after it, B3)'
     act(() => {
       sendingSecond = result.current.send({ text: 'And then?' });
     });
+    // Wait for the second turn's acceptance, not just 'streaming' (set before the request is hashed and sent): on a
+    // slow runner the request is still being hashed, and its fetch would take the next test's mock.
     await waitFor(() => {
       expect(result.current.state.status).toBe('streaming');
+      expect(result.current.state.turnId).toBe(secondId);
     });
     // The first turn's stream was not cancelled: its fields still come.
     expect(hooks.firstSignal?.aborted).toBe(false);
