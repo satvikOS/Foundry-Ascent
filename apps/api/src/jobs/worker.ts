@@ -155,6 +155,7 @@ export async function dispatchJob(
             requestId,
             ...(job.turns === undefined ? {} : { queuedTurns: job.turns }),
             ...(job.settled === true ? { settled: true } : {}),
+            ...(job.opener === true ? { opener: true } : {}),
           },
           { deadline, attempt: ctx.attempt, maxAttempts: deps.maxReceiveCount },
         );

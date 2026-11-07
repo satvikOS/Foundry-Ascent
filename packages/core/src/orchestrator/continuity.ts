@@ -4,6 +4,7 @@ import {
   firstNameOf,
   isAboutThread,
   isNearDuplicate,
+  isPersonalOpener,
   lastQuestionOf,
   mentions,
   rewriteIdentity,
@@ -342,9 +343,10 @@ const TAKE_UP_EXCHANGES = 20;
  *    opened a conversation since in which nothing was said (it was said once; it is not said again word for word), it
  *    opens the way that conversation opened ({@link repeatsOpener}), or it comes back to a thread that conversation
  *    opened on and the founder never took up there (none of their messages holds two of its words, nor did they answer
- *    it with a short yes: `@foundry/ai` `untakenThread`; lab run 39780304879, production 2026-10-16…20);
+ *    it with a short yes: `@foundry/ai` `untakenThread`; lab run 39780304879, production 2026-10-16…20), or it is one
+ *    a mentor never opens on (personal, small talk, the scripted frame: `isPersonalOpener`);
  * 3. else, for someone who has talked here before, a short, warm greeting that names no subject (`plainOpeners`),
- *    phrased for this conversation and never the way the latest one opened. Nothing the founder said is ever read by
+ *    phrased for this conversation and never the way the last ones opened. Nothing the founder said is ever read by
  *    rule for what to open on (production 2026-11-06: the previous call held only "great" and "hows your perosnal life
  *    going on..", and the next call opened "Hi, want to carry on with your perosnal life?").
  * Every distilled line is said to the person (`addressFounder`: "maya will get" becomes "you will get"; a line still
@@ -482,6 +484,8 @@ export async function chooseOpener(
     current &&
     !fromSomeoneElse &&
     !leftAside &&
+    // A line stored before the distillation's check (or that slipped past it): never personal or the scripted frame.
+    !isPersonalOpener(stored) &&
     since.withOpener === 0 &&
     !repeatsOpener(stored, latest?.opener ?? null) &&
     !askedAtTheEnd(heard, stored)
@@ -489,14 +493,18 @@ export async function chooseOpener(
     return found({ text: stored, sourceSessionId: source ?? null, byPerson: false });
   }
   if (latest === null) return found(null);
-  // No line the model wrote for this conversation: a greeting that names nothing, phrased for this conversation (the
-  // person's latest, and how many they opened since it), never the greeting or the invitation the latest one opened
-  // with.
-  const seed = `${latest.sessionId}:${args.principalId}:${String(since.opened)}`;
-  const plain = plainOpeners(seed, latest.withThisVeir)
+  // No line the model wrote for this conversation: a greeting that names nothing, never a greeting or an invitation
+  // one of the person's last conversations opened with (when every line reuses one, only the latest's is avoided).
+  // Each conversation they open since without a word takes the next line of the same order, so two in a row never
+  // greet alike.
+  const plain = plainOpeners(`${latest.sessionId}:${args.principalId}`, latest.withThisVeir)
     .map((line) => validatedOpener(line, guards))
     .filter((line): line is string => line !== null);
-  const fresh = plain.find((line) => !reusesWording(line, latest.opener ?? null)) ?? plain[0];
+  const recent = (last?.conversations ?? []).map((c) => c.opener ?? null);
+  const unsaid = plain.filter((line) => recent.every((previous) => !reusesWording(line, previous)));
+  const pool =
+    unsaid.length > 0 ? unsaid : plain.filter((line) => !reusesWording(line, latest.opener ?? null));
+  const fresh = pool.length > 0 ? pool[since.opened % pool.length] : plain[0];
   return found(
     fresh === undefined ? null : { text: fresh, sourceSessionId: latest.sessionId, byPerson: false },
   );

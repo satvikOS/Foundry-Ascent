@@ -49,8 +49,10 @@ import {
   keepHumanAdvice,
   withoutAdviceRewrites,
   modelFailure,
+  openerSkipReason,
   personaCanDistill,
   previousNeedsDistill,
+  previousWantsOpener,
   removedSince,
   sameNotebook,
   staleWriteReason,
@@ -82,7 +84,10 @@ import { conversationGrounding } from './memory-dedupe.js';
  * queues a job delayed by `turnDelaySeconds` (the backstop of a conversation left open); ending a conversation,
  * or a call in it (every way a call ends: hang-up, time limit, a switch, replacement), queues one now; starting
  * a conversation queues the person's previous one now when it has undistilled turns and the person moved on
- * from it (ended, or no turn for `settleGraceSeconds`). Those three are `settled`: never skipped as active.
+ * from it (ended, or no turn for `settleGraceSeconds`). Those three are `settled`: never skipped as active. When the
+ * previous one is distilled and its notebook holds no next opener while it has open threads (distillation wrote none,
+ * or its line was dropped: production 2026-11-06), starting a conversation queues an opener job for it instead
+ * ({@link DistillJobInput.opener}), so the next conversation picks up a real thread in the model's words.
  * Each job carries the turn count it was queued at, and skips cheaply when a later turn queued another, when
  * there is nothing new or (a turn's job) when the conversation is still active. Calls the daily maintenance
  * closes are distilled inline, and a bounded backstop (daily maintenance, and the `distill_sweep` message)
@@ -101,7 +106,8 @@ export interface DistillService {
   afterCallEnd(ctx: RequestContext, sessionId: string): Promise<void>;
   /**
    * After a conversation started: queues the person's previous conversation now when it has undistilled turns
-   * and they moved on from it (it ended, or its last turn is older than `settleGraceSeconds`).
+   * and they moved on from it (it ended, or its last turn is older than `settleGraceSeconds`); when it is distilled
+   * and its notebook holds no next opener while it has open threads, queues an opener job for it.
    */
   afterCreate(ctx: RequestContext, session: Pick<SessionView, 'id' | 'ventureId'>): Promise<void>;
   /**
@@ -136,6 +142,11 @@ export interface DistillJobInput {
   readonly queuedTurns?: number;
   /** The conversation is settled (ended, a call in it ended, its person moved on): never skipped as active. */
   readonly settled?: boolean;
+  /**
+   * Only the next opener, written again for a distilled conversation whose notebook holds none while it has open
+   * threads (`refreshOpener`): nothing else is written.
+   */
+  readonly opener?: boolean;
 }
 
 export interface DistillRunOptions {
@@ -181,7 +192,10 @@ export interface DistillBackstopReport {
 }
 
 /** What queued a distillation (logs only). */
-type Trigger = 'turn' | 'end' | 'call_end' | 'next_conversation';
+type Trigger = 'turn' | 'end' | 'call_end' | 'next_conversation' | 'opener';
+
+/** The audit action of an opener job's try (one per notebook version: {@link DistillJobInput.opener}). */
+const OPENER_ACTION = 'notebook.opener_written';
 
 /** A failure worth another delivery (the model unavailable or out of time, a notebook racing): retried. */
 export class RetryableDistillError extends Error {
@@ -320,7 +334,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     trigger: Trigger,
   ): Promise<void> {
     // Every trigger but a turn's says the conversation is over for now: distilled even if its last turn is recent.
-    const settled = trigger !== 'turn';
+    const settled = trigger !== 'turn' && trigger !== 'opener';
     await kit.deps.jobQueue.enqueue(
       {
         type: 'distill_session',
@@ -329,6 +343,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         ventureId: session.ventureId,
         turns,
         ...(settled ? { settled } : {}),
+        ...(trigger === 'opener' ? { opener: true as const } : {}),
         requestId,
       },
       delaySeconds > 0 ? { delaySeconds } : {},
@@ -584,6 +599,228 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     return kit.system((sx) => recordWithoutDigestIn(sx, state, requestId, outcome, reason, upTo));
   }
 
+  /** The distillation prompt for `part` of the conversation (the turns after the first `covered`). */
+  function promptFor(
+    state: sessionsRepo.DistillState,
+    source: DistillSource,
+    part: readonly turnsRepo.TurnRecord[],
+    covered: number,
+    now: Date,
+  ): ReturnType<typeof buildDistillPrompt> {
+    return buildDistillPrompt({
+      personaName: source.persona.name,
+      eirName: source.eirName,
+      mentor: source.mentor,
+      founderFirstName: source.founderFirstName,
+      venture: {
+        name: source.venture.name,
+        stage: source.venture.stage,
+        domain: source.venture.domain,
+        currentGoal: source.venture.currentGoal,
+      },
+      sessionGoal: state.goal,
+      // What the conversation opened with: the model sees the thread it raised and whether it was taken up.
+      opener: state.opener,
+      turns: part.map((t) => ({
+        founderText: t.founderText,
+        answer: t.response?.answer ?? null,
+        channel: t.channel,
+      })),
+      earlierTurns: covered,
+      previousDigest: covered > 0 ? state.digest : null,
+      evidence: [...source.evidence.values()],
+      previousNotebook: source.notebook
+        ? { ...source.notebook.content, updatedAt: source.notebook.updatedAt }
+        : null,
+      today: now.toISOString().slice(0, 10),
+    });
+  }
+
+  /**
+   * The model's draft for `prompt`, or the failure to record. A failure another delivery may get past (the model
+   * unavailable or out of time, an unusable answer once) is thrown as {@link RetryableDistillError}.
+   */
+  async function draftFor(
+    state: sessionsRepo.DistillState,
+    ctx: RequestContext,
+    prompt: ReturnType<typeof buildDistillPrompt>,
+    options: DistillRunOptions,
+  ): Promise<{ readonly draft: DistillDraft } | { readonly failure: string }> {
+    const remaining =
+      options.deadline === undefined ? null : options.deadline - Date.now() - DEADLINE_MARGIN_MS;
+    try {
+      const result = await meteredStructured(
+        kit,
+        { ctx, ventureId: state.ventureId, purpose: 'distill' },
+        {
+          system: prompt.system,
+          messages: prompt.messages,
+          schemaName: DISTILL_SCHEMA_NAME,
+          zodSchema: DistillDraft,
+          maxOutputTokens: DISTILL_MAX_OUTPUT_TOKENS,
+          timeoutMs: kit.config.turns.modelTimeoutMs,
+          ...(remaining === null ? {} : { signal: AbortSignal.timeout(Math.max(1_000, remaining)) }),
+        },
+      );
+      return { draft: result.value };
+    } catch (err) {
+      if (!isModelGatewayError(err)) throw err;
+      // Only answers the model gave count towards the retry of an unusable one, never queue deliveries.
+      const answers = err instanceof ModelUnavailableError ? 0 : await countUnusableAnswer(state.id);
+      const failure = modelFailure(err, {
+        answers,
+        lastDelivery: (options.attempt ?? 1) >= (options.maxAttempts ?? 1),
+      });
+      if (failure === null) throw new RetryableDistillError(err.code);
+      return { failure };
+    }
+  }
+
+  /**
+   * An opener job ({@link DistillJobInput.opener}): the conversation's last part again (at most MAX_DISTILL_TURNS
+   * turns, with the digest of the turns before them), with the notebook as it is now, for the next opener only. The
+   * prompt opens on the notebook's most important open thread when that part brought nothing about the venture
+   * (production 2026-11-06: the call held only small talk, and the notebook's threads on the advisor session and who
+   * signs the cheque went unused), and the sanitizer's checks hold as for any distillation. Written only onto the
+   * notebook version read; nothing else is written (the digest, notes, memory and lessons stay as distilled). Each try
+   * is audited, and one is made per notebook version: a line the checks drop is not paid for again until the notebook
+   * changes.
+   */
+  async function refreshOpener(
+    state: sessionsRepo.DistillState,
+    ctx: RequestContext,
+    requestId: string,
+    options: DistillRunOptions,
+  ): Promise<DistillOutcome> {
+    const sessionId = state.id;
+    const skipped = (reason: string): DistillOutcome => {
+      logger.info('distill.skipped', { requestId, sessionId, reason, opener: true });
+      return empty(sessionId, 'skipped', reason);
+    };
+    const source = await kit.system((sx) => loadSource(sx, state), { transaction: false });
+    if (source === null || !personaCanDistill(source.persona, source.consent, kit.now())) {
+      return skipped('persona_inactive');
+    }
+    const notebook = source.notebook;
+    if (notebook === null || !notebook.intact || notebook.content.nextOpener !== null) {
+      return skipped('opener_present');
+    }
+    const writtenAt = Date.parse(notebook.updatedAt ?? notebook.createdAt);
+    const tries = await kit.system(
+      (sx) =>
+        auditRepo.listAuditEvents(sx, {
+          tenantId: state.tenantId,
+          ventureId: state.ventureId,
+          action: OPENER_ACTION,
+          limit: 20,
+        }),
+      { transaction: false },
+    );
+    if (tries.items.some((e) => e.objectId === notebook.id && Date.parse(e.at) >= writtenAt)) {
+      return skipped('opener_tried');
+    }
+    const part = source.turns.slice(-MAX_DISTILL_TURNS);
+    if (part.length === 0) return skipped('no_turns');
+    const now = kit.now();
+    const answer = await draftFor(
+      state,
+      ctx,
+      promptFor(state, source, part, source.turns.length - part.length, now),
+      options,
+    );
+    let line: { readonly nextOpener: string | null; readonly nextTopic: string | null } = {
+      nextOpener: null,
+      nextTopic: null,
+    };
+    let reason = 'failure' in answer ? answer.failure : 'no_line';
+    let dropped = { untaken: 0, personal: 0 };
+    if ('draft' in answer) {
+      // Only its opener is read: the rest of the answer is never written.
+      const result = sanitizeDistill(
+        answer.draft,
+        sanitizeContext(state, source, now.toISOString(), notebook.content, source.pins, []),
+      );
+      if (result === null) reason = 'cross_venture';
+      else {
+        dropped = {
+          untaken: result.stats.untakenOpenerDropped,
+          personal: result.stats.personalOpenerDropped,
+        };
+        // What a person removed never comes back.
+        const filtered = dropSuppressed(
+          {
+            ...notebook.content,
+            nextOpener: result.notebookDelta.nextOpener,
+            nextTopic: result.notebookDelta.nextTopic,
+          },
+          notebook.suppressed,
+        ).content;
+        line = { nextOpener: filtered.nextOpener, nextTopic: filtered.nextTopic ?? null };
+      }
+    }
+    const written = await kit.system(
+      async (sx): Promise<{ readonly stale: string } | { readonly version: number | null }> => {
+        const stale = openerSkipReason(
+          await sessionsRepo.getDistillState(sx, sessionId, { lock: true }),
+          state.completedTurns,
+        );
+        if (stale !== null) return { stale };
+        let version: number | null = null;
+        if (line.nextOpener !== null) {
+          const saved = await notebooksRepo.saveNotebook(sx, {
+            tenantId: state.tenantId,
+            ventureId: state.ventureId,
+            personaId: state.personaId,
+            expectedVersion: notebook.version,
+            content: { ...notebook.content, nextOpener: line.nextOpener, nextTopic: line.nextTopic },
+            suppressed: notebook.suppressed,
+            editedBy: 'veir',
+            principalId: null,
+            // Drawn from this conversation: deleting it erases the line too.
+            sourceSessionId: sessionId,
+          });
+          // Written meanwhile (a distillation or a person): the next conversation's start tries again.
+          if (saved === null) return { stale: 'notebook_changed' };
+          version = saved.version;
+        }
+        await auditRepo.appendAudit(sx, {
+          action: OPENER_ACTION,
+          outcome: version === null ? 'blocked' : 'succeeded',
+          tenantId: state.tenantId,
+          ventureId: state.ventureId,
+          objectType: 'notebook',
+          objectId: notebook.id,
+          requestId,
+          policyReason: version === null ? reason : null,
+          metadata: {
+            sessionId,
+            personaId: state.personaId,
+            notebookVersion: version,
+            untakenOpenerDropped: dropped.untaken,
+            personalOpenerDropped: dropped.personal,
+          },
+        });
+        return { version };
+      },
+    );
+    if ('stale' in written) return skipped(written.stale);
+    logger.info('distill.opener_written', {
+      requestId,
+      sessionId,
+      written: written.version !== null,
+      notebookVersion: written.version,
+    });
+    return {
+      ...empty(
+        sessionId,
+        written.version === null ? 'dropped' : 'distilled',
+        written.version === null ? reason : null,
+      ),
+      turns: state.completedTurns,
+      notebookVersion: written.version,
+    };
+  }
+
   /**
    * One run over the next part of the conversation: the earliest completed turns no digest covers yet, at
    * most MAX_DISTILL_TURNS, with the digest of the turns before them. Read, call the model, write; the digest
@@ -611,64 +848,12 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     if (part.length === 0) return recordWithoutDigest(state, requestId, 'dropped', 'no_content');
 
     const now = kit.now();
-    const prompt = buildDistillPrompt({
-      personaName: source.persona.name,
-      eirName: source.eirName,
-      mentor: source.mentor,
-      founderFirstName: source.founderFirstName,
-      venture: {
-        name: source.venture.name,
-        stage: source.venture.stage,
-        domain: source.venture.domain,
-        currentGoal: source.venture.currentGoal,
-      },
-      sessionGoal: state.goal,
-      // What the conversation opened with: the model sees the thread it raised and whether it was taken up.
-      opener: state.opener,
-      turns: part.map((t) => ({
-        founderText: t.founderText,
-        answer: t.response?.answer ?? null,
-        channel: t.channel,
-      })),
-      earlierTurns: covered,
-      previousDigest: covered > 0 ? state.digest : null,
-      evidence: [...source.evidence.values()],
-      previousNotebook: source.notebook
-        ? { ...source.notebook.content, updatedAt: source.notebook.updatedAt }
-        : null,
-      today: now.toISOString().slice(0, 10),
-    });
+    const prompt = promptFor(state, source, part, covered, now);
     // The turns the model sees; the digest written from its answer covers no more than these.
     const upTo = covered + prompt.turnsShown;
-    const remaining =
-      options.deadline === undefined ? null : options.deadline - Date.now() - DEADLINE_MARGIN_MS;
-    let draft: DistillDraft;
-    try {
-      const result = await meteredStructured(
-        kit,
-        { ctx, ventureId: state.ventureId, purpose: 'distill' },
-        {
-          system: prompt.system,
-          messages: prompt.messages,
-          schemaName: DISTILL_SCHEMA_NAME,
-          zodSchema: DistillDraft,
-          maxOutputTokens: DISTILL_MAX_OUTPUT_TOKENS,
-          timeoutMs: kit.config.turns.modelTimeoutMs,
-          ...(remaining === null ? {} : { signal: AbortSignal.timeout(Math.max(1_000, remaining)) }),
-        },
-      );
-      draft = result.value;
-    } catch (err) {
-      if (!isModelGatewayError(err)) throw err;
-      // Only answers the model gave count towards the retry of an unusable one, never queue deliveries.
-      const answers = err instanceof ModelUnavailableError ? 0 : await countUnusableAnswer(sessionId);
-      const failure = modelFailure(err, {
-        answers,
-        lastDelivery: (options.attempt ?? 1) >= (options.maxAttempts ?? 1),
-      });
-      if (failure === null) throw new RetryableDistillError(err.code);
-      return recordWithoutDigest(state, requestId, 'failed', failure, upTo);
-    }
+    const answer = await draftFor(state, ctx, prompt, options);
+    if ('failure' in answer) return recordWithoutDigest(state, requestId, 'failed', answer.failure, upTo);
+    const { draft } = answer;
 
     const nowIso = now.toISOString();
     const readContent = source.notebook?.content ?? null;
@@ -892,7 +1077,10 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       transaction: false,
     });
     const settled = job.settled === true;
-    const skip = distillSkipReason(state, kit.now(), cfg.activeWindowSeconds, job.queuedTurns, settled);
+    const skip =
+      job.opener === true
+        ? openerSkipReason(state, job.queuedTurns)
+        : distillSkipReason(state, kit.now(), cfg.activeWindowSeconds, job.queuedTurns, settled);
     if (state === null || skip !== null) return skipped(skip ?? 'not_found');
     const settings = await kit.system((sx) => settingsRepo.getPlatformSettings(sx), { transaction: false });
     if (!settings.aiEnabled) return skipped('kill_switch');
@@ -917,7 +1105,9 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
         sessionsRepo.claimDistillation(sx, {
           sessionId,
           claimId,
-          turns: state.completedTurns,
+          // A claim holds while the digest covers fewer turns than this: an opener job's conversation is distilled
+          // already, so it claims as long as no other run moved the digest on meanwhile.
+          turns: job.opener === true ? state.distillVersion + 1 : state.completedTurns,
           seconds: claimSeconds(options.deadline),
         }),
       { transaction: false },
@@ -948,6 +1138,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       return true;
     };
     try {
+      if (job.opener === true) return await refreshOpener(state, ctx, requestId, options);
       // A long conversation is distilled in parts, oldest first; each covers only the turns its model call saw.
       let current = state;
       let total: DistillOutcome | null = null;
@@ -1026,13 +1217,15 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
             excludeSessionId: created.id,
           }),
         );
-        if (previous === null || !previousNeedsDistill(previous, kit.now(), cfg.settleGraceSeconds)) return;
+        if (previous === null) return;
+        const distil = previousNeedsDistill(previous, kit.now(), cfg.settleGraceSeconds);
+        if (!distil && !previousWantsOpener(previous)) return;
         await enqueue(
           { id: previous.id, tenantId: ctx.tenantId, ventureId: created.ventureId },
           previous.completedTurns,
           ctx.requestId,
           0,
-          'next_conversation',
+          distil ? 'next_conversation' : 'opener',
         );
       }),
 

@@ -44,6 +44,7 @@ import {
   splitSentences,
 } from './spoken-text.js';
 import { DEFAULT_SPEECH_VOICE } from './voices.js';
+import { addressFounder } from '../orchestrator/address-founder.js';
 import { plainOpeners } from '../orchestrator/continuity-prompt.js';
 
 /** The words of {@link callIntro}. */
@@ -521,6 +522,29 @@ describe('the names a call may say', () => {
     expect(ownGreetingLine('What did the union say?', 'Maya')).toBeNull();
   });
 
+  it('says a model line that called the founder by name with the call’s own name, once (review of 5f15d7b)', () => {
+    const base = {
+      firstName: 'Maya',
+      personaName: 'Thomas',
+      eirFirstName: null,
+      mentor: true,
+      firstMeeting: false,
+      conversationStarted: false,
+      seed: 's1',
+    } as const;
+    const said = (line: string): string =>
+      callIntroText({ ...base, opener: addressFounder(line, { founder: 'Maya Patel' }) });
+    expect(said('Hi Maya! Who signs the cheque at the libraries?')).toBe(
+      'Hi Maya! Who signs the cheque at the libraries?',
+    );
+    expect(said('Good to see you again, Maya. Who signs the cheque?')).toBe(
+      'Good to see you again, Maya. Who signs the cheque?',
+    );
+    expect(said('Maya, good to see you. How did the advisor session go?')).toBe(
+      'Good to see you, Maya. How did the advisor session go?',
+    );
+  });
+
   it('says the founder’s name in a greeting one reply in four at most, like every reply (the coach hand-off)', () => {
     const named = ['Maya, that works.', 'Sounds good.', 'Hi Maya, how did it go?'];
     const unnamed = Array.from({ length: 12 }, (_, i) => `Reply ${String(i)} without a name.`);
@@ -552,14 +576,31 @@ describe('the names a call may say', () => {
     expect(modelLine('Good to see you again. Maya, how did the pilot booking go?')).toBe(
       'Good to see you again. How did the pilot booking go?',
     );
-    // A line that cannot be said without her name is not said as written: the call's plain hello, then the line's own
-    // words without its greeting, never calling her by it ("Hi, how did Maya's pilot booking go?").
+    // A line that cannot be said without her name (a person's line: a model line says "your pilot") is not said while
+    // the budget has no room for it: the call's plain hello and an invitation, and the conversation keeps the line as
+    // its first message (review of 5f15d7b: "Hi, Amara's clinics: who signs the cheque?" said the name anyway).
     expect(
       ownGreetingLine("Good to see you again. How did Maya's pilot booking go?", null, 'Maya'),
     ).toBeNull();
-    expect(modelLine("Good to see you again. How did Maya's pilot booking go?")).toBe(
-      "Hi, how did Maya's pilot booking go?",
-    );
+    for (const opener of [
+      "Good to see you again. How did Maya's pilot booking go?",
+      "Hi! Maya's clinics: who signs the cheque?",
+      "How did Maya's pilot booking go?",
+    ]) {
+      const intro = callIntro({ ...base, firstMeeting: false, opener, pastReplies: named });
+      expect(intro.text, opener).toMatch(/^Hi, [^.!?]+\?$/);
+      expect(intro.text, opener).not.toMatch(/Maya/);
+      expect(intro.carriesOpener, opener).toBe(false);
+      expect(openerKept(intro, opener), opener).toBe(opener);
+    }
+    // With room for her name, the line is said as written.
+    expect(
+      callIntroText({
+        ...base,
+        firstMeeting: false,
+        opener: "Good to see you again. How did Maya's pilot booking go?",
+      }),
+    ).toBe("Good to see you again. How did Maya's pilot booking go?");
     expect(withoutVocative('Welcome back, Maya! Maya, where did you land?', 'Maya')).toBe(
       'Welcome back! Where did you land?',
     );

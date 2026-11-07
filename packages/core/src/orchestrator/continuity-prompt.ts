@@ -367,7 +367,10 @@ function mixed(hash: number): number {
   return h >>> 0;
 }
 
-/** Greetings to someone this vEIR has talked with before. */
+/**
+ * Greetings to someone this vEIR has talked with before; never one the distillation prompt calls a stock line ("Good
+ * to talk again", @foundry/ai distill/prompt.ts).
+ */
 const GREETINGS_AGAIN = [
   'Good to see you again.',
   'Welcome back.',
@@ -375,7 +378,9 @@ const GREETINGS_AGAIN = [
   'Nice to hear from you again.',
   'Great to see you.',
   'Hello again.',
-  'Good to talk again.',
+  'Nice to see you.',
+  'Good to hear from you.',
+  'Hi again.',
 ];
 /** Greetings to someone whose last conversation here was with another coach of the venture (never "again"). */
 const GREETINGS_NEW = ['Good to have you here.', 'Welcome.', 'Glad you’re here.'];
@@ -388,22 +393,22 @@ const INVITATIONS = [
   'What feels most pressing right now?',
   'What shall we dig into?',
   'What would be most useful to talk through?',
+  'What would you like to tackle first?',
 ];
-/** Invitations only someone met before hears. */
-const INVITATIONS_AGAIN = ['What’s been happening since we last spoke?'];
 
 /**
  * The topic-free opening lines of a new conversation, in the order this `seed` (the conversation) tries them: a
  * greeting, then an invitation that names nothing ("Welcome back. What feels most pressing right now?"). Said when the
  * notebook holds no line the model wrote for this conversation (distillation has not run yet, wrote none because nothing
  * about the venture was said, or its line cannot be said): no subject, none of the founder's words, no name (a call
- * adds it within the name budget), no time words. `met`: the person talked with this vEIR before (else their last
+ * adds it within the name budget), no time words (never "since we last spoke": it may be said seconds after the last
+ * conversation, before its distillation ran). `met`: the person talked with this vEIR before (else their last
  * conversation was with another coach of the venture). Every greeting and invitation comes up in turn, so a caller can
- * skip the ones the last conversation opened with.
+ * skip the ones the last conversations opened with.
  */
 export function plainOpeners(seed: string, met: boolean): string[] {
   const greetings = met ? GREETINGS_AGAIN : GREETINGS_NEW;
-  const invitations = met ? [...INVITATIONS, ...INVITATIONS_AGAIN] : INVITATIONS;
+  const invitations = INVITATIONS;
   const h = mixed(seedOf(seed));
   const out: string[] = [];
   for (let k = 0; k < greetings.length * invitations.length; k += 1) {

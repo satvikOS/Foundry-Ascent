@@ -1,4 +1,4 @@
-import { isEverydayWord, tidyFounderWords } from '@foundry/ai';
+import { isEverydayWord, tidyFounderWords, withoutVocativeName } from '@foundry/ai';
 
 /**
  * How a model-written line (the notebook's next opener, written at distillation) is said TO the founder.
@@ -90,19 +90,24 @@ const S_VERBS = new Set(
 const THIRD_PERSON = /\b(?:she|he|her|hers|him|his|herself|himself)\b/i;
 
 /**
- * `text` (a distilled line: the notebook's next topic or opener, a digest topic) addressed to the founder: their
- * name, or "the founder", becomes "you" or "your" (and the verb after it agrees: "maya will get" → "you will get",
- * "Maya plans" → "You plan", "the founder's pilot" → "your pilot"); other people's names get their real case
- * back ("noor" → "Noor"). Null when the line still speaks of the founder in the third person (he, she, her…), so it
- * is dropped rather than said.
+ * `text` (a distilled line: the notebook's next topic or opener, a digest topic) addressed to the founder: where it
+ * calls them by name, the name goes ("Hi Maya! Who signs…" → "Hi! Who signs…", "Good to see you again, Maya." → "Good
+ * to see you again."; a call says it back within the name budget, never "Hi you!"); elsewhere their name, or "the
+ * founder", becomes "you" or "your" (and the verb after it agrees: "maya will get" → "you will get", "Maya plans" →
+ * "You plan", "the founder's pilot" → "your pilot"); other people's names get their real case back ("noor" →
+ * "Noor"). Null when the line still speaks of the founder in the third person (he, she, her…), so it is dropped
+ * rather than said.
  */
 export function addressFounder(text: string, people: OpenerPeople): string | null {
   const founderNames = new Set<string>(['the founder']);
+  let line = text.normalize('NFKC');
   if (people.founder !== null && people.founder.trim() !== '') {
     const full = people.founder.normalize('NFKC').trim().replace(/\s+/g, ' ');
     founderNames.add(full);
     const first = full.split(' ')[0];
     if (first !== undefined && first.length >= 2) founderNames.add(first);
+    // Said to them, never about them: the name they are called by goes before it could become "you".
+    for (const name of new Set([full, first ?? ''])) line = withoutVocativeName(line, name).text;
   }
   const alternation = [...founderNames]
     .sort((a, b) => b.length - a.length)
@@ -114,8 +119,7 @@ export function addressFounder(text: string, people: OpenerPeople): string | nul
     at === 0 ? /^\p{Lu}/u.test(source) : /[.!?]\s+$/.test(source.slice(0, at));
   const cased = (word: string, source: string, at: number): string =>
     startOfSentence(source, at) ? `${word.charAt(0).toUpperCase()}${word.slice(1)}` : word;
-  let out = text
-    .normalize('NFKC')
+  let out = line
     .replace(/[‘’ʼ]/g, "'")
     .replace(new RegExp(`\\b(?:${alternation})'s\\b`, 'giu'), (_m, at: number, source: string) =>
       cased('your', source, at),

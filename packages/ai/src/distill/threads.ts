@@ -26,9 +26,9 @@ import { contentWords } from '../prompts/conversation-state.js';
 const FRAME_TEXT = [
   // Greetings and the call's hello (first meeting included).
   "Hi Hello Hey Good to have you back. Welcome back. Good to talk again. Nice to hear from you again. Good to have you here. I'm the program's AI coach, digital twin, vEIR.",
-  "Good to see you again. Great to see you. Hello again. Welcome. Glad you're here.",
+  "Good to see you again. Great to see you. Hello again. Welcome. Glad you're here. Nice to see you. Good to hear from you. Hi again.",
   // The invitations of a greeting that names nothing.
-  "What's on your mind today? Where would you like to start? What feels most pressing right now? What shall we dig into? What would be most useful to talk through? What's been happening since we last spoke? Where shall we carry on? What would you like to look at next?",
+  "What's on your mind today? Where would you like to start? What feels most pressing right now? What shall we dig into? What would be most useful to talk through? What would you like to tackle first? What's been happening since we last spoke? Where shall we carry on? What would you like to look at next?",
   // Endings and invitations.
   'Where did you land on it? Want to pick that up, or is something else on your mind? Shall we carry on from there, or start somewhere new? How has it gone since? How is it going? Where are things now?',
   'Want to pick up where we left off, or start on something new? Want to pick up where your last conversation here left off, or start on something new? Your last conversation here was about.',

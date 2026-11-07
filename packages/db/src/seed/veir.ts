@@ -421,9 +421,10 @@ async function seedNotebook(
         'Treat the group chat as the competitor: the map has to be faster than sending a message.',
       ),
     ],
+    // In the shape distillation writes it: its own greeting, then one sentence that names the thread.
     nextOpener:
-      'Last time you planned five library-staff interviews about occupancy data. How many have you done, and what ' +
-      'did they say about sharing counts?',
+      'Good to see you again. How many of the library-staff interviews have you done, and would any library share its ' +
+      'occupancy counts?',
     // Both were drawn from the past conversation: deleting it clears them.
     summarySources: [sessionId],
     nextOpenerSource: sessionId,

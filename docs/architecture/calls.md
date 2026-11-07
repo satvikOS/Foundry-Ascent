@@ -223,12 +223,14 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
 - **The intro** greets the founder by first name. On a first meeting the vEIR introduces itself once ("Hi Maya,
   I'm Corin's vEIR, Corin's digital twin."; a mentor under its own name, ADR-0021, only "Hi Maya, I'm Thomas.") and
   continues with the conversation's opener, or "What would you like to work on?". With someone it has met, it says
-  the conversation's opener as written (`repeatGreetingOf`), never phrased again around what it is about and never
+  the conversation's opener as written, never phrased again around what it is about and never
   put in a fixed frame (owner: "it always repeats the same question in the same way like reading a script";
   production 2026-11-06: "Hi, want to carry on with your perosnal life?"). A line that greets in its own words (the
   model-written next opener, and the greeting that names nothing `chooseOpener` falls back on) keeps its greeting
   ("Good to see you again, Maya. What did the student union say?"; `ownGreetingLine`); a line without one (a
-  person's own) follows the call's "Hi Maya, …". With no opener, the call says hello and an invitation that names
+  person's own) follows the call's "Hi Maya, …", unless it says the founder's name some other way ("Maya's
+  clinics") while the name budget has no room: then the call invites, and the conversation keeps the line. With no
+  opener, the call says hello and an invitation that names
   nothing, varied from call to call ("Hi Maya, what's on your mind today?"; "…where shall we carry on?" on a
   conversation under way).
   The founder's name is said in a greeting one reply in four at most, as in every reply (`greetedName`, read from the

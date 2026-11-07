@@ -297,10 +297,10 @@ describe('starting a call', () => {
     const intro = started.intro;
     if (intro === null) throw new Error('expected an intro');
     // Maya has met her vEIR (the seeded conversation): no self-introduction, and the seeded notebook's line as it was
-    // written (it has no greeting of its own, so after the call's hello), never cut down and put in a frame ("Hi Maya,
-    // how did the five library-staff interviews go?"). By name: no reply named her lately.
+    // written, in its own greeting, never cut down and put in a frame ("Hi Maya, how did the five library-staff
+    // interviews go?"). By name, in that greeting: no reply named her lately.
     expect(intro.text).toBe(
-      'Hi Maya, last time you planned five library-staff interviews about occupancy data. How many have you done, and what did they say about sharing counts?',
+      'Good to see you again, Maya. How many of the library-staff interviews have you done, and would any library share its occupancy counts?',
     );
     // What the call said is the conversation's first message: the vEIR's history holds the greeting it gave.
     expect((await h.core.sessions.get(ctx.maya, sessionId)).session.opener).toBe(intro.text);

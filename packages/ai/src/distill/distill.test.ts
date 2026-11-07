@@ -12,6 +12,7 @@ import { MAX_DISTILL_TURNS, buildDistillPrompt, type DistillPromptInput } from '
 import {
   NOTEBOOK_OPENER_PIN,
   NOTEBOOK_SUMMARY_PIN,
+  isPersonalOpener,
   sanitizeDistill,
   type DistillSanitizeContext,
   type PreviousNotebook,
@@ -977,6 +978,41 @@ describe('a conversation with nothing about the venture in it (production 2026-1
     const aside = said('Good to see you. Did the advisor session happen in the end?', 'the advisor session');
     expect(aside.notebookDelta.nextOpener).toBeNull();
     expect(aside.stats.untakenOpenerDropped).toBe(1);
+  });
+
+  it('drops the incident’s own words as typed, small talk and the scripted frame (review of 5f15d7b)', () => {
+    for (const line of [
+      'Hi! How is your perosnal life going?',
+      'Good to see you. How are things going in your life outside work?',
+      'Hey! How was your day?',
+      'Nice to see you. How is your health these days?',
+      'Hello again. Want to carry on with your personal stuff?',
+      'Hi, want to carry on with the pilot?',
+      'Hope you are well. How has your week been?',
+      'Hey, how are things with you and the family?',
+      'Good to see you. Is everything okay at home?',
+    ]) {
+      const out = said(line, null);
+      expect(out.notebookDelta.nextOpener, line).toBeNull();
+      expect(out.stats.personalOpenerDropped, line).toBe(1);
+      expect(isPersonalOpener(line), line).toBe(true);
+    }
+  });
+
+  it('keeps a venture whose subject only sounds personal', () => {
+    for (const line of [
+      'Did your weekend pop-up at the farmers market bring in any orders?',
+      'How did your holiday-let pricing test land with the first three owners?',
+      'Did the home life insurance brokers reply about the referral fee?',
+      'How did the social life app beta do with the first fifty students?',
+      'How did your family life coaching pilot go with the two schools?',
+      'How did the home life insurance quote compare?',
+      'Did your holiday rental listings go live?',
+      'How was your week of interviews with the podiatry clinics?',
+      'How is your family business handling the second pilot?',
+    ]) {
+      expect(isPersonalOpener(line), line).toBe(false);
+    }
   });
 });
 

@@ -273,8 +273,9 @@ export function ownGreetingLine(
   const clause = first[1];
   if (withoutRepeatedGreeting(`${clause}.`, names).text !== '') return text;
   const after = text.slice(first[0].length);
-  const named =
-    first[2] === ',' && BARE_HELLO.test(clause) ? `${clause} ${name},` : `${clause}, ${name}${first[2]}`;
+  // A bare hello takes the name without a comma ("Hey Maya, …", "Hi Maya!"); any other greeting after one.
+  const bare = first[2] === ',' ? BARE_HELLO.test(clause) : /^(?:hi|hello|hey|hiya)$/i.test(clause);
+  const named = bare ? `${clause} ${name}${first[2]}` : `${clause}, ${name}${first[2]}`;
   return `${named}${after}`;
 }
 
@@ -295,7 +296,7 @@ export interface CallGreeting {
  * said only while the latest replies (`pastReplies`, newest first) leave it room: one reply in four
  * (`nameBudgetSpent`, as every reply is held to).
  */
-export function repeatGreetingOf(args: {
+function repeatGreetingOf(args: {
   readonly firstName: string | null;
   readonly opener: string | null;
   readonly conversationStarted: boolean;
@@ -312,8 +313,12 @@ export function repeatGreetingOf(args: {
     const own = ownGreetingLine(opener, name, args.firstName);
     if (own !== null) return { text: own, carriesOpener: true };
     // No greeting of its own (a person's line), or one that cannot be said without a name the budget has no room
-    // for: the call's hello, then the line's own words.
-    return { text: `${hi}, ${continuing(rest.removed ? rest.text.trim() : opener)}`, carriesOpener: true };
+    // for: the call's hello, then the line's own words, unless those still say the name ("Maya's clinics"): then
+    // the invitation, so the one-in-four limit holds (the conversation keeps the opener as its first message).
+    const words = rest.removed ? rest.text.trim() : opener;
+    if (name !== null || args.firstName === null || !nameWord(args.firstName).test(words)) {
+      return { text: `${hi}, ${continuing(words)}`, carriesOpener: true };
+    }
   }
   return {
     text: `${hi}, ${plainInvitation(args.seed ?? '', args.conversationStarted)}`,

@@ -18,6 +18,22 @@ describe('addressFounder (LAB-U2: said to the founder, names in their real case)
     expect(addressFounder(line, PEOPLE)).toBe(said);
   });
 
+  it('drops the name where the line calls them by it, never "Hi you!" (review of 5f15d7b)', () => {
+    for (const [line, said] of [
+      ['Hi Maya! Who signs the cheque at the libraries?', 'Hi! Who signs the cheque at the libraries?'],
+      ['Good to see you again, Maya. Who signs the cheque?', 'Good to see you again. Who signs the cheque?'],
+      [
+        'Maya, good to see you. How did the advisor session go?',
+        'Good to see you. How did the advisor session go?',
+      ],
+      ['Welcome back, Maya Patel! Did the dean reply?', 'Welcome back! Did the dean reply?'],
+      // Talked about, not called by: said as "you".
+      ["Hi! How did Maya's pilot go?", 'Hi! How did your pilot go?'],
+    ] as const) {
+      expect(addressFounder(line, PEOPLE), line).toBe(said);
+    }
+  });
+
   it('drops a line that still speaks of the founder in the third person', () => {
     expect(addressFounder('whether she will sign the purchase order', PEOPLE)).toBeNull();
     expect(addressFounder('his plan for the pilot', PEOPLE)).toBeNull();

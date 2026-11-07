@@ -223,8 +223,10 @@ describe('plainOpeners: the opener when the notebook holds no line the model wro
           // a thread the founder left aside.
           expect([...threadWords(line)], line).toEqual([]);
           expect(line, line).not.toMatch(
-            /\b(?:ago|yesterday|today’s|last time|we talked|left off|pick up)\b/i,
+            /\b(?:ago|yesterday|today’s|last time|we talked|left off|pick up|since we last)\b/i,
           );
+          // Never a line the distillation prompt calls stock (review of 5f15d7b).
+          expect(line, line).not.toMatch(/good to talk again|carry on with/i);
           expect(line, line).toMatch(/^[^.!?]+[.!] [^.!?]+\?$/);
         }
       }
@@ -263,7 +265,7 @@ describe('plainOpeners: the opener when the notebook holds no line the model wro
     expect(new Set(firsts.map((l) => l.split(/(?<=[.!])\s/)[1])).size).toBeGreaterThanOrEqual(5);
     // Every greeting and every invitation comes up for one conversation, so a caller can skip the last one's wording.
     const all = plainOpeners('one', true);
-    expect(new Set(all.map((l) => l.split(/(?<=[.!])\s/)[0])).size).toBe(7);
+    expect(new Set(all.map((l) => l.split(/(?<=[.!])\s/)[0])).size).toBe(9);
     expect(new Set(all.map((l) => l.split(/(?<=[.!])\s/)[1])).size).toBe(7);
   });
 });

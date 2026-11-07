@@ -53,6 +53,11 @@ async function distilledOpener(request: APIRequestContext, sessionId: string): P
     .poll(async () => (await sessionTurns(request, sessionId)).session.digest ?? null, { timeout: 30_000 })
     .not.toBeNull();
   const { ventureId } = (await sessionTurns(request, sessionId)).session;
+  return notebookOpener(request, ventureId);
+}
+
+/** The line the notebook holds for the next conversation now. */
+async function notebookOpener(request: APIRequestContext, ventureId: string): Promise<string | null> {
   const response = await request.get(`/api/v1/ventures/${ventureId}/notebook`);
   expect(response.status(), 'GET /ventures/:id/notebook').toBe(200);
   return ((await response.json()) as { nextOpener: string | null }).nextOpener;
@@ -702,12 +707,18 @@ test.describe('vEIR calls', () => {
         await hangUp();
         // Nothing about the venture was said: the model opens on an open thread of the notebook, or writes nothing.
         const line = await distilledOpener(page.request, sessionId);
-        const { intro } = await callFromPalette();
-        for (const said of [intro, line ?? '']) {
+        const next = await callFromPalette();
+        const intro = next.intro;
+        // With no line, starting the next conversation queued an opener job (the notebook still has open threads): the
+        // call says the line it wrote when it landed before the call started, else a greeting that names nothing.
+        const { ventureId } = (await sessionTurns(page.request, next.sessionId)).session;
+        const written = line ?? (await notebookOpener(page.request, ventureId));
+        for (const said of [intro, written ?? '']) {
           expect(said).not.toMatch(/perosnal|personal|\blife\b/i);
           expect(said).not.toMatch(FRAMED);
         }
         if (line !== null) expect(intro.replace(', Maya', '')).toBe(line);
+        else if (written !== null && intro.replace(', Maya', '') === written) expect(written).toMatch(/\?$/);
         else expect(intro).toMatch(PLAIN_GREETING);
       });
     } finally {

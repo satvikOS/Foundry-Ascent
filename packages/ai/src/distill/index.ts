@@ -9,7 +9,7 @@ export {
 } from './schema.js';
 export { MAX_DISTILL_TURNS, buildDistillPrompt } from './prompt.js';
 export type { DistillPromptInput, DistillTurn } from './prompt.js';
-export { NOTEBOOK_OPENER_PIN, NOTEBOOK_SUMMARY_PIN, sanitizeDistill } from './sanitize.js';
+export { NOTEBOOK_OPENER_PIN, NOTEBOOK_SUMMARY_PIN, isPersonalOpener, sanitizeDistill } from './sanitize.js';
 export type {
   DistillConversation,
   DistillSanitizeContext,

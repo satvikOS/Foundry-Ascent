@@ -131,7 +131,10 @@ export interface DistillStats {
    * raised, or a thread kept from an earlier conversation that this one never took up.
    */
   untakenOpenerDropped: number;
-  /** 1 when the proposed next opener (with its thread) was about someone's personal life, never a mentor's opener. */
+  /**
+   * 1 when the proposed next opener (with its thread) was one a mentor never opens on: someone's personal life, small
+   * talk, the scripted frame ({@link isPersonalOpener}).
+   */
   personalOpenerDropped: number;
 }
 
@@ -204,9 +207,41 @@ function byCommitmentOrder(a: NotebookCommitment, b: NotebookCommitment): number
   return b.createdAt.localeCompare(a.createdAt);
 }
 
-/** Someone's personal life, never what a mentor opens a conversation on ("your personal life", "your love life"). */
-const PERSONAL_LIFE =
-  /\b(?:personal|private|love|dating|family|home|social|sex)\s+li(?:fe|ves)\b|\b(?:your|my)\s+(?:weekend|holiday|vacation|boyfriend|girlfriend|husband|wife)\b/i;
+/** "personal" as typed, typos too ("perosnal", "presonal", "prsnl": production 2026-11-06). */
+const PERSONAL = String.raw`p[a-z]{0,2}r[a-z]{0,3}n[a-z]{0,2}l`;
+/** The end of a clause, or the words small talk goes on with ("…life going?", "…day been?", "…health these days?"). */
+const CLAUSE_END = String.raw`(?=\s*(?:[?.!,;:…]|$|(?:going|been|treating|lately|these days|so far|today|then|at the moment)\b))`;
+/**
+ * Lines a mentor never opens a conversation on (production 2026-11-06: the founder asked about the mentor's life, and
+ * the next call opened on it): someone's personal life, private matters said as the person's own ("your personal
+ * life", "your love life", "your husband"), small talk about them ("How was your day?", "How is your health these
+ * days?", "everything at home"), and the scripted frame the owner banned ("Want to carry on with…?"). A venture whose
+ * subject sounds personal keeps its line: a weekend market, a holiday let, a family-life coaching pilot or a social
+ * life app is said as itself, because the words go on after "life", "weekend" or "family".
+ */
+const PERSONAL_OPENER = new RegExp(
+  [
+    // Someone's personal, private, love, dating or sex life, or their personal stuff; any spelling of "personal".
+    String.raw`\b(?:${PERSONAL}|private|love|dating|sex)\s+(?:li(?:fe|ves)|stuff|matters|things)\b(?!\s+(?:app|apps|coach\w*|insurance|platform|product|pilot|market|brand|course|beta|service)\b)`,
+    // Their family, home or social life, as theirs and ending the clause.
+    String.raw`\b(?:your|ur|my|his|her|their)\s+(?:family|home|social)\s+li(?:fe|ves)${CLAUSE_END}`,
+    String.raw`\b(?:your|ur)\s+life\s+outside\s+(?:of\s+)?(?:work|the\s+\w+)\b`,
+    String.raw`\b(?:your|ur)\s+(?:husband|wife|boyfriend|girlfriend)\b`,
+    String.raw`\byou\s+and\s+(?:the|your)\s+(?:family|kids|husband|wife)${CLAUSE_END}`,
+    String.raw`\b(?:everything|things|all)\s+(?:ok\s+|okay\s+|good\s+|well\s+)?at\s+home\b`,
+    // Small talk about them: "How was your day?", "How has your week been?", "How is your health these days?".
+    String.raw`\bhow(?:'s|’s|s| is| was| has| are| have| were)\s+(?:your|ur)\s+(?:${PERSONAL}\s+|private\s+)?(?:day|week|weekend|morning|evening|night|health|family|holiday|vacation|life|summer)${CLAUSE_END}`,
+    String.raw`\bhow\s+(?:are|r)\s+(?:you|u)\s+(?:feeling|doing|keeping|holding up)${CLAUSE_END}`,
+    // The scripted frame (owner: "like reading a script"; production: "Hi, want to carry on with your perosnal life?").
+    String.raw`\b(?:want|like)\s+to\s+(?:carry\s+on|continue|keep\s+going)\s+with\b`,
+  ].join('|'),
+  'iu',
+);
+
+/** Whether a next opener (or its thread) is one a mentor never opens on ({@link PERSONAL_OPENER}). */
+export function isPersonalOpener(text: string): boolean {
+  return PERSONAL_OPENER.test(text.replace(/[‘’ʼ]/g, "'"));
+}
 
 /**
  * The threads a conversation raised that the founder did not take up ({@link untakenThread}): what it opened with;
@@ -567,9 +602,9 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
         stats.untakenOpenerDropped = 1;
       }
     }
-    // Never anyone's personal life (production 2026-11-06: the founder asked about the mentor's life, and the next call
-    // opened on it). The prompt rules it out; this holds when the model does not.
-    if (nextOpener !== null && [nextOpener, nextTopic].some((t) => t !== null && PERSONAL_LIFE.test(t))) {
+    // Never anyone's personal life, small talk or the scripted frame (production 2026-11-06: the founder asked about
+    // the mentor's life, and the next call opened on it). The prompt rules them out; this holds when the model does not.
+    if (nextOpener !== null && [nextOpener, nextTopic].some((t) => t !== null && isPersonalOpener(t))) {
       nextOpener = null;
       nextTopic = null;
       stats.personalOpenerDropped = 1;

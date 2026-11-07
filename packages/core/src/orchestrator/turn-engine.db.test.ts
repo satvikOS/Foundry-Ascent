@@ -530,7 +530,7 @@ describe('continuity', () => {
     // conversation opens with a greeting that names nothing, never the notebook's older line.
     const after = await core.sessions.create(maya, h.ventures.quietquad.id, {});
     expect(after.opener).toMatch(
-      /^(?:Good to see you again|Welcome back|Good to have you back|Nice to hear from you again|Great to see you|Hello again|Good to talk again)\. [^.!?]+\?$/,
+      /^(?:Good to see you again|Welcome back|Good to have you back|Nice to hear from you again|Great to see you|Hello again|Nice to see you|Good to hear from you|Hi again)\. [^.!?]+\?$/,
     );
     expect(after.opener).not.toBe(notebook.nextOpener);
     await core.sessions.remove(maya, after.id);
@@ -556,7 +556,11 @@ describe('continuity', () => {
     expect(context.historyTurns).toBe(1);
     // The short reply is retrieved together with the opener's question it answers.
     // (The turn's last embedding is what it taught, embedded to be kept by meaning.)
-    expect(gateway.embedded.some((text) => text.includes('How many have you done'))).toBe(true);
+    expect(
+      gateway.embedded.some((text) =>
+        text.includes('How many of the library-staff interviews have you done'),
+      ),
+    ).toBe(true);
   });
 
   it('temporary chats have no opener and use no notes', async () => {
@@ -2071,7 +2075,7 @@ describe('release pinning and the opener check (run last: they change the person
     // Never the stored line: the conversation opens with a greeting that names nothing instead.
     expect(session.opener).not.toMatch(/Corin|approve/);
     expect(session.opener).toMatch(
-      /^(?:Good to see you again|Welcome back|Good to have you back|Nice to hear from you again|Great to see you|Hello again|Good to talk again)\. [^.!?]+\?$/,
+      /^(?:Good to see you again|Welcome back|Good to have you back|Nice to hear from you again|Great to see you|Hello again|Nice to see you|Good to hear from you|Hi again)\. [^.!?]+\?$/,
     );
   });
 });

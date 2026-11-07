@@ -41,6 +41,11 @@ describe('isTopicLine: what the founder told, for the left-off section only (LAB
       'Should we price per library or per seat?',
       'The student union offered a group booking discount.',
       'Hi! Quick one, we finished five library-staff interviews this week.',
+      // Small-talk words that go on to the venture (review of 5f15d7b).
+      "How's it going to work if the clinics refuse to pay for monitoring time?",
+      'How are you going to help me price the pressure sensor for podiatry clinics?',
+      "How's your family clinic network reacting to the sensor pilot?",
+      'How was your week of interviews with the podiatry clinics?',
     ]) {
       expect(isTopicLine(line), line).toBe(true);
     }

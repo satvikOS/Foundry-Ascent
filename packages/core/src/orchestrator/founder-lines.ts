@@ -43,10 +43,12 @@ const RECALL =
   /\b(?:remember|recall|remind me|last time|(?:we|you and i) (?:talked|spoke|discussed|chatted|covered)|did i (?:tell|say|mention|ask)|i (?:told|asked|said to|mentioned to) you|what did (?:i|we) (?:say|tell|talk|discuss|decide|agree|ask)|(?:in|from|during) our (?:last |previous |earlier |first )?(?:chat|call|conversation|session|talk)|you (?:said|told me|mentioned)|(?:forgot|forget)\b)/i;
 /**
  * Questions about the vEIR itself, not the venture ("Is this a real person?", "Do you even have a life?"), and small talk
- * asked of it ("hows your perosnal life going on..", "how are you?": production 2026-11-06).
+ * asked of it ("hows your perosnal life going on..", "how are you?": production 2026-11-06), only as small talk: never
+ * a question that goes on to the venture ("How's it going to work if the clinics refuse to pay?", "How's your family
+ * clinic network reacting?").
  */
 const ABOUT_THE_VEIR =
-  /\b(?:are you (?:really |actually )?(?:a |an |the )?(?:(?:real|actual|live|genuine) )?(?:bot|robot|human|real|ai|person|machine|man|woman|really)|is (?:this|it|that) (?:really |actually )?(?:a |an )?(?:(?:real|actual|live|genuine) )?(?:bot|human|ai|person|robot|machine)\b|is this (?:really |actually )?(?:you|real|[A-Z][a-z]+\b(?=\s*\?))|am i (?:talking|speaking|chatting) (?:to|with)|who (?:am i talking to|are you|is this)|what are you|your name|do you (?:even )?(?:have a life|sleep|eat|feel|dream)|you(?:'re| are) (?:a bot|an ai|not real|a robot|human)|how(?:'?s| is| are| was)? (?:your|ur) (?:[\p{L}']+ )?(?:life|day|week|weekend|morning|evening|family|health|holiday|vacation)|how (?:are|r) (?:you|u)\b|how(?:'?s| is) it going\b)/iu;
+  /\b(?:are you (?:really |actually )?(?:a |an |the )?(?:(?:real|actual|live|genuine) )?(?:bot|robot|human|real|ai|person|machine|man|woman|really)|is (?:this|it|that) (?:really |actually )?(?:a |an )?(?:(?:real|actual|live|genuine) )?(?:bot|human|ai|person|robot|machine)\b|is this (?:really |actually )?(?:you|real|[A-Z][a-z]+\b(?=\s*\?))|am i (?:talking|speaking|chatting) (?:to|with)|who (?:am i talking to|are you|is this)|what are you|your name|do you (?:even )?(?:have a life|sleep|eat|feel|dream)|you(?:'re| are) (?:a bot|an ai|not real|a robot|human)|how(?:'?s| is| are| was)? (?:your|ur) (?:[\p{L}']+ )?(?:life|day|week|weekend|morning|evening|family|health|holiday|vacation)(?=\s*(?:[?.!,…]|$| (?:going|been|treating|so far|lately|these days|today|then)\b))|how (?:are|r) (?:you|u)\b(?! (?:going|planning|able|hoping|thinking|meant|supposed) to\b)|how(?:'?s| is) it going\b(?! to\b))/iu;
 /** Checks of the line itself. */
 const META = /\b(?:can you hear me|are you there|is this (?:working|on)|mic check|testing|test test)\b/i;
 

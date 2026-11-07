@@ -1036,11 +1036,17 @@ export interface PreviousConversation {
   readonly distillVersion: number;
   readonly digestDeleted: boolean;
   readonly completedTurns: number;
+  /**
+   * The notebook of its persona holds no next opener while it has open threads (questions, open commitments, advice):
+   * a line for the next conversation is wanted (`distill_session` with `opener`).
+   */
+  readonly openerWanted: boolean;
 }
 
 /**
- * The person's most recent other conversation in the venture (deleted ones are hidden by RLS and excluded
- * for the system executor), or null.
+ * The person's most recent other conversation in the venture in which something was said (a completed turn: one they
+ * opened and left without a word has nothing to distil, and the opener reads past it too), or null; deleted ones are
+ * hidden by RLS and excluded for the system executor. Read with its persona's notebook in the same statement.
  */
 export function getPreviousConversation(
   ex: SqlExecutor,
@@ -1050,9 +1056,19 @@ export function getPreviousConversation(
     ex,
     `SELECT s.id, s.status, s.privacy, s.last_activity_at, s.distill_version,
             s.digest_deleted_at IS NOT NULL AS digest_deleted,
-            (SELECT count(*) FROM turns t WHERE t.session_id = s.id AND t.status = 'completed') AS completed_turns
+            (SELECT count(*) FROM turns t WHERE t.session_id = s.id AND t.status = 'completed') AS completed_turns,
+            EXISTS (
+              SELECT 1 FROM veir_notebooks n JOIN persona_releases r ON r.persona_id = n.persona_id
+              WHERE r.id = s.persona_release_id AND n.venture_id = s.venture_id
+                AND n.content->>'nextOpener' IS NULL
+                AND (jsonb_array_length(n.content->'openQuestions') > 0
+                  OR jsonb_array_length(n.content->'lastAdvice') > 0
+                  OR EXISTS (SELECT 1 FROM jsonb_array_elements(n.content->'commitments') c
+                             WHERE c->>'status' = 'open'))
+            ) AS opener_wanted
      FROM coaching_sessions s
      WHERE s.venture_id = :ventureId AND s.started_by = :startedBy AND s.id <> :except AND s.deleted_at IS NULL
+       AND EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id AND t.status = 'completed')
      ORDER BY s.last_activity_at DESC, s.id DESC
      LIMIT 1`,
     {
@@ -1068,6 +1084,7 @@ export function getPreviousConversation(
       distillVersion: col.int.decode(r.distill_version, 'distill_version'),
       digestDeleted: col.bool.decode(r.digest_deleted, 'digest_deleted'),
       completedTurns: col.int.decode(r.completed_turns, 'completed_turns'),
+      openerWanted: col.bool.decode(r.opener_wanted, 'opener_wanted'),
     }),
   );
 }
