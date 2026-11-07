@@ -737,9 +737,14 @@ describe('memory kept automatically', () => {
         session.id,
         'Libraries want weekly occupancy reports for every study room.',
       );
-      // The reply was complete before the memory it taught was even embedded; it is embedded by the time the
-      // turn's work is done.
-      expect(timeline).toEqual(['turn.completed', 'memory-embed-start', 'memory-embed-done']);
+      // The reply was complete before the memory it taught was even embedded (and before its fields, which say what
+      // it kept); it is embedded by the time the turn's work is done.
+      expect(timeline).toEqual([
+        'turn.completed',
+        'turn.completed',
+        'memory-embed-start',
+        'memory-embed-done',
+      ]);
       const [reports] = await learnedFrom(turn.id);
       expect(reports).toMatchObject({ keptAutomatically: true, hasEmbedding: true });
     } finally {

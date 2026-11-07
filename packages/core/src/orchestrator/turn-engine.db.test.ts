@@ -204,7 +204,15 @@ describe('streamed turns', () => {
       'status:retrieving',
       'status:reasoning',
     ]);
-    expect(kinds.slice(kinds.lastIndexOf('turn.delta') + 1)).toEqual(['status:validating', 'turn.completed']);
+    // The reply completes, then the same turn again with its fields (fieldsPending on the first).
+    expect(kinds.slice(kinds.lastIndexOf('turn.delta') + 1)).toEqual([
+      'status:validating',
+      'turn.completed',
+      'turn.completed',
+    ]);
+    const terminals = events.filter((e) => e.event === 'turn.completed');
+    expect(terminals[0]).toMatchObject({ fieldsPending: true });
+    expect(terminals[1]).not.toHaveProperty('fieldsPending');
     const units = deltas(events);
     expect(units.length).toBeGreaterThan(2);
     expect(units.map((d) => d.seq)).toEqual(units.map((_, i) => i));
@@ -248,7 +256,9 @@ describe('streamed turns', () => {
     const turn = completed(events);
     expect(turn.mode).toBe('teach');
     expect(turn.response?.mode).toBe('teach');
-    expect(await auditMetadata(turn.id, 'turn.completed')).toMatchObject({ autoMode: true, mode: 'teach' });
+    // The reply completes first (in the mode the turn started in); the mode the model chose comes with its fields.
+    expect(await auditMetadata(turn.id, 'turn.completed')).toMatchObject({ autoMode: true });
+    expect(await auditMetadata(turn.id, 'turn.annotated')).toMatchObject({ mode: 'teach' });
     expect((await h.core.sessions.get(maya, session.id)).session.mode).toBe('teach');
   });
 
@@ -1057,6 +1067,83 @@ describe('spoken turns', () => {
     expect(shown).toBe(sentences.slice(0, 7).join(' '));
     expect(said).toBe(shown);
     expect(turn.response?.answer).not.toContain('Point 8');
+  });
+
+  it('completes on the reply without waiting for its fields; the next message is admitted at once (lab 42238272157, B3)', async () => {
+    // Phase B is held until released: the turn must complete (and a call return to listening) on the reply alone.
+    class HeldFields extends MockModelGateway {
+      readonly asked: string[] = [];
+      #release: () => void = () => undefined;
+      readonly held = new Promise<void>((resolve) => {
+        this.#release = resolve;
+      });
+      release(): void {
+        this.#release();
+      }
+      override async generateStructured<T>(request: GenerateStructuredRequest<T>) {
+        if (request.schemaName === COACH_ANNOTATIONS_SCHEMA_NAME) {
+          this.asked.push(request.schemaName);
+          await this.held;
+        }
+        return super.generateStructured(request);
+      }
+    }
+    for (const channel of ['text', 'voice'] as const) {
+      const gateway = new HeldFields({ streamDelayMs: 0 });
+      const { core, orchestrator } = coreWith(gateway);
+      const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+      const events: TurnStreamEvent[] = [];
+      const input = {
+        text: 'Should we run the pilot in one library or two?',
+        mode: 'coach' as const,
+        channel,
+        ...(channel === 'voice' ? { callId: CALL_ID } : {}),
+      };
+      const running = orchestrator.runTurn(maya, session.id, input, (e) => {
+        events.push(TurnStreamEvent.parse(e));
+      });
+      // The terminal event arrives while phase B is still held.
+      for (let i = 0; i < 200 && !events.some((e) => e.event === 'turn.completed'); i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(gateway.asked, channel).toEqual([COACH_ANNOTATIONS_SCHEMA_NAME]);
+      const first = events.find((e) => e.event === 'turn.completed');
+      expect(first, channel).toMatchObject({ event: 'turn.completed', fieldsPending: true });
+      if (first?.event !== 'turn.completed') throw new Error('expected turn.completed');
+      expect(first.turn.status).toBe('completed');
+      expect(first.turn.response?.answer.length ?? 0).toBeGreaterThan(0);
+      // What was said came before the terminal event, each unit gated; nothing is said after it.
+      const completedAt = events.indexOf(first);
+      expect(
+        events.slice(completedAt).some((e) => e.event === 'turn.speech' || e.event === 'turn.delta'),
+      ).toBe(false);
+      if (channel === 'voice') expect(speechUnits(events).length).toBeGreaterThan(0);
+      // The turn is no longer pending: the founder's next message is admitted now, not after the fields.
+      const stored = await h.t.db.system((sx) => turnsRepo.getTurn(sx, first.turn.id));
+      expect(stored?.status).toBe('completed');
+      gateway.release();
+      const outcome = await running;
+      expect(outcome.status).toBe('completed');
+      // The same turn again, with its fields, the answer unchanged.
+      const last = completed(events);
+      expect(last.id).toBe(first.turn.id);
+      expect(last.response?.answer).toBe(first.turn.response?.answer);
+      expect(events.filter((e) => e.event === 'turn.completed')).toHaveLength(2);
+      const fields = await h.t.db.system((sx) => turnsRepo.getTurn(sx, first.turn.id));
+      expect(fields?.response?.answer).toBe(first.turn.response?.answer);
+      expect(await auditMetadata(first.turn.id, 'turn.annotated')).toMatchObject({ mode: 'coach' });
+    }
+  });
+
+  it('a crisis message never waits on, or makes, a fields call (the crisis path gates what is said)', async () => {
+    const gateway = new MockModelGateway({ streamDelayMs: 0 });
+    const { core, orchestrator } = coreWith(gateway);
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const calls = gateway.calls.length;
+    const { events, outcome } = await run(orchestrator, session.id, { text: CRISIS_TEXT, mode: 'coach' });
+    expect(outcome.status).toBe('blocked');
+    expect(events.at(-1)).toMatchObject({ event: 'turn.blocked', reason: 'crisis_support' });
+    expect(gateway.calls.slice(calls).filter((c) => c.kind !== 'embed')).toEqual([]);
   });
 
   it('bounds the annotations call', async () => {

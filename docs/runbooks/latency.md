@@ -671,8 +671,25 @@ pnpm --filter @foundry/api latency --profile production --set dbRoundTripMs=65 -
 
 - The first sound comes about **350 ms later at p50** (565 ms at p95): the 300 ms slower first token and the slower
   words before the first sentence is complete. Every 100 ms of Haiku's real first token moves it by about as much.
-- A turn completes about 1.7 s later (phase B's fields on the slower model), but nothing the founder hears waits for
-  them: the reply is spoken as it streams, and the next turn may start before they arrive.
+- Phase B's fields took about 1.7 s longer on the slower model. That was not free: the turn's `turn.completed`, a
+  call's return to listening (the next line the founder said waited, queued, for it) and a chat's composer all waited
+  for them. The lab then measured Haiku at p50 0.67 s to the first token, 1.29 s to the first text, 5.6 s for phase B
+  and 8.0 s in all (run 42238272157), so since the bug sweep of 2026-11-06 a streamed reply completes without them:
+
+### Phase B after the turn (2026-11-06)
+
+- `turn.completed` is sent once the reply is validated, with `fieldsPending: true`; phase B starts at the same moment
+  (from the same prompt and the reply as shown), and the same turn with its fields (claims, next steps, follow-ups,
+  what it kept, the mode the model chose, a model-proposed escalation) follows in the same stream as a second
+  `turn.completed` once they are stored (`turnsRepo.annotateTurn`, audit `turn.annotated`). The answer is unchanged.
+- Nothing the founder waits on waits for phase B: the turn is no longer pending (the next message is admitted), a call
+  goes back to listening, the composer is free, and a new message never cancels the open stream of a completed turn
+  (`useTurnStream`). `turn.timing` `totalMs` ends at the first `turn.completed`; `structuredMs` still counts phase B.
+- What is said is gated as before: the crisis path and the safety screen run before generation, the sentence gate on
+  every unit, and a pre-classified escalation is forced by the reply's own validation (its draft is created with the
+  turn). Fields that would not pass the validation (another venture's name, an identity claim) are left out, never the
+  reply (`annotations_discarded`). A barge-in or a cancel before phase B starts stops it, as before.
+- Phase B forces its tool on Claude Haiku 4.5 (no prose before the object, no repair round).
 - Not measured: Haiku's real first token and speed from us-east-1 (§8), and how much a cache read shortens the first
   token on a conversation's later turns.
 

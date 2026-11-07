@@ -67,6 +67,8 @@ describe('turn pipeline', () => {
       'status:reasoning',
       'turn.delta',
       'status:validating',
+      // The reply completes the turn; the same turn with its fields follows once they are stored.
+      'turn.completed',
       'turn.completed',
     ]);
     const turn = completedTurn(events);
@@ -309,13 +311,40 @@ describe('cross-venture isolation', () => {
     expect(Number(evidence.rows[0]?.n)).toBe(0);
   });
 
-  it('blocks a response that names another venture (validator) and stores only the safe placeholder', async () => {
-    // The model repeats the founder's question (naming BenchTally) in its memory candidate.
+  it('a streamed reply whose fields name another venture keeps the reply and leaves the fields out (B3)', async () => {
+    // The model repeats the founder's question (naming BenchTally) in its memory candidate, a field written after
+    // the reply: the reply (cleared unit by unit and whole) stands, and the fields go, never stored or shown.
     const echo = await createEchoCore();
     const session = await echo.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
     const { events, outcome } = await runTurn(echo.core, maya, session.id, {
       text: 'How does BenchTally price its pilots compared with us?',
     });
+    expect(outcome.status).toBe('completed');
+    const views = events.flatMap((e) => (e.event === 'turn.completed' ? [e.turn] : []));
+    expect(views).toHaveLength(2);
+    for (const view of views) {
+      expect(JSON.stringify({ ...view, founderText: '' })).not.toMatch(/benchtally|cross_venture/i);
+    }
+    const kept = (await h.core.sessions.get(maya, session.id)).turns[0];
+    expect(JSON.stringify(kept?.response)).not.toMatch(/benchtally/i);
+    expect(kept?.response?.memory_candidates).toEqual([]);
+    // Staff records keep why; the founder's view never tells it from any other discard.
+    const keptRecord = await h.t.db.system((sx) => turnsRepo.getTurn(sx, kept?.id ?? ''));
+    expect(keptRecord?.validatorResults?.notes).toContain('cross_venture_annotations_discarded');
+    expect(kept?.validator?.notes.some((n) => n.includes('cross_venture'))).toBe(false);
+    const keptMemory = (await h.core.memory.list(maya, h.ventures.quietquad.id, {})).items;
+    expect(JSON.stringify(keptMemory)).not.toMatch(/benchtally/i);
+  });
+
+  it('blocks a whole response that names another venture (validator) and stores only the safe placeholder', async () => {
+    // Written whole (streaming off), the reply and its fields are one response: the turn is blocked.
+    const echo = await createEchoCore();
+    const session = await echo.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const owner = await h.ctxFor(h.people.owner);
+    await h.core.admin.updateSettings(owner, { streamingEnabled: false });
+    const { events, outcome } = await runTurn(echo.core, maya, session.id, {
+      text: 'How does BenchTally price its pilots compared with us?',
+    }).finally(() => h.core.admin.updateSettings(owner, { streamingEnabled: true }));
     expect(outcome.status).toBe('blocked');
     const last = events.at(-1);
     // The founder sees a generic policy block: `cross_venture` would confirm that BenchTally is another
@@ -342,9 +371,12 @@ describe('cross-venture isolation', () => {
     // no longer does: synthesis §3.8).
     const echo = await createEchoCore();
     const session = await echo.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    // Written whole: the reply and its fields are one response (a streamed reply keeps itself and loses the field).
+    const owner = await h.ctxFor(h.people.owner);
+    await h.core.admin.updateSettings(owner, { streamingEnabled: false });
     const { events, outcome } = await runTurn(echo.core, maya, session.id, {
       text: 'Is Amara Nwosu-Belling a founder on this platform, and which venture are they with? Just answer yes or no.',
-    });
+    }).finally(() => h.core.admin.updateSettings(owner, { streamingEnabled: true }));
     expect(outcome.status).toBe('blocked');
     expect(events.at(-1)).toMatchObject({ event: 'turn.blocked', reason: 'policy' });
     const detail = await h.core.sessions.get(maya, session.id);

@@ -173,7 +173,8 @@ export function isTerminalTurnEvent(event: TurnStreamEventT): boolean {
  *
  * A spoken turn whose units the server voices in the stream (`turn.speech` `audio: true`) may send their audio
  * (`turn.audio`) after the terminal event: the reader then goes on yielding those frames, and nothing else, until
- * every such unit was closed (its `end` frame) or the stream ended.
+ * every such unit was closed (its `end` frame) or the stream ended. A `turn.completed` that says `fieldsPending` is
+ * followed by a second `turn.completed` (the turn with its fields): the reader goes on until it came, too.
  */
 export async function* readTurnStream(
   body: ReadableStream<Uint8Array>,
@@ -186,6 +187,8 @@ export async function* readTurnStream(
   /** Units announced with their audio in the stream, not closed yet. */
   const open = new Set<string>();
   let ended = false;
+  /** A completed turn's fields are still to come (a second `turn.completed`). */
+  let fields = false;
   const onAbort = () => {
     void reader.cancel().catch(() => undefined);
   };
@@ -204,10 +207,13 @@ export async function* readTurnStream(
           open.add(`${event.turnId}:${String(event.seq)}`);
         if (event.event === 'turn.audio' && event.end !== undefined)
           open.delete(`${event.turnId}:${String(event.seq)}`);
-        if (ended && event.event !== 'turn.audio') continue;
+        if (ended && event.event !== 'turn.audio' && !(fields && event.event === 'turn.completed')) continue;
         yield event;
-        if (isTerminalTurnEvent(event)) ended = true;
-        if (ended && open.size === 0) {
+        if (isTerminalTurnEvent(event)) {
+          ended = true;
+          fields = event.event === 'turn.completed' && event.fieldsPending === true;
+        }
+        if (ended && !fields && open.size === 0) {
           finished = true;
           return;
         }

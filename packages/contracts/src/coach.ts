@@ -322,7 +322,17 @@ export const TurnStreamEvent = z.discriminatedUnion('event', [
     sampleRate: z.number().int().min(8_000).max(48_000).optional(),
     end: z.enum(['done', 'failed', 'paused', 'refused']).optional(),
   }),
-  z.object({ event: z.literal('turn.completed'), turn: TurnView }),
+  z.object({
+    event: z.literal('turn.completed'),
+    turn: TurnView,
+    /**
+     * Present (true) when the reply's fields (claims, next steps, follow-ups, what the turn kept) are still being
+     * written: the turn is complete and the founder may answer at once. The same turn with its fields follows in this
+     * stream as a second `turn.completed` (without `fieldsPending`), its answer unchanged; or the stream ends without it
+     * (the fields then show when the conversation is read again). Additive: older clients stop at the first.
+     */
+    fieldsPending: z.literal(true).optional(),
+  }),
   z.object({
     event: z.literal('turn.blocked'),
     turnId: Id,

@@ -544,6 +544,54 @@ export function finishTurn(ex: SqlExecutor, input: FinishTurnInput): Promise<Tur
   );
 }
 
+export interface AnnotateTurnInput {
+  readonly turnId: string;
+  /**
+   * The response's fields that arrived after the reply (claims, uncertainty, challenge, next actions, memory candidates,
+   * follow-ups, mode, escalation): merged over the stored response, whose answer and spoken form stay as they are.
+   */
+  readonly fields: Readonly<Record<string, unknown>>;
+  readonly validatorResults: ValidatorResultsValue;
+  readonly mode: CoachModeValue;
+  /** What the call that wrote them cost, added to the turn's own totals. */
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly costUsd: number;
+  readonly latencyMs: number;
+}
+
+/**
+ * Adds a completed turn's fields to it once they arrived (a streamed reply completes before them). Null when the turn
+ * is no longer a completed turn with a response: an ephemeral session's turns, redacted when it ended, are never written
+ * again.
+ */
+export function annotateTurn(ex: SqlExecutor, input: AnnotateTurnInput): Promise<TurnRecord | null> {
+  return queryFirst(
+    ex,
+    `UPDATE turns AS t SET
+       response = t.response || :fields,
+       validator_results = :validator,
+       mode = :mode,
+       input_tokens = t.input_tokens + :inputTokens,
+       output_tokens = t.output_tokens + :outputTokens,
+       cost_usd = t.cost_usd + :costUsd,
+       latency_ms = coalesce(t.latency_ms, 0) + :latencyMs
+     WHERE t.id = :id AND t.status = 'completed' AND t.response IS NOT NULL
+     RETURNING ${COLUMNS}`,
+    {
+      id: p.uuid(input.turnId),
+      fields: p.json(input.fields),
+      validator: p.json(input.validatorResults),
+      mode: p.text(input.mode),
+      inputTokens: p.int(input.inputTokens),
+      outputTokens: p.int(input.outputTokens),
+      costUsd: p.num(input.costUsd),
+      latencyMs: p.int(input.latencyMs),
+    },
+    decodeTurn,
+  );
+}
+
 /** Text that replaces the founder's words when an ephemeral session ends. */
 export const EPHEMERAL_REDACTION_TEXT = '[ephemeral session: content removed]';
 

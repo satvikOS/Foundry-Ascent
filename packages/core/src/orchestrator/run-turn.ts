@@ -16,6 +16,7 @@ import {
 import {
   CreateTurnRequest,
   type CoachMode,
+  type CoachResponse,
   type TurnBlockedDetail,
   type TurnChannel,
   type TurnStreamEvent,
@@ -61,7 +62,7 @@ import { proposeMemoryCandidates, settleKeptMemory } from '../services/memory.js
 import { statedMemory } from '../services/founder-statements.js';
 import { conversationGrounding } from '../services/memory-dedupe.js';
 import { historyAsHeard } from '../services/spoken-text.js';
-import { answerTurn, generationError } from './answer.js';
+import { answerTurn, generationError, type AnnotatedTurn } from './answer.js';
 import { blockedDetailOf, participantRiskLabel, participantTurnView, supportMessageFor } from './blocked.js';
 import {
   leftOffThreads,
@@ -126,8 +127,10 @@ export interface Orchestrator {
    * Runs one coaching turn (system design §7 steps 1–7) and emits `turn.accepted` → `turn.status`
    * (classifying, retrieving, reasoning, validating) → exactly one of `turn.completed`, `turn.blocked`,
    * `turn.error`. With streaming on, validated `turn.delta` units of the answer (and, on a call, signed
-   * `turn.speech` units) come before the terminal event, which stays authoritative. Never throws for domain
-   * failures: they are emitted (and returned in the outcome).
+   * `turn.speech` units) come before the terminal event, which stays authoritative. A streamed reply completes before
+   * its fields (phase B): its `turn.completed` says `fieldsPending`, and the same turn with its fields follows as a
+   * second `turn.completed` once they are stored. Never throws for domain failures: they are emitted (and returned in
+   * the outcome).
    */
   runTurn(
     ctx: RequestContext,
@@ -1119,6 +1122,8 @@ export function createOrchestrator(
       faceApproval: a.faceApproval,
       signal,
       startedAt: a.startedAt,
+      // The reply completes the turn; its fields (phase B) are added to it once they arrive (annotateTurn below).
+      deferAnnotations: true,
     });
     if (answered.kind === 'generation_failed') {
       const error = generationError(answered.cause);
@@ -1129,24 +1134,31 @@ export function createOrchestrator(
     }
     const { context, shown, generation, checked } = answered;
     const status = checked.blocked ? 'blocked' : 'completed';
+    // A streamed reply's fields (phase B) are still being written: what they keep is kept when they arrive.
+    const fieldsPending = answered.annotations !== null;
     // What the turn taught is kept automatically, checked by its words now; its meaning is settled after the turn
     // completed (settleKeptMemory), so the reply never waits for an embedding. A decision, goal or constraint the
     // founder stated in plain first-person words is kept with it too when the model's candidates do not say it
     // (founder-statements.ts, LAB-K1: no model call; a chat is otherwise distilled only after nine idle minutes).
-    const proposed = checked.response.memory_candidates;
-    const stated =
-      !checked.blocked && pre.session.privacy === 'standard'
-        ? statedMemory(turn.founderText, {
-            founderName: coach.memory.continuity.founderFirstName ?? null,
-            modelCandidates: proposed,
-          })
-        : [];
-    const keepable = !checked.blocked && pre.session.privacy === 'standard' ? [...proposed, ...stated] : [];
+    const keepableOf = (response: CoachResponse): CoachResponse['memory_candidates'] => {
+      if (checked.blocked || pre.session.privacy !== 'standard') return [];
+      const proposed = response.memory_candidates;
+      return [
+        ...proposed,
+        ...statedMemory(turn.founderText, {
+          founderName: coach.memory.continuity.founderFirstName ?? null,
+          modelCandidates: proposed,
+        }),
+      ];
+    };
+    const keepable = fieldsPending ? [] : keepableOf(checked.response);
     // What the founder stated is recorded with the turn's own candidates: the answer's "Saved to Knowledge" line reads
     // them (LAB-K1: a decision kept from the founder's words showed no saved line, since only the model's candidates
     // were on the turn).
     const recorded =
-      stated.length === 0 ? checked.response : { ...checked.response, memory_candidates: keepable };
+      keepable.length === checked.response.memory_candidates.length
+        ? checked.response
+        : { ...checked.response, memory_candidates: keepable };
     // A call ends a streamed reply with its last unit; a narrowed answer adds nothing aloud (Sources & reasoning
     // says it: LAB-M14). A reply written whole (streaming off, or a stream that broke, was empty or was not prose)
     // is said as its validated spoken form. A blocked turn says nothing more.
@@ -1325,27 +1337,160 @@ export function createOrchestrator(
       // A turn just answered: its author, and no rating yet.
       const extras = (await turnsRepo.turnViewExtras(tx, [finished], null)).get(finished.id);
       const view = participantTurnView(turnsRepo.toTurnView(finished, evidence, blocked, extras));
-      return { view, blocked: view.blocked, kept: kept?.createdRecords ?? [] };
+      return {
+        view,
+        blocked: view.blocked,
+        kept: kept?.createdRecords ?? [],
+        escalated: escalationId !== null,
+      };
     });
+
+    /**
+     * The reply's fields (phase B) added to the stored turn once they arrived (answer.ts `withAnnotations`): the claims,
+     * follow-ups and next steps, what the turn keeps (with what the founder stated), the escalation the model proposed
+     * when the reply's validation drafted none, and the mode it chose. The turn's answer and what was said stay as they
+     * were. Never throws: a failure leaves the completed turn without its fields (`turn.annotations_unsaved`).
+     */
+    const addFields = async (
+      pending: Promise<AnnotatedTurn>,
+      escalated: boolean,
+    ): Promise<{ readonly view: TurnView; readonly kept: readonly memoryRepo.MemoryRecord[] } | null> => {
+      const annotated = await pending;
+      const response = annotated.checked.response;
+      const keep = keepableOf(response);
+      const { answer: _answer, spoken: _spoken, ...fields } = { ...response, memory_candidates: keep };
+      try {
+        return await kit.inRequest(ctx, async (scope) => {
+          const { tx } = scope;
+          const updated = await turnsRepo.annotateTurn(tx, {
+            turnId: turn.id,
+            fields,
+            validatorResults: annotated.checked.results,
+            mode: response.mode,
+            inputTokens: annotated.attempts.reduce((n, x) => n + x.usage.inputTokens, 0),
+            outputTokens: annotated.attempts.reduce((n, x) => n + x.usage.outputTokens, 0),
+            costUsd: annotated.attempts.reduce((n, x) => n + x.costUsd, 0),
+            latencyMs: annotated.latencyMs,
+          });
+          // An ephemeral conversation that ended meanwhile (its turns redacted), or a turn gone: nothing to add to.
+          if (updated === null) return null;
+          const kept =
+            keep.length > 0
+              ? await proposeMemoryCandidates(tx, {
+                  tenantId: ctx.tenantId,
+                  ventureId,
+                  createdBy: ctx.principalId,
+                  candidates: keep,
+                  evidence: evidenceIndex,
+                  source: { kind: 'turn', id: turn.id, sessionId: pre.session.id },
+                  visibility: candidateVisibility(pack),
+                  grounding,
+                  forgotten: await memoryRepo.listForgottenMemory(tx, { ventureId }),
+                })
+              : null;
+          const esc = response.escalation;
+          let escalationId: string | null = null;
+          if (
+            !escalated &&
+            esc.required &&
+            esc.category !== null &&
+            esc.priority !== null &&
+            (annotated.checked.results.escalationForced || esc.priority === 'P0' || esc.priority === 'P1')
+          ) {
+            const draft = await createDraftEscalation(scope, {
+              ventureId,
+              sessionId: pre.session.id,
+              turnId: turn.id,
+              founderText: turn.founderText,
+              category: esc.category,
+              priority: esc.priority,
+              requestedRole: esc.requested_role ?? 'eir',
+              response,
+              evidence: shown.map((k) => k.item),
+              reason: esc.reason,
+            });
+            escalationId = draft.id;
+          }
+          if (response.mode !== checked.response.mode) {
+            await sessionsRepo.setSessionMode(tx, { sessionId: pre.session.id, mode: response.mode });
+          }
+          await audit(scope, {
+            action: 'turn.annotated',
+            outcome: 'succeeded',
+            ventureId,
+            objectType: 'turn',
+            objectId: turn.id,
+            policyReason: null,
+            metadata: {
+              policyVersion: POLICY_VERSION,
+              modelId: annotated.attempts.at(-1)?.modelId ?? null,
+              attempts: annotated.attempts.length,
+              mode: response.mode,
+              memoryCandidates: kept?.records.length ?? 0,
+              escalationId,
+              phaseBMs: annotated.latencyMs,
+              factsDowngraded: annotated.checked.results.factsDowngraded,
+              narrowed: annotated.checked.results.narrowed,
+            },
+          });
+          const evidence = (await turnsRepo.listTurnEvidence(tx, [turn.id])).get(turn.id) ?? [];
+          const extras = (await turnsRepo.turnViewExtras(tx, [updated], null)).get(updated.id);
+          const view = participantTurnView(turnsRepo.toTurnView(updated, evidence, null, extras));
+          kit.deps.logger.info('turn.annotated', {
+            requestId: ctx.requestId,
+            turnId: turn.id,
+            phaseBMs: annotated.latencyMs,
+            claims: response.claims.length,
+            nextActions: response.next_actions.length,
+            memoryCandidates: kept?.records.length ?? 0,
+            notes: annotated.checked.results.notes.filter((n) => n.startsWith('annotations_')).join(','),
+          });
+          return { view, kept: kept?.createdRecords ?? [] };
+        });
+      } catch (err) {
+        kit.deps.logger.warn('turn.annotations_unsaved', {
+          requestId: ctx.requestId,
+          turnId: turn.id,
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+        return null;
+      }
+    };
 
     if (persisted.blocked !== null) {
       await emit({ event: 'turn.blocked', turnId: turn.id, ...persisted.blocked });
       await withdrawFaceUnits(a.faceApproval);
       return { status: 'blocked', turnId: turn.id, replayed: false, error: null };
     }
-    await emit({ event: 'turn.completed', turn: persisted.view });
+    await emit({
+      event: 'turn.completed',
+      turn: persisted.view,
+      ...(answered.annotations === null ? {} : { fieldsPending: true as const }),
+    });
     // Only now, with the reply complete: what the turn kept is settled by meaning (never throws). That embeds it, so
     // it runs after the response (LAB-P1: the stream stayed open, and the API busy, for a Titan call after every
     // turn that kept something): the host keeps the process alive for it, or the turn waits for it (tests).
-    if (persisted.kept.length > 0) {
+    const settle = async (kept: readonly memoryRepo.MemoryRecord[]): Promise<void> => {
+      if (kept.length === 0) return;
       const settling = settleKeptMemory(kit, ctx, {
         ventureId,
         sessionId: pre.session.id,
-        items: persisted.kept,
+        items: kept,
         grounding,
       });
       if (kit.deps.afterResponse === undefined) await settling;
       else kit.deps.afterResponse(settling);
+    };
+    await settle(persisted.kept);
+    if (answered.annotations !== null) {
+      // The reply's fields, added to the stored turn when they arrive: the founder already has the reply, and a call is
+      // listening again (lab run 42238272157: everything waited 5.6 s for them on Haiku).
+      const annotated = await addFields(answered.annotations, persisted.escalated);
+      if (annotated !== null) {
+        // The same turn again, with its fields (the contract's `fieldsPending`).
+        await emit({ event: 'turn.completed', turn: annotated.view });
+        await settle(annotated.kept);
+      }
     }
     return { status: 'completed', turnId: turn.id, replayed: false, error: null };
   }

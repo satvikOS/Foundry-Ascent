@@ -9,6 +9,7 @@ import {
   cutMetaNarration,
   isOnlyLeadIn,
   isModelGatewayError,
+  ModelUnavailableError,
   signsOff,
   withoutRepeats,
   withoutUnits,
@@ -54,6 +55,11 @@ export interface Generation {
   readonly gateBlocked: GateBlockReason | null;
   /** Streamed turns: details for the turn record, the audit and the spoken ending. */
   readonly stream: StreamDetails | null;
+  /**
+   * A streamed reply's phase B, under way when the generation returns (absent: a reply written whole, blocked or
+   * interrupted, whose fields, if any, are in `raw`). Nothing the founder waits on waits for it.
+   */
+  readonly annotations?: PendingAnnotations | null;
 }
 
 /**
@@ -72,7 +78,6 @@ export interface StreamDetails {
   readonly deltas: number;
   readonly gate: GateStats;
   readonly phaseAMs: number;
-  readonly phaseBMs: number;
   /** Set when the reply was written whole after all (its speech then holds and finishes like a whole reply). */
   readonly fallback: StreamFallback | null;
   /**
@@ -443,12 +448,17 @@ export async function generateWhole(
  *
  * Phase B then produces the structured fields for exactly the streamed reply; when it fails, the reply stands
  * alone (`annotations_unavailable`). Phase B runs after phase A, not alongside it: claims, grounding coverage,
- * the challenge and the follow-ups must describe the text the founder read.
+ * the challenge and the follow-ups must describe the text the founder read. It is started when the reply is complete
+ * and returned under way (`Generation.annotations`): the turn completes on the reply, and its fields are added to the
+ * stored turn when they arrive (run-turn.ts), so nothing the founder waits on (the terminal event, a call's return to
+ * listening, the next message) waits for them. What is said was gated before it was said: the crisis path and the
+ * safety screen run before generation, the sentence gate on every unit, and a pre-classified escalation is forced by the
+ * validation of the reply itself.
  *
  * On a call, the caller cancelling the turn after speech units were sent is the founder speaking over the
- * vEIR (barge-in, docs/architecture/calls.md §2.6), not a failure: the reply stands as far as it was written
- * (phase A) or whole (phase B), without annotations (`interrupted`), so the turn and what the founder heard of
- * it stay in the conversation. Cancelled before any unit was sent, the turn fails as before.
+ * vEIR (barge-in, docs/architecture/calls.md §2.6), not a failure: the reply stands as far as it was written,
+ * without annotations (`interrupted`), so the turn and what the founder heard of it stay in the conversation.
+ * Cancelled before any unit was sent, the turn fails as before.
  */
 export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   const { gateway, logger } = a.kit.deps;
@@ -514,13 +524,12 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       stop.abort();
     }
   };
-  const details = (phaseAMs: number, phaseBMs: number, modelFirstTokenMs: number | null): StreamDetails => ({
+  const details = (phaseAMs: number, modelFirstTokenMs: number | null): StreamDetails => ({
     firstDeltaMs: timing.firstDeltaAt === null ? null : Math.round(timing.firstDeltaAt - a.startedAt),
     modelFirstTokenMs,
     deltas: timing.deltas,
     gate: gate.stats,
     phaseAMs,
-    phaseBMs,
     fallback: null,
     interrupted: false,
     speech,
@@ -535,7 +544,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       latencyMs: phaseAMs,
       notes: ['stream_gate_blocked'],
       gateBlocked: reason,
-      stream: details(phaseAMs, 0, null),
+      stream: details(phaseAMs, null),
     };
   };
   /** The caller cancelled after speech units were sent: the founder spoke over the reply (see above). */
@@ -556,7 +565,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       latencyMs: phaseAMs,
       notes: ['interrupted'],
       gateBlocked: null,
-      stream: { ...details(phaseAMs, 0, null), interrupted: true },
+      stream: { ...details(phaseAMs, null), interrupted: true },
     };
   };
   /** The reply written whole after all: it is said whole, after whatever the stream already said. */
@@ -574,7 +583,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       ...whole,
       latencyMs: whole.latencyMs + phaseAMs,
       notes: [`stream_${fallback}`, ...whole.notes],
-      stream: { ...details(phaseAMs, 0, null), fallback },
+      stream: { ...details(phaseAMs, null), fallback },
     } satisfies Generation;
   };
 
@@ -939,65 +948,100 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   // Still nothing said: the reply is written whole after all.
   if (said.shown.trim() === '' && gate.stats.withheld === 0) return wholeInstead('empty', phaseAMs, null);
 
-  // Phase B: the structured fields of exactly that reply.
-  const phaseBStarted = performance.now();
-  const budget = Math.min(ANNOTATION_BUDGET_MS, a.kit.config.turns.modelTimeoutMs);
-  const timeout = AbortSignal.timeout(budget);
-  let annotations: CoachAnnotations;
-  let interrupted = false;
-  try {
-    const result = await gateway.generateStructured({
-      purpose: a.meter.purpose,
-      system: a.system,
-      messages: annotationMessages(a.messages, replyText),
-      ...(a.promptCache ? { promptCache: a.promptCache } : {}),
-      schemaName: COACH_ANNOTATIONS_SCHEMA_NAME,
-      zodSchema: CoachAnnotations,
-      requestId: a.ctx.requestId,
-      maxOutputTokens: ANNOTATION_MAX_TOKENS,
-      timeoutMs: budget,
-      signal: a.signal ? AbortSignal.any([a.signal, timeout]) : timeout,
-    });
-    attempts.push(...result.attempts);
-    await record(a, result.attempts);
-    annotations = result.value;
-  } catch (err) {
-    attempts.push(...attemptsOf(err));
-    await record(a, attemptsOf(err));
-    if (interruptedBy()) {
-      // Spoken over once the reply was written: it stands whole, without annotations.
-      interrupted = true;
-      speech?.discard();
-      logger.info('turn.interrupted', {
-        requestId: a.ctx.requestId,
-        turnId: a.turnId,
-        phase: 'annotations',
-        units: speech?.sent ?? 0,
-      });
-      notes.push('interrupted');
-    } else if (a.signal?.aborted) {
-      throw new GenerationFailure(err, attempts);
-    } else {
-      logger.warn('turn.annotations_unavailable', {
-        requestId: a.ctx.requestId,
-        turnId: a.turnId,
-        code: isModelGatewayError(err) ? err.code : 'unknown',
-      });
-      notes.push('annotations_unavailable');
+  if (a.signal?.aborted === true) {
+    // Cancelled while the reply was being written. On a call after units were said, the founder spoke over it: it
+    // stands as written, without fields. Otherwise (a typed message cancelled, nothing said) the turn fails, as before.
+    if (!interruptedBy()) {
+      throw new GenerationFailure(new ModelUnavailableError('aborted', streamed.modelId), attempts);
     }
-    annotations = emptyAnnotations(a.mode ?? a.fallbackMode);
+    return interruptedAt(replyText, streamed.modelId, phaseAMs);
   }
-  const phaseBMs = Math.round(performance.now() - phaseBStarted);
-
+  // Phase B: the structured fields of exactly that reply, started now and never waited for here (see the function's
+  // comment): the reply is complete, shown and said.
+  const annotations = startAnnotations(a, replyText);
   return {
-    raw: { ...annotations, answer: replyText, spoken: voice ? replyText : null },
+    raw: {
+      ...emptyAnnotations(a.mode ?? a.fallbackMode),
+      answer: replyText,
+      spoken: voice ? replyText : null,
+    },
     modelId: streamed.modelId,
     fallbackUsed: streamed.fallbackUsed,
     attempts,
-    latencyMs: phaseAMs + phaseBMs,
+    latencyMs: phaseAMs,
     notes,
     gateBlocked: null,
-    stream: { ...details(phaseAMs, phaseBMs, streamed.firstTokenMs), interrupted },
+    stream: details(phaseAMs, streamed.firstTokenMs),
+    annotations,
+  };
+}
+
+/** What phase B gave: the annotations, or null when it failed (`note` says why), and every billable attempt it made. */
+export interface AnnotationsResult {
+  readonly value: CoachAnnotations | null;
+  readonly attempts: readonly ModelAttempt[];
+  /** Model time of the call. */
+  readonly latencyMs: number;
+  /** `annotations_unavailable` when the call failed (the reply stands alone), else null. */
+  readonly note: string | null;
+}
+
+/** Phase B under way: its result (never rejects, already metered), and a way to stop it when nothing will read it. */
+export interface PendingAnnotations {
+  readonly result: Promise<AnnotationsResult>;
+  cancel(): void;
+}
+
+/**
+ * Phase B of a streamed reply (lab run 42238272157 on Haiku: phase B took 5.6 s after a reply whose first text showed at
+ * 1.29 s, and the turn's terminal event, a call's return to listening and the founder's next message all waited for it).
+ * The caller's signal is not its signal: the reply it describes is complete, so a founder speaking over it, or leaving,
+ * does not take its fields away. Bounded by {@link ANNOTATION_BUDGET_MS} and {@link ANNOTATION_MAX_TOKENS}; metered as the
+ * turn's own purpose.
+ */
+function startAnnotations(a: StreamArgs, replyText: string): PendingAnnotations {
+  const budget = Math.min(ANNOTATION_BUDGET_MS, a.kit.config.turns.modelTimeoutMs);
+  const stop = new AbortController();
+  const started = performance.now();
+  const result = (async (): Promise<AnnotationsResult> => {
+    try {
+      const out = await a.kit.deps.gateway.generateStructured({
+        purpose: a.meter.purpose,
+        system: a.system,
+        messages: annotationMessages(a.messages, replyText),
+        ...(a.promptCache ? { promptCache: a.promptCache } : {}),
+        schemaName: COACH_ANNOTATIONS_SCHEMA_NAME,
+        zodSchema: CoachAnnotations,
+        requestId: a.ctx.requestId,
+        maxOutputTokens: ANNOTATION_MAX_TOKENS,
+        timeoutMs: budget,
+        signal: AbortSignal.any([stop.signal, AbortSignal.timeout(budget)]),
+      });
+      await record(a, out.attempts);
+      return { value: out.value, attempts: out.attempts, latencyMs: Math.round(out.latencyMs), note: null };
+    } catch (err) {
+      const failed = attemptsOf(err);
+      await record(a, failed).catch(() => undefined);
+      if (!stop.signal.aborted) {
+        a.kit.deps.logger.warn('turn.annotations_unavailable', {
+          requestId: a.ctx.requestId,
+          turnId: a.turnId,
+          code: isModelGatewayError(err) ? err.code : 'unknown',
+        });
+      }
+      return {
+        value: null,
+        attempts: failed,
+        latencyMs: Math.round(performance.now() - started),
+        note: 'annotations_unavailable',
+      };
+    }
+  })();
+  return {
+    result,
+    cancel: () => {
+      stop.abort();
+    },
   };
 }
 

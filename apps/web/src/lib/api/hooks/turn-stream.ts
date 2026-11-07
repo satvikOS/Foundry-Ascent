@@ -243,8 +243,10 @@ function outcomeUnknown(error: unknown): boolean {
  * Send a founder message and follow the SSE turn stream:
  *   const { state, send, retry, cancel, reset } = useTurnStream(sessionId, { ventureId });
  *   await send({ text, mode });
- * Only one turn streams at a time; `send` cancels a previous in-flight turn. The stream is aborted on
- * unmount. On completion the session cache gets the new turn and venture data is invalidated.
+ * Only one turn streams at a time; `send` cancels a previous in-flight turn. A turn that already completed is not
+ * cancelled: its stream stays open while the server adds the reply's fields (claims, next steps, what was kept) to the
+ * stored turn, and its end reads the conversation again, so they show. The stream is aborted on unmount. On completion
+ * the session cache gets the new turn and venture data is invalidated.
  *
  * Idempotency: each new message gets a fresh Idempotency-Key. When an attempt fails with an unknown
  * outcome (see `outcomeUnknown`), sending the identical body again — `retry()` or `send()` with the same
@@ -255,6 +257,8 @@ export function useTurnStream(sessionId: string, { ventureId, onEvent }: UseTurn
   const client = useQueryClient();
   const [state, dispatch] = useReducer(turnStreamReducer, INITIAL);
   const controllerRef = useRef<AbortController | null>(null);
+  /** Streams whose turn already ended (completed or blocked): never cancelled, never dispatched from again. */
+  const endedRef = useRef<WeakSet<AbortController>>(new WeakSet());
   const attemptRef = useRef<UnsettledAttempt | null>(null);
   const lastBodyRef = useRef<CreateTurnBody | null>(null);
   /** Scheduled automatic replay of a still-pending turn, and how many replays its key has had. */
@@ -300,7 +304,9 @@ export function useTurnStream(sessionId: string, { ventureId, onEvent }: UseTurn
 
   const send = useCallback(
     async (body: CreateTurnBody): Promise<TurnStreamState['status']> => {
-      controllerRef.current?.abort();
+      const previousController = controllerRef.current;
+      if (previousController !== null && !endedRef.current.has(previousController))
+        previousController.abort();
       clearReplayTimer();
       const controller = new AbortController();
       controllerRef.current = controller;
@@ -321,12 +327,23 @@ export function useTurnStream(sessionId: string, { ventureId, onEvent }: UseTurn
           idempotencyKey,
         })) {
           if (controller.signal.aborted) break;
+          if (endedRef.current.has(controller)) {
+            // A turn that ended keeps its stream open for its fields (a second `turn.completed`): the conversation
+            // shows them, and the state is this turn's only while no newer one streams.
+            if (event.event === 'turn.completed') {
+              applyCompletedTurn(event.turn);
+              if (controllerRef.current === controller) dispatch({ type: 'event', event });
+            }
+            continue;
+          }
           dispatch({ type: 'event', event });
           onEventRef.current?.(event);
           if (event.event === 'turn.completed') {
             applyCompletedTurn(event.turn);
+            endedRef.current.add(controller);
             final = 'completed';
           } else if (event.event === 'turn.blocked') {
+            endedRef.current.add(controller);
             final = 'blocked';
           } else if (event.event === 'turn.error' && event.code === 'conflict') {
             // A replay found the original turn still being answered: keep the key so the next try
@@ -335,12 +352,14 @@ export function useTurnStream(sessionId: string, { ventureId, onEvent }: UseTurn
             pendingRetryAfter = event.retryAfterSeconds ?? null;
           }
         }
-        if (controller.signal.aborted) {
+        if (controller.signal.aborted && !endedRef.current.has(controller)) {
           dispatch({ type: 'cancelled' });
           final = 'cancelled';
         }
       } catch (error) {
-        if (isAbortError(error) || controller.signal.aborted) {
+        if (endedRef.current.has(controller)) {
+          // The turn already ended: a stream that breaks while its fields are added changes nothing shown.
+        } else if (isAbortError(error) || controller.signal.aborted) {
           dispatch({ type: 'cancelled' });
           final = 'cancelled';
         } else {

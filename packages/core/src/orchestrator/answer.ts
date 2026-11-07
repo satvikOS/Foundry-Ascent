@@ -46,6 +46,7 @@ import {
   GenerationFailure,
   generateStreamed,
   generateWhole,
+  type AnnotationsResult,
   type FaceApproval,
   type Generation,
   type GenerationMeter,
@@ -115,6 +116,11 @@ export interface AnswerSpec {
   readonly faceApproval?: Promise<FaceApproval | null> | null;
   readonly signal: AbortSignal | undefined;
   readonly startedAt: number;
+  /**
+   * A streamed reply completes without waiting for its fields (phase B): they come as `annotations`, for the caller to
+   * add to the stored turn (a founder turn). Absent or false: they are waited for (the studio's test conversation).
+   */
+  readonly deferAnnotations?: boolean;
 }
 
 export type AnswerOutcome =
@@ -124,8 +130,13 @@ export type AnswerOutcome =
       /** Evidence shown to the model (the only items it may cite). */
       readonly shown: KeyedEvidence[];
       readonly generation: Generation;
-      /** The validated response, authoritative over anything streamed. */
+      /**
+       * The validated response, authoritative over anything streamed. With `annotations` under way, its fields are
+       * empty but for a forced escalation: the reply, as validated, is what the founder read and heard.
+       */
       readonly checked: CoachResponseValidation;
+      /** A streamed reply's fields, arriving after it (`deferAnnotations`); null when `checked` has them already. */
+      readonly annotations: Promise<AnnotatedTurn> | null;
     }
   | {
       /** The model failed; every billable attempt made is already in the usage ledger. */
@@ -395,7 +406,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
 
   // Step 6: deterministic validation of the whole response (authoritative over any streamed unit).
   await emit({ event: 'turn.status', phase: 'validating', detail: null, evidenceCount: shown.length });
-  const validated = validateCoachResponse(generation.raw, {
+  const options: Parameters<typeof validateCoachResponse>[1] = {
     evidenceKeys,
     preRisk: risk,
     otherVentureNames: guards.others.names,
@@ -421,11 +432,91 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     founderText: spec.founderText,
     introduced,
     channel: spec.channel,
-  });
+  };
+  const validated = validateCoachResponse(generation.raw, options);
   validated.results.notes.push(...generation.notes);
   const checked =
     generation.gateBlocked === null
       ? validated
       : enforceGateBlock(validated, generation.gateBlocked, spec.channel);
-  return { kind: 'answered', context, shown, generation, checked };
+  const pending = generation.annotations ?? null;
+  if (pending === null) return { kind: 'answered', context, shown, generation, checked, annotations: null };
+  if (checked.blocked) {
+    // Nothing will read the fields of a reply that was held back: the call is stopped (what it cost is metered).
+    pending.cancel();
+    await pending.result;
+    return { kind: 'answered', context, shown, generation, checked, annotations: null };
+  }
+  const annotations = pending.result.then((result) => ({
+    checked: withAnnotations(checked, generation.raw, result, options),
+    attempts: result.attempts,
+    latencyMs: result.latencyMs,
+  }));
+  if (spec.deferAnnotations === true)
+    return { kind: 'answered', context, shown, generation, checked, annotations };
+  // Waited for here (the studio's test conversation): one generation, as a reply written whole would be.
+  const annotated = await annotations;
+  return {
+    kind: 'answered',
+    context,
+    shown,
+    generation: {
+      ...generation,
+      attempts: [...generation.attempts, ...annotated.attempts],
+      latencyMs: generation.latencyMs + annotated.latencyMs,
+      annotations: null,
+    },
+    checked: annotated.checked,
+    annotations: null,
+  };
+}
+
+/** A streamed reply's fields (phase B) added to its validated response, once they arrived. */
+export interface AnnotatedTurn {
+  /** The response with its fields; its answer and spoken form are the reply as validated and shown. */
+  readonly checked: CoachResponseValidation;
+  /** Phase B's billable attempts (already in the usage ledger). */
+  readonly attempts: readonly ModelAttempt[];
+  readonly latencyMs: number;
+}
+
+/**
+ * `checked` (a streamed reply validated with empty fields) with phase B's fields, validated as part of the whole
+ * response: the claims, follow-ups, memory candidates, mode and escalation the validation keeps. The answer and spoken
+ * form stay exactly as they were validated, shown and said. Fields the validation would hold back (another venture's
+ * name or canary in them, an identity claim, an invalid object) are left out, never the reply, which the gate and the
+ * validation already cleared and the founder already read (`annotations_discarded`).
+ */
+export function withAnnotations(
+  checked: CoachResponseValidation,
+  raw: unknown,
+  result: AnnotationsResult,
+  options: Parameters<typeof validateCoachResponse>[1],
+): CoachResponseValidation {
+  const note = (code: string): CoachResponseValidation => ({
+    ...checked,
+    results: { ...checked.results, notes: [...checked.results.notes, code] },
+  });
+  if (result.value === null) return note(result.note ?? 'annotations_unavailable');
+  const reply = raw as { readonly answer: string; readonly spoken: string | null };
+  const merged = validateCoachResponse(
+    { ...result.value, answer: reply.answer, spoken: reply.spoken },
+    options,
+  );
+  // A discard for another venture's name is noted as such only where participants never see it (blocked.ts): the
+  // founder's view never tells it from any other discard.
+  if (merged.blocked)
+    return note(
+      merged.blockReason === 'cross_venture'
+        ? 'cross_venture_annotations_discarded'
+        : 'annotations_discarded',
+    );
+  return {
+    ...checked,
+    response: { ...merged.response, answer: checked.response.answer, spoken: checked.response.spoken },
+    results: {
+      ...merged.results,
+      notes: [...new Set([...checked.results.notes, ...merged.results.notes])],
+    },
+  };
 }

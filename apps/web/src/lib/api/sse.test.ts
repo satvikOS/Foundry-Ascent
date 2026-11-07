@@ -227,6 +227,22 @@ describe('readTurnStream', () => {
     }
   });
 
+  it('after a turn.completed with fieldsPending, reads on to the same turn with its fields, and ends quietly without it', async () => {
+    const completed = (extra: Record<string, unknown> = {}) =>
+      `event: turn.completed\ndata: ${JSON.stringify({ turn: completedTurn(), ...extra })}\n\n`;
+    const stream = streamOf([
+      completed({ fieldsPending: true }),
+      'event: turn.status\ndata: {"phase":"reasoning","detail":null,"evidenceCount":null}\n\n',
+      completed(),
+      completed(),
+    ]);
+    const events = await collect(readTurnStream(stream));
+    expect(events.map((e) => e.event)).toEqual(['turn.completed', 'turn.completed']);
+    expect(events[0]).toMatchObject({ fieldsPending: true });
+    // A stream that ends before the fields came ends quietly: the turn is complete.
+    expect((await collect(readTurnStream(streamOf([completed({ fieldsPending: true })])))).length).toBe(1);
+  });
+
   it('reads a voiced unit’s audio after the terminal event until every such unit closed, and nothing else', async () => {
     const sig = 'c2lnbmF0dXJlLW9mLXRoZS11bml0LTAx';
     const unit = (seq: number, audio: boolean) =>

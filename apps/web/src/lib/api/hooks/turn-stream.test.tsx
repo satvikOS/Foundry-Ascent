@@ -620,3 +620,101 @@ describe('useTurnStream idempotency', () => {
     expect(idempotencyKeyOf(fetchMock.mock.calls[1])).not.toBe(idempotencyKeyOf(fetchMock.mock.calls[0]));
   });
 });
+
+describe('useTurnStream after a turn completed (its fields arrive after it, B3)', () => {
+  it('frees the composer at turn.completed, shows the fields when they come, and never lets that stream touch the next turn', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(queryKeys.session.detail(IDS.session), { session: { turnCount: 0 }, turns: [] });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useTurnStream(IDS.session, { ventureId: IDS.venture }), { wrapper });
+    const first = makeTurn({ id: IDS.turn, sessionId: IDS.session, ordinal: 1 });
+    const firstWithFields = makeTurn({
+      id: IDS.turn,
+      sessionId: IDS.session,
+      ordinal: 1,
+      response: {
+        ...first.response,
+        follow_up_questions: ['Who signs off the spend?'],
+      } as typeof first.response,
+    });
+    const frame = (event: object) =>
+      new TextEncoder().encode(
+        `event: ${(event as { event: string }).event}\ndata: ${JSON.stringify(event)}\n\n`,
+      );
+    const hooks: { fields?: () => void; release?: () => void; firstSignal?: AbortSignal | null } = {};
+    // The first turn completes with its fields still to come: its stream stays open.
+    fetchMock.mockImplementationOnce((_url, init) => {
+      hooks.firstSignal = init?.signal ?? null;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(frame({ event: 'turn.accepted', turnId: IDS.turn, ordinal: 1 }));
+          controller.enqueue(frame({ event: 'turn.completed', turn: first, fieldsPending: true }));
+          hooks.fields = () => {
+            controller.enqueue(frame({ event: 'turn.completed', turn: firstWithFields }));
+            controller.close();
+          };
+        },
+      });
+      return Promise.resolve(
+        new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+      );
+    });
+    let sending: Promise<unknown> = Promise.resolve();
+    act(() => {
+      sending = result.current.send({ text: 'Where should I start?' });
+    });
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('completed');
+    });
+    // The composer is free: the next message goes now, while the first stream is still open.
+    expect(result.current.isStreaming).toBe(false);
+    const secondId = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+    const second = makeTurn({ id: secondId, sessionId: IDS.session, ordinal: 2 });
+    fetchMock.mockImplementationOnce(() => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(frame({ event: 'turn.accepted', turnId: secondId, ordinal: 2 }));
+          hooks.release = () => {
+            controller.enqueue(frame({ event: 'turn.completed', turn: second }));
+            controller.close();
+          };
+        },
+      });
+      return Promise.resolve(
+        new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+      );
+    });
+    let sendingSecond: Promise<unknown> = Promise.resolve();
+    act(() => {
+      sendingSecond = result.current.send({ text: 'And then?' });
+    });
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('streaming');
+    });
+    // The first turn's stream was not cancelled: its fields still come.
+    expect(hooks.firstSignal?.aborted).toBe(false);
+    await act(async () => {
+      hooks.fields?.();
+      await sending;
+    });
+    const cached = client.getQueryData<{
+      turns: { id: string; response: { follow_up_questions: string[] } | null }[];
+    }>(queryKeys.session.detail(IDS.session));
+    expect(cached?.turns.find((t) => t.id === IDS.turn)?.response?.follow_up_questions).toEqual([
+      'Who signs off the spend?',
+    ]);
+    // The second turn is still streaming: the first stream's end never cancelled it.
+    expect(result.current.state.status).toBe('streaming');
+    expect(result.current.state.turnId).toBe(secondId);
+    await act(async () => {
+      hooks.release?.();
+      await sendingSecond;
+    });
+    expect(result.current.state.status).toBe('completed');
+    expect(result.current.state.turn?.id).toBe(secondId);
+  });
+});

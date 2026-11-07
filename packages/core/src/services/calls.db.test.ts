@@ -1727,7 +1727,8 @@ describe('the turn engine and the calls service together', () => {
         heard: [{ seq: heard.seq, text: heard.text, sig: heard.sig }],
       });
 
-      // … and over the last unit, once the reply was written but before its annotations.
+      // … and over the last unit, as the reply was finished: it stands whole, without its fields (no call is made for
+      // them); once its fields are under way, the founder's voice no longer stops them.
       const late = await interrupted(
         sessionId,
         call.id,

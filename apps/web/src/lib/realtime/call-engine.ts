@@ -1453,6 +1453,11 @@ export class CallEngine {
         return null;
       case 'turn.completed': {
         const completed = event.turn;
+        if (turn.done) {
+          // The same turn again with its fields (after `fieldsPending`): the conversation shows them; nothing is said.
+          this.deps.onTurnSettled?.(completed.sessionId, completed);
+          return null;
+        }
         turn.turnId = completed.id;
         if (turn.units === 0 && completed.status === 'completed' && completed.response) {
           // No streamed units (streaming is off): speak the stored, validated spoken reply sentence by
