@@ -104,7 +104,7 @@ describe('model selection', () => {
       background: {
         primary: 'us.amazon.nova-2-lite-v1:0',
         fallback: 'global.amazon.nova-2-lite-v1:0',
-        purposes: ['classification', 'eval', 'ingestion', 'seed', 'embedding'],
+        purposes: ['classification', 'eval', 'ingestion', 'seed'],
       },
     });
     expect(reasoningAccess(production)).toEqual({

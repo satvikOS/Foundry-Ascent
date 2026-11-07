@@ -360,7 +360,7 @@ describe('model router — the background route (MODEL_BACKGROUND_*)', () => {
       background: {
         primaryModelId: NOVA_US,
         fallbackModelId: NOVA_GLOBAL,
-        purposes: ['classification', 'eval', 'ingestion', 'seed', 'embedding'],
+        purposes: ['classification', 'eval', 'ingestion', 'seed'],
       },
       embeddingsModelId: DEFAULT_MODEL_IDS.embeddings,
       credentials: STATIC_CREDENTIALS,

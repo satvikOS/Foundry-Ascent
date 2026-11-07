@@ -199,6 +199,8 @@ describe('POST /sessions/:id/turns (SSE)', () => {
       'status:reasoning',
       'turn.delta',
       'status:validating',
+      // The reply completes the turn (fieldsPending); the same turn with its fields follows.
+      'turn.completed',
       'turn.completed',
     ]);
     const last = events.at(-1);
