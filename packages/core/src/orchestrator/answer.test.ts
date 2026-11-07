@@ -15,7 +15,6 @@ import {
   MockModelGateway,
   ModelUnavailableError,
   REPEAT_FALLBACK,
-  SPOKEN_HAND_BACKS,
   classifyRisk,
   mockCoachResponse,
   type HistoryTurn,
@@ -278,7 +277,7 @@ describe('an instruction to reply with a code (evals MX-0004, G8)', () => {
 });
 
 describe('the continuation never says the stock line', () => {
-  it('a call whose continuation only repeated keeps its lead-in and hands the turn back', async () => {
+  it('a call whose continuation only repeated keeps its lead-in, and no stock question is said after it', async () => {
     // A lead-in that is no stock opener ("Great, Idris." is left out on the way: validators/openers.ts).
     const lead = 'Right, Idris.';
     const { gateway, continued } = scripted(
@@ -291,10 +290,10 @@ describe('the continuation never says the stock line', () => {
       expect(text).not.toContain(REPEAT_FALLBACK);
       expect(text).not.toContain('That still stands');
     }
-    expect(turn.said[0]).toBe(lead);
-    expect(turn.said).toHaveLength(2);
-    expect(SPOKEN_HAND_BACKS as readonly string[]).toContain(turn.said[1]);
-    expect(turn.answer).toBe(`${lead} ${turn.said[1] ?? ''}`);
+    // Production, 2026-11-06: "What do you think?" was appended to replies it did not follow from.
+    expect(turn.said).toEqual([lead]);
+    expect(turn.answer).toBe(lead);
+    expect(turn.notes).not.toContain('stream_hand_back');
   });
 
   it('a typed reply whose continuation only repeated stands as its lead-in', async () => {
@@ -547,7 +546,7 @@ describe('A-security regressions: a recap of a long last reply keeps its new adv
     }
   });
 
-  it('on a call: the new advice is said, then the hand-back', async () => {
+  it('on a call: the new advice is said, and nothing is appended after it', async () => {
     const said =
       'Send the west library the same offer the same day. If they push back, offer half a term at the same rate.';
     for (const text of [
@@ -563,8 +562,8 @@ describe('A-security regressions: a recap of a long last reply keeps its new adv
           failing,
         );
         const turn = await answer(gateway, { text, channel: 'voice' });
-        expect(turn.answer.startsWith(said), text).toBe(true);
-        expect(SPOKEN_HAND_BACKS as readonly string[]).toContain(turn.said.at(-1));
+        expect(turn.answer, text).toBe(said);
+        expect(turn.said.join(' '), text).toBe(said);
       }
     }
   });
@@ -816,7 +815,6 @@ describe('diff4-A4 (medium): news parked again by the continuation still gets th
             if (channel === 'voice') expect(turn.said.join(' '), label).toBe(`${lead}${news}`);
             for (const said of everything(turn)) {
               expect(said, label).not.toMatch(/one thing at a time|let's finish|before we/i);
-              for (const handBack of SPOKEN_HAND_BACKS) expect(said, label).not.toContain(handBack);
             }
           }
         }

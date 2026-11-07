@@ -7,7 +7,6 @@ import {
   SentenceGate,
   clampWords,
   cutMetaNarration,
-  endsWithHandBack,
   isOnlyLeadIn,
   isModelGatewayError,
   withoutRepeats,
@@ -274,11 +273,6 @@ export interface GenerateArgs {
   /** Who the reply may narrate by name (the founder it talks to, the venture's people; LAB-M1b). */
   readonly narration?: NarrationNames;
   /**
-   * A call's turn: said right after a streamed reply that ends on a statement (`spokenHandBackFor`), so the founder
-   * knows it is their turn without waiting for the annotations; null for none.
-   */
-  readonly handBack?: string | null;
-  /**
    * The conversation's earlier replies (and opener) a reply never says again, or null when it may (the founder asked to
    * hear it again, or sincerely asked who or what the coach is). A whole reply that says one again is written once more
    * with what was already said (`repeat_regenerated`): left out by the validator alone, the sentences around it would
@@ -458,13 +452,11 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   const notes: string[] = [];
   const attempts: ModelAttempt[] = [];
   const voice = a.channel === 'voice';
-  // A call's reply leaves room for its hand-back within the spoken budget (it is said after the reply).
-  const spokenBudget = SPOKEN_MAX_WORDS - (voice && a.handBack ? a.handBack.split(/\s+/).length : 0);
   const traceText = a.kit.config.turns.traceStreamText;
   // What the gate left out is kept for the continuation request; its text is logged only in the lab.
   const gate = new SentenceGate({
     ...a.gate,
-    ...(voice ? { maxUnitChars: SPOKEN_UNIT_CHARS, spokenWordBudget: spokenBudget, spoken: true } : {}),
+    ...(voice ? { maxUnitChars: SPOKEN_UNIT_CHARS, spokenWordBudget: SPOKEN_MAX_WORDS, spoken: true } : {}),
     keepDropped: true,
     // A reply left with nothing but repeats goes on (or is written anew) below, never as a stock line.
     callerContinues: true,
@@ -513,7 +505,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       if (speech && unit.spoken !== '') await speech.queue(unit.spoken);
     }
     if (result.blocked !== null || result.fallback !== null || result.cut !== null) stop.abort();
-    else if (!said.full && (gate.full || (voice && said.words >= spokenBudget))) {
+    else if (!said.full && (gate.full || gate.spokenFull || (voice && said.words >= SPOKEN_MAX_WORDS))) {
       // All of the reply that can be said was said: a call's spoken budget, or a short reply's (a thanks).
       said.full = true;
       stop.abort();
@@ -621,7 +613,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
       ...(voice
         ? {
             maxUnitChars: SPOKEN_UNIT_CHARS,
-            spokenWordBudget: Math.max(0, spokenBudget - said.words),
+            spokenWordBudget: Math.max(0, SPOKEN_MAX_WORDS - said.words),
             spoken: true,
           }
         : {}),
@@ -665,7 +657,13 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
         if (unit.spoken !== '') said.spoken += ` ${unit.spoken}`;
         if (speech && unit.spoken !== '') await speech.queue(unit.spoken);
       }
-      if (result.blocked !== null || result.fallback !== null || result.cut !== null || more.full)
+      if (
+        result.blocked !== null ||
+        result.fallback !== null ||
+        result.cut !== null ||
+        more.full ||
+        more.spokenFull
+      )
         halt.abort();
     };
     try {
@@ -687,7 +685,14 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
           signal: until,
         },
         async (chunk) => {
-          if (more.blocked !== null || more.fallback !== null || more.cut !== null || more.full) return;
+          if (
+            more.blocked !== null ||
+            more.fallback !== null ||
+            more.cut !== null ||
+            more.full ||
+            more.spokenFull
+          )
+            return;
           if (extractor.isDone()) return;
           const text = extractor.push(chunk);
           if (text !== '') await show(more.push(text));
@@ -709,7 +714,13 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
         return added;
       }
     }
-    if (more.blocked === null && more.fallback === null && more.cut === null && !more.full) {
+    if (
+      more.blocked === null &&
+      more.fallback === null &&
+      more.cut === null &&
+      !more.full &&
+      !more.spokenFull
+    ) {
       const rest = extractor.end();
       if (rest !== '') await show(more.push(rest));
       await show(more.end());
@@ -892,7 +903,7 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
     replyWords: wordCount(reply.text),
     shownWords: wordCount(said.shown),
     spokenWords: said.words,
-    spokenBudget: voice ? spokenBudget : null,
+    spokenBudget: voice ? SPOKEN_MAX_WORDS : null,
     ...(traceText
       ? { replyText: reply.text, shownText: said.shown, dropped: JSON.stringify(trace.dropped) }
       : {}),
@@ -924,23 +935,6 @@ export async function generateStreamed(a: StreamArgs): Promise<Generation> {
   }
   // Still nothing said: the reply is written whole after all.
   if (said.shown.trim() === '' && gate.stats.withheld === 0) return wholeInstead('empty', phaseAMs, null);
-  // A call's reply that ended on a statement hands the turn back now, not after the annotations.
-  const handBack = voice ? (a.handBack ?? null) : null;
-  if (
-    handBack !== null &&
-    speech !== null &&
-    a.signal?.aborted !== true &&
-    !endsWithHandBack(said.spoken) &&
-    !endsWithHandBack(replyText) &&
-    said.words + handBack.split(/\s+/).length <= SPOKEN_MAX_WORDS
-  ) {
-    // Shown and said, like any unit of the reply (the transcript is what was said).
-    await a.emit({ event: 'turn.delta', turnId: a.turnId, seq: timing.deltas, text: ` ${handBack}` });
-    timing.deltas += 1;
-    await speech.queue(handBack);
-    replyText = `${replyText.trimEnd()} ${handBack}`;
-    notes.push('stream_hand_back');
-  }
 
   // Phase B: the structured fields of exactly that reply.
   const phaseBStarted = performance.now();

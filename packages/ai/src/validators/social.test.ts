@@ -3,15 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { directChoiceOf, socialTurnOf } from '../prompts/conversation-state.js';
 import {
   CLOSING_FALLBACK,
-  SPOKEN_HAND_BACKS,
-  STRESSED_HAND_BACKS,
   asksToRepeat,
   NEWS_FALLBACK,
-  endsWithHandBack,
   parksTheirNews,
   questionsOf,
   reasksQuestion,
-  spokenHandBackFor,
   withoutAgendaPush,
   withinSocialBudget,
   withoutRepeats,
@@ -116,45 +112,6 @@ describe('never the previous reply again (repeated_reply, LAB-M3, LAB-M10)', () 
       expect(asksToRepeat(text), text).toBe(true);
     }
     expect(asksToRepeat('What should we repeat in the second pilot?')).toBe(false);
-  });
-});
-
-describe('a spoken reply hands the turn back (spoken_no_handback)', () => {
-  it('knows a reply that hands back: a question, or an invitation', () => {
-    expect(endsWithHandBack('Price per library. Does Friday work?')).toBe(true);
-    expect(endsWithHandBack('Price per library. Tell me how that sits with you.')).toBe(true);
-    expect(endsWithHandBack('Set that up by Friday and talk about it after.')).toBe(false);
-  });
-
-  it('none for a social turn; a question about what would help for someone stressed', () => {
-    expect(spokenHandBackFor("Okay, thanks, that's helpful. Talk soon.", 't1')).toBeNull();
-    expect(spokenHandBackFor("I'm so stressed, nothing is working this week.", 't1')).toBe(
-      STRESSED_HAND_BACKS[0],
-    );
-    expect(SPOKEN_HAND_BACKS).toContain(spokenHandBackFor('How do we get the first ten users?', 't1'));
-  });
-
-  it('never hands back with a line the conversation already heard: four statement-ending call turns, four lines', () => {
-    for (const [founder, pool] of [
-      ['How do we get the first ten users?', SPOKEN_HAND_BACKS],
-      ["I'm so stressed, nothing is working this week.", STRESSED_HAND_BACKS],
-    ] as const) {
-      const answers: string[] = [];
-      const said: string[] = [];
-      for (let turn = 0; turn < 4; turn += 1) {
-        // The same seed every turn: only what was heard can change the line.
-        const line = spokenHandBackFor(founder, 'same-turn-id', answers);
-        expect(line).not.toBeNull();
-        expect(pool as readonly string[]).toContain(line);
-        said.push(line ?? '');
-        answers.push(`Start with the two libraries that already count seats. ${line ?? ''}`);
-      }
-      expect(new Set(said).size).toBe(4);
-    }
-    // Short enough that a call's spoken budget always keeps room for one.
-    for (const line of SPOKEN_HAND_BACKS) expect(line.split(/\s+/).length).toBeLessThanOrEqual(4);
-    // Once every line was said, none rather than a repeat.
-    expect(spokenHandBackFor('How do we get users?', 't', [SPOKEN_HAND_BACKS.join(' ')])).toBeNull();
   });
 });
 

@@ -39,7 +39,6 @@ import {
   NEWS_FALLBACK,
   REPEAT_FALLBACK,
   asksToRepeat,
-  endsWithHandBack,
   withinSocialBudget,
   withoutAgendaPush,
   withoutRepeats,
@@ -153,11 +152,6 @@ export interface ValidateCoachResponseOptions {
    * and name the gate had left out (pilot v3: 97 stock openers, name overuse in 26 of 60 runs). Default false.
    */
   released?: boolean;
-  /**
-   * A call's turn: the hand-back said after a spoken reply that ends on a statement (`spoken_hand_back_added`), or
-   * null for none (a typed turn, or the founder wrapping up). The turn engine picks it (`spokenHandBackFor`).
-   */
-  handBack?: string | null;
   /**
    * What the founder's message does socially, as the turn engine read it (`socialTurnOf`, with a first message's
    * hello left to pick up the last conversation). Omitted: read from `founderText`.
@@ -899,29 +893,6 @@ export function validateCoachResponse(
   }
   if (channel === 'voice' && !r.spoken) {
     r.spoken = deriveSpoken(r.answer, limits.spokenMaxWords) || deriveSpoken(EMPTY_ANSWER_FALLBACK);
-  }
-  // A spoken reply hands the turn back, unless the founder is wrapping up or only being social.
-  const handBack = options.handBack ?? null;
-  if (
-    channel === 'voice' &&
-    handBack !== null &&
-    social === null &&
-    r.spoken &&
-    !endsWithHandBack(r.spoken)
-  ) {
-    const room = limits.spokenMaxWords - handBack.split(/\s+/).length;
-    let spoken = r.spoken;
-    while (spoken.split(/\s+/).filter(Boolean).length > room) {
-      const cut = spoken.replace(/\s*[^.!?]*[.!?…]?\s*$/u, '').trim();
-      if (cut === '' || cut === spoken) break;
-      spoken = cut;
-    }
-    r.spoken = `${spoken} ${handBack}`;
-    // The transcript is what was said.
-    if (!endsWithHandBack(r.answer) && r.answer.length + handBack.length < limits.answerMaxChars) {
-      r.answer = `${r.answer.trimEnd()} ${handBack}`;
-    }
-    notes.push('spoken_hand_back_added');
   }
   if (truncated > 0) notes.push(`truncated:${truncated}`);
   if (dropped.claims + dropped.other > 0) notes.push(`items_dropped:${dropped.claims + dropped.other}`);

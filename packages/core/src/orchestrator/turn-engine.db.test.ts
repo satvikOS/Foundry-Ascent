@@ -14,8 +14,6 @@ import {
   MockModelGateway,
   NARROWING_NOTE_PREFIX,
   REPEAT_FALLBACK,
-  SPOKEN_HAND_BACKS,
-  STRESSED_HAND_BACKS,
   mockCoachResponse,
   type ChatMessage,
   type EmbedOptions,
@@ -1044,21 +1042,21 @@ describe('spoken turns', () => {
     const said = speechUnits(events)
       .map((u) => u.text)
       .join(' ');
-    expect(said.split(/\s+/).length).toBe(70);
+    // Seven whole sentences (63 words): the eighth would not fit whole, so it is neither said nor shown.
+    expect(said.split(/\s+/).length).toBe(63);
     const turn = completed(events);
-    expect(turn.validator?.notes).toEqual(expect.arrayContaining(['stream_spoken_cut', 'stream_hand_back']));
-    // The transcript is what was said, to the end of the sentence the budget ran out in, and then the hand-back the
-    // budget kept room for (it stopped mid-thought before: the lab's spoken_no_handback).
+    expect(turn.validator?.notes).toContain('stream_spoken_cut');
+    expect(turn.validator?.notes).not.toContain('stream_hand_back');
+    // The transcript is what was said, to the end of the sentence the budget ran out in, with no stock question after
+    // it (production, 2026-11-06: "What do you think?" followed from nothing).
     const shown = deltas(events)
       .map((d) => d.text)
       .join('')
       .trim();
     expect(turn.response?.answer).toBe(shown);
-    const handBack = SPOKEN_HAND_BACKS.find((h) => shown.endsWith(h));
-    expect(handBack).toBeDefined();
-    expect(shown).toBe(`${sentences.slice(0, 8).join(' ')} ${handBack ?? ''}`);
-    expect(said.endsWith(handBack ?? '?')).toBe(true);
-    expect(turn.response?.answer).not.toContain('Point 9');
+    expect(shown).toBe(sentences.slice(0, 7).join(' '));
+    expect(said).toBe(shown);
+    expect(turn.response?.answer).not.toContain('Point 8');
   });
 
   it('bounds the annotations call', async () => {
@@ -1403,15 +1401,16 @@ describe('conversation craft the lab still heard (wave 7)', () => {
     }
   });
 
-  it('a call’s reply that ends on a statement hands the turn back as it is said', async () => {
-    for (const [text, expected] of [
-      ['How do we get the first ten users?', SPOKEN_HAND_BACKS as readonly string[]],
-      ["I'm so stressed, nothing is working this week.", STRESSED_HAND_BACKS as readonly string[]],
-    ] as const) {
-      const gateway = new MockModelGateway({
-        streamDelayMs: 0,
-        streamFixture: () => 'Start with the two libraries that already count seats. Set it up by Friday.',
-      });
+  it('a call’s reply that ends on a statement ends there, typed into the transcript as said (production, 2026-11-06)', async () => {
+    // "hows your perosnal life going on.." got "I'm good, thanks for asking. What do you think?": a stock question
+    // appended to a reply it did not follow from. A complete answer ends without one.
+    for (const text of [
+      'How do we get the first ten users?',
+      "I'm so stressed, nothing is working this week.",
+      'hows your perosnal life going on..',
+    ]) {
+      const reply = 'Start with the two libraries that already count seats. Set it up by Friday.';
+      const gateway = new MockModelGateway({ streamDelayMs: 0, streamFixture: () => reply });
       const { core, orchestrator } = coreWith(gateway);
       const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
       const { events } = await run(orchestrator, session.id, {
@@ -1420,50 +1419,16 @@ describe('conversation craft the lab still heard (wave 7)', () => {
         channel: 'voice',
         callId: CALL_ID,
       });
-      const units = speechUnits(events).map((u) => u.text);
-      expect(expected).toContain(units.at(-1));
       const turn = completed(events);
-      expect(turn.response?.answer).toBe(
-        `Start with the two libraries that already count seats. Set it up by Friday. ${units.at(-1) ?? ''}`,
-      );
-      // Said before the annotations, right after the reply.
-      const validating = events.findIndex((e) => e.event === 'turn.status' && e.phase === 'validating');
-      expect(events.findLastIndex((e) => e.event === 'turn.speech')).toBeLessThan(validating);
-    }
-  });
-
-  it('never hands back twice with the same line in one call (repeated_question)', async () => {
-    const replies = [
-      'Start with the two libraries that already count seats.',
-      'Book the facilities manager for a twenty-minute walk-through.',
-      'Put the per-library price in the one-page plan.',
-      'Send the plan to both librarians before the weekend.',
-    ];
-    let n = 0;
-    const gateway = new MockModelGateway({
-      streamDelayMs: 0,
-      streamFixture: () => replies[n++ % replies.length] ?? '',
-    });
-    const { core, orchestrator } = coreWith(gateway);
-    const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
-    const handBacks: string[] = [];
-    for (const text of [
-      'How do we get the first ten users?',
-      'Who should we talk to first?',
-      'What goes in the plan?',
-      'And then what?',
-    ]) {
-      const { events } = await run(orchestrator, session.id, {
+      expect(turn.response?.answer, text).toBe(reply);
+      expect(
+        speechUnits(events)
+          .map((u) => u.text)
+          .join(' '),
         text,
-        mode: 'coach',
-        channel: 'voice',
-        callId: CALL_ID,
-      });
-      const last = speechUnits(events).at(-1)?.text ?? '';
-      expect(SPOKEN_HAND_BACKS as readonly string[]).toContain(last);
-      handBacks.push(last);
+      ).toBe(reply);
+      expect(turn.validator?.notes, text).not.toContain('stream_hand_back');
     }
-    expect(new Set(handBacks).size).toBe(4);
   });
 });
 

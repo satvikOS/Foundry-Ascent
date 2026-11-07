@@ -780,12 +780,18 @@ describe('SentenceGate', () => {
     expect(g.stats).toMatchObject({ units: 0, withheld: 0 });
   });
 
-  it('speaks plain sentences within the word budget', () => {
-    const { units } = run(gate({ spokenWordBudget: 8 }), [
+  it('speaks plain sentences within the word budget, each whole or not at all (never "Then count seats for.")', () => {
+    const g = gate({ spokenWordBudget: 8 });
+    const { units } = run(g, [
       'Start with **five** interviews [E1]. Then count seats for a whole week at night. Then decide.',
     ]);
-    expect(units.map((u) => u.spoken)).toEqual(['Start with five interviews.', 'Then count seats for.', '']);
-    expect(units.map((u) => u.text)).toHaveLength(3);
+    // The second sentence does not fit whole: it is neither said nor shown, and nothing after it is.
+    expect(units.map((u) => u.spoken)).toEqual(['Start with five interviews.']);
+    expect(joined(units).trim()).toBe('Start with **five** interviews [E1].');
+    expect(g.spokenFull).toBe(true);
+    // A first sentence longer than the whole budget is cut, else the call would say nothing.
+    const long = run(gate({ spokenWordBudget: 4 }), ['Count the seats for a whole week at night.']);
+    expect(long.units.map((u) => u.spoken)).toEqual(['Count the seats for.']);
   });
 
   it('checks each unit as heard on a call: a lower-case name signs off there', () => {

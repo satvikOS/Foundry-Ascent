@@ -1,11 +1,4 @@
-import {
-  RISK_RULES,
-  SentenceGate,
-  buildRetrievalQuery,
-  classifyRisk,
-  deriveSpoken,
-  spokenHandBackFor,
-} from '@foundry/ai';
+import { RISK_RULES, SentenceGate, buildRetrievalQuery, classifyRisk, deriveSpoken } from '@foundry/ai';
 
 import { ReplyExtractor } from './reply-extract.js';
 
@@ -171,7 +164,6 @@ async function warm(guards: TurnWarmUpGuards): Promise<void> {
         otherVentureMemberNames: guards.otherVentureMemberNames,
       });
       buildRetrievalQuery({ founderText: line, previousAnswer: PREVIOUS_REPLY, currentGoal: null });
-      spokenHandBackFor(line, '00000000-0000-4000-8000-000000000000', [PREVIOUS_REPLY]);
       await nextTurnOfTheLoop();
     }
   }

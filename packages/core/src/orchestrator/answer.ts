@@ -14,7 +14,6 @@ import {
   SOCIAL_BUDGETS,
   YES_NO_BUDGET,
   socialTurnOf,
-  spokenHandBackFor,
   validateCoachResponse,
   statedPreferences,
   wrapUpOf,
@@ -271,8 +270,8 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     spec.history.length === 0
       ? context.openerReplayed && openerSaidHello(spec.opener, founderNames)
       : !founderMoves(spec.founderText).includes('greeting');
-  // Conversation craft (validators/social.ts): a social turn gets a short reply, a reply never says the previous one
-  // (or the opener) again, and a call's reply that ends on a statement hands the turn back.
+  // Conversation craft (validators/social.ts): a social turn gets a short reply, and a reply never says the previous one
+  // (or the opener) again.
   const lastAnswer = spec.history.at(-1)?.answer ?? null;
   const previousReply =
     spec.history.length > 0 ? lastAnswer : context.openerReplayed ? (spec.opener ?? null) : null;
@@ -285,14 +284,6 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
   // A hello that opens the conversation (nothing said before it) is answered with the pick-up of last time.
   const read = socialTurnOf(spec.founderText);
   const social = read === 'greeting' && previousReply === null ? null : read;
-  // Never a hand-back the conversation already heard (the replies in view, and the opener).
-  const handBack =
-    spec.channel === 'voice'
-      ? spokenHandBackFor(spec.founderText, spec.ids.turnId, [
-          ...spec.history.map((t) => t.answer),
-          spec.opener ?? null,
-        ])
-      : null;
 
   const introduced = alreadyIntroduced(spec);
   // A whole reply that says the conversation again is written once more with what was said (generateWhole), unless
@@ -356,7 +347,6 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     signal: spec.signal,
     startedAt: spec.startedAt,
     narration: { founder: spec.continuity.founderFirstName ?? null, people: guards.addressees },
-    handBack,
     alreadySaid,
   };
   let generation: Generation;
@@ -425,8 +415,6 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     pastReplies: spec.pastReplies ?? [],
     // What the gate released was shown or said as it stands: never edited for repeats again.
     released: generation.stream !== null && generation.stream.fallback === null,
-    // A streamed reply handed the turn back as it was said (generate.ts); a reply written whole gets it here.
-    handBack: generation.stream?.fallback === null ? null : handBack,
     social,
     noQuestions,
     knownFigures,

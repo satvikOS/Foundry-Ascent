@@ -2,15 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { validateCoachResponse } from './coach-response.js';
 import { SentenceGate, type GateUnit, type SentenceGateOptions } from './sentence-gate.js';
-import {
-  SPOKEN_HAND_BACKS,
-  announcedCountGap,
-  asksToRepeat,
-  isListItem,
-  spokenHandBackFor,
-  withoutRepeats,
-  withoutUnits,
-} from './social.js';
+import { announcedCountGap, asksToRepeat, isListItem, withoutRepeats, withoutUnits } from './social.js';
 
 /**
  * The whole-conversation repeat guard (live pilot 42099643194). Paraphrased patterns, never transcript text:
@@ -361,20 +353,5 @@ describe('escalation source telemetry (classifier, model or both)', () => {
     expect(notes(true, [])).toContain('escalation_source:model');
     expect(notes(true, ['legal'])).toContain('escalation_source:both');
     expect(notes(false, []).some((n) => n.startsWith('escalation_source'))).toBe(false);
-  });
-});
-
-describe('call hand-backs (C10, C14)', () => {
-  it('never says "How does that sound?", and says none after a goodbye or a wrap-up (26-05)', () => {
-    expect(SPOKEN_HAND_BACKS).not.toContain('How does that sound?');
-    expect(SPOKEN_HAND_BACKS).not.toContain('Sound right to you?');
-    for (const text of [
-      "Got it, I'll call them tomorrow.",
-      'Okay, I have to go now, bye.',
-      'Thanks, talk soon!',
-    ]) {
-      expect(spokenHandBackFor(text, 'turn-1'), text).toBeNull();
-    }
-    expect(spokenHandBackFor('How do I price the pilot?', 'turn-1')).not.toBeNull();
   });
 });

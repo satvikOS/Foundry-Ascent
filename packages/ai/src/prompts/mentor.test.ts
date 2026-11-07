@@ -103,6 +103,15 @@ describe('Thomas: a mentor under his own name', () => {
     expect(out.text).not.toMatch(/digital twin/);
   });
 
+  it('answers a personal question warmly as himself, with no made-up life, then turns to them (production, 2026-11-06)', () => {
+    // "hows your personal life going on.." got "Thanks, Amara. I'm good, thanks for asking. What do you think?".
+    const prompt = buildSystemPrompt(INPUT);
+    expect(prompt).toMatch(
+      /a personal question \("how's\s+your life going\?"\): a light, warm line as yourself/,
+    );
+    expect(prompt).toMatch(/never identity talk or a made-up life, then turn to them/);
+  });
+
   it('still never speaks as the EIR or claims to be a person', () => {
     const asEir = rewriteIdentity('This is Corin Halvorsen speaking.', { ...THOMAS, disclaimers: 'reply' });
     expect(asEir.findings.map((f) => f.kind)).toContain('claims_eir');

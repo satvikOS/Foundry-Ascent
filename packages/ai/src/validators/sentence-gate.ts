@@ -455,6 +455,8 @@ export class SentenceGate {
   /** Set once joining a unit to the shown text would form Markdown the subset removes. */
   #withholding = false;
   #spokenWords = 0;
+  /** A call's spoken word budget is used up: nothing more is shown or said ({@link spokenFull}). */
+  #spokenFull = false;
   /** Length of the stable text already checked for other ventures as a whole. */
   #leakCheckedTo = 0;
   /** The end of the last unit released, as shown and as heard: the next unit's identity check reads it first. */
@@ -584,6 +586,15 @@ export class SentenceGate {
   /** The reply budget (`replyBudget`) is used up: the reply is what was released. */
   get full(): boolean {
     return this.#full;
+  }
+
+  /**
+   * A call's spoken word budget (`spokenWordBudget`) is used up: the next sentence did not fit whole, so it was neither
+   * said nor shown, and nothing after it is. Production replies were said to the budget's last word mid-sentence ("Point
+   * 8 is about the pilot and.") while the transcript showed the whole sentence.
+   */
+  get spokenFull(): boolean {
+    return this.#spokenFull;
   }
 
   /** Counts for audit metadata (no content). */
@@ -990,6 +1001,8 @@ export class SentenceGate {
     text = split;
     const spoken = this.#speak(text, before);
     if ('blocked' in spoken) return spoken.blocked;
+    // On a call, a sentence that cannot be said whole is not shown either: the transcript is what was said.
+    if (this.#spokenFull) return null;
     this.#tail = identityTail(text);
     if (!this.#identified && identifiesHonestly(text, this.#identity)) this.#identified = true;
     if (this.#life !== null) {
@@ -1089,7 +1102,12 @@ export class SentenceGate {
     }
     if (budget === undefined || speakable === '') return { said: speakable };
     const left = budget - this.#spokenWords;
-    if (left <= 0) return { said: '' };
+    if (this.#spokenFull || left <= 0 || (words(speakable) > left && this.#spokenWords > 0)) {
+      // A sentence is said whole or not at all once something was said; only a first sentence longer than the whole
+      // budget is cut (else the call would say nothing).
+      this.#spokenFull = true;
+      return { said: '' };
+    }
     const clamped = words(speakable) > left ? clampWords(speakable, left).text : speakable;
     this.#spokenWords += words(clamped);
     return { said: clamped };

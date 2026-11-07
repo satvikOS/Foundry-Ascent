@@ -5,7 +5,7 @@ import { socialTurnOf, type SocialTurn } from '../prompts/conversation-state.js'
 import { validateCoachResponse, type ValidateCoachResponseOptions } from './coach-response.js';
 import { identityQuestionOf } from './identity.js';
 import { SentenceGate, type GateUnit, type SentenceGateOptions } from './sentence-gate.js';
-import { SOCIAL_BUDGETS, spokenHandBackFor } from './social.js';
+import { SOCIAL_BUDGETS } from './social.js';
 import { SPOKEN_MAX_WORDS } from './speech.js';
 
 /**
@@ -153,7 +153,6 @@ describe('the honest one-liner survives every wave 7 filter (LAB-M15/M16 × w7-a
       for (const previous of PREVIOUS) {
         const social = socialOf(question, previous);
         for (const spoken of [false, true]) {
-          const handBack = spoken ? spokenHandBackFor(question, 'turn-1', [previous]) : null;
           const options: SentenceGateOptions = {
             ...NAMES,
             founderName: 'Maya',
@@ -163,7 +162,7 @@ describe('the honest one-liner survives every wave 7 filter (LAB-M15/M16 × w7-a
             previousReply: previous,
             replyBudget: social === null ? null : SOCIAL_BUDGETS[social],
             spoken,
-            ...(spoken ? { spokenWordBudget: SPOKEN_MAX_WORDS - (handBack?.split(/\s+/).length ?? 0) } : {}),
+            ...(spoken ? { spokenWordBudget: SPOKEN_MAX_WORDS } : {}),
             otherVentureNames: ['BenchTally'],
             otherVentureCanaries: ['CANARY-abcdef'],
             otherVentureMemberNames: ['Amara Nwosu-Belling'],
@@ -184,7 +183,7 @@ describe('the honest one-liner survives every wave 7 filter (LAB-M15/M16 × w7-a
     }
   }, 60_000);
 
-  it('the final validator, typed and on a call (with its hand-back)', () => {
+  it('the final validator, typed and on a call', () => {
     for (const [question, want, replies] of CASES) {
       for (const previous of PREVIOUS) {
         for (const channel of ['text', 'voice'] as const) {
@@ -202,7 +201,6 @@ describe('the honest one-liner survives every wave 7 filter (LAB-M15/M16 × w7-a
             introduced: true,
             previousReply: previous,
             social: socialOf(question, previous),
-            handBack: channel === 'voice' ? spokenHandBackFor(question, 'turn-1', [previous]) : null,
             channel,
           };
           for (const reply of replies) {

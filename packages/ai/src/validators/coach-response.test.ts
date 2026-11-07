@@ -1407,7 +1407,6 @@ describe('validateCoachResponse — conversation craft the lab still heard (wave
           ...opts(),
           channel,
           founderText: 'Thank you, this is genuinely helpful',
-          handBack: 'What do you think?',
         },
       );
       expect(checked.response.answer).toBe("You're welcome. Let's keep moving.");
@@ -1564,40 +1563,50 @@ describe('validateCoachResponse — conversation craft the lab still heard (wave
     expect(again.response.answer).toContain("I'm Corin's digital twin, built from how Corin coaches");
   });
 
-  it('a call’s reply that ends on a statement hands the turn back, within 70 words', () => {
-    const statement = 'Set the pilot up by Friday and agree what result moves it to a paid contract.';
-    const checked = validateCoachResponse(base({ answer: statement, spoken: statement }), {
-      ...opts(),
-      channel: 'voice',
-      founderText: 'How do we get the first ten users?',
-      handBack: 'What do you think?',
-    });
-    expect(checked.response.spoken).toBe(`${statement} What do you think?`);
-    expect(checked.response.answer).toBe(`${statement} What do you think?`);
-    expect(checked.results.notes).toContain('spoken_hand_back_added');
-    // A reply that already hands back is left alone; a long one makes room.
-    const asks = validateCoachResponse(
-      base({ answer: 'Price per library. Does Friday work?', spoken: null }),
+  it('a call’s reply that ends on a statement ends there: no stock question after it (production, 2026-11-06)', () => {
+    // "hows your perosnal life going on.." got "Thanks, Amara. I'm good, thanks for asking. What do you think?": a stock
+    // thanks that thanked nothing, and a question appended that followed from nothing.
+    const checked = validateCoachResponse(
+      base({
+        answer: "Thanks, Amara. I'm good, thanks for asking.",
+        spoken: "Thanks, Amara. I'm good, thanks for asking.",
+      }),
       {
         ...opts(),
         channel: 'voice',
-        founderText: 'How should we price it?',
-        handBack: 'What do you think?',
+        founderText: 'hows your perosnal life going on..',
+        founderName: 'Amara',
       },
     );
-    expect(asks.response.spoken).toBe('Price per library. Does Friday work?');
-    const long = Array.from(
-      { length: 10 },
-      (_, i) => `Point ${String(i + 1)} is about the pilot counts.`,
-    ).join(' ');
-    const roomy = validateCoachResponse(base({ answer: long, spoken: long }), {
+    expect(checked.response.spoken).toBe("I'm good, thanks for asking.");
+    expect(checked.response.answer).toBe("I'm good, thanks for asking.");
+    const statement = 'Set the pilot up by Friday and agree what result moves it to a paid contract.';
+    const plain = validateCoachResponse(base({ answer: statement, spoken: statement }), {
       ...opts(),
       channel: 'voice',
-      founderText: 'What should we check?',
-      handBack: 'What do you think?',
+      founderText: 'How do we get the first ten users?',
     });
-    expect(roomy.response.spoken?.split(/\s+/).length).toBeLessThanOrEqual(70);
-    expect(roomy.response.spoken?.endsWith('What do you think?')).toBe(true);
+    expect(plain.response.spoken).toBe(statement);
+    expect(plain.response.answer).toBe(statement);
+    // The name is not said on the reply right after one that said it, nor a stock thanks for "great".
+    const next = validateCoachResponse(
+      base({
+        answer:
+          "Thanks, Amara. What's the single thing your customers would pay for, and who signs the cheque?",
+        spoken:
+          "Thanks, Amara. What's the single thing your customers would pay for, and who signs the cheque?",
+      }),
+      {
+        ...opts(),
+        channel: 'voice',
+        founderText: 'great',
+        founderName: 'Amara',
+        previousReply: "Thanks, Amara. I'm good, thanks for asking.",
+      },
+    );
+    expect(next.response.spoken).toBe(
+      "What's the single thing your customers would pay for, and who signs the cheque?",
+    );
   });
 });
 

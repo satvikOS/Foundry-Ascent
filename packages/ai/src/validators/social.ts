@@ -1,10 +1,4 @@
-import {
-  contentWords,
-  founderMoves,
-  socialTurnOf,
-  wrapUpOf,
-  type SocialTurn,
-} from '../prompts/conversation-state.js';
+import { contentWords, founderMoves, type SocialTurn } from '../prompts/conversation-state.js';
 import { sentenceSpans } from './meta-narration.js';
 
 /**
@@ -15,8 +9,10 @@ import { sentenceSpans } from './meta-narration.js';
  *   turn (thanks, a wrap-up, a hello: `socialTurnOf`) gets a short reply ({@link SOCIAL_BUDGETS}: whole sentences
  *   within a few words), a wrap-up asks nothing new, and its structured response carries nothing to cite, plan or
  *   remember (`social_turn_report` x4: "Okay, thanks, that's helpful. Talk soon." still came with next steps).
- * - `spoken_no_handback` x6: a spoken reply that ends on a statement leaves the founder waiting; it ends by handing the
- *   turn back ({@link endsWithHandBack}, {@link spokenHandBack}) unless the founder is wrapping up.
+ * - A spoken reply is never given a stock hand-back ("What do you think?") after it: production, 2026-11-06, "hows
+ *   your personal life going" got "I'm good, thanks for asking. What do you think?", a question that followed from
+ *   nothing. A complete answer may end without a question (prompts/craft.ts `SPOKEN_REGISTER`); the call shows the
+ *   founder it is listening once the reply ends.
  * - `repeated_reply` x3, LAB-M3, LAB-M10: a reply that says the previous one again. Its sentences that mostly repeat
  *   the previous reply (four-word sequences, as the evals measure) are left out ({@link withoutRepeats}), unless
  *   the founder asked to hear it again ({@link asksToRepeat}).
@@ -368,71 +364,4 @@ export function withoutAgendaPush(text: string): { readonly text: string; readon
       .trim(),
     dropped: pushed.length,
   };
-}
-
-/** How a spoken reply hands the turn back without a question ("Tell me how that sits with you."). */
-const INVITATION =
-  /^(?:tell me|walk me through|your turn|go ahead|over to you|let me know|say more|talk me through|what do you think|keep going|let's hear|i'd love to hear|try it and tell me)\b/i;
-
-/** Whether a spoken reply ends by handing the turn back: its last sentence asks, or invites them to talk. */
-export function endsWithHandBack(spoken: string): boolean {
-  const sentences = sentencesOf(spoken.trim());
-  const last = sentences.at(-1) ?? '';
-  return /\?["'”’)\]*_]*$/.test(last) || INVITATION.test(last.replace(/^[^\p{L}]+/u, ''));
-}
-
-/**
- * Short hand-backs (four words at most: the call's spoken budget keeps room for one) said after a spoken reply that
- * ended on a statement: varied by turn, and never one the conversation already heard (the evals' `repeated_question`
- * flags an exact repeat anywhere in a conversation; two fixed lines repeated on any call of three or more such
- * replies).
- */
-export const SPOKEN_HAND_BACKS = [
-  // "How does that sound?" and "Sound right to you?" are gone: the brief names repeated "How does that sound?" endings.
-  'What do you think?',
-  'Does that fit?',
-  'Want to try that?',
-  "Anything you'd change?",
-  "What's your gut?",
-  'Does that feel doable?',
-  'Where would you start?',
-  'Which part first?',
-  'Does that match?',
-  'Shall we try it?',
-] as const;
-/** Hand-backs after a reply to someone who sounds stressed or discouraged: about them, not the plan. */
-export const STRESSED_HAND_BACKS = [
-  'What would help most right now?',
-  'How are you holding up?',
-  'What feels heaviest right now?',
-  'Want to take it one piece at a time?',
-  'What would make this week lighter?',
-] as const;
-
-function plainLine(text: string): string {
-  return text.replace(/[‘’ʼ]/g, "'").replace(/\s+/g, ' ').toLowerCase();
-}
-
-/**
- * The hand-back of a call's turn (see the module comment): none when the founder is only being social or wrapping
- * up; one about what would help when they sound stressed ({@link STRESSED_HAND_BACKS}); else one of
- * {@link SPOKEN_HAND_BACKS}. Chosen by `seed` (the turn's id) among those the conversation has not heard yet
- * (`earlier`: the replies in view, and the opener): null once every one was said.
- */
-export function spokenHandBackFor(
-  founderText: string,
-  seed: string,
-  earlier: readonly (string | null | undefined)[] = [],
-): string | null {
-  const moves = founderMoves(founderText);
-  // Live pilot 42099643194 (calls): a hand-back followed a goodbye, and every "got it, I'll do X" got one.
-  if (socialTurnOf(founderText) !== null || moves.includes('closing') || wrapUpOf(founderText, moves))
-    return null;
-  const pool: readonly string[] = moves.includes('stress') ? STRESSED_HAND_BACKS : SPOKEN_HAND_BACKS;
-  const heard = earlier.map((text) => plainLine(text ?? '')).join('\n');
-  const fresh = pool.filter((line) => !heard.includes(plainLine(line)));
-  if (fresh.length === 0) return null;
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  return fresh[hash % fresh.length] ?? null;
 }
