@@ -277,7 +277,7 @@ export function buildContinuityBlock(
   const profile = section(
     'founder_profile',
     entries(
-      nb?.founderProfile?.filter((e) => !isJudgmentalNote(e.text)),
+      nb?.founderProfile.filter((e) => !isJudgmentalNote(e.text)),
       MAX_ENTRIES.founderProfile,
     ),
   );
