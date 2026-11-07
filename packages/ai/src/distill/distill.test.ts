@@ -1392,8 +1392,26 @@ describe('no verdict on the founder and no pressure in the notes (production, 20
       'Does not like long answers',
       'Thinks in terms of shipping the product',
       'Likes to see the arithmetic',
+      // Boundaries and preferences they stated (review of the 2026-11-07 fix).
+      'Does not want to share revenue figures yet',
+      "Won't commit to dates until the board meets",
+      "Can't focus on calls longer than 20 minutes; prefers short calls",
     ]) {
       expect(isJudgmentalNote(note), note).toBe(false);
+    }
+  });
+
+  it('reads the same verdict however it is put', () => {
+    for (const note of [
+      'Gives non-specific answers about what advisors said',
+      'Struggles with specifics',
+      'Needs repeated prompting to give concrete details',
+      'Has not followed up with the advisor despite committing to it',
+      'Rarely comes prepared',
+      'Tends to summarise expert sessions without specifics',
+      'Summarises vaguely when pressed',
+    ]) {
+      expect(isJudgmentalNote(note), note).toBe(true);
     }
   });
 
@@ -1432,6 +1450,24 @@ describe('no verdict on the founder and no pressure in the notes (production, 20
     expect(withoutPressure('These unknowns cannot wait. The founder met an advisor.')).toBe(
       'The founder met an advisor.',
     );
+    // A sentence that is pressure all through keeps what it says besides it.
+    expect(
+      withoutPressure(
+        'Device class and reimbursement unknowns block the go-to-market strategy and cannot wait.',
+      ),
+    ).toBe('Device class and reimbursement unknowns.');
+    expect(withoutPressure('Time-sensitive: confirm the device class.')).toBe('Confirm the device class.');
+    // A fact that only uses such a word is no pressure (review of the 2026-11-07 fix).
+    for (const fact of [
+      'Critical care units are a second market.',
+      'Overdue invoices from pilots are a cash risk.',
+      'Pilot with the clinic starts immediately after clearance.',
+      'Founder wants to launch right away in two clinics.',
+      'Critical path: device class then reimbursement code.',
+      "The team can't wait to launch.",
+    ]) {
+      expect(withoutPressure(fact), fact).toBe(fact);
+    }
     const d = draft();
     d.digest.summary = 'Maya asked how to price the pilot. The open questions are urgent and cannot wait.';
     d.digest.open_questions = ['Who holds the budget? This cannot wait.'];
@@ -1548,6 +1584,14 @@ describe('an opener written from the notebook alone (production, 2026-11-07)', (
     expect(line('Good to see you. Want me to walk you through the device class follow-up?')).not.toBeNull();
     expect(offersHelp('Shall we draft the questions for the advisor?')).toBe(true);
     expect(offersHelp('Did the advisor say?')).toBe(false);
+    // A help word is no offer, and an offer followed by a bare question still ends on the question (review of the
+    // 2026-11-07 fix).
+    expect(line('Welcome back. Did the advisor help you settle the device class?')).toBeNull();
+    expect(line('Hi again. Did the device class question go through with the advisor?')).toBeNull();
+    expect(offersHelp('Did the advisor help you pin down the device class?')).toBe(false);
+    expect(offersHelp('I can help you prep the advisor follow-up. Did they reply yet?')).toBe(false);
+    expect(offersHelp('Good to see you. Want help to interview five library staff?')).toBe(true);
+    expect(offersHelp('Good to see you. Happy to help you act on this: ask for a deposit.')).toBe(true);
   });
 
   it('drops small talk, a line that names no thread, another venture and what a person removed', () => {

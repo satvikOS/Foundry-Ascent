@@ -1600,10 +1600,12 @@ describe('how a new conversation opens', () => {
       h.gateway.calls.filter((c) => c.kind === 'generate' && c.schemaName === 'NotebookOpener').length;
     const before = asked();
     // The preview New chat fetches (on a link's hover too) writes nothing and calls no model: it says the line is
-    // missing.
+    // missing, and meanwhile offers help with the newest open thread in the notebook's own words.
     const hovered = await h.core.sessions.previewOpener(maya, quietquad());
     expect(hovered.missing).toBe(true);
-    expect(hovered.opener ?? '').not.toMatch(/facilities office/);
+    expect(hovered.opener ?? '').toMatch(
+      /^(?:Good to see you again|Welcome back|Good to have you back|Nice to hear from you again|Great to see you|Hello again|Nice to see you|Good to hear from you)\. (?:I can help you prepare the next step on this|Happy to walk you through this one|Let me help you get ready for this): Follow up with the facilities office on who owns the pilot budget\.$/,
+    );
     expect(asked()).toBe(before);
     // New chat, once open, has it written from the notebook's own lines (never the founder's words): the live thread,
     // and an offer of help; the conversation then opens with it.
@@ -1640,7 +1642,7 @@ describe('how a new conversation opens', () => {
     h.jobQueue.drain();
     await h.core.sessions.remove(maya, conversation.id);
     // A call that starts a conversation created without an opener (New chat greeted without one) never waits for a
-    // line: it opens with the greeting that names nothing and offers help, and the model writes the line for the next
+    // line: it opens with the offer of help with the newest open thread, and the model writes the line for the next
     // start, once.
     await h.t.db.system(async (sx) => {
       const current = await notebooksRepo.getNotebook(sx, key);
@@ -1658,8 +1660,9 @@ describe('how a new conversation opens', () => {
     const silent = await h.core.sessions.create(maya, quietquad(), { openerShownAt: null });
     expect(silent.opener).toBeNull();
     const ringing = await startCall(maya, silent.id);
-    expect(ringing.intro?.text ?? '').not.toMatch(/facilities office|most pressing/);
-    expect(ringing.intro?.text ?? '').toMatch(/help|walk you through|hand|prep/);
+    expect(ringing.intro?.text ?? '').toMatch(/facilities office/);
+    expect(ringing.intro?.text ?? '').toMatch(/help|walk you through/);
+    expect(ringing.intro?.text ?? '').not.toMatch(/most pressing/);
     expect(asked()).toBe(before + 2);
     await h.core.calls.end(maya, ringing.call.id, { reason: 'user' });
     h.jobQueue.drain();

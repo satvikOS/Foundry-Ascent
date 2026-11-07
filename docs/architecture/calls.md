@@ -234,8 +234,10 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
   nothing and offers help, varied from call to call ("Hi Maya, what can I help you prepare for?"; "…what can I help
   you with next?" on a conversation under way). With a thread open in the notebook, the line is written ahead (at
   distillation, or by New chat as it opens: knowledge-pools.md, "A notebook with open threads always gets a line"); a
-  call never waits for the writer, and one that starts with the line missing has it written after the response, for
-  the next start (one attempt per notebook version and conversation).
+  call never waits for the writer, and one that starts with the line missing offers help with the notebook's newest
+  open thread in the notebook's own words ("Good to see you again. I can help you prepare the next step on this:
+  follow up with the advisor on the device class."; `threadOffer`, once the notebook holds the latest conversation)
+  and has the line written after the response, for the next start (one attempt per notebook version and conversation).
   The founder's name is said in a greeting one reply in four at most, as in every reply (`greetedName`, read from the
   vEIR's latest replies to them: this conversation's, or the end of the last ones), never twice in one line (a model
   line that names them already, after its greeting's comma or later, is said as written), and a model line that calls

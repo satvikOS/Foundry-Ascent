@@ -18,7 +18,7 @@ from typing import Any
 from conversation_lab.live.dataset import DIMENSIONS, Scenario
 from conversation_lab.live.student import BACKOFF_SECONDS, MODEL_RETRIES, TRANSIENT_MODEL_ERRORS
 
-JUDGE_PROMPT_VERSION = "live-judge/2026-11-05.3"
+JUDGE_PROMPT_VERSION = "live-judge/2026-11-07.1"
 MAX_TOKENS = 1400
 #: Dimensions that may be "not applicable" (null) for a scenario: no remembered context to use, nothing went wrong
 #: that needed recovering, no voice call.
@@ -54,7 +54,8 @@ ANCHORS: dict[str, tuple[str, str, str]] = {
         "Names what the student is really trying to decide, including what was implied across turns.",
     ),
     "relevance_directness": (
-        "Opens with praise or a recap; buries the answer under questions or a framework.",
+        "Opens with praise or a recap; buries the answer under questions or a framework; meets a goal or a request "
+        "for help with questions only.",
         "Answers, but with padding or one unnecessary clarifying question.",
         "Leads with the answer when enough is known; asks only questions whose answer would change the advice.",
     ),
@@ -82,9 +83,11 @@ ANCHORS: dict[str, tuple[str, str, str]] = {
         "says honestly when it does not have something. Null if there was no remembered context to use.",
     ),
     "non_redundancy": (
-        "Repeats questions already answered or the same advice turn after turn; stock phrases recur.",
+        "Repeats questions already answered, or asks again in any words one the student said they could not "
+        "answer; the same advice turn after turn; stock phrases recur.",
         "One repeated point or phrase.",
-        "Never re-asks what was answered; builds on earlier turns; repetition only when the student asks.",
+        "Never re-asks what was answered, nor what the student said they do not know (it teaches the likely answer "
+        "and the fastest way to find out instead); builds on earlier turns; repetition only when the student asks.",
     ),
     "natural_flow": (
         "Robotic: canned openers, 'How does that sound?' endings, lists in conversation, narrates its process.",

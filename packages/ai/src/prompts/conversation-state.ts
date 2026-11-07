@@ -23,6 +23,7 @@ export type FounderMove =
   | 'resume'
   | 'topic_shift'
   | 'repair'
+  | 'clarify'
   | 'closing'
   | 'thanks'
   | 'stress'
@@ -154,6 +155,12 @@ export interface ConversationState {
    */
   readonly onlyNoAnswer?: boolean;
   /**
+   * The message has no answer (the `unknown` or `help` move) to the vEIR's check-in on the founder themselves: how they
+   * are, or who can support them ({@link SUPPORT_CHECK_IN}), or a question of a reply that escalated for wellbeing. No
+   * lesson in its place and no "never ask it again": the vEIR stays with them.
+   */
+  readonly answersCheckIn?: boolean;
+  /**
    * The vEIR's own phrasing lately (coaching v3): question forms and openings it used twice or more in this
    * conversation, or at the end of its last conversations (prompts/phrasing.ts). Absent: none.
    */
@@ -179,8 +186,43 @@ const OPENING_WORDS = 6;
 
 const APOSTROPHES = /[‘’ʼ]/g;
 
+/**
+ * Contractions typed without their apostrophe, and the slip "ddint", with the apostrophe put back: every cue then
+ * reads one spelling (production, 2026-11-07: the founder typed "i ddint do that" and "i dont know", and only the
+ * second was heard as having no answer).
+ */
+const BARE_CONTRACTIONS = new Map([
+  ['dont', "don't"],
+  ['didnt', "didn't"],
+  ['ddint', "didn't"],
+  ['didint', "didn't"],
+  ['doesnt', "doesn't"],
+  ['havent', "haven't"],
+  ['hasnt', "hasn't"],
+  ['hadnt', "hadn't"],
+  ['couldnt', "couldn't"],
+  ['wouldnt', "wouldn't"],
+  ['shouldnt', "shouldn't"],
+  ['wasnt', "wasn't"],
+  ['werent', "weren't"],
+  ['isnt', "isn't"],
+  ['arent', "aren't"],
+  ['cant', "can't"],
+  ['wont', "won't"],
+  ['im', "i'm"],
+  ['ive', "i've"],
+  ['thats', "that's"],
+]);
+const BARE_CONTRACTION = new RegExp(String.raw`\b(?:${[...BARE_CONTRACTIONS.keys()].join('|')})\b`, 'g');
+
 function normalize(text: string): string {
-  return text.normalize('NFKC').replace(APOSTROPHES, "'").replace(/\s+/g, ' ').trim().toLowerCase();
+  return text
+    .normalize('NFKC')
+    .replace(APOSTROPHES, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(BARE_CONTRACTION, (word) => BARE_CONTRACTIONS.get(word) ?? word);
 }
 
 /** Cues for each move (on the normalised, lower-cased message), in order of importance. */
@@ -196,6 +238,11 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
   [
     'repair',
     /(?:\b(?:that's not what i (?:meant|said|asked|was asking)|that isn't what i (?:meant|said|asked)|you misunderstood|you misread|you got (?:that|it|me) wrong|i didn't (?:mean|say|ask) that|you (?:were|are) wrong|(?:that's|that is|that was) (?:not right|wrong|incorrect|not true|not correct)|you made a mistake|you said (?:something )?wrong|correction:)\b|^(?:no|nope|not quite|not exactly|sorry|wait)[,.!]?\s+(?:i|what i)\s+(?:meant|mean|was asking|asked|said)\b|^i meant\b)/,
+  ],
+  [
+    // "I'm not sure what you mean" asks for the question again, never an answer to it in its place.
+    'clarify',
+    /\b(?:(?:not sure|don't know|i don't understand|i didn't (?:get|understand|follow)|(?:i'm )?not following) what you (?:mean|meant|'re asking|are asking)|what do you mean)\b/,
   ],
   [
     'closing',
@@ -318,7 +365,7 @@ const HELP_REQUEST = new RegExp(
 
 /** A sentence that only says they don't know ("I don't know.", "idk", "No idea what to ask"). */
 const DONT_KNOW =
-  /^(?:(?:honestly|um+|uh+|well|that's the thing|thats the thing)[,.]? )*(?:i (?:really |honestly |just )?(?:don't|do not|dont) know|idk|dunno|no idea|not sure|i'm not sure|i have no idea|no clue)(?: (?:what|how|where|which)\b.*)?$/;
+  /^(?:(?:honestly|um+|uh+|well|that's the thing)[,.]? )*(?:(?:i )?(?:really |honestly |just )?(?:don't|do not) know|idk|dunno|no idea|not sure|i'm not sure|i have no idea|no clue)(?: (?!(?:what|how) (?:you (?:mean|meant)|you're asking|you are asking|that means)\b)(?:what|how|where|which)\b.*)?$/;
 
 /**
  * A clause that says the founder has no answer yet: they do not know, did not do it, it has not happened, nobody told
@@ -328,9 +375,11 @@ const DONT_KNOW =
  */
 const NO_ANSWER = new RegExp(
   [
-    String.raw`^(?:(?:no|nope|honestly|um+|uh+|well|sorry|so)[,.]? )*(?:i|we) (?:really |honestly |just |actually )?(?:didn't|did not|haven't|have not|never|couldn't|could not) (?:(?:really|actually|yet|even|get to|got to|manage to|managed to|get around to|got around to) )*(?:do|done|did|ask|asked|book|booked|call|called|talk|talked|speak|spoke|try|tried|hear|heard|check|checked|look|looked|follow|followed|reach|reached|find|found|meet|met|write|wrote|written|send|sent)\b(?:(?: (?:that|it|this|them|him|her|one|anything|up|out|back|yet|either|so far|to (?:them|him|her|anyone)))*$|\b.* yet$)`,
+    String.raw`^(?:(?:no|nope|honestly|um+|uh+|well|sorry|so)[,.]? )*(?:(?:i|we) )?(?:really |honestly |just |actually )?(?:didn't|did not|haven't|have not|never|couldn't|could not) (?:(?:really|actually|yet|even|get to|got to|manage to|managed to|get around to|got around to) )*(?:do|done|did|ask|asked|book|booked|call|called|talk|talked|speak|spoke|try|tried|hear|heard|check|checked|look|looked|follow|followed|reach|reached|find|found|meet|met|write|wrote|written|send|sent|discuss|discussed|cover|covered|raise|raised|mention|mentioned|go over|went over|gone over)\b(?:(?: (?:that|it|this|them|him|her|one|anything|up|out|back|yet|either|so far|to (?:them|him|her|anyone)|about (?:that|it|this|them)))*$|\b.* yet$)`,
+    String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:(?:i|we) )?(?:didn't|did not|haven't|have not|never) (?:get|got|gotten|have|had) (?:a |the )?(?:chance|time|opportunity)\b(?: to\b.*)?$`,
+    String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:it|that|this|the (?:topic|subject|question)) (?:didn't|did not|never|hasn't|has not) (?:really )?(?:come|came) up(?: (?:yet|at all))?$`,
     String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:i|we) (?:didn't|did not|haven't|have not|never) (?:get|got|gotten) (?:around )?to (?:it|that|this|them)$`,
-    String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:i|we) (?:didn't|did not|haven't|have not|never) (?:get|got|gotten) (?:that|this|so) far$`,
+    String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:i|we) (?:didn't|did not|haven't|have not|never) (?:get|got|gotten) (?:(?:that|this|so) far|there)(?: yet)?$`,
     String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:i|we) (?:didn't|did not|haven't|have not)(?: yet)?$`,
     String.raw`^(?:(?:no|nope|honestly|well|sorry|so|oh)[,.]? )*(?:i|we) (?:forgot|forget) (?:to (?:ask|check|mention|raise it|bring it up|follow up)(?: (?:that|it|this|them|about (?:that|it|this)))?)?$`,
     String.raw`^(?:(?:no|nope|well|so)[,.]? )*(?:not yet|nothing yet|not so far|no clue|no idea|not really sure|no one (?:told|said|mentioned|explained)|nobody (?:told|said|mentioned|explained))\b`,
@@ -364,6 +413,19 @@ function hasNoAnswer(text: string): boolean {
 }
 
 /**
+ * Whether `text` only says the founder has no answer ({@link hasNoAnswer}): no subject of its own besides it and no
+ * change of topic ("I didn't do that", "no idea"; "Not yet, but can we work on the pitch deck" moves on).
+ */
+export function saysOnlyNoAnswer(text: string): boolean {
+  const moves = founderMoves(text);
+  return (
+    moves.includes('unknown') &&
+    !moves.includes('topic_shift') &&
+    contentWords(besidesNoAnswer(text)).size < 2
+  );
+}
+
+/**
  * The founder's message without its clauses that say they have no answer ({@link hasNoAnswer}): what else it brings
  * ("Not yet. Can we work on my pitch deck instead" brings the pitch deck). '' when it says nothing else.
  */
@@ -393,6 +455,14 @@ const GOAL = new RegExp(
     String.raw`\b(?:prepar(?:e|ing) for|get(?:ting)? ready for)\b`,
   ].join('|'),
 );
+
+/**
+ * A check-in on the founder themselves: how they are, whether they are safe, who can support them (asked after a
+ * wellbeing escalation). "Not really sure" or "I didn't do that" after it is no gap in their venture knowledge to teach
+ * into, and asking after them again is no re-ask to leave out (validators/social.ts `isProtectedLine`).
+ */
+export const SUPPORT_CHECK_IN =
+  /\b(?:someone (?:close to you|you trust|you can (?:talk|turn|reach out) to)|(?:a )?support (?:service|line|network|group|person)|(?:a )?friends? or (?:a )?family|family or (?:a )?friends?|talk to (?:a friend|family|someone)|how (?:are|have) you (?:been )?(?:feeling|holding up|coping|sleeping))\b|\bare you (?:ok|okay|safe|alright|all right)(?=\s*(?:[?.!]|$))/i;
 
 /** Whether `text` hands the work to the vEIR or says the founder is stuck ({@link HELP_REQUEST}, {@link DONT_KNOW}). */
 function asksForHelp(text: string): boolean {
@@ -880,6 +950,39 @@ const STOPWORDS = new Set(
   ).split(' '),
 );
 
+/**
+ * Words that name one subject, by their stems (production, 2026-11-07: "what class the device falls into and how clinics
+ * would pay" came back as "which classification it gets and which billing code clinics would use", and "the regulatory
+ * path" as "your regulatory pathway"). The lab reads the same subjects (ops/lab live/checks.py `_SUBJECTS`).
+ */
+const SUBJECTS: readonly (readonly [RegExp, string])[] = [
+  [/^(?:class|classif\w*|categor\w*)$/, 'class'],
+  [/^(?:pay|paid|payment|payer|bill\w*|reimburs\w*|cover\w*|insur\w*|cod|cpt)$/, 'pay'],
+  [/^(?:advis|advis[eo]r|mentor)$/, 'advisor'],
+  [/^(?:regulat\w*|fda|clearanc|pathway|path)$/, 'regulatory'],
+  [/^(?:pric|price|cost|charg|fee)$/, 'price'],
+  [/^(?:customer|client|buyer)$/, 'customer'],
+  [/^(?:approv\w*|sign-?off)$/, 'approve'],
+];
+
+/** The subjects {@link subjectOf} names. */
+export const SUBJECT_NAMES: ReadonlySet<string> = new Set(SUBJECTS.map(([, subject]) => subject));
+
+/** The subject a content word (as {@link contentWords} cuts it) names, or null ({@link SUBJECTS}). */
+export function subjectOf(word: string): string | null {
+  return SUBJECTS.find(([pattern]) => pattern.test(word))?.[1] ?? null;
+}
+
+/** The subjects `text` names ({@link subjectOf}). */
+export function subjectsOf(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const word of contentWords(text)) {
+    const subject = subjectOf(word);
+    if (subject !== null) out.add(subject);
+  }
+  return out;
+}
+
 function suffixless(word: string): string {
   if (word.length > 5 && word.endsWith('ing')) return word.slice(0, -3);
   if (word.length > 4 && word.endsWith('ies')) return `${word.slice(0, -3)}y`;
@@ -1218,19 +1321,25 @@ export function deriveConversationState(
     !moves.includes('unknown') &&
     socialTurnOf(founderText) === null &&
     substantive(founderText, moves);
+  const wrapUp = wrapUpOf(founderText, moves);
+  const social = socialTurnOf(founderText);
+  const answersCheckIn =
+    lastAsked !== null &&
+    (moves.includes('unknown') || moves.includes('help')) &&
+    (SUPPORT_CHECK_IN.test(lastAsked) || (!afterOpener && turns.at(-1)?.escalated === 'safety_wellbeing'));
   const prev: Thread | null = previous;
   const open = parked.filter((p) => p !== current).slice(0, MAX_PARKED);
   const said = [...turns.map((t) => t.answer ?? ''), opener].join('\n').replace(/[‘’ʼ]/g, "'").toLowerCase();
   const usedPhrases = OVERUSED_PHRASES.filter((phrase) => said.includes(phrase));
   return {
     moves,
-    social: socialTurnOf(founderText),
+    social,
     directChoice: directChoiceOf(founderText),
     asksForNumber: asksForNumber(founderText),
     reportsDone: reportsCommitmentDone(founderText),
     told,
     preferences,
-    wrapUp: wrapUpOf(founderText, moves),
+    wrapUp,
     aboutOthers: aboutOthersOf(founderText),
     escalatedEarlier,
     usedPhrases,
@@ -1246,11 +1355,10 @@ export function deriveConversationState(
     openQuestion: lastAsked !== null && !takesUp(lastAsked, founderText, moves),
     earlierTurns: turns.length,
     afterOpener,
-    goal: moves.includes('goal') || namesWork,
-    onlyNoAnswer:
-      moves.includes('unknown') &&
-      !moves.includes('topic_shift') &&
-      contentWords(besidesNoAnswer(founderText)).size < 2,
+    // "Thanks, I'll go prepare for the pitch now, bye!" signs off: the plan they name is no goal to teach into.
+    goal: (moves.includes('goal') || namesWork) && !wrapUp && !moves.includes('closing') && social === null,
+    onlyNoAnswer: !answersCheckIn && saysOnlyNoAnswer(founderText),
+    ...(answersCheckIn ? { answersCheckIn } : {}),
     inRoleReplies,
     duplicate,
     adviceGiven: adviceGiven.slice(-MAX_ADVICE),
@@ -1281,6 +1389,7 @@ const MOVE_LABELS: Readonly<Record<FounderMove, string>> = {
   recall: 'asks what you remember from before',
   resume: 'wants to go back to an earlier thread',
   repair: 'corrects how you understood them',
+  clarify: 'did not follow what you asked',
   closing: 'is wrapping up',
   thanks: 'thanks you',
   topic_shift: 'changes the topic',
@@ -1309,6 +1418,7 @@ const NOTABLE: ReadonlySet<FounderMove> = new Set([
   'recall',
   'resume',
   'repair',
+  'clarify',
   'closing',
   'thanks',
   'topic_shift',
@@ -1430,7 +1540,18 @@ export function renderConversationState(state: ConversationState): string {
       '  with at most one short question, unless they already asked you something. If neither says which, ask that.',
     );
   }
-  if (state.moves.includes('help')) {
+  if (state.moves.includes('clarify')) {
+    lines.push(
+      '- They did not follow what you asked: say it again more plainly, in fewer words, with an example of the kind of',
+      '  answer you mean. Never answer it for them in its place.',
+    );
+  }
+  if (state.answersCheckIn === true) {
+    lines.push(
+      '- They have no answer to your check-in on them, and that is fine: stay with them in a few warm, plain words, name',
+      '  one or two places they could turn to, and never press them for an answer or answer it for them.',
+    );
+  } else if (state.moves.includes('help')) {
     lines.push(
       '- They want you to do it, or they are stuck: do the work in this reply. Give the thing itself, specific to their',
       '  venture (a draft, concrete options or questions, an example, the first steps), then at most a short check that',
@@ -1446,14 +1567,15 @@ export function renderConversationState(state: ConversationState): string {
     }
   }
   // Production, 2026-11-07: "I didn't do that" and "I don't know" were met by the question they had just said they could
-  // not answer, two replies later and in other words.
-  if (state.moves.includes('unknown') && state.onlyNoAnswer !== true) {
+  // not answer, two replies later and in other words. A check-in on them is never answered for them (above).
+  const unknown = state.moves.includes('unknown') && state.answersCheckIn !== true;
+  if (unknown && state.onlyNoAnswer !== true) {
     // "Not yet, but I want to talk about hiring": they moved on, and the reply goes with them.
     lines.push(
       '- They have no answer to that yet and move on to something of their own: answer what they bring now. Never ask',
       '  the earlier question again, in any words.',
     );
-  } else if (state.moves.includes('unknown')) {
+  } else if (unknown) {
     lines.push(
       '- They do not know, have not done it or have no answer yet, and that is fine. Never ask it again, in any words.',
       '  Acknowledge it in a few plain words, without judgement; then say what the answer most likely is or how it',

@@ -83,6 +83,22 @@
         }
       ],
       "expect": "The vEIR explains how clearance of a monitoring device usually works and what the founder can do first. When the founder says nobody told them the class, it never asks about the class again in any words; it says what the class most likely is for such a device, hedged, and how to find out fast. When the founder moves to the pitch for clinic buyers, the vEIR goes with them and never steers back to the advisor or the class; it teaches who usually signs a clinic's purchase order and drafts the pitch's opening."
+    },
+    {
+      "id": "AG-6",
+      "title": "no answer typed without apostrophes, twice (second review of the 2026-11-07 fix)",
+      "turns": [
+        { "say": "getting the sleeve to market", "topic": "agenda", "help": true },
+        { "say": "i didnt do that", "topic": "agenda", "unknown": true },
+        { "say": "it didn't come up", "topic": "agenda", "unknown": true },
+        {
+          "say": "i dont know, can you just help me prepare",
+          "topic": "agenda",
+          "help": true,
+          "unknown": true
+        }
+      ],
+      "expect": "The vEIR opens on the advisor follow-up with an offer of help and teaches the usual path to market for a monitoring device. After each no-answer it never asks about the advisor, the device class, how clinics pay or the regulatory path again in any words; it says what the answer most likely is, hedged, and the fastest way to find out, then drafts the questions for the advisor and a short plan when asked."
     }
   ]
 }

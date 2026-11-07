@@ -279,17 +279,29 @@ export function isPersonalOpener(text: string): boolean {
   return PERSONAL_OPENER.test(text.replace(/[‘’ʼ]/g, "'"));
 }
 
-/** An offer of concrete help in an opener: to walk them through it, prepare or draft it with them, get them ready. */
-const HELP_OFFER =
-  /\b(?:help|prepare|prep|walk (?:you )?through|draft|get (?:you |it |that )?ready|work through|go through|run through|put together|map out|sketch out|lay out|rehearse|practi[sc]e)\b/i;
+/** What an opener offers to do with the thread: walk them through it, prepare or draft it with them, get them ready. */
+const HELP_VERB = String.raw`(?:help|prepare|prep|walk (?:you )?through|draft|get (?:you |it |that )?ready|work through|go through|run through|put together|map out|sketch out|lay out|rehearse|practi[sc]e)`;
+/** Who offers it: the vEIR in the first person, or a "want…?" put to the founder ("Want help to…?", "Shall we…?"). */
+const OFFER_FRAME = String.raw`(?:i can|i could|i'll|i will|i'd (?:like|love|be (?:glad|happy)) to|let me|let's|lets|we can|we could|shall (?:i|we)|should (?:i|we)|(?:do you |would you )?(?:want|like) (?:me|us) to|(?:do you )?want|would you like|(?:happy|glad|ready|here) to|how about (?:i|we))`;
+/** An offer of concrete help: a frame of {@link OFFER_FRAME} with a {@link HELP_VERB} within a few words of it. */
+const HELP_OFFER = new RegExp(String.raw`\b${OFFER_FRAME}\b(?:\s+[\w'-]+){0,4}?\s+${HELP_VERB}\b`, 'i');
 
 /**
- * Whether a model-written next opener offers concrete help with its thread ({@link HELP_OFFER}). A line that only asks
- * about it ("Did the advisor ever get back to you on the device class?") is the question the owner rejected as the first
- * thing said (production, 2026-11-07), and is not kept. The lab reads the same (ops/lab agenda.py `OPENER_HELP`).
+ * Whether a model-written next opener offers concrete help with its thread ({@link HELP_OFFER}), and does not end on a
+ * question that offers none. A line that only asks about it ("Did the advisor ever get back to you on the device
+ * class?", "Did the advisor help you settle the device class?": a help word is no offer) is the question the owner
+ * rejected as the first thing said (production, 2026-11-07), and is not kept. The lab reads the same (ops/lab agenda.py
+ * `offers_help`).
  */
 export function offersHelp(opener: string): boolean {
-  return HELP_OFFER.test(opener);
+  const text = opener.replace(/[‘’ʼ]/g, "'");
+  if (!HELP_OFFER.test(text)) return false;
+  const last =
+    text
+      .trim()
+      .split(/(?<=[.!?])\s+/)
+      .at(-1) ?? '';
+  return !last.endsWith('?') || HELP_OFFER.test(last);
 }
 
 /**

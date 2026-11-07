@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { expectLinearTime } from '../testing/linear-time.js';
+import { stuckOn } from '../validators/social.js';
 import {
   GIST_CHARS,
   MAX_PARKED,
@@ -14,6 +15,7 @@ import {
   renderConversationState,
   reportsCommitmentDone,
   stripLinks,
+  SUPPORT_CHECK_IN,
   type FounderMove,
 } from './conversation-state.js';
 import { buildMessages } from './messages.js';
@@ -485,6 +487,79 @@ describe('a founder with no answer, and a goal ahead of them (production, 2026-1
     expect(deriveConversationState(history, text).onlyNoAnswer).toBe(true);
   });
 
+  // Typed without apostrophes, or said the way people say they did not get to it (review of the 2026-11-07 fix: the
+  // owner typed "i ddint do that" and "i dont know").
+  it.each([
+    'i didnt do that',
+    'i ddint do that',
+    'i didnt',
+    'i havent',
+    'i havent done that',
+    'no i didnt',
+    'no i havent',
+    'didnt do it',
+    'i didnt ask',
+    'i didnt get to it',
+    'dont know',
+    'i dont know',
+    'I havent asked yet',
+    "we haven't gotten there",
+    "haven't done it yet",
+    "I didn't ask about that",
+    "we didn't discuss it",
+    "it didn't come up",
+    "I didn't get a chance",
+    "I didn't have time",
+    "no, we didn't talk about that",
+  ])('hears %j as no answer yet, typed or said however', (text) => {
+    expect(founderMoves(text)).toContain('unknown');
+    expect(stuckOn(text)).toBe(true);
+    const state = deriveConversationState(history, text);
+    expect(state.onlyNoAnswer).toBe(true);
+    expect(renderConversationState(state)).toContain('Never ask it again, in any words.');
+  });
+
+  it('asks the question again more plainly when they did not follow it, never answers it for them', () => {
+    for (const text of [
+      "i'm not sure what you mean",
+      "I don't know what you mean",
+      'not following what you are asking',
+    ]) {
+      const moves = founderMoves(text);
+      expect(moves, text).toContain('clarify');
+      expect(moves, text).not.toContain('unknown');
+      expect(moves, text).not.toContain('help');
+      const block = renderConversationState(deriveConversationState(history, text));
+      expect(block).toContain('say it again more plainly');
+      expect(block).not.toContain('answer it yourself');
+    }
+  });
+
+  it('stays with them when they have no answer to a check-in on them, never answers it for them', () => {
+    const checkIn = [
+      {
+        founderText: 'Everything is falling apart and I cannot sleep.',
+        answer:
+          'That sounds really heavy, and I am glad you said it. Is there someone close to you or a support service you can talk to today?',
+        escalated: 'safety_wellbeing',
+      },
+    ];
+    for (const text of ['not really sure', "I didn't do that", "I don't know"]) {
+      const state = deriveConversationState(checkIn, text);
+      expect(state.answersCheckIn, text).toBe(true);
+      expect(state.onlyNoAnswer, text).toBe(false);
+      const block = renderConversationState(state);
+      expect(block).toContain('no answer to your check-in on them');
+      expect(block).not.toContain('Never ask it again');
+      expect(block).not.toContain('answer it yourself');
+      expect(stuckOn(text, checkIn[0]?.answer)).toBe(false);
+    }
+    // A question about the venture that happens to ask whether they are fine with something is no check-in.
+    expect(SUPPORT_CHECK_IN.test('Are you OK with charging a deposit?')).toBe(false);
+    expect(SUPPORT_CHECK_IN.test('Are you okay?')).toBe(true);
+    expect(stuckOn("I don't know", 'Are you OK with charging a deposit?')).toBe(true);
+  });
+
   it.each([
     "I didn't think the price was too high.",
     "We didn't get the grant, sadly.",
@@ -530,6 +605,15 @@ describe('a founder with no answer, and a goal ahead of them (production, 2026-1
     expect(block).toContain('names a goal or a step ahead of them');
     expect(block).toContain('teach and prepare. Most of the reply is how it usually works');
     expect(block).toContain('at most one question, after it.');
+  });
+
+  it.each([
+    "Thanks, that's all for today. I'll go prepare for the pitch now, bye!",
+    'Perfect, thanks! I need to get ready for the investor meeting, talk soon',
+  ])('signs off on %j: the plan they name is no goal to teach into', (text) => {
+    const state = deriveConversationState(history, text);
+    expect(state.goal).toBe(false);
+    expect(renderConversationState(state)).not.toContain('teach and prepare');
   });
 
   it.each([

@@ -551,7 +551,7 @@ export class SentenceGate {
     this.#question =
       options.founderText === undefined ? null : identityQuestionOf(options.founderText, this.#identity);
     this.#news = founderMoves(options.founderText ?? '').includes('news');
-    this.#stuck = stuckOn(options.founderText);
+    this.#stuck = stuckOn(options.founderText, options.previousReply);
     this.#life = options.founderText === undefined ? null : askedLifeFor(options.founderText, this.#identity);
     this.#keepReferrals = options.keepReferrals === true;
     this.#signOffWelcome = welcomesSignOff(options.founderText);

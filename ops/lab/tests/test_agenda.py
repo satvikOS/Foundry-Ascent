@@ -10,6 +10,7 @@ from conversation_lab.agenda import (
     check_reply,
     grade_conversation,
     load,
+    offers_help,
     run_channel,
     summarize,
 )
@@ -227,9 +228,16 @@ def test_the_runner_plays_remembered_conversations_in_order_and_ends_each() -> N
         reserve=reserved.append,
         sleep=slept.append,
     )
-    assert [r.id for r in results] == ["AG-1-call", "AG-2-call", "AG-3-call", "AG-4-call", "AG-5-call"]
-    assert client.ended == ["s1", "s2", "s3", "s4", "s5"]
-    assert client.calls_ended == ["c-s1", "c-s2", "c-s3", "c-s4", "c-s5"]
+    assert [r.id for r in results] == [
+        "AG-1-call",
+        "AG-2-call",
+        "AG-3-call",
+        "AG-4-call",
+        "AG-5-call",
+        "AG-6-call",
+    ]
+    assert client.ended == ["s1", "s2", "s3", "s4", "s5", "s6"]
+    assert client.calls_ended == ["c-s1", "c-s2", "c-s3", "c-s4", "c-s5", "c-s6"]
     assert reserved == [len(c["turns"]) for c in suite["conversations"]]
     assert slept  # waits for each conversation's distillation
     assert results[0].notebook_before == {
@@ -344,3 +352,15 @@ def test_the_owners_call_of_2026_11_07_no_answer_is_never_asked_again() -> None:
     helpful.turns = []
     grade_conversation(helpful, ag4)
     assert "opener:no_thread_or_help" not in helpful.failures
+
+
+def test_an_opener_with_a_help_word_and_no_offer_is_bare() -> None:
+    """The product's ``offersHelp``: a first-person offer, never a help word alone, and no closing question without one
+    (review of the 2026-11-07 fix)."""
+    assert offers_help(
+        "Good to see you. I can help you prepare the advisor follow-up on the sleeve's device class."
+    )
+    assert offers_help("Good to see you. Want help to interview five library staff?")
+    assert not offers_help("Welcome back. Did the advisor help you settle the device class?")
+    assert not offers_help("Hi again. Did the device class question go through with the advisor?")
+    assert not offers_help("I can help you prep the advisor follow-up. Did they reply yet?")

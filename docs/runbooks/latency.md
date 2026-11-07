@@ -712,8 +712,9 @@ round trips, retrieval, the face's pre-approval; the export carries no per-stage
 CloudWatch, §3, is the next read), and the rest is the time to finish the first sentence, which a call says whole or
 not at all. Each reply's first sentence was a long question (25–40 words, about 0.3–0.4 s of Haiku's output before the
 gate could release it); the spoken register now asks for a short first sentence that says something (policy
-`fa-coach-policy/2026-11-07.1`). A call's start never waits for the notebook's opener being written (it is written
-ahead, or after the response for the next start: knowledge-pools.md), so nothing new comes before the first word.
+`fa-coach-policy/2026-11-07.1`, current `fa-coach-policy/2026-11-07.3`). A call's start never waits for the notebook's
+opener being written (it is written ahead, or after the response for the next start, and meanwhile the call offers
+help with the notebook's newest open thread: knowledge-pools.md), so nothing new comes before the first word.
 Not explained yet: the 1.8–2.6 s before the model starts; the call's `turn.timing` lines (`acceptedMs`, `retrievalMs`,
 `promptMs`, `modelStartMs`, the prompt-cache token fields) are what would say which stage it is.
 

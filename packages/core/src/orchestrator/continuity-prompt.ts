@@ -115,6 +115,8 @@ export interface LeftOffThreads {
   readonly questions: readonly string[];
   /** Of them, the texts the vEIR already raised in this conversation: marked so, and not pushed again. */
   readonly raised?: readonly string[];
+  /** Of them, the texts a person wrote: shown as they wrote them (the model's are shown without pressure). */
+  readonly byPerson?: readonly string[];
 }
 
 const MINUTE = 60_000;
@@ -290,6 +292,7 @@ function renderConversation(
 function threadLines(threads: LeftOffThreads | null): string[] {
   if (threads === null) return [];
   const raised = new Set(threads.raised ?? []);
+  const byPerson = new Set(threads.byPerson ?? []);
   const note = (text: string): string => (raised.has(text) ? ` [${RAISED_NOTE}]` : '');
   const lines = [
     ...threads.commitments
@@ -300,7 +303,7 @@ function threadLines(threads: LeftOffThreads | null): string[] {
       ),
     ...threads.questions
       .slice(0, 3)
-      .map((q) => `- open question: ${line(withoutPressure(q), LINE_CHARS)}${note(q)}`),
+      .map((q) => `- open question: ${line(byPerson.has(q) ? q : withoutPressure(q), LINE_CHARS)}${note(q)}`),
   ];
   return lines.length === 0 ? [] : ['<open_threads>', ...lines, '</open_threads>'];
 }
@@ -432,6 +435,35 @@ export function plainOpeners(seed: string, met: boolean): string[] {
     const invitation =
       invitations[((h >>> 7) + k + Math.floor(k / greetings.length)) % invitations.length] ?? invitations[0];
     out.push(`${greeting ?? ''} ${invitation ?? ''}`.trim());
+  }
+  return [...new Set(out)];
+}
+
+/** Offers of help with one thread, before the notebook's own words for it ({@link threadOpeners}). */
+const THREAD_OFFERS = [
+  'I can help you prepare the next step on this:',
+  'Happy to walk you through this one:',
+  'Let me help you get ready for this:',
+];
+
+/**
+ * Opening lines that greet and offer help with one thread of the notebook (`thread`: the notebook's own words for an
+ * open commitment or question, as written by the model or a person), in the order this `seed` tries them ("Welcome
+ * back. I can help you prepare the next step on this: follow up with the advisor on the device class."). Said while the
+ * model's line for this conversation is missing and being written (orchestrator/continuity.ts `chooseOpener`): the
+ * first sentence shows the vEIR remembers where they are and offers help (owner, 2026-11-07), and no founder words are
+ * read by rule for it. `met`: as {@link plainOpeners}.
+ */
+export function threadOpeners(seed: string, met: boolean, thread: string): string[] {
+  const text = thread.trim().replace(/[\s.!?…]+$/u, '');
+  if (text === '') return [];
+  const greetings = met ? GREETINGS_AGAIN : GREETINGS_NEW;
+  const h = mixed(seedOf(seed));
+  const out: string[] = [];
+  for (let k = 0; k < greetings.length * THREAD_OFFERS.length; k += 1) {
+    const greeting = greetings[(h + k) % greetings.length] ?? greetings[0];
+    const offer = THREAD_OFFERS[((h >>> 7) + k + Math.floor(k / greetings.length)) % THREAD_OFFERS.length];
+    out.push(`${greeting ?? ''} ${offer ?? ''} ${text}.`.trim());
   }
   return [...new Set(out)];
 }

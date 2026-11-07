@@ -8,6 +8,7 @@ import {
   founderMoves,
   renderConversationState,
   reportsCommitmentDone,
+  saysOnlyNoAnswer,
 } from './conversation-state.js';
 import { escapeData, truncate } from './escape.js';
 
@@ -119,9 +120,8 @@ function conversationStateBlock(
 /**
  * Whether the founder's message, once the conversation is under way, brings a subject of their own that no open item
  * of the notes is about ("Help me prepare for the pitch next week"): then the notes leave their agenda out of this turn
- * (`ownSubject`). A short reply, "you tell me", a message that only says they have no answer ("I didn't do that") or a
- * question about what the vEIR remembers is about the conversation so far, and keeps it; so does a report of having
- * done what they committed to ("I did the thing I said I'd do, with the five librarians", "Done!"): the reply names
+ * ({@link leavesAgendaOut}). A short reply, "you tell me" or a question about what the vEIR remembers is about the
+ * conversation so far, and keeps it; so does a report of having done what they committed to ("I did the thing I said I'd do, with the five librarians", "Done!"): the reply names
  * which commitment it was (evals G12). A no-answer with a subject of its own after it ("Not yet, but I want to talk
  * about hiring") is read for that subject (`besidesNoAnswer`).
  */
@@ -139,6 +139,20 @@ export function bringsOwnSubject(
     ...(continuity?.notebook?.openQuestions ?? []).map((q) => q.text),
   ];
   return !open.some((item) => raisedIn(item, [rest]));
+}
+
+/**
+ * Whether the notes leave their agenda out of this turn, once the conversation is under way (`ownSubject`): the message
+ * brings a subject of the founder's own ({@link bringsOwnSubject}), or only says they have no answer ("I didn't do
+ * that", "no idea"). Production, 2026-11-07: on exactly the turn the founder said they could not answer, the notes still
+ * offered the open question on billing and the commitment's "ask how it went", and the reply asked it again in other
+ * words; the conversation itself holds what was asked.
+ */
+export function leavesAgendaOut(
+  founderText: string,
+  continuity: PromptContinuity | null | undefined,
+): boolean {
+  return saysOnlyNoAnswer(founderText) || bringsOwnSubject(founderText, continuity);
 }
 
 /**
@@ -171,9 +185,9 @@ export function buildMessages(
     // What the vEIR already said here: an open commitment it raised is not pushed again (LAB-R8).
     saidInConversation: [...completed.map((t) => t.answer), options.opener ?? null],
     // Once the conversation is under way, the notebook's opener has done its job, and a message with a subject of the
-    // founder's own is not answered from the notes' agenda.
+    // founder's own, or only a no-answer, is not answered from the notes' agenda.
     conversationStarted: started,
-    ownSubject: started && bringsOwnSubject(founderText, options.continuity),
+    ownSubject: started && leavesAgendaOut(founderText, options.continuity),
   });
   const state =
     options.conversationState === false

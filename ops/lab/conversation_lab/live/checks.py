@@ -105,13 +105,19 @@ NO_ANSWER_CLAUSE = re.compile(
     "|".join(
         _FILLER + pattern
         for pattern in (
-            r"(?:i|we) (?:really |honestly |just |actually )?(?:didn't|did not|haven't|have not|never|couldn't|"
+            r"(?:(?:i|we) )?(?:really |honestly |just |actually )?(?:didn't|did not|haven't|have not|never|couldn't|"
             r"could not) (?:(?:really|actually|yet|even|get to|got to|manage to|managed to|get around to|got around to) )*"
             r"(?:do|done|did|ask|asked|book|booked|call|called|talk|talked|speak|spoke|try|tried|hear|heard|check|checked|"
-            r"look|looked|follow|followed|reach|reached|find|found|meet|met|write|wrote|written|send|sent)\b(?:(?: (?:that|"
-            r"it|this|them|him|her|one|anything|up|out|back|yet|either|so far|to (?:them|him|her|anyone)))*$|\b.* yet$)",
+            r"look|looked|follow|followed|reach|reached|find|found|meet|met|write|wrote|written|send|sent|discuss|"
+            r"discussed|cover|covered|raise|raised|mention|mentioned|go over|went over|gone over)\b(?:(?: (?:that|it|this|"
+            r"them|him|her|one|anything|up|out|back|yet|either|so far|to (?:them|him|her|anyone)|about (?:that|it|this|"
+            r"them)))*$|\b.* yet$)",
+            r"(?:(?:i|we) )?(?:didn't|did not|haven't|have not|never) (?:get|got|gotten|have|had) (?:a |the )?(?:chance|"
+            r"time|opportunity)\b(?: to\b.*)?$",
+            r"(?:it|that|this|the (?:topic|subject|question)) (?:didn't|did not|never|hasn't|has not) (?:really )?"
+            r"(?:come|came) up(?: (?:yet|at all))?$",
             r"(?:i|we) (?:didn't|did not|haven't|have not|never) (?:get|got|gotten) (?:(?:around )?to (?:it|that|"
-            r"this|them)|(?:that|this|so) far)$",
+            r"this|them)|(?:(?:that|this|so) far|there)(?: yet)?)$",
             r"(?:i|we) (?:didn't|did not|haven't|have not)(?: yet)?$",
             r"(?:i|we) (?:forgot|forget)(?: to (?:ask|check|mention|raise it|bring it up|follow up)(?: (?:that|it|"
             r"this|them|about (?:that|it|this)))?)?$",
@@ -122,28 +128,95 @@ NO_ANSWER_CLAUSE = re.compile(
             r"get into|got into|go into|went into)\b",
             r"(?:i|we) (?:can't|cannot|don't|do not) (?:really )?remember(?: (?:that|it|this|exactly|what (?:they|"
             r"he|she) said))?$",
-            r"(?:i (?:really |honestly |just )?(?:don't|do not|dont) (?:(?:really|honestly|actually|even) )?know|"
-            r"idk|dunno|i dunno|no idea|no clue|not sure|i have no (?:idea|clue)|i've no (?:idea|clue)|(?:i'm|i am|im) "
+            r"(?:(?:i )?(?:really |honestly |just )?(?:don't|do not) (?:(?:really|honestly|actually|even) )?know|"
+            r"idk|dunno|i dunno|no idea|no clue|not sure|i have no (?:idea|clue)|i've no (?:idea|clue)|(?:i'm|i am) "
             r"(?:honestly |really |just |still |actually )?not (?:really |totally |entirely |quite )?sure|i (?:wouldn't|"
-            r"would not) know|beats me)(?: (?:what|how|where|which)\b.*| (?:anything|much) about (?:that|it|this))?"
+            r"would not) know|beats me)(?: (?!(?:what|how) (?:you (?:mean|meant)|you're asking|you are asking|that means)"
+            r"\b)(?:what|how|where|which)\b.*| (?:anything|much) about (?:that|it|this))?"
             r"(?: (?:honestly|really|tbh|to be honest|yet|at all))*$",
         )
     )
 )
-#: The student hands the work back (the product's ``help`` move, in short).
-HANDS_BACK = re.compile(r"\b(?:you tell me|just tell me)\b", re.IGNORECASE)
-_CLAUSE = re.compile(r"(?<=[.!,;\u2014\u2013])\s+|\s+(?:but|and) (?=(?:i|we|can|could|let's|lets|let)\b)")
+#: The student hands the work back or asks for it to be done (the product's ``help`` move,
+#: prompts/conversation-state.ts ``HELP_REQUEST``): a question in such a message is no answer of their own to give.
+HANDS_BACK = re.compile(
+    "|".join(
+        (
+            r"\byou tell me\b|\btell me (?:what|how|which|where|who|if|whether)\b|\bjust tell me\b",
+            r"\b(?:can|could|would|will) you (?:please |just |maybe )?(?:help|show|walk|give|write|draft|suggest|list|"
+            r"come up|tell|teach|explain|navigate|guide|prep|prepare)\b",
+            r"(?<!would )(?<!could )(?<!will )(?<!might )(?<!may )(?<!can )(?<!it )(?<!that )(?<!this )(?<!which )"
+            r"(?<!they )(?<!to )(?<!also )\bhelp (?:me|us)\b",
+            r"\b(?:i|we) (?:need|want|would like|'d like) (?:some |your )?(?:help|ideas|examples|suggestions|guidance|"
+            r"a hand)\b",
+            r"\bwhat (?:should|do|would|could) (?:i|we) (?:even )?(?:ask|say|do|write|focus on|start with|prepare|bring|"
+            r"lead with)\b",
+            r"\bwhat would you (?:ask|do|say|write|suggest|recommend|start with|focus on)\b",
+            r"\b(?:give|show) (?:me|us) (?:some |a few |a couple of |three |two |an? )?(?:ideas|examples|options|"
+            r"questions|list|draft|template|example|starting point|steps|pointers)\b",
+            r"\b(?:walk|talk) (?:me|us) through\b|\bshow (?:me|us) how\b|\bwhere (?:do|should) (?:i|we) (?:even )?"
+            r"(?:start|begin)\b|\bget (?:me |us )?started\b",
+            r"\b(?:i'm|i am|we're|we are) (?:so |totally |completely |a bit |kind of |kinda |just )?(?:blank|stuck|lost|"
+            r"clueless|drawing a blank)\b",
+        )
+    )
+)
+#: Contractions typed without their apostrophe, put back first (the product's prompts/conversation-state.ts
+#: ``BARE_CONTRACTIONS``: "i ddint do that", "i dont know").
+_BARE_CONTRACTIONS = {
+    "dont": "don't",
+    "didnt": "didn't",
+    "ddint": "didn't",
+    "didint": "didn't",
+    "doesnt": "doesn't",
+    "havent": "haven't",
+    "hasnt": "hasn't",
+    "hadnt": "hadn't",
+    "couldnt": "couldn't",
+    "wouldnt": "wouldn't",
+    "shouldnt": "shouldn't",
+    "wasnt": "wasn't",
+    "werent": "weren't",
+    "isnt": "isn't",
+    "arent": "aren't",
+    "cant": "can't",
+    "wont": "won't",
+    "im": "i'm",
+    "ive": "i've",
+    "thats": "that's",
+}
+_BARE_CONTRACTION = re.compile(r"\b(?:" + "|".join(_BARE_CONTRACTIONS) + r")\b")
+#: A check-in on the student themselves (the product's prompts/conversation-state.ts ``SUPPORT_CHECK_IN``): no
+#: answer to it is no gap to teach into, and asking after them again is no re-ask.
+SUPPORT_CHECK_IN = re.compile(
+    r"\b(?:someone (?:close to you|you trust|you can (?:talk|turn|reach out) to)|(?:a )?support (?:service|line|"
+    r"network|group|person)|(?:a )?friends? or (?:a )?family|family or (?:a )?friends?|talk to (?:a friend|family|"
+    r"someone)|how (?:are|have) you (?:been )?(?:feeling|holding up|coping|sleeping))\b|\bare you (?:ok|okay|safe|"
+    r"alright|all right)(?=\s*(?:[?.!]|$))",
+    re.IGNORECASE,
+)
+_CLAUSE = re.compile(r"(?<=[.!,;—–])\s+|\s+(?:but|and) (?=(?:i|we|can|could|let's|lets|let)\b)")
 
 
-def no_answer(student: str) -> bool:
+def _normalized(text: str) -> str:
+    plain = re.sub(r"\s+", " ", text.translate(_APOSTROPHES)).strip().lower()
+    return _BARE_CONTRACTION.sub(lambda m: _BARE_CONTRACTIONS[m.group(0)], plain)
+
+
+def no_answer(student: str, previous: str | None = None) -> bool:
     """The student has no answer yet or hands the work back (the product's ``stuckOn``): a no-answer clause in a message
-    that asks nothing of its own (a question in it is what to answer, as the product reads it)."""
-    text = re.sub(r"\s+", " ", student.translate(_APOSTROPHES)).strip().lower()
+    that asks nothing of its own (a question in it is what to answer, as the product reads it), or a request for the
+    work itself. Never after ``previous`` (the coach's reply before it) ended on a check-in on the student."""
+    if previous:
+        questions = _question_clauses(previous.translate(_APOSTROPHES))
+        if questions and SUPPORT_CHECK_IN.search(questions[-1]):
+            return False
+    text = _normalized(student)
     if HANDS_BACK.search(text):
         return True
     if "?" in text:
         return False
-    clauses = (c.rstrip(".!,;\u2026\u2014\u2013 ").strip() for c in _CLAUSE.split(text))
+    clauses = (c.rstrip(".!,;…—– ").strip() for c in _CLAUSE.split(text))
     return any(NO_ANSWER_CLAUSE.match(c) for c in clauses if c)
 
 
@@ -155,18 +228,35 @@ SOCIAL_ONLY = re.compile(
 )
 #: A line in character in a role-play ("**Investor:** ...", a quoted line): its question is the counterpart's.
 IN_ROLE = re.compile(r"^\s*(?:\*\*|__)?[A-Z][\w'.-]*(?: [A-Za-z][\w'.-]*){0,4}:(?:\*\*|__)?\s|^\s*[\"“]")
-#: A founder-profile note that judges the founder (the product's distill/judgment.ts ``JUDGMENTAL``).
-JUDGMENTAL = re.compile(
+#: A founder-profile note that judges the founder (the product's distill/judgment.ts ``JUDGMENTAL``): a deficit word,
+#: a failure in the coaching exchange itself, or "even when pressed"; within a stated boundary or preference
+#: (``STATED_BOUNDARY``: "Does not want to share revenue figures yet"), only a deficit word.
+_DEFICIT = (
     r"\b(?:vague(?:ly)?|evasive(?:ly)?|deflects?|deflecting|unprepared|disorgani[sz]ed|careless(?:ly)?|lazy|"
     r"defensive(?:ly)?|superficial(?:ly)?|sloppy|unfocused|unreliable|uncooperative|dismissive(?:ly)?|stubborn(?:ly)?|"
-    r"scattered|clueless|naive(?:ly)?|unrealistic(?:ally)?|lacks? (?:clarity|focus|depth|rigou?r|follow-through|"
-    r"preparation|understanding|initiative))\b"
-    r"|\b(?:does ?n[o']t|did ?n[o']t|never|rarely|seldom|fails? to|failed to|unable to|struggles? to|can'?t|cannot|"
-    r"won'?t|refuses? to|avoids?|neglects? to)\s+(?:\w+\s+){0,2}?(?:extract|report|follow (?:up|through)|prepare|"
-    r"answer|engage|share|commit|listen|focus|deliver|retain|recall|remember|explain|articulate|specify|complete|"
-    r"finish|take notes|think (?:through|ahead)|do (?:the|their|his|her) homework|learn)\b"
-    r"|\beven when (?:pressed|asked|prompted|pushed|challenged)\b",
+    r"scattered|clueless|naive(?:ly)?|unrealistic(?:ally)?|non-?specific|lacks? (?:clarity|focus|depth|rigou?r|"
+    r"follow-through|preparation|understanding|initiative|specifics|detail))\b"
+)
+DEFICIT_WORD = re.compile(_DEFICIT, re.IGNORECASE)
+JUDGMENTAL = re.compile(
+    "|".join(
+        (
+            _DEFICIT,
+            r"\b(?:fails? to|failed to|unable to|struggles? (?:to|with)|refuses? to|neglects? to|tends? to (?:avoid|"
+            r"dodge|deflect|summari[sz]e|generali[sz]e|gloss))\b",
+            r"\b(?:does ?n[o']t|did ?n[o']t|has ?n[o']t|have ?n[o']t|never|rarely|seldom|can'?t|cannot|won'?t)\s+"
+            r"(?:\w+\s+){0,2}?(?:extract|report|follow(?:s|ed)? (?:up|through)|prepare[ds]?|retain|recall|articulate|"
+            r"specify|engage|listen|take notes|give (?:specifics|details|concrete)|do (?:the|their|his|her) homework)\b",
+            r"\bneeds? (?:repeated |constant |a lot of |much |frequent )?(?:prompting|pushing|chasing|reminding|"
+            r"reminders)\b",
+            r"\b(?:even when (?:pressed|asked|prompted|pushed|challenged)|when pressed|despite (?:committing|promising|"
+            r"agreeing|saying)|without (?:specifics|details|concrete (?:details|answers)))\b",
+        )
+    ),
     re.IGNORECASE,
+)
+STATED_BOUNDARY = re.compile(
+    r"\b(?:wants?|wanted|prefers?|preferred|would rather|likes?|until|yet|for now)\b", re.IGNORECASE
 )
 #: Words of a reply's opening compared across one run's replies (the opener census independent of any phrase list).
 OPENING_WORDS = 3
@@ -335,7 +425,7 @@ _STOP_WORDS = (
     "a an the is are was were be been being am do does did done to of in on at for with by from and or but so if "
     "then that this these those it its it's you your you're yours i i'm me my we our they them their he she his her "
     "would could should can will shall may might must just really actually exactly right now say said tell think "
-    "about there here any some very also still again one ok okay well let's let me us maybe"
+    "about there here any all some very also still again one ok okay well let's let me us maybe"
 )
 _STOP = frozenset(_STOP_WORDS.split(" "))
 _TAG_QUESTIONS = frozenset(
@@ -393,15 +483,25 @@ _GLUE = frozenset(
 )
 
 
-#: Words that name one subject, by their stems (the product's validators/social.ts ``SUBJECTS``): "what class the
+#: Words that name one subject, by their stems (the product's prompts/conversation-state.ts ``SUBJECTS``): "what class the
 #: device falls into and how clinics would pay" and "which classification it gets and which billing code they use".
 _SUBJECTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^(?:class|classif\w*|categor\w*)$"), "class"),
-    (re.compile(r"^(?:pay|paid|payment|payer|bill|reimburs\w*|coverag\w*)$"), "pay"),
+    (re.compile(r"^(?:pay|paid|payment|payer|bill\w*|reimburs\w*|cover\w*|insur\w*|code|cod|cpt)$"), "pay"),
     (re.compile(r"^(?:advis|advis[eo]r|mentor)$"), "advisor"),
+    (re.compile(r"^(?:regulat\w*|fda|clearanc\w*|pathway|path)$"), "regulatory"),
     (re.compile(r"^(?:pric|price|cost|charg|fee)$"), "price"),
     (re.compile(r"^(?:customer|client|buyer)$"), "customer"),
     (re.compile(r"^(?:approv\w*|sign-?off)$"), "approve"),
+)
+
+
+_SUBJECT_NAMES = frozenset(name for _, name in _SUBJECTS)
+#: A question that offers the coach's own work (the product's validators/social.ts ``OFFERS_WORK``): never a re-ask.
+OFFERS_WORK = re.compile(
+    r"^[\s*_\"“]*(?:(?:so|and|or|then)[,\s]+)?(?:(?:do you )?want me to|would you like me to|shall i|should i|can i|"
+    r"could i|would it help (?:if i|for me to)|how about i|i can\b.*\bif you (?:like|want))\b",
+    re.IGNORECASE,
 )
 
 
@@ -426,12 +526,16 @@ def _same_question(a: list[str], b: list[str], ca: set[str], cb: set[str]) -> bo
     return min(len(ca), len(cb)) >= 2 and _jaccard(ca, cb) >= 0.6
 
 
-def same_subject(qa: str, qb: str, *, strict: bool = False) -> bool:
+def same_subject(qa: str, qb: str, *, strict: bool = False, settled: bool = False) -> bool:
     """The product's reading of a question asked again (validators/social.ts ``reasksQuestion``): three shared content
     words or more and 60% of the shorter, or three and 30% with two said together in both; ``strict`` (after the student
-    had no answer, or for a question asked before the previous reply): three shared words, or two said together, or
-    40%. ops/lab agenda.py reads the same."""
+    had no answer): one shared subject (the device class, how clinics pay, the advisor, the regulatory path) unless
+    ``qa`` offers the coach's own work, else three shared words, or two said together, or 40%; ``settled`` (a question
+    asked before the previous reply): three shared words, or two (said together, or two subjects) and 60%. ops/lab
+    agenda.py reads the same."""
     ca, cb = set(_subject_seq(qa)), set(_subject_seq(qb))
+    if strict and not OFFERS_WORK.search(qa) and ca & cb & _SUBJECT_NAMES:
+        return True
     shared = len(ca & cb)
     if not ca or not cb:
         return False
@@ -439,12 +543,16 @@ def same_subject(qa: str, qb: str, *, strict: bool = False) -> bool:
     pair = bool(_pairs(qa) & _pairs(qb))
     if shared >= 3 and (share >= 0.6 or (share >= 0.3 and pair)):
         return True
-    return strict and (shared >= 3 or (shared >= 2 and (pair or share >= 0.4)))
+    if strict:
+        return shared >= 3 or (shared >= 2 and (pair or share >= 0.4))
+    subjects = len(ca & cb & _SUBJECT_NAMES)
+    return settled and (shared >= 3 or (shared >= 2 and share >= 0.6 and (pair or subjects >= 2)))
 
 
 def judgmental_notes(notes: Iterable[str]) -> list[str]:
     """Founder-profile notes that judge the founder (see ``JUDGMENTAL``)."""
-    return [n for n in notes if JUDGMENTAL.search(n.translate(_APOSTROPHES))]
+    plain = ((n, n.translate(_APOSTROPHES)) for n in notes)
+    return [n for n, t in plain if (DEFICIT_WORD if STATED_BOUNDARY.search(t) else JUDGMENTAL).search(t)]
 
 
 #: An acknowledgement that leads a sentence into a restatement of the student's answer ("Okay, so department heads need
@@ -582,7 +690,7 @@ def run_checks(
         result.replies += 1
         repeat_ok = bool(REPEAT_REQUEST.search(student))
         # repeated questions; after a student with no answer, any question back on the same subject
-        stuck = no_answer(student)
+        stuck = no_answer(student, turns[i - 1].coach if i > 0 else None)
         reasked = False
         for q in _questions(coach):
             words, content = _words(q), _content(q)
@@ -593,7 +701,7 @@ def run_checks(
                 # A question from before the previous reply is read strictly: the student had their turn to answer it.
                 settled = at != previous_at
                 if _same_question(words, earlier, content, earlier_content) or same_subject(
-                    q, text, strict=settled
+                    q, text, settled=settled
                 ):
                     result.findings.append(Finding("repeated_question", MEDIUM, t.at))
                     result.private_matches.append({"code": "repeated_question", "at": t.at, "text": q})

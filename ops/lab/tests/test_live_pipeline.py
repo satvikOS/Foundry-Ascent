@@ -14,7 +14,15 @@ import pytest
 from conversation_lab.budget import BudgetExceededError
 from conversation_lab.config import MAX_BUDGET_USD, lab_models, model_family, suites_for
 from conversation_lab.live.calibration import agreement, build_packet
-from conversation_lab.live.checks import BLOCKING, Turn, judgmental_notes, reply_hole, run_checks
+from conversation_lab.live.checks import (
+    BLOCKING,
+    Turn,
+    judgmental_notes,
+    no_answer,
+    reply_hole,
+    run_checks,
+    same_subject,
+)
 from conversation_lab.live.cli import cmd_check, cmd_plan
 from conversation_lab.live.dataset import DatasetError, load, own_text, validate_scenario
 from conversation_lab.live.fake import FakeApp
@@ -298,6 +306,83 @@ def test_a_reworded_question_after_any_no_answer_is_found(student: str) -> None:
     assert "reasked_after_unknown" in run_checks(call).codes()
 
 
+@pytest.mark.parametrize(
+    "student",
+    [
+        "i didnt do that",
+        "i ddint do that",
+        "i didnt",
+        "i havent",
+        "i havent done that",
+        "no i didnt",
+        "no i havent",
+        "didnt do it",
+        "i didnt ask",
+        "i didnt get to it",
+        "dont know",
+        "i dont know",
+        "I havent asked yet",
+        "we haven't gotten there",
+        "haven't done it yet",
+        "I didn't ask about that",
+        "we didn't discuss it",
+        "it didn't come up",
+        "I didn't get a chance",
+        "I didn't have time",
+        "no, we didn't talk about that",
+        "Can you help me?",
+        "help me with the deck",
+    ],
+)
+def test_a_no_answer_typed_or_said_however_is_read_as_the_product_reads_it(student: str) -> None:
+    """Without apostrophes, or the ways people say they did not get to it; and any request for the work itself, as the
+    product's ``stuckOn`` turns strict on the ``help`` move (review of the 2026-11-07 fix)."""
+    assert no_answer(student)
+
+
+def test_no_answer_to_a_check_in_on_the_student_is_no_stuck_turn() -> None:
+    check_in = "I hear you. Is there someone close to you or a support service you can talk to today?"
+    assert not no_answer("not really sure", check_in)
+    assert no_answer("not really sure", "What did the advisor say about the device class?")
+    assert not no_answer("i'm not sure what you mean")
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Is monitoring time reimbursable under existing CPT codes?",
+        "Do you know if monitoring time is billable under existing codes?",
+        "And on reimbursement, what do you know so far?",
+        "So what did your advisor actually say?",
+        "Where are you with the regulatory side?",
+        "Have you followed up with the clinical-innovation advisor yet?",
+        "Have you spoken to the advisor since?",
+        "Do you know yet how the FDA would classify it?",
+        "Is there a CPT code you can bill under?",
+        "What is your regulatory pathway?",
+    ],
+)
+def test_after_a_no_answer_a_question_on_any_subject_of_the_earlier_one_is_a_reask(question: str) -> None:
+    first = (
+        "Got it. Walk me through where you are with the regulatory path: what did the advisor tell you about device "
+        "class and how clinics would pay?"
+    )
+    assert same_subject(question, first, strict=True)
+    call = [
+        T("1.1", "getting the product to market", first),
+        T("1.2", "i didnt do that", f"That is normal at this stage. {question}"),
+    ]
+    assert "reasked_after_unknown" in run_checks(call).codes()
+
+
+def test_an_offer_of_the_coachs_own_work_and_a_new_follow_up_are_no_reask() -> None:
+    first = "What did the advisor tell you about device class and how clinics would pay?"
+    assert not same_subject("Want me to draft the questions for your advisor?", first, strict=True)
+    paid = "What does your customer pay for the tool they use today?"
+    assert not same_subject("Would that customer pay more for the version with alerts?", paid, settled=True)
+    assert same_subject("Did the advisor mention the class at all?", first, settled=True)
+
+
 def test_a_no_answer_that_moves_on_or_asks_is_read_as_the_product_reads_it() -> None:
     first = T("1.1", "taking the insole to market", "What did the advisor tell you about the device class?")
     for student in (
@@ -341,6 +426,24 @@ def test_a_profile_note_that_judges_the_founder_is_found() -> None:
         "Does not report what experts told them; stays vague even when pressed",
     ]
     assert judgmental_notes(notes) == [notes[1]]
+    # Boundaries and preferences the founder stated are no verdict; the same verdict in other words is one.
+    assert (
+        judgmental_notes(
+            [
+                "Does not want to share revenue figures yet",
+                "Won't commit to dates until the board meets",
+                "Can't focus on calls longer than 20 minutes; prefers short calls",
+            ]
+        )
+        == []
+    )
+    paraphrases = [
+        "Struggles with specifics",
+        "Needs repeated prompting to give concrete details",
+        "Rarely comes prepared",
+        "Tends to summarise expert sessions without specifics",
+    ]
+    assert judgmental_notes(paraphrases) == paraphrases
     assert "judgmental_profile_note" in run_checks([], profile_notes=notes).codes()
     assert run_checks([], profile_notes=notes[:1]).codes() == []
 

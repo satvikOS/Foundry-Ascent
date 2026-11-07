@@ -542,7 +542,7 @@ export function validateCoachResponse(
       const unrepeated = withoutRepeats(out, previous, {
         keepReferrals: forcedEscalationFor(options.preRisk) !== null,
         signOffs: social === null && !welcomesSignOff(options.founderText),
-        strictQuestions: stuckOn(options.founderText),
+        strictQuestions: stuckOn(options.founderText, options.previousReply),
         asked: askedBefore(options.previousReply, options.earlierReplies),
       });
       // A reply that only signed off again keeps its sign-off: never a stock line in its place.

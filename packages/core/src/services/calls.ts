@@ -692,8 +692,9 @@ export function createCallsService(
   /**
    * The model writes the notebook's missing opener for the next start (production, 2026-11-07: "Nice to see you. What
    * feels most pressing right now?" to a founder whose notebook held open threads), after the response: a call never
-   * waits for it, its first words come with the start. New chat has it written when it opens, ahead of a call started
-   * from there (`SessionsService.prepareOpener`). Without a host to keep it alive (tests, scripts) it is waited for
+   * waits for it, its first words come with the start and offer help with the notebook's newest open thread meanwhile
+   * (orchestrator/continuity.ts `threadOffer`). New chat has it written when it opens, ahead of a call started from
+   * there (`SessionsService.prepareOpener`). Without a host to keep it alive (tests, scripts) it is waited for
    * (`Kit.later`).
    */
   function writeForNextStart(ctx: RequestContext, started: Started, missing: MissingOpener): Promise<void> {

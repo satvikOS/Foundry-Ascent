@@ -257,6 +257,40 @@ describe('the same question two replies later, longer and reworded (production, 
     expect(reasksQuestion('Want me to draft the questions for your next advisor call?', before)).toBe(false);
   });
 
+  it('after a no-answer, reads a question that shares one subject with an earlier one as asked again', () => {
+    const r1 =
+      'Got it. Walk me through where you are with the regulatory path: what did the advisor tell you about device class and how clinics would pay?';
+    for (const question of [
+      'Do you know yet how the FDA would classify it?',
+      'Is there a CPT code you can bill under?',
+      'What is your regulatory pathway?',
+    ]) {
+      expect(
+        reasksQuestion(question, askedBefore('So who signs off?', [r1]), { strict: true }),
+        question,
+      ).toBe(true);
+      expect(reasksQuestion(question, askedBefore(r1), { strict: true }), question).toBe(true);
+    }
+    expect(
+      reasksQuestion('Would it help if I drafted the questions for your advisor?', askedBefore(r1), {
+        strict: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps a new follow-up on a settled question when the founder answered it (review of the 2026-11-07 fix)', () => {
+    const earlier = askedBefore('That gives you the anchor.', [
+      'What does your customer pay for the tool they use today?',
+    ]);
+    expect(reasksQuestion('Would that customer pay more for the version with alerts?', earlier)).toBe(false);
+    const kept = withoutRepeats(
+      'That gives you the anchor. Would that customer pay more for the version with alerts?',
+      'What does your customer pay for the tool they use today?',
+      { asked: earlier },
+    );
+    expect(kept.dropped).toBe(0);
+  });
+
   it('leaves the question out of the reply and keeps the teaching around it', () => {
     const reply =
       'That is normal at this stage. Did the advisor actually say which device class the insole falls into, and whether monitoring time is reimbursable under existing codes? Most foot-pressure monitors sit in a low-risk class, so the route is usually lighter.';

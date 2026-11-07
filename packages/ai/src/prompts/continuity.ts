@@ -9,7 +9,7 @@ import type {
 } from '@foundry/contracts';
 
 import { isJudgmentalNote, withoutPressure } from '../distill/judgment.js';
-import { contentWords } from './conversation-state.js';
+import { contentWords, subjectsOf } from './conversation-state.js';
 import { escapeData, escapeInline, truncate } from './escape.js';
 
 /** One earlier conversation, summarised by distillation. */
@@ -85,9 +85,9 @@ export interface ContinuityBlockOptions {
    */
   conversationStarted?: boolean;
   /**
-   * The founder's message brings a subject of their own that none of the open items is about: the notes' agenda (open
-   * commitments, open questions, last advice, and the digests' commitments and open questions) is left out of this
-   * turn; who they are and what happened stay. Lab run 39780304879 (help first already live): a question about a pitch
+   * The founder's message brings a subject of their own that none of the open items is about, or only says they have no
+   * answer (prompts/messages.ts `leavesAgendaOut`): the notes' agenda (open commitments, open questions, last advice,
+   * and the digests' commitments and open questions) is left out of this turn; who they are and what happened stay. Lab run 39780304879 (help first already live): a question about a pitch
    * and one about making money were still answered with the notebook's open commitment, from the notes alone.
    */
   ownSubject?: boolean;
@@ -104,18 +104,22 @@ export const PAST_DUE_NOTE = 'date passed: it may be done, so ask how it went; n
 
 /**
  * Whether `commitment` was already raised in what was said: one reply (or the opener) holds two of its content words,
- * or all of them when it has fewer.
+ * or all of them when it has fewer, or names a subject of it (`subjectsOf`: production, 2026-11-07, "how clinics would
+ * pay" raised the open question "Whether monitoring time is billable under existing codes", which shares no word with it).
  */
 export function raisedIn(commitment: string, said: readonly (string | null | undefined)[]): boolean {
   const words = contentWords(commitment);
   if (words.size === 0) return false;
   const needed = Math.min(2, words.size);
+  const subjects = subjectsOf(commitment);
   return said.some((text) => {
     if (text === null || text === undefined || text.trim() === '') return false;
     const there = contentWords(text);
     let n = 0;
     for (const w of words) if (there.has(w)) n += 1;
-    return n >= needed;
+    if (n >= needed) return true;
+    const named = subjectsOf(text);
+    return [...subjects].some((subject) => named.has(subject));
   });
 }
 
@@ -181,14 +185,17 @@ function section(tag: string, lines: readonly string[]): string[] {
   return lines.length === 0 ? [] : [`<${tag}>`, ...lines, `</${tag}>`];
 }
 
-/** `today` marks overdue commitments; null renders the due date only. `raised`: already raised in this conversation. */
+/**
+ * `today` marks overdue commitments; null renders the due date only. `raised`: already raised in this conversation, so
+ * its date is never a cue to ask how it went (they had their turn to say).
+ */
 function commitmentLine(
   c: PromptCommitment | NotebookCommitment,
   today: string | null,
   raised = false,
 ): string {
   const due = isoDate(c.due);
-  const past = today !== null && due !== null && due < today;
+  const past = !raised && today !== null && due !== null && due < today;
   const when = due === null ? '' : ` (due ${due}${past ? `, ${PAST_DUE_NOTE}` : ''})`;
   const note = raised ? ` [${RAISED_NOTE}]` : '';
   return `- ${escapeData(truncate(c.text.replace(/\s+/g, ' ').trim(), MAX_ENTRY_CHARS))}${when}${note}`;
@@ -276,12 +283,13 @@ export function buildContinuityBlock(
     .slice(0, MAX_ENTRIES.commitments)
     .map((c) => commitmentLine(c, today, said.length > 0 && raisedIn(c.text, said)));
 
-  // Optional parts in the order they are given up when the block is too long (last dropped first). A note that judges
-  // the founder, stored before distillation refused them, is never shown (distill/judgment.ts).
+  // Optional parts in the order they are given up when the block is too long (last dropped first). A model's note that
+  // judges the founder, or frames a question as pressure, stored before distillation refused them, is never shown as it
+  // was (distill/judgment.ts); a line a person wrote (no source conversation) is shown as they wrote it.
   const profile = section(
     'founder_profile',
     entries(
-      nb?.founderProfile.filter((e) => !isJudgmentalNote(e.text)),
+      nb?.founderProfile.filter((e) => e.sourceSessionId === null || !isJudgmentalNote(e.text)),
       MAX_ENTRIES.founderProfile,
     ),
   );
@@ -289,7 +297,9 @@ export function buildContinuityBlock(
     ? section(
         'open_questions',
         entries(
-          nb?.openQuestions.map((q) => ({ ...q, text: withoutPressure(q.text) })),
+          nb?.openQuestions.map((q) =>
+            q.sourceSessionId === null ? q : { ...q, text: withoutPressure(q.text) },
+          ),
           MAX_ENTRIES.openQuestions,
           said,
         ),

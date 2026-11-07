@@ -2,7 +2,11 @@ import {
   asksToRepeat,
   contentWords,
   founderMoves,
+  lastQuestionOf,
   socialTurnOf,
+  SUBJECT_NAMES,
+  subjectOf,
+  SUPPORT_CHECK_IN,
   wrapUpOf,
   type SocialTurn,
 } from '../prompts/conversation-state.js';
@@ -254,8 +258,8 @@ export function repeatsPrevious(
 
 /**
  * A question's terms: its content words, each cut to a root ("reimbursement" and "reimbursable" meet) or to the subject
- * it names ({@link SUBJECTS}: "classification" and "class", "billing code" and "pay"), and the pairs of them it says one
- * after another ("device class"). `settled`: asked before the previous reply, so the founder has had their turn to
+ * it names ("classification" and "class", "billing code" and "pay": prompts/conversation-state.ts `subjectOf`), and the
+ * pairs of them it says one after another ("device class"). `settled`: asked before the previous reply, so the founder has had their turn to
  * answer it; a question back on its subject is read strictly ({@link ReaskOptions}).
  */
 export interface QuestionTerms {
@@ -268,23 +272,16 @@ export interface QuestionTerms {
 const ROOT_ENDING = /(?:ments?|abl|ibl|ation|ition|ity|ive|ical|al)$/;
 
 /**
- * Words that name one subject, by their stems (production, 2026-11-07: "what class the device falls into and how clinics
- * would pay" came back as "which classification it gets and which billing code clinics would use"). The lab reads the
- * same subjects (ops/lab live/checks.py `_SUBJECTS`).
+ * A question that offers the vEIR's own work ("Want me to draft the questions for your advisor?"): what a reply after a
+ * no-answer should end on, never a re-ask of the question left unanswered, whatever subject it shares.
  */
-const SUBJECTS: readonly (readonly [RegExp, string])[] = [
-  [/^(?:class|classif\w*|categor\w*)$/, 'class'],
-  [/^(?:pay|paid|payment|payer|bill|reimburs\w*|coverag\w*)$/, 'pay'],
-  [/^(?:advis|advis[eo]r|mentor)$/, 'advisor'],
-  [/^(?:pric|price|cost|charg|fee)$/, 'price'],
-  [/^(?:customer|client|buyer)$/, 'customer'],
-  [/^(?:approv\w*|sign-?off)$/, 'approve'],
-];
+const OFFERS_WORK =
+  /^[\s*_"“]*(?:(?:so|and|or|then)[,\s]+)?(?:(?:do you )?want me to|would you like me to|shall i|should i|can i|could i|would it help (?:if i|for me to)|how about i|i can\b.*\bif you (?:like|want))\b/i;
 
 function questionTerms(sentence: string, settled = false): QuestionTerms {
   const words = [...contentWords(sentence)].map((word) => {
-    const subject = SUBJECTS.find(([pattern]) => pattern.test(word));
-    if (subject !== undefined) return subject[1];
+    const subject = subjectOf(word);
+    if (subject !== null) return subject;
     const root = word.replace(ROOT_ENDING, '');
     const cut = root.length >= 4 ? root : word;
     return cut.length > 3 && cut.endsWith('e') ? cut.slice(0, -1) : cut;
@@ -326,8 +323,10 @@ export function askedBefore(
 export interface ReaskOptions {
   /**
    * The founder just said they do not know, have not done it, or handed the work back (`stuckOn`): any question that
-   * comes back to the same subject is asked again, however it is worded (three shared terms, or two in a pair or 40% of
-   * them).
+   * comes back to a subject of one they were asked (the device class, how clinics pay, the advisor, the regulatory path:
+   * prompts/conversation-state.ts `subjectOf`) is asked again however it is worded, even sharing that one term ("So
+   * what did your advisor actually say?"), unless it offers the vEIR's own work ({@link OFFERS_WORK}); else three shared
+   * terms, or two in a pair or 40% of them.
    */
   readonly strict?: boolean;
 }
@@ -347,6 +346,14 @@ export function reasksQuestion(
   if (asked.length === 0 || !/\?["'”’)\]*_]*\s*$/.test(sentence)) return false;
   const terms = questionTerms(sentence);
   const strict = options.strict === true;
+  const subjects = [...terms.words].filter((w) => SUBJECT_NAMES.has(w));
+  if (
+    strict &&
+    subjects.length > 0 &&
+    !OFFERS_WORK.test(sentence) &&
+    asked.some((question) => subjects.some((subject) => question.words.has(subject)))
+  )
+    return true;
   if (terms.words.size < (strict || asked.some((question) => question.settled === true) ? 2 : 3))
     return false;
   return asked.some((question) => {
@@ -356,17 +363,28 @@ export function reasksQuestion(
     if (shared >= 3 && share >= 0.6) return true;
     const pair = [...terms.pairs].some((p) => question.pairs.has(p));
     if (shared >= 3 && share >= 0.3 && pair) return true;
-    return (strict || question.settled === true) && (shared >= 3 || (shared >= 2 && (pair || share >= 0.4)));
+    if (strict) return shared >= 3 || (shared >= 2 && (pair || share >= 0.4));
+    // A settled question comes back whole, or as two of its terms (a pair said again, or two subjects) with little
+    // else: "Did the advisor mention the class at all?" asks it again, while "What does your customer pay today?"
+    // leaves "Would that customer pay more for the version with alerts?" a new question.
+    const sharedSubjects = subjects.filter((subject) => question.words.has(subject)).length;
+    return (
+      question.settled === true &&
+      (shared >= 3 || (shared >= 2 && share >= 0.6 && (pair || sharedSubjects >= 2)))
+    );
   });
 }
 
 /**
  * Whether the founder's message says they do not know, have not done it or have no answer yet, or hands the work back
  * ("you tell me"): a question of the vEIR's that comes back to the same subject is then read strictly
- * ({@link ReaskOptions}).
+ * ({@link ReaskOptions}). Never after `previousReply` checked on the founder themselves (prompts/conversation-state.ts
+ * `SUPPORT_CHECK_IN`): asking after them again is care, not a re-ask.
  */
-export function stuckOn(founderText: string | undefined): boolean {
+export function stuckOn(founderText: string | undefined, previousReply?: string | null): boolean {
   if (founderText === undefined || founderText.trim() === '') return false;
+  const asked = typeof previousReply === 'string' ? lastQuestionOf(previousReply) : null;
+  if (asked !== null && SUPPORT_CHECK_IN.test(asked)) return false;
   const moves = founderMoves(founderText);
   return moves.includes('unknown') || moves.includes('help');
 }
@@ -432,9 +450,17 @@ const SAFETY_LINE =
 const REFERRAL_LINE =
   /\b(?:lawyers?|attorneys?|legal (?:advice|counsel|clinic|review|help)|counsel|irb|ethics (?:board|committee|review)|tech[- ]?transfer|patent (?:attorney|agent)|accountants?|tax (?:advisers?|advisors?)|doctors?|clinicians?|physicians?|pharmacists?|regulatory (?:advice|expert|consultant|counsel)|fda|program(?:me)? (?:staff|team|lead|director)|human eir|your eir|escalat\w*|flag(?:ged|ging)? (?:this|it) (?:to|for))\b/i;
 
-/** Whether `sentence` is a safety line ({@link SAFETY_LINE}), or a referral when `keepReferrals` ({@link REFERRAL_LINE}). */
+/**
+ * Whether `sentence` is a safety line ({@link SAFETY_LINE}) or a check-in on the founder themselves ("Is there someone
+ * close to you you can talk to today?": prompts/conversation-state.ts `SUPPORT_CHECK_IN`), or a referral when
+ * `keepReferrals` ({@link REFERRAL_LINE}).
+ */
 export function isProtectedLine(sentence: string, keepReferrals = false): boolean {
-  return SAFETY_LINE.test(sentence) || (keepReferrals && REFERRAL_LINE.test(sentence));
+  return (
+    SAFETY_LINE.test(sentence) ||
+    SUPPORT_CHECK_IN.test(sentence) ||
+    (keepReferrals && REFERRAL_LINE.test(sentence))
+  );
 }
 
 export interface WithoutRepeatsOptions {

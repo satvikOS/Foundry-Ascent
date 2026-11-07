@@ -55,13 +55,19 @@ FOLLOW_UP = re.compile(
 BOOK_AGAIN = re.compile(
     r"\bbook (?:the|that|your|an?) (?:advisor |adviser )?(?:session|meeting|call)\b", re.IGNORECASE
 )
-#: An opener's offer of help (the product's distill/sanitize.ts ``HELP_OFFER``), and the notebook's threads it may name
-#: (the suite's venture: a regulated sleeve).
-OPENER_HELP = re.compile(
-    r"\b(?:help|prepare|prep|walk (?:you )?through|draft|get (?:you |it |that )?ready|work through|go through|"
-    r"run through|put together|map out|sketch out|lay out|rehearse|practi[sc]e)\b",
-    re.IGNORECASE,
+#: An opener's offer of help (the product's distill/sanitize.ts ``HELP_OFFER``): a first-person frame, or a "want...?"
+#: put to the founder, with a help verb within a few words of it (a help word alone is no offer: "Did the advisor help
+#: you settle the device class?"), and the notebook's threads it may name (the suite's venture: a regulated sleeve).
+_HELP_VERB = (
+    r"(?:help|prepare|prep|walk (?:you )?through|draft|get (?:you |it |that )?ready|work through|go through|"
+    r"run through|put together|map out|sketch out|lay out|rehearse|practi[sc]e)"
 )
+_OFFER_FRAME = (
+    r"(?:i can|i could|i'll|i will|i'd (?:like|love|be (?:glad|happy)) to|let me|let's|lets|we can|we could|"
+    r"shall (?:i|we)|should (?:i|we)|(?:do you |would you )?(?:want|like) (?:me|us) to|(?:do you )?want|would you like|"
+    r"(?:happy|glad|ready|here) to|how about (?:i|we))"
+)
+OPENER_HELP = re.compile(rf"\b{_OFFER_FRAME}\b(?:\s+[\w'-]+){{0,4}}?\s+{_HELP_VERB}\b", re.IGNORECASE)
 OPENER_THREAD = re.compile(
     r"\b(?:advis[oe]r|device|class\w*|reimburs\w*|clinic\w*|regulat\w*|billing|pay\w*|sleeve|pitch|cofounder|budget)\b",
     re.IGNORECASE,
@@ -312,6 +318,15 @@ def took_up(opener: str, founder_lines: Sequence[str]) -> bool:
     return len(_content(opener) & _content(said)) >= 2
 
 
+def offers_help(opener: str) -> bool:
+    """The product's ``offersHelp``: an offer of help (``OPENER_HELP``), and no closing question that offers none."""
+    text = opener.replace("\u2019", "'").replace("\u2018", "'")
+    if not OPENER_HELP.search(text):
+        return False
+    last = ([s.strip() for s in _SENTENCE.split(text.strip()) if s.strip()] or [""])[-1]
+    return not last.endswith("?") or bool(OPENER_HELP.search(last))
+
+
 def grade_conversation(result: ConversationResult, conversation: Mapping[str, Any]) -> None:
     earlier: list[str] = [s for s in sentences(result.opener) if s.endswith("?")]
     result.opener_reopens = bool(AGENDA_TERMS.search(result.opener))
@@ -323,7 +338,7 @@ def grade_conversation(result: ConversationResult, conversation: Mapping[str, An
     result.opener_bare = (
         threads
         and result.opener != ""
-        and not (OPENER_HELP.search(result.opener) and OPENER_THREAD.search(result.opener))
+        and not (offers_help(result.opener) and OPENER_THREAD.search(result.opener))
     )
     result.founder_took_up_opener = took_up(result.opener, [f for f, _ in result.turns])
     result.checks = []

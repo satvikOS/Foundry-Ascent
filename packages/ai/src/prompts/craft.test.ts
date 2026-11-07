@@ -315,7 +315,10 @@ describe('conversation craft in the system prompt', () => {
     // no answer is never asked again, an opener offers help, and distillation keeps no verdict or pressure.
     // 2026-11-07.2: its review: a no-answer that moves on is followed there, an opener written ahead takes in the latest
     // conversation not distilled yet and always offers help, and the notes show stored pressure without it.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.2');
+    // 2026-11-07.3: its second review: a no-answer typed without apostrophes or said another way is heard, a turn with
+    // only a no-answer leaves the notes' agenda out, a goodbye is no goal, a request to clarify gets the question again,
+    // a check-in on the founder is never answered for them, and stated boundaries stay in the notes.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.3');
   });
 });
 

@@ -17,7 +17,7 @@ import {
 import { parseControlBlock } from './control.js';
 import { MODE_INSTRUCTIONS, autoModeInstructions, autoModes } from './modes.js';
 import { buildEvidenceBlock } from './evidence.js';
-import { DECLINED_INSTRUCTION_NOTE, bringsOwnSubject, buildMessages } from './messages.js';
+import { DECLINED_INSTRUCTION_NOTE, bringsOwnSubject, buildMessages, leavesAgendaOut } from './messages.js';
 import { resolvePersonaIdentity, veirFirstName } from './persona.js';
 import { buildSystemPrompt, type SystemPromptInput } from './system.js';
 
@@ -441,15 +441,15 @@ describe('continuity', () => {
 
   it('marks an open commitment already raised in this conversation, so it is not pushed again (LAB-R8)', () => {
     const asked = 'Before we talk about Noor: what did you learn from the five library staff interviews?';
-    // A short reply keeps the notes' agenda (it answers the conversation so far), with what was raised marked.
+    // A short reply keeps the notes' agenda (it answers the conversation so far), with what was raised marked; once
+    // raised, its passed date is no cue to ask how it went (production, 2026-11-07).
     const messages = buildMessages([{ founderText: 'We got the union on board.', answer: asked }], 'Sure.', {
       continuity: CONTINUITY,
       today: '2026-10-16',
     });
     const notes = messages.at(-1)?.content ?? '';
-    expect(notes).toContain(
-      `- Interview five library staff (due 2026-10-10, ${PAST_DUE_NOTE}) [${RAISED_NOTE}]`,
-    );
+    expect(notes).toContain(`- Interview five library staff (due 2026-10-10) [${RAISED_NOTE}]`);
+    expect(notes).not.toContain(PAST_DUE_NOTE);
     expect(notes).toContain('- Install the door counter (due 2026-10-30)\n');
     // Their news, a subject of their own: the agenda is left out of that turn altogether.
     const news =
@@ -529,10 +529,11 @@ describe('continuity', () => {
     for (const about of [
       'The library staff interviews went badly.',
       'Sure.',
-      "I don't know. You tell me.",
+      'You tell me.',
       'Do you remember what we said last time?',
     ]) {
       expect(bringsOwnSubject(about, CONTINUITY)).toBe(false);
+      expect(leavesAgendaOut(about, CONTINUITY)).toBe(false);
       expect(notesFor(about)).toContain('<open_commitments>');
     }
     // A no-answer that moves on to a subject of their own is read for that subject, with or without a question mark (a
@@ -547,8 +548,19 @@ describe('continuity', () => {
       expect(bringsOwnSubject(own, CONTINUITY), own).toBe(true);
       expect(notesFor(own), own).not.toContain('<open_commitments>');
     }
-    for (const about of ["I didn't do that.", 'Not yet.', 'No idea, honestly.']) {
-      expect(bringsOwnSubject(about, CONTINUITY), about).toBe(false);
+    // Only a no-answer brings no subject, and the agenda stays out all the same: the question they could not answer is
+    // in the conversation, and the notes would only offer it up again (production, 2026-11-07).
+    for (const none of [
+      "I didn't do that.",
+      'i didnt do that',
+      'Not yet.',
+      'No idea, honestly.',
+      "I don't know. You tell me.",
+    ]) {
+      expect(bringsOwnSubject(none, CONTINUITY), none).toBe(false);
+      expect(leavesAgendaOut(none, CONTINUITY), none).toBe(true);
+      expect(notesFor(none), none).not.toContain('<open_commitments>');
+      expect(notesFor(none), none).toContain('<founder_profile>');
     }
     // Before the conversation is under way, the notes are whole.
     expect(
@@ -921,6 +933,18 @@ describe('the notes never carry a verdict on the founder (production, 2026-11-07
             {
               id: 'fp-2',
               text: 'Does not report what experts told them; stays vague even when pressed',
+              sourceSessionId: '00000000-0000-4000-8000-000000000001',
+              createdAt: at,
+            },
+            {
+              id: 'fp-3',
+              text: "Doesn't want to share revenue figures until the pilot ends",
+              sourceSessionId: '00000000-0000-4000-8000-000000000001',
+              createdAt: at,
+            },
+            {
+              id: 'fp-4',
+              text: 'Rarely follows up with advisors',
               sourceSessionId: null,
               createdAt: at,
             },
@@ -937,6 +961,9 @@ describe('the notes never carry a verdict on the founder (production, 2026-11-07
     );
     expect(block).toContain('- Prefers direct answers and actionable steps');
     expect(block).not.toContain('even when pressed');
+    // A boundary they stated stays in view, and so does what a person wrote, as they wrote it.
+    expect(block).toContain("- Doesn't want to share revenue figures until the pilot ends");
+    expect(block).toContain('- Rarely follows up with advisors');
   });
 
   it('shows notes and digests stored with pressure without it', () => {
@@ -945,13 +972,25 @@ describe('the notes never carry a verdict on the founder (production, 2026-11-07
       {
         notebook: {
           summary:
-            'Building a clinic insole. The device class is open, which blocks the go-to-market strategy.',
+            'Building a clinic insole. The device class is open, which blocks the go-to-market strategy. Critical care units are the second market.',
           founderProfile: [],
           commitments: [],
           openQuestions: [
             {
               id: 'oq-1',
               text: 'Which billing route applies (urgent)',
+              sourceSessionId: '00000000-0000-4000-8000-000000000001',
+              createdAt: at,
+            },
+            {
+              id: 'oq-2',
+              text: 'Whether overdue pilot invoices are a cash risk',
+              sourceSessionId: '00000000-0000-4000-8000-000000000001',
+              createdAt: at,
+            },
+            {
+              id: 'oq-3',
+              text: 'Who signs off on the pilot (urgent)',
               sourceSessionId: null,
               createdAt: at,
             },
@@ -975,9 +1014,12 @@ describe('the notes never carry a verdict on the founder (production, 2026-11-07
       },
       { today: '2026-11-07' },
     );
-    expect(block).toContain('The device class is open.');
+    expect(block).toContain('The device class is open. Critical care units are the second market.');
     expect(block).toContain('- Which billing route applies.');
+    expect(block).toContain('- Whether overdue pilot invoices are a cash risk');
     expect(block).toContain('- Who owns the budget.');
-    expect(block).not.toMatch(/cannot wait|urgent|blocks the go-to-market/);
+    expect(block).not.toMatch(/cannot wait|blocks the go-to-market/);
+    // A person's own line is shown as they wrote it.
+    expect(block).toContain('- Who signs off on the pilot (urgent)');
   });
 });

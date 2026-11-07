@@ -1,6 +1,7 @@
 import {
   CROSS_VENTURE_BLOCK_ANSWER,
   PAST_DUE_NOTE,
+  RAISED_NOTE,
   buildSystemPrompt,
   type CoachResponseValidation,
 } from '@foundry/ai';
@@ -223,7 +224,9 @@ describe('context with continuity and the opener', () => {
     expect(context.messages[1]?.content).toContain('five interviews');
     const last = context.messages.at(-1)?.content ?? '';
     expect(last).toContain('<your_notes>');
-    expect(last).toContain(`Interview five library staff (due 2026-10-10, ${PAST_DUE_NOTE})`);
+    // The opener raised it: marked so, and its passed date is no cue to ask how it went again.
+    expect(last).toContain(`Interview five library staff (due 2026-10-10) [${RAISED_NOTE}]`);
+    expect(last).not.toContain(PAST_DUE_NOTE);
     // The opener was said: the notebook's next_opener is not pushed again.
     expect(last).not.toContain('<next_opener>');
     expect(last).toContain('They went well.');

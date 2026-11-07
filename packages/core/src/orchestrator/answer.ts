@@ -334,7 +334,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
       : {
           text: saidBefore.join('\n\n'),
           keepReferrals: forcedEscalationFor(risk) !== null,
-          strictQuestions: stuckOn(spec.founderText),
+          strictQuestions: stuckOn(spec.founderText, previousReply),
           asked: askedBefore(previousReply, earlierReplies),
         };
   const wrapUp = risk.categories.length === 0 && !risk.crisis && wrapUpOf(spec.founderText);

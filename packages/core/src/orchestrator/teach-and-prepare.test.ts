@@ -32,7 +32,7 @@ const CONTINUITY: PromptContinuity = {
       {
         id: 'fp-2',
         text: 'Does not report what experts told them; stays vague even when pressed',
-        sourceSessionId: null,
+        sourceSessionId: 's-earlier-call',
         createdAt: AT,
       },
     ],
@@ -95,13 +95,16 @@ const REPLIES = [
   'So there is a process. Who sits in those layers, and what does each one sign off on?',
 ];
 
-/** The user message of turn `n` (0-based) as the turn assembles it: "Where you left off", the notes, the state. */
-function turnMessage(n: number): string {
+/**
+ * The user message of turn `n` (0-based) as the turn assembles it: "Where you left off", the notes, the state.
+ * `said`: what the founder says on that turn instead of the call's words.
+ */
+function turnMessage(n: number, said?: string): string {
   const history: HistoryTurn[] = REPLIES.slice(0, n).map((answer, i) => ({
     founderText: FOUNDER[i] ?? '',
     answer,
   }));
-  const founderText = FOUNDER[n] ?? '';
+  const founderText = said ?? FOUNDER[n] ?? '';
   const prompt = buildSystemPromptParts({
     release: {
       version: 2,
@@ -176,15 +179,45 @@ describe('what each turn of the production call now carries (2026-11-07)', () =>
     );
   });
 
-  it('a founder with no answer: never asked again, taught how it usually goes instead', () => {
-    const message = turnMessage(2);
-    expect(message).toContain('Never ask it again, in any words.');
-    expect(message).toContain('- You already asked:');
-    // The threads they had no answer for are marked as raised, so the notes never push them again this conversation.
-    expect(message).toContain('<open_threads>');
+  it.each([
+    [2, undefined],
+    [1, 'i dont know'],
+    [1, 'i didnt do that'],
+    [1, "it didn't come up"],
+  ] as const)(
+    'a founder with no answer (turn %i, %j): never asked again, taught how it usually goes instead',
+    (n, said) => {
+      const message = turnMessage(n, said);
+      expect(message).toContain('Never ask it again, in any words.');
+      expect(message).toContain('- You already asked:');
+      // The notebook's agenda is left out of that turn: it would offer up the very question they could not answer, in
+      // other words (the open question on billing, the commitment's "ask how it went"; review of the 2026-11-07 fix).
+      expect(message).not.toContain('<open_threads>');
+      expect(message).not.toContain('<open_commitments>');
+      expect(message).not.toContain('<open_questions>');
+      expect(message).not.toContain('billable under existing codes');
+      expect(message).not.toContain('ask how it went');
+      expect(message).toContain('Prefers direct answers and actionable steps');
+    },
+  );
+
+  it('marks the threads a reply raised by their subject, and never asks how a raised commitment went', () => {
+    // "how clinics would pay" raised the open question on billing, which shares no word with it.
+    const threads = leftOffThreads(CONTINUITY, {
+      founderText: 'Sure.',
+      said: [REPLIES[0] ?? '', OPENER],
+      started: true,
+    });
+    expect(threads?.raised).toEqual([
+      'Follow up with the clinical-innovation advisor on device class, the billing route and the budget owner',
+      'Which device class the insole falls into',
+      'Whether monitoring time is billable under existing codes',
+    ]);
+    const message = turnMessage(1, 'Sure.');
     expect(message).toContain(
       'device class, the billing route and the budget owner (due 2026-11-01) [already raised',
     );
+    expect(message).not.toContain('ask how it went');
   });
 
   it('lists the open threads at the start of a conversation, before the founder brings a subject', () => {

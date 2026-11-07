@@ -128,6 +128,43 @@ describe('every earlier reply in view is guarded, not only the previous one', ()
     );
   });
 
+  it('after a no-answer, leaves out a short question back on any subject of the one left unanswered (review of the 2026-11-07 fix)', () => {
+    // Synthetic wording, the call's shape: each of these was released whole after "I don't know" or "I didn't do that".
+    const first =
+      'Got it. Walk me through where you are with the regulatory path: what did the advisor tell you about device class and how clinics would pay?';
+    const reasks = [
+      'Is monitoring time reimbursable under existing CPT codes?',
+      'Do you know if monitoring time is billable under existing codes?',
+      'And on reimbursement, what do you know so far?',
+      'So what did your advisor actually say?',
+      'Where are you with the regulatory side?',
+      'Have you followed up with the clinical-innovation advisor yet?',
+      'Have you spoken to the advisor since?',
+    ];
+    for (const founderText of ["I don't know", "I didn't do that", 'i didnt do that', 'i dont know']) {
+      for (const question of reasks) {
+        const g = gate({ previousReply: first, founderText, spoken: true });
+        expect(joined(run(g, [`That is normal at this stage. ${question} `])).trim(), question).toBe(
+          'That is normal at this stage.',
+        );
+        expect(g.trace.reasksDropped, question).toBe(1);
+      }
+      // An offer of its own work is what such a reply should end on: kept.
+      const offer = gate({ previousReply: first, founderText, spoken: true });
+      expect(
+        joined(run(offer, ['That is normal. Want me to draft the questions for your advisor? '])).trim(),
+      ).toBe('That is normal. Want me to draft the questions for your advisor?');
+    }
+    // A check-in on them asked again is care, never a re-ask: said whole, however the founder answered.
+    const checkIn = 'I hear you. Is there someone close to you or a support service you can talk to today?';
+    const care = gate({ previousReply: checkIn, founderText: 'not really sure' });
+    expect(
+      joined(
+        run(care, ['That is okay. Is there a friend or family member you could reach out to tonight? ']),
+      ).trim(),
+    ).toBe('That is okay. Is there a friend or family member you could reach out to tonight?');
+  });
+
   it.each([
     "I don't really know.",
     'not sure honestly',

@@ -1,12 +1,12 @@
 import type { StudentProfile } from '@foundry/contracts';
 import {
   MAX_PROMPT_DIGESTS,
-  bringsOwnSubject,
   firstNameOf,
   isAboutThread,
   isNearDuplicate,
   isPersonalOpener,
   lastQuestionOf,
+  leavesAgendaOut,
   mentions,
   namesAThread,
   notebookThreads,
@@ -35,6 +35,7 @@ import {
   LEFT_OFF_CONVERSATIONS,
   LEFT_OFF_EXCHANGES,
   plainOpeners,
+  threadOpeners,
   type LeftOffConversationData,
   type LeftOffData,
   type LeftOffDigest,
@@ -317,8 +318,8 @@ export function pastRepliesOf(leftOff: LeftOffData | null): string[] {
 /**
  * Open threads of the notebook the turn already loaded (open commitments and open questions), for "Where you left off",
  * held to the rules the notes keep (prompts/messages.ts `buildMessages`): once the conversation is under way, a message
- * with a subject of the founder's own gets none of them (`bringsOwnSubject`), and one the vEIR already raised in this
- * conversation is marked so (`raisedIn`). Production, 2026-11-07: the notes left their agenda out of every turn of a
+ * with a subject of the founder's own, or only a no-answer, gets none of them (`leavesAgendaOut`), and one the vEIR
+ * already raised in this conversation is marked so (`raisedIn`, by subject too). Production, 2026-11-07: the notes left their agenda out of every turn of a
  * call while this section still listed it, and the third reply asked the first one's question again. `turn`: the
  * founder's message, what the vEIR said in this conversation (its replies and the opener) and whether it is under way;
  * absent, every open thread is listed.
@@ -333,7 +334,7 @@ export function leftOffThreads(
 ): LeftOffThreads | null {
   const nb = continuity.notebook ?? null;
   if (nb === null) return null;
-  if (turn !== undefined && turn.started && bringsOwnSubject(turn.founderText, continuity)) return null;
+  if (turn !== undefined && turn.started && leavesAgendaOut(turn.founderText, continuity)) return null;
   const commitments = nb.commitments
     .filter((c) => c.status === 'open')
     .map((c) => ({ text: c.text, due: c.due }));
@@ -343,6 +344,7 @@ export function leftOffThreads(
     commitments,
     questions,
     raised: [...commitments.map((c) => c.text), ...questions].filter((text) => raisedIn(text, said)),
+    byPerson: nb.openQuestions.filter((q) => q.sourceSessionId === null).map((q) => q.text),
   };
 }
 
@@ -394,7 +396,10 @@ const TAKE_UP_EXCHANGES = 20;
  *    it with a short yes: `@foundry/ai` `untakenThread`; lab run 39780304879, production 2026-10-16…20), or it is one
  *    a mentor never opens on (personal, small talk, the scripted frame: `isPersonalOpener`; or a line that names no
  *    thread the notebook or that conversation left open: `namesAThread`);
- * 3. else, for someone who has talked here before, a short, warm greeting that names no subject (`plainOpeners`),
+ * 3. else, while that line is missing, the notebook leaves threads open ({@link MissingOpener}) and it holds the
+ *    latest conversation (distilled), a greeting that offers help with the newest open thread in the notebook's own
+ *    words (`threadOpeners`, {@link threadOffer});
+ * 4. else, for someone who has talked here before, a short, warm greeting that names no subject (`plainOpeners`),
  *    phrased for this conversation and never the way the last ones opened. Nothing the founder said is ever read by
  *    rule for what to open on (production 2026-11-06: the previous call held only "great" and "hows your perosnal life
  *    going on..", and the next call opened "Hi, want to carry on with your perosnal life?").
@@ -404,9 +409,9 @@ const TAKE_UP_EXCHANGES = 20;
  * teammate's plan, MX-0005). A preview (no conversation yet) says what the next one opens with, and a call starting
  * in that conversation (`sessionId`, left out of the count) says it too. Every line must pass the opener checks
  * (identity, cross-venture): one that fails is skipped. `opener` is null when there is none (a first conversation
- * without a notebook line); `latest` is the person's latest conversation. `missing` says when the greeting that names
- * nothing was chosen although the notebook holds open threads and has no current line of the model's
- * ({@link MissingOpener}; production, 2026-11-07: a notebook distilled from a small-talk call before the next-opener
+ * without a notebook line); `latest` is the person's latest conversation. `missing` says when the notebook holds open
+ * threads and has no current line of the model's, so a stand-in was chosen (the thread offer, else the greeting that
+ * names nothing) and the model is to write one ({@link MissingOpener}; production, 2026-11-07: a notebook distilled from a small-talk call before the next-opener
  * rule held opened the next call with "Nice to see you. What feels most pressing right now?").
  */
 export async function chooseOpener(
@@ -583,6 +588,22 @@ export async function chooseOpener(
           ].filter((text): text is string => text !== null && text.trim() !== ''),
         }
       : null;
+  // The model's line is missing while the notebook leaves threads open: until it is written (for the next start), a
+  // greeting that offers help with the newest open thread, in the notebook's own words. Only once the notebook holds
+  // the latest conversation: before its distillation, a thread of the notebook may be one that conversation settled or
+  // moved on from (LAB-R6c), and the greeting names nothing.
+  if (missing !== null && latestDistilled) {
+    const offer = await threadOffer(tx, {
+      notebook: notebook?.content ?? null,
+      principalId: args.principalId,
+      latest,
+      people,
+      guards,
+      seed: `${latest.sessionId}:${args.principalId}:${since.opened}`,
+      leftAside: (text) => reopens(text),
+    });
+    if (offer !== null) return found(offer, missing);
+  }
   // No line the model wrote for this conversation: a greeting that names nothing, never a greeting or an invitation
   // one of the person's last conversations opened with (when every line reuses one, only the latest's is avoided).
   // Each conversation they open since without a word takes the next line of the same order, so two in a row never
@@ -599,6 +620,51 @@ export async function chooseOpener(
     fresh === undefined ? null : { text: fresh, sourceSessionId: latest.sessionId, byPerson: false },
     missing,
   );
+}
+
+/**
+ * The best safe line while the model's is missing ({@link MissingOpener}) and the notebook holds the person's latest
+ * conversation: a greeting and an offer of help with the notebook's newest open commitment, else its first open
+ * question, in the notebook's own words (`threadOpeners`;
+ * production, 2026-11-07: a call that started before the line was written said "...where can I help you pick up?" to a
+ * founder whose notebook held an advisor follow-up). Never a thread drawn from a teammate's conversation, one the
+ * founder left aside, one still about the founder in the third person, or a line that fails the opener checks. Null
+ * when none can be said.
+ */
+async function threadOffer(
+  tx: AppExecutor,
+  args: {
+    readonly notebook: notebooksRepo.NotebookContent | null;
+    readonly principalId: string;
+    readonly latest: LeftOffConversationData;
+    readonly people: OpenerPeople;
+    readonly guards: OpenerGuards;
+    readonly seed: string;
+    readonly leftAside: (text: string) => boolean;
+  },
+): Promise<ChosenOpener | null> {
+  if (args.notebook === null) return null;
+  const threads = [
+    ...args.notebook.commitments
+      .filter((c) => c.status === 'open')
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    ...args.notebook.openQuestions,
+  ];
+  for (const thread of threads) {
+    if (args.leftAside(thread.text)) continue;
+    const source = thread.sourceSessionId;
+    if (source !== null && (await sessionsRepo.getSession(tx, source))?.startedBy !== args.principalId)
+      continue;
+    const addressed = addressFounder(thread.text, args.people);
+    if (addressed === null) continue;
+    const line = threadOpeners(args.seed, args.latest.withThisVeir, addressed).find(
+      (text) => text.length <= MAX_OPENER_CHARS && !isPersonalOpener(text),
+    );
+    const said = line === undefined ? null : validatedOpener(line, args.guards);
+    if (said !== null)
+      return { text: said, sourceSessionId: source ?? args.latest.sessionId, byPerson: false };
+  }
+  return null;
 }
 
 /**

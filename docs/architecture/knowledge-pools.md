@@ -430,8 +430,15 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   (`Kit.later`). Notebooks distilled before this rule are given their line once by
   daily maintenance and the `distill_sweep` message (`backfillOpeners`: up to 20 a run, idempotent, audited
   `maintenance.notebook_openers`; a notebook whose attempt was made is not listed again until it changes, so one that
-  can never be written does not hold the queue). Otherwise (no thread anywhere, or while a line is being written) the
-  conversation opens with a short, warm greeting that names nothing and offers help ("Welcome back. What can I help
+  can never be written does not hold the queue). While the line is missing and being written (a call that starts
+  before it exists, a New chat whose wait ran out), the conversation opens with a greeting that offers help with the
+  notebook's newest open commitment, else its first open question, in the notebook's own words ("Welcome back. I can
+  help you prepare the next step on this: follow up with the advisor on the device class."; `threadOffer`,
+  `threadOpeners`), once the notebook holds the latest conversation (before its distillation a notebook thread may be
+  one that conversation settled: LAB-R6c): never a thread from a teammate's conversation, one the founder left aside,
+  or one still about them in the third person. Otherwise (no thread anywhere, or the latest conversation not
+  distilled yet) the conversation opens with a short, warm greeting that
+  names nothing and offers help ("Welcome back. What can I help
   you prepare for?"; `plainOpeners`), phrased for that conversation and never with a greeting or invitation the person's last conversations opened with, and never "since we last spoke" (it may be said seconds
   after a call); nothing the founder said is ever read by rule for what to open on (production 2026-11-06: "hows
   your perosnal life going on.." became "Hi, want to carry on with your perosnal life?"). Every distilled line is
@@ -446,20 +453,28 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   shown) opens the conversation without one. A hello
   right after the opener is answered with a hello, never the recall again (`<conversation_state>` reads the
   founder's first message as the reply to the replayed opener).
-- **Teach and prepare, never a loop** (production, 2026-11-07; policy `fa-coach-policy/2026-11-07.2`). The call that
+- **Teach and prepare, never a loop** (production, 2026-11-07; policy `fa-coach-policy/2026-11-07.3`). The call that
   prompted it: a returning founder named a goal and got "walk me through where you are…", a vague answer got a
   question, a short answer got the first question again in other words, and a founder with no answer was asked again.
   Prompt rules saying "follow the founder" had lost to context that was mostly one topic, so each turn now carries:
   - `<conversation_state>` reads two more moves (`founderMoves`): `goal` (a goal or a step ahead of them, or their
     first reply to the opener's invitation naming what they want to work on: "teach and prepare", the usual path,
-    what the terms mean, the prep itself, at most one question after it) and `unknown` ("I don't know", "I didn't do
-    that", "not yet", "they never told me", "I forgot to ask", "beats me", read clause by clause: never asked again in
-    any words; acknowledged without judgement, then what the answer most likely is, the fastest way to find out and
-    the next step). A no-answer with a subject of its own after it ("Not yet, but can we work on the pitch deck",
-    with or without a question mark, as a voice transcript has none) moves on: the reply follows them there, the notes
-    leave their agenda out (`bringsOwnSubject` reads what the message brings besides the no-answer), and the old
-    question is neither asked nor answered unasked. Two replies in a row that ended in a question make the next one
-    give substance and ask nothing.
+    what the terms mean, the prep itself, at most one question after it; never on a goodbye that names a next step,
+    "Thanks, I'll go prepare for the pitch now, bye!") and `unknown` ("I don't know", "I didn't do that", "not yet",
+    "they never told me", "I forgot to ask", "it didn't come up", "I didn't get a chance", "beats me", typed with or
+    without apostrophes, "i ddint do that" included: contractions are put back before any cue reads the message; read
+    clause by clause: never asked again in any words; acknowledged without judgement, then what the answer most likely
+    is, the fastest way to find out and the next step). A message that is only a no-answer leaves the notes' agenda
+    out of that turn, open threads and questions included (`leavesAgendaOut`): the question they could not answer is
+    in the conversation, and the notes would only offer it up again in other words. A no-answer with a subject of its
+    own after it ("Not yet, but can we work on the pitch deck", with or without a question mark, as a voice transcript
+    has none) moves on: the reply follows them there, the notes leave their agenda out (`bringsOwnSubject` reads what
+    the message brings besides the no-answer), and the old question is neither asked nor answered unasked. "I'm not
+    sure what you mean" is `clarify`: the question said again more plainly, never answered for them. No answer to a
+    check-in on the founder themselves ("Is there someone close to you you can talk to today?": `SUPPORT_CHECK_IN`, or
+    a reply that escalated for wellbeing) is never taught into or answered for them, and asking after them again is
+    never left out as a re-ask. Two replies in a row that ended in a question make the next one give substance and ask
+    nothing.
   - Conversation craft says the same for every turn (help, stuck or no answer: do the work; teach how such things
     generally work, hedged: device classes, reimbursement codes, approval committees), rule 5 makes general education
     on high-risk topics explicit (never their own class, cost or timeline), DIAGNOSE gives its read before any
@@ -469,9 +484,16 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     and the whole reply's rewrite: `reasksQuestion`): besides the shared-words test, a longer question sharing three
     content words, two of them said together ("device class"), with any earlier question of the conversation. Words
     that name one subject count as one ("classification" and "class"; "billing", "payment" and "reimbursement" as how
-    they pay). Read strictly (three shared words, or two said together, or 40% of them): after a founder with no answer
-    or "you tell me" (`stuckOn`), and for any question asked before the previous reply (`askedBefore`: the founder has
-    had their turn, so a vague or short answer is never met with the first question again). A reply that only asks
+    they pay, with "code", "CPT", "coverage" and "insurance"; "regulatory", "FDA", "pathway" and "path" as the
+    regulatory route). After a founder with no answer or "you tell me" (`stuckOn`), any question that names a subject
+    of one already asked is asked again ("So what did your advisor actually say?" after a question about the advisor),
+    unless it offers the vEIR's own work ("Want me to draft the questions for your advisor?"); else three shared words,
+    or two said together, or 40% of them. A question asked before the previous reply (`askedBefore`: the founder has
+    had their turn) comes back whole, or as two of its terms (said together, or two subjects) with little else, so a
+    vague or short answer is never met with the first question again, while a new follow-up on the same subject ("Would
+    that customer pay more for the version with alerts?") is kept. Notes threads already raised in the conversation
+    are marked by subject too (`raisedIn`: "how clinics would pay" raised the open question on billing), and a raised
+    commitment's passed date is no cue to ask how it went. A reply that only asks
     where the founder brought something is counted (validator note `question_only`; an acknowledgement that only
     restates the answer, "Okay, so department heads need to approve it.", is no substance; the lab reads the same).
 - **Distillation** (purpose `distill`, the daily caps and the kill switch) runs from jobs only the API
@@ -480,12 +502,16 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     while the conversation is active (a turn in the last 480 s), and a job whose conversation has more turns
     since is `superseded`;
   - what it writes of the founder is how they like to work, never a verdict on them: a founder-profile note that judges
-    them (what they fail to do, how vague they seem, "even when pressed") is never written (`isJudgmentalNote`,
-    `distill/judgment.ts`) nor shown to the model from an older notebook; threads are said plainly, never as pressure
-    ("urgent", "cannot wait", "blocks the go-to-market": `withoutPressure` cuts such clauses from summaries and open
-    questions, and a turn's notes and "Where you left off" show what was stored before without them); a question the
-    vEIR asked that the founder could not answer is never kept as an open question (production, 2026-11-07, policy
-    `fa-coach-policy/2026-11-07.2`);
+    them (a deficit word, a failure in the coaching exchange such as not reporting, preparing or following up, "even
+    when pressed", "needs repeated prompting") is never written (`isJudgmentalNote`, `distill/judgment.ts`) nor shown
+    to the model from an older notebook, while a boundary or preference they stated ("Does not want to share revenue
+    figures yet", "Won't commit to dates until the board meets") is kept; threads are said plainly, never as pressure
+    said of the thread ("cannot wait", "is urgent", "(urgent)", "blocks the go-to-market", "is a blocker for launch":
+    `withoutPressure` cuts such clauses from summaries and open questions, keeps what a sentence says besides them,
+    and leaves facts that only use such a word alone, "Critical care units are a second market"; a turn's notes and
+    "Where you left off" show what the model stored before without them, and a line a person wrote as they wrote it);
+    a question the vEIR asked that the founder could not answer is never kept as an open question (production,
+    2026-11-07, policy `fa-coach-policy/2026-11-07.3`);
   - when a conversation ends, and when a call in it ends however it ends (hang-up, a server stop, a
     replacement from another conversation; calls the daily maintenance closes are distilled inline),
     immediately and `settled`: never skipped as active;
