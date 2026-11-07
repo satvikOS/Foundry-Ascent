@@ -112,24 +112,6 @@ export interface SessionsService {
   getTurnEvidence(ctx: RequestContext, turnId: string): Promise<EvidenceItem[]>;
 }
 
-/** Longest a New chat greeting stays the line its conversation opens with (it says "about 3 minutes ago"). */
-export const OPENER_SHOWN_MAX_AGE_MS = 60 * 60 * 1000;
-
-/**
- * When the opener of a conversation created now is phrased: when New chat showed it (`openerShownAt`, the preview's
- * `at`), so the conversation opens with the line the person read however long they took to write; now when it was
- * not shown, is in the future, or is over an hour old (a line about "a moment ago" is no longer true then).
- */
-export function openerTime(shownAt: string | null | undefined, now: Date): Date {
-  if (shownAt == null) return now;
-  const at = Date.parse(shownAt);
-  // A few seconds ahead is another server's clock; further is not a time anyone was shown anything.
-  if (!Number.isFinite(at) || at > now.getTime() + 5_000 || now.getTime() - at > OPENER_SHOWN_MAX_AGE_MS) {
-    return now;
-  }
-  return new Date(Math.min(at, now.getTime()));
-}
-
 export function createSessionsService(kit: Kit, directory: DirectoryCache): SessionsService {
   const { logger } = kit.deps;
 
@@ -142,10 +124,7 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
     return view;
   }
 
-  /**
-   * The opening line of a new conversation of the caller (orchestrator/continuity.ts `chooseOpener`), phrased as
-   * of `now` (when it says how long ago the last conversation was).
-   */
+  /** The opening line of a new conversation of the caller (orchestrator/continuity.ts `chooseOpener`). */
   function openerFor(
     scope: RequestScope,
     ventureId: string,
@@ -155,7 +134,6 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
       readonly eirNames: readonly string[];
       readonly team: readonly string[];
     },
-    now: Date,
   ): ReturnType<typeof chooseOpener> {
     return chooseOpener(scope.tx, {
       ventureId,
@@ -168,7 +146,6 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
         otherVentureMemberNames: guards.others.memberNames,
       },
       team: guards.team,
-      now,
     });
   }
 
@@ -236,13 +213,11 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
         input.privacy === 'standard' && input.openerShownAt !== null
           ? await openerGuards(ctx, ventureId)
           : null;
-      const openerAt = openerTime(input.openerShownAt, kit.now());
       return kit.inRequest(ctx, async (scope) => {
         // Re-resolved in the writing transaction: a suspension in between still blocks the session.
         const active = await requireAssignmentActive(scope, ventureId);
         requireModeAllowed(active, input.mode);
-        const opener =
-          guards === null ? null : (await openerFor(scope, ventureId, active, guards, openerAt)).opener;
+        const opener = guards === null ? null : (await openerFor(scope, ventureId, active, guards)).opener;
         const session = await sessionsRepo.createSession(scope.tx, {
           tenantId: ctx.tenantId,
           ventureId,
@@ -289,7 +264,6 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
           ventureId,
           await requireAssignmentActive(scope, ventureId),
           guards,
-          at,
         );
         return {
           opener: opener?.text ?? null,

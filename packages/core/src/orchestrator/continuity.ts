@@ -25,22 +25,15 @@ import {
 } from '@foundry/db';
 
 import { mentionsEir } from '../internal/eir-names.js';
+import { addressFounder, properNounsIn, type OpenerPeople } from './address-founder.js';
 import {
   LEFT_OFF_CONVERSATIONS,
   LEFT_OFF_EXCHANGES,
-  continuityOpener,
-  newsSubjectOf,
-  relativeWhen,
-  subjectOf,
-  threadOpener,
-  threadSubject,
+  plainOpeners,
   type LeftOffConversationData,
   type LeftOffData,
   type LeftOffThreads,
-  type OpenerSubject,
-  type SubjectOptions,
 } from './continuity-prompt.js';
-import { addressFounder, properNounsIn, topicWords, type OpenerPeople } from './opener-topic.js';
 
 /**
  * What the vEIR remembers when a turn starts (the specific pool): the founder's first name, the notebook of
@@ -330,18 +323,6 @@ export interface ChosenOpener {
   /** The conversation it was drawn from (deleting it erases this copy); null when a person wrote it. */
   readonly sourceSessionId: string | null;
   readonly byPerson: boolean;
-  /**
-   * What it is about, when it was phrased around a thread or the last conversation's subject (a call's greeting is
-   * phrased around it in one sentence); null for a line that names nothing (the generic invitation); absent for a
-   * stored sentence (a person's, or the notebook's), which a greeting reads itself (`readOpener`).
-   */
-  readonly subject?: OpenerSubject | null;
-  /**
-   * The model-written line itself (the notebook's next opener, written at distillation with a greeting in its own
-   * words): a call says it as written, its greeting kept, never phrased again around a subject (calls.ts
-   * `ownGreetingLine`).
-   */
-  readonly modelLine?: true;
 }
 
 /** Exchanges read to tell whether a stored opener only repeats a question the vEIR already asked. */
@@ -350,37 +331,29 @@ const OPENER_ECHO_EXCHANGES = 3;
 const TAKE_UP_EXCHANGES = 20;
 
 /**
- * The vEIR's opening line for a new standard conversation of `principalId` (its first bubble, and what a call says
- * after introducing itself), in this order:
+ * The vEIR's opening line for a new standard conversation of `principalId` (its first bubble, and what a call says),
+ * in this order:
  * 1. the notebook's next opener when a person wrote or rewrote it (they chose what to open with);
- * 2. when the notebook's opener is current (distillation drew it from the person's latest conversation, call or
- *    chat; for an opener of unknown origin, the notebook was written after that conversation's last turn with this
- *    vEIR): the model-written line itself (coaching v3: written at distillation from what changed, so it costs no
- *    model call here), unless it only repeats a question the vEIR asked at the end of that conversation
- *    (production: call 3 opened with call 2's closing question, verbatim), it already opened a conversation since
- *    in which nothing was said (it was said once; it is not said again word for word) or it opens the way that
- *    conversation opened ({@link repeatsOpener}); else, as a fallback, a line phrased around the thread it noted to
- *    come back to (`nextTopic`);
- * 3. the deterministic fallback when there is no usable model line (distillation has not run yet, or failed): a line
- *    that picks up the person's latest conversation itself, with any of the venture's vEIRs (when it was, what
- *    about), built from what was said (orchestrator/continuity-prompt.ts), never the way that conversation opened
- *    while another line is there;
- * 4. an older notebook opener.
- * A thread the person's latest conversation opened on and they never took up there (none of their messages holds two
- * of its words, nor did they answer it with a short yes: `@foundry/ai` `untakenThread`) is never opened on again,
- * whether it comes back as the notebook's opener, its next topic or that conversation's own subject: the line picks
- * up what they brought there instead (their news, else their latest topic), or else invites them plainly (lab run
- * 39780304879, and production 2026-10-16…20: three openers in a row came back to the advisor session the founder
- * never took up). A line a person wrote stays theirs (step 1).
+ * 2. the model-written line (coaching v3, owner round 3: what an opener is about is the model's choice, written at
+ *    distillation from that conversation and the notebook's open threads, so it costs no model call here), when it is
+ *    current (drawn from the person's latest conversation, call or chat; for a line of unknown origin, the notebook
+ *    was written after that conversation's last turn with this vEIR), unless it only repeats a question the vEIR asked
+ *    at the end of that conversation (production: call 3 opened with call 2's closing question, verbatim), it already
+ *    opened a conversation since in which nothing was said (it was said once; it is not said again word for word), it
+ *    opens the way that conversation opened ({@link repeatsOpener}), or it comes back to a thread that conversation
+ *    opened on and the founder never took up there (none of their messages holds two of its words, nor did they answer
+ *    it with a short yes: `@foundry/ai` `untakenThread`; lab run 39780304879, production 2026-10-16…20);
+ * 3. else, for someone who has talked here before, a short, warm greeting that names no subject (`plainOpeners`),
+ *    phrased for this conversation and never the way the latest one opened. Nothing the founder said is ever read by
+ *    rule for what to open on (production 2026-11-06: the previous call held only "great" and "hows your perosnal life
+ *    going on..", and the next call opened "Hi, want to carry on with your perosnal life?").
  * Every distilled line is said to the person (`addressFounder`: "maya will get" becomes "you will get"; a line still
  * in the third person is not said), with the team's names in their real case (`team`; LAB-U2). A notebook opener
  * drawn from a teammate's conversation is never said to the person as theirs ("Last time you planned…" was a
- * teammate's plan, MX-0005): it is skipped, and the person's own latest conversation, or nothing, opens.
- * Phrasing follows the latest conversation, the person and how many conversations they opened since it, so each
- * new conversation opens differently; a preview (no conversation yet) says what the next one opens with, and a
- * call starting in that conversation (`sessionId`, left out of the count) says it too. Every line must pass the
- * opener checks (identity, cross-venture): one that fails is skipped. `opener` is null when there is none (a
- * first conversation); `latest` is the conversation it picks up.
+ * teammate's plan, MX-0005). A preview (no conversation yet) says what the next one opens with, and a call starting
+ * in that conversation (`sessionId`, left out of the count) says it too. Every line must pass the opener checks
+ * (identity, cross-venture): one that fails is skipped. `opener` is null when there is none (a first conversation
+ * without a notebook line); `latest` is the person's latest conversation.
  */
 export async function chooseOpener(
   tx: AppExecutor,
@@ -389,7 +362,6 @@ export async function chooseOpener(
     readonly persona: { readonly id: string; readonly name: string };
     readonly principalId: string;
     readonly guards: Omit<OpenerGuards, 'personaName' | 'personaEirName'>;
-    readonly now: Date;
     /** The conversation the opener is for, when it exists already (a call starting in it). */
     readonly sessionId?: string | null;
     /** Display names of the venture's people, so a name in a distilled line keeps its real case. */
@@ -420,8 +392,7 @@ export async function chooseOpener(
     ownOnly: true,
   });
   const latest = last?.conversations[0] ?? null;
-  // Names in their real case: the team's, and the proper nouns the vEIR wrote in that conversation (item 2: the
-  // founder's lower case, "the harbour hall study room", is never said back as typed).
+  // Names in their real case: the team's, and the proper nouns the vEIR wrote in that conversation (item 2).
   const people: OpenerPeople = {
     founder: principal?.displayName ?? null,
     team: args.team ?? [],
@@ -467,8 +438,6 @@ export async function chooseOpener(
   const reopens = (text: string | null | undefined): boolean =>
     untaken !== null && text !== null && text !== undefined && isAboutThread(text, untaken, names);
   const topic = notebook?.content.nextTopic ?? null;
-  // The founder's news or latest topic in their own words, never the thread they left aside.
-  const pickUp: SubjectOptions = untaken === null ? {} : { avoid: reopens, foundersOwn: true };
   // Conversations the person opened since the latest one without saying anything: each opens differently, and
   // the stored line, once said in one of them, is not said again word for word.
   const since =
@@ -484,7 +453,6 @@ export async function chooseOpener(
           excludeSessionId: args.sessionId ?? null,
           opener: stored,
         });
-  const seed = `${latest?.sessionId ?? 'first'}:${args.principalId}:${String(since.opened)}`;
   // Current: drawn from the person's latest conversation, call or chat; or written after that conversation's last
   // turn once the latest conversation itself was distilled (its distillation saw the opener and kept it), or when the
   // opener's origin is unknown. An opener drawn from an older conversation is never current while the latest one is
@@ -503,72 +471,51 @@ export async function chooseOpener(
       latest.withThisVeir &&
       notebook?.updatedAt != null &&
       Date.parse(notebook.updatedAt) > Date.parse(latest.lastActivityAt));
-  // A stored sentence's subject is read from it (undefined); a line phrased around a thread carries its own.
-  const drawn = (text: string, subject?: OpenerSubject | null): ChosenOpener => ({
-    text,
-    sourceSessionId: source ?? null,
-    byPerson: false,
-    ...(subject === undefined ? {} : { subject }),
-  });
-  // The founder's news in their latest conversation comes first: a stored line that does not name it (the coach's
-  // framing, "anchoring the pilot price") gives way to a line around the news (LAB-R6b).
-  const news = latest === null ? null : newsSubjectOf(latest, people, pickUp);
-  const namesNews =
-    news === null ||
-    topicWords(`${stored ?? ''} ${topic ?? ''}`).some((w) => topicWords(news.text).includes(w));
   // The notebook's line or thread comes back to what the founder left aside: neither is said.
   const leftAside = reopens(next) || reopens(topic);
-  if (stored !== null && current && !fromSomeoneElse && namesNews && !leftAside) {
-    // The model's own line first (coaching v3, owner round 3: openers are model-written, never a template): the
-    // distillation wrote it from what changed in that conversation, after its own opener. It is said unless it was
-    // already said in a conversation opened since, only repeats the question that conversation ended on, or opens
-    // the way that conversation opened (never the same opener twice in a row). No model call here: the line was
-    // written ahead, so the greeting costs nothing at page load.
-    if (
-      since.withOpener === 0 &&
-      !repeatsOpener(stored, latest?.opener ?? null) &&
-      !askedAtTheEnd(heard, stored)
-    ) {
-      return found({ ...drawn(stored), modelLine: true });
-    }
-    // The deterministic fallback: a line phrased around the thread it noted.
-    const when =
-      latest !== null && source === latest.sessionId ? relativeWhen(latest.lastActivityAt, args.now) : null;
-    // Phrased another way while a phrasing opens the way the latest conversation did (never given up for a line
-    // without the thread just because one phrasing's greeting and frame repeated).
-    const arounds =
-      topic === null
-        ? []
-        : openerPhrasings(seed, (s) =>
-            validatedOpener(threadOpener(topic, { seed: s, people, when }), guards),
-          ).filter((t): t is string => t !== null);
-    const around = arounds.find((t) => !repeatsOpener(t, latest?.opener ?? null)) ?? null;
-    const thread = topic === null ? null : threadSubject(topic, people);
-    if (around !== null)
-      return found(drawn(around, thread === null ? null : { kind: 'thread', text: thread }));
+  // The model's own line (coaching v3, owner round 3: openers are model-written, never a template), said unless it was
+  // already said in a conversation opened since, only repeats the question that conversation ended on, or opens the
+  // way that conversation opened (never the same opener twice in a row). No model call here: the line was written
+  // ahead, so the greeting costs nothing at page load or call start.
+  if (
+    stored !== null &&
+    current &&
+    !fromSomeoneElse &&
+    !leftAside &&
+    since.withOpener === 0 &&
+    !repeatsOpener(stored, latest?.opener ?? null) &&
+    !askedAtTheEnd(heard, stored)
+  ) {
+    return found({ text: stored, sourceSessionId: source ?? null, byPerson: false });
   }
-  if (latest !== null) {
-    const subject = latest.withThisVeir ? subjectOf(latest, people, pickUp) : null;
-    // The line about what they brought, phrased another way (another greeting and frame) while one phrasing opens the
-    // way the latest conversation did; the line without a subject only when no phrasing of it is new. A phrasing that
-    // repeated the last opener's start once gave way to the generic line, losing the subject (flaky in review).
-    const phrasings = openerPhrasings(seed, (s) =>
-      continuityOpener(latest, { now: args.now, seed: s, people, subject: pickUp }),
-    );
-    const valid: ChosenOpener[] = [];
-    for (const [candidate, about] of [
-      ...phrasings.map((lines) => [lines.withTopic, subject] as const),
-      ...phrasings.map((lines) => [lines.generic, null] as const),
-    ]) {
-      const text = candidate === null ? null : validatedOpener(candidate, guards);
-      if (text !== null)
-        valid.push({ text, sourceSessionId: latest.sessionId, byPerson: false, subject: about });
-    }
-    // Never the way the latest conversation opened, while another line is there to say.
-    const fallback = valid.find((o) => !repeatsOpener(o.text, latest.opener ?? null)) ?? valid[0];
-    if (fallback !== undefined) return found(fallback);
-  }
-  return found(stored === null || fromSomeoneElse || leftAside ? null : drawn(stored));
+  if (latest === null) return found(null);
+  // No line the model wrote for this conversation: a greeting that names nothing, phrased for this conversation (the
+  // person's latest, and how many they opened since it), never the greeting or the invitation the latest one opened
+  // with.
+  const seed = `${latest.sessionId}:${args.principalId}:${String(since.opened)}`;
+  const plain = plainOpeners(seed, latest.withThisVeir)
+    .map((line) => validatedOpener(line, guards))
+    .filter((line): line is string => line !== null);
+  const fresh = plain.find((line) => !reusesWording(line, latest.opener ?? null)) ?? plain[0];
+  return found(
+    fresh === undefined ? null : { text: fresh, sourceSessionId: latest.sessionId, byPerson: false },
+  );
+}
+
+/**
+ * Whether `line` (a greeting and an invitation) says again what `previous` (the latest conversation's opener) said:
+ * {@link repeatsOpener}, or the same greeting, or the same invitation, anywhere in it.
+ */
+function reusesWording(line: string, previous: string | null): boolean {
+  if (previous === null || previous.trim() === '') return false;
+  if (repeatsOpener(line, previous)) return true;
+  const flat = (text: string): string =>
+    text.toLowerCase().replace(/[‘’ʼ]/g, "'").replace(/\s+/g, ' ').trim();
+  const said = flat(previous);
+  return line
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => flat(part).replace(/[.!?]+$/, ''))
+    .some((part) => part !== '' && said.includes(part));
 }
 
 /** The founder's messages in a conversation, oldest first, and whether that is all of them. */
@@ -631,18 +578,6 @@ export function repeatsOpener(candidate: string, previous: string | null): boole
       .join(' ');
   const a = start(candidate);
   return isNearDuplicate(candidate, previous, 0.6) || (a !== '' && a === start(previous));
-}
-
-/** Phrasings of the fallback line tried before one that opens differently from the latest conversation is given up. */
-export const OPENER_PHRASINGS = 6;
-
-/**
- * The fallback line `make` phrases for `seed`, then for {@link OPENER_PHRASINGS} - 1 seeds derived from it: another
- * greeting and frame for the same substance, so a phrasing that opens the way the latest conversation did is said
- * another way rather than dropped for a line without its subject.
- */
-export function openerPhrasings<T>(seed: string, make: (seed: string) => T): T[] {
-  return Array.from({ length: OPENER_PHRASINGS }, (_, i) => make(i === 0 ? seed : `${seed}:${String(i)}`));
 }
 
 /** First words of two openers that may not be the same (a greeting and its frame: "Good to talk again. Shall we pick up"). */

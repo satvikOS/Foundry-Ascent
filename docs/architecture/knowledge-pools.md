@@ -388,30 +388,26 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   what was said in it. Temporary and deleted conversations and other ventures are never read; a temporary
   conversation reads nothing. The notes' earlier digests leave out the conversations this section shows (each is
   sent once) and mark one with a previous coach as that coach's. A new standard conversation opens with the
-  notebook's next opener when a person wrote or rewrote it; when it is current (drawn from the person's latest
-  conversation, or nothing was said since it was written; one kept from an older conversation only when the founder
-  spoke of its thread in the latest), with a greeting phrased afresh around the thread the
-  distillation noted to come back to (`nextTopic`, a short phrase: "Welcome back. I wanted to come back to the five
-  library-staff interviews you planned. How is it going?"), or the stored sentence when there is no thread (never
-  when it only repeats the question that conversation ended on, or already opened a conversation since); otherwise
-  with a line built from that latest conversation ("Good to have you back. Last time (about 3 minutes ago, on a
-  call), we talked about whether to price per library or per seat."): its digest's topics said mid-sentence, else
-  a summary of what the founder brought, never their words quoted back ("whether to …", "how to …", "your plan to
-  …", "booking the auditorium", or its most telling noun phrase; never a greeting, a check, a recall or memory
-  question, a question about the vEIR, thanks or a wrap-up), else a generic line. A thread the latest conversation
-  opened on that the founder took up in none of their messages there is never opened on again, as the notebook's
-  opener, its thread or that conversation's subject: the line picks up their news, else their latest topic, else
-  invites them plainly. A subject must read as one (`readsAsSubject`: never a lone date or month, a single word that
-  only describes ("full-time"), a plan without its verb, or a phrase cut mid-clause). Every distilled line it uses (the
-  thread, the stored sentence, the topics) is said to the founder: their name or "the founder" becomes "you", team
-  names keep their real case, and a line still in the third person is left out. Phrasing varies with how many
-  conversations the person opened since, so two never open alike. The line is validated like any opener and
-  stored with the conversation it came from (`coaching_sessions.opener`). A call says it after introducing itself; a call that
+  notebook's next opener when a person wrote or rewrote it; else with the line the model wrote at distillation when
+  it is current (drawn from the person's latest conversation, or nothing was said since it was written; one kept
+  from an older conversation only when the founder spoke of its thread in the latest), said as written (never when
+  it only repeats the question that conversation ended on, opens the way it opened, comes back to a thread it opened
+  on that the founder took up in none of their messages there, or already opened a conversation since). What an
+  opener is about is always the model's choice: the distillation prompt has it pick up the most important thread of
+  that conversation, or, when nothing about the venture was said (small talk, a one-word reply, a test), the most
+  important open thread of the notebook; never small talk, a question about the vEIR itself or anything personal,
+  every word in its own spelling. Otherwise the conversation opens with a short, warm greeting that names nothing
+  ("Hello again. What feels most pressing right now?"; `plainOpeners`), phrased for that conversation and never
+  with the greeting or invitation the latest one opened with; nothing the founder said is ever read by rule for
+  what to open on (production 2026-11-06: "hows your perosnal life going on.." became "Hi, want to carry on with
+  your perosnal life?"). Every distilled line is said to the founder: their name or "the founder" becomes "you",
+  team names keep their real case, and a line still in the third person is left out. The line is validated like any
+  opener and stored with the conversation it came from (`coaching_sessions.opener`). A call says it; a call that
   starts a conversation nobody has said anything in chooses the line again at call start and keeps it as the
   conversation's first message. `GET /ventures/:id/opener` previews it for New chat, which greets with it (the
   opener's own greeting as the heading, with the founder's name; the time of day only with nothing to pick up, or
-  for a private chat) and creates the conversation with `openerShownAt` (the preview's `at`), so the line is
-  phrased as it was shown, within an hour; `null` (no opener shown) opens the conversation without one. A hello
+  for a private chat) and creates the conversation with `openerShownAt` (the preview's `at`); `null` (no opener
+  shown) opens the conversation without one. A hello
   right after the opener is answered with a hello, never the recall again (`<conversation_state>` reads the
   founder's first message as the reply to the replayed opener).
 - **Distillation** (purpose `distill`, the daily caps and the kill switch) runs from jobs only the API

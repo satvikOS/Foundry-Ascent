@@ -173,7 +173,7 @@ describe('a call introduces the vEIR only on a first meeting', () => {
     expect(typed.status).toBe('completed');
     const again = await h.core.calls.start(devin, session.id, { inputMode: 'typed' });
     // Without his name: the first call's intro said it, and the name is said one reply in four at most.
-    expect(again.intro?.text).toBe('Hi, where would you like to pick up?');
+    expect(again.intro?.text).toMatch(/^Hi, .*(?:pick up|carry on|next)\?$/);
     await h.core.calls.end(devin, again.call.id, { reason: 'user' });
   });
 });

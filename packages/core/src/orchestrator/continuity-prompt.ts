@@ -7,19 +7,7 @@ import {
   truncate,
 } from '@foundry/ai';
 
-import {
-  addressFounder,
-  isClauseFragment,
-  isTopicLine,
-  isVenting,
-  opensANameWithADiscourseWord,
-  readsAsSubject,
-  topicOf,
-  topicWords,
-  withoutDiscourseWords,
-  type LineTopic,
-  type OpenerPeople,
-} from './opener-topic.js';
+import { isTopicLine } from './founder-lines.js';
 
 /**
  * "Where you left off": what the vEIR knows about the venture's most recent earlier conversations at the moment a
@@ -32,8 +20,11 @@ import {
  *   the start of the final user message, before the `<your_notes>` block, as untrusted data (escaped, never with
  *   system authority, like the notes and the evidence). The conversation-craft doctrine of the system prompt
  *   refers to it by its heading, {@link LEFT_OFF_HEADING}.
- * - {@link continuityOpener}: the deterministic, identity-safe opening line of a new conversation (its first
- *   bubble, and what a call says after introducing itself) when no better opener is stored.
+ * - {@link plainOpeners}: the opening line of a new conversation (its first bubble, and what a call says) when the
+ *   notebook holds no line the model wrote for it: a short, warm greeting that names no subject. What an opener is
+ *   about always comes from the model (the notebook's next opener, written at distillation), never from the founder's
+ *   words read by rule (production 2026-11-06: "hows your perosnal life going on.." became "Hi, want to carry on with
+ *   your perosnal life?").
  *
  * Nothing here is logged; the section carries founder words.
  */
@@ -358,7 +349,7 @@ export function renderLeftOffSection(
   return `${truncate(section, maxChars - '\n</where_you_left_off>'.length)}\n</where_you_left_off>`;
 }
 
-/** A small, stable hash (FNV-1a) choosing the phrasing of an opener per conversation. */
+/** A small, stable hash (FNV-1a) choosing the phrasing of a greeting per conversation. */
 function seedOf(text: string): number {
   let hash = 0x811c9dc5;
   for (let i = 0; i < text.length; i += 1) {
@@ -368,349 +359,76 @@ function seedOf(text: string): number {
   return hash;
 }
 
-function capitalise(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
+/** `hash` with its bits mixed, so seeds that differ only at the end still spread over every phrasing. */
+function mixed(hash: number): number {
+  let h = hash ^ (hash >>> 16);
+  h = Math.imul(h, 0x45d9f3b) >>> 0;
+  h ^= h >>> 16;
+  return h >>> 0;
 }
 
-/**
- * A label as it is said in the middle of a sentence: "Regulatory pathway" becomes "regulatory pathway" (labels are
- * capitalised like headings), while a name or an acronym keeps its case ("Boston pilot", "FDA clearance", "iOS
- * app"). Only a first word that is an everyday English word written as a heading ("Regulatory") is lowered, never
- * one that opens a name of capitalised words with a discourse word in it ("Entrepreneur First", "Founders First":
- * lowered, the name was cut at "First").
- */
-export function midSentence(label: string): string {
-  const text = oneLine(label);
-  const first = /^\p{Lu}\p{Ll}+(?=$|[\s,;:–—-])/u.exec(text)?.[0];
-  if (first === undefined || opensANameWithADiscourseWord(text)) return text;
-  return isEverydayWord(first) ? `${first.toLowerCase()}${text.slice(first.length)}` : text;
-}
-
-/**
- * What an opening line is about, in the pieces a line is built from: a thread the vEIR noted to come back to
- * (`thread`: "the five library-staff interviews you planned"), the last conversation's topics (`topics`: "per-library
- * pricing"), or a question the founder asked there, summarised (`question`: "whether to price per library or per
- * seat"). Said to the founder, mid-sentence. A call's greeting is phrased around it in one sentence.
- */
-export interface OpenerSubject {
-  readonly kind: 'thread' | 'topics' | 'question';
-  readonly text: string;
-}
-
-/** Question words: a phrase opening with one is a clause ("where we left off yesterday"), unless it is the question. */
-const WH_START = /^(?:where|what|when|who|whom|why|how|which|whether)(?![\p{L}'])/iu;
-/**
- * A question the founder asked, as `topicOf` summarises it ("whether you can do the pilot for $500", "how to price
- * the pilot"): a pronoun and its verb belong in it, so it is no clause fragment.
- */
-const ASKED = /^(?:whether\s|(?:how|what|which|when|where|who)\s+to\s)/i;
-/**
- * The founder's own "I", "my" or "we" in a question read back from an opener ("whether I should quit my job", "how to
- * tell my cofounder"): said by the vEIR, it would be its own job and its own life (the presence policy; the review of
- * e9e49fb heard "Hi Maya, where did you land on whether I should quit my job?"). `topicOf` says a question to the
- * founder ("whether you should…", "your cofounder"), so one in the first person quotes their line: a fragment. Case
- * matters for "us": "the US market" is no one; nor is a numeral after a name ("a Phase I trial", "a Class I device",
- * "I-9 forms": the differential review of 6656c33).
- */
-const FIRST_PERSON =
-  /(?<![\p{L}'’])(?:(?<!\b(?:Phase|Class|Type|Stage|Tier|Grade|Part|Level|Series|Schedule|Category|Title|Chapter|Section|Article|Volume|Act)\s)[Ii](?:['’](?:m|ve|ll|d))?(?!-)|[Mm](?:e|y|ine|yself)|[Ww]e(?:['’](?:re|ve|ll|d))?|us|[Oo]urs?)(?![\p{L}'’])/u;
-
-/** Longest phrase read from a stored opener (a greeting shortens it to fit; see calls.ts `repeatGreeting`). */
-const OPENER_PHRASE_CHARS = 120;
-
-/**
- * What a stored opening sentence is about, read from the shapes openers take, or why it cannot be said: a subject;
- * `fragment` when it has one of those shapes around a clause cut from the founder's line, or around words that do not
- * read as a subject (`readsAsSubject`: "we talked about January"), never said again; null for any other sentence.
- * "Said you'd X", "were going to X" and "planned to X" are a plan: `your plan to X`. The phrase is read without the
- * adverbs at its ends ("we talked about a short pilot instead" is about "a short pilot": the voice suite on 9a2a41f),
- * a plan's with the timing or the manner that is all its verb has ("you said you'd hire later" is "your plan to hire
- * later", never "your plan to hire": the differential review of 6656c33), and with its numbers whole ("$1.5M",
- * "$1,200"). A subject that vents, withdraws from the venture or speaks of the founder's private health ("you said
- * you'd see your therapist", "we talked about whether to give up": `isVenting`) is a fragment, never said again.
- */
-export function readOpener(text: string): OpenerSubject | 'fragment' | null {
-  const read = readOpenerShape(text);
-  return read === null || read === 'fragment' || (readsAsSubject(read.text) && !isVenting(read.text))
-    ? read
-    : 'fragment';
-}
-
-/** {@link readOpener} before its subject is checked. */
-function readOpenerShape(text: string): OpenerSubject | 'fragment' | null {
-  const flat = text.replace(/[‘’ʼ]/g, "'").replace(/\s+/g, ' ').trim();
-  /** The phrase a shape names (`{ cut }`), `fragment`, or null when it names nothing sayable. */
-  const phrase = (
-    raw: string | undefined,
-    question = false,
-    verbPhrase = false,
-  ): { readonly cut: string } | 'fragment' | null => {
-    const cut = withoutDiscourseWords(
-      (raw ?? '').split(/(?<!\d)[.:]|[.:](?!\d)|[!?;]|,\s|\s—\s|\s-\s/)[0]?.trim() ?? '',
-      verbPhrase,
-    );
-    if (cut === '' || cut.length > OPENER_PHRASE_CHARS || topicWords(cut).length === 0) return null;
-    const asked = question && ASKED.test(cut);
-    if (asked ? FIRST_PERSON.test(cut) : isClauseFragment(cut)) return 'fragment';
-    // A question word opens a clause ("pick up where we left off yesterday"): a subject only as the question asked.
-    return !question && WH_START.test(cut) ? null : { cut };
-  };
-  const planned =
-    /\blast time,? you (planned|were (?:going|planning|hoping)|said you'd|said you would|said you were going|wanted|hoped)( to)? (.+)$/i.exec(
-      flat,
-    );
-  if (planned !== null) {
-    // "said you'd email the dean": a plan, never a noun phrase ("how did email the dean go?").
-    const plan = planned[2] !== undefined || /^said/i.test(planned[1] ?? '');
-    const what = phrase(planned[3], false, plan);
-    if (what === null || what === 'fragment') return what;
-    if (plan) {
-      return { kind: 'thread', text: `your plan to ${what.cut}` };
-    }
-    if (!/^planned$/i.test(planned[1] ?? '')) return null;
-    return {
-      kind: 'thread',
-      text: /^(?:\d|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(what.cut)
-        ? `the ${what.cut}`
-        : what.cut,
-    };
-  }
-  const left = /\b(?:we left off on|come back to|pick up|we were on)\s+(.+)$/i.exec(flat);
-  if (left !== null) {
-    const what = phrase(left[1]?.replace(/,? or (?:is )?something else.*$/i, ''));
-    return what === null || what === 'fragment' ? what : { kind: 'thread', text: what.cut };
-  }
-  const talked = /\bwe (?:talked|spoke) about\s+(.+)$/i.exec(flat);
-  if (talked !== null) {
-    const what = phrase(talked[1], true);
-    if (what === null || what === 'fragment') return what;
-    return { kind: WH_START.test(what.cut) ? 'question' : 'topics', text: what.cut };
-  }
-  return null;
-}
-
-/**
- * What a stored opening sentence is about (see {@link readOpener}), so a call can greet around it in one sentence;
- * null for any other sentence and for one that names a clause fragment.
- */
-export function subjectOfOpener(text: string): OpenerSubject | null {
-  const read = readOpener(text);
-  return read === 'fragment' ? null : read;
-}
-
-/** What the last conversation was about (never a thread: see {@link OpenerSubject}). */
-type Subject = OpenerSubject & { readonly kind: 'topics' | 'question' };
-
-/** How a subject is chosen from a conversation. */
-export interface SubjectOptions {
-  /**
-   * A subject this returns true for is never chosen: the thread the conversation opened on that the founder never
-   * took up (orchestrator/continuity.ts `chooseOpener`).
-   */
-  readonly avoid?: (text: string) => boolean;
-  /**
-   * Only what the founder brought in their own words (their news, else their latest topic), never the digest's
-   * topics (which can be the vEIR's framing of the thread they left aside).
-   */
-  readonly foundersOwn?: boolean;
-}
-
-/**
- * A subject an opener can say: it reads as one (`readsAsSubject`), it is not the founder venting, withdrawing or
- * speaking of their private health (`isVenting`, as on every other path: the differential review of cc29cad heard
- * "we talked about your plan to talk to someone" for "I just need to talk to someone tbh"), and it is not one to avoid.
- */
-function sayable(text: string | null, options: SubjectOptions): text is string {
-  return (
-    text !== null && text !== '' && readsAsSubject(text) && !isVenting(text) && options.avoid?.(text) !== true
-  );
-}
-
-/**
- * The founder's latest news in a conversation, as a subject ("signing a letter of intent with Hartwell"), or null:
- * news comes first in an opener (LAB-R6b: the opener named the coach's "anchoring the pilot price" over "we signed a
- * letter of intent with Hartwell"). Only words that read as a subject: "My cofounder wants to quit his job and go
- * full-time in January" is "your cofounder's plan to go full-time in January", never "January" (lab run 39780304879).
- */
-export function newsSubjectOf(
-  c: Pick<LeftOffConversationData, 'exchanges' | 'said'>,
-  people: OpenerPeople,
-  options: SubjectOptions = {},
-): Subject | null {
-  const said = c.said ?? c.exchanges.map((x) => x.founder);
-  for (const raw of [...said].reverse()) {
-    if (!founderMoves(raw).includes('news') || !isTopicLine(raw)) continue;
-    const topic = topicOf(raw);
-    const text = topic === null ? null : addressFounder(topic.text, people);
-    if (sayable(text, options) && text.length <= 70)
-      return { kind: topic?.question === true ? 'question' : 'topics', text };
-  }
-  return null;
-}
-
-/**
- * What the last conversation was about: the founder's news first ({@link newsSubjectOf}), then the digest's topics (one or two, said mid-sentence, addressed to the
- * founder), else a summary of the most telling thing the founder brought (opener-topic.ts `topicOf`), from its
- * last messages or its first one (the title). Greetings, checks, recall and memory questions, questions about the
- * vEIR, thanks and wrap-ups are never a subject, and nothing the founder said is quoted back (LAB-R3). Only what reads
- * as a subject (`readsAsSubject`), and nothing `options.avoid` rules out; with `options.foundersOwn`, only the
- * founder's news or their latest topic. Null when nothing names a topic.
- */
-export function subjectOf(
-  c: Pick<LeftOffConversationData, 'digest' | 'title' | 'exchanges' | 'said'>,
-  people: OpenerPeople,
-  options: SubjectOptions = {},
-): Subject | null {
-  const news = newsSubjectOf(c, people, options);
-  if (news !== null) return news;
-  if (options.foundersOwn !== true) {
-    const topics = (c.digest?.topics ?? [])
-      .map((t) => addressFounder(withoutDiscourseWords(midSentence(t).replace(/[.!?]+$/, '')), people))
-      // Never the founder venting or their private health, distilled as a topic ("your burnout").
-      .filter(
-        (t): t is string =>
-          t !== null && t !== '' && t.length <= 60 && !isVenting(t) && options.avoid?.(t) !== true,
-      );
-    const joined = topics.slice(0, 2).join(' and ');
-    if (topics.length > 0 && readsAsSubject(joined)) return { kind: 'topics', text: joined };
-  }
-  // The newest messages first: they are where the conversation left off (with `foundersOwn`, everything they said
-  // in its last exchanges, distilled or not; else what the digest does not cover yet).
-  const founderLines =
-    options.foundersOwn === true
-      ? (c.said ?? c.exchanges.map((x) => x.founder))
-      : c.exchanges.map((x) => x.founder);
-  const lines = [...[...founderLines].reverse(), ...(c.title === null ? [] : [c.title])];
-  let best: (LineTopic & { readonly said: string }) | null = null;
-  for (const line of lines) {
-    if (!isTopicLine(line)) continue;
-    const topic = topicOf(line);
-    const said = topic === null ? null : addressFounder(topic.text, people);
-    if (topic === null || !sayable(said, options)) continue;
-    if (best === null || topic.score > best.score) best = { ...topic, said };
-    // Their latest topic, when only what they brought is said.
-    if (options.foundersOwn === true) break;
-  }
-  return best === null ? null : { kind: best.question ? 'question' : 'topics', text: best.said };
-}
-
-/**
- * What the last conversation was about, as the vEIR can say it after "Last time,": "we talked about per-library
- * pricing", "we talked about whether to run a two-week test". Null when nothing names a topic.
- */
-export function leftOffTopic(
-  c: Pick<LeftOffConversationData, 'digest' | 'title'> &
-    Partial<Pick<LeftOffConversationData, 'exchanges' | 'said'>>,
-  people: OpenerPeople = { founder: null },
-): string | null {
-  const subject = subjectOf({ exchanges: [], ...c }, people);
-  return subject === null ? null : `we talked about ${subject.text}`;
-}
-
-const GREETINGS = [
-  'Good to have you back.',
+/** Greetings to someone this vEIR has talked with before. */
+const GREETINGS_AGAIN = [
+  'Good to see you again.',
   'Welcome back.',
-  'Good to talk again.',
+  'Good to have you back.',
   'Nice to hear from you again.',
+  'Great to see you.',
+  'Hello again.',
+  'Good to talk again.',
 ];
+/** Greetings to someone whose last conversation here was with another coach of the venture (never "again"). */
+const GREETINGS_NEW = ['Good to have you here.', 'Welcome.', 'Glad you’re here.'];
 
-/** Endings after a question the founder asked (summarised as "whether to …", "how to …"). */
-const ENDINGS = [
-  'Where did you land on it?',
-  'Want to pick that up, or is something else on your mind?',
-  'Shall we carry on from there, or start somewhere new?',
+/** Invitations that name nothing: the founder chooses what the conversation is about. */
+const INVITATIONS = [
+  'What’s on your mind today?',
+  'Where would you like to start?',
+  'What would you like to work on?',
+  'What feels most pressing right now?',
+  'What shall we dig into?',
+  'What would be most useful to talk through?',
 ];
-
-/** Endings that make sense whatever the subject was (a statement or two topics). */
-const OPEN_ENDINGS = [
-  'Want to pick that up, or is something else on your mind?',
-  'Shall we carry on from there, or start somewhere new?',
-  'How has it gone since?',
-];
+/** Invitations only someone met before hears. */
+const INVITATIONS_AGAIN = ['What’s been happening since we last spoke?'];
 
 /**
- * The deterministic opening line of a new conversation that follows `last` (the person's own latest one), for
- * when no better opener is stored: it says when that was and what it was about, and invites them to carry on.
- * The phrasing varies with `seed`, so one conversation after another rarely opens alike. It names nobody and
- * claims nothing about a person (callers still run it through the opener checks). What it was about is
- * summarised, never quoted, and said to the founder (`people`); `withTopic` is null when the last conversation has
- * nothing worth naming (only greetings, checks, recall or identity questions); `generic` never names one.
+ * The topic-free opening lines of a new conversation, in the order this `seed` (the conversation) tries them: a
+ * greeting, then an invitation that names nothing ("Welcome back. What feels most pressing right now?"). Said when the
+ * notebook holds no line the model wrote for this conversation (distillation has not run yet, wrote none because nothing
+ * about the venture was said, or its line cannot be said): no subject, none of the founder's words, no name (a call
+ * adds it within the name budget), no time words. `met`: the person talked with this vEIR before (else their last
+ * conversation was with another coach of the venture). Every greeting and invitation comes up in turn, so a caller can
+ * skip the ones the last conversation opened with.
  */
-export function continuityOpener(
-  last: Pick<LeftOffConversationData, 'digest' | 'title' | 'channel' | 'lastActivityAt' | 'withThisVeir'> &
-    Partial<Pick<LeftOffConversationData, 'exchanges' | 'said'>>,
-  options: {
-    readonly now: Date;
-    readonly seed: string;
-    readonly people?: OpenerPeople;
-    /** How its subject is chosen ({@link subjectOf}). */
-    readonly subject?: SubjectOptions;
-  },
-): { readonly withTopic: string | null; readonly generic: string } {
-  const seed = seedOf(options.seed);
-  const when = relativeWhen(last.lastActivityAt, options.now);
-  const onCall = last.channel === 'call' ? ', on a call' : '';
-  const subject = subjectOf({ exchanges: [], ...last }, options.people ?? { founder: null }, options.subject);
-  const greeting = GREETINGS[seed % GREETINGS.length] ?? GREETINGS[0];
-  if (!last.withThisVeir) {
-    // Another coach had it: the founder's history, never "we".
-    return {
-      withTopic:
-        subject === null
-          ? null
-          : `Good to have you here. Your last conversation here (${when}${onCall}) was about ${subject.text}. Want to pick that up, or start somewhere new?`,
-      generic: `Good to have you here. Want to pick up where your last conversation here left off ${when}, or start on something new?`,
-    };
+export function plainOpeners(seed: string, met: boolean): string[] {
+  const greetings = met ? GREETINGS_AGAIN : GREETINGS_NEW;
+  const invitations = met ? [...INVITATIONS, ...INVITATIONS_AGAIN] : INVITATIONS;
+  const h = mixed(seedOf(seed));
+  const out: string[] = [];
+  for (let k = 0; k < greetings.length * invitations.length; k += 1) {
+    const greeting = greetings[(h + k) % greetings.length] ?? greetings[0];
+    const invitation =
+      invitations[((h >>> 7) + k + Math.floor(k / greetings.length)) % invitations.length] ?? invitations[0];
+    out.push(`${greeting ?? ''} ${invitation ?? ''}`.trim());
   }
-  const generic = `${greeting} Want to pick up where we left off ${when}, or start on something new?`;
-  if (subject === null) return { withTopic: null, generic };
-  const topic = `we talked about ${subject.text}`;
-  const endings = subject.kind === 'question' ? ENDINGS : OPEN_ENDINGS;
-  const ending = endings[(seed >>> 5) % endings.length] ?? OPEN_ENDINGS[0];
-  const withTopic = [
-    `${greeting} Last time (${when}${onCall}), ${topic}. ${ending}`,
-    `${greeting} ${capitalise(when)}${onCall}, ${topic}. ${ending}`,
-    `${greeting} When we last spoke (${when}${onCall}), ${topic}. ${ending}`,
-  ][(seed >>> 3) % 3];
-  return { withTopic: withTopic ?? null, generic };
+  return [...new Set(out)];
 }
 
-/**
- * The thread the vEIR noted to come back to (the notebook's next topic) as an opener says it: mid-sentence and to
- * the founder, or null when it cannot be said (still in the third person, nothing to name, too long).
- */
-export function threadSubject(topic: string, people: OpenerPeople = { founder: null }): string | null {
-  // Distilled about the founder ("the facility budget numbers maya will get"): said to them, or not at all (LAB-U2);
-  // without an adverb at its ends ("the short pilot instead"); never the founder venting, withdrawing or their private
-  // health ("your plan to see your therapist", "quitting the startup": the differential review of 6656c33).
-  const thread = addressFounder(withoutDiscourseWords(midSentence(topic).replace(/[.!?]+$/, '')), people);
-  return thread === null || !readsAsSubject(thread) || isVenting(thread) || thread.length > 120
-    ? null
-    : thread;
-}
+/** Invitations that name nothing, said mid-sentence after a call's hello ("Hi Maya, what's on your mind today?"). */
+const CALL_INVITATIONS = INVITATIONS.map((i) => `${i.charAt(0).toLowerCase()}${i.slice(1)}`);
+/** The same, for a conversation already under way (a call joins it). */
+const CALL_CONTINUATIONS = [
+  'where would you like to pick up?',
+  'where shall we carry on?',
+  'what would you like to look at next?',
+];
 
 /**
- * The opening line that comes back to a thread the vEIR noted to pick up next time (the notebook's next topic, a
- * short phrase such as "the five library-staff interviews you planned"), phrased afresh for each conversation
- * (`seed`), with when that was when it is known. The thread is said mid-sentence and to the founder (`people`:
- * distilled about them, it is rephrased in the second person, or no line is made); callers still run the line
- * through the opener checks.
+ * What a call says after its hello when it has no opener to say (`seed`: the call), mid-sentence: an invitation that
+ * names nothing, or for a conversation already under way, one to carry on.
  */
-export function threadOpener(
-  topic: string,
-  options: { readonly seed: string; readonly when?: string | null; readonly people?: OpenerPeople },
-): string | null {
-  const thread = threadSubject(topic, options.people ?? { founder: null });
-  if (thread === null) return null;
-  const seed = seedOf(options.seed);
-  const greeting = GREETINGS[seed % GREETINGS.length] ?? GREETINGS[0];
-  const last = options.when ? `Last time (${options.when})` : 'Last time';
-  return (
-    [
-      `${greeting} I wanted to come back to ${thread}. How is it going?`,
-      `${greeting} ${last}, we left off on ${thread}. Where are things now?`,
-      `${greeting} Shall we pick up ${thread}, or is something else on your mind?`,
-      `${greeting} ${last}, we talked about ${thread}. How has it gone since?`,
-    ][(seed >>> 3) % 4] ?? null
-  );
+export function plainInvitation(seed: string, conversationStarted: boolean): string {
+  const lines = conversationStarted ? CALL_CONTINUATIONS : CALL_INVITATIONS;
+  return lines[mixed(seedOf(seed)) % lines.length] ?? lines[0] ?? '';
 }

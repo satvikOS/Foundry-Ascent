@@ -125,5 +125,12 @@ describe('New chat’s greeting', () => {
       splitOpener('Hello and thanks again for walking me through the whole pilot plan. What next?').greeting,
     ).toBeNull();
     expect(splitOpener('Welcome back.').greeting).toBeNull();
+    // The greetings of a line that names nothing, for someone whose last conversation was with another coach.
+    for (const greeting of ['Welcome.', 'Glad you’re here.', 'Good to have you here.']) {
+      expect(splitOpener(`${greeting} What feels most pressing right now?`)).toEqual({
+        greeting,
+        rest: 'What feels most pressing right now?',
+      });
+    }
   });
 });

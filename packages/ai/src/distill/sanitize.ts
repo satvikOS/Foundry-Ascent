@@ -131,6 +131,8 @@ export interface DistillStats {
    * raised, or a thread kept from an earlier conversation that this one never took up.
    */
   untakenOpenerDropped: number;
+  /** 1 when the proposed next opener (with its thread) was about someone's personal life, never a mentor's opener. */
+  personalOpenerDropped: number;
 }
 
 export interface SanitizedDistill {
@@ -201,6 +203,10 @@ function byCommitmentOrder(a: NotebookCommitment, b: NotebookCommitment): number
   }
   return b.createdAt.localeCompare(a.createdAt);
 }
+
+/** Someone's personal life, never what a mentor opens a conversation on ("your personal life", "your love life"). */
+const PERSONAL_LIFE =
+  /\b(?:personal|private|love|dating|family|home|social|sex)\s+li(?:fe|ves)\b|\b(?:your|my)\s+(?:weekend|holiday|vacation|boyfriend|girlfriend|husband|wife)\b/i;
 
 /**
  * The threads a conversation raised that the founder did not take up ({@link untakenThread}): what it opened with;
@@ -287,6 +293,7 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     lessonDropReasons: [],
     identityRewrites: 0,
     untakenOpenerDropped: 0,
+    personalOpenerDropped: 0,
   };
   const identity = {
     personaName: ctx.personaName,
@@ -543,8 +550,9 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     nextTopic = topic === '' || topic.endsWith('?') || mentionsSuppressed(topic) ? null : topic;
     // Never a thread the founder did not take up when it was raised, nor one kept from an earlier conversation that
     // this one never took up (lab run 39780304879: the opener re-opened the advisor session the founder ignored, and
-    // a chat's distillation copied the previous opener word for word). The opener then picks up what the founder
-    // brought instead (orchestrator/continuity.ts `chooseOpener`).
+    // a chat's distillation copied the previous opener word for word). With no line, the next conversation opens with
+    // a greeting that names nothing (orchestrator/continuity.ts `chooseOpener`); the prompt asks for another open
+    // thread of the notebook instead.
     if (nextOpener !== null && ctx.conversation !== undefined) {
       const untaken = untakenThreads(ctx.conversation, previous, ctx.previousOpenerSource, ctx.sessionId);
       const names = ctx.conversation.names ?? [];
@@ -558,6 +566,13 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
         nextTopic = null;
         stats.untakenOpenerDropped = 1;
       }
+    }
+    // Never anyone's personal life (production 2026-11-06: the founder asked about the mentor's life, and the next call
+    // opened on it). The prompt rules it out; this holds when the model does not.
+    if (nextOpener !== null && [nextOpener, nextTopic].some((t) => t !== null && PERSONAL_LIFE.test(t))) {
+      nextOpener = null;
+      nextTopic = null;
+      stats.personalOpenerDropped = 1;
     }
     if (nextOpener !== null && nextOpener !== previous?.nextOpener) fresh.push(nextOpener);
     if (nextTopic !== null && nextTopic !== previous?.nextTopic) fresh.push(nextTopic);

@@ -243,10 +243,19 @@ describe('buildDistillPrompt', () => {
     // No opener, no line.
     expect(buildDistillPrompt(INPUT).messages[0]?.content).not.toContain('<opened_with');
     const { system } = buildDistillPrompt(INPUT);
-    expect(system).toContain(
-      'Never a thread they did not take up when you raised it (what <opened_with> raised',
-    );
-    expect(system).toContain('never keep the previous next_opener or its next_topic unless they took that');
+    expect(system).toContain('a thread they did not take up when you raised it (what <opened_with> raised');
+    expect(system).toContain('the previous next_opener or its next_topic unless they took that thread up in');
+  });
+
+  it('asks the model for the notebook’s most important open thread instead of null, never small talk or a typo (production 2026-11-06)', () => {
+    const { system } = buildDistillPrompt(INPUT);
+    expect(system).toContain('When THIS conversation brought nothing about the');
+    expect(system).toContain('open instead on the most important thread still open in <previous_notebook>');
+    expect(system).toContain('null only when <previous_notebook> holds no open thread either.');
+    expect(system).toContain('anything the founder asked about you yourself');
+    expect(system).toContain('personal life, health, family, relationships, finances, beliefs');
+    expect(system).toContain('every word spelled correctly, never their typos');
+    expect(system).toContain('in the first');
   });
 
   it('sends the earliest turns not yet distilled, at most MAX_DISTILL_TURNS, and says when there is no notebook', () => {
@@ -921,6 +930,56 @@ describe('sanitizeDistill — the next opener is a thread the founder took up (l
   });
 });
 
+describe('a conversation with nothing about the venture in it (production 2026-11-06)', () => {
+  // The previous call held only "great" and "hows your perosnal life going on.." (the founder asked the mentor about
+  // his life), after an opener on the advisor session; the next call opened "Hi, want to carry on with your perosnal
+  // life?".
+  const SMALL_TALK = ['great', 'hows your perosnal life going on..'];
+  const OPENED = 'Good to see you again. Did the advisor session happen?';
+  const OTHER = '00000000-0000-4000-8000-0000000000cc';
+  const THREADS: PreviousNotebook = {
+    ...PREVIOUS,
+    openQuestions: [
+      entry('q-learned', 'What were the top three things Maya learned in the advisor session?'),
+      entry('q-pays', 'What is the single thing customers would pay for, and who signs the cheque?'),
+    ],
+    lastAdvice: [entry('a-pathway', 'Book the innovation pathway advisor session and clarify who pays.')],
+    nextOpener: OPENED,
+    nextTopic: 'the advisor session',
+  };
+  const said = (nextOpener: string | null, nextTopic: string | null) =>
+    run(
+      draft({ notebook: { ...draft().notebook, next_opener: nextOpener, next_topic: nextTopic } }),
+      ctx({
+        previousNotebook: THREADS,
+        previousOpenerSource: OTHER,
+        conversation: { opener: OPENED, founderTurns: SMALL_TALK, names: ['Maya', 'Thomas'] },
+      }),
+    );
+
+  it('keeps a line the model wrote from another open thread of the notebook', () => {
+    const out = said(
+      'Good to see you again. Have you worked out who signs the cheque at the clinics?',
+      'who signs the cheque at the clinics',
+    );
+    expect(out.notebookDelta.nextOpener).toBe(
+      'Good to see you again. Have you worked out who signs the cheque at the clinics?',
+    );
+    expect(out.stats.untakenOpenerDropped).toBe(0);
+    expect(out.stats.personalOpenerDropped).toBe(0);
+  });
+
+  it('drops a line on anyone’s personal life, and one on the thread the call opened on that they left aside', () => {
+    const personal = said('Hi again! How is your personal life going these days?', 'your personal life');
+    expect(personal.notebookDelta.nextOpener).toBeNull();
+    expect(personal.notebookDelta.nextTopic).toBeNull();
+    expect(personal.stats.personalOpenerDropped).toBe(1);
+    const aside = said('Good to see you. Did the advisor session happen in the end?', 'the advisor session');
+    expect(aside.notebookDelta.nextOpener).toBeNull();
+    expect(aside.stats.untakenOpenerDropped).toBe(1);
+  });
+});
+
 describe('sanitizeDistill — memory and lesson candidates', () => {
   it('cites only shown evidence, clamps confidence and skips what memory already holds', () => {
     const out = run();
@@ -1140,7 +1199,8 @@ describe('a mentor under its own name (audit P0-3: Thomas, ADR-0021)', () => {
     expect(system).toContain(
       'the line you will open your next conversation with, exactly as you would say it',
     );
-    expect(system).toContain('never the wording, greeting or shape of <opened_with> or the');
+    expect(system).toContain('Vary the greeting, the wording and the shape every time: never those of');
+    expect(system).toContain('"Want to carry on with…?"');
     expect(system).toContain('No dates or time words');
   });
 });

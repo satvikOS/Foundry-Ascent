@@ -296,11 +296,12 @@ describe('starting a call', () => {
     expect(CALL_LIMITS.sttGrantSeconds).toBeLessThanOrEqual(30);
     const intro = started.intro;
     if (intro === null) throw new Error('expected an intro');
-    // Maya has met her vEIR (the seeded conversation): one sentence of at most 90 characters, greeting her around
-    // the opener's thread (the seeded notebook's five library-staff interviews). By name: no reply named her lately.
-    expect(intro.text).toMatch(/^Hi Maya, .*five library-staff interviews.*\?$/);
-    expect(intro.text.length).toBeLessThanOrEqual(90);
-    expect(intro.text.split(/(?<=[.!?])\s+/)).toHaveLength(1);
+    // Maya has met her vEIR (the seeded conversation): no self-introduction, and the seeded notebook's line as it was
+    // written (it has no greeting of its own, so after the call's hello), never cut down and put in a frame ("Hi Maya,
+    // how did the five library-staff interviews go?"). By name: no reply named her lately.
+    expect(intro.text).toBe(
+      'Hi Maya, last time you planned five library-staff interviews about occupancy data. How many have you done, and what did they say about sharing counts?',
+    );
     // What the call said is the conversation's first message: the vEIR's history holds the greeting it gave.
     expect((await h.core.sessions.get(ctx.maya, sessionId)).session.opener).toBe(intro.text);
     expect(
@@ -320,7 +321,7 @@ describe('starting a call', () => {
     await talk('maya', sessionId, again.call.id, 'Can we test the seat map this week?');
     const third = await startCall('maya', sessionId);
     // Without her name: this conversation's opening line said it a reply ago (one reply in four at most).
-    expect(third.intro?.text).toBe('Hi, where would you like to pick up?');
+    expect(third.intro?.text).toMatch(/^Hi, .*(?:pick up|carry on|next)\?$/);
     await endCall('maya', third.call.id);
     expect(await auditActions()).toEqual(expect.arrayContaining(['call.started', 'call.ended']));
     // The grant URL and the intro are content: never logged.
@@ -340,11 +341,13 @@ describe('starting a call', () => {
     await storeOpenerUnchecked(h, h.ventures.quietquad, text);
     const sessionId = await newSession('maya', 'quietquad');
     const started = await startCall('maya', sessionId);
-    // Never the stored line: the call picks up Maya's last conversation (the test above) instead. Not by name: that
-    // conversation's call greeted her by name a reply ago (one reply in four).
-    expect(started.intro?.text).toMatch(/^Hi, /);
-    expect(started.intro?.text).toContain('whether you can test the seat map this week?');
-    expect(started.intro?.text).not.toMatch(/Corin here|myself/);
+    // Never the stored line, nor Maya's own words from her last conversation (the test above) read back by rule: a
+    // greeting that names nothing. Not by name: that conversation's call greeted her by name a reply ago (one reply in
+    // four).
+    const intro = started.intro?.text ?? '';
+    expect(intro).toMatch(/^[^.!?]+[.!] [^.!?]+\?$/);
+    expect(intro).not.toMatch(/Corin here|myself|seat map|Maya/);
+    expect(intro.length).toBeLessThanOrEqual(90);
     await endCall('maya', started.call.id);
   });
 
@@ -361,9 +364,8 @@ describe('starting a call', () => {
     try {
       const sessionId = await newSession('maya', 'quietquad');
       const started = await startCall('maya', sessionId);
-      // Not by name: the calls before it named her (one reply in four).
-      expect(started.intro?.text).toMatch(/^Hi, /);
-      expect(started.intro?.text).not.toMatch(/Corin Halvorsen|Corin asked/);
+      // Not by name: the calls before it named her (one reply in four). No self-introduction: she has met it.
+      expect(started.intro?.text).not.toMatch(/Corin Halvorsen|Corin asked|Maya|I'm /);
       await endCall('maya', started.call.id);
     } finally {
       await rename("Corin's vEIR");
@@ -1839,7 +1841,8 @@ describe('the turn engine and the calls service together', () => {
     const temporary = await h.core.sessions.create(ctx.maya, quietquad, { privacy: 'ephemeral' });
     expect(temporary.opener).toBeNull();
     const call = await startCall('maya', temporary.id, 'typed');
-    expect(call.intro?.text).toBe('Hi Maya, what would you like to work on?');
+    // An invitation that names nothing (phrased for the call).
+    expect(call.intro?.text).toMatch(/^Hi Maya, (?:what|where)\b[^.!?]*\?$/);
     await endCall('maya', call.call.id);
   });
 

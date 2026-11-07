@@ -372,7 +372,9 @@ describe('distillSession', () => {
     const commitment = nb?.content.commitments.find((c) => c.sourceSessionId === sessionId);
     expect(commitment?.status).toBe('open');
     expect(commitment?.text).toMatch(/library staff/);
-    expect(nb?.content.nextOpener).toMatch(/^Last time you planned to interview five library staff/);
+    // A greeting of its own, then the founder's plan (the mock follows the distillation prompt's shape).
+    expect(nb?.content.nextOpener).toMatch(/^[^.!?]+\. Did you get to interview five library staff/);
+    expect(nb?.content.nextTopic).toMatch(/^your plan to interview five library staff/);
     expect(await personEdits()).toEqual([]);
 
     const proposals = await proposalsFrom(sessionId);

@@ -25,7 +25,7 @@ export interface ShownWelcome {
 
 /** How an opener's own greeting sentence starts ("Welcome back.", "Good to talk again.", "Hi Maya!"). */
 const GREETING_START =
-  /^(?:hi|hello|hey|hiya|welcome back|good to|nice to|great to|lovely to|good (?:morning|afternoon|evening)|morning|afternoon|evening)\b/i;
+  /^(?:hi|hello|hey|hiya|welcome|glad you|good to|nice to|great to|lovely to|good (?:morning|afternoon|evening)|morning|afternoon|evening)\b/i;
 /** Longest greeting sentence taken for a heading. */
 const GREETING_MAX_WORDS = 7;
 

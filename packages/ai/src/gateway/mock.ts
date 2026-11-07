@@ -1173,6 +1173,71 @@ function memoryTitleOf(plan: string): string {
   return title.length > 120 ? `${title.slice(0, 119).trimEnd()}…` : title;
 }
 
+/** Greetings the mock's next opener opens with, as the distillation prompt asks (its own words, varied). */
+const OPENER_GREETINGS = [
+  'Good to see you again.',
+  'Nice to see you.',
+  'Hello again.',
+  'Good to hear from you.',
+];
+
+/** At most `n` words of `text`. */
+function firstWords(text: string, n: number): string {
+  return text.split(/\s+/).slice(0, n).join(' ');
+}
+
+/**
+ * The next opener and its thread, as the distillation prompt asks: a greeting of its own, then one sentence naming the
+ * thread of THIS conversation (the founder's plan, else the venture topic it was about); with nothing about the venture
+ * in it (small talk, a one-word reply, a test), the most important thread still open in the previous notebook (an open
+ * commitment, then an open question, then advice given); else none. Never the founder's small talk.
+ */
+function mockNextOpener(args: {
+  readonly thread: string | null;
+  readonly topic: string | null;
+  readonly previous: {
+    readonly commitment: string | null;
+    readonly question: string | null;
+    readonly advice: string | null;
+  };
+  readonly seed: string;
+  readonly names: readonly string[];
+}): { readonly opener: string | null; readonly topic: string | null } {
+  let sum = 0;
+  for (let i = 0; i < args.seed.length; i += 1) sum = (sum + args.seed.charCodeAt(i)) % 9973;
+  const greeting = OPENER_GREETINGS[sum % OPENER_GREETINGS.length] ?? OPENER_GREETINGS[0] ?? '';
+  const plain = (text: string): string => lowerFirst(withoutFinalStop(text.replace(/\?+$/, '')), args.names);
+  if (args.thread !== null) {
+    return {
+      opener: `${greeting} Did you get to ${args.thread}?`,
+      topic: `your plan to ${firstWords(args.thread, 9)}`,
+    };
+  }
+  if (args.topic !== null) {
+    return { opener: `${greeting} Where did you land on ${args.topic}?`, topic: args.topic };
+  }
+  const { commitment, question, advice } = args.previous;
+  if (commitment !== null) {
+    return {
+      opener: `${greeting} Did you get to ${plain(commitment)}?`,
+      topic: `your plan to ${firstWords(plain(commitment), 9)}`,
+    };
+  }
+  if (question !== null) {
+    return {
+      opener: `${greeting} One question is still open: ${upperFirst(plain(question))}?`,
+      topic: firstWords(plain(question), 12),
+    };
+  }
+  if (advice !== null) {
+    return {
+      opener: `${greeting} Did you get a chance to act on this: ${plain(advice)}?`,
+      topic: firstWords(plain(advice), 12),
+    };
+  }
+  return { opener: null, topic: null };
+}
+
 /**
  * Deterministic `DistillDraft` from a distillation prompt: a title and digest from the transcript, the
  * previous notebook carried forward with its ids plus new entries (a founder-profile note, commitments
@@ -1245,9 +1310,17 @@ export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
 
   // The thread of the whole conversation: what the founder said now, or what an earlier part recorded.
   const thread = stated[0] ?? earlierCommitments[0]?.text;
-  const opener = thread
-    ? `Last time you planned to ${lowerFirst(withoutFinalStop(thread), names)}. How did it go?`
-    : `Last time we talked about ${bank.phrase}. Where did you land?`;
+  const next = mockNextOpener({
+    thread: thread === undefined ? null : lowerFirst(withoutFinalStop(thread), names),
+    topic: main === 'general' ? null : bank.phrase,
+    previous: {
+      commitment: prevCommitments.find((c) => c.status === 'open')?.text ?? null,
+      question: prevQuestions[0]?.text ?? null,
+      advice: prevAdvice[0]?.text ?? null,
+    },
+    seed: founderTexts.join('\n'),
+    names,
+  });
 
   const lesson = turns.length >= 2 ? [bank.lesson] : [];
   // One memory candidate whose title and content say the same thing: what the founder said they would do, in
@@ -1301,7 +1374,8 @@ export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
         ...questions.slice(0, 2).map((text) => ({ id: null, text })),
       ],
       last_advice: [{ id: null, text: bank.advice }, ...prevAdvice.map((e) => ({ id: e.id, text: e.text }))],
-      next_opener: opener,
+      next_opener: next.opener,
+      next_topic: next.topic,
     },
     memory_candidates: memory,
     lesson_candidates: lesson,

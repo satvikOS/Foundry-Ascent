@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { openerPhrasings, pastRepliesOf, repeatsOpener } from './continuity.js';
-import { continuityOpener, threadOpener, type LeftOffConversationData } from './continuity-prompt.js';
+import { pastRepliesOf, repeatsOpener } from './continuity.js';
+import { plainOpeners, type LeftOffConversationData } from './continuity-prompt.js';
 
 /**
  * Coaching v3 (owner round 3): openers are model-written and never the same twice in a row, and the vEIR's phrasing
@@ -23,32 +23,21 @@ describe('a new conversation never opens the way the last one did', () => {
     expect(repeatsOpener('Hey. Did the second library answer?', '')).toBe(false);
   });
 
-  it('says the fallback line another way, never drops its subject, when its phrasing repeats the last opener', () => {
-    // Review of coaching v3 (a flaky continuity test): a phrasing whose greeting and frame matched the last opener gave
-    // way to the line without a subject. Whatever the seed, and whatever phrasing the last conversation opened with,
-    // another phrasing of the same thread or topic opens differently.
-    const last = {
-      digest: null,
-      title: 'Per-seat pricing',
-      channel: 'chat' as const,
-      lastActivityAt: '2026-11-05T10:00:00.000Z',
-      withThisVeir: true,
-      exchanges: [{ founder: 'Should we charge libraries per seat?', answer: 'Who signs off on it?' }],
-      said: ['Should we charge libraries per seat?'],
-    };
-    const now = new Date('2026-11-06T10:00:00.000Z');
+  it('a greeting that names nothing always has another wording than the one the last conversation opened with', () => {
+    // Whatever the seed, and whichever plain line the last conversation opened with, another opens differently: not a
+    // near-duplicate, not the same first words, and neither its greeting nor its invitation again.
     for (let n = 0; n < 200; n += 1) {
       const seed = `session-${String(n)}:maya:0`;
-      const topics = openerPhrasings(seed, (s) => continuityOpener(last, { now, seed: s }).withTopic);
-      const threads = openerPhrasings(seed, (s) =>
-        threadOpener('the five library-staff interviews you planned', { seed: s }),
-      );
-      for (const lines of [topics, threads]) {
-        for (const previous of lines) {
-          const fresh = lines.find((l) => l !== null && !repeatsOpener(l, previous));
-          expect(fresh, seed).toBeDefined();
-          expect(fresh ?? '').toMatch(/per seat|library-staff interviews/);
-        }
+      const lines = plainOpeners(seed, true);
+      for (const previous of lines) {
+        const [greeting, invitation] = previous.split(/(?<=[.!])\s/);
+        const fresh = lines.find(
+          (l) =>
+            !repeatsOpener(l, previous) &&
+            !l.includes(greeting ?? previous) &&
+            !l.includes(invitation ?? previous),
+        );
+        expect(fresh, `${seed}: ${previous}`).toBeDefined();
       }
     }
   });

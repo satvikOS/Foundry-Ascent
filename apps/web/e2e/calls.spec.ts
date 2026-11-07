@@ -30,7 +30,7 @@ import {
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
 
 interface SessionTurns {
-  session: { ventureId: string };
+  session: { ventureId: string; digest: unknown; opener: string | null };
   turns: {
     id: string;
     response: {
@@ -46,6 +46,22 @@ async function sessionTurns(request: APIRequestContext, sessionId: string): Prom
   expect(response.status(), 'GET /sessions/:id').toBe(200);
   return (await response.json()) as SessionTurns;
 }
+
+/** Waits until `sessionId` is distilled, then returns the line the model wrote for the next conversation (if any). */
+async function distilledOpener(request: APIRequestContext, sessionId: string): Promise<string | null> {
+  await expect
+    .poll(async () => (await sessionTurns(request, sessionId)).session.digest ?? null, { timeout: 30_000 })
+    .not.toBeNull();
+  const { ventureId } = (await sessionTurns(request, sessionId)).session;
+  const response = await request.get(`/api/v1/ventures/${ventureId}/notebook`);
+  expect(response.status(), 'GET /ventures/:id/notebook').toBe(200);
+  return ((await response.json()) as { nextOpener: string | null }).nextOpener;
+}
+
+/** A greeting that names nothing (what a conversation opens with when the model wrote no line for it). */
+const PLAIN_GREETING = /^[^.!?]+[.!] (?:What|Where)\b[^.!?]*\?$/;
+/** The fixed frames greetings were once phrased in around the founder's words (owner: "like reading a script"). */
+const FRAMED = /want to carry on with|shall we pick up|where are things with|any more thoughts on/i;
 
 /** Deletes memory the test kept, so the next run (and the next spec) starts from the seeded memory. */
 async function deleteMemory(request: APIRequestContext, memoryId: string): Promise<void> {
@@ -573,10 +589,10 @@ test.describe('vEIR calls', () => {
     }
   });
 
-  test('a second call minutes later picks up the first, remembers it when asked, and so does the next chat', async ({
+  test('a second call says the line the model wrote about the first, remembers it when asked, and so does the next chat', async ({
     page,
   }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(240_000);
     await voiceNoticeSeen(page);
     const token = runToken();
     const calls = trackCalls(page);
@@ -636,20 +652,17 @@ test.describe('vEIR calls', () => {
         await hangUp();
       });
 
-      await test.step('a second call opens by picking up the first, not with the same greeting', async () => {
+      await test.step('a second call opens with the line the model wrote about the first, never a template', async () => {
+        // Hanging up distilled the first call: the notebook holds the line the model wrote about it (pricing).
+        const line = (await distilledOpener(page.request, first)) ?? '';
+        expect(line).toMatch(/pric/i);
         const { sessionId, intro } = await callFromPalette();
         expect(sessionId).not.toBe(first);
-        // Met before: one sentence that greets her and picks the first call up (no self-introduction, no "an AI
-        // coach"), at most 90 characters; not by name: the first call named her a reply ago (one reply in four).
-        expect(intro).toMatch(/^Hi, /);
-        expect(intro.length).toBeLessThanOrEqual(90);
-        expect(intro).not.toContain('what would you like to work on?');
-        // It names what the first call was about (pricing), in a sentence that reads right: never a clause spliced
-        // in as the topic ("how did where we left off yesterday go?", "shall we pick up They'll…").
-        expect(intro).toMatch(/pric/i);
-        expect(intro).not.toMatch(
-          /\b(?:how did|with|pick up|carry on with|land on) (?:where|what|when|how|who|they|we|it|email|call)\b/i,
-        );
+        // Met before: no self-introduction, no "an AI coach"; the model's line as written, its own greeting kept (her
+        // name only while one reply in four leaves room), never put in a frame around the founder's words.
+        expect(intro.replace(', Maya', '')).toBe(line);
+        expect(intro).not.toMatch(/I'm |AI coach|digital twin/);
+        expect(intro).not.toMatch(FRAMED);
         await expectPlainMentorName(page, 'the second call');
       });
 
@@ -669,18 +682,33 @@ test.describe('vEIR calls', () => {
         await hangUp();
       });
 
-      await test.step('the next chat opens by picking up the calls too', async () => {
+      await test.step('the next chat opens with the line the model wrote about the calls too', async () => {
+        const line = await distilledOpener(page.request, created[1] ?? '');
         await openVenture(page);
         const sessionId = await startConversation(page, `One more thing about the pilot. ${token}`);
         created.push(sessionId);
-        const detail = (await (await page.request.get(`/api/v1/sessions/${sessionId}`)).json()) as {
-          session: { opener: string | null };
-        };
-        const opener = detail.session.opener ?? '';
-        expect(opener).toMatch(
-          /last time|when we last spoke|we talked about|you said|you asked|welcome back|good to have you back|good to talk again|nice to hear from you again/i,
-        );
+        const opener = (await sessionTurns(page.request, sessionId)).session.opener ?? '';
+        // The model's line, or with none a greeting that names nothing; never a template around the founder's words.
+        if (line !== null) expect(opener).toBe(line);
+        else expect(opener).toMatch(PLAIN_GREETING);
+        expect(opener).not.toMatch(FRAMED);
         await expect(page.getByRole('main').getByText(opener.slice(0, 40)).first()).toBeVisible();
+      });
+
+      await test.step('after a call of small talk only, the next call never opens on the founder’s words (production 2026-11-06)', async () => {
+        const { sessionId } = await callFromPalette();
+        await sayOnCall(sessionId, 'great', 1);
+        await sayOnCall(sessionId, 'hows your perosnal life going on..', 2);
+        await hangUp();
+        // Nothing about the venture was said: the model opens on an open thread of the notebook, or writes nothing.
+        const line = await distilledOpener(page.request, sessionId);
+        const { intro } = await callFromPalette();
+        for (const said of [intro, line ?? '']) {
+          expect(said).not.toMatch(/perosnal|personal|\blife\b/i);
+          expect(said).not.toMatch(FRAMED);
+        }
+        if (line !== null) expect(intro.replace(', Maya', '')).toBe(line);
+        else expect(intro).toMatch(PLAIN_GREETING);
       });
     } finally {
       await endCalls(page, calls.ids);

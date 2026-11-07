@@ -553,7 +553,10 @@ describe('MockModelGateway distillation and recap', () => {
     memory_candidates: CoachResponse.shape.memory_candidates,
   });
 
-  function distillRequest(turns: { founderText: string; answer: string }[]) {
+  function distillRequest(
+    turns: { founderText: string; answer: string }[],
+    previous: { readonly openThreads: boolean } = { openThreads: true },
+  ) {
     const prompt = buildDistillPrompt({
       personaName: "Corin's vEIR",
       eirName: 'Corin Halvorsen',
@@ -571,16 +574,18 @@ describe('MockModelGateway distillation and recap', () => {
             createdAt: '2026-10-01T00:00:00.000Z',
           },
         ],
-        commitments: [
-          {
-            id: 'cm-old',
-            text: 'Interview five library staff',
-            due: '2026-10-10',
-            status: 'open',
-            sourceSessionId: null,
-            createdAt: '2026-10-01T00:00:00.000Z',
-          },
-        ],
+        commitments: previous.openThreads
+          ? [
+              {
+                id: 'cm-old',
+                text: 'Interview five library staff',
+                due: '2026-10-10',
+                status: 'open',
+                sourceSessionId: null,
+                createdAt: '2026-10-01T00:00:00.000Z',
+              },
+            ]
+          : [],
         openQuestions: [],
         lastAdvice: [],
         nextOpener: null,
@@ -596,6 +601,27 @@ describe('MockModelGateway distillation and recap', () => {
       requestId: 'req-distill',
     };
   }
+
+  it('opens on the notebook’s open thread after small talk, never the founder’s words (production 2026-11-06)', async () => {
+    const gw = new MockModelGateway();
+    const turns = [
+      { founderText: 'great', answer: 'Glad to hear it.' },
+      {
+        founderText: 'hows your perosnal life going on..',
+        answer: "I'm an AI mentor, so let's talk about you.",
+      },
+    ];
+    const draft = (await gw.generateStructured(distillRequest(turns))).value;
+    expect(draft.notebook.next_opener).toMatch(/\. Did you get to interview five library staff\?$/);
+    expect(draft.notebook.next_topic).toBe('your plan to interview five library staff');
+    for (const text of [draft.notebook.next_opener ?? '', draft.notebook.next_topic ?? '']) {
+      expect(text).not.toMatch(/perosnal|personal|life|great/i);
+    }
+    // With no open thread in the notebook either, no line at all (as Nova wrote in production).
+    const none = (await gw.generateStructured(distillRequest(turns, { openThreads: false }))).value;
+    expect(none.notebook.next_opener).toBeNull();
+    expect(none.notebook.next_topic ?? null).toBeNull();
+  });
 
   it('writes a deterministic distillation that carries the previous notebook forward', async () => {
     const gw = new MockModelGateway();
@@ -614,9 +640,11 @@ describe('MockModelGateway distillation and recap', () => {
     ]);
     expect(draft.notebook.founder_profile.map((e) => e.id)).toContain('fp-old');
     expect(draft.notebook.commitments.map((c) => c.id)).toEqual(['cm-old', null]);
-    expect(draft.notebook.next_opener).toBe(
-      'Last time you planned to ask three libraries for a deposit next week. How did it go?',
+    // A greeting of its own, then the founder's plan (as the distillation prompt asks).
+    expect(draft.notebook.next_opener).toMatch(
+      /^(?:Good to see you again|Nice to see you|Hello again|Good to hear from you)\. Did you get to ask three libraries for a deposit next week\?$/,
     );
+    expect(draft.notebook.next_topic).toBe('your plan to ask three libraries for a deposit next week');
     expect(draft.lesson_candidates).toHaveLength(1);
 
     const clean = sanitizeDistill(draft, {

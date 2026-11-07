@@ -17,15 +17,18 @@ import { contentWords } from '../prompts/conversation-state.js';
  */
 
 /**
- * The frame of every opener and greeting the vEIR says around a thread, so a thread is read without it: the
- * greetings, endings and invitations of orchestrator/continuity-prompt.ts (`continuityOpener`, `threadOpener`,
- * `relativeWhen`) and services/calls.ts (`repeatGreetingOf`, `callIntro`), the shapes a stored opener takes
- * (`readOpener`: "last time you planned", "we left off on"), and the frames the model writes its next opener in
- * ("Did you manage to …", "You mentioned …, are you ready …"). A core test keeps it in step with those templates.
+ * The frame of every opener and greeting the vEIR says, so a thread is read without it: the topic-free greetings and
+ * invitations of orchestrator/continuity-prompt.ts (`plainOpeners`, `plainInvitation`) and services/calls.ts
+ * (`callIntro`), the frames the model writes its next opener in ("Did you manage to …", "You mentioned …, are you
+ * ready …"), and the templates openers were once phrased in, still stored on older conversations ("Shall we pick up
+ * …", "Last time, we talked about …", "a moment ago"). A core test keeps it in step with the greetings.
  */
 const FRAME_TEXT = [
   // Greetings and the call's hello (first meeting included).
   "Hi Hello Hey Good to have you back. Welcome back. Good to talk again. Nice to hear from you again. Good to have you here. I'm the program's AI coach, digital twin, vEIR.",
+  "Good to see you again. Great to see you. Hello again. Welcome. Glad you're here.",
+  // The invitations of a greeting that names nothing.
+  "What's on your mind today? Where would you like to start? What feels most pressing right now? What shall we dig into? What would be most useful to talk through? What's been happening since we last spoke? Where shall we carry on? What would you like to look at next?",
   // Endings and invitations.
   'Where did you land on it? Want to pick that up, or is something else on your mind? Shall we carry on from there, or start somewhere new? How has it gone since? How is it going? Where are things now?',
   'Want to pick up where we left off, or start on something new? Want to pick up where your last conversation here left off, or start on something new? Your last conversation here was about.',

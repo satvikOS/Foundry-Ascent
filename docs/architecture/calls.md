@@ -222,27 +222,27 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
 
 - **The intro** greets the founder by first name. On a first meeting the vEIR introduces itself once ("Hi Maya,
   I'm Corin's vEIR, Corin's digital twin."; a mentor under its own name, ADR-0021, only "Hi Maya, I'm Thomas.") and
-  continues with the conversation's opener, or "What would you like to work on?". With someone it has met, it is one sentence of at most 90 characters (`repeatGreetingOf`): phrased
-  around what the opener is about ("Hi Maya, where are things with the facilities budget call you planned?"),
-  shortened to fit rather than dropped ("…the Harbour Hall study room for the pilot kickoff on Monday" loses "on
-  Monday", then "for the pilot kickoff"), else the opener itself as one sentence, else "Hi Maya, what would you like
-  to work on?" ("…where would you like to pick up?" on a conversation under way). An opener built around a clause
-  cut from the founder's line ("we left off on They'll promote QuietQuad") is never said, and an opener a person
-  wrote that cannot be shortened is said whole rather than dropped. The model-written next opener (the notebook's
-  line, `ChosenOpener.modelLine`) greets in its own words: a call says it as written, its greeting kept ("Good to
-  see you again, Maya. What did the student union say?"), never swapped for a fixed "Hi Maya, …" (`ownGreetingLine`).
+  continues with the conversation's opener, or "What would you like to work on?". With someone it has met, it says
+  the conversation's opener as written (`repeatGreetingOf`), never phrased again around what it is about and never
+  put in a fixed frame (owner: "it always repeats the same question in the same way like reading a script";
+  production 2026-11-06: "Hi, want to carry on with your perosnal life?"). A line that greets in its own words (the
+  model-written next opener, and the greeting that names nothing `chooseOpener` falls back on) keeps its greeting
+  ("Good to see you again, Maya. What did the student union say?"; `ownGreetingLine`); a line without one (a
+  person's own) follows the call's "Hi Maya, …". With no opener, the call says hello and an invitation that names
+  nothing, varied from call to call ("Hi Maya, what's on your mind today?"; "…where shall we carry on?" on a
+  conversation under way).
   The founder's name is said in a greeting one reply in four at most, as in every reply (`greetedName`, read from the
   vEIR's latest replies to them: this conversation's, or the end of the last ones), never twice in one line (a model
   line that names them already, after its greeting's comma or later, is said as written), and a model line that calls
   them by name when the budget is spent is said without it ("Good to see you again. What did …"; `withoutVocative`),
-  or phrased again when it cannot be. A greeting the opening line said ("Hi …", and a model line's own: "Good to see
-  you again", "Nice to see you"; `openerSaidHello`) means the first reply does not greet again; a line that only
-  welcomes them back ("Good to have you back") still leaves a hello a hello back. The opener is chosen afresh at call start for a
-  conversation nobody has said anything in (`chooseOpener`, with what it is about: none for the generic invitation),
-  phrased and kept in the same transaction: the intro becomes that conversation's first message
-  (`coaching_sessions.opener`, replayed by the turn engine) when it says the opener, so the vEIR's history holds the
-  greeting it gave and its first reply never greets again (the sentence gate and the validator leave a greeting
-  out); a bare invitation never replaces a substantive opener (`openerKept`). The vEIR introduces
+  or after a plain "Hi," without its greeting when it cannot be. A greeting the opening line said ("Hi …", and a model
+  line's own: "Good to see you again", "Nice to see you"; `openerSaidHello`) means the first reply does not greet
+  again; a line that only welcomes them back ("Good to have you back") still leaves a hello a hello back. The opener
+  is chosen afresh at call start for a conversation nobody has said anything in (`chooseOpener`; no model call on the
+  way to the first word: the line was written at distillation), and kept in the same transaction: the intro becomes
+  that conversation's first message (`coaching_sessions.opener`, replayed by the turn engine) when it says the opener,
+  so the vEIR's history holds the greeting it gave and its first reply never greets again (the sentence gate and the
+  validator leave a greeting out); a bare invitation never replaces a substantive opener (`openerKept`). The vEIR introduces
   itself by its persona name unless that name presents it as an EIR ("Corin Halvorsen", "Coach Corin"); it then
   says "Corin's vEIR". The opener is a person-editable note: it is stored, shown and spoken only if it names no EIR
   at all and passes the identity rules and the cross-venture check; otherwise it is left out. None in a temporary

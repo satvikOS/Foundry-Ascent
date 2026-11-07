@@ -139,8 +139,10 @@ describe('coaching sessions', () => {
       ConversationOpenerResponse,
     );
     expect(preview.lastConversation).toMatchObject({ sessionId: said.id, channel: 'chat' });
-    // What it was about, summarised: never the founder's question quoted back (LAB-R3).
-    expect(preview.opener).toContain('we talked about whether to price per library or per seat.');
+    // Nothing distilled yet: a greeting that names nothing, never the founder's question read back (LAB-R3,
+    // production 2026-11-06).
+    expect(preview.opener ?? '').toMatch(/^[^.!?]+[.!] [^.!?]+\?$/);
+    expect(preview.opener ?? '').not.toMatch(/price|library|seat/i);
     expect(Number.isFinite(Date.parse(preview.at))).toBe(true);
     const next = await startSession(maya, 'coach');
     expect(next.opener).toBe(preview.opener);
