@@ -6,6 +6,7 @@
  * resolutions feeding the notebook.
  */
 import {
+  DEFAULT_FALLBACK_TIMEOUT_MS,
   DISTILL_MAX_OUTPUT_TOKENS,
   DISTILL_SCHEMA_NAME,
   type DistillDraft,
@@ -25,7 +26,7 @@ import { type RequestContext } from '../context.js';
 import { createCore, type Core } from '../core.js';
 import { memoryEmbeddingText } from '../internal/embeddings.js';
 import { type CoreHarness, createCoreHarness, restatingMemoryFixtures } from '../testing/harness.js';
-import { RetryableDistillError } from './distill.js';
+import { DISTILL_MODEL_TIMEOUT_MS, MIN_DISTILL_BUDGET_MS, RetryableDistillError } from './distill.js';
 import { resolutionEntryId } from './notebook-advice.js';
 
 let h: CoreHarness;
@@ -43,6 +44,8 @@ let whileAnswering: (() => Promise<void>) | null = null;
 let failNext: Error | null = null;
 /** The output bound of every distillation call the scripted gateway saw. */
 const distillBounds: (number | undefined)[] = [];
+/** The model time budget of every distillation call the scripted gateway saw. */
+const distillTimeouts: (number | undefined)[] = [];
 let scriptedCore: Core;
 /** The model of the scripted core (answers with `scripted`). */
 let scriptedGateway: ModelGateway;
@@ -202,7 +205,10 @@ beforeAll(async () => {
   const gateway: ModelGateway = {
     info: mock.info,
     generateStructured: async <T>(request: GenerateStructuredRequest<T>) => {
-      if (request.schemaName === DISTILL_SCHEMA_NAME) distillBounds.push(request.maxOutputTokens);
+      if (request.schemaName === DISTILL_SCHEMA_NAME) {
+        distillBounds.push(request.maxOutputTokens);
+        distillTimeouts.push(request.timeoutMs);
+      }
       const failure = failNext;
       failNext = null;
       if (failure) throw failure;
@@ -475,9 +481,24 @@ describe('distillSession', () => {
     const id = await conversation(priya, ['We will price the sensor pilot per lab, two labs first.'], bench);
     await idle(id, 15);
     distillBounds.length = 0;
+    distillTimeouts.length = 0;
     expect((await scriptedCore.distill.distillSession(job(id))).status).toBe('distilled');
     expect(distillBounds).toEqual([DISTILL_MAX_OUTPUT_TOKENS]);
     expect(DISTILL_MAX_OUTPUT_TOKENS).toBeGreaterThan(4_096);
+    // And the time to write it and repair it once on the coach (lab 42238272157: Haiku's first attempt took 11-15 s and
+    // its repair was cut off at 10-11 s by the turn's 25 s budget, then fell back to Nova).
+    expect(distillTimeouts).toEqual([DISTILL_MODEL_TIMEOUT_MS]);
+  });
+
+  it('sizes its model budget for a first attempt and a repair on the coach, inside the worker run', () => {
+    // A first attempt of up to ~20 s and a repair as long again: the coach's own budget holds both.
+    expect(DISTILL_MODEL_TIMEOUT_MS).toBeGreaterThanOrEqual(2 * 20_000);
+    // A part starts only with time for the coach's budget, the fallback's and the writes after them.
+    expect(MIN_DISTILL_BUDGET_MS).toBeGreaterThanOrEqual(
+      DISTILL_MODEL_TIMEOUT_MS + DEFAULT_FALLBACK_TIMEOUT_MS,
+    );
+    // The worker Lambda runs 120 s (infra/cdk WORKER_TIMEOUT_SECONDS): a part that starts must be able to finish.
+    expect(MIN_DISTILL_BUDGET_MS).toBeLessThan(120_000);
   });
 
   it('sends a continued conversation’s digest and only its new turns, and covers exactly those', async () => {

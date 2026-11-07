@@ -192,8 +192,19 @@ export class RetryableDistillError extends Error {
   }
 }
 
-/** Time a distillation needs to start (model call with its fallback, plus the writes). */
-const MIN_DISTILL_BUDGET_MS = 45_000;
+/**
+ * The coach's own time for one distillation call, its repair included (the gateway's fallback has its own 25 s). Up to
+ * DISTILL_MAX_OUTPUT_TOKENS of notebook: lab run 42238272157 measured Haiku's first attempt at 11-15 s, and its repair,
+ * cut off at 10-11 s under the turn's 25 s budget, fell back to Nova every time. 50 s holds a first attempt and a repair
+ * as long again; a distillation never waits on a founder, so its budget is sized for the work, not a turn.
+ */
+export const DISTILL_MODEL_TIMEOUT_MS = 50_000;
+/**
+ * Time a distillation part needs to start: the coach's budget, the fallback's 25 s (router DEFAULT_FALLBACK_TIMEOUT_MS)
+ * and the writes after it. Inside the worker's 120 s run (infra/cdk WORKER_TIMEOUT_SECONDS), so a part that starts can
+ * finish; a part left for lack of time waits for the next trigger or the backstop.
+ */
+export const MIN_DISTILL_BUDGET_MS = 85_000;
 /**
  * Conversations the backstop distils at once (each a model call at a time), from different ventures. Its
  * spend per run stays bounded: at most `backstopBatch` conversations of MAX_PARTS_PER_JOB parts each, all
@@ -653,7 +664,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
           schemaName: DISTILL_SCHEMA_NAME,
           zodSchema: DistillDraft,
           maxOutputTokens: DISTILL_MAX_OUTPUT_TOKENS,
-          timeoutMs: kit.config.turns.modelTimeoutMs,
+          timeoutMs: DISTILL_MODEL_TIMEOUT_MS,
           ...(remaining === null ? {} : { signal: AbortSignal.timeout(Math.max(1_000, remaining)) }),
         },
       );
