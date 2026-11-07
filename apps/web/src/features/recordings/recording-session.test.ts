@@ -30,6 +30,7 @@ function fakeEngine() {
     context: { createGain: vi.fn(), createMediaStreamSource: vi.fn() },
     veir: null,
     microphone: null,
+    microphoneOpen: true,
   };
   const engine: RecordedEngine = {
     subscribe: (listener) => {
@@ -132,6 +133,7 @@ describe('RecordingSession', () => {
     await session.stop();
     expect(session.getSnapshot()).toEqual({
       status: 'failed',
+      title: 'The recording wasn’t saved',
       message: 'The connection dropped while it was saving.',
       canRetry: true,
     });
@@ -143,13 +145,60 @@ describe('RecordingSession', () => {
     expect(session.getSnapshot()).toEqual({ status: 'idle' });
   });
 
-  it('refuses to start when the call is not live, and stops by itself near the size limit', async () => {
+  it('never drops a take whose save failed: Record waits until it is saved or discarded', async () => {
+    const save = vi
+      .fn<(recorded: RecordedCall) => Promise<RecordingView>>()
+      .mockRejectedValueOnce(new ApiError({ status: 500, code: 'internal', title: 'Server error' }))
+      .mockResolvedValueOnce({ id: 'r1' } as RecordingView)
+      .mockResolvedValueOnce({ id: 'r2' } as RecordingView);
+    const { session, recorder } = setup(save);
+    session.start();
+    await session.stop();
+    expect(session.getSnapshot()).toMatchObject({ status: 'failed', canRetry: true });
+    expect(session.canStart()).toBe(false);
+    // Record does nothing meanwhile: the failed take stays, and Try again still saves it.
+    session.start();
+    expect(recorder.start).toHaveBeenCalledOnce();
+    expect(session.getSnapshot()).toMatchObject({ status: 'failed', canRetry: true });
+    await session.retry();
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save.mock.calls[1]?.[0]).toBe(save.mock.calls[0]?.[0]);
+    expect(session.getSnapshot()).toMatchObject({ status: 'saved', recording: { id: 'r1' } });
+    // Saved: the next take may start (from the "saved" notice too).
+    expect(session.canStart()).toBe(true);
+    session.start();
+    expect(session.getSnapshot()).toMatchObject({ status: 'recording' });
+    await session.stop();
+    expect(session.getSnapshot()).toMatchObject({ status: 'saved', recording: { id: 'r2' } });
+  });
+
+  it('a discarded take lets the next one start', async () => {
+    const save = vi
+      .fn<(recorded: RecordedCall) => Promise<RecordingView>>()
+      .mockRejectedValueOnce(new ApiError({ status: 0, code: 'network_error', title: 'Upload failed' }));
+    const { session } = setup(save);
+    session.start();
+    await session.stop();
+    session.dismiss();
+    expect(session.getSnapshot()).toEqual({ status: 'idle' });
+    expect(session.canStart()).toBe(true);
+    await session.retry();
+    expect(save).toHaveBeenCalledOnce();
+  });
+
+  it('says why it did not start when the call is not live, and stops by itself near the size limit', async () => {
     const { session, call, recorder, save } = setup();
     call.set({ phase: 'starting' });
-    expect(() => {
-      session.start();
-    }).toThrow('The call isn’t live.');
+    session.start();
+    expect(session.getSnapshot()).toEqual({
+      status: 'failed',
+      title: 'The recording didn’t start',
+      message: 'The call isn’t live.',
+      canRetry: false,
+    });
+    expect(recorder.start).not.toHaveBeenCalled();
     call.set({ phase: 'live' });
+    expect(session.canStart()).toBe(true);
     session.start();
     recorder.onLimit?.();
     await vi.waitFor(() => {

@@ -17,7 +17,9 @@ import {
  * The recording of a live call (ADR-0023): one per call engine, so it carries on while the call is minimized and
  * ends with the call. Record starts it; Stop, hanging up or the call ending any other way stops it and saves it (the
  * file and its captions go to the recordings store, then it shows in the conversation and under Recordings). A save
- * that fails keeps the file in this page so it can be tried again; nothing is kept anywhere else.
+ * that fails keeps the file in this page so it can be tried again; nothing is kept anywhere else. While it is kept, a
+ * new recording cannot start: the founder saves it (Try again) or lets it go (Discard) first, so a take is never lost
+ * without their say.
  */
 
 export type RecordingState =
@@ -25,7 +27,14 @@ export type RecordingState =
   | { readonly status: 'recording'; readonly callId: string; readonly startedAt: number }
   | { readonly status: 'saving'; readonly percent: number | null }
   | { readonly status: 'saved'; readonly recording: RecordingView }
-  | { readonly status: 'failed'; readonly message: string; readonly canRetry: boolean };
+  | {
+      readonly status: 'failed';
+      /** What failed: the recording did not start, or it was not saved. */
+      readonly title: string;
+      readonly message: string;
+      /** The take is kept in this page and can be saved again (Try again), or discarded. */
+      readonly canRetry: boolean;
+    };
 
 /** The parts of the call engine a recording reads. */
 export interface RecordedEngine {
@@ -66,6 +75,8 @@ export interface RecordingSubject {
 }
 
 const IDLE: RecordingState = { status: 'idle' };
+const START_FAILED = 'The recording didn’t start';
+const SAVE_FAILED = 'The recording wasn’t saved';
 
 export class RecordingSession {
   private state: RecordingState = IDLE;
@@ -107,11 +118,27 @@ export class RecordingSession {
   }
 
   /**
-   * Starts recording the live call. Throws with a message to show when the call cannot be recorded here (no call, a
-   * browser that cannot record).
+   * Whether Record may start now: nothing recording or saving, and no take whose save failed still waiting to be saved
+   * or discarded.
+   */
+  canStart(): boolean {
+    return this.active === null && this.state.status !== 'saving' && this.unsaved === null;
+  }
+
+  /**
+   * Starts recording the live call. When it cannot (no live call, a browser that cannot record) the state says why
+   * (`failed`, nothing to retry). Does nothing while {@link canStart} is false.
    */
   start(): void {
-    if (this.active !== null || this.state.status === 'saving') return;
+    if (!this.canStart()) return;
+    try {
+      this.begin();
+    } catch (error) {
+      this.set({ status: 'failed', title: START_FAILED, message: messageOf(error), canRetry: false });
+    }
+  }
+
+  private begin(): void {
     const snapshot = this.engine.getSnapshot();
     const callId = snapshot.call?.id ?? null;
     const audio = this.engine.recordingSources();
@@ -153,7 +180,6 @@ export class RecordingSession {
     recorder.onLimit = () => {
       void this.stop();
     };
-    this.unsaved = null;
     this.active = {
       recorder,
       captions,
@@ -193,7 +219,7 @@ export class RecordingSession {
               },
       };
     } catch (error) {
-      this.set({ status: 'failed', message: messageOf(error), canRetry: false });
+      this.set({ status: 'failed', title: SAVE_FAILED, message: messageOf(error), canRetry: false });
       return;
     }
     await this.save(recorded);
@@ -206,7 +232,7 @@ export class RecordingSession {
     await this.save(recorded);
   }
 
-  /** Forgets a saved or failed recording (a failed one's file is dropped). */
+  /** Forgets a saved or failed recording (Discard: a failed one's file is dropped). */
   dismiss(): void {
     if (this.state.status !== 'saved' && this.state.status !== 'failed') return;
     this.unsaved = null;
@@ -226,7 +252,7 @@ export class RecordingSession {
       this.set({ status: 'saved', recording: saved });
       this.onSaved?.(saved);
     } catch (error) {
-      this.set({ status: 'failed', message: saveFailure(error), canRetry: true });
+      this.set({ status: 'failed', title: SAVE_FAILED, message: saveFailure(error), canRetry: true });
     }
   }
 }

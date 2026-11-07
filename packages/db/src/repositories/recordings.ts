@@ -193,7 +193,10 @@ export interface ListRecordingsOptions {
   readonly limit?: number;
 }
 
-/** The caller's ready recordings, latest first (one conversation's, one venture's, or all of them). */
+/**
+ * The caller's ready recordings, latest first (one conversation's, one venture's, or all of them), of ventures the
+ * caller still has: a membership revoked or expired takes that venture's recordings off the list at once.
+ */
 export function listRecordings(
   ex: SqlExecutor,
   options: ListRecordingsOptions = {},
@@ -201,7 +204,7 @@ export function listRecordings(
   return queryRows(
     ex,
     `SELECT ${COLUMNS} FROM ${FROM}
-     WHERE r.deleted_at IS NULL AND r.status = 'ready'
+     WHERE r.deleted_at IS NULL AND r.status = 'ready' AND app.can_read_venture(r.venture_id)
        AND (:session IS NULL OR r.session_id = :session)
        AND (:venture IS NULL OR r.venture_id = :venture)
      ORDER BY r.created_at DESC, r.id
@@ -288,16 +291,25 @@ export function listPurgeable(
   );
 }
 
-/** The files of these deleted recordings are gone from the bucket. */
-export async function markPurged(sx: SystemExecutor, ids: readonly string[]): Promise<number> {
+/**
+ * The files of these deleted recordings are gone from the bucket, and none can arrive any more: a recording deleted
+ * while its upload may still be running (pending, created within `uploadWindowSeconds`) is left purgeable, so a file
+ * that lands after this purge is removed by the next one (the daily maintenance). Returns how many were marked.
+ */
+export async function markPurged(
+  sx: SystemExecutor,
+  ids: readonly string[],
+  options: { readonly uploadWindowSeconds: number },
+): Promise<number> {
   if (ids.length === 0) return 0;
   return queryNumber(
     sx,
     `WITH done AS (
        UPDATE call_recordings SET purged_at = now()
        WHERE id = ANY (:ids) AND deleted_at IS NOT NULL AND purged_at IS NULL
+         AND (status = 'ready' OR created_at < now() - make_interval(secs => :window))
        RETURNING 1)
      SELECT count(*) AS n FROM done`,
-    { ids: p.uuidArray([...ids]) },
+    { ids: p.uuidArray([...ids]), window: p.int(options.uploadWindowSeconds) },
   );
 }

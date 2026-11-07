@@ -87,8 +87,15 @@ export const DOCUMENTS_PREFIX = 'tenants/';
 export const RECORDINGS_PREFIX = 'tenants/';
 
 /**
- * Days past the app's own retention (`recordings.retentionDays`, enforced by the daily maintenance) after which the
- * recordings bucket's lifecycle expires a file anyway: a backstop for a file whose purge never succeeded.
+ * How long a call recording is kept: the app's own retention (packages/contracts `RECORDING_LIMITS.retentionDays`,
+ * which the daily maintenance enforces and the app tells founders: a year). Not configurable here, since the app and
+ * its notice would not follow; test/data.test.ts checks the two agree.
+ */
+export const RECORDINGS_RETENTION_DAYS = 365;
+
+/**
+ * Days past the app's own retention ({@link RECORDINGS_RETENTION_DAYS}, enforced by the daily maintenance) after which
+ * the recordings bucket's lifecycle expires a file anyway: a backstop for a file whose purge never succeeded.
  */
 export const RECORDINGS_LIFECYCLE_GRACE_DAYS = 7;
 

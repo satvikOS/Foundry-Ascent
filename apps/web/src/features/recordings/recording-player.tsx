@@ -6,13 +6,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
+import { formatClock } from '@/features/calls/use-call-clock';
 import { fetchPlayback } from '@/lib/api/hooks/recordings';
 import { queryKeys } from '@/lib/api/query-keys';
 import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 import { cuesAt, parseWebVtt, type ShownCue } from './captions';
-import { recordingClock } from './record-control';
 
 /*
  * Replays a recording with its captions in step (ADR-0023). The files come straight from the recordings store through
@@ -204,7 +204,7 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 text-small text-muted-foreground">
           <span className="tabular">
-            {recordingClock(recording.durationMs / 1000)} · {formatDateTime(recording.createdAt)}
+            {formatClock(recording.durationMs / 1000)} · {formatDateTime(recording.createdAt)}
           </span>
           {recording.hasCaptions ? (
             <Button
@@ -245,9 +245,7 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
                         active && 'bg-accent text-foreground',
                       )}
                     >
-                      <span className="tabular text-muted-foreground">
-                        {recordingClock(cue.startMs / 1000)}
-                      </span>
+                      <span className="tabular text-muted-foreground">{formatClock(cue.startMs / 1000)}</span>
                       <span className="min-w-0">
                         {cue.name ? <span className="font-medium">{cue.name}: </span> : null}
                         <span className={active ? '' : 'text-muted-foreground'}>{cue.text}</span>

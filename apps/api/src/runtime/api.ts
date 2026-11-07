@@ -165,6 +165,7 @@ export function createApiRuntime(env: EnvLike): ApiRuntime {
     recordingStore: new S3RecordingStore({
       bucket: required(config.recordingsBucket, 'RECORDINGS_BUCKET'),
       region: config.awsRegion,
+      logger: logger.child({ component: 'recordings' }),
     }),
     jobQueue: new SqsJobQueue({
       queueUrl: required(config.jobsQueueUrl, 'JOBS_QUEUE_URL'),

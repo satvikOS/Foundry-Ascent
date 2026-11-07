@@ -32,7 +32,7 @@ export const RECORDING_LIMITS = {
   durationSlackMs: 60_000,
   /** Recordings one person may start per UTC day. */
   dailyRecordingsPerPrincipal: 40,
-  /** How long a recording is kept; then it is deleted (infra `recordings.retentionDays` matches it). */
+  /** How long a recording is kept; then it is deleted (infra RECORDINGS_RETENTION_DAYS matches it, tested there). */
   retentionDays: 365,
 } as const;
 

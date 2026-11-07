@@ -11,7 +11,7 @@ import {
   RecordingPlaybackResponse,
   type CreateRecordingRequest,
 } from '@foundry/contracts';
-import { auditRepo } from '@foundry/db';
+import { auditRepo, p, recordingsRepo, venturesRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type RequestContext } from '../context.js';
@@ -254,6 +254,7 @@ describe('replaying and deleting', () => {
   it('the daily maintenance removes files a failed deletion left behind', async () => {
     const { callId } = await call(maya);
     const created = await recorded(maya, callId);
+    await h.core.recordings.complete(maya, created.recording.id);
     h.recordingStore.failDeletes = true;
     try {
       await h.core.recordings.remove(maya, created.recording.id);
@@ -269,6 +270,89 @@ describe('replaying and deleting', () => {
       auditRepo.listAuditEvents(sx, { action: 'maintenance.recordings' }),
     );
     expect(audit.items[0]).toMatchObject({ outcome: 'succeeded', objectType: 'call_recording' });
+  });
+});
+
+describe('an upload still arriving when its recording is deleted', () => {
+  /** The keys a recording's presigned PUTs name, with the sizes the browser declared. */
+  function signed(recordingId: string) {
+    return h.recordingStore.puts
+      .filter((put) => put.key.includes(recordingId))
+      .map((put) => ({ key: put.key, bytes: put.contentLength }));
+  }
+
+  it('a file that lands after its conversation or the recording was deleted is removed too, never left a year', async () => {
+    // The conversation is deleted while the browser is still uploading: the purge finds nothing yet.
+    const { sessionId, callId } = await call(maya);
+    const first = CreateRecordingResponse.parse(await h.core.recordings.create(maya, callId, request()));
+    await h.core.sessions.remove(maya, sessionId);
+    // The pending recording itself is deleted mid-upload.
+    const other = await call(maya);
+    const second = CreateRecordingResponse.parse(
+      await h.core.recordings.create(maya, other.callId, request()),
+    );
+    await h.core.recordings.remove(maya, second.recording.id);
+
+    // The in-flight PUTs land afterwards.
+    const late = [...signed(first.recording.id), ...signed(second.recording.id)];
+    expect(late).toHaveLength(4);
+    for (const file of late) h.recordingStore.put(file.key, file.bytes);
+
+    // Neither is marked purged while an upload may still arrive, so the daily maintenance removes the late files.
+    const ids = [first.recording.id, second.recording.id];
+    const purgeable = async () =>
+      (await h.t.db.system((sx) => recordingsRepo.listPurgeable(sx, { limit: 1000 })))
+        .map((r) => r.id)
+        .filter((id) => ids.includes(id));
+    expect((await purgeable()).sort()).toEqual([...ids].sort());
+    await h.core.maintenance.runDaily({ requestId: 'maintenance-late-upload' });
+    for (const file of late) expect(h.recordingStore.objects.has(file.key)).toBe(false);
+
+    // Once no upload can arrive any more (the window of a pending recording has passed), they are marked purged.
+    await h.t.db.system((sx) =>
+      sx.query(
+        "UPDATE call_recordings SET created_at = created_at - interval '25 hours' WHERE id = ANY (:ids)",
+        { ids: p.uuidArray(ids) },
+      ),
+    );
+    await h.core.maintenance.runDaily({ requestId: 'maintenance-late-upload-settled' });
+    expect(await purgeable()).toEqual([]);
+  });
+});
+
+describe('after the venture is gone', () => {
+  it('a revoked membership loses its recordings of the venture at once, and may still delete them', async () => {
+    const { sessionId, callId } = await call(devin);
+    const kept = await recorded(devin, callId);
+    await h.core.recordings.complete(devin, kept.recording.id);
+    const pending = await recorded(devin, callId);
+    expect((await h.core.recordings.list(devin, { sessionId })).items.map((r) => r.id)).toEqual([
+      kept.recording.id,
+    ]);
+
+    await h.t.db.system((sx) =>
+      venturesRepo.revokeMembership(sx, { ventureId: ventureId(), principalId: h.people.devin }),
+    );
+    try {
+      expect((await h.core.recordings.list(devin, {})).items).toEqual([]);
+      expect((await h.core.recordings.list(devin, { ventureId: ventureId() })).items).toEqual([]);
+      expect((await refusal(h.core.recordings.playback(devin, kept.recording.id))).code).toBe('not_found');
+      expect((await refusal(h.core.recordings.complete(devin, pending.recording.id))).code).toBe('not_found');
+      const denied = await audits('recording.access', kept.recording.id);
+      expect(denied[0]).toMatchObject({
+        outcome: 'denied',
+        policyReason: 'venture_access:venture_not_visible',
+      });
+      // Their own recording is still theirs to delete (and its files go).
+      await h.core.recordings.remove(devin, kept.recording.id);
+      expect(h.recordingStore.deleted.filter((key) => key.includes(kept.recording.id))).toHaveLength(2);
+    } finally {
+      await h.t.db.system((sx) =>
+        venturesRepo.addMembership(sx, { ventureId: ventureId(), principalId: h.people.devin, role: 'team' }),
+      );
+    }
+    // With the venture back, the pending one completes as before.
+    expect((await h.core.recordings.complete(devin, pending.recording.id)).status).toBe('ready');
   });
 });
 

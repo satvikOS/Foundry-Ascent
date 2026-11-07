@@ -73,8 +73,10 @@ export interface RecordedCall {
 }
 
 /**
- * Saves a recording: registers it for the call (POST /calls/:id/recordings), uploads the recording and its captions to
- * their presigned URLs, then completes it (POST /recordings/:id/complete). Resolves with the ready recording.
+ * Saves a recording: registers it for the call (POST /calls/:id/recordings), uploads its captions and then the
+ * recording to their presigned URLs, then completes it (POST /recordings/:id/complete). Resolves with the ready
+ * recording. Both URLs are signed together and must be used within minutes, while the recording of a long call can
+ * take longer than that to upload: the small captions file goes first, so neither upload starts after its URL expired.
  */
 export async function saveRecording(
   recording: RecordedCall,
@@ -95,10 +97,6 @@ export async function saveRecording(
     idempotencyKey: createIdempotencyKey(),
     ...(options.signal ? { signal: options.signal } : {}),
   });
-  await uploadToPresignedUrl(ticket.upload.media, recording.media, {
-    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
-    ...(options.signal ? { signal: options.signal } : {}),
-  });
   if (ticket.upload.captions !== null && captions !== null) {
     await uploadToPresignedUrl(
       ticket.upload.captions,
@@ -106,6 +104,10 @@ export async function saveRecording(
       options.signal ? { signal: options.signal } : {},
     );
   }
+  await uploadToPresignedUrl(ticket.upload.media, recording.media, {
+    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
+  });
   return api.post(path`/recordings/${ticket.recording.id}/complete`, RecordingView, undefined, {
     idempotencyKey: createIdempotencyKey(),
   });

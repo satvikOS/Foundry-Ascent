@@ -658,6 +658,22 @@ describe('CallEngine · voice', () => {
     expect(h.state()).toMatchObject({ muted: true, talking: false });
   });
 
+  it('tells a call recording whether the call hears the microphone (push to talk released is off-mic)', async () => {
+    const h = setup();
+    await h.engine.start({ ventureId: IDS.venture, sessionId: IDS.session, talkMode: 'push_to_talk' });
+    await flush(10);
+    FakeWebSocket.last().serverOpen();
+    const heard = () => h.engine.recordingSources()?.microphoneOpen;
+    expect(heard()).toBe(false);
+    h.engine.pushToTalk(true);
+    expect(heard()).toBe(true);
+    h.engine.pushToTalk(false);
+    expect(heard()).toBe(false);
+    h.engine.pushToTalk(true);
+    h.engine.setMuted(true);
+    expect(heard()).toBe(false);
+  });
+
   it('says when the microphone is unplugged, continues by typing and reconnects it on request', async () => {
     const h = setup();
     await startLive(h);

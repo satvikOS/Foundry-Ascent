@@ -191,6 +191,9 @@ export function CallScreen() {
     founderName: me.principal.displayName,
     face,
     tenant,
+    // The screen shows the call, and with it the recording's save (CallLive renders RecordingSaveStatus).
+    inCall:
+      open && (snapshot.phase === 'starting' || snapshot.phase === 'live' || snapshot.phase === 'ending'),
   });
   const recordBlocker: RecordBlocker =
     privacy === 'ephemeral'
@@ -575,6 +578,7 @@ export function CallScreen() {
             open={disclosing}
             name={veir.name}
             kind={startKind}
+            privacy={route?.sessionId === null ? (choicePending ? null : newPrivacy) : privacy}
             confirmLabel={choicePending ? 'Continue' : 'Start call'}
             onConfirm={() => {
               acknowledgeDisclosure();
@@ -590,6 +594,7 @@ export function CallScreen() {
             open={videoAsk && live}
             name={veir.name}
             kind="video"
+            privacy={privacy}
             confirmLabel="Turn on video"
             onConfirm={() => {
               acknowledgeKind(me.principal.id, 'video');

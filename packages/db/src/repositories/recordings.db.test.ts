@@ -252,8 +252,20 @@ describe('call recordings (0031)', () => {
         captionsKey: created.captionsKey,
       },
     ]);
-    expect(await t.db.system((sx) => recordingsRepo.markPurged(sx, [created.id]))).toBe(1);
-    expect(await t.db.system((sx) => recordingsRepo.markPurged(sx, [created.id]))).toBe(0);
+    // Deleted while still pending: its upload may yet arrive, so it is not marked purged within the upload window
+    // (a later purge removes a file that lands meanwhile).
+    expect(
+      await t.db.system((sx) => recordingsRepo.markPurged(sx, [created.id], { uploadWindowSeconds: 3_600 })),
+    ).toBe(0);
+    expect(
+      await t.db.system((sx) => recordingsRepo.listPurgeable(sx, { limit: 10, id: created.id })),
+    ).toHaveLength(1);
+    expect(
+      await t.db.system((sx) => recordingsRepo.markPurged(sx, [created.id], { uploadWindowSeconds: 0 })),
+    ).toBe(1);
+    expect(
+      await t.db.system((sx) => recordingsRepo.markPurged(sx, [created.id], { uploadWindowSeconds: 0 })),
+    ).toBe(0);
     expect(
       await t.db.system((sx) => recordingsRepo.listPurgeable(sx, { limit: 10, id: created.id })),
     ).toEqual([]);
@@ -282,6 +294,17 @@ describe('call recordings (0031)', () => {
     );
     expect(purgeable.map((r) => r.id).sort()).toEqual([first.id, second.id].sort());
     expect(purgeable.find((r) => r.id === second.id)?.captionsKey).toBeNull();
+    // The ready one's files are complete and are marked purged at once; the pending one waits out its upload.
+    expect(
+      await t.db.system((sx) =>
+        recordingsRepo.markPurged(sx, [first.id, second.id], { uploadWindowSeconds: 3_600 }),
+      ),
+    ).toBe(1);
+    expect(
+      (await t.db.system((sx) => recordingsRepo.listPurgeable(sx, { limit: 10, sessionId: session }))).map(
+        (r) => r.id,
+      ),
+    ).toEqual([second.id]);
   });
 
   it('abandons uploads nobody finished', async () => {

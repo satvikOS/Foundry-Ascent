@@ -1,10 +1,4 @@
-import {
-  DeleteObjectCommand,
-  GetObjectCommand,
-  HeadObjectCommand,
-  PutObjectCommand,
-  type S3Client,
-} from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, type S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   type PresignedDownload,
@@ -15,7 +9,8 @@ import {
 } from '@foundry/core';
 
 import { UPLOAD_URL_TTL_SECONDS } from '../config.js';
-import { createS3Client } from './s3-object-store.js';
+import { type Logger } from '../logging.js';
+import { createS3Client, presignBoundPut } from './s3-object-store.js';
 
 /** Every recording key lives under this prefix (the bucket's IAM scopes it): `tenants/{t}/ventures/{v}/sessions/…`. */
 export const RECORDING_KEY_PREFIX = 'tenants/';
@@ -37,15 +32,14 @@ function assertRecordingKey(key: string): void {
   if (!isRecordingKey(key)) throw new TypeError('object key is not a recording file');
 }
 
-/**
- * A HEAD of a key that is not there: 404, or 403 where the role may not list the bucket for that request (a HeadObject
- * carries no `s3:prefix`, which the listing grant is conditioned on). The key is always one core built for this
- * recording, so either way the upload has not arrived.
- */
-function isMissing(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
-  return err.name === 'NoSuchKey' || err.name === 'NotFound' || status === 404 || status === 403;
+function statusOf(err: unknown): number | undefined {
+  return (err as { $metadata?: { httpStatusCode?: number } } | null)?.$metadata?.httpStatusCode;
+}
+
+function isNotFound(err: unknown): boolean {
+  return (
+    err instanceof Error && (err.name === 'NoSuchKey' || err.name === 'NotFound' || statusOf(err) === 404)
+  );
 }
 
 export interface S3RecordingStoreOptions {
@@ -54,6 +48,8 @@ export interface S3RecordingStoreOptions {
   /** Injected client (tests). */
   readonly client?: S3Client;
   readonly now?: () => Date;
+  /** Where a HEAD that S3 refused is reported (`recordings.head_denied`). */
+  readonly logger: Pick<Logger, 'warn'>;
 }
 
 /**
@@ -64,42 +60,30 @@ export interface S3RecordingStoreOptions {
  * - `presignGet`: SigV4 query-signed GET whose response type is fixed and never cached, valid as long as core asks
  *   (the recording's length and a margin, at most {@link MAX_PLAYBACK_URL_SECONDS}): the player streams it with range
  *   requests for as long as someone watches.
- * - `size`: HeadObject (null for a key that is not there).
+ * - `size`: HeadObject; null for a key that is not there. The functions may not list the bucket (ADR-0023 §8), so S3
+ *   answers a HEAD of a missing key with 403, not 404: a 403 is taken as "not uploaded yet" too, and logged
+ *   (`recordings.head_denied`, without the key) so that a real denial (a policy regression, the wrong bucket) shows.
  * - `delete`: idempotent.
  */
 export class S3RecordingStore implements RecordingStore {
   readonly #bucket: string;
   readonly #client: S3Client;
   readonly #now: () => Date;
+  readonly #logger: Pick<Logger, 'warn'>;
 
   constructor(options: S3RecordingStoreOptions) {
     this.#bucket = options.bucket;
     this.#client = options.client ?? createS3Client(options.region);
     this.#now = options.now ?? (() => new Date());
+    this.#logger = options.logger;
   }
 
   async presignPut(input: RecordingPutInput): Promise<PresignedUpload> {
     assertRecordingKey(input.key);
-    if (!Number.isSafeInteger(input.contentLength) || input.contentLength < 1) {
-      throw new TypeError('contentLength must be a positive integer');
-    }
-    const expiresIn = Math.max(60, Math.min(input.expiresInSeconds, UPLOAD_URL_TTL_SECONDS));
-    const signedAt = this.#now();
-    const url = await getSignedUrl(
-      this.#client,
-      new PutObjectCommand({
-        Bucket: this.#bucket,
-        Key: input.key,
-        ContentType: input.contentType,
-        ContentLength: input.contentLength,
-      }),
-      { expiresIn, signingDate: signedAt, signableHeaders: new Set(['content-type', 'content-length']) },
-    );
-    return {
-      url,
-      headers: { 'content-type': input.contentType },
-      expiresAt: new Date(signedAt.getTime() + expiresIn * 1000).toISOString(),
-    };
+    return presignBoundPut(this.#client, this.#bucket, input, {
+      maxSeconds: UPLOAD_URL_TTL_SECONDS,
+      signedAt: this.#now(),
+    });
   }
 
   async presignGet(input: RecordingGetInput): Promise<PresignedDownload> {
@@ -125,7 +109,11 @@ export class S3RecordingStore implements RecordingStore {
       const head = await this.#client.send(new HeadObjectCommand({ Bucket: this.#bucket, Key: key }));
       return head.ContentLength ?? null;
     } catch (err) {
-      if (isMissing(err)) return null;
+      if (isNotFound(err)) return null;
+      if (statusOf(err) === 403) {
+        this.#logger.warn('recordings.head_denied', { status: 403 });
+        return null;
+      }
       throw err;
     }
   }

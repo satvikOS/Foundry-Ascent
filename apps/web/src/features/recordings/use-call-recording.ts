@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import type { RecordingView } from '@foundry/contracts';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { announce } from '@/components/a11y/live-announcer';
 import { toast } from '@/components/ui/toast';
@@ -55,19 +56,47 @@ export function useElapsedSeconds(startedAt: number | null): number {
   return startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1000));
 }
 
+/** How long "Recording saved" stays in the call screen. */
+export const SAVED_NOTICE_MS = 8_000;
+
+/** Opens a saved recording in the venture's Recordings (a live call goes on, minimized). */
+export function useWatchRecording(tenant: string): (recording: RecordingView) => void {
+  const navigate = useNavigate();
+  return useCallback(
+    (recording: RecordingView) => {
+      void navigate({
+        to: '/$tenant/app/v/$ventureId/recordings',
+        params: { tenant, ventureId: recording.ventureId },
+        search: { r: recording.id },
+      });
+    },
+    [navigate, tenant],
+  );
+}
+
 /**
- * Keeps the call's recording in step with the call screen (who it shows, the face) and says what happens to it: the
- * toasts while it saves, then Watch (its conversation's list and Recordings are refreshed), or why it failed with
- * Try again. Mounted once, by the call screen, which stays mounted for the whole call.
+ * Keeps the call's recording in step with the call screen (who it shows, the face) and says what happens to it. While
+ * the call screen is open (`inCall`) the screen itself shows the save (RecordingSaveStatus, above the controls): the
+ * screen is a modal, so nothing outside it can be clicked, and a toast over it would hide End and pass its clicks
+ * through to it. Once the screen is closed (minimized, or the call ended and it returned to the conversation) a toast
+ * says it instead: Saving, then Watch (its conversation's list and Recordings are refreshed), or why it failed with
+ * Try again and Discard. Mounted once, by the call screen, which stays mounted for the whole call.
  */
 export function useCallRecordingLifecycle(
   session: RecordingSession,
-  subject: { veirName: string; founderName: string; face: RecordedFace | null; tenant: string },
+  subject: {
+    veirName: string;
+    founderName: string;
+    face: RecordedFace | null;
+    tenant: string;
+    /** The call screen is open and shows the call (and so the save). */
+    inCall: boolean;
+  },
 ): void {
   const client = useQueryClient();
-  const navigate = useNavigate();
   const state = useRecordingState(session);
-  const { veirName, founderName, face, tenant } = subject;
+  const { veirName, founderName, face, tenant, inCall } = subject;
+  const watch = useWatchRecording(tenant);
 
   useEffect(() => {
     session.attach({ veirName, founderName, face });
@@ -82,22 +111,48 @@ export function useCallRecordingLifecycle(
     };
   }, [client, session]);
 
+  // Said once per change, wherever it is shown.
   const previous = useRef<RecordingState['status']>(state.status);
   useEffect(() => {
     const was = previous.current;
     previous.current = state.status;
     if (state.status === was) return;
-    switch (state.status) {
-      case 'recording':
-        announce('Recording started');
-        break;
+    if (state.status === 'recording') announce('Recording started');
+    else if (state.status === 'saving' && was === 'recording') announce('Recording stopped. Saving it.');
+    else if (state.status === 'saved') announce('Recording saved');
+    else if (state.status === 'failed') announce(state.title, 'assertive');
+  }, [state]);
+
+  // In the call screen, "Recording saved" goes after a moment (Record stays usable meanwhile).
+  useEffect(() => {
+    if (!inCall || state.status !== 'saved') return undefined;
+    const timer = window.setTimeout(() => {
+      if (session.getSnapshot() === state) session.dismiss();
+    }, SAVED_NOTICE_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [inCall, session, state]);
+
+  // Outside the call screen, a toast.
+  const status = state.status;
+  const percent = state.status === 'saving' ? state.percent : null;
+  useEffect(() => {
+    if (inCall) {
+      toast.dismiss(SAVE_TOAST);
+      return;
+    }
+    const current = session.getSnapshot();
+    switch (current.status) {
       case 'saving':
-        if (was === 'recording') announce('Recording stopped. Saving it.');
-        toast.loading('Saving the recording…', { id: SAVE_TOAST, duration: Infinity });
+        toast.loading('Saving the recording…', {
+          id: SAVE_TOAST,
+          duration: Infinity,
+          ...(current.percent === null ? {} : { description: `${String(current.percent)}%` }),
+        });
         break;
       case 'saved': {
-        const { recording } = state;
-        announce('Recording saved');
+        const { recording } = current;
         toast.success('Recording saved', {
           id: SAVE_TOAST,
           duration: 8_000,
@@ -105,11 +160,7 @@ export function useCallRecordingLifecycle(
           action: {
             label: 'Watch',
             onClick: () => {
-              void navigate({
-                to: '/$tenant/app/v/$ventureId/recordings',
-                params: { tenant, ventureId: recording.ventureId },
-                search: { r: recording.id },
-              });
+              watch(recording);
             },
           },
         });
@@ -117,12 +168,12 @@ export function useCallRecordingLifecycle(
         break;
       }
       case 'failed':
-        announce('The recording wasn’t saved', 'assertive');
-        toast.error('The recording wasn’t saved', {
+        toast.error(current.title, {
           id: SAVE_TOAST,
           duration: Infinity,
-          description: state.message,
-          ...(state.canRetry
+          description: current.message,
+          // Closing the toast keeps a take that can still be saved: the call screen offers it again.
+          ...(current.canRetry
             ? {
                 action: {
                   label: 'Try again',
@@ -130,17 +181,25 @@ export function useCallRecordingLifecycle(
                     void session.retry();
                   },
                 },
+                cancel: {
+                  label: 'Discard',
+                  onClick: () => {
+                    session.dismiss();
+                  },
+                },
               }
-            : {}),
-          onDismiss: () => {
-            session.dismiss();
-          },
+            : {
+                onDismiss: () => {
+                  session.dismiss();
+                },
+              }),
         });
         break;
+      case 'recording':
       case 'idle':
         break;
     }
-  }, [navigate, session, state, tenant]);
+  }, [inCall, session, status, percent, watch]);
 }
 
 /** Whether this browser can record calls (checked once). */

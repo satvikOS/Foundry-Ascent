@@ -59,6 +59,45 @@ export function createS3Client(region: string, overrides: Omit<S3ClientConfig, '
 }
 
 /**
+ * A SigV4 query-signed PUT of one key that binds `content-type` and `content-length`, so the browser must upload
+ * exactly the declared type and size (anything else fails with 403 at S3), valid for the asked time within 1 minute
+ * and `maxSeconds`. The caller has checked the key belongs to its bucket. Shared by the documents and recordings stores.
+ */
+export async function presignBoundPut(
+  client: S3Client,
+  bucket: string,
+  input: {
+    readonly key: string;
+    readonly contentType: string;
+    readonly contentLength: number;
+    readonly expiresInSeconds: number;
+  },
+  options: { readonly maxSeconds: number; readonly signedAt: Date },
+): Promise<PresignedUpload> {
+  if (!Number.isSafeInteger(input.contentLength) || input.contentLength < 1) {
+    throw new TypeError('contentLength must be a positive integer');
+  }
+  const expiresIn = Math.max(60, Math.min(input.expiresInSeconds, options.maxSeconds));
+  const command = new PutObjectCommand({
+    Bucket: bucket,
+    Key: input.key,
+    ContentType: input.contentType,
+    ContentLength: input.contentLength,
+  });
+  const url = await getSignedUrl(client, command, {
+    expiresIn,
+    signingDate: options.signedAt,
+    signableHeaders: new Set(['content-type', 'content-length']),
+  });
+  return {
+    url,
+    // Content-Length is set by the browser from the body (it cannot be set by scripts).
+    headers: { 'content-type': input.contentType },
+    expiresAt: new Date(options.signedAt.getTime() + expiresIn * 1000).toISOString(),
+  };
+}
+
+/**
  * Documents bucket adapter (core `ObjectStore` port).
  *
  * - `presignPut`: SigV4 query-signed PUT that signs `content-type` and `content-length`, so the browser
@@ -83,29 +122,10 @@ export class S3ObjectStore implements ObjectStore {
 
   async presignPut(input: PresignPutInput): Promise<PresignedUpload> {
     assertDocumentKey(input.key);
-    if (!Number.isSafeInteger(input.contentLength) || input.contentLength < 1) {
-      throw new TypeError('contentLength must be a positive integer');
-    }
-    const expiresIn = Math.max(60, Math.min(input.expiresInSeconds, this.#maxPresignSeconds));
-    const signedAt = this.#now();
-    const command = new PutObjectCommand({
-      Bucket: this.#bucket,
-      Key: input.key,
-      ContentType: input.contentType,
-      ContentLength: input.contentLength,
+    return presignBoundPut(this.#client, this.#bucket, input, {
+      maxSeconds: this.#maxPresignSeconds,
+      signedAt: this.#now(),
     });
-    const url = await getSignedUrl(this.#client, command, {
-      expiresIn,
-      signingDate: signedAt,
-      // Both are bound into the signature: a different type or size fails with 403 at S3.
-      signableHeaders: new Set(['content-type', 'content-length']),
-    });
-    return {
-      url,
-      // Content-Length is set by the browser from the body (it cannot be set by scripts).
-      headers: { 'content-type': input.contentType },
-      expiresAt: new Date(signedAt.getTime() + expiresIn * 1000).toISOString(),
-    };
   }
 
   async presignGet(input: PresignGetInput): Promise<PresignedDownload> {

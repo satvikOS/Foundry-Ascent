@@ -204,7 +204,8 @@ test.describe('call recordings', () => {
     );
     await stop.click();
     await completed;
-    await expect(page.getByText('Recording saved')).toBeVisible();
+    // Said in the call screen itself (a toast over the modal screen could not be clicked).
+    await expect(screen.getByRole('group', { name: 'Recording saved' })).toBeVisible();
     await expect(indicator).toHaveCount(0);
     // The call goes on after the recording stopped: Record again is offered.
     await expect(screen.getByRole('button', { name: 'Record' })).toBeEnabled();
@@ -268,6 +269,91 @@ test.describe('call recordings', () => {
       if (!(code.includes('jitless') && /Function\((?:``|""|'')\)/.test(code))) unexpected.push(violation);
     }
     expect(unexpected).toEqual([]);
+  });
+
+  test('a save during the call is shown in the call screen: Try again after a failure, Watch without hanging up', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await muteMedia(page);
+    await voiceNoticeSeen(page);
+    await openVenture(page);
+    const sessionId = await startConversation(page, `Which room is quiet at noon? ${runToken()}`);
+    await expect(page.getByRole('article', { name: 'Exchange 1' })).toBeVisible({ timeout: 30_000 });
+    const { screen, reply } = await openCall(page);
+
+    /** The button under the pointer at the centre of `control` (what a click there would press). */
+    const underPointer = async (control: Locator): Promise<string | null> => {
+      const box = await control.boundingBox();
+      if (!box) throw new Error('control not laid out');
+      return page.evaluate(
+        ([x, y]) => {
+          const button = document.elementFromPoint(x ?? 0, y ?? 0)?.closest('button');
+          return button ? (button.getAttribute('aria-label') ?? button.textContent.trim()) : null;
+        },
+        [box.x + box.width / 2, box.y + box.height / 2],
+      );
+    };
+    const toasts = page.locator('[data-sonner-toast]');
+
+    // The first save fails (the API is unavailable for a moment).
+    const failing = '**/api/v1/calls/*/recordings';
+    await page.route(failing, (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: 'application/problem+json',
+        body: JSON.stringify({ title: 'Service unavailable', status: 503, code: 'internal' }),
+      }),
+    );
+    await record(page, screen);
+    await say(page, reply, sessionId, `The east reading room, ${runToken()}`);
+    await screen.getByRole('button', { name: /^Stop recording, / }).click();
+    const failed = screen.getByRole('group', { name: 'The recording wasn’t saved' });
+    await expect(failed).toBeVisible({ timeout: 15_000 });
+    await expect(toasts).toHaveCount(0);
+    // The take is kept: Record waits until it is saved or discarded, and R does not start another either.
+    const recordControl = screen.getByRole('button', { name: 'Record' });
+    await expect(recordControl).toHaveAttribute('aria-disabled', 'true');
+    await expect(recordControl).toHaveAccessibleDescription('Save or discard the last recording first.');
+    await page.keyboard.press('r');
+    await expect(screen.getByTestId('recording-indicator')).toHaveCount(0);
+    // On a phone too, Try again is what is under the pointer, and End is still End.
+    const desktop = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 844 });
+    const tryAgain = failed.getByRole('button', { name: 'Try again' });
+    expect(await underPointer(tryAgain)).toBe('Try again');
+    expect(await underPointer(screen.getByRole('button', { name: 'End call' }))).toBe('End call');
+    if (desktop) await page.setViewportSize(desktop);
+
+    // Try again saves that same take.
+    await page.unroute(failing);
+    const completed = page.waitForResponse(
+      (response) =>
+        /\/recordings\/[0-9a-f-]{36}\/complete$/.test(response.url()) && response.status() === 200,
+    );
+    expect(await underPointer(tryAgain)).toBe('Try again');
+    await tryAgain.click();
+    await completed;
+    const saved = screen.getByRole('group', { name: 'Recording saved' });
+    await expect(saved).toBeVisible();
+    await expect(toasts).toHaveCount(0);
+    const [listed] = await recordingsOf(page, sessionId);
+    expect(listed?.status).toBe('ready');
+
+    // Watch opens it while the call goes on (minimized): the click lands on Watch, never on End call.
+    const watch = saved.getByRole('button', { name: 'Watch' });
+    expect(await underPointer(watch)).toBe('Watch');
+    await watch.click();
+    await expect(page).toHaveURL(new RegExp(`/recordings\\?r=${listed?.id ?? ''}`));
+    const bar = page.getByRole('region', { name: /^Call with / });
+    await expect(bar.getByRole('button', { name: 'Return to call' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Undo' })).toHaveCount(0);
+    await bar.getByRole('button', { name: 'Return to call' }).click();
+    await expect(callScreen(page).getByRole('button', { name: 'End call' })).toBeVisible();
+    await endCall(page);
+    await page.request.delete(`/api/v1/sessions/${sessionId}`, {
+      headers: { ...WRITE_HEADERS, 'idempotency-key': runToken() },
+    });
   });
 
   test('hanging up stops and saves the recording; deleting the conversation deletes it', async ({ page }) => {

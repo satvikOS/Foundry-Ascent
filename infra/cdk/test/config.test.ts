@@ -42,6 +42,15 @@ const withChange = (path: string[], value: unknown): Record<string, unknown> => 
 };
 
 describe('config', () => {
+  it('refuses a recordings retention: the app keeps recordings for a year and says so, the bucket follows it', () => {
+    expect(parseConfig({ ...valid(), recordings: { corsOrigins: [] } }).recordings).toEqual({
+      corsOrigins: [],
+    });
+    expect(() => parseConfig({ ...valid(), recordings: { corsOrigins: [], retentionDays: 30 } })).toThrow(
+      /\$\.recordings\.retentionDays/,
+    );
+  });
+
   it('loads config/production.json', () => {
     const config = loadConfig();
     expect(config.region).toBe('us-east-1');

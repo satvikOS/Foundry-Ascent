@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/features/admin/shared/test-utils';
 
-import { RecordControl, RecordingMark, recordingClock } from './record-control';
+import { RecordControl, RecordingMark } from './record-control';
 import { acknowledgeRecordingNotice } from './recording-notice-store';
 import type { RecordingSession, RecordingState } from './recording-session';
 
@@ -66,6 +66,25 @@ describe('RecordControl', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
+  it('waits for a take whose save failed to be saved or discarded before another starts', async () => {
+    acknowledgeRecordingNotice('p-unsaved');
+    const user = userEvent.setup();
+    const { session, start } = fakeSession({
+      status: 'failed',
+      title: 'The recording wasn’t saved',
+      message: 'The connection dropped while it was saving.',
+      canRetry: true,
+    });
+    renderWithProviders(
+      <RecordControl session={session} blocker={null} principalId="p-unsaved" name="Thomas" video={false} />,
+    );
+    const record = screen.getByRole('button', { name: 'Record' });
+    expect(record).toHaveAttribute('aria-disabled', 'true');
+    expect(record).toHaveAccessibleDescription('Save or discard the last recording first.');
+    await user.click(record);
+    expect(start).not.toHaveBeenCalled();
+  });
+
   it('keeps the control on a private call, disabled, with the reason', async () => {
     const user = userEvent.setup();
     const { session, start } = fakeSession();
@@ -84,13 +103,5 @@ describe('RecordControl', () => {
     await user.click(record);
     expect(start).not.toHaveBeenCalled();
     expect(screen.queryByRole('alertdialog')).toBeNull();
-  });
-});
-
-describe('recordingClock', () => {
-  it('writes a length as m:ss, or h:mm:ss past an hour', () => {
-    expect(recordingClock(0)).toBe('0:00');
-    expect(recordingClock(65.9)).toBe('1:05');
-    expect(recordingClock(3_725)).toBe('1:02:05');
   });
 });

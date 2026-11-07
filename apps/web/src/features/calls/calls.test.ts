@@ -95,6 +95,15 @@ describe('call kinds', () => {
         .join(' '),
     ).not.toMatch(/avatar/);
   });
+
+  it('says what is kept of the sound by the call’s privacy: a private call can never be recorded', () => {
+    const voice = (privacy: 'standard' | 'ephemeral' | null) =>
+      disclosureFacts('Thomas', 'voice', privacy).find((fact) => fact.id === 'voice')?.text ?? '';
+    expect(voice('standard')).toMatch(/No audio is kept unless you record the call/);
+    expect(voice('ephemeral')).toMatch(/This call is private: no audio is kept and it can’t be recorded\./);
+    expect(voice('ephemeral')).not.toMatch(/unless you record/);
+    expect(voice(null)).toMatch(/a private call can’t be recorded/);
+  });
 });
 
 describe('call clock', () => {

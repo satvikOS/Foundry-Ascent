@@ -3776,24 +3776,6 @@ exports[`template snapshots > FoundryAscent-Data 1`] = `
               },
               "Sid": "RecordingObjects",
             },
-            {
-              "Action": "s3:ListBucket",
-              "Condition": {
-                "StringLike": {
-                  "s3:prefix": [
-                    "tenants/*",
-                  ],
-                },
-              },
-              "Effect": "Allow",
-              "Resource": {
-                "Fn::GetAtt": [
-                  "RecordingsBucketAA52F499",
-                  "Arn",
-                ],
-              },
-              "Sid": "RecordingListing",
-            },
           ],
           "Version": "2012-10-17",
         },

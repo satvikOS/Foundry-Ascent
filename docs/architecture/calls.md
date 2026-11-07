@@ -834,16 +834,20 @@ replaces the first), cuts an utterance with the next one (no queue), and sounds 
 ## 7. Recordings (ADR-0023)
 
 A founder may record their own call from the call screen and watch it again later, with its captions, without calling
-the vEIR. Never a private call; only the person who recorded it can list, play or delete it.
+the vEIR. Never a private call; only the person who recorded it can list, play or delete it (list and play only while
+they still have the venture).
 
 - **Recording (browser).** `features/recordings`: Record in the dock (keyboard `R`; a notice the first time), "● REC"
   and the time in the header while it records, Stop to save; hanging up stops and saves it. `CallRecorder` records one
   canvas (the face's video while it shows, else the presence) and a WebAudio mix of the vEIR's voice (the player's
-  output and a vendor face's audio track) and the microphone, with `MediaRecorder` (webm, or mp4 on Safari);
+  output and a vendor face's audio track) and the microphone (silent whenever the call does not hear it: muted, on
+  hold, push to talk released), with `MediaRecorder` (webm, or mp4 on Safari);
   `CaptionRecorder` turns the call's captions into WebVTT cues. `CallEngine.recordingSources()` exposes the call's
   AudioContext, the player's output and the microphone stream without changing them.
-- **Saving.** `POST /calls/:id/recordings` → presigned PUTs (recording, captions) → `POST /recordings/:id/complete`
-  (sizes checked) → listed. A failed save keeps the file in the page with Try again.
+- **Saving.** `POST /calls/:id/recordings` → presigned PUTs (the captions uploaded first, then the recording) →
+  `POST /recordings/:id/complete` (sizes checked) → listed. While the call screen is open the save shows in it, above
+  the controls (`RecordingSaveStatus`: Watch, or Try again and Discard); a toast says it once the screen is closed. A
+  failed save keeps the file in the page, and Record waits until it is saved or discarded.
 - **Replay.** `GET /recordings/:id/playback` → presigned GETs for the `<video>` (CORS, range requests) and the captions
   file; captions show over the picture and as a transcript whose lines seek. In the conversation (at the end of its
   transcript) and under Recordings in the venture's side panel (`/v/:id/recordings`, `?r=` opens one).

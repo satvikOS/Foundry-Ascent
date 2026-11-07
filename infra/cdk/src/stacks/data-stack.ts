@@ -25,6 +25,7 @@ import {
   JOBS_VISIBILITY_TIMEOUT_SECONDS,
   NAMES,
   RECORDINGS_LIFECYCLE_GRACE_DAYS,
+  RECORDINGS_RETENTION_DAYS,
   RECORDINGS_PREFIX,
 } from '../lib/constants.js';
 import { retentionDays } from '../lib/logs.js';
@@ -217,7 +218,7 @@ export class DataStack extends Stack {
     // Founders' recordings of their own calls: private (all public access blocked, owner-enforced objects, encrypted
     // at rest, TLS only), uploaded and replayed only through presigned URLs the API signs after checking the
     // recording is the caller's own. Keys are per tenant, venture and conversation. The app deletes a recording when
-    // its founder or its conversation does, and after `recordings.retentionDays`; the lifecycle expires anything left
+    // its founder or its conversation does, and after RECORDINGS_RETENTION_DAYS; the lifecycle expires anything left
     // a week later and aborts unfinished uploads.
     this.recordingsBucket = new s3.Bucket(this, 'RecordingsBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -233,7 +234,7 @@ export class DataStack extends Stack {
         {
           id: 'expire-past-retention',
           prefix: RECORDINGS_PREFIX,
-          expiration: Duration.days(config.recordings.retentionDays + RECORDINGS_LIFECYCLE_GRACE_DAYS),
+          expiration: Duration.days(RECORDINGS_RETENTION_DAYS + RECORDINGS_LIFECYCLE_GRACE_DAYS),
         },
       ],
       cors:
@@ -313,13 +314,8 @@ export class DataStack extends Stack {
           actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
           resources: [recordingObjects],
         }),
-        new iam.PolicyStatement({
-          // Lets HeadObject on a missing key return 404 instead of 403, within the tenants/ prefix only.
-          sid: 'RecordingListing',
-          actions: ['s3:ListBucket'],
-          resources: [this.recordingsBucket.bucketArn],
-          conditions: { StringLike: { 's3:prefix': [`${RECORDINGS_PREFIX}*`] } },
-        }),
+        // No s3:ListBucket: nothing lists recordings. Without it S3 answers a HeadObject of a key not uploaded yet
+        // with 403 instead of 404, which the API's store treats as not uploaded and logs (recordings.head_denied).
       ],
     });
     acknowledge(this.recordingsAccessPolicy, {

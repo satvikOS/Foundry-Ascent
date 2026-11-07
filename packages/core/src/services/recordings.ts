@@ -9,10 +9,10 @@ import {
   type RecordingPlaybackResponse,
   type RecordingView,
 } from '@foundry/contracts';
-import { auditRepo, callsRepo, recordingsRepo, sessionsRepo } from '@foundry/db';
+import { auditRepo, callsRepo, recordingsRepo, sessionsRepo, venturesRepo } from '@foundry/db';
 import { type z } from 'zod';
 
-import { requireVentureAccess } from '../authz/venture-access.js';
+import { decideVentureAccess, requireVentureAccess } from '../authz/venture-access.js';
 import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
@@ -25,8 +25,9 @@ import { type RecordingStore } from '../ports.js';
  * straight to the recordings store with presigned PUTs issued here, after this checked the call is the caller's own
  * and its conversation is remembered (a private call is never recorded); `complete` checks the sizes that arrived.
  * Replay gets presigned GETs, never a model. Only the person who recorded it lists, plays or deletes it (RLS), and
- * deleting it or its conversation deletes its files (at once, and the daily maintenance retries any it missed). Every
- * step is audited with identifiers and counts, never content.
+ * lists or plays it only while they still have its venture (a revoked or expired membership loses it at once, though
+ * they may still delete it). Deleting it or its conversation deletes its files (at once, and the daily maintenance
+ * retries any it missed or any that arrived later). Every step is audited with identifiers and counts, never content.
  */
 export interface RecordingsService {
   /** Registers a recording of the caller's own call and returns the presigned PUTs for its files. */
@@ -49,7 +50,11 @@ export interface RecordingsService {
 const PLAYBACK_MIN_SECONDS = 15 * 60;
 const PLAYBACK_MAX_SECONDS = 4 * 3_600;
 
-/** A pending recording whose upload has not completed after this long is abandoned (its files purged). */
+/**
+ * A pending recording whose upload has not completed after this long is abandoned (its files purged). It is also how
+ * long an upload of a pending recording may still be arriving: one deleted before then is purged again by the daily
+ * maintenance until it has passed, so a file that lands after the first purge is removed too.
+ */
 export const STALE_RECORDING_SECONDS = 24 * 3_600;
 
 /** Files of deleted recordings removed per purge at most. */
@@ -95,7 +100,9 @@ export interface PurgeResult {
 
 /**
  * Removes the files of deleted recordings from the store and marks them purged (owner role): one recording, one
- * conversation's, or the oldest {@link PURGE_BATCH}. A file that cannot be deleted now stays for the next purge.
+ * conversation's, or the oldest {@link PURGE_BATCH}. A file that cannot be deleted now stays for the next purge, and
+ * so does a recording deleted while its upload may still be arriving (pending, younger than
+ * {@link STALE_RECORDING_SECONDS}): its files are deleted now and again by each purge until no upload can land.
  * Never throws for a store failure (counted in `failed`).
  */
 export async function purgeRecordings(
@@ -129,7 +136,10 @@ export async function purgeRecordings(
       });
     }
   }
-  const purged = await kit.system((sx) => recordingsRepo.markPurged(sx, done), { transaction: false });
+  const purged = await kit.system(
+    (sx) => recordingsRepo.markPurged(sx, done, { uploadWindowSeconds: STALE_RECORDING_SECONDS }),
+    { transaction: false },
+  );
   return { purged, failed };
 }
 
@@ -175,21 +185,37 @@ export function createRecordingsService(kit: Kit): RecordingsService {
     return configured;
   }
 
-  /** The caller's own recording, not deleted; anyone else's (or none) is not found. */
+  /**
+   * The caller's own recording, not deleted; anyone else's (or none) is not found. `venture: 'read'` also needs the
+   * caller to still have the venture (a membership revoked or expired loses its recordings at once, as it loses the
+   * rest of the venture: they carry the vEIR's advice about it); deleting one's own recording does not.
+   */
   async function ownRecording(
     scope: RequestScope,
     recordingId: string,
+    venture: 'read' | 'none',
   ): Promise<recordingsRepo.RecordingRecord> {
     const recording = await recordingsRepo.getRecording(scope.tx, recordingId);
-    if (recording?.deletedAt !== null) {
+    const deny = (policyReason: string, ventureId: string | null): never => {
       scope.deferAudit({
         action: 'recording.access',
         outcome: 'denied',
+        ventureId,
         objectType: 'call_recording',
         objectId: recordingId,
-        policyReason: recording === null ? 'recording_not_visible' : 'recording_deleted',
+        policyReason,
       });
       throw fail.notFound('Recording');
+    };
+    if (recording === null) return deny('recording_not_visible', null);
+    if (recording.deletedAt !== null) return deny('recording_deleted', recording.ventureId);
+    if (venture === 'read') {
+      const access = await venturesRepo.getVentureAccess(scope.tx, {
+        ventureId: recording.ventureId,
+        principalId: scope.ctx.principalId,
+      });
+      const decision = decideVentureAccess(access, scope.ctx, 'read');
+      if (!decision.allowed) return deny(`venture_access:${decision.reason}`, null);
     }
     return recording;
   }
@@ -321,7 +347,7 @@ export function createRecordingsService(kit: Kit): RecordingsService {
     complete: async (ctx, rawRecordingId) => {
       const recordingId = requireId(rawRecordingId, 'Recording');
       const files = store();
-      const current = await kit.inRequest(ctx, (scope) => ownRecording(scope, recordingId));
+      const current = await kit.inRequest(ctx, (scope) => ownRecording(scope, recordingId, 'read'));
       if (current.status === 'ready') return recordingsRepo.toRecordingView(current);
       const [media, captions] = await Promise.all([
         files.size(current.storageKey),
@@ -343,7 +369,7 @@ export function createRecordingsService(kit: Kit): RecordingsService {
         }
         const ready = await recordingsRepo.markReady(scope.tx, recordingId);
         if (ready === null) {
-          const again = await ownRecording(scope, recordingId);
+          const again = await ownRecording(scope, recordingId, 'read');
           return recordingsRepo.toRecordingView(again);
         }
         await audit(scope, {
@@ -382,7 +408,7 @@ export function createRecordingsService(kit: Kit): RecordingsService {
       const recordingId = requireId(rawRecordingId, 'Recording');
       const files = store();
       const recording = await kit.inRequest(ctx, async (scope) => {
-        const own = await ownRecording(scope, recordingId);
+        const own = await ownRecording(scope, recordingId, 'read');
         if (own.status !== 'ready')
           throw fail.conflict('This recording is still being saved.', 'recording_pending');
         await audit(scope, {
@@ -412,7 +438,7 @@ export function createRecordingsService(kit: Kit): RecordingsService {
     remove: async (ctx, rawRecordingId) => {
       const recordingId = requireId(rawRecordingId, 'Recording');
       await kit.inRequest(ctx, async (scope) => {
-        await ownRecording(scope, recordingId);
+        await ownRecording(scope, recordingId, 'none');
         const deleted = await recordingsRepo.softDeleteRecording(scope.tx, recordingId, 'founder');
         if (deleted === null) throw fail.notFound('Recording');
         await audit(scope, {

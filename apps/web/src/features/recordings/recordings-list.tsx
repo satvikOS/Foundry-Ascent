@@ -14,12 +14,12 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/toast';
+import { formatClock, spokenDuration } from '@/features/calls/use-call-clock';
 import { errorMessage } from '@/lib/api/errors';
 import { useDeleteRecording } from '@/lib/api/hooks/recordings';
 import { formatDateTime, isoString } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
-import { recordingClock, spokenLength } from './record-control';
 import { RecordingPlayer } from './recording-player';
 
 interface RecordingsListProps {
@@ -74,9 +74,9 @@ export function RecordingsList({
                       </>
                     ) : null}
                     <span className="tabular" aria-hidden>
-                      {recordingClock(recording.durationMs / 1000)}
+                      {formatClock(recording.durationMs / 1000)}
                     </span>
-                    <span className="sr-only">{spokenLength(recording.durationMs / 1000)}</span>
+                    <span className="sr-only">{spokenDuration(recording.durationMs / 1000)}</span>
                     {recording.hasCaptions ? (
                       <>
                         <span aria-hidden>·</span>

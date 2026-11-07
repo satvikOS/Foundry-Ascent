@@ -112,13 +112,11 @@ export interface PlatformConfig {
   /**
    * Call recordings (ADR-0023): the private recordings bucket. `corsOrigins` are the exact app origins whose pages may
    * upload to it and replay from it with presigned URLs (the CloudFront distribution's own `https://` origin, known
-   * after the first deploy; a custom site domain is added by the app). `retentionDays`: how long a recording is kept
-   * before the daily maintenance deletes it (packages/contracts RECORDING_LIMITS.retentionDays); the bucket's
-   * lifecycle expires anything left a week later. Absent: no origin may use the bucket and a year's retention.
+   * after the first deploy; a custom site domain is added by the app). Absent: no origin may use the bucket. How long
+   * recordings are kept is the app's (lib/constants.ts RECORDINGS_RETENTION_DAYS), not a setting.
    */
   readonly recordings: {
     readonly corsOrigins: readonly string[];
-    readonly retentionDays: number;
   };
   /**
    * The vEIR's digital twin (docs/runbooks/avatars.md): the vendor that draws the face (HeyGen LiveAvatar, LITE
@@ -233,7 +231,7 @@ const SPEECH_OFF = { enabled: false, engine: 'neural', dailyAlarmUsd: 15 } as co
 /** Used when `distillation` is absent from the file. */
 const DISTILLATION_OFF = { sweepEnabled: false, sweepIntervalMinutes: 15 } as const;
 /** Used when `recordings` is absent from the file: no browser origin may use the bucket. */
-const RECORDINGS_DEFAULT = { corsOrigins: [], retentionDays: 365 } as const;
+const RECORDINGS_DEFAULT = { corsOrigins: [] } as const;
 
 export const CONFIG_FILE = join(INFRA_ROOT, 'config', 'production.json');
 
@@ -441,12 +439,15 @@ function parseRecordings(raw: unknown): PlatformConfig['recordings'] {
       throw new ConfigError(`$.recordings.corsOrigins[${String(i)}]`, 'must be an https:// origin');
     }
   });
-  return {
-    corsOrigins,
-    // The app says recordings are kept for a year (RECORDING_LIMITS.retentionDays): a shorter or longer retention
-    // changes both.
-    retentionDays: int(recordings, 'retentionDays', '$.recordings', 30, 3650),
-  };
+  // The app keeps recordings for RECORDING_LIMITS.retentionDays and says so; a retention set here would reach only the
+  // bucket, so it is refused rather than ignored.
+  if (recordings.retentionDays !== undefined) {
+    throw new ConfigError(
+      '$.recordings.retentionDays',
+      'is not read: recordings are kept for packages/contracts RECORDING_LIMITS.retentionDays',
+    );
+  }
+  return { corsOrigins };
 }
 
 /** LiveAvatar avatar and voice ids are UUIDs (e.g. the sandbox avatar `dd73ea75-1218-4ef3-92ce-606d5f7fbc0a`). */

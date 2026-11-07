@@ -1,3 +1,4 @@
+import type { SessionView } from '@foundry/contracts';
 import { AudioLines, Ban, History, LifeBuoy, Phone, Sparkles, Video, type LucideIcon } from 'lucide-react';
 
 import {
@@ -13,6 +14,16 @@ import {
 
 import type { CallKind } from './call-kind';
 
+type SessionPrivacy = SessionView['privacy'];
+
+/** What is kept of the call's sound, by its conversation's privacy. */
+const AUDIO_KEPT: Record<SessionPrivacy | 'unknown', string> = {
+  standard: 'No audio is kept unless you record the call; the transcript is saved here like chat.',
+  ephemeral: 'This call is private: no audio is kept and it can’t be recorded.',
+  unknown:
+    'No audio is kept unless you record the call (a private call can’t be recorded); the transcript is saved here like chat.',
+};
+
 interface Fact {
   readonly id: string;
   readonly icon: LucideIcon;
@@ -23,9 +34,14 @@ interface Fact {
  * The facts a person reads before their first call of a kind (and may re-read from the call settings): who they
  * are talking to, what is synthetic, what happens to their voice and what is remembered, that a person is there,
  * and what the mentor will not do. Said once here, calmly, instead of on every message; the call tile keeps its
- * "AI avatar" and "AI voice" labels. `kind` null: both kinds (re-reading from the settings).
+ * "AI avatar" and "AI voice" labels. `kind` null: both kinds (re-reading from the settings). `privacy`: the call's
+ * conversation, when known (a private one keeps no audio and cannot be recorded; null: not chosen yet, or any call).
  */
-export function disclosureFacts(name: string, kind: CallKind | null): readonly Fact[] {
+export function disclosureFacts(
+  name: string,
+  kind: CallKind | null,
+  privacy: SessionPrivacy | null = null,
+): readonly Fact[] {
   const synthetic =
     kind === 'voice'
       ? 'The voice you hear is AI-generated.'
@@ -37,7 +53,7 @@ export function disclosureFacts(name: string, kind: CallKind | null): readonly F
     {
       id: 'voice',
       icon: AudioLines,
-      text: 'Your voice is turned into text as you speak (Amazon Transcribe). No audio is kept unless you record the call; the transcript is saved here like chat.',
+      text: `Your voice is turned into text as you speak (Amazon Transcribe). ${AUDIO_KEPT[privacy ?? 'unknown']}`,
     },
     {
       id: 'memory',
@@ -63,6 +79,8 @@ interface CallDisclosureDialogProps {
   name: string;
   /** The call about to start; null when re-read from the call settings (no call starts). */
   kind: CallKind | null;
+  /** The call's conversation (private or remembered), when known. */
+  privacy?: SessionPrivacy | null;
   /** Start call (the first call of this kind): stores that it was read, then the call starts. */
   onConfirm?: () => void;
   /** Cancel or Close (Escape too). */
@@ -79,11 +97,12 @@ export function CallDisclosureDialog({
   open,
   name,
   kind,
+  privacy = null,
   onConfirm,
   onCancel,
   confirmLabel = 'Start call',
 }: CallDisclosureDialogProps) {
-  const facts = disclosureFacts(name, kind);
+  const facts = disclosureFacts(name, kind, privacy);
   const title =
     kind === null
       ? `About calls with ${name}`

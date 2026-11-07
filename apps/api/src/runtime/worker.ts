@@ -59,6 +59,7 @@ export function createWorkerRuntime(env: EnvLike): WorkerDeps {
     recordingStore: new S3RecordingStore({
       bucket: required(config.recordingsBucket, 'RECORDINGS_BUCKET'),
       region: config.awsRegion,
+      logger: logger.child({ component: 'recordings' }),
     }),
     jobQueue: unavailableJobQueue,
     textExtractor: new DocumentTextExtractor(),

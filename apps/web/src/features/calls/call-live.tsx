@@ -9,6 +9,7 @@ import type { CallEngine, CallNotice, CallSnapshot, TypedReason } from '@/lib/re
 import { cn } from '@/lib/utils';
 
 import { RecordControl } from '@/features/recordings/record-control';
+import { RecordingSaveStatus } from '@/features/recordings/recording-save-status';
 import type { RecordingSession } from '@/features/recordings/recording-session';
 import type { RecordBlocker } from '@/features/recordings/use-call-recording';
 
@@ -209,10 +210,11 @@ export function CallLive({
         else typeRef.current?.focus();
       },
       r: () => {
-        if (recording?.blocker !== null) return;
-        const status = recording.session.getSnapshot().status;
-        if (status === 'recording') void recording.session.stop();
-        else if (status === 'idle')
+        if (recording === null) return;
+        const { session } = recording;
+        // As on the control: stopping is never blocked; starting needs a call that can be recorded now.
+        if (session.getSnapshot().status === 'recording') void session.stop();
+        else if (recording.blocker === null && session.canStart())
           document.querySelector<HTMLButtonElement>('[data-slot="record-control"]')?.click();
       },
     },
@@ -476,6 +478,7 @@ export function CallLive({
             className="max-w-[45rem]"
           />
         ) : null}
+        {recording ? <RecordingSaveStatus session={recording.session} tenant={tenant} /> : null}
         {ending.pending ? (
           <EndUndo
             undoRef={undoRef}

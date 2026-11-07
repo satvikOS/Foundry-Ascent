@@ -57,8 +57,7 @@
   },
   "recordings": {
     "corsOrigins": ["https://d38hejyf9iw77e.cloudfront.net"],
-    "retentionDays": 365,
-    "note": "Call recordings (ADR-0023): the private recordings bucket accepts presigned uploads and replays only from these exact app origins (the CloudFront distribution's own origin; a custom site domain is added automatically). Recordings are kept for retentionDays (the app says a year: packages/contracts RECORDING_LIMITS.retentionDays), then the daily maintenance deletes them; the bucket's lifecycle expires anything left a week later."
+    "note": "Call recordings (ADR-0023): the private recordings bucket accepts presigned uploads and replays only from these exact app origins (the CloudFront distribution's own origin; a custom site domain is added automatically). Recordings are kept for a year (packages/contracts RECORDING_LIMITS.retentionDays, not a setting), then the daily maintenance deletes them; the bucket's lifecycle expires anything left a week later."
   },
   "media": {
     "face": {

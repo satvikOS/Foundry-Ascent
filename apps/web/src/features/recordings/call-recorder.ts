@@ -7,7 +7,8 @@ import { RECORDING_LIMITS, type RecordingMimeType } from '@foundry/contracts';
  *            "AI avatar" as on the call tile), otherwise the call's presence (a sphere that follows the vEIR's voice,
  *            with its name), so switching between voice and video mid-recording never changes the recorded track
  *   sound    a WebAudio mix on the call's own AudioContext: the vEIR's voice as the speakers get it, a vendor face's
- *            voice from its element, and the founder's microphone (silent while muted)
+ *            voice from its element, and the founder's microphone, silent whenever the call does not hear it (muted,
+ *            on hold, or push to talk released: what is said off-mic is never recorded)
  *
  * MediaRecorder encodes both into the container the browser supports (webm on Chromium and Firefox, mp4 on Safari),
  * or sound only where a canvas cannot be captured. Everything stays in this page's memory until it is saved.
@@ -100,6 +101,8 @@ export interface RecordingAudio {
     Partial<Pick<AudioContext, 'createMediaStreamDestination'>>;
   readonly veir: AudioNode | null;
   readonly microphone: MediaStream | null;
+  /** Whether the call hears the microphone now: false while muted, on hold or with push to talk released. */
+  readonly microphoneOpen: boolean;
 }
 
 /** What the picture shows now: the face's element (or stream) while it shows, else the presence. */
@@ -215,7 +218,7 @@ export class CallRecorder {
   private canvasTrack: MediaStreamTrack | null = null;
   private destination: MediaStreamAudioDestinationNode | null = null;
   private veir: AudioNode | null = null;
-  private microphone: { stream: MediaStream; node: AudioNode } | null = null;
+  private microphone: { stream: MediaStream; node: AudioNode; gate: GainNode } | null = null;
   private faceVoice: { track: MediaStreamTrack; node: AudioNode } | null = null;
   private faceStream: { stream: MediaStream; video: HTMLVideoElement } | null = null;
   private format: RecordingFormat | null = null;
@@ -288,13 +291,18 @@ export class CallRecorder {
     }
     if (audio.microphone !== (this.microphone?.stream ?? null)) {
       this.disconnect(this.microphone?.node ?? null);
+      this.disconnect(this.microphone?.gate ?? null);
       this.microphone = null;
       if (audio.microphone !== null && audio.microphone.getAudioTracks().length > 0) {
         const node = context.createMediaStreamSource(audio.microphone);
-        node.connect(destination);
-        this.microphone = { stream: audio.microphone, node };
+        // The microphone reaches the recording through a gate the call's own gating drives.
+        const gate = context.createGain();
+        node.connect(gate);
+        gate.connect(destination);
+        this.microphone = { stream: audio.microphone, node, gate };
       }
     }
+    if (this.microphone !== null) this.microphone.gate.gain.value = audio.microphoneOpen ? 1 : 0;
     // A vendor face plays its voice in its own element. When the browser refused that element's sound, the face routes
     // its voice into the call's output instead (muted at full volume), which the recording already taps: never twice.
     const media = this.input.picture().media;
@@ -376,6 +384,7 @@ export class CallRecorder {
     if (this.destination !== null) this.disconnect(this.veir, this.destination);
     this.veir = null;
     this.disconnect(this.microphone?.node ?? null);
+    this.disconnect(this.microphone?.gate ?? null);
     this.microphone = null;
     this.disconnect(this.faceVoice?.node ?? null);
     this.faceVoice = null;

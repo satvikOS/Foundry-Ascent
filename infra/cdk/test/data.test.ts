@@ -1,6 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { Match } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
+import { RECORDINGS_RETENTION_DAYS } from '../src/lib/constants.js';
+import { REPO_ROOT } from '../src/paths.js';
 import { auroraEngineVersion } from '../src/stacks/data-stack.js';
 import { defaultSynth, resources, resourcesOfType, synthesize } from './helpers.js';
 
@@ -259,8 +264,19 @@ describe('FoundryAscent-Data', () => {
       });
     });
 
+    it('keeps recordings exactly as long as the app says (packages/contracts RECORDING_LIMITS.retentionDays)', () => {
+      const contracts = readFileSync(
+        join(REPO_ROOT, 'packages', 'contracts', 'src', 'recordings.ts'),
+        'utf8',
+      );
+      const limits = /export const RECORDING_LIMITS = \{([\s\S]*?)\} as const;/.exec(contracts)?.[1] ?? '';
+      const days = /\bretentionDays: ([\d_]+),/.exec(limits)?.[1];
+      expect(days).toBeDefined();
+      expect(Number(days?.replaceAll('_', ''))).toBe(RECORDINGS_RETENTION_DAYS);
+    });
+
     it('expires files a week past the app’s retention and aborts unfinished uploads', () => {
-      const { retentionDays } = loadConfig().recordings;
+      const retentionDays = RECORDINGS_RETENTION_DAYS;
       expect(recordings().LifecycleConfiguration).toEqual({
         Rules: [
           {
@@ -313,13 +329,15 @@ describe('FoundryAscent-Data', () => {
                 ],
               },
             },
-            Match.objectLike({
-              Sid: 'RecordingListing',
-              Condition: { StringLike: { 's3:prefix': ['tenants/*'] } },
-            }),
           ],
         },
       });
+      // Nothing lists the recordings (the worker only deletes them; the API reads a 403 HEAD as not uploaded).
+      const recordingPolicies = resourcesOfType(template, 'AWS::IAM::ManagedPolicy').filter(([, policy]) =>
+        JSON.stringify(policy).includes('RecordingObjects'),
+      );
+      expect(recordingPolicies).toHaveLength(1);
+      expect(JSON.stringify(recordingPolicies)).not.toContain('s3:ListBucket');
     });
   });
 

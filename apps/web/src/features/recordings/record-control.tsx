@@ -2,7 +2,7 @@ import { Circle, Square } from 'lucide-react';
 import { useId, useState } from 'react';
 
 import { SimpleTooltip } from '@/components/ui/tooltip';
-import { toast } from '@/components/ui/toast';
+import { formatClock, spokenDuration } from '@/features/calls/use-call-clock';
 import { cn } from '@/lib/utils';
 
 import { RecordingNoticeDialog } from './recording-notice';
@@ -16,56 +16,28 @@ import {
   type RecordBlocker,
 } from './use-call-recording';
 
-/** `m:ss` (or `h:mm:ss`) of a recording's length. */
-export function recordingClock(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const rest = String(s % 60).padStart(2, '0');
-  return h > 0 ? `${String(h)}:${String(m).padStart(2, '0')}:${rest}` : `${String(m)}:${rest}`;
-}
-
-/** "1 minute 5 seconds", for screen readers. */
-export function spokenLength(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  const part = (n: number, unit: string) => `${String(n)} ${unit}${n === 1 ? '' : 's'}`;
-  return m === 0
-    ? part(s, 'second')
-    : s === 0
-      ? part(m, 'minute')
-      : `${part(m, 'minute')} ${part(s, 'second')}`;
-}
-
 /** Starts the recording, after its notice the first time; the notice's choice is remembered per person. */
 export function useStartRecording(session: RecordingSession, principalId: string) {
   const [seen, acknowledge] = useRecordingNotice(principalId);
   const [asking, setAsking] = useState(false);
-  const begin = () => {
-    try {
-      session.start();
-    } catch (error) {
-      toast.error('The recording didn’t start', {
-        description: error instanceof Error ? error.message : undefined,
-      });
-    }
-  };
   return {
     asking,
     request: () => {
-      if (seen) begin();
+      if (seen) session.start();
       else setAsking(true);
     },
     confirm: () => {
       acknowledge();
       setAsking(false);
-      begin();
+      session.start();
     },
     cancel: () => {
       setAsking(false);
     },
   };
 }
+
+const UNSAVED_TEXT = 'Save or discard the last recording first.';
 
 interface RecordControlProps {
   session: RecordingSession;
@@ -98,8 +70,10 @@ export function RecordControl({
   const recording = state.status === 'recording';
   const seconds = useElapsedSeconds(recording ? state.startedAt : null);
   const saving = state.status === 'saving';
-  const blocked = blocker !== null && !recording;
-  const reason = blocker === null ? null : RECORD_BLOCKER_TEXT[blocker];
+  // A take whose save failed waits to be saved or discarded (above the controls) before another can start.
+  const unsaved = state.status === 'failed' && state.canRetry;
+  const blocked = (blocker !== null || unsaved) && !recording;
+  const reason = blocker !== null ? RECORD_BLOCKER_TEXT[blocker] : unsaved ? UNSAVED_TEXT : null;
 
   const toggle = () => {
     if (blocked || disabled || saving) return;
@@ -121,7 +95,7 @@ export function RecordControl({
           aria-keyshortcuts="R"
           aria-label={
             recording
-              ? `Stop recording, ${spokenLength(seconds)} recorded`
+              ? `Stop recording, ${spokenDuration(seconds)} recorded`
               : saving
                 ? 'Saving the recording'
                 : 'Record'
@@ -135,7 +109,7 @@ export function RecordControl({
             <>
               <span aria-hidden className="fa-rec-dot size-2.5 rounded-full bg-destructive" />
               <span aria-hidden className="tabular">
-                {recordingClock(seconds)}
+                {formatClock(seconds)}
               </span>
               <Square aria-hidden className="size-3.5 fill-current" />
               <span aria-hidden>Stop</span>
@@ -191,7 +165,7 @@ export function RecordingMark({
       <span aria-hidden className="fa-rec-dot size-2 rounded-full bg-destructive" />
       <span aria-hidden>REC</span>
       <span aria-hidden className="tabular">
-        {recordingClock(seconds)}
+        {formatClock(seconds)}
       </span>
       <span className="sr-only">Recording</span>
     </span>

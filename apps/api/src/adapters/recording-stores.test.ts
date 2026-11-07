@@ -20,8 +20,14 @@ const media = `${prefix}/call.webm`;
 const captions = `${prefix}/captions.vtt`;
 const NOW = new Date('2026-11-06T12:00:00.000Z');
 
-function s3With(client: S3Client): S3RecordingStore {
-  return new S3RecordingStore({ bucket: 'foundry-recordings', region: 'us-east-1', client, now: () => NOW });
+function s3With(client: S3Client, logger = { warn: vi.fn() }): S3RecordingStore {
+  return new S3RecordingStore({
+    bucket: 'foundry-recordings',
+    region: 'us-east-1',
+    client,
+    now: () => NOW,
+    logger,
+  });
 }
 
 describe('recording keys', () => {
@@ -90,7 +96,7 @@ describe('S3RecordingStore', () => {
     ).rejects.toThrow(TypeError);
   });
 
-  it('measures an upload with HEAD (null when it never arrived) and deletes idempotently', async () => {
+  it('measures an upload with HEAD (null when it never arrived, a 403 logged) and deletes idempotently', async () => {
     const missing = Object.assign(new Error('not found'), {
       name: 'NotFound',
       $metadata: { httpStatusCode: 404 },
@@ -106,11 +112,15 @@ describe('S3RecordingStore', () => {
       .mockRejectedValueOnce(forbidden)
       .mockRejectedValueOnce(new Error('throttled'))
       .mockResolvedValueOnce({});
-    const store = s3With({ send } as unknown as S3Client);
+    const logger = { warn: vi.fn() };
+    const store = s3With({ send } as unknown as S3Client, logger);
     expect(await store.size(media)).toBe(4_096);
     expect(send.mock.calls[0]?.[0]).toBeInstanceOf(HeadObjectCommand);
     expect(await store.size(media)).toBeNull();
+    expect(logger.warn).not.toHaveBeenCalled();
+    // Without ListBucket S3 answers a missing key with 403: not uploaded, but said, so a real denial shows (no key).
     expect(await store.size(media)).toBeNull();
+    expect(logger.warn).toHaveBeenCalledExactlyOnceWith('recordings.head_denied', { status: 403 });
     await expect(store.size(media)).rejects.toThrow('throttled');
     await store.delete(captions);
     const deleted = send.mock.calls[4]?.[0] as DeleteObjectCommand;
