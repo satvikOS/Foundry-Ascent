@@ -196,6 +196,9 @@ const BARE_CONTRACTIONS = new Map([
   ['didnt', "didn't"],
   ['ddint', "didn't"],
   ['didint', "didn't"],
+  ['dint', "didn't"],
+  ['didn', "didn't"],
+  ['havnt', "haven't"],
   ['doesnt', "doesn't"],
   ['havent', "haven't"],
   ['hasnt', "hasn't"],
@@ -213,7 +216,8 @@ const BARE_CONTRACTIONS = new Map([
   ['ive', "i've"],
   ['thats', "that's"],
 ]);
-const BARE_CONTRACTION = new RegExp(String.raw`\b(?:${[...BARE_CONTRACTIONS.keys()].join('|')})\b`, 'g');
+// Never the start of a contraction already typed ("didn" in "didn't").
+const BARE_CONTRACTION = new RegExp(String.raw`\b(?:${[...BARE_CONTRACTIONS.keys()].join('|')})\b(?!')`, 'g');
 
 function normalize(text: string): string {
   return text
@@ -363,31 +367,62 @@ const HELP_REQUEST = new RegExp(
   ].join('|'),
 );
 
-/** A sentence that only says they don't know ("I don't know.", "idk", "No idea what to ask"). */
-const DONT_KNOW =
-  /^(?:(?:honestly|um+|uh+|well|that's the thing)[,.]? )*(?:(?:i )?(?:really |honestly |just )?(?:don't|do not) know|idk|dunno|no idea|not sure|i'm not sure|i have no idea|no clue)(?: (?!(?:what|how) (?:you (?:mean|meant)|you're asking|you are asking|that means)\b)(?:what|how|where|which)\b.*)?$/;
+/**
+ * What may follow "I don't know" and keep it a no-answer: a question word and what it asks ("who pays"), or up to
+ * three words ("the codes", "man", "whether it is"); never "what you mean" (the question asked again). "I don't know if
+ * clinics will pay for it" is a worry of their own, not a no-answer.
+ */
+const DONT_KNOW_TAIL = String.raw`(?: (?!(?:what|how) (?:you (?:mean|meant)|you're asking|you are asking|that means)\b)(?:(?:what|how|where|which|who|whom|when|why)\b.*|(?:[\w'-]+)(?: [\w'-]+){0,2}))?`;
+
+/** A sentence that only says they don't know ("I don't know.", "idk", "No idea what to ask", "i dont know who pays"). */
+const DONT_KNOW = new RegExp(
+  String.raw`^(?:(?:honestly|um+|uh+|well|that's the thing|no|nope|nah|yeah|so)[,.]? )*(?:(?:i )?(?:really |honestly |just |actually )?(?:don't|do not) (?:really |honestly |actually |even )?(?:know|kno|knw|no)|idk|dunno|i dunno|no idea|not sure|i'm not sure|i have no idea|no clue|not a clue|(?:i )?(?:got|'ve got|have got) no (?:idea|clue))${DONT_KNOW_TAIL}$`,
+);
+
+/** Words before a no-answer that keep it one ("nope,", "honestly", "um"). */
+const NO_ANSWER_FILLER = String.raw`(?:(?:no|nope|nah|honestly|um+|uh+|well|sorry|so|oh|yeah|actually)[,.]? )*`;
+/** "didn't", "haven't", "never", "couldn't": what a no-answer says of what they did. */
+const NOT_DONE = String.raw`(?:didn't|did not|haven't|have not|hadn't|had not|never|couldn't|could not)`;
+/**
+ * What may follow the verb of a no-answer: its object and particles ("look into it", "get around to it", "ask them
+ * about that"), and filler ("yet", "tbh", "man"); never a new subject of the founder's own.
+ */
+const DONE_TAIL = String.raw`(?: (?:that|it|this|them|him|her|one|anything|any of (?:that|it|this|them)|up|out|back|yet|either|so far|at all|really|honestly|tbh|man|sorry|(?:in)?to (?:it|that|this|them|him|her|anyone)|around to (?:it|that|this|them)|at (?:it|that|this|them)|on (?:it|that|this|them)|with (?:them|him|her|anyone)|about (?:that|it|this|them)))*`;
 
 /**
  * A clause that says the founder has no answer yet: they do not know, did not do it, it has not happened, nobody told
  * them (production, 2026-11-07: "I didn't do that" and "I don't know" were answered with the question they had just said
  * they could not answer, in other words, two replies later). The whole clause, so "I can't remember the exact number,
- * but our churn is what I want to fix" keeps its subject. Never a question of its own.
+ * but our churn is what I want to fix" keeps its subject. Never a question of its own. The subject is optional
+ * throughout ("didnt get to it", "nope havent"), and the verb takes its object and particles ({@link DONE_TAIL}).
+ * The lab reads the same (ops/lab live/checks.py `NO_ANSWER_CLAUSE`).
  */
 const NO_ANSWER = new RegExp(
   [
-    String.raw`^(?:(?:no|nope|honestly|um+|uh+|well|sorry|so)[,.]? )*(?:(?:i|we) )?(?:really |honestly |just |actually )?(?:didn't|did not|haven't|have not|never|couldn't|could not) (?:(?:really|actually|yet|even|get to|got to|manage to|managed to|get around to|got around to) )*(?:do|done|did|ask|asked|book|booked|call|called|talk|talked|speak|spoke|try|tried|hear|heard|check|checked|look|looked|follow|followed|reach|reached|find|found|meet|met|write|wrote|written|send|sent|discuss|discussed|cover|covered|raise|raised|mention|mentioned|go over|went over|gone over)\b(?:(?: (?:that|it|this|them|him|her|one|anything|up|out|back|yet|either|so far|to (?:them|him|her|anyone)|about (?:that|it|this|them)))*$|\b.* yet$)`,
-    String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:(?:i|we) )?(?:didn't|did not|haven't|have not|never) (?:get|got|gotten|have|had) (?:a |the )?(?:chance|time|opportunity)\b(?: to\b.*)?$`,
-    String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:it|that|this|the (?:topic|subject|question)) (?:didn't|did not|never|hasn't|has not) (?:really )?(?:come|came) up(?: (?:yet|at all))?$`,
-    String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:i|we) (?:didn't|did not|haven't|have not|never) (?:get|got|gotten) (?:around )?to (?:it|that|this|them)$`,
-    String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:i|we) (?:didn't|did not|haven't|have not|never) (?:get|got|gotten) (?:(?:that|this|so) far|there)(?: yet)?$`,
-    String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:i|we) (?:didn't|did not|haven't|have not)(?: yet)?$`,
-    String.raw`^(?:(?:no|nope|honestly|well|sorry|so|oh)[,.]? )*(?:i|we) (?:forgot|forget) (?:to (?:ask|check|mention|raise it|bring it up|follow up)(?: (?:that|it|this|them|about (?:that|it|this)))?)?$`,
-    String.raw`^(?:(?:no|nope|well|so)[,.]? )*(?:not yet|nothing yet|not so far|no clue|no idea|not really sure|no one (?:told|said|mentioned|explained)|nobody (?:told|said|mentioned|explained))\b`,
-    String.raw`^(?:(?:no|nope|well|so)[,.]? )*(?:they|he|she|it|the \w+) (?:didn't|did not|never|wouldn't|would not) (?:really )?(?:say|said|tell|told|mention|mentioned|specify|specified|explain|explained|answer|answered|give|gave|cover|covered|get into|got into|go into|went into)\b`,
-    String.raw`^(?:(?:honestly|um+|uh+|well|so)[,.]? )*(?:i|we) (?:can't|cannot|don't|do not) (?:really )?remember(?: (?:that|it|this|exactly|what (?:they|he|she) said))?$`,
-    String.raw`^(?:(?:honestly|um+|uh+|well|so)[,.]? )*(?:i (?:really |honestly |just )?(?:don't|do not|dont) (?:really |honestly |actually |even )know|i dunno|i have no (?:idea|clue)|i've no (?:idea|clue)|(?:i'm|i am|im) (?:honestly |really |just |still |actually )?not (?:really |totally |entirely |quite )?sure|i (?:wouldn't|would not) know|beats me)(?: (?:anything|much) about (?:that|it|this))?(?: (?:honestly|really|tbh|to be honest|yet|at all))*$`,
-    String.raw`^(?:idk|dunno|no idea|no clue|not sure|i don't know|i do not know)(?: (?:honestly|really|tbh|to be honest|yet|at all|anything about (?:that|it|this)))+$`,
-  ].join('|'),
+    String.raw`(?:(?:i|we) )?(?:really |honestly |just |actually |still )?${NOT_DONE} (?:(?:really|actually|yet|even|ever|get to|got to|gotten to|manage to|managed to|get around to|got around to|gotten around to) )*(?:do|done|did|ask|asked|book|booked|call|called|talk|talked|speak|spoke|try|tried|hear|heard|check|checked|look|looked|follow|followed|reach|reached|find|found|meet|met|write|wrote|written|send|sent|discuss|discussed|cover|covered|raise|raised|mention|mentioned|go over|went over|gone over|figure|figured|work|worked|sort|sorted|think|thought|research|researched|dig|dug|explore|explored|read|google|googled|confirm|confirmed)\b(?:${DONE_TAIL}$|\b.* yet$)`,
+    String.raw`(?:(?:i|we) )?${NOT_DONE} (?:get|got|gotten|have|had) (?:a |the )?(?:chance|time|opportunity)\b(?: to\b.*)?$`,
+    String.raw`(?:it|that|this|the (?:topic|subject|question)) (?:didn't|did not|never|hasn't|has not) (?:really )?(?:come|came) up(?: (?:yet|at all))?$`,
+    String.raw`(?:(?:i|we) )?(?:still )?${NOT_DONE} (?:(?:really|actually|yet|even) )*(?:get|got|gotten) (?:around )?to (?:it|that|this|them)(?: yet)?$`,
+    String.raw`(?:i|we) ${NOT_DONE} (?:get|got|gotten) (?:(?:that|this|so) far|there)(?: yet)?$`,
+    String.raw`(?:i|we) (?:didn't|did not|haven't|have not)(?: yet)?$`,
+    // "nope, havent": the subject left out after a no.
+    String.raw`(?:no|nope|nah)[,.]? (?:(?:i|we) )?(?:didn't|did not|haven't|have not)(?: yet)?$`,
+    String.raw`(?:i|we) (?:forgot|forget) (?:to (?:ask|check|mention|raise it|bring it up|follow up)(?: (?:that|it|this|them|about (?:that|it|this)))?)?$`,
+    String.raw`(?:not yet|nothing yet|not so far|no clue|no idea|not a clue|not really sure|no one (?:told|said|mentioned|explained)|nobody (?:told|said|mentioned|explained))\b`,
+    String.raw`(?:i )?(?:got|'ve got|have got) no (?:idea|clue)\b`,
+    String.raw`(?:they|he|she|it|the \w+) (?:didn't|did not|never|wouldn't|would not) (?:really )?(?:say|said|tell|told|mention|mentioned|specify|specified|explain|explained|answer|answered|give|gave|cover|covered|get into|got into|go into|went into)\b`,
+    String.raw`(?:i|we) (?:can't|cannot|don't|do not) (?:really )?remember(?: (?:that|it|this|exactly|what (?:they|he|she) said))?$`,
+    // "i dont have that info", "we don't have an answer yet".
+    String.raw`(?:(?:i|we) )?(?:don't|do not|didn't|did not|haven't|have not) (?:really |actually )?(?:have|get|got) (?:(?:that|the|an|any|a|that kind of|those|this) )?(?:(?:real|good|clear|exact) )?(?:info|information|answer|answers|details?|data|numbers?|specifics)(?: (?:yet|on (?:that|it|this)|for (?:that|it|you)|honestly|tbh|sorry))*$`,
+    // "i dont have that": never "I didn't get that" (they did not follow the question).
+    String.raw`(?:(?:i|we) )?(?:don't|do not|haven't|have not) (?:really |actually )?(?:have|got) (?:that|it|one)(?: (?:yet|honestly|tbh|sorry))*$`,
+    // "not something i looked at", "that's not something we've thought about".
+    String.raw`(?:(?:that's|that is|it's|it is) )?not something (?:i|we)(?:'ve| have)? (?:really |actually |even )?(?:looked at|looked into|thought about|checked|asked about|covered|considered|know (?:much )?about)(?: yet)?$`,
+    String.raw`(?:i (?:really |honestly |just )?(?:don't|do not) (?:really |honestly |actually |even )know|i dunno|i have no (?:idea|clue)|i've no (?:idea|clue)|(?:i'm|i am) (?:honestly |really |just |still |actually )?not (?:really |totally |entirely |quite )?sure|i (?:wouldn't|would not) know|beats me)(?: (?:anything|much) about (?:that|it|this))?(?: (?:honestly|really|tbh|to be honest|yet|at all))*$`,
+    String.raw`(?:idk|dunno|no idea|no clue|not sure|i don't know|i do not know)(?: (?:honestly|really|tbh|to be honest|yet|at all|anything about (?:that|it|this)))+$`,
+  ]
+    .map((clause) => `^${NO_ANSWER_FILLER}(?:${clause})`)
+    .join('|'),
 );
 
 /** The clauses of a message, without their closing punctuation ("I don't know, I didn't do that" has two). */
@@ -451,7 +486,11 @@ const GOAL = new RegExp(
     String.raw`\b(?:find(?:ing)?|land(?:ing)?|sign(?:ing)?|get(?:ting)?|win(?:ning)?) (?:(?:my|our|the|a|more|some|first|paying|real)\s+){0,3}(?:customers?|clients?|users?|pilots?|investors?|co-?founders?|clinics?|hospitals?|schools?|buyers?|distributors?|partners?)\b`,
     String.raw`\b(?:get(?:ting)?|obtain(?:ing)?|apply(?:ing)? for|go(?:ing)? through) (?:(?:the|a|an|our|my|regulatory|fda|ce)\s+){0,2}(?:approval|clearance|certification|patent|licen[cs]e|accreditation)\b`,
     String.raw`\b(?:my|our|the) (?:main |big |next |biggest )?(?:goal|aim|priority|focus|next step)(?: right now| now| this (?:week|month|term|year))? (?:is|would be)\b`,
-    String.raw`\b(?:i|we) (?:want|need|have|plan|hope|'d like|would like|am trying|are trying|'m trying|'re trying) to (?:get|launch|raise|find|build|ship|sell|start|scale|grow|hire|pitch|apply|prepare|figure out|work out)\b`,
+    // Never "I need to get some sleep" (review of the 2026-11-07 fix, round 3).
+    String.raw`\b(?:i|we) (?:want|need|have|plan|hope|'d like|would like|am trying|are trying|'m trying|'re trying) to (?:get(?! (?:some |a (?:bit|little) (?:of )?|more )?(?:sleep|rest|food|lunch|dinner|breakfast|coffee|off|going|home|back to (?:you|work)|a break|my head)\b)|launch|raise|find|build|ship|sell|start|scale|grow|hire|pitch|apply|prepare|figure out|work out)\b`,
+    // "need to get this thing out to clinics", "commercializing it", "the launch".
+    String.raw`\bget(?:ting)? (?:[\w-]+ ){0,3}out (?:to|into) (?:the )?(?:market|clinics?|customers?|hospitals?|users?|patients?|schools?|stores?|buyers?)\b`,
+    String.raw`\bcommerciali[sz](?:e|es|ing|ation)\b|^(?:the |our |my )?(?:launch|rollout|commerciali[sz]ation)$`,
     String.raw`\b(?:prepar(?:e|ing) for|get(?:ting)? ready for)\b`,
   ].join('|'),
 );
@@ -462,7 +501,7 @@ const GOAL = new RegExp(
  * into, and asking after them again is no re-ask to leave out (validators/social.ts `isProtectedLine`).
  */
 export const SUPPORT_CHECK_IN =
-  /\b(?:someone (?:close to you|you trust|you can (?:talk|turn|reach out) to)|(?:a )?support (?:service|line|network|group|person)|(?:a )?friends? or (?:a )?family|family or (?:a )?friends?|talk to (?:a friend|family|someone)|how (?:are|have) you (?:been )?(?:feeling|holding up|coping|sleeping))\b|\bare you (?:ok|okay|safe|alright|all right)(?=\s*(?:[?.!]|$))/i;
+  /\b(?:someone (?:close to you|you trust|you can (?:talk|turn|reach out) to)|(?:a )?support (?:service|line|network|group|person)|(?:a )?friends? or (?:a )?family|family or (?:a )?friends?|talk to (?:a friend|family|someone)|how (?:are|have) you (?:been )?(?:feeling|holding up|coping|sleeping))\b(?! about (?:the|your|this|that|our) (?!(?:situation|news|loss)\b))|\bare you (?:ok|okay|safe|alright|all right)(?=\s*(?:[?.!]|$))/i;
 
 /** Whether `text` hands the work to the vEIR or says the founder is stuck ({@link HELP_REQUEST}, {@link DONT_KNOW}). */
 function asksForHelp(text: string): boolean {
@@ -956,9 +995,9 @@ const STOPWORDS = new Set(
  * path" as "your regulatory pathway"). The lab reads the same subjects (ops/lab live/checks.py `_SUBJECTS`).
  */
 const SUBJECTS: readonly (readonly [RegExp, string])[] = [
-  [/^(?:class|classif\w*|categor\w*)$/, 'class'],
-  [/^(?:pay|paid|payment|payer|bill\w*|reimburs\w*|cover\w*|insur\w*|cod|cpt)$/, 'pay'],
-  [/^(?:advis|advis[eo]r|mentor)$/, 'advisor'],
+  [/^(?:class|classif\w*|categor\w*|tier)$/, 'class'],
+  [/^(?:pay|paid|payment|payer|bill\w*|reimburs\w*|cover\w*|insur\w*|compensat\w*|cod|cpt)$/, 'pay'],
+  [/^(?:advis|advis[eo]r|mentor|expert|consultant)$/, 'advisor'],
   [/^(?:regulat\w*|fda|clearanc|pathway|path)$/, 'regulatory'],
   [/^(?:pric|price|cost|charg|fee)$/, 'price'],
   [/^(?:customer|client|buyer)$/, 'customer'],
@@ -967,6 +1006,15 @@ const SUBJECTS: readonly (readonly [RegExp, string])[] = [
 
 /** The subjects {@link subjectOf} names. */
 export const SUBJECT_NAMES: ReadonlySet<string> = new Set(SUBJECTS.map(([, subject]) => subject));
+
+/**
+ * The subjects narrow enough that one shared word makes a question the same one (a customer or a price is in most
+ * questions about a venture: "What would a pilot customer need to see first?" is a new question after "Who is your first
+ * customer?").
+ */
+export const NARROW_SUBJECT_NAMES: ReadonlySet<string> = new Set(
+  [...SUBJECT_NAMES].filter((subject) => subject !== 'customer' && subject !== 'price'),
+);
 
 /** The subject a content word (as {@link contentWords} cuts it) names, or null ({@link SUBJECTS}). */
 export function subjectOf(word: string): string | null {

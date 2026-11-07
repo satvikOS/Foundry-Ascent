@@ -1,4 +1,11 @@
-import { buildSystemPromptParts, type HistoryTurn, type PromptContinuity } from '@foundry/ai';
+import {
+  askedBefore,
+  buildSystemPromptParts,
+  stuckOn,
+  withoutRepeats,
+  type HistoryTurn,
+  type PromptContinuity,
+} from '@foundry/ai';
 import { DEFAULT_DISCLOSURE } from '@foundry/contracts';
 import { describe, expect, it } from 'vitest';
 
@@ -198,6 +205,40 @@ describe('what each turn of the production call now carries (2026-11-07)', () =>
       expect(message).not.toContain('billable under existing codes');
       expect(message).not.toContain('ask how it went');
       expect(message).toContain('Prefers direct answers and actionable steps');
+    },
+  );
+
+  it.each([
+    'we didnt look into it',
+    'didnt get to it',
+    'havent gotten to it',
+    'never got around to it',
+    'i dont know man',
+    'nope havent',
+    'i dont know who pays',
+    'i dint do that',
+    'not a clue',
+    'i got no idea',
+    'i dont have that info',
+    'havent figured that out',
+    'not something i looked at',
+  ])(
+    "the call's third turn after %j: never asked again, in the prompt and in the reply (review, round 3)",
+    (said) => {
+      const message = turnMessage(2, said);
+      expect(message).toContain('Never ask it again, in any words.');
+      expect(message).not.toContain('<open_questions>');
+      expect(message).not.toContain('billable under existing codes');
+      const [r1, r2] = REPLIES as [string, string];
+      expect(stuckOn(said, r2)).toBe(true);
+      const reply = withoutRepeats(
+        'Okay. Is monitoring time reimbursable under existing CPT codes?',
+        [r2, r1, OPENER].join('\n\n'),
+        { strictQuestions: stuckOn(said, r2), asked: askedBefore(r2, [r1, OPENER]) },
+      );
+      expect(reply.removed).toEqual(['Is monitoring time reimbursable under existing CPT codes?']);
+      // On the second turn too, right after the first question.
+      expect(turnMessage(1, said)).toContain('Never ask it again, in any words.');
     },
   );
 

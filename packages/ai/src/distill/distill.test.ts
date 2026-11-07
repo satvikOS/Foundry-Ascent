@@ -1611,3 +1611,36 @@ describe('an opener written from the notebook alone (production, 2026-11-07)', (
     expect(sanitizeOpener({ next_opener: null, next_topic: null }, opener())).toBeNull();
   });
 });
+
+describe('more verdicts and more pressure, caught (review of the 2026-11-07 fix, round 3)', () => {
+  it.each([
+    'Gives non-committal answers about advisor conversations',
+    'Avoids specifics about what the advisor said',
+    'Knowledge of regulatory pathways is weak',
+    'Has little grasp of reimbursement basics',
+    'Short replies; may be disengaged',
+    "Hasn't done basic regulatory research",
+    'Often answers "I don\'t know" to basic regulatory questions',
+  ])('leaves out %j', (note) => {
+    expect(isJudgmentalNote(note)).toBe(true);
+  });
+
+  it.each(['Prefers direct answers and actionable steps', 'Has a weak signal from clinics so far'])(
+    'keeps %j',
+    (note) => {
+      expect(isJudgmentalNote(note)).toBe(false);
+    },
+  );
+
+  it('cuts urgency framing and keeps the thread', () => {
+    expect(withoutPressure('Confirm device class ASAP.')).toBe('Confirm device class.');
+    expect(withoutPressure('The device class must be confirmed before anything else.')).toBe(
+      'The device class must be confirmed.',
+    );
+    expect(withoutPressure('Reimbursement is the critical blocker for launch.')).not.toMatch(
+      /critical|blocker/,
+    );
+    expect(withoutPressure('This is overdue and needs to happen this week.')).toBe('');
+    expect(withoutPressure('Overdue invoices are a cash risk.')).toBe('Overdue invoices are a cash risk.');
+  });
+});

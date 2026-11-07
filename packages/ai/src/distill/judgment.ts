@@ -15,12 +15,15 @@ import { contentWords } from '../prompts/conversation-state.js';
  * a preference the founder stated is none of them ("Does not want to share revenue figures yet", "Won't commit to dates
  * until the board meets": {@link STATED_BOUNDARY}).
  */
-const DEFICIT = String.raw`\b(?:vague(?:ly)?|evasive(?:ly)?|deflects?|deflecting|unprepared|disorgani[sz]ed|careless(?:ly)?|lazy|defensive(?:ly)?|superficial(?:ly)?|sloppy|unfocused|unreliable|uncooperative|dismissive(?:ly)?|stubborn(?:ly)?|scattered|clueless|naive(?:ly)?|unrealistic(?:ally)?|non-?specific|lacks? (?:clarity|focus|depth|rigou?r|follow-through|preparation|understanding|initiative|specifics|detail))\b`;
+const DEFICIT = String.raw`\b(?:vague(?:ly)?|evasive(?:ly)?|deflects?|deflecting|unprepared|disorgani[sz]ed|careless(?:ly)?|lazy|defensive(?:ly)?|superficial(?:ly)?|sloppy|unfocused|unreliable|uncooperative|dismissive(?:ly)?|stubborn(?:ly)?|scattered|clueless|naive(?:ly)?|unrealistic(?:ally)?|non-?specific|non-?committal|disengaged|unengaged|(?:is|are|seems?|remains?) (?:\w+ )?weak|weak (?:grasp|understanding|knowledge|grounding)|(?:little|poor|limited|shaky|thin|no real) (?:grasp|understanding|knowledge|command)|lacks? (?:clarity|focus|depth|rigou?r|follow-through|preparation|understanding|initiative|specifics|detail|knowledge|basics))\b`;
 const JUDGMENTAL = new RegExp(
   [
     DEFICIT,
     String.raw`\b(?:fails? to|failed to|unable to|struggles? (?:to|with)|refuses? to|neglects? to|tends? to (?:avoid|dodge|deflect|summari[sz]e|generali[sz]e|gloss))\b`,
     String.raw`\b(?:does ?n[o']t|did ?n[o']t|has ?n[o']t|have ?n[o']t|never|rarely|seldom|can'?t|cannot|won'?t)\s+(?:\w+\s+){0,2}?(?:extract|report|follow(?:s|ed)? (?:up|through)|prepare[ds]?|retain|recall|articulate|specify|engage|listen|take notes|give (?:specifics|details|concrete)|do (?:the|their|his|her) homework)\b`,
+    String.raw`\bavoids? (?:giving |sharing |going into )?(?:specifics|details|answering|the question|questions|committing)\b`,
+    String.raw`\b(?:has ?n[o']t|have ?n[o']t|did ?n[o']t|never) (?:done|did) (?:(?:the|any|much|basic|their|his|her|even) )*(?:\w+ )?(?:research|homework|reading|groundwork|legwork)\b`,
+    String.raw`\b(?:often|usually|always|keeps?|tends? to|mostly) (?:answers?|says?|replies?|responds?|answering|saying|replying) (?:with )?["“']?i (?:don'?t|do not) know\b`,
     String.raw`\bneeds? (?:repeated |constant |a lot of |much |frequent )?(?:prompting|pushing|chasing|reminding|reminders)\b`,
     String.raw`\b(?:even when (?:pressed|asked|prompted|pushed|challenged)|when pressed|despite (?:committing|promising|agreeing|saying)|without (?:specifics|details|concrete (?:details|answers)))\b`,
   ].join('|'),
@@ -56,6 +59,13 @@ const PRESSURE_SOURCE = [
   String.raw`\bblock(?:s|ing)? (?:everything(?: else)?|all (?:progress|else)|the (?:whole |entire )?(?:go-to-market|launch|plan|strategy|venture|progress)(?: (?:strategy|plan|work))?)`,
   String.raw`\bgates? everything(?: else)?\b`,
   String.raw`\b(?:is|are) (?:a |the )?(?:main |big |key )?blockers? (?:for|to|on) (?:the |a |our |their )?[\w-]+`,
+  // Review of the 2026-11-07 fix, round 3: "the critical blocker for launch", "ASAP", "overdue and needs to happen this
+  // week", "must be confirmed before anything else".
+  String.raw`\b(?:is|are) (?:the |a )?critical (?:blocker|path|issue|bottleneck)\b(?: (?:for|to|on) (?:the |a |our |their )?[\w-]+)?`,
+  String.raw`(?:,\s*)?\b(?:asap|as soon as possible)\b(?=[.!?)]|$)`,
+  String.raw`\b(?:is|are) (?:now |long |already )?overdue\b`,
+  String.raw`\bneeds? to happen (?:this week|now|today|immediately|right away|asap)\b`,
+  String.raw`(?<=\bmust be (?:confirmed|resolved|settled|answered|done|decided|nailed down|sorted)) (?:before anything else|first|now|immediately|right away)\b`,
 ].join('|');
 const PRESSURE = new RegExp(PRESSURE_SOURCE, 'i');
 /** A pressure phrase with the connective before it ("and cannot wait", "which blocks the launch"). */

@@ -31,6 +31,7 @@ import {
   isProtectedLine,
   parksTheirNews,
   askedBefore,
+  putToFounder,
   reasksQuestion,
   repeatsPrevious,
   stuckOn,
@@ -821,7 +822,7 @@ export class SentenceGate {
         this.#cut = 'meta_narration';
         return { units, blocked: null, fallback: null, cut: this.#cut };
       }
-      const repeat = this.#repeatOf(rawUnit);
+      const repeat = this.#repeatOf(rawUnit, this.#raw.slice(0, this.#cursor));
       if (repeat !== null) {
         // An earlier reply again: never said twice. Only the unit is left out, never what follows it (a reply cut at
         // its first repeat lost new content and safety lines). An item of a list is the exception: left out, its list
@@ -842,7 +843,7 @@ export class SentenceGate {
           findUnitEnd(this.#raw, end, this.#maxUnitChars) ?? (this.#ended ? this.#raw.length : null);
         if (next === null || (!this.#ended && stable.length < next + this.#holdBack)) break;
         const following = this.#raw.slice(end, next);
-        if (following.trim() !== '' && this.#repeatOf(following) !== null) {
+        if (following.trim() !== '' && this.#repeatOf(following, this.#raw.slice(0, end)) !== null) {
           this.#cursor = end;
           this.#repeatsDropped += 1;
           this.#repeatedUnits.push(rawUnit);
@@ -922,11 +923,18 @@ export class SentenceGate {
    * Whether a unit says an earlier reply again (`repeat`), asks one of its questions again (`reask`), or neither. A
    * safety line, and on a flagged turn a referral, is never a repeat (`isProtectedLine`).
    */
-  #repeatOf(unit: string): 'repeat' | 'reask' | null {
+  #repeatOf(unit: string, before: string): 'repeat' | 'reask' | null {
     if (this.#previousGrams === null) return null;
     if (isProtectedLine(unit, this.#keepReferrals)) return null;
     if (repeatsPrevious(unit, this.#previousGrams, { signOffs: !this.#signOffWelcome })) return 'repeat';
-    return reasksQuestion(unit.trim(), this.#previousQuestions, { strict: this.#stuck }) ? 'reask' : null;
+    // A question for someone else (in a quoted draft, a list of questions to send) is the founder's prep, never a
+    // re-ask of them, unless it comes back whole (`putToFounder`).
+    return reasksQuestion(unit.trim(), this.#previousQuestions, {
+      strict: this.#stuck,
+      toFounder: putToFounder(before, unit),
+    })
+      ? 'reask'
+      : null;
   }
 
   /** Ends the reply where an earlier reply would have been said again (`GateCutReason` `repeat`). */

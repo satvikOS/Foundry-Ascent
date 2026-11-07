@@ -318,7 +318,10 @@ describe('conversation craft in the system prompt', () => {
     // 2026-11-07.3: its second review: a no-answer typed without apostrophes or said another way is heard, a turn with
     // only a no-answer leaves the notes' agenda out, a goodbye is no goal, a request to clarify gets the question again,
     // a check-in on the founder is never answered for them, and stated boundaries stay in the notes.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.3');
+    // 2026-11-07.4: its third review: a casual no-answer is heard however it is typed ("we didnt look into it", "nope
+    // havent", "i dont know who pays", "not a clue"), and the questions a reply gives the founder to send are never
+    // read as a re-ask of them.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.4');
   });
 });
 

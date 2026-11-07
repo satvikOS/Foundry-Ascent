@@ -453,7 +453,7 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   shown) opens the conversation without one. A hello
   right after the opener is answered with a hello, never the recall again (`<conversation_state>` reads the
   founder's first message as the reply to the replayed opener).
-- **Teach and prepare, never a loop** (production, 2026-11-07; policy `fa-coach-policy/2026-11-07.3`). The call that
+- **Teach and prepare, never a loop** (production, 2026-11-07; policy `fa-coach-policy/2026-11-07.4`). The call that
   prompted it: a returning founder named a goal and got "walk me through where you are…", a vague answer got a
   question, a short answer got the first question again in other words, and a founder with no answer was asked again.
   Prompt rules saying "follow the founder" had lost to context that was mostly one topic, so each turn now carries:
@@ -461,8 +461,10 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     first reply to the opener's invitation naming what they want to work on: "teach and prepare", the usual path,
     what the terms mean, the prep itself, at most one question after it; never on a goodbye that names a next step,
     "Thanks, I'll go prepare for the pitch now, bye!") and `unknown` ("I don't know", "I didn't do that", "not yet",
-    "they never told me", "I forgot to ask", "it didn't come up", "I didn't get a chance", "beats me", typed with or
-    without apostrophes, "i ddint do that" included: contractions are put back before any cue reads the message; read
+    "they never told me", "I forgot to ask", "it didn't come up", "I didn't get a chance", "beats me", "we didnt look
+    into it", "didnt get to it", "nope havent", "i dont know who pays", "not a clue", "i dont have that info", "not
+    something i looked at", typed with or without apostrophes, "i ddint do that" and "i dint" included: contractions
+    are put back before any cue reads the message, the subject is optional and the verb takes its particles; read
     clause by clause: never asked again in any words; acknowledged without judgement, then what the answer most likely
     is, the fastest way to find out and the next step). A message that is only a no-answer leaves the notes' agenda
     out of that turn, open threads and questions included (`leavesAgendaOut`): the question they could not answer is
@@ -488,7 +490,11 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     regulatory route). After a founder with no answer or "you tell me" (`stuckOn`), any question that names a subject
     of one already asked is asked again ("So what did your advisor actually say?" after a question about the advisor),
     unless it offers the vEIR's own work ("Want me to draft the questions for your advisor?"); else three shared words,
-    or two said together, or 40% of them. A question asked before the previous reply (`askedBefore`: the founder has
+    or two said together, or 40% of them. A customer or a price alone is too broad to make a question the same one, and
+    "tier", "compensated", "expert" and "consultant" name the class, how they pay and the advisor. Only questions put to
+    the founder are read so (`putToFounder`): a question in a quoted draft, a list item under a lead-in ending in ":",
+    or a question after "Ask your advisor:" or "questions to send:" is prep for someone else, a re-ask only when it
+    comes back whole (three shared words), so a drafted email after "i dont know" keeps its body and its closing quote. A question asked before the previous reply (`askedBefore`: the founder has
     had their turn) comes back whole, or as two of its terms (said together, or two subjects) with little else, so a
     vague or short answer is never met with the first question again, while a new follow-up on the same subject ("Would
     that customer pay more for the version with alerts?") is kept. Notes threads already raised in the conversation

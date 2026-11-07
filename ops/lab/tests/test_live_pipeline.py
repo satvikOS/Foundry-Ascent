@@ -19,6 +19,7 @@ from conversation_lab.live.checks import (
     Turn,
     judgmental_notes,
     no_answer,
+    put_to_student,
     reply_hole,
     run_checks,
     same_subject,
@@ -1397,3 +1398,77 @@ def test_figures_agree_with_the_product_on_the_shared_cases() -> None:
         codes = run_checks([T("1.1", case["known"], case["reply"])]).codes()
         assert ("unsourced_figure" in codes) == (case["unsourced"] > 0), case["reply"]
         assert ("proposed_figure" in codes) == (case["proposed"] > 0), case["reply"]
+
+
+_FIRST = (
+    "Got it. Walk me through where you are with the regulatory path: what did the advisor tell you about device "
+    "class and how clinics would pay?"
+)
+
+
+@pytest.mark.parametrize(
+    "student",
+    [
+        "we didnt look into it",
+        "didnt get to it",
+        "havent gotten to it",
+        "never got around to it",
+        "i dont know man",
+        "nope havent",
+        "i dont know who pays",
+        "i dint do that",
+        "not a clue",
+        "i got no idea",
+        "i dont have that info",
+        "havent figured that out",
+        "not something i looked at",
+    ],
+)
+def test_a_casual_no_answer_is_heard_and_the_turn_three_reask_found(student: str) -> None:
+    """Review of the 2026-11-07 fix, round 3: the product's ``NO_ANSWER`` and ``DONT_KNOW``, mirrored."""
+    assert no_answer(student)
+    call = [
+        T("1.1", "getting product to market", _FIRST),
+        T("1.2", "there are a few layers of sign-off to get through", "So who sits in those layers?"),
+        T("1.3", student, "Okay. Is monitoring time reimbursable under existing CPT codes?"),
+    ]
+    assert "reasked_after_unknown" in run_checks(call).codes()
+
+
+@pytest.mark.parametrize(
+    "student",
+    ["I don't know if clinics will pay for it.", "I didn't get that.", "We looked into it and the advisor said Class II."],
+)
+def test_an_answer_of_their_own_is_no_no_answer(student: str) -> None:
+    assert not no_answer(student)
+
+
+def test_questions_given_to_the_student_to_send_are_prep_not_a_reask() -> None:
+    draft = (
+        "That's normal. You could send something like: \"Hi Dr. Lee, thanks again for last week. Two quick questions: "
+        "do you expect the insole to be Class II? And which billing codes do clinics usually use for remote monitoring "
+        "time?\" Once you hear back, we can sketch the clearance timeline."
+    )
+    listed = (
+        "Here are three questions to send:\n\n1. Do you see the insole as Class II, or could it be exempt?\n"
+        "2. Which CPT codes would clinics bill for the monitoring time?\n3. Who at the clinic owns the budget for this?"
+    )
+    for coach in (draft, listed):
+        call = [T("1.1", "getting product to market", _FIRST), T("1.2", "i dont know", coach)]
+        assert "reasked_after_unknown" not in run_checks(call).codes(), coach
+    assert put_to_student("That is normal. What did the advisor say?", "What did the advisor say?")
+    assert not put_to_student("Ask your advisor: is it Class II?", "Ask your advisor: is it Class II?")
+
+
+def test_more_verdicts_on_the_founder_are_judgmental() -> None:
+    notes = [
+        "Gives non-committal answers about advisor conversations",
+        "Avoids specifics about what the advisor said",
+        "Knowledge of regulatory pathways is weak",
+        "Has little grasp of reimbursement basics",
+        "Short replies; may be disengaged",
+        "Hasn't done basic regulatory research",
+        'Often answers "I don\'t know" to basic regulatory questions',
+        "Prefers direct answers and actionable steps",
+    ]
+    assert judgmental_notes(notes) == notes[:-1]

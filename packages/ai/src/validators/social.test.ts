@@ -7,6 +7,7 @@ import {
   asksToRepeat,
   NEWS_FALLBACK,
   parksTheirNews,
+  putToFounder,
   questionsOf,
   asksOnly,
   reasksQuestion,
@@ -331,5 +332,144 @@ describe('a reply that only asks (production, 2026-11-07)', () => {
       ),
     ).toBe(false);
     expect(asksOnly('Here is the plan for this week.')).toBe(false);
+  });
+});
+
+describe("a no-answer however it is said, in the call's three-turn shape (review of the 2026-11-07 fix, round 3)", () => {
+  const OPENER = 'Nice to see you. What feels most pressing right now?';
+  const R1 =
+    'Got it. Walk me through where you are with the regulatory path: what did the advisor tell you about device class and how clinics would pay?';
+  const R2 = 'So there is a process. Who sits in those layers, and what does each one sign off on?';
+  const NO_ANSWERS = [
+    'i dont know, i didnt do that',
+    'i ddint do that',
+    'we didnt look into it',
+    'didnt get to it',
+    'havent gotten to it',
+    'never got around to it',
+    'i dont know man',
+    'nope havent',
+    'i dont know who pays',
+    'i dint do that',
+    'i didn look into that',
+    'havnt done it',
+    'not a clue',
+    'i got no idea',
+    'i dont have that info',
+    'i dont have an answer',
+    'havent figured that out',
+    'not something i looked at',
+    'i dont kno',
+    'i dont know the codes',
+  ];
+
+  it.each(NO_ANSWERS)('turn 3 never asks the first question again after %j', (founderText) => {
+    expect(stuckOn(founderText, R2)).toBe(true);
+    const out = withoutRepeats(
+      'Okay. Is monitoring time reimbursable under existing CPT codes?',
+      [R2, R1, OPENER].join('\n\n'),
+      { strictQuestions: stuckOn(founderText, R2), asked: askedBefore(R2, [R1, OPENER]) },
+    );
+    expect(out.removed).toEqual(['Is monitoring time reimbursable under existing CPT codes?']);
+  });
+
+  it.each(['we didnt look into it', 'didnt get to it', 'nope havent', 'i dont know who pays'])(
+    'turn 2 never asks what the advisor said again after %j',
+    (founderText) => {
+      const out = withoutRepeats(
+        'That is normal. So what did your advisor actually say about the class?',
+        [R1, OPENER].join('\n\n'),
+        { strictQuestions: stuckOn(founderText, R1), asked: askedBefore(R1, [OPENER]) },
+      );
+      expect(out.text).toBe('That is normal.');
+    },
+  );
+
+  it.each([
+    'Department heads, mostly.',
+    "I don't know if clinics will pay for it.",
+    "I didn't get that.",
+    'We looked into it last week and the advisor said Class II.',
+  ])('reads %j as an answer of their own', (founderText) => {
+    expect(stuckOn(founderText, R1)).toBe(false);
+  });
+});
+
+describe('questions given to the founder to put to someone else are their prep, not a re-ask (review of the 2026-11-07 fix, round 3)', () => {
+  const previous =
+    'Got it. Walk me through where you are with the regulatory path: what did the advisor tell you about device class and how clinics would pay?';
+  const draft =
+    'That\'s normal, most founders leave that first session with more questions than answers. The quickest fix is a short email. You could send something like: "Hi Dr. Lee, thanks again for last week. Two quick questions: do you expect the insole to be Class II, and is there a predicate device you\'d point us to? And which billing codes do clinics usually use for remote monitoring time?" Once you hear back, we can sketch the clearance timeline.';
+  const list =
+    'Here are three questions to send:\n\n1. Do you see the insole as Class II, or could it be exempt?\n2. Which CPT codes would clinics bill for the monitoring time?\n3. Who at the clinic owns the budget for this?';
+
+  it.each([draft, list])('keeps the whole reply after "i dont know": %j', (reply) => {
+    for (const founderText of ['i dont know', 'i ddint do that']) {
+      const out = withoutRepeats(reply, previous, {
+        strictQuestions: stuckOn(founderText, previous),
+        asked: askedBefore(previous),
+      });
+      expect(out.text).toBe(reply);
+    }
+  });
+
+  it('tells a question for someone else from one put to the founder', () => {
+    expect(putToFounder('You could send: "Hi Dr. Lee. ', 'Is it Class II?')).toBe(false);
+    expect(putToFounder('Ask your advisor: ', 'Is it Class II?')).toBe(false);
+    expect(putToFounder('', 'Ask your advisor: is it Class II?')).toBe(false);
+    expect(putToFounder('Ask your advisor: is it Class II? ', 'Which codes apply?')).toBe(false);
+    expect(putToFounder('Questions for your advisor:\n1. ', 'Is it Class II?')).toBe(false);
+    expect(putToFounder('A few things to pin down:\n\n1. Is it Class II?\n', '2. Which codes apply?')).toBe(
+      false,
+    );
+    // Put to the founder themselves.
+    expect(putToFounder('', 'Walk me through the path: what did the advisor say?')).toBe(true);
+    expect(putToFounder('Two questions for you:\n1. ', 'What did the advisor say?')).toBe(true);
+    expect(putToFounder('That is normal. ', 'What did the advisor say?')).toBe(true);
+    expect(putToFounder('Ask your advisor: is it Class II? Most are. ', 'What did they say?')).toBe(true);
+    expect(putToFounder('She said "it depends". ', 'What did the advisor say?')).toBe(true);
+  });
+
+  it('still reads a question for someone else that comes back whole as asked again', () => {
+    const asked = askedBefore('Did the advisor say which device class the insole falls into?');
+    expect(
+      reasksQuestion('Which device class does the insole fall into?', asked, {
+        strict: true,
+        toFounder: false,
+      }),
+    ).toBe(true);
+    expect(reasksQuestion('Is it Class II?', asked, { strict: true, toFounder: false })).toBe(false);
+  });
+});
+
+describe('re-asks by subject, in other words, and broad subjects (review of the 2026-11-07 fix, round 3)', () => {
+  const r1 =
+    'Got it. Walk me through where you are with the regulatory path: what did the advisor tell you about device class and how clinics would pay?';
+
+  it.each([
+    'Do you know what risk tier the insole falls under?',
+    'How do clinics get compensated for the time?',
+    'What did the clinical-innovation expert say about it?',
+  ])('after a no-answer, reads %j as asked again', (question) => {
+    expect(reasksQuestion(question, askedBefore(r1), { strict: true })).toBe(true);
+  });
+
+  it('one shared customer or price is no re-ask after a no-answer', () => {
+    const asked = askedBefore('Who is your first customer: the clinic or the patient?');
+    expect(reasksQuestion('What would a pilot customer need to see?', asked, { strict: true })).toBe(false);
+    expect(
+      reasksQuestion('What price would the clinic accept?', askedBefore('What price do you charge today?'), {
+        strict: true,
+      }),
+    ).toBe(false);
+    expect(
+      withoutRepeats(
+        'No problem. What would a pilot customer need to see?',
+        'Who is your first customer: the clinic or the patient?',
+        {
+          strictQuestions: stuckOn('no idea'),
+        },
+      ).dropped,
+    ).toBe(0);
   });
 });

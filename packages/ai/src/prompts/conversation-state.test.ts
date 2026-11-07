@@ -1022,3 +1022,25 @@ describe('a report of having done what they committed to (evals G12, the matrixâ
     expect(last.indexOf(LINE)).toBeLessThan(last.indexOf('<founder_message>'));
   });
 });
+
+describe('goals and check-ins as founders say them (review of the 2026-11-07 fix, round 3)', () => {
+  it.each(['need to get this thing out to clinics', 'commercializing it', 'the launch'])(
+    'hears %j as a goal',
+    (text) => {
+      expect(founderMoves(text)).toContain('goal');
+    },
+  );
+
+  it.each(['I need to get some sleep honestly', 'we need to get going soon'])(
+    'hears no goal in %j',
+    (text) => {
+      expect(founderMoves(text)).not.toContain('goal');
+    },
+  );
+
+  it('a question about how the founder feels about their work is no check-in on them', () => {
+    expect(SUPPORT_CHECK_IN.test('How are you feeling about the pitch?')).toBe(false);
+    expect(SUPPORT_CHECK_IN.test('How are you feeling today?')).toBe(true);
+    expect(SUPPORT_CHECK_IN.test('How are you feeling about the situation?')).toBe(true);
+  });
+});

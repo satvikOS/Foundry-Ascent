@@ -950,3 +950,40 @@ describe('SentenceGate', () => {
     });
   });
 });
+
+describe('questions the reply gives the founder to put to someone else, after a no-answer (review of the 2026-11-07 fix)', () => {
+  const previous =
+    'Got it. Walk me through where you are with the regulatory path: what did the advisor tell you about device class and how clinics would pay?';
+  const draft =
+    'That\'s normal, most founders leave that first session with more questions than answers. The quickest fix is a short email. You could send something like: "Hi Dr. Lee, thanks again for last week. Two quick questions: do you expect the insole to be Class II, and is there a predicate device you\'d point us to? And which billing codes do clinics usually use for remote monitoring time?" Once you hear back, we can sketch the clearance timeline.';
+  const list =
+    'Here are three questions to send:\n\n1. Do you see the insole as Class II, or could it be exempt?\n2. Which CPT codes would clinics bill for the monitoring time?\n3. Who at the clinic owns the budget for this?';
+
+  it.each(['i dont know', 'i ddint do that', 'we didnt look into it'])(
+    'keeps a drafted email whole, its questions and its closing quote (%j)',
+    (founderText) => {
+      for (const chunks of chunkings(draft)) {
+        const g = gate({ previousReply: previous, founderText });
+        const out = run(g, chunks);
+        expect(joined(out.units)).toBe(draft);
+      }
+    },
+  );
+
+  it.each(['i dont know', 'i ddint do that'])(
+    'keeps a list of questions to send whole, with its lead-in (%j)',
+    (founderText) => {
+      for (const chunks of chunkings(list)) {
+        const g = gate({ previousReply: previous, founderText });
+        expect(joined(run(g, chunks).units)).toBe(list);
+      }
+    },
+  );
+
+  it('still leaves out a question put to the founder again on the same subject', () => {
+    const reply =
+      'No problem. So what did your advisor actually say about the class? Either way, here is the usual path.';
+    const g = gate({ previousReply: previous, founderText: 'i dont know' });
+    expect(joined(run(g, [reply]).units)).not.toContain('your advisor actually say');
+  });
+});

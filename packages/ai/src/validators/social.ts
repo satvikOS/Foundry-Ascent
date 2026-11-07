@@ -4,7 +4,7 @@ import {
   founderMoves,
   lastQuestionOf,
   socialTurnOf,
-  SUBJECT_NAMES,
+  NARROW_SUBJECT_NAMES,
   subjectOf,
   SUPPORT_CHECK_IN,
   wrapUpOf,
@@ -329,6 +329,12 @@ export interface ReaskOptions {
    * terms, or two in a pair or 40% of them.
    */
   readonly strict?: boolean;
+  /**
+   * False for a question the reply gives the founder to put to someone else ({@link putToFounder}: a quoted draft, a
+   * list of questions for their advisor): only one that comes back whole (three shared terms) is a re-ask; the strict
+   * and settled readings are for questions put to the founder. Default true.
+   */
+  readonly toFounder?: boolean;
 }
 
 /**
@@ -345,8 +351,18 @@ export function reasksQuestion(
 ): boolean {
   if (asked.length === 0 || !/\?["'”’)\]*_]*\s*$/.test(sentence)) return false;
   const terms = questionTerms(sentence);
+  if (options.toFounder === false) {
+    if (terms.words.size < 3) return false;
+    return asked.some((question) => {
+      let shared = 0;
+      for (const w of terms.words) if (question.words.has(w)) shared += 1;
+      const share = shared / Math.min(terms.words.size, question.words.size);
+      const pair = [...terms.pairs].some((p) => question.pairs.has(p));
+      return shared >= 3 && (share >= 0.6 || (share >= 0.3 && pair));
+    });
+  }
   const strict = options.strict === true;
-  const subjects = [...terms.words].filter((w) => SUBJECT_NAMES.has(w));
+  const subjects = [...terms.words].filter((w) => NARROW_SUBJECT_NAMES.has(w));
   if (
     strict &&
     subjects.length > 0 &&
@@ -373,6 +389,77 @@ export function reasksQuestion(
       (shared >= 3 || (shared >= 2 && share >= 0.6 && (pair || sharedSubjects >= 2)))
     );
   });
+}
+
+/**
+ * A lead-in that hands the founder questions to put to someone else ("Ask your advisor:", "Here are three questions to
+ * send:", "You could send something like:").
+ */
+const PREP_LEAD_IN =
+  /\b(?:ask(?:ing)? (?:them|him|her|your|the|whoever|each|someone|an?)\b|(?:send|email|write|message|text) (?:them|him|her|your|the|an?|something)\b|questions? (?:to (?:send|ask|bring|raise|put)|you (?:could|can|might|should) (?:send|ask|bring|raise|put)|worth (?:asking|sending|raising)|for (?:them|him|her|your|the|dr)\b)|something like|(?:could|can|might) (?:say|ask|send|write|open with|lead with)|(?:a|the|this) (?:draft|template|script|note|email|message)\b)[^:]*:[*_\s]*$/i;
+
+/** A lead-in that puts what follows to the founder themselves ("Two questions for you:", "Ask yourself:"). */
+const FOUNDER_LEAD_IN = /\b(?:for you|yourself|ask you|(?:i'd|i would) (?:like|love) to know|tell me)\b/i;
+
+/** A line said by someone in a role-play ("**Investor:** …", "Dr Lee: …"), never "Walk me through the path: …". */
+const ROLE_SPEAKER =
+  /^\s*(?:(?:\*\*|__)[^*_\n]{1,40}:(?:\*\*|__)|\p{Lu}[\p{L}'.-]*(?: \p{Lu}[\p{L}'.-]*){0,2}:)\s/u;
+
+/** A list marker alone ("1.", "-"), as sentences split it from its item. */
+const BARE_LIST_MARKER = /^\s*(?:[-*+•]|\d{1,3}[.)])\s*$/;
+/** Text that ends on a list marker: what follows is that item's text. */
+const BARE_LIST_MARKER_END = /(?:^|\n)\s*(?:[-*+•]|\d{1,3}[.)])\s*$/;
+
+/** Whether a double quotation is still open at the end of `text` (a straight quote toggles, curly ones open and close). */
+function quoteOpenAt(text: string): boolean {
+  let open = false;
+  for (const ch of text) {
+    if (ch === '"') open = !open;
+    else if (ch === '\u201C') open = true;
+    else if (ch === '\u201D') open = false;
+  }
+  return open;
+}
+
+/** The lead-in a sentence ends on or opens with: its text up to its last colon, or null. */
+function leadInOf(sentence: string): string | null {
+  const ask = sentence.lastIndexOf('?');
+  const head = ask < 0 ? sentence : sentence.slice(0, ask);
+  const colon = head.lastIndexOf(':');
+  return colon < 0 ? null : head.slice(0, colon + 1);
+}
+
+/**
+ * Whether the question `sentence` (what the reply says after `before`) is put to the founder, rather than given to
+ * them to put to someone else: one inside an open quotation (a draft email), a line in character, a list item under a
+ * lead-in ending in ":", or a question after a lead-in such as "Ask your advisor:" or "questions to send:" (and the
+ * questions and list items that follow it). Review of the 2026-11-07 fix: after "i dont know", the strict re-ask
+ * reading took the questions out of a drafted email, leaving its quote open and its body gone.
+ */
+export function putToFounder(before: string, sentence: string): boolean {
+  const ask = sentence.lastIndexOf('?');
+  if (quoteOpenAt(before + (ask < 0 ? sentence : sentence.slice(0, ask)))) return false;
+  if (ROLE_SPEAKER.test(sentence)) return false;
+  // Sentences split a list item's marker from its text ("1." then "Do you see…?").
+  const listItem = isListItem(sentence) || BARE_LIST_MARKER_END.test(before);
+  const earlier = sentenceSpans(before)
+    .map((s) => before.slice(s.start, s.end).trim())
+    .filter((s) => s !== '');
+  for (const s of [sentence.trim(), ...earlier.reverse()]) {
+    const lead = leadInOf(s);
+    if (lead !== null) {
+      if (FOUNDER_LEAD_IN.test(lead)) return true;
+      if (PREP_LEAD_IN.test(lead)) return false;
+      if (s !== sentence.trim()) return !listItem;
+      // A list item's own label ("1. **Class:** …?") leads into nothing: the lead-in is above it.
+      if (!listItem) return true;
+      continue;
+    }
+    // A run of questions or list items goes on under the lead-in that opened it.
+    if (s !== sentence.trim() && !/\?["'”’)\]*_]*$/.test(s) && !isListItem(s) && !BARE_LIST_MARKER.test(s))
+      break;
+  }
+  return true;
 }
 
 /**
@@ -513,7 +600,10 @@ export function withoutRepeats(
     const sentence = text.slice(s.start, s.end);
     const repeat =
       repeatsPrevious(sentence, said, { signOffs: options.signOffs !== false }) ||
-      reasksQuestion(sentence, asked, { strict: options.strictQuestions === true });
+      reasksQuestion(sentence, asked, {
+        strict: options.strictQuestions === true,
+        toFounder: putToFounder(text.slice(0, s.start), sentence),
+      });
     if (!repeat || isProtectedLine(sentence, options.keepReferrals === true)) {
       lastKept = s;
       continue;
