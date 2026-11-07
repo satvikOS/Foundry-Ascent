@@ -242,12 +242,15 @@ class LastConversation(_Camel):
 
 
 class ConversationOpener(_Camel):
-    """``GET /ventures/:id/opener``: how the vEIR would open a new conversation now."""
+    """``GET /ventures/:id/opener`` (and ``POST``): how the vEIR would open a new conversation now."""
 
     opener: str | None = None
     last_conversation: LastConversation | None = None
     #: When the line was phrased (sent back as ``openerShownAt`` when a conversation is created after showing it).
     at: str | None = None
+    #: The notebook leaves threads open with no line for this conversation: ``POST`` has one written (``GET`` writes
+    #: nothing).
+    missing: bool | None = None
 
 
 class SessionDetail(_Camel):
