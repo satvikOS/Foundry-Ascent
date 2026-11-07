@@ -27,7 +27,7 @@ import { errorMessage } from '@/lib/api/errors';
 import { fetchRecordingDownload } from '@/lib/api/hooks/recording-files';
 import { useDeleteRecording } from '@/lib/api/hooks/recordings';
 
-import { followDownload } from './page-unload';
+import { saveDownload } from './save-download';
 
 /** The recording's file type, as a person knows it ("WebM", "MP4"). */
 export function fileType(recording: Pick<RecordingView, 'mimeType'>): string {
@@ -36,8 +36,8 @@ export function fileType(recording: Pick<RecordingView, 'mimeType'>): string {
 
 /**
  * Saves a file of a recording: a presigned GET signed when it is asked for (the server records each one as a
- * download), followed as a link. The file is sent as an attachment under its name, so the page stays where it is (and
- * a take still recording or saving is not asked about: followDownload).
+ * download), loaded in a hidden frame. The file is sent as an attachment under its name, and the page is never
+ * navigated, so a call, or a take still recording or saving, goes on undisturbed (saveDownload).
  */
 function useDownload(recording: RecordingView) {
   const name = useVeirName(recording.ventureId);
@@ -47,7 +47,7 @@ function useDownload(recording: RecordingView) {
     setBusy(true);
     fetchRecordingDownload(recording.id, { file, name })
       .then((saved) => {
-        followDownload(saved.url);
+        saveDownload(saved.url);
         announce('Download started');
       })
       .catch((error: unknown) => {

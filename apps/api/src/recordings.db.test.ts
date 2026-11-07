@@ -287,6 +287,11 @@ describe('PUT|GET /_local/recordings/:token (development only)', () => {
     expect(saved.headers.get('content-disposition')).toBe(
       `attachment; filename="Thomas call 2026-11-07 14-22.webm"; filename*=UTF-8''Thomas%20call%202026-11-07%2014-22.webm`,
     );
+    // Saved through a hidden frame, as from S3 (which denies no frame); replay keeps the API's frame denial.
+    expect(saved.headers.get('x-frame-options')).toBeNull();
+    expect(saved.headers.get('content-security-policy')).toBe("default-src 'none'; base-uri 'none'");
+    expect(whole.headers.get('x-frame-options')).toBe('DENY');
+    expect(whole.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
   });
 
   it('refuses to mount outside development', () => {

@@ -112,12 +112,14 @@ Region `us-east-1`, account taken from the deploying credentials. Every IAM role
     `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`,
     `Permissions-Policy: camera=(), microphone=(self), geolocation=()` (the microphone for voice calls, on
     this origin only) and the CSP
-    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: https://<recordings bucket>.s3.us-east-1.amazonaws.com; font-src 'self' data:; connect-src 'self' https://<documents bucket>.s3.us-east-1.amazonaws.com https://<recordings bucket>.s3.us-east-1.amazonaws.com wss://transcribestreaming.us-east-1.amazonaws.com:8443; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`.
+    `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: https://<recordings bucket>.s3.us-east-1.amazonaws.com; font-src 'self' data:; connect-src 'self' https://<documents bucket>.s3.us-east-1.amazonaws.com https://<recordings bucket>.s3.us-east-1.amazonaws.com wss://transcribestreaming.us-east-1.amazonaws.com:8443; frame-src 'self' https://<recordings bucket>.s3.us-east-1.amazonaws.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`.
     `connect-src` names exactly the documents bucket the presigned uploads use, the call recordings bucket
     (ADR-0023: a recording's presigned uploads and its captions) and Transcribe streaming, which the call
     screen's microphone streams to (a test forbids `*` anywhere in the rendered policy); `media-src … blob:`
     lets the call screen play the speech it fetched from `/api/v1/speech`, and the recordings bucket there lets
-    a founder replay their own recording through its presigned GET. The
+    a founder replay their own recording through its presigned GET; `frame-src` names it too, because a download
+    is saved from a hidden, sandboxed frame that loads its presigned GET (an attachment), never by navigating the
+    page. The
     microphone's AudioWorklet is a same-origin static file, which `script-src 'self'` covers.
     `'unsafe-inline'` in `style-src` is only for a `<style>` element Radix injects (`src/constructs/edge.ts`).
     While `media.face.provider` is `heygen-liveavatar`, `connect-src` (and `media-src`) also name exactly the

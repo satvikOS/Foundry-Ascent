@@ -47,6 +47,17 @@ export function applySecurityHeaders(headers: Headers): void {
   headers.set('content-security-policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
 }
 
+/**
+ * The development stand-in for the recordings bucket answers a download as S3 does, with no frame denial: the app
+ * saves a recording's file through a hidden frame (ADR-0023 §4), which Safari refuses to download from under
+ * `X-Frame-Options`. Only an attachment: replay and uploads keep every header.
+ */
+function allowDownloadFrame(headers: Headers): void {
+  if (!headers.get('content-disposition')?.startsWith('attachment')) return;
+  headers.delete('x-frame-options');
+  headers.set('content-security-policy', "default-src 'none'; base-uri 'none'");
+}
+
 export interface RequestLogOptions {
   readonly logger: Logger;
   readonly now?: () => number;
@@ -80,6 +91,7 @@ export function requestContext({
     const res = c.res;
     res.headers.set(REQUEST_ID_HEADER, requestId);
     applySecurityHeaders(res.headers);
+    if (c.req.path.startsWith(LOCAL_RECORDINGS_PREFIX)) allowDownloadFrame(res.headers);
     const session = c.get('session');
     const status = res.status;
     const fields = {

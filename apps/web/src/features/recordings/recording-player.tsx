@@ -65,7 +65,10 @@ function scrollBehavior(): ScrollBehavior {
   }
 }
 
-/** A WebM from MediaRecorder carries no duration: seeking to the end once makes the browser measure it. */
+/**
+ * A WebM from MediaRecorder (Firefox, Chromium on Linux, and every recording before mp4 came first) carries no
+ * duration: seeking to the end once makes the browser measure it. An mp4 states its own.
+ */
 function measureDuration(video: HTMLVideoElement): void {
   if (Number.isFinite(video.duration)) return;
   const restore = () => {

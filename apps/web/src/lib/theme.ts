@@ -86,6 +86,11 @@ function subscribe(listener: () => void): () => void {
 
 const getSnapshot = (): ThemeState => state;
 
+/** The theme the app shows now, outside React (a recording's composed call view follows it). */
+export function resolvedTheme(): ResolvedTheme {
+  return state.resolved;
+}
+
 export function useTheme(): ThemeState & { setTheme: typeof setTheme } {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   return { ...snapshot, setTheme };

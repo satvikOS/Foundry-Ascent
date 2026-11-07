@@ -27,7 +27,9 @@ const PAGE_HEADERS = {
     "media-src 'self' blob: https://foundryascent-data-recordingsbucket-abc.s3.us-east-1.amazonaws.com; " +
     "connect-src 'self' https://foundryascent-data-documentsbucket-abc.s3.us-east-1.amazonaws.com " +
     'https://foundryascent-data-recordingsbucket-abc.s3.us-east-1.amazonaws.com ' +
-    "wss://transcribestreaming.us-east-1.amazonaws.com:8443; frame-ancestors 'none'; object-src 'none'",
+    'wss://transcribestreaming.us-east-1.amazonaws.com:8443; ' +
+    "frame-src 'self' https://foundryascent-data-recordingsbucket-abc.s3.us-east-1.amazonaws.com; " +
+    "frame-ancestors 'none'; object-src 'none'",
   'x-frame-options': 'DENY',
   'referrer-policy': 'strict-origin-when-cross-origin',
   'permissions-policy': 'camera=(), microphone=(self), geolocation=()',
@@ -282,6 +284,23 @@ describe('scripts/smoke.mjs first contact (R6)', () => {
         ),
       },
       /CSP connect-src allows https:\/\/\*\.amazonaws\.com/,
+    ],
+    [
+      'recordings cannot be downloaded (no frame of the bucket)',
+      {
+        'content-security-policy': PAGE_HEADERS['content-security-policy'].replace(/ frame-src [^;]+;/, ''),
+      },
+      /CSP frame-src "missing", expected "'self' <recordings bucket>"/,
+    ],
+    [
+      'frame-src allows another host',
+      {
+        'content-security-policy': PAGE_HEADERS['content-security-policy'].replace(
+          "frame-src 'self'",
+          "frame-src 'self' https://*.amazonaws.com",
+        ),
+      },
+      /CSP frame-src "'self' https:\/\/\*\.amazonaws\.com/,
     ],
   ])('fails the page checks when %s', async (_case, pageHeaders, problem) => {
     const { server, origin } = await serve({ transient: () => null, pageHeaders });

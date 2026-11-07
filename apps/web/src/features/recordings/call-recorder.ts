@@ -1,5 +1,7 @@
 import { RECORDING_LIMITS, type RecordingMimeType } from '@foundry/contracts';
 
+import { resolvedTheme, type ResolvedTheme } from '@/lib/theme';
+
 import type { CaptionSpeaker } from './captions';
 
 /*
@@ -19,8 +21,10 @@ import type { CaptionSpeaker } from './captions';
  *            on hold, or push to talk released: what is said off-mic is never recorded). The shared screen brings
  *            no sound of its own, so nothing is heard twice.
  *
- * MediaRecorder encodes both into the container the browser supports (webm on Chromium and Firefox, mp4 on Safari),
- * or sound only where no picture can be captured. Everything stays in this page's memory until it is saved.
+ * MediaRecorder encodes both as H.264 and AAC in mp4 where the browser can (Chrome and Edge on a Mac or Windows,
+ * Safari): a downloaded file then states its length and opens in the computer's own player. Elsewhere (Firefox,
+ * Chromium on Linux) it is webm, or sound only where no picture can be captured. Everything stays in this page's
+ * memory until it is saved.
  */
 
 /** The browser objects a recording needs (real ones in the app, fakes in tests). */
@@ -30,6 +34,10 @@ export interface RecorderBrowser {
   createStream(tracks: MediaStreamTrack[]): MediaStream;
   /** A muted, inline video element playing `stream` (to draw a face that comes as a stream). */
   playStream(stream: MediaStream): HTMLVideoElement;
+  /** This page's size in device pixels: what a capture of this tab is made of (scaled down to fit what was asked). */
+  viewport(): { width: number; height: number };
+  /** The app's theme now (the composed call view follows it, as the shared tab does). */
+  theme(): ResolvedTheme;
   now(): number;
   setInterval(callback: () => void, ms: number): unknown;
   clearInterval(handle: unknown): void;
@@ -52,6 +60,11 @@ export const BROWSER_RECORDER: RecorderBrowser = {
     void video.play().catch(() => undefined);
     return video;
   },
+  viewport: () => ({
+    width: window.innerWidth * window.devicePixelRatio,
+    height: window.innerHeight * window.devicePixelRatio,
+  }),
+  theme: resolvedTheme,
   now: () => performance.now(),
   setInterval: (callback, ms) => window.setInterval(callback, ms),
   clearInterval: (handle) => {
@@ -66,14 +79,20 @@ export interface RecordingFormat {
   readonly mimeType: RecordingMimeType;
 }
 
+/**
+ * mp4 with H.264 and AAC first: MediaRecorder writes no length into a webm file (a player shows none and seeks poorly,
+ * and QuickTime opens no webm at all), while its mp4 states it. A bare `mp4` comes only after webm: Chromium may fill
+ * it with Opus, which QuickTime does not play either.
+ */
 const VIDEO_FORMATS: readonly RecordingFormat[] = [
+  { recorderType: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', mimeType: 'video/mp4' },
   { recorderType: 'video/webm;codecs=vp8,opus', mimeType: 'video/webm' },
   { recorderType: 'video/webm;codecs=vp9,opus', mimeType: 'video/webm' },
   { recorderType: 'video/webm', mimeType: 'video/webm' },
-  { recorderType: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', mimeType: 'video/mp4' },
   { recorderType: 'video/mp4', mimeType: 'video/mp4' },
 ];
 const AUDIO_FORMATS: readonly RecordingFormat[] = [
+  { recorderType: 'audio/mp4;codecs=mp4a.40.2', mimeType: 'audio/mp4' },
   { recorderType: 'audio/webm;codecs=opus', mimeType: 'audio/webm' },
   { recorderType: 'audio/webm', mimeType: 'audio/webm' },
   { recorderType: 'audio/mp4', mimeType: 'audio/mp4' },
@@ -283,15 +302,38 @@ const PANEL: Rect = { x: 800, y: 88, w: 448, h: 600 };
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 const LINE_HEIGHT = 28;
 const SPEAKER_GAP = 14;
-const COLORS = {
-  top: '#0c0d10',
-  bottom: '#16181d',
-  surface: 'rgba(255, 255, 255, 0.04)',
-  text: '#f4f5f7',
-  muted: '#9aa0ab',
-  veir: '#b8c6ff',
-  record: '#ef4444',
-} as const;
+
+interface Palette {
+  readonly top: string;
+  readonly bottom: string;
+  readonly surface: string;
+  readonly text: string;
+  readonly muted: string;
+  readonly veir: string;
+  readonly record: string;
+}
+
+/** The composed view in the app's own theme, so a take that minimizes the call does not flip from light to dark. */
+const PALETTES: Record<ResolvedTheme, Palette> = {
+  dark: {
+    top: '#0c0d10',
+    bottom: '#16181d',
+    surface: 'rgba(255, 255, 255, 0.04)',
+    text: '#f4f5f7',
+    muted: '#9aa0ab',
+    veir: '#b8c6ff',
+    record: '#ef4444',
+  },
+  light: {
+    top: '#fafaf9',
+    bottom: '#f1f1ee',
+    surface: 'rgba(17, 17, 16, 0.04)',
+    text: '#111110',
+    muted: '#5c5c58',
+    veir: '#3b4bb5',
+    record: '#dc2626',
+  },
+};
 
 /** `m:ss` (or `h:mm:ss`), as the call shows its time. */
 function clock(ms: number): string {
@@ -310,13 +352,26 @@ function roundRect(ctx: Context2D, rect: Rect, radius: number): void {
   else ctx.rect(rect.x, rect.y, rect.w, rect.h);
 }
 
-/** `track`'s picture size, scaled down to fit {@link SCREEN_MAX} (even numbers, as encoders want them). */
-function screenSize(track: MediaStreamTrack): { width: number; height: number } {
-  const { width, height } = track.getSettings();
-  if (width === undefined || height === undefined || width <= 0 || height <= 0) return { ...SCREEN_MAX };
-  const scale = Math.min(1, SCREEN_MAX.width / width, SCREEN_MAX.height / height);
+/**
+ * The canvas a shared tab is drawn on: the tab's own shape (this page in device pixels, `viewport`) scaled down to fit
+ * the capture's size and {@link SCREEN_MAX}, in even numbers as encoders want them. The capture's settings alone would
+ * not do: Chromium reports the largest size asked for there, not its frames' (a 16:10 laptop's tab would be drawn
+ * with black bars down both sides).
+ */
+function screenSize(
+  track: MediaStreamTrack,
+  viewport: { width: number; height: number },
+): { width: number; height: number } {
+  const settings = track.getSettings();
+  const known = (value: number | undefined): value is number => value !== undefined && value > 0;
+  const bound = {
+    width: Math.min(SCREEN_MAX.width, known(settings.width) ? settings.width : SCREEN_MAX.width),
+    height: Math.min(SCREEN_MAX.height, known(settings.height) ? settings.height : SCREEN_MAX.height),
+  };
+  const shape = known(viewport.width) && known(viewport.height) ? viewport : bound;
+  const scale = Math.min(1, bound.width / shape.width, bound.height / shape.height);
   const even = (value: number) => Math.max(2, Math.round((value * scale) / 2) * 2);
-  return { width: even(width), height: even(height) };
+  return { width: even(shape.width), height: even(shape.height) };
 }
 
 /** Draws `source` whole in a `width`×`height` canvas, centred (a tab resized while it records keeps its shape). */
@@ -361,8 +416,8 @@ function drawLabel(ctx: Context2D, text: string, x: number, y: number): void {
 }
 
 /** The call's presence in the stage: a soft sphere that swells with the vEIR's voice. */
-function drawPresence(ctx: Context2D, level: number, t: number): void {
-  ctx.fillStyle = COLORS.surface;
+function drawPresence(ctx: Context2D, colors: Palette, level: number, t: number): void {
+  ctx.fillStyle = colors.surface;
   roundRect(ctx, STAGE, 20);
   ctx.fill();
   const breathing = 1 + Math.sin(t / 900) * 0.015;
@@ -471,7 +526,8 @@ export class CallRecorder {
     }
     const display = this.input.display;
     const screen = display?.getVideoTracks().find((track) => track.readyState === 'live') ?? null;
-    this.size = screen === null ? { width: WIDTH, height: HEIGHT } : screenSize(screen);
+    this.size =
+      screen === null ? { width: WIDTH, height: HEIGHT } : screenSize(screen, this.browser.viewport());
     const canvas = this.browser.createCanvas(this.size.width, this.size.height);
     const ctx = typeof canvas.captureStream === 'function' ? canvas.getContext('2d') : null;
     const format = pickFormat((type) => Recorder.isTypeSupported(type), ctx !== null);
@@ -608,12 +664,13 @@ export class CallRecorder {
     const screen = this.screen;
     if (screen !== null && this.showsCall(screen) && drawContain(ctx, screen.video, width, height)) return;
     // The composed view at its own size, scaled to fit the canvas and centred on its background.
+    const colors = PALETTES[this.browser.theme()];
     const scale = Math.min(width / WIDTH, height / HEIGHT);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = COLORS.top;
+    ctx.fillStyle = colors.top;
     ctx.fillRect(0, 0, width, height);
     ctx.setTransform(scale, 0, 0, scale, (width - WIDTH * scale) / 2, (height - HEIGHT * scale) / 2);
-    this.draw(ctx);
+    this.draw(ctx, colors);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
 
@@ -629,10 +686,10 @@ export class CallRecorder {
   }
 
   /** The composed call view: header (name, kind, time), stage (face or presence), conversation. */
-  private draw(ctx: Context2D): void {
+  private draw(ctx: Context2D, colors: Palette): void {
     const background = ctx.createLinearGradient(0, 0, 0, HEIGHT);
-    background.addColorStop(0, COLORS.top);
-    background.addColorStop(1, COLORS.bottom);
+    background.addColorStop(0, colors.top);
+    background.addColorStop(1, colors.bottom);
     ctx.fillStyle = background;
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
     ctx.textAlign = 'start';
@@ -645,27 +702,27 @@ export class CallRecorder {
       face = this.faceStream.video;
     }
     const avatar = face !== null && drawCover(ctx, face, STAGE);
-    if (!avatar) drawPresence(ctx, this.input.level(), this.browser.now());
+    if (!avatar) drawPresence(ctx, colors, this.input.level(), this.browser.now());
     drawLabel(ctx, avatar ? 'AI avatar' : 'AI voice', STAGE.x + 16, STAGE.y + 16);
     // Header: whose call, and how long it has been recorded.
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = COLORS.text;
+    ctx.fillStyle = colors.text;
     ctx.font = `600 24px ${FONT}`;
     ctx.fillText(this.input.name, STAGE.x, 46);
     ctx.font = `600 20px ${FONT}`;
     const time = clock(this.elapsedMs());
     const timeWidth = ctx.measureText(time).width;
     ctx.fillText(time, WIDTH - 32 - timeWidth, 46);
-    ctx.fillStyle = COLORS.record;
+    ctx.fillStyle = colors.record;
     ctx.beginPath();
     ctx.arc(WIDTH - 32 - timeWidth - 16, 46, 6, 0, Math.PI * 2);
     ctx.fill();
-    this.drawConversation(ctx);
+    this.drawConversation(ctx, colors);
   }
 
   /** The conversation's latest lines, newest at the bottom, as many as fit the panel. */
-  private drawConversation(ctx: Context2D): void {
-    ctx.fillStyle = COLORS.surface;
+  private drawConversation(ctx: Context2D, colors: Palette): void {
+    ctx.fillStyle = colors.surface;
     roundRect(ctx, PANEL, 20);
     ctx.fill();
     const pad = 24;
@@ -691,14 +748,14 @@ export class CallRecorder {
       if (y < PANEL.y + pad) break;
       for (const row of [...line.rows].reverse()) {
         ctx.font = `400 20px ${FONT}`;
-        ctx.fillStyle = line.speaker === 'veir' ? COLORS.text : COLORS.muted;
+        ctx.fillStyle = line.speaker === 'veir' ? colors.text : colors.muted;
         ctx.globalAlpha = line.live ? 0.7 : 1;
         ctx.fillText(row, PANEL.x + pad, y);
         y -= LINE_HEIGHT;
       }
       ctx.globalAlpha = 1;
       ctx.font = `600 15px ${FONT}`;
-      ctx.fillStyle = line.speaker === 'veir' ? COLORS.veir : COLORS.muted;
+      ctx.fillStyle = line.speaker === 'veir' ? colors.veir : colors.muted;
       ctx.fillText(line.speaker === 'veir' ? this.input.name : this.input.founderName, PANEL.x + pad, y + 4);
       y -= LINE_HEIGHT + SPEAKER_GAP;
     }

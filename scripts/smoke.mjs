@@ -11,7 +11,8 @@
  *                                    with the camera off, CSP media-src exactly 'self' blob: and the call
  *                                    recordings bucket, and a connect-src of exactly 'self', the documents
  *                                    bucket, the recordings bucket, Amazon Transcribe streaming and the wired
- *                                    video face's room origins (SMOKE_FACE_CONNECT), nothing else
+ *                                    video face's room origins (SMOKE_FACE_CONNECT), nothing else; frame-src
+ *                                    exactly 'self' and the recordings bucket (a download's hidden frame)
  *   2. GET /assets/<entry>.js        200 JavaScript, immutable caching
  *   3. GET /api/v1/health            200 JSON, status ok/degraded [+ the deployed version]. The public
  *                                    health route never queries the database (so polling it cannot keep
@@ -69,7 +70,7 @@ const CSP_DIRECTIVES = ["default-src 'self'", "frame-ancestors 'none'", "object-
  * camera off; synthesized speech plays from blob: URLs and a founder's call recording streams from the
  * recordings bucket (ADR-0023); the browser may connect to the documents bucket (presigned uploads), the
  * recordings bucket (presigned uploads and captions) and Amazon Transcribe streaming (presigned
- * speech-to-text), and nowhere else.
+ * speech-to-text), and nowhere else; a recording's download is saved from a hidden frame of the recordings bucket.
  */
 const PERMISSIONS = { microphone: '(self)', camera: '()' };
 const MEDIA_SRC = "'self' blob: <recordings bucket>";
@@ -273,6 +274,9 @@ function edgePolicyProblems(csp, permissionsPolicy, faceConnect = faceConnectOri
     );
   if (recordings !== undefined && UPLOAD_ORIGIN.test(recordings) && !connect.includes(recordings))
     problems.push('CSP connect-src lacks the recordings bucket that media-src names');
+  const frames = policy.get('frame-src') ?? [];
+  if (frames.length !== 2 || frames[0] !== "'self'" || frames[1] !== recordings)
+    problems.push(`CSP frame-src "${frames.join(' ') || 'missing'}", expected "'self' <recordings bucket>"`);
   if (!connect.includes(SPEECH_TO_TEXT_ORIGIN))
     problems.push(`CSP connect-src lacks ${SPEECH_TO_TEXT_ORIGIN}`);
   if (unexpected.length > 0) problems.push(`CSP connect-src allows ${unexpected.join(' ')}`);

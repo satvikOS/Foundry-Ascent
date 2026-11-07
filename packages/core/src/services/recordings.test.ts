@@ -43,6 +43,22 @@ describe('a downloaded recording’s name', () => {
     );
   });
 
+  it('is cut by characters, never inside one, and always encodes (the download header names it)', () => {
+    const emoji = '\u{1F680}';
+    expect(recordingFilename({ ...base, name: `${'a'.repeat(59)}${emoji}` })).toBe(
+      `${'a'.repeat(59)}${emoji} call 2026-11-07 14-22.webm`,
+    );
+    expect(recordingFilename({ ...base, name: `${'a'.repeat(60)}${emoji}` })).toBe(
+      `${'a'.repeat(60)} call 2026-11-07 14-22.webm`,
+    );
+    // A lone half of a surrogate pair is dropped.
+    const lone = recordingFilename({ ...base, name: 'Thomas\uD83D' });
+    expect(lone).toBe('Thomas call 2026-11-07 14-22.webm');
+    for (const name of [`${'a'.repeat(59)}${emoji}`, emoji.repeat(70), 'x\uDE80y']) {
+      expect(() => encodeURIComponent(recordingFilename({ ...base, name }))).not.toThrow();
+    }
+  });
+
   it('drops invisible formatting characters: a right-to-left override cannot disguise the extension', () => {
     expect(recordingFilename({ ...base, name: 'Thomas\u202Ecod.exe\u200B' })).toBe(
       'Thomascod.exe call 2026-11-07 14-22.webm',

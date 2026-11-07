@@ -31,8 +31,10 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
      1920×1080 at 15 frames a second. Only a browser surface carrying that handle is recorded (`sharesThisTab`):
      another tab, a window or a whole screen is stopped at once and the call view is recorded instead ("Only this tab
      can be recorded, so the call view is recorded."), so nothing outside the call (other pages, other apps,
-     notifications) can reach a recording. The tab's frames are drawn onto a canvas of its size (scaled to fit
-     1920×1080), its track hinted `detail` (text stays sharp), **only while the call screen is open**: the recording
+     notifications) can reach a recording. The tab's frames are drawn onto a canvas of its shape (this page in device
+     pixels, scaled to fit the capture and 1920×1080: Chromium's track settings report the largest size asked for, not
+     its frames', so a 16:10 laptop would otherwise get black bars), its track hinted `detail` (text stays sharp),
+     **only while the call screen is open**: the recording
      is then the call as the founder sees it, the face or the voice visual, the captions, the conversation lines of
      both speakers and the call's controls. While the call is minimized the tab shows other pages (a private chat
      among them, which is never kept), so the composed call view below is drawn instead, from the moment the screen
@@ -45,7 +47,9 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
      own video element while a face shows (a vendor face's WebRTC track, or the stand-in's stream), labelled "AI
      avatar" as on the call tile, otherwise the call's presence (a sphere that follows the vEIR's measured voice, "AI
      voice"); the vEIR's name and the recording's time; and the conversation's latest lines from both speakers under
-     their names (`CaptionRecorder.recent`: finished lines and those still being heard). Where this tab was asked for
+     their names (`CaptionRecorder.recent`: finished lines and those still being heard). It is drawn in the app's
+     theme (light or dark, read every frame), as the shared tab shows it, so a take that minimizes the call does not
+     flip between the two. Where this tab was asked for
      and not recorded the call screen says why, with OK: declined ("The screen wasn't shared, so the call view is
      recorded."), the browser failing ("The browser couldn't share this tab, so the call view is recorded.") or
      something else shared ("Only this tab can be recorded, …").
@@ -56,9 +60,12 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
      off-mic would otherwise be recorded). `CallEngine.recordingSources()` hands these over without changing the call's
      graph; the recording re-taps them when the microphone reconnects or the face comes back.
      The shared screen's own sound is never taken, so nothing is heard twice.
-   - **Container:** the first `isTypeSupported` of webm (VP8/VP9 + Opus: Chromium, Firefox) or mp4 (H.264 + AAC:
-     Safari), sound only (webm/Opus or mp4/AAC) where no picture can be captured (a screen shared for it is stopped at
-     once); 96 kbit/s audio and 1.5 Mbit/s video for a shared tab (mostly still text: a 30-minute call is about 340 MB)
+   - **Container:** the first `isTypeSupported` of mp4 with H.264 + AAC (Chrome and Edge on a Mac or Windows, Safari)
+     or webm (VP8/VP9 + Opus: Firefox, Chromium on Linux, which has no AAC encoder), sound only (mp4/AAC or webm/Opus)
+     where no picture can be captured (a screen shared for it is stopped at once). mp4 comes first because
+     `MediaRecorder` writes it with its length, and webm without one: a downloaded webm shows no length and seeks
+     poorly in most players, and QuickTime, the Mac's own, opens none. A bare `video/mp4` is asked for only last
+     (Chromium may fill it with Opus, which QuickTime does not play either). 96 kbit/s audio and 1.5 Mbit/s video for a shared tab (mostly still text: a 30-minute call is about 340 MB)
      or 1 Mbit/s for the composed view (about 235 MB, held in memory on the phones that record it), both under the
      512 MB cap (about 44 and 65 minutes).
    - **Captions:** a timed transcript recorded from the call's own captions as they change (each validated unit of
@@ -107,9 +114,13 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
    2026-11-07 14-22.webm", "… transcript.vtt"; "Call …" in UTC without them; characters a file system refuses and
    invisible formatting characters such as a right-to-left override removed). It is signed only once the file is
    confirmed stored (HeadObject), and audited only once signed, so a download that could not be issued is never
-   recorded as one (a replay likewise). The browser follows it as a link, a navigation the bucket answers with the
-   file, so it needs no CORS and the CSP no new origin; the page's leave-the-page prompt (§2's `beforeunload`) lets
-   that one navigation through (`followDownload`), so downloading while a take is held asks nothing. When a recording
+   recorded as one (a replay likewise). The browser loads it in a hidden frame (`saveDownload`: sandboxed to
+   `allow-downloads`, so an error page from the store runs nothing, and removed after a minute), which saves the
+   attachment; the page itself never navigates. Following it as a link would: the bucket's origin ignores a link's
+   `download` attribute, and in Firefox and Safari starting that navigation breaks what the page has open even though
+   the answer turns out to be an attachment (a take's upload, the call's streamed replies, its Transcribe socket), and
+   it would meet the leave-the-page prompt (§2's `beforeunload`). A frame needs no CORS, and one origin in `frame-src`
+   (§8). When a recording
    began (`startedAt`) is its registration, made as its save begins, less its length: what the lists show and a
    download is named after. `GET /recordings` lists one conversation's, one venture's or all of the caller's ready
    recordings, latest first, a page at a time (`limit`, at most 100; `nextCursor` → `cursor`, a keyset on the
@@ -141,9 +152,10 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
    call's kept recordings (`recordings`), and its export carries the audit trail. Logs never carry a URL, a key or a
    caption.
 8. **CSP and IAM stay exact.** The recordings bucket's regional endpoint is the one origin added, to `connect-src`
-   (uploads, the captions file) and `media-src` (the player): `media-src 'self' blob: https://<bucket>.s3.<region>.amazonaws.com`.
-   A download is a navigation, which no directive of the policy governs, and its response is an attachment, so the
-   page stays where it is.
+   (uploads, the captions file), `media-src` (the player) and `frame-src` (a download's hidden frame):
+   `media-src 'self' blob: https://<bucket>.s3.<region>.amazonaws.com`,
+   `frame-src 'self' https://<bucket>.s3.<region>.amazonaws.com` (`'self'` is what frames had from `default-src`).
+   S3 sends no `X-Frame-Options`; `frame-ancestors 'none'` stays on the app's own pages.
    `scripts/smoke.mjs` checks it after each deploy (exactly two bucket origins in `connect-src`, the recordings one in
    both). The API role may Get/Put/Delete recording keys only (`tenants/*/recordings/*`; its GetObject allow-list now
    names venture documents and recordings); the worker may only delete them (an explicit deny on Get and Put). Neither
@@ -152,7 +164,8 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
    `RECORDINGS_BUCKET` to the api and worker functions.
 9. **Local development and the end-to-end suite** use `LocalRecordingStore` behind the same port: HMAC-signed tokens
    standing in for presigned URLs (`PUT|GET /api/v1/_local/recordings/:token`, development only, byte ranges
-   answered, a download's token naming the file it is sent as, `Content-Disposition: attachment`), at the API's own
+   answered, a download's token naming the file it is sent as, `Content-Disposition: attachment`, and that attachment
+   sent without the API's frame denial, as S3 sends it: Safari downloads nothing from a frame under `X-Frame-Options`), at the API's own
    origin in the suite, so the recording is uploaded, replayed and downloaded cross-origin under the production CSP as
    it is from S3. A headless browser has no screen to share: the suite's founder shares a stand-in (`getDisplayMedia`
    answering with a canvas "tab" that carries the page's capture handle, or a window, or refusing as a founder who
@@ -184,9 +197,11 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
   this tab is recorded; elsewhere the call view is.
 - **Stopping the recording when the call is minimized:** the call carries on minimized (Watch after a save relies on
   it), and so does its recording, as the call view.
-- **A hidden iframe for downloads** (no navigation of the page): needs a `frame-src` origin in the CSP, and is refused
-  by `X-Frame-Options`/`frame-ancestors` on the local store; letting the one download navigation past the
-  leave-the-page prompt is enough.
+- **Following a download as a link** (a top-level navigation answered as an attachment, which needs no CSP change; the
+  first version of this amendment): in Firefox and WebKit starting the navigation breaks the page's open requests (an
+  upload in flight fails or hangs, a streamed fetch fails, a WebSocket stops receiving), so a download during a call or
+  a save could lose the save or the call's live connections, and it had to be let past the leave-the-page prompt.
+  Checked in Chromium, Firefox and WebKit: a hidden frame downloads in all three with everything kept.
 - **The screen's own sound (`audio: true`):** tab audio would carry the vEIR's voice a second time beside the mix, and
   never the microphone; the mix has both, gated as the call hears them.
 - **Server-side recording** (the API or a media server joining the call): the founder's audio never passes through
@@ -203,12 +218,15 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
   screen it is the composed call view with the conversation, and a voice call switching to video mid-recording stays
   one recording either way.
 - Good: a recording or its transcript downloads under a readable name, from a short-lived link signed when asked for
-  and audited, with no change to the CSP or the bucket's CORS.
+  and audited, without the page navigating (a call or a save goes on), with one exact origin in `frame-src` and no
+  change to the bucket's CORS. Where the browser can, the file is an mp4 that states its length and opens in the
+  computer's own player.
 - Good: privacy holds in the database itself: owner-only rows, no private calls, gone with the conversation.
 - Bad: the browser holds the recording in memory until it is saved; closing the tab before the save finished loses it
   (nothing is kept anywhere else). While it records, saves or waits for Try again, leaving the page asks first
   (`beforeunload`). A save that fails keeps it in the page with Try again.
-- Bad: a WebM from `MediaRecorder` has no duration in its header; the player seeks to the end once to measure it.
+- Bad: a WebM from `MediaRecorder` (Firefox, Chromium on Linux, and recordings made before mp4 came first) has no
+  duration in its header; the player seeks to the end once to measure it, and a downloaded one shows no length.
 - Bad: the browser asks which screen to share every time Record is pressed. Drawing the tab onto a canvas (up to
   1920×1080 at 15 fps) or composing the call view (1280×720 at 24 fps) costs a little CPU, and a hidden tab's timers
   may be slowed by the browser, freezing the picture (never the sound) until it is shown again. Firefox and desktop

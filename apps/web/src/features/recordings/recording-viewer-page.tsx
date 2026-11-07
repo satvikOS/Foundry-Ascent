@@ -1,7 +1,7 @@
 import type { RecordingView } from '@foundry/contracts';
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, MessageSquareText, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/error-state';
@@ -27,6 +27,17 @@ export function RecordingViewerPage() {
   const navigate = useNavigate();
   const [deleting, setDeleting] = useState<RecordingView | null>(null);
   const recording = replay.data?.recording ?? null;
+  // A recording is shown under its own venture: a link from another venture's path (edited by hand) moves there.
+  const ownVenture = recording?.ventureId ?? ventureId;
+  const elsewhere = ownVenture !== ventureId;
+  useEffect(() => {
+    if (!elsewhere) return;
+    void navigate({
+      to: '/$tenant/app/v/$ventureId/recordings/$recordingId',
+      params: { tenant, ventureId: ownVenture, recordingId },
+      replace: true,
+    });
+  }, [elsewhere, navigate, ownVenture, recordingId, tenant]);
 
   return (
     <PageContainer size="wide">
@@ -40,7 +51,7 @@ export function RecordingViewerPage() {
           Recordings
         </Link>
       </nav>
-      {replay.isPending ? (
+      {replay.isPending || elsewhere ? (
         <div role="status" aria-label="Loading the recording" className="grid gap-6">
           <Skeleton className="h-8 w-72 max-w-full" />
           <Skeleton className="aspect-video w-full rounded-2xl lg:w-[calc(100%-23rem)]" />
@@ -62,7 +73,7 @@ export function RecordingViewerPage() {
                 <Button asChild variant="secondary" size="sm">
                   <Link
                     to="/$tenant/app/v/$ventureId/c/$sessionId"
-                    params={{ tenant, ventureId, sessionId: recording.sessionId }}
+                    params={{ tenant, ventureId: recording.ventureId, sessionId: recording.sessionId }}
                   >
                     <MessageSquareText aria-hidden />
                     Open conversation

@@ -844,17 +844,20 @@ it (list, play and download only while they still have the venture).
   Where the browser can share this tab and tell a capture of it (Chromium and Edge on a computer: the page sets a
   capture handle), the Record press asks to share it (`getDisplayMedia`, the tab preferred, no tab sound, at most
   1080p at 15 frames a second) and only a capture of this tab is accepted (`sharesThisTab`; another tab, a window or a
-  whole screen is stopped and the call view recorded, said above the controls). The tab is drawn onto the canvas only
+  whole screen is stopped and the call view recorded, said above the controls). The canvas has the tab's shape (this
+  page in device pixels, within 1080p: no black bars on a 16:10 laptop). The tab is drawn onto the canvas only
   while the call screen is open (`RecordingSession.showing`), so the recording is the call as the founder sees it
   (face or voice visual, captions, the conversation, the controls) and never another page; the browser's own Stop
   sharing stops and saves it. While the call is minimized, and wherever this tab cannot be shared (iOS and iPadOS
   Safari, most phones, Firefox and desktop Safari) or was not, `CallRecorder` composes the call view instead (the
   face's video while it shows, else the presence; the vEIR's name and the time; the latest lines of both speakers from
-  `CaptionRecorder.recent`); a tab asked for and not recorded is said above the controls (`recording-note`, with OK).
+  `CaptionRecorder.recent`), in the app's light or dark theme as the tab shows it; a tab asked for and not recorded is
+  said above the controls (`recording-note`, with OK).
   The sound is a WebAudio mix of the vEIR's voice (the player's output and a vendor face's audio track) and the
   microphone (silent whenever the call does not hear it: muted, on hold, push to talk released), never the shared
-  screen's own, with `MediaRecorder` (webm, or mp4 on Safari; 1.5 Mbit/s for a shared tab, 1 Mbit/s for the call
-  view); `CaptionRecorder` turns the call's captions into WebVTT cues. `CallEngine.recordingSources()` exposes the
+  screen's own, with `MediaRecorder` (mp4 with H.264 and AAC wherever it is recorded, Chrome and Edge on a Mac or
+  Windows and Safari, since it states its length and opens in QuickTime; else webm, which carries none: Firefox,
+  Chromium on Linux; 1.5 Mbit/s for a shared tab, 1 Mbit/s for the call view); `CaptionRecorder` turns the call's captions into WebVTT cues. `CallEngine.recordingSources()` exposes the
   call's AudioContext, the player's output and the microphone stream without changing them.
 - **Saving.** `POST /calls/:id/recordings` → presigned PUTs (the captions uploaded first, then the recording) →
   `POST /recordings/:id/complete` (sizes checked) → listed. While the call screen is open the save shows in it, above
@@ -874,8 +877,10 @@ it (list, play and download only while they still have the venture).
 - **Download.** `GET /recordings/:id/download?file=recording|transcript` → one presigned GET (5 minutes) whose response
   is `Content-Disposition: attachment` under a readable name in the founder's time zone, after when it began ("Thomas
   call 2026-11-07 14-22.webm", "… transcript.vtt"), signed once the file is confirmed stored and audited
-  `recording.downloaded` once signed; the browser follows it as a link (`followDownload`, which the leave-the-page
-  prompt lets through), so the bucket needs no CORS for it and the CSP no new origin.
+  `recording.downloaded` once signed; a hidden frame sandboxed to downloads loads it (`saveDownload`), so the page
+  never navigates: a link would start a navigation that, in Firefox and Safari, breaks a take's upload and the call's
+  streamed replies and sockets. The bucket needs no CORS for it; the CSP names it in `frame-src`. A viewer reached at
+  another venture's path moves to the recording's own.
 - **Storage.** The private recordings bucket (Data stack): exact-origin CORS, SSE-S3, a year's retention with a
   lifecycle backstop; `call_recordings` (migration 0031) holds keys, sizes, duration, cue count and lifecycle, owner-only
   under RLS. Deleting the conversation deletes its recordings (trigger), the API and the daily maintenance remove the

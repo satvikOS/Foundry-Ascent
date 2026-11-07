@@ -132,12 +132,13 @@ export function recordingFilename(args: {
   const name = (args.name ?? '')
     // eslint-disable-next-line no-control-regex -- control characters are exactly what is removed
     .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, ' ')
-    .replace(/\p{Cf}+/gu, '')
+    // Formatting characters, and a lone half of a surrogate pair (the header could not encode it).
+    .replace(/[\p{Cf}\p{Cs}]+/gu, '')
     .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 60)
     .trim();
-  const stem = name === '' ? `Call ${when}` : `${name} call ${when}`;
+  // Cut by characters, never inside one (an emoji is two UTF-16 units).
+  const short = Array.from(name).slice(0, 60).join('').trim();
+  const stem = short === '' ? `Call ${when}` : `${short} call ${when}`;
   return args.file === 'transcript' ? `${stem} transcript.vtt` : `${stem}.${EXTENSIONS[args.mimeType]}`;
 }
 

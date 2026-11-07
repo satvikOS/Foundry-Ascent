@@ -79,7 +79,8 @@ export interface ContentSecurityPolicyOrigins {
   /**
    * The call recordings bucket's endpoint (`documentsUploadOrigin` of that bucket, ADR-0023): the call screen uploads
    * a recording and its captions there and the player streams them back, both with presigned URLs. Named in
-   * `connect-src` (the uploads, the captions) and `media-src` (the player), and nowhere else.
+   * `connect-src` (the uploads, the captions), `media-src` (the player) and `frame-src` (a download, saved from a
+   * hidden frame), and nowhere else.
    */
   readonly recordingsOrigin: string;
   /** Amazon Transcribe streaming (`speechToTextOrigin`). */
@@ -111,6 +112,10 @@ export interface ContentSecurityPolicyOrigins {
  * origins it is configured with (`media.face.csp`) and nothing while it does not. Its video arrives over WebRTC
  * as a `MediaStream` (`srcObject`), which needs no `media-src` host; the speak channel never reaches the browser.
  *
+ * Saving a recording (ADR-0023 §4) loads its presigned GET, an attachment, in a hidden sandboxed frame: hence
+ * `frame-src` names the recordings bucket beside `'self'` (what frames had from `default-src`). Following it as a link
+ * instead would start a navigation of the page, which in Firefox and Safari breaks a call's open requests and sockets.
+ *
  * `style-src` keeps `'unsafe-inline'`: Radix's scroll lock injects a `<style>` element at runtime. The SPA
  * already ships that rule and sonner's styles in its own stylesheet, so removing `'unsafe-inline'` is a
  * one-line change once a browser pass over every page shows no violation.
@@ -138,6 +143,7 @@ export function contentSecurityPolicy(origins: ContentSecurityPolicyOrigins): st
       origins.speechToTextOrigin,
       ...faceConnect,
     ].join(' '),
+    `frame-src 'self' ${origins.recordingsOrigin}`,
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",

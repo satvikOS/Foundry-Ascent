@@ -706,11 +706,12 @@ describe('FoundryAscent-App', () => {
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
           `media-src 'self' blob: ${RECORDINGS_ORIGIN}; font-src 'self' data:; ` +
           `connect-src 'self' https://docs-bucket.s3.us-east-1.amazonaws.com ${RECORDINGS_ORIGIN} ${TRANSCRIBE_ORIGIN}; ` +
+          `frame-src 'self' ${RECORDINGS_ORIGIN}; ` +
           "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
       );
     });
 
-    it('lets calls stream to Transcribe, play speech from blob URLs and replay recordings, and nothing more', () => {
+    it('lets calls stream to Transcribe, play speech from blob URLs, replay and save recordings, and nothing more', () => {
       expect(speechToTextOrigin('us-east-1')).toBe(TRANSCRIBE_ORIGIN);
       const directives = testPolicy().split('; ');
       // The only remote media: the recordings bucket, exactly (a founder replaying their own call, ADR-0023).
@@ -726,9 +727,13 @@ describe('FoundryAscent-App', () => {
         RECORDINGS_ORIGIN,
         TRANSCRIBE_ORIGIN,
       ]);
+      // The only remote frame: the recordings bucket, exactly (a download saved from a hidden frame, ADR-0023).
+      expect(directives.filter((d) => d.startsWith('frame-src'))).toEqual([
+        `frame-src 'self' ${RECORDINGS_ORIGIN}`,
+      ]);
       // The microphone's AudioWorklet is a same-origin static file, which script-src 'self' covers: no
-      // worker-src, no blob: or remote script, and nothing framed.
-      expect(directives.some((d) => /^(frame-src|child-src|worker-src) /.test(d))).toBe(false);
+      // worker-src, no blob: or remote script.
+      expect(directives.some((d) => /^(child-src|worker-src) /.test(d))).toBe(false);
       expect(directives.find((d) => d.startsWith('script-src'))).toBe("script-src 'self'");
     });
 
@@ -767,7 +772,7 @@ describe('FoundryAscent-App', () => {
       ).toThrow(/exact origins/);
     });
 
-    it('pins connect-src and media-src to the exact bucket endpoints the presigned URLs use (no S3 wildcard)', () => {
+    it('pins connect-src, media-src and frame-src to the exact bucket endpoints the presigned URLs use (no S3 wildcard)', () => {
       const [[, policy] = ['', {}]] = resourcesOfType(template, 'AWS::CloudFront::ResponseHeadersPolicy');
       const config = policy.ResponseHeadersPolicyConfig as Props;
       const csp = ((config.SecurityHeadersConfig as Props).ContentSecurityPolicy as Props)
@@ -789,6 +794,8 @@ describe('FoundryAscent-App', () => {
         expect.any(String),
         ref('Recordings'),
         expect.any(String),
+        ref('Recordings'),
+        expect.any(String),
       ]);
       const rendered = parts
         .map((part) =>
@@ -805,6 +812,7 @@ describe('FoundryAscent-App', () => {
       expect(rendered).toContain(
         `connect-src 'self' https://<documents>.s3.us-east-1.amazonaws.com https://<recordings>.s3.us-east-1.amazonaws.com ${TRANSCRIBE_ORIGIN} wss://heygen-feapbkvq.livekit.cloud https://heygen-feapbkvq.livekit.cloud wss://webrtc-signaling.heygen.io;`,
       );
+      expect(rendered).toContain("frame-src 'self' https://<recordings>.s3.us-east-1.amazonaws.com;");
       expect(rendered.match(/webrtc-signaling/g)).toHaveLength(1);
       expect(rendered).not.toContain('*');
     });

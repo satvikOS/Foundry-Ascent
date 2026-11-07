@@ -12,12 +12,29 @@ import {
 } from './call-recorder';
 
 describe('pickFormat', () => {
-  it('takes webm where it is recorded (Chromium, Firefox), mp4 on Safari, and sound only without a canvas', () => {
-    const chromium = (type: string) => type.startsWith('video/webm') || type.startsWith('audio/webm');
-    expect(pickFormat(chromium, true)).toEqual({
+  it('takes H.264 and AAC in mp4 where it is recorded (it states its length), else webm, and sound only without a canvas', () => {
+    // Chrome and Edge on a computer, and Safari, record both: mp4 comes first.
+    const both = (type: string) => /^(video|audio)\/(webm|mp4)/.test(type);
+    expect(pickFormat(both, true)).toEqual({
+      recorderType: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+      mimeType: 'video/mp4',
+    });
+    expect(pickFormat(both, false)).toEqual({
+      recorderType: 'audio/mp4;codecs=mp4a.40.2',
+      mimeType: 'audio/mp4',
+    });
+    // Firefox, and Chromium on Linux (no AAC encoder: its bare mp4 would carry Opus): webm.
+    const webm = (type: string) =>
+      type.startsWith('video/webm') || type.startsWith('audio/webm') || type === 'video/mp4';
+    expect(pickFormat(webm, true)).toEqual({
       recorderType: 'video/webm;codecs=vp8,opus',
       mimeType: 'video/webm',
     });
+    expect(pickFormat(webm, false)).toEqual({
+      recorderType: 'audio/webm;codecs=opus',
+      mimeType: 'audio/webm',
+    });
+    // An older Safari that names no codecs.
     const safari = (type: string) => type === 'video/mp4' || type === 'audio/mp4';
     expect(pickFormat(safari, true)).toEqual({ recorderType: 'video/mp4', mimeType: 'video/mp4' });
     expect(pickFormat(safari, false)).toEqual({ recorderType: 'audio/mp4', mimeType: 'audio/mp4' });
@@ -143,6 +160,9 @@ describe('CallRecorder', () => {
       display?: MediaStream | null;
       onScreen?: () => boolean;
       now?: () => number;
+      /** This page in device pixels (a shared tab's frames have its shape). */
+      viewport?: { width: number; height: number };
+      theme?: () => 'light' | 'dark';
     } = {},
   ) {
     const gates: { gain: { value: number }; connect: () => void; disconnect: () => void }[] = [];
@@ -182,6 +202,8 @@ describe('CallRecorder', () => {
     const canvasTrack = fakeTrack();
     const canvases: { width: number; height: number }[] = [];
     const drawn: string[] = [];
+    /** Every colour the composed view was painted with. */
+    const painted = new Set<string>();
     /** What each drawImage drew (the shared tab's element, or a face). */
     const images: unknown[] = [];
     /** The shared tab as it plays (ready to be drawn). */
@@ -213,7 +235,10 @@ describe('CallRecorder', () => {
                 : key === 'createLinearGradient' || key === 'createRadialGradient'
                   ? () => gradient
                   : vi.fn(),
-            set: () => true,
+            set: (_target, key, value) => {
+              if (key === 'fillStyle' && typeof value === 'string') painted.add(value);
+              return true;
+            },
           },
         );
         return {
@@ -225,6 +250,8 @@ describe('CallRecorder', () => {
       },
       createStream: (tracks) => ({ tracks }) as unknown as MediaStream,
       playStream: () => tab as unknown as HTMLVideoElement,
+      viewport: () => options.viewport ?? { width: 1280, height: 720 },
+      theme: options.theme ?? (() => 'dark'),
       now: options.now ?? (() => 0),
       setInterval: (callback) => frames.push(callback),
       clearInterval: () => undefined,
@@ -249,7 +276,20 @@ describe('CallRecorder', () => {
     const frame = () => {
       for (const draw of frames) draw();
     };
-    return { recorder, audio, gates, recorded, canvases, canvasTrack, mixed, drawn, images, tab, frame };
+    return {
+      recorder,
+      audio,
+      gates,
+      recorded,
+      canvases,
+      canvasTrack,
+      mixed,
+      drawn,
+      painted,
+      images,
+      tab,
+      frame,
+    };
   }
 
   /** A shared tab: one live video track of its size, no sound. */
@@ -318,15 +358,31 @@ describe('CallRecorder', () => {
     expect(images).toEqual([tab]);
   });
 
-  it('draws a large tab scaled down to 1080p, and a tab of unknown size at 1080p', () => {
-    const large = fakeRecorder(true, {
+  it('draws the tab at its own shape, scaled down to 1080p: a 16:10 laptop gets no black bars', () => {
+    // A 1440x900 page on a Retina screen: Chromium reports the largest size asked for, its frames are 1728x1080.
+    const laptop = fakeRecorder(true, {
       video: true,
       canvas: true,
-      display: sharedScreen({ width: 3840, height: 2400 }).stream,
+      display: sharedScreen({ width: 1920, height: 1080 }).stream,
+      viewport: { width: 2880, height: 1800 },
     });
-    large.recorder.start();
-    expect(large.canvases).toEqual([{ width: 1728, height: 1080 }]);
-    const unknown = fakeRecorder(true, { video: true, canvas: true, display: sharedScreen({}).stream });
+    laptop.recorder.start();
+    expect(laptop.canvases).toEqual([{ width: 1728, height: 1080 }]);
+    // A smaller page is never scaled up, and a capture of unknown size is bounded by 1080p.
+    const small = fakeRecorder(true, {
+      video: true,
+      canvas: true,
+      display: sharedScreen({ width: 1920, height: 1080 }).stream,
+      viewport: { width: 1024, height: 700 },
+    });
+    small.recorder.start();
+    expect(small.canvases).toEqual([{ width: 1024, height: 700 }]);
+    const unknown = fakeRecorder(true, {
+      video: true,
+      canvas: true,
+      display: sharedScreen({}).stream,
+      viewport: { width: 3840, height: 2160 },
+    });
     unknown.recorder.start();
     expect(unknown.canvases).toEqual([{ width: 1920, height: 1080 }]);
   });
@@ -366,6 +422,26 @@ describe('CallRecorder', () => {
         'We ran the pilot',
       ]),
     );
+  });
+
+  it('composes the call view in the app’s theme, as the shared tab shows it', () => {
+    let theme: 'light' | 'dark' = 'light';
+    const { recorder, painted, frame } = fakeRecorder(true, {
+      video: true,
+      canvas: true,
+      theme: () => theme,
+    });
+    recorder.start();
+    expect(painted).toContain('#fafaf9');
+    expect(painted).toContain('#111110');
+    expect(painted).not.toContain('#f4f5f7');
+    // The theme changed while it records: the next frame follows.
+    painted.clear();
+    theme = 'dark';
+    frame();
+    expect(painted).toContain('#0c0d10');
+    expect(painted).toContain('#f4f5f7');
+    expect(painted).not.toContain('#111110');
   });
 
   it('records sound only where no picture can be recorded, and does not keep a screen shared for it', () => {

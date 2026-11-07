@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-import { expect, type Dialog, type Locator, type Page } from '@playwright/test';
+import { expect, type Dialog, type Locator, type Page, type Request } from '@playwright/test';
 
 import {
   expectNoHorizontalScroll,
@@ -22,7 +22,7 @@ import {
  * goes on typed and its replies show as captions. The recording is the shared screen (or, when it is not shared, the
  * composed call view) with the call's sound, uploaded, watched in its viewer with its transcript in step, downloaded
  * (an attachment, under a readable name) and deleted. A headless browser has no screen to share, so the screen the
- * founder shares is a stand-in: getDisplayMedia answers with a canvas "tab" of its own size that says it is this tab
+ * founder shares is a stand-in: getDisplayMedia answers with a canvas "tab" of the page's size that says it is this tab
  * (or a window), or refuses as a founder who declines would. Every media element is muted, so the test browser never
  * makes a sound.
  */
@@ -32,7 +32,8 @@ const FILES_ORIGIN = new URL(process.env.E2E_API_URL ?? 'http://localhost:8787')
 
 /**
  * The SPA's production Content-Security-Policy (infra/cdk/src/constructs/edge.ts) with the recordings bucket's origin
- * (the API here) in `connect-src` (uploads, captions) and `media-src` (the player), and nothing else from outside.
+ * (the API here) in `connect-src` (uploads, captions), `media-src` (the player) and `frame-src` (a download, saved from
+ * a hidden frame), and nothing else from outside.
  */
 const PRODUCTION_CSP = [
   "default-src 'self'",
@@ -42,6 +43,7 @@ const PRODUCTION_CSP = [
   `media-src 'self' blob: ${FILES_ORIGIN}`,
   "font-src 'self' data:",
   `connect-src 'self' ${FILES_ORIGIN}`,
+  `frame-src 'self' ${FILES_ORIGIN}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -75,18 +77,19 @@ async function muteMedia(page: Page): Promise<void> {
   });
 }
 
-/** The shared "tab" the stand-in screen shows (its size is what a recording of it plays at). */
-const SHARED = { width: 640, height: 360 };
+/** What Chromium's shared tab reports as its size: the largest asked for (SCREEN_OPTIONS), not its frames'. */
+const REPORTED = { width: 1920, height: 1080 };
 
 /**
  * The screen the founder shares: getDisplayMedia answers with a canvas of its own, this tab as Chromium shares it
- * (`share`: a browser surface carrying the page's capture handle) or a window (`window`), or refuses as a founder who
- * declines the browser's prompt (`decline`). What it was asked for, the tracks it gave and how often the recording drew
+ * (`share`: a browser surface carrying the page's capture handle, its frames the page's size and its settings the
+ * largest size asked for) or a window (`window`), or refuses as a founder who declines the browser's prompt
+ * (`decline`). What it was asked for, the tracks it gave and how often the recording drew
  * the shared tab (`drawn`) are kept to inspect.
  */
 async function shareScreen(page: Page, answer: 'share' | 'window' | 'decline'): Promise<void> {
   await page.addInitScript(
-    ({ answer: mode, size }) => {
+    ({ answer: mode, reported }) => {
       const shared = {
         asked: [] as unknown[],
         tracks: [] as MediaStreamTrack[],
@@ -121,6 +124,7 @@ async function shareScreen(page: Page, answer: 'share' | 'window' | 'decline'): 
         shared.asked.push(JSON.parse(JSON.stringify(options ?? {})));
         if (mode === 'decline')
           return Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
+        const size = { width: window.innerWidth, height: window.innerHeight };
         const canvas = document.createElement('canvas');
         canvas.width = size.width;
         canvas.height = size.height;
@@ -141,7 +145,7 @@ async function shareScreen(page: Page, answer: 'share' | 'window' | 'decline'): 
           Object.assign(track, {
             getSettings: () => ({
               ...settings,
-              ...size,
+              ...reported,
               displaySurface: mode === 'window' ? 'window' : 'browser',
             }),
             getCaptureHandle: () => (mode === 'share' && shared.handle ? { handle: shared.handle } : null),
@@ -152,7 +156,7 @@ async function shareScreen(page: Page, answer: 'share' | 'window' | 'decline'): 
         return Promise.resolve(stream);
       };
     },
-    { answer, size: SHARED },
+    { answer, reported: REPORTED },
   );
 }
 
@@ -194,6 +198,56 @@ async function enforceProductionCsp(page: Page): Promise<() => Promise<string[]>
     },
   );
   return () => page.evaluate(() => (window as unknown as { __cspViolations: string[] }).__cspViolations);
+}
+
+/**
+ * The file a recording is saved as in this browser: H.264 and AAC in mp4 where MediaRecorder writes it (Chromium on a
+ * Mac or Windows), else webm (Chromium on Linux has no AAC encoder).
+ */
+async function recordedFormat(page: Page): Promise<{ mimeType: string; extension: string }> {
+  const mp4 = await page.evaluate(() =>
+    MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E,mp4a.40.2'),
+  );
+  return mp4 ? { mimeType: 'video/mp4', extension: 'mp4' } : { mimeType: 'video/webm', extension: 'webm' };
+}
+
+/** The length a fresh media element reads from the file at `url` as soon as it knows it (no seeking: the file's own). */
+function statedDuration(page: Page, url: string): Promise<number> {
+  return page.evaluate(
+    (src) =>
+      new Promise<number>((resolve) => {
+        const video = document.createElement('video');
+        video.muted = true;
+        // As the player reads it (CORS, the store's own origin).
+        video.crossOrigin = 'anonymous';
+        video.preload = 'metadata';
+        video.onloadedmetadata = () => {
+          resolve(video.duration);
+          video.removeAttribute('src');
+        };
+        video.onerror = () => {
+          resolve(Number.NaN);
+        };
+        video.src = src;
+      }),
+    url,
+  );
+}
+
+/**
+ * Collects the navigations of the page itself (not of a frame in it): a download must start none, since starting one
+ * breaks the page's open requests and sockets in Firefox and Safari. Returns them, and stops collecting.
+ */
+function pageNavigations(page: Page): () => string[] {
+  const seen: string[] = [];
+  const onRequest = (request: Request) => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) seen.push(request.url());
+  };
+  page.on('request', onRequest);
+  return () => {
+    page.off('request', onRequest);
+    return seen;
+  };
 }
 
 async function voiceNoticeSeen(page: Page): Promise<void> {
@@ -362,7 +416,8 @@ test.describe('call recordings', () => {
     await expect(transcript).toContainText('Thomas:');
     const video = player.locator('video[data-slot="recording-video"]');
     await expect(video).toHaveAttribute('src', new RegExp(`^${FILES_ORIGIN}/api/v1/_local/recordings/`));
-    // The file plays: its length is known (MediaRecorder writes none), and it is the shared screen, at its size.
+    // The file plays: its length is known, and it is the shared screen at the page's own shape and size (not the size
+    // the capture reports, which would add black bars down the sides of a page that is not 16:9).
     await expect
       .poll(() => video.evaluate((v: HTMLVideoElement) => (Number.isFinite(v.duration) ? v.duration : 0)), {
         timeout: 20_000,
@@ -370,7 +425,7 @@ test.describe('call recordings', () => {
       .toBeGreaterThan(1);
     expect(
       await video.evaluate((v: HTMLVideoElement) => `${String(v.videoWidth)}x${String(v.videoHeight)}`),
-    ).toBe(`${String(SHARED.width)}x${String(SHARED.height)}`);
+    ).toBe(await page.evaluate(() => `${String(window.innerWidth)}x${String(window.innerHeight)}`));
     expect(await video.evaluate((v: HTMLVideoElement) => v.muted)).toBe(true);
     // A transcript line jumps the recording to it; the line is marked as the one heard. The recorded tab already shows
     // the call's lines, so the caption box over the picture is off until turned on.
@@ -390,12 +445,17 @@ test.describe('call recordings', () => {
     });
     await expectNoSeriousA11yViolations(page, 'recording viewer');
 
-    // Download: the recording, then its transcript, each an attachment under a readable name.
+    // Download: the recording, then its transcript, each an attachment under a readable name, saved from a hidden
+    // frame (allowed by the production CSP) while the page itself goes nowhere.
+    const format = await recordedFormat(page);
+    const navigations = pageNavigations(page);
     const download = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Download' }).click();
     await page.getByRole('menuitem', { name: /^Recording/ }).click();
     const recordingFile = await download;
-    expect(recordingFile.suggestedFilename()).toMatch(/^Thomas call \d{4}-\d\d-\d\d \d\d-\d\d\.webm$/);
+    expect(recordingFile.suggestedFilename()).toMatch(
+      new RegExp(`^Thomas call \\d{4}-\\d\\d-\\d\\d \\d\\d-\\d\\d\\.${format.extension}$`),
+    );
     const transcriptDownload = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Download' }).click();
     await page.getByRole('menuitem', { name: /^Transcript/ }).click();
@@ -404,7 +464,8 @@ test.describe('call recordings', () => {
     const vtt = await readFile(await transcriptFile.path(), 'utf8');
     expect(vtt.startsWith('WEBVTT')).toBe(true);
     expect(vtt).toContain(line);
-    // What the browser followed: the recordings store's own answer, an attachment (never through the app's API).
+    expect(navigations()).toEqual([]);
+    // What the frame loaded: the recordings store's own answer, an attachment (never through the app's API).
     const signed = (await (
       await page.request.get(`/api/v1/recordings/${recordingId}/download?name=Thomas&timeZone=UTC`)
     ).json()) as { url: string; filename: string };
@@ -414,7 +475,10 @@ test.describe('call recordings', () => {
     expect(file.headers()['content-disposition']).toBe(
       `attachment; filename="${signed.filename}"; filename*=UTF-8''${encodeURIComponent(signed.filename)}`,
     );
-    expect(file.headers()['content-type']).toBe('video/webm');
+    expect(file.headers()['content-type']).toBe(format.mimeType);
+    // An mp4 states its own length: a fresh player knows it at once, with no seek to the end (webm, which
+    // MediaRecorder writes without one, is recorded only where mp4 cannot be).
+    if (format.mimeType === 'video/mp4') expect(await statedDuration(page, signed.url)).toBeGreaterThan(1);
 
     // On a phone the viewer fits: the player, then the transcript, no sideways scroll.
     const wide = page.viewportSize();
@@ -567,6 +631,8 @@ test.describe('call recordings', () => {
     };
     page.on('dialog', onDialog);
     const here = page.url();
+    const { extension } = await recordedFormat(page);
+    const navigations = pageNavigations(page);
     const heldDownload = page.waitForEvent('download');
     await page
       .getByRole('list', { name: 'Recordings of this conversation' })
@@ -574,10 +640,12 @@ test.describe('call recordings', () => {
       .first()
       .click();
     await page.getByRole('menuitem', { name: /^Recording/ }).click();
-    expect((await heldDownload).suggestedFilename()).toMatch(/^Thomas call .+\.webm$/);
+    expect((await heldDownload).suggestedFilename()).toMatch(new RegExp(`^Thomas call .+\\.${extension}$`));
     expect(dialogs).toEqual([]);
     page.off('dialog', onDialog);
-    // The page stayed where it was, and so did the call and its recording.
+    // The page never navigated (the file came to a hidden frame), so the call's requests and the take were never at
+    // risk; it stayed where it was, and so did the call and its recording.
+    expect(navigations()).toEqual([]);
     expect(page.url()).toBe(here);
     await expect(bar.getByTestId('recording-indicator')).toContainText('REC');
     const savedFromBar = page.waitForResponse(
@@ -760,7 +828,10 @@ test.describe('call recordings', () => {
       const listed = (await (await page.request.get(`/api/v1/recordings?sessionId=${sessionId}`)).json()) as {
         items: { kind: string; mimeType: string }[];
       };
-      expect(listed.items[0]).toMatchObject({ kind: 'video', mimeType: 'video/webm' });
+      expect(listed.items[0]).toMatchObject({
+        kind: 'video',
+        mimeType: (await recordedFormat(page)).mimeType,
+      });
       // Replayed, it is one video track at the composed call view's size.
       await page
         .getByRole('list', { name: 'Recordings of this conversation' })

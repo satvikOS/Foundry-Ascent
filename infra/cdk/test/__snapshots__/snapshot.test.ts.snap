@@ -2030,7 +2030,15 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                         "StackName": "FoundryAscent-Data",
                       },
                     },
-                    ".s3.us-east-1.amazonaws.com wss://transcribestreaming.us-east-1.amazonaws.com:8443 wss://heygen-feapbkvq.livekit.cloud https://heygen-feapbkvq.livekit.cloud wss://webrtc-signaling.heygen.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
+                    ".s3.us-east-1.amazonaws.com wss://transcribestreaming.us-east-1.amazonaws.com:8443 wss://heygen-feapbkvq.livekit.cloud https://heygen-feapbkvq.livekit.cloud wss://webrtc-signaling.heygen.io; frame-src 'self' https://",
+                    {
+                      "Fn::GetStackOutput": {
+                        "OutputName": "PublishOutputRefRecordingsBucketAA52F4998A33EDA0",
+                        "Region": "us-east-1",
+                        "StackName": "FoundryAscent-Data",
+                      },
+                    },
+                    ".s3.us-east-1.amazonaws.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
                   ],
                 ],
               },

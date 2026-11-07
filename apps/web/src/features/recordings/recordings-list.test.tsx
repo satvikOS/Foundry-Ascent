@@ -64,9 +64,13 @@ async function renderOnRecordings(ui: ReactElement) {
 const urlOf = (input: RequestInfo | URL): string =>
   typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 
+/** What was saved: the files the hidden download frames load (the page itself never navigates). */
+const saved = (): string[] => [...document.querySelectorAll('iframe')].map((frame) => frame.src);
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  for (const frame of document.querySelectorAll('iframe')) frame.remove();
 });
 
 describe('RecordingsList', () => {
@@ -94,10 +98,6 @@ describe('RecordingsList', () => {
         }),
       ),
     );
-    const followed: string[] = [];
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-      followed.push(this.href);
-    });
     const user = userEvent.setup();
     await renderOnRecordings(<RecordingsList items={[RECORDING]} label="Recordings of this conversation" />);
     // Nothing is signed before someone asks.
@@ -106,7 +106,7 @@ describe('RecordingsList', () => {
     await user.click(screen.getByRole('button', { name: /^Download the recording from / }));
     await user.click(await screen.findByRole('menuitem', { name: /^Recording/ }));
     await waitFor(() => {
-      expect(followed).toEqual(['https://recordings.test/call.webm?sig=1']);
+      expect(saved()).toEqual(['https://recordings.test/call.webm?sig=1']);
     });
     const asked = new URL(urlOf(fetchMock.mock.calls[0]?.[0] ?? ''), 'http://localhost');
     expect(asked.pathname).toBe(`/api/v1/recordings/${RECORDING.id}/download`);
@@ -119,9 +119,9 @@ describe('RecordingsList', () => {
     await user.click(screen.getByRole('button', { name: /^Download the recording from / }));
     await user.click(await screen.findByRole('menuitem', { name: /^Transcript/ }));
     await waitFor(() => {
-      expect(followed).toHaveLength(2);
+      expect(saved()).toHaveLength(2);
     });
-    expect(followed[1]).toBe('https://recordings.test/captions.vtt?sig=1');
+    expect(saved()[1]).toBe('https://recordings.test/captions.vtt?sig=1');
     expect(urlOf(fetchMock.mock.calls[1]?.[0] ?? '')).toContain('file=transcript');
   });
 
@@ -134,7 +134,6 @@ describe('RecordingsList', () => {
         filename: 'Call.webm',
       }),
     );
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
     const user = userEvent.setup();
     await renderOnRecordings(
       <RecordingsList
@@ -144,7 +143,7 @@ describe('RecordingsList', () => {
     );
     await user.click(screen.getByRole('button', { name: /^Download the recording from / }));
     await waitFor(() => {
-      expect(click).toHaveBeenCalledOnce();
+      expect(saved()).toEqual(['https://recordings.test/call.webm?sig=1']);
     });
     expect(screen.queryByRole('menu')).toBeNull();
   });
