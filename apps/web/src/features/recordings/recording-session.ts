@@ -19,7 +19,9 @@ import {
  * file and its captions go to the recordings store, then it shows in the conversation and under Recordings). A save
  * that fails keeps the file in this page so it can be tried again; nothing is kept anywhere else. While it is kept, a
  * new recording cannot start: the founder saves it (Try again) or lets it go (Discard) first, so a take is never lost
- * without their say.
+ * without their say. For the same reason, while a take exists only in this page (recording, saving, or waiting for
+ * Try again) leaving the page asks first. A save refused because today's recordings are used up cannot succeed by
+ * trying again: it says so, and Record is not offered again until the limit has passed.
  */
 
 export type RecordingState =
@@ -64,6 +66,11 @@ export interface RecordingSessionDeps {
   ): Promise<RecordingView>;
   /** Wall clock (ms): the recording's elapsed time on screen. */
   now(): number;
+  /**
+   * Makes leaving the page ask first (a take exists only in this page) until the returned release is called. The
+   * browser's own `beforeunload` prompt: {@link guardPageUnload}.
+   */
+  guardUnload?(): () => void;
 }
 
 export interface RecordingSubject {
@@ -91,6 +98,10 @@ export class RecordingSession {
   } | null = null;
   /** A recording whose save failed, kept in this page for another try. */
   private unsaved: RecordedCall | null = null;
+  /** Until when (ms) the day's recordings are used up: none can be saved, so none starts. */
+  private limitedUntil = 0;
+  /** Releases the leave-the-page prompt, while a take exists only in this page. */
+  private releaseUnload: (() => void) | null = null;
   onSaved: ((recording: RecordingView) => void) | null = null;
 
   constructor(
@@ -114,15 +125,29 @@ export class RecordingSession {
 
   private set(state: RecordingState): void {
     this.state = state;
+    const holding = state.status === 'recording' || state.status === 'saving' || this.unsaved !== null;
+    if (holding && this.releaseUnload === null) {
+      this.releaseUnload = this.deps.guardUnload?.() ?? null;
+    } else if (!holding && this.releaseUnload !== null) {
+      this.releaseUnload();
+      this.releaseUnload = null;
+    }
     for (const listener of [...this.listeners]) listener();
   }
 
+  /** Today's recordings are used up (a save said so): Record waits until the limit has passed. */
+  limitReached(): boolean {
+    return this.deps.now() < this.limitedUntil;
+  }
+
   /**
-   * Whether Record may start now: nothing recording or saving, and no take whose save failed still waiting to be saved
-   * or discarded.
+   * Whether Record may start now: nothing recording or saving, no take whose save failed still waiting to be saved or
+   * discarded, and today's recordings not used up.
    */
   canStart(): boolean {
-    return this.active === null && this.state.status !== 'saving' && this.unsaved === null;
+    return (
+      this.active === null && this.state.status !== 'saving' && this.unsaved === null && !this.limitReached()
+    );
   }
 
   /**
@@ -252,10 +277,21 @@ export class RecordingSession {
       this.set({ status: 'saved', recording: saved });
       this.onSaved?.(saved);
     } catch (error) {
-      this.set({ status: 'failed', title: SAVE_FAILED, message: saveFailure(error), canRetry: true });
+      // Today's recordings are used up: trying again cannot save it, so it is not kept for that.
+      const limited = isApiError(error) && error.reason === DAILY_LIMIT_REASON;
+      if (limited) {
+        this.unsaved = null;
+        this.limitedUntil = this.deps.now() + (error.retryAfter ?? 3_600) * 1000;
+      }
+      this.set({ status: 'failed', title: SAVE_FAILED, message: saveFailure(error), canRetry: !limited });
     }
   }
 }
+
+const DAILY_LIMIT_REASON = 'daily_recordings';
+
+/** Why Record is not offered once today's recordings are used up (and why the save that found it failed). */
+export const DAILY_LIMIT_TEXT = 'You’ve saved as many recordings as you can today.';
 
 /** Why a save failed, in words that fit a recording (the generic conflict message would not). */
 export function saveFailure(error: unknown): string {
@@ -265,6 +301,7 @@ export function saveFailure(error: unknown): string {
         ? 'Private calls aren’t recorded.'
         : 'The recording didn’t finish uploading.';
     }
+    if (error.reason === DAILY_LIMIT_REASON) return DAILY_LIMIT_TEXT;
     if (error.code === 'network_error') return 'The connection dropped while it was saving.';
   }
   return errorMessage(error);
@@ -284,6 +321,20 @@ export function recordingSessionFor(engine: RecordedEngine, deps: RecordingSessi
     sessions.set(engine, session);
   }
   return session;
+}
+
+/**
+ * The browser asks before the page is closed, reloaded or left for another site (a take held only in this page would
+ * be lost). Moving between the app's own pages keeps it, and needs no prompt.
+ */
+export function guardPageUnload(): () => void {
+  const ask = (event: BeforeUnloadEvent) => {
+    event.preventDefault();
+  };
+  window.addEventListener('beforeunload', ask);
+  return () => {
+    window.removeEventListener('beforeunload', ask);
+  };
 }
 
 /** The recording that runs in the browser (MediaRecorder on the call's own media). */

@@ -71,6 +71,8 @@ function setup(
   };
   const inputs: CallRecorderInput[] = [];
   const call = fakeEngine();
+  /** Whether leaving the page asks first now. */
+  const unload = { guarded: 0, released: 0, held: () => unload.guarded > unload.released };
   const session = new RecordingSession(call.engine, {
     createRecorder: (input) => {
       inputs.push(input);
@@ -78,9 +80,15 @@ function setup(
     },
     save,
     now: () => now,
+    guardUnload: () => {
+      unload.guarded += 1;
+      return () => {
+        unload.released += 1;
+      };
+    },
   });
   session.attach({ veirName: 'Thomas', founderName: 'Maya', face: null });
-  return { session, recorder, call, save, inputs, tick: (ms: number) => (now += ms) };
+  return { session, recorder, call, save, inputs, unload, tick: (ms: number) => (now += ms) };
 }
 
 describe('RecordingSession', () => {
@@ -204,6 +212,83 @@ describe('RecordingSession', () => {
     await vi.waitFor(() => {
       expect(save).toHaveBeenCalledOnce();
     });
+  });
+});
+
+describe('RecordingSession: leaving the page', () => {
+  it('asks before leaving while a take exists only in this page: recording, saving, or waiting for Try again', async () => {
+    let finish: (view: RecordingView) => void = () => undefined;
+    const save = vi
+      .fn<(recorded: RecordedCall) => Promise<RecordingView>>()
+      .mockRejectedValueOnce(new ApiError({ status: 0, code: 'network_error', title: 'Upload failed' }))
+      .mockImplementationOnce(
+        () =>
+          new Promise<RecordingView>((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const { session, unload } = setup(save);
+    expect(unload.held()).toBe(false);
+    session.start();
+    expect(unload.held()).toBe(true);
+    await session.stop();
+    // Failed, kept for Try again: still asks.
+    expect(session.getSnapshot()).toMatchObject({ status: 'failed', canRetry: true });
+    expect(unload.held()).toBe(true);
+    const retrying = session.retry();
+    expect(session.getSnapshot()).toMatchObject({ status: 'saving' });
+    expect(unload.held()).toBe(true);
+    finish({ id: 'r1' } as RecordingView);
+    await retrying;
+    // Saved: nothing is left to lose.
+    expect(session.getSnapshot()).toMatchObject({ status: 'saved' });
+    expect(unload.held()).toBe(false);
+    expect(unload.guarded).toBe(1);
+  });
+
+  it('stops asking once a failed take is discarded', async () => {
+    const save = vi
+      .fn<(recorded: RecordedCall) => Promise<RecordingView>>()
+      .mockRejectedValueOnce(new ApiError({ status: 500, code: 'internal', title: 'Server error' }));
+    const { session, unload } = setup(save);
+    session.start();
+    await session.stop();
+    expect(unload.held()).toBe(true);
+    session.dismiss();
+    expect(unload.held()).toBe(false);
+  });
+});
+
+describe('RecordingSession: today’s recordings used up', () => {
+  it('says so, offers no Try again, and does not start another until the limit has passed', async () => {
+    const save = vi.fn<(recorded: RecordedCall) => Promise<RecordingView>>().mockRejectedValueOnce(
+      new ApiError({
+        status: 429,
+        code: 'rate_limited',
+        title: 'Too many requests',
+        detail: 'You’ve saved as many recordings as you can today.',
+        reason: 'daily_recordings',
+        retryAfter: 600,
+      }),
+    );
+    const { session, recorder, unload, tick } = setup(save);
+    session.start();
+    await session.stop();
+    expect(session.getSnapshot()).toEqual({
+      status: 'failed',
+      title: 'The recording wasn’t saved',
+      message: 'You’ve saved as many recordings as you can today.',
+      canRetry: false,
+    });
+    expect(unload.held()).toBe(false);
+    session.dismiss();
+    expect(session.limitReached()).toBe(true);
+    expect(session.canStart()).toBe(false);
+    session.start();
+    expect(recorder.start).toHaveBeenCalledOnce();
+    tick(601_000);
+    expect(session.limitReached()).toBe(false);
+    expect(session.canStart()).toBe(true);
   });
 });
 

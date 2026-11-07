@@ -30,7 +30,12 @@ export const RECORDING_LIMITS = {
   maxCues: 20_000,
   /** A recording may run this much past its call's own time limit (the upload is measured by the browser). */
   durationSlackMs: 60_000,
-  /** Recordings one person may start per UTC day. */
+  /**
+   * The longest a replay's presigned GETs last (the API asks for the recording's length and a margin, at most this;
+   * every recordings store clamps to it too).
+   */
+  maxPlaybackUrlSeconds: 4 * 3_600,
+  /** Recordings one person may keep from one UTC day (saved or still uploading; deleted ones do not count). */
   dailyRecordingsPerPrincipal: 40,
   /** How long a recording is kept; then it is deleted (infra RECORDINGS_RETENTION_DAYS matches it, tested there). */
   retentionDays: 365,

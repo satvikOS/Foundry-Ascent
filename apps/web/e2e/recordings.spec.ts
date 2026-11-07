@@ -2,6 +2,7 @@ import { expect, type Locator, type Page } from '@playwright/test';
 
 import {
   expectNoHorizontalScroll,
+  expectNoSeriousA11yViolations,
   FOUNDER_STATE,
   openVenture,
   runToken,
@@ -191,8 +192,25 @@ test.describe('call recordings', () => {
     await notice.getByRole('button', { name: 'Start recording' }).click();
     const indicator = screen.getByTestId('recording-indicator');
     await expect(indicator).toContainText('REC');
-    const stop = screen.getByRole('button', { name: /^Stop recording, / });
+    const stop = screen.getByRole('button', { name: /Stop recording$/ });
     await expect(stop).toHaveAttribute('aria-pressed', 'true');
+    // Its name starts with what it shows (label in name); the whole call screen passes while it records.
+    await expect(stop).toHaveAccessibleName(/^\d+:\d\d Stop recording$/);
+    await expectNoSeriousA11yViolations(page, 'call while recording');
+    // On a phone the header keeps its room for the time left (its warning near the end) while it records.
+    const desktop = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(indicator).toBeVisible();
+    const fits = await screen
+      .locator('[data-slot="call-kind"]')
+      .evaluate((line) =>
+        [...line.querySelectorAll<HTMLElement>('span.truncate')].every(
+          (span) => span.scrollWidth <= span.clientWidth,
+        ),
+      );
+    expect(fits, 'time left is not truncated while recording on a phone').toBe(true);
+    await expect(screen.locator('[data-slot="call-kind"]')).toContainText(/min left/);
+    if (desktop) await page.setViewportSize(desktop);
 
     const line = `Footfall at the east wing, ${runToken()}`;
     await say(page, reply, sessionId, line);
@@ -307,7 +325,7 @@ test.describe('call recordings', () => {
     );
     await record(page, screen);
     await say(page, reply, sessionId, `The east reading room, ${runToken()}`);
-    await screen.getByRole('button', { name: /^Stop recording, / }).click();
+    await screen.getByRole('button', { name: /Stop recording$/ }).click();
     const failed = screen.getByRole('group', { name: 'The recording wasn’t saved' });
     await expect(failed).toBeVisible({ timeout: 15_000 });
     await expect(toasts).toHaveCount(0);
@@ -348,6 +366,36 @@ test.describe('call recordings', () => {
     const bar = page.getByRole('region', { name: /^Call with / });
     await expect(bar.getByRole('button', { name: 'Return to call' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Undo' })).toHaveCount(0);
+    // The call is still live: the replay waits to be played instead of playing over it.
+    const replay = page.locator('[data-slot="recording-player"] video[data-slot="recording-video"]');
+    await expect(replay).toHaveAttribute('src', /\/_local\/recordings\//);
+    await expect
+      .poll(() => replay.evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 15_000 })
+      .toBeGreaterThan(0);
+    await page.waitForTimeout(1_500);
+    expect(
+      await replay.evaluate((v: HTMLVideoElement) => ({ autoplay: v.autoplay, paused: v.paused })),
+    ).toEqual({
+      autoplay: false,
+      paused: true,
+    });
+
+    // Recording again, then minimized: the bar says it is still recording and stops it there.
+    await bar.getByRole('button', { name: 'Return to call' }).click();
+    await expect(screen.getByRole('button', { name: 'End call' })).toBeVisible();
+    await screen.getByRole('button', { name: 'Record' }).click();
+    await expect(screen.getByTestId('recording-indicator')).toBeVisible();
+    await screen.getByRole('button', { name: 'Minimize call' }).click();
+    await expect(bar.getByTestId('recording-indicator')).toContainText('REC');
+    const savedFromBar = page.waitForResponse(
+      (response) =>
+        /\/recordings\/[0-9a-f-]{36}\/complete$/.test(response.url()) && response.status() === 200,
+    );
+    await bar.getByRole('button', { name: 'Stop recording' }).click();
+    await savedFromBar;
+    await expect(bar.getByTestId('recording-indicator')).toHaveCount(0);
+    await expect(toasts.filter({ hasText: 'Recording saved' })).toBeVisible();
+    expect(await recordingsOf(page, sessionId)).toHaveLength(2);
     await bar.getByRole('button', { name: 'Return to call' }).click();
     await expect(callScreen(page).getByRole('button', { name: 'End call' })).toBeVisible();
     await endCall(page);
@@ -441,7 +489,7 @@ test.describe('call recordings', () => {
         (response) =>
           /\/recordings\/[0-9a-f-]{36}\/complete$/.test(response.url()) && response.status() === 200,
       );
-      await video.getByRole('button', { name: /^Stop recording, / }).click();
+      await video.getByRole('button', { name: /Stop recording$/ }).click();
       await completed;
       await endCall(page);
       const [saved] = await recordingsOf(page, sessionId);

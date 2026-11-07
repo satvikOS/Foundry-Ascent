@@ -1,5 +1,6 @@
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, type S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { RECORDING_LIMITS } from '@foundry/contracts';
 import {
   type PresignedDownload,
   type PresignedUpload,
@@ -14,8 +15,6 @@ import { createS3Client, presignBoundPut } from './s3-object-store.js';
 
 /** Every recording key lives under this prefix (the bucket's IAM scopes it): `tenants/{t}/ventures/{v}/sessions/…`. */
 export const RECORDING_KEY_PREFIX = 'tenants/';
-/** The longest a replay's presigned GET lasts (core asks for the recording's length and a margin, at most this). */
-export const MAX_PLAYBACK_URL_SECONDS = 4 * 3_600;
 
 /** A recording's file key: under the prefix, a conversation's `recordings/` folder, no traversal. */
 export function isRecordingKey(key: string): boolean {
@@ -58,8 +57,8 @@ export interface S3RecordingStoreOptions {
  * - `presignPut`: SigV4 query-signed PUT binding `content-type` and `content-length`, so the browser uploads exactly
  *   the declared type and size; at most 5 minutes to start; recording keys only.
  * - `presignGet`: SigV4 query-signed GET whose response type is fixed and never cached, valid as long as core asks
- *   (the recording's length and a margin, at most {@link MAX_PLAYBACK_URL_SECONDS}): the player streams it with range
- *   requests for as long as someone watches.
+ *   (the recording's length and a margin, at most `RECORDING_LIMITS.maxPlaybackUrlSeconds`): the player streams it
+ *   with range requests for as long as someone watches.
  * - `size`: HeadObject; null for a key that is not there. The functions may not list the bucket (ADR-0023 §8), so S3
  *   answers a HEAD of a missing key with 403, not 404: a 403 is taken as "not uploaded yet" too, and logged
  *   (`recordings.head_denied`, without the key) so that a real denial (a policy regression, the wrong bucket) shows.
@@ -88,7 +87,7 @@ export class S3RecordingStore implements RecordingStore {
 
   async presignGet(input: RecordingGetInput): Promise<PresignedDownload> {
     assertRecordingKey(input.key);
-    const expiresIn = Math.max(60, Math.min(input.expiresInSeconds, MAX_PLAYBACK_URL_SECONDS));
+    const expiresIn = Math.max(60, Math.min(input.expiresInSeconds, RECORDING_LIMITS.maxPlaybackUrlSeconds));
     const signedAt = this.#now();
     const url = await getSignedUrl(
       this.#client,

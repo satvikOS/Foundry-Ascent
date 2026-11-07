@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { jsonResponse, renderWithProviders, stubFetch } from '@/features/admin/shared/test-utils';
+import { queryKeys } from '@/lib/api/query-keys';
 
 import { RecordingsList } from './recordings-list';
 
@@ -73,7 +74,7 @@ describe('RecordingsList', () => {
     });
     const user = userEvent.setup();
     const onPlay = vi.fn();
-    renderWithProviders(<Playing onPlay={onPlay} />);
+    const { client } = renderWithProviders(<Playing onPlay={onPlay} />);
     const row = within(screen.getByRole('list', { name: 'Your recordings' })).getByRole('listitem');
     expect(row).toHaveTextContent('Pilot pricing');
     expect(row).toHaveTextContent('2:05');
@@ -91,6 +92,12 @@ describe('RecordingsList', () => {
     expect(
       urls.every((url) => url.includes('/recordings/') || url.startsWith('https://recordings.test/')),
     ).toBe(true);
+
+    // Another recording saved or deleted refreshes the lists, never the one playing: no new URLs, no restart.
+    await client.invalidateQueries({ queryKey: queryKeys.recordings.all() });
+    const playbacks = fetchMock.mock.calls.filter(([input]) => urlOf(input).includes('/playback'));
+    expect(playbacks).toHaveLength(1);
+    expect(document.querySelector('video[data-slot="recording-video"]')).toBe(video);
   });
 
   it('deletes a recording after confirming', async () => {

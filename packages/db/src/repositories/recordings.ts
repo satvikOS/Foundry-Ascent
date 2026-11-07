@@ -144,12 +144,16 @@ export function getRecording(ex: SqlExecutor, id: string): Promise<RecordingReco
   );
 }
 
-/** Recordings the caller started today (UTC), deleted ones included: the daily limit. */
+/**
+ * Recordings the caller started today (UTC) and still has, saved or still uploading: the daily limit. One they deleted
+ * (its files go with it) no longer counts, so recording and deleting takes in a rehearsal never uses the day up; an
+ * upload that never finished counts until it is abandoned, since its presigned PUTs could still store a file.
+ */
 export function recordingsToday(ex: SqlExecutor, principalId: string): Promise<number> {
   return queryNumber(
     ex,
     `SELECT count(*) AS n FROM call_recordings
-     WHERE recorded_by = :principal
+     WHERE recorded_by = :principal AND deleted_at IS NULL
        AND created_at >= (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`,
     { principal: p.uuid(principalId) },
   );
@@ -225,8 +229,6 @@ export function listRecordings(
 /** The files of a deleted recording still to remove from the bucket. */
 export interface PurgeableRecording {
   readonly id: string;
-  readonly tenantId: string;
-  readonly ventureId: string;
   readonly storageKey: string;
   readonly captionsKey: string | null;
 }
@@ -270,7 +272,7 @@ export function listPurgeable(
 ): Promise<PurgeableRecording[]> {
   return queryRows(
     sx,
-    `SELECT id, tenant_id, venture_id, storage_key, captions_key FROM call_recordings
+    `SELECT id, storage_key, captions_key FROM call_recordings
      WHERE deleted_at IS NOT NULL AND purged_at IS NULL
        AND (:session IS NULL OR session_id = :session)
        AND (:id IS NULL OR id = :id)
@@ -283,8 +285,6 @@ export function listPurgeable(
     },
     (r) => ({
       id: col.uuid.decode(r.id, 'id'),
-      tenantId: col.uuid.decode(r.tenant_id, 'tenant_id'),
-      ventureId: col.uuid.decode(r.venture_id, 'venture_id'),
       storageKey: col.text.decode(r.storage_key, 'storage_key'),
       captionsKey: col.text.nullable.decode(r.captions_key, 'captions_key'),
     }),

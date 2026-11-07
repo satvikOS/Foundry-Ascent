@@ -25,6 +25,7 @@ import {
   useCallRecordingLifecycle,
   useCanRecord,
   useRecordingSession,
+  useRecordingState,
   type RecordBlocker,
 } from '@/features/recordings/use-call-recording';
 
@@ -638,6 +639,7 @@ function CallHeader({
   onClose: () => void;
 }) {
   const clock = useCallClock(snapshot);
+  const recordingNow = useRecordingState(recording).status === 'recording';
   const KindIcon = kind === 'video' ? Video : Phone;
   // A video call waiting for its face has not started its conversation: no clock yet, only "Connecting to …".
   const timing = live && snapshot.liveAt !== null && !snapshot.awaitingFace;
@@ -675,7 +677,8 @@ function CallHeader({
           className="flex max-w-[min(22rem,60vw)] items-center gap-1.5 text-caption whitespace-nowrap text-muted-foreground"
         >
           <KindIcon aria-hidden className="size-3.5 shrink-0" />
-          <span>{CALL_KIND_LABEL[kind]}</span>
+          {/* While it records, a phone shows the kind by its icon only: the line keeps room for the time left. */}
+          <span className={cn(recordingNow && 'sr-only sm:not-sr-only')}>{CALL_KIND_LABEL[kind]}</span>
           {timing ? (
             <>
               <span aria-hidden>·</span>
@@ -685,7 +688,7 @@ function CallHeader({
               <span className="sr-only">, call time {spokenDuration(clock.elapsed)}</span>
             </>
           ) : null}
-          {live ? <RecordingMark session={recording} separator /> : null}
+          {live ? <RecordingMark session={recording} separator compact /> : null}
           {timing && clock.leftLabel ? (
             <span className={cn('truncate', clock.warning && 'font-medium text-warning')}>
               <span aria-hidden>· </span>

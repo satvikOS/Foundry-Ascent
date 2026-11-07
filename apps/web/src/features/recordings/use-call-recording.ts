@@ -11,6 +11,7 @@ import { saveRecording } from '@/lib/api/hooks/recordings';
 import { canRecordCalls } from './call-recorder';
 import {
   browserRecorder,
+  guardPageUnload,
   recordingSessionFor,
   type RecordedEngine,
   type RecordedFace,
@@ -29,7 +30,12 @@ export const RECORD_BLOCKER_TEXT: Record<Exclude<RecordBlocker, null>, string> =
 
 const SAVE_TOAST = 'call-recording-save';
 
-const BROWSER_DEPS = { createRecorder: browserRecorder, save: saveRecording, now: () => Date.now() };
+const BROWSER_DEPS = {
+  createRecorder: browserRecorder,
+  save: saveRecording,
+  now: () => Date.now(),
+  guardUnload: guardPageUnload,
+};
 
 /** The engine's recording (one per engine, shared by every part of the call screen). */
 export function useRecordingSession(engine: RecordedEngine): RecordingSession {
@@ -59,7 +65,10 @@ export function useElapsedSeconds(startedAt: number | null): number {
 /** How long "Recording saved" stays in the call screen. */
 export const SAVED_NOTICE_MS = 8_000;
 
-/** Opens a saved recording in the venture's Recordings (a live call goes on, minimized). */
+/**
+ * Opens a saved recording in the venture's Recordings (a live call goes on, minimized, and the replay waits to be
+ * played: RecordingPlayer).
+ */
 export function useWatchRecording(tenant: string): (recording: RecordingView) => void {
   const navigate = useNavigate();
   return useCallback(

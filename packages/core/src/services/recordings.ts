@@ -46,9 +46,8 @@ export interface RecordingsService {
   remove(ctx: RequestContext, recordingId: string): Promise<void>;
 }
 
-/** Shortest and longest lifetime of a replay's presigned GETs (the player streams the file until then). */
+/** Shortest lifetime of a replay's presigned GETs (the longest is `RECORDING_LIMITS.maxPlaybackUrlSeconds`). */
 const PLAYBACK_MIN_SECONDS = 15 * 60;
-const PLAYBACK_MAX_SECONDS = 4 * 3_600;
 
 /**
  * A pending recording whose upload has not completed after this long is abandoned (its files purged). It is also how
@@ -82,7 +81,7 @@ export function recordingKeys(args: {
 /** How long a replay's presigned GETs last: the recording's length and a margin, within bounds. */
 export function playbackSeconds(durationMs: number): number {
   return Math.min(
-    PLAYBACK_MAX_SECONDS,
+    RECORDING_LIMITS.maxPlaybackUrlSeconds,
     Math.max(PLAYBACK_MIN_SECONDS, Math.ceil(durationMs / 1000) * 2 + 600),
   );
 }

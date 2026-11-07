@@ -14,7 +14,7 @@ import { z } from 'zod';
 
 import { UPLOAD_URL_TTL_SECONDS } from '../config.js';
 import { LocalUploadRejectedError } from './local-object-store.js';
-import { isRecordingKey, MAX_PLAYBACK_URL_SECONDS } from './s3-recording-store.js';
+import { isRecordingKey } from './s3-recording-store.js';
 
 /** Route (relative to /api/v1) of local "presigned" recording uploads and downloads. Development only. */
 export const LOCAL_RECORDING_ROUTE = '/_local/recordings/:token';
@@ -145,7 +145,7 @@ export class LocalRecordingStore implements RecordingStore, LocalRecordingTarget
   async presignGet(input: RecordingGetInput): Promise<PresignedDownload> {
     await Promise.resolve();
     this.#path(input.key);
-    const expiresIn = Math.min(input.expiresInSeconds, MAX_PLAYBACK_URL_SECONDS);
+    const expiresIn = Math.min(input.expiresInSeconds, RECORDING_LIMITS.maxPlaybackUrlSeconds);
     const expiresAt = new Date(this.#now().getTime() + expiresIn * 1000);
     const token = this.#token({ o: 'get', k: input.key, t: input.contentType, e: expiresAt.getTime() });
     return { url: this.#url(token), expiresAt: expiresAt.toISOString() };

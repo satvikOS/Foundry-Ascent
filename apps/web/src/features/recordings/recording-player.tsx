@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useOptionalCall } from '@/features/calls/call-context';
 import { formatClock } from '@/features/calls/use-call-clock';
 import { fetchPlayback } from '@/lib/api/hooks/recordings';
 import { queryKeys } from '@/lib/api/query-keys';
@@ -18,7 +19,19 @@ import { cuesAt, parseWebVtt, type ShownCue } from './captions';
  * Replays a recording with its captions in step (ADR-0023). The files come straight from the recordings store through
  * presigned GETs issued for this replay; nothing here calls the vEIR or any model. The captions show over the picture
  * and as a transcript beside it, where a line jumps the recording to it.
+ *
+ * A replay never plays over a live call: while one goes on, a replay does not start by itself (the founder would hear
+ * two of the vEIR). On a voice call, playing it also puts the call on hold (the call's own hold: microphone off, resumed
+ * from the call), so the replay is never heard as the founder speaking, and the microphone opening again pauses it.
  */
+
+/**
+ * One replay's queries (its presigned GETs, its captions). Outside `queryKeys.recordings` on purpose: a list refreshed
+ * after a save or a delete must never fetch new URLs for a recording that is playing (it would restart it).
+ */
+function replayKey(recordingId: string, part: 'playback' | 'captions') {
+  return [...queryKeys.all, 'recording-replay', recordingId, part] as const;
+}
 
 /** A WebM from MediaRecorder carries no duration: seeking to the end once makes the browser measure it. */
 function measureDuration(video: HTMLVideoElement): void {
@@ -70,6 +83,36 @@ function usePlayhead(video: HTMLVideoElement | null): number {
   return ms;
 }
 
+/**
+ * Keeps a replay and a live call apart: on a voice call, playing the replay holds the call, and the call's microphone
+ * opening again (resumed, unmuted) pauses the replay. Says whether a call is live, and whether it is a voice call.
+ */
+function useReplayHoldsCall(video: HTMLVideoElement | null): { onCall: boolean; onVoiceCall: boolean } {
+  const call = useOptionalCall();
+  const engine = call?.engine ?? null;
+  const snapshot = call?.snapshot ?? null;
+  const onCall = snapshot !== null && snapshot.phase === 'live';
+  const onVoiceCall = onCall && snapshot.input === 'voice';
+  const microphoneOpen = onVoiceCall && !snapshot.muted && !snapshot.held;
+
+  useEffect(() => {
+    if (video === null || engine === null || !onVoiceCall) return undefined;
+    const hold = () => {
+      engine.hold();
+    };
+    video.addEventListener('play', hold);
+    return () => {
+      video.removeEventListener('play', hold);
+    };
+  }, [engine, onVoiceCall, video]);
+
+  useEffect(() => {
+    if (video !== null && microphoneOpen && !video.paused) video.pause();
+  }, [microphoneOpen, video]);
+
+  return { onCall, onVoiceCall };
+}
+
 interface RecordingPlayerProps {
   recording: RecordingView;
   /** Start playing as soon as it can (it was chosen with a click). */
@@ -79,7 +122,7 @@ interface RecordingPlayerProps {
 
 export function RecordingPlayer({ recording, autoPlay = false, className }: RecordingPlayerProps) {
   const playback = useQuery({
-    queryKey: [...queryKeys.recordings.all(), 'playback', recording.id],
+    queryKey: replayKey(recording.id, 'playback'),
     queryFn: ({ signal }) => fetchPlayback(recording.id, signal),
     // Presigned GETs are credentials that expire: fetched for each replay, never kept.
     staleTime: Infinity,
@@ -88,7 +131,7 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
   });
   const captionsUrl = playback.data?.captions?.url ?? null;
   const captions = useQuery({
-    queryKey: [...queryKeys.recordings.all(), 'captions', recording.id],
+    queryKey: replayKey(recording.id, 'captions'),
     queryFn: async ({ signal }) => {
       const response = await fetch(captionsUrl ?? '', { signal, credentials: 'omit', cache: 'no-store' });
       if (!response.ok) throw new Error('The captions couldn’t be loaded.');
@@ -103,6 +146,7 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
   const [showCaptions, setShowCaptions] = useState(true);
   const resumeAt = useRef<number | null>(null);
   const playhead = usePlayhead(video);
+  const { onCall, onVoiceCall } = useReplayHoldsCall(video);
   const cues = useMemo(() => captions.data ?? [], [captions.data]);
   const showing = cuesAt(cues, playhead);
   const label = `Recording of the call on ${formatDateTime(recording.createdAt)}`;
@@ -165,7 +209,7 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
                 playsInline
                 preload="metadata"
                 crossOrigin="anonymous"
-                autoPlay={autoPlay}
+                autoPlay={autoPlay && !onCall}
                 aria-label={label}
                 data-slot="recording-video"
                 onLoadedMetadata={(event) => {
@@ -206,6 +250,9 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
           <span className="tabular">
             {formatClock(recording.durationMs / 1000)} · {formatDateTime(recording.createdAt)}
           </span>
+          {onVoiceCall ? (
+            <span data-slot="recording-on-call">Playing this puts your call on hold.</span>
+          ) : null}
           {recording.hasCaptions ? (
             <Button
               variant="ghost"

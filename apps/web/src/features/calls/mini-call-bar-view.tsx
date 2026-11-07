@@ -1,8 +1,10 @@
-import { Maximize2, Mic, MicOff, Phone, PhoneOff, Video, Volume2, X } from 'lucide-react';
+import { Maximize2, Mic, MicOff, Phone, PhoneOff, Square, Video, Volume2, X } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { SimpleTooltip } from '@/components/ui/tooltip';
+import { RecordingMark } from '@/features/recordings/record-control';
+import { useRecordingSession, useRecordingState } from '@/features/recordings/use-call-recording';
 import { useMediaQuery } from '@/lib/hooks/use-media-query';
 import { budgetEndLine, CALL_END_LINES } from '@/lib/realtime/call-api';
 import type { CallSnapshot } from '@/lib/realtime/call-state';
@@ -38,8 +40,9 @@ function barAnnouncement(snapshot: CallSnapshot): string {
 
 /**
  * A call that continues while the person looks elsewhere, on every page: the vEIR's face (or a small sphere), its
- * name, the kind of call and the timer (and the time left near the end), Turn on sound when the browser stopped the
- * call's sound (as the call screen offers), mute, back to the call and End, with a short Undo as on the call
+ * name, the kind of call and the timer (and the time left near the end), "● REC" with Stop while the call is being
+ * recorded (it goes on recording while minimized), Turn on sound when the browser stopped the call's sound (as the call
+ * screen offers), mute, back to the call and End, with a short Undo as on the call
  * screen. After a call ended out of view (its time ran out, or the program paused calls), it says so and offers its
  * review (in its conversation) instead. Rendered by `MiniCallBar` only while there is a call to show; while shown,
  * the page's sticky headers sit below it (`--mini-call-height`).
@@ -104,6 +107,9 @@ function Bar({
 }) {
   const ended = snapshot.phase === 'ended';
   const ending = useEndWithUndo(engine, snapshot);
+  // The call's recording (the call screen's own: one per engine) carries on while minimized, and says so here.
+  const recordingSession = useRecordingSession(engine);
+  const recording = useRecordingState(recordingSession).status === 'recording' && !ended;
   const undoRef = useRef<HTMLButtonElement | null>(null);
   const endRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
@@ -164,6 +170,12 @@ function Bar({
               {videoNote}
             </span>
           ) : null}
+          {recording ? (
+            <>
+              {' '}
+              <RecordingMark session={recordingSession} separator compact />
+            </>
+          ) : null}
           {micLost ? <span className="text-warning"> · Microphone disconnected</span> : null}
           {soundOff ? <span className="text-warning"> · Sound is off</span> : null}
         </p>
@@ -213,6 +225,21 @@ function Bar({
               <Volume2 aria-hidden />
               <span className="hidden sm:inline">Turn on</span>
             </Button>
+          ) : null}
+          {recording ? (
+            <SimpleTooltip content="Stop and save the recording">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Stop recording"
+                className="text-destructive"
+                onClick={() => {
+                  void recordingSession.stop();
+                }}
+              >
+                <Square aria-hidden className="fill-current" />
+              </Button>
+            </SimpleTooltip>
           ) : null}
           {snapshot.input === 'voice' ? (
             <SimpleTooltip content={snapshot.muted ? 'Unmute' : 'Mute'}>

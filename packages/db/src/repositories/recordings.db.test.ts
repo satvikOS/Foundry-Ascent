@@ -1,5 +1,5 @@
 /**
- * Call recordings (migration 0031): only a person's own call in a remembered conversation can be recorded, nobody
+ * Call recordings (migrations 0031, 0032): only a person's own call in a remembered conversation can be recorded, nobody
  * else ever sees the recording (not the venture's team, its EIR or a program lead), its files and size never change,
  * deleting it or its conversation deletes it, and the purge reads find exactly the files still to remove.
  */
@@ -100,6 +100,46 @@ function input(
     captions: { key: `${prefix}/captions.vtt`, bytes: 120, cues: 3 },
     ...overrides,
   };
+}
+
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** A promise with its resolver, to hold a transaction open at a chosen point. */
+function gate(): { promise: Promise<void>; open: () => void } {
+  let open = (): void => undefined;
+  const promise = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { promise, open };
+}
+
+/** Tracks whether a promise settled, without changing its outcome. */
+function watch<T>(promise: Promise<T>): { promise: Promise<T>; settled: () => boolean } {
+  let done = false;
+  const tracked = promise.then(
+    (value) => {
+      done = true;
+      return value;
+    },
+    (err: unknown) => {
+      done = true;
+      throw err;
+    },
+  );
+  tracked.catch(() => undefined);
+  return { promise: tracked, settled: () => done };
+}
+
+/** A conversation's recordings as stored (owner role: deleted ones too). */
+async function storedRecordings(sessionId: string): Promise<{ id: string; deleted_reason: string | null }[]> {
+  const result = await t.db.system((sx) =>
+    sx.query('SELECT id, deleted_reason FROM call_recordings WHERE session_id = :id ORDER BY created_at', {
+      id: p.uuid(sessionId),
+    }),
+  );
+  return result.rows as { id: string; deleted_reason: string | null }[];
 }
 
 beforeAll(async () => {
@@ -208,11 +248,71 @@ describe('call recordings (0031)', () => {
     const gone = await newSession(maya);
     const goneCall = await callIn(maya, gone);
     await t.db.withContext(maya, (tx) => sessionsRepo.softDeleteSession(tx, gone));
+    // Refused by the live-conversation lock (0032) before the insert policy is checked.
     expect(
       await sqlState(
         t.db.withContext(maya, (tx) => recordingsRepo.createRecording(tx, input(maya, goneCall))),
       ),
-    ).toBe('42501');
+    ).toBe('55000');
+  });
+
+  it('a recording inserted while its conversation is being deleted waits for the delete, then is refused', async () => {
+    const session = await newSession(maya);
+    const call = await callIn(maya, session);
+    const deleting = gate();
+    const deleted = gate();
+    const deletion = t.db.withContext(maya, async (tx) => {
+      expect(await sessionsRepo.softDeleteSession(tx, session)).toBe(true);
+      deleted.open();
+      await deleting.promise;
+    });
+    await deleted.promise;
+    // A second connection registers a recording while the delete is still uncommitted.
+    const late = watch(t.db.withContext(maya, (tx) => recordingsRepo.createRecording(tx, input(maya, call))));
+    await pause(300);
+    expect(late.settled()).toBe(false);
+    deleting.open();
+    await deletion;
+    expect(await sqlState(late.promise)).toBe('55000');
+    expect(await storedRecordings(session)).toEqual([]);
+  });
+
+  it('a delete of the conversation that comes after the insert waits for it, then deletes the recording too', async () => {
+    const session = await newSession(maya);
+    const call = await callIn(maya, session);
+    const inserted = gate();
+    const committing = gate();
+    const insert = t.db.withContext(maya, async (tx) => {
+      const created = await recordingsRepo.createRecording(tx, input(maya, call));
+      inserted.open();
+      await committing.promise;
+      return created;
+    });
+    await inserted.promise;
+    const deletion = watch(t.db.withContext(maya, (tx) => sessionsRepo.softDeleteSession(tx, session)));
+    await pause(300);
+    expect(deletion.settled()).toBe(false);
+    committing.open();
+    const created = await insert;
+    expect(await deletion.promise).toBe(true);
+    expect(await storedRecordings(session)).toEqual([{ id: created.id, deleted_reason: 'conversation' }]);
+  });
+
+  it('the daily limit counts recordings saved or uploading, not deleted ones', async () => {
+    const today = () => t.db.withContext(maya, (tx) => recordingsRepo.recordingsToday(tx, maya.principalId));
+    const session = await newSession(maya);
+    const call = await callIn(maya, session);
+    const before = await today();
+    const pending = await t.db.withContext(maya, (tx) =>
+      recordingsRepo.createRecording(tx, input(maya, call)),
+    );
+    const ready = await t.db.withContext(maya, (tx) => recordingsRepo.createRecording(tx, input(maya, call)));
+    await t.db.withContext(maya, (tx) => recordingsRepo.markReady(tx, ready.id));
+    expect(await today()).toBe(before + 2);
+    await t.db.withContext(maya, (tx) => recordingsRepo.softDeleteRecording(tx, ready.id, 'founder'));
+    expect(await today()).toBe(before + 1);
+    await t.db.withContext(maya, (tx) => recordingsRepo.softDeleteRecording(tx, pending.id, 'founder'));
+    expect(await today()).toBe(before);
   });
 
   it('a recording’s files never change; deleted stays deleted; purged stays purged', async () => {
@@ -246,8 +346,6 @@ describe('call recordings (0031)', () => {
     expect(purgeable).toEqual([
       {
         id: created.id,
-        tenantId: seed.tenantId,
-        ventureId: call.ventureId,
         storageKey: created.storageKey,
         captionsKey: created.captionsKey,
       },

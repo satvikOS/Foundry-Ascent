@@ -42,7 +42,8 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
    conversation; otherwise after a year); it is remembered per person in the browser, like the call disclosure. A
    private call keeps the control, disabled, with "Private calls aren't recorded." as its description. The save is
    shown in the call screen above the controls while the screen is open (Saving with its progress; "Recording saved"
-   with Watch, which opens it while the call goes on minimized; or why it failed, with Try again and Discard): the
+   with Watch, which opens it while the call goes on minimized, waiting to be played; or why it failed, with Try
+   again and Discard): the
    screen is a modal, and a toast over it could not be clicked and would pass its clicks to End. A toast says it only
    once the screen is closed. A take whose save failed stays in the page until it is saved or discarded, and Record
    waits until then, so no take is lost without the founder's say.
@@ -56,7 +57,8 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
    Keys: `tenants/{tenant}/ventures/{venture}/sessions/{conversation}/recordings/{id}/call.{webm|mp4|m4a}` and
    `…/captions.vtt`.
 4. **Nothing of a recording passes through the API.** `POST /calls/:id/recordings` (the caller's own call, in a
-   remembered conversation that still exists, founder or team of a live venture; at most 40 a day) registers it and
+   remembered conversation that still exists, founder or team of a live venture; at most 40 a day, counting those
+   saved or still uploading, not those deleted; past it the save says so and is not offered again) registers it and
    returns presigned PUTs that bind the exact content type and size (5 minutes to start; 512 MB at most, a duration
    within the call's own limit plus a minute). The browser uploads the small captions file first and then the
    recording, so neither upload starts after its URL expired however long the recording takes to send.
@@ -72,7 +74,10 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
    recording does not.
    Its insert policy also requires the call to be the caller's own and the conversation to be `standard` and not
    deleted, so a private call cannot be recorded even by a modified client. A guard trigger keeps the identity, keys
-   and sizes immutable, a ready recording ready and a deleted one deleted.
+   and sizes immutable, a ready recording ready and a deleted one deleted. An insert locks its conversation row
+   first, as `app.soft_delete_session` does (`call_recordings_require_live_session`, migration 0032, the same lock
+   0009 takes for turns), so an insert and a delete of the conversation serialise: one that comes while the delete is
+   uncommitted waits and is then refused, and a delete that comes after it deletes the new recording too.
 6. **Deletion.** Deleting a recording marks it deleted and removes its files after the commit. Deleting a conversation
    marks every recording of it deleted in the same transaction, whoever made it (`call_recordings_follow_session`, a
    `SECURITY DEFINER` trigger on `coaching_sessions.deleted_at`, the column every conversation deletion path sets), and
@@ -117,8 +122,9 @@ private call, go when its conversation goes, and keep the CSP and IAM as tight a
 - Good: works the same on phones, tablets and laptops (Chromium, Firefox, Safari 14.1+), and a voice call switching to
   video mid-recording stays one recording.
 - Good: privacy holds in the database itself: owner-only rows, no private calls, gone with the conversation.
-- Bad: the browser holds the recording in memory until it is saved; closing the tab mid-recording loses it (nothing is
-  kept anywhere else). A save that fails keeps it in the page with Try again.
+- Bad: the browser holds the recording in memory until it is saved; closing the tab before the save finished loses it
+  (nothing is kept anywhere else). While it records, saves or waits for Try again, leaving the page asks first
+  (`beforeunload`). A save that fails keeps it in the page with Try again.
 - Bad: a WebM from `MediaRecorder` has no duration in its header; the player seeks to the end once to measure it.
 - Bad: drawing the canvas costs a little CPU during a recorded video call (960×540 at 24 fps).
 

@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { RecordingNoticeDialog } from './recording-notice';
 import './recordings.css';
 import { useRecordingNotice } from './recording-notice-store';
-import type { RecordingSession } from './recording-session';
+import { DAILY_LIMIT_TEXT, type RecordingSession } from './recording-session';
 import {
   RECORD_BLOCKER_TEXT,
   useElapsedSeconds,
@@ -72,8 +72,17 @@ export function RecordControl({
   const saving = state.status === 'saving';
   // A take whose save failed waits to be saved or discarded (above the controls) before another can start.
   const unsaved = state.status === 'failed' && state.canRetry;
-  const blocked = (blocker !== null || unsaved) && !recording;
-  const reason = blocker !== null ? RECORD_BLOCKER_TEXT[blocker] : unsaved ? UNSAVED_TEXT : null;
+  // Today's recordings are used up (a save said so): another could not be saved either.
+  const limited = !recording && session.limitReached();
+  const blocked = (blocker !== null || unsaved || limited) && !recording;
+  const reason =
+    blocker !== null
+      ? RECORD_BLOCKER_TEXT[blocker]
+      : unsaved
+        ? UNSAVED_TEXT
+        : limited
+          ? DAILY_LIMIT_TEXT
+          : null;
 
   const toggle = () => {
     if (blocked || disabled || saving) return;
@@ -93,13 +102,10 @@ export function RecordControl({
           aria-disabled={blocked || disabled || saving || undefined}
           aria-describedby={blocked ? reasonId : undefined}
           aria-keyshortcuts="R"
-          aria-label={
-            recording
-              ? `Stop recording, ${spokenDuration(seconds)} recorded`
-              : saving
-                ? 'Saving the recording'
-                : 'Record'
-          }
+          // While it records, the name is what the button shows ("0:42 Stop", then "recording" for a screen reader):
+          // a voice-control user says what they see. The time is described in words.
+          aria-label={recording ? undefined : saving ? 'Saving the recording' : 'Record'}
+          aria-description={recording ? `${spokenDuration(seconds)} recorded` : undefined}
           className={cn(
             'fa-call-control fa-call-focus relative inline-flex h-12 min-w-28 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-full px-5 text-sm font-medium transition-colors duration-150',
             (blocked || disabled || saving) && 'cursor-not-allowed opacity-50',
@@ -108,11 +114,11 @@ export function RecordControl({
           {recording ? (
             <>
               <span aria-hidden className="fa-rec-dot size-2.5 rounded-full bg-destructive" />
-              <span aria-hidden className="tabular">
-                {formatClock(seconds)}
-              </span>
+              <span className="tabular">{formatClock(seconds)}</span>{' '}
               <Square aria-hidden className="size-3.5 fill-current" />
-              <span aria-hidden>Stop</span>
+              <span>
+                Stop <span className="sr-only">recording</span>
+              </span>
             </>
           ) : saving ? (
             <span aria-hidden>Saving…</span>
@@ -140,13 +146,19 @@ export function RecordControl({
   );
 }
 
-/** "● REC 0:42" beside the call's time while it records (the dock's Stop says the rest). */
+/**
+ * "● REC 0:42" beside the call's time while it records: in the call screen's header (the dock's Stop says the rest) and
+ * in the mini call bar while the call is minimized. `compact`: on a phone only "● REC", so the line keeps its room for
+ * the time left (and its warning near the end).
+ */
 export function RecordingMark({
   session,
   separator = false,
+  compact = false,
 }: {
   session: RecordingSession;
   separator?: boolean;
+  compact?: boolean;
 }) {
   const state = useRecordingState(session);
   const recording = state.status === 'recording';
@@ -164,7 +176,7 @@ export function RecordingMark({
       ) : null}
       <span aria-hidden className="fa-rec-dot size-2 rounded-full bg-destructive" />
       <span aria-hidden>REC</span>
-      <span aria-hidden className="tabular">
+      <span aria-hidden className={cn('tabular', compact && 'hidden sm:inline')}>
         {formatClock(seconds)}
       </span>
       <span className="sr-only">Recording</span>

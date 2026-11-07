@@ -838,7 +838,9 @@ the vEIR. Never a private call; only the person who recorded it can list, play o
 they still have the venture).
 
 - **Recording (browser).** `features/recordings`: Record in the dock (keyboard `R`; a notice the first time), "● REC"
-  and the time in the header while it records, Stop to save; hanging up stops and saves it. `CallRecorder` records one
+  and the time in the header while it records (on a phone "● REC" only, so the time left keeps its room), Stop to save;
+  hanging up stops and saves it. Minimized, the call goes on recording and the mini call bar says so ("● REC", with
+  Stop). `CallRecorder` records one
   canvas (the face's video while it shows, else the presence) and a WebAudio mix of the vEIR's voice (the player's
   output and a vendor face's audio track) and the microphone (silent whenever the call does not hear it: muted, on
   hold, push to talk released), with `MediaRecorder` (webm, or mp4 on Safari);
@@ -847,10 +849,14 @@ they still have the venture).
 - **Saving.** `POST /calls/:id/recordings` → presigned PUTs (the captions uploaded first, then the recording) →
   `POST /recordings/:id/complete` (sizes checked) → listed. While the call screen is open the save shows in it, above
   the controls (`RecordingSaveStatus`: Watch, or Try again and Discard); a toast says it once the screen is closed. A
-  failed save keeps the file in the page, and Record waits until it is saved or discarded.
+  failed save keeps the file in the page, and Record waits until it is saved or discarded. While a take exists only in
+  the page (recording, saving, or kept for Try again) leaving the page asks first (`beforeunload`). A save refused by
+  the daily limit (`daily_recordings`) says so and offers neither Try again nor Record until it has passed.
 - **Replay.** `GET /recordings/:id/playback` → presigned GETs for the `<video>` (CORS, range requests) and the captions
   file; captions show over the picture and as a transcript whose lines seek. In the conversation (at the end of its
-  transcript) and under Recordings in the venture's side panel (`/v/:id/recordings`, `?r=` opens one).
+  transcript) and under Recordings in the venture's side panel (`/v/:id/recordings`, `?r=` opens one). While a call
+  is live a replay does not start by itself; on a voice call, playing it holds the call (microphone off) and the
+  microphone opening again pauses it, so a replay is never heard by the call.
 - **Storage.** The private recordings bucket (Data stack): exact-origin CORS, SSE-S3, a year's retention with a
   lifecycle backstop; `call_recordings` (migration 0031) holds keys, sizes, duration, cue count and lifecycle, owner-only
   under RLS. Deleting the conversation deletes its recordings (trigger), the API and the daily maintenance remove the

@@ -46,6 +46,8 @@ export const PUBLIC_PROBLEM_REASONS = [
   'face_not_active',
   /** POST /calls/:id/recordings, 409 `conflict`: a private (temporary) call is never recorded. */
   'recording_private_call',
+  /** POST /calls/:id/recordings, 429 `rate_limited`: the person's recordings for today are used up. */
+  'daily_recordings',
 ] as const;
 
 /** RFC 9457 problem details. */

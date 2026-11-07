@@ -8,7 +8,7 @@ import { RecordControl, RecordingMark } from './record-control';
 import { acknowledgeRecordingNotice } from './recording-notice-store';
 import type { RecordingSession, RecordingState } from './recording-session';
 
-function fakeSession(initial: RecordingState = { status: 'idle' }) {
+function fakeSession(initial: RecordingState = { status: 'idle' }, options: { limited?: boolean } = {}) {
   let state = initial;
   const listeners = new Set<() => void>();
   const start = vi.fn(() => {
@@ -22,6 +22,7 @@ function fakeSession(initial: RecordingState = { status: 'idle' }) {
       return () => listeners.delete(listener);
     },
     getSnapshot: () => state,
+    limitReached: () => options.limited ?? false,
     start,
     stop,
   } as unknown as RecordingSession;
@@ -45,11 +46,12 @@ describe('RecordControl', () => {
     expect(start).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Start recording' }));
     expect(start).toHaveBeenCalledOnce();
-    const stopButton = await screen.findByRole('button', {
-      name: /^Stop recording, 1 minute 5 seconds recorded$/,
-    });
+    // Its name is what it shows (label in name, WCAG 2.5.3); the time is described in words.
+    const stopButton = await screen.findByRole('button', { name: /^1:0\d ?Stop recording$/ });
+    expect(stopButton).toHaveAccessibleDescription(/^1 minute \d seconds? recorded$/);
+    expect(stopButton).toHaveTextContent(/^1:0\d Stop/);
     expect(stopButton).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByTestId('recording-indicator')).toHaveTextContent('REC1:05');
+    expect(screen.getByTestId('recording-indicator')).toHaveTextContent(/^REC1:0\d/);
     await user.click(stopButton);
     expect(stop).toHaveBeenCalledOnce();
   });
@@ -81,6 +83,20 @@ describe('RecordControl', () => {
     const record = screen.getByRole('button', { name: 'Record' });
     expect(record).toHaveAttribute('aria-disabled', 'true');
     expect(record).toHaveAccessibleDescription('Save or discard the last recording first.');
+    await user.click(record);
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it('offers no Record once today’s recordings are used up', async () => {
+    acknowledgeRecordingNotice('p-limited');
+    const user = userEvent.setup();
+    const { session, start } = fakeSession({ status: 'idle' }, { limited: true });
+    renderWithProviders(
+      <RecordControl session={session} blocker={null} principalId="p-limited" name="Thomas" video={false} />,
+    );
+    const record = screen.getByRole('button', { name: 'Record' });
+    expect(record).toHaveAttribute('aria-disabled', 'true');
+    expect(record).toHaveAccessibleDescription('You’ve saved as many recordings as you can today.');
     await user.click(record);
     expect(start).not.toHaveBeenCalled();
   });

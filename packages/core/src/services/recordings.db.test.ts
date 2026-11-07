@@ -7,6 +7,7 @@
  */
 import {
   CreateRecordingResponse,
+  RECORDING_LIMITS,
   RecordingListResponse,
   RecordingPlaybackResponse,
   type CreateRecordingRequest,
@@ -194,6 +195,29 @@ describe('recording a call', () => {
     expect(created.upload.captions).toBeNull();
     expect(created.recording).toMatchObject({ kind: 'audio', hasCaptions: false });
     expect((await h.core.recordings.complete(maya, created.recording.id)).status).toBe('ready');
+  });
+});
+
+describe('the daily limit', () => {
+  it('counts the recordings kept today, not deleted ones, and says when it is reached', async () => {
+    // Devin's own recordings, all of one call.
+    const { callId } = await call(devin);
+    const ids: string[] = [];
+    for (let i = 0; i < RECORDING_LIMITS.dailyRecordingsPerPrincipal; i += 1) {
+      ids.push((await h.core.recordings.create(devin, callId, request())).recording.id);
+    }
+    const limited = await refusal(h.core.recordings.create(devin, callId, request()));
+    expect(limited).toEqual({ code: 'rate_limited', reason: 'daily_recordings' });
+    // A take recorded and deleted (a rehearsal) gives its place back.
+    await h.core.recordings.remove(devin, ids[0] ?? '');
+    const again = await h.core.recordings.create(devin, callId, request());
+    expect(again.recording.status).toBe('pending');
+    expect((await refusal(h.core.recordings.create(devin, callId, request()))).reason).toBe(
+      'daily_recordings',
+    );
+    // All deleted again: the day is Devin's again (later tests record as Devin).
+    for (const id of [...ids.slice(1), again.recording.id]) await h.core.recordings.remove(devin, id);
+    expect((await h.core.recordings.create(devin, callId, request())).recording.status).toBe('pending');
   });
 });
 
