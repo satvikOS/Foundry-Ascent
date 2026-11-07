@@ -92,6 +92,19 @@ export class CaptionRecorder {
     return [...this.done].sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
   }
 
+  /**
+   * The last `count` lines as the call shows them now, oldest first: finished ones and those still showing (`live`
+   * while they may change). What a composed recording of the call view draws as its conversation.
+   */
+  recent(count: number): { speaker: CaptionSpeaker; text: string; live: boolean }[] {
+    const finished = this.done.slice(-count).map((cue) => ({ ...cue, live: false }));
+    const showing = (['veir', 'founder'] as const).flatMap((speaker) => {
+      const cue = this.open[speaker];
+      return cue === null ? [] : [{ speaker, text: cue.text, live: true, startMs: cue.startMs }];
+    });
+    return [...finished, ...showing].sort((a, b) => a.startMs - b.startMs).slice(-count);
+  }
+
   private close(speaker: CaptionSpeaker, atMs: number): void {
     const cue = this.open[speaker];
     if (cue === null) return;

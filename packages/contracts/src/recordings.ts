@@ -6,9 +6,10 @@ import { Id, Timestamp } from './domain.js';
  * Call recordings (ADR-0023, docs/architecture/calls.md §7).
  *
  * A founder records their own call from the call screen and watches it again later without calling the vEIR. The
- * browser records the call itself (the vEIR's face on a video call or the call's presence, both voices mixed, and the
- * captions as a WebVTT transcript) and uploads both files straight to the private recordings store with presigned
- * PUTs the API issues for the caller's own call; replay reads them back with short-lived presigned GETs. Nothing of a
+ * browser records the screen it shares for it (else the composed call view: the vEIR's face or the call's presence and
+ * the conversation's lines), both voices mixed, and the captions as a WebVTT transcript, and uploads both files
+ * straight to the private recordings store with presigned PUTs the API issues for the caller's own call; replay (and
+ * a download, `./recording-files.ts`) reads them back with short-lived presigned GETs. Nothing of a
  * recording passes through the API, and replay never calls the vEIR or any model. A private (temporary) call is never
  * recorded; deleting the conversation deletes its recordings.
  */
@@ -52,7 +53,7 @@ export const RecordingView = z.object({
   /** The conversation's title when it has one (null: untitled). */
   conversationTitle: z.string().nullable(),
   mimeType: RecordingMimeType,
-  /** `video` (the face or the presence, with sound) or `audio` (sound only). */
+  /** `video` (the shared screen or the call view, with sound) or `audio` (sound only). */
   kind: z.enum(['video', 'audio']),
   bytes: z.number().int().min(1),
   durationMs: z.number().int().min(1),

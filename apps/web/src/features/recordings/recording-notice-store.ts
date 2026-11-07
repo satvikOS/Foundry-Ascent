@@ -4,9 +4,10 @@ import { safeStorage } from '@/lib/storage';
 
 /*
  * The notice read before a person's first recording (what is recorded, where it is kept, how to delete it),
- * remembered per person in this browser: a versioned key, so new facts are shown again once.
+ * remembered per person in this browser: a versioned key, so new facts are shown again once (2: the screen is
+ * recorded).
  */
-const NOTICE_VERSION = 1;
+const NOTICE_VERSION = 2;
 
 export function recordingNoticeKey(principalId: string): string {
   return `fa.recording.notice.v${String(NOTICE_VERSION)}.${principalId}`;

@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, LoaderCircle } from 'lucide-react';
+import { CircleAlert, CircleCheck, Info, LoaderCircle } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
@@ -9,17 +9,35 @@ const action =
   'fa-call-focus inline-flex min-h-8 items-center rounded-full px-3 font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground';
 
 /**
- * The recording's save, in the call screen above its controls (a toast says it once the screen is closed:
- * useCallRecordingLifecycle). Saving with its progress; then "Recording saved" with Watch (the call goes on,
+ * The recording's note and its save, in the call screen above its controls (a toast says the save once the screen is
+ * closed: useCallRecordingLifecycle). While it records, what the founder should know about what is recorded (the
+ * screen was not shared so the call view is, a whole screen is shared), with OK. Then saving with its progress; then "Recording saved" with Watch (the call goes on,
  * minimized, while the recording opens), which goes by itself after a moment; or why it was not saved, with Try again
  * and Discard. Inside the screen, so it can be clicked, and above the controls, so it never covers End.
  */
 export function RecordingSaveStatus({ session, tenant }: { session: RecordingSession; tenant: string }) {
   const state = useRecordingState(session);
   const watch = useWatchRecording(tenant);
-  if (state.status === 'idle' || state.status === 'recording') return null;
   const shell =
     'glass flex min-h-11 max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-3xl border border-(--glass-border) py-1.5 pr-1.5 pl-4 text-small text-popover-foreground';
+  if (state.status === 'recording' && state.note !== null) {
+    return (
+      <div role="group" aria-label="About this recording" data-slot="recording-note" className={shell}>
+        <Info aria-hidden className="size-4 text-muted-foreground" />
+        <span>{state.note}</span>
+        <button
+          type="button"
+          className={action}
+          onClick={() => {
+            session.dismissNote();
+          }}
+        >
+          OK
+        </button>
+      </div>
+    );
+  }
+  if (state.status === 'idle' || state.status === 'starting' || state.status === 'recording') return null;
   if (state.status === 'saving') {
     return (
       <div data-slot="recording-save" data-state="saving" className={cn(shell, 'pr-4')}>

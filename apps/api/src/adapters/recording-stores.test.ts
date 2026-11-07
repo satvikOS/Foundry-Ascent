@@ -77,6 +77,24 @@ describe('S3RecordingStore', () => {
     expect(new URL(long.url).searchParams.get('X-Amz-Expires')).toBe('14400');
   });
 
+  it('signs a download GET that saves the file under its name (attachment), and a replay GET that does not', async () => {
+    const store = s3With(createS3Client('us-east-1', { credentials }));
+    const download = await store.presignGet({
+      key: media,
+      contentType: 'video/webm',
+      expiresInSeconds: 300,
+      downloadAs: 'Thomas call 2026-11-07 14-22.webm',
+    });
+    const url = new URL(download.url);
+    expect(url.searchParams.get('X-Amz-Expires')).toBe('300');
+    expect(url.searchParams.get('response-content-type')).toBe('video/webm');
+    expect(url.searchParams.get('response-content-disposition')).toBe(
+      `attachment; filename="Thomas call 2026-11-07 14-22.webm"; filename*=UTF-8''Thomas%20call%202026-11-07%2014-22.webm`,
+    );
+    const replay = await store.presignGet({ key: media, contentType: 'video/webm', expiresInSeconds: 300 });
+    expect(new URL(replay.url).searchParams.has('response-content-disposition')).toBe(false);
+  });
+
   it('refuses anything but a recording key', async () => {
     const store = s3With(createS3Client('us-east-1', { credentials }));
     await expect(
@@ -170,7 +188,12 @@ describe('LocalRecordingStore', () => {
     await expect(store.read(token, undefined)).rejects.toBeInstanceOf(LocalUploadRejectedError);
     const whole = await store.read(get, undefined);
     expect(new TextDecoder().decode(whole.body)).toBe('0123456789');
-    expect(whole).toMatchObject({ contentType: 'video/webm', size: 10, range: null });
+    expect(whole).toMatchObject({
+      contentType: 'video/webm',
+      contentDisposition: null,
+      size: 10,
+      range: null,
+    });
     const part = await store.read(get, 'bytes=2-5');
     expect(new TextDecoder().decode(part.body)).toBe('2345');
     expect(part.range).toEqual({ start: 2, end: 5 });
@@ -182,6 +205,28 @@ describe('LocalRecordingStore', () => {
     expect(await store.size(media)).toBeNull();
     await expect(store.read(get, undefined)).rejects.toMatchObject({ status: 404 });
     await store.delete(media);
+  });
+
+  it('serves a download as an attachment under the name it was signed with', async () => {
+    const upload = await store.presignPut({
+      key: captions,
+      contentType: 'text/vtt',
+      contentLength: 6,
+      expiresInSeconds: 300,
+    });
+    await store.receive(tokenOf(upload.url), 'text/vtt', new TextEncoder().encode('WEBVTT'));
+    const download = await store.presignGet({
+      key: captions,
+      contentType: 'text/vtt',
+      expiresInSeconds: 300,
+      downloadAs: 'Maya’s vEIR call 2026-11-07 09-05 transcript.vtt',
+    });
+    const file = await store.read(tokenOf(download.url), undefined);
+    expect(file).toMatchObject({ contentType: 'text/vtt', size: 6, range: null });
+    expect(file.contentDisposition).toBe(
+      `attachment; filename="Maya_s vEIR call 2026-11-07 09-05 transcript.vtt"; filename*=UTF-8''Maya%E2%80%99s%20vEIR%20call%202026-11-07%2009-05%20transcript.vtt`,
+    );
+    await store.delete(captions);
   });
 
   it('parses one byte range of a file', () => {

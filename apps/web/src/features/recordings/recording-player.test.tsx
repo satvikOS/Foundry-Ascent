@@ -1,5 +1,6 @@
 import type { RecordingView } from '@foundry/contracts';
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { useReducer } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -114,5 +115,95 @@ describe('RecordingPlayer during a live call', () => {
     video.dispatchEvent(new Event('play'));
     expect(hold).not.toHaveBeenCalled();
     expect(document.querySelector('[data-slot="recording-on-call"]')).toBeNull();
+  });
+});
+
+describe('RecordingPlayer: the transcript follows the replay', () => {
+  const VTT = [
+    'WEBVTT',
+    '',
+    '1',
+    '00:00:00.000 --> 00:00:02.000',
+    '<v.veir Thomas>What changed this week?',
+    '',
+    '2',
+    '00:00:03.000 --> 00:00:05.000',
+    '<v.founder Maya>We ran the pilot.',
+    '',
+  ].join('\n');
+
+  /** A media element whose time the test moves (jsdom plays nothing). */
+  function controllable(video: HTMLVideoElement) {
+    const state = { time: 0, paused: true };
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => state.time,
+      set: (value: number) => {
+        state.time = value;
+        video.dispatchEvent(new Event('seeked'));
+      },
+    });
+    Object.defineProperty(video, 'duration', { configurable: true, get: () => 60 });
+    Object.defineProperty(video, 'paused', { configurable: true, get: () => state.paused });
+    const play = vi.spyOn(video, 'play').mockImplementation(() => {
+      state.paused = false;
+      return Promise.resolve();
+    });
+    const pause = vi.spyOn(video, 'pause').mockImplementation(() => {
+      state.paused = true;
+    });
+    return { state, play, pause };
+  }
+
+  it('marks the line being heard, jumps to a line when it is pressed, and answers K, J and L', async () => {
+    stubFetch().mockImplementation((input) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.startsWith('https://recordings.test/captions.vtt'))
+        return Promise.resolve(new Response(VTT, { status: 200 }));
+      return Promise.resolve(
+        jsonResponse({
+          recording: { ...RECORDING, hasCaptions: true },
+          media: { url: 'https://recordings.test/call.webm?sig=1', expiresAt: '2026-11-06T13:00:00.000Z' },
+          captions: {
+            url: 'https://recordings.test/captions.vtt?sig=1',
+            expiresAt: '2026-11-06T13:00:00.000Z',
+          },
+        }),
+      );
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<RecordingPlayer recording={{ ...RECORDING, hasCaptions: true }} />);
+    const video = await replay();
+    const { state, play, pause } = controllable(video);
+    const transcript = await screen.findByRole('list', { name: 'Transcript' });
+    await waitFor(() => {
+      expect(within(transcript).getAllByRole('button')).toHaveLength(2);
+    });
+    const [thomas, maya] = within(transcript).getAllByRole('button');
+    if (thomas === undefined || maya === undefined) throw new Error('no transcript lines');
+
+    act(() => {
+      state.time = 3.5;
+      video.dispatchEvent(new Event('timeupdate'));
+    });
+    expect(maya).toHaveAttribute('aria-current', 'true');
+    expect(thomas).not.toHaveAttribute('aria-current');
+    expect(document.querySelector('[data-slot="recording-captions"]')).toHaveTextContent(
+      'Maya: We ran the pilot.',
+    );
+
+    await user.click(thomas);
+    expect(state.time).toBe(0);
+    expect(play).toHaveBeenCalledOnce();
+    expect(thomas).toHaveAttribute('aria-current', 'true');
+
+    await user.keyboard('l');
+    expect(state.time).toBe(10);
+    await user.keyboard('j');
+    expect(state.time).toBe(0);
+    await user.keyboard('k');
+    expect(pause).toHaveBeenCalledOnce();
+    await user.keyboard('k');
+    expect(play).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,5 +1,3 @@
-import { useState } from 'react';
-
 import { useRecordings } from '@/lib/api/hooks/recordings';
 
 import { RecordingsList } from './recordings-list';
@@ -16,7 +14,6 @@ export function ConversationRecordings({
   privacy: 'standard' | 'ephemeral';
 }) {
   const recordings = useRecordings({ sessionId }, { enabled: privacy === 'standard' });
-  const [playing, setPlaying] = useState<string | null>(null);
   const items = recordings.data?.items ?? [];
   if (privacy !== 'standard' || items.length === 0) return null;
   return (
@@ -28,12 +25,7 @@ export function ConversationRecordings({
       <h2 id={`recordings-${sessionId}`} className="text-small font-medium text-muted-foreground">
         Recordings
       </h2>
-      <RecordingsList
-        items={items}
-        playing={playing}
-        onPlay={setPlaying}
-        label="Recordings of this conversation"
-      />
+      <RecordingsList items={items} label="Recordings of this conversation" />
     </section>
   );
 }

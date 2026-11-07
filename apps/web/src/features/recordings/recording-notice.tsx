@@ -1,4 +1,4 @@
-import { Captions, Circle, LockKeyhole, Trash2, type LucideIcon } from 'lucide-react';
+import { Circle, LockKeyhole, MonitorPlay, Trash2, type LucideIcon } from 'lucide-react';
 
 import {
   AlertDialog,
@@ -17,15 +17,19 @@ interface Fact {
   readonly text: string;
 }
 
-/** What a person reads before their first recording: what is recorded, where it is kept, how to delete it. */
-export function recordingFacts(name: string, video: boolean): readonly Fact[] {
+/**
+ * What a person reads before their first recording: what is recorded, where it is kept, how to delete it. `screen`:
+ * the browser can share this tab, and asks which to share once they start (else the call view is recorded).
+ */
+export function recordingFacts(name: string, video: boolean, screen: boolean): readonly Fact[] {
+  const picture = video ? `${name}’s AI avatar` : 'the call’s sphere';
   return [
     {
       id: 'what',
-      icon: Captions,
-      text: video
-        ? `Both voices, ${name}’s AI avatar and the captions are recorded.`
-        : `Both voices and the captions are recorded, with the call’s sphere as the picture.`,
+      icon: MonitorPlay,
+      text: screen
+        ? 'This tab is recorded as you see it, with both voices. Your browser asks you to share it first.'
+        : `The call view is recorded: ${picture}, the conversation and both voices.`,
     },
     {
       id: 'where',
@@ -46,6 +50,8 @@ interface RecordingNoticeDialogProps {
   name: string;
   /** A video call: the face is in the picture. */
   video: boolean;
+  /** The browser can share this tab (it asks once they start). */
+  screen: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -55,10 +61,11 @@ export function RecordingNoticeDialog({
   open,
   name,
   video,
+  screen,
   onConfirm,
   onCancel,
 }: RecordingNoticeDialogProps) {
-  const facts = recordingFacts(name, video);
+  const facts = recordingFacts(name, video, screen);
   return (
     <AlertDialog
       open={open}

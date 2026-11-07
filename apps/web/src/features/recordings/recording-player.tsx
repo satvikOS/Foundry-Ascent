@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { AudioLines, Captions, CaptionsOff } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { Kbd } from '@/components/ui/kbd';
+
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,6 +13,7 @@ import { formatClock } from '@/features/calls/use-call-clock';
 import { fetchPlayback } from '@/lib/api/hooks/recordings';
 import { queryKeys } from '@/lib/api/query-keys';
 import { formatDateTime } from '@/lib/format';
+import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import { cn } from '@/lib/utils';
 
 import { cuesAt, parseWebVtt, type ShownCue } from './captions';
@@ -18,7 +21,8 @@ import { cuesAt, parseWebVtt, type ShownCue } from './captions';
 /*
  * Replays a recording with its captions in step (ADR-0023). The files come straight from the recordings store through
  * presigned GETs issued for this replay; nothing here calls the vEIR or any model. The captions show over the picture
- * and as a transcript beside it, where a line jumps the recording to it.
+ * and as a transcript beside it that follows the replay (the line being heard is marked and kept in view), where a
+ * line jumps the recording to it. K plays or pauses it, J and L go back or forward ten seconds.
  *
  * A replay never plays over a live call: while one goes on, a replay does not start by itself (the founder would hear
  * two of the vEIR). On a voice call, playing it also puts the call on hold (the call's own hold: microphone off, resumed
@@ -31,6 +35,34 @@ import { cuesAt, parseWebVtt, type ShownCue } from './captions';
  */
 function replayKey(recordingId: string, part: 'playback' | 'captions') {
   return [...queryKeys.all, 'recording-replay', recordingId, part] as const;
+}
+
+/**
+ * A recording's presigned GETs for one replay, shared by everything that shows it (one request; never kept after it
+ * closes: they are credentials that expire, and each replay is audited).
+ */
+export function useRecordingReplay(recordingId: string) {
+  return useQuery({
+    queryKey: replayKey(recordingId, 'playback'),
+    queryFn: ({ signal }) => fetchPlayback(recordingId, signal),
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+  });
+}
+
+/** How far J and L move the replay. */
+const SKIP_SECONDS = 10;
+/** After the person scrolls the transcript themselves, it stops following the replay for this long. */
+const OWN_SCROLL_MS = 4_000;
+
+/** Smooth, unless the person asked for less motion. */
+function scrollBehavior(): ScrollBehavior {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  } catch {
+    return 'auto';
+  }
 }
 
 /** A WebM from MediaRecorder carries no duration: seeking to the end once makes the browser measure it. */
@@ -121,14 +153,7 @@ interface RecordingPlayerProps {
 }
 
 export function RecordingPlayer({ recording, autoPlay = false, className }: RecordingPlayerProps) {
-  const playback = useQuery({
-    queryKey: replayKey(recording.id, 'playback'),
-    queryFn: ({ signal }) => fetchPlayback(recording.id, signal),
-    // Presigned GETs are credentials that expire: fetched for each replay, never kept.
-    staleTime: Infinity,
-    gcTime: 0,
-    retry: false,
-  });
+  const playback = useRecordingReplay(recording.id);
   const captionsUrl = playback.data?.captions?.url ?? null;
   const captions = useQuery({
     queryKey: replayKey(recording.id, 'captions'),
@@ -150,6 +175,39 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
   const cues = useMemo(() => captions.data ?? [], [captions.data]);
   const showing = cuesAt(cues, playhead);
   const label = `Recording of the call on ${formatDateTime(recording.createdAt)}`;
+  const transcriptRef = useRef<HTMLOListElement | null>(null);
+  const ownScrollAt = useRef(0);
+  const current = showing.at(-1) ?? null;
+  const currentKey = current === null ? null : `${String(current.startMs)}-${current.speaker}`;
+
+  // The transcript keeps the line being heard in view, unless the person is reading elsewhere in it.
+  useEffect(() => {
+    const list = transcriptRef.current;
+    if (list === null || currentKey === null || Date.now() - ownScrollAt.current < OWN_SCROLL_MS) return;
+    const line = list.querySelector<HTMLElement>(`[data-cue="${currentKey}"]`);
+    if (line === null) return;
+    const top = line.offsetTop - list.offsetTop - list.clientHeight / 3;
+    if (Math.abs(list.scrollTop - top) < line.offsetHeight) return;
+    list.scrollTo({ top, behavior: scrollBehavior() });
+  }, [currentKey]);
+
+  useHotkeys(
+    {
+      k: () => {
+        if (video === null) return;
+        if (video.paused) void video.play().catch(() => undefined);
+        else video.pause();
+      },
+      j: () => {
+        if (video !== null) video.currentTime = Math.max(0, video.currentTime - SKIP_SECONDS);
+      },
+      l: () => {
+        if (video !== null)
+          video.currentTime = Math.min(video.duration || Infinity, video.currentTime + SKIP_SECONDS);
+      },
+    },
+    video !== null,
+  );
 
   const onError = useCallback(() => {
     // A replay watched past its presigned GET's life: fresh ones, from where it stopped.
@@ -184,10 +242,10 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
     <section
       aria-label={label}
       data-slot="recording-player"
-      className={cn('grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]', className)}
+      className={cn('grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start', className)}
     >
-      <div className="grid gap-2">
-        <div className="relative aspect-video overflow-hidden rounded-xl bg-black ring-1 ring-border">
+      <div className="grid min-w-0 gap-2">
+        <div className="relative aspect-video overflow-hidden rounded-2xl bg-black ring-1 ring-border">
           {playback.isPending ? (
             <Skeleton className="absolute inset-0 rounded-none" />
           ) : playback.isError ? (
@@ -211,6 +269,7 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
                 crossOrigin="anonymous"
                 autoPlay={autoPlay && !onCall}
                 aria-label={label}
+                aria-keyshortcuts="K J L"
                 data-slot="recording-video"
                 onLoadedMetadata={(event) => {
                   measureDuration(event.currentTarget);
@@ -247,8 +306,8 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
           )}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 text-small text-muted-foreground">
-          <span className="tabular">
-            {formatClock(recording.durationMs / 1000)} · {formatDateTime(recording.createdAt)}
+          <span className="hidden items-center gap-1.5 sm:flex">
+            <Kbd>K</Kbd> play or pause · <Kbd>J</Kbd> <Kbd>L</Kbd> 10 seconds
           </span>
           {onVoiceCall ? (
             <span data-slot="recording-on-call">Playing this puts your call on hold.</span>
@@ -269,18 +328,29 @@ export function RecordingPlayer({ recording, autoPlay = false, className }: Reco
         </div>
       </div>
       {recording.hasCaptions ? (
-        <div className="grid max-h-[22rem] content-start gap-1 overflow-y-auto lg:max-h-none">
-          <h3 className="px-2 text-small font-medium text-muted-foreground">Transcript</h3>
+        <div className="grid content-start gap-1 rounded-2xl border border-border p-2 lg:sticky lg:top-4">
+          <h2 className="px-2 pt-1 text-small font-medium text-muted-foreground">Transcript</h2>
           {captions.isError ? (
             <p role="status" className="px-2 text-small text-muted-foreground">
               The captions couldn’t be loaded.
             </p>
           ) : (
-            <ol aria-label="Transcript" className="grid gap-0.5">
+            <ol
+              ref={transcriptRef}
+              aria-label="Transcript"
+              onWheel={() => {
+                ownScrollAt.current = Date.now();
+              }}
+              onTouchMove={() => {
+                ownScrollAt.current = Date.now();
+              }}
+              className="grid max-h-[22rem] gap-0.5 overflow-y-auto overscroll-contain lg:max-h-[calc(100dvh-14rem)]"
+            >
               {cues.map((cue) => {
+                const key = `${String(cue.startMs)}-${cue.speaker}`;
                 const active = showing.includes(cue);
                 return (
-                  <li key={`${String(cue.startMs)}-${cue.speaker}`}>
+                  <li key={key} data-cue={key}>
                     <button
                       type="button"
                       onClick={() => {

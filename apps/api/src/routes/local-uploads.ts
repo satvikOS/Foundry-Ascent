@@ -124,6 +124,7 @@ export function registerLocalRecordingRoutes(r: RouteBuilder, target: LocalRecor
         c.header('content-type', file.contentType);
         c.header('accept-ranges', 'bytes');
         c.header('cache-control', 'private, no-store');
+        if (file.contentDisposition !== null) c.header('content-disposition', file.contentDisposition);
         if (file.range === null) return c.body(file.body.slice().buffer, 200);
         c.header(
           'content-range',

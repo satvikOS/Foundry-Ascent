@@ -1,6 +1,6 @@
 /**
- * Call recordings over HTTP (ADR-0023): register (201 with presigned PUTs), complete, list, replay (presigned GETs)
- * and delete (204), for the caller's own call only; a private call is 409 `recording_private_call`, someone else's
+ * Call recordings over HTTP (ADR-0023): register (201 with presigned PUTs), complete, list, replay (presigned GETs),
+ * download (a presigned GET that saves the file under a readable name) and delete (204), for the caller's own call only; a private call is 409 `recording_private_call`, someone else's
  * recording is 404, and the development stand-in for the recordings bucket accepts exactly the signed upload and
  * answers byte ranges. Every response parses with its contract.
  */
@@ -17,6 +17,7 @@ import {
   SessionView,
   StartCallResponse,
 } from '@foundry/contracts';
+import { RecordingDownloadResponse } from '@foundry/contracts/recording-files';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { LocalRecordingStore } from './adapters/local-recording-store.js';
@@ -111,10 +112,33 @@ describe('call recordings', () => {
     );
     expect(replay.media.url).toContain('call.webm');
     expect(replay.captions?.url).toContain('captions.vtt');
+    const download = await json(
+      await api.request(`/recordings/${id}/download?name=Thomas&timeZone=America%2FNew_York`, {
+        cookie: maya,
+      }),
+      RecordingDownloadResponse,
+    );
+    expect(download.filename).toMatch(/^Thomas call \d{4}-\d\d-\d\d \d\d-\d\d\.webm$/);
+    expect(api.h.recordingStore.gets.at(-1)).toMatchObject({
+      key: media?.key,
+      downloadAs: download.filename,
+    });
+    const transcript = await json(
+      await api.request(`/recordings/${id}/download?file=transcript`, { cookie: maya }),
+      RecordingDownloadResponse,
+    );
+    expect(transcript.filename).toMatch(/^Call .+ transcript\.vtt$/);
+    expect(
+      (await problem(await api.request(`/recordings/${id}/download?file=everything`, { cookie: maya }), 422))
+        .code,
+    ).toBe('validation_failed');
 
     // Devin works on the venture, but the recording is Maya's.
     expect(
       (await problem(await api.request(`/recordings/${id}/playback`, { cookie: devin }), 404)).code,
+    ).toBe('not_found');
+    expect(
+      (await problem(await api.request(`/recordings/${id}/download`, { cookie: devin }), 404)).code,
     ).toBe('not_found');
     expect(
       (
@@ -189,6 +213,7 @@ describe('call recordings', () => {
         { method: 'POST', path: '/recordings/:id/complete', auth: 'session', idempotency: 'standard' },
         { method: 'GET', path: '/recordings', auth: 'session', idempotency: 'none' },
         { method: 'GET', path: '/recordings/:id/playback', auth: 'session', idempotency: 'none' },
+        { method: 'GET', path: '/recordings/:id/download', auth: 'session', idempotency: 'none' },
         { method: 'DELETE', path: '/recordings/:id', auth: 'session', idempotency: 'standard' },
       ]),
     );
@@ -246,7 +271,22 @@ describe('PUT|GET /_local/recordings/:token (development only)', () => {
     expect(part.status).toBe(206);
     expect(await part.text()).toBe('bcd');
     expect(part.headers.get('content-range')).toBe('bytes 1-3/6');
+    expect(whole.headers.get('content-disposition')).toBeNull();
     expect((await app.request(new Request(`http://localhost${get}x`))).status).toBe(403);
+
+    // A download is the same file, saved under its name.
+    const download = await store.presignGet({
+      key,
+      contentType: 'video/webm',
+      expiresInSeconds: 60,
+      downloadAs: 'Thomas call 2026-11-07 14-22.webm',
+    });
+    const saved = await app.request(new Request(`http://localhost${new URL(download.url).pathname}`));
+    expect(saved.status).toBe(200);
+    expect(await saved.text()).toBe('abcdef');
+    expect(saved.headers.get('content-disposition')).toBe(
+      `attachment; filename="Thomas call 2026-11-07 14-22.webm"; filename*=UTF-8''Thomas%20call%202026-11-07%2014-22.webm`,
+    );
   });
 
   it('refuses to mount outside development', () => {

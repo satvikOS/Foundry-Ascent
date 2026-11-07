@@ -9,6 +9,11 @@ import {
   type RecordingPlaybackResponse,
   type RecordingView,
 } from '@foundry/contracts';
+import {
+  RecordingDownloadQuery,
+  type RecordingDownloadFile,
+  type RecordingDownloadResponse,
+} from '@foundry/contracts/recording-files';
 import { auditRepo, callsRepo, recordingsRepo, sessionsRepo, venturesRepo } from '@foundry/db';
 import { type z } from 'zod';
 
@@ -24,8 +29,8 @@ import { type RecordingStore } from '../ports.js';
  * without calling the vEIR. The browser records and uploads both files (the recording and its WebVTT captions)
  * straight to the recordings store with presigned PUTs issued here, after this checked the call is the caller's own
  * and its conversation is remembered (a private call is never recorded); `complete` checks the sizes that arrived.
- * Replay gets presigned GETs, never a model. Only the person who recorded it lists, plays or deletes it (RLS), and
- * lists or plays it only while they still have its venture (a revoked or expired membership loses it at once, though
+ * Replay and download get presigned GETs, never a model. Only the person who recorded it lists, plays, downloads or
+ * deletes it (RLS), and lists, plays or downloads it only while they still have its venture (a revoked or expired membership loses it at once, though
  * they may still delete it). Deleting it or its conversation deletes its files (at once, and the daily maintenance
  * retries any it missed or any that arrived later). Every step is audited with identifiers and counts, never content.
  */
@@ -42,12 +47,21 @@ export interface RecordingsService {
   list(ctx: RequestContext, query: z.input<typeof RecordingListQuery>): Promise<RecordingListResponse>;
   /** Presigned GETs of a ready recording and its captions, long enough to watch it to its end. Audited. */
   playback(ctx: RequestContext, recordingId: string): Promise<RecordingPlaybackResponse>;
+  /** A presigned GET that saves the recording or its transcript under a readable name. Audited. */
+  download(
+    ctx: RequestContext,
+    recordingId: string,
+    query: z.input<typeof RecordingDownloadQuery>,
+  ): Promise<RecordingDownloadResponse>;
   /** Deletes the caller's recording and then its files. */
   remove(ctx: RequestContext, recordingId: string): Promise<void>;
 }
 
 /** Shortest lifetime of a replay's presigned GETs (the longest is `RECORDING_LIMITS.maxPlaybackUrlSeconds`). */
 const PLAYBACK_MIN_SECONDS = 15 * 60;
+
+/** How long a download's presigned GET lasts: long enough to start saving it (the save itself may take longer). */
+export const DOWNLOAD_URL_SECONDS = 5 * 60;
 
 /**
  * A pending recording whose upload has not completed after this long is abandoned (its files purged). It is also how
@@ -76,6 +90,53 @@ export function recordingKeys(args: {
 }): { readonly media: string; readonly captions: string } {
   const prefix = `tenants/${args.tenantId}/ventures/${args.ventureId}/sessions/${args.sessionId}/recordings/${args.recordingId}`;
   return { media: `${prefix}/call.${EXTENSIONS[args.mimeType]}`, captions: `${prefix}/captions.vtt` };
+}
+
+/** A time zone the platform knows by this IANA name, else UTC. */
+function knownTimeZone(timeZone: string | undefined): string {
+  if (timeZone === undefined || timeZone === '') return 'UTC';
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone }).resolvedOptions().timeZone;
+  } catch {
+    return 'UTC';
+  }
+}
+
+/**
+ * The name a downloaded file is saved under, as the person would name it: whose call it was and when, in their time
+ * zone ("Thomas call 2026-11-07 14-22.webm", its transcript "… transcript.vtt"). Characters a file system refuses
+ * never reach it; the header encodes the rest (content-disposition in the stores).
+ */
+export function recordingFilename(args: {
+  readonly name: string | undefined;
+  readonly createdAt: string;
+  readonly timeZone: string | undefined;
+  readonly mimeType: RecordingMimeType;
+  readonly file: RecordingDownloadFile;
+}): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: knownTimeZone(args.timeZone),
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(new Date(args.createdAt))
+      .map((part) => [part.type, part.value]),
+  );
+  const when = `${parts.year ?? ''}-${parts.month ?? ''}-${parts.day ?? ''} ${parts.hour ?? ''}-${parts.minute ?? ''}`;
+  const name = (args.name ?? '')
+    // eslint-disable-next-line no-control-regex -- control characters are exactly what is removed
+    .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60)
+    .trim();
+  const stem = name === '' ? `Call ${when}` : `${name} call ${when}`;
+  return args.file === 'transcript' ? `${stem} transcript.vtt` : `${stem}.${EXTENSIONS[args.mimeType]}`;
 }
 
 /** How long a replay's presigned GETs last: the recording's length and a margin, within bounds. */
@@ -432,6 +493,42 @@ export function createRecordingsService(kit: Kit): RecordingsService {
             }),
       ]);
       return { recording: recordingsRepo.toRecordingView(recording), media, captions };
+    },
+
+    download: async (ctx, rawRecordingId, rawQuery) => {
+      const recordingId = requireId(rawRecordingId, 'Recording');
+      const query = parseInput(RecordingDownloadQuery, rawQuery);
+      const files = store();
+      const { recording, key } = await kit.inRequest(ctx, async (scope) => {
+        const own = await ownRecording(scope, recordingId, 'read');
+        if (own.status !== 'ready')
+          throw fail.conflict('This recording is still being saved.', 'recording_pending');
+        const file = query.file === 'transcript' ? own.captionsKey : own.storageKey;
+        if (file === null) throw fail.notFound('Transcript');
+        await audit(scope, {
+          action: 'recording.downloaded',
+          outcome: 'succeeded',
+          ventureId: own.ventureId,
+          objectType: 'call_recording',
+          objectId: recordingId,
+          metadata: { callId: own.callId, file: query.file },
+        });
+        return { recording: own, key: file };
+      });
+      const filename = recordingFilename({
+        name: query.name,
+        createdAt: recording.createdAt,
+        timeZone: query.timeZone,
+        mimeType: recording.mimeType,
+        file: query.file,
+      });
+      const presigned = await files.presignGet({
+        key,
+        contentType: query.file === 'transcript' ? RECORDING_CAPTIONS_TYPE : recording.mimeType,
+        expiresInSeconds: DOWNLOAD_URL_SECONDS,
+        downloadAs: filename,
+      });
+      return { ...presigned, filename };
     },
 
     remove: async (ctx, rawRecordingId) => {

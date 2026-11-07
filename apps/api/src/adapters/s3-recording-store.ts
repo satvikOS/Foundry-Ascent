@@ -11,6 +11,7 @@ import {
 
 import { UPLOAD_URL_TTL_SECONDS } from '../config.js';
 import { type Logger } from '../logging.js';
+import { contentDisposition } from './content-disposition.js';
 import { createS3Client, presignBoundPut } from './s3-object-store.js';
 
 /** Every recording key lives under this prefix (the bucket's IAM scopes it): `tenants/{t}/ventures/{v}/sessions/…`. */
@@ -58,7 +59,8 @@ export interface S3RecordingStoreOptions {
  *   the declared type and size; at most 5 minutes to start; recording keys only.
  * - `presignGet`: SigV4 query-signed GET whose response type is fixed and never cached, valid as long as core asks
  *   (the recording's length and a margin, at most `RECORDING_LIMITS.maxPlaybackUrlSeconds`): the player streams it
- *   with range requests for as long as someone watches.
+ *   with range requests for as long as someone watches. A download (`downloadAs`) also fixes the response's
+ *   `Content-Disposition` to `attachment` with that name, so following the link saves the file.
  * - `size`: HeadObject; null for a key that is not there. The functions may not list the bucket (ADR-0023 §8), so S3
  *   answers a HEAD of a missing key with 403, not 404: a 403 is taken as "not uploaded yet" too, and logged
  *   (`recordings.head_denied`, without the key) so that a real denial (a policy regression, the wrong bucket) shows.
@@ -96,6 +98,9 @@ export class S3RecordingStore implements RecordingStore {
         Key: input.key,
         ResponseContentType: input.contentType,
         ResponseCacheControl: 'private, no-store',
+        ...(input.downloadAs === undefined
+          ? {}
+          : { ResponseContentDisposition: contentDisposition('attachment', input.downloadAs) }),
       }),
       { expiresIn, signingDate: signedAt },
     );

@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./viewer": "./src/viewer.ts"
+    "./viewer": "./src/viewer.ts",
+    "./recording-files": "./src/recording-files.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

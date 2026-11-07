@@ -51,16 +51,28 @@ function fakeEngine() {
   };
 }
 
+/** A shared screen: one video track (a tab unless `surface` says otherwise), stoppable. */
+function sharedScreen(surface = 'browser') {
+  const track = { stop: vi.fn(), getSettings: () => ({ displaySurface: surface }) };
+  return {
+    track,
+    stream: { getTracks: () => [track], getVideoTracks: () => [track] } as unknown as MediaStream,
+  };
+}
+
 function setup(
   save = vi.fn((recorded: RecordedCall) =>
     Promise.resolve({ id: 'r1', callId: recorded.callId } as RecordingView),
   ),
+  requestScreen?: () => Promise<MediaStream> | null,
 ) {
   let now = 1_000_000;
   const recorder = {
     start: vi.fn(),
     sync: vi.fn(),
+    capture: 'view' as 'screen' | 'view' | 'sound',
     onLimit: null as (() => void) | null,
+    onScreenEnded: null as (() => void) | null,
     stop: vi.fn(() =>
       Promise.resolve({
         media: new Blob(['x'.repeat(10)], { type: 'video/webm' }),
@@ -76,8 +88,10 @@ function setup(
   const session = new RecordingSession(call.engine, {
     createRecorder: (input) => {
       inputs.push(input);
+      if (input.display !== null) recorder.capture = 'screen';
       return recorder;
     },
+    ...(requestScreen ? { requestScreen } : {}),
     save,
     now: () => now,
     guardUnload: () => {
@@ -98,10 +112,13 @@ describe('RecordingSession', () => {
     session.onSaved = onSaved;
     session.start();
     expect(recorder.start).toHaveBeenCalledOnce();
-    expect(session.getSnapshot()).toMatchObject({
+    // Where no screen can be shared, the call view is recorded, and that is what was expected: nothing to say.
+    expect(session.getSnapshot()).toEqual({
       status: 'recording',
       callId: CALL.id,
       startedAt: 1_000_000,
+      capture: 'view',
+      note: null,
     });
     tick(1_000);
     call.set({ captions: { veir: 'What changed this week?', founder: null, founderLive: false } });
@@ -212,6 +229,140 @@ describe('RecordingSession', () => {
     await vi.waitFor(() => {
       expect(save).toHaveBeenCalledOnce();
     });
+  });
+});
+
+describe('RecordingSession: the screen', () => {
+  it('asks for the screen in the Record press, then records it with the call’s sound', async () => {
+    const screen = sharedScreen();
+    let share: (stream: MediaStream) => void = () => undefined;
+    const requestScreen = vi.fn(
+      () =>
+        new Promise<MediaStream>((resolve) => {
+          share = resolve;
+        }),
+    );
+    const { session, recorder, inputs, unload } = setup(undefined, requestScreen);
+    session.start();
+    // Asked at once (the browser asks only from the press itself); nothing records until it is answered.
+    expect(requestScreen).toHaveBeenCalledOnce();
+    expect(session.getSnapshot()).toEqual({ status: 'starting' });
+    expect(session.canStart()).toBe(false);
+    expect(recorder.start).not.toHaveBeenCalled();
+    expect(unload.held()).toBe(false);
+    share(screen.stream);
+    await vi.waitFor(() => {
+      expect(session.getSnapshot()).toMatchObject({ status: 'recording', capture: 'screen', note: null });
+    });
+    expect(inputs[0]?.display).toBe(screen.stream);
+    expect(inputs[0]).toMatchObject({ name: 'Thomas', founderName: 'Maya' });
+    expect(unload.held()).toBe(true);
+  });
+
+  it('stops and saves when the person stops sharing from the browser', async () => {
+    const { session, recorder, save } = setup(undefined, () => Promise.resolve(sharedScreen().stream));
+    session.start();
+    await vi.waitFor(() => {
+      expect(session.getSnapshot()).toMatchObject({ status: 'recording', capture: 'screen' });
+    });
+    recorder.onScreenEnded?.();
+    await vi.waitFor(() => {
+      expect(save).toHaveBeenCalledOnce();
+    });
+    expect(session.getSnapshot()).toMatchObject({ status: 'saved' });
+  });
+
+  it('records the call view when the screen is not shared, and says so', async () => {
+    const refused = () => Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
+    const { session, inputs } = setup(undefined, refused);
+    session.start();
+    await vi.waitFor(() => {
+      expect(session.getSnapshot()).toMatchObject({
+        status: 'recording',
+        capture: 'view',
+        note: 'The screen wasn’t shared, so the call view is recorded.',
+      });
+    });
+    expect(inputs[0]?.display).toBeNull();
+    // The conversation the call view draws: both speakers' lines as the call shows them.
+    expect(inputs[0]?.transcript()).toEqual([]);
+    session.dismissNote();
+    expect(session.getSnapshot()).toMatchObject({ status: 'recording', note: null });
+  });
+
+  it('records the call view when the browser could not capture the screen, or refused to ask', async () => {
+    const failed = setup(undefined, () => Promise.reject(new DOMException('No source', 'NotReadableError')));
+    failed.session.start();
+    await vi.waitFor(() => {
+      expect(failed.session.getSnapshot()).toMatchObject({
+        status: 'recording',
+        capture: 'view',
+        note: 'The screen wasn’t shared, so the call view is recorded.',
+      });
+    });
+    const refused = setup(undefined, () => {
+      throw new TypeError('getDisplayMedia needs a user gesture');
+    });
+    refused.session.start();
+    expect(refused.session.getSnapshot()).toMatchObject({ status: 'recording', capture: 'view' });
+    expect(refused.inputs[0]?.display).toBeNull();
+  });
+
+  it('says when a whole screen is recorded rather than this tab', async () => {
+    const { session } = setup(undefined, () => Promise.resolve(sharedScreen('monitor').stream));
+    session.start();
+    await vi.waitFor(() => {
+      expect(session.getSnapshot()).toMatchObject({
+        status: 'recording',
+        capture: 'screen',
+        note: 'The whole screen is recorded, not just this tab.',
+      });
+    });
+  });
+
+  it('records nothing when Stop or the call’s end comes while the browser asks, and stops a screen shared late', async () => {
+    const screen = sharedScreen();
+    let share: (stream: MediaStream) => void = () => undefined;
+    const asked = () =>
+      new Promise<MediaStream>((resolve) => {
+        share = resolve;
+      });
+    const { session, recorder, call } = setup(undefined, asked);
+    session.start();
+    await session.stop();
+    expect(session.getSnapshot()).toEqual({ status: 'idle' });
+    share(screen.stream);
+    await vi.waitFor(() => {
+      expect(screen.track.stop).toHaveBeenCalled();
+    });
+    expect(recorder.start).not.toHaveBeenCalled();
+
+    // The call ends while the browser asks.
+    const late = sharedScreen();
+    session.start();
+    call.set({ phase: 'ended' });
+    share(late.stream);
+    await vi.waitFor(() => {
+      expect(late.track.stop).toHaveBeenCalled();
+    });
+    expect(session.getSnapshot()).toEqual({ status: 'idle' });
+    expect(recorder.start).not.toHaveBeenCalled();
+  });
+
+  it('stops the shared screen when the recording cannot start after all', async () => {
+    const screen = sharedScreen();
+    const { session, recorder } = setup(undefined, () => Promise.resolve(screen.stream));
+    recorder.start.mockImplementation(() => {
+      throw new Error('This browser can’t record calls.');
+    });
+    session.start();
+    await vi.waitFor(() => {
+      expect(session.getSnapshot()).toMatchObject({
+        status: 'failed',
+        message: 'This browser can’t record calls.',
+      });
+    });
+    expect(screen.track.stop).toHaveBeenCalled();
   });
 });
 

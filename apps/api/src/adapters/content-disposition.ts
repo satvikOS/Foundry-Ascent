@@ -2,8 +2,8 @@ import { type DocumentContentType } from '@foundry/contracts';
 import { type z } from 'zod';
 
 /**
- * `Content-Disposition` for a stored document (RFC 6266 / RFC 8187): a plain ASCII `filename` for old
- * clients and the exact name as UTF-8 in `filename*`. Quotes, backslashes, control and non-ASCII characters
+ * `Content-Disposition` for a stored file, a document or a call recording (RFC 6266 / RFC 8187): a plain ASCII
+ * `filename` for old clients and the exact name as UTF-8 in `filename*`. Quotes, backslashes, control and non-ASCII characters
  * never reach the plain form, so a file name cannot break out of the header value.
  */
 export function contentDisposition(disposition: 'inline' | 'attachment', filename: string): string {

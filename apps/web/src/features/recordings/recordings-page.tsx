@@ -1,4 +1,4 @@
-import { getRouteApi, useNavigate } from '@tanstack/react-router';
+import { getRouteApi } from '@tanstack/react-router';
 import { CirclePlay } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/empty-state';
@@ -13,16 +13,11 @@ const routeApi = getRouteApi('/$tenant/app/v/$ventureId/recordings');
 
 /**
  * Recordings: the person's own recordings of their calls in this venture, latest first, to watch again with their
- * captions without calling the vEIR. Only they can see them; `?r=` opens one.
+ * transcript (each in its own viewer) or download, without calling the vEIR. Only they can see them.
  */
 export function RecordingsPage() {
   const { ventureId } = routeApi.useParams();
-  const { r: playing = null } = routeApi.useSearch();
-  const navigate = useNavigate({ from: '/$tenant/app/v/$ventureId/recordings' });
   const recordings = useRecordings({ ventureId });
-  const play = (id: string | null) => {
-    void navigate({ search: id === null ? {} : { r: id }, replace: true });
-  };
   return (
     <PageContainer size="narrow">
       <PageHeader title="Recordings" description="Calls you recorded. Only you can watch them." />
@@ -37,13 +32,7 @@ export function RecordingsPage() {
           description="Press Record during a call to keep one here."
         />
       ) : (
-        <RecordingsList
-          items={recordings.data.items}
-          playing={playing}
-          onPlay={play}
-          showConversation
-          label="Your recordings"
-        />
+        <RecordingsList items={recordings.data.items} showConversation label="Your recordings" />
       )}
     </PageContainer>
   );

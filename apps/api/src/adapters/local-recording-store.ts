@@ -13,6 +13,7 @@ import {
 import { z } from 'zod';
 
 import { UPLOAD_URL_TTL_SECONDS } from '../config.js';
+import { contentDisposition } from './content-disposition.js';
 import { LocalUploadRejectedError } from './local-object-store.js';
 import { isRecordingKey } from './s3-recording-store.js';
 
@@ -29,7 +30,14 @@ const Claims = z.discriminatedUnion('o', [
     l: z.number().int().min(1),
     e: z.number().int(),
   }),
-  z.object({ o: z.literal('get'), k: z.string().min(1).max(512), t: ContentType, e: z.number().int() }),
+  z.object({
+    o: z.literal('get'),
+    k: z.string().min(1).max(512),
+    t: ContentType,
+    e: z.number().int(),
+    /** A download: the name it is saved under. */
+    f: z.string().min(1).max(255).optional(),
+  }),
 ]);
 type Claims = z.infer<typeof Claims>;
 
@@ -37,6 +45,8 @@ type Claims = z.infer<typeof Claims>;
 export interface LocalRecordingRead {
   readonly body: Uint8Array;
   readonly contentType: string;
+  /** `attachment; filename=…` for a download, else null (the player reads it). */
+  readonly contentDisposition: string | null;
   readonly size: number;
   /** The range sent (inclusive), or null for the whole file. */
   readonly range: { readonly start: number; readonly end: number } | null;
@@ -70,7 +80,8 @@ const MAX_RANGE_BYTES = 8 * 1024 * 1024;
  * Filesystem RecordingStore for the local dev server and the end-to-end suite, with S3-like presigned URLs: a token
  * signed with HMAC binds the key, the content type, the exact length (uploads) and the expiry, and
  * `PUT|GET /api/v1/_local/recordings/:token` (mounted only when APP_ENV=development) checks them. GETs answer byte
- * ranges, so the player can seek as it does in the recordings bucket.
+ * ranges, so the player can seek as it does in the recordings bucket; a download's token names the file it is saved
+ * as, sent as `Content-Disposition: attachment` as S3 does for a presigned GET that asks for it.
  */
 export class LocalRecordingStore implements RecordingStore, LocalRecordingTarget {
   readonly #root: string;
@@ -147,7 +158,13 @@ export class LocalRecordingStore implements RecordingStore, LocalRecordingTarget
     this.#path(input.key);
     const expiresIn = Math.min(input.expiresInSeconds, RECORDING_LIMITS.maxPlaybackUrlSeconds);
     const expiresAt = new Date(this.#now().getTime() + expiresIn * 1000);
-    const token = this.#token({ o: 'get', k: input.key, t: input.contentType, e: expiresAt.getTime() });
+    const token = this.#token({
+      o: 'get',
+      k: input.key,
+      t: input.contentType,
+      e: expiresAt.getTime(),
+      ...(input.downloadAs === undefined ? {} : { f: input.downloadAs }),
+    });
     return { url: this.#url(token), expiresAt: expiresAt.toISOString() };
   }
 
@@ -182,6 +199,7 @@ export class LocalRecordingStore implements RecordingStore, LocalRecordingTarget
       return {
         body,
         contentType: claims.t,
+        contentDisposition: claims.f === undefined ? null : contentDisposition('attachment', claims.f),
         size,
         range: wanted === null ? null : { start, end },
       };

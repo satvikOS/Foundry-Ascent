@@ -8,7 +8,7 @@ import { toast } from '@/components/ui/toast';
 import { queryKeys } from '@/lib/api/query-keys';
 import { saveRecording } from '@/lib/api/hooks/recording-upload';
 
-import { canRecordCalls } from './call-recorder';
+import { canRecordCalls, requestScreen } from './call-recorder';
 import {
   browserRecorder,
   guardPageUnload,
@@ -32,6 +32,7 @@ const SAVE_TOAST = 'call-recording-save';
 
 const BROWSER_DEPS = {
   createRecorder: browserRecorder,
+  requestScreen,
   save: saveRecording,
   now: () => Date.now(),
   guardUnload: guardPageUnload,
@@ -66,17 +67,16 @@ export function useElapsedSeconds(startedAt: number | null): number {
 export const SAVED_NOTICE_MS = 8_000;
 
 /**
- * Opens a saved recording in the venture's Recordings (a live call goes on, minimized, and the replay waits to be
- * played: RecordingPlayer).
+ * Opens a saved recording in its viewer, under the venture's Recordings (a live call goes on, minimized, and the replay
+ * waits to be played: RecordingPlayer).
  */
 export function useWatchRecording(tenant: string): (recording: RecordingView) => void {
   const navigate = useNavigate();
   return useCallback(
     (recording: RecordingView) => {
       void navigate({
-        to: '/$tenant/app/v/$ventureId/recordings',
-        params: { tenant, ventureId: recording.ventureId },
-        search: { r: recording.id },
+        to: '/$tenant/app/v/$ventureId/recordings/$recordingId',
+        params: { tenant, ventureId: recording.ventureId, recordingId: recording.id },
       });
     },
     [navigate, tenant],
@@ -126,7 +126,8 @@ export function useCallRecordingLifecycle(
     const was = previous.current;
     previous.current = state.status;
     if (state.status === was) return;
-    if (state.status === 'recording') announce('Recording started');
+    if (state.status === 'recording')
+      announce(state.note === null ? 'Recording started' : `Recording started. ${state.note}`);
     else if (state.status === 'saving' && was === 'recording') announce('Recording stopped. Saving it.');
     else if (state.status === 'saved') announce('Recording saved');
     else if (state.status === 'failed') announce(state.title, 'assertive');
@@ -204,6 +205,7 @@ export function useCallRecordingLifecycle(
               }),
         });
         break;
+      case 'starting':
       case 'recording':
       case 'idle':
         break;

@@ -83,6 +83,8 @@ export interface RecordingGetInput {
   readonly contentType: RecordingContentType;
   /** Long enough to watch the whole recording: the player streams it with range requests until then. */
   readonly expiresInSeconds: number;
+  /** Saves the file under this name (`Content-Disposition: attachment`) instead of serving it to the player. */
+  readonly downloadAs?: string;
 }
 
 /**

@@ -31,6 +31,19 @@ describe('CaptionRecorder', () => {
       { speaker: 'veir', startMs: 3_000, endMs: 9_000, text: 'Still talking' },
     ]);
   });
+
+  it('gives the latest lines as the call shows them, finished and still being heard, for a composed recording', () => {
+    const r = new CaptionRecorder();
+    r.observe({ veir: 'Good to see you.', founder: null, founderLive: false }, 0);
+    r.observe({ veir: 'What changed this week?', founder: null, founderLive: false }, 1_800);
+    r.observe({ veir: 'What changed this week?', founder: 'We ran', founderLive: true }, 3_000);
+    expect(r.recent(8).map(({ speaker, text, live }) => ({ speaker, text, live }))).toEqual([
+      { speaker: 'veir', text: 'Good to see you.', live: false },
+      { speaker: 'veir', text: 'What changed this week?', live: true },
+      { speaker: 'founder', text: 'We ran', live: true },
+    ]);
+    expect(r.recent(2).map((line) => line.text)).toEqual(['What changed this week?', 'We ran']);
+  });
 });
 
 describe('WebVTT', () => {

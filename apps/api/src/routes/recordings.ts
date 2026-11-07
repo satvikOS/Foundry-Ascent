@@ -1,4 +1,5 @@
 import { CreateRecordingRequest, RecordingListQuery } from '@foundry/contracts';
+import { RecordingDownloadQuery } from '@foundry/contracts/recording-files';
 import { type Core } from '@foundry/core';
 
 import { jsonBody, pathParam, queryParams } from '../http/input.js';
@@ -6,7 +7,8 @@ import { type RouteBuilder } from '../http/router.js';
 
 /**
  * Call recordings (ADR-0023, docs/architecture/calls.md §7): the caller's own recordings only. The files never pass
- * through the API: it issues presigned PUTs for the upload and presigned GETs for replay, after checking ownership.
+ * through the API: it issues presigned PUTs for the upload and presigned GETs for replay and download, after checking
+ * ownership.
  */
 export function registerRecordingRoutes(r: RouteBuilder, core: Core): void {
   // The response carries presigned upload URLs (short-lived, one key each): never stored for replay, so a retry
@@ -27,6 +29,10 @@ export function registerRecordingRoutes(r: RouteBuilder, core: Core): void {
   // Presigned GETs (a credential for as long as the recording lasts): each request issues fresh ones.
   r.get('/recordings/:id/playback', async (c, ctx) =>
     c.json(await core.recordings.playback(ctx, pathParam(c, 'id'))),
+  );
+  // A presigned GET that saves the file (`attachment`, under a readable name); the browser follows it as a link.
+  r.get('/recordings/:id/download', async (c, ctx) =>
+    c.json(await core.recordings.download(ctx, pathParam(c, 'id'), queryParams(c, RecordingDownloadQuery))),
   );
   r.delete('/recordings/:id', async (c, ctx) => {
     await core.recordings.remove(ctx, pathParam(c, 'id'));

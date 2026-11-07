@@ -49,6 +49,7 @@ import { Route as TenantAppVVentureIdTeamRouteImport } from './routes/$tenant/ap
 import { Route as TenantAppVenturesVentureIdIndexRouteImport } from './routes/$tenant/app/ventures/$ventureId/index';
 import { Route as TenantAppVenturesVentureIdSplatRouteImport } from './routes/$tenant/app/ventures/$ventureId/$';
 import { Route as TenantAppVVentureIdCSessionIdRouteImport } from './routes/$tenant/app/v/$ventureId/c/$sessionId';
+import { Route as TenantAppVVentureIdRecordingsRecordingIdRouteImport } from './routes/$tenant/app/v/$ventureId/recordings_.$recordingId';
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -267,6 +268,12 @@ const TenantAppVVentureIdCSessionIdRoute =
     path: '/c/$sessionId',
     getParentRoute: () => TenantAppVVentureIdRouteRoute,
   } as any);
+const TenantAppVVentureIdRecordingsRecordingIdRoute =
+  TenantAppVVentureIdRecordingsRecordingIdRouteImport.update({
+    id: '/recordings_/$recordingId',
+    path: '/recordings/$recordingId',
+    getParentRoute: () => TenantAppVVentureIdRouteRoute,
+  } as any);
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute;
@@ -309,6 +316,7 @@ export interface FileRoutesByFullPath {
   '/$tenant/app/v/$ventureId/': typeof TenantAppVVentureIdIndexRoute;
   '/$tenant/app/ventures/$ventureId/': typeof TenantAppVenturesVentureIdIndexRoute;
   '/$tenant/app/v/$ventureId/c/$sessionId': typeof TenantAppVVentureIdCSessionIdRoute;
+  '/$tenant/app/v/$ventureId/recordings/$recordingId': typeof TenantAppVVentureIdRecordingsRecordingIdRoute;
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute;
@@ -346,6 +354,7 @@ export interface FileRoutesByTo {
   '/$tenant/app/v/$ventureId': typeof TenantAppVVentureIdIndexRoute;
   '/$tenant/app/ventures/$ventureId': typeof TenantAppVenturesVentureIdIndexRoute;
   '/$tenant/app/v/$ventureId/c/$sessionId': typeof TenantAppVVentureIdCSessionIdRoute;
+  '/$tenant/app/v/$ventureId/recordings/$recordingId': typeof TenantAppVVentureIdRecordingsRecordingIdRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -389,6 +398,7 @@ export interface FileRoutesById {
   '/$tenant/app/v/$ventureId/': typeof TenantAppVVentureIdIndexRoute;
   '/$tenant/app/ventures/$ventureId/': typeof TenantAppVenturesVentureIdIndexRoute;
   '/$tenant/app/v/$ventureId/c/$sessionId': typeof TenantAppVVentureIdCSessionIdRoute;
+  '/$tenant/app/v/$ventureId/recordings_/$recordingId': typeof TenantAppVVentureIdRecordingsRecordingIdRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -432,7 +442,8 @@ export interface FileRouteTypes {
     | '/$tenant/app/eir/personas/'
     | '/$tenant/app/v/$ventureId/'
     | '/$tenant/app/ventures/$ventureId/'
-    | '/$tenant/app/v/$ventureId/c/$sessionId';
+    | '/$tenant/app/v/$ventureId/c/$sessionId'
+    | '/$tenant/app/v/$ventureId/recordings/$recordingId';
   fileRoutesByTo: FileRoutesByTo;
   to:
     | '/'
@@ -469,7 +480,8 @@ export interface FileRouteTypes {
     | '/$tenant/app/eir/personas'
     | '/$tenant/app/v/$ventureId'
     | '/$tenant/app/ventures/$ventureId'
-    | '/$tenant/app/v/$ventureId/c/$sessionId';
+    | '/$tenant/app/v/$ventureId/c/$sessionId'
+    | '/$tenant/app/v/$ventureId/recordings/$recordingId';
   id:
     | '__root__'
     | '/'
@@ -511,7 +523,8 @@ export interface FileRouteTypes {
     | '/$tenant/app/eir/personas/'
     | '/$tenant/app/v/$ventureId/'
     | '/$tenant/app/ventures/$ventureId/'
-    | '/$tenant/app/v/$ventureId/c/$sessionId';
+    | '/$tenant/app/v/$ventureId/c/$sessionId'
+    | '/$tenant/app/v/$ventureId/recordings_/$recordingId';
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -804,6 +817,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TenantAppVVentureIdCSessionIdRouteImport;
       parentRoute: typeof TenantAppVVentureIdRouteRoute;
     };
+    '/$tenant/app/v/$ventureId/recordings_/$recordingId': {
+      id: '/$tenant/app/v/$ventureId/recordings_/$recordingId';
+      path: '/recordings/$recordingId';
+      fullPath: '/$tenant/app/v/$ventureId/recordings/$recordingId';
+      preLoaderRoute: typeof TenantAppVVentureIdRecordingsRecordingIdRouteImport;
+      parentRoute: typeof TenantAppVVentureIdRouteRoute;
+    };
   }
 }
 
@@ -883,6 +903,7 @@ interface TenantAppVVentureIdRouteRouteChildren {
   TenantAppVVentureIdTeamRoute: typeof TenantAppVVentureIdTeamRoute;
   TenantAppVVentureIdIndexRoute: typeof TenantAppVVentureIdIndexRoute;
   TenantAppVVentureIdCSessionIdRoute: typeof TenantAppVVentureIdCSessionIdRoute;
+  TenantAppVVentureIdRecordingsRecordingIdRoute: typeof TenantAppVVentureIdRecordingsRecordingIdRoute;
 }
 
 const TenantAppVVentureIdRouteRouteChildren: TenantAppVVentureIdRouteRouteChildren =
@@ -895,6 +916,8 @@ const TenantAppVVentureIdRouteRouteChildren: TenantAppVVentureIdRouteRouteChildr
     TenantAppVVentureIdTeamRoute: TenantAppVVentureIdTeamRoute,
     TenantAppVVentureIdIndexRoute: TenantAppVVentureIdIndexRoute,
     TenantAppVVentureIdCSessionIdRoute: TenantAppVVentureIdCSessionIdRoute,
+    TenantAppVVentureIdRecordingsRecordingIdRoute:
+      TenantAppVVentureIdRecordingsRecordingIdRoute,
   };
 
 const TenantAppVVentureIdRouteRouteWithChildren =

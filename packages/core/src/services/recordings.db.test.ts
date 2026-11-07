@@ -12,13 +12,14 @@ import {
   RecordingPlaybackResponse,
   type CreateRecordingRequest,
 } from '@foundry/contracts';
+import { RecordingDownloadResponse } from '@foundry/contracts/recording-files';
 import { auditRepo, p, recordingsRepo, venturesRepo } from '@foundry/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type RequestContext } from '../context.js';
 import { DomainError } from '../errors.js';
 import { type CoreHarness, createCoreHarness } from '../testing/harness.js';
-import { playbackSeconds, recordingKeys } from './recordings.js';
+import { DOWNLOAD_URL_SECONDS, playbackSeconds, recordingKeys } from './recordings.js';
 
 let h: CoreHarness;
 let maya: RequestContext;
@@ -252,6 +253,67 @@ describe('replaying and deleting', () => {
     expect(denied.every((e) => e.outcome === 'denied')).toBe(true);
   });
 
+  it('downloads the recording or its transcript under a readable name, to its owner only, audited', async () => {
+    const { callId } = await call(maya);
+    const created = await recorded(maya, callId);
+    expect(
+      (await refusal(h.core.recordings.download(maya, created.recording.id, { file: 'recording' }))).reason,
+    ).toBe('recording_pending');
+    const ready = await h.core.recordings.complete(maya, created.recording.id);
+    const keys = recordingKeys({
+      tenantId: maya.tenantId,
+      ventureId: ventureId(),
+      sessionId: ready.sessionId,
+      recordingId: ready.id,
+      mimeType: 'video/webm',
+    });
+
+    const saved = RecordingDownloadResponse.parse(
+      await h.core.recordings.download(maya, ready.id, { name: 'Thomas', timeZone: 'UTC' }),
+    );
+    const day = ready.createdAt.slice(0, 10);
+    expect(saved.filename).toMatch(new RegExp(`^Thomas call ${day} \\d\\d-\\d\\d\\.webm$`));
+    expect(h.recordingStore.gets.at(-1)).toEqual({
+      key: keys.media,
+      contentType: 'video/webm',
+      expiresInSeconds: DOWNLOAD_URL_SECONDS,
+      downloadAs: saved.filename,
+    });
+    const transcript = await h.core.recordings.download(maya, ready.id, {
+      file: 'transcript',
+      name: 'Thomas',
+    });
+    expect(transcript.filename).toMatch(/^Thomas call .+ transcript\.vtt$/);
+    expect(h.recordingStore.gets.at(-1)).toMatchObject({ key: keys.captions, contentType: 'text/vtt' });
+
+    // Nobody else, not even the venture's team or the platform owner, and nothing for a transcript never saved.
+    for (const other of [devin, owner]) {
+      expect((await refusal(h.core.recordings.download(other, ready.id, {}))).code).toBe('not_found');
+    }
+    const silent = await recorded(maya, callId, { captions: null });
+    await h.core.recordings.complete(maya, silent.recording.id);
+    expect(
+      (await refusal(h.core.recordings.download(maya, silent.recording.id, { file: 'transcript' }))).code,
+    ).toBe('not_found');
+    expect(
+      (await refusal(h.core.recordings.download(maya, ready.id, { file: 'video' as 'recording' }))).code,
+    ).toBe('validation_failed');
+
+    const downloads = await h.t.db.system((sx) =>
+      sx.query(
+        `SELECT outcome, metadata::text AS metadata FROM audit_events
+          WHERE action = 'recording.downloaded' AND object_id = :id ORDER BY id`,
+        { id: p.text(ready.id) },
+      ),
+    );
+    expect(downloads.rows.map((row) => [row.outcome, JSON.parse(String(row.metadata)) as unknown])).toEqual([
+      ['succeeded', { callId, file: 'recording' }],
+      ['succeeded', { callId, file: 'transcript' }],
+    ]);
+    // Ids and the file's kind only: never a URL or the name it was saved under.
+    expect(JSON.stringify(downloads.rows)).not.toMatch(/Thomas|https?:/);
+  });
+
   it('deleting a recording removes its files at once', async () => {
     const { sessionId, callId } = await call(maya);
     const created = await recorded(maya, callId);
@@ -361,6 +423,9 @@ describe('after the venture is gone', () => {
       expect((await h.core.recordings.list(devin, {})).items).toEqual([]);
       expect((await h.core.recordings.list(devin, { ventureId: ventureId() })).items).toEqual([]);
       expect((await refusal(h.core.recordings.playback(devin, kept.recording.id))).code).toBe('not_found');
+      expect((await refusal(h.core.recordings.download(devin, kept.recording.id, {}))).code).toBe(
+        'not_found',
+      );
       expect((await refusal(h.core.recordings.complete(devin, pending.recording.id))).code).toBe('not_found');
       const denied = await audits('recording.access', kept.recording.id);
       expect(denied[0]).toMatchObject({

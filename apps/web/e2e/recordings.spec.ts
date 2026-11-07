@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 import { expect, type Locator, type Page } from '@playwright/test';
 
 import {
@@ -17,9 +19,11 @@ import {
  * Call recordings (ADR-0023) against the real API in mock mode, with the development stand-in for the recordings
  * bucket (presigned PUTs and GETs at the API's own origin: cross-origin under the production CSP, as the bucket is).
  * The browser has a fake microphone (Chromium's fake media device); there is no Amazon Transcribe here, so the call
- * goes on typed and its replies show as captions. The recording is the call itself (MediaRecorder on the call's
- * presence and its sound), uploaded, replayed with its captions in step, and deleted. Every media element is muted,
- * so the test browser never makes a sound.
+ * goes on typed and its replies show as captions. The recording is the shared screen (or, when it is not shared, the
+ * composed call view) with the call's sound, uploaded, watched in its viewer with its transcript in step, downloaded
+ * (an attachment, under a readable name) and deleted. A headless browser has no screen to share, so the screen the
+ * founder shares is a stand-in: getDisplayMedia answers with a canvas "tab" of its own size, or refuses as a founder
+ * who declines would. Every media element is muted, so the test browser never makes a sound.
  */
 
 const WRITE_HEADERS = { 'x-requested-with': 'foundry-ascent', 'content-type': 'application/json' };
@@ -45,6 +49,7 @@ const PRODUCTION_CSP = [
 
 test.use({
   storageState: FOUNDER_STATE,
+  acceptDownloads: true,
   permissions: ['microphone', 'local-network-access'],
   launchOptions: {
     args: ['--disable-audio-output', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
@@ -66,6 +71,55 @@ async function muteMedia(page: Page): Promise<void> {
       },
       true,
     );
+  });
+}
+
+/** The shared "tab" the stand-in screen shows (its size is what a recording of it plays at). */
+const SHARED = { width: 640, height: 360 };
+
+/**
+ * The screen the founder shares: getDisplayMedia answers with a canvas of its own (`share`), or refuses as a founder
+ * who declines the browser's prompt (`decline`). What it was asked for, and the tracks it gave, are kept to inspect.
+ */
+async function shareScreen(page: Page, answer: 'share' | 'decline'): Promise<void> {
+  await page.addInitScript(
+    ({ answer: mode, size }) => {
+      const shared = { asked: [] as unknown[], tracks: [] as MediaStreamTrack[] };
+      (window as unknown as { __screen: typeof shared }).__screen = shared;
+      navigator.mediaDevices.getDisplayMedia = (options) => {
+        shared.asked.push(JSON.parse(JSON.stringify(options ?? {})));
+        if (mode === 'decline')
+          return Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
+        const canvas = document.createElement('canvas');
+        canvas.width = size.width;
+        canvas.height = size.height;
+        const ctx = canvas.getContext('2d');
+        const draw = () => {
+          if (!ctx) return;
+          ctx.fillStyle = '#10131a';
+          ctx.fillRect(0, 0, size.width, size.height);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '28px sans-serif';
+          ctx.fillText(`The call tab ${String(Date.now() % 100_000)}`, 24, size.height / 2);
+        };
+        draw();
+        window.setInterval(draw, 100);
+        const stream = canvas.captureStream(15);
+        shared.tracks.push(...stream.getVideoTracks());
+        return Promise.resolve(stream);
+      };
+    },
+    { answer, size: SHARED },
+  );
+}
+
+/** The founder presses Stop sharing in the browser's own bar: the shared track ends. */
+async function stopSharing(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    for (const track of (window as unknown as { __screen: { tracks: MediaStreamTrack[] } }).__screen.tracks) {
+      track.stop();
+      track.dispatchEvent(new Event('ended'));
+    }
   });
 }
 
@@ -173,9 +227,12 @@ async function recordingsOf(page: Page, sessionId: string): Promise<ListedRecord
 }
 
 test.describe('call recordings', () => {
-  test('records a call, stops, replays it with its captions in step, and deletes it', async ({ page }) => {
-    test.setTimeout(120_000);
+  test('records the shared screen, watches it in its viewer with the transcript in step, downloads it, and deletes it', async ({
+    page,
+  }) => {
+    test.setTimeout(150_000);
     await muteMedia(page);
+    await shareScreen(page, 'share');
     const violations = await enforceProductionCsp(page);
     await voiceNoticeSeen(page);
     const ventureId = await openVenture(page);
@@ -186,12 +243,21 @@ test.describe('call recordings', () => {
     // The first time: what is recorded, where it is kept, how to delete it.
     await screen.getByRole('button', { name: 'Record' }).click();
     const notice = page.getByRole('alertdialog', { name: 'Record this call?' });
-    await expect(notice).toContainText('Both voices and the captions are recorded');
+    await expect(notice).toContainText('This tab is recorded as you see it, with both voices.');
     await expect(notice).toContainText('Only you can watch it.');
     await expect(notice).toContainText('Deleting the conversation deletes it too');
     await notice.getByRole('button', { name: 'Start recording' }).click();
     const indicator = screen.getByTestId('recording-indicator');
     await expect(indicator).toContainText('REC');
+    // The browser was asked for this tab, without its sound (the recording mixes the call's own).
+    const asked = await page.evaluate(
+      () => (window as unknown as { __screen: { asked: unknown[] } }).__screen.asked,
+    );
+    expect(asked).toEqual([
+      expect.objectContaining({ audio: false, preferCurrentTab: true, surfaceSwitching: 'exclude' }),
+    ]);
+    // A tab was shared, as asked: nothing to say about it.
+    await expect(screen.locator('[data-slot="recording-note"]')).toHaveCount(0);
     const stop = screen.getByRole('button', { name: /Stop recording$/ });
     await expect(stop).toHaveAttribute('aria-pressed', 'true');
     // Its name starts with what it shows (label in name); the whole call screen passes while it records.
@@ -233,31 +299,77 @@ test.describe('call recordings', () => {
     expect(saved).toMatchObject({ sessionId, status: 'ready', hasCaptions: true });
     const recordingId = saved?.id ?? '';
 
-    // In the conversation, at the end of its transcript.
+    // In the conversation, at the end of its transcript: Watch opens its viewer.
     const inConversation = page.getByRole('list', { name: 'Recordings of this conversation' });
     await expect(inConversation.getByRole('listitem')).toHaveCount(1);
-    await inConversation.getByRole('button', { name: /^Play the recording from / }).click();
+    await expect(inConversation.getByRole('listitem')).toContainText('Video');
+    await inConversation.getByRole('link', { name: /^Watch the recording from / }).click();
+    await expect(page).toHaveURL(new RegExp(`/v/${ventureId}/recordings/${recordingId}$`));
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     const player = page.locator('[data-slot="recording-player"]');
     const transcript = player.getByRole('list', { name: 'Transcript' });
     await expect(transcript).toContainText(line, { timeout: 15_000 });
     await expect(transcript).toContainText('Thomas:');
     const video = player.locator('video[data-slot="recording-video"]');
     await expect(video).toHaveAttribute('src', new RegExp(`^${FILES_ORIGIN}/api/v1/_local/recordings/`));
-    // The file plays: its length is known (MediaRecorder writes none), and time moves.
+    // The file plays: its length is known (MediaRecorder writes none), and it is the shared screen, at its size.
     await expect
       .poll(() => video.evaluate((v: HTMLVideoElement) => (Number.isFinite(v.duration) ? v.duration : 0)), {
         timeout: 20_000,
       })
       .toBeGreaterThan(1);
+    expect(
+      await video.evaluate((v: HTMLVideoElement) => `${String(v.videoWidth)}x${String(v.videoHeight)}`),
+    ).toBe(`${String(SHARED.width)}x${String(SHARED.height)}`);
     expect(await video.evaluate((v: HTMLVideoElement) => v.muted)).toBe(true);
-    // A transcript line jumps the recording to it, and its caption shows over the picture in step.
-    await transcript
-      .getByRole('button', { name: new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) })
-      .click();
+    // A transcript line jumps the recording to it; the line is marked as the one heard, its caption over the picture.
+    const said = transcript.getByRole('button', {
+      name: new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    });
+    await said.click();
     await expect(player.locator('[data-slot="recording-captions"]')).toContainText(line, { timeout: 10_000 });
+    await expect(said).toHaveAttribute('aria-current', 'true');
     await expect
       .poll(() => video.evaluate((v: HTMLVideoElement) => v.currentTime), { timeout: 10_000 })
       .toBeGreaterThan(0);
+    await video.evaluate((v: HTMLVideoElement) => {
+      v.pause();
+    });
+    await expectNoSeriousA11yViolations(page, 'recording viewer');
+
+    // Download: the recording, then its transcript, each an attachment under a readable name.
+    const download = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Download' }).click();
+    await page.getByRole('menuitem', { name: /^Recording/ }).click();
+    const recordingFile = await download;
+    expect(recordingFile.suggestedFilename()).toMatch(/^Thomas call \d{4}-\d\d-\d\d \d\d-\d\d\.webm$/);
+    const transcriptDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Download' }).click();
+    await page.getByRole('menuitem', { name: /^Transcript/ }).click();
+    const transcriptFile = await transcriptDownload;
+    expect(transcriptFile.suggestedFilename()).toMatch(/^Thomas call .+ transcript\.vtt$/);
+    const vtt = await readFile(await transcriptFile.path(), 'utf8');
+    expect(vtt.startsWith('WEBVTT')).toBe(true);
+    expect(vtt).toContain(line);
+    // What the browser followed: the recordings store's own answer, an attachment (never through the app's API).
+    const signed = (await (
+      await page.request.get(`/api/v1/recordings/${recordingId}/download?name=Thomas&timeZone=UTC`)
+    ).json()) as { url: string; filename: string };
+    expect(signed.url.startsWith(`${FILES_ORIGIN}/api/v1/_local/recordings/`)).toBe(true);
+    const file = await page.request.get(signed.url);
+    expect(file.status()).toBe(200);
+    expect(file.headers()['content-disposition']).toBe(
+      `attachment; filename="${signed.filename}"; filename*=UTF-8''${encodeURIComponent(signed.filename)}`,
+    );
+    expect(file.headers()['content-type']).toBe('video/webm');
+
+    // On a phone the viewer fits: the player, then the transcript, no sideways scroll.
+    const wide = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(video).toBeVisible();
+    await expect(transcript).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    if (wide) await page.setViewportSize(wide);
 
     // Under Recordings, from the side panel; deleted there.
     await page.getByRole('link', { name: 'Recordings' }).first().click();
@@ -294,6 +406,7 @@ test.describe('call recordings', () => {
   }) => {
     test.setTimeout(120_000);
     await muteMedia(page);
+    await shareScreen(page, 'share');
     await voiceNoticeSeen(page);
     await openVenture(page);
     const sessionId = await startConversation(page, `Which room is quiet at noon? ${runToken()}`);
@@ -362,7 +475,7 @@ test.describe('call recordings', () => {
     const watch = saved.getByRole('button', { name: 'Watch' });
     expect(await underPointer(watch)).toBe('Watch');
     await watch.click();
-    await expect(page).toHaveURL(new RegExp(`/recordings\\?r=${listed?.id ?? ''}`));
+    await expect(page).toHaveURL(new RegExp(`/recordings/${listed?.id ?? ''}$`));
     const bar = page.getByRole('region', { name: /^Call with / });
     await expect(bar.getByRole('button', { name: 'Return to call' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Undo' })).toHaveCount(0);
@@ -407,6 +520,7 @@ test.describe('call recordings', () => {
   test('hanging up stops and saves the recording; deleting the conversation deletes it', async ({ page }) => {
     test.setTimeout(90_000);
     await muteMedia(page);
+    await shareScreen(page, 'share');
     await voiceNoticeSeen(page);
     await openVenture(page);
     const sessionId = await startConversation(page, `Who books the reading room? ${runToken()}`);
@@ -430,6 +544,35 @@ test.describe('call recordings', () => {
     expect(await recordingsOf(page, sessionId)).toEqual([]);
     const gone = await page.request.get(`/api/v1/recordings/${saved?.id ?? ''}/playback`);
     expect(gone.status(), 'the deleted conversation’s recording').toBe(404);
+  });
+
+  test('stopping the screen share from the browser stops the recording and saves it', async ({ page }) => {
+    test.setTimeout(90_000);
+    await muteMedia(page);
+    await shareScreen(page, 'share');
+    await voiceNoticeSeen(page);
+    await openVenture(page);
+    const sessionId = await startConversation(page, `Who keeps the reading room keys? ${runToken()}`);
+    await expect(page.getByRole('article', { name: 'Exchange 1' })).toBeVisible({ timeout: 30_000 });
+    const { screen, reply } = await openCall(page);
+    await record(page, screen);
+    await say(page, reply, sessionId, `The night porter does, ${runToken()}`);
+    const completed = page.waitForResponse(
+      (response) =>
+        /\/recordings\/[0-9a-f-]{36}\/complete$/.test(response.url()) && response.status() === 200,
+    );
+    await stopSharing(page);
+    await completed;
+    await expect(screen.getByRole('group', { name: 'Recording saved' })).toBeVisible();
+    await expect(screen.getByTestId('recording-indicator')).toHaveCount(0);
+    // The call goes on.
+    await expect(screen.getByRole('button', { name: 'End call' })).toBeVisible();
+    const [saved] = await recordingsOf(page, sessionId);
+    expect(saved).toMatchObject({ status: 'ready', hasCaptions: true });
+    await endCall(page);
+    await page.request.delete(`/api/v1/sessions/${sessionId}`, {
+      headers: { ...WRITE_HEADERS, 'idempotency-key': runToken() },
+    });
   });
 
   test('a private call cannot be recorded: the control says why and nothing is sent', async ({ page }) => {
@@ -458,13 +601,14 @@ test.describe('call recordings', () => {
     });
     expect([204, 404]).toContain(response.status());
   });
-  test('one recording through a switch to video: the AI avatar is in it, as one video', async ({
+  test('a declined screen records the call view, said plainly, as one video through a switch to video', async ({
     page,
     baseURL,
   }) => {
     if (!baseURL) throw new Error('baseURL is required');
     test.setTimeout(90_000);
     await muteMedia(page);
+    await shareScreen(page, 'decline');
     await voiceNoticeSeen(page);
     // Faces ship off: on for this test (the development stand-in face, a canvas, no one's likeness).
     await setFacesEnabled(baseURL, true);
@@ -475,6 +619,10 @@ test.describe('call recordings', () => {
       await expect(page.getByRole('article', { name: 'Exchange 1' })).toBeVisible({ timeout: 30_000 });
       const { screen } = await openCall(page);
       await record(page, screen);
+      const note = screen.locator('[data-slot="recording-note"]');
+      await expect(note).toHaveText(/The screen wasn’t shared, so the call view is recorded\./);
+      await note.getByRole('button', { name: 'OK' }).click();
+      await expect(note).toHaveCount(0);
       await screen.getByRole('button', { name: 'Switch to video' }).click();
       await page.waitForURL(/\?call=video$/);
       const video = callScreen(page);
@@ -498,10 +646,10 @@ test.describe('call recordings', () => {
         items: { kind: string; mimeType: string }[];
       };
       expect(listed.items[0]).toMatchObject({ kind: 'video', mimeType: 'video/webm' });
-      // Replayed, it is one video track at the recording's size.
+      // Replayed, it is one video track at the composed call view's size.
       await page
         .getByRole('list', { name: 'Recordings of this conversation' })
-        .getByRole('button', { name: /^Play the recording from / })
+        .getByRole('link', { name: /^Watch the recording from / })
         .click();
       const replay = page.locator('[data-slot="recording-player"] video[data-slot="recording-video"]');
       await expect
@@ -511,7 +659,7 @@ test.describe('call recordings', () => {
             timeout: 20_000,
           },
         )
-        .toBe('960x540');
+        .toBe('1280x720');
     } finally {
       await setFacesEnabled(baseURL, false);
       if (sessionId) {

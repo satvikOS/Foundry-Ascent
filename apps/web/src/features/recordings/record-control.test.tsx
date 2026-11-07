@@ -12,7 +12,13 @@ function fakeSession(initial: RecordingState = { status: 'idle' }, options: { li
   let state = initial;
   const listeners = new Set<() => void>();
   const start = vi.fn(() => {
-    state = { status: 'recording', callId: 'c', startedAt: Date.now() - 65_000 };
+    state = {
+      status: 'recording',
+      callId: 'c',
+      startedAt: Date.now() - 65_000,
+      capture: 'screen',
+      note: null,
+    };
     for (const listener of [...listeners]) listener();
   });
   const stop = vi.fn(() => Promise.resolve());
@@ -41,7 +47,10 @@ describe('RecordControl', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Record' }));
     const notice = await screen.findByRole('alertdialog', { name: 'Record this call?' });
-    expect(notice).toHaveTextContent('Both voices, Thomas’s AI avatar and the captions are recorded.');
+    // jsdom cannot share a screen: the call view is recorded, as on a phone.
+    expect(notice).toHaveTextContent(
+      'The call view is recorded: Thomas’s AI avatar, the conversation and both voices.',
+    );
     expect(notice).toHaveTextContent('Only you can watch it.');
     expect(start).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Start recording' }));
@@ -66,6 +75,45 @@ describe('RecordControl', () => {
     await user.click(screen.getByRole('button', { name: 'Record' }));
     expect(start).toHaveBeenCalledOnce();
     expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('says the tab is recorded where the browser can share it, and waits while the browser asks', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getDisplayMedia: vi.fn() },
+    });
+    try {
+      const user = userEvent.setup();
+      const { session, start } = fakeSession();
+      const first = renderWithProviders(
+        <RecordControl session={session} blocker={null} principalId="p-screen" name="Thomas" video={false} />,
+      );
+      await user.click(screen.getByRole('button', { name: 'Record' }));
+      expect(await screen.findByRole('alertdialog', { name: 'Record this call?' })).toHaveTextContent(
+        'This tab is recorded as you see it, with both voices. Your browser asks you to share it first.',
+      );
+      await user.click(screen.getByRole('button', { name: 'Not now' }));
+      expect(start).not.toHaveBeenCalled();
+
+      first.unmount();
+      const asking = fakeSession({ status: 'starting' });
+      renderWithProviders(
+        <RecordControl
+          session={asking.session}
+          blocker={null}
+          principalId="p-screen"
+          name="Thomas"
+          video={false}
+        />,
+      );
+      const control = screen.getByRole('button', { name: 'Starting the recording' });
+      expect(control).toHaveAttribute('aria-disabled', 'true');
+      await user.click(control);
+      expect(asking.start).not.toHaveBeenCalled();
+      expect(asking.stop).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(navigator, 'mediaDevices');
+    }
   });
 
   it('waits for a take whose save failed to be saved or discarded before another starts', async () => {

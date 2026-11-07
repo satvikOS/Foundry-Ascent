@@ -40,7 +40,7 @@ if (!('ResizeObserver' in window)) {
   });
 }
 
-for (const method of ['scrollIntoView', 'hasPointerCapture', 'releasePointerCapture'] as const) {
+for (const method of ['scrollIntoView', 'scrollTo', 'hasPointerCapture', 'releasePointerCapture'] as const) {
   if (!(method in Element.prototype)) {
     Object.defineProperty(Element.prototype, method, { writable: true, value: () => false });
   }

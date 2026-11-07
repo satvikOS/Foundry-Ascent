@@ -833,19 +833,25 @@ replaces the first), cuts an utterance with the next one (no queue), and sounds 
 
 ## 7. Recordings (ADR-0023)
 
-A founder may record their own call from the call screen and watch it again later, with its captions, without calling
-the vEIR. Never a private call; only the person who recorded it can list, play or delete it (list and play only while
-they still have the venture).
+A founder may record their own call from the call screen and watch it again later, with its transcript, or download
+it, without calling the vEIR. Never a private call; only the person who recorded it can list, play, download or delete
+it (list, play and download only while they still have the venture).
 
 - **Recording (browser).** `features/recordings`: Record in the dock (keyboard `R`; a notice the first time), "● REC"
   and the time in the header while it records (on a phone "● REC" only, so the time left keeps its room), Stop to save;
   hanging up stops and saves it. Minimized, the call goes on recording and the mini call bar says so ("● REC", with
-  Stop). `CallRecorder` records one
-  canvas (the face's video while it shows, else the presence) and a WebAudio mix of the vEIR's voice (the player's
-  output and a vendor face's audio track) and the microphone (silent whenever the call does not hear it: muted, on
-  hold, push to talk released), with `MediaRecorder` (webm, or mp4 on Safari);
-  `CaptionRecorder` turns the call's captions into WebVTT cues. `CallEngine.recordingSources()` exposes the call's
-  AudioContext, the player's output and the microphone stream without changing them.
+  Stop). The picture is the screen: the Record press asks the browser to share this tab (`getDisplayMedia`, the tab
+  preferred and offered alone where the browser can, no tab sound, at most 1080p at 15 frames a second), so the
+  recording is the call as the founder sees it (face or voice visual, captions, the conversation, the controls); the
+  browser's own Stop sharing stops and saves it. Where a screen cannot be shared (iOS and iPadOS Safari, most phones)
+  or the founder did not share it, `CallRecorder` composes the call view on a 1280×720 canvas instead (the face's
+  video while it shows, else the presence; the vEIR's name and the time; the latest lines of both speakers from
+  `CaptionRecorder.recent`), and the call screen says so above the controls (`recording-note`, with OK); so it does
+  when a whole screen or window was shared rather than the tab. The sound is a WebAudio mix of the vEIR's voice (the
+  player's output and a vendor face's audio track) and the microphone (silent whenever the call does not hear it:
+  muted, on hold, push to talk released), never the shared screen's own, with `MediaRecorder` (webm, or mp4 on
+  Safari, 1.5 Mbit/s); `CaptionRecorder` turns the call's captions into WebVTT cues. `CallEngine.recordingSources()`
+  exposes the call's AudioContext, the player's output and the microphone stream without changing them.
 - **Saving.** `POST /calls/:id/recordings` → presigned PUTs (the captions uploaded first, then the recording) →
   `POST /recordings/:id/complete` (sizes checked) → listed. While the call screen is open the save shows in it, above
   the controls (`RecordingSaveStatus`: Watch, or Try again and Discard); a toast says it once the screen is closed. A
@@ -853,10 +859,17 @@ they still have the venture).
   the page (recording, saving, or kept for Try again) leaving the page asks first (`beforeunload`). A save refused by
   the daily limit (`daily_recordings`) says so and offers neither Try again nor Record until it has passed.
 - **Replay.** `GET /recordings/:id/playback` → presigned GETs for the `<video>` (CORS, range requests) and the captions
-  file; captions show over the picture and as a transcript whose lines seek. In the conversation (at the end of its
-  transcript) and under Recordings in the venture's side panel (`/v/:id/recordings`, `?r=` opens one). While a call
-  is live a replay does not start by itself; on a voice call, playing it holds the call (microphone off) and the
-  microphone opening again pauses it, so a replay is never heard by the call.
+  file. Recordings is a section of the venture (side panel, `g r`, `/v/:id/recordings`): its rows (and the
+  conversation's own list, at the end of its transcript) say when, which conversation, how long, video or sound only
+  and the size, with Watch, Download and Delete. Watch (and the call screen's Watch after a save) opens the viewer,
+  `/v/:id/recordings/:recordingId`: the player large, the transcript beside it (below it on a phone) marking the line
+  being heard and keeping it in view, a line seeking to it, `K` play or pause and `J`/`L` ten seconds; Download, Open
+  conversation and Delete. While a call is live a replay does not start by itself; on a voice call, playing it holds
+  the call (microphone off) and the microphone opening again pauses it, so a replay is never heard by the call.
+- **Download.** `GET /recordings/:id/download?file=recording|transcript` → one presigned GET (5 minutes) whose response
+  is `Content-Disposition: attachment` under a readable name in the founder's time zone ("Thomas call 2026-11-07
+  14-22.webm", "… transcript.vtt"), audited `recording.downloaded`; the browser follows it as a link, so the bucket
+  needs no CORS for it and the CSP no new origin.
 - **Storage.** The private recordings bucket (Data stack): exact-origin CORS, SSE-S3, a year's retention with a
   lifecycle backstop; `call_recordings` (migration 0031) holds keys, sizes, duration, cue count and lifecycle, owner-only
   under RLS. Deleting the conversation deletes its recordings (trigger), the API and the daily maintenance remove the

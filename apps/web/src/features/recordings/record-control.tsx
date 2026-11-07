@@ -1,10 +1,11 @@
 import { Circle, Square } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { formatClock, spokenDuration } from '@/features/calls/use-call-clock';
 import { cn } from '@/lib/utils';
 
+import { canShareScreen } from './call-recorder';
 import { RecordingNoticeDialog } from './recording-notice';
 import './recordings.css';
 import { useRecordingNotice } from './recording-notice-store';
@@ -70,6 +71,9 @@ export function RecordControl({
   const recording = state.status === 'recording';
   const seconds = useElapsedSeconds(recording ? state.startedAt : null);
   const saving = state.status === 'saving';
+  // The browser asks which screen to share.
+  const starting = state.status === 'starting';
+  const screen = useMemo(() => canShareScreen(), []);
   // A take whose save failed waits to be saved or discarded (above the controls) before another can start.
   const unsaved = state.status === 'failed' && state.canRetry;
   // Today's recordings are used up (a save said so): another could not be saved either.
@@ -84,8 +88,9 @@ export function RecordControl({
           ? DAILY_LIMIT_TEXT
           : null;
 
+  const busy = saving || starting;
   const toggle = () => {
-    if (blocked || disabled || saving) return;
+    if (blocked || disabled || busy) return;
     if (recording) void session.stop();
     else start.request();
   };
@@ -99,16 +104,24 @@ export function RecordControl({
           data-recording={recording || undefined}
           onClick={toggle}
           aria-pressed={recording}
-          aria-disabled={blocked || disabled || saving || undefined}
+          aria-disabled={blocked || disabled || busy || undefined}
           aria-describedby={blocked ? reasonId : undefined}
           aria-keyshortcuts="R"
           // While it records, the name is what the button shows ("0:42 Stop", then "recording" for a screen reader):
           // a voice-control user says what they see. The time is described in words.
-          aria-label={recording ? undefined : saving ? 'Saving the recording' : 'Record'}
+          aria-label={
+            recording
+              ? undefined
+              : saving
+                ? 'Saving the recording'
+                : starting
+                  ? 'Starting the recording'
+                  : 'Record'
+          }
           aria-description={recording ? `${spokenDuration(seconds)} recorded` : undefined}
           className={cn(
             'fa-call-control fa-call-focus relative inline-flex h-12 min-w-28 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-full px-5 text-sm font-medium transition-colors duration-150',
-            (blocked || disabled || saving) && 'cursor-not-allowed opacity-50',
+            (blocked || disabled || busy) && 'cursor-not-allowed opacity-50',
           )}
         >
           {recording ? (
@@ -122,6 +135,8 @@ export function RecordControl({
             </>
           ) : saving ? (
             <span aria-hidden>Saving…</span>
+          ) : starting ? (
+            <span aria-hidden>Starting…</span>
           ) : (
             <>
               <Circle aria-hidden className="size-3.5 fill-current text-destructive" />
@@ -139,6 +154,7 @@ export function RecordControl({
         open={start.asking}
         name={name}
         video={video}
+        screen={screen}
         onConfirm={start.confirm}
         onCancel={start.cancel}
       />

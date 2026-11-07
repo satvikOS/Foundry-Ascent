@@ -31,6 +31,9 @@ function fakeSession(initial: RecordingState) {
   const dismiss = vi.fn(() => {
     set({ status: 'idle' });
   });
+  const dismissNote = vi.fn(() => {
+    if (state.status === 'recording') set({ ...state, note: null });
+  });
   const session = {
     subscribe: (listener: () => void) => {
       listeners.add(listener);
@@ -39,8 +42,9 @@ function fakeSession(initial: RecordingState) {
     getSnapshot: () => state,
     retry,
     dismiss,
+    dismissNote,
   } as unknown as RecordingSession;
-  return { session, set, retry, dismiss };
+  return { session, set, retry, dismiss, dismissNote };
 }
 
 const SAVED = {
@@ -53,13 +57,33 @@ describe('RecordingSaveStatus (in the call screen, never a toast over it)', () =
     const { session, set } = fakeSession({ status: 'idle' });
     const { container } = renderWithProviders(<RecordingSaveStatus session={session} tenant="ain" />);
     expect(container).toBeEmptyDOMElement();
-    set({ status: 'recording', callId: 'c', startedAt: 0 });
+    set({ status: 'starting' });
+    expect(container).toBeEmptyDOMElement();
+    set({ status: 'recording', callId: 'c', startedAt: 0, capture: 'screen', note: null });
     expect(container).toBeEmptyDOMElement();
     set({ status: 'saving', percent: 42 });
     expect(screen.getByText(/Saving the recording…/)).toHaveTextContent('Saving the recording… 42%');
   });
 
-  it('Watch opens the saved recording in Recordings and clears the notice', async () => {
+  it('says plainly while it records when the call view is recorded instead of the screen, until OK', async () => {
+    const user = userEvent.setup();
+    const { session, dismissNote } = fakeSession({
+      status: 'recording',
+      callId: 'c',
+      startedAt: 0,
+      capture: 'view',
+      note: 'The screen wasn’t shared, so the call view is recorded.',
+    });
+    const { container } = renderWithProviders(<RecordingSaveStatus session={session} tenant="ain" />);
+    expect(screen.getByRole('group', { name: 'About this recording' })).toHaveTextContent(
+      'The screen wasn’t shared, so the call view is recorded.',
+    );
+    await user.click(screen.getByRole('button', { name: 'OK' }));
+    expect(dismissNote).toHaveBeenCalledOnce();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('Watch opens the saved recording in its viewer and clears the notice', async () => {
     const user = userEvent.setup();
     const { session, dismiss } = fakeSession({ status: 'saved', recording: SAVED });
     renderWithProviders(<RecordingSaveStatus session={session} tenant="ain" />);
@@ -68,9 +92,8 @@ describe('RecordingSaveStatus (in the call screen, never a toast over it)', () =
     );
     await user.click(screen.getByRole('button', { name: 'Watch' }));
     expect(navigate).toHaveBeenCalledWith({
-      to: '/$tenant/app/v/$ventureId/recordings',
-      params: { tenant: 'ain', ventureId: SAVED.ventureId },
-      search: { r: SAVED.id },
+      to: '/$tenant/app/v/$ventureId/recordings/$recordingId',
+      params: { tenant: 'ain', ventureId: SAVED.ventureId, recordingId: SAVED.id },
     });
     expect(dismiss).toHaveBeenCalledOnce();
   });
