@@ -1409,71 +1409,32 @@ describe('how a new conversation opens', () => {
     // Varied from one conversation to the next, never one stock line.
     expect(new Set(openers).size, openers.join(' | ')).toBeGreaterThan(1);
 
-    // Starting a conversation queues an opener job for the previous one (review of 5f15d7b): it is distilled, and its
-    // notebook has open threads but no line. The empty conversations since are read past.
-    const opening = await h.core.sessions.create(maya, quietquad(), {});
-    h.jobQueue.drain();
-    await h.core.distill.afterCreate(maya, opening);
-    expect(h.jobQueue.jobs.map((j) => j.job)).toEqual([
-      expect.objectContaining({ type: 'distill_session', sessionId: previous.id, turns: 2, opener: true }),
-    ]);
-    expect(h.jobQueue.jobs[0]?.job).not.toHaveProperty('settled');
-    h.jobQueue.drain();
-    const openerJob = { sessionId: previous.id, requestId: 'opener-job', queuedTurns: 2, opener: true };
-    // The model unavailable: another delivery tries again. An answer it cannot use is recorded as the try, and that is
-    // not paid for again until the notebook changes.
-    h.gateway.scriptNext('unavailable');
-    await expect(h.core.distill.distillSession(openerJob)).rejects.toThrow(/transiently/);
-    h.gateway.scriptNext('invalid_output');
-    expect(await h.core.distill.distillSession(openerJob)).toMatchObject({
-      status: 'dropped',
-      reason: 'model_output_invalid',
-      notebookVersion: null,
-    });
-    expect(await h.core.distill.distillSession(openerJob)).toMatchObject({
-      status: 'skipped',
-      reason: 'opener_tried',
-    });
-    // Once the notebook changes, it is tried again, and the model's line on an open thread is written: what the next
-    // conversation and its call open with, never the founder's small talk.
-    await notebook(previous.id, null, {
-      openQuestions: [
-        entry(
-          'q-pays',
-          'What is the single thing customers would pay for, and who signs the cheque?',
-          previous.id,
-        ),
-      ],
-    });
-    expect(await h.core.distill.distillSession(openerJob)).toMatchObject({ status: 'distilled' });
-    const stored = await h.t.db.system((sx) => notebooksRepo.getNotebook(sx, key));
-    // The mock opens on an open commitment first, as the prompt asks, else an open question: a thread of the notebook.
-    const line = stored?.content.nextOpener ?? '';
-    const threads = [
-      ...(stored?.content.commitments ?? []).filter((c) => c.status === 'open'),
-      ...(stored?.content.openQuestions ?? []),
-    ].map((t) => t.text.toLowerCase());
-    const named = (line.toLowerCase().match(/\p{L}{6,}/gu) ?? []).filter((w) =>
-      threads.some((t) => t.includes(w)),
-    );
-    expect(named.length, line).toBeGreaterThanOrEqual(2);
-    expect(stored?.content.nextOpenerSource).toBe(previous.id);
-    // Nothing else was written: the summary stays as distilled.
-    expect(stored?.content.summary).toMatch(/advisor session/);
-    const picked = await h.core.sessions.create(maya, quietquad(), {});
-    expect(picked.opener).toBe(line);
-    expect(picked.opener ?? '').not.toMatch(founderWords);
-    expect(picked.opener ?? '').not.toMatch(/carry on with/i);
-    expect(await h.core.distill.distillSession(openerJob)).toMatchObject({
-      status: 'skipped',
-      reason: 'opener_present',
-    });
+    // A model line that is small talk, health or the mentor answering about itself (review of 1e2fd79), stored as
+    // the notebook's line from that small-talk conversation: never said, in chat or on the call.
+    for (const bad of [
+      'Good to hear from you. How have you been?',
+      'Nice to see you! I am well, thanks for asking about my life.',
+      'Hi again! How is your mental health holding up?',
+      'Good to see you. How are you?',
+      'Hello again. Anything fun planned?',
+    ]) {
+      await notebook(previous.id, bad, { nextTopic: null });
+      const next = await h.core.sessions.create(maya, quietquad(), {});
+      expect(next.opener ?? '', bad).not.toBe(bad);
+      const call = await startCall(maya, next.id);
+      const intro = call.intro?.text ?? '';
+      const rest = bad.slice(bad.search(/[.!] /) + 2);
+      expect(intro, bad).not.toContain(rest);
+      expect(next.opener ?? '', bad).not.toContain(rest);
+      await h.core.calls.end(maya, call.call.id, { reason: 'user' });
+      h.jobQueue.drain();
+    }
 
     // A line the distillation wrote from the notebook's open threads is what opens instead (the model's words).
-    const written = 'Good to see you again. Have you worked out who signs the cheque at the clinics?';
-    await notebook(previous.id, written, { nextTopic: 'who signs the cheque at the clinics' });
+    const line = 'Good to see you again. Have you worked out who signs the cheque at the clinics?';
+    await notebook(previous.id, line, { nextTopic: 'who signs the cheque at the clinics' });
     const after = await h.core.sessions.create(maya, quietquad(), {});
-    expect(after.opener).toBe(written);
+    expect(after.opener).toBe(line);
     const call = await startCall(maya, after.id);
     expect(call.intro?.text ?? '').toMatch(
       /^Good to see you again(?:, Maya)?\. Have you worked out who signs/,

@@ -1,5 +1,6 @@
 import {
   isEverydayWord,
+  isPersonalOpener,
   nameBudgetSpent,
   rewriteIdentity,
   textsContainOtherVenture,
@@ -231,8 +232,11 @@ export function withoutVocative(text: string, name: string): string | null {
   const out = text
     // ", Maya" before the clause ends (or before another comma).
     .replace(new RegExp(`\\s*,\\s*${word}(?=\\s*[,.!?…;:]|\\s*$)`, 'gu'), '')
-    // "Hey Maya, …" / "Hi Maya!": the name after a bare hello.
-    .replace(new RegExp(`^((?:hi|hello|hey|hiya)(?: there| again)?)\\s+${word}(?=\\s*[,.!?…])`, 'iu'), '$1')
+    // "Hey Maya, …" / "Hi Maya!" / "Hi Maya — …": the name after a bare hello.
+    .replace(
+      new RegExp(`^((?:hi|hello|hey|hiya)(?: there| again)?)\\s+${word}(?=\\s*(?:[,.!?…;:—–]|-\\s))`, 'iu'),
+      '$1',
+    )
     // "Maya, …" opening a sentence: the sentence starts after it.
     .replace(
       new RegExp(`(^|[.!?…]\\s+)${word}\\s*,\\s*(\\p{L})`, 'gu'),
@@ -267,15 +271,17 @@ export function ownGreetingLine(
   }
   // The line names them already, in its greeting ("Good to see you again, Maya.") or after it: never twice.
   if (nameWord(name).test(text)) return text;
-  // The name goes into the first clause, when that clause is a greeting on its own ("Hey, good to have you back!").
-  const first = /^([^,.!?…\n]+?)\s*([,.!…])/u.exec(text);
-  if (first?.[1] === undefined || first[2] === undefined) return text;
+  // The name goes into the first clause, when that clause is a greeting on its own ("Hey, good to have you back!"). A
+  // clause ends where `withoutRepeatedGreeting` ends one: a dash or spaced hyphen too ("Hi — …" → "Hi Maya — …").
+  const first = /^([^,.!?…\n;:—–]+?)(\s*)([,.!…;:—–]|-(?=\s))/u.exec(text);
+  if (first?.[1] === undefined || first[3] === undefined) return text;
   const clause = first[1];
   if (withoutRepeatedGreeting(`${clause}.`, names).text !== '') return text;
   const after = text.slice(first[0].length);
+  const mark = `${first[2] ?? ''}${first[3]}`;
   // A bare hello takes the name without a comma ("Hey Maya, …", "Hi Maya!"); any other greeting after one.
-  const bare = first[2] === ',' ? BARE_HELLO.test(clause) : /^(?:hi|hello|hey|hiya)$/i.test(clause);
-  const named = bare ? `${clause} ${name}${first[2]}` : `${clause}, ${name}${first[2]}`;
+  const bare = /[!.…]/u.test(first[3]) ? /^(?:hi|hello|hey|hiya)$/i.test(clause) : BARE_HELLO.test(clause);
+  const named = bare ? `${clause} ${name}${mark}` : `${clause}, ${name}${mark}`;
   return `${named}${after}`;
 }
 
@@ -673,7 +679,9 @@ export function createCallsService(
       ...(started.pastReplies === undefined ? {} : { pastReplies: started.pastReplies }),
     };
     const candidates = [
-      ...(opener === '' || mentionsEir(opener, guards.eirNames) || !safe(opener)
+      // A line stored before the opener checks (or on a conversation opened before them) is never said when it is
+      // personal, small talk or the scripted frame ("Hi, want to carry on with your perosnal life?"): the call invites.
+      ...(opener === '' || mentionsEir(opener, guards.eirNames) || !safe(opener) || isPersonalOpener(opener)
         ? []
         : [callIntro({ ...base, opener })]),
       callIntro({ ...base, opener: null }),

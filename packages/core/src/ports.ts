@@ -116,12 +116,6 @@ export const DistillSessionJob = z.object({
    * It is distilled now even though its last turn is recent (never skipped as active).
    */
   settled: z.boolean().optional(),
-  /**
-   * Only the next opener: the conversation is distilled already and its notebook holds no line for the next
-   * conversation while it has open threads, so the line is written again from them (one model call, at most once per
-   * notebook version). Queued when the person's next conversation starts.
-   */
-  opener: z.literal(true).optional(),
   /** Request that enqueued the job (correlation only). */
   requestId: z.string().max(128).nullable(),
 });

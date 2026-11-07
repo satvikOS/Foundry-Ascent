@@ -321,11 +321,12 @@ export function withoutVocativeName(
     removed += 1;
   };
   let out = text;
-  // A lead word then the name ending its clause: "Thanks, Maya!", "Good luck Maya." (the name only). The lead word in
-  // any case, the name as `flags` say: a founder called Will keeps "Okay, will you send it?" (review of coaching v2).
+  // A lead word then the name ending its clause: "Thanks, Maya!", "Good luck Maya.", "Hi Maya - quick one" (the name
+  // only). The lead word in any case, the name as `flags` say: a founder called Will keeps "Okay, will you send it?"
+  // (review of coaching v2).
   out = out.replace(
     new RegExp(
-      `(?<![\\p{L}])(${ADDRESS_LEAD_ANY_CASE})(?:,\\s*|\\s+)${n}(?![\\p{L}\\p{N}'’])(?=\\s*(?:[.!?…,;:—–)]|$))`,
+      `(?<![\\p{L}])(${ADDRESS_LEAD_ANY_CASE})(?:,\\s*|\\s+)${n}(?![\\p{L}\\p{N}'’])(?=\\s*(?:[.!?…,;:—–)]|-\\s|$))`,
       flags,
     ),
     (_m, word: string) => {
@@ -333,9 +334,9 @@ export function withoutVocativeName(
       return word;
     },
   );
-  // The name opening a sentence: "Maya, the pilot…" / "Maya — the pilot…".
+  // The name opening a sentence: "Maya, the pilot…" / "Maya — the pilot…" / "Maya! Good to see you."
   out = out.replace(
-    new RegExp(`(^|[.!?…]\\s+|\\n\\s*)${n}\\s*(?:,|—|–| - )\\s*([*_"“]*)(\\p{L})`, flags),
+    new RegExp(`(^|[.!?…]\\s+|\\n\\s*)${n}\\s*(?:,|!+|—|–| - )\\s*([*_"“]*)(\\p{L})`, flags),
     (_m, pre: string, emphasis: string, c: string) => {
       count();
       return `${pre}${emphasis}${c.toUpperCase()}`;

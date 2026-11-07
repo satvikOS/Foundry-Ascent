@@ -396,14 +396,13 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   opener is about is always the model's choice: the distillation prompt has it pick up the most important thread of
   that conversation, or, when nothing about the venture was said (small talk, a one-word reply, a test), the most
   important open thread of the notebook; never small talk, a question about the vEIR itself or anything personal,
-  every word in its own spelling; the sanitizer drops a line on anyone's personal life, small talk or the scripted
-  "Want to carry on with…?" frame (typos included: `isPersonalOpener`), and the opener checks it again. When the
-  latest conversation is distilled and the notebook still holds no line while it has open threads (distillation wrote
-  none, or its line was dropped), starting the next conversation queues an opener job: the model writes the line
-  again from that conversation's last part and the notebook as it is now, nothing else is written, and each notebook
-  version is tried once (`distill_session` with `opener`; never on the way to a first word: a call that starts after
-  it landed says it). Otherwise the conversation opens with a short, warm greeting that names nothing ("Hello again.
-  What feels most pressing right now?"; `plainOpeners`), phrased for that conversation and never with a greeting or
+  every word in its own spelling; the sanitizer drops a line on anyone's personal life, health or family, small talk,
+  the vEIR answering a question about itself or the scripted "Want to carry on with…?" frame (typos included:
+  `isPersonalOpener`), and a line that names nothing the founder said, the digest or the notebook holds
+  (`namesAThread`: "How have you been?"); the opener checks both again, and a call never says a stored line that
+  fails the first. A previous line the conversation never said is no thread the founder left aside: only one it
+  opened on and they let go is dropped. Otherwise the conversation opens with a short, warm greeting that names
+  nothing ("Hello again. What feels most pressing right now?"; `plainOpeners`), phrased for that conversation and never with a greeting or
   invitation the person's last conversations opened with, and never "since we last spoke" (it may be said seconds
   after a call); nothing the founder said is ever read by rule for what to open on (production 2026-11-06: "hows
   your perosnal life going on.." became "Hi, want to carry on with your perosnal life?"). Every distilled line is

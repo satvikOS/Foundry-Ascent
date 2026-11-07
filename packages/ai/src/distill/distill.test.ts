@@ -13,6 +13,7 @@ import {
   NOTEBOOK_OPENER_PIN,
   NOTEBOOK_SUMMARY_PIN,
   isPersonalOpener,
+  namesAThread,
   sanitizeDistill,
   type DistillSanitizeContext,
   type PreviousNotebook,
@@ -245,7 +246,7 @@ describe('buildDistillPrompt', () => {
     expect(buildDistillPrompt(INPUT).messages[0]?.content).not.toContain('<opened_with');
     const { system } = buildDistillPrompt(INPUT);
     expect(system).toContain('a thread they did not take up when you raised it (what <opened_with> raised');
-    expect(system).toContain('the previous next_opener or its next_topic unless they took that thread up in');
+    expect(system).toContain('the previous next_opener when <opened_with> said it and');
   });
 
   it('asks the model for the notebook’s most important open thread instead of null, never small talk or a typo (production 2026-11-06)', () => {
@@ -1010,9 +1011,119 @@ describe('a conversation with nothing about the venture in it (production 2026-1
       'Did your holiday rental listings go live?',
       'How was your week of interviews with the podiatry clinics?',
       'How is your family business handling the second pilot?',
+      // Review of 1e2fd79: staff, a fund, a partner clinic, a health economics model, a question that continues.
+      'Good to see you. Did the clinic personnel matters get sorted before the pilot?',
+      'Hey! How is the private life sciences fund intro?',
+      'Hi. Would you like to continue with the reimbursement analysis?',
+      'Did your partner clinic sign the pilot terms?',
+      'How is your health economics model coming along?',
+      'How did the parental consent things go with the school?',
+      'Is the battery life holding up in the insoles?',
+      'How are you feeling about the reimbursement pathway now?',
+      'How are you doing on the clinic interviews?',
+      "How's it going with the first podiatry clinic?",
+      'How are things with the device classification?',
+      'Did the family-practice clinics reply?',
+      'How have you been getting on with the advisor questions?',
     ]) {
       expect(isPersonalOpener(line), line).toBe(false);
     }
+  });
+
+  it('drops everyday small talk, health and family, the mentor answering about itself and the frame’s variants (review of 1e2fd79)', () => {
+    for (const line of [
+      'Hi, I am doing well, thanks for asking. What did the advisor say?',
+      "I'm doing well, thanks for asking! How did the advisor session go?",
+      'Nice to see you! I am well, thanks for asking about my life.',
+      'Hi! How have you been?',
+      'Good to see you. How are you?',
+      "Hey, how's it going?",
+      "Hey, how's life treating you?",
+      'How are things with you?',
+      'Hope you are feeling better. Shall we look at reimbursement?',
+      "How's your partner?",
+      'How is your mum doing?',
+      'How did your date go?',
+      'How are you holding up with everything?',
+      'Hi again! How is your mental health holding up?',
+      'Hi, how is the therapy going?',
+      'Shall we carry on with the reimbursement question?',
+      'Want to keep going on the reimbursement pathway?',
+      'Do you want to continue with the pilot?',
+    ]) {
+      expect(isPersonalOpener(line), line).toBe(true);
+    }
+  });
+
+  it('drops a line that names no thread of the venture, however it is worded (review of 1e2fd79)', () => {
+    for (const line of [
+      'Good to hear from you. Hope the week treated you kindly?',
+      'Great to see you. Anything fun planned?',
+      'Hello again. What a week it has been!',
+    ]) {
+      const out = said(line, null);
+      expect(out.notebookDelta.nextOpener, line).toBeNull();
+      expect(out.stats.personalOpenerDropped, line).toBe(1);
+    }
+    expect(
+      namesAThread('Good to see you. How have you been?', ['Who signs the cheque at the clinics?']),
+    ).toBe(false);
+    expect(
+      namesAThread('Good to see you. Have you worked out who signs the cheque?', [
+        'What is the single thing customers would pay for, and who signs the cheque?',
+      ]),
+    ).toBe(true);
+    // The greeting and the founder's name name no thread.
+    expect(namesAThread('Hi Maya, good to see you again.', ['Maya will see the dean.'], ['Maya'])).toBe(
+      false,
+    );
+  });
+
+  it('keeps a previous line the conversation never said: the founder never left it aside (review of 1e2fd79)', () => {
+    // The conversation opened on a greeting that names nothing and held only small talk; the previous line (from an
+    // older conversation) was never said, so it is not a thread they let go.
+    const line = 'Hello again. Did any clinic tell you who would sign the cheque?';
+    const out = run(
+      draft({
+        notebook: {
+          ...draft().notebook,
+          next_opener: line,
+          next_topic: 'who signs the cheque at the clinics',
+        },
+      }),
+      ctx({
+        previousNotebook: {
+          ...THREADS,
+          nextOpener: 'Good to hear from you. Have you worked out who signs the cheque at the clinics?',
+          nextTopic: 'who signs the cheque at the clinics',
+        },
+        previousOpenerSource: OTHER,
+        conversation: {
+          opener: 'Welcome back. What feels most pressing right now?',
+          founderTurns: ['hi', 'how are you'],
+          names: ['Maya', 'Thomas'],
+        },
+      }),
+    );
+    expect(out.notebookDelta.nextOpener).toBe(line);
+    expect(out.stats.untakenOpenerDropped).toBe(0);
+    // Said as the opener and let go, it is dropped as before.
+    const aside = run(
+      draft({
+        notebook: {
+          ...draft().notebook,
+          next_opener: line,
+          next_topic: 'who signs the cheque at the clinics',
+        },
+      }),
+      ctx({
+        previousNotebook: { ...THREADS, nextOpener: line, nextTopic: 'who signs the cheque at the clinics' },
+        previousOpenerSource: OTHER,
+        conversation: { opener: line, founderTurns: ['hi', 'how are you'], names: ['Maya', 'Thomas'] },
+      }),
+    );
+    expect(aside.notebookDelta.nextOpener).toBeNull();
+    expect(aside.stats.untakenOpenerDropped).toBe(1);
   });
 });
 

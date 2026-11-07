@@ -12,6 +12,7 @@ import { lastQuestionOf } from '../prompts/continuity.js';
 import { truncate } from '../prompts/escape.js';
 import { COMMON_WORDS } from '../risk/common-words.js';
 import { textsContainOtherVenture } from '../validators/coach-response.js';
+import { withoutRepeatedGreeting } from '../validators/greeting.js';
 import { IDENTITY_MARGIN_CHARS, rewriteIdentity } from '../validators/identity.js';
 import { sanitizePlainText } from '../validators/markdown.js';
 import { checkDeidentified, type DeidentifyReason, type LessonDeidentifyContext } from './deidentify.js';
@@ -128,12 +129,13 @@ export interface DistillStats {
   identityRewrites: number;
   /**
    * 1 when the proposed next opener (with its thread) was dropped: a thread the founder did not take up when it was
-   * raised, or a thread kept from an earlier conversation that this one never took up.
+   * raised (this conversation's opener, the previous line it opened on, a question the vEIR asked).
    */
   untakenOpenerDropped: number;
   /**
    * 1 when the proposed next opener (with its thread) was one a mentor never opens on: someone's personal life, small
-   * talk, the scripted frame ({@link isPersonalOpener}).
+   * talk, the scripted frame ({@link isPersonalOpener}), or a line that names no thread of the venture
+   * ({@link namesAThread}).
    */
   personalOpenerDropped: number;
 }
@@ -207,33 +209,59 @@ function byCommitmentOrder(a: NotebookCommitment, b: NotebookCommitment): number
   return b.createdAt.localeCompare(a.createdAt);
 }
 
-/** "personal" as typed, typos too ("perosnal", "presonal", "prsnl": production 2026-11-06). */
-const PERSONAL = String.raw`p[a-z]{0,2}r[a-z]{0,3}n[a-z]{0,2}l`;
+/**
+ * "personal" as typed, typos too ("perosnal", "presonal", "prsnl": production 2026-11-06), never "personnel" (a clinic's
+ * staff is a venture thread).
+ */
+const PERSONAL = String.raw`(?!personnel\b)p[a-z]{0,2}r[a-z]{0,3}n[a-z]{0,2}l`;
 /** The end of a clause, or the words small talk goes on with ("…life going?", "…day been?", "…health these days?"). */
 const CLAUSE_END = String.raw`(?=\s*(?:[?.!,;:…]|$|(?:going|been|treating|lately|these days|so far|today|then|at the moment)\b))`;
+/** The end of a clause and nothing else ("How's it going?", never "How's it going with the pilot?"). */
+const END = String.raw`(?=\s*(?:[?.!,;:…]|$))`;
+/** What a check-in on someone goes on with ("How is your mum doing?", "How's your partner?"). */
+const CHECK_IN_END = String.raw`(?=\s*(?:[?.!,;:…]|$|(?:doing|going|keeping|holding|feeling|getting on|settling|been|lately|these days|ok|okay|well)\b))`;
+/** Close family and partners, said as the person's own. */
+const FAMILY = String.raw`(?:mum|mom|mother|dad|father|parents?|kids?|children|son|daughter|partner|spouse|baby|family|brother|sister|siblings?|grandma|grandmother|grandpa|grandfather|grandparents?)`;
 /**
  * Lines a mentor never opens a conversation on (production 2026-11-06: the founder asked about the mentor's life, and
  * the next call opened on it): someone's personal life, private matters said as the person's own ("your personal
- * life", "your love life", "your husband"), small talk about them ("How was your day?", "How is your health these
- * days?", "everything at home"), and the scripted frame the owner banned ("Want to carry on with…?"). A venture whose
- * subject sounds personal keeps its line: a weekend market, a holiday let, a family-life coaching pilot or a social
- * life app is said as itself, because the words go on after "life", "weekend" or "family".
+ * life", "your love life", "your husband", "your mum"), their health and feelings ("feeling better", "your mental
+ * health"), small talk about them ("How was your day?", "How have you been?", "How's it going?", "How are things with
+ * you?"), the mentor answering a question about itself ("I'm doing well, thanks for asking", "my life"), and the
+ * scripted frame the owner banned ("Want to carry on with…?", "Shall we keep going on…?"). A venture whose subject
+ * sounds personal keeps its line: a weekend market, a holiday let, a family-life coaching pilot, a social life app, a
+ * private life sciences fund, the clinic's personnel, your partner clinic or your health economics model is said as
+ * itself, because the words go on.
  */
 const PERSONAL_OPENER = new RegExp(
   [
     // Someone's personal, private, love, dating or sex life, or their personal stuff; any spelling of "personal".
-    String.raw`\b(?:${PERSONAL}|private|love|dating|sex)\s+(?:li(?:fe|ves)|stuff|matters|things)\b(?!\s+(?:app|apps|coach\w*|insurance|platform|product|pilot|market|brand|course|beta|service)\b)`,
+    String.raw`\b(?:${PERSONAL}|private|love|dating|sex)\s+(?:li(?:fe|ves)|stuff|matters|things)\b(?!\s+(?:app|apps|coach\w*|insurance|platform|product|pilot|market|brand|course|beta|service|sciences?|cycle)\b)`,
     // Their family, home or social life, as theirs and ending the clause.
     String.raw`\b(?:your|ur|my|his|her|their)\s+(?:family|home|social)\s+li(?:fe|ves)${CLAUSE_END}`,
     String.raw`\b(?:your|ur)\s+life\s+outside\s+(?:of\s+)?(?:work|the\s+\w+)\b`,
     String.raw`\b(?:your|ur)\s+(?:husband|wife|boyfriend|girlfriend)\b`,
+    String.raw`\b(?:your|ur)\s+${FAMILY}${CHECK_IN_END}`,
     String.raw`\byou\s+and\s+(?:the|your)\s+(?:family|kids|husband|wife)${CLAUSE_END}`,
     String.raw`\b(?:everything|things|all)\s+(?:ok\s+|okay\s+|good\s+|well\s+)?at\s+home\b`,
-    // Small talk about them: "How was your day?", "How has your week been?", "How is your health these days?".
-    String.raw`\bhow(?:'s|’s|s| is| was| has| are| have| were)\s+(?:your|ur)\s+(?:${PERSONAL}\s+|private\s+)?(?:day|week|weekend|morning|evening|night|health|family|holiday|vacation|life|summer)${CLAUSE_END}`,
-    String.raw`\bhow\s+(?:are|r)\s+(?:you|u)\s+(?:feeling|doing|keeping|holding up)${CLAUSE_END}`,
+    // Their health and feelings.
+    String.raw`\b(?:your|ur)\s+(?:mental\s+|physical\s+)?(?:health|wellbeing|well-being)${CHECK_IN_END}`,
+    String.raw`\bhow(?:'s|s| is| was| has)\s+(?:the\s+|your\s+|ur\s+)?therapy(?:\s+sessions?)?(?:\s+(?:going|been))?${END}`,
+    String.raw`\bfeeling\s+(?:better|unwell|sick|ill|poorly|run\s+down)\b`,
+    String.raw`\bhow\s+(?:are|r)\s+(?:you|u)\s+holding\s+up\b`,
+    // Small talk about them: "How was your day?", "How has your week been?", "How did your date go?".
+    String.raw`\bhow(?:'s|s| is| was| has| are| have| were)\s+(?:your|ur)\s+(?:${PERSONAL}\s+|private\s+)?(?:day|week|weekend|morning|evening|night|health|family|holiday|vacation|life|summer)${CLAUSE_END}`,
+    String.raw`\bhow\s+(?:did|was|is)\s+(?:your|ur)\s+(?:date|wedding|birthday|anniversary|honeymoon)\b`,
+    String.raw`\bhow\s+(?:are|r)\s+(?:you|u)(?:\s+(?:feeling|doing|keeping|getting\s+on))?(?:\s+(?:today|lately|these\s+days))?${END}`,
+    String.raw`\bhow\s+(?:have|'ve)\s+(?:you|u)\s+been(?:\s+(?:keeping|doing))?(?:\s+(?:lately|these\s+days))?${END}`,
+    String.raw`\bhow(?:'s|s| is| are| has)\s+(?:it|everything|life|things)(?:\s+(?:been|going|treating\s+(?:you|u)))?(?:\s+(?:with\s+(?:you|u)|lately|these\s+days|at\s+the\s+moment))?${END}`,
+    // The mentor answering a question about itself (the incident's own shape: "hows your perosnal life going on..").
+    String.raw`\bthanks?(?:\s+you)?\s+for\s+asking\b`,
+    String.raw`\b(?:i'm|i\s+am|i've\s+been|i\s+have\s+been)\s+(?:doing\s+)?(?:well|good|great|fine|okay|ok)\b(?!\s+(?:aware|placed|positioned)\b)`,
+    String.raw`\bmy\s+(?:own\s+|${PERSONAL}\s+|private\s+)?(?:life|day|week|weekend|evening|morning|holiday|family)\b`,
     // The scripted frame (owner: "like reading a script"; production: "Hi, want to carry on with your perosnal life?").
-    String.raw`\b(?:want|like)\s+to\s+(?:carry\s+on|continue|keep\s+going)\s+with\b`,
+    String.raw`\bwant(?:\s+to)?\s+(?:carry\s+on|keep\s+going|continue)\s+(?:with|on)\b`,
+    String.raw`\b(?:like\s+to|shall\s+we|should\s+we|let's|lets)\s+(?:carry\s+on|keep\s+going)\s+(?:with|on)\b`,
   ].join('|'),
   'iu',
 );
@@ -244,11 +272,30 @@ export function isPersonalOpener(text: string): boolean {
 }
 
 /**
+ * Whether a model-written next opener names a thread of the venture: past its greeting, it shares a word with one of
+ * `threads` (what the founder said, the conversation's digest, the notebook's summary, open questions, open commitments
+ * and advice). A line that names nothing of them ("Good to see you. How have you been?", "I am well, thanks for asking.") is small
+ * talk whatever its wording, and the greeting that names nothing is said instead. `names`: the people's, which name no
+ * thread.
+ */
+export function namesAThread(
+  opener: string,
+  threads: readonly string[],
+  names: readonly string[] = [],
+): boolean {
+  const said = threadWords(withoutRepeatedGreeting(opener, names).text, names);
+  if (said.size === 0) return false;
+  const known = threadWords(threads.join('\n'), names);
+  for (const word of said) if (known.has(word)) return true;
+  return false;
+}
+
+/**
  * The threads a conversation raised that the founder did not take up ({@link untakenThread}): what it opened with;
  * each question the vEIR asked that no later founder message took up (the last answer's question had no reply yet,
  * so it is not counted); and the previous notebook's thread when it was drawn from an earlier conversation (or a
- * person, or nobody knows) and this conversation never took it up: a thread that survived a newer conversation
- * untouched is stale.
+ * person, or nobody knows), this conversation opened on it and the founder did not take it up. A previous line this
+ * conversation never said is not counted: the founder never left it aside (review of 1e2fd79).
  */
 function untakenThreads(
   conversation: DistillConversation,
@@ -275,9 +322,10 @@ function untakenThreads(
       if (thread === null) continue;
       const words = threadWords(thread, names);
       if (words.size === 0) continue;
-      // Raised as the opener, a short yes takes it up; otherwise the founder has to speak of it.
+      // Raised as the opener and not taken up (a short yes takes it up). A line that was never said (the conversation
+      // opened on something else) was never left aside: it may stand.
       const raised = opener !== null && isAboutThread(opener, words, names);
-      if (raised ? !tookUp(words, said) : !mentions(words, said)) out.push(words);
+      if (raised && !tookUp(words, said)) out.push(words);
     }
   }
   return out;
@@ -296,8 +344,10 @@ function untakenThreads(
  * - when any newly written text names another venture, one of its members or a canary, the whole
  *   distillation is dropped (null), like a recap;
  * - the next opener and its thread are dropped (null) when they are about a thread the founder did not take up
- *   when it was raised (the conversation's opener, a question the vEIR asked) or a thread kept from an earlier
- *   conversation that this one never took up, unless the founder spoke of it themselves (`conversation`).
+ *   when it was raised (the conversation's opener, the previous line when it opened on it, a question the vEIR
+ *   asked), unless the founder spoke of it themselves (`conversation`); when they are personal, small talk or the
+ *   scripted frame (`isPersonalOpener`); and when they name no thread the notebook or the digest leaves open
+ *   (`namesAThread`).
  *
  * Notebook merge semantics: the model returns the full proposed notebook, starting from the previous one.
  * Entries a person edited (`pinnedEntryIds`) are kept as the person left them, and a proposal with a
@@ -583,11 +633,10 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
             .trim();
     if (topic !== '' && mentionsSuppressed(topic)) stats.suppressedDropped += 1;
     nextTopic = topic === '' || topic.endsWith('?') || mentionsSuppressed(topic) ? null : topic;
-    // Never a thread the founder did not take up when it was raised, nor one kept from an earlier conversation that
-    // this one never took up (lab run 39780304879: the opener re-opened the advisor session the founder ignored, and
-    // a chat's distillation copied the previous opener word for word). With no line, the next conversation opens with
-    // a greeting that names nothing (orchestrator/continuity.ts `chooseOpener`); the prompt asks for another open
-    // thread of the notebook instead.
+    // Never a thread the founder did not take up when it was raised (lab run 39780304879: the opener re-opened the
+    // advisor session the founder ignored, and a chat's distillation copied that opener word for word). With no line,
+    // the next conversation opens with a greeting that names nothing (orchestrator/continuity.ts `chooseOpener`); the
+    // prompt asks for another open thread of the notebook instead.
     if (nextOpener !== null && ctx.conversation !== undefined) {
       const untaken = untakenThreads(ctx.conversation, previous, ctx.previousOpenerSource, ctx.sessionId);
       const names = ctx.conversation.names ?? [];
@@ -632,6 +681,30 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     nextOpener,
     nextTopic,
   };
+  if (nextOpener !== null && !pinned.has(NOTEBOOK_OPENER_PIN)) {
+    // A line that names no thread of the venture is small talk, however it is worded ("How have you been?"): what
+    // the founder said, what this conversation was about and what the notebook (before and after it) holds is what
+    // an opener picks up.
+    const notebooks = previous === null ? [notebookDelta] : [notebookDelta, previous];
+    const threads = [
+      ...(ctx.conversation?.founderTurns ?? []),
+      digest.summary,
+      ...digest.topics,
+      ...digest.commitments.map((c) => c.text),
+      ...digest.openQuestions,
+      ...notebooks.flatMap((n) => [
+        n.summary,
+        ...n.commitments.filter((c) => c.status === 'open').map((c) => c.text),
+        ...n.openQuestions.map((q) => q.text),
+        ...n.lastAdvice.map((a) => a.text),
+      ]),
+    ];
+    if (!namesAThread(nextOpener, threads, ctx.conversation?.names ?? [])) {
+      notebookDelta.nextOpener = null;
+      notebookDelta.nextTopic = null;
+      stats.personalOpenerDropped = 1;
+    }
+  }
 
   // Memory candidates ------------------------------------------------------------------------------------
   const evidenceKeys = new Set([...(ctx.evidenceKeys ?? [])].map((k) => k.trim().toUpperCase()));

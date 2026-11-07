@@ -7,6 +7,7 @@ import {
   isPersonalOpener,
   lastQuestionOf,
   mentions,
+  namesAThread,
   rewriteIdentity,
   sanitizePlainText,
   textsContainOtherVenture,
@@ -33,6 +34,7 @@ import {
   plainOpeners,
   type LeftOffConversationData,
   type LeftOffData,
+  type LeftOffDigest,
   type LeftOffThreads,
 } from './continuity-prompt.js';
 
@@ -344,7 +346,8 @@ const TAKE_UP_EXCHANGES = 20;
  *    opens the way that conversation opened ({@link repeatsOpener}), or it comes back to a thread that conversation
  *    opened on and the founder never took up there (none of their messages holds two of its words, nor did they answer
  *    it with a short yes: `@foundry/ai` `untakenThread`; lab run 39780304879, production 2026-10-16…20), or it is one
- *    a mentor never opens on (personal, small talk, the scripted frame: `isPersonalOpener`);
+ *    a mentor never opens on (personal, small talk, the scripted frame: `isPersonalOpener`; or a line that names no
+ *    thread the notebook or that conversation left open: `namesAThread`);
  * 3. else, for someone who has talked here before, a short, warm greeting that names no subject (`plainOpeners`),
  *    phrased for this conversation and never the way the last ones opened. Nothing the founder said is ever read by
  *    rule for what to open on (production 2026-11-06: the previous call held only "great" and "hows your perosnal life
@@ -484,8 +487,14 @@ export async function chooseOpener(
     current &&
     !fromSomeoneElse &&
     !leftAside &&
-    // A line stored before the distillation's check (or that slipped past it): never personal or the scripted frame.
+    // A line stored before the distillation's check (or that slipped past it): never personal, small talk or the
+    // scripted frame, and always about a thread the venture still has.
     !isPersonalOpener(stored) &&
+    namesAThread(
+      stored,
+      openThreads(notebook?.content ?? null, latest?.digest ?? null, heard?.lines ?? []),
+      names,
+    ) &&
     since.withOpener === 0 &&
     !repeatsOpener(stored, latest?.opener ?? null) &&
     !askedAtTheEnd(heard, stored)
@@ -508,6 +517,28 @@ export async function chooseOpener(
   return found(
     fresh === undefined ? null : { text: fresh, sourceSessionId: latest.sessionId, byPerson: false },
   );
+}
+
+/**
+ * What an opener may pick up, for `namesAThread` (the sanitizer reads the same): the founder's last messages, the latest
+ * conversation's digest, and the notebook's summary, open commitments, open questions and advice.
+ */
+function openThreads(
+  notebook: notebooksRepo.NotebookContent | null,
+  digest: LeftOffDigest | null,
+  founderLines: readonly string[],
+): string[] {
+  return [
+    ...founderLines,
+    digest?.summary ?? '',
+    ...(digest?.topics ?? []),
+    notebook?.summary ?? '',
+    ...(notebook?.commitments ?? []).filter((c) => c.status === 'open').map((c) => c.text),
+    ...(notebook?.openQuestions ?? []).map((q) => q.text),
+    ...(notebook?.lastAdvice ?? []).map((a) => a.text),
+    ...(digest?.commitments ?? []).map((c) => c.text),
+    ...(digest?.openQuestions ?? []),
+  ];
 }
 
 /**

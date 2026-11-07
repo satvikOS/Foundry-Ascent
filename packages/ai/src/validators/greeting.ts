@@ -82,9 +82,17 @@ function isGreetingClause(clause: string, names: readonly string[]): boolean {
 }
 
 /**
- * `text` without the greeting it opens with (see the module comment): clauses split at commas, full stops and
- * exclamation marks are dropped from the start while each is only a greeting (with `names`, the founder's, at most).
- * `removed` when something was dropped; `text` is '' when the whole reply was a greeting.
+ * The first clause of a line and what ends it: a comma, full stop, exclamation mark, semicolon, colon, dash or spaced
+ * hyphen ("Hi Amara — how did it go?", "Hey; did…", "Hi again: …", "Hi - quick question"), as {@link openerSaidHello}
+ * reads it. A question mark ends no greeting.
+ */
+const GREETING_CLAUSE_SPLIT = /^((?:(?!\s-\s)[^,.!?…\n;:—–])+)((?:[,.!…;:—–]+|\s+-(?=\s))["'”’)]*\s*|$)/u;
+
+/**
+ * `text` without the greeting it opens with (see the module comment): clauses split at commas, full stops,
+ * exclamation marks, semicolons, colons, dashes and spaced hyphens are dropped from the start while each is only a
+ * greeting (with `names`, the founder's, at most). `removed` when something was dropped; `text` is '' when the whole
+ * reply was a greeting.
  */
 export function withoutRepeatedGreeting(
   text: string,
@@ -94,7 +102,7 @@ export function withoutRepeatedGreeting(
   let rest = text.slice(lead.length);
   let removed = false;
   for (;;) {
-    const clause = /^([^,.!?…\n]+)([,.!…]+["'”’)]*\s*|$)/u.exec(rest);
+    const clause = GREETING_CLAUSE_SPLIT.exec(rest);
     if (clause?.[1] === undefined) break;
     // A greeting, or the name after one ("Welcome back, Mina.").
     const greets = isGreetingClause(clause[1], names) || (removed && withoutNames(clause[1], names) === '');

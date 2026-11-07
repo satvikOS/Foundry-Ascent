@@ -412,6 +412,74 @@ describe('the call intro', () => {
   });
 });
 
+describe('a model line whose greeting ends at a dash, semicolon or colon (review of 1e2fd79)', () => {
+  const thomas = {
+    firstName: 'Amara',
+    personaName: 'Thomas',
+    eirFirstName: null,
+    mentor: true,
+    firstMeeting: false,
+    conversationStarted: false,
+    seed: 'call-1',
+  } as const;
+  /** The line as a call says it: addressed to the founder first, as `chooseOpener` does. */
+  const said = (line: string, spent: boolean): string =>
+    callIntroText({
+      ...thomas,
+      opener: addressFounder(line, { founder: 'Amara Okafor' }),
+      ...(spent ? { pastReplies: ['Thanks, Amara.'] } : {}),
+    });
+
+  it('keeps the line’s own greeting, with the name in it once, never a second hello in front', () => {
+    for (const [line, named, unnamed] of [
+      [
+        'Hi Amara — how did the advisor session on device classification go?',
+        'Hi Amara — how did the advisor session on device classification go?',
+        'Hi — how did the advisor session on device classification go?',
+      ],
+      [
+        'Hey — did you manage to book the clinical innovation pathway session?',
+        'Hey Amara — did you manage to book the clinical innovation pathway session?',
+        'Hey — did you manage to book the clinical innovation pathway session?',
+      ],
+      [
+        'Hi there — I have been thinking about who signs the cheque.',
+        'Hi there Amara — I have been thinking about who signs the cheque.',
+        'Hi there — I have been thinking about who signs the cheque.',
+      ],
+      [
+        'Hi again: did you get to the advisor?',
+        'Hi again Amara: did you get to the advisor?',
+        'Hi again: did you get to the advisor?',
+      ],
+      [
+        'Hey Amara; did the reimbursement pathway get clearer?',
+        'Hey Amara; did the reimbursement pathway get clearer?',
+        'Hey; did the reimbursement pathway get clearer?',
+      ],
+      [
+        'Hi Amara - quick question: who signs the cheque?',
+        'Hi Amara - quick question: who signs the cheque?',
+        'Hi - quick question: who signs the cheque?',
+      ],
+      [
+        'Amara! Good to see you. Did the advisor session happen?',
+        'Good to see you, Amara. Did the advisor session happen?',
+        'Good to see you. Did the advisor session happen?',
+      ],
+      [
+        'Good to see you again — did the clinics say who signs the cheque?',
+        'Good to see you again, Amara — did the clinics say who signs the cheque?',
+        'Good to see you again — did the clinics say who signs the cheque?',
+      ],
+    ] as const) {
+      expect(said(line, false), line).toBe(named);
+      expect(said(line, true), line).toBe(unnamed);
+      expect(said(line, false), line).not.toMatch(/\b(?:hi|hey)\b.*\b(?:hi|hey)\b|\byou\b[!-]/i);
+    }
+  });
+});
+
 describe('the names a call may say', () => {
   const EIRS = ['Corin Halvorsen', 'Ruth Abernathy-Song'];
 

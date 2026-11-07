@@ -22,8 +22,7 @@ export type DistillSkipReason =
   | 'no_turns'
   | 'up_to_date'
   | 'superseded'
-  | 'active'
-  | 'not_distilled';
+  | 'active';
 
 type DistillStateFields = Pick<
   sessionsRepo.DistillState,
@@ -73,38 +72,6 @@ export function distillSkipReason(
   if (queuedTurns !== undefined && state.completedTurns > queuedTurns) return 'superseded';
   if (!settled && isActive(state, now, activeWindowSeconds)) return 'active';
   return null;
-}
-
-/**
- * Cheap checks before the model call of an opener job (`opener`: the conversation is distilled, and its notebook holds
- * no next opener): the conversation is gone, deleted, temporary, its digest was deleted, it has no completed turn, the
- * job was queued at other turns than it has now, or not every turn is distilled yet (that distillation writes the
- * line itself). Null when the opener should be written now.
- */
-export function openerSkipReason(
-  state: DistillStateFields | null,
-  queuedTurns?: number,
-): DistillSkipReason | null {
-  if (state === null) return 'not_found';
-  if (state.deletedAt !== null) return 'deleted';
-  if (state.privacy !== 'standard') return 'ephemeral';
-  if (state.digestDeletedAt !== null) return 'digest_deleted';
-  if (state.completedTurns === 0) return 'no_turns';
-  if (queuedTurns !== undefined && state.completedTurns !== queuedTurns) return 'superseded';
-  if (state.distillVersion < state.completedTurns) return 'not_distilled';
-  return null;
-}
-
-/**
- * Whether starting a conversation should have a next opener written for the person's previous one: it is a standard
- * conversation, its digest was not deleted, every completed turn of it is distilled, and its notebook holds no next
- * opener while it has open threads (`openerWanted`: distillation wrote none, or its line was dropped). The line is for
- * the conversation after this one, or a call that starts in this one once the line has landed; the new conversation
- * never waits for it.
- */
-export function previousWantsOpener(previous: sessionsRepo.PreviousConversation | null): boolean {
-  if (previous?.privacy !== 'standard' || previous.digestDeleted || !previous.openerWanted) return false;
-  return previous.completedTurns > 0 && previous.distillVersion >= previous.completedTurns;
 }
 
 /** Unusable answers (invalid or refused) a conversation's turns may get before the failure is recorded. */

@@ -369,7 +369,8 @@ function mixed(hash: number): number {
 
 /**
  * Greetings to someone this vEIR has talked with before; never one the distillation prompt calls a stock line ("Good
- * to talk again", @foundry/ai distill/prompt.ts).
+ * to talk again", @foundry/ai distill/prompt.ts), and never the bare hello a founder types ("Hi"), which the line
+ * would echo.
  */
 const GREETINGS_AGAIN = [
   'Good to see you again.',
@@ -380,7 +381,6 @@ const GREETINGS_AGAIN = [
   'Hello again.',
   'Nice to see you.',
   'Good to hear from you.',
-  'Hi again.',
 ];
 /** Greetings to someone whose last conversation here was with another coach of the venture (never "again"). */
 const GREETINGS_NEW = ['Good to have you here.', 'Welcome.', 'Glad you’re here.'];

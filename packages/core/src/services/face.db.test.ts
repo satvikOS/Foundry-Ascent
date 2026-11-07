@@ -774,8 +774,8 @@ describe('the face of a call: off by default, then the stand-in', () => {
       });
       const manifest = spoken.faceManifest ?? '';
       const pcm = spoken.bytes.subarray(44);
-      // The test hands parts 0, 1 and 2 of the intro. Since wave 7 a repeat call's intro is one sentence of at most
-      // 90 characters ("Hi Maya, …?"), about three seconds of speech; it used to run two or three sentences.
+      // The test hands parts 0, 1 and 2 of the intro. A repeat call's intro is the conversation's opener as written
+      // (its own greeting, then its sentence), at least three one-second parts long.
       expect(Math.ceil(pcm.length / FACE_CHUNK_BYTES)).toBeGreaterThanOrEqual(3);
       /** One second of the intro, as its own part. */
       const second = (i: number) =>

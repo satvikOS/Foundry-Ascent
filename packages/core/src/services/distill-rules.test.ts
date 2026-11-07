@@ -15,10 +15,8 @@ import {
   withoutAdviceRewrites,
   keepHumanAdvice,
   modelFailure,
-  openerSkipReason,
   personaCanDistill,
   previousNeedsDistill,
-  previousWantsOpener,
   removedSince,
   sameNotebook,
   staleWriteReason,
@@ -181,7 +179,6 @@ describe('previousNeedsDistill (a new conversation distils the previous one)', (
     distillVersion: 1,
     digestDeleted: false,
     completedTurns: 3,
-    openerWanted: false,
   };
 
   it('queues an idle conversation with turns no digest covers', () => {
@@ -211,33 +208,6 @@ describe('previousNeedsDistill (a new conversation distils the previous one)', (
     expect(previousNeedsDistill({ ...previous, lastActivityAt: minutesAgo(1.5) }, NOW, GRACE)).toBe(true);
     // A turn within the grace may still be going on in another tab.
     expect(previousNeedsDistill({ ...previous, lastActivityAt: minutesAgo(0.5) }, NOW, GRACE)).toBe(false);
-  });
-
-  it('wants an opener for a distilled conversation whose notebook has open threads and no line (2026-11-06)', () => {
-    const distilled = { ...previous, distillVersion: 3, openerWanted: true };
-    expect(previousWantsOpener(distilled)).toBe(true);
-    // Still to distil: that distillation writes the line itself.
-    expect(previousWantsOpener({ ...distilled, distillVersion: 1 })).toBe(false);
-    expect(previousWantsOpener({ ...distilled, openerWanted: false })).toBe(false);
-    expect(previousWantsOpener({ ...distilled, completedTurns: 0, distillVersion: 0 })).toBe(false);
-    expect(previousWantsOpener({ ...distilled, privacy: 'ephemeral' })).toBe(false);
-    expect(previousWantsOpener({ ...distilled, digestDeleted: true })).toBe(false);
-    expect(previousWantsOpener(null)).toBe(false);
-  });
-});
-
-describe('openerSkipReason (an opener job only for a distilled conversation)', () => {
-  it('runs for a conversation every turn of which is distilled, at the turns it was queued at', () => {
-    const distilled = { ...state, distillVersion: state.completedTurns };
-    expect(openerSkipReason(distilled, state.completedTurns)).toBeNull();
-    expect(openerSkipReason(distilled)).toBeNull();
-    expect(openerSkipReason(state)).toBe('not_distilled');
-    expect(openerSkipReason(distilled, state.completedTurns - 1)).toBe('superseded');
-    expect(openerSkipReason(null)).toBe('not_found');
-    expect(openerSkipReason({ ...distilled, deletedAt: minutesAgo(0) })).toBe('deleted');
-    expect(openerSkipReason({ ...distilled, digestDeletedAt: minutesAgo(0) })).toBe('digest_deleted');
-    expect(openerSkipReason({ ...distilled, privacy: 'ephemeral' })).toBe('ephemeral');
-    expect(openerSkipReason({ ...distilled, completedTurns: 0, distillVersion: 0 })).toBe('no_turns');
   });
 });
 

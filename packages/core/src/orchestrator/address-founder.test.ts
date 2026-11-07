@@ -29,6 +29,17 @@ describe('addressFounder (LAB-U2: said to the founder, names in their real case)
       ['Welcome back, Maya Patel! Did the dean reply?', 'Welcome back! Did the dean reply?'],
       // Talked about, not called by: said as "you".
       ["Hi! How did Maya's pilot go?", 'Hi! How did your pilot go?'],
+      // After a hello and a spaced hyphen, or opening the line before "!" (review of 1e2fd79): never "Hi you -".
+      ['Hi Maya - quick question: who signs the cheque?', 'Hi - quick question: who signs the cheque?'],
+      [
+        'Maya! Good to see you. Did the advisor session happen?',
+        'Good to see you. Did the advisor session happen?',
+      ],
+      [
+        'Hey Maya; did the reimbursement pathway get clearer?',
+        'Hey; did the reimbursement pathway get clearer?',
+      ],
+      ['Hi Maya — how did the advisor session go?', 'Hi — how did the advisor session go?'],
     ] as const) {
       expect(addressFounder(line, PEOPLE), line).toBe(said);
     }
