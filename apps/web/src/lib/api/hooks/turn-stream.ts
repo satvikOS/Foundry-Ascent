@@ -341,9 +341,12 @@ export function useTurnStream(sessionId: string, { ventureId, onEvent }: UseTurn
           if (event.event === 'turn.completed') {
             applyCompletedTurn(event.turn);
             endedRef.current.add(controller);
+            // The turn is recorded: the same words sent again (while its fields still come) are a new turn.
+            settleAttempt(idempotencyKey);
             final = 'completed';
           } else if (event.event === 'turn.blocked') {
             endedRef.current.add(controller);
+            settleAttempt(idempotencyKey);
             final = 'blocked';
           } else if (event.event === 'turn.error' && event.code === 'conflict') {
             // A replay found the original turn still being answered: keep the key so the next try

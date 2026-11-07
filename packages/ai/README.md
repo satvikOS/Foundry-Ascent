@@ -314,7 +314,8 @@ true)` → kind `mentor`; ADR-0021, "Thomas"): `MENTOR_IDENTITY_RULES` (first pe
   `nameBudgetSpent` holds the name to one reply in four over this conversation and the end of the last ones
   (`pastReplies`); `withoutStockOpener` also reads any short grade of the founder's move ("That's a solid revision")
   and "I hear you want…" (said back plainly); `withoutInventedFigures` names a made-up price by its role ("a gift
-  card", "a monthly price"). The phrasing ledger (`prompts/phrasing.ts`) counts the vEIR's question forms and openings
+  card", "a monthly price"), except when the founder asked for a number (`asksForNumber`: the reasoned range is the
+  answer), and reads a number the founder spelled out ("fifty cedis") as theirs. The phrasing ledger (`prompts/phrasing.ts`) counts the vEIR's question forms and openings
   here and in its last conversations for `<conversation_state>`, and `withVariedQuestions` says a recently used
   question form another way with the same substance (never dropped). A reference item is optional background
   (`REFERENCE_RULES`); the distillation prompt speaks as a mentor under its own name (`DistillPromptInput.mentor`)

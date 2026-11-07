@@ -16,8 +16,14 @@
  *   what it is, where a price is offered or asked and the sentence reads as well without the number: "offer a $10 gift
  *   card" → "offer a gift card", "add a 10 percent discount" → "add a discount", "would you pay $2/month for it" →
  *   "would you pay a monthly price for it", "sell it at $30 per unit" → "sell it at a set price per unit". Any other
- *   made-up figure (an estimate, a fact about the market) stays as written (and counted): the sentence would not
- *   read without it.
+ *   made-up figure (an estimate, a fact about the market: "Tutors in Accra usually charge 50 to 100 cedis an hour",
+ *   "Kenya has about 50 million people") stays as written and is counted, not removed: the sentence would not read
+ *   without it, and the prompt's rule is what keeps it out.
+ *
+ * When the founder asked for a number ("how much should I charge per session?"), the prompt has Thomas give a reasoned
+ * range (conversation-state.ts `asksForNumber`): that range is the answer, so neither scrubber touches it (`asked`); it
+ * is still counted. Known numbers are read from digits and from words ("I charge fifty cedis"), so a figure the founder
+ * spelled out is theirs when Thomas says it back in digits.
  */
 
 /**
@@ -76,6 +82,70 @@ export function numbersIn(text: string): number[] {
     if (v !== null) out.push(v);
   }
   return out;
+}
+
+/** Number words and their values (a Map: "constructor" is no number). */
+const WORD_UNITS: ReadonlyMap<string, number> = new Map([
+  ...'zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen'
+    .split(' ')
+    .map((w, i) => [w, i] as const),
+  ...'twenty thirty forty fifty sixty seventy eighty ninety'
+    .split(' ')
+    .map((w, i) => [w, (i + 2) * 10] as const),
+]);
+const WORD_SCALES: ReadonlyMap<string, number> = new Map([
+  ['thousand', 1e3],
+  ['million', 1e6],
+  ['billion', 1e9],
+]);
+
+/**
+ * The numbers `text` spells out in words ("fifty cedis", "two hundred and fifty", "a thousand", "twenty-five"), as
+ * values. A lone "one" or "zero" is left out: "the one I sell" is no figure, and 1 would make every "$1" theirs.
+ */
+export function spelledNumbersIn(text: string): number[] {
+  const out: number[] = [];
+  // Punctuation ends a number ("a thousand, twenty-five" is two); a hyphen joins one ("twenty-five").
+  const words = text.toLowerCase().match(/[a-z]+|[^a-z\s-]+/g) ?? [];
+  let total = 0;
+  let current = 0;
+  let seen = 0;
+  const end = (): void => {
+    const value = total + current;
+    if (seen > 0 && !(seen === 1 && value <= 1)) out.push(value);
+    total = 0;
+    current = 0;
+    seen = 0;
+  };
+  for (let i = 0; i < words.length; i += 1) {
+    const w = words[i] ?? '';
+    const next = words[i + 1] ?? '';
+    const numeric = (x: string): boolean => WORD_UNITS.has(x) || x === 'hundred' || WORD_SCALES.has(x);
+    const unit = WORD_UNITS.get(w);
+    const scale = WORD_SCALES.get(w);
+    if (unit !== undefined) {
+      current += unit;
+      seen += 1;
+    } else if (w === 'hundred') {
+      current = (current === 0 ? 1 : current) * 100;
+      seen += 2;
+    } else if (scale !== undefined) {
+      total += (current === 0 ? 1 : current) * scale;
+      current = 0;
+      seen += 2;
+    } else if (w === 'a' && (next === 'hundred' || WORD_SCALES.has(next))) {
+      if (seen > 0) end();
+    } else if (w === 'and' && seen > 0 && numeric(next)) {
+      // "two hundred and fifty".
+    } else if (seen > 0) end();
+  }
+  if (seen > 0) end();
+  return out;
+}
+
+/** The numbers known text holds, in digits or in words. */
+function knownNumbersIn(text: string): number[] {
+  return [...numbersIn(text), ...spelledNumbersIn(text)];
 }
 
 function close(a: number, b: number): boolean {
@@ -171,7 +241,7 @@ export interface InventedFigures {
 
 /** The money and percentage figures of `answer` that `known` (what the founder said, the sources shown) does not give. */
 export function inventedFigures(answer: string, known: string): InventedFigures {
-  const knownNumbers = numbersIn(known);
+  const knownNumbers = knownNumbersIn(known);
   const unsourced: string[] = [];
   const proposed: string[] = [];
   for (const m of answer.matchAll(FIGURE)) {
@@ -237,7 +307,10 @@ function commaExampleRole(
 export function withoutExampleFigures(
   answer: string,
   known: string,
+  asked = false,
 ): { readonly text: string; readonly removed: number } {
+  // They asked for a number: the range offered is the answer (see the module comment).
+  if (asked) return { text: answer, removed: 0 };
   let removed = 0;
   const withoutCommaExamples = answer.replace(
     COMMA_EXAMPLE,
@@ -282,13 +355,24 @@ const PRICED_THING = new RegExp(
   'gu',
 );
 
-/** "$2/month", "$30 per unit", "$10 a session": a price per period or per item. */
+/** A hedge before a price ("around $15 a session"): said by its role, the price needs none ("around a set price"). */
+const PRICE_HEDGE = String.raw`(?:around|about|roughly|approximately|something like|maybe|perhaps)\s+`;
+
+/**
+ * "$2/month", "$30 per unit", "$10 a session", "50 cedis an hour": a price per period or per item, with a hedge before
+ * it, and "price it at" before that ("Price it at 40 cedis per session" is said "Price it per session").
+ */
 const PRICE_PER = new RegExp(
-  String.raw`(?<!\b(?:the|that|this|your|their|our|my|its|a|an) )(${FIGURE_OR_RANGE})\s?(?:/\s?|\ba |\bper |\beach )(month|week|year|seat|user|session|class|lesson|unit|order|head|person|student|household|customer|box|kit|test|visit|night|hour)\b`,
+  String.raw`(\bpric(?:e|ing) (?:it|them|this|that|each one) at\s+)?(${PRICE_HEDGE})?(?<!\b(?:the|that|this|your|their|our|my|its|a|an) )(${FIGURE_OR_RANGE})\s?(?:/\s?|\ban? |\bper |\beach )(month|week|year|day|term|semester|seat|user|session|class|lesson|unit|order|head|person|student|household|customer|family|box|crate|bag|sack|plate|meal|cup|bottle|item|piece|pack|ticket|ride|trip|delivery|kit|test|visit|night|hour|page|copy|kilo|litre|liter|dozen)\b`,
   'giu',
 );
 
-const PERIOD: Readonly<Record<string, string>> = { month: 'monthly', week: 'weekly', year: 'yearly' };
+const PERIOD: Readonly<Record<string, string>> = {
+  day: 'daily',
+  month: 'monthly',
+  week: 'weekly',
+  year: 'yearly',
+};
 
 /** Where a verb of offering may stand: a clause's start, after "you", "we", a modal, "try", "then"… (never "they"). */
 const OFFER_LEAD = String.raw`(?:^[\s*_"“]*|[:;(—–]\s*|,\s+|\b(?:you|we|i|to|could|would|should|might|can|will|then|and|or|just|first|maybe|perhaps|try|consider|start by)\s+)`;
@@ -338,7 +422,10 @@ function articleFor(word: string, capital: boolean): string {
 export function withoutInventedFigures(
   answer: string,
   known: string,
+  asked = false,
 ): { readonly text: string; readonly removed: number } {
+  // They asked for a number: the range offered is the answer (see the module comment).
+  if (asked) return { text: answer, removed: 0 };
   const invented = new Set(inventedFigures(answer, known).unsourced.map((f) => f.replace(/\s+/g, ' ')));
   if (invented.size === 0) return { text: answer, removed: 0 };
   const madeUp = (figure: string): boolean => {
@@ -354,11 +441,30 @@ export function withoutInventedFigures(
       return `${articleFor(next, article.startsWith('A'))} `;
     },
   );
-  text = text.replace(PRICE_PER, (whole, figure: string, per: string, at: number, all: string) => {
-    if (!madeUp(figure) || !offeredAt(all, at)) return whole;
-    removed += 1;
-    const period = PERIOD[per.toLowerCase()];
-    return period === undefined ? `a set price per ${per}` : `a ${period} price`;
-  });
+  text = text.replace(
+    PRICE_PER,
+    (
+      whole,
+      priceAt: string | undefined,
+      hedge: string | undefined,
+      figure: string,
+      per: string,
+      at: number,
+      all: string,
+    ) => {
+      const figureAt = at + (priceAt?.length ?? 0) + (hedge?.length ?? 0);
+      if (!madeUp(figure) || !offeredAt(all, figureAt)) return whole;
+      removed += 1;
+      const period = PERIOD[per.toLowerCase()];
+      if (priceAt !== undefined) {
+        // "Price it at 40 cedis per session" → "Price it per session"; "… $10 a month" → "Price it monthly".
+        const verb = priceAt.replace(/\s+at\s+$/iu, '');
+        return period === undefined ? `${verb} per ${per}` : `${verb} ${period}`;
+      }
+      const role = period === undefined ? `a set price per ${per}` : `a ${period} price`;
+      // A hedge that opened its sentence leaves its capital to the role.
+      return hedge !== undefined && /^\p{Lu}/u.test(hedge) ? `A${role.slice(1)}` : role;
+    },
+  );
   return removed === 0 ? { text: answer, removed: 0 } : { text, removed };
 }

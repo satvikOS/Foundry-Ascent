@@ -12,6 +12,7 @@ import {
 
 import { type DbContext } from '../db.js';
 import { p } from '../params.js';
+import { readTogether } from './common.js';
 import { GUIDE_DOCTRINE, GUIDE_STYLE } from '../seed/doctrine.js';
 import { type SeedResult } from '../seed/seed.js';
 import { createTestDatabase, makeContext, type TestDatabase } from '../testing/test-database.js';
@@ -646,6 +647,11 @@ describe('documents, sessions, turns, escalations', () => {
       ).toBe(2);
       const recent = await turnsRepo.listRecentTurns(tx, { sessionId: session.id, limit: 8 });
       expect(recent.map((r) => r.ordinal)).toEqual([1, 2]);
+      // The founder's messages from before the history window that hold a number (their figures stay known).
+      const earlier = (limit: number) =>
+        readTogether(tx, { earlier: turnsRepo.earlierFounderFiguresPart({ sessionId: session.id, limit }) });
+      expect((await earlier(1)).earlier).toEqual(['Question 1']);
+      expect((await earlier(8)).earlier).toEqual([]);
       return { sessionId: session.id };
     });
     await t.db.withContext(maya, async (tx) => {

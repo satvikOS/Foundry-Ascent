@@ -84,6 +84,24 @@
       "known": "We make 500 naira a day.",
       "unsourced": 0,
       "proposed": 0
+    },
+    {
+      "reply": "So at 50 cedis a session, charge 50 cedis a session to the next ten and see who returns.",
+      "known": "I charge fifty cedis per session to students.",
+      "unsourced": 0,
+      "proposed": 0
+    },
+    {
+      "reply": "Keep ₦250 a plate: it is your price, and it sells.",
+      "known": "We sell jollof at two hundred and fifty naira a plate.",
+      "unsourced": 0,
+      "proposed": 0
+    },
+    {
+      "reply": "Charge around $15 a session to start, assuming parents compare you to a private tutor.",
+      "known": "How much should I charge per session for the tutoring?",
+      "unsourced": 1,
+      "proposed": 0
     }
   ]
 }

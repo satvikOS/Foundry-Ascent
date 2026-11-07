@@ -29,7 +29,13 @@ import {
   type IdentityViolationKind,
 } from './identity.js';
 import { sanitizeMarkdown, sanitizePlainText } from './markdown.js';
-import { contentWords, founderMoves, socialTurnOf, type SocialTurn } from '../prompts/conversation-state.js';
+import {
+  asksForNumber,
+  contentWords,
+  founderMoves,
+  socialTurnOf,
+  type SocialTurn,
+} from '../prompts/conversation-state.js';
 import { questionFramesOf, withVariedQuestions } from '../prompts/phrasing.js';
 import { inventedFigures, withoutExampleFigures, withoutInventedFigures } from './figures.js';
 import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.js';
@@ -578,10 +584,12 @@ export function validateCoachResponse(
       out = named.text;
     }
     if (options.knownFigures !== undefined) {
-      const figures = withoutExampleFigures(out, options.knownFigures);
+      // Asked for a number, the range Thomas reasons out is the answer: it stays (and is counted below).
+      const asked = options.founderText !== undefined && asksForNumber(options.founderText);
+      const figures = withoutExampleFigures(out, options.knownFigures, asked);
       if (figures.removed > 0 && note) notes.push(`example_figure_removed:${figures.removed}`);
       out = figures.text;
-      const invented = withoutInventedFigures(out, options.knownFigures);
+      const invented = withoutInventedFigures(out, options.knownFigures, asked);
       if (invented.removed > 0 && note) notes.push(`invented_figure_removed:${invented.removed}`);
       out = invented.text;
     }

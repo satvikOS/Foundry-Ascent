@@ -206,6 +206,22 @@ describe('the stored answer is what the gate released (the root of pilot v3’s 
   });
 });
 
+describe('a number they asked for (review of B1: the asked-for price was said by its role mid-sentence)', () => {
+  it('is shown, spoken and stored as written, and still counted', () => {
+    const founderText = 'How much should I charge per session for the tutoring?';
+    const reply =
+      'Charge around $15 a session to start, assuming parents compare you to a private tutor. Price it at 40 cedis per session for the group class.';
+    const typed = shown(run(gate({ founderText, knownFigures: founderText }), [reply]));
+    const spoken = shown(run(gate({ founderText, knownFigures: founderText, spoken: true }), [reply]));
+    expect(typed).toBe(reply);
+    expect(spoken).toBe(reply);
+    const stored = validateCoachResponse(response(reply), opts({ founderText, knownFigures: founderText }));
+    expect(stored.response.answer).toBe(reply);
+    expect(stored.results.notes).toContain('invented_figure:2');
+    expect(stored.results.notes.some((n) => n.startsWith('invented_figure_removed'))).toBe(false);
+  });
+});
+
 describe("the founder's name across conversations (pilot v3: overuse in 26 of 60 runs)", () => {
   it('counts the end of the last conversation too: a new conversation does not open on the name again', () => {
     const reply = 'Hi Maya, where did the landlord call land?';
@@ -386,21 +402,55 @@ describe('figures nobody gave, said by what they are (pilot v3: 30)', () => {
 });
 
 describe('the ledger names the lines it closed on and the phrases it said twice (lab run 42238272157)', () => {
-  it('says the closing lines of the latest replies, and the whole phrases two of them shared', () => {
+  it('says a close that recurs, and the whole phrases two replies shared', () => {
     const ledger = phrasingLedger([
       "Book the dean. Shape the proposal around what you learn instead of what you assumed. You're set, go get those answers.",
       'Run the survey first. Then shape the proposal around what you learn instead of what you assumed.',
     ]);
+    // The second close says the first reply's line again; the first reply's sign-off was said once.
     expect(ledger.closings).toEqual([
-      "You're set, go get those answers.",
       'Then shape the proposal around what you learn instead of what you assumed.',
     ]);
     expect(ledger.phrases).toEqual(['shape the proposal around what you learn instead of what you assumed']);
     const line = renderPhrasingLedger(ledger);
-    expect(line).toContain('closing lines "You\'re set, go get those answers."');
+    expect(line).toContain(
+      'closing lines "Then shape the proposal around what you learn instead of what you assumed."',
+    );
     expect(line).toContain(
       'phrases said twice "shape the proposal around what you learn instead of what you assumed"',
     );
-    expect(line).toContain('never say them again');
+    expect(line).toContain('find another way to close');
+    expect(line).not.toContain('never say them again');
+    // The same close, shaped alike (the lab's "You're set… go get those answers" three times).
+    expect(
+      phrasingLedger([
+        "Send the form tonight. You're set, go get those answers.",
+        "Call the dean first. You're set, go get the signatures.",
+      ]).closings,
+    ).toEqual(["You're set, go get those answers.", "You're set, go get the signatures."]);
+  });
+
+  it('never names a close said once, the founder’s own terms, or anything when they ask to hear it again (review of B2)', () => {
+    const replies = [
+      'Ask each head teacher what result would make them pay for a second term.',
+      'Run the pilot with the three schools in Kumasi first. Get each head teacher to name the result that would make them pay.',
+      'Last time you were going to ask the three schools in Kumasi what they would pay. Run the pilot with the three schools in Kumasi as planned.',
+    ];
+    const founderSaid = ['We are running the pilot with the three schools in Kumasi next month.'];
+    const ledger = phrasingLedger(replies, [], { founderSaid });
+    expect(ledger.closings).toEqual([]);
+    expect(ledger.phrases).toEqual([]);
+    expect(renderPhrasingLedger(ledger)).toBe('');
+    // Without their words in view the shared phrase is Thomas's own, and is named.
+    expect(phrasingLedger(replies).phrases).toEqual(['run the pilot with the three schools in kumasi']);
+    // Asked to hear it again, nothing said is named as said.
+    const asked = phrasingLedger(replies, [], { repeatAsked: true });
+    expect(asked.closings).toEqual([]);
+    expect(asked.phrases).toEqual([]);
+    const state = deriveConversationState(
+      replies.map((answer, i) => ({ founderText: `Message ${i + 1}.`, answer })),
+      'What was the first step again?',
+    );
+    expect(renderConversationState(state)).not.toContain('Said more than once');
   });
 });

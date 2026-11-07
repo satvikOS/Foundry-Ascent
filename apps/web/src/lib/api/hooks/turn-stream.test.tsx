@@ -718,3 +718,64 @@ describe('useTurnStream after a turn completed (its fields arrive after it, B3)'
     expect(result.current.state.turn?.id).toBe(secondId);
   });
 });
+
+describe('useTurnStream sends the same words again while the last turn’s fields still come', () => {
+  it('gives the second message its own key, so it is stored and answered rather than replayed', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(queryKeys.session.detail(IDS.session), { session: { turnCount: 0 }, turns: [] });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useTurnStream(IDS.session, { ventureId: IDS.venture }), { wrapper });
+    const first = makeTurn({ id: IDS.turn, sessionId: IDS.session, ordinal: 1 });
+    const frame = (event: object) =>
+      new TextEncoder().encode(
+        `event: ${(event as { event: string }).event}\ndata: ${JSON.stringify(event)}\n\n`,
+      );
+    const closers: (() => void)[] = [];
+    // The first turn completes with its fields still to come: its stream stays open.
+    fetchMock.mockImplementationOnce(() => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(frame({ event: 'turn.accepted', turnId: IDS.turn, ordinal: 1 }));
+          controller.enqueue(frame({ event: 'turn.completed', turn: first, fieldsPending: true }));
+          closers.push(() => {
+            controller.close();
+          });
+        },
+      });
+      return Promise.resolve(
+        new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+      );
+    });
+    let sending: Promise<unknown> = Promise.resolve();
+    act(() => {
+      sending = result.current.send({ text: 'yes' });
+    });
+    await waitFor(() => {
+      expect(result.current.state.status).toBe('completed');
+    });
+    expect(result.current.isStreaming).toBe(false);
+    const secondId = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+    fetchMock.mockResolvedValueOnce(
+      sse(
+        { event: 'turn.accepted', turnId: secondId, ordinal: 2 },
+        { event: 'turn.completed', turn: makeTurn({ id: secondId, sessionId: IDS.session, ordinal: 2 }) },
+      ),
+    );
+    await act(async () => {
+      await result.current.send({ text: 'yes' });
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const keys = fetchMock.mock.calls.map((call) => idempotencyKeyOf(call));
+    expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(keys[1]).not.toBe(keys[0]);
+    expect(result.current.state.turn?.id).toBe(secondId);
+    await act(async () => {
+      for (const close of closers) close();
+      await sending;
+    });
+  });
+});

@@ -1,11 +1,14 @@
 import {
+  asksToRepeat,
   contentWords,
-  founderMoves,
   socialTurnOf,
   wrapUpOf,
   type SocialTurn,
 } from '../prompts/conversation-state.js';
 import { sentenceSpans } from './meta-narration.js';
+
+/** Read in prompts/conversation-state.ts (the phrasing ledger reads it too); the validators' own since diff3-A3. */
+export { asksToRepeat };
 
 /**
  * Conversation craft the lab still heard after the presence work (wave 6, runs 39088463537 and 39089309562),
@@ -76,24 +79,6 @@ export function withinSocialBudget(text: string, social: SocialTurn): string {
   const out = kept.join(' ');
   const same = out.replace(/\s+/g, ' ').trim() === text.replace(/\s+/g, ' ').trim();
   return same ? text : out;
-}
-
-/**
- * The founder asks to hear something again, or to run a rehearsal or a drill again ("ok stop, run it again from the
- * top", "same questions again"): then a reply may repeat it (diff3-A3; the brief: repetition the student asked for is
- * not a fault).
- */
-const REPEAT_REQUEST =
-  /\b(?:from the top|(?:run|do|go through|ask|start) (?:(?:it|that|this|them|those|the (?:\w+ )?(?:questions|pitch|run|round|drill|rehearsal|role-?play)) )?(?:again|over)|again,? (?:the )?same (?:questions|run|round|drill)|same questions again|(?:another|one more) (?:round|run|pass)|repeat (?:that|it|this|yourself|what you said)|say (?:that|it|this) again|one more time|come again|(?:what|which) was (?:that|it|the (?:first|second|last|next) (?:step|one|thing|point))|remind me what you (?:said|suggested)|go over (?:that|it) again|(?:can|could) you (?:say|explain) (?:that|it) again|(?:sorry|pardon),? what\?)/i;
-
-/**
- * Whether the founder asks to hear the last reply (or part of it) again: in so many words, or by asking what the
- * vEIR remembers or where they were (the answer names it again, on purpose).
- */
-export function asksToRepeat(founderText: string): boolean {
-  if (REPEAT_REQUEST.test(founderText.replace(/[‘’ʼ]/g, "'"))) return true;
-  const moves = founderMoves(founderText);
-  return moves.includes('recall') || moves.includes('resume');
 }
 
 /** Four-word sequences of a text (lower case, citation keys and punctuation out), the evals' repetition unit. */

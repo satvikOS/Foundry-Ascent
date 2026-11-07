@@ -12,8 +12,10 @@
  *   the model varies wording and manner while the substance stays consistent.
  * - Lab run 42238272157 (Haiku, long sessions): replies closed on the same line again ("shape the proposal around what
  *   you learn instead of what you assumed" twice, "You're set… go get those answers" three times). The ledger also
- *   names the closing lines of the latest replies and the whole phrases two of them shared, so the model says neither
- *   again; the repeat guard leaves out a sentence that does (validators/social.ts `repeatsPrevious`).
+ *   names a closing line that recurred and the whole phrases two replies shared, so the model finds another way to say
+ *   them; the repeat guard leaves out a sentence that repeats (validators/social.ts `repeatsPrevious`). A close said
+ *   once (usually the reply's core action), the founder's own terms, and anything when they ask to hear it again are
+ *   never named (a review of B2).
  * - {@link rephraseQuestion} is the generation-time backstop: a question whose form was used recently is said in
  *   another form with the same substance ("Of the steps you could take this week, which is the smallest?"), never
  *   dropped. Only forms with a known, grammatical alternative are rephrased; any other question stands as written.
@@ -31,8 +33,10 @@ const LEDGER_PAST_REPLIES = 12;
 const LEDGER_MAX_QUESTIONS = 4;
 /** Most openings the ledger reports. */
 const LEDGER_MAX_OPENINGS = 3;
-/** Closing lines the ledger reports: the last statement of the latest replies of this conversation. */
+/** Closing lines the ledger reports: the last statement of the latest replies of this conversation, when it recurs. */
 const LEDGER_MAX_CLOSINGS = 3;
+/** Words two closes open on alike ("You're set, go get…" / "You're set, go ask…"): the same close said again. */
+const CLOSE_SHAPE_WORDS = 3;
 /** Most phrases said twice the ledger reports. */
 const LEDGER_MAX_PHRASES = 3;
 /** Words of a closing line the ledger quotes. */
@@ -126,10 +130,23 @@ export interface PhrasingLedger {
   readonly questions: readonly PhrasingForm[];
   /** Openings used twice or more, or in an earlier conversation; most used first. */
   readonly openings: readonly PhrasingForm[];
-  /** How the latest replies of this conversation closed: each one's last statement, as written (newest first). */
+  /**
+   * How the latest replies of this conversation closed, where that close was said before in it: each one's last
+   * statement, as written (newest first). A close said once is not named: it is usually the reply's core action.
+   */
   readonly closings: readonly string[];
-  /** Whole phrases ({@link PHRASE_WORDS} words or more) two replies of this conversation both said, lower case. */
+  /**
+   * Whole phrases ({@link PHRASE_WORDS} words or more) two replies of this conversation both said, lower case; never one
+   * made mostly of the founder's own words (their name for their project is theirs to hear again).
+   */
   readonly phrases: readonly string[];
+}
+
+export interface PhrasingLedgerOptions {
+  /** What the founder said in this conversation (their messages, the current one too): their terms are not repeats. */
+  readonly founderSaid?: readonly (string | null | undefined)[];
+  /** They asked to hear something again: what was said is not named as said (it may be said again, on purpose). */
+  readonly repeatAsked?: boolean;
 }
 
 function tally(
@@ -168,12 +185,15 @@ function texts(replies: readonly (string | null | undefined)[], max: number): st
 export function phrasingLedger(
   replies: readonly (string | null | undefined)[],
   past: readonly (string | null | undefined)[] = [],
+  options: PhrasingLedgerOptions = {},
 ): PhrasingLedger {
   const current = texts(replies, LEDGER_REPLIES);
   const earlier = texts(past, LEDGER_PAST_REPLIES);
+  const founderWords = new Set(texts(options.founderSaid ?? [], Number.MAX_SAFE_INTEGER).flatMap(wordsOf));
+  const repeatAsked = options.repeatAsked === true;
   return {
-    closings: closingLines(current),
-    phrases: sharedPhrases(current),
+    closings: repeatAsked ? [] : closingLines(current, founderWords),
+    phrases: repeatAsked ? [] : sharedPhrases(current, founderWords),
     questions: tally(current, earlier, questionFramesOf, LEDGER_MAX_QUESTIONS),
     openings: tally(
       current,
@@ -195,16 +215,71 @@ function sentencesOf(text: string): string[] {
     .filter((s) => /[\p{L}\p{N}]/u.test(s));
 }
 
-/** The last statement of each of the latest replies (a closing question is read as a form instead), clipped. */
-function closingLines(replies: readonly string[]): string[] {
-  const out: string[] = [];
-  for (const reply of replies.slice(0, LEDGER_MAX_CLOSINGS)) {
-    const last = sentencesOf(reply).at(-1);
-    if (last === undefined || /\?["'”’)\]*_]*$/u.test(last)) continue;
-    const words = last.split(/\s+/);
+/** The four-word sequences of a sentence's words. */
+function fourGrams(words: readonly string[]): Set<string> {
+  const out = new Set<string>();
+  for (let i = 0; i + 4 <= words.length; i += 1) out.add(words.slice(i, i + 4).join(' '));
+  return out;
+}
+
+/**
+ * Whether at least half the content words of `words` are the founder's ("the pilot with the three schools in Kumasi"):
+ * their terms, said back, never a phrase of Thomas's own to vary (a review of B2).
+ */
+function mostlyTheirs(words: readonly string[], founderWords: ReadonlySet<string>): boolean {
+  const content = words.filter((w) => !FUNCTION_WORDS.has(w));
+  return content.length > 0 && content.filter((w) => founderWords.has(w)).length * 2 >= content.length;
+}
+
+/** Whether two closes open on the same {@link CLOSE_SHAPE_WORDS} words: the close's shape said again. */
+function sameShape(a: readonly string[], b: readonly string[]): boolean {
+  return (
+    a.length >= CLOSE_SHAPE_WORDS &&
+    b.length >= CLOSE_SHAPE_WORDS &&
+    a.slice(0, CLOSE_SHAPE_WORDS).join(' ') === b.slice(0, CLOSE_SHAPE_WORDS).join(' ')
+  );
+}
+
+/** Whether `other` holds at least half of the four-word sequences `mine` holds. */
+function sharesMost(mine: ReadonlySet<string>, other: readonly string[]): boolean {
+  if (mine.size === 0) return false;
+  const theirs = fourGrams(other);
+  let shared = 0;
+  for (const g of mine) if (theirs.has(g)) shared += 1;
+  return shared * 2 >= mine.size;
+}
+
+/**
+ * The last statement of each of the latest replies that recurs in this conversation (a closing question is read as a
+ * form instead), clipped: a close shaped like another reply's close, or one most of which another reply said. A close
+ * said once is the reply's core action as often as not, and is never named.
+ */
+function closingLines(replies: readonly string[], founderWords: ReadonlySet<string>): string[] {
+  const sentences = replies.map((r) => sentencesOf(r).map(wordsOf));
+  const closeOf = (i: number): string | null => {
+    const last = sentencesOf(replies[i] ?? '').at(-1);
+    if (last === undefined || /\?["'”’)\]*_]*$/u.test(last)) return null;
     // A short close ("Fine.", "Good luck!") is no line worth naming.
-    if (words.length < 4) continue;
-    const line = words.length > CLOSING_WORDS ? `${words.slice(0, CLOSING_WORDS).join(' ')} …` : last;
+    return last.split(/\s+/).length < 4 ? null : last;
+  };
+  const out: string[] = [];
+  for (let i = 0; i < Math.min(LEDGER_MAX_CLOSINGS, replies.length); i += 1) {
+    const last = closeOf(i);
+    if (last === null) continue;
+    const words = wordsOf(last);
+    if (mostlyTheirs(words, founderWords)) continue;
+    const grams = fourGrams(words);
+    const recurs = sentences.some((other, j) => {
+      if (j === i) return false;
+      const otherClose = other.at(-1);
+      return (
+        (otherClose !== undefined && closeOf(j) !== null && sameShape(words, otherClose)) ||
+        other.some((sentence) => sharesMost(grams, sentence))
+      );
+    });
+    if (!recurs) continue;
+    const all = last.split(/\s+/);
+    const line = all.length > CLOSING_WORDS ? `${all.slice(0, CLOSING_WORDS).join(' ')} …` : last;
     if (!out.includes(line)) out.push(line);
   }
   return out;
@@ -218,7 +293,7 @@ const PHRASE_SCAN_WORDS = 400;
  * in the words read: each reply's {@link PHRASE_WORDS}-word sequences are looked up in the others' sets, and a run is
  * consecutive sequences found in the same reply.
  */
-function sharedPhrases(replies: readonly string[]): string[] {
+function sharedPhrases(replies: readonly string[], founderWords: ReadonlySet<string> = new Set()): string[] {
   const lists = replies.map((r) => wordsOf(r).slice(0, PHRASE_SCAN_WORDS));
   const grams = (words: readonly string[]): string[] => {
     const out: string[] = [];
@@ -242,7 +317,10 @@ function sharedPhrases(replies: readonly string[]): string[] {
         let last = i;
         while (last + 1 < own.length && other.has(own[last + 1] ?? '')) last += 1;
         const run = words.slice(i, last + PHRASE_WORDS);
-        if (run.filter((w) => !FUNCTION_WORDS.has(w)).length >= PHRASE_CONTENT) {
+        if (
+          run.filter((w) => !FUNCTION_WORDS.has(w)).length >= PHRASE_CONTENT &&
+          !mostlyTheirs(run, founderWords)
+        ) {
           const phrase = run.join(' ');
           if (!found.some((f) => f.includes(phrase))) found.push(phrase);
         }
@@ -274,7 +352,8 @@ export function renderPhrasingLedger(ledger: PhrasingLedger): string {
   if (ledger.phrases.length > 0) already.push(`phrases said twice ${ledger.phrases.map(quote).join(', ')}`);
   if (already.length > 0) {
     lines.push(
-      `- Already said in this conversation: ${already.join('; ')}; never say them again, nor a variant.`,
+      `- Said more than once in this conversation: ${already.join('; ')}; find another way to close, and your own new`,
+      '  words for anything you need from them again.',
     );
   }
   if (lines.length === 0) return '';

@@ -34,7 +34,7 @@ import {
   reasksQuestion,
   repeatsPrevious,
 } from './social.js';
-import { founderMoves } from '../prompts/conversation-state.js';
+import { asksForNumber, founderMoves } from '../prompts/conversation-state.js';
 import { questionFramesOf, withVariedQuestions } from '../prompts/phrasing.js';
 import { nameBudgetSpent, withoutStockOpener, withoutVocativeName } from './openers.js';
 import { clampWords, toSpeakable } from './speech.js';
@@ -491,6 +491,8 @@ export class SentenceGate {
   readonly #signOffWelcome: boolean;
   /** The founder says goodbye or wraps up: a reply that was all repeats never ends on a new question. */
   readonly #wrapsUp: boolean;
+  /** The founder asked for a number: the range Thomas reasons out is the answer, never said by its role. */
+  readonly #askedNumber: boolean;
   /** The founder's message brings news: a unit that parks it for the vEIR's agenda is left out (LAB-R8). */
   readonly #news: boolean;
   /** Units left out because they parked the founder's news. */
@@ -549,6 +551,7 @@ export class SentenceGate {
     this.#keepReferrals = options.keepReferrals === true;
     this.#signOffWelcome = welcomesSignOff(options.founderText);
     this.#wrapsUp = wrapsUp(options.founderText);
+    this.#askedNumber = options.founderText !== undefined && asksForNumber(options.founderText);
     const said = [options.previousReply, ...(options.earlierReplies ?? [])].filter(
       (t): t is string => typeof t === 'string' && t.trim() !== '',
     );
@@ -774,8 +777,8 @@ export class SentenceGate {
         }).text;
       }
       if (this.#options.knownFigures !== undefined) {
-        rawUnit = withoutExampleFigures(rawUnit, this.#options.knownFigures).text;
-        rawUnit = withoutInventedFigures(rawUnit, this.#options.knownFigures).text;
+        rawUnit = withoutExampleFigures(rawUnit, this.#options.knownFigures, this.#askedNumber).text;
+        rawUnit = withoutInventedFigures(rawUnit, this.#options.knownFigures, this.#askedNumber).text;
       }
       if (
         this.#options.noQuestions === true &&

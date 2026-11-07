@@ -3,7 +3,12 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { conversationCraftRules } from '../prompts/craft.js';
-import { inventedFigures, withoutExampleFigures, withoutInventedFigures } from './figures.js';
+import {
+  inventedFigures,
+  spelledNumbersIn,
+  withoutExampleFigures,
+  withoutInventedFigures,
+} from './figures.js';
 
 /**
  * The figure cases the product and the lab's live checks read the same way (evals/tests/fixtures/figure_cases.json;
@@ -111,6 +116,40 @@ describe('figures nobody gave, read as the lab reads them (lab run 42238272157: 
     expect(withoutInventedFigures('Would they pay $2 a month for it?', 'we lend crates').text).toBe(
       'Would they pay a monthly price for it?',
     );
+  });
+
+  it('leaves the range they asked for as written, and counts it (review of B1: "Charge a set price per session")', () => {
+    const reply =
+      'Charge around $15 a session to start, assuming parents compare you to a private tutor. Price it at 40 cedis per session for the group class.';
+    const known = 'How much should I charge per session for the tutoring?';
+    expect(withoutInventedFigures(reply, known, true)).toEqual({ text: reply, removed: 0 });
+    expect(withoutExampleFigures('Charge, say, $15 a session.', known, true).removed).toBe(0);
+    expect(inventedFigures(reply, known).unsourced).toEqual(['$15', '40 cedis']);
+    // Unasked, the price is said by its role, and the hedge or "at" before it goes with it.
+    expect(withoutInventedFigures(reply, 'I tutor.').text).toBe(
+      'Charge a set price per session to start, assuming parents compare you to a private tutor. Price it per session for the group class.',
+    );
+    expect(withoutInventedFigures('Price it at $10 a month and see who stays.', 'we lend crates').text).toBe(
+      'Price it monthly and see who stays.',
+    );
+    expect(
+      withoutInventedFigures('Charge 5 dollars a crate and see who keeps them.', 'we lend crates').text,
+    ).toBe('Charge a set price per crate and see who keeps them.');
+    // A local rate or a market size stated as a fact is measured, not removed: the sentence needs its number.
+    const fact = 'Tutors in Accra usually charge 50 to 100 cedis an hour, so you are cheap.';
+    expect(withoutInventedFigures(fact, 'I sell tutoring.')).toEqual({ text: fact, removed: 0 });
+    expect(inventedFigures(fact, 'I sell tutoring.').unsourced).toEqual(['50 to 100 cedis']);
+  });
+
+  it('reads a number they spelled out as theirs (review of B1: "fifty cedis" said back as a set price)', () => {
+    expect(
+      spelledNumbersIn('fifty cedis, two hundred and fifty a term, a thousand, twenty-five, the one I sell'),
+    ).toEqual([50, 250, 1000, 25]);
+    const reply = 'So at 50 cedis a session, charge 50 cedis a session to the next ten and see who returns.';
+    expect(withoutInventedFigures(reply, 'I charge fifty cedis per session to students.')).toEqual({
+      text: reply,
+      removed: 0,
+    });
   });
 
   it('is asked of the prompt: no local rate, market price, size or statistic of its own, and how to find one', () => {

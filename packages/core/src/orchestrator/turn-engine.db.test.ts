@@ -1135,6 +1135,51 @@ describe('spoken turns', () => {
     }
   });
 
+  it('a turn that fails while its fields are under way stops them, and they are metered, before it returns', async () => {
+    // The persist finds the turn no longer pending (turn_not_pending) while phase B runs: nothing will read the fields,
+    // and the request must not end with that model call still in flight (on Lambda its usage would never be recorded).
+    let sessionId = '';
+    class FieldsOutliveTheTurn extends MockModelGateway {
+      ended = false;
+      aborted = false;
+      override async streamText(request: StreamTextRequest, onText: TextChunkHandler) {
+        // Before the reply is written: the turn is then no longer pending when it is persisted.
+        await h.t.db.system((sx) =>
+          sx.query(`UPDATE turns SET status = 'failed' WHERE session_id = :id AND status = 'pending'`, {
+            id: p.uuid(sessionId),
+          }),
+        );
+        return super.streamText(request, onText);
+      }
+      override async generateStructured<T>(request: GenerateStructuredRequest<T>) {
+        if (request.schemaName !== COACH_ANNOTATIONS_SCHEMA_NAME) return super.generateStructured(request);
+        try {
+          await new Promise<never>((_resolve, reject) => {
+            request.signal?.addEventListener('abort', () => {
+              this.aborted = true;
+              reject(new DOMException('aborted', 'AbortError'));
+            });
+          });
+        } finally {
+          this.ended = true;
+        }
+        return super.generateStructured(request);
+      }
+    }
+    const gateway = new FieldsOutliveTheTurn({ streamDelayMs: 0 });
+    const { core, orchestrator } = coreWith(gateway);
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    sessionId = session.id;
+    const { events, outcome } = await run(orchestrator, session.id, {
+      text: 'Should we run the pilot in one library or two?',
+      mode: 'coach',
+    });
+    expect(outcome.status).toBe('failed');
+    expect(events.some((e) => e.event === 'turn.error')).toBe(true);
+    expect(gateway.aborted).toBe(true);
+    expect(gateway.ended).toBe(true);
+  });
+
   it('a crisis message never waits on, or makes, a fields call (the crisis path gates what is said)', async () => {
     const gateway = new MockModelGateway({ streamDelayMs: 0 });
     const { core, orchestrator } = coreWith(gateway);

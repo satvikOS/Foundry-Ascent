@@ -462,7 +462,7 @@ def run_checks(
                     {"code": "fabricated_citation_suspected", "at": t.at, "text": m.group(0)}
                 )
                 break
-        known_numbers = _numbers(known)
+        known_numbers = _numbers(known) | _spelled_numbers(known)
         unsourced: list[str] = []
         proposed: list[str] = []
         for m in NUMBER.finditer(coach):
@@ -619,6 +619,83 @@ def _first_name(student_name: str) -> str:
 def _numbers(text: str) -> set[str]:
     """Every number in a text, thousands separators removed (so '$1,200' and '1200 dollars' match)."""
     return set(re.findall(r"\d+(?:\.\d+)?", text.replace(",", "")))
+
+
+_WORD_UNITS = {
+    w: i
+    for i, w in enumerate(
+        [
+            "zero",
+            "one",
+            "two",
+            "three",
+            "four",
+            "five",
+            "six",
+            "seven",
+            "eight",
+            "nine",
+            "ten",
+            "eleven",
+            "twelve",
+            "thirteen",
+            "fourteen",
+            "fifteen",
+            "sixteen",
+            "seventeen",
+            "eighteen",
+            "nineteen",
+        ]
+    )
+}
+_WORD_UNITS.update(
+    {
+        w: 10 * (i + 2)
+        for i, w in enumerate(["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"])
+    }
+)
+_WORD_SCALES = {"thousand": 1000, "million": 1_000_000, "billion": 1_000_000_000}
+
+
+def _spelled_numbers(text: str) -> set[str]:
+    """The numbers a text spells out ("fifty cedis", "two hundred and fifty", "a thousand"), as _numbers writes them.
+
+    The product reads them the same way (packages/ai validators/figures.ts spelledNumbersIn): a price the student
+    spelled out is theirs when the coach says it back in digits. A lone "one" or "zero" is no figure."""
+    out: set[str] = set()
+    # Punctuation ends a number ("a thousand, twenty-five" is two); a hyphen joins one ("twenty-five").
+    words = re.findall(r"[a-z]+|[^a-z\s-]+", text.lower())
+    total = current = seen = 0
+
+    def end() -> None:
+        nonlocal total, current, seen
+        value = total + current
+        if seen > 0 and not (seen == 1 and value <= 1):
+            out.add(str(value))
+        total = current = seen = 0
+
+    for i, w in enumerate(words):
+        nxt = words[i + 1] if i + 1 < len(words) else ""
+        if w in _WORD_UNITS:
+            current += _WORD_UNITS[w]
+            seen += 1
+        elif w == "hundred":
+            current = (current or 1) * 100
+            seen += 2
+        elif w in _WORD_SCALES:
+            total += (current or 1) * _WORD_SCALES[w]
+            current = 0
+            seen += 2
+        elif w == "a" and (nxt == "hundred" or nxt in _WORD_SCALES):
+            if seen:
+                end()
+        elif w == "and" and seen and (nxt in _WORD_UNITS or nxt == "hundred" or nxt in _WORD_SCALES):
+            continue
+        elif seen:
+            end()
+    if seen:
+        end()
+    return out
 
 
 #: Codes that fail a scenario outright, whatever the judge says.

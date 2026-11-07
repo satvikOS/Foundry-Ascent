@@ -101,6 +101,11 @@ export interface AnswerSpec {
   readonly pastReplies?: readonly string[];
   readonly evidence: readonly KeyedEvidence[];
   readonly history: readonly HistoryTurn[];
+  /**
+   * The founder's messages of this conversation from before `history` that hold a number: what they said there is
+   * theirs when a reply says it back (validators/figures.ts). Absent: none.
+   */
+  readonly earlierFounderFigures?: readonly string[];
   readonly opener: string | null;
   readonly founderText: string;
   readonly guards: {
@@ -123,6 +128,17 @@ export interface AnswerSpec {
   readonly deferAnnotations?: boolean;
 }
 
+/** A streamed reply's fields (phase B) under way. */
+export interface PendingFields {
+  /** The fields added to the validated response, once they arrive. */
+  readonly result: Promise<AnnotatedTurn>;
+  /**
+   * Stops phase B when nothing will read it (the turn failed or was held back), and waits until what it cost is metered:
+   * a request never ends with an unmetered model call still running (on Lambda it could be frozen mid-call).
+   */
+  stop(): Promise<void>;
+}
+
 export type AnswerOutcome =
   | {
       readonly kind: 'answered';
@@ -136,7 +152,7 @@ export type AnswerOutcome =
        */
       readonly checked: CoachResponseValidation;
       /** A streamed reply's fields, arriving after it (`deferAnnotations`); null when `checked` has them already. */
-      readonly annotations: Promise<AnnotatedTurn> | null;
+      readonly annotations: PendingFields | null;
     }
   | {
       /** The model failed; every billable attempt made is already in the usage ledger. */
@@ -333,6 +349,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
   // The figures a reply may state: what the founder said in view, the sources shown, and what the notes remember of
   // them (validators/figures.ts; a review of B1: a price settled in an earlier conversation was said by its role).
   const knownFigures = [
+    ...(spec.earlierFounderFigures ?? []),
     ...spec.history.map((t) => t.founderText),
     spec.founderText,
     ...shown.map((k) => `${k.item.title} ${k.item.excerpt}`),
@@ -454,8 +471,20 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
     attempts: result.attempts,
     latencyMs: result.latencyMs,
   }));
-  if (spec.deferAnnotations === true)
-    return { kind: 'answered', context, shown, generation, checked, annotations };
+  if (spec.deferAnnotations === true) {
+    const stop = async (): Promise<void> => {
+      pending.cancel();
+      await pending.result;
+    };
+    return {
+      kind: 'answered',
+      context,
+      shown,
+      generation,
+      checked,
+      annotations: { result: annotations, stop },
+    };
+  }
   // Waited for here (the studio's test conversation): one generation, as a reply written whole would be.
   const annotated = await annotations;
   return {
@@ -527,19 +556,39 @@ export function withAnnotations(
 const OWN_WORDS = new Set(['lastAdvice', 'nextOpener', 'nextTopic', 'updatedAt', 'date', 'due', 'sessionId']);
 
 /**
- * The text of what the notes remember of the founder and their venture (the notebook, the profile, the digests and
- * commitments, the venture's goal), never the vEIR's own advice or openers: figures the founder gave in an earlier
- * conversation count as given.
+ * A sentence of a summary that tells what the vEIR put forward ("I suggested charging 40 cedis a session", "we
+ * discussed a 10% discount"): distillation summarises the whole conversation, the vEIR's own suggestions included, so a
+ * figure there is not one the founder gave (a review of B1: a made-up price that reached a digest then counted as theirs).
  */
-function rememberedText(continuity: AnswerSpec['continuity'], venture: AnswerSpec['venture']): string[] {
+const PUT_FORWARD =
+  /\b(?:suggest(?:ed|ing|ion)?|advis(?:ed|ing)|advice|recommend(?:ed|ing|ation)?|propos(?:ed|ing|al)|floated|discuss(?:ed|ing)|explored|talked (?:about|through)|walked (?:them|him|her) through|(?:i|we) (?:said|offered|gave|set out|laid out|pointed|proposed))\b/iu;
+
+/** The sentences of a summary that tell what the founder brought, never what the vEIR put forward. */
+function foundersSide(summary: string): string {
+  return summary
+    .split(/(?<=[.!?])\s+/u)
+    .filter((sentence) => !PUT_FORWARD.test(sentence))
+    .join(' ');
+}
+
+/**
+ * The text of what the notes remember of the founder and their venture (the notebook, the profile, the digests and
+ * commitments, the venture's goal), never the vEIR's own advice or openers, nor what a summary says it put forward:
+ * figures the founder gave in an earlier conversation count as given.
+ */
+export function rememberedText(
+  continuity: AnswerSpec['continuity'],
+  venture: AnswerSpec['venture'],
+): string[] {
   const out: string[] = [];
-  const walk = (value: unknown): void => {
+  const walk = (value: unknown, key?: string): void => {
     if (typeof value === 'string') {
-      if (value.trim() !== '') out.push(value);
+      const text = key === 'summary' ? foundersSide(value) : value;
+      if (text.trim() !== '') out.push(text);
     } else if (Array.isArray(value)) {
       for (const item of value) walk(item);
     } else if (typeof value === 'object' && value !== null) {
-      for (const [key, item] of Object.entries(value)) if (!OWN_WORDS.has(key)) walk(item);
+      for (const [k, item] of Object.entries(value)) if (!OWN_WORDS.has(k)) walk(item, k);
     }
   };
   walk(continuity.notebook ?? null);

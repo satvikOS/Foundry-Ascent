@@ -63,7 +63,7 @@ import { proposeMemoryCandidates, settleKeptMemory } from '../services/memory.js
 import { statedMemory } from '../services/founder-statements.js';
 import { conversationGrounding } from '../services/memory-dedupe.js';
 import { historyAsHeard } from '../services/spoken-text.js';
-import { answerTurn, generationError, type AnnotatedTurn } from './answer.js';
+import { answerTurn, generationError, type AnnotatedTurn, type PendingFields } from './answer.js';
 import { blockedDetailOf, participantRiskLabel, participantTurnView, supportMessageFor } from './blocked.js';
 import {
   leftOffThreads,
@@ -254,6 +254,8 @@ interface Coach {
   readonly presence: Pick<personasRepo.PersonaPresence, 'firstPerson' | 'eirSeesWork' | 'mentor'>;
   /** Earlier completed turns, oldest first (at most `historyTurns`). */
   readonly history: readonly turnsRepo.TurnRecord[];
+  /** The founder's messages from before the history that hold a number (their figures stay known), newest first. */
+  readonly earlierFounderFigures: readonly string[];
   /**
    * The same turns as the founder heard them: a reply they spoke over during a call is replayed as the
    * verified words they heard, or left out when they heard none of it (docs/architecture/calls.md §2.6).
@@ -615,6 +617,7 @@ export function createOrchestrator(
         const historyRead = await readTogether(tx, {
           ...turnsRepo.recentTurnsParts(recent),
           interruptions: callsRepo.turnInterruptionsPart(turnsRepo.recentTurnIdsSubquery(recent)),
+          earlierFigures: turnsRepo.earlierFounderFiguresPart(recent),
         });
         const history = await turnsRepo.recentTurnsFrom(tx, historyRead);
         const { interruptions } = historyRead;
@@ -644,6 +647,7 @@ export function createOrchestrator(
           release,
           allowedModes,
           history,
+          earlierFounderFigures: historyRead.earlierFigures,
           heardHistory: historyAsHeard(history, interruptions, input.text),
           // The opener is the conversation's first message: replayed while the history reaches back to it.
           opener:
@@ -975,6 +979,11 @@ export function createOrchestrator(
     readonly startedAt: number;
     /** Work the turn hands to the host ({@link Kit.later}); runTurn waits for it before it returns when there is none. */
     readonly tails: Promise<void>[];
+    /**
+     * Set once the reply's fields (phase B) are under way: a turn that fails after that stops them, and waits for them
+     * to be metered, before it reports the failure.
+     */
+    readonly phaseB: { fields: PendingFields | null };
   }
 
   async function accepted(a: Accepted): Promise<RunTurnOutcome> {
@@ -1126,6 +1135,7 @@ export function createOrchestrator(
       pastReplies: pastRepliesOf(leftOffData),
       evidence: pack.items,
       history: coach.heardHistory,
+      earlierFounderFigures: coach.earlierFounderFigures,
       opener: coach.opener,
       founderText: input.text,
       guards: { eirNames, addressees, others },
@@ -1145,6 +1155,7 @@ export function createOrchestrator(
       return { status: 'failed', turnId: turn.id, replayed: false, error };
     }
     const { context, shown, generation, checked } = answered;
+    a.phaseB.fields = answered.annotations;
     const status = checked.blocked ? 'blocked' : 'completed';
     // A streamed reply's fields (phase B) are still being written: what they keep is kept when they arrive.
     const fieldsPending = answered.annotations !== null;
@@ -1516,6 +1527,8 @@ export function createOrchestrator(
     };
 
     if (persisted.blocked !== null) {
+      // Nothing will read the fields of a reply that was held back.
+      await answered.annotations?.stop();
       await emit({ event: 'turn.blocked', turnId: turn.id, ...persisted.blocked });
       await withdrawFaceUnits(a.faceApproval);
       return { status: 'blocked', turnId: turn.id, replayed: false, error: null };
@@ -1543,7 +1556,7 @@ export function createOrchestrator(
     if (answered.annotations !== null) {
       // The reply's fields, added to the stored turn when they arrive: the founder already has the reply, and a call is
       // listening again (lab run 42238272157: everything waited 5.6 s for them on Haiku).
-      const annotated = await addFields(answered.annotations, persisted.drafted);
+      const annotated = await addFields(answered.annotations.result, persisted.drafted);
       if (annotated !== null) {
         // The same turn again, with its fields (the contract's `fieldsPending`).
         await emit({ event: 'turn.completed', turn: annotated.view });
@@ -1701,6 +1714,7 @@ export function createOrchestrator(
       let prefetch: TurnContextPrefetch | null = null;
       // Work handed to the host's after-response work (Kit.later); without that hook, waited for before returning.
       const tails: Promise<void>[] = [];
+      const phaseB: { fields: PendingFields | null } = { fields: null };
       try {
         const startedAt = performance.now();
         const emit = safeEmitter(rawEmit, ctx.requestId);
@@ -1860,8 +1874,11 @@ export function createOrchestrator(
             signal: options.signal,
             startedAt,
             tails,
+            phaseB,
           });
         } catch (err) {
+          // The reply's fields, if under way, are for a turn that failed: stopped, and metered, first.
+          await phaseB.fields?.stop();
           const error = asDomainError(err);
           logger.error('turn.failed', {
             requestId: ctx.requestId,

@@ -218,6 +218,36 @@ export function recentTurnsParts(args: { sessionId: string; limit?: number }): {
   };
 }
 
+/** Most of a session's earlier founder messages read for their figures, newest first, and how much of each. */
+const EARLIER_FIGURE_TURNS = 40;
+const EARLIER_FIGURE_CHARS = 2000;
+/** A message with a number in it: digits, or a number word (read case-insensitively). */
+const HOLDS_A_NUMBER =
+  '[0-9]|hundred|thousand|million|billion|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|teen\\M|\\m(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\\M';
+
+/**
+ * The founder's messages of a session from before its last `limit` completed turns (the history window) that hold a
+ * number, newest first, clipped: a price they gave early in a long conversation is still theirs when the reply says it
+ * back (a review of B1). Small: only messages with a number, at most {@link EARLIER_FIGURE_TURNS} of them.
+ */
+export function earlierFounderFiguresPart(args: { sessionId: string; limit?: number }): ReadPart<string[]> {
+  const limit = clampLimit(args.limit, 8, 50);
+  return rowsPart(
+    `SELECT left(t.founder_text, :chars) AS text FROM turns t
+     WHERE t.session_id = :sessionId AND t.status = 'completed' AND t.founder_text ~* :holdsNumber
+       AND t.id NOT IN (${recentTurnIdsSql()})
+     ORDER BY t.ordinal DESC LIMIT :most`,
+    {
+      sessionId: p.uuid(args.sessionId),
+      limit: p.int(limit),
+      chars: p.int(EARLIER_FIGURE_CHARS),
+      holdsNumber: p.text(HOLDS_A_NUMBER),
+      most: p.int(EARLIER_FIGURE_TURNS),
+    },
+    (r) => col.text.decode(r.text, 'text'),
+  );
+}
+
 /** The history {@link recentTurnsParts} read, oldest first, the rows beyond the first batch read in batches. */
 export async function recentTurnsFrom(ex: SqlExecutor, read: RecentTurnsRead): Promise<TurnRecord[]> {
   const have = new Map(read.newest.map((t) => [t.id, t] as const));
