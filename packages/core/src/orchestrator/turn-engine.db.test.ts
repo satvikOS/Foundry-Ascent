@@ -534,8 +534,19 @@ describe('continuity', () => {
     const { core } = coreWith(gateway);
     const notebook = await core.notebook.get(maya, h.ventures.quietquad.id);
     expect(notebook.nextOpener).toMatch(/library-staff interviews/);
-    // Maya talked since the notebook was written (the tests above), and nothing distilled from that yet: a new
-    // conversation opens with a greeting that names nothing, never the notebook's older line.
+    // Maya talks after the notebook was written, and nothing is distilled from that yet: a new conversation opens with
+    // a greeting that names nothing, never the notebook's older line. (Said here, so the test never depends on the
+    // conversations of the tests above.) That conversation opens on another line, so the notebook's is not the last
+    // opener said.
+    await storeOpenerUnchecked(h, h.ventures.quietquad, 'Which library answered first?', {
+      unknownSource: true,
+    });
+    const since = await h.core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    expect(since.opener).toBe('Which library answered first?');
+    await run(h.core.orchestrator, since.id, {
+      text: 'We booked two of the library interviews.',
+      mode: 'coach',
+    });
     const after = await core.sessions.create(maya, h.ventures.quietquad.id, {});
     expect(after.opener).toMatch(
       /^(?:Good to see you again|Welcome back|Good to have you back|Nice to hear from you again|Great to see you|Hello again|Nice to see you|Good to hear from you|Hi again)\. [^.!?]+\?$/,
