@@ -132,7 +132,11 @@ describe('Transcribe streaming presigner', () => {
 
 describe('speech-to-text wiring', () => {
   it('presigns wherever the models run on Bedrock, and grants nothing on the mock model', () => {
-    const env = { DOCUMENTS_BUCKET: 'docs-bucket', JOBS_QUEUE_URL: 'https://sqs.test/queue' };
+    const env = {
+      DOCUMENTS_BUCKET: 'docs-bucket',
+      RECORDINGS_BUCKET: 'recordings-bucket',
+      JOBS_QUEUE_URL: 'https://sqs.test/queue',
+    };
     const config = loadApiConfig(env, 'api');
     expect(sttGrantsFor({ ...env, MODEL_PROVIDER: 'bedrock' }, config).sttGrants).toBeInstanceOf(
       TranscribeStreamingPresigner,
@@ -144,6 +148,7 @@ describe('speech-to-text wiring', () => {
   it('mints no grant when infra turned speech off (SPEECH_ENABLED=false): calls start typed', () => {
     const off = {
       DOCUMENTS_BUCKET: 'docs-bucket',
+      RECORDINGS_BUCKET: 'recordings-bucket',
       JOBS_QUEUE_URL: 'https://sqs.test/queue',
       MODEL_PROVIDER: 'bedrock',
       SPEECH_ENABLED: 'false',

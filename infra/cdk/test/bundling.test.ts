@@ -127,6 +127,7 @@ const FAKE_ENV: Readonly<Record<string, string>> = {
   DB_NAME: 'foundry',
   DB_RESUME_BUDGET_MS: '40000',
   DOCUMENTS_BUCKET: 'foundry-ascent-documents-check',
+  RECORDINGS_BUCKET: 'foundry-ascent-recordings-check',
   JOBS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123456789012/FoundryAscent-Jobs',
   JOBS_MAX_RECEIVE_COUNT: '3',
   MODEL_PROVIDER: 'bedrock',

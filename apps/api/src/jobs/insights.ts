@@ -120,6 +120,8 @@ const CallRow = z
     speechPlays: Count,
     turnLatencyMsP50: Ms,
     turnLatencyMsP95: Ms,
+    /** Recordings of the call its founder keeps (ADR-0023): a count, never the files. */
+    recordings: Count,
   })
   .strict();
 

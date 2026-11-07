@@ -200,6 +200,7 @@ export function renderReport(report: InsightsReport): string {
         'Barge-ins',
         'Reconnects',
         'Turn latency p50/p95 ms',
+        'Recordings',
       ],
       report.calls.map((c) => [
         short(c.id),
@@ -218,6 +219,7 @@ export function renderReport(report: InsightsReport): string {
         c.bargeIns,
         c.reconnects,
         `${cell(c.turnLatencyMsP50)}/${cell(c.turnLatencyMsP95)}`,
+        c.recordings,
       ]),
     ),
   );

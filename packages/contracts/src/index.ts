@@ -4,4 +4,5 @@ export * from './api.js';
 export * from './errors.js';
 export * from './knowledge.js';
 export * from './calls.js';
+export * from './recordings.js';
 export * from './student.js';

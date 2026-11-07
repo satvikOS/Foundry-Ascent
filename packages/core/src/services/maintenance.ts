@@ -5,6 +5,7 @@ import { CALL_LIMITS } from './call-usage.js';
 import { type DistillBackstopReport, type DistillService } from './distill.js';
 import { type FaceHooks, meterFace } from './face.js';
 import { settlePendingAiProposals, type PendingSettleResult } from './memory.js';
+import { maintainRecordings } from './recordings.js';
 
 export interface MaintenanceReport {
   /** Ephemeral sessions ended because they were idle for `maintenance.ephemeralIdleSeconds` (24 h). */
@@ -17,6 +18,17 @@ export interface MaintenanceReport {
   readonly endedCallsDistilled: number;
   /** Document uploads left unfinished ({@link staleUploadSeconds}), now `failed` with `upload_incomplete`. */
   readonly staleUploadsFailed: number;
+  /**
+   * Call recordings: uploads nobody finished abandoned, recordings past their retention expired, and the files of
+   * deleted recordings (by their founder, with their conversation, or expired) removed from the recordings store
+   * (`failed`: left for the next run).
+   */
+  readonly recordings: {
+    readonly abandoned: number;
+    readonly expired: number;
+    readonly purged: number;
+    readonly failed: number;
+  };
   /**
    * AI memory proposals left from before automatic memory, settled through the checks new memory goes through
    * (`settlePendingAiProposals`): kept, or retired as a restatement or as not the founder's.
@@ -145,6 +157,9 @@ export function createMaintenanceService(
         });
         return count;
       });
+      // Recordings whose conversation or founder deleted them lose their files here if the request that deleted them
+      // could not remove them at once (and uploads nobody finished go with them).
+      const recordings = await maintainRecordings(kit, requestId);
       const pendingProposals = await settlePendingAiProposals(kit);
       await kit.system((sx) =>
         auditRepo.appendAudit(sx, {
@@ -166,6 +181,7 @@ export function createMaintenanceService(
         staleCallsEnded: staleCalls,
         endedCallsDistilled: endedCalls.distilled,
         staleUploadsFailed: staleUploads,
+        recordingsPurged: recordings.purged,
         proposalsKept: pendingProposals.kept,
         proposalsRetired: pendingProposals.duplicates + pendingProposals.notTheFounders,
         distilled: distillation.distilled,
@@ -177,6 +193,7 @@ export function createMaintenanceService(
         staleCallsEnded: staleCalls,
         endedCallsDistilled: endedCalls.distilled,
         staleUploadsFailed: staleUploads,
+        recordings,
         pendingProposals,
         distillation,
       };

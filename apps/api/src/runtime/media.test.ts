@@ -10,6 +10,7 @@ import { mediaFor } from './api.js';
 const prod = {
   APP_ENV: 'production',
   DOCUMENTS_BUCKET: 'foundry-ascent-documents',
+  RECORDINGS_BUCKET: 'foundry-ascent-recordings',
   JOBS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123456789012/FoundryAscent-Jobs',
 };
 

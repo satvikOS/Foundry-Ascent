@@ -37,7 +37,7 @@ export function disclosureFacts(name: string, kind: CallKind | null): readonly F
     {
       id: 'voice',
       icon: AudioLines,
-      text: 'Your voice is turned into text as you speak (Amazon Transcribe). No audio is kept; the transcript is saved here like chat.',
+      text: 'Your voice is turned into text as you speak (Amazon Transcribe). No audio is kept unless you record the call; the transcript is saved here like chat.',
     },
     {
       id: 'memory',

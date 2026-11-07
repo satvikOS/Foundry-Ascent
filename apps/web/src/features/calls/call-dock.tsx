@@ -1,5 +1,5 @@
 import { Mic, MicOff, X } from 'lucide-react';
-import type { KeyboardEvent, PointerEvent, RefObject } from 'react';
+import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from 'react';
 
 import { Kbd } from '@/components/ui/kbd';
 import { SimpleTooltip } from '@/components/ui/tooltip';
@@ -22,15 +22,26 @@ interface CallDockProps {
   endRef?: RefObject<HTMLButtonElement | null>;
   onMute: () => void;
   onEnd: () => void;
+  /** Between the two: the call's Record control (features/recordings). */
+  center?: ReactNode;
 }
 
 /**
  * The call's controls, as in the owner's reference: the microphone in the bottom-left corner and End in the
- * bottom-right, nothing in between. The rarer controls (captions, push to talk, typing, switching to chat) are in
+ * bottom-right, with Record between them (owner, 2026-11-06: "a record screen option in the call"). The rarer controls (captions, push to talk, typing, switching to chat) are in
  * the call settings; their shortcuts work without opening it. Each is a 56 px target with a name, a pressed state
  * where it toggles, and its shortcut.
  */
-export function CallDock({ name, voice, muted, disabled, endRef, onMute, onEnd }: CallDockProps) {
+export function CallDock({
+  name,
+  voice,
+  muted,
+  disabled,
+  endRef,
+  onMute,
+  onEnd,
+  center = null,
+}: CallDockProps) {
   return (
     <div role="toolbar" aria-label="Call controls" className="flex w-full items-center justify-between gap-3">
       {voice ? (
@@ -57,6 +68,7 @@ export function CallDock({ name, voice, muted, disabled, endRef, onMute, onEnd }
       ) : (
         <span aria-hidden className="size-14" />
       )}
+      {center}
       <SimpleTooltip content={`End call with ${name}`}>
         <button ref={endRef} type="button" onClick={onEnd} aria-label="End call" className={callControl}>
           <X aria-hidden />

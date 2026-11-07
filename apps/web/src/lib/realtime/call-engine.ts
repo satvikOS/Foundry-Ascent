@@ -444,6 +444,22 @@ export class CallEngine {
     return this.deps.clock.now() - this.voicedAt < VOICED_HANGOVER_MS;
   }
 
+  /**
+   * The call's sound for a recording (features/recordings): the one AudioContext everything plays on, the vEIR's
+   * voice as the speakers get it (a vendor face plays its own voice in its element, which the recording taps there),
+   * and the founder's microphone while it is open. Null while the call has no audio. Nothing changes here: the
+   * recording connects these to nodes of its own and disconnects them when it stops.
+   */
+  recordingSources(): {
+    readonly context: CallAudioContext;
+    readonly veir: AudioNode | null;
+    readonly microphone: MediaStream | null;
+  } | null {
+    const context = this.context;
+    if (context === null || context.state === 'closed') return null;
+    return { context, veir: this.player?.output ?? null, microphone: this.capture?.microphone ?? null };
+  }
+
   /** The state the avatar shows. */
   avatarState(): AvatarState {
     const s = this.snapshot;

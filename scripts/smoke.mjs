@@ -8,9 +8,10 @@
  * Checks, in order (each one independent, all reported):
  *   1. GET /                         200 text/html with the security headers (CSP, HSTS, nosniff, DENY)
  *                                    and the voice-call edge policy: Permissions-Policy microphone=(self)
- *                                    with the camera off, CSP media-src 'self' blob:, and a connect-src of
- *                                    exactly 'self', the documents bucket, Amazon Transcribe streaming and
- *                                    the wired video face's room origins (SMOKE_FACE_CONNECT), nothing else
+ *                                    with the camera off, CSP media-src exactly 'self' blob: and the call
+ *                                    recordings bucket, and a connect-src of exactly 'self', the documents
+ *                                    bucket, the recordings bucket, Amazon Transcribe streaming and the wired
+ *                                    video face's room origins (SMOKE_FACE_CONNECT), nothing else
  *   2. GET /assets/<entry>.js        200 JavaScript, immutable caching
  *   3. GET /api/v1/health            200 JSON, status ok/degraded [+ the deployed version]. The public
  *                                    health route never queries the database (so polling it cannot keep
@@ -65,11 +66,13 @@ const MIN_HSTS_SECONDS = 31_536_000;
 const CSP_DIRECTIVES = ["default-src 'self'", "frame-ancestors 'none'", "object-src 'none'"];
 /**
  * Voice calls (ADR-0010; infra/cdk/src/constructs/edge.ts): the microphone for this origin only and the
- * camera off; synthesized speech plays from blob: URLs; the browser may connect to the documents bucket
- * (presigned uploads) and to Amazon Transcribe streaming (presigned speech-to-text), and nowhere else.
+ * camera off; synthesized speech plays from blob: URLs and a founder's call recording streams from the
+ * recordings bucket (ADR-0023); the browser may connect to the documents bucket (presigned uploads), the
+ * recordings bucket (presigned uploads and captions) and Amazon Transcribe streaming (presigned
+ * speech-to-text), and nowhere else.
  */
 const PERMISSIONS = { microphone: '(self)', camera: '()' };
-const MEDIA_SRC = "'self' blob:";
+const MEDIA_SRC = "'self' blob: <recordings bucket>";
 const SPEECH_TO_TEXT_ORIGIN = 'wss://transcribestreaming.us-east-1.amazonaws.com:8443';
 const UPLOAD_ORIGIN = /^https:\/\/[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]\.s3\.us-east-1\.amazonaws\.com$/;
 
@@ -240,10 +243,19 @@ function edgePolicyProblems(csp, permissionsPolicy, faceConnect = faceConnectOri
       problems.push(`Permissions-Policy ${feature}=${actual ?? 'missing'}, expected ${allow}`);
   }
   const policy = directives(csp, ';');
-  const media = policy.get('media-src')?.join(' ');
-  if (media !== MEDIA_SRC) problems.push(`CSP media-src "${media ?? 'missing'}", expected "${MEDIA_SRC}"`);
+  const media = policy.get('media-src') ?? [];
+  const recordings = media[2];
+  if (
+    media.length !== 3 ||
+    media[0] !== "'self'" ||
+    media[1] !== 'blob:' ||
+    recordings === undefined ||
+    !UPLOAD_ORIGIN.test(recordings)
+  ) {
+    problems.push(`CSP media-src "${media.join(' ') || 'missing'}", expected "${MEDIA_SRC}"`);
+  }
   const connect = policy.get('connect-src') ?? [];
-  const uploads = connect.filter((source) => UPLOAD_ORIGIN.test(source));
+  const buckets = connect.filter((source) => UPLOAD_ORIGIN.test(source));
   const unexpected = connect.filter(
     (source) =>
       source !== "'self'" &&
@@ -255,8 +267,12 @@ function edgePolicyProblems(csp, permissionsPolicy, faceConnect = faceConnectOri
     if (!connect.includes(origin)) problems.push(`CSP connect-src lacks the face's ${origin}`);
   }
   if (!connect.includes("'self'")) problems.push("CSP connect-src lacks 'self'");
-  if (uploads.length !== 1)
-    problems.push(`CSP connect-src has ${uploads.length} documents-bucket origins, expected 1`);
+  if (buckets.length !== 2)
+    problems.push(
+      `CSP connect-src has ${buckets.length} bucket origins, expected 2 (documents and recordings)`,
+    );
+  if (recordings !== undefined && UPLOAD_ORIGIN.test(recordings) && !connect.includes(recordings))
+    problems.push('CSP connect-src lacks the recordings bucket that media-src names');
   if (!connect.includes(SPEECH_TO_TEXT_ORIGIN))
     problems.push(`CSP connect-src lacks ${SPEECH_TO_TEXT_ORIGIN}`);
   if (unexpected.length > 0) problems.push(`CSP connect-src allows ${unexpected.join(' ')}`);

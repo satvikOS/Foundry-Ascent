@@ -43,6 +43,7 @@ import { Route as TenantAppVVentureIdIndexRouteImport } from './routes/$tenant/a
 import { Route as TenantAppVVentureIdDocumentsRouteImport } from './routes/$tenant/app/v/$ventureId/documents';
 import { Route as TenantAppVVentureIdHelpRouteImport } from './routes/$tenant/app/v/$ventureId/help';
 import { Route as TenantAppVVentureIdKnowledgeRouteImport } from './routes/$tenant/app/v/$ventureId/knowledge';
+import { Route as TenantAppVVentureIdRecordingsRouteImport } from './routes/$tenant/app/v/$ventureId/recordings';
 import { Route as TenantAppVVentureIdSettingsRouteImport } from './routes/$tenant/app/v/$ventureId/settings';
 import { Route as TenantAppVVentureIdTeamRouteImport } from './routes/$tenant/app/v/$ventureId/team';
 import { Route as TenantAppVenturesVentureIdIndexRouteImport } from './routes/$tenant/app/ventures/$ventureId/index';
@@ -231,6 +232,12 @@ const TenantAppVVentureIdKnowledgeRoute =
     path: '/knowledge',
     getParentRoute: () => TenantAppVVentureIdRouteRoute,
   } as any);
+const TenantAppVVentureIdRecordingsRoute =
+  TenantAppVVentureIdRecordingsRouteImport.update({
+    id: '/recordings',
+    path: '/recordings',
+    getParentRoute: () => TenantAppVVentureIdRouteRoute,
+  } as any);
 const TenantAppVVentureIdSettingsRoute =
   TenantAppVVentureIdSettingsRouteImport.update({
     id: '/settings',
@@ -294,6 +301,7 @@ export interface FileRoutesByFullPath {
   '/$tenant/app/v/$ventureId/documents': typeof TenantAppVVentureIdDocumentsRoute;
   '/$tenant/app/v/$ventureId/help': typeof TenantAppVVentureIdHelpRoute;
   '/$tenant/app/v/$ventureId/knowledge': typeof TenantAppVVentureIdKnowledgeRoute;
+  '/$tenant/app/v/$ventureId/recordings': typeof TenantAppVVentureIdRecordingsRoute;
   '/$tenant/app/v/$ventureId/settings': typeof TenantAppVVentureIdSettingsRoute;
   '/$tenant/app/v/$ventureId/team': typeof TenantAppVVentureIdTeamRoute;
   '/$tenant/app/ventures/$ventureId/$': typeof TenantAppVenturesVentureIdSplatRoute;
@@ -330,6 +338,7 @@ export interface FileRoutesByTo {
   '/$tenant/app/v/$ventureId/documents': typeof TenantAppVVentureIdDocumentsRoute;
   '/$tenant/app/v/$ventureId/help': typeof TenantAppVVentureIdHelpRoute;
   '/$tenant/app/v/$ventureId/knowledge': typeof TenantAppVVentureIdKnowledgeRoute;
+  '/$tenant/app/v/$ventureId/recordings': typeof TenantAppVVentureIdRecordingsRoute;
   '/$tenant/app/v/$ventureId/settings': typeof TenantAppVVentureIdSettingsRoute;
   '/$tenant/app/v/$ventureId/team': typeof TenantAppVVentureIdTeamRoute;
   '/$tenant/app/ventures/$ventureId/$': typeof TenantAppVenturesVentureIdSplatRoute;
@@ -372,6 +381,7 @@ export interface FileRoutesById {
   '/$tenant/app/v/$ventureId/documents': typeof TenantAppVVentureIdDocumentsRoute;
   '/$tenant/app/v/$ventureId/help': typeof TenantAppVVentureIdHelpRoute;
   '/$tenant/app/v/$ventureId/knowledge': typeof TenantAppVVentureIdKnowledgeRoute;
+  '/$tenant/app/v/$ventureId/recordings': typeof TenantAppVVentureIdRecordingsRoute;
   '/$tenant/app/v/$ventureId/settings': typeof TenantAppVVentureIdSettingsRoute;
   '/$tenant/app/v/$ventureId/team': typeof TenantAppVVentureIdTeamRoute;
   '/$tenant/app/ventures/$ventureId/$': typeof TenantAppVenturesVentureIdSplatRoute;
@@ -415,6 +425,7 @@ export interface FileRouteTypes {
     | '/$tenant/app/v/$ventureId/documents'
     | '/$tenant/app/v/$ventureId/help'
     | '/$tenant/app/v/$ventureId/knowledge'
+    | '/$tenant/app/v/$ventureId/recordings'
     | '/$tenant/app/v/$ventureId/settings'
     | '/$tenant/app/v/$ventureId/team'
     | '/$tenant/app/ventures/$ventureId/$'
@@ -451,6 +462,7 @@ export interface FileRouteTypes {
     | '/$tenant/app/v/$ventureId/documents'
     | '/$tenant/app/v/$ventureId/help'
     | '/$tenant/app/v/$ventureId/knowledge'
+    | '/$tenant/app/v/$ventureId/recordings'
     | '/$tenant/app/v/$ventureId/settings'
     | '/$tenant/app/v/$ventureId/team'
     | '/$tenant/app/ventures/$ventureId/$'
@@ -492,6 +504,7 @@ export interface FileRouteTypes {
     | '/$tenant/app/v/$ventureId/documents'
     | '/$tenant/app/v/$ventureId/help'
     | '/$tenant/app/v/$ventureId/knowledge'
+    | '/$tenant/app/v/$ventureId/recordings'
     | '/$tenant/app/v/$ventureId/settings'
     | '/$tenant/app/v/$ventureId/team'
     | '/$tenant/app/ventures/$ventureId/$'
@@ -749,6 +762,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TenantAppVVentureIdKnowledgeRouteImport;
       parentRoute: typeof TenantAppVVentureIdRouteRoute;
     };
+    '/$tenant/app/v/$ventureId/recordings': {
+      id: '/$tenant/app/v/$ventureId/recordings';
+      path: '/recordings';
+      fullPath: '/$tenant/app/v/$ventureId/recordings';
+      preLoaderRoute: typeof TenantAppVVentureIdRecordingsRouteImport;
+      parentRoute: typeof TenantAppVVentureIdRouteRoute;
+    };
     '/$tenant/app/v/$ventureId/settings': {
       id: '/$tenant/app/v/$ventureId/settings';
       path: '/settings';
@@ -858,6 +878,7 @@ interface TenantAppVVentureIdRouteRouteChildren {
   TenantAppVVentureIdDocumentsRoute: typeof TenantAppVVentureIdDocumentsRoute;
   TenantAppVVentureIdHelpRoute: typeof TenantAppVVentureIdHelpRoute;
   TenantAppVVentureIdKnowledgeRoute: typeof TenantAppVVentureIdKnowledgeRoute;
+  TenantAppVVentureIdRecordingsRoute: typeof TenantAppVVentureIdRecordingsRoute;
   TenantAppVVentureIdSettingsRoute: typeof TenantAppVVentureIdSettingsRoute;
   TenantAppVVentureIdTeamRoute: typeof TenantAppVVentureIdTeamRoute;
   TenantAppVVentureIdIndexRoute: typeof TenantAppVVentureIdIndexRoute;
@@ -869,6 +890,7 @@ const TenantAppVVentureIdRouteRouteChildren: TenantAppVVentureIdRouteRouteChildr
     TenantAppVVentureIdDocumentsRoute: TenantAppVVentureIdDocumentsRoute,
     TenantAppVVentureIdHelpRoute: TenantAppVVentureIdHelpRoute,
     TenantAppVVentureIdKnowledgeRoute: TenantAppVVentureIdKnowledgeRoute,
+    TenantAppVVentureIdRecordingsRoute: TenantAppVVentureIdRecordingsRoute,
     TenantAppVVentureIdSettingsRoute: TenantAppVVentureIdSettingsRoute,
     TenantAppVVentureIdTeamRoute: TenantAppVVentureIdTeamRoute,
     TenantAppVVentureIdIndexRoute: TenantAppVVentureIdIndexRoute,

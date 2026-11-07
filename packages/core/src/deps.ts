@@ -14,6 +14,7 @@ import {
   type IdGenerator,
   type JobQueue,
   type ObjectStore,
+  type RecordingStore,
   type SpeechSynthesizer,
   type StockVoice,
   type SttGrantIssuer,
@@ -28,6 +29,11 @@ export interface CoreDeps {
   readonly gateway: ModelGateway;
   readonly config: CoreConfig;
   readonly objectStore: ObjectStore;
+  /**
+   * Call recordings (the recordings bucket; the API and the worker). Absent: calls cannot be recorded
+   * (`recording_unavailable`) and nothing is purged.
+   */
+  readonly recordingStore?: RecordingStore;
   readonly jobQueue: JobQueue;
   /** Required by the ingestion worker only. */
   readonly textExtractor?: TextExtractor;

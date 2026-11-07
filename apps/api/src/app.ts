@@ -3,6 +3,7 @@ import { type Db } from '@foundry/db';
 import { Hono } from 'hono';
 
 import { type LocalUploadTarget } from './adapters/local-object-store.js';
+import { type LocalRecordingTarget } from './adapters/local-recording-store.js';
 import { MAX_JSON_BODY_BYTES } from './config.js';
 import { SSE_KEEP_ALIVE_MS } from './lambda-contract.js';
 import { createDbIdempotencyStore, type IdempotencyStore } from './http/idempotency.js';
@@ -12,7 +13,8 @@ import { RouteBuilder } from './http/router.js';
 import { type AppEnv, type RouteInfo } from './http/types.js';
 import { type Logger } from './logging.js';
 import { registerCallRoutes } from './routes/calls.js';
-import { registerLocalUploadRoutes } from './routes/local-uploads.js';
+import { registerLocalRecordingRoutes, registerLocalUploadRoutes } from './routes/local-uploads.js';
+import { registerRecordingRoutes } from './routes/recordings.js';
 import { registerSessionRoutes } from './routes/sessions.js';
 import { registerStudioRoutes } from './routes/studio.js';
 import { registerSystemRoutes } from './routes/system.js';
@@ -61,6 +63,8 @@ export interface AppDeps {
   readonly inflight?: InflightTracker;
   /** DEVELOPMENT ONLY: local stand-in for S3 presigned uploads. Refused in any other environment. */
   readonly localUploads?: LocalUploadTarget;
+  /** DEVELOPMENT ONLY: local stand-in for the recordings bucket's presigned URLs. Refused in any other environment. */
+  readonly localRecordings?: LocalRecordingTarget;
   readonly http?: Partial<HttpOptions>;
   readonly now?: () => Date;
 }
@@ -78,6 +82,9 @@ export type ApiApp = Hono<AppEnv> & {
 export function createApp(deps: AppDeps): ApiApp {
   if (deps.localUploads !== undefined && deps.appEnv !== 'development') {
     throw new Error('Local uploads can only be mounted when APP_ENV=development');
+  }
+  if (deps.localRecordings !== undefined && deps.appEnv !== 'development') {
+    throw new Error('Local recordings can only be mounted when APP_ENV=development');
   }
   const http: HttpOptions = { ...DEFAULT_HTTP_OPTIONS, ...deps.http };
   const now = deps.now ?? (() => new Date());
@@ -128,7 +135,9 @@ export function createApp(deps: AppDeps): ApiApp {
   registerStudioRoutes(routes, deps.core, { turnTimeoutMs: http.turnTimeoutMs });
   registerVeirRoutes(routes, deps.core);
   registerCallRoutes(routes, deps.core);
+  registerRecordingRoutes(routes, deps.core);
   if (deps.localUploads !== undefined) registerLocalUploadRoutes(routes, deps.localUploads);
+  if (deps.localRecordings !== undefined) registerLocalRecordingRoutes(routes, deps.localRecordings);
 
   return Object.assign(app, { routeTable: [...routes.routes] as readonly RouteInfo[] });
 }

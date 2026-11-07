@@ -110,6 +110,17 @@ export interface PlatformConfig {
     readonly sweepIntervalMinutes: number;
   };
   /**
+   * Call recordings (ADR-0023): the private recordings bucket. `corsOrigins` are the exact app origins whose pages may
+   * upload to it and replay from it with presigned URLs (the CloudFront distribution's own `https://` origin, known
+   * after the first deploy; a custom site domain is added by the app). `retentionDays`: how long a recording is kept
+   * before the daily maintenance deletes it (packages/contracts RECORDING_LIMITS.retentionDays); the bucket's
+   * lifecycle expires anything left a week later. Absent: no origin may use the bucket and a year's retention.
+   */
+  readonly recordings: {
+    readonly corsOrigins: readonly string[];
+    readonly retentionDays: number;
+  };
+  /**
    * The vEIR's digital twin (docs/runbooks/avatars.md): the vendor that draws the face (HeyGen LiveAvatar, LITE
    * mode) and the one that voices the EIRs' clones (ElevenLabs). Optional in the file; absent means off. Even
    * wired, a face or a clone is used only once Admin › Settings turns it on and the persona's consent covers it.
@@ -221,6 +232,8 @@ const MEDIA_OFF: PlatformConfig['media'] = {
 const SPEECH_OFF = { enabled: false, engine: 'neural', dailyAlarmUsd: 15 } as const;
 /** Used when `distillation` is absent from the file. */
 const DISTILLATION_OFF = { sweepEnabled: false, sweepIntervalMinutes: 15 } as const;
+/** Used when `recordings` is absent from the file: no browser origin may use the bucket. */
+const RECORDINGS_DEFAULT = { corsOrigins: [], retentionDays: 365 } as const;
 
 export const CONFIG_FILE = join(INFRA_ROOT, 'config', 'production.json');
 
@@ -417,6 +430,23 @@ function origins(parent: Json, key: string, path: string): string[] {
     }
     return origin;
   });
+}
+
+function parseRecordings(raw: unknown): PlatformConfig['recordings'] {
+  if (raw === undefined) return RECORDINGS_DEFAULT;
+  const recordings = obj(raw, '$.recordings');
+  const corsOrigins = origins(recordings, 'corsOrigins', '$.recordings');
+  corsOrigins.forEach((origin, i) => {
+    if (!origin.startsWith('https://')) {
+      throw new ConfigError(`$.recordings.corsOrigins[${String(i)}]`, 'must be an https:// origin');
+    }
+  });
+  return {
+    corsOrigins,
+    // The app says recordings are kept for a year (RECORDING_LIMITS.retentionDays): a shorter or longer retention
+    // changes both.
+    retentionDays: int(recordings, 'retentionDays', '$.recordings', 30, 3650),
+  };
 }
 
 /** LiveAvatar avatar and voice ids are UUIDs (e.g. the sandbox avatar `dd73ea75-1218-4ef3-92ce-606d5f7fbc0a`). */
@@ -713,6 +743,7 @@ export function parseConfig(raw: unknown): PlatformConfig {
     },
     speech,
     distillation: parseDistillation(root.distillation),
+    recordings: parseRecordings(root.recordings),
     media,
     logRetentionDays,
   };

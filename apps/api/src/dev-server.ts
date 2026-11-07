@@ -27,6 +27,7 @@ import { developmentFaceFor } from './adapters/development-face.js';
 import { developmentVoiceFor } from './adapters/development-voice.js';
 import { InlineJobQueue } from './adapters/inline-job-queue.js';
 import { LocalObjectStore } from './adapters/local-object-store.js';
+import { LocalRecordingStore } from './adapters/local-recording-store.js';
 import { DocumentTextExtractor } from './adapters/text-extractor.js';
 import { createApp } from './app.js';
 import { loadApiConfig, loadCoreConfig } from './config.js';
@@ -88,6 +89,12 @@ async function main(): Promise<void> {
     downloadOrigin: process.env.LOCAL_DOWNLOAD_ORIGIN,
     maxUploadBytes: MAX_DOCUMENT_BYTES,
   });
+  // Call recordings beside the uploads, with presigned URLs at the API's own origin when one is given (the end-to-end
+  // suite: cross-origin under the CSP, as the recordings bucket is in production), else through the web proxy.
+  const recordingStore = new LocalRecordingStore({
+    directory: resolve(uploadDir, '..', 'recordings'),
+    origin: process.env.LOCAL_DOWNLOAD_ORIGIN ?? config.siteOrigin ?? `http://localhost:${String(port)}`,
+  });
   const jobQueue = new InlineJobQueue({ logger, maxAttempts: LOCAL_JOB_ATTEMPTS });
   const gateway = createGateway(env, logger);
   const core = createCore({
@@ -95,6 +102,7 @@ async function main(): Promise<void> {
     gateway,
     config: loadCoreConfig(env),
     objectStore,
+    recordingStore,
     jobQueue,
     textExtractor: new DocumentTextExtractor(),
     logger: logger.child({ component: 'core' }),
@@ -137,6 +145,7 @@ async function main(): Promise<void> {
     appEnv: 'development',
     appVersion: config.appVersion,
     localUploads: objectStore,
+    localRecordings: recordingStore,
   });
   // The lab's vendor probes (LAB_FACE_PROBE_TOKEN) answer their own paths; everything else is the app.
   const probe = localFace.probe;

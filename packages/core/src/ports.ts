@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
-import { type DocumentContentType } from '@foundry/contracts';
+import {
+  type DocumentContentType,
+  type RECORDING_CAPTIONS_TYPE,
+  type RecordingMimeType,
+} from '@foundry/contracts';
 import { z } from 'zod';
 
 /**
@@ -57,6 +61,41 @@ export interface ObjectStore {
    */
   getObject(key: string, options: { readonly maxBytes: number }): Promise<Uint8Array>;
   /** Deletes an object; deleting a missing key is not an error. */
+  delete(key: string): Promise<void>;
+}
+
+/** A file of a call recording: the recording itself (webm or mp4) or its WebVTT captions. */
+export type RecordingContentType = RecordingMimeType | typeof RECORDING_CAPTIONS_TYPE;
+
+export interface RecordingPutInput {
+  /** `tenants/{t}/ventures/{v}/sessions/{s}/recordings/{id}/{file}` (built by core). */
+  readonly key: string;
+  readonly contentType: RecordingContentType;
+  /** Exact byte length the browser declared (signed, so a different size is refused). */
+  readonly contentLength: number;
+  readonly expiresInSeconds: number;
+}
+
+export interface RecordingGetInput {
+  /** Key of a ready recording's file (from its record, never from input). */
+  readonly key: string;
+  /** Served as this type, whatever the object's metadata says. */
+  readonly contentType: RecordingContentType;
+  /** Long enough to watch the whole recording: the player streams it with range requests until then. */
+  readonly expiresInSeconds: number;
+}
+
+/**
+ * Call recordings storage (the private recordings bucket in production, the filesystem locally): presigned PUTs the
+ * browser uploads with and presigned GETs the player reads with, issued by core only after it checked the caller owns
+ * the recording; a size check when an upload is completed; deletion. Nothing of a recording passes through the API.
+ */
+export interface RecordingStore {
+  presignPut(input: RecordingPutInput): Promise<PresignedUpload>;
+  presignGet(input: RecordingGetInput): Promise<PresignedDownload>;
+  /** The stored object's size in bytes, or null when it does not exist (the upload never arrived). */
+  size(key: string): Promise<number | null>;
+  /** Deletes an object; a missing key is not an error. */
   delete(key: string): Promise<void>;
 }
 

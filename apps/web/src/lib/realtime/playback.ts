@@ -341,6 +341,14 @@ export class SpeechPlayer {
     return this.playing !== null || this.queue.length > 0;
   }
 
+  /**
+   * The call's own output as the speakers get it (after ducking): a call recording taps it here. A vendor face's
+   * voice is not in it (the face plays it in its own element).
+   */
+  get output(): AudioNode {
+    return this.analyser;
+  }
+
   /** RMS of what the vEIR is heard saying (0–1): the call's own output, or the face's own sound. */
   level(): number {
     if (this.playing === null) return 0;

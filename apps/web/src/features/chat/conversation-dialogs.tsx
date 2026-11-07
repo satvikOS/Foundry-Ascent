@@ -115,7 +115,7 @@ export function RenameConversationDialog({
  * theirs now, and stays.
  */
 export const DELETE_CONVERSATION_DESCRIPTION =
-  'Erases its messages, summary and anything remembered only from it. Memory you edited stays. This can’t be undone.';
+  'Erases its messages, summary, recordings and anything remembered only from it. Memory you edited stays. This can’t be undone.';
 
 /** Delete a conversation after confirming: its content is erased and it leaves every list. */
 export function DeleteConversationDialog({

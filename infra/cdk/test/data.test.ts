@@ -227,6 +227,102 @@ describe('FoundryAscent-Data', () => {
     });
   });
 
+  describe('call recordings bucket (ADR-0023)', () => {
+    const recordings = (): Record<string, unknown> => {
+      const found = resourcesOfType(template, 'AWS::S3::Bucket').find(([id]) =>
+        id.startsWith('RecordingsBucket'),
+      );
+      if (!found) throw new Error('recordings bucket not found');
+      return found[1];
+    };
+
+    it('is private, SSE-S3, unversioned, owner-enforced, retained and logs access', () => {
+      template.hasResource('AWS::S3::Bucket', {
+        Properties: Match.objectLike({
+          BucketEncryption: {
+            ServerSideEncryptionConfiguration: [
+              { ServerSideEncryptionByDefault: { SSEAlgorithm: 'AES256' } },
+            ],
+          },
+          PublicAccessBlockConfiguration: {
+            BlockPublicAcls: true,
+            BlockPublicPolicy: true,
+            IgnorePublicAcls: true,
+            RestrictPublicBuckets: true,
+          },
+          VersioningConfiguration: Match.absent(),
+          LoggingConfiguration: Match.objectLike({ LogFilePrefix: 'recordings/' }),
+          OwnershipControls: { Rules: [{ ObjectOwnership: 'BucketOwnerEnforced' }] },
+        }),
+        DeletionPolicy: 'RetainExceptOnCreate',
+        UpdateReplacePolicy: 'Retain',
+      });
+    });
+
+    it('expires files a week past the app’s retention and aborts unfinished uploads', () => {
+      const { retentionDays } = loadConfig().recordings;
+      expect(recordings().LifecycleConfiguration).toEqual({
+        Rules: [
+          {
+            Id: 'abort-incomplete-uploads',
+            Status: 'Enabled',
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 },
+          },
+          {
+            Id: 'expire-past-retention',
+            Status: 'Enabled',
+            Prefix: 'tenants/',
+            ExpirationInDays: retentionDays + 7,
+          },
+        ],
+      });
+    });
+
+    it('allows presigned PUTs and replays from the exact app origins only (no wildcard)', () => {
+      const { corsOrigins } = loadConfig().recordings;
+      expect(corsOrigins.length).toBeGreaterThan(0);
+      expect(recordings().CorsConfiguration).toEqual({
+        CorsRules: [
+          {
+            AllowedMethods: ['PUT', 'GET'],
+            AllowedOrigins: [...corsOrigins],
+            AllowedHeaders: ['content-type', 'range'],
+            ExposedHeaders: ['ETag', 'Content-Length', 'Content-Range', 'Accept-Ranges'],
+            MaxAge: 3000,
+          },
+        ],
+      });
+      expect(JSON.stringify(recordings().CorsConfiguration)).not.toContain('*');
+    });
+
+    it('defines recording access on recording keys under tenants/ only', () => {
+      template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
+        PolicyDocument: {
+          Statement: [
+            {
+              Sid: 'RecordingObjects',
+              Effect: 'Allow',
+              Action: ['s3:DeleteObject', 's3:GetObject', 's3:PutObject'],
+              Resource: {
+                'Fn::Join': [
+                  '',
+                  [
+                    { 'Fn::GetAtt': [Match.stringLikeRegexp('^RecordingsBucket'), 'Arn'] },
+                    '/tenants/*/recordings/*',
+                  ],
+                ],
+              },
+            },
+            Match.objectLike({
+              Sid: 'RecordingListing',
+              Condition: { StringLike: { 's3:prefix': ['tenants/*'] } },
+            }),
+          ],
+        },
+      });
+    });
+  });
+
   describe('jobs queue', () => {
     it('uses SSE-SQS, a 6x worker-timeout visibility and a 3-strike DLQ', () => {
       template.hasResourceProperties('AWS::SQS::Queue', {

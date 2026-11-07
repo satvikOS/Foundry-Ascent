@@ -55,6 +55,11 @@ export const queryKeys = {
   session: {
     detail: (sessionId: string) => [ROOT, 'session', sessionId] as const,
   },
+  /** `GET /recordings`: the person's own call recordings (one conversation's, one venture's). */
+  recordings: {
+    all: () => [ROOT, 'recordings'] as const,
+    list: (filters: { sessionId?: string; ventureId?: string }) => [ROOT, 'recordings', filters] as const,
+  },
   conversations: {
     all: () => [ROOT, 'conversations'] as const,
     list: (filters: ConversationFilters) => [ROOT, 'conversations', filters] as const,

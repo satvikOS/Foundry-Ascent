@@ -6,6 +6,7 @@ const prod = {
   APP_ENV: 'production',
   APP_VERSION: 'abc1234',
   DOCUMENTS_BUCKET: 'foundry-ascent-documents',
+  RECORDINGS_BUCKET: 'foundry-ascent-recordings',
   JOBS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123456789012/FoundryAscent-Jobs',
   AWS_REGION: 'us-east-1',
 };
@@ -171,6 +172,7 @@ describe('loadApiConfig', () => {
       logLevel: 'info',
       awsRegion: 'us-east-1',
       documentsBucket: 'foundry-ascent-documents',
+      recordingsBucket: 'foundry-ascent-recordings',
       jobsQueueUrl: prod.JOBS_QUEUE_URL,
       jobsMaxReceiveCount: 3,
       siteOrigin: null,
@@ -202,6 +204,9 @@ describe('loadApiConfig', () => {
   it('requires the bucket and queue where they are used, naming variables but not values', () => {
     expect(() => loadApiConfig({ ...prod, JOBS_QUEUE_URL: '' }, 'api')).toThrow(/JOBS_QUEUE_URL/);
     expect(() => loadApiConfig({ APP_ENV: 'production' }, 'worker')).toThrow(/DOCUMENTS_BUCKET/);
+    expect(() => loadApiConfig({ ...prod, RECORDINGS_BUCKET: '' }, 'api')).toThrow(/RECORDINGS_BUCKET/);
+    expect(() => loadApiConfig({ ...prod, RECORDINGS_BUCKET: '' }, 'worker')).toThrow(/RECORDINGS_BUCKET/);
+    expect(() => loadApiConfig({ ...prod, RECORDINGS_BUCKET: 'Not_A_Bucket!' }, 'api')).toThrow(ConfigError);
     expect(() => loadApiConfig({ APP_ENV: 'production' }, 'migrate')).not.toThrow();
     expect(() => loadApiConfig({ ...prod, DOCUMENTS_BUCKET: 'Not_A_Bucket!' }, 'api')).toThrow(ConfigError);
     try {

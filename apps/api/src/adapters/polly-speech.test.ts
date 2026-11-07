@@ -136,7 +136,11 @@ describe('preferEngine', () => {
 });
 
 describe('speech wiring', () => {
-  const env = { DOCUMENTS_BUCKET: 'docs-bucket', JOBS_QUEUE_URL: 'https://sqs.test/queue' };
+  const env = {
+    DOCUMENTS_BUCKET: 'docs-bucket',
+    RECORDINGS_BUCKET: 'recordings-bucket',
+    JOBS_QUEUE_URL: 'https://sqs.test/queue',
+  };
 
   it('uses Polly wherever the models run on Bedrock, and nothing on the mock model', () => {
     const config = loadApiConfig(env, 'api');

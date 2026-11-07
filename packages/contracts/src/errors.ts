@@ -23,6 +23,7 @@ export const ErrorCode = z.enum([
   'upload_too_large',
   'unsupported_media_type',
   'speech_unavailable',
+  'recording_unavailable',
   'internal',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
@@ -43,6 +44,8 @@ export const PUBLIC_PROBLEM_REASONS = [
   'crisis_speech_limit',
   /** POST /calls/:id/face/*, 409 `conflict`: the call's face has ended (the call goes on with the presence). */
   'face_not_active',
+  /** POST /calls/:id/recordings, 409 `conflict`: a private (temporary) call is never recorded. */
+  'recording_private_call',
 ] as const;
 
 /** RFC 9457 problem details. */
@@ -86,5 +89,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   unsupported_media_type: 415,
   /** Server-side speech synthesis is not configured here (local development): the client speaks itself. */
   speech_unavailable: 501,
+  /** No recordings store is wired here: a call cannot be recorded. */
+  recording_unavailable: 501,
   internal: 500,
 };

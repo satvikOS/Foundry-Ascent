@@ -16,10 +16,10 @@ describe('DeleteConversationDialog', () => {
       />,
     );
     const dialog = await screen.findByRole('alertdialog', { name: 'Delete this conversation?' });
-    // The server erases what the vEIR drew only from this conversation, never what a person edited or kept:
-    // the dialog promises no more than that.
+    // The server erases what the vEIR drew only from this conversation (and its call recordings, ADR-0023), never what
+    // a person edited or kept: the dialog promises no more than that.
     expect(dialog).toHaveAccessibleDescription(
-      'Erases its messages, summary and anything remembered only from it. Memory you edited stays. This can’t be undone.',
+      'Erases its messages, summary, recordings and anything remembered only from it. Memory you edited stays. This can’t be undone.',
     );
   });
 });

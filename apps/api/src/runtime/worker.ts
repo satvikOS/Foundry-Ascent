@@ -3,6 +3,7 @@ import { type Core, createCore, type EnvLike } from '@foundry/core';
 import { type Db } from '@foundry/db';
 
 import { S3ObjectStore } from '../adapters/s3-object-store.js';
+import { S3RecordingStore } from '../adapters/s3-recording-store.js';
 import { DocumentTextExtractor } from '../adapters/text-extractor.js';
 import { unavailableJobQueue } from '../adapters/unavailable-ports.js';
 import { loadApiConfig, loadCoreConfig, required } from '../config.js';
@@ -52,6 +53,11 @@ export function createWorkerRuntime(env: EnvLike): WorkerDeps {
     config: loadCoreConfig(env),
     objectStore: new S3ObjectStore({
       bucket: required(config.documentsBucket, 'DOCUMENTS_BUCKET'),
+      region: config.awsRegion,
+    }),
+    // Deleted recordings' files are purged by the daily maintenance.
+    recordingStore: new S3RecordingStore({
+      bucket: required(config.recordingsBucket, 'RECORDINGS_BUCKET'),
       region: config.awsRegion,
     }),
     jobQueue: unavailableJobQueue,

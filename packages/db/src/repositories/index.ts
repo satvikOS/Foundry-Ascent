@@ -29,6 +29,7 @@ export * as callsRepo from './calls.js';
 export * as insightsRepo from './insights.js';
 export * as readerRepo from './reader.js';
 export * as twinRepo from './twin.js';
+export * as recordingsRepo from './recordings.js';
 export {
   EXCERPT_CHARS,
   idRef,

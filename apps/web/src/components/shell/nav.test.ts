@@ -134,7 +134,7 @@ describe('ventureDestinations', () => {
   const ids = (person: Me) => ventureDestinations(person, VENTURE_A).map((d) => d.id);
 
   it('gives members and the assigned EIR every page of the venture', () => {
-    const all = ['knowledge', 'documents', 'help', 'venture'];
+    const all = ['knowledge', 'documents', 'recordings', 'help', 'venture'];
     for (const role of ['founder', 'team', 'advisor'] as const) {
       expect(ids(me({ memberships: [{ ventureId: VENTURE_A, ventureName: 'QuietQuad', role }] }))).toEqual(
         all,

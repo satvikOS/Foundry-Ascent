@@ -83,6 +83,15 @@ export function speechAlarmCharactersPerDay(
 /** S3 key prefix that every venture document lives under (`tenants/{t}/ventures/{v}/documents/...`). */
 export const DOCUMENTS_PREFIX = 'tenants/';
 
+/** S3 key prefix of every call recording file (`tenants/{t}/ventures/{v}/sessions/{s}/recordings/{id}/...`). */
+export const RECORDINGS_PREFIX = 'tenants/';
+
+/**
+ * Days past the app's own retention (`recordings.retentionDays`, enforced by the daily maintenance) after which the
+ * recordings bucket's lifecycle expires a file anyway: a backstop for a file whose purge never succeeded.
+ */
+export const RECORDINGS_LIFECYCLE_GRACE_DAYS = 7;
+
 /**
  * Browser origins allowed to PUT to the documents bucket with a presigned URL when no custom domain is
  * configured. The CloudFront domain is only known after the App stack creates the distribution, and the

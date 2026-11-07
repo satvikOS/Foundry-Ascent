@@ -1,0 +1,26 @@
+/* A recording in progress: its red dot breathes (still when motion is reduced). */
+.fa-rec-dot {
+  animation: fa-rec-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes fa-rec-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fa-rec-dot {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .fa-rec-dot {
+    background-color: Mark;
+  }
+}

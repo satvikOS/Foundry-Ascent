@@ -139,6 +139,11 @@ export class MicCapture {
     this.trackListener = listener;
   }
 
+  /** The microphone's stream (a call recording mixes it in; muting the call disables its track). */
+  get microphone(): MediaStream {
+    return this.stream;
+  }
+
   /** The source delivers silence whatever is said (muted by the system, not by the call). */
   get sourceMuted(): boolean {
     return this.tracks().some((track) => track.muted);

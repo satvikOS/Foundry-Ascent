@@ -76,6 +76,12 @@ export function speechToTextOrigin(region: string): string {
 export interface ContentSecurityPolicyOrigins {
   /** The documents bucket endpoint presigned uploads go to (`documentsUploadOrigin`). */
   readonly uploadOrigin: string;
+  /**
+   * The call recordings bucket's endpoint (`documentsUploadOrigin` of that bucket, ADR-0023): the call screen uploads
+   * a recording and its captions there and the player streams them back, both with presigned URLs. Named in
+   * `connect-src` (the uploads, the captions) and `media-src` (the player), and nowhere else.
+   */
+  readonly recordingsOrigin: string;
   /** Amazon Transcribe streaming (`speechToTextOrigin`). */
   readonly speechToTextOrigin: string;
   /**
@@ -86,15 +92,16 @@ export interface ContentSecurityPolicyOrigins {
 }
 
 /**
- * The SPA's Content-Security-Policy. `connect-src` allows the app's own origin and exactly two others:
- * the documents bucket and Transcribe streaming. A wildcard such as `https://*.s3.amazonaws.com` would let
+ * The SPA's Content-Security-Policy. `connect-src` allows the app's own origin and exactly three others:
+ * the documents bucket, the call recordings bucket and Transcribe streaming. A wildcard such as `https://*.s3.amazonaws.com` would let
  * injected script send data to any bucket in the world. The Transcribe endpoint serves every AWS account,
  * so it cannot be pinned to ours; `script-src 'self'` (no inline or third-party script) is what keeps
  * injected code from using it.
  *
  * Voice calls (ADR-0010) also rely on:
  * - `media-src 'self' blob:`: the call screen fetches synthesized speech (`POST /api/v1/speech`,
- *   `audio/mpeg`) and plays it from a `blob:` object URL. Remote media stays blocked.
+ *   `audio/mpeg`) and plays it from a `blob:` object URL. The only remote media is the call recordings bucket (a
+ *   founder replaying their own recording through a presigned GET, ADR-0023).
  * - `script-src 'self'` for the microphone's AudioWorklet: a worklet module is fetched as a script
  *   (CSP3 `script-src-elem`, falling back to `script-src`), so a same-origin static file such as
  *   `/worklets/<name>.js` loads, while `blob:` and cross-origin modules are refused. Verified on
@@ -121,9 +128,16 @@ export function contentSecurityPolicy(origins: ContentSecurityPolicyOrigins): st
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
-    ['media-src', "'self'", 'blob:', ...faceMedia].join(' '),
+    ['media-src', "'self'", 'blob:', origins.recordingsOrigin, ...faceMedia].join(' '),
     "font-src 'self' data:",
-    ['connect-src', "'self'", origins.uploadOrigin, origins.speechToTextOrigin, ...faceConnect].join(' '),
+    [
+      'connect-src',
+      "'self'",
+      origins.uploadOrigin,
+      origins.recordingsOrigin,
+      origins.speechToTextOrigin,
+      ...faceConnect,
+    ].join(' '),
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",

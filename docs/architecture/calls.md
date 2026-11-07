@@ -792,7 +792,7 @@ replaces the first), cuts an utterance with the next one (no queue), and sounds 
 
 - **Audio.** The founder's voice goes from the browser straight to Amazon Transcribe in us-east-1 (inside
   the AWS account boundary the platform already uses); our API never receives it. Neither the founder's
-  audio nor the synthesized speech is recorded or stored.
+  audio nor the synthesized speech is recorded or stored, unless the founder records the call (§7).
 - **What is stored.** The words of a call are the conversation's turns, kept, validated, shown and deleted
   like chat (temporary chats keep nothing once they end). What the founder heard of an interrupted reply is
   stored on its turn and redacted with it. The `calls` row holds identifiers and numbers only.
@@ -830,3 +830,26 @@ replaces the first), cuts an utterance with the next one (no queue), and sounds 
   the crisis message.
 - **Before a production voice launch**, the University's privacy review covers student voice processing
   by Amazon Transcribe and the first-call notice.
+
+## 7. Recordings (ADR-0023)
+
+A founder may record their own call from the call screen and watch it again later, with its captions, without calling
+the vEIR. Never a private call; only the person who recorded it can list, play or delete it.
+
+- **Recording (browser).** `features/recordings`: Record in the dock (keyboard `R`; a notice the first time), "● REC"
+  and the time in the header while it records, Stop to save; hanging up stops and saves it. `CallRecorder` records one
+  canvas (the face's video while it shows, else the presence) and a WebAudio mix of the vEIR's voice (the player's
+  output and a vendor face's audio track) and the microphone, with `MediaRecorder` (webm, or mp4 on Safari);
+  `CaptionRecorder` turns the call's captions into WebVTT cues. `CallEngine.recordingSources()` exposes the call's
+  AudioContext, the player's output and the microphone stream without changing them.
+- **Saving.** `POST /calls/:id/recordings` → presigned PUTs (recording, captions) → `POST /recordings/:id/complete`
+  (sizes checked) → listed. A failed save keeps the file in the page with Try again.
+- **Replay.** `GET /recordings/:id/playback` → presigned GETs for the `<video>` (CORS, range requests) and the captions
+  file; captions show over the picture and as a transcript whose lines seek. In the conversation (at the end of its
+  transcript) and under Recordings in the venture's side panel (`/v/:id/recordings`, `?r=` opens one).
+- **Storage.** The private recordings bucket (Data stack): exact-origin CORS, SSE-S3, a year's retention with a
+  lifecycle backstop; `call_recordings` (migration 0031) holds keys, sizes, duration, cue count and lifecycle, owner-only
+  under RLS. Deleting the conversation deletes its recordings (trigger), the API and the daily maintenance remove the
+  files.
+- **Locally** `LocalRecordingStore` stands in for the bucket (`/_local/recordings/:token`, development only).
+

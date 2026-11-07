@@ -58,6 +58,15 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
         },
       },
     },
+    "RecordingsBucket": {
+      "Value": {
+        "Fn::GetStackOutput": {
+          "OutputName": "PublishOutputRefRecordingsBucketAA52F4998A33EDA0",
+          "Region": "us-east-1",
+          "StackName": "FoundryAscent-Data",
+        },
+      },
+    },
     "SecretArn": {
       "Value": {
         "Fn::GetStackOutput": {
@@ -284,6 +293,13 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "MODEL_PRIMARY_ID": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             "MODEL_PROVIDER": "bedrock",
             "NODE_OPTIONS": "--enable-source-maps",
+            "RECORDINGS_BUCKET": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefRecordingsBucketAA52F4998A33EDA0",
+                "Region": "us-east-1",
+                "StackName": "FoundryAscent-Data",
+              },
+            },
             "SPEECH_ENABLED": "true",
             "SPEECH_ENGINE": "neural",
           },
@@ -369,6 +385,13 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
               "StackName": "FoundryAscent-Data",
             },
           },
+          {
+            "Fn::GetStackOutput": {
+              "OutputName": "PublishOutputRefRecordingsAccessPolicy43DA96BFA313A0B2",
+              "Region": "us-east-1",
+              "StackName": "FoundryAscent-Data",
+            },
+          },
         ],
         "PermissionsBoundary": {
           "Fn::Join": [
@@ -423,26 +446,48 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             {
               "Action": "s3:GetObject",
               "Effect": "Deny",
-              "NotResource": {
-                "Fn::Join": [
-                  "",
-                  [
-                    "arn:",
-                    {
-                      "Ref": "AWS::Partition",
-                    },
-                    ":s3:::",
-                    {
-                      "Fn::GetStackOutput": {
-                        "OutputName": "PublishOutputRefDocumentsBucket9EC9DEB9D4188A2E",
-                        "Region": "us-east-1",
-                        "StackName": "FoundryAscent-Data",
+              "NotResource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
                       },
-                    },
-                    "/tenants/*/ventures/*/documents/*",
+                      ":s3:::",
+                      {
+                        "Fn::GetStackOutput": {
+                          "OutputName": "PublishOutputRefDocumentsBucket9EC9DEB9D4188A2E",
+                          "Region": "us-east-1",
+                          "StackName": "FoundryAscent-Data",
+                        },
+                      },
+                      "/tenants/*/ventures/*/documents/*",
+                    ],
                   ],
-                ],
-              },
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:",
+                      {
+                        "Ref": "AWS::Partition",
+                      },
+                      ":s3:::",
+                      {
+                        "Fn::GetStackOutput": {
+                          "OutputName": "PublishOutputRefRecordingsBucketAA52F4998A33EDA0",
+                          "Region": "us-east-1",
+                          "StackName": "FoundryAscent-Data",
+                        },
+                      },
+                      "/tenants/*/recordings/*",
+                    ],
+                  ],
+                },
+              ],
               "Sid": "DocumentsApiReadsOnlyVentureDocuments",
             },
             {
@@ -1961,10 +2006,26 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                 "Fn::Join": [
                   "",
                   [
-                    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https://",
+                    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: https://",
+                    {
+                      "Fn::GetStackOutput": {
+                        "OutputName": "PublishOutputRefRecordingsBucketAA52F4998A33EDA0",
+                        "Region": "us-east-1",
+                        "StackName": "FoundryAscent-Data",
+                      },
+                    },
+                    ".s3.us-east-1.amazonaws.com; font-src 'self' data:; connect-src 'self' https://",
                     {
                       "Fn::GetStackOutput": {
                         "OutputName": "PublishOutputRefDocumentsBucket9EC9DEB9D4188A2E",
+                        "Region": "us-east-1",
+                        "StackName": "FoundryAscent-Data",
+                      },
+                    },
+                    ".s3.us-east-1.amazonaws.com https://",
+                    {
+                      "Fn::GetStackOutput": {
+                        "OutputName": "PublishOutputRefRecordingsBucketAA52F4998A33EDA0",
                         "Region": "us-east-1",
                         "StackName": "FoundryAscent-Data",
                       },
@@ -2341,6 +2402,13 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "MODEL_PRIMARY_ID": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             "MODEL_PROVIDER": "bedrock",
             "NODE_OPTIONS": "--enable-source-maps",
+            "RECORDINGS_BUCKET": {
+              "Fn::GetStackOutput": {
+                "OutputName": "PublishOutputRefRecordingsBucketAA52F4998A33EDA0",
+                "Region": "us-east-1",
+                "StackName": "FoundryAscent-Data",
+              },
+            },
           },
         },
         "FunctionName": "FoundryAscent-Worker",
@@ -2433,6 +2501,13 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
               "StackName": "FoundryAscent-Data",
             },
           },
+          {
+            "Fn::GetStackOutput": {
+              "OutputName": "PublishOutputRefRecordingsAccessPolicy43DA96BFA313A0B2",
+              "Region": "us-east-1",
+              "StackName": "FoundryAscent-Data",
+            },
+          },
         ],
         "PermissionsBoundary": {
           "Fn::Join": [
@@ -2468,6 +2543,34 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
                   "Arn",
                 ],
               },
+            },
+            {
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+              ],
+              "Effect": "Deny",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":s3:::",
+                    {
+                      "Fn::GetStackOutput": {
+                        "OutputName": "PublishOutputRefRecordingsBucketAA52F4998A33EDA0",
+                        "Region": "us-east-1",
+                        "StackName": "FoundryAscent-Data",
+                      },
+                    },
+                    "/*",
+                  ],
+                ],
+              },
+              "Sid": "RecordingsWorkerDeletesOnly",
             },
             {
               "Action": [
@@ -2689,7 +2792,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
 
 exports[`template snapshots > FoundryAscent-Data 1`] = `
 {
-  "Description": "Foundry Ascent: VPC (isolated), Aurora Serverless v2, documents bucket, jobs queue",
+  "Description": "Foundry Ascent: VPC (isolated), Aurora Serverless v2, documents and recordings buckets, jobs queue",
   "Outputs": {
     "PublishOutputFnGetAttJobsDeadLetterQueueE6E1CCE2QueueNameFFDEA6FC": {
       "Value": {
@@ -2735,6 +2838,16 @@ exports[`template snapshots > FoundryAscent-Data 1`] = `
     "PublishOutputRefJobsQueue86ED6666C6B4A300": {
       "Value": {
         "Ref": "JobsQueue86ED6666",
+      },
+    },
+    "PublishOutputRefRecordingsAccessPolicy43DA96BFA313A0B2": {
+      "Value": {
+        "Ref": "RecordingsAccessPolicy43DA96BF",
+      },
+    },
+    "PublishOutputRefRecordingsBucketAA52F4998A33EDA0": {
+      "Value": {
+        "Ref": "RecordingsBucketAA52F499",
       },
     },
   },
@@ -2978,6 +3091,42 @@ exports[`template snapshots > FoundryAscent-Data 1`] = `
                       ],
                     },
                     "/documents/*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "s3:PutObject",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::GetAtt": [
+                      "RecordingsBucketAA52F499",
+                      "Arn",
+                    ],
+                  },
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId",
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "logging.s3.amazonaws.com",
+              },
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "AccessLogsBucket83982689",
+                        "Arn",
+                      ],
+                    },
+                    "/recordings/*",
                   ],
                 ],
               },
@@ -3597,6 +3746,216 @@ exports[`template snapshots > FoundryAscent-Data 1`] = `
         ],
       },
       "Type": "AWS::SQS::QueuePolicy",
+    },
+    "RecordingsAccessPolicy43DA96BF": {
+      "Properties": {
+        "Description": "Foundry Ascent: sign call recording uploads and replays, check sizes, delete (tenants/ prefix)",
+        "Path": "/",
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "s3:DeleteObject",
+                "s3:GetObject",
+                "s3:PutObject",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "RecordingsBucketAA52F499",
+                        "Arn",
+                      ],
+                    },
+                    "/tenants/*/recordings/*",
+                  ],
+                ],
+              },
+              "Sid": "RecordingObjects",
+            },
+            {
+              "Action": "s3:ListBucket",
+              "Condition": {
+                "StringLike": {
+                  "s3:prefix": [
+                    "tenants/*",
+                  ],
+                },
+              },
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "RecordingsBucketAA52F499",
+                  "Arn",
+                ],
+              },
+              "Sid": "RecordingListing",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::IAM::ManagedPolicy",
+    },
+    "RecordingsBucketAA52F499": {
+      "DeletionPolicy": "RetainExceptOnCreate",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "CorsConfiguration": {
+          "CorsRules": [
+            {
+              "AllowedHeaders": [
+                "content-type",
+                "range",
+              ],
+              "AllowedMethods": [
+                "PUT",
+                "GET",
+              ],
+              "AllowedOrigins": [
+                "https://d38hejyf9iw77e.cloudfront.net",
+              ],
+              "ExposedHeaders": [
+                "ETag",
+                "Content-Length",
+                "Content-Range",
+                "Accept-Ranges",
+              ],
+              "MaxAge": 3000,
+            },
+          ],
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": 1,
+              },
+              "Id": "abort-incomplete-uploads",
+              "Status": "Enabled",
+            },
+            {
+              "ExpirationInDays": 372,
+              "Id": "expire-past-retention",
+              "Prefix": "tenants/",
+              "Status": "Enabled",
+            },
+          ],
+        },
+        "LoggingConfiguration": {
+          "DestinationBucketName": {
+            "Ref": "AccessLogsBucket83982689",
+          },
+          "LogFilePrefix": "recordings/",
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced",
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "RecordingsBucketPolicy7D6C1F47": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "RecordingsBucketAA52F499",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "RecordingsBucketAA52F499",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "RecordingsBucketAA52F499",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "NumericLessThan": {
+                  "s3:TlsVersion": 1.2,
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "RecordingsBucketAA52F499",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "RecordingsBucketAA52F499",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
     },
     "RestrictDefaultSgLogsDDF1DACF": {
       "DeletionPolicy": "Delete",

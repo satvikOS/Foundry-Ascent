@@ -38,6 +38,7 @@ const TITLES: Readonly<Record<ErrorCode, string>> = {
   upload_too_large: 'Payload too large',
   unsupported_media_type: 'Unsupported media type',
   speech_unavailable: 'Speech unavailable',
+  recording_unavailable: 'Recording unavailable',
   internal: 'Internal error',
 };
 

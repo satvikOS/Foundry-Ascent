@@ -37,8 +37,9 @@ push to main ──► CI (quality · database · infra · python · e2e) ──
   provider it manages. The deploy role may not list providers, so the step uses the provider's fixed ARN
   (it must exist, since the role was just assumed through it). The job summary shows which case applied.
 - `scripts/smoke.mjs` then checks the live site: security headers on `/` (including
-  `Permissions-Policy: … microphone=(self)` with the camera off, `media-src 'self' blob:`, and a
-  `connect-src` of exactly the documents bucket and Amazon Transcribe streaming; pages that still carry
+  `Permissions-Policy: … microphone=(self)` with the camera off, `media-src 'self' blob:` and the call
+  recordings bucket (ADR-0023), and a `connect-src` of exactly the documents bucket, the recordings bucket and
+  Amazon Transcribe streaming; pages that still carry
   the previous headers policy are retried for up to 10 minutes while it reaches every edge), an immutable asset,
   `/api/v1/health` **reporting the deployed commit** (the public health route never queries the
   database), a signed `POST /api/v1/auth/sign-in` with an invalid code → `401 invalid_access_code` (the

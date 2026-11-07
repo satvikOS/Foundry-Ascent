@@ -37,6 +37,7 @@
     ],
     "api": [
       "DOCUMENTS_BUCKET",
+      "RECORDINGS_BUCKET",
       "JOBS_QUEUE_URL",
       "DB_RESUME_BUDGET_MS",
       "SPEECH_ENABLED",
@@ -54,7 +55,7 @@
       "MEDIA_VOICE_ID",
       "MEDIA_VOICE_FALLBACK_VOICE_ID"
     ],
-    "worker": ["DOCUMENTS_BUCKET", "JOBS_MAX_RECEIVE_COUNT"],
+    "worker": ["DOCUMENTS_BUCKET", "RECORDINGS_BUCKET", "JOBS_MAX_RECEIVE_COUNT"],
     "migrate": [
       "OWNER_ACCESS_CODE_PREFIX",
       "OWNER_ACCESS_CODE_HASH",

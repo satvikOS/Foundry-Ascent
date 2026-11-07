@@ -190,6 +190,8 @@ export interface CallInsight {
   readonly speechPlays: number;
   readonly turnLatencyMsP50: number | null;
   readonly turnLatencyMsP95: number | null;
+  /** Recordings of the call its founder saved and still keeps (a count; the files are never read). */
+  readonly recordings: number;
 }
 
 /** Calls started in the window, oldest first. */
@@ -205,7 +207,9 @@ export function listCalls(
             c.end_reason, c.end_detail, c.last_state, c.mic_open_seconds, c.stt_grants, c.speech_characters,
             c.first_audio_ms_p50, c.first_audio_ms_p95, c.barge_ins, c.reconnects,
             coalesce(t.turns, 0) AS turns, coalesce(t.interrupted, 0) AS interrupted, t.p50, t.p95,
-            coalesce(u.units, 0) AS units, coalesce(u.plays, 0) AS plays
+            coalesce(u.units, 0) AS units, coalesce(u.plays, 0) AS plays,
+            (SELECT count(*) FROM call_recordings k
+              WHERE k.call_id = c.id AND k.status = 'ready' AND k.deleted_at IS NULL) AS recordings
      FROM calls c
      LEFT JOIN LATERAL (
        SELECT count(*) AS turns, count(*) FILTER (WHERE x.interrupted_at IS NOT NULL) AS interrupted,
@@ -244,6 +248,7 @@ export function listCalls(
       speechPlays: numOrNull(r, 'plays') ?? 0,
       turnLatencyMsP50: numOrNull(r, 'p50'),
       turnLatencyMsP95: numOrNull(r, 'p95'),
+      recordings: int(r, 'recordings'),
     }),
   );
 }

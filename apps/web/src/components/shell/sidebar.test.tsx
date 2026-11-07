@@ -237,7 +237,7 @@ describe('SidebarContent: the floating panel', () => {
     expect(within(recents).getByRole('heading', { name: 'Older' })).toBeInTheDocument();
     const names = screen.getAllByRole('link').map((link) => link.textContent);
     expect(names[0]).toBe('New chat');
-    expect(names.slice(-4)).toEqual(['Knowledge', 'Documents', 'Human help', 'Venture']);
+    expect(names.slice(-5)).toEqual(['Knowledge', 'Documents', 'Recordings', 'Human help', 'Venture']);
     expect(screen.queryByRole('link', { name: /^Call / })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Team' })).toBeNull();
 

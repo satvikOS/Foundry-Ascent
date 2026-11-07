@@ -45,9 +45,11 @@ const FUNCTIONS = [
 type Props = Record<string, unknown>;
 
 const TRANSCRIBE_ORIGIN = 'wss://transcribestreaming.us-east-1.amazonaws.com:8443';
+const RECORDINGS_ORIGIN = 'https://recordings-bucket.s3.us-east-1.amazonaws.com';
 const testPolicy = (): string =>
   contentSecurityPolicy({
     uploadOrigin: documentsUploadOrigin('docs-bucket', 'us-east-1'),
+    recordingsOrigin: documentsUploadOrigin('recordings-bucket', 'us-east-1'),
     speechToTextOrigin: speechToTextOrigin('us-east-1'),
   });
 const actionsOf = (statement: Props): string[] =>
@@ -169,7 +171,7 @@ describe('FoundryAscent-App', () => {
   });
 
   describe('permissions', () => {
-    it('attaches the Data stack access policies (database to all, documents to api and worker)', () => {
+    it('attaches the Data stack access policies (database to all, documents and recordings to api and worker)', () => {
       const managed = (name: string): unknown[] => {
         const roleRef = (fn(name)[1].Role as { 'Fn::GetAtt': [string, string] })['Fn::GetAtt'][0];
         return (all[roleRef]?.Properties?.ManagedPolicyArns as unknown[] | undefined) ?? [];
@@ -179,10 +181,12 @@ describe('FoundryAscent-App', () => {
       expect(managed('FoundryAscent-Api').map(outputName)).toEqual([
         expect.stringMatching(/DatabaseAccessPolicy/),
         expect.stringMatching(/DocumentsAccessPolicy/),
+        expect.stringMatching(/RecordingsAccessPolicy/),
       ]);
       expect(managed('FoundryAscent-Worker').map(outputName)).toEqual([
         expect.stringMatching(/DatabaseAccessPolicy/),
         expect.stringMatching(/DocumentsAccessPolicy/),
+        expect.stringMatching(/RecordingsAccessPolicy/),
       ]);
       expect(managed('FoundryAscent-Migrate').map(outputName)).toEqual([
         expect.stringMatching(/DatabaseAccessPolicy/),
@@ -229,24 +233,36 @@ describe('FoundryAscent-App', () => {
           .filter((s) => s.Effect === 'Deny')
           .flatMap((s) => (Array.isArray(s.Action) ? (s.Action as string[]) : [s.Action as string]));
       expect(denied('FoundryAscent-Api')).toEqual(['s3:GetObject']);
-      expect(denied('FoundryAscent-Worker').sort()).toEqual(['s3:DeleteObject', 's3:PutObject']);
+      // The worker: documents read-only, and recordings delete-only (the daily purge).
+      const workerDenies = rolePolicyStatements('FoundryAscent-Worker').filter((s) => s.Effect === 'Deny');
+      expect(workerDenies.map((s) => [s.Sid, actionsOf(s).sort()])).toEqual([
+        ['RecordingsWorkerDeletesOnly', ['s3:GetObject', 's3:PutObject']],
+        ['DocumentsWorkerReadOnly', ['s3:DeleteObject', 's3:PutObject']],
+      ]);
       expect(denied('FoundryAscent-Migrate')).toEqual([]);
       const deny = rolePolicyStatements('FoundryAscent-Api').find((s) => s.Effect === 'Deny');
-      // An allow-list: the api may sign GETs of venture documents (the document viewer) and nothing else.
+      // An allow-list: the api may sign GETs of venture documents (the document viewer) and of call recordings (their
+      // replays, ADR-0023), and nothing else.
       expect(deny?.Resource).toBeUndefined();
-      const allowed = JSON.stringify(deny?.NotResource);
-      expect(allowed).toContain('FoundryAscent-Data');
-      const suffix = /"(\/tenants\/[^"]*)"\]\]\}/.exec(allowed)?.[1];
-      expect(suffix).toBe('/tenants/*/ventures/*/documents/*');
-      // IAM's wildcard match of an object key against the one allowed pattern.
-      const readable = (key: string): boolean =>
-        new RegExp(`^${(suffix ?? '').replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`).test(
-          key,
-        );
-      expect(readable('/tenants/t1/ventures/v1/documents/d1/notes.md')).toBe(true);
-      expect(readable('/tenants/t1/personas/p1/library/handbook.md')).toBe(false);
-      expect(readable('/tenants/t1/exports/e1/archive.zip')).toBe(false);
-      expect(readable('/tenants/t1/other/y')).toBe(false);
+      const allowed = deny?.NotResource as unknown[];
+      expect(allowed).toHaveLength(2);
+      const suffixes = allowed.map((resource) => {
+        const text = JSON.stringify(resource);
+        expect(text).toContain('FoundryAscent-Data');
+        return /"(\/tenants\/[^"]*)"\]\]\}/.exec(text)?.[1] ?? '';
+      });
+      expect(suffixes).toEqual(['/tenants/*/ventures/*/documents/*', '/tenants/*/recordings/*']);
+      expect(JSON.stringify(allowed[0])).toMatch(/PublishOutputRefDocumentsBucket/);
+      expect(JSON.stringify(allowed[1])).toMatch(/PublishOutputRefRecordingsBucket/);
+      // IAM's wildcard match of an object key against an allowed pattern.
+      const readable = (suffix: string, key: string): boolean =>
+        new RegExp(`^${suffix.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`).test(key);
+      const [documents = '', recordings = ''] = suffixes;
+      expect(readable(documents, '/tenants/t1/ventures/v1/documents/d1/notes.md')).toBe(true);
+      expect(readable(documents, '/tenants/t1/personas/p1/library/handbook.md')).toBe(false);
+      expect(readable(documents, '/tenants/t1/exports/e1/archive.zip')).toBe(false);
+      expect(readable(documents, '/tenants/t1/other/y')).toBe(false);
+      expect(readable(recordings, '/tenants/t1/ventures/v1/sessions/s1/recordings/r1/call.webm')).toBe(true);
     });
 
     it('lets only the API synthesize speech with Amazon Polly, pinned to the platform region', () => {
@@ -688,21 +704,26 @@ describe('FoundryAscent-App', () => {
       });
       expect(testPolicy()).toBe(
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
-          "media-src 'self' blob:; font-src 'self' data:; " +
-          `connect-src 'self' https://docs-bucket.s3.us-east-1.amazonaws.com ${TRANSCRIBE_ORIGIN}; ` +
+          `media-src 'self' blob: ${RECORDINGS_ORIGIN}; font-src 'self' data:; ` +
+          `connect-src 'self' https://docs-bucket.s3.us-east-1.amazonaws.com ${RECORDINGS_ORIGIN} ${TRANSCRIBE_ORIGIN}; ` +
           "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
       );
     });
 
-    it('lets calls stream to Transcribe and play speech from blob URLs, and nothing more', () => {
+    it('lets calls stream to Transcribe, play speech from blob URLs and replay recordings, and nothing more', () => {
       expect(speechToTextOrigin('us-east-1')).toBe(TRANSCRIBE_ORIGIN);
       const directives = testPolicy().split('; ');
-      expect(directives.filter((d) => d.startsWith('media-src'))).toEqual(["media-src 'self' blob:"]);
-      // Exactly two foreign origins: the documents bucket and Transcribe streaming (port 8443 included).
+      // The only remote media: the recordings bucket, exactly (a founder replaying their own call, ADR-0023).
+      expect(directives.filter((d) => d.startsWith('media-src'))).toEqual([
+        `media-src 'self' blob: ${RECORDINGS_ORIGIN}`,
+      ]);
+      // Exactly three foreign origins: the documents bucket, the recordings bucket and Transcribe streaming (port 8443
+      // included).
       expect(directives.find((d) => d.startsWith('connect-src'))?.split(' ')).toEqual([
         'connect-src',
         "'self'",
         'https://docs-bucket.s3.us-east-1.amazonaws.com',
+        RECORDINGS_ORIGIN,
         TRANSCRIBE_ORIGIN,
       ]);
       // The microphone's AudioWorklet is a same-origin static file, which script-src 'self' covers: no
@@ -714,6 +735,7 @@ describe('FoundryAscent-App', () => {
     it('adds exactly the face’s room origins when a face is wired, and refuses a wildcard', () => {
       const withFace = contentSecurityPolicy({
         uploadOrigin: documentsUploadOrigin('docs-bucket', 'us-east-1'),
+        recordingsOrigin: documentsUploadOrigin('recordings-bucket', 'us-east-1'),
         speechToTextOrigin: speechToTextOrigin('us-east-1'),
         face: { connect: ['wss://room.livekit.example'], media: ['https://media.example'] },
       }).split('; ');
@@ -724,12 +746,13 @@ describe('FoundryAscent-App', () => {
           .slice(-1),
       ).toEqual(['wss://room.livekit.example']);
       expect(withFace.find((d) => d.startsWith('media-src'))).toBe(
-        "media-src 'self' blob: https://media.example",
+        `media-src 'self' blob: ${RECORDINGS_ORIGIN} https://media.example`,
       );
       // No face, or an empty one: the policy is unchanged.
       expect(
         contentSecurityPolicy({
           uploadOrigin: documentsUploadOrigin('docs-bucket', 'us-east-1'),
+          recordingsOrigin: documentsUploadOrigin('recordings-bucket', 'us-east-1'),
           speechToTextOrigin: speechToTextOrigin('us-east-1'),
           face: { connect: [], media: [] },
         }),
@@ -737,32 +760,50 @@ describe('FoundryAscent-App', () => {
       expect(() =>
         contentSecurityPolicy({
           uploadOrigin: documentsUploadOrigin('docs-bucket', 'us-east-1'),
+          recordingsOrigin: documentsUploadOrigin('recordings-bucket', 'us-east-1'),
           speechToTextOrigin: speechToTextOrigin('us-east-1'),
           face: { connect: ['wss://*.livekit.cloud'], media: [] },
         }),
       ).toThrow(/exact origins/);
     });
 
-    it('pins connect-src to the documents bucket endpoint the presigned uploads use (no S3 wildcard)', () => {
+    it('pins connect-src and media-src to the exact bucket endpoints the presigned URLs use (no S3 wildcard)', () => {
       const [[, policy] = ['', {}]] = resourcesOfType(template, 'AWS::CloudFront::ResponseHeadersPolicy');
       const config = policy.ResponseHeadersPolicyConfig as Props;
       const csp = ((config.SecurityHeadersConfig as Props).ContentSecurityPolicy as Props)
         .ContentSecurityPolicy;
-      // The bucket name comes from the Data stack through the existing weak reference (no new export).
-      const bucketRef = {
+      // The bucket names come from the Data stack through weak references (Fn::GetStackOutput).
+      const ref = (bucket: string): unknown => ({
         'Fn::GetStackOutput': {
-          OutputName: expect.stringMatching(/^PublishOutputRefDocumentsBucket/) as unknown,
+          OutputName: expect.stringMatching(new RegExp(`^PublishOutputRef${bucket}Bucket`)) as unknown,
           Region: 'us-east-1',
           StackName: 'FoundryAscent-Data',
         },
-      };
-      expect(csp).toEqual({ 'Fn::Join': ['', [expect.any(String), bucketRef, expect.any(String)]] });
-      const [, parts] = (csp as { 'Fn::Join': [string, [string, unknown, string]] })['Fn::Join'];
-      const rendered = `${parts[0]}<bucket>${parts[2]}`;
+      });
+      const parts = (csp as { 'Fn::Join': [string, unknown[]] })['Fn::Join'][1];
+      expect(parts).toEqual([
+        expect.any(String),
+        ref('Recordings'),
+        expect.any(String),
+        ref('Documents'),
+        expect.any(String),
+        ref('Recordings'),
+        expect.any(String),
+      ]);
+      const rendered = parts
+        .map((part) =>
+          typeof part === 'string'
+            ? part
+            : JSON.stringify(part).includes('Recordings')
+              ? '<recordings>'
+              : '<documents>',
+        )
+        .join('');
+      expect(rendered).toContain("media-src 'self' blob: https://<recordings>.s3.us-east-1.amazonaws.com;");
       // Then the shipped face's room (the vendor sandbox's LiveKit project, exact origins) and LITE's speak channel
       // (exactly its one origin: the stock face's page holds that socket).
       expect(rendered).toContain(
-        `connect-src 'self' https://<bucket>.s3.us-east-1.amazonaws.com ${TRANSCRIBE_ORIGIN} wss://heygen-feapbkvq.livekit.cloud https://heygen-feapbkvq.livekit.cloud wss://webrtc-signaling.heygen.io;`,
+        `connect-src 'self' https://<documents>.s3.us-east-1.amazonaws.com https://<recordings>.s3.us-east-1.amazonaws.com ${TRANSCRIBE_ORIGIN} wss://heygen-feapbkvq.livekit.cloud https://heygen-feapbkvq.livekit.cloud wss://webrtc-signaling.heygen.io;`,
       );
       expect(rendered.match(/webrtc-signaling/g)).toHaveLength(1);
       expect(rendered).not.toContain('*');

@@ -98,12 +98,17 @@ export function buildApp(options: BuildOptions = {}): FoundryApp {
   const data = new DataStack(app, `${STACK_PREFIX}-Data`, {
     env,
     tags,
-    description: 'Foundry Ascent: VPC (isolated), Aurora Serverless v2, documents bucket, jobs queue',
+    description:
+      'Foundry Ascent: VPC (isolated), Aurora Serverless v2, documents and recordings buckets, jobs queue',
     terminationProtection: true,
     config,
     uploadCorsOrigins: siteDomain
       ? [...DEFAULT_UPLOAD_CORS_ORIGINS, `https://${siteDomain.domainName}`]
       : DEFAULT_UPLOAD_CORS_ORIGINS,
+    recordingCorsOrigins: [
+      ...config.recordings.corsOrigins,
+      ...(siteDomain ? [`https://${siteDomain.domainName}`] : []),
+    ],
   });
 
   const appStack = new AppStack(app, `${STACK_PREFIX}-App`, {
@@ -118,6 +123,8 @@ export function buildApp(options: BuildOptions = {}): FoundryApp {
     documentsBucket: data.documentsBucket,
     databaseAccessPolicy: data.databaseAccessPolicy,
     documentsAccessPolicy: data.documentsAccessPolicy,
+    recordingsBucket: data.recordingsBucket,
+    recordingsAccessPolicy: data.recordingsAccessPolicy,
     jobsQueue: data.jobsQueue,
     jobsDeadLetterQueue: data.jobsDeadLetterQueue,
     ...(siteDomain ? { siteDomain } : {}),

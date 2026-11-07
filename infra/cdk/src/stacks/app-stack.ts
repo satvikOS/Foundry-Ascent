@@ -44,6 +44,7 @@ import {
   API_SSE_KEEP_ALIVE_SECONDS,
   API_TIMING_MARGIN_SECONDS,
   DOCUMENTS_PREFIX,
+  RECORDINGS_PREFIX,
   ENVIRONMENT_NAME,
   INSIGHTS_TIMEOUT_MINUTES,
   JOBS_MAX_RECEIVE_COUNT,
@@ -89,10 +90,14 @@ export interface AppStackProps extends StackProps {
   readonly cluster: rds.IDatabaseCluster;
   readonly clusterSecret: secretsmanager.ISecret;
   readonly documentsBucket: s3.IBucket;
+  /** Founders' call recordings (Data stack; ADR-0023). */
+  readonly recordingsBucket: s3.IBucket;
   /** rds-data:* on the cluster + secretsmanager:GetSecretValue on its secret (Data stack). */
   readonly databaseAccessPolicy: iam.IManagedPolicy;
   /** Read/write on `tenants/*` of the documents bucket (Data stack). */
   readonly documentsAccessPolicy: iam.IManagedPolicy;
+  /** Sign uploads and replays of call recordings, check sizes, delete (Data stack). */
+  readonly recordingsAccessPolicy: iam.IManagedPolicy;
   readonly jobsQueue: sqs.IQueue;
   readonly jobsDeadLetterQueue: sqs.IQueue;
   readonly siteDomain?: SiteDomain;
@@ -145,6 +150,7 @@ export class AppStack extends Stack {
       DB_NAME: NAMES.databaseName,
       DB_RESUME_BUDGET_MS: String(API_DB_RESUME_BUDGET_SECONDS * 1000),
       DOCUMENTS_BUCKET: props.documentsBucket.bucketName,
+      RECORDINGS_BUCKET: props.recordingsBucket.bucketName,
       JOBS_QUEUE_URL: props.jobsQueue.queueUrl,
       JOBS_MAX_RECEIVE_COUNT: String(JOBS_MAX_RECEIVE_COUNT),
       MODEL_PROVIDER: 'bedrock',
@@ -255,6 +261,20 @@ export class AppStack extends Stack {
     this.migrate.role.addManagedPolicy(props.databaseAccessPolicy);
     props.jobsQueue.grantSendMessages(this.api.role);
 
+    // Call recordings (ADR-0023). The API signs a recording's presigned uploads and replays, checks the sizes that
+    // arrived and deletes it; the worker's daily maintenance only deletes the files of deleted recordings: it never
+    // signs an upload or a replay.
+    this.api.role.addManagedPolicy(props.recordingsAccessPolicy);
+    this.worker.role.addManagedPolicy(props.recordingsAccessPolicy);
+    this.worker.role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'RecordingsWorkerDeletesOnly',
+        effect: iam.Effect.DENY,
+        actions: ['s3:PutObject', 's3:GetObject'],
+        resources: [`arn:${Aws.PARTITION}:s3:::${props.recordingsBucket.bucketName}/*`],
+      }),
+    );
+
     // Documents, per role. The deployed Data stack's DocumentsAccessPolicy grants Get/Put/Delete on
     // tenants/*; an explicit deny narrows each role to what it uses without touching that stack:
     //   api    PutObject (signs presigned uploads) + DeleteObject (document delete) + GetObject on venture
@@ -263,14 +283,17 @@ export class AppStack extends Stack {
     //          the reader may see it). An allow-list: every other object, a vEIR's library or anything
     //          stored under tenants/ later, stays unreadable without a change here.
     //   worker GetObject (ingestion); never writes or deletes.
+    //          The same allow-list keeps the call recordings' keys signable (ADR-0023): the api signs a recording's
+    //          replay and checks the size of an upload (HeadObject) after checking the recording is the caller's own.
     const documentObjects = `arn:${Aws.PARTITION}:s3:::${props.documentsBucket.bucketName}/${DOCUMENTS_PREFIX}*`;
     const ventureDocuments = `arn:${Aws.PARTITION}:s3:::${props.documentsBucket.bucketName}/${DOCUMENTS_PREFIX}*/ventures/*/documents/*`;
+    const callRecordings = `arn:${Aws.PARTITION}:s3:::${props.recordingsBucket.bucketName}/${RECORDINGS_PREFIX}*/recordings/*`;
     this.api.role.addToPolicy(
       new iam.PolicyStatement({
         sid: 'DocumentsApiReadsOnlyVentureDocuments',
         effect: iam.Effect.DENY,
         actions: ['s3:GetObject'],
-        notResources: [ventureDocuments],
+        notResources: [ventureDocuments, callRecordings],
       }),
     );
     this.worker.role.addToPolicy(
@@ -519,6 +542,7 @@ export class AppStack extends Stack {
     // ---- CloudFront -------------------------------------------------------------------------------------------
     const securityHeaders = createSecurityHeadersPolicy(this, 'SecurityHeaders', {
       uploadOrigin: documentsUploadOrigin(props.documentsBucket.bucketName, this.region),
+      recordingsOrigin: documentsUploadOrigin(props.recordingsBucket.bucketName, this.region),
       speechToTextOrigin: speechToTextOrigin(config.region),
       ...(config.media.face.provider === 'none' ? {} : { face: config.media.face.csp }),
     });
@@ -831,6 +855,7 @@ export class AppStack extends Stack {
     new CfnOutput(this, 'ClusterArn', { value: props.cluster.clusterArn });
     new CfnOutput(this, 'SecretArn', { value: props.clusterSecret.secretArn });
     new CfnOutput(this, 'DocumentsBucket', { value: props.documentsBucket.bucketName });
+    new CfnOutput(this, 'RecordingsBucket', { value: props.recordingsBucket.bucketName });
     new CfnOutput(this, 'JobsQueueUrl', { value: props.jobsQueue.queueUrl });
     new CfnOutput(this, 'AlarmTopicArn', { value: this.alarmTopic.topicArn });
   }

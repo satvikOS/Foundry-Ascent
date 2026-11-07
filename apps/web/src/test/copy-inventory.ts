@@ -426,6 +426,7 @@ export function screenOf(file: string): string {
     [/^features\/chat\/venture-context(?:-sections)?\./, 'Context panel'],
     [/^features\/chat\/(?:new-chat-page|privacy-choice|first-message)\./, 'New chat'],
     [/^features\/(?:chat|coach)\//, 'Conversation'],
+    [/^features\/recordings\//, 'Recordings'],
     [/^features\/calls\//, 'Call'],
     [/^features\/(?:knowledge|memory)\//, 'Knowledge'],
     [/^features\/documents\//, 'Documents'],

@@ -19,6 +19,14 @@ import { discardConversation } from '@/lib/realtime/call-api';
 import type { CallEngine } from '@/lib/realtime/call-engine';
 import type { CallSnapshot } from '@/lib/realtime/call-state';
 import { cn } from '@/lib/utils';
+import { RecordingMark } from '@/features/recordings/record-control';
+import type { RecordingSession } from '@/features/recordings/recording-session';
+import {
+  useCallRecordingLifecycle,
+  useCanRecord,
+  useRecordingSession,
+  type RecordBlocker,
+} from '@/features/recordings/use-call-recording';
 
 import { newConversationRequest } from '../chat/first-message';
 import { startPrivacy, takeChoiceInView, useStartPrivacy } from '../chat/privacy-choice';
@@ -174,6 +182,24 @@ export function CallScreen() {
   }, [route]);
 
   useLiveCallPage(engine, snapshot.phase === 'live');
+
+  // The call's recording lives with the engine (it carries on while minimized and is saved when the call ends).
+  const recordingSession = useRecordingSession(engine);
+  const canRecord = useCanRecord();
+  useCallRecordingLifecycle(recordingSession, {
+    veirName: veir.name,
+    founderName: me.principal.displayName,
+    face,
+    tenant,
+  });
+  const recordBlocker: RecordBlocker =
+    privacy === 'ephemeral'
+      ? 'private'
+      : !canRecord
+        ? 'unsupported'
+        : snapshot.phase !== 'live' || snapshot.awaitingFace
+          ? 'not_live'
+          : null;
 
   // A live video call asks for its face here as well as on its tile: this screen stays mounted for the whole call,
   // minimized or not, so a call minimized while it was still starting still gets its face, and with it its
@@ -486,6 +512,7 @@ export function CallScreen() {
             live={live}
             snapshot={snapshot}
             isPrivate={privacy === 'ephemeral'}
+            recording={recordingSession}
             onClose={() => {
               // Live: minimized, the call goes on in the mini bar and Back returns to it. Before the call: closed,
               // and its `?call=1` entry is replaced so Back never returns to it.
@@ -508,6 +535,7 @@ export function CallScreen() {
               onSwitchKind={switchLive}
               videoBlocked={videoBlocked}
               headingRef={headingRef}
+              recording={{ session: recordingSession, blocker: recordBlocker, principalId: me.principal.id }}
             />
           ) : (
             <CallLobby
@@ -590,6 +618,7 @@ function CallHeader({
   live,
   snapshot,
   isPrivate,
+  recording,
   onClose,
 }: {
   name: string;
@@ -599,6 +628,8 @@ function CallHeader({
   snapshot: Parameters<typeof useCallClock>[0] & Pick<CallSnapshot, 'awaitingFace'>;
   /** A private call (a one-off) says so quietly while it lasts. */
   isPrivate: boolean;
+  /** The call's recording: "● REC" and its time while it records. */
+  recording: RecordingSession;
   onClose: () => void;
 }) {
   const clock = useCallClock(snapshot);
@@ -661,6 +692,7 @@ function CallHeader({
               <PrivateMark />
             </>
           ) : null}
+          {live ? <RecordingMark session={recording} separator /> : null}
         </p>
       </div>
       {/* The switch and the call settings sit in this corner (CallLive, CallLobby). */}

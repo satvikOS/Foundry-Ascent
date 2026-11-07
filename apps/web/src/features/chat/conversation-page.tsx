@@ -28,6 +28,7 @@ import { useEndSession, useSession } from '@/lib/api/hooks/sessions';
 import { useTurnStream } from '@/lib/api/hooks/turn-stream';
 import { useVenture } from '@/lib/api/hooks/ventures';
 import { CallReviewSlot } from '@/features/calls/call-review-slot';
+import { ConversationRecordings } from '@/features/recordings/conversation-recordings';
 import { CallButtons } from '@/features/calls/call-buttons';
 import { useCallEntry } from '@/features/calls/call-entry';
 import { canWrite } from '@/lib/auth/roles';
@@ -441,6 +442,7 @@ function Conversation() {
             </div>
           ) : null}
           <CallReviewSlot sessionId={sessionId} />
+          <ConversationRecordings sessionId={sessionId} privacy={session.privacy} />
           {ended ? (
             <DigestView
               session={session}

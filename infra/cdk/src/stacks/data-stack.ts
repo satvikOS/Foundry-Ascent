@@ -5,7 +5,8 @@
  *    the VPC needs the internet, and Lambdas reach the database through the RDS Data API, not the VPC.
  *  - Aurora Serverless v2 PostgreSQL (scales to 0 ACU and auto-pauses after `aurora.autoPauseMinutes` idle, 30
  *    in production; a minimum above 0 keeps it awake instead), Data API on, AWS-managed encryption.
- *  - Documents bucket (presigned uploads), access-log bucket, jobs queue + DLQ.
+ *  - Documents bucket (presigned uploads), call recordings bucket (presigned uploads and replays, ADR-0023),
+ *    access-log bucket, jobs queue + DLQ.
  */
 import { CfnResource, Duration, RemovalPolicy, Resource, Stack, type StackProps } from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
@@ -23,6 +24,8 @@ import {
   JOBS_MAX_RECEIVE_COUNT,
   JOBS_VISIBILITY_TIMEOUT_SECONDS,
   NAMES,
+  RECORDINGS_LIFECYCLE_GRACE_DAYS,
+  RECORDINGS_PREFIX,
 } from '../lib/constants.js';
 import { retentionDays } from '../lib/logs.js';
 import { acknowledge, wildcardResource } from '../lib/nag.js';
@@ -50,6 +53,11 @@ export interface DataStackProps extends StackProps {
    * not used); a custom site domain is added by the app when configured.
    */
   readonly uploadCorsOrigins?: readonly string[];
+  /**
+   * The exact app origins whose pages may upload call recordings and replay them (config `recordings.corsOrigins`,
+   * plus a custom site domain). Empty: no browser can use the recordings bucket.
+   */
+  readonly recordingCorsOrigins?: readonly string[];
 }
 
 export class DataStack extends Stack {
@@ -57,6 +65,8 @@ export class DataStack extends Stack {
   readonly cluster: rds.DatabaseCluster;
   readonly clusterSecret: secretsmanager.ISecret;
   readonly documentsBucket: s3.Bucket;
+  /** Founders' recordings of their own calls (private; presigned uploads and replays only). */
+  readonly recordingsBucket: s3.Bucket;
   readonly accessLogsBucket: s3.Bucket;
   readonly jobsQueue: sqs.Queue;
   readonly jobsDeadLetterQueue: sqs.Queue;
@@ -64,6 +74,8 @@ export class DataStack extends Stack {
   readonly databaseAccessPolicy: iam.ManagedPolicy;
   /** Attach to roles that read/write venture documents. */
   readonly documentsAccessPolicy: iam.ManagedPolicy;
+  /** Attach to roles that sign call recording uploads and replays, check their sizes and delete them. */
+  readonly recordingsAccessPolicy: iam.ManagedPolicy;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -201,6 +213,46 @@ export class DataStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE,
     });
 
+    // ---- Call recordings bucket (ADR-0023) ---------------------------------------------------------------
+    // Founders' recordings of their own calls: private (all public access blocked, owner-enforced objects, encrypted
+    // at rest, TLS only), uploaded and replayed only through presigned URLs the API signs after checking the
+    // recording is the caller's own. Keys are per tenant, venture and conversation. The app deletes a recording when
+    // its founder or its conversation does, and after `recordings.retentionDays`; the lifecycle expires anything left
+    // a week later and aborts unfinished uploads.
+    this.recordingsBucket = new s3.Bucket(this, 'RecordingsBucket', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      minimumTLSVersion: 1.2,
+      versioned: false,
+      serverAccessLogsBucket: this.accessLogsBucket,
+      serverAccessLogsPrefix: 'recordings/',
+      lifecycleRules: [
+        { id: 'abort-incomplete-uploads', abortIncompleteMultipartUploadAfter: Duration.days(1) },
+        {
+          id: 'expire-past-retention',
+          prefix: RECORDINGS_PREFIX,
+          expiration: Duration.days(config.recordings.retentionDays + RECORDINGS_LIFECYCLE_GRACE_DAYS),
+        },
+      ],
+      cors:
+        (props.recordingCorsOrigins ?? []).length === 0
+          ? undefined
+          : [
+              {
+                // The call screen uploads a recording and its captions with presigned PUTs; the player streams the
+                // recording (range requests) and reads its captions with presigned GETs. Exact app origins only.
+                allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.GET],
+                allowedOrigins: [...(props.recordingCorsOrigins ?? [])],
+                allowedHeaders: ['content-type', 'range'],
+                exposedHeaders: ['ETag', 'Content-Length', 'Content-Range', 'Accept-Ranges'],
+                maxAge: 3000,
+              },
+            ],
+      removalPolicy: RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE,
+    });
+
     // ---- Access policies (attached to roles by the App stack) ----------------------------------------
     this.databaseAccessPolicy = new iam.ManagedPolicy(this, 'DatabaseAccessPolicy', {
       description: 'Foundry Ascent: query Aurora through the RDS Data API',
@@ -247,6 +299,33 @@ export class DataStack extends Stack {
       id: wildcardResource(this, documentObjects),
       reason:
         'Venture documents are keyed tenants/{tenant}/ventures/{venture}/documents/{id}/{file}; per-object authorization happens in the API (authz + RLS) before any presigned URL is issued or object read.',
+    });
+
+    const recordingObjects = this.recordingsBucket.arnForObjects(`${RECORDINGS_PREFIX}*/recordings/*`);
+    this.recordingsAccessPolicy = new iam.ManagedPolicy(this, 'RecordingsAccessPolicy', {
+      description:
+        'Foundry Ascent: sign call recording uploads and replays, check sizes, delete (tenants/ prefix)',
+      statements: [
+        new iam.PolicyStatement({
+          // PutObject and GetObject sign the browser's presigned URLs (and GetObject answers HeadObject when an
+          // upload is completed); the functions themselves never read a recording.
+          sid: 'RecordingObjects',
+          actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+          resources: [recordingObjects],
+        }),
+        new iam.PolicyStatement({
+          // Lets HeadObject on a missing key return 404 instead of 403, within the tenants/ prefix only.
+          sid: 'RecordingListing',
+          actions: ['s3:ListBucket'],
+          resources: [this.recordingsBucket.bucketArn],
+          conditions: { StringLike: { 's3:prefix': [`${RECORDINGS_PREFIX}*`] } },
+        }),
+      ],
+    });
+    acknowledge(this.recordingsAccessPolicy, {
+      id: wildcardResource(this, recordingObjects),
+      reason:
+        'Recordings are keyed tenants/{tenant}/ventures/{venture}/sessions/{session}/recordings/{id}/{file}; per-object authorization happens in the API (owner-only RLS) before any presigned URL is issued, and the functions never read a recording themselves.',
     });
 
     // ---- Jobs queue + DLQ (SSE-SQS) --------------------------------------------------------------------

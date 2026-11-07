@@ -76,6 +76,7 @@ function report(overrides: Partial<InsightsReport> = {}): InsightsReport {
         speechPlays: 18,
         turnLatencyMsP50: 2400,
         turnLatencyMsP95: 5200,
+        recordings: 1,
       },
     ],
     turns: [],

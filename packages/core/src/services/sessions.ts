@@ -38,6 +38,7 @@ import { assertWithinSpendCaps } from '../orchestrator/guards.js';
 import { RECAP_SCHEMA_NAME, RecapDraft, buildRecapPrompt, sanitizeRecap } from '../orchestrator/recap.js';
 import { persistMemoryCandidates } from './memory.js';
 import { conversationGrounding } from './memory-dedupe.js';
+import { purgeRecordings } from './recordings.js';
 
 type SessionDetail = z.infer<typeof SessionDetailResponse>;
 
@@ -345,6 +346,10 @@ export function createSessionsService(kit: Kit, directory: DirectoryCache): Sess
           objectType: 'session',
           objectId: sessionId,
           metadata: { privacy: session.privacy, status: session.status, hadDigest: session.digest !== null },
+        });
+        // Its recordings were deleted with it (migration 0031): their files go now (the daily maintenance retries).
+        scope.afterCommit(async () => {
+          await purgeRecordings(kit, { requestId: ctx.requestId, sessionId });
         });
       });
     },

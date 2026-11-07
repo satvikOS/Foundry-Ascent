@@ -3,7 +3,8 @@
  * - First contact (R6): the first requests of a new CloudFront distribution or S3 origin can answer 403/404
  *   while the configuration propagates, and the smoke test must retry those instead of failing the deploy.
  * - Voice-call edge policy: pages must allow the microphone for this origin only, play speech from blob:
- *   URLs, and connect to nothing beyond the documents bucket and Amazon Transcribe streaming.
+ *   URLs and call recordings from the recordings bucket, and connect to nothing beyond the documents bucket,
+ *   the recordings bucket and Amazon Transcribe streaming.
  */
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -22,8 +23,10 @@ const PAGE_HEADERS = {
   'strict-transport-security': 'max-age=63072000; includeSubDomains; preload',
   'x-content-type-options': 'nosniff',
   'content-security-policy':
-    "default-src 'self'; script-src 'self'; media-src 'self' blob:; " +
+    "default-src 'self'; script-src 'self'; " +
+    "media-src 'self' blob: https://foundryascent-data-recordingsbucket-abc.s3.us-east-1.amazonaws.com; " +
     "connect-src 'self' https://foundryascent-data-documentsbucket-abc.s3.us-east-1.amazonaws.com " +
+    'https://foundryascent-data-recordingsbucket-abc.s3.us-east-1.amazonaws.com ' +
     "wss://transcribestreaming.us-east-1.amazonaws.com:8443; frame-ancestors 'none'; object-src 'none'",
   'x-frame-options': 'DENY',
   'referrer-policy': 'strict-origin-when-cross-origin',
@@ -233,7 +236,37 @@ describe('scripts/smoke.mjs first contact (R6)', () => {
     [
       'speech cannot play from blob: URLs',
       { 'content-security-policy': PAGE_HEADERS['content-security-policy'].replace(' blob:', '') },
-      /CSP media-src "'self'", expected "'self' blob:"/,
+      /CSP media-src "'self' https:\/\/foundryascent-data-recordingsbucket-abc\S+", expected "'self' blob: <recordings bucket>"/,
+    ],
+    [
+      'recordings cannot be replayed',
+      {
+        'content-security-policy': PAGE_HEADERS['content-security-policy'].replace(
+          / https:\/\/foundryascent-data-recordingsbucket-abc\.s3\.us-east-1\.amazonaws\.com;/,
+          ';',
+        ),
+      },
+      /CSP media-src "'self' blob:", expected "'self' blob: <recordings bucket>"/,
+    ],
+    [
+      'media-src allows another host',
+      {
+        'content-security-policy': PAGE_HEADERS['content-security-policy'].replace(
+          "media-src 'self' blob:",
+          "media-src 'self' blob: https://*.amazonaws.com",
+        ),
+      },
+      /CSP media-src "'self' blob: https:\/\/\*\.amazonaws\.com/,
+    ],
+    [
+      'the recordings bucket is missing from connect-src',
+      {
+        'content-security-policy': PAGE_HEADERS['content-security-policy'].replace(
+          /https:\/\/foundryascent-data-recordingsbucket-abc\.s3\.us-east-1\.amazonaws\.com wss/,
+          'wss',
+        ),
+      },
+      /CSP connect-src has 1 bucket origins, expected 2/,
     ],
     [
       'Transcribe streaming is not allowed',

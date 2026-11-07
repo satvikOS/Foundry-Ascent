@@ -47,6 +47,10 @@ export {
   type IdGenerator,
   type JobQueue,
   type ObjectStore,
+  type RecordingContentType,
+  type RecordingGetInput,
+  type RecordingPutInput,
+  type RecordingStore,
   type PresignGetInput,
   type PresignPutInput,
   type PresignedDownload,
@@ -125,6 +129,12 @@ export {
 export { type LessonsService } from './services/lessons.js';
 export { MEMORY_PAGE_DEFAULT, type MemoryPage, type MemoryService } from './services/memory.js';
 export { type MaintenanceReport, type MaintenanceService } from './services/maintenance.js';
+export {
+  STALE_RECORDING_SECONDS,
+  playbackSeconds,
+  recordingKeys,
+  type RecordingsService,
+} from './services/recordings.js';
 export {
   RetryableDistillError,
   type DistillBackstopReport,

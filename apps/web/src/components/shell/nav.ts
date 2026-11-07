@@ -4,6 +4,7 @@ import {
   Briefcase,
   Building2,
   ChartColumn,
+  CirclePlay,
   ClipboardCheck,
   FileText,
   Flag,
@@ -85,7 +86,7 @@ export function staffWorkspace(id: StaffWorkspaceId): StaffWorkspace {
   return found;
 }
 
-export type VentureDestinationId = 'knowledge' | 'documents' | 'help' | 'venture';
+export type VentureDestinationId = 'knowledge' | 'documents' | 'recordings' | 'help' | 'venture';
 
 export interface VentureDestination {
   id: VentureDestinationId;
@@ -95,6 +96,7 @@ export interface VentureDestination {
   to:
     | '/$tenant/app/v/$ventureId/knowledge'
     | '/$tenant/app/v/$ventureId/documents'
+    | '/$tenant/app/v/$ventureId/recordings'
     | '/$tenant/app/v/$ventureId/help'
     | '/$tenant/app/v/$ventureId/settings';
 }
@@ -114,6 +116,14 @@ export const VENTURE_DESTINATIONS: readonly VentureDestination[] = [
     icon: FileText,
     shortcut: 'g d',
     to: '/$tenant/app/v/$ventureId/documents',
+  },
+  // The person's own call recordings (ADR-0023): only they can watch them.
+  {
+    id: 'recordings',
+    label: 'Recordings',
+    icon: CirclePlay,
+    shortcut: 'g r',
+    to: '/$tenant/app/v/$ventureId/recordings',
   },
   { id: 'help', label: 'Human help', icon: LifeBuoy, shortcut: 'g h', to: '/$tenant/app/v/$ventureId/help' },
   // The venture's profile, current goal and team, on one page.

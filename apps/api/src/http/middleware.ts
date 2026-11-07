@@ -25,13 +25,15 @@ import { type AppContext, type AppEnv } from './types.js';
 
 /** Path prefix of the development-only local upload target (presigned-URL semantics, no session). */
 export const LOCAL_UPLOAD_PREFIX = `${API_PREFIX}/_local/uploads/`;
+/** Path prefix of the development-only local recordings target (the same semantics, for call recordings). */
+export const LOCAL_RECORDINGS_PREFIX = `${API_PREFIX}/_local/recordings/`;
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const CONTENT_SHA256_HEADER = 'x-amz-content-sha256';
 const HEX_SHA256 = /^[0-9a-f]{64}$/i;
 
 function isLocalUpload(c: AppContext): boolean {
-  return c.req.path.startsWith(LOCAL_UPLOAD_PREFIX);
+  return c.req.path.startsWith(LOCAL_UPLOAD_PREFIX) || c.req.path.startsWith(LOCAL_RECORDINGS_PREFIX);
 }
 
 /** Response headers on every API response (CloudFront adds the site-wide policy on top). */

@@ -14,6 +14,7 @@ import { HeygenLiveAvatarFace } from '../adapters/heygen-liveavatar.js';
 import { MediaSecrets } from '../adapters/media-secrets.js';
 import { PollySpeechSynthesizer } from '../adapters/polly-speech.js';
 import { S3ObjectStore } from '../adapters/s3-object-store.js';
+import { S3RecordingStore } from '../adapters/s3-recording-store.js';
 import { SqsJobQueue } from '../adapters/sqs-job-queue.js';
 import { TranscribeStreamingPresigner } from '../adapters/transcribe-presigner.js';
 import { type ApiApp, createApp } from '../app.js';
@@ -159,6 +160,10 @@ export function createApiRuntime(env: EnvLike): ApiRuntime {
     config: loadCoreConfig(env),
     objectStore: new S3ObjectStore({
       bucket: required(config.documentsBucket, 'DOCUMENTS_BUCKET'),
+      region: config.awsRegion,
+    }),
+    recordingStore: new S3RecordingStore({
+      bucket: required(config.recordingsBucket, 'RECORDINGS_BUCKET'),
       region: config.awsRegion,
     }),
     jobQueue: new SqsJobQueue({

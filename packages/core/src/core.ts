@@ -25,6 +25,7 @@ import { createMemoryService, type MemoryService } from './services/memory.js';
 import { createNotebookService, type NotebookService } from './services/notebook.js';
 import { createPersonaManagementService, type PersonaManagementService } from './services/personas.js';
 import { createProgramService, type ProgramService } from './services/program.js';
+import { createRecordingsService, type RecordingsService } from './services/recordings.js';
 import { createSessionsService, type SessionsService } from './services/sessions.js';
 import { createSpeechService, type SpeechService } from './services/speech.js';
 import { createTeamService, type TeamService } from './services/team.js';
@@ -63,6 +64,8 @@ export interface Core {
   readonly veir: VeirService;
   /** Voice calls: start, heartbeat, barge-in, end and summary. */
   readonly calls: CallsService;
+  /** Recordings of a founder's own calls: saved from the call screen, replayed without the vEIR. */
+  readonly recordings: RecordingsService;
   /** Text-to-speech of validated replies during calls. */
   readonly speech: SpeechService;
   /** The face of a call: its vendor session, and relaying verified audio to it. */
@@ -121,6 +124,7 @@ export function createCore(deps: CoreDeps): Core {
     notebook: createNotebookService(kit, directory),
     veir: createVeirService(kit, face),
     calls: createCallsService(kit, directory, speechKeys, distill, faceHooks, turnContexts),
+    recordings: createRecordingsService(kit),
     speech,
     face,
     twin: createTwinService(kit),

@@ -114,6 +114,8 @@ export async function dispatchJob(
           staleCallsEnded: report.staleCallsEnded,
           endedCallsDistilled: report.endedCallsDistilled,
           staleUploadsFailed: report.staleUploadsFailed,
+          recordingsPurged: report.recordings.purged,
+          recordingsPurgeFailed: report.recordings.failed,
           proposalsKept: report.pendingProposals.kept,
           proposalsRetired: report.pendingProposals.duplicates + report.pendingProposals.notTheFounders,
           distillCandidates: report.distillation.candidates,

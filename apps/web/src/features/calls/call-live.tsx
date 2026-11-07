@@ -8,6 +8,10 @@ import { useHotkeys } from '@/lib/hooks/use-hotkeys';
 import type { CallEngine, CallNotice, CallSnapshot, TypedReason } from '@/lib/realtime/call-engine';
 import { cn } from '@/lib/utils';
 
+import { RecordControl } from '@/features/recordings/record-control';
+import type { RecordingSession } from '@/features/recordings/recording-session';
+import type { RecordBlocker } from '@/features/recordings/use-call-recording';
+
 import { CallCaptions } from './call-captions';
 import { CallDock, HoldToTalk } from './call-dock';
 import type { CallKind } from './call-kind';
@@ -88,6 +92,12 @@ interface CallLiveProps {
   videoBlocked?: string | null;
   /** The call screen's heading (the vEIR's name in its header), focused when the call opens. */
   headingRef?: RefObject<HTMLHeadingElement | null>;
+  /** The call's recording (features/recordings): Record in the dock; null: no Record control. */
+  recording?: {
+    readonly session: RecordingSession;
+    readonly blocker: RecordBlocker;
+    readonly principalId: string;
+  } | null;
 }
 
 export { END_UNDO_MS, useEndWithUndo };
@@ -114,6 +124,7 @@ export function CallLive({
   onSwitchKind = null,
   videoBlocked = null,
   headingRef,
+  recording = null,
 }: CallLiveProps) {
   const [captions, setCaptions] = useCaptionsPreference();
   const [captionSize] = useCaptionSize();
@@ -196,6 +207,13 @@ export function CallLive({
       t: () => {
         if (voice) toggleTyping();
         else typeRef.current?.focus();
+      },
+      r: () => {
+        if (recording?.blocker !== null) return;
+        const status = recording.session.getSnapshot().status;
+        if (status === 'recording') void recording.session.stop();
+        else if (status === 'idle')
+          document.querySelector<HTMLButtonElement>('[data-slot="record-control"]')?.click();
       },
     },
     live && !ending.pending,
@@ -475,6 +493,18 @@ export function CallLive({
           endRef={endRef}
           onMute={toggleMute}
           onEnd={ending.request}
+          center={
+            recording ? (
+              <RecordControl
+                session={recording.session}
+                blocker={recording.blocker}
+                principalId={recording.principalId}
+                name={veir.name}
+                video={kind === 'video'}
+                disabled={ending.pending}
+              />
+            ) : null
+          }
         />
       </div>
     </div>

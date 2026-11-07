@@ -129,6 +129,7 @@ beforeAll(async () => {
     MODEL_PROVIDER: 'mock',
     AWS_REGION: 'us-east-1',
     DOCUMENTS_BUCKET: 'foundry-ascent-documents-test',
+    RECORDINGS_BUCKET: 'foundry-ascent-recordings-test',
     JOBS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123456789012/FoundryAscent-Jobs',
     // A new deploy owner code: the migrate handler binds it, the API then accepts it.
     OWNER_ACCESS_CODE_PREFIX: accessCodePrefix(ownerCode),

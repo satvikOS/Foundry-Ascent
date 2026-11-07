@@ -230,6 +230,8 @@ export function errorMessage(error: unknown): string {
       return 'That file type isn’t supported. Upload a PDF, DOCX, TXT or Markdown file.';
     case 'speech_unavailable':
       return 'Spoken replies aren’t available here, so your browser reads them aloud instead.';
+    case 'recording_unavailable':
+      return 'Recordings aren’t available here.';
     case 'stream_interrupted':
       return 'The response was interrupted. Try sending again.';
     case 'invalid_response':

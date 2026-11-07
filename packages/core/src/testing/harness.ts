@@ -21,7 +21,13 @@ import {
   type SttGrantIssuer,
   type VoiceProvider,
 } from '../ports.js';
-import { MemoryJobQueue, MemoryObjectStore, RecordingLogger, Utf8TextExtractor } from './fakes.js';
+import {
+  MemoryJobQueue,
+  MemoryObjectStore,
+  MemoryRecordingStore,
+  RecordingLogger,
+  Utf8TextExtractor,
+} from './fakes.js';
 
 type ConfigOverrides = Parameters<typeof coreConfig>[0];
 
@@ -40,6 +46,8 @@ export interface CoreHarnessOptions {
   readonly clonedVoice?: VoiceProvider;
   /** The platform's stock vendor voice (absent: calls speak with Amazon Polly). */
   readonly stockVoice?: StockVoice;
+  /** No recordings store (calls cannot be recorded: `recording_unavailable`). Default: the in-memory one. */
+  readonly withoutRecordings?: boolean;
 }
 
 /**
@@ -127,6 +135,8 @@ export interface CoreHarness {
   readonly config: CoreConfig;
   readonly gateway: MockModelGateway;
   readonly objectStore: MemoryObjectStore;
+  /** Call recordings' files (sizes only). */
+  readonly recordingStore: MemoryRecordingStore;
   readonly jobQueue: MemoryJobQueue;
   readonly logger: RecordingLogger;
   readonly people: SeedPeople;
@@ -162,6 +172,7 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
   // Streams without pauses unless a test asks for them.
   const gateway = new MockModelGateway({ streamDelayMs: 0, ...options.gatewayOptions });
   const objectStore = new MemoryObjectStore();
+  const recordingStore = new MemoryRecordingStore();
   const jobQueue = new MemoryJobQueue();
   const logger = new RecordingLogger();
   const build = (cfg: CoreConfig, ports: CoreHarnessOptions = options, db: Db = t.db): Core =>
@@ -170,6 +181,7 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
       gateway,
       config: cfg,
       objectStore,
+      ...(options.withoutRecordings === true ? {} : { recordingStore }),
       jobQueue,
       textExtractor: new Utf8TextExtractor(),
       logger,
@@ -195,6 +207,7 @@ export async function createCoreHarness(options: CoreHarnessOptions = {}): Promi
     config,
     gateway,
     objectStore,
+    recordingStore,
     jobQueue,
     logger,
     people: {

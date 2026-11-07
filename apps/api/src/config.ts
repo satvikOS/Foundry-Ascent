@@ -47,6 +47,15 @@ const EnvSchema = z.object({
       .regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/, 'must be an S3 bucket name')
       .optional(),
   ),
+  /** The private call recordings bucket (ADR-0023): presigned uploads and replays, and the purge of deleted ones. */
+  RECORDINGS_BUCKET: z.preprocess(
+    emptyToUndefined,
+    z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/, 'must be an S3 bucket name')
+      .optional(),
+  ),
   JOBS_QUEUE_URL: z.preprocess(emptyToUndefined, z.url().optional()),
   /** The jobs queue's redrive maxReceiveCount (last attempt marks a document failed). */
   JOBS_MAX_RECEIVE_COUNT: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(1000).default(3)),
@@ -126,6 +135,8 @@ export interface ApiConfig {
   /** Region of the S3 bucket and SQS queue (the Lambda runtime sets AWS_REGION). */
   readonly awsRegion: string;
   readonly documentsBucket: string | null;
+  /** The call recordings bucket (api and worker). */
+  readonly recordingsBucket: string | null;
   readonly jobsQueueUrl: string | null;
   readonly jobsMaxReceiveCount: number;
   /** Public origin of the SPA when statically known (custom domain); otherwise derived per request. */
@@ -163,7 +174,8 @@ export class ConfigError extends Error {
 
 /**
  * Parses and validates the environment. Error messages name variables, never their values.
- * `api` needs DOCUMENTS_BUCKET and JOBS_QUEUE_URL; `worker` needs DOCUMENTS_BUCKET.
+ * `api` needs DOCUMENTS_BUCKET, RECORDINGS_BUCKET and JOBS_QUEUE_URL; `worker` needs DOCUMENTS_BUCKET and
+ * RECORDINGS_BUCKET.
  */
 export function loadApiConfig(env: EnvLike, role: ApiRole): ApiConfig {
   const parsed = EnvSchema.safeParse(env);
@@ -175,6 +187,8 @@ export function loadApiConfig(env: EnvLike, role: ApiRole): ApiConfig {
   const missing: string[] = [];
   if ((role === 'api' || role === 'worker') && e.DOCUMENTS_BUCKET === undefined)
     missing.push('DOCUMENTS_BUCKET');
+  if ((role === 'api' || role === 'worker') && e.RECORDINGS_BUCKET === undefined)
+    missing.push('RECORDINGS_BUCKET');
   if (role === 'api' && e.JOBS_QUEUE_URL === undefined) missing.push('JOBS_QUEUE_URL');
   if (missing.length > 0) throw new ConfigError(`Missing required environment: ${missing.join(', ')}`);
   // A FULL face shows a stock avatar: one must be named (the vendor sandbox has its own, whatever is named).
@@ -224,6 +238,7 @@ export function loadApiConfig(env: EnvLike, role: ApiRole): ApiConfig {
     logLevel: e.LOG_LEVEL,
     awsRegion: e.AWS_REGION ?? e.BEDROCK_REGION ?? 'us-east-1',
     documentsBucket: e.DOCUMENTS_BUCKET ?? null,
+    recordingsBucket: e.RECORDINGS_BUCKET ?? null,
     jobsQueueUrl: e.JOBS_QUEUE_URL ?? null,
     jobsMaxReceiveCount: e.JOBS_MAX_RECEIVE_COUNT,
     siteOrigin: e.SITE_ORIGIN?.replace(/\/+$/, '') ?? null,
