@@ -1193,7 +1193,8 @@ function firstWords(text: string, n: number): string {
 
 /**
  * The next opener and its thread, as the distillation prompt asks: a greeting of its own, then one sentence naming the
- * thread and offering help with it, never a bare question: the thread of THIS conversation (the founder's plan, else the venture topic it was about); with nothing about the venture
+ * thread and offering help with it in a frame of its kind (so two lines in a row rarely open alike), never a bare
+ * question: the thread of THIS conversation (the founder's plan, else the venture topic it was about); with nothing about the venture
  * in it (small talk, a one-word reply, a test), the most important thread still open in the previous notebook (an open
  * commitment, then an open question, then advice given); else none. Never the founder's small talk.
  */
@@ -1219,12 +1220,12 @@ function mockNextOpener(args: {
     };
   }
   if (args.topic !== null) {
-    return { opener: `${greeting} I can help you work through ${args.topic}.`, topic: args.topic };
+    return { opener: `${greeting} Want to work through ${args.topic} together?`, topic: args.topic };
   }
   const { commitment, question, advice } = args.previous;
   if (commitment !== null) {
     return {
-      opener: `${greeting} I can help you ${plain(commitment)}.`,
+      opener: `${greeting} Want help to ${plain(commitment)}?`,
       topic: `your plan to ${firstWords(plain(commitment), 9)}`,
     };
   }
@@ -1236,7 +1237,7 @@ function mockNextOpener(args: {
   }
   if (advice !== null) {
     return {
-      opener: `${greeting} I can help you act on this: ${plain(advice)}.`,
+      opener: `${greeting} Happy to help you act on this: ${plain(advice)}.`,
       topic: firstWords(plain(advice), 12),
     };
   }

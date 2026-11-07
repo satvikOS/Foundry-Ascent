@@ -612,7 +612,7 @@ describe('MockModelGateway distillation and recap', () => {
       },
     ];
     const draft = (await gw.generateStructured(distillRequest(turns))).value;
-    expect(draft.notebook.next_opener).toMatch(/\. I can help you interview five library staff\.$/);
+    expect(draft.notebook.next_opener).toMatch(/\. Want help to interview five library staff\?$/);
     expect(draft.notebook.next_topic).toBe('your plan to interview five library staff');
     for (const text of [draft.notebook.next_opener ?? '', draft.notebook.next_topic ?? '']) {
       expect(text).not.toMatch(/perosnal|personal|life|great/i);

@@ -303,7 +303,7 @@ describe('a second call after the first was distilled at once (the local server;
     await talk(maya, first.id, 'We are weighing per-library pricing for the pilot.', call1.call.id);
     await h.core.calls.end(maya, call1.call.id, { reason: 'user' });
     h.jobQueue.drain();
-    // The mock writes a greeting of its own, then "I can help you work through pricing." (the distillation prompt's
+    // The mock writes a greeting of its own, then "Want to work through pricing together?" (the distillation prompt's
     // shape).
     const outcome = await h.core.distill.distillSession({
       sessionId: first.id,
