@@ -1,0 +1,71 @@
+{
+  "about": "Figures a reply may and may not state, read the same way by the product (packages/ai validators/figures.ts inventedFigures) and the lab's live checks (ops/lab conversation_lab/live/checks.py unsourced_figure / proposed_figure). `known` is what the founder said; `unsourced` and `proposed` count the figures of `reply` nobody gave. A money figure offered as an example ('say, ...') is a price the coach made up: unsourced. Only a percentage or a count can be a proposed bar. 'About', 'around' and 'roughly' are claims. Lab run 42238272157: 'a local tutor at, say, 50-100 cedis an hour' was judged a prohibited invented local rate.",
+  "cases": [
+    {
+      "reply": "Compare it with a local tutor at, say, 50–100 cedis an hour.",
+      "known": "I want to run maths tutoring for SHS students in Kumasi.",
+      "unsourced": 1,
+      "proposed": 0
+    },
+    {
+      "reply": "Tutors there charge around GHS 80 a session.",
+      "known": "We tutor in Kumasi.",
+      "unsourced": 1,
+      "proposed": 0
+    },
+    {
+      "reply": "Ask what they pay now, since ₦5,000 a month is common.",
+      "known": "Parents pay for after-school lessons.",
+      "unsourced": 1,
+      "proposed": 0
+    },
+    {
+      "reply": "At 40 cedis a session and 12 sessions, that is 480 cedis a term.",
+      "known": "We charge 40 cedis a session and run 12 sessions a term.",
+      "unsourced": 0,
+      "proposed": 0
+    },
+    {
+      "reply": "Your 200 rupees a week is a fine start.",
+      "known": "We make 200 rupees a week from the stall.",
+      "unsourced": 0,
+      "proposed": 0
+    },
+    {
+      "reply": "The market is worth $2 billion.",
+      "known": "Is the market big enough?",
+      "unsourced": 1,
+      "proposed": 0
+    },
+    {
+      "reply": "Most students spend 300 shillings on lunch.",
+      "known": "We sell lunch boxes on campus.",
+      "unsourced": 1,
+      "proposed": 0
+    },
+    {
+      "reply": "Charge, say, $5 a crate and see who keeps them.",
+      "known": "We lend crates to market sellers.",
+      "unsourced": 1,
+      "proposed": 0
+    },
+    {
+      "reply": "Pick a bar, say 30% reordering.",
+      "known": "How do I know the pilot worked?",
+      "unsourced": 0,
+      "proposed": 1
+    },
+    {
+      "reply": "If fewer than 15% reorder, stop.",
+      "known": "When should I stop?",
+      "unsourced": 0,
+      "proposed": 1
+    },
+    {
+      "reply": "Ask three tutors near the school what they charge an hour, and write the numbers down.",
+      "known": "How much should I charge?",
+      "unsourced": 0,
+      "proposed": 0
+    }
+  ]
+}

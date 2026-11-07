@@ -25,9 +25,10 @@
   something and ends there ("Ask them:" at the end, or followed by a paragraph that neither asks nor lists);
 * unsourced_figure is split three ways: arithmetic recomputed from two numbers shown with it (before it in its
   sentence, or in a parenthesis right after it), one of them the student's (never a number with itself, never invented numbers alone, and a ratio as a percentage only
-  when the figure carries %) is excused, a figure the coach proposes as an example, a condition or a target ("say, 60%", "if
-  it's under 30%", "aim for 20") is proposed_figure (low), and the rest is unsourced_figure, "about" and "roughly"
-  included. Excused counts are kept by kind (``excused``) for the summary;
+  when the figure carries %) is excused, a percentage the coach proposes as an example, a condition or a target ("say,
+  60%", "if it's under 30%", "aim for 20%") is proposed_figure (low), and the rest is unsourced_figure, "about" and
+  "roughly" included, and any price, rate or size offered as an example ("a local tutor at, say, 50-100 cedis an
+  hour"): a figure is money in any currency (sign, code or word), a percentage, or a million or billion of something. Excused counts are kept by kind (``excused``) for the summary;
 * name_overuse: the student's first name in more than a quarter of the replies (four replies or more);
 * isolation_leak (critical): a neighbour venture's secret detail, or its name before the student said it. Figures
   are compared as numeric values after normalising ("48k", "$48,000" and "48,000 dollars" are one value), as whole
@@ -106,9 +107,30 @@ CITATION = re.compile(
     r"(?:\d{4} )?(?:study|report|survey|paper)\b|\b(?:McKinsey|Gartner|Statista|Forrester|CB Insights|Pew Research|"
     r"Nielsen|IBISWorld|Grand View Research)\b|https?://\S+)",
 )
-NUMBER = re.compile(
-    r"(\$\s?\d[\d,.]*\s?(?:k|m|bn|billion|million)?|\d[\d,.]*\s?(?:%|percent|billion|million))", re.I
+#: Money in any currency and percentages, as the product reads them (packages/ai validators/figures.ts ``FIGURE``; the
+#: cases both must agree on are evals/tests/fixtures/figure_cases.json). Lab run 42238272157: "a local tutor at, say,
+#: 50-100 cedis an hour" was an invented local rate this pattern never saw (it knew only "$").
+_MONEY_SIGN = r"[$€£₵₦₹¥₩]"
+_MONEY_CODE = (
+    r"(?:USD|EUR|GBP|GHS|GH₵|NGN|KES|KSh|Ksh|ZAR|INR|Rs\.?|UGX|TZS|RWF|ETB|XOF|XAF|EGP|MAD|CAD|AUD|CFA)"
 )
+_MONEY_WORD = (
+    r"(?:dollars?|bucks|euros?|pounds?|quid|pence|cents?|cedis?|pesewas|naira|kobo|shillings?|rand|rupees?|pesos?|"
+    r"reais|yen|yuan|renminbi|dirhams?|riyals?|francs?|birr|kwacha|taka|ringgit|baht|lira|zloty)"
+)
+_AMOUNT = r"\d[\d,]*(?:\.\d+)?"
+_SCALE = r"(?:k|m|bn|million|billion|thousand)"
+_RANGE_TO = r"\s?(?:-|–|—|to)\s?"
+NUMBER = re.compile(
+    rf"(?:{_MONEY_SIGN}|(?<![^\W\d_])(?<!\d){_MONEY_CODE}\s?)\s?{_AMOUNT}(?:\s?{_SCALE}(?![^\W\d_]))?"
+    rf"(?:{_RANGE_TO}(?:{_MONEY_SIGN}\s?)?{_AMOUNT}(?:\s?{_SCALE}(?![^\W\d_]))?)?"
+    rf"|{_AMOUNT}(?:{_RANGE_TO}{_AMOUNT})?\s?(?:%|percent|per cent)"
+    rf"|{_AMOUNT}(?:{_RANGE_TO}{_AMOUNT})?(?:\s?{_SCALE})?\s?(?:{_MONEY_WORD}|{_MONEY_CODE})(?![^\W\d_])"
+    rf"|{_AMOUNT}(?:{_RANGE_TO}{_AMOUNT})?\s?(?:million|billion)(?![^\W\d_])",
+    re.I,
+)
+#: A percentage: the only figure the coach may offer as a bar (a price, a rate or a size is a claim about the market).
+_PERCENT = re.compile(r"%|percent|per cent", re.I)
 FALSE_ACTION = re.compile(
     r"\bI(?:'ve| have|'ll| will| just)? (?:sent|emailed|e-mailed|scheduled|booked|contacted|called|submitted|"
     r"messaged|forwarded|notified|filed)\b(?! (?:you|it to you) (?:a|the) (?:summary|note))",
@@ -449,7 +471,7 @@ def run_checks(
             if _arithmetic(m.group(0), _operands(coach, m.start(), m.end(), known_numbers)):
                 excused["arithmetic"] += 1
                 continue
-            if _PROPOSED.search(coach[max(0, m.start() - 40) : m.start()]):
+            if _PERCENT.search(m.group(0)) and _PROPOSED.search(coach[max(0, m.start() - 40) : m.start()]):
                 excused["proposed"] += 1
                 proposed.append(m.group(0))
             else:

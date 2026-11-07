@@ -282,9 +282,11 @@ describe('conversation craft in the system prompt', () => {
     // (rehearsal, a resend, "later", "no more questions") are said in <conversation_state> on those turns only.
     // Review of coaching v2 adds ~15: the preamble habits described (not quoted) and empathy kept when they struggle.
     // Coaching v3 adds ~8: a made-up figure is named by its role instead (pilot v3: 30 unsourced figures).
-    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(1090);
-    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1150);
-    expect(tokens(craft)).toBeLessThanOrEqual(1100);
+    // 2026-11-06.1 adds ~26: no local rate, market size or statistic of its own, even as an example (lab 42238272157:
+    // "a local tutor at, say, 50–100 cedis an hour").
+    expect(tokens(conversationCraftRules('text'))).toBeLessThanOrEqual(1116);
+    expect(tokens(conversationCraftRules('voice'))).toBeLessThanOrEqual(1176);
+    expect(tokens(craft)).toBeLessThanOrEqual(1126);
   });
 
   it('is part of the versioned policy', () => {
@@ -301,7 +303,9 @@ describe('conversation craft in the system prompt', () => {
     // 2026-11-05.2: coaching v2 (live pilot 42124259353): the Thomas mentor identity, content-first openings (and the
     // output check), the founder's numbers only, rehearsal that reacts and steps out, conversation control and recovery
     // in the conversation state, the stated preferences enforced.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-05.2');
+    // 2026-11-06.1: the bug sweep (lab 42238272157 on Haiku, production): no local rate, market size or statistic of
+    // its own, even as an example.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-06.1');
   });
 });
 

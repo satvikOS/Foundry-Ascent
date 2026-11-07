@@ -1155,3 +1155,14 @@ def test_the_opener_census_counts_the_other_stock_openers_and_repeated_openings(
     rates = aggregate([row], {"evidence": "live"})["checks"]["phrase_rate_per_100_replies"]
     assert rates["(other stock opener)"] == 40.0
     assert rates["(repeated opening)"] == 20.0
+
+
+def test_figures_agree_with_the_product_on_the_shared_cases() -> None:
+    """The cases packages/ai validators/figures.test.ts reads too (evals/tests/fixtures/figure_cases.json): the lab's
+    unsourced_figure and proposed_figure fire exactly where the product counts invented and proposed figures (lab run
+    42238272157: "a local tutor at, say, 50-100 cedis an hour" was an invented local rate the checks never saw)."""
+    path = Path(__file__).resolve().parents[3] / "evals" / "tests" / "fixtures" / "figure_cases.json"
+    for case in json.loads(path.read_text(encoding="utf-8"))["cases"]:
+        codes = run_checks([T("1.1", case["known"], case["reply"])]).codes()
+        assert ("unsourced_figure" in codes) == (case["unsourced"] > 0), case["reply"]
+        assert ("proposed_figure" in codes) == (case["proposed"] > 0), case["reply"]

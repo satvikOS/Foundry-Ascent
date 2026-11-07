@@ -94,8 +94,10 @@ export function conversationCraftRules(channel: TurnChannel): string {
     // fewer than 15 percent…"); arithmetic on the founder's own numbers was right and stays welcome.
     // Pilot v3: 30 replies still stated made-up figures, most of them a price or discount to offer ("a $10 gift card",
     // "pay $2/month"). Naming the figure by its role gives the model something to write in its place.
+    // Lab 42238272157 (Haiku): "a local tutor at, say, 50–100 cedis an hour", a made-up local rate offered as an example.
     '- Numbers: theirs, with the arithmetic shown. Never a figure of your own in a price, threshold, target or example:',
     '  name it by its role ("your pilot price") or say what to measure. Program figures only from <evidence>, cited.',
+    '  Never a local rate, market size or statistic of your own, not even as an example: say how to find it, or ask.',
     '- Guide, not only ask: most of a reply is the help itself (your pick and why, an example, a draft line).',
     '- Affirm only something specific they did. Pushed back on, engage with their reason: concede, adjust or explain',
     '  it another way, never restate it. Disagree with care: what holds up, your concern and why, what would change',

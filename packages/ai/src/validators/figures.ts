@@ -20,9 +20,33 @@
  *   read without it.
  */
 
-/** A money or percentage figure ("$1,200", "$1.5k", "40%", "15 percent", "$2/month"). */
-const FIGURE =
-  /(?:[$€£]\s?\d[\d,]*(?:\.\d+)?(?:\s?(?:k|m|bn|million|billion|thousand))?|\d[\d,]*(?:\.\d+)?\s?(?:%|percent|per cent))/giu;
+/**
+ * Money in any currency, as the lab's live checks read it (ops/lab conversation_lab/live/checks.py `NUMBER`; the cases
+ * both must agree on are evals/tests/fixtures/figure_cases.json). Lab run 42238272157: "a local tutor at, say, 50–100
+ * cedis an hour" was a made-up local rate that neither the product nor the lab read as a figure (only "$", "€", "£").
+ */
+const MONEY_SIGN = '[$€£₵₦₹¥₩]';
+const MONEY_CODE =
+  '(?:USD|EUR|GBP|GHS|GH₵|NGN|KES|KSh|Ksh|ZAR|INR|Rs\\.?|UGX|TZS|RWF|ETB|XOF|XAF|EGP|MAD|CAD|AUD|CFA)';
+const MONEY_WORD =
+  '(?:dollars?|bucks|euros?|pounds?|quid|pence|cents?|cedis?|pesewas|naira|kobo|shillings?|rand|rupees?|pesos?|reais|yen|yuan|renminbi|dirhams?|riyals?|francs?|birr|kwacha|taka|ringgit|baht|lira|zloty)';
+const AMOUNT = '\\d[\\d,]*(?:\\.\\d+)?';
+const SCALE = '(?:k|m|bn|million|billion|thousand)';
+const RANGE_TO = '\\s?(?:-|–|—|to)\\s?';
+/** The figure shapes: a sign or a code first, or a currency word, %, "million" or "billion" after. */
+const FIGURE_SOURCE = [
+  // "$1,200", "$1.5k", "GHS 80", "₦5,000", "$5–$10".
+  `(?:${MONEY_SIGN}|(?<![\\p{L}\\p{N}])${MONEY_CODE}\\s?)\\s?${AMOUNT}(?:\\s?${SCALE}(?![\\p{L}]))?(?:${RANGE_TO}(?:${MONEY_SIGN}\\s?)?${AMOUNT}(?:\\s?${SCALE}(?![\\p{L}]))?)?`,
+  // "40%", "15 percent", "10–15%".
+  `${AMOUNT}(?:${RANGE_TO}${AMOUNT})?\\s?(?:%|percent|per cent)`,
+  // "50–100 cedis", "300 shillings", "2 million dollars".
+  `${AMOUNT}(?:${RANGE_TO}${AMOUNT})?(?:\\s?${SCALE})?\\s?(?:${MONEY_WORD}|${MONEY_CODE})(?![\\p{L}])`,
+  // A market size or a statistic: "2 million students", "1.5 billion".
+  `${AMOUNT}(?:${RANGE_TO}${AMOUNT})?\\s?(?:million|billion)(?![\\p{L}])`,
+].join('|');
+/** A money or percentage figure ("$1,200", "$1.5k", "40%", "15 percent", "$2/month", "50–100 cedis", "GHS 80"). */
+const FIGURE = new RegExp(FIGURE_SOURCE, 'giu');
+const PERCENT = /%|percent|per cent/i;
 
 /** Any number in known text ("40 firm orders", "$3.50", "70%"). */
 const NUMBER = /\d[\d,]*(?:\.\d+)?(?:\s?(?:k|m|bn|million|billion|thousand))?/giu;
@@ -88,9 +112,13 @@ function derivable(value: number, known: readonly number[], percent: boolean): b
   return false;
 }
 
-/** Words before a figure that offer it as an example, a condition or a target ("say", "e.g.", "if it's under"). */
+/**
+ * Words before a figure that offer it as an example, a condition or a target ("say", "e.g.", "aim for", "if it's
+ * under"), at most 24 characters before it: the lab's `_PROPOSED` (ops/lab live/checks.py), word for word, so both
+ * split the same figures. "About", "around", "roughly", "like", "over" and "under" are claims, not proposals.
+ */
 const PROPOSED_CUE =
-  /(?:\bsay,?|\be\.?g\.?,?|\bfor (?:example|instance),?|\bsomething like|\blike|\bmaybe|\baround|\babout|\broughly|\baim (?:for|at)|\btarget(?:ing)?|\bif (?:it(?:'s| is)|you (?:get|hit|see)|fewer than|less than|more than|under|over|below|above)|\bat least|\bunder|\bover|\bbelow|\babove)\s*$/iu;
+  /(?:\b(?:say|e\.g\.|for example|for instance|suppose|imagine|aim for|target(?:ing)?(?: of)?|goal of|threshold of|set (?:a|the|your) (?:bar|threshold|target|cap) (?:at|of)|cap(?:ped)? at|kill (?:it )?(?:if|at|below)|if(?: (?:it'?s|you get|you see|you hit|fewer than|more than|less than|under|over|below|above|at least))?)\b[^.?!\d]{0,24})$/iu;
 
 export interface InventedFigures {
   /** Figures stated as fact that nobody gave. */
@@ -105,12 +133,15 @@ export function inventedFigures(answer: string, known: string): InventedFigures 
   const unsourced: string[] = [];
   const proposed: string[] = [];
   for (const m of answer.matchAll(FIGURE)) {
-    const value = valueOf(m[0]);
-    if (value === null) continue;
-    const percent = /%|percent|per cent/i.test(m[0]);
-    if (derivable(value, knownNumbers, percent)) continue;
-    const before = answer.slice(Math.max(0, m.index - 30), m.index);
-    (PROPOSED_CUE.test(before) ? proposed : unsourced).push(m[0].trim());
+    // Every number of the figure: one end of a range nobody gave makes the range made up.
+    const values = numbersIn(m[0]);
+    if (values.length === 0) continue;
+    const percent = PERCENT.test(m[0]);
+    if (values.every((value) => derivable(value, knownNumbers, percent))) continue;
+    const before = answer.slice(Math.max(0, m.index - 40), m.index);
+    // Only a percentage is ever a bar the founder sets: a price, a rate or a size is a claim about the market.
+    const offered = percent && PROPOSED_CUE.test(before);
+    (offered ? proposed : unsourced).push(m[0].trim());
   }
   return { unsourced, proposed };
 }
@@ -120,15 +151,33 @@ const EXAMPLE_ASIDE =
   /\s?\((?:say|e\.?g\.?|for example|for instance|something like|maybe|like|roughly|around|about|even|just|only)\b[^()\n]{0,120}\)|\s?[—–]\s?(?:say|e\.?g\.?|for example|for instance|something like|maybe)\b[^—–\n]{0,120}[—–]\s?/giu;
 
 /**
- * `answer` without the asides that only offer a made-up figure as an example (see the module comment). An aside whose
- * figures the founder or a source gave stays.
+ * An example price set off by commas, and the preposition it hangs from: "a local tutor at, say, 50–100 cedis an hour."
+ * (lab run 42238272157), "Charge, say, $5 a crate, and…", "A tutor at, for example, GHS 80 a session would…". It ends
+ * where its clause does (punctuation, or the verb or conjunction the sentence goes on with).
+ */
+const COMMA_EXAMPLE = new RegExp(
+  String.raw`(?:\s+(?:at|for|of|around|about|costing|charging))?,\s*(?:say|e\.g\.|for example|for instance),?\s+(${FIGURE_SOURCE})(?:\s?(?:\/\s?|\ban? |\bper |\beach )\p{L}+)?(?=\s*(?:[,.;:!?)]|$)|\s+(?:would|will|could|might|can|is|are|was|and|or|but|so|which|that|to|still)\b)`,
+  'giu',
+);
+
+/**
+ * `answer` without the asides that only offer a made-up figure as an example (see the module comment): in parentheses
+ * or dashes, or a money example set off by commas ({@link COMMA_EXAMPLE}). An aside whose figures the founder or a
+ * source gave stays, and so does a percentage offered as a bar.
  */
 export function withoutExampleFigures(
   answer: string,
   known: string,
 ): { readonly text: string; readonly removed: number } {
   let removed = 0;
-  const text = answer.replace(EXAMPLE_ASIDE, (aside) => {
+  const withoutCommaExamples = answer.replace(COMMA_EXAMPLE, (aside, figure: string) => {
+    if (PERCENT.test(figure)) return aside;
+    const invented = inventedFigures(figure, known);
+    if (invented.unsourced.length + invented.proposed.length === 0) return aside;
+    removed += 1;
+    return '';
+  });
+  const text = withoutCommaExamples.replace(EXAMPLE_ASIDE, (aside) => {
     if (
       inventedFigures(aside, known).proposed.length + inventedFigures(aside, known).unsourced.length ===
       0
@@ -139,11 +188,13 @@ export function withoutExampleFigures(
     // A dash aside joins the words around it ("of that — say $1 — so" → "of that so").
     return /^\s?[—–]/.test(aside) ? ' ' : '';
   });
-  return removed === 0 ? { text: answer, removed: 0 } : { text: text.replace(/ {2,}/g, ' '), removed };
+  return removed === 0
+    ? { text: answer, removed: 0 }
+    : { text: text.replace(/ {2,}/g, ' ').replace(/ +([,.;:!?])/g, '$1'), removed };
 }
 
-/** A money or percentage figure, or a range of two ("$5–$10", "10 to 15 percent"). */
-const FIGURE_OR_RANGE = String.raw`(?:[$€£]\s?\d[\d,]*(?:\.\d+)?(?:\s?(?:k|m|bn|million|billion|thousand))?|\d[\d,]*(?:\.\d+)?\s?(?:%|percent|per cent))(?:\s?(?:-|–|—|to)\s?(?:[$€£]\s?)?\d[\d,]*(?:\.\d+)?(?:\s?(?:k|m|%|percent|per cent))?)?`;
+/** A money or percentage figure, or a range of two ("$5–$10", "10 to 15 percent", "50–100 cedis"). */
+const FIGURE_OR_RANGE = `(?:${FIGURE_SOURCE})`;
 
 /** "a $10 gift card", "an 8% cut": an article, the figure, then the thing it prices. */
 const PRICED_THING = new RegExp(
