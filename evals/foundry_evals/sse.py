@@ -182,7 +182,9 @@ def decode_turn_event(message: SseMessage) -> TurnStreamEvent:
 
 @dataclass
 class TurnStreamResult:
-    """Everything a turn stream said, in order. ``terminal`` is None when the stream was truncated."""
+    """Everything a turn stream said, in order. ``terminal`` is None when the stream was truncated. A streamed reply
+    completes before its fields (``fieldsPending``): ``terminal`` is then the second ``turn.completed``, the same turn
+    with its claims, next steps and escalation, or the first when the stream ended without it (``fields_pending``)."""
 
     accepted: TurnAccepted | None = None
     statuses: list[TurnStatus] = field(default_factory=list)
@@ -198,11 +200,18 @@ class TurnStreamResult:
     def phases(self) -> list[str]:
         return [s.phase for s in self.statuses]
 
+    @property
+    def fields_pending(self) -> bool:
+        """The reply completed and its fields have not arrived (yet)."""
+        return isinstance(self.terminal, TurnCompleted) and self.terminal.fields_pending is True
+
 
 class TurnStreamReader:
     """Consumes turn-stream bytes incrementally and enforces the event order contract:
     ``turn.accepted`` → (``turn.status`` | ``turn.delta`` | ``turn.speech``)* → exactly one terminal event (or a lone pre-acceptance
-    ``turn.error``). Frames after the terminal event are a protocol error.
+    ``turn.error``). A ``turn.completed`` with ``fieldsPending`` may be followed by one more ``turn.completed`` of the
+    same turn, with its fields, which becomes the terminal event. Any other frame after the terminal event is a protocol
+    error.
     """
 
     def __init__(self) -> None:
@@ -211,7 +220,8 @@ class TurnStreamReader:
 
     @property
     def done(self) -> bool:
-        return self.result.terminal is not None
+        """The stream said all it will: a terminal event, and the reply's fields when they were pending."""
+        return self.result.terminal is not None and not self.result.fields_pending
 
     def feed(self, chunk: bytes) -> None:
         for message in self._parser.feed(chunk):
@@ -232,6 +242,13 @@ class TurnStreamReader:
         result = self.result
         result.frames += 1
         if result.terminal is not None:
+            if isinstance(event, TurnCompleted) and result.fields_pending:
+                if not isinstance(result.terminal, TurnCompleted) or event.turn.id != result.terminal.turn.id:
+                    raise SseProtocolError("the fields' turn.completed refers to a different turn")
+                if event.fields_pending:
+                    raise SseProtocolError("a second turn.completed with its fields still pending")
+                result.terminal = event
+                return
             raise SseProtocolError(f"frame '{event.event}' after the terminal event")
         if isinstance(event, TurnAccepted):
             if result.accepted is not None:

@@ -100,6 +100,58 @@ export async function createDraftEscalation(
   return record;
 }
 
+/**
+ * Revises the escalation a turn drafted before its reply's fields arrived (orchestrator/run-turn.ts `addFields`): the
+ * category, priority, role and reason the fields settled on, and a packet built from them (the next step proposed, the
+ * evidence cited). Only a draft nobody acted on is revised; returns whether it was.
+ */
+export async function reviseDraftEscalation(
+  scope: RequestScope,
+  args: {
+    readonly escalationId: string;
+    readonly ventureId: string;
+    readonly turnId: string;
+    readonly founderText: string;
+    readonly category: EscalationCategory;
+    readonly priority: EscalationPriority;
+    readonly requestedRole: RequestedRoleValue;
+    readonly response: CoachResponse;
+    readonly evidence: readonly EvidenceItem[];
+    readonly reason: string | null;
+  },
+): Promise<boolean> {
+  const packet = assemblePacket({
+    founderQuestion: args.founderText,
+    desiredDecision: null,
+    category: args.category,
+    priority: args.priority,
+    turn: { response: args.response, evidence: args.evidence },
+    reason: args.reason,
+  });
+  const revised = await escalationsRepo.reviseDraftEscalation(scope.tx, {
+    escalationId: args.escalationId,
+    category: args.category,
+    priority: args.priority,
+    requestedRole: args.requestedRole,
+    packet,
+  });
+  if (revised === null) return false;
+  await audit(scope, {
+    action: 'escalation.revised',
+    outcome: 'succeeded',
+    ventureId: args.ventureId,
+    objectType: 'escalation',
+    objectId: revised.id,
+    metadata: {
+      category: args.category,
+      priority: args.priority,
+      turnId: args.turnId,
+      requestedRole: args.requestedRole,
+    },
+  });
+  return true;
+}
+
 async function loadTurnForVenture(
   tx: SqlExecutor,
   turnId: string,

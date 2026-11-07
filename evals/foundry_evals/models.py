@@ -522,6 +522,9 @@ class TurnSpeech(_Camel):
 class TurnCompleted(_Camel):
     event: Literal["turn.completed"]
     turn: TurnView
+    #: The reply is complete and its fields (claims, next steps, follow-ups, what it kept) are still being written: the
+    #: same turn with them follows as a second ``turn.completed``, or the stream ends without it (contracts coach.ts).
+    fields_pending: bool | None = None
 
 
 class TurnBlocked(_Camel):

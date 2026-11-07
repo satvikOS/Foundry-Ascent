@@ -126,6 +126,45 @@ class TestTurnStream:
         with pytest.raises(SseProtocolError, match="different turn"):
             read_turn_stream([text.encode()])
 
+    def test_a_reply_completed_before_its_fields_reads_on_to_the_fields(
+        self, turn_payload: dict[str, Any]
+    ) -> None:
+        # The streamed reply completes first (fieldsPending), then the same turn again with its fields: the graders read
+        # the second (claims, next steps, escalation), never the reply without them.
+        bare = {**turn_payload, "response": {**turn_payload["response"], "claims": [], "next_actions": []}}
+        text = completed_stream(bare).replace(
+            '"event": "turn.completed", "turn"', '"event": "turn.completed", "fieldsPending": true, "turn"'
+        )
+        reader = TurnStreamReader()
+        for chunk in chunked(text, 9):
+            reader.feed(chunk)
+        assert not reader.done
+        assert reader.result.fields_pending
+        for chunk in chunked(frame("turn.completed", {"turn": turn_payload}), 9):
+            reader.feed(chunk)
+        assert reader.done
+        result = reader.close()
+        assert isinstance(result.terminal, TurnCompleted)
+        assert not result.fields_pending
+        assert result.terminal.turn.response is not None
+        assert len(result.terminal.turn.response.claims) == len(turn_payload["response"]["claims"]) > 0
+
+    def test_a_reply_whose_fields_never_came_still_completes(self, turn_payload: dict[str, Any]) -> None:
+        text = completed_stream(turn_payload).replace(
+            '"event": "turn.completed", "turn"', '"event": "turn.completed", "fieldsPending": true, "turn"'
+        )
+        result = read_turn_stream([text.encode()])
+        assert isinstance(result.terminal, TurnCompleted)
+        assert result.fields_pending
+        assert not result.truncated
+
+    def test_the_fields_of_another_turn_are_rejected(self, turn_payload: dict[str, Any]) -> None:
+        text = completed_stream(turn_payload).replace(
+            '"event": "turn.completed", "turn"', '"event": "turn.completed", "fieldsPending": true, "turn"'
+        ) + frame("turn.completed", {"turn": {**turn_payload, "id": "00000000-0000-4000-8000-00000000ffff"}})
+        with pytest.raises(SseProtocolError, match="different turn"):
+            read_turn_stream([text.encode()])
+
     def test_incremental_reader_reports_done(self) -> None:
         reader = TurnStreamReader()
         for chunk in chunked(blocked_stream(), 4):

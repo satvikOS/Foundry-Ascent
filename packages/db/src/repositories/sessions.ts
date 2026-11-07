@@ -323,15 +323,26 @@ export function setSessionStatus(
   );
 }
 
-/** Changes the session's current mode (a turn may switch mode). */
+/**
+ * Changes the session's current mode (a turn may switch mode). With `unlessAfter` (a turn's ordinal), only while no
+ * later turn exists: a turn's fields that arrive after the founder's next message never overwrite that message's mode.
+ */
 export function setSessionMode(
   ex: SqlExecutor,
-  args: { sessionId: string; mode: CoachModeValue },
+  args: { sessionId: string; mode: CoachModeValue; unlessAfter?: number },
 ): Promise<SessionRecord | null> {
+  const later =
+    args.unlessAfter === undefined
+      ? ''
+      : ' AND NOT EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id AND t.ordinal > :ordinal)';
   return queryFirst(
     ex,
-    `UPDATE coaching_sessions AS s SET mode = :mode WHERE s.id = :id AND s.status = 'active' RETURNING ${COLUMNS}`,
-    { id: p.uuid(args.sessionId), mode: p.text(args.mode) },
+    `UPDATE coaching_sessions AS s SET mode = :mode WHERE s.id = :id AND s.status = 'active'${later} RETURNING ${COLUMNS}`,
+    {
+      id: p.uuid(args.sessionId),
+      mode: p.text(args.mode),
+      ...(args.unlessAfter === undefined ? {} : { ordinal: p.int(args.unlessAfter) }),
+    },
     decodeSession,
   );
 }

@@ -8,8 +8,8 @@
  * compute openly, or say what to measure; on the way out:
  *
  * - {@link inventedFigures} reads which money and percentage figures of a reply nobody gave (neither the founder's
- *   messages, nor the sources shown, nor arithmetic on two of those numbers): counted on the turn record
- *   (`invented_figure:n`, `proposed_figure:n`), so the lab and production can see the rate;
+ *   messages, the notes kept of them, nor the sources shown, nor arithmetic on those numbers): counted on the turn
+ *   record (`invented_figure:n`, `proposed_figure:n`), so the lab and production can see the rate;
  * - {@link withoutExampleFigures} leaves out an aside that only offers a made-up figure as an example ("(say, $10 a
  *   month)", "— e.g. 40 percent —", "(even $5–$10)"). The sentence around it stands; nothing else of the reply is touched.
  * - {@link withoutInventedFigures} (coaching v3: pilot v3 still stated 30 made-up figures) says a figure nobody gave by
@@ -88,16 +88,32 @@ function close(a: number, b: number): boolean {
  */
 const SCALES = [0.5, 0.25, 1 / 3, 2, 4, 12, 52, 1 / 12, 1 / 52];
 
+/**
+ * The periods a known number, or a product of two, is carried over when the reply shows it ("20 boxes a day at ₦500,
+ * you'd make ₦70,000 a week"; "₦500 a day is ₦3,500 a week"): a review of B1 found Thomas's own arithmetic on the
+ * founder's numbers said as "a weekly price". Only numbers shown before the figure in its sentence count, as the lab's
+ * checks read them (ops/lab live/checks.py `_operands`): a count times 30 is otherwise a month by chance.
+ */
+const PERIODS = [4, 7, 12, 30, 52, 365];
+
 /** Most known numbers combined pairwise (arithmetic on a long pasted table stays bounded). */
 const MAX_KNOWN = 40;
 
 /**
  * Whether `value` is one of the known numbers, or arithmetic on two of them (sum, difference, product, quotient, or a
- * quotient as a percentage), within rounding.
+ * quotient as a percentage), within rounding; or, on the known numbers `shown` before it in its sentence, one or a
+ * product of two carried over a period ({@link PERIODS}), or a product of three.
  */
-function derivable(value: number, known: readonly number[], percent: boolean): boolean {
+function derivable(
+  value: number,
+  known: readonly number[],
+  percent: boolean,
+  shown: readonly number[] = [],
+): boolean {
+  const scaled = (k: number): boolean =>
+    close(value, k) || (!percent && SCALES.some((f) => close(value, k * f)));
+  if (known.some(scaled)) return true;
   const nums = known.slice(0, MAX_KNOWN);
-  if (nums.some((k) => close(value, k) || (!percent && SCALES.some((f) => close(value, k * f))))) return true;
   for (let i = 0; i < nums.length; i += 1) {
     for (let j = 0; j < nums.length; j += 1) {
       const a = nums[i] ?? 0;
@@ -109,7 +125,33 @@ function derivable(value: number, known: readonly number[], percent: boolean): b
       }
     }
   }
+  if (percent) return false;
+  const ops = shown.slice(-MAX_SHOWN);
+  for (let i = 0; i < ops.length; i += 1) {
+    const a = ops[i] ?? 0;
+    if (PERIODS.some((f) => close(value, a * f))) return true;
+    for (let j = i + 1; j < ops.length; j += 1) {
+      const b = ops[j] ?? 0;
+      if (PERIODS.some((f) => close(value, a * b * f))) return true;
+      for (let k = j + 1; k < ops.length; k += 1) if (close(value, a * b * (ops[k] ?? 0))) return true;
+    }
+  }
   return false;
+}
+
+/** Most numbers shown before a figure that its arithmetic is read on (the latest ones). */
+const MAX_SHOWN = 8;
+
+/** The known numbers said before `index` in its sentence of `text` (the arithmetic a figure shows). */
+function shownBefore(text: string, index: number, known: readonly number[]): number[] {
+  const head = text.slice(0, index);
+  const from = Math.max(
+    head.lastIndexOf('. '),
+    head.lastIndexOf('! '),
+    head.lastIndexOf('? '),
+    head.lastIndexOf('\n'),
+  );
+  return numbersIn(head.slice(from + 1)).filter((n) => n !== 0 && known.some((k) => close(n, k)));
 }
 
 /**
@@ -137,7 +179,8 @@ export function inventedFigures(answer: string, known: string): InventedFigures 
     const values = numbersIn(m[0]);
     if (values.length === 0) continue;
     const percent = PERCENT.test(m[0]);
-    if (values.every((value) => derivable(value, knownNumbers, percent))) continue;
+    const shown = shownBefore(answer, m.index, knownNumbers);
+    if (values.every((value) => derivable(value, knownNumbers, percent, shown))) continue;
     const before = answer.slice(Math.max(0, m.index - 40), m.index);
     // Only a percentage is ever a bar the founder sets: a price, a rate or a size is a claim about the market.
     const offered = percent && PROPOSED_CUE.test(before);
@@ -156,9 +199,35 @@ const EXAMPLE_ASIDE =
  * where its clause does (punctuation, or the verb or conjunction the sentence goes on with).
  */
 const COMMA_EXAMPLE = new RegExp(
-  String.raw`(?:\s+(?:at|for|of|around|about|costing|charging))?,\s*(?:say|e\.g\.|for example|for instance),?\s+(${FIGURE_SOURCE})(?:\s?(?:\/\s?|\ban? |\bper |\beach )\p{L}+)?(?=\s*(?:[,.;:!?)]|$)|\s+(?:would|will|could|might|can|is|are|was|and|or|but|so|which|that|to|still)\b)`,
+  String.raw`(?:\s+(at|for|of|around|about|costing|charging))?,\s*(?:say|e\.g\.|for example|for instance),?\s+(${FIGURE_SOURCE})(?:\s?(?:\/\s?|\ban? |\bper |\beach )(\p{L}+))?(,(?=\s+(?:and|or|then|so)\b))?(?=\s*(?:[,.;:!?)]|$)|\s+(?:would|will|could|might|can|is|are|was|and|or|but|so|which|that|to|still)\b)`,
   'giu',
 );
+
+/** Most words a clause may have before a removed example and still be a bare verb ("Charge", "Price it at"). */
+const BARE_CLAUSE_WORDS = 3;
+
+/**
+ * What stands where a comma-set example price was (see {@link COMMA_EXAMPLE}): the price by its role where the clause
+ * offers it per unit ("Charge, say, $5 a crate, and see" → "Charge a set price per crate, and see"; "Try a price, for
+ * example, 40 cedis a session" → "Try a price per session"), else nothing, and the comma after it goes when what is
+ * left before it is a bare verb ("Price it at, say, 200 naira, and see who pays" → "Price it and see who pays"). A review
+ * of B1: "Charge, and see who keeps them." read as clipped.
+ */
+function commaExampleRole(
+  before: string,
+  preposition: string | undefined,
+  unit: string | undefined,
+  comma: string | undefined,
+): string {
+  const clause = before.split(/[.!?\n]\s*/u).pop() ?? '';
+  const trailing = comma ?? '';
+  if (unit !== undefined && /\bprices?$/iu.test(clause.trimEnd())) return ` per ${unit}${trailing}`;
+  if (unit !== undefined && OFFERING.test(clause)) {
+    return `${preposition === undefined ? '' : ` ${preposition}`} a set price per ${unit}${trailing}`;
+  }
+  const words = clause.split(/\s+/u).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+  return words <= BARE_CLAUSE_WORDS ? '' : trailing;
+}
 
 /**
  * `answer` without the asides that only offer a made-up figure as an example (see the module comment): in parentheses
@@ -170,13 +239,24 @@ export function withoutExampleFigures(
   known: string,
 ): { readonly text: string; readonly removed: number } {
   let removed = 0;
-  const withoutCommaExamples = answer.replace(COMMA_EXAMPLE, (aside, figure: string) => {
-    if (PERCENT.test(figure)) return aside;
-    const invented = inventedFigures(figure, known);
-    if (invented.unsourced.length + invented.proposed.length === 0) return aside;
-    removed += 1;
-    return '';
-  });
+  const withoutCommaExamples = answer.replace(
+    COMMA_EXAMPLE,
+    (
+      aside: string,
+      preposition: string | undefined,
+      figure: string,
+      unit: string | undefined,
+      comma: string | undefined,
+      at: number,
+      all: string,
+    ) => {
+      if (PERCENT.test(figure)) return aside;
+      const invented = inventedFigures(figure, known);
+      if (invented.unsourced.length + invented.proposed.length === 0) return aside;
+      removed += 1;
+      return commaExampleRole(all.slice(0, at), preposition, unit, comma);
+    },
+  );
   const text = withoutCommaExamples.replace(EXAMPLE_ASIDE, (aside) => {
     if (
       inventedFigures(aside, known).proposed.length + inventedFigures(aside, known).unsourced.length ===
@@ -225,8 +305,17 @@ const OFFERING = new RegExp(
   'iu',
 );
 
-/** Whether the figure at `index` of `text` is offered or asked as a price ({@link OFFERING}). */
+/**
+ * Words that make a figure the result of the sentence's arithmetic, never the thing offered ("…, you'd make ₦70,000 a
+ * week", "that's 105 cedis a week", "= $480 a term"): such a figure is never said by its role (a review of B1: "you'd
+ * make a weekly price").
+ */
+const RESULT_CUE =
+  /(?:\bthat['’]s|\bthat is|\bthat would be|\bthat comes to|\bwhich is|\bwhich comes to|\b(?:you|they|we|i)(?:['’]d|['’]ll| would| will| could| can)? (?:make|earn|clear|bring in|take home|net|gross|end up with)|\bcomes? (?:out )?to|\badds? up to|\bworks? out (?:to|at)|\btotal(?:s|ling|ing)?(?: of)?|\bgives? you|\bin total|=)\s*(?:about|around|roughly|nearly|almost|over|under|just|only)?\s*$/iu;
+
+/** Whether the figure at `index` of `text` is offered or asked as a price ({@link OFFERING}), not a result. */
 function offeredAt(text: string, index: number): boolean {
+  if (RESULT_CUE.test(text.slice(Math.max(0, index - 40), index))) return false;
   const from = Math.max(0, index - 80);
   const parts = text.slice(from, index).split(/[.!?\n]\s/u);
   // A clause cut by the window does not start where the window does.

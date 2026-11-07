@@ -66,6 +66,24 @@
       "known": "How much should I charge?",
       "unsourced": 0,
       "proposed": 0
+    },
+    {
+      "reply": "If you sell 20 boxes a day at ₦500, you'd make ₦70,000 a week.",
+      "known": "We sell 20 boxes a day at 500 naira each.",
+      "unsourced": 0,
+      "proposed": 0
+    },
+    {
+      "reply": "If you sell 3 crates a day at 5 cedis, that's 105 cedis a week.",
+      "known": "We rent out 3 crates a day at 5 cedis.",
+      "unsourced": 0,
+      "proposed": 0
+    },
+    {
+      "reply": "At ₦500 a day, that is ₦3,500 a week.",
+      "known": "We make 500 naira a day.",
+      "unsourced": 0,
+      "proposed": 0
     }
   ]
 }

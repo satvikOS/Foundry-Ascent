@@ -236,6 +236,22 @@ class TestTurns:
         assert outcome.phases == ["classifying", "retrieving", "reasoning", "validating"]
         assert outcome.keepalives == 1
 
+    def test_a_reply_completed_before_its_fields_is_graded_with_its_fields(
+        self, turn_payload: dict[str, Any]
+    ) -> None:
+        # The streamed reply completes with fieldsPending, then the same turn with its claims and next steps: the
+        # outcome carries the second (the graders read its fields), and its duration ends with the first.
+        bare = {**turn_payload, "response": {**turn_payload["response"], "claims": [], "next_actions": []}}
+        stream = completed_stream(bare).replace(
+            '"event": "turn.completed", "turn"', '"event": "turn.completed", "fieldsPending": true, "turn"'
+        ) + frame("turn.completed", {"turn": turn_payload})
+        outcome = client_for(self._session_handler(stream)).run_turn("s", "hi")
+        assert outcome.kind == "completed"
+        assert outcome.turn is not None
+        assert outcome.turn.response is not None
+        assert len(outcome.turn.response.claims) == len(turn_payload["response"]["claims"]) > 0
+        assert outcome.replied_at is not None
+
     def test_voice_turn_sends_the_call_and_keeps_its_speech_units(self, turn_payload: dict[str, Any]) -> None:
         stream = completed_stream(turn_payload)
         at = stream.index("event: turn.completed")

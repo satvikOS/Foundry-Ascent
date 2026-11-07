@@ -965,7 +965,26 @@ class FakeFoundryApi:
                 )
                 for i, u in enumerate(units)
             )
-            text = accepted + status + speech + ": keep-alive\n\n" + frame("turn.completed", {"turn": view})
+            # As the API streams a reply: complete first, without its fields (fieldsPending), then the same turn
+            # with them (contracts coach.ts TurnStreamEvent).
+            bare = {
+                **view,
+                "response": {
+                    **result,
+                    "claims": [],
+                    "next_actions": [],
+                    "follow_up_questions": [],
+                    "memory_candidates": [],
+                },
+            }
+            text = (
+                accepted
+                + status
+                + speech
+                + ": keep-alive\n\n"
+                + frame("turn.completed", {"turn": bare, "fieldsPending": True})
+                + frame("turn.completed", {"turn": view})
+            )
         return httpx.Response(
             200, content=text.encode(), headers={"content-type": "text/event-stream; charset=utf-8"}
         )

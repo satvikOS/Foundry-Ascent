@@ -238,6 +238,39 @@ export async function updateEscalationPacket(
   return id ? getEscalation(ex, id) : null;
 }
 
+/**
+ * Revises an AI-drafted escalation nobody has acted on yet (still `draft`, never consented to): its category,
+ * priority, requested role and packet, when the reply's fields judged the matter more pressing than the draft made
+ * without them (orchestrator/run-turn.ts `addFields`). Null when the draft was acted on meanwhile.
+ */
+export async function reviseDraftEscalation(
+  ex: SqlExecutor,
+  args: {
+    readonly escalationId: string;
+    readonly category: EscalationRecord['category'];
+    readonly priority: EscalationRecord['priority'];
+    readonly requestedRole: EscalationRecord['requestedRole'];
+    readonly packet: EscalationPacketValue;
+  },
+): Promise<EscalationRecord | null> {
+  const id = await queryFirst(
+    ex,
+    `UPDATE escalations
+     SET category = :category, priority = :priority, requested_role = :requestedRole, packet = :packet,
+         updated_at = now()
+     WHERE id = :id AND status = 'draft' AND sharing_consent_at IS NULL RETURNING id`,
+    {
+      id: p.uuid(args.escalationId),
+      category: p.text(args.category),
+      priority: p.text(args.priority),
+      requestedRole: p.text(args.requestedRole),
+      packet: p.json(args.packet),
+    },
+    (r) => col.uuid.decode(r.id, 'id'),
+  );
+  return id ? getEscalation(ex, id) : null;
+}
+
 /** What the packet of an escalation drawn from a temporary chat says once the chat ended unshared. */
 export const TEMPORARY_CHAT_ENDED_TEXT = '[temporary chat ended]';
 

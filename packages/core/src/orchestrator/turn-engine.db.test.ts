@@ -2131,3 +2131,48 @@ describe('release pinning and the opener check (run last: they change the person
     );
   });
 });
+
+describe('an escalation drafted before the reply had its fields', () => {
+  it("is revised to the fields' more urgent judgement, with their reason and next step", async () => {
+    const reason =
+      'The license signs today and the filing deadline is tomorrow, so this needs a specialist now.';
+    const step =
+      'Ask the tech-transfer office to hold the signature until a specialist has read the license.';
+    const gateway = new MockModelGateway({
+      streamDelayMs: 0,
+      fixtures: {
+        [COACH_ANNOTATIONS_SCHEMA_NAME]: (context) => {
+          const { answer: _a, spoken: _s, ...annotations } = mockCoachResponse(context);
+          return {
+            ...annotations,
+            next_actions: [{ owner: 'founder', action: step, target_date: null }],
+            escalation: {
+              required: true,
+              category: 'ip_licensing',
+              priority: 'P0',
+              reason,
+              requested_role: 'specialist',
+            },
+          };
+        },
+      },
+    });
+    const { core, orchestrator } = coreWith(gateway);
+    const session = await core.sessions.create(maya, h.ventures.quietquad.id, { mode: 'coach' });
+    const { events, outcome } = await run(orchestrator, session.id, {
+      text: 'Should we file a provisional patent before we sign the exclusive license agreement with the university?',
+      mode: 'coach',
+    });
+    expect(outcome.status).toBe('completed');
+    const turn = completed(events);
+    expect(turn.response?.escalation).toMatchObject({ required: true, priority: 'P0', reason });
+    // One draft for the turn, as urgent as the stored response says, with the model's reason and next step.
+    const drafts = (await core.escalations.list(maya, h.ventures.quietquad.id)).filter(
+      (e) => e.turnId === turn.id,
+    );
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({ status: 'draft', priority: 'P0', category: 'ip_licensing' });
+    expect(drafts[0]?.packet).toMatchObject({ reason, proposedNextStep: step });
+    expect(await auditMetadata(turn.id, 'turn.annotated')).toMatchObject({ escalationRevised: true });
+  });
+});

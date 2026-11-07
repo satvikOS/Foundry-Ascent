@@ -7,6 +7,7 @@ import {
   buildRetrievalQuery,
   classifyRisk,
   deriveSpoken,
+  morePressing,
   riskLabel,
   withSafetyScreen,
   type HistoryTurn,
@@ -57,7 +58,7 @@ import {
   type AdmitVoiceTurn,
   type VoiceTurnReads,
 } from '../services/call-admission.js';
-import { createDraftEscalation } from '../services/escalations.js';
+import { createDraftEscalation, reviseDraftEscalation } from '../services/escalations.js';
 import { proposeMemoryCandidates, settleKeptMemory } from '../services/memory.js';
 import { statedMemory } from '../services/founder-statements.js';
 import { conversationGrounding } from '../services/memory-dedupe.js';
@@ -169,6 +170,17 @@ export interface OrchestratorOptions {
  * lives no longer than the turn: runTurn hands it to the host's after-response work (drained before a Lambda
  * invocation returns) or waits for it, on every path, used or not.
  */
+type Escalation = CoachResponse['escalation'];
+
+/** The escalation a turn drafted when its reply was stored: revised once the reply's fields arrive (`addFields`). */
+interface DraftedEscalation {
+  readonly id: string;
+  readonly category: NonNullable<Escalation['category']>;
+  readonly priority: NonNullable<Escalation['priority']>;
+  readonly requestedRole: NonNullable<Escalation['requested_role']>;
+  readonly reason: string | null;
+}
+
 interface TurnContextPrefetch {
   readonly keys: TurnContextKeys;
   /**
@@ -1255,6 +1267,7 @@ export function createOrchestrator(
       const candidates = kept?.records ?? [];
       const esc = checked.response.escalation;
       let escalationId: string | null = null;
+      let drafted: DraftedEscalation | null = null;
       if (
         esc.required &&
         esc.category !== null &&
@@ -1274,6 +1287,13 @@ export function createOrchestrator(
           reason: esc.reason,
         });
         escalationId = draft.id;
+        drafted = {
+          id: draft.id,
+          category: esc.category,
+          priority: esc.priority,
+          requestedRole: esc.requested_role ?? 'eir',
+          reason: esc.reason,
+        };
       }
       if (checked.response.mode !== pre.session.mode) {
         await sessionsRepo.setSessionMode(tx, { sessionId: pre.session.id, mode: checked.response.mode });
@@ -1341,7 +1361,7 @@ export function createOrchestrator(
         view,
         blocked: view.blocked,
         kept: kept?.createdRecords ?? [],
-        escalated: escalationId !== null,
+        drafted,
       };
     });
 
@@ -1350,10 +1370,15 @@ export function createOrchestrator(
      * follow-ups and next steps, what the turn keeps (with what the founder stated), the escalation the model proposed
      * when the reply's validation drafted none, and the mode it chose. The turn's answer and what was said stay as they
      * were. Never throws: a failure leaves the completed turn without its fields (`turn.annotations_unsaved`).
+     *
+     * An escalation the reply's validation already drafted (a forced category, drafted from a reply without its
+     * fields) is revised to what the fields settled on: the model's more urgent judgement (a P0 for a forced P1), its
+     * reason and role, and a packet with the next step and the evidence it cited (a review of the two-stage completion:
+     * the forced draft stayed a P1 with a generic reason and no next step). Never made less pressing than the draft.
      */
     const addFields = async (
       pending: Promise<AnnotatedTurn>,
-      escalated: boolean,
+      drafted: DraftedEscalation | null,
     ): Promise<{ readonly view: TurnView; readonly kept: readonly memoryRepo.MemoryRecord[] } | null> => {
       const annotated = await pending;
       const response = annotated.checked.response;
@@ -1390,8 +1415,34 @@ export function createOrchestrator(
               : null;
           const esc = response.escalation;
           let escalationId: string | null = null;
-          if (
-            !escalated &&
+          let escalationRevised = false;
+          if (drafted !== null) {
+            // The fields' escalation, unless it is less pressing than the draft (then the draft's stands).
+            const settled =
+              esc.required &&
+              esc.category !== null &&
+              esc.priority !== null &&
+              morePressing(esc.priority, drafted.priority) === esc.priority
+                ? {
+                    category: esc.category,
+                    priority: esc.priority,
+                    requestedRole: esc.requested_role ?? drafted.requestedRole,
+                    reason: esc.reason,
+                  }
+                : drafted;
+            escalationRevised = await reviseDraftEscalation(scope, {
+              escalationId: drafted.id,
+              ventureId,
+              turnId: turn.id,
+              founderText: turn.founderText,
+              category: settled.category,
+              priority: settled.priority,
+              requestedRole: settled.requestedRole,
+              response,
+              evidence: shown.map((k) => k.item),
+              reason: settled.reason,
+            });
+          } else if (
             esc.required &&
             esc.category !== null &&
             esc.priority !== null &&
@@ -1412,7 +1463,13 @@ export function createOrchestrator(
             escalationId = draft.id;
           }
           if (response.mode !== checked.response.mode) {
-            await sessionsRepo.setSessionMode(tx, { sessionId: pre.session.id, mode: response.mode });
+            // Only while this is still the conversation's latest turn: the founder may have sent the next message
+            // meanwhile, and its mode is the one the session keeps.
+            await sessionsRepo.setSessionMode(tx, {
+              sessionId: pre.session.id,
+              mode: response.mode,
+              unlessAfter: turn.ordinal,
+            });
           }
           await audit(scope, {
             action: 'turn.annotated',
@@ -1428,6 +1485,7 @@ export function createOrchestrator(
               mode: response.mode,
               memoryCandidates: kept?.records.length ?? 0,
               escalationId,
+              escalationRevised,
               phaseBMs: annotated.latencyMs,
               factsDowngraded: annotated.checked.results.factsDowngraded,
               narrowed: annotated.checked.results.narrowed,
@@ -1485,7 +1543,7 @@ export function createOrchestrator(
     if (answered.annotations !== null) {
       // The reply's fields, added to the stored turn when they arrive: the founder already has the reply, and a call is
       // listening again (lab run 42238272157: everything waited 5.6 s for them on Haiku).
-      const annotated = await addFields(answered.annotations, persisted.escalated);
+      const annotated = await addFields(answered.annotations, persisted.drafted);
       if (annotated !== null) {
         // The same turn again, with its fields (the contract's `fieldsPending`).
         await emit({ event: 'turn.completed', turn: annotated.view });

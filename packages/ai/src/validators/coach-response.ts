@@ -37,8 +37,10 @@ import { nameBudgetSpent, withoutStockOpener, withoutVocativeName } from './open
 import { cutMetaNarration } from './meta-narration.js';
 import {
   NEWS_FALLBACK,
-  REPEAT_FALLBACK,
   asksToRepeat,
+  repeatFallbackFor,
+  welcomesSignOff,
+  wrapsUp,
   withinSocialBudget,
   withoutAgendaPush,
   withoutRepeats,
@@ -530,10 +532,19 @@ export function validateCoachResponse(
       // A flagged turn keeps its referral, however often it was said (validators/social.ts `isProtectedLine`).
       const unrepeated = withoutRepeats(out, previous, {
         keepReferrals: forcedEscalationFor(options.preRisk) !== null,
+        signOffs: social === null && !welcomesSignOff(options.founderText),
       });
-      if (unrepeated.dropped > 0) {
+      // A reply that only signed off again keeps its sign-off: never a stock line in its place.
+      const instead =
+        unrepeated.dropped === 0
+          ? out
+          : unrepeated.text !== ''
+            ? unrepeated.text
+            : (repeatFallbackFor(unrepeated.removed, social === 'closing' || wrapsUp(options.founderText)) ??
+              out);
+      if (instead !== out) {
         if (note) notes.push(`repeated_sentences_removed:${unrepeated.dropped}`);
-        out = unrepeated.text === '' ? REPEAT_FALLBACK : unrepeated.text;
+        out = instead;
       }
     }
     if (social !== null) {

@@ -1012,7 +1012,15 @@ describe('a long session never says a sentence-level phrase twice (lab run 42238
       'Keep the pilot to two branches for the first term.',
       'Tell the dean what the sensors never store.',
     ];
-    for (const channel of ['text', 'voice'] as const) {
+    // The closing as the lab heard it, and with the lead-in words a model puts before it (review of B2: "Okay, you're
+    // set. Now go get those answers!" was said on every reply).
+    const closings = ["You're set — go get those answers!", "Okay, you're set. Now go get those answers!"];
+    for (const [channel, closing] of [
+      ['text', closings[0]],
+      ['voice', closings[0]],
+      ['text', closings[1]],
+      ['voice', closings[1]],
+    ] as const) {
       const history: HistoryTurn[] = [];
       let turn = 0;
       const gateway = new MockModelGateway({
@@ -1021,7 +1029,7 @@ describe('a long session never says a sentence-level phrase twice (lab run 42238
         streamFixture: (context) =>
           isContinuation(context)
             ? ''
-            : `${advice[turn] ?? ''} Then shape the proposal around what you learn instead of what you assumed. You're set — go get those answers!`,
+            : `${advice[turn] ?? ''} Then shape the proposal around what you learn instead of what you assumed. ${closing ?? ''}`,
       });
       for (turn = 0; turn < advice.length; turn += 1) {
         const out = await answer(gateway, {

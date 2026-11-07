@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import { validateCoachResponse } from './coach-response.js';
 import { SentenceGate, type GateUnit, type SentenceGateOptions } from './sentence-gate.js';
-import { announcedCountGap, asksToRepeat, isListItem, withoutRepeats, withoutUnits } from './social.js';
+import {
+  CLOSING_FALLBACK,
+  REPEAT_FALLBACK,
+  announcedCountGap,
+  asksToRepeat,
+  isListItem,
+  withoutRepeats,
+  withoutUnits,
+} from './social.js';
 
 /**
  * The whole-conversation repeat guard (live pilot 42099643194). Paraphrased patterns, never transcript text:
@@ -36,6 +44,29 @@ function run(g: SentenceGate, chunks: readonly string[]): GateUnit[] {
 }
 
 const joined = (units: readonly GateUnit[]): string => units.map((u) => u.text).join('');
+
+/** A whole reply's fields, empty, and the options it is validated with (no evidence, no flag). */
+const BASE_RESPONSE = {
+  mode: 'coach' as const,
+  answer: '',
+  spoken: null,
+  claims: [],
+  uncertainty: [],
+  challenge: null,
+  next_actions: [],
+  escalation: { required: false, category: null, priority: null, reason: null, requested_role: null },
+  memory_candidates: [],
+  follow_up_questions: [],
+  rehearsal: null,
+};
+const BASE_OPTIONS = {
+  evidenceKeys: new Set<string>(),
+  preRisk: { categories: [] },
+  otherVentureNames: [],
+  otherVentureCanaries: [],
+  personaName: "Corin's vEIR",
+  coverageThreshold: 0.6,
+};
 const chunkings = (text: string): string[][] => [[text], text.match(/.{1,7}/gs) ?? [text]];
 
 // Two replies the coach alternated between (01-09, 28-04, paraphrased).
@@ -385,6 +416,87 @@ describe('phrases and closing lines said again (lab run 42238272157, long sessio
     // A new sign-off, or a sentence that only shares a few everyday words, stays.
     expect(withoutRepeats('Book the dean for Tuesday. Good luck with the dean.', earlier).dropped).toBe(0);
     expect(withoutRepeats('Tell me what you learn from the dean on Tuesday.', earlier).dropped).toBe(0);
+  });
+
+  it('leaves out a sign-off said again after a lead-in word', () => {
+    const closed = "Draft the three interview questions tonight. You're set. Go get those answers!";
+    for (const closing of [
+      "Okay, you're set.",
+      'Now go get those answers.',
+      'Alright, go get those answers!',
+      "So you're all set.",
+      "That's it, you're set.",
+    ]) {
+      expect(withoutRepeats(`Book the dean for Tuesday. ${closing}`, closed).text, closing).toBe(
+        'Book the dean for Tuesday.',
+      );
+    }
+  });
+
+  it('never takes advice that opens like a sign-off for one (review of B2)', () => {
+    for (const [reply, previous] of [
+      [
+        'Book the dean for Tuesday. Go get the signed letter from facilities before Friday, since the pilot cannot start without it.',
+        'Draft the questions tonight. Go get those answers!',
+      ],
+      [
+        'Go make the call to the head librarian this afternoon and ask who approves the spend.',
+        'Go make it happen!',
+      ],
+      [
+        'Come back and tell me what the second library said about the seat counts.',
+        'Come back and tell me how it went.',
+      ],
+      ['Let me know how many of the five librarians agree to the pilot price.', 'Let me know how it goes.'],
+      ['Go get two quotes from the printer before Friday.', "Good. You're set. Go get those answers!"],
+      ['Let me know how many parents said yes.', 'Try it this week. Let me know how it goes.'],
+    ] as const) {
+      expect(withoutRepeats(reply, previous), reply).toMatchObject({ text: reply, dropped: 0 });
+    }
+    for (const chunks of chunkings(
+      'Start with the printer. Go get two quotes from the printer before Friday.',
+    )) {
+      for (const spoken of [false, true]) {
+        const units = run(gate({ previousReply: "Good. You're set. Go get those answers!", spoken }), chunks);
+        expect(joined(units).trim()).toBe(
+          'Start with the printer. Go get two quotes from the printer before Friday.',
+        );
+      }
+    }
+  });
+
+  it('answers a goodbye with its sign-off, never the stock repeat line (review of B2)', () => {
+    const previous = 'Good luck with the dean, Amara. Tell me how it goes.';
+    for (const chunks of chunkings('Good luck tomorrow!')) {
+      for (const spoken of [false, true]) {
+        const units = run(
+          gate({ previousReply: previous, founderText: 'Okay thanks, talk soon!', spoken }),
+          chunks,
+        );
+        expect(joined(units).trim()).toBe('Good luck tomorrow!');
+      }
+    }
+    // Not a goodbye, and the reply only signed off again: its sign-off stands, never a stock line in its place.
+    for (const chunks of chunkings('Good luck tomorrow!')) {
+      const units = run(gate({ previousReply: previous, founderText: 'I meet her at nine.' }), chunks);
+      expect(joined(units)).not.toContain(REPEAT_FALLBACK);
+      expect(joined(units).trim()).toBe('Good luck tomorrow!');
+    }
+    // A goodbye answered with nothing but the last reply again ends on the wrap-up line, never a new question.
+    const said =
+      'Book the dean for Tuesday and bring the one-page plan with the seat counts from both libraries.';
+    for (const chunks of chunkings(said)) {
+      const units = run(gate({ previousReply: said, founderText: 'Okay, I have to go now, bye.' }), chunks);
+      expect(joined(units).trim()).toBe(CLOSING_FALLBACK);
+    }
+    // A whole reply, validated: the same.
+    for (const founderText of ['Okay thanks, talk soon!', 'I meet her at nine.']) {
+      const out = validateCoachResponse(
+        { ...BASE_RESPONSE, answer: 'Good luck tomorrow!' },
+        { ...BASE_OPTIONS, previousReply: previous, founderText },
+      );
+      expect(out.response.answer, founderText).toBe('Good luck tomorrow!');
+    }
   });
 
   it('the gate leaves them out of a streamed reply as it is said', () => {

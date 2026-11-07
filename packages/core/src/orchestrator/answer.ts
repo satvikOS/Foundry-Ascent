@@ -330,11 +330,13 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
         ? SHORT_BUDGET
         : null;
   const noQuestions = plainTurn && preferences.includes('no questions');
-  // The figures a reply may state: what the founder said in view, and the sources shown (validators/figures.ts).
+  // The figures a reply may state: what the founder said in view, the sources shown, and what the notes remember of
+  // them (validators/figures.ts; a review of B1: a price settled in an earlier conversation was said by its role).
   const knownFigures = [
     ...spec.history.map((t) => t.founderText),
     spec.founderText,
     ...shown.map((k) => `${k.item.title} ${k.item.excerpt}`),
+    ...rememberedText(spec.continuity, spec.venture),
   ].join('\n');
 
   // Step 5: generate (streamed through the sentence gate, or whole when streaming is switched off).
@@ -519,4 +521,31 @@ export function withAnnotations(
       notes: [...new Set([...checked.results.notes, ...merged.results.notes])],
     },
   };
+}
+
+/** Notes the vEIR wrote in its own voice: what it said, never what the founder gave. */
+const OWN_WORDS = new Set(['lastAdvice', 'nextOpener', 'nextTopic', 'updatedAt', 'date', 'due', 'sessionId']);
+
+/**
+ * The text of what the notes remember of the founder and their venture (the notebook, the profile, the digests and
+ * commitments, the venture's goal), never the vEIR's own advice or openers: figures the founder gave in an earlier
+ * conversation count as given.
+ */
+function rememberedText(continuity: AnswerSpec['continuity'], venture: AnswerSpec['venture']): string[] {
+  const out: string[] = [];
+  const walk = (value: unknown): void => {
+    if (typeof value === 'string') {
+      if (value.trim() !== '') out.push(value);
+    } else if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+    } else if (typeof value === 'object' && value !== null) {
+      for (const [key, item] of Object.entries(value)) if (!OWN_WORDS.has(key)) walk(item);
+    }
+  };
+  walk(continuity.notebook ?? null);
+  walk(continuity.studentProfile ?? null);
+  walk(continuity.recentDigests ?? []);
+  walk(continuity.openCommitments ?? []);
+  walk(venture?.currentGoal ?? null);
+  return out;
 }

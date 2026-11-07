@@ -23,8 +23,8 @@
 * reply_hole: a reply with a hole: a numbered list that skips a number, a count announced and not given ("three
   steps" then two), a spelled-out list without its first item ("Two:" with no "One"), or a line that announces
   something and ends there ("Ask them:" at the end, or followed by a paragraph that neither asks nor lists);
-* unsourced_figure is split three ways: arithmetic recomputed from two numbers shown with it (before it in its
-  sentence, or in a parenthesis right after it), one of them the student's (never a number with itself, never invented numbers alone, and a ratio as a percentage only
+* unsourced_figure is split three ways: arithmetic recomputed from numbers shown with it (two, two over a day/week/
+  month period, or three; before it in its sentence, or in a parenthesis right after it), one of them the student's (never a number with itself, never invented numbers alone, and a ratio as a percentage only
   when the figure carries %) is excused, a percentage the coach proposes as an example, a condition or a target ("say,
   60%", "if it's under 30%", "aim for 20%") is proposed_figure (low), and the rest is unsourced_figure, "about" and
   "roughly" included, and any price, rate or size offered as an example ("a local tutor at, say, 50-100 cedis an
@@ -570,27 +570,41 @@ def _operands(coach: str, start: int, end: int, known: set[str]) -> list[tuple[f
     return [(float(n), n in known) for n in _numbers(text) if float(n) != 0]
 
 
+#: The periods a sourced number, or a product of two, is carried over ("20 boxes a day at 500 naira" is 70,000 naira a
+#: week), as the product reads them (packages/ai validators/figures.ts ``PERIODS``).
+_PERIODS = (4, 7, 12, 30, 52, 365)
+
+
 def _arithmetic(figure: str, operands: Sequence[tuple[float, bool]]) -> bool:
     """Whether a figure recomputes, within 0.5%, as a sum, difference, product or ratio of two different numbers of
-    its own sentence (``_operands``), one of them at least sourced: never a number with itself (a 40% threshold is
-    not 20 + 20), never from invented numbers alone, and a ratio as a percentage only when the figure carries one."""
+    its own sentence (``_operands``), a sourced one or a product of two carried over a period (``_PERIODS``), or a
+    product of three, at least one of them sourced: never a number with itself (a 40% threshold is not 20 + 20), never from invented
+    numbers alone, and a ratio as a percentage only when the figure carries one."""
     percent = "%" in figure or "percent" in figure.lower()
     values = [float(n) for n in _numbers(figure)]
     pool: dict[float, bool] = {}
     for v, k in operands:
         pool[v] = pool.get(v, False) or k
     items = sorted(pool.items())
+
+    def near(r: float, v: float) -> bool:
+        return bool(r) and abs(r - v) <= 0.005 * max(abs(r), 1)
+
     for v in values:
         for i, (a, ka) in enumerate(items):
-            for b, kb in items[i + 1 :]:
+            for j, (b, kb) in enumerate(items[i + 1 :], start=i + 1):
                 if not (ka or kb):
                     continue
                 results = [a + b, abs(a - b), a * b, a / b, b / a]
                 if percent:
                     results += [100 * a / b, 100 * b / a]
-                for r in results:
-                    if r and abs(r - v) <= 0.005 * max(abs(r), 1):
-                        return True
+                else:
+                    results += [a * b * f for f in _PERIODS]
+                    results += [a * b * c for c, _ in items[j + 1 :]]
+                if any(near(r, v) for r in results):
+                    return True
+            if not percent and ka and any(near(a * f, v) for f in _PERIODS):
+                return True
     return False
 
 

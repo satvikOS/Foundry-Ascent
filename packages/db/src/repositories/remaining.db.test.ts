@@ -267,6 +267,24 @@ describe('remaining repository functions', () => {
       ).toBe('blocked');
       expect(await turnsRepo.finishTurn(tx, { turnId: turn.id, status: 'completed' })).toBeNull();
       expect((await turnsRepo.getTurn(tx, turn.id))?.riskLabel).toBe('high');
+      // A turn's late fields never set the mode once a later turn exists (run-turn.ts addFields).
+      expect(
+        await sessionsRepo.setSessionMode(tx, {
+          sessionId: session.id,
+          mode: 'coach',
+          unlessAfter: turn.ordinal - 1,
+        }),
+      ).toBeNull();
+      expect((await sessionsRepo.getSession(tx, session.id))?.mode).toBe('rehearse');
+      expect(
+        (
+          await sessionsRepo.setSessionMode(tx, {
+            sessionId: session.id,
+            mode: 'coach',
+            unlessAfter: turn.ordinal,
+          })
+        )?.mode,
+      ).toBe('coach');
       expect(
         (await sessionsRepo.setSessionStatus(tx, { sessionId: session.id, status: 'ended' }))?.endedAt,
       ).not.toBeNull();
@@ -297,6 +315,38 @@ describe('remaining repository functions', () => {
         packet: { ...must(esc.packet), founderQuestion: 'Edited' },
       });
       expect(edited?.packet?.founderQuestion).toBe('Edited');
+      // Only a draft is revised by a turn's late fields; this one already waits for the founder's consent.
+      expect(
+        await escalationsRepo.reviseDraftEscalation(tx, {
+          escalationId: esc.id,
+          category: 'expert_judgment',
+          priority: 'P0',
+          requestedRole: 'specialist',
+          packet: must(edited?.packet),
+        }),
+      ).toBeNull();
+      const draft = await escalationsRepo.createEscalation(tx, {
+        tenantId: seed.tenantId,
+        ventureId,
+        category: 'legal',
+        priority: 'P1',
+        createdBy: maya.principalId,
+        packet: must(esc.packet),
+      });
+      expect(
+        await escalationsRepo.reviseDraftEscalation(tx, {
+          escalationId: draft.id,
+          category: 'ip_licensing',
+          priority: 'P0',
+          requestedRole: 'specialist',
+          packet: { ...must(esc.packet), reason: 'Revised' },
+        }),
+      ).toMatchObject({
+        category: 'ip_licensing',
+        priority: 'P0',
+        requestedRole: 'specialist',
+        status: 'draft',
+      });
       const listed = await escalationsRepo.listVentureEscalations(tx, {
         ventureId,
         statuses: ['awaiting_consent'],

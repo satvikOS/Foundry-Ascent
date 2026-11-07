@@ -220,7 +220,10 @@ class TurnOutcome:
     error_retryable: bool = False
     phases: list[str] = field(default_factory=list)
     keepalives: int = 0
+    #: Until the reply completed (the first ``turn.completed``), not its fields: what the founder waited for.
     duration_seconds: float = 0.0
+    #: ``time.monotonic()`` when the reply completed (None when it never did).
+    replied_at: float | None = None
     replayed: bool = False
     #: Voice turns: the ``turn.speech`` units the call would say, in order (what the founder hears).
     speech: list[str] = field(default_factory=list)
@@ -668,7 +671,7 @@ class FoundryClient:
                     waited += delay
                     continue
                 raise refusal.error from None
-            outcome.duration_seconds = time.monotonic() - started
+            outcome.duration_seconds = (outcome.replied_at or time.monotonic()) - started
             if outcome.kind == "blocked" and outcome.turn_id is not None:
                 outcome.turn = self._find_turn(session_id, outcome.turn_id)
             return outcome
@@ -709,9 +712,14 @@ class FoundryClient:
                     raise _RetryableRefusalError(error)
                 raise error
             reader = TurnStreamReader()
+            replied_at: float | None = None
             try:
+                # Read on past a reply that completed with its fields pending, to the same turn with its fields: the
+                # graders read its claims, next steps and escalation.
                 for chunk in response.iter_bytes():
                     reader.feed(chunk)
+                    if replied_at is None and reader.result.terminal is not None:
+                        replied_at = time.monotonic()
                     if reader.done:
                         break
             except httpx.TransportError as exc:
@@ -729,6 +737,7 @@ class FoundryClient:
             kind="error",
             phases=result.phases,
             keepalives=result.keepalives,
+            replied_at=replied_at,
             replayed=replayed,
             speech=[u.text for u in sorted(result.speech, key=lambda u: u.seq)],
         )

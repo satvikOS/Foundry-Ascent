@@ -1,4 +1,10 @@
-import { contentWords, founderMoves, type SocialTurn } from '../prompts/conversation-state.js';
+import {
+  contentWords,
+  founderMoves,
+  socialTurnOf,
+  wrapUpOf,
+  type SocialTurn,
+} from '../prompts/conversation-state.js';
 import { sentenceSpans } from './meta-narration.js';
 
 /**
@@ -121,11 +127,56 @@ export function fourGramsOf(text: string): Set<string> {
 const SIGN_OFF =
   /^(?:you(?:'re| are) (?:all )?set|good luck|best of luck|go (?:and )?(?:get|grab|nail|crush|land|win|make)|you(?:'ve| have) got this|let me know how|come back (?:and|to)|talk soon|over to you|go for it|knock (?:it|'em|them) out|off you go|onward)\b/u;
 
-/** The kind of sign-off a sentence is ("you're set", "go get"), or null for any other sentence. */
+/**
+ * Words a sign-off may open on before it signs off ("Okay, you're set.", "Now go get those answers.", "That's it,
+ * you're set."): at most two of them, read off before the sign-off is matched.
+ */
+const SIGN_OFF_LEAD_IN =
+  /^(?:(?:okay|ok|alright|all right|so|now|right|well|great|perfect|then|and then|and|that's it|that's all)\s+){1,2}/u;
+
+/**
+ * Words a sign-off carries beyond its opening and still only signs off ("Good luck with the dean tomorrow", "Let me
+ * know how it goes", "Come back and tell me how it went"): never what makes a sentence advice.
+ */
+const SIGN_OFF_FILLER = new Set(
+  (
+    'it its them those these that this there here the a an with on at for in to and of me you your yours us out ' +
+    'answers answer goes go get went going how happen make do tell let know talk soon again later tomorrow today ' +
+    'tonight week weekend meeting call chat conversation interview interviews pitch next time then luck really just ' +
+    'all set'
+  ).split(' '),
+);
+
+/** Most words a sign-off carries after its opening, and most of them that are not {@link SIGN_OFF_FILLER}. */
+const SIGN_OFF_MAX_REST = 6;
+const SIGN_OFF_MAX_CONTENT = 1;
+
+/**
+ * The kind of sign-off a sentence is ("you're set", "go get"), or null for any other sentence. Only a sentence that
+ * says nothing beyond its sign-off is one: "Go get the signed letter from facilities before Friday" opens like "Go get
+ * those answers!" and is the help itself (a review of B2: it was left out as a repeated sign-off, and never written
+ * again). A name ("Good luck, Amara.") is not content.
+ */
 function signOffKind(sentence: string): string | null {
-  const text = repeatWords(sentence).join(' ');
-  const m = SIGN_OFF.exec(text);
+  const names = new Set(
+    [...sentence.replace(/[‘’ʼ]/g, "'").matchAll(/(?<=\S\s+)\p{Lu}[\p{L}'-]*/gu)].map((m) =>
+      m[0].toLowerCase().replace(/'s$/u, ''),
+    ),
+  );
+  const words = repeatWords(sentence).join(' ');
+  let text = words;
+  let m = SIGN_OFF.exec(text);
+  if (m === null) {
+    text = words.replace(SIGN_OFF_LEAD_IN, '');
+    m = SIGN_OFF.exec(text);
+  }
   if (m === null) return null;
+  const rest = text
+    .slice(m[0].length)
+    .split(' ')
+    .filter((w) => w !== '' && !names.has(w.replace(/'s$/u, '')));
+  if (rest.length > SIGN_OFF_MAX_REST) return null;
+  if (rest.filter((w) => !SIGN_OFF_FILLER.has(w)).length > SIGN_OFF_MAX_CONTENT) return null;
   // "You're all set" is "you're set"; "go and get" is "go get".
   return m[0]
     .replace(/\b(?:all|and) /gu, '')
@@ -136,6 +187,32 @@ function signOffKind(sentence: string): string | null {
 /** Whether a sentence only signs off ("You're set.", "Good luck with the dean."): left out when said again, never more. */
 export function signsOff(sentence: string): boolean {
   return signOffKind(sentence) !== null;
+}
+
+/**
+ * Whether the founder's message is social (a goodbye, thanks, a hello) or wraps up: a sign-off is then a fitting reply,
+ * never left out for its kind alone. Review of B2: "Okay thanks, talk soon!" after an earlier "Good luck with the dean"
+ * was answered "We covered that a moment ago. Which part should we take further?".
+ */
+export function welcomesSignOff(founderText: string | undefined): boolean {
+  if (founderText === undefined || founderText.trim() === '') return false;
+  return socialTurnOf(founderText) !== null || wrapUpOf(founderText);
+}
+
+/** Whether the founder says goodbye or wraps up: a reply then never ends on a new question. */
+export function wrapsUp(founderText: string | undefined): boolean {
+  if (founderText === undefined || founderText.trim() === '') return false;
+  return socialTurnOf(founderText) === 'closing' || wrapUpOf(founderText);
+}
+
+/**
+ * What a reply says in place of one whose every sentence was left out as said before (`removed`): null when all of
+ * them only signed off (the sign-off stands: a reply that only closes is never swapped for a stock line), the wrap-up
+ * line when the founder wraps up ({@link wrapsUp}, {@link CLOSING_FALLBACK}), else {@link REPEAT_FALLBACK}.
+ */
+export function repeatFallbackFor(removed: readonly string[], closing: boolean): string | null {
+  if (removed.length > 0 && removed.every(signsOff)) return null;
+  return closing ? CLOSING_FALLBACK : REPEAT_FALLBACK;
 }
 
 /** Marks that live in a repeat-key set beside the four-word sequences: never words, so never a sequence. */
@@ -166,11 +243,16 @@ export const REPEAT_SENTENCE_SHARE = 0.6;
  * Whether one sentence (or unit) repeats `previous` (from {@link repeatKeysOf}, or {@link fourGramsOf}): most of its
  * four-word sequences were said there, or it is a sign-off of a kind already said, or one that shares two content words
  * with one. A sentence that is mostly new keeps a phrase said before (leaving it out would lose what is new); the
- * phrasing ledger names such phrases back to the model so it does not say them (prompts/phrasing.ts).
+ * phrasing ledger names such phrases back to the model so it does not say them (prompts/phrasing.ts). `signOffs: false`
+ * (a reply to a goodbye, thanks or a hello: a sign-off is what it says) compares a sign-off as any other sentence.
  */
-export function repeatsPrevious(sentence: string, previous: ReadonlySet<string>): boolean {
+export function repeatsPrevious(
+  sentence: string,
+  previous: ReadonlySet<string>,
+  options: { readonly signOffs?: boolean } = {},
+): boolean {
   if (previous.size === 0) return false;
-  const kind = signOffKind(sentence);
+  const kind = options.signOffs === false ? null : signOffKind(sentence);
   if (kind !== null) {
     if (previous.has(`${SIGN_OFF_KEY}${kind}`)) return true;
     let shared = 0;
@@ -248,6 +330,11 @@ export function isProtectedLine(sentence: string, keepReferrals = false): boolea
 export interface WithoutRepeatsOptions {
   /** The turn is flagged for a consequential matter: a referral sentence is never left out ({@link REFERRAL_LINE}). */
   readonly keepReferrals?: boolean;
+  /**
+   * False on a social turn (a goodbye, thanks, a hello) or a wrap-up: a sign-off is the reply there, so it is never
+   * left out for its kind alone ({@link repeatsPrevious}). Default true.
+   */
+  readonly signOffs?: boolean;
 }
 
 export interface WithoutRepeats {
@@ -281,7 +368,9 @@ export function withoutRepeats(
   let lastKept: { start: number; end: number } | null = null;
   for (const s of spans) {
     const sentence = text.slice(s.start, s.end);
-    const repeat = repeatsPrevious(sentence, said) || reasksQuestion(sentence, asked);
+    const repeat =
+      repeatsPrevious(sentence, said, { signOffs: options.signOffs !== false }) ||
+      reasksQuestion(sentence, asked);
     if (!repeat || isProtectedLine(sentence, options.keepReferrals === true)) {
       lastKept = s;
       continue;

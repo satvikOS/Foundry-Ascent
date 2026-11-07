@@ -22,8 +22,10 @@ import { REPEATED_GREETING_FALLBACK, withoutRepeatedGreeting } from './greeting.
 import { findMetaNarration, isThinkingAloudOpener, type NarrationNames } from './meta-narration.js';
 import {
   NEWS_FALLBACK,
-  REPEAT_FALLBACK,
   asksToRepeat,
+  repeatFallbackFor,
+  welcomesSignOff,
+  wrapsUp,
   repeatKeysOf,
   isListItem,
   isProtectedLine,
@@ -149,8 +151,8 @@ export interface SentenceGateOptions {
   callerContinues?: boolean;
   /**
    * False: a reply this gate left with nothing (or only a lead-in) after leaving out what said the previous reply again
-   * ends there, with no stock line ({@link REPEAT_FALLBACK}) in its place: the caller's reply stands as it was shown (a
-   * continuation that added nothing). It is about repeats only: a reply that parked the founder's news still ends with
+   * ends there, with no stock line (validators/social.ts `REPEAT_FALLBACK`) in its place: the caller's reply stands as
+   * it was shown (a continuation that added nothing). It is about repeats only: a reply that parked the founder's news still ends with
    * the line about their news ({@link NEWS_FALLBACK}), as by default (differential audit, 2026-10-22: "my cofounder quit
    * this morning" was answered "Oh wow." alone). Default true.
    */
@@ -483,6 +485,12 @@ export class SentenceGate {
   readonly #previousQuestions: readonly ReadonlySet<string>[];
   /** Units left out because they said the previous reply again. */
   #repeatsDropped = 0;
+  /** Those units, as written: a reply that only signed off again keeps its sign-off (`repeatFallbackFor`). */
+  readonly #repeatedUnits: string[] = [];
+  /** The founder says goodbye, thanks or hello, or wraps up: a sign-off is never left out for its kind alone. */
+  readonly #signOffWelcome: boolean;
+  /** The founder says goodbye or wraps up: a reply that was all repeats never ends on a new question. */
+  readonly #wrapsUp: boolean;
   /** The founder's message brings news: a unit that parks it for the vEIR's agenda is left out (LAB-R8). */
   readonly #news: boolean;
   /** Units left out because they parked the founder's news. */
@@ -539,6 +547,8 @@ export class SentenceGate {
     this.#news = founderMoves(options.founderText ?? '').includes('news');
     this.#life = options.founderText === undefined ? null : askedLifeFor(options.founderText, this.#identity);
     this.#keepReferrals = options.keepReferrals === true;
+    this.#signOffWelcome = welcomesSignOff(options.founderText);
+    this.#wrapsUp = wrapsUp(options.founderText);
     const said = [options.previousReply, ...(options.earlierReplies ?? [])].filter(
       (t): t is string => typeof t === 'string' && t.trim() !== '',
     );
@@ -811,6 +821,7 @@ export class SentenceGate {
         // unless the turn is flagged, when nothing that may carry its escalation is ever left unsaid.
         this.#cursor = end;
         this.#repeatsDropped += 1;
+        this.#repeatedUnits.push(rawUnit);
         if (repeat === 'reask') this.#reasksDropped += 1;
         this.#keepDropped(repeat, rawUnit);
         if (isListItem(rawUnit) && !this.#keepReferrals) return this.#cutForRepeat(units);
@@ -826,6 +837,7 @@ export class SentenceGate {
         if (following.trim() !== '' && this.#repeatOf(following) !== null) {
           this.#cursor = end;
           this.#repeatsDropped += 1;
+          this.#repeatedUnits.push(rawUnit);
           this.#keepDropped('repeat', rawUnit);
           continue;
         }
@@ -874,15 +886,24 @@ export class SentenceGate {
     }
     if (this.#ended && this.#nothingReleased()) {
       // The reply was only the greeting the opening line already gave, or only the previous reply again: a short
-      // line instead.
+      // line instead. A reply that only signed off again keeps its sign-off, and a goodbye never gets a new question.
       const continues = this.#options.callerContinues === true;
+      const repeated =
+        this.#repeatsDropped > 0 && !continues
+          ? repeatFallbackFor(
+              this.#repeatedUnits.map((u) => u.trim()),
+              this.#wrapsUp,
+            )
+          : undefined;
       const instead = this.#droppedGreeting
         ? REPEATED_GREETING_FALLBACK
         : this.#agendaDropped > 0 && !continues
           ? NEWS_FALLBACK
-          : this.#repeatsDropped > 0 && !continues && this.#options.repeatFallback !== false
-            ? REPEAT_FALLBACK
-            : null;
+          : repeated === null
+            ? (this.#repeatedUnits[0] ?? '').trim() || null
+            : repeated !== undefined && this.#options.repeatFallback !== false
+              ? repeated
+              : null;
       const unit = instead === null ? null : this.#process(instead);
       if (unit !== null && typeof unit !== 'string') this.#show(unit, units);
     }
@@ -896,7 +917,7 @@ export class SentenceGate {
   #repeatOf(unit: string): 'repeat' | 'reask' | null {
     if (this.#previousGrams === null) return null;
     if (isProtectedLine(unit, this.#keepReferrals)) return null;
-    if (repeatsPrevious(unit, this.#previousGrams)) return 'repeat';
+    if (repeatsPrevious(unit, this.#previousGrams, { signOffs: !this.#signOffWelcome })) return 'repeat';
     return reasksQuestion(unit.trim(), this.#previousQuestions) ? 'reask' : null;
   }
 
