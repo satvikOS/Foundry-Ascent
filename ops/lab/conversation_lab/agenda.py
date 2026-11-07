@@ -24,9 +24,10 @@ import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from itertools import pairwise
 from pathlib import Path
 from typing import Any
+
+from conversation_lab.live.checks import same_subject
 
 SCENARIOS = Path(__file__).resolve().parent.parent / "scenarios" / "agenda.json"
 
@@ -54,9 +55,11 @@ FOLLOW_UP = re.compile(
 BOOK_AGAIN = re.compile(
     r"\bbook (?:the|that|your|an?) (?:advisor |adviser )?(?:session|meeting|call)\b", re.IGNORECASE
 )
-#: An opener's offer of help, and the notebook's threads it may name (the suite's venture: a regulated sleeve).
+#: An opener's offer of help (the product's distill/sanitize.ts ``HELP_OFFER``), and the notebook's threads it may name
+#: (the suite's venture: a regulated sleeve).
 OPENER_HELP = re.compile(
-    r"\b(?:help|prepare|prep|walk you through|draft|get (?:you )?ready|work through|go through)\b",
+    r"\b(?:help|prepare|prep|walk (?:you )?through|draft|get (?:you |it |that )?ready|work through|go through|"
+    r"run through|put together|map out|sketch out|lay out|rehearse|practi[sc]e)\b",
     re.IGNORECASE,
 )
 OPENER_THREAD = re.compile(
@@ -138,21 +141,6 @@ def _similar(a: str, b: str) -> bool:
     return len(x & y) / min(len(x), len(y)) >= 0.6
 
 
-def _same_subject(a: str, b: str) -> bool:
-    """A question back on the same subject, the product's strict reading after the founder had no answer: two shared
-    content words said together in both, or 40% of the shorter question's."""
-    wa, wb = (
-        [w for w in _WORD.findall(a.lower()) if w not in _STOP and len(w) > 2],
-        [w for w in _WORD.findall(b.lower()) if w not in _STOP and len(w) > 2],
-    )
-    x, y = set(wa), set(wb)
-    shared = len(x & y)
-    if shared < 2:
-        return False
-    pairs = set(pairwise(wa)) & set(pairwise(wb))
-    return bool(pairs) or shared / min(len(x), len(y)) >= 0.4
-
-
 @dataclass
 class ReplyCheck:
     """What one reply did, as booleans and counts (no text)."""
@@ -207,7 +195,7 @@ def check_reply(
             steer_back=turn.get("topic") == "other" and bool(AGENDA_TERMS.search(reply or "")),
             reask=any(_similar(q, e) for q in asked for e in earlier_questions),
             reask_after_unknown=bool(turn.get("unknown"))
-            and any(_same_subject(q, e) for q in asked for e in earlier_questions),
+            and any(same_subject(q, e, strict=True) for q in asked for e in earlier_questions),
             stale=bool(STALE.search(reply or "")),
             follows_up=bool(FOLLOW_UP.search(reply or "")),
             opening=opening,

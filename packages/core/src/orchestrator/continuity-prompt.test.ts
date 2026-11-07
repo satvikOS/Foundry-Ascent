@@ -63,6 +63,33 @@ describe('relativeWhen', () => {
 });
 
 describe('renderLeftOffSection', () => {
+  it('shows a digest stored before distillation cut its pressure without it (production, 2026-11-07)', () => {
+    const section = renderLeftOffSection(
+      {
+        conversations: [
+          conversation({
+            exchanges: [],
+            digest: {
+              summary:
+                'Maya met the advisor. The device class and the billing route are open, which blocks the go-to-market strategy and cannot wait.',
+              topics: ['device class'],
+              commitments: [],
+              openQuestions: ['Which billing route applies (urgent)'],
+            },
+          }),
+        ],
+      },
+      {
+        now: NOW,
+        threads: { commitments: [], questions: ['Who owns the budget, which cannot wait'], raised: [] },
+      },
+    );
+    expect(section).toContain('The device class and the billing route are open.');
+    expect(section).toContain('Which billing route applies.');
+    expect(section).toContain('- open question: Who owns the budget.');
+    expect(section).not.toMatch(/cannot wait|urgent|blocks the go-to-market/);
+  });
+
   it('is empty when there is no earlier conversation (a first conversation, a temporary chat)', () => {
     expect(renderLeftOffSection(null, { now: NOW })).toBe('');
     expect(renderLeftOffSection({ conversations: [] }, { now: NOW })).toBe('');

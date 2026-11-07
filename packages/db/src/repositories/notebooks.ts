@@ -18,8 +18,9 @@ import { z } from 'zod';
 
 import { col, type RawRow } from '../columns.js';
 import { NotebookIntegrityError } from '../errors.js';
-import { type SqlExecutor } from '../executor.js';
+import { type SqlExecutor, type SystemExecutor } from '../executor.js';
 import { p } from '../params.js';
+import { appendAudit } from './audit.js';
 import { firstPart, queryFirst, queryRows, readPart, type ReadPart } from './common.js';
 
 /** At most this many conversations are recorded as the sources of the summary (oldest dropped first). */
@@ -180,17 +181,27 @@ export interface NotebookWithoutOpener {
   readonly personaId: string;
   /** The venture's latest standard conversation with this persona that has a completed turn. */
   readonly sessionId: string;
-  /** Who had it (the opener's model call is billed to them). */
+  /** Who had it (the line is theirs, and its model call is billed to them). */
   readonly startedBy: string;
   /** What it opened with. */
   readonly opener: string | null;
+  /** Its last activity: with the notebook's version, what an attempt is remembered by ({@link claimOpenerAttempt}). */
+  readonly lastActivityAt: string;
 }
+
+/** The audit action that records an attempt to write a notebook's opener ({@link claimOpenerAttempt}). */
+export const OPENER_ATTEMPT_ACTION = 'notebook.opener_attempted';
+
+/** Advisory-lock namespace for opener attempts (two-key form: never clashes with 7012025–7012031). */
+export const OPENER_ATTEMPT_LOCK_NAMESPACE = 7_012_032;
 
 /**
  * Notebooks that hold an open thread (an open commitment, an open question or advice) and no next opener, with no edit
- * of a person's pending (a distillation must merge those first), least recently written first: the ones a notebook
- * opener is written for once (services/distill.ts `backfillOpeners`; production, 2026-11-07: notebooks distilled before
- * the next-opener rule held kept no line). System role; at most `limit`.
+ * of a person's pending (a distillation must merge those first) and no attempt at a line for this version of the
+ * notebook and its latest conversation (one that failed, was dropped or could not run is not tried again until either
+ * changes), least recently written first: the ones a notebook opener is written for once (services/distill.ts
+ * `backfillOpeners`; production, 2026-11-07: notebooks distilled before the next-opener rule held kept no line). System
+ * role; at most `limit`.
  */
 export function listNotebooksWithoutOpener(
   ex: SqlExecutor,
@@ -200,10 +211,10 @@ export function listNotebooksWithoutOpener(
     `CASE WHEN jsonb_typeof(n.content -> '${key}') = 'array' THEN n.content -> '${key}' ELSE '[]'::jsonb END`;
   return queryRows(
     ex,
-    `SELECT n.tenant_id, n.venture_id, n.persona_id, s.id AS session_id, s.started_by, s.opener
+    `SELECT n.tenant_id, n.venture_id, n.persona_id, s.id AS session_id, s.started_by, s.opener, s.last_activity_at
      FROM veir_notebooks n
      JOIN LATERAL (
-       SELECT cs.id, cs.started_by, cs.opener FROM coaching_sessions cs
+       SELECT cs.id, cs.started_by, cs.opener, cs.last_activity_at FROM coaching_sessions cs
        JOIN persona_releases r ON r.id = cs.persona_release_id
        WHERE cs.venture_id = n.venture_id AND r.persona_id = n.persona_id AND cs.deleted_at IS NULL
          AND cs.privacy = 'standard'
@@ -215,6 +226,13 @@ export function listNotebooksWithoutOpener(
        AND (EXISTS (SELECT 1 FROM jsonb_array_elements(${array('commitments')}) c (item) WHERE c.item ->> 'status' = 'open')
             OR jsonb_array_length(${array('openQuestions')}) > 0
             OR jsonb_array_length(${array('lastAdvice')}) > 0)
+       AND NOT EXISTS (
+         SELECT 1 FROM audit_events a
+         WHERE a.action = '${OPENER_ATTEMPT_ACTION}' AND a.venture_id = n.venture_id
+           AND a.metadata ->> 'personaId' = n.persona_id::text
+           AND a.metadata ->> 'notebookVersion' = n.version::text
+           AND a.metadata ->> 'sourceSessionId' = s.id::text
+           AND a.metadata ->> 'sourceActivityMs' = floor(extract(epoch FROM s.last_activity_at) * 1000)::bigint::text)
      ORDER BY n.updated_at ASC NULLS FIRST, n.id
      LIMIT :limit`,
     { limit: p.int(args.limit) },
@@ -225,8 +243,76 @@ export function listNotebooksWithoutOpener(
       sessionId: col.uuid.decode(r.session_id, 'session_id'),
       startedBy: col.uuid.decode(r.started_by, 'started_by'),
       opener: col.text.nullable.decode(r.opener, 'opener'),
+      lastActivityAt: col.ts.decode(r.last_activity_at, 'last_activity_at'),
     }),
   );
+}
+
+/** What an attempt at a notebook's opener is remembered by: the notebook's version and the conversation it draws on. */
+export interface OpenerAttempt {
+  readonly tenantId: string;
+  readonly ventureId: string;
+  readonly personaId: string;
+  readonly notebookVersion: number;
+  readonly sourceSessionId: string;
+  /** The last activity of that conversation (ISO): a conversation still going on is tried again once it moved on. */
+  readonly sourceActivityAt: string;
+  readonly requestId: string;
+}
+
+/**
+ * Records one attempt to write a notebook's opener with the model, or reports that one was made already for this version
+ * of the notebook and this state of its conversation (false): every outcome of a write that reached the model, or could
+ * never reach it (a persona that cannot write, a person's edits pending), is remembered, so the next conversation start,
+ * New chat and the daily backfill never pay for the same attempt again (review of the 2026-11-07 opener writer: a line
+ * dropped every time was written again on every start). Under a per-notebook advisory lock, so two starts at once make
+ * one attempt. Audited (`notebook.opener_attempted`, identifiers and counts only). Must run inside a transaction
+ * (`db.system(fn)`): the lock is held until commit.
+ */
+export async function claimOpenerAttempt(sx: SystemExecutor, attempt: OpenerAttempt): Promise<boolean> {
+  await sx.query(
+    'SELECT count(*) AS n FROM (SELECT pg_advisory_xact_lock(:namespace, hashtext(:key))) AS l',
+    {
+      namespace: p.int(OPENER_ATTEMPT_LOCK_NAMESPACE),
+      key: p.text(`${attempt.ventureId}:${attempt.personaId}`),
+    },
+  );
+  const metadata = {
+    personaId: attempt.personaId,
+    notebookVersion: attempt.notebookVersion,
+    sourceSessionId: attempt.sourceSessionId,
+    sourceActivityMs: Date.parse(attempt.sourceActivityAt),
+  };
+  const tried = await queryRows(
+    sx,
+    `SELECT 1 AS tried FROM audit_events a
+     WHERE a.action = :action AND a.venture_id = :ventureId
+       AND a.metadata ->> 'personaId' = :personaId
+       AND a.metadata ->> 'notebookVersion' = :version
+       AND a.metadata ->> 'sourceSessionId' = :sourceSessionId
+       AND a.metadata ->> 'sourceActivityMs' = :activity
+     LIMIT 1`,
+    {
+      action: p.text(OPENER_ATTEMPT_ACTION),
+      ventureId: p.uuid(attempt.ventureId),
+      personaId: p.text(attempt.personaId),
+      version: p.text(String(metadata.notebookVersion)),
+      sourceSessionId: p.text(attempt.sourceSessionId),
+      activity: p.text(String(metadata.sourceActivityMs)),
+    },
+    () => true,
+  );
+  if (tried.length > 0) return false;
+  await appendAudit(sx, {
+    action: OPENER_ATTEMPT_ACTION,
+    outcome: 'allowed',
+    tenantId: attempt.tenantId,
+    ventureId: attempt.ventureId,
+    objectType: 'notebook',
+    requestId: attempt.requestId,
+    metadata,
+  });
+  return true;
 }
 
 export interface SaveNotebookInput {

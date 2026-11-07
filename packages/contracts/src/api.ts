@@ -156,9 +156,9 @@ export const UpdateSessionResponse = SessionView;
 /** `POST /ventures/:id/sessions` 201 body. */
 export const CreateSessionResponse = SessionView;
 /**
- * `GET /ventures/:id/opener` 200 body: how the vEIR would open a new standard conversation of the caller now (the
- * line it stores as the conversation's first message, and a call says after introducing itself), so New chat and
- * the call screen can greet with it before anything is sent. `lastConversation` is the caller's latest earlier
+ * `GET /ventures/:id/opener` (and `POST`, which first has a missing line written) 200 body: how the vEIR would open a
+ * new standard conversation of the caller now (the line it stores as the conversation's first message, and a call says
+ * after introducing itself), so New chat and the call screen can greet with it before anything is sent. `lastConversation` is the caller's latest earlier
  * conversation. Both null for a first conversation; a temporary chat opens with neither.
  */
 export const ConversationOpenerResponse = z.object({
@@ -174,6 +174,12 @@ export const ConversationOpenerResponse = z.object({
       title: z.string().nullable(),
     })
     .nullable(),
+  /**
+   * Additive. True when the notebook leaves threads open but holds no line of the model's for this conversation (the
+   * opener is then a greeting that names nothing): `POST /ventures/:id/opener` has one written and answers with this
+   * body again. `GET` writes nothing.
+   */
+  missing: z.boolean().optional(),
 });
 export type ConversationOpenerResponse = z.infer<typeof ConversationOpenerResponse>;
 export const SessionDetailResponse = z.object({ session: SessionView, turns: z.array(TurnView) });

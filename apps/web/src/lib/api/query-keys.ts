@@ -49,6 +49,8 @@ export const queryKeys = {
     notebook: (ventureId: string) => [ROOT, 'venture', ventureId, 'notebook'] as const,
     /** `GET /ventures/:id/opener`: how the vEIR would open a new conversation now (New chat's greeting). */
     opener: (ventureId: string) => [ROOT, 'venture', ventureId, 'opener'] as const,
+    /** `POST /ventures/:id/opener`: that greeting once a missing line was written (under `opener`, removed with it). */
+    preparedOpener: (ventureId: string) => [ROOT, 'venture', ventureId, 'opener', 'prepared'] as const,
     /** `GET /ventures/:id/sessions`: one venture's conversations (Knowledge reads their digests). */
     sessions: (ventureId: string) => [ROOT, 'venture', ventureId, 'sessions'] as const,
   },

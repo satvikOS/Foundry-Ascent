@@ -148,6 +148,12 @@ export interface ConversationState {
    */
   readonly goal?: boolean;
   /**
+   * The message says they have no answer (the `unknown` move) and brings nothing besides it (no subject of its own, no
+   * change of topic): the question left open is what to answer, from how it usually goes. "Not yet, but can we work on
+   * the pitch deck" moves on, and the reply follows them there.
+   */
+  readonly onlyNoAnswer?: boolean;
+  /**
    * The vEIR's own phrasing lately (coaching v3): question forms and openings it used twice or more in this
    * conversation, or at the end of its last conversations (prompts/phrasing.ts). Absent: none.
    */
@@ -315,20 +321,37 @@ const DONT_KNOW =
   /^(?:(?:honestly|um+|uh+|well|that's the thing|thats the thing)[,.]? )*(?:i (?:really |honestly |just )?(?:don't|do not|dont) know|idk|dunno|no idea|not sure|i'm not sure|i have no idea|no clue)(?: (?:what|how|where|which)\b.*)?$/;
 
 /**
- * A sentence that says the founder has no answer yet: they did not do it, it has not happened, nobody told them
- * (production, 2026-11-07: "I didn't do that" and "I don't know" were answered with the question they had just said
- * they could not answer, in other words, two replies later). Never a question of its own.
+ * A clause that says the founder has no answer yet: they do not know, did not do it, it has not happened, nobody told
+ * them (production, 2026-11-07: "I didn't do that" and "I don't know" were answered with the question they had just said
+ * they could not answer, in other words, two replies later). The whole clause, so "I can't remember the exact number,
+ * but our churn is what I want to fix" keeps its subject. Never a question of its own.
  */
 const NO_ANSWER = new RegExp(
   [
     String.raw`^(?:(?:no|nope|honestly|um+|uh+|well|sorry|so)[,.]? )*(?:i|we) (?:really |honestly |just |actually )?(?:didn't|did not|haven't|have not|never|couldn't|could not) (?:(?:really|actually|yet|even|get to|got to|manage to|managed to|get around to|got around to) )*(?:do|done|did|ask|asked|book|booked|call|called|talk|talked|speak|spoke|try|tried|hear|heard|check|checked|look|looked|follow|followed|reach|reached|find|found|meet|met|write|wrote|written|send|sent)\b(?:(?: (?:that|it|this|them|him|her|one|anything|up|out|back|yet|either|so far|to (?:them|him|her|anyone)))*$|\b.* yet$)`,
     String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:i|we) (?:didn't|did not|haven't|have not|never) (?:get|got|gotten) (?:around )?to (?:it|that|this|them)$`,
+    String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:i|we) (?:didn't|did not|haven't|have not|never) (?:get|got|gotten) (?:that|this|so) far$`,
     String.raw`^(?:(?:no|nope|honestly|well|sorry|so)[,.]? )*(?:i|we) (?:didn't|did not|haven't|have not)(?: yet)?$`,
-    String.raw`^(?:(?:no|nope|well|so)[,.]? )*(?:not yet|nothing yet|not so far|no clue|no idea|not really sure|no one (?:told|said)|nobody (?:told|said))\b`,
-    String.raw`^(?:(?:no|nope|well|so)[,.]? )*(?:they|he|she|it|the \w+) (?:didn't|did not|never|wouldn't|would not) (?:really )?(?:say|tell|mention|specify|explain|answer|give|cover|get into)\b`,
-    String.raw`\b(?:i|we) (?:can't|cannot|don't|do not) (?:really )?remember\b`,
+    String.raw`^(?:(?:no|nope|honestly|well|sorry|so|oh)[,.]? )*(?:i|we) (?:forgot|forget) (?:to (?:ask|check|mention|raise it|bring it up|follow up)(?: (?:that|it|this|them|about (?:that|it|this)))?)?$`,
+    String.raw`^(?:(?:no|nope|well|so)[,.]? )*(?:not yet|nothing yet|not so far|no clue|no idea|not really sure|no one (?:told|said|mentioned|explained)|nobody (?:told|said|mentioned|explained))\b`,
+    String.raw`^(?:(?:no|nope|well|so)[,.]? )*(?:they|he|she|it|the \w+) (?:didn't|did not|never|wouldn't|would not) (?:really )?(?:say|said|tell|told|mention|mentioned|specify|specified|explain|explained|answer|answered|give|gave|cover|covered|get into|got into|go into|went into)\b`,
+    String.raw`^(?:(?:honestly|um+|uh+|well|so)[,.]? )*(?:i|we) (?:can't|cannot|don't|do not) (?:really )?remember(?: (?:that|it|this|exactly|what (?:they|he|she) said))?$`,
+    String.raw`^(?:(?:honestly|um+|uh+|well|so)[,.]? )*(?:i (?:really |honestly |just )?(?:don't|do not|dont) (?:really |honestly |actually |even )know|i dunno|i have no (?:idea|clue)|i've no (?:idea|clue)|(?:i'm|i am|im) (?:honestly |really |just |still |actually )?not (?:really |totally |entirely |quite )?sure|i (?:wouldn't|would not) know|beats me)(?: (?:anything|much) about (?:that|it|this))?(?: (?:honestly|really|tbh|to be honest|yet|at all))*$`,
+    String.raw`^(?:idk|dunno|no idea|no clue|not sure|i don't know|i do not know)(?: (?:honestly|really|tbh|to be honest|yet|at all|anything about (?:that|it|this)))+$`,
   ].join('|'),
 );
+
+/** The clauses of a message, without their closing punctuation ("I don't know, I didn't do that" has two). */
+function clausesOf(text: string): string[] {
+  return text
+    .split(/(?<=[.!,;—–])\s+|\s+(?:but|and) (?=(?:i|we|can|could|let's|lets|let)\b)/)
+    .map((clause) => clause.replace(/[.!,;…—–]+$/, '').trim())
+    .filter((clause) => clause !== '');
+}
+
+function saysNoAnswer(clause: string): boolean {
+  return DONT_KNOW.test(clause) || NO_ANSWER.test(clause);
+}
 
 /**
  * Whether `text` says the founder does not know, has not done it or has no answer yet ({@link DONT_KNOW},
@@ -337,11 +360,19 @@ const NO_ANSWER = new RegExp(
  */
 function hasNoAnswer(text: string): boolean {
   if (text.includes('?')) return false;
-  // Clause by clause: "I don't know, I didn't do that" says it twice in one sentence.
-  return text
-    .split(/(?<=[.!,;])\s+/)
-    .map((clause) => clause.replace(/[.!,;…]+$/, '').trim())
-    .some((clause) => DONT_KNOW.test(clause) || NO_ANSWER.test(clause));
+  return clausesOf(text).some(saysNoAnswer);
+}
+
+/**
+ * The founder's message without its clauses that say they have no answer ({@link hasNoAnswer}): what else it brings
+ * ("Not yet. Can we work on my pitch deck instead" brings the pitch deck). '' when it says nothing else.
+ */
+export function besidesNoAnswer(text: string): string {
+  const t = normalize(text);
+  if (!hasNoAnswer(t)) return t;
+  return clausesOf(t)
+    .filter((clause) => !saysNoAnswer(clause))
+    .join('. ');
 }
 
 /**
@@ -1216,6 +1247,10 @@ export function deriveConversationState(
     earlierTurns: turns.length,
     afterOpener,
     goal: moves.includes('goal') || namesWork,
+    onlyNoAnswer:
+      moves.includes('unknown') &&
+      !moves.includes('topic_shift') &&
+      contentWords(besidesNoAnswer(founderText)).size < 2,
     inRoleReplies,
     duplicate,
     adviceGiven: adviceGiven.slice(-MAX_ADVICE),
@@ -1412,7 +1447,13 @@ export function renderConversationState(state: ConversationState): string {
   }
   // Production, 2026-11-07: "I didn't do that" and "I don't know" were met by the question they had just said they could
   // not answer, two replies later and in other words.
-  if (state.moves.includes('unknown')) {
+  if (state.moves.includes('unknown') && state.onlyNoAnswer !== true) {
+    // "Not yet, but I want to talk about hiring": they moved on, and the reply goes with them.
+    lines.push(
+      '- They have no answer to that yet and move on to something of their own: answer what they bring now. Never ask',
+      '  the earlier question again, in any words.',
+    );
+  } else if (state.moves.includes('unknown')) {
     lines.push(
       '- They do not know, have not done it or have no answer yet, and that is fine. Never ask it again, in any words.',
       '  Acknowledge it in a few plain words, without judgement; then say what the answer most likely is or how it',

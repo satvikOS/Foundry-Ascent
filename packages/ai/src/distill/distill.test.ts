@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { toStrictJsonSchema, type JsonObject } from '../gateway/json-schema.js';
 import { expectLinearTime } from '../testing/linear-time.js';
-import { isJudgmentalNote } from './judgment.js';
+import { isJudgmentalNote, withoutPressure } from './judgment.js';
 import {
   MAX_DISTILL_TURNS,
   buildDistillPrompt,
@@ -23,7 +23,7 @@ import {
   notebookThreads,
   sanitizeDistill,
   sanitizeOpener,
-  withoutPressure,
+  offersHelp,
   type DistillSanitizeContext,
   type OpenerSanitizeContext,
   type PreviousNotebook,
@@ -99,7 +99,7 @@ function draft(overrides: Partial<DistillDraftT> = {}): DistillDraftT {
       ],
       open_questions: [{ id: 'oq-1', text: 'Will libraries share occupancy data?' }],
       last_advice: [{ id: null, text: 'Test the price with a small deposit' }],
-      next_opener: 'Last time you planned to ask three libraries for a deposit. How did it go?',
+      next_opener: 'Last time you planned to ask three libraries for a deposit. Want help preparing the ask?',
     },
     memory_candidates: [
       {
@@ -780,7 +780,7 @@ describe('sanitizeDistill — the next opener is a thread the founder took up (l
       ),
     ],
     nextOpener:
-      'You mentioned you’d write down the three questions I suggested—how did that go, and are you ready for the advisor session now?',
+      'You mentioned you’d write down the three questions I suggested—want help getting them ready for the advisor session?',
     nextTopic: 'the three advisor questions you drafted',
   };
   const AG2 = [
@@ -845,7 +845,7 @@ describe('sanitizeDistill — the next opener is a thread the founder took up (l
   it('keeps what the founder brought, and a thread they took up', () => {
     const fresh = run(
       opening(
-        'You mentioned your cofounder wants to go full-time in January. What does he need from you first?',
+        'You mentioned your cofounder wants to go full-time in January. Want help working out what he needs from you first?',
         "the cofounder's full-time commitment requirements",
       ),
       ctx({
@@ -870,7 +870,10 @@ describe('sanitizeDistill — the next opener is a thread the founder took up (l
     expect(named.notebookDelta.nextTopic).toBe('the three advisor questions you drafted');
     // …or with a short yes to the opener that raised it.
     const yes = run(
-      opening('How did the three advisor questions land?', 'the three advisor questions you drafted'),
+      opening(
+        'Want to go through how the three advisor questions landed?',
+        'the three advisor questions you drafted',
+      ),
       ctx({
         previousNotebook: ADVISOR,
         previousOpenerSource: OTHER,
@@ -976,14 +979,21 @@ describe('a conversation with nothing about the venture in it (production 2026-1
 
   it('keeps a line the model wrote from another open thread of the notebook', () => {
     const out = said(
-      'Good to see you again. Have you worked out who signs the cheque at the clinics?',
+      'Good to see you again. Want help working out who signs the cheque at the clinics?',
       'who signs the cheque at the clinics',
     );
     expect(out.notebookDelta.nextOpener).toBe(
-      'Good to see you again. Have you worked out who signs the cheque at the clinics?',
+      'Good to see you again. Want help working out who signs the cheque at the clinics?',
     );
     expect(out.stats.untakenOpenerDropped).toBe(0);
     expect(out.stats.personalOpenerDropped).toBe(0);
+    // The same thread as a bare question is not kept: the next conversation's start writes one that offers help.
+    const bare = said(
+      'Good to see you again. Have you worked out who signs the cheque at the clinics?',
+      'who signs the cheque at the clinics',
+    );
+    expect(bare.notebookDelta.nextOpener).toBeNull();
+    expect(bare.stats.bareOpenerDropped).toBe(1);
   });
 
   it('drops a line on anyone’s personal life, and one on the thread the call opened on that they left aside', () => {
@@ -1097,7 +1107,7 @@ describe('a conversation with nothing about the venture in it (production 2026-1
   it('keeps a previous line the conversation never said: the founder never left it aside (review of 1e2fd79)', () => {
     // The conversation opened on a greeting that names nothing and held only small talk; the previous line (from an
     // older conversation) was never said, so it is not a thread they let go.
-    const line = 'Hello again. Did any clinic tell you who would sign the cheque?';
+    const line = 'Hello again. I can help you find out who would sign the cheque at the clinics.';
     const out = run(
       draft({
         notebook: {
@@ -1529,6 +1539,15 @@ describe('an opener written from the notebook alone (production, 2026-11-07)', (
         'Good to see you. I can help you prep the follow-up with your clinical advisor on device class.',
       nextTopic: 'the advisor follow-up on device class',
     });
+  });
+
+  it('drops a line that only asks about the thread: the first thing said offers help (production, 2026-11-07)', () => {
+    const line = (next_opener: string) => sanitizeOpener({ next_opener, next_topic: null }, opener());
+    expect(line('Hey. What did the advisor say about the device class?')).toBeNull();
+    expect(line('Good to see you. Did the advisor ever get back to you on the device class?')).toBeNull();
+    expect(line('Good to see you. Want me to walk you through the device class follow-up?')).not.toBeNull();
+    expect(offersHelp('Shall we draft the questions for the advisor?')).toBe(true);
+    expect(offersHelp('Did the advisor say?')).toBe(false);
   });
 
   it('drops small talk, a line that names no thread, another venture and what a person removed', () => {

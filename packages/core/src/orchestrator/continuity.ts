@@ -38,6 +38,7 @@ import {
   type LeftOffConversationData,
   type LeftOffData,
   type LeftOffDigest,
+  type LeftOffExchangeText,
   type LeftOffThreads,
 } from './continuity-prompt.js';
 
@@ -347,12 +348,15 @@ export function leftOffThreads(
 
 /**
  * What a notebook lacks for an opener: a line the model wrote for this conversation, while it holds open threads (its
- * line is missing, cannot be said, or was written before the person's latest conversation). The caller has the model
- * write one (services/distill.ts `writeOpener`) and chooses again.
+ * line is missing, cannot be said, or was written before the person's latest conversation, distilled or not). The model writes one (services/distill.ts `writeOpener`), ahead of the next start.
  */
 export interface MissingOpener {
   /** The person's latest conversation: the line is drawn from it (deleting it erases the line). */
   readonly sourceSessionId: string;
+  /** Its last activity: with the notebook's version, what an attempt at the line is remembered by. */
+  readonly sourceActivityAt: string;
+  /** Its exchanges the notebook does not hold yet (it is not distilled), oldest first: the line takes them in. */
+  readonly latest: readonly LeftOffExchangeText[];
   /** What that conversation opened with: never said again. */
   readonly lastOpener: string | null;
   /**
@@ -556,19 +560,22 @@ export async function chooseOpener(
     return found({ text: stored, sourceSessionId: source ?? null, byPerson: false });
   }
   if (latest === null) return found(null);
-  // A line the model may write now: the latest conversation was distilled (the notebook knows it), and no line is stored,
-  // it is no line to open on (personal, small talk, no thread) or it was written before that conversation, while the
-  // notebook leaves threads open. A conversation not distilled yet writes its own line when it is (a call a minute after
-  // a chat opens with the greeting, and its first reply reads that chat in "Where you left off"). A sound, current line
-  // that was not said (it repeats or comes back to a thread left aside) is the model's choice already made.
+  // A line the model may write: no line is stored, it is no line to open on (personal, small talk, no thread) or it
+  // was written before the latest conversation, while the notebook leaves threads open. A latest
+  // conversation not distilled yet goes to the model with it, so the line takes it in (LAB-R6c: never the thread of an
+  // older conversation the latest one moved on from). A sound, current line that was not said (it repeats or comes back
+  // to a thread left aside) is the model's choice already made, and so is a sound line of a teammate's: never written
+  // over for this person.
   const missing =
-    latestDistilled &&
     latest.withThisVeir &&
     (!sound || !current) &&
+    !(fromSomeoneElse && sound) &&
     notebook !== null &&
     notebookThreads(notebook.content).length > 0
       ? {
           sourceSessionId: latest.sessionId,
+          sourceActivityAt: latest.lastActivityAt,
+          latest: latestDistilled ? [] : latest.exchanges,
           lastOpener: latest.opener ?? null,
           leftAside: [
             ...(untaken !== null && latest.opener != null ? [latest.opener] : []),

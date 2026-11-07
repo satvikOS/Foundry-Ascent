@@ -192,9 +192,9 @@ def test_the_runner_plays_remembered_conversations_in_order_and_ends_each() -> N
         reserve=reserved.append,
         sleep=slept.append,
     )
-    assert [r.id for r in results] == ["AG-1-call", "AG-2-call", "AG-3-call", "AG-4-call"]
-    assert client.ended == ["s1", "s2", "s3", "s4"]
-    assert client.calls_ended == ["c-s1", "c-s2", "c-s3", "c-s4"]
+    assert [r.id for r in results] == ["AG-1-call", "AG-2-call", "AG-3-call", "AG-4-call", "AG-5-call"]
+    assert client.ended == ["s1", "s2", "s3", "s4", "s5"]
+    assert client.calls_ended == ["c-s1", "c-s2", "c-s3", "c-s4", "c-s5"]
     assert reserved == [len(c["turns"]) for c in suite["conversations"]]
     assert slept  # waits for each conversation's distillation
     assert results[0].notebook_before == {
@@ -236,6 +236,8 @@ def test_the_scenarios_cover_every_requested_founder_move() -> None:
         "I met the advisor last week",
         "I want to get the sleeve to market.",
         "I don't know, I didn't do that.",
+        "They never told me",
+        "Can we work on my pitch for the clinic buyers instead",
     ):
         assert any(needed in line for line in lines), needed
 

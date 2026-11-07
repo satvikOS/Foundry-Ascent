@@ -1,6 +1,7 @@
 import {
   AUTO_MODE,
   CROSS_VENTURE_BLOCK_ANSWER,
+  askedBefore,
   asksToRepeat,
   INVALID_RESPONSE_ANSWER,
   buildSystemPromptParts,
@@ -334,6 +335,7 @@ export async function answerTurn(raw: AnswerSpec): Promise<AnswerOutcome> {
           text: saidBefore.join('\n\n'),
           keepReferrals: forcedEscalationFor(risk) !== null,
           strictQuestions: stuckOn(spec.founderText),
+          asked: askedBefore(previousReply, earlierReplies),
         };
   const wrapUp = risk.categories.length === 0 && !risk.crisis && wrapUpOf(spec.founderText);
   // How they asked to be answered, kept until they change it (live pilot 42124259353: "yes or no answers only" and "no

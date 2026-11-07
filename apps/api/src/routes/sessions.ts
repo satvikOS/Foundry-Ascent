@@ -26,9 +26,13 @@ export function registerSessionRoutes(
     await core.distill.afterCreate(ctx, session);
     return c.json(session, 201);
   });
-  // How the vEIR would open a new conversation now (New chat and the call screen greet with it).
+  // How the vEIR would open a new conversation now (New chat and the call screen greet with it). GET writes nothing (a
+  // link's hover fetches it); POST first has a missing line written, when New chat opens on a preview that said so.
   r.get('/ventures/:id/opener', async (c, ctx) =>
     c.json(await core.sessions.previewOpener(ctx, pathParam(c, 'id'))),
+  );
+  r.post('/ventures/:id/opener', async (c, ctx) =>
+    c.json(await core.sessions.prepareOpener(ctx, pathParam(c, 'id'))),
   );
   r.get('/ventures/:id/sessions', async (c, ctx) =>
     c.json({ items: await core.sessions.list(ctx, pathParam(c, 'id')) }),

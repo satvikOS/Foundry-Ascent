@@ -71,12 +71,14 @@ function bodyOf(init: RequestInit | undefined): unknown {
 
 /**
  * The API as New chat reads it: each venture, how its vEIR would open a conversation now (`opener`: a held
- * promise to answer late), and an upload that stays in flight until aborted.
+ * promise to answer late; `prepared`: the answer once a missing line was written), and an upload that stays in flight
+ * until aborted.
  */
 function stubApi({
   calls: callsOn = false,
   opener,
-}: { calls?: boolean; opener?: Promise<Response> } = {}): Call[] {
+  prepared,
+}: { calls?: boolean; opener?: Promise<Response>; prepared?: Promise<Response> } = {}): Call[] {
   const calls: Call[] = [];
   stubFetch().mockImplementation((input, init) => {
     const url = input instanceof Request ? input.url : input.toString();
@@ -144,6 +146,9 @@ function stubApi({
       }
       if (method === 'GET' && url === `/api/v1/ventures/${id}/opener`) {
         return opener ?? Promise.resolve(jsonResponse(preview));
+      }
+      if (method === 'POST' && url === `/api/v1/ventures/${id}/opener`) {
+        return prepared ?? Promise.resolve(jsonResponse(preview));
       }
       if (method === 'GET' && url === `/api/v1/ventures/${id}/escalations`) {
         return Promise.resolve(
@@ -425,6 +430,54 @@ describe('New chat', () => {
     await waitFor(() => {
       expect(composer()).toHaveFocus();
     });
+  });
+
+  it('has a missing line written once it opens, and greets with it (production, 2026-11-07)', async () => {
+    const line =
+      'Good to see you. I can help you prep the follow-up with your clinical advisor on device class.';
+    const calls = stubApi({
+      opener: Promise.resolve(
+        jsonResponse({
+          opener: 'Welcome back. What can I help you prepare for?',
+          at: OPENER_AT,
+          lastConversation: null,
+          missing: true,
+        }),
+      ),
+      prepared: Promise.resolve(
+        jsonResponse({ opener: line, at: '2026-10-16T19:00:01.000Z', lastConversation: null }),
+      ),
+    });
+    renderNewChat(B);
+    expect(await screen.findByText(/prep the follow-up with your clinical advisor/)).toBeVisible();
+    expect(screen.queryByText(/What can I help you prepare for/)).toBeNull();
+    await userEvent.setup().type(composer(), 'Hello{Enter}');
+    await screen.findByText('Conversation');
+    const create = calls.find((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${B}/sessions`);
+    expect(create?.body).toMatchObject({ openerShownAt: '2026-10-16T19:00:01.000Z' });
+  });
+
+  it('never asks for a line to be written when the preview has one (a hover fetch writes nothing either)', async () => {
+    const calls = stubApi();
+    renderNewChat(B);
+    await screen.findByText(OPENER_LINE);
+    expect(calls.some((c) => c.method === 'POST' && c.url === `/api/v1/ventures/${B}/opener`)).toBe(false);
+  });
+
+  it('greets with the preview when the line being written is late', async () => {
+    stubApi({
+      opener: Promise.resolve(
+        jsonResponse({
+          opener: 'Welcome back. What can I help you prepare for?',
+          at: OPENER_AT,
+          lastConversation: null,
+          missing: true,
+        }),
+      ),
+      prepared: new Promise<Response>(() => undefined),
+    });
+    renderNewChat(B);
+    expect(await screen.findByText(/What can I help you prepare for/, {}, { timeout: 4_000 })).toBeVisible();
   });
 
   it('greets without the opener when it is late, and never changes the greeting once shown', async () => {

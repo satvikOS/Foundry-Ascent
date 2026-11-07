@@ -25,7 +25,7 @@ import {
   type NotebookOpenerDraft,
 } from './schema.js';
 import { isNearDuplicate, repeatsNote, textKey } from './similarity.js';
-import { isJudgmentalNote } from './judgment.js';
+import { isJudgmentalNote, withoutPressure } from './judgment.js';
 import { isAboutThread, mentions, threadWords, tookUp, untakenThread } from './threads.js';
 
 /** Text kept past a field's limit for the identity check, so a sentence that crosses the limit is judged whole. */
@@ -140,6 +140,8 @@ export interface DistillStats {
    * ({@link namesAThread}).
    */
   personalOpenerDropped: number;
+  /** 1 when the proposed next opener (with its thread) offered no help with it ({@link offersHelp}). */
+  bareOpenerDropped: number;
   /** Founder-profile notes left out because they judge the founder ({@link isJudgmentalNote}). */
   judgmentalDropped: number;
   /** Texts whose pressure framing was cut ({@link withoutPressure}): summaries and open questions. */
@@ -277,6 +279,19 @@ export function isPersonalOpener(text: string): boolean {
   return PERSONAL_OPENER.test(text.replace(/[‘’ʼ]/g, "'"));
 }
 
+/** An offer of concrete help in an opener: to walk them through it, prepare or draft it with them, get them ready. */
+const HELP_OFFER =
+  /\b(?:help|prepare|prep|walk (?:you )?through|draft|get (?:you |it |that )?ready|work through|go through|run through|put together|map out|sketch out|lay out|rehearse|practi[sc]e)\b/i;
+
+/**
+ * Whether a model-written next opener offers concrete help with its thread ({@link HELP_OFFER}). A line that only asks
+ * about it ("Did the advisor ever get back to you on the device class?") is the question the owner rejected as the first
+ * thing said (production, 2026-11-07), and is not kept. The lab reads the same (ops/lab agenda.py `OPENER_HELP`).
+ */
+export function offersHelp(opener: string): boolean {
+  return HELP_OFFER.test(opener);
+}
+
 /**
  * Whether a model-written next opener names a thread of the venture: past its greeting, it shares a word with one of
  * `threads` (what the founder said, the conversation's digest, the notebook's summary, open questions, open commitments
@@ -318,6 +333,8 @@ export interface OpenerSanitizeContext {
   mentor?: boolean;
   /** The notebook the line was written from. */
   notebook: PreviousNotebook;
+  /** What the founder said in the latest conversation when the notebook does not hold it yet: threads it may name. */
+  latest?: readonly string[];
   /** Names that are no thread (the founder's, the persona's, the EIR's). */
   names?: readonly string[];
   /** Texts the founder's team removed from the notebook: never written back. */
@@ -335,8 +352,8 @@ export interface SanitizedOpener {
 /**
  * The checks of a distillation's next opener (`sanitizeDistill`), for one written on its own from the notebook
  * (`buildOpenerPrompt`): plain, identity-rewritten and bounded; never what a person removed; never personal, small talk
- * or the scripted frame; always naming a thread the notebook leaves open; never another venture. Null when the line
- * cannot be kept.
+ * or the scripted frame; always naming a thread the notebook leaves open and offering help with it ({@link offersHelp});
+ * never another venture. Null when the line cannot be kept.
  */
 export function sanitizeOpener(
   draft: NotebookOpenerDraft,
@@ -360,7 +377,9 @@ export function sanitizeOpener(
     draft.next_opener === null ? '' : withoutPressure(clean(draft.next_opener, L.nextOpenerMaxChars));
   if (opener === '' || removed(opener) || isPersonalOpener(opener)) return null;
   const names = ctx.names ?? [];
-  if (!namesAThread(opener, [ctx.notebook.summary, ...notebookThreads(ctx.notebook)], names)) return null;
+  const threads = [ctx.notebook.summary, ...notebookThreads(ctx.notebook), ...(ctx.latest ?? [])];
+  if (!namesAThread(opener, threads, names)) return null;
+  if (!offersHelp(opener)) return null;
   const raw =
     draft.next_topic === null
       ? ''
@@ -380,35 +399,6 @@ export function sanitizeOpener(
     return null;
   }
   return { nextOpener: opener, nextTopic: topic };
-}
-
-/** A clause that frames a thread as pressure ("…, which cannot wait", "(urgent)", "blocks the go-to-market strategy"). */
-const PRESSURE = new RegExp(
-  String.raw`\b(?:cannot wait|can'?t wait|urgent(?:ly)?(?! care)|overdue|asap|as soon as possible|right away|immediately|critical(?:ly)?|must be (?:resolved|settled|answered|done) (?:now|first|before)|blocks? (?:everything|all|the (?:whole|entire)? ?(?:go-to-market|launch|plan|strategy|venture|progress))|blocking (?:everything|all progress|the (?:launch|go-to-market|plan|strategy)))\b`,
-  'i',
-);
-
-/**
- * `text` without the clauses that frame it as pressure ({@link PRESSURE}): the threads a notebook keeps are what to help
- * with, never an agenda to push (production, 2026-11-07: the digest wrote the open unknowns as blocking the
- * go-to-market plan and unable to wait, and the call came back to them every turn). Clauses are cut at commas, semicolons, dashes and
- * brackets; a sentence that is nothing but pressure goes whole. '' when nothing is left.
- */
-export function withoutPressure(text: string): string {
-  if (!PRESSURE.test(text.replace(/[‘’ʼ]/g, "'"))) return text;
-  const kept = sentencesOf(text)
-    .map((sentence) => {
-      const parts = sentence.split(/(?=[,;(—–])|(?<=[)])|\s(?=-\s)|\s(?=and (?:which|that|it|they)\b)/u);
-      const clean = parts.filter((part) => !PRESSURE.test(part.replace(/[‘’ʼ]/g, "'"))).join('');
-      return clean
-        .replace(/\(\s*\)/g, '')
-        .replace(/\s+([.!?…])/gu, '$1')
-        .replace(/[\s,;:—–-]+([.!?…]?)$/u, '$1')
-        .trim();
-    })
-    .filter((sentence) => /[\p{L}\p{N}]/u.test(sentence))
-    .map((sentence) => (/[.!?…]$/u.test(sentence) ? sentence : `${sentence}.`));
-  return kept.join(' ');
 }
 
 /**
@@ -500,6 +490,7 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
     identityRewrites: 0,
     untakenOpenerDropped: 0,
     personalOpenerDropped: 0,
+    bareOpenerDropped: 0,
     judgmentalDropped: 0,
     pressureRemoved: 0,
   };
@@ -851,6 +842,13 @@ export function sanitizeDistill(draft: DistillDraft, ctx: DistillSanitizeContext
       notebookDelta.nextOpener = null;
       notebookDelta.nextTopic = null;
       stats.personalOpenerDropped = 1;
+    } else if (!offersHelp(nextOpener)) {
+      // Never a bare question: the line names the thread and offers help with it (production, 2026-11-07). With none,
+      // the model writes one from the notebook when the next conversation starts (core services/distill.ts
+      // `writeOpener`).
+      notebookDelta.nextOpener = null;
+      notebookDelta.nextTopic = null;
+      stats.bareOpenerDropped = 1;
     }
   }
 

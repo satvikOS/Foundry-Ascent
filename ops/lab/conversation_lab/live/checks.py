@@ -97,15 +97,56 @@ PREAMBLE_OPENERS = re.compile(
     r"great[!,.\u2014]|perfect[!,.\u2014]|absolutely[!,.\u2014]|got it[!,.\u2014])",
     re.IGNORECASE,
 )
-#: The student has no answer yet or hands the work back (the product's ``founderMoves`` ``unknown`` and ``help``, in short).
-NO_ANSWER = re.compile(
-    r"(?:^|[.!,;]\s*)(?:(?:no|nope|honestly|um+|uh+|well|so|sorry)[,.]?\s+)*(?:i (?:really |honestly |just )?"
-    r"(?:don'?t|do not) know\b(?! (?:if|whether|that)\b)|idk\b|dunno\b|no idea\b|no clue\b|not sure\b(?![^?]*\?)|not yet\b|"
-    r"nothing yet\b|(?:i|we) (?:didn'?t|did not|haven'?t|have not|never) (?:\w+ ){0,2}?(?:do|done|did|ask|asked|book|"
-    r"booked|call|called|talk|talked|try|tried|hear|heard|check|checked|follow|followed|reach|reached|meet|met|send|"
-    r"sent)\b|(?:they|he|she) (?:didn'?t|did not|never) (?:say|tell|mention|specify)\b|you tell me\b|just tell me\b)",
-    re.IGNORECASE,
+#: A clause that says the student has no answer yet (the product's ``founderMoves`` ``unknown``,
+#: prompts/conversation-state.ts ``NO_ANSWER`` and ``DONT_KNOW``): the whole clause, so "I can't remember the exact
+#: number, but our churn is what I want to fix" keeps its subject.
+_FILLER = r"(?:(?:no|nope|honestly|um+|uh+|well|sorry|so|oh)[,.]? )*"
+NO_ANSWER_CLAUSE = re.compile(
+    "|".join(
+        _FILLER + pattern
+        for pattern in (
+            r"(?:i|we) (?:really |honestly |just |actually )?(?:didn't|did not|haven't|have not|never|couldn't|"
+            r"could not) (?:(?:really|actually|yet|even|get to|got to|manage to|managed to|get around to|got around to) )*"
+            r"(?:do|done|did|ask|asked|book|booked|call|called|talk|talked|speak|spoke|try|tried|hear|heard|check|checked|"
+            r"look|looked|follow|followed|reach|reached|find|found|meet|met|write|wrote|written|send|sent)\b(?:(?: (?:that|"
+            r"it|this|them|him|her|one|anything|up|out|back|yet|either|so far|to (?:them|him|her|anyone)))*$|\b.* yet$)",
+            r"(?:i|we) (?:didn't|did not|haven't|have not|never) (?:get|got|gotten) (?:(?:around )?to (?:it|that|"
+            r"this|them)|(?:that|this|so) far)$",
+            r"(?:i|we) (?:didn't|did not|haven't|have not)(?: yet)?$",
+            r"(?:i|we) (?:forgot|forget)(?: to (?:ask|check|mention|raise it|bring it up|follow up)(?: (?:that|it|"
+            r"this|them|about (?:that|it|this)))?)?$",
+            r"(?:not yet|nothing yet|not so far|no clue|no idea|not really sure|no one (?:told|said|mentioned|"
+            r"explained)|nobody (?:told|said|mentioned|explained))\b",
+            r"(?:they|he|she|it|the \w+) (?:didn't|did not|never|wouldn't|would not) (?:really )?(?:say|said|"
+            r"tell|told|mention|mentioned|specify|specified|explain|explained|answer|answered|give|gave|cover|covered|"
+            r"get into|got into|go into|went into)\b",
+            r"(?:i|we) (?:can't|cannot|don't|do not) (?:really )?remember(?: (?:that|it|this|exactly|what (?:they|"
+            r"he|she) said))?$",
+            r"(?:i (?:really |honestly |just )?(?:don't|do not|dont) (?:(?:really|honestly|actually|even) )?know|"
+            r"idk|dunno|i dunno|no idea|no clue|not sure|i have no (?:idea|clue)|i've no (?:idea|clue)|(?:i'm|i am|im) "
+            r"(?:honestly |really |just |still |actually )?not (?:really |totally |entirely |quite )?sure|i (?:wouldn't|"
+            r"would not) know|beats me)(?: (?:what|how|where|which)\b.*| (?:anything|much) about (?:that|it|this))?"
+            r"(?: (?:honestly|really|tbh|to be honest|yet|at all))*$",
+        )
+    )
 )
+#: The student hands the work back (the product's ``help`` move, in short).
+HANDS_BACK = re.compile(r"\b(?:you tell me|just tell me)\b", re.IGNORECASE)
+_CLAUSE = re.compile(r"(?<=[.!,;\u2014\u2013])\s+|\s+(?:but|and) (?=(?:i|we|can|could|let's|lets|let)\b)")
+
+
+def no_answer(student: str) -> bool:
+    """The student has no answer yet or hands the work back (the product's ``stuckOn``): a no-answer clause in a message
+    that asks nothing of its own (a question in it is what to answer, as the product reads it)."""
+    text = re.sub(r"\s+", " ", student.translate(_APOSTROPHES)).strip().lower()
+    if HANDS_BACK.search(text):
+        return True
+    if "?" in text:
+        return False
+    clauses = (c.rstrip(".!,;\u2026\u2014\u2013 ").strip() for c in _CLAUSE.split(text))
+    return any(NO_ANSWER_CLAUSE.match(c) for c in clauses if c)
+
+
 #: A message that is only social: a hello, thanks or a goodbye (a reply to it may be a question alone).
 SOCIAL_ONLY = re.compile(
     r"^\s*(?:hi|hey|hello|hiya|good (?:morning|afternoon|evening)|thanks?(?: you)?(?: so much)?|thank you|cheers|ok(?:ay)?|"
@@ -352,10 +393,27 @@ _GLUE = frozenset(
 )
 
 
+#: Words that name one subject, by their stems (the product's validators/social.ts ``SUBJECTS``): "what class the
+#: device falls into and how clinics would pay" and "which classification it gets and which billing code they use".
+_SUBJECTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"^(?:class|classif\w*|categor\w*)$"), "class"),
+    (re.compile(r"^(?:pay|paid|payment|payer|bill|reimburs\w*|coverag\w*)$"), "pay"),
+    (re.compile(r"^(?:advis|advis[eo]r|mentor)$"), "advisor"),
+    (re.compile(r"^(?:pric|price|cost|charg|fee)$"), "price"),
+    (re.compile(r"^(?:customer|client|buyer)$"), "customer"),
+    (re.compile(r"^(?:approv\w*|sign-?off)$"), "approve"),
+)
+
+
+def _subject(word: str) -> str:
+    stem = _stem(word)
+    return next((name for pattern, name in _SUBJECTS if pattern.match(word) or pattern.match(stem)), stem)
+
+
 def _subject_seq(text: str) -> list[str]:
-    """The stemmed words a question is about, in order (for the pairs it says together)."""
+    """The words a question is about, stemmed or named by their subject, in order (for the pairs it says together)."""
     words = (w.strip("'") for w in _words(text))
-    return [_stem(w) for w in words if w not in _STOP and w not in _GLUE and len(w) > 1]
+    return [_subject(w) for w in words if w not in _STOP and w not in _GLUE and len(w) > 1]
 
 
 def _pairs(text: str) -> set[tuple[str, str]]:
@@ -368,10 +426,11 @@ def _same_question(a: list[str], b: list[str], ca: set[str], cb: set[str]) -> bo
     return min(len(ca), len(cb)) >= 2 and _jaccard(ca, cb) >= 0.6
 
 
-def _same_subject(qa: str, qb: str, *, strict: bool = False) -> bool:
+def same_subject(qa: str, qb: str, *, strict: bool = False) -> bool:
     """The product's reading of a question asked again (validators/social.ts ``reasksQuestion``): three shared content
     words or more and 60% of the shorter, or three and 30% with two said together in both; ``strict`` (after the student
-    had no answer): two shared words said together, or 40%."""
+    had no answer, or for a question asked before the previous reply): three shared words, or two said together, or
+    40%. ops/lab agenda.py reads the same."""
     ca, cb = set(_subject_seq(qa)), set(_subject_seq(qb))
     shared = len(ca & cb)
     if not ca or not cb:
@@ -380,7 +439,7 @@ def _same_subject(qa: str, qb: str, *, strict: bool = False) -> bool:
     pair = bool(_pairs(qa) & _pairs(qb))
     if shared >= 3 and (share >= 0.6 or (share >= 0.3 and pair)):
         return True
-    return strict and shared >= 2 and (pair or share >= 0.4)
+    return strict and (shared >= 3 or (shared >= 2 and (pair or share >= 0.4)))
 
 
 def judgmental_notes(notes: Iterable[str]) -> list[str]:
@@ -388,13 +447,23 @@ def judgmental_notes(notes: Iterable[str]) -> list[str]:
     return [n for n in notes if JUDGMENTAL.search(n.translate(_APOSTROPHES))]
 
 
+#: An acknowledgement that leads a sentence into a restatement of the student's answer ("Okay, so department heads need
+#: to approve it.", "That's something, so there's a process."; the product's validators/social.ts ``RESTATING_LEAD``).
+RESTATING_LEAD = re.compile(
+    r"^(?:(?:ok(?:ay)?|got it|right|sure|i see|alright|makes sense|fair enough|understood|that's (?:something|fair|good|"
+    r"helpful|useful|great|interesting|a start|real progress))\b[\s,.!:;\u2014\u2013-]*)+(?:so\b[\s,]*)?|^so\b[\s,]*",
+    re.IGNORECASE,
+)
+
+
 def question_only(coach: str) -> bool:
-    """A reply that asks and says nothing of substance: no statement of eight words or more and no list (a line in
-    character in a role-play is the counterpart's, never counted)."""
+    """A reply that asks and says nothing of substance: no statement of eight words or more beyond an acknowledgement
+    that restates the student (``RESTATING_LEAD``) and no list (a line in character in a role-play is the counterpart's,
+    never counted)."""
     if "?" not in coach or IN_ROLE.search(coach) or len(_ANY_ITEM.findall(coach)) >= 2:
         return False
     statements = [s for s in _SENTENCES.split(coach) if s.strip() and not s.strip().endswith("?")]
-    return not any(len(_words(s)) >= 8 for s in statements)
+    return not any(len(RESTATING_LEAD.sub("", s.strip(), count=1).split()) >= 8 for s in statements)
 
 
 def _jaccard(a: Iterable[Any], b: Iterable[Any]) -> float:
@@ -500,6 +569,7 @@ def run_checks(
     first_name = _first_name(student_name)
     named = 0
     asked: list[tuple[str, list[str], set[str]]] = []
+    previous_at: str | None = None
     said: list[tuple[set[tuple[str, ...]], set[str]]] = []
     watch_counts: dict[str, int] = dict.fromkeys(WATCH_PHRASES, 0)
     excused = {"arithmetic": 0, "proposed": 0}
@@ -512,7 +582,7 @@ def run_checks(
         result.replies += 1
         repeat_ok = bool(REPEAT_REQUEST.search(student))
         # repeated questions; after a student with no answer, any question back on the same subject
-        no_answer = bool(NO_ANSWER.search(student))
+        stuck = no_answer(student)
         reasked = False
         for q in _questions(coach):
             words, content = _words(q), _content(q)
@@ -520,22 +590,26 @@ def run_checks(
                 if at == t.at or repeat_ok:
                     continue
                 text = " ".join(earlier)
-                if _same_question(words, earlier, content, earlier_content) or _same_subject(q, text):
+                # A question from before the previous reply is read strictly: the student had their turn to answer it.
+                settled = at != previous_at
+                if _same_question(words, earlier, content, earlier_content) or same_subject(
+                    q, text, strict=settled
+                ):
                     result.findings.append(Finding("repeated_question", MEDIUM, t.at))
                     result.private_matches.append({"code": "repeated_question", "at": t.at, "text": q})
                     break
             if (
-                no_answer
+                stuck
                 and not reasked
                 and any(
-                    at != t.at and _same_subject(q, " ".join(earlier), strict=True)
-                    for at, earlier, _ in asked
+                    at != t.at and same_subject(q, " ".join(earlier), strict=True) for at, earlier, _ in asked
                 )
             ):
                 reasked = True
                 result.findings.append(Finding("reasked_after_unknown", HIGH, t.at))
                 result.private_matches.append({"code": "reasked_after_unknown", "at": t.at, "text": q})
             asked.append((t.at, words, content))
+        previous_at = t.at
         # a reply that only asks, where the student brought something to answer
         if student.strip() and not SOCIAL_ONLY.search(student) and question_only(coach):
             result.findings.append(Finding("question_only", MEDIUM, t.at))

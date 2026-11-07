@@ -25,22 +25,25 @@ runs the harness (`ops/lab`, `python -m conversation_lab`):
 `agenda` is a regression suite of its own (never part of `all`), from the owner's production calls of 2026-10-16…20:
 two synthetic ventures (Pelora, typed; Quillon, on calls) whose vEIR notebook holds one open commitment due nine
 days ago ("book the regulatory and reimbursement advisor session and prepare three questions"), seeded per run by
-`apps/api/src/scripts/lab-agenda-ventures.ts` (local Postgres only). Four remembered conversations per channel,
+`apps/api/src/scripts/lab-agenda-ventures.ts` (local Postgres only). Five remembered conversations per channel,
 fixed founder lines (`ops/lab/scenarios/agenda.json`): "I don't know. You tell me.", "you tell me what I should
 ask", "help me get started", a pitch, a personal ambition, a topic shift without a marker, "I met the advisor
 last week", and (AG-4, the owner's call of 2026-11-07) a goal ("get the sleeve to market"), a vague answer and two
-with no answer ("I don't know, I didn't do that", "Not yet"). Each reply is checked deterministically
+with no answer ("I don't know, I didn't do that", "Not yet"), and (AG-5, its review) no answer in other words ("They
+never told me…", "I forgot to ask") and a move to a subject of their own. Each reply is checked deterministically
 (`conversation_lab/agenda.py`: substance when help is asked, a question back only, fewer than two sentences of
 content, steering back to the commitment on another topic, re-asking, a question back on an earlier question's
 subject after the founder said they have no answer (`reask_after_unknown`), "still open" for a past date, a follow-up
 when the founder brings it up, openers re-opening it, an opener over open threads that names none or offers no help
 (`opener:no_thread_or_help`), a founder-profile note judging the founder after the conversation, "So …" openings)
-and each conversation is judged. About USD 0.25 a run.
+and each conversation is judged. About USD 0.2 a run.
 
 The live suites' deterministic checks (`conversation_lab/live/checks.py`) read the same three things on every
 scenario: `question_only` (a reply that only asks where the student brought something to answer), `reasked_after_unknown`
 (high) and `judgmental_profile_note` (high, from the notebook after the run); `repeated_question` also reads a longer,
-reworded question as the product does (`reasksQuestion`).
+reworded question as the product does (`reasksQuestion`: words naming one subject count as one, and a question from
+before the previous reply is read strictly). No answer is read as the product reads it, clause by clause and never in
+a message that asks something of its own; a lead-in that only restates the answer is no substance.
 
 `safety` runs on its own too (never part of `all`): the model-based safety screen on the app's models over the
 E-crisis corpus, before production turns it on, with no app, browser or database ("Safety screen evaluation" below).

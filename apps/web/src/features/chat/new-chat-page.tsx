@@ -9,7 +9,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { errorMessage } from '@/lib/api/errors';
 import { memoryQueryOptions } from '@/lib/api/hooks/memory';
-import { conversationOpenerQueryOptions, useCreateSession } from '@/lib/api/hooks/sessions';
+import {
+  conversationOpenerQueryOptions,
+  preparedOpenerQueryOptions,
+  useCreateSession,
+} from '@/lib/api/hooks/sessions';
 import { useVenture } from '@/lib/api/hooks/ventures';
 import { canWrite } from '@/lib/auth/roles';
 import { useRequiredMe } from '@/lib/auth/use-me';
@@ -40,6 +44,11 @@ function firstName(displayName: string): string {
 
 /** Longest New chat waits for the vEIR's opener before greeting without one (a slow network, a cold server). */
 export const OPENER_WAIT_MS = 1_500;
+/**
+ * Longest New chat waits, once the preview said the notebook's line is missing, for the server to have it written
+ * (`POST /ventures/:id/opener`, which itself waits at most two seconds) before greeting with the preview's line.
+ */
+export const OPENER_PREPARE_WAIT_MS = 2_500;
 
 /** The welcome this browser showed last over a line without its own greeting (`greeting.ts`), if any. */
 function readShownWelcome(): ShownWelcome | null {
@@ -148,16 +157,41 @@ function NewChat() {
     };
   }, []);
   const [shown, setShown] = useState<ShownOpener | null>(null);
+  // The preview says the notebook leaves threads open with no line for this conversation (production, 2026-11-07: "Nice
+  // to see you. What feels most pressing right now?"): now that New chat is open (never on a link's hover), the server
+  // has one written, briefly waited for.
+  const missing = openerQuery.data?.missing === true && !openerQuery.isRefetching;
+  const preparedQuery = useQuery({
+    ...preparedOpenerQueryOptions(ventureId),
+    enabled: missing && shown === null,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const [prepareLate, setPrepareLate] = useState(false);
+  useEffect(() => {
+    if (!missing) return;
+    const timer = setTimeout(() => {
+      setPrepareLate(true);
+    }, OPENER_PREPARE_WAIT_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [missing]);
   // Read once per visit: the heading never changes in front of the founder.
   const [previousWelcome] = useState(readShownWelcome);
   if (shown === null) {
     const preview = openerQuery.data;
+    const line = missing
+      ? (preparedQuery.data ?? (preparedQuery.isError || prepareLate ? preview : undefined))
+      : preview;
     if (preview !== undefined && !openerQuery.isRefetching) {
-      setShown({
-        opener: preview.opener,
-        at: preview.opener === null ? null : preview.at,
-        returning: preview.lastConversation !== null,
-      });
+      if (line !== undefined) {
+        setShown({
+          opener: line.opener,
+          at: line.opener === null ? null : line.at,
+          returning: line.lastConversation !== null,
+        });
+      }
     } else if (openerQuery.isError || openerLate) {
       // Not in time (or not at all): greet without it, and the conversation opens without one too.
       setShown({ opener: null, at: null, returning: false });
@@ -272,8 +306,8 @@ function NewChat() {
     if (shownWelcome !== null) safeStorage.set(STORAGE_KEYS.newChatWelcome, shownWelcome);
   }, [shownWelcome]);
 
-  // The page appears once its greeting is known (briefly, at most OPENER_WAIT_MS): it never changes in front of
-  // the founder, and nothing moves under them.
+  // The page appears once its greeting is known (briefly, at most OPENER_WAIT_MS, or OPENER_PREPARE_WAIT_MS while a
+  // missing line is written): it never changes in front of the founder, and nothing moves under them.
   if (!ready) {
     return (
       <ConversationWindow>

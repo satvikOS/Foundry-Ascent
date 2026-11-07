@@ -128,6 +128,28 @@ describe('every earlier reply in view is guarded, not only the previous one', ()
     );
   });
 
+  it.each([
+    "I don't really know.",
+    'not sure honestly',
+    'They never told me.',
+    'We never got that far.',
+    'I forgot to ask.',
+    "They didn't go into it.",
+    'idk tbh',
+    'Beats me.',
+  ])('after %j, a question back on the subject in other words is left out', (founderText) => {
+    const first =
+      'Walk me through the regulatory route: what did the advisor session tell you about the device class and how clinics would pay?';
+    const g = gate({ previousReply: first, founderText });
+    expect(
+      joined(
+        run(g, [
+          'That is common. Has anyone told you what classification the insole gets and which billing code clinics would use? ',
+        ]),
+      ).trim(),
+    ).toBe('That is common.');
+  });
+
   it('lets the founder ask for it again, or rerun a drill (diff3-A3)', () => {
     for (const text of [
       'Can you say that again?',

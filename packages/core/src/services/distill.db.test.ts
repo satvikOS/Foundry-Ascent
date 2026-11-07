@@ -379,7 +379,7 @@ describe('distillSession', () => {
     expect(commitment?.status).toBe('open');
     expect(commitment?.text).toMatch(/library staff/);
     // A greeting of its own, then the founder's plan (the mock follows the distillation prompt's shape).
-    expect(nb?.content.nextOpener).toMatch(/^[^.!?]+\. Did you get to interview five library staff/);
+    expect(nb?.content.nextOpener).toMatch(/^[^.!?]+\. I can help you interview five library staff/);
     expect(nb?.content.nextTopic).toMatch(/^your plan to interview five library staff/);
     expect(await personEdits()).toEqual([]);
 
@@ -1665,7 +1665,7 @@ describe('daily maintenance', () => {
 });
 
 describe('what a distillation draws from a conversation, and its deletion', () => {
-  const OPENER = 'Last time you planned to ask three libraries for a deposit. How did it go?';
+  const OPENER = 'Last time you planned to ask three libraries for a deposit. Want help preparing the ask?';
   const scriptOpener = (): void => {
     scripted = (context) => {
       const draft = mockDistillDraft(context);

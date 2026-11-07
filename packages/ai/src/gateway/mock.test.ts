@@ -612,7 +612,7 @@ describe('MockModelGateway distillation and recap', () => {
       },
     ];
     const draft = (await gw.generateStructured(distillRequest(turns))).value;
-    expect(draft.notebook.next_opener).toMatch(/\. Did you get to interview five library staff\?$/);
+    expect(draft.notebook.next_opener).toMatch(/\. I can help you interview five library staff\.$/);
     expect(draft.notebook.next_topic).toBe('your plan to interview five library staff');
     for (const text of [draft.notebook.next_opener ?? '', draft.notebook.next_topic ?? '']) {
       expect(text).not.toMatch(/perosnal|personal|life|great/i);
@@ -642,7 +642,7 @@ describe('MockModelGateway distillation and recap', () => {
     expect(draft.notebook.commitments.map((c) => c.id)).toEqual(['cm-old', null]);
     // A greeting of its own, then the founder's plan (as the distillation prompt asks).
     expect(draft.notebook.next_opener).toMatch(
-      /^(?:Good to see you again|Nice to see you|Hello again|Good to hear from you)\. Did you get to ask three libraries for a deposit next week\?$/,
+      /^(?:Good to see you again|Nice to see you|Hello again|Good to hear from you)\. I can help you ask three libraries for a deposit next week\.$/,
     );
     expect(draft.notebook.next_topic).toBe('your plan to ask three libraries for a deposit next week');
     expect(draft.lesson_candidates).toHaveLength(1);

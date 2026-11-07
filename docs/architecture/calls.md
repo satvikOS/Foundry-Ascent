@@ -232,9 +232,10 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
   clinics") while the name budget has no room: then the call invites, and the conversation keeps the line. With no
   opener, the call says hello and an invitation that names
   nothing and offers help, varied from call to call ("Hi Maya, what can I help you prepare for?"; "…what can I help
-  you with next?" on a conversation under way). That happens only when the notebook leaves no thread open: with one,
-  and the person's latest conversation distilled, a missing or stale line is written by the model at call start from
-  the notebook (knowledge-pools.md, "A notebook with open threads always gets a line"), waited for up to 2 s.
+  you with next?" on a conversation under way). With a thread open in the notebook, the line is written ahead (at
+  distillation, or by New chat as it opens: knowledge-pools.md, "A notebook with open threads always gets a line"); a
+  call never waits for the writer, and one that starts with the line missing has it written after the response, for
+  the next start (one attempt per notebook version and conversation).
   The founder's name is said in a greeting one reply in four at most, as in every reply (`greetedName`, read from the
   vEIR's latest replies to them: this conversation's, or the end of the last ones), never twice in one line (a model
   line that names them already, after its greeting's comma or later, is said as written), and a model line that calls
@@ -243,8 +244,8 @@ stream-transcription-websocket` URL (en-US, PCM, 16 kHz, partial-results stabili
   line's own: "Good to see you again", "Nice to see you"; `openerSaidHello`) means the first reply does not greet
   again; a line that only welcomes them back ("Good to have you back") still leaves a hello a hello back. The opener
   is chosen afresh at call start for a conversation nobody has said anything in (`chooseOpener`; no model call on the
-  way to the first word when the line was written at distillation; one bounded call when the notebook's line is
-  missing, above), and kept in the same transaction: the intro becomes
+  way to the first word: the line was written ahead, and a missing one is written after the response, above), and
+  kept in the same transaction: the intro becomes
   that conversation's first message (`coaching_sessions.opener`, replayed by the turn engine) when it says the opener,
   so the vEIR's history holds the greeting it gave and its first reply never greets again (the sentence gate and the
   validator leave a greeting out); a bare invitation never replaces a substantive opener (`openerKept`). The vEIR introduces

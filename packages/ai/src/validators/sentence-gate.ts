@@ -30,7 +30,7 @@ import {
   isListItem,
   isProtectedLine,
   parksTheirNews,
-  questionsOf,
+  askedBefore,
   reasksQuestion,
   repeatsPrevious,
   stuckOn,
@@ -580,7 +580,7 @@ export class SentenceGate {
       const grams = new Set<string>();
       for (const text of said) for (const g of repeatKeysOf(text)) grams.add(g);
       this.#previousGrams = grams;
-      this.#previousQuestions = said.flatMap((text) => questionsOf(text));
+      this.#previousQuestions = askedBefore(options.previousReply, options.earlierReplies);
     }
   }
 

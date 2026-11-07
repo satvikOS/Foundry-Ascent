@@ -136,16 +136,19 @@ export interface DistillService {
     readonly deadline?: number;
   }): Promise<DistillBackstopReport>;
   /**
-   * Writes a notebook's next opener with the model, from the notebook alone (purpose `distill`, metered within the
-   * caps): for a notebook with open threads whose line is missing or was written before the person's latest
-   * conversation (`replace`), so the conversation starting now opens on its live thread and offers help (production,
-   * 2026-11-07). Never over a person's line or a notebook with a person's edits pending; audited. Never throws.
+   * Writes a notebook's next opener with the model, from the notebook and the latest conversation's exchanges it does
+   * not hold yet (purpose `distill`, metered within the caps): for a notebook with open threads whose line is missing,
+   * cannot be said or was written before the person's latest conversation (`replace`), so the conversation starting
+   * next opens on its live thread and offers help (production, 2026-11-07). One attempt per version of the notebook and
+   * state of that conversation (`notebooksRepo.claimOpenerAttempt`): whatever its outcome, it is never paid for again
+   * until either changes. Never over a person's line or a notebook with a person's edits pending; audited. Never throws.
    */
   writeOpener(request: OpenerWriteRequest): Promise<OpenerWriteOutcome>;
   /**
    * The one-time backfill (daily maintenance, and the `distill_sweep` message): writes the opener of up to
    * {@link OPENER_BACKFILL_BATCH} notebooks with open threads and none (`notebooksRepo.listNotebooksWithoutOpener`),
-   * while the deadline leaves time. Idempotent: a notebook with a line is never listed again. Never throws.
+   * while the deadline leaves time. Idempotent: a notebook with a line, or one whose attempt for this version and
+   * conversation was made (whatever came of it), is never listed again. Never throws.
    */
   backfillOpeners(options: {
     readonly requestId: string;
@@ -162,6 +165,10 @@ export interface OpenerWriteRequest {
   readonly requestId: string;
   /** The conversation the line is drawn from (the person's latest): deleting it erases the line. */
   readonly sourceSessionId: string;
+  /** Its last activity: with the notebook's version, what the attempt is remembered by. */
+  readonly sourceActivityAt: string;
+  /** Its exchanges the notebook does not hold yet (it is not distilled), oldest first; empty once it is. */
+  readonly latest: readonly { readonly founder: string; readonly answer: string | null }[];
   /** What that conversation opened with: never said again. */
   readonly lastOpener: string | null;
   /** Threads the founder left aside (`MissingOpener.leftAside`): the line is never about one of them. */
@@ -173,30 +180,36 @@ export interface OpenerWriteRequest {
 }
 
 /**
- * `written`; `present`: a line is there (or a person wrote it); `person_edits`: a person's edits wait for the next
- * distillation; `no_threads`: nothing to open on; `skipped`: paused, over the caps, the persona inactive or the notebook
- * changed meanwhile; `dropped`: the model's line failed the opener checks; `failed`: the model gave none.
+ * `written`; `present`: a line is there (or a person wrote it); `tried`: this version of the notebook and state of the
+ * conversation had their attempt already; `person_edits`: a person's edits wait for the next distillation;
+ * `no_threads`: nothing to open on; `skipped`: paused, over the caps, the persona inactive or the notebook changed
+ * meanwhile; `dropped`: the model's line failed the opener checks; `failed`: the model gave none.
  */
 export type OpenerWriteOutcome =
-  'written' | 'present' | 'person_edits' | 'no_threads' | 'skipped' | 'dropped' | 'failed';
+  'written' | 'present' | 'tried' | 'person_edits' | 'no_threads' | 'skipped' | 'dropped' | 'failed';
 
 export interface OpenerBackfillReport {
   readonly candidates: number;
   readonly written: number;
-  /** Candidates not written (dropped, failed or skipped); tried again on a later run while they have no line. */
+  /**
+   * Candidates not written (dropped, failed or skipped): tried again only once the notebook or its latest conversation
+   * changes (`notebooksRepo.claimOpenerAttempt`).
+   */
   readonly notWritten: number;
   /** Candidates left for a later run because the deadline was near. */
   readonly deferred: number;
 }
 
 /**
- * The model's budget for an opener written while a conversation starts. The start waits for it only up to
- * {@link OPENER_WAIT_MS} and lets it finish for the next start.
+ * The model's budget for an opener written ahead of a conversation. New chat waits for it only up to
+ * {@link OPENER_WAIT_MS}; a call's start never waits (services/calls.ts `openCall`). Either lets it finish for the next
+ * start.
  */
 export const OPENER_MODEL_TIMEOUT_MS = 10_000;
 /**
- * How long a conversation's start waits for an opener being written (`writeOpener`): about what a call's voice takes to
- * come up. A line written later is kept for the next start; this one opens with the greeting that names nothing.
+ * How long New chat's request to prepare its greeting waits for an opener being written (`writeOpener`, a few hundred
+ * milliseconds of model time as a rule): a line written later is kept for the next start, and this one greets without
+ * naming a thread.
  */
 export const OPENER_WAIT_MS = 2_000;
 
@@ -1146,11 +1159,23 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
     // A person's line, or any line when only a missing one is written, stays.
     if (content.nextOpener !== null && (!request.replace || content.nextOpenerSource === null))
       return 'present';
+    const settings = await kit.system((sx) => settingsRepo.getPlatformSettings(sx), { transaction: false });
+    if (!settings.aiEnabled) return 'skipped';
+    // One attempt per version of the notebook and state of its latest conversation, whatever comes of it below.
+    const claimed = await kit.system((sx) =>
+      notebooksRepo.claimOpenerAttempt(sx, {
+        tenantId: request.tenantId,
+        ...scope,
+        notebookVersion: source.notebook.version,
+        sourceSessionId: request.sourceSessionId,
+        sourceActivityAt: request.sourceActivityAt,
+        requestId,
+      }),
+    );
+    if (!claimed) return 'tried';
     // A write of the vEIR's clears the marks of a person's edits: those wait for the distillation that merges them.
     if (source.marks.personEdits.length > 0 || !source.notebook.intact) return 'person_edits';
     if (!personaCanDistill(source.persona, source.consent, kit.now())) return 'skipped';
-    const settings = await kit.system((sx) => settingsRepo.getPlatformSettings(sx), { transaction: false });
-    if (!settings.aiEnabled) return 'skipped';
     const ctx: RequestContext = {
       principalId: request.principalId,
       tenantId: request.tenantId,
@@ -1176,6 +1201,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       notebook: { ...content, updatedAt: source.notebook.updatedAt },
       lastOpener: request.lastOpener,
       leftAside: request.leftAside,
+      latest: request.latest,
       today: kit.now().toISOString().slice(0, 10),
     });
     let draft: NotebookOpenerDraft;
@@ -1212,6 +1238,7 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
       personaEirName: source.eirName,
       ...(source.presence.mentor ? { mentor: true } : {}),
       notebook: content,
+      latest: request.latest.map((x) => x.founder),
       names,
       otherVentureNames: others.names,
       otherVentureCanaries: others.canaries,
@@ -1443,6 +1470,8 @@ export function createDistillService(kit: Kit, directory: DirectoryCache): Disti
             principalId: candidate.startedBy,
             requestId,
             sourceSessionId: candidate.sessionId,
+            sourceActivityAt: candidate.lastActivityAt,
+            latest: [],
             lastOpener: candidate.opener,
             leftAside: [],
             replace: false,

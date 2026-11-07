@@ -68,9 +68,18 @@ export interface SessionsService {
   ): Promise<SessionView>;
   /**
    * How the vEIR would open a new standard conversation of the caller in this venture now (founder/team): the
-   * opener `create` would store, and the latest earlier conversation it picks up. Nothing is written.
+   * opener `create` would store, and the latest earlier conversation it picks up. Nothing is written, and no model is
+   * called (New chat fetches it on a link's hover): `missing` says the notebook leaves threads open with no line of the
+   * model's for this conversation, which {@link SessionsService.prepareOpener} has written.
    */
   previewOpener(ctx: RequestContext, ventureId: string): Promise<ConversationOpenerResponse>;
+  /**
+   * {@link SessionsService.previewOpener} once a missing line was written (New chat, when it opens and the preview said
+   * `missing`; production, 2026-11-07): the model writes it from the notebook (`DistillService.writeOpener`, one
+   * attempt per notebook version and conversation), waited for up to `OPENER_WAIT_MS`; a line that takes longer is kept
+   * for the next start, and this greeting names no thread.
+   */
+  prepareOpener(ctx: RequestContext, ventureId: string): Promise<ConversationOpenerResponse>;
   /** Sessions of a venture, latest activity first (founder/team). */
   list(ctx: RequestContext, ventureId: string): Promise<SessionView[]>;
   /**
@@ -175,6 +184,8 @@ export function createSessionsService(
         principalId: ctx.principalId,
         requestId: ctx.requestId,
         sourceSessionId: missing.sourceSessionId,
+        sourceActivityAt: missing.sourceActivityAt,
+        latest: missing.latest,
         lastOpener: missing.lastOpener,
         leftAside: missing.leftAside,
         replace: true,
@@ -182,6 +193,38 @@ export function createSessionsService(
       }),
     );
     return written === 'written';
+  }
+
+  /** How a new conversation would open now (`previewOpener`), with the persona it is for and what the notebook lacks. */
+  async function choosePreview(
+    ctx: RequestContext,
+    ventureId: string,
+    guards: Awaited<ReturnType<typeof openerGuards>>,
+  ): Promise<Awaited<ReturnType<typeof openerFor>> & { readonly personaId: string }> {
+    return kit.inRequest(ctx, async (scope) => {
+      await requireVentureAccess(scope, ventureId, 'write', { objectType: 'session' });
+      const active = await requireAssignmentActive(scope, ventureId);
+      return { personaId: active.persona.id, ...(await openerFor(scope, ventureId, active, guards)) };
+    });
+  }
+
+  /** The `GET /ventures/:id/opener` body for a chosen opener. */
+  function previewOf(chosen: Awaited<ReturnType<typeof openerFor>>, at: Date): ConversationOpenerResponse {
+    const { opener, latest, missing } = chosen;
+    return {
+      opener: opener?.text ?? null,
+      at: at.toISOString(),
+      lastConversation:
+        latest === null
+          ? null
+          : {
+              sessionId: latest.sessionId,
+              lastActivityAt: latest.lastActivityAt,
+              channel: latest.channel,
+              title: latest.title,
+            },
+      ...(missing === null ? {} : { missing: true }),
+    };
   }
 
   /** The opener's guards, from the tenant directory (owner role, cached): read before a request transaction. */
@@ -292,30 +335,18 @@ export function createSessionsService(
       const ventureId = requireId(rawVentureId, 'Venture');
       const guards = await openerGuards(ctx, ventureId);
       const at = kit.now();
-      const choose = (): Promise<Awaited<ReturnType<typeof openerFor>> & { readonly personaId: string }> =>
-        kit.inRequest(ctx, async (scope) => {
-          await requireVentureAccess(scope, ventureId, 'write', { objectType: 'session' });
-          const active = await requireAssignmentActive(scope, ventureId);
-          return { personaId: active.persona.id, ...(await openerFor(scope, ventureId, active, guards)) };
-        });
-      const first = await choose();
+      return previewOf(await choosePreview(ctx, ventureId, guards), at);
+    },
+
+    prepareOpener: async (ctx, rawVentureId) => {
+      const ventureId = requireId(rawVentureId, 'Venture');
+      const guards = await openerGuards(ctx, ventureId);
+      const at = kit.now();
+      const first = await choosePreview(ctx, ventureId, guards);
       // New chat shows this line as the conversation's first: a missing one is written now, and chosen again.
       const written =
         first.missing !== null && (await writeMissing(ctx, ventureId, first.personaId, first.missing));
-      const { opener, latest } = written ? await choose() : first;
-      return {
-        opener: opener?.text ?? null,
-        at: at.toISOString(),
-        lastConversation:
-          latest === null
-            ? null
-            : {
-                sessionId: latest.sessionId,
-                lastActivityAt: latest.lastActivityAt,
-                channel: latest.channel,
-                title: latest.title,
-              },
-      };
+      return previewOf(written ? await choosePreview(ctx, ventureId, guards) : first, at);
     },
 
     list: async (ctx, rawVentureId) => {

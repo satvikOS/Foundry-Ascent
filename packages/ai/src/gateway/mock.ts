@@ -1193,7 +1193,7 @@ function firstWords(text: string, n: number): string {
 
 /**
  * The next opener and its thread, as the distillation prompt asks: a greeting of its own, then one sentence naming the
- * thread of THIS conversation (the founder's plan, else the venture topic it was about); with nothing about the venture
+ * thread and offering help with it, never a bare question: the thread of THIS conversation (the founder's plan, else the venture topic it was about); with nothing about the venture
  * in it (small talk, a one-word reply, a test), the most important thread still open in the previous notebook (an open
  * commitment, then an open question, then advice given); else none. Never the founder's small talk.
  */
@@ -1214,29 +1214,29 @@ function mockNextOpener(args: {
   const plain = (text: string): string => lowerFirst(withoutFinalStop(text.replace(/\?+$/, '')), args.names);
   if (args.thread !== null) {
     return {
-      opener: `${greeting} Did you get to ${args.thread}?`,
+      opener: `${greeting} I can help you ${args.thread}.`,
       topic: `your plan to ${firstWords(args.thread, 9)}`,
     };
   }
   if (args.topic !== null) {
-    return { opener: `${greeting} Where did you land on ${args.topic}?`, topic: args.topic };
+    return { opener: `${greeting} I can help you work through ${args.topic}.`, topic: args.topic };
   }
   const { commitment, question, advice } = args.previous;
   if (commitment !== null) {
     return {
-      opener: `${greeting} Did you get to ${plain(commitment)}?`,
+      opener: `${greeting} I can help you ${plain(commitment)}.`,
       topic: `your plan to ${firstWords(plain(commitment), 9)}`,
     };
   }
   if (question !== null) {
     return {
-      opener: `${greeting} One question is still open: ${upperFirst(plain(question))}?`,
+      opener: `${greeting} I can help you work out ${plain(question)}.`,
       topic: firstWords(plain(question), 12),
     };
   }
   if (advice !== null) {
     return {
-      opener: `${greeting} Did you get a chance to act on this: ${plain(advice)}?`,
+      opener: `${greeting} I can help you act on this: ${plain(advice)}.`,
       topic: firstWords(plain(advice), 12),
     };
   }
@@ -1389,10 +1389,30 @@ export function mockDistillDraft(context: MockGenerateContext): DistillDraft {
 
 /**
  * Deterministic `NotebookOpener` from an opener prompt (`buildOpenerPrompt`): a greeting and an offer to help with the
- * notebook's first open thread (an open commitment, then an open question, then advice), or null for both without one.
+ * founder's plan or venture topic in the latest conversation the notebook does not hold yet (as the distillation mock
+ * reads it), else the notebook's first open thread (an open commitment, then an open question, then advice), or null
+ * for both without one.
  */
 export function mockNotebookOpener(context: MockGenerateContext): NotebookOpenerDraft {
-  const notebook = sectionIn(context.messages.map((m) => m.content).join('\n'), 'notebook');
+  const user = context.messages.map((m) => m.content).join('\n');
+  const conversation = /<latest_conversation[^>]*>([\s\S]*?)<\/latest_conversation>/.exec(user)?.[1] ?? '';
+  const latest = [...conversation.matchAll(/<founder>([\s\S]*?)<\/founder>/g)].map((m) =>
+    unescapeData(m[1] ?? ''),
+  );
+  const plan = latest.flatMap((text) => {
+    const match = COMMITMENT.exec(text);
+    return match?.[1] ? [match[1].trim()] : [];
+  })[0];
+  const topic = latest.map(topicOf).find((t) => t !== 'general');
+  if (plan !== undefined || topic !== undefined) {
+    const thread =
+      plan === undefined ? TOPICS[topic ?? 'general'].phrase : lowerFirst(withoutFinalStop(plan), []);
+    return {
+      next_opener: `Good to see you. I can help you work through ${thread}.`,
+      next_topic: thread.split(/\s+/).slice(0, 12).join(' '),
+    };
+  }
+  const notebook = sectionIn(user, 'notebook');
   const commitment = /<commitment id="[^"]+" status="open"[^>]*>([\s\S]*?)<\/commitment>/.exec(notebook)?.[1];
   const thread =
     commitment === undefined
@@ -1401,8 +1421,8 @@ export function mockNotebookOpener(context: MockGenerateContext): NotebookOpener
         null)
       : unescapeData(commitment);
   if (thread === null) return { next_opener: null, next_topic: null };
-  const topic = withoutFinalStop(thread.trim());
-  const lower = `${topic.charAt(0).toLowerCase()}${topic.slice(1)}`;
+  const plain = withoutFinalStop(thread.trim());
+  const lower = `${plain.charAt(0).toLowerCase()}${plain.slice(1)}`;
   return {
     next_opener: `Good to see you. I can help you get ready for this one: ${lower}.`,
     next_topic: lower.split(/\s+/).slice(0, 12).join(' '),

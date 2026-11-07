@@ -263,6 +263,78 @@ def test_the_production_call_of_2026_11_07_teach_and_prepare() -> None:
     assert run_checks([T("1.1", "go on", "**Investor:** What does a clinic pay you today?")]).codes() == []
 
 
+@pytest.mark.parametrize(
+    "student",
+    [
+        "I don't really know what they meant",
+        "not sure honestly",
+        "I'm honestly not sure.",
+        "They never told me.",
+        "Nobody mentioned it.",
+        "We never got that far.",
+        "I forgot to ask.",
+        "They didn't go into it.",
+        "idk tbh",
+        "Beats me.",
+        "I wouldn't know.",
+        "I don't know anything about that.",
+    ],
+)
+def test_a_reworded_question_after_any_no_answer_is_found(student: str) -> None:
+    """The product's reading of no answer (validators/social.ts ``stuckOn``) and of a subject in other words:
+    classification is the class, billing and payment are how clinics pay."""
+    call = [
+        T(
+            "1.1",
+            "taking the insole to market",
+            "What did the advisor tell you about the device class and how clinics pay?",
+        ),
+        T(
+            "1.2",
+            student,
+            "That's common. Has anyone told you what classification the insole gets and which billing code clinics use?",
+        ),
+    ]
+    assert "reasked_after_unknown" in run_checks(call).codes()
+
+
+def test_a_no_answer_that_moves_on_or_asks_is_read_as_the_product_reads_it() -> None:
+    first = T("1.1", "taking the insole to market", "What did the advisor tell you about the device class?")
+    for student in (
+        "I can't remember the exact number, but our churn on the pilot app is what I want to fix",
+        "Not sure. Does the device class change who pays?",
+    ):
+        follow = T("1.2", student, "Which device class did the advisor give the insole?")
+        assert "reasked_after_unknown" not in run_checks([first, follow]).codes(), student
+
+
+def test_the_first_reply_asked_again_after_a_vague_answer_and_a_short_one_is_found() -> None:
+    """No "I don't know": a question from before the previous reply is read strictly (the student had their turn)."""
+    call = [
+        T(
+            "1.1",
+            "taking the insole to market",
+            "What did the advisor tell you about the device class and how clinics pay?",
+        ),
+        T("1.2", "they said there are hoops to management", "Who sits in those hoops?"),
+        T("1.3", "head of departments mostly", "Did the advisor mention the classification at all?"),
+    ]
+    assert "repeated_question" in run_checks(call).codes()
+
+
+def test_a_lead_in_that_only_restates_the_answer_is_no_substance() -> None:
+    for coach in (
+        "That's something, so there's a process, not a quick yes. Who are the people in those hoops?",
+        "Okay, so department heads need to approve it... But did the advisor say which class the insole is?",
+    ):
+        assert "question_only" in run_checks([T("1.1", "department heads mostly", coach)]).codes(), coach
+    taught = (
+        "So the usual route for a low-risk monitor is a lighter clearance, and clinics bill the monitoring time "
+        "separately. Want the checklist?"
+    )
+    assert run_checks([T("1.1", "department heads mostly", taught)]).codes() == []
+
+
 def test_a_profile_note_that_judges_the_founder_is_found() -> None:
     notes = [
         "Prefers direct answers and actionable steps",

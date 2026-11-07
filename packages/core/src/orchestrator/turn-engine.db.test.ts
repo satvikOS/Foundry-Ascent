@@ -1226,6 +1226,9 @@ describe('spoken turns', () => {
     const { core, orchestrator } = coreWith(gateway, admitted);
     const session = await core.sessions.create(maya, h.ventures.quietquad.id, {});
     const { call } = await core.calls.start(maya, session.id, { inputMode: 'typed' });
+    // What the call's start asked of the model (the notebook's missing opener, written for the next start) is not the
+    // turn's.
+    const atStart = gateway.calls.length;
     try {
       const { events, outcome } = await run(orchestrator, session.id, {
         text: CRISIS_TEXT,
@@ -1234,7 +1237,7 @@ describe('spoken turns', () => {
       });
       expect(outcome.status).toBe('blocked');
       expect(admitted).toEqual([]);
-      expect(gateway.calls.filter((c) => c.kind !== 'embed')).toEqual([]);
+      expect(gateway.calls.slice(atStart).filter((c) => c.kind !== 'embed')).toEqual([]);
       expect(speechUnits(events).map((u) => [u.seq, u.text, u.final])).toEqual([
         [0, CRISIS_SPOKEN_MESSAGE, true],
       ]);

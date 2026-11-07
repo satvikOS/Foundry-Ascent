@@ -465,13 +465,49 @@ describe('a founder with no answer, and a goal ahead of them (production, 2026-1
   });
 
   it.each([
+    "I don't really know.",
+    'not sure honestly',
+    "I'm honestly not sure.",
+    'They never told me.',
+    'Nobody mentioned it.',
+    'We never got that far.',
+    'I forgot to ask.',
+    "I didn't get that far.",
+    "They didn't go into it.",
+    'I have no clue.',
+    'i dunno',
+    'idk tbh',
+    'Beats me.',
+    "I wouldn't know.",
+    "I don't know anything about that.",
+  ])('hears %j as no answer yet, however it is put', (text) => {
+    expect(founderMoves(text)).toContain('unknown');
+    expect(deriveConversationState(history, text).onlyNoAnswer).toBe(true);
+  });
+
+  it.each([
     "I didn't think the price was too high.",
     "We didn't get the grant, sadly.",
     'Not sure. Does it matter who pays?',
     'I never said that.',
     'They said it needs sign-off from the department heads.',
+    "I can't remember the exact number, but our churn on the pilot app is what I want to fix.",
   ])('does not hear %j as no answer', (text) => {
     expect(founderMoves(text)).not.toContain('unknown');
+  });
+
+  it.each([
+    "We haven't heard back yet, but I want to talk about hiring a CTO this month.",
+    'Not yet. Can we work on my pitch deck for the accelerator demo day instead',
+    'Not yet. Can we work on my pitch deck for the accelerator demo day instead?',
+    "No idea, honestly. Let's switch to pricing for the consumer insoles.",
+  ])('follows %j to what it brings, never back to the question', (text) => {
+    const block = renderConversationState(deriveConversationState(history, text));
+    expect(block).not.toContain('has no answer yet: answer it yourself');
+    expect(block).not.toContain('then say what the answer most likely is');
+    if (founderMoves(text).includes('unknown')) {
+      expect(block).toContain('move on to something of their own: answer what they bring now.');
+    }
   });
 
   it('names the question with no answer, so the reply answers it rather than asking it again', () => {

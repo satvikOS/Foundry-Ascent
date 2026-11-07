@@ -59,6 +59,30 @@
         { "say": "Not yet. No idea who would sign off.", "topic": "agenda", "help": true, "unknown": true }
       ],
       "expect": "The vEIR teaches how bringing a monitoring device to clinics usually works (how devices are classified, how clinics get paid for monitoring, who approves a purchase inside a clinic), as general knowledge with hedging and no numbers of its own, and drafts the prep (questions for the advisor, a short plan). Each reply carries substance before any question and asks at most one; after the founder says they do not know or did not do it, it never asks that subject again, it says what the answer most likely is and the fastest way to find out."
+    },
+    {
+      "id": "AG-5",
+      "title": "no answer in other words, then a subject of their own (review of the 2026-11-07 fix)",
+      "turns": [
+        {
+          "say": "Getting the sleeve cleared is the next step, but I'm not sure how that works.",
+          "topic": "agenda",
+          "help": true
+        },
+        { "say": "They never told me what class it falls into.", "topic": "agenda", "unknown": true },
+        {
+          "say": "I forgot to ask, honestly. Can we work on my pitch for the clinic buyers instead",
+          "topic": "other",
+          "unknown": true
+        },
+        {
+          "say": "Beats me who signs the purchase order there.",
+          "topic": "other",
+          "help": true,
+          "unknown": true
+        }
+      ],
+      "expect": "The vEIR explains how clearance of a monitoring device usually works and what the founder can do first. When the founder says nobody told them the class, it never asks about the class again in any words; it says what the class most likely is for such a device, hedged, and how to find out fast. When the founder moves to the pitch for clinic buyers, the vEIR goes with them and never steers back to the advisor or the class; it teaches who usually signs a clinic's purchase order and drafts the pitch's opening."
     }
   ]
 }

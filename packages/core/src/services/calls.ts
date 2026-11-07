@@ -49,8 +49,8 @@ import { type RequestContext } from '../context.js';
 import { DomainError, fail, parseInput } from '../errors.js';
 import { type DirectoryCache } from '../internal/directory.js';
 import { plainInvitation } from '../orchestrator/continuity-prompt.js';
-import { chooseOpener } from '../orchestrator/continuity.js';
-import { OPENER_MODEL_TIMEOUT_MS, openerWithin, type DistillService } from './distill.js';
+import { chooseOpener, type MissingOpener } from '../orchestrator/continuity.js';
+import { OPENER_MODEL_TIMEOUT_MS, type DistillService } from './distill.js';
 import { mentionsEir, personaNameClaimsEir, veirEirName } from '../internal/eir-names.js';
 import { audit, requireId, type Kit, type RequestScope } from '../internal/kit.js';
 import { secondsUntilUtcMidnight } from '../orchestrator/sampling.js';
@@ -690,6 +690,31 @@ export function createCallsService(
   }
 
   /**
+   * The model writes the notebook's missing opener for the next start (production, 2026-11-07: "Nice to see you. What
+   * feels most pressing right now?" to a founder whose notebook held open threads), after the response: a call never
+   * waits for it, its first words come with the start. New chat has it written when it opens, ahead of a call started
+   * from there (`SessionsService.prepareOpener`). Without a host to keep it alive (tests, scripts) it is waited for
+   * (`Kit.later`).
+   */
+  function writeForNextStart(ctx: RequestContext, started: Started, missing: MissingOpener): Promise<void> {
+    const writing = distill.writeOpener({
+      tenantId: ctx.tenantId,
+      ventureId: started.ventureId,
+      personaId: started.personaId,
+      principalId: ctx.principalId,
+      requestId: ctx.requestId,
+      sourceSessionId: missing.sourceSessionId,
+      sourceActivityAt: missing.sourceActivityAt,
+      latest: missing.latest,
+      lastOpener: missing.lastOpener,
+      leftAside: missing.leftAside,
+      replace: true,
+      timeoutMs: OPENER_MODEL_TIMEOUT_MS,
+    });
+    return kit.later(writing);
+  }
+
+  /**
    * A call's intro, signed (null when it cannot be produced; the call then simply starts listening). A call that
    * starts a conversation nobody has said anything in opens with what is true now: the opener is chosen again at
    * call start (the founder may have talked elsewhere since the conversation was created, e.g. a call from New chat
@@ -698,7 +723,7 @@ export function createCallsService(
    * production: "Hi Mina…" then "Hello Mina, nice to hear from you."). An intro that does not say the opener (only
    * "what would you like to work on?") never replaces a substantive one: the conversation keeps the opener. Chosen,
    * phrased and kept in one transaction, before the call responds; when the notebook leaves threads open and has no
-   * line of the model's for them, the model writes one first, waited for up to `OPENER_WAIT_MS` (`writeOpener`). Drawn
+   * line of the model's for them, the model writes one for the next start (`writeOpener`), never waited for. Drawn
    * from the same conversation as the opener it says, so deleting that conversation erases this copy too. Unchanged
    * for a temporary conversation or one already under way; on any failure the stored opener stands and the call still
    * opens.
@@ -712,8 +737,12 @@ export function createCallsService(
       if (started.standard && !started.conversationStarted) {
         try {
           const team = await directory.addressees(ctx.tenantId, started.ventureId);
-          const choose = (tx: Parameters<typeof chooseOpener>[0]): ReturnType<typeof chooseOpener> =>
-            chooseOpener(tx, {
+          const opening = await kit.inRequest(ctx, async ({ tx }) => {
+            const {
+              opener: chosen,
+              pastReplies,
+              missing,
+            } = await chooseOpener(tx, {
               ventureId: started.ventureId,
               persona: { id: started.personaId, name: started.personaName },
               principalId: ctx.principalId,
@@ -726,54 +755,21 @@ export function createCallsService(
               sessionId: started.call.sessionId,
               team,
             });
-          const keep = async (
-            tx: Parameters<typeof chooseOpener>[0],
-            { opener: chosen, pastReplies }: Awaited<ReturnType<typeof chooseOpener>>,
-          ): Promise<CallGreeting | null> => {
             const opened: Started = { ...started, opener: chosen?.text ?? null, pastReplies };
             const intro = introWords(opened, guards);
-            const kept = openerKept(intro, opened.opener);
-            if (kept === started.opener) return intro;
+            const keep = openerKept(intro, opened.opener);
+            if (keep === started.opener) return { words: intro, missing };
             const stored = await sessionsRepo.setSessionOpener(tx, {
               sessionId: started.call.sessionId,
-              opener: kept,
+              opener: keep,
               sourceSessionId: chosen?.sourceSessionId ?? null,
               byPerson: chosen?.byPerson ?? false,
             });
             // Someone spoke in the conversation meanwhile: the stored opener stands.
-            return stored ? intro : introWords(started, guards);
-          };
-          const first = await kit.inRequest(ctx, async ({ tx }) => {
-            const chosen = await choose(tx);
-            return chosen.missing === null
-              ? { chosen, missing: null, words: await keep(tx, chosen) }
-              : { chosen, missing: chosen.missing, words: null };
+            return { words: stored ? intro : introWords(started, guards), missing };
           });
-          if (first.missing === null) {
-            words = first.words;
-          } else {
-            // The notebook leaves threads open and has no line of the model's for them (production, 2026-11-07: "Nice to
-            // see you. What feels most pressing right now?"): the model writes one now, within what the call's voice
-            // takes to come up; a line later than that opens the next call.
-            const written = await openerWithin(
-              kit,
-              distill.writeOpener({
-                tenantId: ctx.tenantId,
-                ventureId: started.ventureId,
-                personaId: started.personaId,
-                principalId: ctx.principalId,
-                requestId: ctx.requestId,
-                sourceSessionId: first.missing.sourceSessionId,
-                lastOpener: first.missing.lastOpener,
-                leftAside: first.missing.leftAside,
-                replace: true,
-                timeoutMs: OPENER_MODEL_TIMEOUT_MS,
-              }),
-            );
-            words = await kit.inRequest(ctx, async ({ tx }) =>
-              keep(tx, written === 'written' ? await choose(tx) : first.chosen),
-            );
-          }
+          words = opening.words;
+          if (opening.missing !== null) await writeForNextStart(ctx, started, opening.missing);
         } catch (err) {
           logger.warn('call.opener_refresh_failed', {
             requestId: ctx.requestId,

@@ -1,6 +1,7 @@
 /**
- * Notes about the founder are how they like to work, never a verdict on them. Shared by the distillation's sanitizer
- * (a judging note is never written) and the turn's notes (one already stored is never shown to the model).
+ * Notes about the founder are how they like to work, never a verdict on them, and the threads they keep are what to help
+ * with, never pressure. Shared by the distillation's sanitizer (neither is written) and the turn's notes and "Where you
+ * left off" (what was stored before is never shown to the model as it was).
  */
 
 /**
@@ -21,4 +22,35 @@ const JUDGMENTAL = new RegExp(
 /** Whether a founder-profile note judges the founder ({@link JUDGMENTAL}): it is never written, nor shown to the model. */
 export function isJudgmentalNote(text: string): boolean {
   return JUDGMENTAL.test(text.replace(/[‘’ʼ]/g, "'"));
+}
+
+/** A clause that frames a thread as pressure ("…, which cannot wait", "(urgent)", "blocks the go-to-market strategy"). */
+const PRESSURE = new RegExp(
+  String.raw`\b(?:cannot wait|can'?t wait|urgent(?:ly)?(?! care)|overdue|asap|as soon as possible|right away|immediately|critical(?:ly)?|must be (?:resolved|settled|answered|done) (?:now|first|before)|blocks? (?:everything|all|the (?:whole|entire)? ?(?:go-to-market|launch|plan|strategy|venture|progress))|blocking (?:everything|all progress|the (?:launch|go-to-market|plan|strategy)))\b`,
+  'i',
+);
+
+/**
+ * `text` without the clauses that frame it as pressure ({@link PRESSURE}): the threads a notebook keeps are what to help
+ * with, never an agenda to push (production, 2026-11-07: the digest wrote the open unknowns as blocking the
+ * go-to-market plan and unable to wait, and the call came back to them every turn). Clauses are cut at commas,
+ * semicolons, dashes and brackets; a sentence that is nothing but pressure goes whole. '' when nothing is left.
+ */
+export function withoutPressure(text: string): string {
+  if (!PRESSURE.test(text.replace(/[‘’ʼ]/g, "'"))) return text;
+  const kept = text
+    .split(/(?<=[.!?])\s+/)
+    .filter((s) => s.trim() !== '')
+    .map((sentence) => {
+      const parts = sentence.split(/(?=[,;(—–])|(?<=[)])|\s(?=-\s)|\s(?=and (?:which|that|it|they)\b)/u);
+      const clean = parts.filter((part) => !PRESSURE.test(part.replace(/[‘’ʼ]/g, "'"))).join('');
+      return clean
+        .replace(/\(\s*\)/g, '')
+        .replace(/\s+([.!?…])/gu, '$1')
+        .replace(/[\s,;:—–-]+([.!?…]?)$/u, '$1')
+        .trim();
+    })
+    .filter((sentence) => /[\p{L}\p{N}]/u.test(sentence))
+    .map((sentence) => (/[.!?…]$/u.test(sentence) ? sentence : `${sentence}.`));
+  return kept.join(' ');
 }

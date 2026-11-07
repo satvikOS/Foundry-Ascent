@@ -21,6 +21,7 @@ import {
   type ModelPurpose,
   type NarrationNames,
   type PromptCacheHint,
+  type QuestionTerms,
   type SentenceGateOptions,
   type StreamStopReason,
 } from '@foundry/ai';
@@ -284,12 +285,14 @@ export interface GenerateArgs {
    * with what was already said (`repeat_regenerated`): left out by the validator alone, the sentences around it would
    * lean on a hole. `keepReferrals`: a flagged turn keeps its referral (validators/social.ts `isProtectedLine`);
    * `strictQuestions`: the founder said they do not know, so a question on the same subject counts as asked again
-   * (validators/social.ts `stuckOn`).
+   * (validators/social.ts `stuckOn`); `asked`: the questions of those replies, the ones before the previous reply
+   * settled (validators/social.ts `askedBefore`).
    */
   readonly alreadySaid?: {
     readonly text: string;
     readonly keepReferrals: boolean;
     readonly strictQuestions: boolean;
+    readonly asked: readonly QuestionTerms[];
   } | null;
 }
 
@@ -414,6 +417,7 @@ export async function generateWhole(
         const repeated = withoutRepeats(result.value.answer, a.alreadySaid.text, {
           keepReferrals: a.alreadySaid.keepReferrals,
           strictQuestions: a.alreadySaid.strictQuestions,
+          asked: a.alreadySaid.asked,
         });
         // A sign-off said again is only left out (the validator does it): never worth writing the reply again for.
         const substance = repeated.removed.filter((sentence) => !signsOff(sentence));

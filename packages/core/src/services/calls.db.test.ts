@@ -457,8 +457,9 @@ describe('starting a call', () => {
     );
     expect(started.intro).not.toBeNull();
     expect(warmed.sort()).toEqual(['model', 'speech']);
-    // Handed to the host to keep alive after the response, never awaited by it.
-    expect(after).toHaveLength(1);
+    // Handed to the host to keep alive after the response, never awaited by it: the prewarm, and the notebook's missing
+    // opener when the model writes it for the next start.
+    expect(after.length).toBeGreaterThanOrEqual(1);
     await endCall('maya', started.call.id);
   });
 

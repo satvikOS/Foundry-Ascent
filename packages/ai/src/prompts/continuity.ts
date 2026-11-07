@@ -8,7 +8,7 @@ import type {
   VeirNotebook,
 } from '@foundry/contracts';
 
-import { isJudgmentalNote } from '../distill/judgment.js';
+import { isJudgmentalNote, withoutPressure } from '../distill/judgment.js';
 import { contentWords } from './conversation-state.js';
 import { escapeData, escapeInline, truncate } from './escape.js';
 
@@ -227,7 +227,7 @@ function renderDigest(d: PromptDigest, agenda = true): string[] {
     .slice(0, 8);
   return [
     `<conversation ${attrs.join(' ')}>`,
-    `<summary>${escapeData(truncate(d.digest.summary.replace(/\s+/g, ' ').trim(), 600))}</summary>`,
+    `<summary>${escapeData(truncate(withoutPressure(d.digest.summary.replace(/\s+/g, ' ').trim()), 600))}</summary>`,
     ...(topics.length > 0 ? [`<topics>${escapeData(topics.join('; '))}</topics>`] : []),
     ...section(
       'commitments',
@@ -238,7 +238,10 @@ function renderDigest(d: PromptDigest, agenda = true): string[] {
       agenda
         ? d.digest.openQuestions
             .slice(0, 4)
-            .map((q) => `- ${escapeData(truncate(q.replace(/\s+/g, ' ').trim(), MAX_ENTRY_CHARS))}`)
+            .map(
+              (q) =>
+                `- ${escapeData(truncate(withoutPressure(q.replace(/\s+/g, ' ').trim()), MAX_ENTRY_CHARS))}`,
+            )
         : [],
     ),
     '</conversation>',
@@ -261,7 +264,8 @@ export function buildContinuityBlock(
   const nb = continuity.notebook ?? null;
 
   const opener = options.conversationStarted === true ? '' : (nb?.nextOpener?.trim() ?? '');
-  const summary = nb?.summary.trim() ?? '';
+  // Stored before distillation cut it, pressure is never shown either ("…, which cannot wait"; distill/judgment.ts).
+  const summary = withoutPressure(nb?.summary.trim() ?? '');
   const core: string[] = [];
   if (summary !== '')
     core.push(`<summary>${escapeData(truncate(summary.replace(/\s+/g, ' '), 1_200))}</summary>`);
@@ -282,7 +286,14 @@ export function buildContinuityBlock(
     ),
   );
   const questions = agenda
-    ? section('open_questions', entries(nb?.openQuestions, MAX_ENTRIES.openQuestions, said))
+    ? section(
+        'open_questions',
+        entries(
+          nb?.openQuestions.map((q) => ({ ...q, text: withoutPressure(q.text) })),
+          MAX_ENTRIES.openQuestions,
+          said,
+        ),
+      )
     : [];
   const advice = agenda ? section('last_advice', entries(nb?.lastAdvice, MAX_ENTRIES.lastAdvice)) : [];
   const sortedDigests = [...(continuity.recentDigests ?? [])]

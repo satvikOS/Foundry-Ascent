@@ -152,6 +152,20 @@ export const conversationOpenerQueryOptions = (ventureId: string) =>
     retry: false,
   });
 
+/**
+ * `POST /ventures/:id/opener`: the greeting once the notebook's missing line was written (the preview said `missing`).
+ * Only from New chat as it opens, never on a link's hover: it may call the model. Fresh as briefly as the preview.
+ */
+export const preparedOpenerQueryOptions = (ventureId: string) =>
+  queryOptions({
+    queryKey: queryKeys.venture.preparedOpener(ventureId),
+    queryFn: ({ signal }) =>
+      api.post(path`/ventures/${ventureId}/opener`, ConversationOpenerResponse, undefined, { signal }),
+    staleTime: 5_000,
+    gcTime: 60_000,
+    retry: false,
+  });
+
 /** Refresh every list a conversation appears in, plus the venture data a conversation changes. */
 function invalidateConversation(client: QueryClient, session: Pick<SessionView, 'id' | 'ventureId'>) {
   // The next New chat picks up this conversation: never the greeting fetched before it.

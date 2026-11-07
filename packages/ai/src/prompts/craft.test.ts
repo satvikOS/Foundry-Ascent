@@ -313,7 +313,9 @@ describe('conversation craft in the system prompt', () => {
     // ledger names the closing lines and the phrases said twice.
     // 2026-11-07.1: teach and prepare (production, 2026-11-07): a goal gets the usual path and the prep, a founder with
     // no answer is never asked again, an opener offers help, and distillation keeps no verdict or pressure.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.1');
+    // 2026-11-07.2: its review: a no-answer that moves on is followed there, an opener written ahead takes in the latest
+    // conversation not distilled yet and always offers help, and the notes show stored pressure without it.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.2');
   });
 });
 

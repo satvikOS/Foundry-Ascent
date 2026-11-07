@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { directChoiceOf, socialTurnOf } from '../prompts/conversation-state.js';
 import {
   CLOSING_FALLBACK,
+  askedBefore,
   asksToRepeat,
   NEWS_FALLBACK,
   parksTheirNews,
@@ -228,6 +229,34 @@ describe('the same question two replies later, longer and reworded (production, 
     ).toBe(false);
   });
 
+  it('reads the same subject in other words: classification is the class, billing and payment are how they pay', () => {
+    for (const reworded of [
+      'So what did your advisor say about classification and payment?',
+      'Has anyone told you what classification the insole gets and which billing code clinics would use?',
+    ]) {
+      expect(reasksQuestion(reworded, questionsOf(first), { strict: true }), reworded).toBe(true);
+    }
+    expect(reasksQuestion('So what did your advisor say about classification and payment?', asked)).toBe(
+      true,
+    );
+  });
+
+  it('reads a question from before the previous reply strictly: the founder has had their turn to answer it', () => {
+    // After a vague answer and a short one (no "I don't know"), the first reply's question in other words.
+    const before = askedBefore(second, [first]);
+    expect(before.filter((q) => q.settled === true)).toHaveLength(1);
+    expect(reasksQuestion('Did the advisor mention the class at all?', before)).toBe(true);
+    expect(
+      reasksQuestion(
+        'Has anyone told you what classification the insole gets and which billing code clinics would use?',
+        before,
+      ),
+    ).toBe(true);
+    // A question on another subject, or one that builds on the answer, is still asked.
+    expect(reasksQuestion('Which of the department heads controls the budget?', before)).toBe(false);
+    expect(reasksQuestion('Want me to draft the questions for your next advisor call?', before)).toBe(false);
+  });
+
   it('leaves the question out of the reply and keeps the teaching around it', () => {
     const reply =
       'That is normal at this stage. Did the advisor actually say which device class the insole falls into, and whether monitoring time is reimbursable under existing codes? Most foot-pressure monitors sit in a low-risk class, so the route is usually lighter.';
@@ -251,6 +280,22 @@ describe('a reply that only asks (production, 2026-11-07)', () => {
       ),
     ).toBe(false);
     expect(asksOnly('**Investor:** What does a clinic pay you today?')).toBe(false);
+    // A lead-in that only says the founder's answer back is no substance, however long.
+    expect(
+      asksOnly(
+        "That's something—so there's a process, not a quick yes. Who are the people in those layers, and what does each one sign off on?",
+      ),
+    ).toBe(true);
+    expect(
+      asksOnly(
+        'Okay, so department heads need to approve it... But here is what I need to know: did the advisor say which class the insole falls into?',
+      ),
+    ).toBe(true);
+    expect(
+      asksOnly(
+        'So the usual route for a low-risk monitor is a lighter clearance, and clinics bill the monitoring time separately. Want the checklist?',
+      ),
+    ).toBe(false);
     expect(asksOnly('Here is the plan for this week.')).toBe(false);
   });
 });

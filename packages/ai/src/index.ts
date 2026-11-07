@@ -251,8 +251,10 @@ export {
   withoutUnits,
   announcedCountGap,
   isProtectedLine,
+  askedBefore,
   asksOnly,
   stuckOn,
+  type QuestionTerms,
   type WithoutRepeats,
   type WithoutRepeatsOptions,
 } from './validators/social.js';

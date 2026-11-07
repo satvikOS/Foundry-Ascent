@@ -6,6 +6,7 @@ import {
   founderMoves,
   isEverydayWord,
   truncate,
+  withoutPressure,
 } from '@foundry/ai';
 
 import { isTopicLine } from './founder-lines.js';
@@ -245,7 +246,9 @@ function renderConversation(
         '</they_said>',
       );
     }
-    out.push(`<summary>${line(c.digest.summary, SUMMARY_CHARS)}</summary>`);
+    // Stored before distillation cut it, a summary's pressure is never shown ("…, which cannot wait"; production,
+    // 2026-11-07).
+    out.push(`<summary>${line(withoutPressure(c.digest.summary), SUMMARY_CHARS)}</summary>`);
     const topics = c.digest.topics.map(oneLine).filter((t) => t !== '');
     if (topics.length > 0)
       out.push(`<topics>${escapeData(truncate(topics.slice(0, 6).join('; '), 300))}</topics>`);
@@ -264,7 +267,7 @@ function renderConversation(
       if (questions.length > 0) {
         out.push(
           '<open_questions>',
-          ...questions.map((q) => `- ${line(q, LINE_CHARS)}`),
+          ...questions.map((q) => `- ${line(withoutPressure(q), LINE_CHARS)}`),
           '</open_questions>',
         );
       }
@@ -295,7 +298,9 @@ function threadLines(threads: LeftOffThreads | null): string[] {
         (c) =>
           `- planned: ${line(c.text, LINE_CHARS)}${c.due ? ` (due ${escapeInline(c.due, 10)})` : ''}${note(c.text)}`,
       ),
-    ...threads.questions.slice(0, 3).map((q) => `- open question: ${line(q, LINE_CHARS)}${note(q)}`),
+    ...threads.questions
+      .slice(0, 3)
+      .map((q) => `- open question: ${line(withoutPressure(q), LINE_CHARS)}${note(q)}`),
   ];
   return lines.length === 0 ? [] : ['<open_threads>', ...lines, '</open_threads>'];
 }
@@ -411,7 +416,7 @@ const INVITATIONS = [
  * greeting, then an invitation that names nothing and offers help ("Welcome back. What can I help you prepare for?").
  * Said when the notebook holds no line the model wrote for this conversation (distillation has not run yet, wrote none
  * because nothing about the venture was said, or its line cannot be said and none could be written in time:
- * services/opener-writer.ts): no subject, none of the founder's words, no name (a call
+ * services/distill.ts `writeOpener`): no subject, none of the founder's words, no name (a call
  * adds it within the name budget), no time words (never "since we last spoke": it may be said seconds after the last
  * conversation, before its distillation ran). `met`: the person talked with this vEIR before (else their last
  * conversation was with another coach of the venture). Every greeting and invitation comes up in turn, so a caller can

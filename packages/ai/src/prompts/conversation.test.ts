@@ -535,6 +535,21 @@ describe('continuity', () => {
       expect(bringsOwnSubject(about, CONTINUITY)).toBe(false);
       expect(notesFor(about)).toContain('<open_commitments>');
     }
+    // A no-answer that moves on to a subject of their own is read for that subject, with or without a question mark (a
+    // voice transcript has none): the agenda stays out. Alone, it keeps the agenda.
+    for (const own of [
+      "We haven't heard back yet, but I want to talk about hiring a CTO this month.",
+      'Not yet. Can we work on my pitch deck for the accelerator demo day instead',
+      'Not yet. Can we work on my pitch deck for the accelerator demo day instead?',
+      "No idea, honestly. Let's switch to pricing for the consumer insoles.",
+      "I can't remember the exact number, but our churn on the pilot app is what I want to fix.",
+    ]) {
+      expect(bringsOwnSubject(own, CONTINUITY), own).toBe(true);
+      expect(notesFor(own), own).not.toContain('<open_commitments>');
+    }
+    for (const about of ["I didn't do that.", 'Not yet.', 'No idea, honestly.']) {
+      expect(bringsOwnSubject(about, CONTINUITY), about).toBe(false);
+    }
     // Before the conversation is under way, the notes are whole.
     expect(
       buildMessages([], 'Help me prepare for my pitch next week.', {
@@ -922,5 +937,47 @@ describe('the notes never carry a verdict on the founder (production, 2026-11-07
     );
     expect(block).toContain('- Prefers direct answers and actionable steps');
     expect(block).not.toContain('even when pressed');
+  });
+
+  it('shows notes and digests stored with pressure without it', () => {
+    const at = '2026-11-01T00:00:00.000Z';
+    const block = buildContinuityBlock(
+      {
+        notebook: {
+          summary:
+            'Building a clinic insole. The device class is open, which blocks the go-to-market strategy.',
+          founderProfile: [],
+          commitments: [],
+          openQuestions: [
+            {
+              id: 'oq-1',
+              text: 'Which billing route applies (urgent)',
+              sourceSessionId: null,
+              createdAt: at,
+            },
+          ],
+          lastAdvice: [],
+          nextOpener: null,
+          nextTopic: null,
+          updatedAt: at,
+        },
+        recentDigests: [
+          {
+            date: at,
+            digest: {
+              summary: 'They met the advisor; the unknowns cannot wait.',
+              topics: [],
+              commitments: [],
+              openQuestions: ['Who owns the budget, which cannot wait'],
+            },
+          },
+        ],
+      },
+      { today: '2026-11-07' },
+    );
+    expect(block).toContain('The device class is open.');
+    expect(block).toContain('- Which billing route applies.');
+    expect(block).toContain('- Who owns the budget.');
+    expect(block).not.toMatch(/cannot wait|urgent|blocks the go-to-market/);
   });
 });

@@ -17,10 +17,10 @@ export {
   NOTEBOOK_SUMMARY_PIN,
   isPersonalOpener,
   namesAThread,
+  offersHelp,
   notebookThreads,
   sanitizeDistill,
   sanitizeOpener,
-  withoutPressure,
 } from './sanitize.js';
 export type {
   DistillConversation,
@@ -32,7 +32,7 @@ export type {
   SanitizedDistill,
   SanitizedOpener,
 } from './sanitize.js';
-export { isJudgmentalNote } from './judgment.js';
+export { isJudgmentalNote, withoutPressure } from './judgment.js';
 export { checkDeidentified, isEverydayWord } from './deidentify.js';
 export type { DeidentifyReason, DeidentifyResult, LessonDeidentifyContext } from './deidentify.js';
 export { contentTokens, isNearDuplicate, jaccardSimilarity, repeatsNote, textKey } from './similarity.js';
