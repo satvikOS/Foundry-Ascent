@@ -537,7 +537,7 @@ const EnvSchema = z.object({
   // Empty is unset (the deployed functions always receive the three; empty when there is no background route).
   MODEL_BACKGROUND_PRIMARY_ID: z.string().optional(),
   MODEL_BACKGROUND_FALLBACK_ID: z.string().optional(),
-  /** Comma-separated purposes (`MODEL_PURPOSES`). */
+  /** Comma-separated purposes (`MODEL_PURPOSES` but `embedding`, always Titan, and `speech`). */
   MODEL_BACKGROUND_PURPOSES: z.string().optional(),
 });
 
@@ -562,7 +562,10 @@ function backgroundFromEnv(e: z.infer<typeof EnvSchema>): BackgroundModels | nul
         .filter((p) => p !== ''),
     ),
   ];
-  const unknown = purposes.filter((p) => !(MODEL_PURPOSES as readonly string[]).includes(p));
+  // Embeddings always go to Titan and speech never reaches a reasoning model: neither can be a background purpose.
+  const unknown = purposes.filter(
+    (p) => !(MODEL_PURPOSES as readonly string[]).includes(p) || p === 'embedding' || p === 'speech',
+  );
   if (purposes.length === 0 || unknown.length > 0) {
     throw new Error('Invalid model gateway environment: MODEL_BACKGROUND_PURPOSES');
   }

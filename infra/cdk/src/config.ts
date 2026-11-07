@@ -236,13 +236,13 @@ const MODEL_ID = /^[a-z0-9][a-z0-9.:-]{2,127}$/;
 
 /**
  * The model gateway's purposes (packages/ai `MODEL_PURPOSES`) a background route may take: every one but `speech`
- * (text-to-speech, never a reasoning model). infra/cdk/test/config.test.ts pins the list against the gateway's.
+ * (text-to-speech, never a reasoning model) and `embedding` (always Titan, `models.embeddings`: a reasoning route
+ * never serves it). infra/cdk/test/config.test.ts pins the list against the gateway's.
  */
 export const BACKGROUND_PURPOSES = [
   'turn',
   'recap',
   'classification',
-  'embedding',
   'ingestion',
   'eval',
   'seed',

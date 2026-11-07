@@ -440,6 +440,17 @@ describe('model router — the background route (MODEL_BACKGROUND_*)', () => {
         MODEL_BACKGROUND_PURPOSES: 'classification,chitchat',
       }),
     ).toThrow(/MODEL_BACKGROUND_PURPOSES$/);
+    // Embeddings always go to Titan and speech to the speech port: a reasoning route never serves either.
+    for (const never of ['embedding', 'speech']) {
+      expect(() =>
+        modelGatewayConfigFromEnv({
+          ...base,
+          MODEL_BACKGROUND_PRIMARY_ID: NOVA_US,
+          MODEL_BACKGROUND_FALLBACK_ID: NOVA_GLOBAL,
+          MODEL_BACKGROUND_PURPOSES: `classification,${never}`,
+        }),
+      ).toThrow(/MODEL_BACKGROUND_PURPOSES$/);
+    }
   });
 });
 

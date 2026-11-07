@@ -135,7 +135,7 @@ const FAKE_ENV: Readonly<Record<string, string>> = {
   MODEL_EMBEDDINGS_ID: 'amazon.titan-embed-text-v2:0',
   MODEL_BACKGROUND_PRIMARY_ID: 'us.amazon.nova-2-lite-v1:0',
   MODEL_BACKGROUND_FALLBACK_ID: 'global.amazon.nova-2-lite-v1:0',
-  MODEL_BACKGROUND_PURPOSES: 'classification,eval,ingestion,seed,embedding',
+  MODEL_BACKGROUND_PURPOSES: 'classification,eval,ingestion,seed',
   BEDROCK_REGION: 'us-east-1',
   // The documented placeholder owner code FA-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ and its hashAccessCode() hash.
   OWNER_ACCESS_CODE_PREFIX: PLACEHOLDER_OWNER.prefix,

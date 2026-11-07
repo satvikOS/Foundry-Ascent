@@ -305,7 +305,7 @@ describe('NovaProvider with prompt caching', () => {
     expect(usesCachePoints('openai.gpt-6-luna')).toBe(false);
   });
 
-  it('marks a Claude Haiku 4.5 request the same way, without sampling parameters or a forced tool', async () => {
+  it('marks a Claude Haiku 4.5 request the same way, without sampling parameters, and forces its one tool', async () => {
     const { provider, streamInputs, converseInputs } = nova(HAIKU_US, true);
     const streamed = await provider.streamText(streamRequest(HINT));
     await provider.generate(
@@ -318,7 +318,8 @@ describe('NovaProvider with prompt caching', () => {
       expect(input?.inferenceConfig).not.toHaveProperty('temperature');
     }
     // Claude caches `tools` too, before `system`: the system checkpoint covers the tool, which carries none itself.
-    expect(converseInputs[0]?.toolConfig?.toolChoice).toEqual({ auto: {} });
+    // Haiku 4.5 takes a forced tool with extended thinking off (nova.ts `forcesTool`): no prose first, no repair.
+    expect(converseInputs[0]?.toolConfig?.toolChoice).toEqual({ tool: { name: SUBMIT_TOOL_NAME } });
     expect(converseInputs[0]?.toolConfig?.tools?.every((t) => !('cachePoint' in t))).toBe(true);
     expect(streamed.rawAttempts[0]).toMatchObject({ cachePoints: 3, modelId: HAIKU_US });
   });

@@ -133,8 +133,9 @@ enabled it is `openai.gpt-6-luna` → Claude Haiku 4.5.
 
 **Background route** (`background` in the config, `MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID`,
 `MODEL_BACKGROUND_PURPOSES` in the environment: all three or none): the purposes it lists get its own primary and
-fallback (production: `classification`, `eval`, `ingestion`, `seed`, `embedding` on `us.amazon.nova-2-lite-v1:0` →
+fallback (production: `classification`, `eval`, `ingestion`, `seed` on `us.amazon.nova-2-lite-v1:0` →
 `global.amazon.nova-2-lite-v1:0`); every other purpose (`turn`, `recap`, `distill`, `test_bench`) the coach's.
+`embedding` and `speech` are refused in the list: embeddings always go to Titan, speech to the speech port.
 `modelsForPurpose(info, purpose)` says which two a purpose gets. A model id used on both routes shares one provider
 instance.
 
@@ -151,8 +152,8 @@ instance.
   sent back once; if the remaining budget is under 1.5 s the repair is skipped.
 - **Converse adapter — e.g. `us.anthropic.claude-haiku-4-5-20251001-v1:0` or `us.amazon.nova-2-lite-v1:0`** via
   Bedrock Runtime `Converse` with one tool, `submit_response`, whose `inputSchema.json` is the same strict schema:
-  forced for Nova, requested (`auto`) for Claude, whose newer models refuse a forced tool and sampling parameters (a
-  reply written as text is still read and repaired). Prompt caching (`MODEL_PROMPT_CACHE`, on by default): for the
+  forced for Nova and Claude Haiku 4.5, requested (`auto`) for the newer Claude models that refuse a forced tool
+  (`forcesTool`); no Claude request carries sampling parameters (a reply written as text is still read and repaired). Prompt caching (`MODEL_PROMPT_CACHE`, on by default): for the
   models whose cache rates are priced (Nova, Claude Haiku 4.5: `usesCachePoints`), a `cachePoint` after the system
   prompt's unchanging prefix and after the conversation's last two earlier founder messages (the request's
   `promptCache` hint); Claude caches only a prefix of at least 4,096 tokens, Nova 1,024. These are the only places

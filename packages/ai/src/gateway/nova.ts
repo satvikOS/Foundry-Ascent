@@ -62,14 +62,32 @@ const GEO_PREFIX = /^(?:us|eu|apac|jp|au|ca|us-gov|global)\./;
 const PROFILE_REQUIRED = /on-demand throughput|inference profile/i;
 
 /**
- * Anthropic Claude ids on Bedrock (`anthropic.…`, also behind `us.`/`global.` inference profiles). Current
- * Claude models reject sampling parameters and newer ones a forced tool choice, so Converse requests for any Claude id
- * send neither: the structured call asks for the tool in its description and relies on validation and repair. This
- * and {@link usesCachePoints} are the only places that tell model families apart: nothing outside this adapter knows
- * which family the coach is.
+ * Anthropic Claude ids on Bedrock (`anthropic.…`, also behind `us.`/`global.` inference profiles). Current Claude
+ * models reject sampling parameters, so Converse requests for any Claude id send none. This, {@link forcesTool} and
+ * {@link usesCachePoints} are the only places that tell model families apart: nothing outside this adapter knows which
+ * family the coach is.
  */
 export function isClaudeModelId(modelId: string): boolean {
   return /^(?:[a-z-]+\.)?anthropic\./.test(modelId);
+}
+
+/**
+ * Claude models that take a forced tool (`toolChoice: { tool: { name } }`): Claude 3.x and Claude Haiku 4.5, the
+ * production coach. Anthropic's tool-use docs: a forced `tool_choice` (`tool` or `any`) is supported with extended
+ * thinking off and refused only with it on; this adapter never turns thinking on. Bedrock's Converse API reference
+ * (ToolChoice: `tool`, "the model must request the specified tool", supported by the Anthropic Claude 3 family and
+ * later Claude models). The newest generation (Claude Opus 5.5, Sonnet 5.5, Fable 5.1, Haiku 5.5, which thinks by
+ * default) answers a forced tool with a 400, so they and any Claude id not listed here keep `auto`, the tool asked
+ * for in its description, and the text-reply repair path.
+ *
+ * Lab run 42238272157 (Haiku on `auto`): recap failed 2 of 10 with whole fields missing and distillation was invalid 6
+ * of 14; with the tool forced the model cannot answer in prose first.
+ */
+const FORCED_TOOL_CLAUDE = /^(?:[a-z-]+\.)?anthropic\.claude-(?:3-|haiku-4-5)/;
+
+/** Whether a structured call to `modelId` forces its one tool (every non-Claude model on Converse does). */
+export function forcesTool(modelId: string): boolean {
+  return !isClaudeModelId(modelId) || FORCED_TOOL_CLAUDE.test(modelId);
 }
 
 /**
@@ -236,8 +254,8 @@ function isProfileRequiredError(error: unknown): boolean {
 /**
  * Bedrock Converse reasoning models: Amazon Nova 2 Lite and Anthropic Claude (Claude Haiku 4.5 is the production
  * coach). Structured output is obtained through a single tool (`submit_response`) whose input schema is the response
- * schema, forced for Nova and requested (tool choice `auto`) for Claude, whose newer models reject a forced tool
- * (one request shape for every Claude id; a reply written as text is still read, and repaired). Plain text streams
+ * schema, forced for Nova and Claude Haiku 4.5, and requested (tool choice `auto`) for the newer Claude models that
+ * reject a forced tool ({@link forcesTool}; a reply written as text is still read, and repaired). Plain text streams
  * through ConverseStream. If the base model id requires an inference profile, the provider retries once
  * with the geographic profile id and remembers that choice for the lifetime of the instance.
  */
@@ -297,7 +315,7 @@ export class NovaProvider implements StructuredProvider {
   }
 
   #toolChoice(modelId: string): ToolChoice {
-    return isClaudeModelId(modelId) ? { auto: {} } : { tool: { name: SUBMIT_TOOL_NAME } };
+    return forcesTool(modelId) ? { tool: { name: SUBMIT_TOOL_NAME } } : { auto: {} };
   }
 
   /**

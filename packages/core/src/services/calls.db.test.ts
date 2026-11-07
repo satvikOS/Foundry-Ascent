@@ -64,6 +64,24 @@ async function endCall(who: Person, callId: string) {
   return EndCallResponse.parse(await h.core.calls.end(ctx[who], callId, { reason: 'user' }));
 }
 
+/**
+ * Maya's latest conversation with her vEIR is a call that greeted her by name and in which she asked to test the seat
+ * map: what a test of a later call's intro stands on (the conversation it picks up, and a reply that said her name a
+ * reply ago, which a call says one reply in four at most), so it never depends on an earlier test having made that
+ * call. A call says her name only while the replies before it leave room for it: calls are made until one does.
+ */
+async function seatMapCallThatNamedMaya(): Promise<void> {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const sessionId = await newSession('maya', 'quietquad');
+    const started = await startCall('maya', sessionId, 'typed');
+    const named = /\bMaya\b/.test(started.intro?.text ?? '');
+    await talk('maya', sessionId, started.call.id, 'Can we test the seat map this week?');
+    await endCall('maya', started.call.id);
+    if (named) return;
+  }
+  throw new Error('no call greeted Maya by name');
+}
+
 async function beat(who: Person, callId: string) {
   return CallHeartbeatResponse.parse(
     await h.core.calls.heartbeat(ctx[who], callId, { state: 'listening', micOpenSeconds: 12 }),
@@ -338,10 +356,11 @@ describe('starting a call', () => {
         edit: { action: 'edit_opener', text },
       }),
     ).rejects.toMatchObject({ code: 'validation_failed' });
+    await seatMapCallThatNamedMaya();
     await storeOpenerUnchecked(h, h.ventures.quietquad, text);
     const sessionId = await newSession('maya', 'quietquad');
     const started = await startCall('maya', sessionId);
-    // Never the stored line, nor Maya's own words from her last conversation (the test above) read back by rule: a
+    // Never the stored line, nor Maya's own words from her last conversation (seatMapCallThatNamedMaya) read back by rule: a
     // greeting that names nothing. Not by name: that conversation's call greeted her by name a reply ago (one reply in
     // four).
     const intro = started.intro?.text ?? '';
@@ -352,6 +371,7 @@ describe('starting a call', () => {
   });
 
   it('introduces a persona named after its EIR as the EIR’s vEIR, and leaves out an opener that names the EIR', async () => {
+    await seatMapCallThatNamedMaya();
     await storeOpenerUnchecked(h, h.ventures.quietquad, 'Corin asked me to check in on your pilot.');
     const rename = (name: string) =>
       h.t.db.system((sx) =>
@@ -1815,6 +1835,7 @@ describe('the turn engine and the calls service together', () => {
         edit: { action: 'edit_opener', text },
       });
     };
+    await seatMapCallThatNamedMaya();
     const stored = 'Last time you planned five library-staff interviews. How did they go?';
     await editOpener(stored);
     const session = await h.core.sessions.create(ctx.maya, quietquad, {});
@@ -1825,7 +1846,7 @@ describe('the turn engine and the calls service together', () => {
     const started = await startCall('maya', session.id, 'typed');
     const intro = started.intro;
     if (intro === null) throw new Error('expected an intro');
-    // Not by name: the calls of the earlier tests named her, and the name is said one reply in four at most.
+    // Not by name: the call before it named her, and the name is said one reply in four at most.
     expect(intro.text).toBe('Hi, what did the second library say about the seat counts?');
     // What the vEIR believes it opened with (its first history message) is what the call said.
     expect((await h.core.sessions.get(ctx.maya, session.id)).session.opener).toBe(intro.text);

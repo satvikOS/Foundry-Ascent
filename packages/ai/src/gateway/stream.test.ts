@@ -15,7 +15,7 @@ import { Deadline } from './deadline.js';
 import { ModelRefusalError, ModelUnavailableError, isModelGatewayError } from './errors.js';
 import { LunaProvider } from './luna.js';
 import { MOCK_MODEL_ID, MockModelGateway, mockStreamChunks } from './mock.js';
-import { NovaProvider, SUBMIT_TOOL_NAME, isClaudeModelId } from './nova.js';
+import { NovaProvider, SUBMIT_TOOL_NAME, forcesTool, isClaudeModelId } from './nova.js';
 import type { ProviderStreamRequest, ProviderStreamResult, StructuredProvider } from './provider.js';
 import { DEFAULT_MODEL_IDS, createModelGateway } from './router.js';
 import {
@@ -327,6 +327,21 @@ describe('Claude on Converse', () => {
     expect(isClaudeModelId('us.anthropic.claude-sonnet-5-5')).toBe(true);
     expect(isClaudeModelId('global.anthropic.claude-haiku-5-5')).toBe(true);
     expect(isClaudeModelId('us.amazon.nova-2-lite-v1:0')).toBe(false);
+  });
+
+  it('forces the tool for Nova and Claude Haiku 4.5, never for a Claude model that refuses a forced tool', () => {
+    expect(forcesTool('us.amazon.nova-2-lite-v1:0')).toBe(true);
+    expect(forcesTool('us.anthropic.claude-haiku-4-5-20251001-v1:0')).toBe(true);
+    expect(forcesTool('global.anthropic.claude-haiku-4-5-20251001-v1:0')).toBe(true);
+    expect(forcesTool('anthropic.claude-3-5-haiku-20241022-v1:0')).toBe(true);
+    for (const refuses of [
+      'anthropic.claude-opus-5-5',
+      'us.anthropic.claude-sonnet-5-5',
+      'global.anthropic.claude-haiku-5-5',
+      'us.anthropic.claude-fable-5-1',
+    ]) {
+      expect(forcesTool(refuses)).toBe(false);
+    }
   });
 
   it('sends no sampling parameters and asks for the tool instead of forcing it', async () => {

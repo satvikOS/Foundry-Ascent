@@ -741,9 +741,11 @@ const RECONNECT_LINE = 'Okay, and what should I do first tomorrow morning?';
  * "Reconnecting…" once the face's session nears its end or the vendor ends it, then the face is back on a new session;
  * the next turn is said by the new face over the new session's own speak channel, its chunks acknowledged. Why the
  * old face ended is the page's own account (`face/end`: `time_limit` when the page replaced it at a quiet moment
- * before the vendor's end, the vendor's reason otherwise).
+ * before the vendor's end, the vendor's reason otherwise). `seconds_live_before` is how long the face was live (from
+ * `liveAt`, the page time its first frame showed) until the tile said "Reconnecting…": the session's real length, not
+ * the arm's wait, which starts only after the turns and the barge-in.
  */
-async function liteReconnect(page: Page) {
+async function liteReconnect(page: Page, liveAt: number) {
   const since = await pageNow(page);
   const channelsBefore = (await readLab(page)).lite.channels.length;
   const reconnecting = await reconnectingTile(page)
@@ -762,7 +764,7 @@ async function liteReconnect(page: Page) {
   const ended = lab.faceEnds.find((e) => e.at >= since) ?? null;
   const result = {
     reconnected: back,
-    seconds_live_before: reconnecting ? Math.round((gone - since) / 100) / 10 : null,
+    seconds_live_before: reconnecting ? Math.round((gone - liveAt) / 100) / 10 : null,
     seconds_to_reconnect: back ? Math.round((backAt - gone) / 100) / 10 : null,
     end_reason: ended?.reason ?? null,
     turn_spoken_by_face: null as boolean | null,
@@ -1553,7 +1555,7 @@ test.describe('Conversation lab · face (HeyGen LiveAvatar FULL and LITE, sandbo
         error: errorName(err),
       }));
       step = 'reconnect';
-      result.reconnect = await liteReconnect(page).catch((err: unknown) => ({
+      result.reconnect = await liteReconnect(page, live).catch((err: unknown) => ({
         reconnected: false,
         error: errorName(err),
       }));

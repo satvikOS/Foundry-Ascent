@@ -349,7 +349,7 @@ An operator with credentials allowed to invoke the app's models can run the scri
 MODEL_PROVIDER=bedrock BEDROCK_REGION=us-east-1 \
 MODEL_PRIMARY_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0 MODEL_FALLBACK_ID=us.amazon.nova-2-lite-v1:0 \
 MODEL_BACKGROUND_PRIMARY_ID=us.amazon.nova-2-lite-v1:0 MODEL_BACKGROUND_FALLBACK_ID=global.amazon.nova-2-lite-v1:0 \
-MODEL_BACKGROUND_PURPOSES=classification,eval,ingestion,seed,embedding \
+MODEL_BACKGROUND_PURPOSES=classification,eval,ingestion,seed \
 MODEL_EMBEDDINGS_ID=amazon.titan-embed-text-v2:0 \
 pnpm --filter @foundry/api exec tsx src/scripts/lab-safety-screen.ts --budget-usd 1 --out /tmp/safety-screen
 ```

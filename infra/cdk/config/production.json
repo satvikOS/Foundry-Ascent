@@ -21,7 +21,7 @@
     "background": {
       "primary": "us.amazon.nova-2-lite-v1:0",
       "fallback": "global.amazon.nova-2-lite-v1:0",
-      "purposes": ["classification", "eval", "ingestion", "seed", "embedding"]
+      "purposes": ["classification", "eval", "ingestion", "seed"]
     },
     "embeddings": "amazon.titan-embed-text-v2:0",
     "note": "Owner decision 2026-11-06 (ADR-0022): the coach is Claude Haiku 4.5 through its US inference profile, with Amazon Nova 2 Lite behind it. primary and fallback serve every purpose a founder reads: a turn (its streamed reply and its fields), a recap, the distillation (it writes the notebook and the next opener) and a studio test conversation. background serves the rest on Nova 2 Lite: the safety screen (classification), evaluations, ingestion and seeding. Haiku costs about 3.3 times Nova per input token and 2.2 times per output token (packages/ai/src/pricing.ts); prompt caching (cache reads at a tenth of the input rate) takes about half of that back on a conversation's turns (docs/runbooks/latency.md). The spend caps are unchanged. A later switch to another provider's model changes these ids and the gateway adapter (packages/ai), nothing else.",

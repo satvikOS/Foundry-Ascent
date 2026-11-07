@@ -29,8 +29,9 @@ configuration change and one gateway adapter.
    (memory correctness 5.0 against Nova's 4.75). A studio test conversation is what a student would get.
 3. **Background purposes stay on Nova 2 Lite** (`models.background`: primary `us.`, fallback `global.`):
    `classification` (the indirect-ideation safety screen, evaluated on Nova by the lab's safety suite), `eval`,
-   `ingestion`, `seed` and `embedding` (the last three embed with Titan; listed so any model call they make stays
-   cheap). The runtime contract carries them as `MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID` and
+   `ingestion` and `seed` (the last two embed with Titan; listed so any model call they make stays cheap).
+   Embeddings are never a background purpose: they always go to Titan (`models.embeddings`), and the configuration
+   and the gateway refuse `embedding` in the list. The runtime contract carries them as `MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID` and
    `MODEL_BACKGROUND_PURPOSES`; `turn` can never be a background purpose (config.ts refuses it).
 4. **Prompt caching** on Claude Haiku 4.5: the Converse adapter puts a cache checkpoint after the turn prompt's
    unchanging prefix (identity, persona, doctrine, rules, venture, continuity notes: about 18,000 characters, 4,500
@@ -45,8 +46,8 @@ configuration change and one gateway adapter.
    the regions that profile routes to from us-east-1 (us-east-1, us-east-2, us-west-2, per its Bedrock model card);
    Nova keeps every region and the region-less ARN (its `global.` profile routes anywhere).
 7. **Provider-neutral beyond the adapter**: the gateway contract (`ModelGateway`, purposes, usage with cache tokens,
-   the prompt-cache hint) names no provider. What differs for Claude (no sampling parameters, tool choice `auto`, which
-   ids take cache checkpoints) lives in `packages/ai/src/gateway/nova.ts`, the Converse adapter; a later OpenAI-family
+   the prompt-cache hint) names no provider. What differs for Claude (no sampling parameters, a forced tool only for the
+   ids that take one, which ids take cache checkpoints) lives in `packages/ai/src/gateway/nova.ts`, the Converse adapter; a later OpenAI-family
    coach is a new id in `production.json` and its adapter (`luna.ts` already serves Mantle's OpenAI-compatible
    endpoint), with no change in packages/core.
 

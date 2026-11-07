@@ -199,7 +199,7 @@ Set a number once the account quota allows (it must leave 10 unreserved).
 | `true`                                            | `models.luna.modelId` (`openai.gpt-6-luna`)                      | `models.primary` (Claude Haiku 4.5)              | `bedrock-mantle:CreateInference` |
 
 `MODEL_EMBEDDINGS_ID` is always `models.embeddings` (`amazon.titan-embed-text-v2:0`). `models.background` (primary,
-fallback, purposes: Nova 2 Lite `us.` then `global.` for `classification`, `eval`, `ingestion`, `seed`, `embedding`)
+fallback, purposes: Nova 2 Lite `us.` then `global.` for `classification`, `eval`, `ingestion`, `seed`; embeddings always go to Titan)
 becomes `MODEL_BACKGROUND_PRIMARY_ID`, `MODEL_BACKGROUND_FALLBACK_ID` and `MODEL_BACKGROUND_PURPOSES` of every function
 (all three empty without it; a `turn` is never a background purpose), and Luna never moves it (ADR-0022). Flipping
 the flag is a config change plus a normal deploy.

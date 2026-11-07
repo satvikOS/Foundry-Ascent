@@ -18,7 +18,7 @@ def test_app_models_follow_the_production_config_while_luna_is_disabled() -> Non
         background=config.BackgroundModels(
             primary="us.amazon.nova-2-lite-v1:0",
             fallback="global.amazon.nova-2-lite-v1:0",
-            purposes=("classification", "eval", "ingestion", "seed", "embedding"),
+            purposes=("classification", "eval", "ingestion", "seed"),
         ),
     )
     # The lab's API process gets the same route (packages/ai router.ts reads these variables).
@@ -28,7 +28,7 @@ def test_app_models_follow_the_production_config_while_luna_is_disabled() -> Non
         "MODEL_EMBEDDINGS_ID": "amazon.titan-embed-text-v2:0",
         "MODEL_BACKGROUND_PRIMARY_ID": "us.amazon.nova-2-lite-v1:0",
         "MODEL_BACKGROUND_FALLBACK_ID": "global.amazon.nova-2-lite-v1:0",
-        "MODEL_BACKGROUND_PURPOSES": "classification,eval,ingestion,seed,embedding",
+        "MODEL_BACKGROUND_PURPOSES": "classification,eval,ingestion,seed",
     }
     assert models.for_purpose("turn") == (
         "us.anthropic.claude-haiku-4-5-20251001-v1:0",

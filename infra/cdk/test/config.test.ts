@@ -439,15 +439,19 @@ describe('config', () => {
     );
     expect(refused({ ...background, purposes: ['eval', 'eval'] })).toThrow(/must not repeat/);
     expect(refused({ ...background, purposes: ['turn'] })).toThrow(/must not include turn/);
+    // Embeddings always go to Titan (models.embeddings): a background route never serves them.
+    expect(refused({ ...background, purposes: ['embedding'] })).toThrow(/purposes\[0\]/);
     expect(refused({ ...background, primary: 'Nova Lite' })).toThrow(/models.background.primary/);
   });
 
-  it('lists as background purposes exactly the gateway’s model purposes but speech', () => {
+  it('lists as background purposes exactly the gateway’s model purposes but speech and embedding', () => {
     const types = readFileSync(join(REPO_ROOT, 'packages', 'ai', 'src', 'gateway', 'types.ts'), 'utf8');
     const list = /export const MODEL_PURPOSES = \[([^\]]*)\]/.exec(types)?.[1] ?? '';
     const gateway = [...list.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
     expect(gateway.length).toBeGreaterThan(5);
-    expect([...BACKGROUND_PURPOSES].sort()).toEqual(gateway.filter((p) => p !== 'speech').sort());
+    expect([...BACKGROUND_PURPOSES].sort()).toEqual(
+      gateway.filter((p) => p !== 'speech' && p !== 'embedding').sort(),
+    );
   });
 
   it('treats the Luna block as optional', () => {
