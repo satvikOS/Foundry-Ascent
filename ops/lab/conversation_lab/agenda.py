@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from conversation_lab.live.checks import put_to_student, same_subject
+from conversation_lab.live.checks import in_quotation, same_subject
 
 SCENARIOS = Path(__file__).resolve().parent.parent / "scenarios" / "agenda.json"
 
@@ -183,10 +183,12 @@ def check_reply(
 ) -> tuple[ReplyCheck, list[str]]:
     """One reply's checks, and the questions it asked the founder (for the re-ask check of later replies). A question
     in a line the vEIR wrote for the founder to say or send (inside a quotation, however many sentences it runs and
-    however it closes: '...in what order?".'; or under "Ask your advisor:") is not asked of them (the product's
-    validators/social.ts ``putToFounder``; lab run 42457618242 counted one as a re-ask after a no-answer)."""
+    however it closes: '...in what order?".') is not asked of them (the quote tracking of the product's
+    validators/social.ts ``putToFounder``; lab run 42457618242 counted one as a re-ask after a no-answer). Only the
+    quotation is skipped: a lead-in such as "Say something like:" covers its own quoted line, never a question put to
+    the founder after that quotation has closed ('You could send: "Who signs off?" Did the advisor get back to you?')."""
     said = sentences(reply)
-    asked = [s for s in said if s.endswith("?") and put_to_student(reply or "", s)]
+    asked = [s for s in said if s.endswith("?") and not in_quotation(reply or "", s)]
     statements = [s for s in said if not s.endswith("?")]
     items = len(_LIST_ITEM.findall(reply or ""))
     marks = (reply or "").count("?")

@@ -382,11 +382,19 @@ def test_a_question_quoted_for_the_founder_to_send_is_never_a_reask() -> None:
         assert not check.reask_after_unknown, reply
         assert not check.reask, reply
         assert asked == [], reply
-    # Put to the founder unquoted, it is still the re-ask.
-    again, _ = check_reply(
-        "Fair. So who has to sign off when the sleeve goes into a clinic?", unknown, 3, [first]
-    )
-    assert again.reask_after_unknown
+    # Put to the founder unquoted, it is still the re-ask: on its own, or after a quoted line its lead-in introduced
+    # (whether the quotation closes as '?".' or as '?"' with the founder's question run on in the same sentence).
+    for reply in (
+        "Fair. So who has to sign off when the sleeve goes into a clinic?",
+        'Say something like: "Can you confirm the approval sequence?". When the sleeve goes into a clinic, who has '
+        "to sign off, and in what order?",
+        'You could send: "Who signs off on this?" When the sleeve goes into a clinic, who has to sign off, and in '
+        "what order?",
+    ):
+        again, asked = check_reply(reply, unknown, 3, [first])
+        assert again.reask_after_unknown, reply
+        assert again.reask, reply
+        assert len(asked) == 1, reply
 
 
 def test_an_offer_to_carry_on_the_conversation_just_had_is_no_bare_opener() -> None:
