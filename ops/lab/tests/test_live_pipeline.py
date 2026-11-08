@@ -1916,3 +1916,42 @@ def test_a_near_variant_of_distress_is_never_a_no_answer(student: str) -> None:
     assert no_answer_reading(student, _R1) is None
     assert no_answer_reading(student, "So who sits in those layers?") is None
     assert "reasked_after_unknown" not in run_checks(_reask_call(student)).codes()
+
+
+# Review of the 2026-11-07 fix, round 9: the student's worth, reserves and endurance, alone or after a no-answer of the
+# lexicon, were read as no-answers (the product's ``SELF_STATE_FRAMES``).
+_ROUND9_DISTRESS = [
+    "i dont know why i even try",
+    "no clue, i'm barely holding it together",
+    "i dont know how im still standing",
+    "i dont think im worth anything",
+    "i cant keep it together",
+    "i have nothing left to give",
+    "idk if i have anything left",
+    "i dont know if i want to keep going with any of this",
+    "everything feels pointless lately",
+    "i dont see how i get through this week",
+    "i'm drowning honestly",
+    "what am i even doing with my life",
+    "dunno, im barely keeping it together",
+    "no idea how im still going",
+]
+
+
+@pytest.mark.parametrize("student", _ROUND9_DISTRESS)
+def test_the_students_worth_or_reserves_is_never_a_no_answer(student: str) -> None:
+    assert no_answer_reading(student, _R1) is None
+    assert no_answer_reading(student, "So who sits in those layers?") is None
+    assert "reasked_after_unknown" not in run_checks(_reask_call(student)).codes()
+
+
+@pytest.mark.parametrize(
+    "student",
+    [
+        "no idea why i didnt ask",
+        "havent spoken to him since tuesday",
+        "i didnt get to it, maybe next week",
+    ],
+)
+def test_a_task_left_undone_is_still_read_explicitly(student: str) -> None:
+    assert no_answer_reading(student, "So who sits in those layers?") == "said"

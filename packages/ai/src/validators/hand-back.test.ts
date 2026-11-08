@@ -986,13 +986,51 @@ describe('only an explicit no-answer is stuck, and distress vetoes every reading
     }
   });
 
+  // Round 9: the founder's worth, reserves and endurance, alone or after a no-answer of the lexicon ("no clue, ...").
+  // Each was read explicitly or by its shape, and the explicit ones left the trailing CPT question out.
+  it.each([
+    'i dont know why i even try',
+    "no clue, i'm barely holding it together",
+    'i dont know how im still standing',
+    'i dont think im worth anything',
+    'i cant keep it together',
+    'i have nothing left to give',
+    'idk if i have anything left',
+    'i dont know if i want to keep going with any of this',
+    'dunno, im barely keeping it together',
+    'no idea how im still going',
+    'i dont know how ill get through today',
+    'havent asked, im falling apart tbh',
+    'no clue, everything feels pointless',
+  ])('vetoes every reading on %j, and the trailing CPT question stays (round 9)', (said) => {
+    expect(inDistress(said)).toBe(true);
+    expect(stuckOn(said, R1)).toBe(false);
+    expect(stuckOn(said, R2)).toBe(false);
+    expect(noAnswerReadingOf(said, noAnswerContextOf(R2))).toBeNull();
+    expect(state(said)).not.toContain(HEDGED);
+    expect(state(said)).not.toContain(MOVES_ON);
+    expect(leavesAgendaOut(said, null, R2)).toBe(leavesAgendaOut(said, null, null));
+    for (const chunks of chunkings(REPLY)) expect(out(said, chunks)).toEqual([REPLY, REPLY]);
+  });
+
   it('keeps a task of the venture out of distress', () => {
     for (const said of [
       'i didnt make it to the meeting',
       'we didnt keep going with the pilot',
+      'i need to keep going with the pilot',
       'i dont know who to talk to at the clinic',
       'he wont be around till monday',
       'i might quit my job to go full time',
+      // Round 9: what is left of a budget or a list, a review to get through, the reason a task was left undone.
+      'we have nothing left in the budget for a pilot',
+      'nothing left to do on the deck',
+      'how do i get through the fda review',
+      'no idea why i didnt ask',
+      'not sure why i thought it was class I',
+      'why do i still need a 510k',
+      'how am i still waiting on the clinic',
+      'is the data worth anything',
+      'what am i doing wrong with the pitch?',
     ]) {
       expect(inDistress(said), said).toBe(false);
     }

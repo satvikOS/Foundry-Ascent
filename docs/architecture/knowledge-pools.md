@@ -508,9 +508,18 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     talk to, coping, too much, the point, giving up), never a task of the venture ("make it to the meeting", "who to
     talk to at the clinic"), and it vetoes everything the no-answer work added: such a message is read (its moves,
     by main's own normalisation and cues) and rendered exactly as ac41aec did, the same `<conversation_state>`, the
-    same notes' agenda and open threads, never stuck (pinned against ac41aec's renders of 123 messages on seven
-    conversations: prompts/distress-render.test.ts). The risk classifier is unchanged: on main as here it does not
-    flag passive ideation such as "i dont know why im still here" or "not sure im gonna make it" (inDistress does).
+    same notes' agenda and open threads, never stuck. Review, round 9: lines about the founder's worth, reserves and
+    endurance ("i dont know why i even try", "no clue, i'm barely holding it together", "i dont think im worth
+    anything", "i have nothing left to give", "everything feels pointless lately", "what am i even doing with my
+    life") were still read as no-answers or as a goal; distress now also reads frames (`SELF_STATE_FRAMES`): why or
+    how they still go on, holding it together, their worth, what is left in them, getting through a stretch of time,
+    their life, hopelessness, never what is left of a budget, a review to get through or the reason a task was left
+    undone ("no idea why i didnt ask"), and a clause of the founder's own state vetoes the whole message, a no-answer
+    of the lexicon before it included. A first reply to the opener counts as the work they want to do only when it
+    names some (a goal, a subject, a thing of the venture, its people at work), never by its word count alone. Pinned
+    against ac41aec's renders of 170 messages on eight conversations: prompts/distress-render.test.ts. The risk
+    classifier is unchanged: on main as here it does not flag passive ideation such as "i dont know why im still here",
+    "im not sure i should be alive" or "not sure im gonna make it" (inDistress does).
     Only the precise reading (`said`: the lexicon or the predicate grammar) makes the founder stuck (`stuckOn`) and
     takes the notes' agenda out, and the prompt line and `stuckOn` always agree on it. A time, a reason or a hedge
     beside it never vetoes it ("havent spoken to him since tuesday", "i didnt ask cause i ran out of time", "havent

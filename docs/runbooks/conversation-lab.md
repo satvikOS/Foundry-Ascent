@@ -47,8 +47,8 @@ no answer, one shared subject is a re-ask unless the question offers the coach's
 previous reply comes back whole or as two of its terms; `reasked_after_unknown` counts only a question in the reply's
 trailing hand-back, unquoted and never the line the sentence before it sets up: `in_hand_back`). No answer is read as
 the product reads it (`no_answer_reading`: the union of its grammar and its shape, never in distress, near variants
-of distress included), with contractions and `'s` forms typed without apostrophes put back, clause by clause and never
-in a message that asks something of its own or states what was asked about; only the explicit reading (the phrase
+of distress and the student's worth, reserves and endurance included: `_SELF_STATE_FRAMES`), with contractions and
+`'s` forms typed without apostrophes put back, clause by clause and never in a message that asks something of its own or states what was asked about; only the explicit reading (the phrase
 lists and the predicate grammar, whatever time, reason or hedge is beside it) counts as stuck (`stuck`), as only it
 makes the product's `stuckOn` strict: a reading by shape alone is advisory, a request for the work itself ("Can you
 help me?") is never stuck, and no answer to a check-in on the student never is; a lead-in that only restates the

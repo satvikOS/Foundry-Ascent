@@ -715,12 +715,55 @@ _DISTRESS = re.compile(
     r"venture)|my (?:startup|company|business)|work|any of (?:it|this)|it|this)(?=\s*[,.!;…]|$| (?:honestly|tbh|rn|"
     r"right now|anymore)\b)"
 )
+#: The student's own state said in frames rather than in fixed wordings (the product's ``SELF_STATE_FRAMES``, round 9):
+#: why or how they still go on, holding together, their worth, their reserves, getting through a stretch of time, their
+#: life, hopelessness. Never what is left of a budget, a review to get through or the reason a task was left undone.
+_SELF_STATE_FRAMES = re.compile(
+    "|".join(
+        (
+            r"\b(?:why|how) (?:do |would |should |can |am |is it )?(?:i'm|i am|i've|i|am i|i keep) (?:(?:even|"
+            r"still|ever|honestly|really|keep) )+(?:try(?:ing)?|bother(?:ing)?|care|caring|stand(?:ing)?|going(?! "
+            r"to)|functioning|function|here|alive|sane|awake|up|breathing|exist(?:ing)?|like this|at it|in this|"
+            r"putting up with|doing (?:this|it|any of (?:this|it))|keep going|do (?:this|it)|carry on|go on|"
+            r"hang(?:ing)? on|holding on|getting up|surviving|managing)\b",
+            r"\b(?:don't know|do not know|idk|dunno|no idea|no clue|not sure|unsure|wonder(?:ing)?) why (?:i'm|i "
+            r"am|i've|i|am i|i keep) (?!(?:(?:even|still|ever|really|honestly|just|kinda|actually) )*(?:didn't|"
+            r"did not|haven't|have not|hadn't|never|forgot|can't remember|wasn't|was not|ask|asked|asking|thought|"
+            r"assumed|said|say|mentioned|missed|skipped|put|left|got|get|wrote|sent|picked|chose|went|called|"
+            r"emailed|texted|signed|agreed|need|have to|should)\b)",
+            r"\b(?:hold(?:ing)?|held|keep(?:ing)?|kept) (?:it|myself|things|my shit|my head|my life) together\b|"
+            r"\bfalling to pieces\b|\bcoming apart\b|\blosing (?:my mind|my shit|it(?=\s*[,.!;…]|$| (?:honestly|"
+            r"tbh|rn|right now|lately|a bit|here)\b))|\bbreaking down\b|\bat (?:my|the end of my) (?:limit|rope|"
+            r"tether)\b|\bend of my (?:rope|tether)\b",
+            r"\b(?:i'm|i am|i'll (?:ever )?be|i was|i'd be|me|myself) (?:(?:not|never|ever|really|even|actually|"
+            r"honestly|truly|just|any) )*(?:worth|good for) (?:anything|nothing|much|something|a damn|shit)\b|"
+            r"\bworthless\b|\b(?:i'm|i am|i feel like|feel like|feeling like) (?:i'm |i am )?(?:(?:such|a|an|"
+            r"total|complete|just|so|huge|real|like|kind of|kinda|the|biggest) )*(?:failure|fraud|loser|mess|"
+            r"wreck|joke|disappointment|burden)\b",
+            r"\b(?:nothing|not much|not anything|anything) left(?:(?: (?:to give|in me|in the tank|of me|inside))|"
+            r"(?=\s*[,.!;…]|$| (?:honestly|tbh|rn|right now|any ?more|at this point)\b))|\brunning on (?:empty|"
+            r"fumes)\b|\bburn(?:ed|t|ing) ?out\b|\b(?:i'm|i am|i feel|feeling|i've been|i was) (?:(?:so|"
+            r"completely|totally|just|really|utterly|kinda|kind of) )*(?:exhausted|depleted|drained|spent)\b",
+            r"\b(?:get|getting|got|make it|making it|survive|surviving) through (?:(?:this|the|another|one more|"
+            r"the rest of (?:the|this)) (?:week|day|month|night|year|weekend|morning)|today|tonight|it all|"
+            r"everything|all (?:of )?(?:this|it)|this(?=\s*[,.!?;…]|$| (?:honestly|tbh|rn|right now)\b))",
+            r"\bwith my life\b|\bmy life is\b|\bwhat am i (?:even |really |honestly |actually |still )*doing(?: "
+            r"(?:here|any ?more|honestly|tbh|rn|right now))?(?=\s*[,.!?;…]|$)",
+            r"\b(?:pointless|meaningless|hopeless|helpless|worthless)\b|\b(?:i'm|i am|i feel(?: like)?(?: i'm)?|"
+            r"feeling(?: like)?(?: i'm)?|i've been) (?:(?:just|really|honestly|completely|totally|kinda|kind of|"
+            r"so|literally|slowly) )*(?:drowning|sinking|spiral(?:l)?ing|crumbling|breaking|suffocating|"
+            r"underwater|going under)\b|\bdrowning\b",
+            r"\bno point (?:in )?(?:trying|going on|carrying on|doing (?:this|it|any of (?:this|it)))\b|"
+            r"\bwhat(?:'s| is) the use\b",
+        )
+    )
+)
 #: The student's own continuing, ability or worth (the product's ``SELF_CONTINUING``), never a task of the venture: in
 #: distress beside a doubt or a negation (``_SELF_DOUBT``).
 _SELF_CONTINUING = re.compile(
     r"\b(?:keep(?:ing)? (?:going|doing (?:this|it|any of (?:this|it))|at it|this up|it up|pushing)|carry(?:ing)? on|"
-    r"go on|(?:gonna|going to|will|'ll|ill|can|able to|ever) (?:ever |even |really |actually )?make it)\b(?! (?:with|"
-    r"to|on|for|in|at|the|a|an|our|my|his|her|their|work|happen|clear|better|easier|cheaper|right|vacation|holiday|"
+    r"go on|(?:gonna|going to|will|'ll|ill|can|able to|ever) (?:ever |even |really |actually )?make it)\b(?! (?:with"
+    r"(?! (?:(?:any|all) (?:of )?)?(?:this|it|everything|that|it all)\b)|to|on|for|in|at|the|a|an|our|my|his|her|their|work|happen|clear|better|easier|cheaper|right|vacation|holiday|"
     r"leave|about|by)\b)|\b(?:i'm|i am|i'll (?:ever )?be|i was|i'd be|me|myself) (?:(?:not|never|ever|really|even|just|"
     r"actually|honestly|truly) )*good enough\b|\bhave it in me\b"
 )
@@ -732,7 +775,9 @@ _SELF_DOUBT = re.compile(
 def _in_distress(text: str) -> bool:
     """Whether the student's message (normalised) is in distress (the product's ``inDistress``, without its risk rules
     and ideation prefilter): never read as a no-answer or as stuck on a question."""
-    return bool(_DISTRESS.search(text)) or bool(_SELF_CONTINUING.search(text) and _SELF_DOUBT.search(text))
+    if _DISTRESS.search(text) or _SELF_STATE_FRAMES.search(text):
+        return True
+    return bool(_SELF_CONTINUING.search(text) and _SELF_DOUBT.search(text))
 
 
 #: What makes a message an answer whatever negation it carries: a figure, content reported, a guess or a reason, a class

@@ -1004,13 +1004,42 @@ const DISTRESS_STATE = new RegExp(
 );
 
 /**
+ * The founder's own state said in frames rather than in fixed wordings (review of the 2026-11-07 fix, round 9: "i dont
+ * know why i even try", "no clue, i'm barely holding it together", "i dont think im worth anything", "i have nothing
+ * left to give", "everything feels pointless lately", "i'm drowning honestly" were read as no-answers or as goals). Each
+ * frame is about the founder themselves, their will, worth, endurance or reserves, never a task of the venture:
+ * - why or how they still go on ("why i even try", "how im still standing", "idk why im like this"), unless it is the
+ *   reason for a task left undone ("no idea why i didnt ask");
+ * - holding together ("barely holding it together", "cant keep it together", "falling to pieces", "losing my mind");
+ * - their worth ("im worth anything", "a failure", "a fraud", "worthless");
+ * - their reserves ("nothing left to give", "anything left in me", "running on empty", "burnt out"), never what is
+ *   left of a budget or a list ("nothing left in the budget", "nothing left to do on the deck");
+ * - getting through a stretch of time ("get through this week", "make it through today");
+ * - their life ("what am i even doing with my life", "what am i doing here");
+ * - hopelessness and being overwhelmed ("pointless", "meaningless", "drowning", "sinking").
+ */
+const SELF_STATE_FRAMES = new RegExp(
+  [
+    String.raw`\b(?:why|how) (?:do |would |should |can |am |is it )?(?:i'm|i am|i've|i|am i|i keep) (?:(?:even|still|ever|honestly|really|keep) )+(?:try(?:ing)?|bother(?:ing)?|care|caring|stand(?:ing)?|going(?! to)|functioning|function|here|alive|sane|awake|up|breathing|exist(?:ing)?|like this|at it|in this|putting up with|doing (?:this|it|any of (?:this|it))|keep going|do (?:this|it)|carry on|go on|hang(?:ing)? on|holding on|getting up|surviving|managing)\b`,
+    String.raw`\b(?:don't know|do not know|idk|dunno|no idea|no clue|not sure|unsure|wonder(?:ing)?) why (?:i'm|i am|i've|i|am i|i keep) (?!(?:(?:even|still|ever|really|honestly|just|kinda|actually) )*(?:didn't|did not|haven't|have not|hadn't|never|forgot|can't remember|wasn't|was not|ask|asked|asking|thought|assumed|said|say|mentioned|missed|skipped|put|left|got|get|wrote|sent|picked|chose|went|called|emailed|texted|signed|agreed|need|have to|should)\b)`,
+    String.raw`\b(?:hold(?:ing)?|held|keep(?:ing)?|kept) (?:it|myself|things|my shit|my head|my life) together\b|\bfalling to pieces\b|\bcoming apart\b|\blosing (?:my mind|my shit|it(?=\s*[,.!;…]|$| (?:honestly|tbh|rn|right now|lately|a bit|here)\b))|\bbreaking down\b|\bat (?:my|the end of my) (?:limit|rope|tether)\b|\bend of my (?:rope|tether)\b`,
+    String.raw`\b(?:i'm|i am|i'll (?:ever )?be|i was|i'd be|me|myself) (?:(?:not|never|ever|really|even|actually|honestly|truly|just|any) )*(?:worth|good for) (?:anything|nothing|much|something|a damn|shit)\b|\bworthless\b|\b(?:i'm|i am|i feel like|feel like|feeling like) (?:i'm |i am )?(?:(?:such|a|an|total|complete|just|so|huge|real|like|kind of|kinda|the|biggest) )*(?:failure|fraud|loser|mess|wreck|joke|disappointment|burden)\b`,
+    String.raw`\b(?:nothing|not much|not anything|anything) left(?:(?: (?:to give|in me|in the tank|of me|inside))|(?=\s*[,.!;…]|$| (?:honestly|tbh|rn|right now|any ?more|at this point)\b))|\brunning on (?:empty|fumes)\b|\bburn(?:ed|t|ing) ?out\b|\b(?:i'm|i am|i feel|feeling|i've been|i was) (?:(?:so|completely|totally|just|really|utterly|kinda|kind of) )*(?:exhausted|depleted|drained|spent)\b`,
+    String.raw`\b(?:get|getting|got|make it|making it|survive|surviving) through (?:(?:this|the|another|one more|the rest of (?:the|this)) (?:week|day|month|night|year|weekend|morning)|today|tonight|it all|everything|all (?:of )?(?:this|it)|this(?=\s*[,.!?;…]|$| (?:honestly|tbh|rn|right now)\b))`,
+    String.raw`\bwith my life\b|\bmy life is\b|\bwhat am i (?:even |really |honestly |actually |still )*doing(?: (?:here|any ?more|honestly|tbh|rn|right now))?(?=\s*[,.!?;…]|$)`,
+    String.raw`\b(?:pointless|meaningless|hopeless|helpless|worthless)\b|\b(?:i'm|i am|i feel(?: like)?(?: i'm)?|feeling(?: like)?(?: i'm)?|i've been) (?:(?:just|really|honestly|completely|totally|kinda|kind of|so|literally|slowly) )*(?:drowning|sinking|spiral(?:l)?ing|crumbling|breaking|suffocating|underwater|going under)\b|\bdrowning\b`,
+    String.raw`\bno point (?:in )?(?:trying|going on|carrying on|doing (?:this|it|any of (?:this|it)))\b|\bwhat(?:'s| is) the use\b`,
+  ].join('|'),
+);
+
+/**
  * The founder's own continuing, ability or worth ("keep going", "keep doing this", "carry on", "go on", "make it", "good
  * enough", "have it in me"), never a task of the venture ("keep going with the pilot", "make it to the meeting"): in
  * distress beside a doubt or a negation ({@link SELF_DOUBT}: "not sure i want to keep going", "no idea how im gonna keep
  * going", "i dont think im good enough"; review of the 2026-11-07 fix, round 8).
  */
 const SELF_CONTINUING =
-  /\b(?:keep(?:ing)? (?:going|doing (?:this|it|any of (?:this|it))|at it|this up|it up|pushing)|carry(?:ing)? on|go on|(?:gonna|going to|will|'ll|ill|can|able to|ever) (?:ever |even |really |actually )?make it)\b(?! (?:with|to|on|for|in|at|the|a|an|our|my|his|her|their|work|happen|clear|better|easier|cheaper|right|vacation|holiday|leave|about|by)\b)|\b(?:i'm|i am|i'll (?:ever )?be|i was|i'd be|me|myself) (?:(?:not|never|ever|really|even|just|actually|honestly|truly) )*good enough\b|\bhave it in me\b/;
+  /\b(?:keep(?:ing)? (?:going|doing (?:this|it|any of (?:this|it))|at it|this up|it up|pushing)|carry(?:ing)? on|go on|(?:gonna|going to|will|'ll|ill|can|able to|ever) (?:ever |even |really |actually )?make it)\b(?! (?:with(?! (?:(?:any|all) (?:of )?)?(?:this|it|everything|that|it all)\b)|to|on|for|in|at|the|a|an|our|my|his|her|their|work|happen|clear|better|easier|cheaper|right|vacation|holiday|leave|about|by)\b)|\b(?:i'm|i am|i'll (?:ever )?be|i was|i'd be|me|myself) (?:(?:not|never|ever|really|even|just|actually|honestly|truly) )*good enough\b|\bhave it in me\b/;
 /** A doubt, a negation, or a why or a how ({@link SELF_CONTINUING}). */
 const SELF_DOUBT =
   /n't\b|\b(?:not|never|no|nobody|idk|dunno|unsure|doubt|wonder(?:ing)?|why|how|if|whether|cannot|might|maybe)\b/;
@@ -1026,7 +1055,8 @@ const SELF_STATE =
 export function inDistress(text: string): boolean {
   const t = normalize(text);
   if (t === '') return false;
-  if (DISTRESS.test(t) || DISTRESS_STATE.test(t) || WELLBEING_CUE.test(t) || STRESS_CUE.test(t)) return true;
+  if (DISTRESS.test(t) || DISTRESS_STATE.test(t) || SELF_STATE_FRAMES.test(t)) return true;
+  if (WELLBEING_CUE.test(t) || STRESS_CUE.test(t)) return true;
   if (SELF_CONTINUING.test(t) && SELF_DOUBT.test(t)) return true;
   const risk = classifyRisk(text);
   return risk.crisis || risk.categories.includes('safety_wellbeing') || ideationPrefilter(text).hit;
@@ -1907,6 +1937,33 @@ function substantive(text: string, moves: readonly FounderMove[]): boolean {
   return content >= 2;
 }
 
+/**
+ * A thing of the venture named as a noun: after a determiner or a possessive ("the clinic rollout", "our pricing", "a
+ * pressure insole"), never a time, the founder's life or mind ("this week", "my life").
+ */
+const WORK_OBJECT =
+  /\b(?:the|our|my|a|an|this|that|these|those|their|its|some|first)\s+(?!(?:week|weekend|day|days|month|year|night|morning|time|moment|life|mind|head|way|point|end|rest|thing|things|lot|bit|bed|room|house|world|feeling|feelings)\b)[a-z][\w-]{2,}/;
+
+/** The venture's people at work: "we", a third party, or an action on others ("interviewing clinicians"). */
+const WORK_AGENT =
+  /\b(?:we|we're|we've|we'll|we'd|our|us|he|she|they|they're|his|her|cofounder|co-founder|team)\b|\b[a-z]{3,}ing (?:[a-z]+ )?(?!(?:things|days|weeks|months|years|hours|nights)\b)[a-z]{3,}(?<!ss)s\b/;
+
+/** The founder speaking of themselves ("i", "i'm", "me", "myself", "my"), or of how something feels. */
+const SELF_OR_FEELING = /\b(?:i|i'm|i've|i'd|i'll|me|myself|my|am i)\b|\b(?:feel|feels|feeling|felt)\b/;
+
+/**
+ * Whether the founder's message names something of the venture to work on (review of the 2026-11-07 fix, round 9: "i'm
+ * drowning honestly", "everything feels pointless lately" and "i dont see how i get through this week", substantive by
+ * their word count, were read as the work they want to do): a goal ({@link GOAL}), a subject of the venture
+ * ({@link subjectsOf}), a thing named as a noun ({@link WORK_OBJECT}), the venture's people at work ({@link WORK_AGENT}),
+ * or words that are neither about the founder themselves nor how something feels ("investor outreach", "clinic pilots").
+ */
+function namesAWorkObject(text: string): boolean {
+  const t = normalize(text);
+  if (GOAL.test(t) || subjectsOf(t).size > 0 || WORK_OBJECT.test(t) || WORK_AGENT.test(t)) return true;
+  return !SELF_OR_FEELING.test(t);
+}
+
 function median(values: readonly number[]): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -2067,7 +2124,8 @@ export function deriveConversationState(
     !moves.includes('short_reply') &&
     !moves.includes('unknown') &&
     socialTurnOf(founderText) === null &&
-    substantive(founderText, moves);
+    substantive(founderText, moves) &&
+    namesAWorkObject(founderText);
   const wrapUp = wrapUpOf(founderText, moves);
   const social = socialTurnOf(founderText);
   const answersCheckIn =

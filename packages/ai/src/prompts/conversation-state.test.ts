@@ -648,6 +648,35 @@ describe('a founder with no answer, and a goal ahead of them (production, 2026-1
     ).toBe(false);
   });
 
+  // Review of the 2026-11-07 fix, round 9: a first reply substantive only by its word count named no work.
+  it.each([
+    "nobody's told me yet",
+    'i keep thinking about it',
+    'honestly i just woke up',
+    'i dont see how i get through this week',
+    "i'm drowning honestly",
+    'everything feels pointless lately',
+  ])('reads no work to teach into in %j', (text) => {
+    const state = deriveConversationState([], text, {
+      opener: 'Nice to see you. What feels most pressing right now?',
+    });
+    expect(state.goal).toBe(false);
+    expect(renderConversationState(state)).not.toContain('teach and prepare');
+  });
+
+  it.each([
+    'the clinic rollout',
+    'investor outreach',
+    "i'm interviewing clinicians this week",
+    'i feel like we should focus on clinics',
+    'pricing mostly',
+  ])('reads %j as the work they want to do', (text) => {
+    const state = deriveConversationState([], text, {
+      opener: 'Nice to see you. What feels most pressing right now?',
+    });
+    expect(state.goal).toBe(true);
+  });
+
   it('after two replies that ended in a question, asks for substance and no question', () => {
     const two = [
       { founderText: 'taking the insole to market', answer: asked },

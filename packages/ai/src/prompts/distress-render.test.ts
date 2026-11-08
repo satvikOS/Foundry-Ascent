@@ -35,6 +35,7 @@ const R3 =
 const R4 = 'That makes sense. Most insoles land in class II, so plan for a 510(k).';
 const RW = 'That sounds like a lot to carry. How are you holding up?';
 const RE = 'I hear you. Please reach out to someone you trust. What would help most right now?';
+const RY = 'Did the advisor say whether it is class II?';
 const AT = '2026-11-03T10:00:00.000Z';
 
 const CONTINUITY = {
@@ -94,9 +95,14 @@ const CONVERSATIONS: readonly (readonly [string, readonly (StateTurn & { readonl
   ],
   ['well', [{ founderText: 'its been a brutal week', answer: RW }]],
   ['esc', [{ founderText: 'everything is a lot right now', answer: RE, escalated: 'safety_wellbeing' }]],
+  ['yn', [{ founderText: 'taking the insole to market', answer: RY }]],
 ];
 
-/** The repro sweep of round 8, round 8's own variants, and the distress lists of rounds 6 and 7. */
+/**
+ * The repro sweep of round 8, round 8's own variants, the distress lists of rounds 6 and 7, and round 9's lines about the
+ * founder's worth, reserves and endurance ("i dont know why i even try", "no clue, i'm barely holding it together", "i
+ * have nothing left to give", "everything feels pointless lately") with variants of each.
+ */
 const DISTRESS = [
   'im not sure i want to keep going',
   'not sure i want to keep going honestly',
@@ -221,6 +227,54 @@ const DISTRESS = [
   'not sure im ok',
   'i just cant',
   'idk i just feel empty',
+  // Round 9: self-worth, depletion and endurance, read as no-answers or goals (the verifier's twelve, then variants).
+  'everything feels pointless lately',
+  'i dont see how i get through this week',
+  "no clue, i'm barely holding it together",
+  "i'm drowning honestly",
+  'i dont think im worth anything',
+  'i cant keep it together',
+  'i dont know why i even try',
+  'idk if i have anything left',
+  'i dont know if i want to keep going with any of this',
+  'i have nothing left to give',
+  'i dont know how im still standing',
+  'what am i even doing with my life',
+  'why do i even try',
+  'honestly whats the use of trying',
+  'no idea how im still going',
+  'idk how im still functioning',
+  'i can barely hold it together',
+  'im falling to pieces',
+  'i feel like im losing my mind',
+  'i dont think im worth much',
+  'im worthless at this',
+  'im a failure',
+  'i have nothing left',
+  'not sure i have anything left in me',
+  'im running on empty',
+  'im completely burnt out',
+  'it all feels meaningless',
+  'everything is pointless',
+  'i dont know how ill get through today',
+  'not sure i can get through the week',
+  'im drowning in all of it',
+  'i feel like im sinking',
+  'i dont know if i want to keep going with this',
+  'not sure i want to keep going with it',
+  'what am i doing with my life',
+  'idk what im doing with my life honestly',
+  'no clue, everything feels pointless',
+  'dunno, im barely keeping it together',
+  'havent asked, im falling apart tbh',
+  'nah, i dont think im worth anything to anyone',
+  'i dont see how i keep going',
+  'i dont know how much longer i can do this',
+  'i dont even know why i bother trying',
+  'i feel like a failure',
+  'i dont know why im still trying',
+  'whats the point of trying',
+  'idk, i cant hold it together',
 ];
 
 const FIXTURE: Readonly<Record<string, readonly string[]>> = JSON.parse(
@@ -243,7 +297,7 @@ function rendered(history: readonly StateTurn[], message: string): { state: stri
   return { state, digest };
 }
 
-describe('a message in distress renders as main rendered it (review of the 2026-11-07 fix, round 8)', () => {
+describe('a message in distress renders as main rendered it (review of the 2026-11-07 fix, rounds 8 and 9)', () => {
   it('holds every message of the sweep', () => {
     expect(Object.keys(FIXTURE).sort()).toEqual([...DISTRESS].sort());
   });
