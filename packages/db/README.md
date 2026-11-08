@@ -368,6 +368,13 @@ AI-origin items can never be confirmed without `approved_by` or `auto_kept_at` (
   next message); audited (`persona.release_*`, `via: owner_release`). Applied only while the release's deterministic id
   is absent, with a consent in force covering doctrine and the deploy owner; `SeedResult.ownerReleases` says what each
   did (`applied`, `present`, `no_owner`, …). Without the setting (tests, CI, e2e) the demo personas stay as seeded.
+- Story releases (`./story-releases.ts`): a seeded founder's backstory replaced once in a database that already holds
+  the old one (the seed itself never rewrites a row), named in the same list as the owner releases.
+  `amara-seam-again-2026-11-08`: Amara gets a new venture, Seam Again (a weekly campus clothes-repair pop-up: memory,
+  a pop-up log document, an empty notebook), assigned to Corin's vEIR (Thomas once his release is applied), and her
+  SoleSignal membership is revoked; SoleSignal keeps every row, so restoring the membership undoes it. Applied only
+  while the new venture's deterministic id is absent, with demo data and the deploy owner; audited
+  (`venture.story_release_applied`); `SeedResult.storyReleases` says what each did.
 - Embeddings are backfilled by the migrate handler: `knowledgeRepo.listChunksMissingEmbeddings` →
   embed → `setChunkEmbeddings` (same for memory).
 - Access-code utilities (runtime-contract format): `generateAccessCode()`, `accessCodePrefix(code)`,

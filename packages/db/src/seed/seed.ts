@@ -19,6 +19,7 @@
  *   its text changed, withdrawn when the JSON drops it; a person's withdrawal is kept).
  */
 import { col } from '../columns.js';
+import { appendAudit } from '../repositories/audit.js';
 import { type Db, type EnvLike } from '../db.js';
 import { SqlUsageError } from '../errors.js';
 import { type SystemExecutor } from '../executor.js';
@@ -36,6 +37,7 @@ import { seedId, ventureCanary } from './ids.js';
 import { bodyFromSections, insertRows, insertSourceWithChunks } from './insert.js';
 import { SEED_PATTERNS, SEED_RESOURCES } from './resources.js';
 import { parseOwnerReleases, seedOwnerReleases, type OwnerReleaseResult } from './owner-releases.js';
+import { STORY_RELEASES, type StoryReleaseResult } from './story-releases.js';
 import { hasVeirSchema, seedVeirs, type SeededVeir } from './veir.js';
 import {
   SEED_EIRS,
@@ -64,8 +66,9 @@ export interface SeedConfig {
    */
   readonly knowledgePack?: boolean;
   /**
-   * Owner-approved persona releases to apply once (`SEED_OWNER_RELEASES`, keys of `OWNER_RELEASES` in
-   * ./owner-releases.ts; ADR-0021). Default none.
+   * Owner-approved releases to apply once (`SEED_OWNER_RELEASES`): persona releases, keys of `OWNER_RELEASES` in
+   * ./owner-releases.ts (ADR-0021), and demo-story releases, keys of `STORY_RELEASES` in ./story-releases.ts.
+   * Default none.
    */
   readonly ownerReleases?: readonly string[];
 }
@@ -102,8 +105,10 @@ export interface SeedResult {
   readonly ventures: readonly SeededVenture[];
   /** vEIR personas (empty without demo data or before migration 0004). */
   readonly veirs: readonly SeededVeir[];
-  /** What each configured owner release did on this run (`SeedConfig.ownerReleases`). */
+  /** What each configured persona release did on this run (`SeedConfig.ownerReleases`). */
   readonly ownerReleases: readonly OwnerReleaseResult[];
+  /** What each configured demo-story release did on this run (`SeedConfig.ownerReleases`). */
+  readonly storyReleases: readonly StoryReleaseResult[];
 }
 
 function dayFn(now: Date): (offsetDays: number) => string {
@@ -419,11 +424,22 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
   }
 
   // The owner's releases come after the personas they change exist (the vEIRs above), on every deploy that names them.
+  const releaseKeys = config.ownerReleases ?? [];
+  const isStory = (key: string): boolean => STORY_RELEASES.some((r) => r.key === key);
   const ownerReleases = await seedOwnerReleases(sx, {
     tenantId,
     id,
     ownerId,
-    keys: config.ownerReleases ?? [],
+    keys: releaseKeys.filter((key) => !isStory(key)),
+  });
+  const storyReleases = await seedStoryReleases(sx, {
+    tenantId,
+    id,
+    principals,
+    ownerId,
+    ready: demo && veirSchema,
+    day: dayFn(config.now ?? new Date()),
+    keys: releaseKeys.filter(isStory),
   });
 
   return {
@@ -437,7 +453,116 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
     ventures,
     veirs,
     ownerReleases,
+    storyReleases,
   };
+}
+
+/**
+ * Applies the demo-story releases `keys` names (./story-releases.ts): once per database, while the new venture's
+ * deterministic id is absent, with the deploy owner as the one who grants the memberships.
+ */
+async function seedStoryReleases(
+  sx: SystemExecutor,
+  c: {
+    readonly tenantId: string;
+    readonly id: (...parts: string[]) => string;
+    readonly principals: Readonly<Record<string, string>>;
+    readonly ownerId: string | null;
+    /** Demo data and the vEIR schema (migration 0004) are there. */
+    readonly ready: boolean;
+    readonly day: (offsetDays: number) => string;
+    readonly keys: readonly string[];
+  },
+): Promise<StoryReleaseResult[]> {
+  const results: StoryReleaseResult[] = [];
+  for (const key of c.keys) {
+    const release = STORY_RELEASES.find((r) => r.key === key);
+    if (release === undefined) throw new SqlUsageError(`unknown story release ${key.slice(0, 60)}`);
+    const v = release.venture(c.day);
+    const ventureId = c.id('venture', v.key);
+    const done = (outcome: StoryReleaseResult['outcome'], left = 0): void => {
+      results.push({ key, outcome, ventureId, left });
+    };
+    if (!c.ready) {
+      done('no_demo_data');
+      continue;
+    }
+    const present = await sx.query('SELECT 1 FROM ventures WHERE id = :id', { id: p.uuid(ventureId) });
+    if (present.rows.length > 0) {
+      done('present');
+      continue;
+    }
+    if (c.ownerId === null) {
+      done('no_owner');
+      continue;
+    }
+    const personaId = c.id('persona', 'veir', v.eir);
+    const persona = await sx.query(
+      `SELECT 1 FROM personas WHERE id = :id AND tenant_id = :tenantId AND kind = 'eir_persona' AND status <> 'retired'`,
+      { id: p.uuid(personaId), tenantId: p.uuid(c.tenantId) },
+    );
+    if (persona.rows.length === 0) {
+      done('no_persona');
+      continue;
+    }
+
+    // The venture with its memory and document, assigned straight to the vEIR, and the vEIR's empty notebook.
+    await seedVenture(sx, {
+      v,
+      tenantId: c.tenantId,
+      id: c.id,
+      principals: c.principals,
+      personaId,
+      approver: c.ownerId,
+    });
+    await insertRows(
+      sx,
+      'veir_notebooks',
+      { id: 'uuid', tenant_id: 'uuid', venture_id: 'uuid', persona_id: 'uuid' },
+      [
+        {
+          id: c.id('notebook', v.key, v.eir),
+          tenant_id: c.tenantId,
+          venture_id: ventureId,
+          persona_id: personaId,
+        },
+      ],
+    );
+    const founderId = c.principals[release.founder];
+    if (founderId === undefined) throw new SqlUsageError(`story release ${key} names an unknown founder`);
+    const left = await sx.query(
+      `UPDATE venture_memberships SET revoked_at = now()
+        WHERE principal_id = :founder AND venture_id = ANY (:ventures) AND revoked_at IS NULL
+        RETURNING id`,
+      {
+        founder: p.uuid(founderId),
+        ventures: p.uuidArray(release.leaves.map((k) => c.id('venture', k))),
+      },
+    );
+    for (const [person, title] of Object.entries(release.titles)) {
+      const principalId = c.principals[person];
+      if (principalId === undefined) continue;
+      await sx.query(
+        'UPDATE principals SET title = :title, updated_at = now() WHERE id = :id AND tenant_id = :tenantId',
+        { id: p.uuid(principalId), tenantId: p.uuid(c.tenantId), title: p.text(title) },
+      );
+    }
+    await appendAudit(sx, {
+      tenantId: c.tenantId,
+      actorId: c.ownerId,
+      outcome: 'succeeded',
+      action: 'venture.story_release_applied',
+      objectType: 'venture',
+      objectId: ventureId,
+      metadata: {
+        storyRelease: release.key,
+        approvedOn: release.approvedOn,
+        membershipsLeft: left.rows.length,
+      },
+    });
+    done('applied', left.rows.length);
+  }
+  return results;
 }
 
 async function bindOwnerCode(

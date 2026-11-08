@@ -7,8 +7,8 @@
   "homeTenant": {
     "slug": "ain",
     "name": "Ain Foundry",
-    "ownerReleases": ["thomas-2026-11-05"],
-    "note": "ownerReleases: persona releases the platform owner approved outside the studio, applied once by the deploy's seed (packages/db/src/seed/owner-releases.ts). thomas-2026-11-05 (approved 2026-11-05, ADR-0021): Corin's vEIR becomes Thomas, an AI mentor under his own name with a conversation-first doctrine."
+    "ownerReleases": ["thomas-2026-11-05", "amara-seam-again-2026-11-08"],
+    "note": "ownerReleases: persona releases the platform owner approved outside the studio, applied once by the deploy's seed (packages/db/src/seed/owner-releases.ts). thomas-2026-11-05 (approved 2026-11-05, ADR-0021): Corin's vEIR becomes Thomas, an AI mentor under his own name with a conversation-first doctrine. amara-seam-again-2026-11-08 (owner, 2026-11-08; packages/db/src/seed/story-releases.ts): the demo founder Amara gets a new, simple venture, Seam Again (a weekly campus clothes-repair pop-up), coached by Thomas, and leaves SoleSignal; nothing is deleted."
   },
   "owner": {
     "displayName": "Platform Owner",

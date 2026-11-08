@@ -90,6 +90,7 @@ async function main(): Promise<void> {
           ? `Owner releases: production's (infra/cdk/config/production.json; SEED_OWNER_RELEASES= for none)`
           : `Owner releases: SEED_OWNER_RELEASES`,
         ...result.ownerReleases.map((r) => `Owner release ${r.key}: ${r.outcome}`),
+        ...result.storyReleases.map((r) => `Story release ${r.key}: ${r.outcome}`),
         `DB_DRIVER=pg`,
         `DATABASE_URL=${url}`,
         `DEV owner access code (local only, shown once): ${code}`,

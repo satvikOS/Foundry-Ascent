@@ -37,6 +37,8 @@ SoleSignal are coached by Corin's vEIR, BenchTally and EmberLoop by Ruth's. On a
 vEIRs existed, the seed ends the original Foundry Guide assignment of each demo venture and creates the
 vEIR assignment exactly once, and only while that original assignment is still the active one: a venture a
 program lead re-assigned is left alone (`migrate-0004.db.test.ts`).
+Where production's story release is applied (`packages/db/src/seed/story-releases.ts`), Amara's venture is Seam
+Again, also coached by Corin's vEIR (presented as Thomas), and SoleSignal has no founder.
 
 **The coaching vEIR's EIR is the venture's reviewer (decision).** Each vEIR assignment carries the EIR the
 vEIR is built from, so the human who reviews a venture is always the EIR whose doctrine coaches it. The
