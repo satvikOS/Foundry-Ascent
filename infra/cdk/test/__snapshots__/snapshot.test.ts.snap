@@ -1634,7 +1634,7 @@ exports[`template snapshots > FoundryAscent-App 1`] = `
             "OWNER_ACCESS_CODE_HASH": "scrypt$N=32768,r=8,p=1$3EVOFO9pqROC_L4H7mo98g$RtIal90yLMyXBPUP_M2t51rYP2irq5D3k3DB6iweVY8",
             "OWNER_ACCESS_CODE_PREFIX": "T9302",
             "OWNER_DISPLAY_NAME": "Platform Owner",
-            "SEED_OWNER_RELEASES": "thomas-2026-11-05",
+            "SEED_OWNER_RELEASES": "thomas-2026-11-05,amara-seam-again-2026-11-08",
           },
         },
         "FunctionName": "FoundryAscent-Migrate",

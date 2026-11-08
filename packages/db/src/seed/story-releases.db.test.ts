@@ -98,12 +98,25 @@ describe('the Seam Again story release', () => {
     );
     expect(chunks.length).toBeGreaterThan(0);
     expect(chunks.some((c) => String(c.content).includes('$118'))).toBe(true);
-    expect(
-      await rows('SELECT 1 FROM veir_notebooks WHERE venture_id = :v AND persona_id = :pe', {
-        v: p.uuid(seamAgain),
-        pe: p.uuid(corin),
-      }),
-    ).toHaveLength(1);
+    // Thomas's notebook knows the open follow-ups (one overdue) and how the first conversation opens, as a person
+    // wrote it (no source conversation).
+    const [notebook] = await rows(
+      'SELECT content::text AS content FROM veir_notebooks WHERE venture_id = :v AND persona_id = :pe',
+      { v: p.uuid(seamAgain), pe: p.uuid(corin) },
+    );
+    const content = JSON.parse(String(notebook?.content)) as {
+      commitments: { text: string; due: string; status: string; sourceSessionId: string | null }[];
+      nextOpener: string;
+      nextOpenerSource: string | null;
+    };
+    expect(content.commitments).toHaveLength(3);
+    expect(content.commitments.every((x) => x.status === 'open' && x.sourceSessionId === null)).toBe(true);
+    const today = new Date().toISOString().slice(0, 10);
+    expect(content.commitments.filter((x) => x.due < today).map((x) => x.text)).toEqual([
+      'Test a $10 hem with five people from the waitlist',
+    ]);
+    expect(content.nextOpener).toMatch(/^Want help .*\?$/);
+    expect(content.nextOpenerSource).toBeNull();
 
     // Nothing in the new venture mentions the old story; the old venture keeps every row.
     const text = JSON.stringify([venture, memory, chunks]).toLowerCase();

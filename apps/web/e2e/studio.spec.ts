@@ -96,8 +96,9 @@ test.describe('program lead', () => {
     await assign(CORIN_PERSONA);
     await expect(row).toContainText(CORIN_PERSONA);
     await expect(row).toContainText(CORIN);
-    // The filter chips count who coaches what.
-    await expect(page.getByRole('button', { name: new RegExp(`^${CORIN_PERSONA}\\s*3$`) })).toBeVisible();
+    // The filter chips count who coaches what: QuietQuad, SoleSignal, Seam Again (production's story release) and now
+    // EmberLoop.
+    await expect(page.getByRole('button', { name: new RegExp(`^${CORIN_PERSONA}\\s*4$`) })).toBeVisible();
 
     // Back to the seeded assignment.
     await assign(SEEDED_VEIR);

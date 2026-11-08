@@ -214,10 +214,12 @@ candidates (`ops/lab/models.json` `live.coach`), the app's roles only the effect
 
 ### Owner-approved persona releases
 
-`config/production.json` → `homeTenant.ownerReleases` (at most 8 keys of `packages/db/src/seed/owner-releases.ts`)
+`config/production.json` → `homeTenant.ownerReleases` (at most 8 keys of `packages/db/src/seed/owner-releases.ts` or
+`packages/db/src/seed/story-releases.ts`)
 becomes `SEED_OWNER_RELEASES` on the migrate function: the deploy's seed applies each release once to the home tenant,
 created and approved by the deploy owner (ADR-0021). Production names `thomas-2026-11-05` (Thomas, approved by the owner
-on 2026-11-05). An unknown key fails the seed, so the deploy rolls back before any function changes.
+on 2026-11-05) and `amara-seam-again-2026-11-08` (the demo founder Amara's new venture, Seam Again, coached by
+Thomas; she leaves SoleSignal, nothing is deleted). An unknown key fails the seed, so the deploy rolls back before any function changes.
 
 ### Voice calls and distillation
 

@@ -30,6 +30,17 @@ export interface StoryRelease {
   readonly titles: Readonly<Record<string, string>>;
   /** The new venture; `day(n)` renders the deploy day + n days as YYYY-MM-DD. Its `eir` names the coaching vEIR. */
   readonly venture: (day: (offsetDays: number) => string) => SeedVenture;
+  /**
+   * What the coaching vEIR's notebook starts with, as a person wrote it (drawn from no conversation): the open
+   * commitments with their due dates, which reach the vEIR only through the notebook ("Where you left off", a past
+   * due date), and the line its first conversation opens with. Distillation rewrites it after the first conversation.
+   */
+  readonly notebook: (day: (offsetDays: number) => string) => {
+    readonly summary: string;
+    readonly commitments: readonly { readonly id: string; readonly text: string; readonly due: string }[];
+    readonly openQuestions: readonly { readonly id: string; readonly text: string }[];
+    readonly nextOpener: string;
+  };
 }
 
 /**
@@ -97,7 +108,9 @@ export const SEAM_AGAIN_RELEASE: StoryRelease = {
         title: 'First pop-up day in the student union',
         content:
           'One Wednesday table in the student union lobby: drop-off 11:00–15:00, pick-up by 18:00, priced per ' +
-          'repair (button $4, seam $6, hem $8). Amara and her flatmate Jun did the sewing.',
+          'repair (button $4, seam $6, hem $8). Amara and her flatmate Jun did the sewing. Result: 23 items came in; ' +
+          '21 were fixed and collected the same day (9 seams, 8 buttons, 4 hems), 2 zips went back unfinished, and ' +
+          'the day took $118.',
         status: 'confirmed',
         visibility: 'venture',
         confidence: 0.75,
@@ -110,7 +123,7 @@ export const SEAM_AGAIN_RELEASE: StoryRelease = {
           success_criteria: '15 or more items fixed and collected the same day',
           result:
             '23 items dropped off; 21 fixed and collected the same day (9 seams, 8 buttons, 4 hems); 2 zip repairs ' +
-            'handed back unfinished; $118 taken; about 14 minutes per repair on average.',
+            'handed back unfinished; $118 taken; about 13½ minutes per finished repair (283 minutes for 21).',
           status: 'completed',
         },
       },
@@ -119,15 +132,16 @@ export const SEAM_AGAIN_RELEASE: StoryRelease = {
         type: 'decision',
         title: 'Buttons, seams and hems only: no zips, leather or alterations',
         content:
-          'Offer only the three quick repairs; turn away zips, leather and alterations, which took over 40 minutes ' +
-          'each on the first day.',
+          'Offer only the three quick repairs. Turn away zips (each took over 40 minutes on the first day and went ' +
+          'back unfinished), and leather and alterations, which would take longer still.',
         status: 'confirmed',
         visibility: 'venture',
         confidence: 0.7,
         origin: 'founder',
         author: 'amara',
         attributes: {
-          rationale: 'The two zip jobs took more time than six buttons and were still not finished',
+          rationale:
+            'Each zip took longer than six buttons (over 40 minutes against about 36) and neither was finished',
           alternatives: ['Charge $15+ for zips', 'Take zips home and return them next week'],
           reversal_condition: 'If zip requests become a large share of drop-offs',
           decided_on: day(-5),
@@ -238,7 +252,7 @@ export const SEAM_AGAIN_RELEASE: StoryRelease = {
           'Amara wants to keep Seam Again to one weekday during term so it does not eat into exam preparation; Jun ' +
           'can only sew on Wednesdays.',
         status: 'confirmed',
-        visibility: 'founder_private',
+        visibility: 'venture',
         confidence: 0.8,
         origin: 'founder',
         author: 'amara',
@@ -309,6 +323,26 @@ export const SEAM_AGAIN_RELEASE: StoryRelease = {
         ],
       },
     ],
+  }),
+  notebook: (day) => ({
+    summary:
+      'Amara is testing whether a weekly campus clothes-repair pop-up can pay her and Jun at least the $16 an hour a ' +
+      'campus job pays. The first Wednesday fixed 21 items and took $118, about $11.80 an hour each, so the open ' +
+      'question is price and volume: a $10 hem, a regular Wednesday table, and groups such as the theatre society.',
+    commitments: [
+      { id: 'c-hem-price-test', text: 'Test a $10 hem with five people from the waitlist', due: day(-2) },
+      {
+        id: 'c-theatre-email',
+        text: 'Email the theatre society’s costume manager about a repair session',
+        due: day(3),
+      },
+      { id: 'c-book-table', text: 'Book the student union table for the next four Wednesdays', due: day(5) },
+    ],
+    openQuestions: [
+      { id: 'q-hourly', text: 'What price and volume would get each sewer to $16 an hour?' },
+      { id: 'q-groups', text: 'Would clubs pay for repairs in batches?' },
+    ],
+    nextOpener: 'Want help setting up the $10 hem test with five people from your waitlist?',
   }),
 };
 

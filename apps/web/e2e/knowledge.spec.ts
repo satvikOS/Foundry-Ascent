@@ -416,7 +416,7 @@ test.describe('human help', () => {
         ).toBeVisible();
         await expect(viewer.getByRole('link', { name: 'Open inbox' })).toBeVisible();
       } else {
-        // The advisor lands in their own venture (SoleSignal).
+        // The advisor lands in a venture they advise (Seam Again or SoleSignal).
         await viewer.goto(`/${TENANT}/app`);
         await viewer.waitForURL(/\/app\/v\/[0-9a-f-]{36}/);
         const advisorVenture = /\/app\/v\/([0-9a-f-]{36})/.exec(viewer.url())?.[1] ?? '';

@@ -24,8 +24,8 @@ export interface PlatformConfig {
     readonly slug: string;
     readonly name: string;
     /**
-     * Owner-approved persona releases the seed applies once to this tenant (`SEED_OWNER_RELEASES`; keys of
-     * packages/db/src/seed/owner-releases.ts, ADR-0021). Empty when absent; an unknown key fails the deploy's seed.
+     * Owner-approved releases the seed applies once to this tenant (`SEED_OWNER_RELEASES`; keys of
+     * packages/db/src/seed/owner-releases.ts, ADR-0021, or packages/db/src/seed/story-releases.ts). Empty when absent; an unknown key fails the deploy's seed.
      */
     readonly ownerReleases: readonly string[];
   };

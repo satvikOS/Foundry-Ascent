@@ -498,7 +498,7 @@ async function seedStoryReleases(
     }
     const personaId = c.id('persona', 'veir', v.eir);
     const persona = await sx.query(
-      `SELECT 1 FROM personas WHERE id = :id AND tenant_id = :tenantId AND kind = 'eir_persona' AND status <> 'retired'`,
+      `SELECT 1 FROM personas WHERE id = :id AND tenant_id = :tenantId AND kind = 'eir_persona' AND status = 'active'`,
       { id: p.uuid(personaId), tenantId: p.uuid(c.tenantId) },
     );
     if (persona.rows.length === 0) {
@@ -506,7 +506,7 @@ async function seedStoryReleases(
       continue;
     }
 
-    // The venture with its memory and document, assigned straight to the vEIR, and the vEIR's empty notebook.
+    // The venture with its memory and document, assigned straight to the vEIR, and the vEIR's notebook.
     await seedVenture(sx, {
       v,
       tenantId: c.tenantId,
@@ -515,16 +515,40 @@ async function seedStoryReleases(
       personaId,
       approver: c.ownerId,
     });
+    const nb = release.notebook(c.day);
+    const written = new Date().toISOString();
+    // As a person wrote it (no source conversation): kept until distillation rewrites it, never erased with one.
+    const line = (x: { id: string; text: string }) => ({ ...x, sourceSessionId: null, createdAt: written });
     await insertRows(
       sx,
       'veir_notebooks',
-      { id: 'uuid', tenant_id: 'uuid', venture_id: 'uuid', persona_id: 'uuid' },
+      {
+        id: 'uuid',
+        tenant_id: 'uuid',
+        venture_id: 'uuid',
+        persona_id: 'uuid',
+        content: 'jsonb',
+        version: 'integer',
+        last_edited_by: 'text',
+      },
       [
         {
           id: c.id('notebook', v.key, v.eir),
           tenant_id: c.tenantId,
           venture_id: ventureId,
           persona_id: personaId,
+          content: {
+            summary: nb.summary,
+            founderProfile: [],
+            commitments: nb.commitments.map((x) => ({ ...line(x), due: x.due, status: 'open' })),
+            openQuestions: nb.openQuestions.map(line),
+            lastAdvice: [],
+            nextOpener: nb.nextOpener,
+            summarySources: [],
+            nextOpenerSource: null,
+          },
+          version: 1,
+          last_edited_by: 'veir',
         },
       ],
     );

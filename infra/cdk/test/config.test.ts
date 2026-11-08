@@ -389,13 +389,16 @@ describe('config', () => {
     expect(config.distillation.sweepIntervalMinutes).toBe(15);
   });
 
-  it('reads the owner-approved releases the seed applies (none when absent; production ships Thomas)', () => {
+  it('reads the owner-approved releases the seed applies (none when absent; production ships Thomas and the Seam Again story)', () => {
     expect(parseConfig(valid()).homeTenant.ownerReleases).toEqual([]);
     expect(
       parseConfig(withChange(['homeTenant', 'ownerReleases'], ['thomas-2026-11-05'])).homeTenant
         .ownerReleases,
     ).toEqual(['thomas-2026-11-05']);
-    expect(loadConfig().homeTenant.ownerReleases).toEqual(['thomas-2026-11-05']);
+    expect(loadConfig().homeTenant.ownerReleases).toEqual([
+      'thomas-2026-11-05',
+      'amara-seam-again-2026-11-08',
+    ]);
     for (const bad of ['Thomas', 'thomas 2026', '', 7, ['thomas-2026-11-05']]) {
       expect(() => parseConfig(withChange(['homeTenant', 'ownerReleases'], [bad]))).toThrow(ConfigError);
     }
