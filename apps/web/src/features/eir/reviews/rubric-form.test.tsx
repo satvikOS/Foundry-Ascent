@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/features/admin/shared/test-utils';
@@ -72,7 +72,10 @@ describe('RubricForm validation', () => {
     expect(await screen.findByText('Score rigor from 1 to 5.')).toBeVisible();
 
     score('Rigor', 4);
-    expect(await screen.findByRole('alert')).toHaveTextContent('Score the 5 remaining criteria to submit.');
+    // The alert is already there (it said 6): wait for its text to change, not for it to appear (CI run 42445819861).
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('Score the 5 remaining criteria to submit.');
+    });
     expect(screen.queryByText('Score rigor from 1 to 5.')).not.toBeInTheDocument();
   });
 

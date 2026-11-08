@@ -271,7 +271,13 @@ export async function expectNoSeriousA11yViolations(page: Page, label: string): 
   // Let entrance transitions settle so colour contrast is measured on final colours.
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
-  const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+  // What an open modal hides (Radix marks it data-aria-hidden) sits under its scrim, dimmed on purpose and out of reach:
+  // its contrast is not what anyone reads. Measured anyway, the result hung on whether a control behind the scrim was
+  // still disabled (exempt) when axe ran: CI run 42445819861 failed the call disclosure on the lobby's Start call.
+  const results = await new AxeBuilder({ page })
+    .withTags(WCAG_TAGS)
+    .exclude('[data-aria-hidden="true"]')
+    .analyze();
   const blocking = results.violations
     .filter((violation) => violation.impact === 'serious' || violation.impact === 'critical')
     .map((violation) => ({
