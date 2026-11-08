@@ -67,6 +67,8 @@ only once the deployment wires that vendor):
 
 1. GitHub → the repository → **Settings › Secrets and variables › Actions › New repository secret**: name
    `HEYGEN_LIVEAVATAR_API`, value the LiveAvatar API key. (Already set? Skip to 2. To rotate, update it here.)
+   A second account's key goes in `HEYGEN_LIVEAVATAR_API_2`: when it is set the workflows use it instead (the first
+   ran out of credits on 2026-11-08); delete it to go back to the first key, then run step 2 again.
 2. **Actions › Ops - sync HeyGen key › Run workflow** (branch `main`). It runs in the `production` environment
    (approve it if the environment asks) as the deploy role, and creates `foundry-ascent/media/heygen` the first time
    or stores the new value after that. The job summary says _created_, _updated_ or _skipped_ (the repository

@@ -1,7 +1,8 @@
 name: Ops - HeyGen catalogue
 
 # Lists HeyGen LiveAvatar's stock avatars and voices with the owner's key (the repository secret
-# HEYGEN_LIVEAVATAR_API), so the vEIR's stock face can be chosen from the stock list: ops/aws/heygen_catalog.py
+# HEYGEN_LIVEAVATAR_API_2 when set, else HEYGEN_LIVEAVATAR_API, as in Ops - sync HeyGen key), so the vEIR's stock
+# face can be chosen from the stock list: ops/aws/heygen_catalog.py
 # reads GET /v1/avatars/public and /v1/voices (public, with each voice's engines), validates the envelope and paging
 # strictly and each avatar and voice on its own (an invalid one is skipped and counted by reason only), and marks
 # each avatar usable in LITE, in FULL and in the sandbox (Wayne only), and likely green-screen (studio) when its
@@ -47,7 +48,7 @@ jobs:
       - name: Check the repository secret
         id: key
         env:
-          HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API }}
+          HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API_2 || secrets.HEYGEN_LIVEAVATAR_API }}
         run: |
           if [ -z "${HEYGEN_KEY}" ]; then
             echo "::notice::The repository secret HEYGEN_LIVEAVATAR_API is empty or not set: nothing to list."
@@ -83,7 +84,7 @@ jobs:
         id: catalog
         if: steps.key.outputs.present == 'true'
         env:
-          HEYGEN_API_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API }}
+          HEYGEN_API_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API_2 || secrets.HEYGEN_LIVEAVATAR_API }}
         run: |
           python -I ops/aws/heygen_catalog.py --out-dir "${RUNNER_TEMP}/heygen-catalog" --summary "${GITHUB_STEP_SUMMARY}"
 

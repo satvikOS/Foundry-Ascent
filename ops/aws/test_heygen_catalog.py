@@ -907,8 +907,9 @@ def test_the_workflow_runs_from_main_only_and_keeps_the_key_off_the_log() -> Non
     assert "    environment: production\n" in text
     assert "    permissions:\n      contents: read\n" in text
     assert "persist-credentials: false" in text
-    # The secret reaches exactly two steps, each through the environment: the check and the catalogue.
-    assert text.count("${{ secrets.HEYGEN_LIVEAVATAR_API }}") == 2
+    # The secret reaches exactly two steps, each through the environment: the check and the catalogue (the second
+    # account's key when it is set, as Ops - sync HeyGen key does).
+    assert text.count("${{ secrets.HEYGEN_LIVEAVATAR_API_2 || secrets.HEYGEN_LIVEAVATAR_API }}") == 2
     for line in text.splitlines():
         if "secrets.HEYGEN_LIVEAVATAR_API" in line:
             assert line.strip().startswith(("HEYGEN_KEY:", "HEYGEN_API_KEY:")), line

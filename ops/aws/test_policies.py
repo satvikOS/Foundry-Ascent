@@ -473,7 +473,11 @@ MEDIA_KEY_CLI: dict[str, str | None] = {
     "secretsmanager:createsecret": "secretsmanager:CreateSecret",
     "secretsmanager:putsecretvalue": "secretsmanager:PutSecretValue",
 }
-MEDIA_KEY_SECRET_ENV = "HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API }}"
+MEDIA_KEY_SECRET_ENV = "HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API_2 || secrets.HEYGEN_LIVEAVATAR_API }}"
+# Which of the two secrets that is, by name only (a comparison: the value never leaves the expression).
+MEDIA_KEY_SOURCE_ENV = (
+    "KEY_SOURCE: ${{ secrets.HEYGEN_LIVEAVATAR_API_2 != '' && 'HEYGEN_LIVEAVATAR_API_2' || 'HEYGEN_LIVEAVATAR_API' }}"
+)
 # The ElevenLabs key sync (docs/runbooks/elevenlabs-voice.md): the same calls on its own secret, through the same
 # policy; its `check` mode calls no AWS at all.
 VOICE_KEY_WORKFLOW = "ops-elevenlabs-key.yml"
@@ -517,9 +521,12 @@ def test_the_heygen_key_workflow_never_exposes_the_key() -> None:
     # No checkout and no dependency code on the runner that decrypts the key.
     for absent in ("actions/checkout", "pnpm", "npm ", "pip ", "setup-node", "setup-python", "actions/cache"):
         assert absent not in code, absent
-    # The secret reaches only the two steps that need it, through their environment.
-    assert code.count("secrets.HEYGEN_LIVEAVATAR_API") == 2
+    # The secret (the second account's when it is set) reaches only the two steps that need it, through their
+    # environment; the check step also learns which secret it is, by name.
     assert code.count(MEDIA_KEY_SECRET_ENV) == 2
+    assert code.count(MEDIA_KEY_SOURCE_ENV) == 1
+    secret_lines = [line.strip() for line in code.splitlines() if "secrets.HEYGEN_LIVEAVATAR_API" in line]
+    assert sorted(secret_lines) == sorted([MEDIA_KEY_SECRET_ENV, MEDIA_KEY_SECRET_ENV, MEDIA_KEY_SOURCE_ENV])
     # The value is masked line by line and never echoed: no line that names the key (HEYGEN_KEY, or `key` once
     # trimmed) prints anything; only ::add-mask:: sees its lines.
     for line in code.splitlines():

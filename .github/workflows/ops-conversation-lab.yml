@@ -284,7 +284,7 @@ jobs:
       - name: Check the HeyGen sandbox key
         if: matrix.suite == 'face'
         env:
-          HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API }}
+          HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API_2 || secrets.HEYGEN_LIVEAVATAR_API }}
         run: |
           if [ -z "${HEYGEN_KEY}" ]; then
             echo "::error::The face suite needs the repository secret HEYGEN_LIVEAVATAR_API (the HeyGen LiveAvatar API key)."
@@ -395,7 +395,7 @@ jobs:
         working-directory: ops/lab
         env:
           PYTHONPATH: ${{ github.workspace }}/evals
-          LAB_HEYGEN_API_KEY: ${{ matrix.suite == 'face' && secrets.HEYGEN_LIVEAVATAR_API || '' }}
+          LAB_HEYGEN_API_KEY: ${{ matrix.suite == 'face' && (secrets.HEYGEN_LIVEAVATAR_API_2 || secrets.HEYGEN_LIVEAVATAR_API) || '' }}
           # The production site's origin (the dispatch input, else the repository variable FA_SITE_URL; both public),
           # for the lite probe's L10 only: Playwright serves a blank page at it itself, so nothing is requested from
           # production. Unset: a production-shaped stand-in, reported but not graded as the production origin.

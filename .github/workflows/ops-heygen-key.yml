@@ -1,10 +1,13 @@
 name: Ops - sync HeyGen key
 
-# Copies the repository secret HEYGEN_LIVEAVATAR_API (the owner's HeyGen LiveAvatar API key) into the AWS Secrets
-# Manager secret foundry-ascent/media/heygen in us-east-1, as {"apiKey": "<key>"}: the secret the API reads the face
+# Copies the owner's HeyGen LiveAvatar API key into the AWS Secrets Manager secret foundry-ascent/media/heygen in us-east-1, as {"apiKey": "<key>"}: the secret the API reads the face
 # vendor's key from (packages/core/media-vendors.json; docs/runbooks/avatars.md §2). The owner never pastes the key
 # into a shell. Run it by hand after setting or rotating the repository secret; the API picks a new key up within
 # 5 minutes.
+#
+# Which key: the repository secret HEYGEN_LIVEAVATAR_API_2 when it is set (the owner's second account, added
+# 2026-11-08 when the first ran out of credits), else HEYGEN_LIVEAVATAR_API. To go back to the first key, delete
+# HEYGEN_LIVEAVATAR_API_2 and run this again. The log and the summary name the secret used, never its value.
 #
 # Why a separate, manual workflow and not a step of Deploy: the key is decrypted on a runner only when the owner asks
 # for it (not on every push to main), on a runner that installs and runs no dependency code (Deploy's job runs
@@ -52,13 +55,16 @@ jobs:
       - name: Check the repository secret
         id: key
         env:
-          HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API }}
+          HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API_2 || secrets.HEYGEN_LIVEAVATAR_API }}
+          KEY_SOURCE: ${{ secrets.HEYGEN_LIVEAVATAR_API_2 != '' && 'HEYGEN_LIVEAVATAR_API_2' || 'HEYGEN_LIVEAVATAR_API' }}
         run: |
           if [ -z "${HEYGEN_KEY}" ]; then
-            echo "::notice::The repository secret HEYGEN_LIVEAVATAR_API is empty or not set: nothing to copy."
+            echo "::notice::The repository secrets HEYGEN_LIVEAVATAR_API_2 and HEYGEN_LIVEAVATAR_API are empty or not set: nothing to copy."
             echo "present=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
+          echo "Using ${KEY_SOURCE}."
+          echo "source=${KEY_SOURCE}" >> "${GITHUB_OUTPUT}"
           # Mask every line, as given and without surrounding whitespace (a multi-line value is a paste error, refused
           # below, but must not print either; ::add-mask:: masks one line).
           printf '%s\n' "${HEYGEN_KEY}" | while IFS= read -r line; do
@@ -72,7 +78,7 @@ jobs:
           key="${HEYGEN_KEY#"${HEYGEN_KEY%%[![:space:]]*}"}"
           key="${key%"${key##*[![:space:]]}"}"
           if [ "${#key}" -lt 16 ] || [ "${#key}" -gt 1024 ] || [[ ! "${key}" =~ ^[A-Za-z0-9._~+/=:_-]+$ ]]; then
-            echo "::error::HEYGEN_LIVEAVATAR_API is not a single API key (16 to 1024 letters, digits or ._~+/=:_- without spaces or quotes). Set it again under Settings > Secrets and variables > Actions."
+            echo "::error::${KEY_SOURCE} is not a single API key (16 to 1024 letters, digits or ._~+/=:_- without spaces or quotes). Set it again under Settings > Secrets and variables > Actions."
             exit 1
           fi
           echo "present=true" >> "${GITHUB_OUTPUT}"
@@ -119,7 +125,7 @@ jobs:
         id: store
         if: steps.key.outputs.present == 'true'
         env:
-          HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API }}
+          HEYGEN_KEY: ${{ secrets.HEYGEN_LIVEAVATAR_API_2 || secrets.HEYGEN_LIVEAVATAR_API }}
           # Throttling is retried by the CLI; any error that remains stops the run.
           AWS_RETRY_MODE: standard
           AWS_MAX_ATTEMPTS: '6'
@@ -183,12 +189,13 @@ jobs:
         if: always()
         env:
           PRESENT: ${{ steps.key.outputs.present }}
+          SOURCE: ${{ steps.key.outputs.source }}
           ACTION: ${{ steps.store.outputs.action }}
           OUTCOME: ${{ steps.store.outcome }}
         run: |
           # Step summaries are not covered by ::add-mask::; only fixed words are written here.
           case "${PRESENT}:${ACTION}:${OUTCOME}" in
-            false:*) result="skipped: the repository secret HEYGEN_LIVEAVATAR_API is empty or not set" ;;
+            false:*) result="skipped: the repository secrets HEYGEN_LIVEAVATAR_API_2 and HEYGEN_LIVEAVATAR_API are empty or not set" ;;
             true:created:success) result="created (the API reads it within 5 minutes)" ;;
             true:updated:success) result="updated (the API reads it within 5 minutes)" ;;
             *) result="not stored (see the log)" ;;
@@ -199,5 +206,8 @@ jobs:
             echo "| | |"
             echo "| --- | --- |"
             echo "| Secret | \`${SECRET_NAME}\` (us-east-1) |"
+            case "${SOURCE}" in
+              HEYGEN_LIVEAVATAR_API_2 | HEYGEN_LIVEAVATAR_API) echo "| Key | repository secret \`${SOURCE}\` |" ;;
+            esac
             echo "| Result | ${result} |"
           } >> "${GITHUB_STEP_SUMMARY}"
