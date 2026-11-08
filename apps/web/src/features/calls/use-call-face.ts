@@ -92,8 +92,13 @@ export interface CallFaceDeps {
   warm?(provider: EmbodimentProviderId): void;
   /** Tells the server the face is no longer shown (it ends the vendor session), and why (audited there). */
   endFace(callId: string, loss: FaceLoss): Promise<void>;
-  /** A face that has not shown its first frame by then is given up for this call. */
+  /** A face whose session opened but that has not shown its first frame by then is given up for this call. */
   readonly connectTimeoutMs: number;
+  /**
+   * How long the server may take to open the vendor session (default {@link FACE_SESSION_TIMEOUT_MS}): its own bound,
+   * apart from the join's, because a session the server opened is the call's only one (a second ask is refused).
+   */
+  readonly sessionTimeoutMs?: number;
   /** A call on hold longer than this gives its face up (default {@link FACE_HOLD_GRACE_MS}). */
   readonly holdGraceMs?: number;
   /**
@@ -104,6 +109,12 @@ export interface CallFaceDeps {
   readonly wallNow?: () => number;
 }
 
+/**
+ * How long opening the vendor session may take. The vendor's start usually takes 1.5–3 s but went past 8 s on four
+ * calls in a week (production, 2026-11-06..08), and under the join's 8 s bound those faces were given up just before
+ * they came, with no second session allowed for the call: "Video isn't available" on a slow day at the vendor.
+ */
+export const FACE_SESSION_TIMEOUT_MS = 20_000;
 /** How long a call may stay on hold (the page hidden) before its face is given up: the vendor bills idle faces. */
 export const FACE_HOLD_GRACE_MS = 60_000;
 /**
@@ -349,10 +360,11 @@ export class CallFaceController {
     let stage: FaceJoinStage = 'session';
     void (async () => {
       try {
-        // Bounded like the join itself: a call whose speech waits for the face never waits on a slow API for long.
+        // Bounded on its own: a call whose speech waits for the face never waits on a slow API for long, and a slow
+        // vendor start (its one session for the call) is not given up under the join's shorter bound.
         const session = await Promise.race([
           this.deps.startSession(ventureId, callId, signal),
-          timeout(this.deps.connectTimeoutMs, signal),
+          timeout(this.deps.sessionTimeoutMs ?? FACE_SESSION_TIMEOUT_MS, signal),
         ]);
         if (session.token === null || session.provider === 'builtin') {
           // Not offered now (credits, minutes, caps, the switches): nothing opened, nothing to end on the server.

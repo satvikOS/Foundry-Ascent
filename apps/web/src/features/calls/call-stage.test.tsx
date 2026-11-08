@@ -8,7 +8,7 @@ import type { AvatarProvider, FaceLoss, FaceRelay, FaceRenderer } from '@/lib/re
 
 import { CallStage } from './call-stage';
 import { LIVE, fakeEngine, json, renderWithRouter, stubFetch } from './testing';
-import { CallFaceController, type CallFaceDeps } from './use-call-face';
+import { CallFaceController, FACE_SESSION_TIMEOUT_MS, type CallFaceDeps } from './use-call-face';
 import type { CallVeir } from './use-call-veir';
 
 const VENTURE = '0b9d1f0e-6a0c-4f39-9d0e-5d3b8a1c2e01';
@@ -664,6 +664,56 @@ describe('CallStage: the face of a call', () => {
       expect(faceDeps.startSession).toHaveBeenCalledTimes(2);
     });
     expect(controller.getSnapshot().status).toBe('reconnecting');
+  });
+
+  it('waits for a slow vendor start past the join’s bound: the call’s one session is not given up', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const face = vendorFace();
+      const { asEngine, controller, faceDeps } = controllerWith(face);
+      // As production on 2026-11-08: the server took 8.1–8.5 s to open the session.
+      faceDeps.startSession.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(() => {
+              resolve(SESSION);
+            }, 8_500);
+          }),
+      );
+      renderWithRouter(stage({ controller, engine: asEngine }));
+      await videoTileSays('Connecting to Thomas…', 'connecting');
+      act(() => {
+        vi.advanceTimersByTime(8_600);
+      });
+      await waitFor(() => {
+        expect(face.provider.connect).toHaveBeenCalled();
+      });
+      act(() => {
+        face.connect();
+      });
+      await screen.findByRole('figure');
+      expect(faceDeps.endFace).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives a vendor start up only after its own bound', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const face = vendorFace();
+      const { asEngine, controller, faceDeps } = controllerWith(face);
+      faceDeps.startSession.mockImplementation(() => new Promise<AvatarSessionResponse>(() => undefined));
+      renderWithRouter(stage({ controller, engine: asEngine }));
+      await videoTileSays('Connecting to Thomas…', 'connecting');
+      act(() => {
+        vi.advanceTimersByTime(FACE_SESSION_TIMEOUT_MS + 100);
+      });
+      await videoTileSays('Video isn’t available right now', 'unavailable');
+      expect(face.provider.connect).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('says video couldn’t start when the API offers no face or the face cannot connect', async () => {
