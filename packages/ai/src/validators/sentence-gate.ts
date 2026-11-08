@@ -32,11 +32,13 @@ import {
   parksTheirNews,
   askedBefore,
   handBackCandidate,
+  leansOnPrevious,
   putToFounder,
   reaskOf,
   repeatsPrevious,
   stuckOn,
   type QuestionTerms,
+  type ReaskReading,
 } from './social.js';
 import { asksForNumber, founderMoves } from '../prompts/conversation-state.js';
 import { questionFramesOf, withVariedQuestions } from '../prompts/phrasing.js';
@@ -739,13 +741,20 @@ export class SentenceGate {
         if (this.#leaks([stable.slice(from)])) return this.#block('cross_venture', units);
       }
       let rawUnit = this.#raw.slice(this.#cursor, end);
-      // A question asked again only by the strict or settled reading goes only from the reply's trailing hand-back: it
-      // is held until the next unit shows whether anything but another question follows it (`#onlyQuestionsAfter`).
+      // A question asked again (by any reading) goes only from the reply's trailing hand-back: it is held until the next
+      // unit shows whether anything but another question follows it (`#onlyQuestionsAfter`).
+      // One that comes back whole also goes from the coach's own prose, once the next unit shows it does not lean on it.
       let trailing = false;
-      if (this.#reaskCandidate(rawUnit, this.#raw.slice(0, this.#cursor))) {
+      const candidate = this.#reaskCandidate(rawUnit, this.#raw.slice(0, this.#cursor));
+      if (candidate !== null) {
         const after = this.#onlyQuestionsAfter(end, stable);
         if (after === null) break;
         trailing = after;
+        if (!after && candidate === 'whole') {
+          const next = this.#nextUnit(end, stable);
+          if (next === null) break;
+          trailing = !leansOnPrevious(next.trim());
+        }
       }
       if (this.#options.greeted === true && this.#opening) {
         // The opening line already said hello: the reply's own greeting is left out (a whole unit, or its start).
@@ -930,37 +939,57 @@ export class SentenceGate {
 
   /**
    * Whether a unit says an earlier reply again (`repeat`), asks one of its questions again (`reask`), or neither. A
-   * question asked again only by the strict or settled reading (`reaskOf` `subject`) is a re-ask only in the reply's
-   * trailing hand-back (`trailing`: only questions follow it, and it is put to the founder: `handBackCandidate`). A
-   * safety line, and on a flagged turn a referral, is never a repeat (`isProtectedLine`).
+   * question asked again, whole or only by the strict or settled reading (`reaskOf`), is a re-ask only in the reply's
+   * trailing hand-back (`trailing`: only questions follow it, and it is put to the founder and goes on from the coach's
+   * own prose: `handBackCandidate`), as in `withoutRepeats`. A safety line, and on a flagged turn a referral, is never a
+   * repeat (`isProtectedLine`).
    */
   #repeatOf(unit: string, before: string, trailing = false): 'repeat' | 'reask' | null {
     if (this.#previousGrams === null) return null;
     if (isProtectedLine(unit, this.#keepReferrals)) return null;
     if (repeatsPrevious(unit, this.#previousGrams, { signOffs: !this.#signOffWelcome })) return 'repeat';
     // A question for someone else (in a quoted draft, a list of questions to send) is the founder's prep, never a
-    // re-ask of them, unless it comes back whole (`putToFounder`).
+    // re-ask of them (`putToFounder`, `handBackCandidate`).
     const reask = reaskOf(unit.trim(), this.#previousQuestions, {
       strict: this.#stuck,
       toFounder: putToFounder(before, unit),
     });
-    if (reask === 'whole') return 'reask';
-    return reask === 'subject' && trailing && handBackCandidate(before, unit) ? 'reask' : null;
+    return reask !== null && trailing && handBackCandidate(before, unit) ? 'reask' : null;
   }
 
   /**
-   * Whether the unit (what the reply says after `before`) would be left out as a re-ask only if it ends the reply: asked
-   * again only by the strict or settled reading, and a candidate for the trailing hand-back (`handBackCandidate`).
+   * How the unit (what the reply says after `before`) asks an earlier question again (`reaskOf`), when it is a
+   * candidate for the trailing hand-back (`handBackCandidate`), or null: such a unit is left out only if it ends the
+   * reply, or, coming back whole, if what follows does not lean on it.
    */
-  #reaskCandidate(unit: string, before: string): boolean {
-    if (this.#previousGrams === null || this.#previousQuestions.length === 0) return false;
-    if (!/\?["'”’)\]*_]*\s*$/u.test(unit) || isProtectedLine(unit, this.#keepReferrals)) return false;
-    return (
-      reaskOf(unit.trim(), this.#previousQuestions, {
-        strict: this.#stuck,
-        toFounder: putToFounder(before, unit),
-      }) === 'subject' && handBackCandidate(before, unit)
-    );
+  #reaskCandidate(unit: string, before: string): ReaskReading | null {
+    if (this.#previousGrams === null || this.#previousQuestions.length === 0) return null;
+    if (!/\?["'”’)\]*_]*\s*$/u.test(unit) || isProtectedLine(unit, this.#keepReferrals)) return null;
+    const reask = reaskOf(unit.trim(), this.#previousQuestions, {
+      strict: this.#stuck,
+      toFounder: putToFounder(before, unit),
+    });
+    return reask !== null && handBackCandidate(before, unit) ? reask : null;
+  }
+
+  /**
+   * The next non-empty unit after `end` ('' when the stream ended without one), or null while it has not arrived.
+   */
+  #nextUnit(end: number, stable: string): string | null {
+    let from = end;
+    for (;;) {
+      let next = findUnitEnd(this.#raw, from, this.#maxUnitChars);
+      if (next === null) {
+        if (!this.#ended) return null;
+        next = this.#raw.length;
+      }
+      if (!this.#ended && stable.length < next) return null;
+      const unit = this.#raw.slice(from, next);
+      if (unit.trim() !== '') return unit;
+      if (next >= this.#raw.length) return this.#ended ? '' : null;
+      if (next <= from) return null;
+      from = next;
+    }
   }
 
   /**

@@ -1572,3 +1572,102 @@ def test_the_shape_alone_needs_a_question_before_it() -> None:
 @pytest.mark.parametrize("student", ["not bad", "no thanks, i dont need that", "no worries", "nope"])
 def test_a_negation_that_answers_is_no_no_answer(student: str) -> None:
     assert not no_answer(student, "Want me to draft the email to him?")
+
+
+# Review of the 2026-11-07 fix, round 5: a no-answer says who did not do what, never any short negation; the product's
+# prompts/conversation-state.ts ``NO_ANSWER_PREDICATE`` reads the same.
+_R1 = (
+    "Got it. Walk me through where you are with the regulatory path: what did the advisor tell you about device class "
+    "and how clinics would pay?"
+)
+_ROUND5_NO_ANSWERS = [
+    "nah",
+    "nope",
+    "ummm no",
+    "no one has told me",
+    "zero idea",
+    "totally forgot tbh",
+    "i blanked on it",
+    "the advisor ghosted me lol",
+    "the meeting got cancelled",
+    "he went quiet after the first meeting",
+    "she said shed get back to me but hasnt",
+    "idk, ask me next week",
+    "i emailed him but he never replied",
+    "didnt get a chance to ask abt billing",
+    "havnt talked to anyone about the codes",
+    "my advisor hasnt replied to my email",
+    "dr lee never got back to me",
+    "i cant reach him",
+    "we havent had time to look into reimbursement",
+    "nobody at the clinic has said",
+    "i dont knw",
+    "dunno tbh",
+    "not sure tbh",
+    "he said hed get back to me",
+    "the call got pushed",
+    "i didnt bring up the device class",
+    "werent able to get hold of him",
+    "i ddint ask him that",
+    "honestly no clue",
+    "havent heard back from the clinic",
+    "i never did the reimbursement research",
+    "we didnt discuss billing at all",
+    "he hasnt confirmed anything",
+    "no news from the advisor",
+    "i havent got the details yet",
+    "they never answered",
+    "it slipped my mind",
+    "i havent checked the cpt stuff",
+    "i couldnt find out",
+    "still waiting to hear from her",
+]
+_ROUND5_REAL_ANSWERS = [
+    "insurance doesnt cover it",
+    "medicare wont pay for it",
+    "theres no code for it",
+    "none of the clinics bill for it",
+    "it doesnt need fda clearance",
+    "we dont have a predicate device",
+    "not reimbursable as far as i know",
+    "the clinics wont pay unless insurance does",
+    "nah the insurer pays not the clinic",
+    "i dont think anyone pays for monitoring now",
+    "no clinic ive talked to pays out of pocket",
+    "insurance pays, not the clinic",
+    "no, the clinic bills it monthly",
+    "they dont pay for the time, only the device",
+    "its not reimbursable yet",
+    "nope, the clinic pays cash",
+    "he didnt think it needs clearance",
+    "none of them want to pay",
+    "we dont have a billing code yet",
+    "i didnt need to ask, its in the guidance",
+]
+
+
+@pytest.mark.parametrize("student", _ROUND5_NO_ANSWERS)
+def test_a_no_answer_says_who_did_not_do_what(student: str) -> None:
+    assert no_answer(student, "So who sits in those layers?")
+    assert no_answer(student, _R1)
+    call = [
+        T("1.1", "getting product to market", _FIRST),
+        T("1.2", "there are a few layers of sign-off to get through", "So who sits in those layers?"),
+        T("1.3", student, "Okay. Is monitoring time reimbursable under existing CPT codes?"),
+    ]
+    assert "reasked_after_unknown" in run_checks(call).codes()
+
+
+@pytest.mark.parametrize("student", _ROUND5_REAL_ANSWERS)
+def test_an_answer_said_as_a_negation_is_no_no_answer(student: str) -> None:
+    assert not no_answer(student, "So who sits in those layers?")
+    assert not no_answer(student, _R1)
+
+
+def test_a_bare_no_answers_a_yes_no_question_and_is_a_no_answer_to_a_wh_question() -> None:
+    assert len(_ROUND5_NO_ANSWERS) == 40
+    assert len(_ROUND5_REAL_ANSWERS) == 20
+    for student in ("nope", "nah", "ummm no"):
+        assert no_answer(student, _R1)
+        assert not no_answer(student, "That is the usual path. Is it Class II?")
+        assert not no_answer(student, "Quick one: did he name a predicate device?")

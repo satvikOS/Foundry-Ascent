@@ -4,6 +4,7 @@ import {
   founderMoves,
   hasNoAnswerOnly,
   lastQuestionOf,
+  noAnswerContextOf,
   socialTurnOf,
   NARROW_SUBJECT_NAMES,
   subjectOf,
@@ -340,9 +341,12 @@ export interface ReaskOptions {
 
 /**
  * How a question asks again one of `asked` ({@link reaskOf}): `whole`, it comes back whole (three shared terms or more,
- * most of its own or with a pair said together), left out wherever it stands; `subject`, only by the strict or settled
- * reading (one subject or two terms back, see {@link ReaskOptions}), left out only as the reply's trailing hand-back
- * ({@link handBackStart}).
+ * most of its own or with a pair said together); `subject`, only by the strict or settled reading (one subject or two
+ * terms back, see {@link ReaskOptions}), left out only as the reply's trailing hand-back ({@link handBackStart}). A
+ * `whole` one goes from the trailing hand-back too, or from the coach's own prose when it is a hand-back candidate
+ * ({@link handBackCandidate}) and what follows does not lean on it ({@link leansOnPrevious}); never from a draft, a
+ * quotation, a list or a blockquote (review of the 2026-11-07 fix, round 5: a question that came back whole was cut out
+ * of the middle of a note to the advisor, which naturally restates it).
  */
 export type ReaskReading = 'whole' | 'subject';
 
@@ -366,7 +370,8 @@ export function reaskOf(
     for (const w of terms.words) if (question.words.has(w)) shared += 1;
     const share = shared / Math.min(terms.words.size, question.words.size);
     const pair = [...terms.pairs].some((p) => question.pairs.has(p));
-    return shared >= 3 && (share >= 0.6 || (share >= 0.3 && pair));
+    // A question for someone else (a draft's, a quotation's) comes back whole only by most of its terms.
+    return shared >= 3 && (share >= 0.6 || (share >= 0.3 && pair && options.toFounder !== false));
   });
   if (comesBackWhole) return 'whole';
   // A question for someone else is a re-ask only when it comes back whole.
@@ -497,7 +502,8 @@ const QUESTION_SENTENCE = /\?["'”’)\]*_]*\s*$/;
  * prep cue before it or in it ({@link PREP_CUE}: "Here is a draft:", "something like", "ask him", "questions to send",
  * "you could write"). Review of the 2026-11-07 fix: deleting a question anywhere in the reply garbled drafts the vEIR
  * wrote for the founder to send (unquoted paragraphs, blockquotes, lists); only a question at the very end, put to the
- * founder, is ever left out by the strict or settled re-ask reading.
+ * founder and going on from the coach's own prose on the same line ({@link goesOnFromProse}), is ever left out as a
+ * re-ask. The prep cues are an extra exemption; the structure is what makes a hole impossible.
  */
 export function handBackCandidate(before: string, sentence: string): boolean {
   if (!QUESTION_SENTENCE.test(sentence)) return false;
@@ -507,7 +513,42 @@ export function handBackCandidate(before: string, sentence: string): boolean {
   if (/^\s*>/.test(line) || /(?:^|\n)\s*>/.test(sentence)) return false;
   if (leadInOf(sentence) !== null) return false;
   if (/:[*_\s]*$/.test(before)) return false;
-  return !PREP_CUE.test(before + sentence);
+  if (PREP_CUE.test(before + sentence)) return false;
+  return goesOnFromProse(before, sentence);
+}
+
+/**
+ * A sentence that announces what follows it ("Try this.", "One way to put it.", "I would write back along these lines.",
+ * "These are the two things to pin down with him."): a question right after it is what it announced.
+ */
+const ANNOUNCES =
+  /\b(?:this|these|the following|below|(?:these|those|similar) lines|like so|as follows|(?:put|say|word|phrase|frame|ask|open|start|send) it(?: like this)?)\s*[.!…]*["'”’)\]*_]*\s*$|\b(?:two|three|four|few|couple of|following|key|main|these|those) (?:things|questions|points|items|asks)\b/i;
+/** A salutation that opens a note ("Hi Dr Lee,", "Hello Sam", "Dear Dr Lee"): the line is a draft. */
+const SALUTATION = /(?:^|[.!?]["'”’)\]*_]*\s+)(?:hi|hello|hey|dear|good (?:morning|afternoon|evening))\b/i;
+/** A line that opens on a titled name ("Dr Lee, would you…"): it speaks to that person, not the founder. */
+const TITLED_NAME = /^[\s*_>"“]*(?:Dr|Mr|Mrs|Ms|Mx|Prof|Professor)\.? \p{Lu}/u;
+
+/**
+ * Whether the question `sentence` goes on from the coach's own prose on the same line, or is the whole reply so far
+ * (review of the 2026-11-07 fix, round 5: drafts and lists of questions introduced in words no cue list held, "Try
+ * this.", "**Questions for Dr Lee**", "Dr Lee, would you…", lost their questions). By the structure of the reply, not a
+ * list of cues: a question that opens a line or a paragraph may be a draft, a list or what a heading announced; a line
+ * with a salutation or one that opens on a titled name is a note to someone else; and a question right after a sentence
+ * that announces what follows ({@link ANNOUNCES}) is what it announced. Left out, any of these would leave the reply
+ * ending on an announcement, a heading or half a note.
+ */
+function goesOnFromProse(before: string, sentence: string): boolean {
+  if (before.trim() === '') return true;
+  if (/^[ \t]*\n/.test(sentence) || /\n[ \t]*$/.test(before)) return false;
+  const line = before.slice(before.lastIndexOf('\n') + 1);
+  if (SALUTATION.test(line) || TITLED_NAME.test(line)) return false;
+  const sentences = sentenceSpans(line).map((span) => line.slice(span.start, span.end));
+  let prose: string | null = null;
+  for (let i = sentences.length - 1; i >= 0 && prose === null; i -= 1) {
+    const s = sentences[i] ?? '';
+    if (!QUESTION_SENTENCE.test(s) && /[\p{L}\p{N}]/u.test(s)) prose = s;
+  }
+  return prose !== null && !ANNOUNCES.test(prose);
 }
 
 /**
@@ -542,7 +583,7 @@ export function stuckOn(founderText: string | undefined, previousReply?: string 
   if (founderText === undefined || founderText.trim() === '') return false;
   const asked = typeof previousReply === 'string' ? lastQuestionOf(previousReply) : null;
   if (asked !== null && SUPPORT_CHECK_IN.test(asked)) return false;
-  const context = { afterQuestion: asked !== null };
+  const context = noAnswerContextOf(previousReply);
   return founderMoves(founderText, context).includes('help') || hasNoAnswerOnly(founderText, context);
 }
 
@@ -620,6 +661,28 @@ export function isProtectedLine(sentence: string, keepReferrals = false): boolea
   );
 }
 
+/**
+ * A sentence that leans on the one before it ("That matters because…", "Either way…", "If so…", "Both shape the
+ * price."): the question before it cannot go without leaving it pointing at nothing.
+ */
+const LEANS_BACK =
+  /^[\s*_"“]*(?:that|those|these|this|it|its|it's|either|both|the answers?|if so|if not|if yes|if no|once you know|whichever|depending)\b/i;
+
+/** Whether `sentence` (what follows a question) leans on it ({@link LEANS_BACK}). */
+export function leansOnPrevious(sentence: string): boolean {
+  return LEANS_BACK.test(sentence.replace(/[‘’ʼ]/g, "'"));
+}
+
+/** The sentence after `span` in `text` ('' when it is the last). */
+function nextSentence(
+  text: string,
+  spans: readonly { readonly start: number; readonly end: number }[],
+  span: { readonly start: number; readonly end: number },
+): string {
+  const next = spans[spans.indexOf(span) + 1];
+  return next === undefined ? '' : text.slice(next.start, next.end);
+}
+
 export interface WithoutRepeatsOptions {
   /** The turn is flagged for a consequential matter: a referral sentence is never left out ({@link REFERRAL_LINE}). */
   readonly keepReferrals?: boolean;
@@ -647,7 +710,8 @@ export interface WithoutRepeats {
 
 /**
  * `text` without the sentences that mostly repeat `previous` (the vEIR's earlier replies; see the module comment), or
- * ask one of their questions again in other words ({@link reasksQuestion}). `dropped` counts them; `text` is '' when
+ * ask one of their questions again in other words ({@link reaskOf}), only as the reply's trailing hand-back
+ * ({@link handBackStart}). `dropped` counts them; `text` is '' when
  * every sentence was a repeat. Only the repeated sentence goes, never what follows it (a reply cut at its first repeat
  * lost new content and its safety lines: 57 of 521 pilot replies lost 25 words or more). A lead-in left announcing
  * nothing ("Ask them:") goes with it. A safety line, and on a flagged turn a referral, is never left out
@@ -663,7 +727,9 @@ export function withoutRepeats(
   if (said.size === 0) return { text, dropped: 0, removed: [] };
   const asked = options.asked ?? questionsOf(previous);
   const spans = sentenceSpans(text);
-  // A question asked again only by the strict or settled reading goes only from the reply's trailing hand-back.
+  // A question asked again only by the strict or settled reading goes only from the reply's trailing hand-back; one that
+  // comes back whole goes from there, or from the coach's own prose when what follows does not lean on it. Left out from
+  // anywhere else it could take a hole out of a draft, a list or a quotation.
   const handBack = handBackStart(text);
   const repeated: { start: number; end: number }[] = [];
   const removed: string[] = [];
@@ -676,8 +742,10 @@ export function withoutRepeats(
     });
     const repeat =
       repeatsPrevious(sentence, said, { signOffs: options.signOffs !== false }) ||
-      reask === 'whole' ||
-      (reask === 'subject' && s.start >= handBack);
+      (reask !== null && s.start >= handBack) ||
+      (reask === 'whole' &&
+        handBackCandidate(text.slice(0, s.start), sentence) &&
+        !leansOnPrevious(nextSentence(text, spans, s)));
     if (!repeat || isProtectedLine(sentence, options.keepReferrals === true)) {
       lastKept = s;
       continue;

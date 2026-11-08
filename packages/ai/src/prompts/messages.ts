@@ -2,11 +2,11 @@ import type { ChatMessage } from '../gateway/types.js';
 import { classifyRisk } from '../risk/classifier.js';
 import { buildContinuityBlock, openCommitmentsOf, raisedIn, type PromptContinuity } from './continuity.js';
 import {
-  asksAQuestion,
   besidesNoAnswer,
   contentWords,
   deriveConversationState,
   founderMoves,
+  noAnswerContextOf,
   renderConversationState,
   reportsCommitmentDone,
   saysOnlyNoAnswer,
@@ -156,7 +156,7 @@ export function leavesAgendaOut(
   previousReply?: string | null,
 ): boolean {
   return (
-    saysOnlyNoAnswer(founderText, { afterQuestion: asksAQuestion(previousReply) }) ||
+    saysOnlyNoAnswer(founderText, noAnswerContextOf(previousReply)) ||
     bringsOwnSubject(founderText, continuity)
   );
 }

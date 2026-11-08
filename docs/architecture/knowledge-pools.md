@@ -468,13 +468,22 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     clause by clause: never asked again in any words; acknowledged without judgement, then what the answer most likely
     is, the fastest way to find out and the next step). Phrase lists did not converge (each review round found new
     casual wordings), so after a question of the vEIR's a no-answer is also read by its shape (`noAnswerClauses`): a
-    clause of at most 14 words with a negation or a doubt in it ("not", "never", "nah", an "n't" however typed, "idk",
-    "unsure", "still waiting"), in a message with no question, no answer (a figure, content reported, "probably",
-    "because", a class named, a contrast, a day or a time), no worry of its own ("I don't know if clinics will pay for
-    it") and none of their own moves (help, clarify, a change of topic, a goal, news, a social turn, their wellbeing),
-    and nothing else said beside it: "he hasnt gotten back to me", "i wasnt able to", "they never replied" are
-    no-answers; "he said its not class III", "no, its class II", "not yet but we have a call friday" and "i didnt get
-    that" are not. A message that is only a no-answer leaves the notes' agenda
+    clause of at most 14 words that says who did not do what (`NO_ANSWER_PREDICATE`): the founder did not know, ask,
+    talk to, reach, follow up, look into, get to, hear or have the time or the meeting ("i didnt talk to the advisor",
+    "werent able to meet", "i honestly dont remember"); they lack the information ("i dont have the class info"); someone
+    else did not reply or say, or is unavailable ("he hasnt gotten back to me", "nobody got back to me", "the advisor
+    ghosted me", "he said hed get back to me"); the meeting did not happen or was cancelled; a bare doubt ("idk", "not
+    sure", "zero idea", "no word from him yet", "still waiting on him"); they forgot. To a question that is not a yes/no
+    one ("what did the advisor tell you?") a bare "no", "nope" or "nah" is a no-answer too; to "Is it Class II?" or
+    "Want me to draft it?" it is the answer. A negated clause about a thing ("insurance doesnt cover it", "theres no
+    code for it", "none of the clinics bill for it"), what they do not have that is no information ("we dont have a
+    predicate device"), an opinion ("i dont think anyone pays") or a contrast ("nah the insurer pays not the clinic") is
+    an answer: any short negation was too much (review, round 5). The message must also carry no question, no answer (a
+    figure, content reported, "probably", "because", a class named, a contrast, a day or a time), no worry of its own
+    ("I don't know if clinics will pay for it") and none of their own moves (help, clarify, a change of topic, a goal,
+    news, a social turn, their wellbeing), and nothing else said beside it: "he said its not class III", "no, its class
+    II", "not yet but we have a call friday" and "i didnt get that" are not no-answers. An answer put off ("idk, ask me
+    next week") is one, in the prompt and in `stuckOn` alike. A message that is only a no-answer leaves the notes' agenda
     out of that turn, open threads and questions included (`leavesAgendaOut`): the question they could not answer is
     in the conversation, and the notes would only offer it up again in other words. A no-answer with a subject of its
     own after it ("Not yet, but can we work on the pitch deck", with or without a question mark, as a voice transcript
@@ -499,17 +508,25 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     of one already asked is asked again ("So what did your advisor actually say?" after a question about the advisor),
     unless it offers the vEIR's own work ("Want me to draft the questions for your advisor?"); else three shared words,
     or two said together, or 40% of them. A customer or a price alone is too broad to make a question the same one, and
-    "tier", "compensated", "expert" and "consultant" name the class, how they pay and the advisor. Only questions put to
+    "tier", "compensated", "expert" and "consultant" name the class, how they pay and the advisor; "approve", "sign
+    off" and "decision" name who approves. Only questions put to
     the founder are read so (`putToFounder`): a question in a quoted draft, a list item under a lead-in ending in ":",
     or a question after "Ask your advisor:" or "questions to send:" is prep for someone else, a re-ask only when it
     comes back whole (three shared words), so a drafted email after "i dont know" keeps its body and its closing quote.
     A question asked again only by subject (the strict or settled reading: `reaskOf` `subject`) is left out only from
     the reply's trailing hand-back (`handBackStart`): the run of questions that ends it, each put to the founder, none
-    in a quotation, a blockquote or a list, under a lead-in ending in ":" or after a prep cue ("Here is a draft",
-    "something like", "ask him", "questions to send", "you could write"). A question followed by anything but another
-    question is never left out, and the sentence gate holds such a question until the next unit shows what follows, so
-    a draft, a list or a quotation can never lose a question from its middle. A question that comes back whole is left
-    out wherever it stands. A question asked before the previous reply (`askedBefore`: the founder has
+    in a quotation, a blockquote or a list, under a lead-in ending in ":", and each going on from the coach's own prose
+    on the same line (`goesOnFromProse`): a question that opens a line or a paragraph may be a draft, a list or what a
+    heading announced; a line with a salutation ("Hi Dr Lee,") or opening on a titled name ("Dr Lee, would you…") is a
+    note to someone else; a question right after a sentence that announces what follows ("Try this.", "One way to put
+    it.", "These are the two things to pin down") is what it announced. The prep cues ("Here is a draft", "something
+    like", "ask him", "questions to send", "you could write") are an extra exemption, not what the rule rests on. A
+    question followed by anything but another question is never left out, and the sentence gate holds such a question
+    until the next unit shows what follows, so a draft, a list or a quotation can never lose a question from its
+    middle. A question that comes back whole is left out from the trailing hand-back too, or from the coach's own prose
+    under the same rule when the sentence after it does not lean on it ("Those two answers shape the plan."), never from
+    a draft, a quotation, a list or a blockquote (review, round 5: a note to the advisor, which naturally restates the
+    question, lost it from its middle). A question asked before the previous reply (`askedBefore`: the founder has
     had their turn) comes back whole, or as two of its terms (said together, or two subjects) with little else, so a
     vague or short answer is never met with the first question again, while a new follow-up on the same subject ("Would
     that customer pay more for the version with alerts?") is kept. Notes threads already raised in the conversation

@@ -324,7 +324,9 @@ describe('conversation craft in the system prompt', () => {
     // 2026-11-07.5: its fourth review: after a question, a no-answer is read by its shape (short, a negation or a doubt,
     // no answer and nothing of their own: "he hasnt gotten back to me", "i wasnt able to"), not by a list of wordings,
     // and a question asked again only by subject is left out only from the reply's trailing hand-back, so a draft, a
-    // list or a quotation never loses a question.
+    // list or a quotation never loses a question. Its fifth review (same release): the shape says who did not do what
+    // ("insurance doesnt cover it" is an answer), a bare "nope" to a wh-question is a no-answer, and a re-ask, whole or
+    // by subject, goes only where it continues the coach's own prose on the same line.
     expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.5');
   });
 });

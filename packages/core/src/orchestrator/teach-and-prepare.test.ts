@@ -345,6 +345,121 @@ describe('what each turn of the production call now carries (2026-11-07)', () =>
     },
   );
 
+  // Review of the 2026-11-07 fix, round 5: the shape took any short negated clause as a no-answer, so an answer said as
+  // a negation was read as "they do not know". A no-answer now says who did not do what. Forty casual no-answers of our
+  // own (typos, no apostrophes, third parties who went quiet, a bare "nope" to a wh-question, noun-phrase objects) and
+  // twenty answers said as negations.
+  const ROUND5_NO_ANSWERS = [
+    'nah',
+    'nope',
+    'ummm no',
+    'no one has told me',
+    'zero idea',
+    'totally forgot tbh',
+    'i blanked on it',
+    'the advisor ghosted me lol',
+    'the meeting got cancelled',
+    'he went quiet after the first meeting',
+    'she said shed get back to me but hasnt',
+    'idk, ask me next week',
+    'i emailed him but he never replied',
+    'didnt get a chance to ask abt billing',
+    'havnt talked to anyone about the codes',
+    'my advisor hasnt replied to my email',
+    'dr lee never got back to me',
+    'i cant reach him',
+    'we havent had time to look into reimbursement',
+    'nobody at the clinic has said',
+    'i dont knw',
+    'dunno tbh',
+    'not sure tbh',
+    'he said hed get back to me',
+    'the call got pushed',
+    'i didnt bring up the device class',
+    'werent able to get hold of him',
+    'i ddint ask him that',
+    'honestly no clue',
+    'havent heard back from the clinic',
+    'i never did the reimbursement research',
+    'we didnt discuss billing at all',
+    'he hasnt confirmed anything',
+    'no news from the advisor',
+    'i havent got the details yet',
+    'they never answered',
+    'it slipped my mind',
+    'i havent checked the cpt stuff',
+    'i couldnt find out',
+    'still waiting to hear from her',
+  ];
+  const ROUND5_REAL_ANSWERS = [
+    'insurance doesnt cover it',
+    'medicare wont pay for it',
+    'theres no code for it',
+    'none of the clinics bill for it',
+    'it doesnt need fda clearance',
+    'we dont have a predicate device',
+    'not reimbursable as far as i know',
+    'the clinics wont pay unless insurance does',
+    'nah the insurer pays not the clinic',
+    'i dont think anyone pays for monitoring now',
+    'no clinic ive talked to pays out of pocket',
+    'insurance pays, not the clinic',
+    'no, the clinic bills it monthly',
+    'they dont pay for the time, only the device',
+    'its not reimbursable yet',
+    'nope, the clinic pays cash',
+    'he didnt think it needs clearance',
+    'none of them want to pay',
+    'we dont have a billing code yet',
+    'i didnt need to ask, its in the guidance',
+  ];
+
+  it('pins forty more casual no-answers and twenty answers said as negations (round 5)', () => {
+    expect(ROUND5_NO_ANSWERS).toHaveLength(40);
+    expect(new Set(ROUND5_NO_ANSWERS).size).toBe(40);
+    expect(ROUND5_REAL_ANSWERS).toHaveLength(20);
+    expect(new Set([...NO_ANSWERS, ...ROUND5_NO_ANSWERS]).size).toBe(80);
+  });
+
+  it.each(ROUND5_NO_ANSWERS)(
+    "the call's third turn after %j: never asked again, in the prompt and in the reply (round 5)",
+    (said) => {
+      const [r1, r2] = REPLIES as [string, string];
+      expect(stuckOn(said, r2)).toBe(true);
+      const message = turnMessage(2, said);
+      expect(message).toContain('Never ask it again, in any words.');
+      expect(message).not.toContain('<open_questions>');
+      expect(message).not.toContain('billable under existing codes');
+      const reply = withoutRepeats(
+        'Okay. Is monitoring time reimbursable under existing CPT codes?',
+        [r2, r1, OPENER].join('\n\n'),
+        { strictQuestions: stuckOn(said, r2), asked: askedBefore(r2, [r1, OPENER]) },
+      );
+      expect(reply.removed).toEqual(['Is monitoring time reimbursable under existing CPT codes?']);
+    },
+  );
+
+  it.each(ROUND5_REAL_ANSWERS)(
+    'after %j, an answer said as a negation: never read as "they do not know", on the second turn or the third',
+    (said) => {
+      const [r1, r2] = REPLIES as [string, string];
+      expect(stuckOn(said, r1)).toBe(false);
+      expect(stuckOn(said, r2)).toBe(false);
+      for (const n of [1, 2]) {
+        const message = turnMessage(n, said);
+        expect(message).not.toContain('They do not know, have not done it or have no answer yet');
+        expect(message).not.toContain('has no answer yet: answer it yourself');
+      }
+      // A genuine follow-up right after it is asked.
+      const followUp = withoutRepeats(
+        'That changes the model a lot. Would the clinics pay cash for it then?',
+        [r1, OPENER].join('\n\n'),
+        { strictQuestions: stuckOn(said, r1), asked: askedBefore(r1, [OPENER]) },
+      );
+      expect(followUp.dropped).toBe(0);
+    },
+  );
+
   it('marks the threads a reply raised by their subject, and never asks how a raised commitment went', () => {
     // "how clinics would pay" raised the open question on billing, which shares no word with it.
     const threads = leftOffThreads(CONTINUITY, {

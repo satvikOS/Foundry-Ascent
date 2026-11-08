@@ -228,7 +228,7 @@ SUPPORT_CHECK_IN = re.compile(
     r"network|group|person)|(?:a )?friends? or (?:a )?family|family or (?:a )?friends?|talk to (?:a friend|family|"
     r"someone)|how (?:are|have) you (?:been )?(?:feeling|holding up|coping|sleeping))\b(?! about (?:the|your|this|"
     r"that|our) (?!(?:situation|news|loss)\b))|\bare you (?:ok|okay|safe|"
-    r"alright|all right)(?=\s*(?:[?.!]|$))",
+    r"alright|all right)(?: (?:right now|now|tonight|today|at the moment|where you are(?: tonight| right now)?))?(?=\s*(?:[?.!]|$))",
     re.IGNORECASE,
 )
 _CLAUSE = re.compile(r"(?<=[.!,;—–])\s+|\s+(?:but|and) (?=(?:i|we|can|could|let's|lets|let)\b)")
@@ -240,20 +240,169 @@ def _normalized(text: str) -> str:
 
 
 #: The structural reading of a no-answer after a question (the product's prompts/conversation-state.ts
-#: ``noAnswerClauses``): a short clause with a negation or a doubt, in a message that carries no answer, no question and
-#: nothing of the student's own. Phrase lists did not converge (three review rounds each found new casual wordings).
+#: ``noAnswerClauses``): a short clause that says who did not do what (``_NO_ANSWER_PREDICATE``), in a message that
+#: carries no answer, no question and nothing of the student's own. Phrase lists did not converge (three review rounds
+#: each found new casual wordings); any short negated clause was too much (round 5: "insurance doesnt cover it").
 NO_ANSWER_MAX_WORDS = 14
-_NEGATION = re.compile(
-    r"n't\b|\b(?:h[ae]?v|h[ae]s|had|di?d|does|do|w[ae]s|w[eu]re|c[ou]{0,2}ld|w[ou]{0,2}ld|sh[ou]{0,2}ld|is|are|ca|wo)nt\b|"
-    r"\b(?:not|never|nothing|nobody|no one|none|neither|nope|nah|no|idk|dunno|unsure|uncertain|clueless|waiting)\b"
+_NA_LEAD = (
+    r"(?:^|\bbut )(?:(?:no|nope|nah|naw|honestly|um+|uh+|ugh|hm+|well|sorry|so|oh|yeah|yea|actually|tbh|lol|ok|"
+    r"okay|man|and|also|plus)[,.!]* )*"
+)
+_NA_ADVERBS = (
+    r"(?:(?:really|rly|realy|honestly|just|actually|still|totally|even|ever|yet|kinda|kind of|sort of|completely|"
+    r"already|quite|truly|exactly|properly|personally|tbh),? )*"
+)
+_NA_SELF = r"(?:(?:i|we|i've|we've|i'm|we're) )?"
+_NA_NOT_DONE = (
+    r"(?:(?:did|have|has|had|could|was|were|ca|wo)n't|(?:did|have|has|had|could|was|were) not|cannot|can not|never|"
+    r"h[ae]?vn?t|h[ae]sn?t|di?dn?t|c[ou]{0,2}ldn?t|w[ae]snt|w[eu]rent)"
+)
+_NA_NOT_NOW = r"(?:(?:do|does)n't|(?:do|does) not|dnt|dont)"
+#: What a no-answer says the student did not do (never a verb of the venture itself: "pay", "cover", "bill").
+_NA_DONE_VERB = (
+    r"(?:ask|asked|do|did|done|talk|talked|speak|spoke|spoken|reach|reached|call|called|ring|rang|rung|phone|phoned|"
+    r"email|emailed|e-mailed|text|texted|message|messaged|dm|dmed|contact|contacted|ping|pinged|write|wrote|written|"
+    r"send|sent|meet|met|see|seen|saw|book|booked|schedule|scheduled|set up|follow|followed|look|looked|check|"
+    r"checked|find|found|figure|figured|research|researched|read|google|googled|dig|dug|hear|heard|go|went|gone|"
+    r"bring|brought|raise|raised|mention|mentioned|cover|covered|discuss|discussed|confirm|confirmed|learn|learned|"
+    r"learnt|catch|caught|sort|sorted|work|worked|try|tried|manage|managed|start|started|explore|explored|think|"
+    r"thought|remember|remembered|know|knew|known|chase|chased|(?:get|got|gotten) (?:to|round|around|a chance|"
+    r"the chance|time|the time|a reply|a response|an answer|any (?:reply|response|answer|word|info|news|time)|back|"
+    r"hold|through|in touch|that far|there|anywhere|far|on it)|(?:have|had) (?:a |the |any )?(?:chance|time|meeting|"
+    r"call|chat|conversation|session|talk|catch-?up)|(?:make|made) (?:it|time|the call|contact)|(?:been )?able)\b"
+)
+_NA_INFO_NOUN = r"(?:info|information|answer|answers|clue|idea|details?|data|specifics|word|reply|response|update|news|feedback)\b"
+_NA_OTHER = r"(?:he|she|they|(?:the|my|our|his|her|their|that) [\w'-]+(?: [\w'-]+)?|dr\.? [\w'-]+)"
+_NA_RESPONSE = (
+    r"(?:reply|replied|respond|responded|answer|answered|get back|got back|gotten back|come back|came back|"
+    r"write back|wrote back|written back|email(?:ed)? back|call(?:ed)? back|text(?:ed)? back|ring back|rang back|"
+    r"hear back|heard back|follow up|followed up|say|said|tell|told|mention|mentioned|confirm|confirmed|share|"
+    r"shared|send|sent|explain|explained|specify|specified|get into|got into|go into|went into|give|gave|comment|"
+    r"commented|return|returned|pick up|picked up|show up|showed up|get in touch|got in touch|reach out|reached out|"
+    r"decide|decided|know|knows|knew)\b"
+)
+_NA_EVENT = r"(?:(?:the|our|my|that) )?(?:meeting|call|session|appointment|chat|catch-?up|follow-?up|intro|demo|conversation|talk)"
+_NO_ANSWER_PREDICATE = re.compile(
+    "|".join(
+        (
+            _NA_LEAD
+            + _NA_SELF
+            + _NA_ADVERBS
+            + _NA_NOT_DONE
+            + " "
+            + _NA_ADVERBS
+            + r"(?:(?:been )?able to |manage(?:d)? to |(?:get|got|gotten) (?:round |around )?to |(?:have|had|find|"
+            r"found|make) (?:a |the )?(?:chance|time) to )?" + _NA_ADVERBS + _NA_DONE_VERB,
+            _NA_LEAD
+            + _NA_SELF
+            + _NA_ADVERBS
+            + _NA_NOT_NOW
+            + " "
+            + _NA_ADVERBS
+            + r"(?:know|kno|knw|no|remember|recall)\b(?! (?:of )?(?:any|anyone|anybody|a single)\b)",
+            _NA_LEAD
+            + _NA_SELF
+            + _NA_ADVERBS
+            + "(?:"
+            + _NA_NOT_DONE
+            + "|"
+            + _NA_NOT_NOW
+            + ") "
+            + _NA_ADVERBS
+            + r"(?:have|got|get|hear|heard) (?:[\w'-]+ ){0,3}?"
+            + _NA_INFO_NOUN,
+            _NA_LEAD
+            + _NA_SELF
+            + r"(?:have |'ve |got |have got )*(?:got |have )?(?:no|zero) (?:[\w'-]+ )?"
+            + _NA_INFO_NOUN,
+            _NA_LEAD
+            + _NA_OTHER
+            + " "
+            + _NA_ADVERBS
+            + "(?:"
+            + _NA_NOT_DONE
+            + "|"
+            + _NA_NOT_NOW
+            + r"|won't|wouldn't|would not|will not) "
+            + _NA_ADVERBS
+            + r"(?:been |even |yet )?"
+            + _NA_RESPONSE,
+            _NA_LEAD
+            + r"(?:nobody|no one|noone|no-one|none of them|neither of them)(?: (?:at|from|in) (?:the |my |our )?"
+            r"[\w'-]+)? (?:(?:has|have|had|ever|really|actually|yet|even) )*(?:"
+            + _NA_RESPONSE
+            + "|"
+            + _NA_DONE_VERB
+            + ")",
+            _NA_LEAD
+            + "(?:"
+            + _NA_OTHER
+            + r"|he's|she's|hes|shes|they've|theyve) (?:(?:has|have|had|just|kind of|kinda|totally|completely|been|"
+            r"kept|keeps) )*(?:ghosted|went quiet|gone quiet|been quiet|is quiet|quiet|went silent|gone silent|"
+            r"been silent|silent|mia|awol|been away|is away|away|been busy|is busy|busy|swamped|dropped off|"
+            r"disappeared|vanished|went dark|gone dark)\b",
+            r"\b(?:said|says|promised)(?: that)? (?:he|she|they|he'd|she'd|they'd|hed|shed|theyd)(?:'d| would| will|"
+            r"'ll| was going to| were going to| was gonna| were gonna)? (?:get back|reply|respond|email|call|text|write|"
+            r"send|follow up|look into it|check|find out|let (?:me|us) know)\b",
+            _NA_LEAD
+            + _NA_EVENT
+            + " "
+            + _NA_ADVERBS
+            + _NA_NOT_DONE
+            + " "
+            + _NA_ADVERBS
+            + r"(?:happen|happened|take place|taken place|took place|go ahead|gone ahead|went ahead|work out|"
+            r"worked out|come together|get scheduled|got scheduled|get booked|got booked)\b",
+            _NA_LEAD
+            + _NA_EVENT
+            + r" (?:(?:got|was|has been|been|is|keeps getting|kept getting|just) )+(?:cancel+ed|postponed|pushed|"
+            r"moved|rescheduled|delayed|called off|dropped|bumped)\b",
+            r"\b(?:idk|dunno|unsure|not (?:really |totally |entirely |quite |too |that )?sure|no idea|zero idea|"
+            r"no clue|zero clue|not a clue|beats me|who knows|no (?:word|reply|replies|response|news|update|luck)"
+            r"(?: (?:yet|back|so far))?|nothing (?:yet|so far|back|from (?:him|her|them))|still waiting|(?:waiting|wait) "
+            r"(?:on|for) (?:him|her|them|a reply|an answer|a response|his|her|their|word|news)|waiting to hear)\b",
+            _NA_LEAD
+            + _NA_SELF
+            + _NA_ADVERBS
+            + r"(?:forgot|forget|spaced|blanked|zoned out|lost track|ran out of time|had no time)\b|\b(?:it|that) "
+            r"(?:totally |completely )?slipped my mind\b",
+            _NA_LEAD
+            + r"(?:(?:that's|that is|it's|it is|its) )?not something (?:i|we)(?:'ve| have)? "
+            + _NA_ADVERBS
+            + "(?:"
+            + _NA_DONE_VERB
+            + r"|thought about|looked (?:at|into))",
+        )
+    )
 )
 _ONLY_INTERJECTIONS = re.compile(
-    r"^(?:(?:no|nope|nah|yeah|yea|yes|um+|uh+|hm+|ugh|well|so|honestly|sorry|oh|ok|okay|lol|tbh|man)[,.!]*\s*)+$"
+    r"^(?:(?:no|nope|nah|naw|yeah|yea|yes|um+|uh+|hm+|ugh|well|so|honestly|sorry|oh|ok|okay|lol|tbh|man|not really|"
+    r"not much|nothing(?: really)?)[,.!]*\s*)+$"
+)
+_SAYS_NO = re.compile(r"\b(?:no|nope|nah|naw|not really|not much|nothing)\b")
+#: A question a bare "no" answers (the product's ``isYesNoQuestion``): it opens with an auxiliary, or ends on "right?".
+_YES_NO_QUESTION = re.compile(
+    r"^(?:(?:is|are|was|were|am|do|does|did|have|has|had|can|could|would|will|should|shall|may|might|must)(?:n't)?|"
+    r"want|wanna|need|ready|sounds?|makes? sense|any|anything|ok|okay|sure|fair|got)\b|"
+    r"\b(?:right|correct|yeah|yes|no|ok|okay|yet)\?"
 )
 _NEGATED_REPORT = re.compile(
     r"\b(?:(?:hasn't|has not|haven't|have not|hadn't|had not|didn't|did not|doesn't|does not|never|wouldn't|would not|"
-    r"won't|not|nobody|no one|nothing)(?: (?:really|actually|even|yet|ever|been|got|gotten|ever been))*) "
-    r"(?:said|says|told|tells|mentioned|thinks)\b"
+    r"won't|not|(?:nobody|no one)(?: (?:at|from|in) (?:the |my |our )?[\w'-]+)?|nothing)(?: (?:really|actually|even|"
+    r"yet|ever|been|got|gotten|ever been|has|have|had))*) (?:said|says|told|tells|mentioned|thinks)\b"
+)
+#: A promise to come back to it, and a "but" before a no-answer: neither is content reported or a contrast.
+_NOT_YET_REPORTED = re.compile(
+    r"\b(?:said|says|promised)(?: that)? (?:he|she|they|he'd|she'd|they'd|hed|shed|theyd)(?:'d| would| will|'ll|"
+    r" was going to| were going to| was gonna| were gonna)? (?:get back|reply|respond|email|call|text|write|send|"
+    r"follow up|look into it|check|find out|let (?:me|us) know)\b|\bbut(?= (?:(?:he|she|they|nobody|no one|"
+    r"(?:the|my|our) [\w'-]+) )?(?:still |really |actually )?(?:hasn't|has not|haven't|have not|hadn't|didn't|"
+    r"did not|never|won't|wouldn't|wasn't|weren't|couldn't|isn't|nothing|no (?:reply|word|response|answer|luck))\b)"
+)
+#: The answer put off ("idk, ask me next week"): no answer of its own beside a no-answer.
+_LATER_ANSWER = re.compile(
+    r"\b(?:ask me|(?:i'll|i will|we'll|we will|i can|we can|i'm going to|i'm gonna) (?:find out|check|ask|"
+    r"let you know|get back to you|follow up|look into it))\b.*$"
 )
 #: What makes a message an answer whatever negation it carries: a figure, content reported, a guess or a reason, a class
 #: named, a contrast that states the alternative, a day or a time.
@@ -301,14 +450,34 @@ _OWN_SUBJECT = re.compile(
 
 
 def _carries_answer(text: str) -> bool:
-    return bool(_ANSWER_SUBSTANCE.search(_NEGATED_REPORT.sub(" ", text)))
+    return bool(_ANSWER_SUBSTANCE.search(_NOT_YET_REPORTED.sub(" ", _NEGATED_REPORT.sub(" ", text))))
 
 
 def _clauses(text: str) -> list[str]:
     return [c for c in (c.rstrip(".!,;…—– ").strip() for c in _CLAUSE.split(text)) if c]
 
 
-def _no_answer_flags(text: str, after_question: bool) -> list[bool]:
+def _is_yes_no(question: str) -> bool:
+    """Whether ``question`` is a yes/no question, read after its lead-in (the product's ``isYesNoQuestion``)."""
+    asked = _normalized(question[question.rfind(":") + 1 :])
+    asked = re.sub(r"^[\s*_\"“'‘(>-]+", "", asked)
+    asked = re.sub(
+        r"^(?:(?:so|and|but|then|okay|ok|right|also|quick one|one more thing|honestly)[,.!]* )+", "", asked
+    )
+    return bool(_YES_NO_QUESTION.search(asked))
+
+
+def _shaped(clause: str, yes_no: bool) -> bool:
+    """A clause shaped like a no-answer (the product's ``noAnswerShape``): short, and says who did not do what; or, to a
+    question that is not a yes/no one, a bare "no"."""
+    if len(clause.split()) > NO_ANSWER_MAX_WORDS:
+        return False
+    if _ONLY_INTERJECTIONS.match(clause):
+        return not yes_no and bool(_SAYS_NO.search(clause))
+    return bool(_NO_ANSWER_PREDICATE.search(clause))
+
+
+def _no_answer_flags(text: str, after_question: bool, yes_no: bool = False) -> list[bool]:
     """Which clauses of ``text`` (normalised) say there is no answer: by the phrase lists, and after a question by the
     shape of the whole message too (the product's ``noAnswerClauses``)."""
     clauses = _clauses(text)
@@ -322,15 +491,7 @@ def _no_answer_flags(text: str, after_question: bool) -> list[bool]:
         or any(_NOT_FOLLOWING.search(c) for c in clauses)
     ):
         return said
-    shaped = [
-        s
-        or (
-            len(c.split()) <= NO_ANSWER_MAX_WORDS
-            and not _ONLY_INTERJECTIONS.match(c)
-            and bool(_NEGATION.search(c))
-        )
-        for s, c in zip(said, clauses, strict=True)
-    ]
+    shaped = [s or _shaped(c, yes_no) for s, c in zip(said, clauses, strict=True)]
     rest = " ".join(c for c, f in zip(clauses, shaped, strict=True) if not f)
     content = {w for w in _words(rest) if len(w) >= 3 and w not in _STOP}
     return shaped if len(content) < 2 else said
@@ -342,21 +503,23 @@ def no_answer(student: str, previous: str | None = None) -> bool:
     besides it, or a request for the work itself. After ``previous`` asked something, a no-answer is read by its shape
     too ("he hasnt gotten back to me"). Never after ``previous`` (the coach's reply before it) ended on a check-in on the
     student."""
-    after_question = False
+    after_question = yes_no = False
     if previous:
         questions = _question_clauses(previous.translate(_APOSTROPHES))
         if questions and SUPPORT_CHECK_IN.search(questions[-1]):
             return False
         after_question = bool(questions)
+        yes_no = bool(questions) and _is_yes_no(questions[-1])
     text = _normalized(student)
     if HANDS_BACK.search(text):
         return True
     if "?" in text:
         return False
-    flags = _no_answer_flags(text, after_question)
+    flags = _no_answer_flags(text, after_question, yes_no)
     if not any(flags):
         return False
-    return not _carries_answer(" ".join(c for c, f in zip(_clauses(text), flags, strict=True) if not f))
+    rest = " ".join(c for c, f in zip(_clauses(text), flags, strict=True) if not f)
+    return not _carries_answer(_LATER_ANSWER.sub(" ", rest))
 
 
 #: A message that is only social: a hello, thanks or a goodbye (a reply to it may be a question alone).
@@ -723,7 +886,7 @@ _SUBJECTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^(?:regulat\w*|fda|clearanc\w*|pathway|path)$"), "regulatory"),
     (re.compile(r"^(?:pric|price|cost|charg|fee)$"), "price"),
     (re.compile(r"^(?:customer|client|buyer)$"), "customer"),
-    (re.compile(r"^(?:approv\w*|sign-?off)$"), "approve"),
+    (re.compile(r"^(?:approv\w*|sign-?off|sign|signer|signatory|decision|decid|decider)$"), "approve"),
 )
 
 
