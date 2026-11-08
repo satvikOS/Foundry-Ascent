@@ -97,7 +97,8 @@ beforeAll(async () => {
   const ids = await h.t.db.system(async (sx) => {
     await venturesRepo.addMembership(sx, { ventureId, principalId: h.people.graham, role: 'advisor' });
     const program = await sx.query(
-      "SELECT id FROM knowledge_sources WHERE scope = 'program' AND tenant_id = :t ORDER BY created_at LIMIT 1",
+      `SELECT id FROM knowledge_sources WHERE scope = 'program' AND tenant_id = :t
+         AND coalesce(uri, '') NOT LIKE 'curriculum:%' ORDER BY created_at, id LIMIT 1`,
       { t: p.uuid(h.seed.tenantId) },
     );
     const persona = await sx.query(

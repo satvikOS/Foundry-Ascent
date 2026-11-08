@@ -322,7 +322,8 @@ describe('seed re-runs (every production deploy)', () => {
                                     E'\\n\\n' ORDER BY c.ordinal)
                   FROM knowledge_chunks c WHERE c.source_id = s.id) AS body_matches_chunks
          FROM knowledge_sources s
-         WHERE s.scope = 'program' OR (s.scope = 'persona' AND s.persona_id = :guide)
+         WHERE (s.scope = 'program' AND coalesce(s.uri, '') NOT LIKE 'curriculum:%')
+            OR (s.scope = 'persona' AND s.persona_id = :guide)
          ORDER BY s.scope`,
         { guide: p.uuid(t.seed?.personaId ?? '') },
       ),
@@ -348,7 +349,9 @@ describe('seed re-runs (every production deploy)', () => {
     const corpora = await t.db.system((sx) =>
       sx.query(
         `SELECT scope, id FROM knowledge_sources
-         WHERE scope = 'program' OR (scope = 'persona' AND persona_id = :guide) ORDER BY scope`,
+         WHERE (scope = 'program' AND coalesce(uri, '') NOT LIKE 'curriculum:%')
+            OR (scope = 'persona' AND persona_id = :guide)
+         ORDER BY scope`,
         { guide: p.uuid(seed.personaId) },
       ),
     );

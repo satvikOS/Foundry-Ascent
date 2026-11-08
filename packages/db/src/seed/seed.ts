@@ -34,7 +34,7 @@ import {
   PROGRAM_METHOD_SOURCE,
 } from './doctrine.js';
 import { syncKnowledgePackToTenants } from '../knowledge-pack/sync.js';
-import { AIN_CURRICULUM, CURRICULUM_TENANT_SLUG } from './curriculum.js';
+import { AIN_CURRICULUM, CURRICULUM_TENANT_SLUG, CURRICULUM_URI_PREFIX } from './curriculum.js';
 import { seedId, ventureCanary } from './ids.js';
 import { bodyFromSections, insertRows, insertSourceWithChunks } from './insert.js';
 import { SEED_PATTERNS, SEED_RESOURCES } from './resources.js';
@@ -345,6 +345,7 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
     ...(slug === CURRICULUM_TENANT_SLUG
       ? AIN_CURRICULUM.map((source) => ({
           sourceId: id('knowledge-source', source.key),
+          uri: `${CURRICULUM_URI_PREFIX}${source.key}`,
           scope: 'program',
           personaId: null,
           title: source.title,
@@ -361,6 +362,7 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
         scope: 'text',
         persona_id: 'uuid',
         title: 'text',
+        uri: 'text',
         owner: 'text',
         classification: 'text',
         created_by: 'uuid',
@@ -373,6 +375,7 @@ export async function seed(sx: SystemExecutor, config: SeedConfig): Promise<Seed
         scope: corpus.scope,
         persona_id: corpus.personaId,
         title: corpus.title,
+        uri: 'uri' in corpus ? corpus.uri : null,
         owner: corpus.owner,
         classification: 'program_internal',
         created_by: approver,

@@ -28,6 +28,7 @@ import {
   twinRepo,
 } from './repositories/index.js';
 import { type SeedResult } from './seed/seed.js';
+import { AIN_CURRICULUM } from './seed/curriculum.js';
 import { GUIDE_DOCTRINE, GUIDE_STYLE } from './seed/doctrine.js';
 import { createTestDatabase, makeContext, type TestDatabase } from './testing/test-database.js';
 
@@ -667,8 +668,11 @@ describe('founder isolation', () => {
       }
       expect(await count(tx, 'SELECT count(*) AS n FROM tenants')).toBe(1);
       expect(await count(tx, 'SELECT count(*) AS n FROM ventures')).toBe(1);
-      // Shared corpora of the home tenant are visible; the partner's are not.
-      expect(await count(tx, `SELECT count(*) AS n FROM knowledge_chunks WHERE scope = 'program'`)).toBe(6);
+      // Shared corpora of the home tenant are visible (the handbook's 6 passages and the Ain curriculum's); the
+      // partner's are not.
+      expect(await count(tx, `SELECT count(*) AS n FROM knowledge_chunks WHERE scope = 'program'`)).toBe(
+        6 + AIN_CURRICULUM.reduce((n, s) => n + s.chunks.length, 0),
+      );
     });
   });
 

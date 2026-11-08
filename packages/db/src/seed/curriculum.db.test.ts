@@ -49,24 +49,60 @@ describe('the Ain Foundry curriculum', () => {
     }
   });
 
-  it("answers a founder's question about a capstone through the coach's shared search", async () => {
-    const founder = seed.ventures
-      .find((v) => v.key === 'quietquad')
-      ?.members.find((m) => m.role === 'founder');
-    if (!founder) throw new Error('founder missing');
-    const found = await t.db.withContext(makeContext(founder.principalId, seed.tenantId), (tx) =>
+  // As the coach asks: the founder's own words, Thomas's library alongside, two shared slots.
+  async function shared(founderText: string) {
+    const quietquad = seed.ventures.find((v) => v.key === 'quietquad');
+    const founder = quietquad?.members.find((m) => m.role === 'founder');
+    if (!quietquad || !founder) throw new Error('founder missing');
+    return t.db.withContext(makeContext(founder.principalId, seed.tenantId), (tx) =>
       retrievalRepo.searchSharedChunks(tx, {
         tenantId: seed.tenantId,
-        query: 'What is the Module 2 capstone? Do I submit the pitch?',
+        personaId: quietquad.personaId,
+        query: founderText,
         embedding: null,
-        limit: 5,
+        limit: 2,
+        reference: { founderText, limit: 1, sessionId: null },
       }),
     );
-    // The roadmap's "three capstones" passage answers it too; Module 2's own capstone is among the passages.
-    expect(found[0]?.title.startsWith('Ain Foundry curriculum:')).toBe(true);
-    expect(found.some((i) => i.title.includes('Module 2') && i.title.endsWith('Module 2 capstone'))).toBe(
-      true,
-    );
+  }
+  const isCurriculum = (title: string) => title.startsWith('Ain Foundry curriculum:');
+
+  it("answers a founder's question about the programme, saying the programme changes as it goes", async () => {
+    for (const question of [
+      'What is the Module 2 capstone? Do I submit the pitch?',
+      'How many events do I need for Module 1?',
+      'What does Module 3 cover?',
+    ]) {
+      const found = (await shared(question)).filter((i) => isCurriculum(i.title));
+      expect(found.length, question).toBeGreaterThan(0);
+      for (const item of found) {
+        if (/capstone|checklist|event|quiz/i.test(item.excerpt)) {
+          expect(item.excerpt.startsWith('As of the programme materials'), question).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("leaves an ordinary founder question to the coach's own library", async () => {
+    for (const question of [
+      'Should I raise money or bootstrap?',
+      'How should I pitch to investors?',
+      'Who is my customer and who is my user?',
+      'How do I find a mentor and build my network?',
+    ]) {
+      const found = await shared(question);
+      expect(
+        found.filter((i) => isCurriculum(i.title)).map((i) => i.title),
+        question,
+      ).toEqual([]);
+    }
+  });
+
+  it('knows a message about the programme from one that is not', () => {
+    expect(retrievalRepo.asksAboutProgramme('When is the business plan capstone due?')).toBe(true);
+    expect(retrievalRepo.asksAboutProgramme('I missed the quiz on Blackboard')).toBe(true);
+    expect(retrievalRepo.asksAboutProgramme('Should I raise money or bootstrap?')).toBe(false);
+    expect(retrievalRepo.asksAboutProgramme('My customers are students')).toBe(false);
   });
 
   it('stays in its own tenant', async () => {
@@ -83,12 +119,12 @@ describe('the Ain Foundry curriculum', () => {
     expect(await curriculumSources(other.tenantId)).toEqual([]);
   });
 
-  it('names no presenter and keeps the programme-changes caveat on every capstone', () => {
+  it('names no presenter, and every passage with a requirement says the programme changes as it goes', () => {
     const text = JSON.stringify(AIN_CURRICULUM);
     for (const name of ['Testa', 'Mammano', 'Shifat']) expect(text).not.toContain(name);
-    for (const s of AIN_CURRICULUM.filter((x) => x.key.includes('module'))) {
-      const capstone = s.chunks.find((c) => c.heading.endsWith('capstone'));
-      expect(capstone?.content).toContain('Live Response Design');
+    for (const chunk of AIN_CURRICULUM.flatMap((s) => s.chunks)) {
+      if (/capstone|checklist|event|quiz/i.test(chunk.content))
+        expect(chunk.content).toContain('Live Response Design');
     }
   });
 });

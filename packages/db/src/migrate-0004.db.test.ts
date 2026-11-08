@@ -208,6 +208,7 @@ describe('migration 0004_veir_knowledge', () => {
     const rows = await t.db.system((sx) =>
       sx.query(
         `SELECT scope, kind, body IS NOT NULL AS has_body, count(*)::int AS n FROM knowledge_sources
+         WHERE coalesce(uri, '') NOT LIKE 'curriculum:%'
          GROUP BY 1, 2, 3 ORDER BY 1, 2`,
       ),
     );

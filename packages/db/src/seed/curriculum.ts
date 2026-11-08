@@ -1,15 +1,21 @@
 /**
  * The Ain Foundry curriculum (owner, 2026-11-08: "add the PDFs into RAG"), curated from the programme's own materials
- * at the repository root: `1.pdf` (roadmap), `2.pdf` (welcome) and `3.pdf`–`5.pdf` (module checklists); reviewed in
- * docs/upgrade/CLIENT-MATERIALS.md. Programme-scope notes of the Ain tenant, retrieved like the programme handbook
- * (vector and keyword search, `program` weight) and cited as programme guidance.
+ * at the repository root: `1.pdf` (the roadmap, an image), `2.pdf` (welcome) and `3.pdf`–`5.pdf` (module checklists);
+ * reviewed in docs/upgrade/CLIENT-MATERIALS.md. Programme-scope notes of the Ain tenant, cited as programme guidance.
  *
- * - Curated, not copied: the modules, their topics, activities and capstones; presenters' names are left out (a
- *   founder needs the topic, not who recorded it).
- * - No dates, counts or completion rules beyond what the checklists say, and every note says the programme adapts as
- *   it goes ("Live Response Design"), so the coach never presents a checklist as the current requirement
- *   (packages/ai prompts: coursework shows learning, not customer commitment).
+ * - Asked for, not pushed: a curriculum passage is a candidate only when the founder's own message is about the
+ *   programme (`retrievalRepo.asksAboutProgramme`, sources marked by {@link CURRICULUM_URI_PREFIX}); otherwise the
+ *   coach's two shared slots stay with its own library and the programme handbook.
+ * - What the materials say, in their words: no glosses of ours attributed to the programme; presenters' names are left
+ *   out (a founder needs the topic, not who recorded it).
+ * - Never the current requirement: every passage says the programme changes as it goes ("Live Response Design"), and
+ *   the event counts say the materials disagree (the Module 1 outline asks for more than the checklist), so the coach
+ *   points to Blackboard or the Mentorship Hub instead of presenting a checklist as what is due.
  */
+import { CURRICULUM_URI_PREFIX } from '../repositories/retrieval.js';
+
+export { CURRICULUM_URI_PREFIX };
+
 export interface CurriculumSource {
   readonly key: string;
   readonly title: string;
@@ -19,13 +25,25 @@ export interface CurriculumSource {
 
 const OWNER = 'Ain Center for Entrepreneurship and Innovation';
 const CURRENT =
-  'The programme follows a "Live Response Design" approach and changes as it goes: check Blackboard or the ' +
-  'Mentorship Hub for what is required in the current cohort.';
+  'As of the programme materials (it changes as it goes, "Live Response Design"; confirm current requirements on ' +
+  'Blackboard or the Mentorship Hub):';
+const EVENTS =
+  'Events: the Module 1 checklist lists one per unit and the Module 1 outline asks for at least three, so confirm ' +
+  'the number for the current cohort.';
+
+const EVENTS_LEAD = `${CURRENT} ${EVENTS}`;
 
 /** The home tenant these notes belong to (`SeedConfig.homeTenant.slug`). */
 export const CURRICULUM_TENANT_SLUG = 'ain';
 
-export const AIN_CURRICULUM: readonly CurriculumSource[] = [
+interface DraftChunk {
+  readonly heading: string;
+  readonly content: string;
+  /** Said first, so it survives the excerpt the coach reads (600 characters). */
+  readonly lead?: string;
+}
+
+const DRAFT: readonly (Omit<CurriculumSource, 'chunks'> & { readonly chunks: readonly DraftChunk[] })[] = [
   {
     key: 'ain-curriculum-roadmap',
     title: 'Ain Foundry curriculum: roadmap',
@@ -34,24 +52,23 @@ export const AIN_CURRICULUM: readonly CurriculumSource[] = [
       {
         heading: 'Three modules, three capstones',
         content:
-          'The Ain Foundry series has three modules, each ending in a capstone. Module 1 (entrepreneurial mindset, ' +
-          'customers versus users, the business model and the Business Model Canvas) ends with submitting a ' +
-          'Business Model Canvas. Module 2 (legal structure, customer discovery, value proposition and the pitch) ' +
-          'ends with submitting the pitch. Module 3 (fundraising, bootstrapping and networking) ends with submitting ' +
-          'a business plan, with an evaluation of the business opportunity.',
+          'The Ain Foundry Roadmap (powered by Ain CFEI) starts with "Launching Your Personalized Foundry Program ' +
+          'Series" and ends with "From Student to Mentor: Join the Foundry Alumni Network". In between are three ' +
+          'modules, each with a capstone: Module 1, the Business Model Canvas; Module 2, The Perfect Pitch; Module 3, ' +
+          `The Business Plan.`,
+        lead: CURRENT,
       },
       {
-        heading: 'How each module runs',
+        heading: 'What each module includes on the roadmap',
         content:
-          'Each unit has short key-term videos, a quiz and an entry in the Foundry Mentor Journal, and students join ' +
-          'entrepreneurship events during each module. Students also join the Ain Foundry Mentorship Hub and work ' +
-          `with a mentor there. ${CURRENT}`,
-      },
-      {
-        heading: 'Students shape the programme',
-        content:
-          'The Ain Center for Entrepreneurship and Innovation runs the series like a startup: it invites students, ' +
-          'mentors and alumni to do customer discovery on the programme itself and to share feedback and ideas.',
+          'Module 1: Pick Your Journey, the Foundry Hub Mentorship Program, an Innovation Event, Entrepreneurial ' +
+          'Mindset I and II, the Customer Discovery AI Validation Process and EIR Foundry Sessions. Module 2: the ' +
+          'Foundry Hub Mentorship Program, an Innovation Event, Legal Structure and Customer Discovery, Value ' +
+          'Proposition and Pitch, the Customer Discovery Validation Process: End User, and EIR Foundry Sessions. ' +
+          'Module 3: the Foundry Hub Mentorship Program, an Innovation Event, Fundraising and Bootstrapping, ' +
+          'Networking I and II, EIR Foundry Sessions, and Evaluation Opportunity: Innovation Incubators and VC ' +
+          `Opportunities.`,
+        lead: CURRENT,
       },
     ],
   },
@@ -63,25 +80,20 @@ export const AIN_CURRICULUM: readonly CurriculumSource[] = [
       {
         heading: 'What Module 1 covers',
         content:
-          'Module 1 lays the groundwork: the entrepreneurial mindset (how entrepreneurs think and act to turn ideas ' +
-          'into reality); the difference between customers and users (the customer chooses and pays, the user uses ' +
-          'it, and they are not always the same person), which shapes what you build and who you sell to; and the ' +
-          'Business Model Canvas, which lays out a business in parts such as the value proposition, customer ' +
-          'segments and revenue streams.',
+          'Module 1 lays the groundwork: the entrepreneurial mindset, the way successful entrepreneurs think and act ' +
+          'to turn ideas into reality; the distinction between customers and users, which helps you design products ' +
+          'and services that meet the needs of your market; and the Business Model Canvas, which breaks a business ' +
+          'into components such as the value proposition, customer segments and revenue streams.',
       },
       {
-        heading: 'Module 1 activities',
+        heading: 'Module 1 checklist',
         content:
-          'Unit 1, Entrepreneurial Mindset: two mindset videos, a quiz, a Foundry Mentor Journal entry, joining the ' +
-          'Ain Foundry Mentorship Hub and at least one entrepreneurial event. Unit 2, Customers vs. Users, Business ' +
-          'Model and Business Model Canvas: three key-term videos (customer versus user, business model, Business ' +
-          'Model Canvas), a quiz, a Foundry Mentor Journal entry and one entrepreneurial event.',
-      },
-      {
-        heading: 'Module 1 capstone',
-        content:
-          'Submit a Business Model Canvas. A completed canvas lays out the assumptions to test; it does not show ' +
-          `that customers want the product. ${CURRENT}`,
+          'Unit 1, Introduction to Entrepreneurial Mindset: Entrepreneurial Mindset videos (Parts I and II), a quiz, ' +
+          'the Foundry Mentor Journal, joining the Ain Foundry Mentorship Hub and an entrepreneurial event. Unit 2, ' +
+          'Customers vs. Users, Business Model and Business Model Canvas: key-term videos on customer versus user, ' +
+          'the business model and the Business Model Canvas, a quiz, the Foundry Mentor Journal and an ' +
+          `entrepreneurial event. Capstone: submit a Business Model Canvas.`,
+        lead: EVENTS_LEAD,
       },
     ],
   },
@@ -94,24 +106,21 @@ export const AIN_CURRICULUM: readonly CurriculumSource[] = [
       {
         heading: 'What Module 2 covers',
         content:
-          'Module 2 turns an idea into a business. Legal structure: the main types of business entity, such as sole ' +
-          'proprietorships, LLCs and corporations, and how to choose one, a choice that affects personal liability ' +
-          'and later growth (the programme gives orientation, not legal advice). Customer discovery: talking ' +
-          'directly with potential customers to understand their needs, test assumptions and refine the idea. Value ' +
-          'proposition: what makes the offering unique and why it matters to customers. The pitch: communicating the ' +
-          'idea clearly and confidently to investors, partners or anyone who could help.',
+          'Module 2 covers what turns an idea into a sustainable business. Legal structure: the types of business ' +
+          'entity, such as sole proprietorships, LLCs and corporations, and how to choose one for your goals. ' +
+          'Customer discovery: engaging directly with potential customers to understand their needs, validate ' +
+          'assumptions and refine the idea. Value proposition: what makes the offering unique and why it matters to ' +
+          'customers. The pitch: communicating the idea clearly and confidently to investors, partners or anyone who ' +
+          'might help.',
       },
       {
-        heading: 'Module 2 activities',
+        heading: 'Module 2 checklist',
         content:
           'Unit 1, Legal Structure and Customer Discovery: key-term videos on legal structure and customer ' +
-          'discovery, a quiz, a Foundry Mentor Journal entry and joining the programme Slack. Unit 2, Value ' +
-          'Proposition and The Pitch: key-term videos, a quiz, a Foundry Mentor Journal entry and one ' +
-          'entrepreneurship event.',
-      },
-      {
-        heading: 'Module 2 capstone',
-        content: `Submit the pitch. ${CURRENT}`,
+          'discovery, a quiz, the Foundry Mentor Journal and joining Slack. Unit 2, Value Proposition and The Pitch: ' +
+          'key-term videos, a quiz, the Foundry Mentor Journal and an entrepreneurship event. Capstone: submit the ' +
+          `pitch (The Perfect Pitch on the roadmap).`,
+        lead: CURRENT,
       },
     ],
   },
@@ -123,23 +132,30 @@ export const AIN_CURRICULUM: readonly CurriculumSource[] = [
       {
         heading: 'What Module 3 covers',
         content:
-          'Module 3 is about funding and relationships. Fundraising: ways to raise capital, from venture capital and ' +
-          'angel investors to crowdfunding and government grants, the pros and cons of each, and pitching to ' +
-          'investors. Bootstrapping: funding the business from your own resources in its early stages, its benefits ' +
-          'and challenges, and whether it suits you. Networking: building relationships with mentors, peers and ' +
-          'industry professionals, and using them to open new opportunities.',
+          'Module 3 covers fundraising, bootstrapping and networking. Fundraising: raising capital, from venture ' +
+          'capital and angel investors to crowdfunding and government grants, the pros and cons of each, and a pitch ' +
+          'that attracts investors. Bootstrapping: relying on your own resources to fund the business in its early ' +
+          'stages, its benefits and challenges, and whether it is right for you. Networking: building relationships ' +
+          'with mentors, peers and industry professionals, and using them to open new opportunities.',
       },
       {
-        heading: 'Module 3 activities',
+        heading: 'Module 3 checklist',
         content:
-          'Unit 1, Fundraising and Bootstrapping: key-term videos on fundraising and bootstrapping, a quiz, a ' +
-          'Foundry Mentor Journal entry and work with a mentor on the Ain Foundry Mentorship Hub. Unit 2, Networking ' +
-          'I and II: two networking videos, a quiz, a Foundry Mentor Journal entry and one entrepreneurship event.',
-      },
-      {
-        heading: 'Module 3 capstone',
-        content: `Submit a business plan, with an evaluation of the business opportunity. ${CURRENT}`,
+          'Unit 1, Fundraising and Bootstrapping: key-term videos on fundraising and bootstrapping, a quiz, the ' +
+          'Foundry Mentor Journal and working with a mentor on the Ain Foundry Mentorship Hub. Unit 2, Networking I ' +
+          'and II: two networking videos, a quiz, the Foundry Mentor Journal and an entrepreneurship event. ' +
+          'Capstone: submit the business plan (The Business Plan on the roadmap; the checklist also names an ' +
+          `evaluation of the business opportunity).`,
+        lead: CURRENT,
       },
     ],
   },
 ];
+
+export const AIN_CURRICULUM: readonly CurriculumSource[] = DRAFT.map((source) => ({
+  ...source,
+  chunks: source.chunks.map(({ heading, content, lead }) => ({
+    heading,
+    content: lead === undefined ? content : `${lead} ${content}`,
+  })),
+}));

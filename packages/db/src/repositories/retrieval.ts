@@ -346,6 +346,26 @@ export const REFERENCE_GATE = {
 } as const;
 
 /**
+ * URI prefix of a programme's curriculum notes (`seed/curriculum.ts`): programme-scope passages about the course
+ * itself (modules, checklists, capstones), which answer a question about the programme and nothing else.
+ */
+export const CURRICULUM_URI_PREFIX = 'curriculum:';
+
+/** What a message about the programme itself names: its parts, its coursework and where it lives. */
+const PROGRAMME_WORDS =
+  /\b(?:modules?|capstones?|curriculum|checklists?|quiz(?:zes)?|coursework|blackboard|mentorship hub|mentor journal|foundry (?:program(?:me)?|series|roadmap|hub|sessions?)|roadmap|ain foundry)\b/i;
+
+/**
+ * The founder's own message is about the programme (a module, a capstone, the checklist, Blackboard, the Mentorship
+ * Hub…): only then is a curriculum passage a candidate for the shared slots. Anything else keeps them for the vEIR's
+ * library and the programme handbook (a review on 2026-11-08 found curriculum passages taking both slots from
+ * "Should I raise money or bootstrap?").
+ */
+export function asksAboutProgramme(founderText: string): boolean {
+  return PROGRAMME_WORDS.test(founderText);
+}
+
+/**
  * Shared-corpus chunks: candidates from the HNSW index (`ORDER BY embedding <=> :q LIMIT n` on the
  * `venture_id IS NULL` partial index) ∪ lexical candidates, rescored with the hybrid formula. Persona
  * chunks are returned as kind `doctrine`, others as `chunk`. authority: persona 1.0, program 0.9,
@@ -367,16 +387,19 @@ function sharedSearch(q: SharedChunkQuery): StoreSearch {
     admitted.length === 0 && refLimit > 0 && q.reference?.context !== undefined
       ? selectContextualReference(q.reference.founderText, q.reference.context).matches
       : [];
+  // Curriculum passages only when the founder's own message is about the programme.
+  const curriculum = `(:curriculumAsked OR NOT EXISTS (SELECT 1 FROM knowledge_sources cs
+       WHERE cs.id = c.source_id AND starts_with(coalesce(cs.uri, ''), :curriculumPrefix)))`;
   return {
     sql: `WITH q AS (SELECT ${orTsQuerySql('query')} AS tsq)
      , ann AS (
        SELECT c.id FROM knowledge_chunks c
-       WHERE ${scopeFilter} AND c.scope <> 'public' AND :embedding IS NOT NULL
+       WHERE ${scopeFilter} AND c.scope <> 'public' AND :embedding IS NOT NULL AND ${curriculum}
        ORDER BY c.embedding <=> :embedding
        LIMIT :candidates)
      , lexical AS (
        SELECT c.id FROM knowledge_chunks c CROSS JOIN q
-       WHERE ${scopeFilter} AND c.scope <> 'public' AND c.tsv @@ q.tsq
+       WHERE ${scopeFilter} AND c.scope <> 'public' AND c.tsv @@ q.tsq AND ${curriculum}
        ORDER BY ts_rank_cd(c.tsv, q.tsq, 32) DESC, c.id
        LIMIT :candidates)
      , recent_ref AS (
@@ -452,6 +475,8 @@ function sharedSearch(q: SharedChunkQuery): StoreSearch {
       refDocumented: p.text(DOCUMENTED_ACCOUNT_HEADING),
       refMinVector: p.num(REFERENCE_GATE.minVector),
       refLimit: p.int(refLimit),
+      curriculumAsked: p.bool(q.reference !== undefined && asksAboutProgramme(q.reference.founderText)),
+      curriculumPrefix: p.text(CURRICULUM_URI_PREFIX),
     },
     decode: (r) => decodeItem('from_row', r),
   };

@@ -17,6 +17,7 @@ import * as memoryRepo from './memory.js';
 import * as personasRepo from './personas.js';
 import * as principalsRepo from './principals.js';
 import * as resourcesRepo from './resources.js';
+import { AIN_CURRICULUM } from '../seed/curriculum.js';
 import * as sessionsRepo from './sessions.js';
 import * as tenantsRepo from './tenants.js';
 import * as turnsRepo from './turns.js';
@@ -174,7 +175,8 @@ describe('remaining repository functions', () => {
         tenantId: seed.tenantId,
         scope: 'program',
       });
-      expect(shared).toHaveLength(1);
+      // The programme handbook and the Ain curriculum notes.
+      expect(shared).toHaveLength(1 + AIN_CURRICULUM.length);
       const doc = await documentsRepo.getDocument(tx, must(must(seed.ventures[0]).documentIds[0]));
       expect(doc?.status).toBe('ready');
     });

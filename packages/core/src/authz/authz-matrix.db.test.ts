@@ -185,7 +185,8 @@ async function seededSource(scope: 'program' | 'persona'): Promise<string> {
     sx.query(
       `SELECT id FROM knowledge_sources
        WHERE tenant_id = :t AND scope = :scope AND (persona_id IS NULL OR persona_id = :persona)
-       ORDER BY created_at LIMIT 1`,
+         AND coalesce(uri, '') NOT LIKE 'curriculum:%'
+       ORDER BY created_at, id LIMIT 1`,
       { t: p.uuid(h.seed.tenantId), scope: p.text(scope), persona: p.uuid(personaId()) },
     ),
   );
