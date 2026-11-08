@@ -575,6 +575,19 @@ export async function chooseOpener(
     return found({ text: stored, sourceSessionId: source ?? null, byPerson: false });
   }
   if (latest === null) return found(null);
+  // The model's sound, current line held back only because it opens the way the latest conversation opened or asks
+  // again what the vEIR asked at its end: the first conversation opened after it still hears a thread, never a
+  // greeting that names nothing (those opened after that one, with nothing said, greet without a subject).
+  const heldBack =
+    stored !== null &&
+    sound &&
+    current &&
+    !fromSomeoneElse &&
+    !leftAside &&
+    since.opened === 0 &&
+    latest.withThisVeir &&
+    notebook !== null &&
+    notebookThreads(notebook.content).length > 0;
   // A line the model may write: no line is stored, it is no line to open on (personal, small talk, no thread) or it
   // was written before the latest conversation, while the notebook leaves threads open. A latest
   // conversation not distilled yet goes to the model with it, so the line takes it in (LAB-R6c: never the thread of an
@@ -602,7 +615,7 @@ export async function chooseOpener(
   // greeting that offers help with the newest open thread, in the notebook's own words. Only once the notebook holds
   // the latest conversation: before its distillation, a thread of the notebook may be one that conversation settled or
   // moved on from (LAB-R6c), and the greeting names nothing.
-  if (missing !== null && latestDistilled) {
+  if (latestDistilled && (missing !== null || heldBack)) {
     const offer = await threadOffer(tx, {
       notebook: notebook?.content ?? null,
       principalId: args.principalId,
@@ -668,7 +681,10 @@ async function threadOffer(
     const addressed = addressFounder(thread.text, args.people);
     if (addressed === null) continue;
     const line = threadOpeners(args.seed, args.latest.withThisVeir, addressed).find(
-      (text) => text.length <= MAX_OPENER_CHARS && !isPersonalOpener(text),
+      (text) =>
+        text.length <= MAX_OPENER_CHARS &&
+        !isPersonalOpener(text) &&
+        !repeatsOpener(text, args.latest.opener ?? null),
     );
     const said = line === undefined ? null : validatedOpener(line, args.guards);
     if (said !== null)

@@ -2137,11 +2137,45 @@ describe('continuity keyed by the venture and the founder (review)', () => {
     // …and the opener says it the way it would be written (the prompt asks the model for that; this holds when the
     // model does not).
     const first = await scripted.sessions.create(maya, quietquad(), {});
-    expect(first.opener).toMatch(/\. I can help you call facilities about the budget Monday\.$/);
+    // The model's line, or (when it would open the way `before` opened: its greeting is seeded by a random id) the
+    // notebook's thread offered in its own words; either way written out.
+    expect(first.opener).toMatch(/(?:\. I can help you c|: C)all facilities about the budget Monday\.$/);
     for (let i = 0; i < 2; i += 1) {
       const opened = await scripted.sessions.create(maya, quietquad(), {});
       expect(opened.opener).not.toMatch(/\bfr\b|monday/);
     }
+  });
+
+  it('names a thread when the model’s line is held back for opening the way the last conversation opened', async () => {
+    // CI run 42452025520: the latest conversation's opener is seeded by its random id, and about one in 25 starts with
+    // the same eight words as the model's next line ("Nice to see you. I can help you …"). That line was held back as a
+    // repeat and the founder heard a greeting that named nothing, though the notebook had open threads.
+    await ageAll(8);
+    const current = await scripted.notebook.get(maya, quietquad());
+    if (current.nextOpener !== null) {
+      await scripted.notebook.update(maya, quietquad(), {
+        expectedVersion: current.version,
+        edit: { action: 'remove_opener' },
+      });
+    }
+    const before = await scripted.sessions.create(maya, quietquad(), {});
+    await say(maya, before.id, 'I will email the library dean about the sensor pilot by Thursday.');
+    await scripted.distill.distillSession({ sessionId: before.id, requestId: 'distill-held', settled: true });
+    const stored = (await scripted.notebook.get(maya, quietquad())).nextOpener ?? '';
+    expect(stored).toMatch(/library dean/i);
+    // The collision, made certain rather than left to the random id: `before` opened with the stored line's first
+    // eight words.
+    const sameStart = stored.split(/\s+/).slice(0, 8).join(' ');
+    await h.t.db.system((sx) =>
+      sx.query('UPDATE coaching_sessions SET opener = :opener WHERE id = :id', {
+        id: p.uuid(before.id),
+        opener: p.text(`${sameStart} prepare the next step on this: Interview five library staff.`),
+      }),
+    );
+    const first = await scripted.sessions.create(maya, quietquad(), {});
+    // A thread, offered in the notebook's words, and never opening the way `before` did.
+    expect(first.opener).toMatch(/: Email the library dean about the sensor pilot by Thursday\.$/);
+    expect(first.opener?.startsWith(sameStart)).toBe(false);
   });
 
   it('says a thread distilled about the founder to them, never by name in lower case (LAB-U2)', async () => {
@@ -2170,7 +2204,11 @@ describe('continuity keyed by the venture and the founder (review)', () => {
     const stored = (await scripted.notebook.get(maya, quietquad())).nextOpener;
     for (let i = 0; i < 3; i += 1) {
       const opened = await scripted.sessions.create(maya, quietquad(), {});
-      if (i === 0) expect(opened.opener).toBe(stored);
+      // The model's line, or the notebook's thread when that line would open the way `before` opened.
+      if (i === 0)
+        expect([stored, 'Get the facility budget numbers from the dean by Friday.']).toContain(
+          opened.opener === stored ? stored : (opened.opener ?? '').split(': ').at(-1),
+        );
       else expect(opened.opener ?? '').not.toMatch(/facility budget/);
       expect(opened.opener).not.toMatch(/maya|the founder/i);
     }
