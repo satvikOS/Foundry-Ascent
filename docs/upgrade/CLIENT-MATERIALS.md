@@ -20,6 +20,12 @@ The spreadsheet artifact runtime and native computer-use permissions were unavai
 
 Policy `fa-coach-policy/2026-11-03.2` explicitly separates course activity from customer commitment, keeps worksheets proportionate to the student's actual decision, requires current evidence for opportunity claims, and handles conflicting cohort requirements without inventing a count. The existing separate learning log supports reflection without treating it as venture traction.
 
+**2026-11-08 (owner: "add the PDFs into RAG"):** `1.pdf`–`5.pdf` are now curated programme notes of the Ain tenant
+(`packages/db/src/seed/curriculum.ts`): the roadmap and Modules 1–3 (topics, unit activities, capstones), retrieved like
+the programme handbook and cited as programme guidance. Presenters' names are left out; every capstone note says the
+programme adapts as it goes, so a checklist is never presented as the current requirement. The other materials below are
+still not ingested.
+
 The files have not been blindly ingested as verified current opportunities or published as new licensed application assets. No OpenOcean service, enrollment flow or replacement architecture was added. Specific curriculum entries still need deliberate programme-resource curation before appearing as retrieved, clickable sources in coaching.
 
 The reviewed text and diagrams do not establish the four intermediate definitions missing from the briefing’s six-rung evidence ladder. The implementation continues to describe actual evidence and uncertainty instead of inventing client-approved rung names.

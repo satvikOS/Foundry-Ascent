@@ -368,6 +368,9 @@ AI-origin items can never be confirmed without `approved_by` or `auto_kept_at` (
   next message); audited (`persona.release_*`, `via: owner_release`). Applied only while the release's deterministic id
   is absent, with a consent in force covering doctrine and the deploy owner; `SeedResult.ownerReleases` says what each
   did (`applied`, `present`, `no_owner`, …). Without the setting (tests, CI, e2e) the demo personas stay as seeded.
+- The Ain Foundry curriculum (`./curriculum.ts`, home tenant `ain` only, demo data or not): the programme's roadmap and
+  Modules 1–3 curated from its own materials (`1.pdf`–`5.pdf`), one programme-scope note per part with its chunks,
+  retrieved like the programme handbook. Inserted once per source like every seeded corpus.
 - Story releases (`./story-releases.ts`): a seeded founder's backstory replaced once in a database that already holds
   the old one (the seed itself never rewrites a row), named in the same list as the owner releases.
   `amara-seam-again-2026-11-08`: Amara gets a new venture, Seam Again (a weekly campus clothes-repair pop-up: memory,
