@@ -118,18 +118,24 @@ NO_ANSWER_CLAUSE = re.compile(
     "|".join(
         _FILLER + "(?:" + pattern + ")"
         for pattern in (
-            r"(?:(?:i|we) )?(?:really |honestly |just |actually |still )?" + _NOT_DONE + r" (?:(?:really|actually|yet|"
+            r"(?:(?:i|we) )?(?:really |honestly |just |actually |still )?"
+            + _NOT_DONE
+            + r" (?:(?:really|actually|yet|"
             r"even|ever|get to|got to|gotten to|manage to|managed to|get around to|got around to|gotten around to) )*"
             r"(?:do|done|did|ask|asked|book|booked|call|called|talk|talked|speak|spoke|try|tried|hear|heard|check|checked|"
             r"look|looked|follow|followed|reach|reached|find|found|meet|met|write|wrote|written|send|sent|discuss|"
             r"discussed|cover|covered|raise|raised|mention|mentioned|go over|went over|gone over|figure|figured|work|"
             r"worked|sort|sorted|think|thought|research|researched|dig|dug|explore|explored|read|google|googled|confirm|"
             r"confirmed)\b(?:" + _DONE_TAIL + r"$|\b.* yet$)",
-            r"(?:(?:i|we) )?" + _NOT_DONE + r" (?:get|got|gotten|have|had) (?:a |the )?(?:chance|time|opportunity)\b"
+            r"(?:(?:i|we) )?"
+            + _NOT_DONE
+            + r" (?:get|got|gotten|have|had) (?:a |the )?(?:chance|time|opportunity)\b"
             r"(?: to\b.*)?$",
             r"(?:it|that|this|the (?:topic|subject|question)) (?:didn't|did not|never|hasn't|has not) (?:really )?"
             r"(?:come|came) up(?: (?:yet|at all))?$",
-            r"(?:(?:i|we) )?(?:still )?" + _NOT_DONE + r" (?:(?:really|actually|yet|even) )*(?:get|got|gotten) "
+            r"(?:(?:i|we) )?(?:still )?"
+            + _NOT_DONE
+            + r" (?:(?:really|actually|yet|even) )*(?:get|got|gotten) "
             r"(?:around )?to (?:it|that|this|them)(?: yet)?$",
             r"(?:i|we) " + _NOT_DONE + r" (?:get|got|gotten) (?:(?:that|this|so) far|there)(?: yet)?$",
             r"(?:i|we) (?:didn't|did not|haven't|have not)(?: yet)?$",
@@ -233,21 +239,124 @@ def _normalized(text: str) -> str:
     return _BARE_CONTRACTION.sub(lambda m: _BARE_CONTRACTIONS[m.group(0)], plain)
 
 
+#: The structural reading of a no-answer after a question (the product's prompts/conversation-state.ts
+#: ``noAnswerClauses``): a short clause with a negation or a doubt, in a message that carries no answer, no question and
+#: nothing of the student's own. Phrase lists did not converge (three review rounds each found new casual wordings).
+NO_ANSWER_MAX_WORDS = 14
+_NEGATION = re.compile(
+    r"n't\b|\b(?:h[ae]?v|h[ae]s|had|di?d|does|do|w[ae]s|w[eu]re|c[ou]{0,2}ld|w[ou]{0,2}ld|sh[ou]{0,2}ld|is|are|ca|wo)nt\b|"
+    r"\b(?:not|never|nothing|nobody|no one|none|neither|nope|nah|no|idk|dunno|unsure|uncertain|clueless|waiting)\b"
+)
+_ONLY_INTERJECTIONS = re.compile(
+    r"^(?:(?:no|nope|nah|yeah|yea|yes|um+|uh+|hm+|ugh|well|so|honestly|sorry|oh|ok|okay|lol|tbh|man)[,.!]*\s*)+$"
+)
+_NEGATED_REPORT = re.compile(
+    r"\b(?:(?:hasn't|has not|haven't|have not|hadn't|had not|didn't|did not|doesn't|does not|never|wouldn't|would not|"
+    r"won't|not|nobody|no one|nothing)(?: (?:really|actually|even|yet|ever|been|got|gotten|ever been))*) "
+    r"(?:said|says|told|tells|mentioned|thinks)\b"
+)
+#: What makes a message an answer whatever negation it carries: a figure, content reported, a guess or a reason, a class
+#: named, a contrast that states the alternative, a day or a time.
+_ANSWER_SUBSTANCE = re.compile(
+    "|".join(
+        (
+            r"\d",
+            r"\b(?:said|says|saying|told (?:me|us)|tells|thinks|reckons)\b",
+            r"\b(?:it's|its|it is)\b(?! (?:not|never)\b)",
+            r"\b(?:probably|likely|maybe|perhaps|because|cause|cuz|apparently|i think|i guess|i bet|i believe)\b",
+            r"\bclass (?:i{1,3}|one|two|three)\b",
+            r"\b(?:but|only|instead|rather|except)\b",
+            r"\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\b|\b(?:tomorrow|tonight|today|next (?:week|month)|"
+            r"this (?:week|month|afternoon|evening|morning))\b",
+        )
+    )
+)
+_ANSWERING_NEGATION = re.compile(
+    r"\bnot (?:too |that |so |very |half |all that )?(?:bad|great|good|terrible|awful|amazing|well|easy|hard|cheap|"
+    r"expensive|bad at all)\b|\b(?:don't|do not|didn't|did not) (?:really )?(?:need|want)\b|\bno (?:thanks|thank you|"
+    r"worries|problem|probs?|rush|biggie)\b|\bnot a problem\b|\bnever ?mind\b"
+)
+_OWN_WORRY = re.compile(r"\b(?:if|whether) (?:[\w'-]+ ){2,}[\w'-]+")
+_NOT_FOLLOWING = re.compile(
+    r"\b(?:don't|do not|didn't|did not) (?:really )?(?:get|understand|follow|catch|hear)(?: (?:that|it|this|you|the "
+    r"question|what you (?:mean|meant|said)))?(?: (?:sorry|tbh|man))*$|\bnot following\b|\bconfus|what you (?:mean|meant)"
+)
+#: Something of the student's own (the product's ``OWN_MOVES``, approximated): a change of topic, a social turn, their
+#: wellbeing, news, a goal, a complaint, a deferral.
+_OWN_SUBJECT = re.compile(
+    "|".join(
+        (
+            r"\b(?:by the way|btw|(?:different|another|unrelated|new) (?:question|topic|thing)|move on|switch(?:ing)? "
+            r"(?:to|gears)|talk about [\w' -]{1,40} instead|change the (?:topic|subject)|quick question)\b",
+            r"^(?:hi|hey|hello|good (?:morning|afternoon|evening))\b|\b(?:thanks|thank you|bye|goodbye|talk soon|see you)\b",
+            r"\b(?:stressed|overwhelmed|exhausted|burn(?:ed|t)? ?out|anxious|worried|panick\w*|struggling|slept|"
+            r"frustrated|scared)\b",
+            r"\b(?:we|i) (?:just |finally )?(?:signed|landed|closed|won|raised|launched|hired|shipped|secured)\b",
+            r"\b(?:i|we) (?:want|need|plan|hope|'d like|would like) to\b",
+            r"\byou (?:keep|already|didn't answer|are not listening|aren't listening)\b",
+            r"\b(?:come back to|later|park (?:that|this|it))\b",
+        )
+    )
+)
+
+
+def _carries_answer(text: str) -> bool:
+    return bool(_ANSWER_SUBSTANCE.search(_NEGATED_REPORT.sub(" ", text)))
+
+
+def _clauses(text: str) -> list[str]:
+    return [c for c in (c.rstrip(".!,;…—– ").strip() for c in _CLAUSE.split(text)) if c]
+
+
+def _no_answer_flags(text: str, after_question: bool) -> list[bool]:
+    """Which clauses of ``text`` (normalised) say there is no answer: by the phrase lists, and after a question by the
+    shape of the whole message too (the product's ``noAnswerClauses``)."""
+    clauses = _clauses(text)
+    said = [bool(NO_ANSWER_CLAUSE.match(c)) for c in clauses]
+    if (
+        not after_question
+        or _carries_answer(text)
+        or _OWN_WORRY.search(text)
+        or _ANSWERING_NEGATION.search(text)
+        or _OWN_SUBJECT.search(text)
+        or any(_NOT_FOLLOWING.search(c) for c in clauses)
+    ):
+        return said
+    shaped = [
+        s
+        or (
+            len(c.split()) <= NO_ANSWER_MAX_WORDS
+            and not _ONLY_INTERJECTIONS.match(c)
+            and bool(_NEGATION.search(c))
+        )
+        for s, c in zip(said, clauses, strict=True)
+    ]
+    rest = " ".join(c for c, f in zip(clauses, shaped, strict=True) if not f)
+    content = {w for w in _words(rest) if len(w) >= 3 and w not in _STOP}
+    return shaped if len(content) < 2 else said
+
+
 def no_answer(student: str, previous: str | None = None) -> bool:
     """The student has no answer yet or hands the work back (the product's ``stuckOn``): a no-answer clause in a message
-    that asks nothing of its own (a question in it is what to answer, as the product reads it), or a request for the
-    work itself. Never after ``previous`` (the coach's reply before it) ended on a check-in on the student."""
+    that asks nothing of its own (a question in it is what to answer, as the product reads it) and carries no answer
+    besides it, or a request for the work itself. After ``previous`` asked something, a no-answer is read by its shape
+    too ("he hasnt gotten back to me"). Never after ``previous`` (the coach's reply before it) ended on a check-in on the
+    student."""
+    after_question = False
     if previous:
         questions = _question_clauses(previous.translate(_APOSTROPHES))
         if questions and SUPPORT_CHECK_IN.search(questions[-1]):
             return False
+        after_question = bool(questions)
     text = _normalized(student)
     if HANDS_BACK.search(text):
         return True
     if "?" in text:
         return False
-    clauses = (c.rstrip(".!,;…—– ").strip() for c in _CLAUSE.split(text))
-    return any(NO_ANSWER_CLAUSE.match(c) for c in clauses if c)
+    flags = _no_answer_flags(text, after_question)
+    if not any(flags):
+        return False
+    return not _carries_answer(" ".join(c for c, f in zip(_clauses(text), flags, strict=True) if not f))
 
 
 #: A message that is only social: a hello, thanks or a goodbye (a reply to it may be a question alone).
@@ -507,7 +616,9 @@ _STUDENT_LEAD_IN = re.compile(
     r"\b(?:for you|yourself|ask you|(?:i'd|i would) (?:like|love) to know|tell me)\b", re.IGNORECASE
 )
 #: A line said by someone in a role-play (the product's ``ROLE_SPEAKER``), never "Walk me through the path: ...".
-_ROLE_SPEAKER = re.compile(r"^\s*(?:(?:\*\*|__)[^*_\n]{1,40}:(?:\*\*|__)|[A-Z][\w'.-]*(?: [A-Z][\w'.-]*){0,2}:)\s")
+_ROLE_SPEAKER = re.compile(
+    r"^\s*(?:(?:\*\*|__)[^*_\n]{1,40}:(?:\*\*|__)|[A-Z][\w'.-]*(?: [A-Z][\w'.-]*){0,2}:)\s"
+)
 _ANY_LIST_ITEM = re.compile(r"^\s*(?:[-*+•]|\d{1,3}[.)])\s+")
 _BARE_LIST_MARKER = re.compile(r"^\s*(?:[-*+•]|\d{1,3}[.)])\s*$")
 _BARE_LIST_MARKER_END = re.compile(r"(?:^|\n)\s*(?:[-*+•]|\d{1,3}[.)])\s*$")
@@ -602,7 +713,12 @@ _GLUE = frozenset(
 #: device falls into and how clinics would pay" and "which classification it gets and which billing code they use".
 _SUBJECTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^(?:class|classif\w*|categor\w*|tier)$"), "class"),
-    (re.compile(r"^(?:pay|paid|payment|payer|bill\w*|reimburs\w*|cover\w*|insur\w*|compensat\w*|code|cod|cpt)$"), "pay"),
+    (
+        re.compile(
+            r"^(?:pay|paid|payment|payer|bill\w*|reimburs\w*|cover\w*|insur\w*|compensat\w*|code|cod|cpt)$"
+        ),
+        "pay",
+    ),
     (re.compile(r"^(?:advis|advis[eo]r|mentor|expert|consultant)$"), "advisor"),
     (re.compile(r"^(?:regulat\w*|fda|clearanc\w*|pathway|path)$"), "regulatory"),
     (re.compile(r"^(?:pric|price|cost|charg|fee)$"), "price"),

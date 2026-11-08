@@ -151,6 +151,7 @@ function turnMessage(n: number, said?: string): string {
       founderText,
       said: [...history.map((t) => t.answer), OPENER],
       started: true,
+      previousReply: history.at(-1)?.answer ?? OPENER,
     }),
   });
   const context = assembleContext({
@@ -239,6 +240,108 @@ describe('what each turn of the production call now carries (2026-11-07)', () =>
       expect(reply.removed).toEqual(['Is monitoring time reimbursable under existing CPT codes?']);
       // On the second turn too, right after the first question.
       expect(turnMessage(1, said)).toContain('Never ask it again, in any words.');
+    },
+  );
+
+  // Review of the 2026-11-07 fix, round 4: a no-answer is read by its shape after a question, not by a list of its
+  // wordings (each round of review found new ones). Synthetic casual wordings: typos, no apostrophes, third parties who
+  // have not replied, objects named as nouns.
+  const NO_ANSWERS = [
+    'i didnt talk to the advisor',
+    'he hasnt gotten back to me',
+    'i wasnt able to',
+    'i dont rly know',
+    'i havent spoken to him',
+    'they never replied',
+    'nah not really',
+    'no word from him yet',
+    'still waiting on him',
+    'havent had the meeting',
+    'i didnt ask him abt the codes',
+    'she hasnt responded',
+    'nobody got back to me',
+    'idk tbh hes been quiet',
+    'i never followed up w him',
+    'not sure, never asked',
+    'i didnt get round to the email',
+    'didnt hear anything back',
+    'the advisor hasnt said anything',
+    'havent looked at the reimbursement stuff',
+    'i couldnt reach her',
+    'they didnt get back to us',
+    'no clue honestly',
+    'i dont have the class info',
+    'we havent booked the call yet',
+    'nope, havent done the reading',
+    'he never emailed back',
+    'i honestly dont remember',
+    'nothing so far',
+    'i didnt follow up on the billing question',
+    'werent able to meet',
+    'i didnt manage to call the clinic',
+    'the meeting didnt happen',
+    'i hvnt asked',
+    'i didnt get a chance w the advisor',
+    'the clinic never answered my email',
+    'not something we got to',
+    'ugh no i totally spaced on it',
+    'no reply from the clinic yet',
+    'i cldnt find anything on it',
+  ];
+  // Answers of their own, a request to say the question again, and a change of subject: never a no-answer.
+  const REAL_ANSWERS = [
+    'he said its not class III',
+    'no, its class II',
+    'not yet but we have a call friday',
+    'i didnt get that',
+    'he said probably class 2',
+    'they told me clinics bill it under 99091',
+    'not class III, more like class II',
+    'we dont sell to hospitals, only clinics',
+    'no because the device is low risk',
+    'nope, maybe next month',
+    'not really, its exempt',
+    'she thinks its exempt',
+    'he didnt name one but said its class II',
+    'i dont know if clinics will pay for it',
+    'i didnt understand the question',
+    'the advisor never said, but clinics pay per scan',
+    'i havent, can we talk about hiring instead',
+    'department heads mostly, not the clinicians',
+    'we did talk, he wants a demo first',
+    'not the patients, the clinic pays',
+  ];
+
+  it('pins forty casual no-answers and twenty answers of their own', () => {
+    expect(NO_ANSWERS).toHaveLength(40);
+    expect(new Set(NO_ANSWERS).size).toBe(40);
+    expect(REAL_ANSWERS).toHaveLength(20);
+  });
+
+  it.each(NO_ANSWERS)(
+    "the call's third turn after %j: never asked again, in the prompt and in the reply (round 4: by its shape)",
+    (said) => {
+      const [r1, r2] = REPLIES as [string, string];
+      expect(stuckOn(said, r2)).toBe(true);
+      const message = turnMessage(2, said);
+      expect(message).toContain('Never ask it again, in any words.');
+      expect(message).not.toContain('<open_questions>');
+      expect(message).not.toContain('billable under existing codes');
+      const reply = withoutRepeats(
+        'Okay. Is monitoring time reimbursable under existing CPT codes?',
+        [r2, r1, OPENER].join('\n\n'),
+        { strictQuestions: stuckOn(said, r2), asked: askedBefore(r2, [r1, OPENER]) },
+      );
+      expect(reply.removed).toEqual(['Is monitoring time reimbursable under existing CPT codes?']);
+    },
+  );
+
+  it.each(REAL_ANSWERS)(
+    "the call's third turn after %j: an answer of their own, never a no-answer",
+    (said) => {
+      const [, r2] = REPLIES as [string, string];
+      expect(stuckOn(said, r2)).toBe(false);
+      expect(turnMessage(2, said)).not.toContain('Never ask it again, in any words.');
     },
   );
 

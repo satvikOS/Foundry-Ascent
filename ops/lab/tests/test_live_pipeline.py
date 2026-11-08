@@ -1437,7 +1437,11 @@ def test_a_casual_no_answer_is_heard_and_the_turn_three_reask_found(student: str
 
 @pytest.mark.parametrize(
     "student",
-    ["I don't know if clinics will pay for it.", "I didn't get that.", "We looked into it and the advisor said Class II."],
+    [
+        "I don't know if clinics will pay for it.",
+        "I didn't get that.",
+        "We looked into it and the advisor said Class II.",
+    ],
 )
 def test_an_answer_of_their_own_is_no_no_answer(student: str) -> None:
     assert not no_answer(student)
@@ -1447,7 +1451,7 @@ def test_questions_given_to_the_student_to_send_are_prep_not_a_reask() -> None:
     draft = (
         "That's normal. You could send something like: \"Hi Dr. Lee, thanks again for last week. Two quick questions: "
         "do you expect the insole to be Class II? And which billing codes do clinics usually use for remote monitoring "
-        "time?\" Once you hear back, we can sketch the clearance timeline."
+        'time?" Once you hear back, we can sketch the clearance timeline.'
     )
     listed = (
         "Here are three questions to send:\n\n1. Do you see the insole as Class II, or could it be exempt?\n"
@@ -1472,3 +1476,99 @@ def test_more_verdicts_on_the_founder_are_judgmental() -> None:
         "Prefers direct answers and actionable steps",
     ]
     assert judgmental_notes(notes) == notes[:-1]
+
+
+#: Review of the 2026-11-07 fix, round 4: casual no-answers read by their shape after a question (the product's
+#: prompts/conversation-state.ts ``noAnswerClauses``), not by a list of their wordings.
+_SHAPED_NO_ANSWERS = [
+    "i didnt talk to the advisor",
+    "he hasnt gotten back to me",
+    "i wasnt able to",
+    "i dont rly know",
+    "i havent spoken to him",
+    "they never replied",
+    "nah not really",
+    "no word from him yet",
+    "still waiting on him",
+    "havent had the meeting",
+    "i didnt ask him abt the codes",
+    "she hasnt responded",
+    "nobody got back to me",
+    "idk tbh hes been quiet",
+    "i never followed up w him",
+    "not sure, never asked",
+    "i didnt get round to the email",
+    "didnt hear anything back",
+    "the advisor hasnt said anything",
+    "havent looked at the reimbursement stuff",
+    "i couldnt reach her",
+    "they didnt get back to us",
+    "no clue honestly",
+    "i dont have the class info",
+    "we havent booked the call yet",
+    "nope, havent done the reading",
+    "he never emailed back",
+    "i honestly dont remember",
+    "nothing so far",
+    "i didnt follow up on the billing question",
+    "werent able to meet",
+    "i didnt manage to call the clinic",
+    "the meeting didnt happen",
+    "i hvnt asked",
+    "i didnt get a chance w the advisor",
+    "the clinic never answered my email",
+    "not something we got to",
+    "ugh no i totally spaced on it",
+    "no reply from the clinic yet",
+    "i cldnt find anything on it",
+]
+_REAL_ANSWERS = [
+    "he said its not class III",
+    "no, its class II",
+    "not yet but we have a call friday",
+    "i didnt get that",
+    "he said probably class 2",
+    "they told me clinics bill it under 99091",
+    "not class III, more like class II",
+    "we dont sell to hospitals, only clinics",
+    "no because the device is low risk",
+    "nope, maybe next month",
+    "not really, its exempt",
+    "she thinks its exempt",
+    "he didnt name one but said its class II",
+    "i dont know if clinics will pay for it",
+    "i didnt understand the question",
+    "the advisor never said, but clinics pay per scan",
+    "i havent, can we talk about hiring instead",
+    "department heads mostly, not the clinicians",
+    "we did talk, he wants a demo first",
+    "not the patients, the clinic pays",
+]
+
+
+@pytest.mark.parametrize("student", _SHAPED_NO_ANSWERS)
+def test_a_no_answer_is_read_by_its_shape_after_a_question(student: str) -> None:
+    assert no_answer(student, "So who sits in those layers?")
+    call = [
+        T("1.1", "getting product to market", _FIRST),
+        T("1.2", "there are a few layers of sign-off to get through", "So who sits in those layers?"),
+        T("1.3", student, "Okay. Is monitoring time reimbursable under existing CPT codes?"),
+    ]
+    assert "reasked_after_unknown" in run_checks(call).codes()
+
+
+@pytest.mark.parametrize("student", _REAL_ANSWERS)
+def test_an_answer_of_their_own_is_never_read_as_a_no_answer_by_its_shape(student: str) -> None:
+    assert not no_answer(student, "So who sits in those layers?")
+
+
+def test_the_shape_alone_needs_a_question_before_it() -> None:
+    assert len(_SHAPED_NO_ANSWERS) == 40
+    assert len(_REAL_ANSWERS) == 20
+    assert not no_answer("he hasnt gotten back to me")
+    assert not no_answer("he hasnt gotten back to me", "That is the usual path.")
+
+
+@pytest.mark.parametrize("student", ["not bad", "no thanks, i dont need that", "no worries", "nope"])
+def test_a_negation_that_answers_is_no_no_answer(student: str) -> None:
+    assert not no_answer(student, "Want me to draft the email to him?")

@@ -1103,6 +1103,7 @@ export function createOrchestrator(
         founderText: input.text,
         said: [...coach.heardHistory.map((t) => t.answer), coach.opener],
         started: coach.heardHistory.length > 0 || (coach.opener ?? '').trim() !== '',
+        previousReply: coach.heardHistory.at(-1)?.answer ?? coach.opener ?? null,
       }),
     });
     // The notes' earlier conversations, without the ones "Where you left off" already shows.

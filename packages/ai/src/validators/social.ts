@@ -2,6 +2,7 @@ import {
   asksToRepeat,
   contentWords,
   founderMoves,
+  hasNoAnswerOnly,
   lastQuestionOf,
   socialTurnOf,
   NARROW_SUBJECT_NAMES,
@@ -338,29 +339,38 @@ export interface ReaskOptions {
 }
 
 /**
- * Whether `sentence` asks again one of `asked` (see {@link questionsOf}) in other words: a question that shares three
- * terms or more with it and most of its own (60%, or of the shorter one); or three or more and 30%, two of them said
- * together in both (production, 2026-11-07: a question about what the advisor said of the device class and how clinics
- * would pay came back two replies later, longer and reworded, about the advisor, the device class and reimbursable
- * monitoring time); `strict`, or a `settled` question, see {@link ReaskOptions}.
+ * How a question asks again one of `asked` ({@link reaskOf}): `whole`, it comes back whole (three shared terms or more,
+ * most of its own or with a pair said together), left out wherever it stands; `subject`, only by the strict or settled
+ * reading (one subject or two terms back, see {@link ReaskOptions}), left out only as the reply's trailing hand-back
+ * ({@link handBackStart}).
  */
-export function reasksQuestion(
+export type ReaskReading = 'whole' | 'subject';
+
+/**
+ * Whether `sentence` asks again one of `asked` (see {@link questionsOf}) in other words, and how ({@link ReaskReading}):
+ * a question that shares three terms or more with it and most of its own (60%, or of the shorter one); or three or more
+ * and 30%, two of them said together in both (production, 2026-11-07: a question about what the advisor said of the
+ * device class and how clinics would pay came back two replies later, longer and reworded, about the advisor, the device
+ * class and reimbursable monitoring time): `whole`. `strict`, or a `settled` question, see {@link ReaskOptions}:
+ * `subject`. Null when it asks something new.
+ */
+export function reaskOf(
   sentence: string,
   asked: readonly QuestionTerms[],
   options: ReaskOptions = {},
-): boolean {
-  if (asked.length === 0 || !/\?["'”’)\]*_]*\s*$/.test(sentence)) return false;
+): ReaskReading | null {
+  if (asked.length === 0 || !/\?["'”’)\]*_]*\s*$/.test(sentence)) return null;
   const terms = questionTerms(sentence);
-  if (options.toFounder === false) {
-    if (terms.words.size < 3) return false;
-    return asked.some((question) => {
-      let shared = 0;
-      for (const w of terms.words) if (question.words.has(w)) shared += 1;
-      const share = shared / Math.min(terms.words.size, question.words.size);
-      const pair = [...terms.pairs].some((p) => question.pairs.has(p));
-      return shared >= 3 && (share >= 0.6 || (share >= 0.3 && pair));
-    });
-  }
+  const comesBackWhole = asked.some((question) => {
+    let shared = 0;
+    for (const w of terms.words) if (question.words.has(w)) shared += 1;
+    const share = shared / Math.min(terms.words.size, question.words.size);
+    const pair = [...terms.pairs].some((p) => question.pairs.has(p));
+    return shared >= 3 && (share >= 0.6 || (share >= 0.3 && pair));
+  });
+  if (comesBackWhole) return 'whole';
+  // A question for someone else is a re-ask only when it comes back whole.
+  if (options.toFounder === false) return null;
   const strict = options.strict === true;
   const subjects = [...terms.words].filter((w) => NARROW_SUBJECT_NAMES.has(w));
   if (
@@ -369,16 +379,13 @@ export function reasksQuestion(
     !OFFERS_WORK.test(sentence) &&
     asked.some((question) => subjects.some((subject) => question.words.has(subject)))
   )
-    return true;
-  if (terms.words.size < (strict || asked.some((question) => question.settled === true) ? 2 : 3))
-    return false;
-  return asked.some((question) => {
+    return 'subject';
+  if (terms.words.size < (strict || asked.some((question) => question.settled === true) ? 2 : 3)) return null;
+  const again = asked.some((question) => {
     let shared = 0;
     for (const w of terms.words) if (question.words.has(w)) shared += 1;
     const share = shared / Math.min(terms.words.size, question.words.size);
-    if (shared >= 3 && share >= 0.6) return true;
     const pair = [...terms.pairs].some((p) => question.pairs.has(p));
-    if (shared >= 3 && share >= 0.3 && pair) return true;
     if (strict) return shared >= 3 || (shared >= 2 && (pair || share >= 0.4));
     // A settled question comes back whole, or as two of its terms (a pair said again, or two subjects) with little
     // else: "Did the advisor mention the class at all?" asks it again, while "What does your customer pay today?"
@@ -389,6 +396,16 @@ export function reasksQuestion(
       (shared >= 3 || (shared >= 2 && share >= 0.6 && (pair || sharedSubjects >= 2)))
     );
   });
+  return again ? 'subject' : null;
+}
+
+/** Whether `sentence` asks one of `asked` again in other words, by any reading ({@link reaskOf}). */
+export function reasksQuestion(
+  sentence: string,
+  asked: readonly QuestionTerms[],
+  options: ReaskOptions = {},
+): boolean {
+  return reaskOf(sentence, asked, options) !== null;
 }
 
 /**
@@ -463,17 +480,70 @@ export function putToFounder(before: string, sentence: string): boolean {
 }
 
 /**
+ * Words that prepare something for the founder to say or send to someone else ("Here is a draft:", "something like",
+ * "ask him", "questions to send", "you could write"): a question anywhere after them may be part of what they send, so
+ * it is never read as a hand-back to the founder ({@link handBackCandidate}).
+ */
+const PREP_CUE =
+  /\b(?:here(?:'s| is| are) (?:a |an |the |my |your |some |two |three )?(?:(?:quick|short|rough|first) )?(?:draft|template|script|version|email|message|note|text|questions?)\b|draft\b[^.?!\n]{0,40}:|something like|ask (?:him|her|them|whoever|each of them)\b|questions? (?:to (?:send|ask|bring|raise|put)|you (?:could|can|might) (?:send|ask|bring|raise|put)|worth (?:asking|sending|raising)|for (?:him|her|them|your|the)\b)|you (?:could|can|might) (?:write|say|send|ask|open with|lead with|text|email)|(?:send|email|text|message|write to) (?:him|her|them)\b)/i;
+
+/** A question sentence ("…?", with closing quotes or emphasis after it). */
+const QUESTION_SENTENCE = /\?["'”’)\]*_]*\s*$/;
+
+/**
+ * Whether the question `sentence` (what the reply says after `before`) may be part of the reply's trailing hand-back:
+ * put to the founder ({@link putToFounder}: not in a quotation, not a line in character, not under "Ask your advisor:"),
+ * and besides not a list item, not a blockquote line ("> …"), not under or after a lead-in ending in ":", and with no
+ * prep cue before it or in it ({@link PREP_CUE}: "Here is a draft:", "something like", "ask him", "questions to send",
+ * "you could write"). Review of the 2026-11-07 fix: deleting a question anywhere in the reply garbled drafts the vEIR
+ * wrote for the founder to send (unquoted paragraphs, blockquotes, lists); only a question at the very end, put to the
+ * founder, is ever left out by the strict or settled re-ask reading.
+ */
+export function handBackCandidate(before: string, sentence: string): boolean {
+  if (!QUESTION_SENTENCE.test(sentence)) return false;
+  if (!putToFounder(before, sentence)) return false;
+  if (isListItem(sentence) || BARE_LIST_MARKER_END.test(before)) return false;
+  const line = before.slice(before.lastIndexOf('\n') + 1) + sentence.replace(/^\s*\n/, '');
+  if (/^\s*>/.test(line) || /(?:^|\n)\s*>/.test(sentence)) return false;
+  if (leadInOf(sentence) !== null) return false;
+  if (/:[*_\s]*$/.test(before)) return false;
+  return !PREP_CUE.test(before + sentence);
+}
+
+/**
+ * Where the reply's trailing hand-back starts: the run of question sentences at its very end, each one a
+ * {@link handBackCandidate} ("That is normal. Most insoles sit in a low class. So what did your advisor say?"), or
+ * `text.length` when it ends on anything else. A question followed by anything but another question is never in it.
+ */
+export function handBackStart(text: string): number {
+  const spans = sentenceSpans(text);
+  let start = text.length;
+  for (let i = spans.length - 1; i >= 0; i -= 1) {
+    const span = spans[i];
+    if (span === undefined) break;
+    const sentence = text.slice(span.start, span.end);
+    if (sentence.trim() === '') continue;
+    if (!handBackCandidate(text.slice(0, span.start), sentence)) break;
+    start = span.start;
+  }
+  return start;
+}
+
+/**
  * Whether the founder's message says they do not know, have not done it or have no answer yet, or hands the work back
  * ("you tell me"): a question of the vEIR's that comes back to the same subject is then read strictly
- * ({@link ReaskOptions}). Never after `previousReply` checked on the founder themselves (prompts/conversation-state.ts
- * `SUPPORT_CHECK_IN`): asking after them again is care, not a re-ask.
+ * ({@link ReaskOptions}). After `previousReply` asked something, a no-answer is read by its shape too, however it is
+ * worded ("he hasnt gotten back to me", "i wasnt able to": prompts/conversation-state.ts `hasNoAnswerOnly`); a message
+ * that carries an answer of its own besides ("not yet, we have a call friday") is none. Never after `previousReply`
+ * checked on the founder themselves (prompts/conversation-state.ts `SUPPORT_CHECK_IN`): asking after them again is care,
+ * not a re-ask.
  */
 export function stuckOn(founderText: string | undefined, previousReply?: string | null): boolean {
   if (founderText === undefined || founderText.trim() === '') return false;
   const asked = typeof previousReply === 'string' ? lastQuestionOf(previousReply) : null;
   if (asked !== null && SUPPORT_CHECK_IN.test(asked)) return false;
-  const moves = founderMoves(founderText);
-  return moves.includes('unknown') || moves.includes('help');
+  const context = { afterQuestion: asked !== null };
+  return founderMoves(founderText, context).includes('help') || hasNoAnswerOnly(founderText, context);
 }
 
 /** A line in character in a role-play ("**Investor:** …", a quoted line): its question is the counterpart's. */
@@ -593,17 +663,21 @@ export function withoutRepeats(
   if (said.size === 0) return { text, dropped: 0, removed: [] };
   const asked = options.asked ?? questionsOf(previous);
   const spans = sentenceSpans(text);
+  // A question asked again only by the strict or settled reading goes only from the reply's trailing hand-back.
+  const handBack = handBackStart(text);
   const repeated: { start: number; end: number }[] = [];
   const removed: string[] = [];
   let lastKept: { start: number; end: number } | null = null;
   for (const s of spans) {
     const sentence = text.slice(s.start, s.end);
+    const reask = reaskOf(sentence, asked, {
+      strict: options.strictQuestions === true,
+      toFounder: putToFounder(text.slice(0, s.start), sentence),
+    });
     const repeat =
       repeatsPrevious(sentence, said, { signOffs: options.signOffs !== false }) ||
-      reasksQuestion(sentence, asked, {
-        strict: options.strictQuestions === true,
-        toFounder: putToFounder(text.slice(0, s.start), sentence),
-      });
+      reask === 'whole' ||
+      (reask === 'subject' && s.start >= handBack);
     if (!repeat || isProtectedLine(sentence, options.keepReferrals === true)) {
       lastKept = s;
       continue;

@@ -2,6 +2,7 @@ import type { ChatMessage } from '../gateway/types.js';
 import { classifyRisk } from '../risk/classifier.js';
 import { buildContinuityBlock, openCommitmentsOf, raisedIn, type PromptContinuity } from './continuity.js';
 import {
+  asksAQuestion,
   besidesNoAnswer,
   contentWords,
   deriveConversationState,
@@ -144,15 +145,20 @@ export function bringsOwnSubject(
 /**
  * Whether the notes leave their agenda out of this turn, once the conversation is under way (`ownSubject`): the message
  * brings a subject of the founder's own ({@link bringsOwnSubject}), or only says they have no answer ("I didn't do
- * that", "no idea"). Production, 2026-11-07: on exactly the turn the founder said they could not answer, the notes still
- * offered the open question on billing and the commitment's "ask how it went", and the reply asked it again in other
- * words; the conversation itself holds what was asked.
+ * that", "no idea"; after `previousReply` asked something, by its shape too: "he hasnt gotten back to me"). Production,
+ * 2026-11-07: on exactly the turn the founder said they could not answer, the notes still offered the open question on
+ * billing and the commitment's "ask how it went", and the reply asked it again in other words; the conversation itself
+ * holds what was asked.
  */
 export function leavesAgendaOut(
   founderText: string,
   continuity: PromptContinuity | null | undefined,
+  previousReply?: string | null,
 ): boolean {
-  return saysOnlyNoAnswer(founderText) || bringsOwnSubject(founderText, continuity);
+  return (
+    saysOnlyNoAnswer(founderText, { afterQuestion: asksAQuestion(previousReply) }) ||
+    bringsOwnSubject(founderText, continuity)
+  );
 }
 
 /**
@@ -187,7 +193,9 @@ export function buildMessages(
     // Once the conversation is under way, the notebook's opener has done its job, and a message with a subject of the
     // founder's own, or only a no-answer, is not answered from the notes' agenda.
     conversationStarted: started,
-    ownSubject: started && leavesAgendaOut(founderText, options.continuity),
+    ownSubject:
+      started &&
+      leavesAgendaOut(founderText, options.continuity, completed.at(-1)?.answer ?? options.opener ?? null),
   });
   const state =
     options.conversationState === false

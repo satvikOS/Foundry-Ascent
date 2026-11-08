@@ -453,7 +453,7 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   shown) opens the conversation without one. A hello
   right after the opener is answered with a hello, never the recall again (`<conversation_state>` reads the
   founder's first message as the reply to the replayed opener).
-- **Teach and prepare, never a loop** (production, 2026-11-07; policy `fa-coach-policy/2026-11-07.4`). The call that
+- **Teach and prepare, never a loop** (production, 2026-11-07; policy `fa-coach-policy/2026-11-07.5`). The call that
   prompted it: a returning founder named a goal and got "walk me through where you are…", a vague answer got a
   question, a short answer got the first question again in other words, and a founder with no answer was asked again.
   Prompt rules saying "follow the founder" had lost to context that was mostly one topic, so each turn now carries:
@@ -466,7 +466,15 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     something i looked at", typed with or without apostrophes, "i ddint do that" and "i dint" included: contractions
     are put back before any cue reads the message, the subject is optional and the verb takes its particles; read
     clause by clause: never asked again in any words; acknowledged without judgement, then what the answer most likely
-    is, the fastest way to find out and the next step). A message that is only a no-answer leaves the notes' agenda
+    is, the fastest way to find out and the next step). Phrase lists did not converge (each review round found new
+    casual wordings), so after a question of the vEIR's a no-answer is also read by its shape (`noAnswerClauses`): a
+    clause of at most 14 words with a negation or a doubt in it ("not", "never", "nah", an "n't" however typed, "idk",
+    "unsure", "still waiting"), in a message with no question, no answer (a figure, content reported, "probably",
+    "because", a class named, a contrast, a day or a time), no worry of its own ("I don't know if clinics will pay for
+    it") and none of their own moves (help, clarify, a change of topic, a goal, news, a social turn, their wellbeing),
+    and nothing else said beside it: "he hasnt gotten back to me", "i wasnt able to", "they never replied" are
+    no-answers; "he said its not class III", "no, its class II", "not yet but we have a call friday" and "i didnt get
+    that" are not. A message that is only a no-answer leaves the notes' agenda
     out of that turn, open threads and questions included (`leavesAgendaOut`): the question they could not answer is
     in the conversation, and the notes would only offer it up again in other words. A no-answer with a subject of its
     own after it ("Not yet, but can we work on the pitch deck", with or without a question mark, as a voice transcript
@@ -494,7 +502,14 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     "tier", "compensated", "expert" and "consultant" name the class, how they pay and the advisor. Only questions put to
     the founder are read so (`putToFounder`): a question in a quoted draft, a list item under a lead-in ending in ":",
     or a question after "Ask your advisor:" or "questions to send:" is prep for someone else, a re-ask only when it
-    comes back whole (three shared words), so a drafted email after "i dont know" keeps its body and its closing quote. A question asked before the previous reply (`askedBefore`: the founder has
+    comes back whole (three shared words), so a drafted email after "i dont know" keeps its body and its closing quote.
+    A question asked again only by subject (the strict or settled reading: `reaskOf` `subject`) is left out only from
+    the reply's trailing hand-back (`handBackStart`): the run of questions that ends it, each put to the founder, none
+    in a quotation, a blockquote or a list, under a lead-in ending in ":" or after a prep cue ("Here is a draft",
+    "something like", "ask him", "questions to send", "you could write"). A question followed by anything but another
+    question is never left out, and the sentence gate holds such a question until the next unit shows what follows, so
+    a draft, a list or a quotation can never lose a question from its middle. A question that comes back whole is left
+    out wherever it stands. A question asked before the previous reply (`askedBefore`: the founder has
     had their turn) comes back whole, or as two of its terms (said together, or two subjects) with little else, so a
     vague or short answer is never met with the first question again, while a new follow-up on the same subject ("Would
     that customer pay more for the version with alerts?") is kept. Notes threads already raised in the conversation

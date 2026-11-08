@@ -437,26 +437,171 @@ function saysNoAnswer(clause: string): boolean {
   return DONT_KNOW.test(clause) || NO_ANSWER.test(clause);
 }
 
+// The structural reading of a no-answer -------------------------------------------------------------------
+
 /**
- * Whether `text` says the founder does not know, has not done it or has no answer yet ({@link DONT_KNOW},
- * {@link NO_ANSWER}), and asks nothing of its own ("Not sure. Does it matter who pays?": that question is what to
- * answer).
+ * Most words of a clause the structural reading takes as a no-answer ({@link noAnswerShape}): a no-answer is short ("he
+ * hasnt gotten back to me"); a long negative sentence says something of its own.
  */
-function hasNoAnswer(text: string): boolean {
+export const NO_ANSWER_MAX_WORDS = 14;
+
+/**
+ * A negation or a doubt, however it is typed (the contractions are put back by `normalize`, and an auxiliary with "nt"
+ * is read as one: "hvnt", "cldnt"): what every no-answer carries ("i wasnt able to", "they never replied", "nah not
+ * really", "no word from him", "still waiting on him").
+ */
+const NEGATION =
+  /n't\b|\b(?:h[ae]?v|h[ae]s|had|di?d|does|do|w[ae]s|w[eu]re|c[ou]{0,2}ld|w[ou]{0,2}ld|sh[ou]{0,2}ld|is|are|ca|wo)nt\b|\b(?:not|never|nothing|nobody|no one|none|neither|nope|nah|no|idk|dunno|unsure|uncertain|clueless|waiting)\b/;
+
+/** A clause of interjections alone ("no", "nope", "um"): to a yes/no question, "no" is the answer. */
+const ONLY_INTERJECTIONS =
+  /^(?:(?:no|nope|nah|yeah|yea|yes|um+|uh+|hm+|ugh|well|so|honestly|sorry|oh|ok|okay|lol|tbh|man)[,.!]*\s*)+$/;
+
+/** "He hasn't said", "nobody told me": a report that it was not said is no reported content. */
+const NEGATED_REPORT =
+  /\b(?:(?:hasn't|has not|haven't|have not|hadn't|had not|didn't|did not|doesn't|does not|never|wouldn't|would not|won't|not|nobody|no one|nothing)(?: (?:really|actually|even|yet|ever|been|got|gotten|ever been))*) (?:said|says|told|tells|mentioned|thinks)\b/g;
+
+/**
+ * What makes a message an answer, whatever negation it carries (the structural reading never takes one as a
+ * no-answer): a figure; content reported ("he said", "she told me", "it's class II"); a guess or a reason ("probably",
+ * "maybe", "because"); a class named; a contrast that states the alternative ("only clinics", "not yet but…"); a day or
+ * a time (news of a step ahead: "not yet, we have a call friday").
+ */
+const ANSWER_SUBSTANCE = new RegExp(
+  [
+    String.raw`\p{N}`,
+    String.raw`\b(?:said|says|saying|told (?:me|us)|tells|thinks|reckons)\b`,
+    String.raw`\b(?:it's|its|it is)\b(?! (?:not|never)\b)`,
+    String.raw`\b(?:probably|likely|maybe|perhaps|because|cause|cuz|apparently|i think|i guess|i bet|i believe)\b`,
+    String.raw`\bclass (?:i{1,3}|one|two|three)\b`,
+    String.raw`\b(?:but|only|instead|rather|except)\b`,
+    String.raw`\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\b|\b(?:tomorrow|tonight|today|next (?:week|month)|this (?:week|month|afternoon|evening|morning))\b`,
+  ].join('|'),
+  'u',
+);
+
+/** Whether `text` (normalised) carries an answer of its own ({@link ANSWER_SUBSTANCE}). */
+function carriesAnswer(text: string): boolean {
+  return ANSWER_SUBSTANCE.test(text.replace(NEGATED_REPORT, ' '));
+}
+
+/**
+ * A negation that answers rather than says there is no answer: an assessment ("not bad", "not great"), a decline of an
+ * offer ("no thanks", "i dont need that"), or a set phrase ("no worries", "never mind").
+ */
+const ANSWERING_NEGATION =
+  /\bnot (?:too |that |so |very |half |all that )?(?:bad|great|good|terrible|awful|amazing|well|easy|hard|cheap|expensive|bad at all)\b|\b(?:don't|do not|didn't|did not) (?:really )?(?:need|want)\b|\bno (?:thanks|thank you|worries|problem|probs?|rush|biggie)\b|\bnot a problem\b|\bnever ?mind\b/;
+
+/**
+ * They did not follow the question ("i didnt get that", "dont understand", "not following"): asked again more plainly
+ * (the `clarify` move), never a no-answer.
+ */
+const NOT_FOLLOWING =
+  /\b(?:don't|do not|didn't|did not) (?:really )?(?:get|understand|follow|catch|hear)(?: (?:that|it|this|you|the question|what you (?:mean|meant|said)))?(?: (?:sorry|tbh|man))*$|\bnot following\b|\bconfus/;
+
+/**
+ * A doubt about something of their own, said as a whole clause ("I don't know if clinics will pay for it", "not sure
+ * whether the pilot is worth it"): a worry to take up, never a no-answer. "i dont know if he replied" stays one.
+ */
+const OWN_WORRY = /\b(?:if|whether) (?:[\w'-]+ ){2,}[\w'-]+/;
+
+/**
+ * Moves that bring something of the founder's own, or ask for something: a message with one of them is never a
+ * no-answer by its shape (a request for help, a question, a change of topic, a goal, news, a social turn, their
+ * wellbeing, a complaint, a request about the conversation).
+ */
+const OWN_MOVES: ReadonlySet<FounderMove> = new Set<FounderMove>([
+  'help',
+  'clarify',
+  'repair',
+  'topic_shift',
+  'news',
+  'goal',
+  'closing',
+  'thanks',
+  'greeting',
+  'stress',
+  'complaint',
+  'lost_reply',
+  'rehearse',
+  'step_out',
+  'defer',
+  'restart',
+  'summary',
+  'recall',
+  'question',
+  'sarcasm',
+]);
+
+/**
+ * Whether a message (normalised, with its moves read without context) may be a no-answer by its shape alone: no
+ * question of its own, no answer in it ({@link carriesAnswer}, {@link ANSWERING_NEGATION}), no worry of its own,
+ * nothing of their own ({@link OWN_MOVES}), no report of a step done, and no clause that says they did not follow the
+ * question.
+ */
+function shapeAllowsNoAnswer(t: string, moves: readonly FounderMove[]): boolean {
+  if (t.includes('?') || carriesAnswer(t) || OWN_WORRY.test(t) || ANSWERING_NEGATION.test(t)) return false;
+  if (moves.some((m) => OWN_MOVES.has(m)) || reportsCommitmentDone(t)) return false;
+  return !clausesOf(t).some((clause) => NOT_FOLLOWING.test(clause));
+}
+
+/** A clause shaped like a no-answer: short ({@link NO_ANSWER_MAX_WORDS}), with a negation or a doubt in it. */
+function noAnswerShape(clause: string): boolean {
+  return (
+    wordCount(clause) <= NO_ANSWER_MAX_WORDS && !ONLY_INTERJECTIONS.test(clause) && NEGATION.test(clause)
+  );
+}
+
+/**
+ * Whether the founder's message has no answer to the question the vEIR just asked, read by its shape rather than by
+ * its wording (reviews of the 2026-11-07 fix: three rounds each found new casual wordings the lists missed, "i didnt
+ * talk to the advisor", "he hasnt gotten back to me", "i wasnt able to", "i dont rly know"; phrase lists do not
+ * converge). After a question, a message is a no-answer when a clause of it is short and carries a negation or a doubt
+ * ({@link noAnswerShape}), and the message carries no answer, no question and nothing of its own
+ * ({@link shapeAllowsNoAnswer}). "he said its not class III", "no, its class II", "not yet but we have a call friday"
+ * and "i didnt get that" are none. `moves`: the message's moves read without context.
+ */
+function noAnswerClauses(t: string, afterQuestion: boolean, moves?: readonly FounderMove[]): boolean[] {
+  const clauses = clausesOf(t);
+  const said = clauses.map(saysNoAnswer);
+  if (!afterQuestion || !shapeAllowsNoAnswer(t, moves ?? founderMoves(t))) return said;
+  const shaped = clauses.map((clause, i) => said[i] === true || noAnswerShape(clause));
+  // By its shape, the no-answer is the whole message: a clause beside it that says something ("department heads mostly,
+  // not the clinicians") makes the negation part of an answer.
+  const rest = clauses.filter((_, i) => shaped[i] !== true).join(' ');
+  return contentWords(rest).size < 2 ? shaped : said;
+}
+
+/**
+ * Whether `text` (normalised) says the founder does not know, has not done it or has no answer yet ({@link DONT_KNOW},
+ * {@link NO_ANSWER}; after a question of the vEIR's, by its shape too: {@link noAnswerClauses}), and asks nothing of its
+ * own ("Not sure. Does it matter who pays?": that question is what to answer).
+ */
+function hasNoAnswer(text: string, afterQuestion = false, moves?: readonly FounderMove[]): boolean {
   if (text.includes('?')) return false;
-  return clausesOf(text).some(saysNoAnswer);
+  return noAnswerClauses(text, afterQuestion, moves).some(Boolean);
+}
+
+/** How a no-answer is read: `afterQuestion`, the vEIR's reply before the message asked something. */
+export interface NoAnswerContext {
+  readonly afterQuestion?: boolean;
+}
+
+/** Whether a reply of the vEIR's asks the founder something: the context a no-answer is read in. */
+export function asksAQuestion(reply: string | null | undefined): boolean {
+  return typeof reply === 'string' && lastQuestionOf(reply) !== null;
 }
 
 /**
  * Whether `text` only says the founder has no answer ({@link hasNoAnswer}): no subject of its own besides it and no
  * change of topic ("I didn't do that", "no idea"; "Not yet, but can we work on the pitch deck" moves on).
  */
-export function saysOnlyNoAnswer(text: string): boolean {
-  const moves = founderMoves(text);
+export function saysOnlyNoAnswer(text: string, context: NoAnswerContext = {}): boolean {
+  const moves = founderMoves(text, context);
   return (
     moves.includes('unknown') &&
     !moves.includes('topic_shift') &&
-    contentWords(besidesNoAnswer(text)).size < 2
+    contentWords(besidesNoAnswer(text, context)).size < 2
   );
 }
 
@@ -464,12 +609,24 @@ export function saysOnlyNoAnswer(text: string): boolean {
  * The founder's message without its clauses that say they have no answer ({@link hasNoAnswer}): what else it brings
  * ("Not yet. Can we work on my pitch deck instead" brings the pitch deck). '' when it says nothing else.
  */
-export function besidesNoAnswer(text: string): string {
+export function besidesNoAnswer(text: string, context: NoAnswerContext = {}): string {
   const t = normalize(text);
-  if (!hasNoAnswer(t)) return t;
+  if (t.includes('?')) return t;
+  const flags = noAnswerClauses(t, context.afterQuestion === true);
+  if (!flags.some(Boolean)) return t;
   return clausesOf(t)
-    .filter((clause) => !saysNoAnswer(clause))
+    .filter((_, i) => !flags[i])
     .join('. ');
+}
+
+/**
+ * Whether the founder's message counts as having no answer, for reading the vEIR's next questions strictly
+ * (validators/social.ts `stuckOn`): it says so ({@link hasNoAnswer}), and what it says besides carries no answer of its
+ * own ({@link carriesAnswer}: "not yet, we have a call friday" brings news of a step ahead).
+ */
+export function hasNoAnswerOnly(text: string, context: NoAnswerContext = {}): boolean {
+  if (!founderMoves(text, context).includes('unknown')) return false;
+  return !carriesAnswer(besidesNoAnswer(text, context));
 }
 
 /**
@@ -702,7 +859,7 @@ function wordCount(text: string): number {
 }
 
 /** What `text` does in the conversation (deterministic cues; English). */
-export function founderMoves(text: string): FounderMove[] {
+export function founderMoves(text: string, context: NoAnswerContext = {}): FounderMove[] {
   const t = normalize(text);
   if (t === '') return [];
   const moves: FounderMove[] = MOVE_CUES.filter(([, cue]) => cue.test(t)).map(([move]) => move);
@@ -713,6 +870,10 @@ export function founderMoves(text: string): FounderMove[] {
   const words = wordCount(t);
   if (words <= 5 && SHORT_REPLY.test(t) && !moves.includes('thanks')) moves.push('short_reply');
   if (t.endsWith('?') || (QUESTION_START.test(t) && words > 2)) moves.push('question');
+  // After a question of the vEIR's, a no-answer is read by its shape too, however it is worded (`noAnswerClauses`).
+  if (context.afterQuestion === true && !moves.includes('unknown') && hasNoAnswer(t, true, moves)) {
+    moves.push('unknown');
+  }
   return moves;
 }
 
@@ -1349,7 +1510,9 @@ export function deriveConversationState(
     if (opening !== '') openings.push(opening);
   }
   const lastAsked = lastQuestionOf(afterOpener ? opener : (turns.at(-1)?.answer ?? ''));
-  const moves = founderMoves(founderText);
+  // A no-answer to the question just asked is read by its shape too ("he hasnt gotten back to me").
+  const noAnswerContext: NoAnswerContext = { afterQuestion: lastAsked !== null };
+  const moves = founderMoves(founderText, noAnswerContext);
   // A role-play under way: the vEIR's latest replies in character, newest first.
   let inRoleReplies = 0;
   for (let i = turns.length - 1; i >= 0 && inRole(turns[i]?.answer ?? ''); i -= 1) inRoleReplies += 1;
@@ -1405,7 +1568,7 @@ export function deriveConversationState(
     afterOpener,
     // "Thanks, I'll go prepare for the pitch now, bye!" signs off: the plan they name is no goal to teach into.
     goal: (moves.includes('goal') || namesWork) && !wrapUp && !moves.includes('closing') && social === null,
-    onlyNoAnswer: !answersCheckIn && saysOnlyNoAnswer(founderText),
+    onlyNoAnswer: !answersCheckIn && saysOnlyNoAnswer(founderText, noAnswerContext),
     ...(answersCheckIn ? { answersCheckIn } : {}),
     inRoleReplies,
     duplicate,

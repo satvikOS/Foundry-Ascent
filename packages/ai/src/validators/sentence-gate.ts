@@ -31,8 +31,9 @@ import {
   isProtectedLine,
   parksTheirNews,
   askedBefore,
+  handBackCandidate,
   putToFounder,
-  reasksQuestion,
+  reaskOf,
   repeatsPrevious,
   stuckOn,
   type QuestionTerms,
@@ -738,6 +739,14 @@ export class SentenceGate {
         if (this.#leaks([stable.slice(from)])) return this.#block('cross_venture', units);
       }
       let rawUnit = this.#raw.slice(this.#cursor, end);
+      // A question asked again only by the strict or settled reading goes only from the reply's trailing hand-back: it
+      // is held until the next unit shows whether anything but another question follows it (`#onlyQuestionsAfter`).
+      let trailing = false;
+      if (this.#reaskCandidate(rawUnit, this.#raw.slice(0, this.#cursor))) {
+        const after = this.#onlyQuestionsAfter(end, stable);
+        if (after === null) break;
+        trailing = after;
+      }
       if (this.#options.greeted === true && this.#opening) {
         // The opening line already said hello: the reply's own greeting is left out (a whole unit, or its start).
         const greeting = withoutRepeatedGreeting(rawUnit, this.#greetingNames);
@@ -822,7 +831,7 @@ export class SentenceGate {
         this.#cut = 'meta_narration';
         return { units, blocked: null, fallback: null, cut: this.#cut };
       }
-      const repeat = this.#repeatOf(rawUnit, this.#raw.slice(0, this.#cursor));
+      const repeat = this.#repeatOf(rawUnit, this.#raw.slice(0, this.#cursor), trailing);
       if (repeat !== null) {
         // An earlier reply again: never said twice. Only the unit is left out, never what follows it (a reply cut at
         // its first repeat lost new content and safety lines). An item of a list is the exception: left out, its list
@@ -921,20 +930,60 @@ export class SentenceGate {
 
   /**
    * Whether a unit says an earlier reply again (`repeat`), asks one of its questions again (`reask`), or neither. A
+   * question asked again only by the strict or settled reading (`reaskOf` `subject`) is a re-ask only in the reply's
+   * trailing hand-back (`trailing`: only questions follow it, and it is put to the founder: `handBackCandidate`). A
    * safety line, and on a flagged turn a referral, is never a repeat (`isProtectedLine`).
    */
-  #repeatOf(unit: string, before: string): 'repeat' | 'reask' | null {
+  #repeatOf(unit: string, before: string, trailing = false): 'repeat' | 'reask' | null {
     if (this.#previousGrams === null) return null;
     if (isProtectedLine(unit, this.#keepReferrals)) return null;
     if (repeatsPrevious(unit, this.#previousGrams, { signOffs: !this.#signOffWelcome })) return 'repeat';
     // A question for someone else (in a quoted draft, a list of questions to send) is the founder's prep, never a
     // re-ask of them, unless it comes back whole (`putToFounder`).
-    return reasksQuestion(unit.trim(), this.#previousQuestions, {
+    const reask = reaskOf(unit.trim(), this.#previousQuestions, {
       strict: this.#stuck,
       toFounder: putToFounder(before, unit),
-    })
-      ? 'reask'
-      : null;
+    });
+    if (reask === 'whole') return 'reask';
+    return reask === 'subject' && trailing && handBackCandidate(before, unit) ? 'reask' : null;
+  }
+
+  /**
+   * Whether the unit (what the reply says after `before`) would be left out as a re-ask only if it ends the reply: asked
+   * again only by the strict or settled reading, and a candidate for the trailing hand-back (`handBackCandidate`).
+   */
+  #reaskCandidate(unit: string, before: string): boolean {
+    if (this.#previousGrams === null || this.#previousQuestions.length === 0) return false;
+    if (!/\?["'”’)\]*_]*\s*$/u.test(unit) || isProtectedLine(unit, this.#keepReferrals)) return false;
+    return (
+      reaskOf(unit.trim(), this.#previousQuestions, {
+        strict: this.#stuck,
+        toFounder: putToFounder(before, unit),
+      }) === 'subject' && handBackCandidate(before, unit)
+    );
+  }
+
+  /**
+   * Whether only questions put to the founder follow the unit that ends at `end`, to the end of the reply (true), or
+   * anything else does (false); null while the next unit has not arrived and the stream has not ended. A question
+   * followed by more than questions is never in the trailing hand-back: left out, it could take a hole out of a draft,
+   * a list or a quotation.
+   */
+  #onlyQuestionsAfter(end: number, stable: string): boolean | null {
+    let from = end;
+    for (;;) {
+      let next = findUnitEnd(this.#raw, from, this.#maxUnitChars);
+      if (next === null) {
+        if (!this.#ended) return null;
+        next = this.#raw.length;
+      }
+      if (!this.#ended && stable.length < next) return null;
+      const unit = this.#raw.slice(from, next);
+      if (unit.trim() !== '' && !handBackCandidate(this.#raw.slice(0, from), unit)) return false;
+      if (next >= this.#raw.length) return this.#ended ? true : null;
+      if (next <= from) return null;
+      from = next;
+    }
   }
 
   /** Ends the reply where an earlier reply would have been said again (`GateCutReason` `repeat`). */

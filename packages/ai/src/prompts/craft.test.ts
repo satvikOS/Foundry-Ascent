@@ -321,7 +321,11 @@ describe('conversation craft in the system prompt', () => {
     // 2026-11-07.4: its third review: a casual no-answer is heard however it is typed ("we didnt look into it", "nope
     // havent", "i dont know who pays", "not a clue"), and the questions a reply gives the founder to send are never
     // read as a re-ask of them.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.4');
+    // 2026-11-07.5: its fourth review: after a question, a no-answer is read by its shape (short, a negation or a doubt,
+    // no answer and nothing of their own: "he hasnt gotten back to me", "i wasnt able to"), not by a list of wordings,
+    // and a question asked again only by subject is left out only from the reply's trailing hand-back, so a draft, a
+    // list or a quotation never loses a question.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.5');
   });
 });
 

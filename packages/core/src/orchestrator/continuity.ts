@@ -330,11 +330,18 @@ export function leftOffThreads(
     readonly founderText: string;
     readonly said: readonly (string | null | undefined)[];
     readonly started: boolean;
+    /** The vEIR's reply the message answers (the last one, or the opener): a no-answer to its question is read by shape. */
+    readonly previousReply?: string | null;
   },
 ): LeftOffThreads | null {
   const nb = continuity.notebook ?? null;
   if (nb === null) return null;
-  if (turn !== undefined && turn.started && leavesAgendaOut(turn.founderText, continuity)) return null;
+  if (
+    turn !== undefined &&
+    turn.started &&
+    leavesAgendaOut(turn.founderText, continuity, turn.previousReply ?? null)
+  )
+    return null;
   const commitments = nb.commitments
     .filter((c) => c.status === 'open')
     .map((c) => ({ text: c.text, due: c.due }));

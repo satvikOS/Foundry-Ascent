@@ -980,10 +980,15 @@ describe('questions the reply gives the founder to put to someone else, after a 
     },
   );
 
-  it('still leaves out a question put to the founder again on the same subject', () => {
+  it('still leaves out a question put to the founder again on the same subject, when it ends the reply', () => {
     const reply =
-      'No problem. So what did your advisor actually say about the class? Either way, here is the usual path.';
+      'No problem. Here is the usual path: most insoles sit in a low class. So what did your advisor actually say about the class?';
     const g = gate({ previousReply: previous, founderText: 'i dont know' });
     expect(joined(run(g, [reply]).units)).not.toContain('your advisor actually say');
+    // Followed by more than questions, it is never left out (review of the 2026-11-07 fix, round 4: only the trailing
+    // hand-back goes, so a draft, a list or a quotation never loses a question from its middle).
+    const mid =
+      'No problem. So what did your advisor actually say about the class? Either way, here is the usual path.';
+    expect(joined(run(gate({ previousReply: previous, founderText: 'i dont know' }), [mid]).units)).toBe(mid);
   });
 });
