@@ -97,7 +97,8 @@ describe("a returning founder's opener", () => {
   let created: number;
   let opener: string | null;
   let createdOpener: string | null;
-  const stored = 'The library pilot starts soon. Which number will you check first on Monday?';
+  // A line the model wrote ahead offers help (2026-11-08: a stored quiz is never said).
+  const stored = 'The library pilot starts soon. Want help choosing which number to check first on Monday?';
 
   beforeAll(async () => {
     rig = await createLatencyRig(LATENCY, { traceQueries: true });
