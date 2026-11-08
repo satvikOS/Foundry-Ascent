@@ -105,9 +105,9 @@ export const SEAM_AGAIN_RELEASE: StoryRelease = {
       {
         key: 'x-first-popup',
         type: 'experiment',
-        title: 'First pop-up day in the student union',
+        title: 'First pop-up day in the student centre',
         content:
-          'One Wednesday table in the student union lobby: drop-off 11:00–15:00, pick-up by 18:00, priced per ' +
+          'One Wednesday table in the student centre lobby: drop-off 11:00–15:00, pick-up by 18:00, priced per ' +
           'repair (button $4, seam $6, hem $8). Amara and her flatmate Jun did the sewing. Result: 23 items came in; ' +
           '21 were fixed and collected the same day (9 seams, 8 buttons, 4 hems), 2 zips went back unfinished, and ' +
           'the day took $118.',
@@ -182,9 +182,9 @@ export const SEAM_AGAIN_RELEASE: StoryRelease = {
       {
         key: 'a-book-table',
         type: 'action',
-        title: 'Book the student union table for the next four Wednesdays',
+        title: 'Book the student centre table for the next four Wednesdays',
         content:
-          'Ask the student union events office whether the same lobby table can be booked four weeks in a row.',
+          'Ask the student centre events office whether the same lobby table can be booked four weeks in a row.',
         status: 'confirmed',
         visibility: 'venture',
         confidence: 0.9,
@@ -336,7 +336,7 @@ export const SEAM_AGAIN_RELEASE: StoryRelease = {
         text: 'Email the theatre society’s costume manager about a repair session',
         due: day(3),
       },
-      { id: 'c-book-table', text: 'Book the student union table for the next four Wednesdays', due: day(5) },
+      { id: 'c-book-table', text: 'Book the student centre table for the next four Wednesdays', due: day(5) },
     ],
     openQuestions: [
       { id: 'q-hourly', text: 'What price and volume would get each sewer to $16 an hour?' },
