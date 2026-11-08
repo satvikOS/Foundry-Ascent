@@ -281,8 +281,16 @@ const FIXTURE: Readonly<Record<string, readonly string[]>> = JSON.parse(
   readFileSync(new URL('./fixtures/distress-render-ac41aec.json', import.meta.url), 'utf8'),
 ) as Record<string, string[]>;
 
+/**
+ * The one change to main's lines a message in distress may see (policy 2026-11-07.8): main's help line now ends by
+ * saying to answer how they are first. It is taken out before the digest, so everything else must still be main's.
+ */
+const PERSON_FIRST =
+  ' If they are telling\n  you how they are rather than asking for the work, respond to that first and leave the work.';
+
 function rendered(history: readonly StateTurn[], message: string): { state: string; digest: string } {
-  const state = renderConversationState(deriveConversationState(history, message, { opener: OPENER }));
+  const full = renderConversationState(deriveConversationState(history, message, { opener: OPENER }));
+  const state = full.replace(PERSON_FIRST, '');
   const last = buildMessages(history, message, {
     continuity: CONTINUITY,
     opener: OPENER,

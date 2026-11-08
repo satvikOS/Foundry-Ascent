@@ -2368,7 +2368,8 @@ export function renderConversationState(state: ConversationState): string {
     lines.push(
       '- They want you to do it, or they are stuck: do the work in this reply. Give the thing itself, specific to their',
       '  venture (a draft, concrete options or questions, an example, the first steps), then at most a short check that',
-      '  it fits. Never hand the question back or ask them for what they just said they cannot give.',
+      '  it fits. Never hand the question back or ask them for what they just said they cannot give. If they are telling',
+      '  you how they are rather than asking for the work, respond to that first and leave the work.',
     );
     const handedBack = state.openQuestion ? (state.askedQuestions[0] ?? null) : null;
     // Lab run 39780304879: "I don't know. You tell me." after "Where are things with the advisor session and your three
@@ -2386,7 +2387,7 @@ export function renderConversationState(state: ConversationState): string {
     // "Not yet, but I want to talk about hiring": they moved on, and the reply goes with them.
     lines.push(
       '- They have no answer to that yet and move on to something of their own: answer what they bring now. Never ask',
-      '  the earlier question again, in any words.',
+      '  the earlier question again, in any words. If what they bring is how they are, respond to that first.',
     );
   } else if (unknown) {
     // Hedged (review of the 2026-11-07 fix, round 6): the reading hears casual wordings by their shape and may misread

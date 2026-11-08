@@ -357,7 +357,9 @@ describe('conversation craft in the system prompt', () => {
     // question does; the shape alone adds only the hedged line; the rule on a founder with no answer is said generally.
     // Its ninth review kept the policy: distress also reads the founder's worth, reserves and endurance ("i dont know
     // why i even try", "i have nothing left to give"), and a first reply names work only when it names some.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.7');
+    // 2026-11-07.8: the help and moving-on lines, like the hedged one, say to answer how they are first when that is what
+    // they bring: no reading of words can name every way of saying it, and the model reads the whole message.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.8');
   });
 });
 
