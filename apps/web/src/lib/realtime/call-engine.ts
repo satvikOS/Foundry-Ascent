@@ -242,6 +242,8 @@ interface ActiveTurn {
    * high-risk message, never taken back: its support line and escalation are under way). Null until it arrives.
    */
   risk: 'ordinary' | 'sensitive' | null;
+  /** The server held its reply back (`turn.blocked`, whatever the reason): it is never asked for again. */
+  blocked: boolean;
 }
 
 /** How a hands-free line's end was found, its endpointer take, and what was sent again ahead of it. */
@@ -249,6 +251,18 @@ interface PendingEndpoint {
   readonly endpointing: TurnEndpointing;
   readonly take: number;
   readonly before: string | null;
+}
+
+/**
+ * A line cut off and the rest the founder said after it, as one: a word Transcribe cut off when the line was sent
+ * and has whole now ("… proposition can" then "canvass for this.") is said once.
+ */
+function goOn(before: string, rest: string): string {
+  const cut = before.trim().split(/\s+/);
+  const last = (cut.at(-1) ?? '').toLocaleLowerCase();
+  const next = (rest.trim().split(/\s+/)[0] ?? '').toLocaleLowerCase();
+  if (/^\p{L}+$/u.test(last) && next.length > last.length && next.startsWith(last)) cut.pop();
+  return joinLine(cut.join(' '), rest);
 }
 
 /** Two parts of what the founder said, in order. */
@@ -1193,7 +1207,7 @@ export class CallEngine {
         this.timing.count('rejoined');
       }
     }
-    const line = before === null ? heard : joinLine(before, heard);
+    const line = before === null ? heard : goOn(before, heard);
     const clamp = (ms: number) => Math.min(60_000, Math.max(0, Math.round(ms)));
     const endpointing: TurnEndpointing = {
       decisionMs: decision.quietMs === null ? null : clamp(decision.quietMs),
@@ -1214,8 +1228,24 @@ export class CallEngine {
    */
   private goesOnFrom(going: string): string | null {
     const last = this.lastLine;
-    if (last === null || this.pendingLines.length > 0 || last.turn.risk !== 'ordinary') return null;
+    if (last === null || this.pendingLines.length > 0) return null;
+    if (last.turn.risk !== 'ordinary' || last.turn.blocked) return null;
     return last.text === going || last.text.endsWith(` ${going}`) ? last.text : null;
+  }
+
+  /**
+   * The server held back the reply to `turn`: a line waiting to be sent with it ahead (`PendingEndpoint.before`)
+   * goes without it, as only what the founder said since.
+   */
+  private unjoinFrom(turn: ActiveTurn): void {
+    const pending = this.pendingEndpoint;
+    const last = this.lastLine;
+    if (pending?.before == null || last?.turn !== turn || this.pendingLines.length !== 1) return;
+    const line = this.pendingLines[0] ?? '';
+    const rest = line.startsWith(pending.before) ? line.slice(pending.before.length).trim() : line;
+    this.pendingLines[0] = rest;
+    this.pendingEndpoint = { ...pending, before: null };
+    if (rest === '') this.pendingLines.length = 0;
   }
 
   /**
@@ -1435,6 +1465,7 @@ export class CallEngine {
       take,
       before: take === null ? null : (this.pendingEndpoint?.before ?? null),
       risk: null,
+      blocked: false,
     };
     this.pendingEndpoint = null;
     this.lastLine = { text, turn };
@@ -1546,6 +1577,8 @@ export class CallEngine {
         return completed;
       }
       case 'turn.blocked':
+        turn.blocked = true;
+        this.unjoinFrom(turn);
         // Crisis support is said first (the fixed support line arrives as signed units of this turn), so
         // it keeps playing to its end; any other held-back reply stops at once.
         if (event.reason === 'crisis_support') this.crisisTurnId = event.turnId;

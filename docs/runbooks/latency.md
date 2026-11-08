@@ -599,9 +599,12 @@ What changed (`endpointing.ts`, `call-engine.ts`):
 - A founder who goes on after a line was sent (a take-back, or the rest said after the reply) gets half as long again
   for the rest of the call, up to twice the defaults (`Endpointer.slowDown`).
 - The rest of a line said after its reply is sent with the line before it, so the vEIR answers the whole line: when
-  Transcribe added the new words to the result the line came from (it heard one utterance), or they open in lower case
-  after a line that did not end a sentence. Only the call's latest turn, when it was ordinary (never a crisis line
-  again) and no other line is waiting; never after a typed line. Counted as `rejoined` in the client's timing counts.
+  Transcribe added the new words to the result the line came from (it heard one utterance), or their first word is
+  all lower case after a line that did not end a sentence (an ellipsis leaves it open; "iPad" does not count). Only
+  words the founder said after the line was sent, within 90 s of it; only the call's latest turn, when it was ordinary
+  and its reply was not held back (never a crisis or blocked line again: a blocked line's rest goes on its own), and
+  no other line is waiting; never after a typed line. A word Transcribe had cut off when the line was sent ("… can"
+  then "canvass for this.") is said once. Counted as `rejoined` in the client's timing counts.
 
 Measured on the same replay, with three fixtures added that follow the 2026-11-08 cut-offs (a 1.1 s pause inside a
 question, a 1 s pause after "Hi, Thomas. How", 1.6 s after "Yeah, so my"); "fixed" is the 600 ms silence:
@@ -630,7 +633,7 @@ question, a 1 s pause after "Hi, Thomas. How", 1.6 s after "Yeah, so my"); "fixe
 | 0.7 s                        | 6 of 13                 | **4 of 13**                    | 1 of 13 |
 
 The price: a finished line goes about 300 ms later than with the 2026-11-06 waits (p50 600 ms, as the fixed silence),
-and an open line up to a second later. The fixtures' pauses are 0.65–1.6 s; production's were likely longer (the founder
+and an open line up to a second later. Every fixture's line gets Transcribe's punctuated final within 0.9 s, so the replay never pays the 1.5 s or 2 s waits on a finished line: they apply only while Transcribe has not finalised, and their cost in production is not measured here. The fixtures' pauses are 0.65–1.6 s; production's were likely longer (the founder
 went on only after the reply's first unit had arrived), which only the longer waits, the slow-down and the line sent
 again cover. Read how often each happens from the client's timing counts (`endpoint.*`, `resumed`, `rejoined`).
 

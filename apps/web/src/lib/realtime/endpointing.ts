@@ -62,6 +62,12 @@ export const DEFAULT_ENDPOINTER: EndpointerOptions = {
   incompleteMs: 2_000,
 };
 
+/**
+ * How long after a line was sent what the founder says can still be its rest (sent with it): longer than a long
+ * reply heard in full on a half-duplex call, shorter than a pause before something new.
+ */
+export const CONTINUE_WINDOW_MS = 90_000;
+
 /** Each time the founder shows a wait was too short, the waits grow by this much ({@link Endpointer.slowDown})… */
 export const SLOW_DOWN_STEP = 1.5;
 /** …up to this many times the defaults (a finished sentence 1.2 s, an open line 3 s, a fragment 4 s). */
@@ -519,7 +525,11 @@ export class Endpointer {
   /** The last take, while it can still be given back. */
   private lastTake: Take | null = null;
   /** The text of the latest take and the results it used, whether or not it can still be given back. */
-  private previousTake: { readonly text: string; readonly results: ReadonlySet<string> } | null = null;
+  private previousTake: {
+    readonly text: string;
+    readonly results: ReadonlySet<string>;
+    readonly at: number;
+  } | null = null;
   /** How many times the defaults each wait is now ({@link slowDown}). */
   private patience = 1;
   private generation = 0;
@@ -657,10 +667,17 @@ export class Endpointer {
     const previous = this.previousTake;
     const first = this.segments.entries().next().value;
     if (previous === null || first === undefined) return null;
+    // Only words the founder said since: Transcribe revising a word it already sent, with no voice after the take,
+    // is not the founder going on. Nor is a line long after (a reply heard, then something new).
+    const now = this.now();
+    if (this.lastVoiceAt <= previous.at || now - previous.at > CONTINUE_WINDOW_MS) return null;
     const [id, segment] = first;
     if (id.includes('#') && previous.results.has(resultOf(id))) return previous.text;
-    const ended = /[.?!]["')\]]*$/.test(previous.text);
-    return !ended && /^[\p{Ll}]/u.test(segment.text) ? previous.text : null;
+    // An ellipsis leaves the line open, as classifyUtterance reads it.
+    const text = previous.text;
+    const ended = /[.?!]["')\]]*$/.test(text) && !/(?:\.\.\.|…)["')\]]*$/.test(text);
+    // The whole first word in lower case: "iPad" or "eBay" opens a new line as often as not.
+    return !ended && /^\p{Ll}+(?![\p{L}])/u.test(segment.text) ? previous.text : null;
   }
 
   /** Which take is the latest: {@link untake} gives back only that one. */
@@ -680,7 +697,7 @@ export class Endpointer {
       this.consumed.set(base, previous === undefined ? segment.text : `${previous} ${segment.text}`);
     }
     this.lastTake = { generation: this.generation, segments: [...this.segments], before };
-    this.previousTake = text === '' ? null : { text, results: new Set(before.keys()) };
+    this.previousTake = text === '' ? null : { text, results: new Set(before.keys()), at: this.now() };
     this.segments.clear();
     if (this.consumed.size > 64) {
       // Old segments never update again; keep the map small on long calls.

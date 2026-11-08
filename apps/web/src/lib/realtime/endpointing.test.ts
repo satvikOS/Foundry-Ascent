@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BARGE_SUSTAIN_MS,
+  CONTINUE_WINDOW_MS,
   Endpointer,
   SLOW_DOWN_MAX,
   SLOW_DOWN_STEP,
@@ -320,6 +321,11 @@ describe('Endpointer (adaptive)', () => {
   it('tells when what is heard goes on from the line just taken', () => {
     const time = clock();
     const ep = new Endpointer(time.now);
+    /** The founder speaks again a moment after the last take. */
+    const speak = () => {
+      time.advance(500);
+      ep.onVoice();
+    };
     expect(ep.continues()).toBeNull();
     ep.onResult({
       resultId: 'a',
@@ -330,6 +336,7 @@ describe('Endpointer (adaptive)', () => {
     expect(ep.continues(), 'nothing taken yet').toBeNull();
     expect(ep.take()).toBe('Could you explain the value proposition');
     // Transcribe adds the rest to the same result: one utterance.
+    speak();
     ep.onResult({
       resultId: 'a',
       text: 'Could you explain the value proposition canvas?',
@@ -340,29 +347,52 @@ describe('Endpointer (adaptive)', () => {
     expect(ep.continues()).toBe('Could you explain the value proposition');
     expect(ep.take()).toBe('canvas?');
 
-    // A new result opening in lower case after a line that did not end a sentence.
-    ep.onResult({ resultId: 'b', text: 'What are the unit economic', partial: true, stable: true });
-    ep.take();
-    ep.onResult({ resultId: 'c', text: 'for this.', partial: false, stable: true });
-    expect(ep.continues()).toBe('What are the unit economic');
-    ep.take();
+    // A new result opening in lower case after a line that did not end a sentence, or ended on an ellipsis.
+    for (const cut of ['What are the unit economic', 'So the thing is...']) {
+      ep.onResult({ resultId: cut, text: cut, partial: true, stable: true });
+      ep.take();
+      speak();
+      ep.onResult({ resultId: `${cut}+`, text: 'for this.', partial: false, stable: true });
+      expect(ep.continues(), cut).toBe(cut);
+      ep.take();
+    }
 
-    // Not after a finished sentence, nor when the new line opens with a capital ("I" always has one).
-    ep.onResult({ resultId: 'd', text: 'We talked to twelve clinics.', partial: false, stable: true });
+    // Not after a finished sentence, nor when the new line opens with a capital ("I" always has one) or a word
+    // with one inside it ("iPad").
+    for (const [cut, next] of [
+      ['We talked to twelve clinics.', 'and three said yes.'],
+      ['So my next', 'I mean the pricing.'],
+      ['So my next', 'iPad first, then web.'],
+    ] as const) {
+      ep.onResult({ resultId: cut, text: cut, partial: true, stable: true });
+      ep.take();
+      speak();
+      ep.onResult({ resultId: `${cut}+${next}`, text: next, partial: false, stable: true });
+      expect(ep.continues(), next).toBeNull();
+      ep.take();
+    }
+
+    // Not Transcribe catching up on a word said before the take (no voice since), nor words long after the line.
+    ep.onResult({ resultId: 'r', text: 'We talked to twelve', partial: true, stable: true });
     ep.take();
-    ep.onResult({ resultId: 'e', text: 'and three said yes.', partial: false, stable: true });
-    expect(ep.continues()).toBeNull();
+    ep.onResult({ resultId: 'r', text: 'We talked to twelve clinics', partial: false, stable: true });
+    expect(ep.text()).toBe('clinics');
+    expect(ep.continues(), 'no voice since the take').toBeNull();
     ep.take();
-    ep.onResult({ resultId: 'f', text: 'So my next', partial: true, stable: true });
+    ep.onResult({ resultId: 'late', text: 'So my next', partial: true, stable: true });
     ep.take();
-    ep.onResult({ resultId: 'g', text: 'I mean the pricing.', partial: false, stable: true });
-    expect(ep.continues()).toBeNull();
+    time.advance(CONTINUE_WINDOW_MS + 1);
+    ep.onVoice();
+    ep.onResult({ resultId: 'late+', text: 'question is pricing', partial: true, stable: true });
+    expect(ep.continues(), 'after the window').toBeNull();
 
     // A line given back is heard whole again: nothing goes on from it.
     const other = new Endpointer(time.now);
     other.onResult({ resultId: 'a', text: 'So my next', partial: true, stable: true });
     other.take();
     other.untake(other.takeGeneration());
+    time.advance(500);
+    other.onVoice();
     other.onResult({ resultId: 'b', text: 'question is pricing', partial: true, stable: true });
     expect(other.continues()).toBeNull();
     expect(other.text()).toBe('So my next question is pricing');

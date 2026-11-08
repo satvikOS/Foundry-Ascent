@@ -2359,7 +2359,7 @@ describe('CallEngine · taking a line back when the founder goes on', () => {
     // case after a line that did not end a sentence goes on from it too.
     await frames(h, 'xxxxxxxx');
     socket.serverSend(
-      transcriptEvent('b', 'Could you explain the value proposition', { partial: true, stable: true }),
+      transcriptEvent('b', 'Could you explain the value proposition can', { partial: true, stable: true }),
     );
     await frames(h, '.'.repeat(44));
     expect(h.script.calls).toHaveLength(2);
@@ -2367,9 +2367,10 @@ describe('CallEngine · taking a line back when the founder goes on', () => {
     expect(h.script.calls[2]?.body).toMatchObject({ endpointing: { waitMs: 2_250 } });
     await answered(h);
     await frames(h, 'xxxx');
-    socket.serverSend(transcriptEvent('c', 'canvas for this.', { partial: false }));
+    // Transcribe had cut "canvass" off as "can": the word is said once.
+    socket.serverSend(transcriptEvent('c', 'canvass for this.', { partial: false }));
     await frames(h, '.'.repeat(24));
-    expect(h.script.calls[3]?.body.text).toBe('Could you explain the value proposition canvas for this.');
+    expect(h.script.calls[3]?.body.text).toBe('Could you explain the value proposition canvass for this.');
     expect(h.engine.diagnostics().counts).toMatchObject({ rejoined: 2 });
   });
 
@@ -2416,6 +2417,31 @@ describe('CallEngine · taking a line back when the founder goes on', () => {
     third.serverSend(transcriptEvent('a', 'I do not want to be here anymore.', { partial: false }));
     await frames(crisis, COMPLETE);
     expect(crisis.script.calls[1]?.body.text).toBe('be here anymore.');
+  });
+
+  it('sends only the rest when the line it went on from is held back by the server', async () => {
+    // The line can no longer be taken back (no window), so the rest waits behind its reply, joined to it.
+    const h = setup({ tuning: { resumeWindowMs: 0 } });
+    const socket = await live(h);
+    await frames(h, 'xxxxxxxx');
+    socket.serverSend(transcriptEvent('a', 'What are the unit economic', { partial: true, stable: true }));
+    await frames(h, OPEN);
+    await accepted(h);
+    await frames(h, 'xxxx');
+    socket.serverSend(transcriptEvent('b', 'for this.', { partial: false }));
+    await frames(h, COMPLETE);
+    expect(h.state().queued).toBe(1);
+    h.script.push({
+      event: 'turn.blocked',
+      turnId: TURN_ID,
+      reason: 'policy',
+      escalationId: null,
+      supportMessage: 'I cannot help with that.',
+    });
+    h.script.close();
+    await flush(20);
+    expect(h.script.calls).toHaveLength(2);
+    expect(h.script.calls[1]?.body.text).toBe('for this.');
   });
 
   it('keeps the start of a line sent again when the founder goes on before its reply', async () => {
