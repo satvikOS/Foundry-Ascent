@@ -350,7 +350,12 @@ describe('conversation craft in the system prompt', () => {
     // tagged "i think", negation-free not-done wordings are heard, the founder's own state is distress (and the hedged
     // line says to answer how they are first), and an unquoted line pointed at, a named role or a heading keeps its
     // question.
-    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.6');
+    // 2026-11-07.7: its eighth review: a message in distress, near variants included ("not sure i want to keep going",
+    // "i dont know why im still here"), is read and rendered as before the no-answer readings (ac41aec); only the
+    // explicit reading (the lexicon, the predicate grammar) makes the founder stuck and takes the notes' agenda out, a
+    // time, a reason or a hedge beside it never vetoes it ("havent asked since tuesday"), only content that answers the
+    // question does; the shape alone adds only the hedged line; the rule on a founder with no answer is said generally.
+    expect(POLICY_VERSION).toBe('fa-coach-policy/2026-11-07.7');
   });
 });
 

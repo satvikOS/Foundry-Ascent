@@ -220,7 +220,9 @@ describe('the same question two replies later, longer and reworded (production, 
   it('after "I don\'t know", any question back on the same subject is asked again', () => {
     expect(stuckOn("I don't know.")).toBe(true);
     expect(stuckOn("I didn't do that.")).toBe(true);
-    expect(stuckOn('you tell me')).toBe(true);
+    // A hand-back is a request for help, answered in the prompt; only an explicit no-answer is read strictly (review of
+    // the 2026-11-07 fix, round 8).
+    expect(stuckOn('you tell me')).toBe(false);
     expect(stuckOn('Department heads, mostly.')).toBe(false);
     const short = 'Did the advisor mention the class at all?';
     expect(reasksQuestion(short, asked)).toBe(false);

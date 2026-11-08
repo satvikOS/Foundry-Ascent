@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  deriveConversationState,
   founderMoves,
   inDistress,
   noAnswerContextOf,
   noAnswerReadingOf,
+  renderConversationState,
   saysOnlyNoAnswer,
 } from '../prompts/conversation-state.js';
 import { leavesAgendaOut } from '../prompts/messages.js';
@@ -70,7 +72,6 @@ describe('a no-answer read by its shape after a question (review of the 2026-11-
   it.each([
     'he said its not class III',
     'no, its class II',
-    'not yet but we have a call friday',
     'i didnt get that',
     'department heads mostly, not the clinicians',
     'not bad',
@@ -78,6 +79,15 @@ describe('a no-answer read by its shape after a question (review of the 2026-11-
     'no worries',
   ])('never reads %j as a no-answer', (text) => {
     expect(stuckOn(text, R1)).toBe(false);
+    expect(saysOnlyNoAnswer(text, { afterQuestion: true })).toBe(false);
+  });
+
+  it('reads "not yet but we have a call friday" explicitly: stuck, and followed to the call they name (round 8)', () => {
+    // A day beside an explicit no-answer is no answer to the question (review of the 2026-11-07 fix, round 8): the prompt
+    // follows them to what they bring and never asks it again, and the strict reading agrees.
+    const text = 'not yet but we have a call friday';
+    expect(noAnswerReadingOf(text, noAnswerContextOf(R1))).toBe('said');
+    expect(stuckOn(text, R1)).toBe(true);
     expect(saysOnlyNoAnswer(text, { afterQuestion: true })).toBe(false);
   });
 
@@ -538,7 +548,6 @@ describe('a no-answer read as the union, a re-ask left out only at the end (revi
     'its still on my list',
     'i aint got a clue',
     'i completely dropped the ball on that',
-    'no progress on that',
     'nothing concrete',
     'im clueless on that',
     "i'll have to check",
@@ -688,8 +697,6 @@ describe('fresh casual no-answers heard, distress kept out, drafted lines kept (
   const FRESH = [
     'cant tell you',
     'Honestly? No idea.',
-    'nah we only talked about the pilot',
-    'he only talked about the tech',
     'i meant to text him but i got busy',
     'i was gonna but life happened',
     'hes ignoring me i think',
@@ -835,5 +842,159 @@ describe('fresh casual no-answers heard, distress kept out, drafted lines kept (
       asked: askedBefore(R1, [OPENER]),
     });
     expect(out.text).toBe('No problem. Here is the usual path: most insoles sit in a low class.');
+  });
+});
+
+describe('only an explicit no-answer is stuck, and distress vetoes every reading (review of the 2026-11-07 fix, round 8)', () => {
+  const HISTORY = [
+    { founderText: 'taking the insole to market', answer: R1 },
+    { founderText: 'there are a few layers of sign-off to get through', answer: R2 },
+  ];
+  const REPLY = `That is common at this stage. Most clinics bill the monitoring time under remote monitoring codes. ${CPT}`;
+  const KEPT =
+    'That is common at this stage. Most clinics bill the monitoring time under remote monitoring codes.';
+  const state = (said: string): string =>
+    renderConversationState(deriveConversationState(HISTORY, said, { opener: OPENER }));
+  const HEDGED = 'reads like they could not answer your question';
+  const MOVES_ON = 'They have no answer to that yet and move on to something of their own';
+  const out = (said: string, chunks: readonly string[]): string[] => [
+    withoutRepeats(REPLY, [R2, R1, OPENER].join('\n\n'), {
+      strictQuestions: stuckOn(said, R2),
+      asked: askedBefore(R2, [R1, OPENER]),
+    }).text,
+    streamed(gate({ previousReply: R2, earlierReplies: [R1, OPENER], founderText: said }), chunks).trim(),
+  ];
+
+  // A time, a reason or a hedge beside an explicit no-answer never vetoes it (the verifier's batch B, round 8).
+  const TIMED = [
+    'havent spoken to him since tuesday',
+    'i didnt ask him today',
+    'no idea, i was out sick this week',
+    'i didnt ask cause i ran out of time',
+    'didnt ask him because the call was short',
+    'havent talked to him in 2 weeks',
+    'we only had 10 mins so didnt get to it',
+    'i didnt get to it, maybe next week',
+    'havent asked yet, probably should',
+    'nah i didnt, its been crazy',
+    'i didnt ask him on the call this morning',
+    'havent checked this month',
+    'i havent had a chance today',
+    'nope not this week',
+    'not yet, swamped this week',
+    'dunno, havent asked since monday',
+    'no i havent asked him yet, maybe tomorrow',
+    'didnt get round to it this week',
+    'nobodys gotten back to me on that',
+    'dont know yet, gotta follow up',
+  ];
+
+  it.each(TIMED)('reads %j explicitly: stuck, the hedged line, and the trailing CPT re-ask goes', (said) => {
+    expect(noAnswerReadingOf(said, noAnswerContextOf(R2))).toBe('said');
+    expect(stuckOn(said, R2)).toBe(true);
+    expect(state(said)).toContain(HEDGED);
+    for (const chunks of chunkings(REPLY)) expect(out(said, chunks)).toEqual([KEPT, KEPT]);
+  });
+
+  // By its shape alone (a casual wording, or an answer said as a negation): only the hedged line, never stuck, never a
+  // question left out, and the notes keep their agenda.
+  const SHAPED = [
+    'no progress on that',
+    'nah we only talked about the pilot',
+    'he only talked about the tech',
+    'insurance doesnt cover it',
+    'medicare wont reimburse it yet',
+    'i wasnt in that meeting, my cofounder was',
+  ];
+
+  it.each(SHAPED)('reads %j by its shape: the hedged line only, the trailing CPT question kept', (said) => {
+    expect(noAnswerReadingOf(said, noAnswerContextOf(R2))).toBe('shape');
+    expect(stuckOn(said, R2)).toBe(false);
+    // The agenda is decided as if nothing had been asked (the reading by shape needs a question).
+    expect(leavesAgendaOut(said, null, R2)).toBe(leavesAgendaOut(said, null, null));
+    expect(state(said)).toContain(HEDGED);
+    for (const chunks of chunkings(REPLY)) expect(out(said, chunks)).toEqual([REPLY, REPLY]);
+  });
+
+  // Content that answers the question is the only veto: no reading at all, and the reply's question stays.
+  const ANSWERED = [
+    'idk, he said class II',
+    'havent asked, but clinics bill it under 99457',
+    'not yet, its class 2 per the fda database',
+    'he never mentioned class but said clinics pay via capital budget',
+    'i didnt need to ask, the fda database says class II',
+  ];
+
+  it.each(ANSWERED)('reads %j as an answer: no no-answer line, nothing left out', (said) => {
+    expect(noAnswerReadingOf(said, noAnswerContextOf(R2))).toBeNull();
+    expect(stuckOn(said, R2)).toBe(false);
+    expect(state(said)).not.toContain(HEDGED);
+    expect(state(said)).not.toContain(MOVES_ON);
+    for (const chunks of chunkings(REPLY)) expect(out(said, chunks)).toEqual([REPLY, REPLY]);
+  });
+
+  it('reads the apostrophe-less forms of "s" as the contraction', () => {
+    for (const said of [
+      'nobodys gotten back to me',
+      'hes been quiet',
+      'shes not sure',
+      'thats not something i looked at',
+    ]) {
+      expect(noAnswerReadingOf(said, noAnswerContextOf(R2)), said).toBe('said');
+    }
+  });
+
+  it('never makes a request for help stuck: it is answered in the prompt', () => {
+    for (const said of ['you tell me', 'can you walk me through how a 510k works']) {
+      expect(founderMoves(said, noAnswerContextOf(R2))).toContain('help');
+      expect(stuckOn(said, R2)).toBe(false);
+    }
+  });
+
+  it('keeps the prompt line and the strict reading in agreement on every reading', () => {
+    for (const said of [
+      ...TIMED,
+      ...SHAPED,
+      ...ANSWERED,
+      'i didnt do that',
+      'not yet but we have a call friday',
+    ]) {
+      const reading = noAnswerReadingOf(said, noAnswerContextOf(R2));
+      const rendered = state(said);
+      const line = rendered.includes(HEDGED) || rendered.includes(MOVES_ON);
+      expect(stuckOn(said, R2), said).toBe(reading === 'said');
+      expect(line, said).toBe(reading !== null);
+    }
+  });
+
+  it('vetoes every reading on near variants of distress', () => {
+    for (const said of [
+      'im not sure i want to keep going',
+      'i dont know why im still here',
+      'not sure im gonna make it',
+      'i dont think im good enough for this',
+      'honestly i dont even care',
+      'i dont know who to talk to',
+      'whats the point honestly',
+      'thinking of giving up',
+    ]) {
+      expect(inDistress(said), said).toBe(true);
+      expect(stuckOn(said, R2), said).toBe(false);
+      expect(noAnswerReadingOf(said, noAnswerContextOf(R2)), said).toBeNull();
+      expect(state(said), said).not.toContain(HEDGED);
+      expect(leavesAgendaOut(said, null, R2), said).toBe(leavesAgendaOut(said, null, null));
+    }
+  });
+
+  it('keeps a task of the venture out of distress', () => {
+    for (const said of [
+      'i didnt make it to the meeting',
+      'we didnt keep going with the pilot',
+      'i dont know who to talk to at the clinic',
+      'he wont be around till monday',
+      'i might quit my job to go full time',
+    ]) {
+      expect(inDistress(said), said).toBe(false);
+    }
   });
 });

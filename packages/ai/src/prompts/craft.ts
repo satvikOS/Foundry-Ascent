@@ -89,9 +89,10 @@ export function conversationCraftRules(channel: TurnChannel): string {
     // Production, 2026-10-20: "You tell me" twice and "help me prepare for the pitch" got the same question back
     // five replies in a row; the doctrine's "one sharp question at a time" was read as "only questions". Production,
     // 2026-11-07: a founder with no answer ("I didn't do that") got the first question again, in other words.
-    '- Asked for help, stuck or with no answer ("you tell me", "I don\'t know", "not yet", a vague reply): do the work.',
-    '  Give the thing itself (a draft, options, first steps), or what the answer most likely is and the fastest way to',
-    '  find out, without judgement; never ask it again in any words, never hand it back.',
+    // Review of the 2026-11-07 fix, round 8: said generally, so a wording no reading recognises is handled the same.
+    '- Asked for help, stuck or with no answer (they do not know, did not do it or have not heard back, in any words):',
+    '  do the work. Give the thing itself (a draft, options, first steps), or what the answer most likely is and the',
+    '  fastest way to find out, without judgement; never ask it again in any words, never hand it back.',
     // Production, 2026-11-07: a goal of bringing the product to market got a request to walk the coach through where
     // they were, and every reply after it was a question.
     '- Teach and prepare: a goal or a step ahead of them gets how it usually works (the usual path, what the terms mean,',

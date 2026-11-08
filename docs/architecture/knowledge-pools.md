@@ -453,7 +453,7 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
   shown) opens the conversation without one. A hello
   right after the opener is answered with a hello, never the recall again (`<conversation_state>` reads the
   founder's first message as the reply to the replayed opener).
-- **Teach and prepare, never a loop** (production, 2026-11-07; policy `fa-coach-policy/2026-11-07.6`). The call that
+- **Teach and prepare, never a loop** (production, 2026-11-07; policy `fa-coach-policy/2026-11-07.7`). The call that
   prompted it: a returning founder named a goal and got "walk me through where you are…", a vague answer got a
   question, a short answer got the first question again in other words, and a founder with no answer was asked again.
   Prompt rules saying "follow the founder" had lost to context that was mostly one topic, so each turn now carries:
@@ -500,12 +500,31 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     review round 7: "not sure i can keep going tbh", "im not in a good place", "i dont see the point", "i dont think im
     cut out for this", "i dont feel anything", "i havent been ok", "nothing is working", or what the stress cue, the wellbeing cue, the risk rules
     or the ideation prefilter flag) is never a no-answer nor stuck on a question: it keeps the reply and the safety
-    path it had before (ac41aec). The message must also carry no question, no answer (a
-    figure, content reported, "probably", "because", a class named, a contrast, a day or a time), no worry of its own
-    ("I don't know if clinics will pay for it") and none of their own moves (help, clarify, a change of topic, a goal,
-    news, a social turn, their wellbeing), and nothing else said beside it: "he said its not class III", "no, its class
-    II", "not yet but we have a call friday" and "i didnt get that" are not no-answers. An answer put off ("idk, ask me
-    next week") is one, in the prompt and in `stuckOn` alike. A message that is only a no-answer by the precise reading
+    path it had before (ac41aec). Review, round 8: near variants of distress ("not sure i want to keep going", "i dont
+    know why im still here", "not sure im gonna make it", "i dont think im good enough", "honestly i dont even care",
+    "i dont know who to talk to", "its too much", "whats the point", "thinking of giving up") were read as no-answers,
+    and the prompt then asked for the answer about the device class. Distress is now read around the founder's own
+    ability, will, worth and going on (keep going, keep doing this, make it, still here, good enough, caring, who to
+    talk to, coping, too much, the point, giving up), never a task of the venture ("make it to the meeting", "who to
+    talk to at the clinic"), and it vetoes everything the no-answer work added: such a message is read (its moves,
+    by main's own normalisation and cues) and rendered exactly as ac41aec did, the same `<conversation_state>`, the
+    same notes' agenda and open threads, never stuck (pinned against ac41aec's renders of 123 messages on seven
+    conversations: prompts/distress-render.test.ts). The risk classifier is unchanged: on main as here it does not
+    flag passive ideation such as "i dont know why im still here" or "not sure im gonna make it" (inDistress does).
+    Only the precise reading (`said`: the lexicon or the predicate grammar) makes the founder stuck (`stuckOn`) and
+    takes the notes' agenda out, and the prompt line and `stuckOn` always agree on it. A time, a reason or a hedge
+    beside it never vetoes it ("havent spoken to him since tuesday", "i didnt ask cause i ran out of time", "havent
+    talked to him in 2 weeks", "i didnt get to it, maybe next week", "nah i didnt, its been crazy", "nobodys gotten
+    back to me": typed `'s` forms are put back too); only content that answers the question does: what someone said
+    ("he said class II"), "it's" with what it is ("its class 2"), a class named, a figure that is no stretch of time
+    ("clinics bill it under 99457"), or a clause beside it that states what was asked about ("clinics pay per scan").
+    The broad reading (`shape`) only adds the hedged line: it is never stuck, never leaves a question out and never
+    changes the notes or the open threads; to be read by its shape the message must also carry no question, no answer
+    of any kind (a figure, content reported, "probably", "because", a class named, a contrast, a day or a time), no
+    worry of its own ("I don't know if clinics will pay for it") and none of their own moves (help, clarify, a change
+    of topic, a goal, news, a social turn, their wellbeing), and nothing else said beside it: "he said its not class
+    III", "no, its class II" and "i didnt get that" are not no-answers. A request for help ("you tell me") is answered
+    in the prompt and is never stuck. A message that is only a no-answer by the precise reading
     leaves the notes' agenda out of that turn, open threads and questions included (`leavesAgendaOut`): the question
     they could not answer is in the conversation, and the notes would only offer it up again in other words. One read
     by its shape alone keeps the notes, the question it left open marked as already raised. A no-answer with a subject of its
@@ -527,7 +546,7 @@ Migration 0009 (`0009_review_privacy`, expand-only and re-runnable, `migrate-000
     content words, two of them said together ("device class"), with any earlier question of the conversation. Words
     that name one subject count as one ("classification" and "class"; "billing", "payment" and "reimbursement" as how
     they pay, with "code", "CPT", "coverage" and "insurance"; "regulatory", "FDA", "pathway" and "path" as the
-    regulatory route). After a founder with no answer or "you tell me" (`stuckOn`), any question that names a subject
+    regulatory route). After a founder who says explicitly they have no answer (`stuckOn`), any question that names a subject
     of one already asked is asked again ("So what did your advisor actually say?" after a question about the advisor),
     unless it offers the vEIR's own work ("Want me to draft the questions for your advisor?"); else three shared words,
     or two said together, or 40% of them. A customer or a price alone is too broad to make a question the same one, and

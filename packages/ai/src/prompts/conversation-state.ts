@@ -167,6 +167,11 @@ export interface ConversationState {
    */
   readonly answersCheckIn?: boolean;
   /**
+   * The message is in distress ({@link inDistress}): rendered as before the no-answer readings (ac41aec), with none of the
+   * lines added since, so the reply and the safety path stay what they were.
+   */
+  readonly distress?: boolean;
+  /**
    * The vEIR's own phrasing lately (coaching v3): question forms and openings it used twice or more in this
    * conversation, or at the end of its last conversations (prompts/phrasing.ts). Absent: none.
    */
@@ -221,7 +226,18 @@ const BARE_CONTRACTIONS = new Map([
   ['aint', "ain't"],
   ['im', "i'm"],
   ['ive', "i've"],
+  // The 's forms typed without their apostrophe (review of the 2026-11-07 fix, round 8: "nobodys gotten back to me" and
+  // "whats the point" were missed). Never "its", "ill", "id", "hed", "shed" or "wed": each is a word of its own.
   ['thats', "that's"],
+  ['whats', "what's"],
+  ['nobodys', "nobody's"],
+  ['noones', "no one's"],
+  ['hes', "he's"],
+  ['shes', "she's"],
+  ['theres', "there's"],
+  ['theyre', "they're"],
+  ['theyve', "they've"],
+  ['youre', "you're"],
 ]);
 // Never the start of a contraction already typed ("didn" in "didn't").
 const BARE_CONTRACTION = new RegExp(String.raw`\b(?:${[...BARE_CONTRACTIONS.keys()].join('|')})\b(?!')`, 'g');
@@ -234,6 +250,11 @@ function normalize(text: string): string {
     .trim()
     .toLowerCase()
     .replace(BARE_CONTRACTION, (word) => BARE_CONTRACTIONS.get(word) ?? word);
+}
+
+/** The message as main normalised it (ac41aec): no contraction put back. What a message in distress is read by. */
+function normalizeAsBefore(text: string): string {
+  return text.normalize('NFKC').replace(APOSTROPHES, "'").replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 /** Cues for each move (on the normalised, lower-cased message), in order of importance. */
@@ -341,6 +362,28 @@ const MOVE_CUES: readonly (readonly [FounderMove, RegExp])[] = [
   ],
 ];
 
+/**
+ * The cues as main read them (ac41aec): no `clarify`, and `resume` and `repair` before they were narrowed (a no-answer
+ * "he hasnt gotten back to me", "i meant to ask but"). What a message in distress is read by ({@link movesAsBefore}).
+ */
+const MOVE_CUES_BEFORE: readonly (readonly [FounderMove, RegExp])[] = MOVE_CUES.filter(
+  ([move]) => move !== 'clarify',
+).map(([move, cue]) => {
+  if (move === 'resume') {
+    return [
+      move,
+      /\b(?:where were we|where was i|(?:go|going|get|getting|come|coming|circle|circling|loop|looping) back to|back to (?:the|what|my|our|where|that|your)|as i was saying|pick(?:ing)? (?:it )?(?:up|back up) (?:where|from|again)|returning to)\b/,
+    ] as const;
+  }
+  if (move === 'repair') {
+    return [
+      move,
+      /(?:\b(?:that's not what i (?:meant|said|asked|was asking)|that isn't what i (?:meant|said|asked)|you misunderstood|you misread|you got (?:that|it|me) wrong|i didn't (?:mean|say|ask) that|you (?:were|are) wrong|(?:that's|that is|that was) (?:not right|wrong|incorrect|not true|not correct)|you made a mistake|you said (?:something )?wrong|correction:)\b|^(?:no|nope|not quite|not exactly|sorry|wait)[,.!]?\s+(?:i|what i)\s+(?:meant|mean|was asking|asked|said)\b|^i meant\b)/,
+    ] as const;
+  }
+  return [move, cue] as const;
+});
+
 /** The founder's own stress or discouragement (the `stress` move's cue): a message in distress ({@link inDistress}). */
 const STRESS_CUE: RegExp = (MOVE_CUES.find(([move]) => move === 'stress') ??
   (['stress', /(?!)/] as const))[1];
@@ -440,10 +483,15 @@ const NO_ANSWER = new RegExp(
     .join('|'),
 );
 
-/** The clauses of a message, without their closing punctuation ("I don't know, I didn't do that" has two). */
+/**
+ * The clauses of a message, without their closing punctuation ("I don't know, I didn't do that" has two; so does "we
+ * only had 10 mins so didnt get to it", review of the 2026-11-07 fix, round 8).
+ */
 function clausesOf(text: string): string[] {
   return text
-    .split(/(?<=[.!,;—–])\s+|\s+(?:but|and) (?=(?:i|we|can|could|let's|lets|let)\b)/)
+    .split(
+      /(?<=[.!,;—–])\s+|\s+(?:but|and) (?=(?:i|we|can|could|let's|lets|let)\b)|\s+so (?=(?:i|we|(?:did|have|had|could|was|were)n't|never)\b)/,
+    )
     .map((clause) => clause.replace(/[.!,;…—–]+$/, '').trim())
     .filter((clause) => clause !== '');
 }
@@ -455,8 +503,9 @@ function saysNoAnswer(clause: string): boolean {
 // The structural reading of a no-answer -------------------------------------------------------------------
 
 /**
- * Most words of a clause the structural reading takes as a no-answer ({@link noAnswerShape}): a no-answer is short ("he
- * hasnt gotten back to me"); a long negative sentence says something of its own.
+ * Most words of a clause the structural readings take as a no-answer ({@link explicitlyNoAnswer},
+ * {@link shapedLikeNoAnswer}): a no-answer is short ("he hasnt gotten back to me"); a long negative sentence says
+ * something of its own.
  */
 export const NO_ANSWER_MAX_WORDS = 14;
 
@@ -476,7 +525,7 @@ const NA_NOT_NOW = String.raw`(?:(?:do|does)n't|(?:do|does) not|dnt|dont)`;
  * time or the meeting. Verbs of the venture itself ("pay", "cover", "bill", "need", "sell") are none of them, so
  * "insurance doesnt cover it" or "we dont sell to hospitals" stays an answer.
  */
-const NA_DONE_VERB = String.raw`(?:ask|asked|do|did|done|talk|talked|speak|spoke|spoken|reach|reached|call|called|ring|rang|rung|phone|phoned|email|emailed|text|texted|message|messaged|contact|contacted|ping|pinged|write|wrote|written|send|sent|meet|met|see|seen|saw|book|booked|schedule|scheduled|set up|follow|followed|look|looked|check|checked|find|found|figure|figured|research|researched|read|google|googled|dig|dug|hear|heard|go|went|gone|bring|brought|raise|raised|mention|mentioned|cover|covered|discuss|discussed|confirm|confirmed|learn|learned|learnt|catch|caught|sort|sorted|work|worked|try|tried|manage|managed|start|started|explore|explored|think|thought|remember|remembered|know|knew|known|chase|chased|(?:get|got|gotten) (?:to|round|around|a chance|the chance|time|the time|a reply|a response|an answer|any (?:reply|response|answer|word|info|news|time)|back|hold|through|in touch|that far|there|anywhere|far|on it)|(?:have|had) (?:a |the |any )?(?:chance|time|meeting|call|chat|conversation|session|talk|catch-?up)|(?:make|made) (?:it|time|the call|contact)|(?:been )?able)\b`;
+const NA_DONE_VERB = String.raw`(?:ask|asked|do|did|done|talk|talked|speak|spoke|spoken|reach|reached|call|called|ring|rang|rung|phone|phoned|email|emailed|text|texted|message|messaged|contact|contacted|ping|pinged|write|wrote|written|send|sent|meet|met|see|seen|saw|book|booked|schedule|scheduled|set up|follow|followed|look|looked|check|checked|find|found|figure|figured|research|researched|read|google|googled|dig|dug|hear|heard|go|went|gone|bring|brought|raise|raised|mention|mentioned|cover|covered|discuss|discussed|confirm|confirmed|learn|learned|learnt|catch|caught|sort|sorted|work|worked|try|tried|manage|managed|start|started|explore|explored|think|thought|remember|remembered|know|knew|known|chase|chased|touch|touched|bother|bothered|connect|connected|link up|linked up|catch up|caught up|(?:get|got|gotten) into (?:it|that|this|them|the weeds|(?:the )?(?:details|specifics|nitty[- ]gritty))|(?:get|got|gotten) (?:to|round|around|a chance|the chance|time|the time|a reply|a response|an answer|any (?:reply|response|answer|word|info|news|time)|back|hold|through|in touch|that far|there|anywhere|far|on it)|(?:have|had) (?:a |the |any |that )?(?:chance|time|sec|second|minute|moment|meeting|call|chat|conversation|session|talk|catch-?up)|(?:make|made) (?:it|time|the call|contact)|(?:been )?able)\b`;
 
 /** What they lack when the noun is information ("i dont have the class info", "we got no answer"). */
 const NA_INFO_NOUN = String.raw`(?:info|information|answer|answers|clue|idea|details?|data|specifics|word|reply|response|update|news|feedback)\b`;
@@ -489,7 +538,7 @@ const NA_RESPONSE = String.raw`(?:reply|replied|respond|responded|answer|answere
 const NA_EVENT = String.raw`(?:(?:the|our|my|that) )?(?:meeting|call|session|appointment|chat|catch-?up|follow-?up|intro|demo|conversation|talk)`;
 
 /**
- * A clause that says there is no answer yet, by what it says and of whom ({@link noAnswerShape}): the founder did not
+ * A clause that says there is no answer yet, by what it says and of whom ({@link explicitlyNoAnswer}): the founder did not
  * know, ask, reach or get to it ("i didnt talk to the advisor", "werent able to meet", "i honestly dont remember"); they
  * lack the information ("i dont have the class info"); someone else did not reply or say ("he hasnt gotten back to me",
  * "nobody got back to me", "the advisor ghosted me", "he said hed get back to me"); the meeting did not happen or was
@@ -510,7 +559,7 @@ const NO_ANSWER_PREDICATE = new RegExp(
     String.raw`${NA_LEAD}${NA_SELF}(?:have |'ve |got |have got )*(?:got |have )?(?:no|zero) (?:[\w'-]+ )?${NA_INFO_NOUN}`,
     // Someone else did not reply or say: "he hasnt gotten back to me", "the clinic never answered my email".
     String.raw`${NA_LEAD}${NA_OTHER} ${NA_ADVERBS}(?:${NA_NOT_DONE}|${NA_NOT_NOW}|won't|wouldn't|would not|will not) ${NA_ADVERBS}(?:been |even |yet )?${NA_RESPONSE}`,
-    String.raw`${NA_LEAD}(?:nobody|no one|noone|no-one|none of them|neither of them)(?: (?:at|from|in) (?:the |my |our )?[\w'-]+)? (?:(?:has|have|had|ever|really|actually|yet|even) )*(?:${NA_RESPONSE}|${NA_DONE_VERB})`,
+    String.raw`${NA_LEAD}(?:nobody|no one|noone|no-one|none of them|neither of them)(?:'s)?(?: (?:at|from|in) (?:the |my |our )?[\w'-]+)? (?:(?:has|have|had|ever|really|actually|yet|even) )*(?:${NA_RESPONSE}|${NA_DONE_VERB})`,
     // Someone else is unavailable: "the advisor ghosted me", "he went quiet", "hes been quiet".
     String.raw`${NA_LEAD}(?:${NA_OTHER}|he's|she's|hes|shes|they've|theyve|they're|theyre) (?:(?:has|have|had|just|kind of|kinda|totally|completely|been|kept|keeps|was|were|is|are|too|so|super|really|still) )*(?:ghosted|ghosting|went quiet|gone quiet|been quiet|is quiet|quiet|went silent|gone silent|been silent|silent|mia|awol|been away|is away|away|been busy|is busy|busy|swamped|slammed|dropped off|disappeared|vanished|went dark|gone dark|cancel+ed|bailed|flaked|no-?showed|left (?:me|us|it) on read|on (?:vacation|holiday|leave|pto)|out of (?:the )?office|ooo|out sick|off sick|travel+ing|ignoring (?:me|us|my|our|it)|ignored (?:me|us|my|our|it))\b`,
     // Not yet, said without a negation: "he left me on read", "i got distracted", "its still on my list", "tbd", "ill
@@ -519,9 +568,9 @@ const NO_ANSWER_PREDICATE = new RegExp(
     // dodged it", "he was vague", "he ran out of time".
     String.raw`${NA_LEAD}(?:we|i|they|he|she|${NA_OTHER}) (?:(?:had|have|has|just|kinda|kind of|already) (?:to )?)*(?:rescheduled?|postponed?|pushed (?:it|the (?:meeting|call)) back|called it off)\b`,
     String.raw`${NA_LEAD}${NA_EVENT} (?:(?:kind of|kinda|just|totally) )?(?:fell through|fell apart|got scrapped|was scrapped|didn't pan out|never happened)\b`,
-    String.raw`${NA_LEAD}(?:${NA_OTHER}|he's|she's|hes|shes) (?:(?:kind of|kinda|sort of|totally|pretty|really|super|just|was|were|is|been) )*(?:dodged|ducked|sidestepped|side-stepped|avoided|skirted|deflected)(?: (?:it|that|the question|the topic|them|both))?\b|${NA_LEAD}(?:${NA_OTHER}) (?:was|were|is|been|got) (?:(?:kind of|kinda|sort of|pretty|really|super|very|totally|so) )*(?:vague|evasive|noncommittal|non-committal|cagey|unclear|wishy-washy|rushed|distracted|in a rush)\b`,
+    String.raw`${NA_LEAD}(?:${NA_OTHER}|he's|she's|hes|shes) (?:(?:kind of|kinda|sort of|totally|pretty|really|super|just|was|were|is|been) )*(?:dodged|ducked|sidestepped|side-stepped|avoided|skirted|deflected)(?: (?:it|that|the question|the topic|them|both))?\b|${NA_LEAD}(?:${NA_OTHER}) (?:was|were|is|been|got) (?:(?:kind of|kinda|sort of|pretty|really|super|very|totally|so) )*(?:vague|evasive|noncommittal|non-committal|cagey|unclear|wishy[- ]?washy|rushed|distracted|in a rush)\b`,
     String.raw`\b(?:ran|run|running) (?:out of|outta) time\b`,
-    String.raw`\b(?:left (?:me|us|it) on read|got nothin'?g?|got (?:distracted|sidetracked|side-tracked|busy|swamped|slammed)|(?:it's|its|that's|thats|it is|that is) (?:still )?on (?:my|the|our) (?:list|to-?do(?: list)?|radar)|(?:still )?working on (?:it|that)|still (?:figuring|working|looking|sorting) (?:it |that )?(?:out|on it|into it)|tbd|to be (?:determined|decided|confirmed)|ask me (?:later|again|another time)|(?:i'll|ill|i will|i'd|i need to|i have to|i gotta|gotta|let me|i should|need to|have to) (?:have to |need to )?(?:check|find out|double-?check|ask(?: (?:him|her|them|around|the advisor))?|look (?:into it|it up|into that)|get back to you(?: on (?:it|that))?)(?: (?:on (?:it|that)|first|tbh|honestly))?$|dropped the ball|fell through the cracks|slipped through the cracks|(?:keep|kept) forgetting|ain't got (?:a |any |the )?(?:clue|idea)|haven't (?:the|a) (?:faintest|foggiest|slightest)|not the (?:faintest|foggiest|slightest)|(?:i'm|i am|im) (?:so |totally |completely |just |a bit )?(?:clueless|drawing a blank|blanking))\b`,
+    String.raw`\b(?:left (?:me|us|it) on read|got nothin'?g?|got (?:distracted|sidetracked|side-tracked|busy|swamped|slammed)|(?:it's|its|that's|thats|it is|that is) (?:still )?on (?:my|the|our) (?:list|to-?do(?: list)?|radar)|(?:still )?working on (?:it|that)|still (?:figuring|working|looking|sorting) (?:it |that )?(?:out|on it|into it)|tbd|to be (?:determined|decided|confirmed)|ask me (?:later|again|another time)|(?:i'll|ill|i will|i'd|i need to|i have to|i gotta|gotta|let me|i should|need to|have to) (?:have to |need to )?(?:check|find out|double-?check|ask(?: (?:him|her|them|around|the advisor))?|look (?:into it|it up|into that)|follow up(?: (?:on (?:it|that)|with (?:him|her|them)))?|get back to you(?: on (?:it|that))?)(?: (?:on (?:it|that)|first|tbh|honestly))?$|dropped the ball|fell through the cracks|slipped through the cracks|(?:keep|kept) forgetting|ain't got (?:a |any |the )?(?:clue|idea)|haven't (?:the|a) (?:faintest|foggiest|slightest)|not the (?:faintest|foggiest|slightest)|(?:i'm|i am|im) (?:so |totally |completely |just |a bit )?(?:clueless|drawing a blank|blanking))\b`,
     // Not done, said without a negation (review of the 2026-11-07 fix, round 7): "i was too busy", "skipped it", "i put it
     // off", "i kept putting it off", "back burner", "i chickened out", "he brushed it off", "kinda fuzzy on that", "im in
     // the dark on that", "your guess is as good as mine", "he gave me a non answer", "zip, nada", "it slipped through",
@@ -560,15 +609,27 @@ const NO_ANSWER_PREDICATE = new RegExp(
     String.raw`${NA_LEAD}${NA_SELF}${NA_ADVERBS}(?:forgot|forget|spaced|blanked|zoned out|lost track|ran (?:out of|outta) time|had no time)\b|\b(?:it|that) (?:totally |completely )?slipped my mind\b`,
     // "not something we got to", "thats not something i looked at".
     String.raw`${NA_LEAD}(?:(?:that's|that is|it's|it is|its) )?not something (?:i|we)(?:'ve| have)? ${NA_ADVERBS}(?:${NA_DONE_VERB}|thought about|looked (?:at|into))`,
+    // Review of the 2026-11-07 fix, round 8: "he wasnt sure either", "i wouldnt know where to look", "i couldnt tell you",
+    // "that never came up w the advisor", "i kinda skipped that convo", "nothing on that front", "not this week", "not a
+    // thing yet", "his assistant keeps pushing the meeting", "we ended up talking about hiring", "still a question mark".
+    String.raw`${NA_LEAD}${NA_OTHER} (?:wasn't|was not|weren't|were not|isn't|is not|aren't|are not) ${NA_ADVERBS}(?:too |that |entirely |totally )?sure\b|${NA_LEAD}(?:he's|she's|they're) not ${NA_ADVERBS}(?:too |that |entirely )?sure\b`,
+    String.raw`${NA_LEAD}${NA_SELF}${NA_ADVERBS}(?:wouldn't|would not|couldn't|could not|can't|cannot) ${NA_ADVERBS}(?:know|tell (?:you|ya|u)|say)\b`,
+    String.raw`${NA_LEAD}(?:it|that|this|the (?:topic|subject|question)) ${NA_ADVERBS}(?:didn't|did not|never|hasn't|has not) ${NA_ADVERBS}(?:come|came) up\b`,
+    String.raw`^${NA_LEAD}${NA_SELF}${NA_ADVERBS}skipped (?:(?:that|this|the) )?(?:convo|conversation|question|part|bit|topic|meeting|call)\b`,
+    String.raw`^${NA_LEAD}(?:nothing|not a thing|not much)(?: (?:on (?:that|this) front|to report|yet|so far))+\b|^${NA_LEAD}not (?:yet|so far|today|tonight|this (?:week|month|morning|afternoon)|right now|rn|at the moment)$`,
+    String.raw`\b(?:was|were|is|are) (?:supposed|meant|going|gonna) to\b[^,.;]* but (?:(?:he|she|they|i|we) )?(?:didn't|did not|never|forgot|couldn't|hasn't|haven't|bailed|flaked)\b`,
+    String.raw`\bnot off (?:the top of )?my head\b|^${NA_LEAD}(?:nothing|no(?:thing)?) (?:concrete|definite|definitive|solid|firm|official)\b|^${NA_LEAD}(?:(?:it's|its|it is|that's|still|all) )*(?:pending|up in the air)(?: (?:still|tbh|honestly|lol|sorry))*$`,
+    String.raw`\b(?:keeps|kept) (?:pushing|moving|rescheduling|cancel+ing|postponing|bumping) (?:back )?(?:the |our |my )?(?:meeting|call|chat|session)\b`,
+    String.raw`\b(?:ended|wound) up (?:talking|chatting) about\b|\b(?:still )?(?:a |an )?(?:big |huge )?(?:question mark|open question|unknown) (?:for|to) (?:me|us)\b`,
   ].join('|'),
 );
 
 /**
  * A negation or a doubt, however it is typed (the contractions are put back by `normalize`, and an auxiliary with "nt"
  * is read as one: "hvnt", "cldnt"): the shape every no-answer carries ("i wasnt able to", "they never replied", "nah not
- * really", "no word from him", "still waiting on him"). The broad reading of the union ({@link noAnswerShape}): recall
- * first, so a casual wording no grammar lists is still heard; what it alone reads is hedged in the prompt and never
- * takes the notes' agenda out ({@link noAnswerReadingOf}).
+ * really", "no word from him", "still waiting on him"). The broad reading ({@link shapedLikeNoAnswer}): recall first,
+ * so a casual wording no grammar lists is still heard; what it alone reads is only hedged in the prompt, never stuck,
+ * and never takes the notes' agenda out ({@link noAnswerReadingOf}).
  */
 const NEGATION =
   /n't\b|\b(?:h[ae]?v|h[ae]s|had|di?d|does|do|w[ae]s|w[eu]re|c[ou]{0,2}ld|w[ou]{0,2}ld|sh[ou]{0,2}ld|is|are|ca|wo)nt\b|\b(?:not|never|nothing|nobody|no one|none|neither|nope|nah|no|idk|dunno|unsure|uncertain|clueless|waiting)\b/;
@@ -576,8 +637,8 @@ const NEGATION =
 /**
  * A word that says it was not done or not known, without a negation ("forgot", "skipped", "swamped", "pending",
  * "unanswered", "crickets", "vague", "a blur", "short on time", "pulled into other stuff"): a doubt marker of the shape
- * reading like a negation ({@link noAnswerShape}; review of the 2026-11-07 fix, round 7: fresh casual wordings without a
- * negation were missed one phrase at a time). What it alone reads is hedged and keeps the notes' agenda.
+ * reading like a negation ({@link shapedLikeNoAnswer}; review of the 2026-11-07 fix, round 7: fresh casual wordings
+ * without a negation were missed one phrase at a time). What it alone reads is hedged and keeps the notes' agenda.
  */
 const NOT_DONE_MARKER =
   /\b(?:forg[eo]t(?:ten)?|forgetting|skipped|missed|busy|swamped|slammed|snowed under|heads[- ]down|procrastinat\w*|postponed|rescheduled|cancel+ed|ghost(?:ed|ing)|silence|silent|crickets|awol|mia|dodg(?:ed|ing)|ducked|ignor(?:ed|ing) (?:me|us|my|our|it)|pending|unanswered|undecided|tbd|blank(?:ed)?|blur|fuzzy|hazy|foggy|vague|unclear|murky|sidetracked|distracted|(?:caught|tied) up|pulled (?:in|into|away)|put (?:it|that|this) off|(?:out of|outta|short on|no) time|meaning to|chicken(?:ed)? out|slipped|bailed|flaked|travel+ing|out of (?:town|office)|not around|unreachable|later|eventually|to be (?:decided|determined|confirmed|seen)|(?:was|were|been|is|are) (?:out|away)(?! of\b))\b/;
@@ -652,9 +713,34 @@ const TAG_HEDGE = /,?\s*\b(?:i think|i guess|i believe|i reckon|i suppose)[.!…
 
 /** Whether `text` (normalised) carries an answer of its own ({@link ANSWER_SUBSTANCE}). */
 function carriesAnswer(text: string): boolean {
-  return ANSWER_SUBSTANCE.test(
-    text.replace(TAG_HEDGE, '').replace(NEGATED_REPORT, ' ').replace(NOT_YET_REPORTED, ' '),
-  );
+  return ANSWER_SUBSTANCE.test(withoutNonReports(text));
+}
+
+/** `text` (normalised) without a tagged hedge, a report that nothing was said, or a promise to come back to it. */
+function withoutNonReports(text: string): string {
+  return text.replace(TAG_HEDGE, '').replace(NEGATED_REPORT, ' ').replace(NOT_YET_REPORTED, ' ');
+}
+
+/**
+ * Content that answers the question, reported or stated (review of the 2026-11-07 fix, round 8): what someone said or
+ * thinks ("he said class II", "the fda database says class II"), "it's" with what it is ("its class 2", never "its been
+ * crazy" or "its on my list"), a class named, or a figure that is no stretch of time ("clinics bill it under 99457", "300 a
+ * unit"; never "2 weeks" or "10 mins"). The only thing that vetoes the explicit reading of a no-answer: a time, a reason
+ * or a hedge beside it ("havent asked since tuesday", "i didnt ask cause i ran out of time", "probably should") never does.
+ */
+const REPORTED_ANSWER = new RegExp(
+  [
+    String.raw`\b(?:said|says|saying|told (?:me|us)|tells|thinks|reckons|according to)\b`,
+    String.raw`\b(?:it's|its|it is)\b(?! (?:not|never|been|just|all|still|kinda|kind of|sort of|pretty|really|so|super|too|crazy|hectic|busy|chaos|chaotic|mad|insane|nuts|wild|a (?:mess|lot|blur|zoo|madhouse)|fine|ok|okay|on (?:my|the|our)|pending|tbd|unclear|undecided|up in the air|fuzzy|hazy|foggy|complicated|tricky|hard|been)\b)`,
+    String.raw`\bclass (?:i{1,3}|one|two|three|[123])\b`,
+    String.raw`(?<![\p{L}\p{N}])\p{N}+(?:[.,]\p{N}+)*(?![\p{N}.,])(?!\s*(?:(?:-|to)\s*\p{N}+\s*)?(?:min|mins|minutes?|hrs?|hours?|days?|wks?|weeks?|months?|mos?|years?|yrs?|am|pm|ish|th|st|nd|rd|x)\b)`,
+  ].join('|'),
+  'u',
+);
+
+/** Whether `text` (normalised) reports content that answers the question ({@link REPORTED_ANSWER}). */
+function reportsAnswer(text: string): boolean {
+  return REPORTED_ANSWER.test(withoutNonReports(text));
 }
 
 /**
@@ -718,59 +804,68 @@ const OWN_MOVES: ReadonlySet<FounderMove> = new Set<FounderMove>([
 ]);
 
 /**
- * Whether a message (normalised, with its moves read without context) may be a no-answer by its shape alone: no
- * question of its own, no answer in it ({@link carriesAnswer}, {@link ANSWERING_NEGATION}), no worry of its own,
- * nothing of their own ({@link OWN_MOVES}), no report of a step done, and no clause that says they did not follow the
- * question.
+ * Whether a message (normalised, with its moves read without context) may be a no-answer beyond the lexicon at all: no
+ * question of its own, no decline or assessment ({@link ANSWERING_NEGATION}), no worry of its own, nothing of their own
+ * ({@link OWN_MOVES}), no report of a step done, and no clause that says they did not follow the question. The shape
+ * reading also needs no answer in it of any kind ({@link carriesAnswer}); the explicit one only none reported
+ * ({@link reportsAnswer}, checked for the whole message in {@link hasNoAnswer}).
  */
-function shapeAllowsNoAnswer(t: string, moves: readonly FounderMove[]): boolean {
-  if (t.includes('?') || carriesAnswer(t) || OWN_WORRY.test(t) || ANSWERING_NEGATION.test(t)) return false;
+function allowsNoAnswer(t: string, moves: readonly FounderMove[]): boolean {
+  if (t.includes('?') || OWN_WORRY.test(t) || ANSWERING_NEGATION.test(t)) return false;
   if (moves.some((m) => OWN_MOVES.has(m)) || reportsCommitmentDone(t)) return false;
   return !clausesOf(t).some((clause) => NOT_FOLLOWING.test(clause));
 }
 
 /**
- * How a clause reads as a no-answer: `said`, by the lexicon ({@link DONT_KNOW}, {@link NO_ANSWER}), the predicate
- * grammar ({@link NO_ANSWER_PREDICATE}: who did not do what) or a bare "no" to a wh-question, readings of high precision;
- * `shape`, only by its shape ({@link NEGATION}: short, a negation or a doubt), the broad reading that hears a casual
- * wording no grammar lists and may misread an answer said as a negation ("insurance doesnt cover it"). Null: none.
+ * How a clause reads as a no-answer: `said`, explicitly, by the lexicon ({@link DONT_KNOW}, {@link NO_ANSWER}), the
+ * predicate grammar ({@link NO_ANSWER_PREDICATE}: who did not do what) or a bare "no" to a wh-question, readings of high
+ * precision; `shape`, only by its shape ({@link NEGATION}: short, a negation or a doubt), the broad reading that hears a
+ * casual wording no grammar lists and may misread an answer said as a negation ("insurance doesnt cover it"). Only
+ * `said` makes the founder stuck on the question (validators/social.ts `stuckOn`) and takes the notes' agenda out;
+ * `shape` only adds the hedged line to the prompt (review of the 2026-11-07 fix, round 8). Null: none.
  */
 export type NoAnswerReading = 'said' | 'shape';
 
 /**
- * A clause shaped like a no-answer, read as the union of two readings (recall first: review of the 2026-11-07 fix, six
- * rounds alternated between a grammar that missed casual wordings and a shape that misread answers): short
- * ({@link NO_ANSWER_MAX_WORDS}) and saying there is no answer yet ({@link NO_ANSWER_PREDICATE}), or, to a question that
- * is not a yes/no one ("what did the advisor tell you?"), a bare "no", "nope" or "nah" (to "Is it Class II?" a "no" is
- * the answer): `said`; else short with a negation or a doubt in it ({@link NEGATION}), or an intention that did not come
- * off ({@link UNDONE_INTENTION}): `shape`. A misread answer costs only a hedged line in the prompt (it says "if they did
- * answer, build on it") and at most a trailing question of the coach's own left out.
+ * A clause that says explicitly there is no answer yet, after a question: short ({@link NO_ANSWER_MAX_WORDS}) and saying
+ * who did not do what ({@link NO_ANSWER_PREDICATE}), or, to a question that is not a yes/no one ("what did the advisor
+ * tell you?"), a bare "no", "nope" or "nah" (to "Is it Class II?" a "no" is the answer).
  */
-function noAnswerShape(clause: string, context: NoAnswerContext): NoAnswerReading | null {
-  if (wordCount(clause) > NO_ANSWER_MAX_WORDS) return null;
-  if (ONLY_INTERJECTIONS.test(clause)) return context.yesNo !== true && SAYS_NO.test(clause) ? 'said' : null;
-  if (NO_ANSWER_PREDICATE.test(clause)) return 'said';
+function explicitlyNoAnswer(clause: string, context: NoAnswerContext): boolean {
+  if (wordCount(clause) > NO_ANSWER_MAX_WORDS) return false;
+  if (ONLY_INTERJECTIONS.test(clause)) return context.yesNo !== true && SAYS_NO.test(clause);
+  return NO_ANSWER_PREDICATE.test(clause);
+}
+
+/**
+ * A clause shaped like a no-answer (review of the 2026-11-07 fix: six rounds alternated between a grammar that missed
+ * casual wordings and a shape that misread answers): short ({@link NO_ANSWER_MAX_WORDS}) with a negation or a doubt in it
+ * ({@link NEGATION}, {@link NOT_DONE_MARKER}), an intention that did not come off ({@link UNDONE_INTENTION}) or only
+ * something else covered ({@link ONLY_COVERED}). A misread answer costs only a hedged line in the prompt (it says "if
+ * they did answer, build on it").
+ */
+function shapedLikeNoAnswer(clause: string): boolean {
+  if (wordCount(clause) > NO_ANSWER_MAX_WORDS || ONLY_INTERJECTIONS.test(clause)) return false;
   const marked =
     NEGATION.test(clause) ||
     NOT_DONE_MARKER.test(clause) ||
     UNDONE_INTENTION.test(clause) ||
     ONLY_COVERED.test(clause);
-  if (!marked) return null;
   // The founder's own state ("im not in a good place", "i dont feel anything", "i havent been ok") is no answer to
   // give: never read as one by its shape (review of the 2026-11-07 fix, round 7; {@link SELF_STATE}).
-  return SELF_STATE.test(clause) ? null : 'shape';
+  return marked && !SELF_STATE.test(clause);
 }
 
 /**
  * How each clause of the founder's message reads as a no-answer to the question the vEIR just asked
- * ({@link NoAnswerReading}). By the lexicon always; after a question, by its shape too, rather than only by a list of
- * its wordings (reviews of the 2026-11-07 fix: rounds each found new casual wordings the lists missed, "i didnt talk to
- * the advisor", "he hasnt gotten back to me", "i wasnt able to", "i dont rly know"; phrase lists do not converge): a
- * clause that is short and says there is no answer yet or carries a negation or a doubt ({@link noAnswerShape}), in a
- * message that carries no answer, no question and nothing of its own ({@link shapeAllowsNoAnswer}). "he said its not
- * class III", "no, its class II", "not yet but we have a call friday" and "i didnt get that" are none. Never a message
- * in distress ({@link inDistress}: "i cant do it anymore", "i dont know what im doing"): it keeps the safety path and
- * the reply it always had. `moves`: the message's moves read without context.
+ * ({@link NoAnswerReading}). By the lexicon always. After a question, explicitly by the predicate grammar too
+ * ({@link explicitlyNoAnswer}), in a message with nothing of its own ({@link allowsNoAnswer}) whose other clauses say at
+ * most one thing besides time, reasons and hedges ({@link STALL_WORDS}: "havent talked to him in 2 weeks", "i didnt get to
+ * it, maybe next week"; review of the 2026-11-07 fix, round 8). Then by its shape ({@link shapedLikeNoAnswer}), rather
+ * than only by a list of its wordings (rounds each found new casual wordings the lists missed), in a message that carries
+ * no answer of any kind ({@link carriesAnswer}) and says nothing besides it. "he said its not class III", "no, its class
+ * II", "not yet but we have a call friday" and "i didnt get that" are none by the shape. A message in distress is never
+ * read by any of these (`founderMoves`, {@link inDistress}). `moves`: the message's moves read without context.
  */
 function noAnswerFlags(
   text: string,
@@ -779,26 +874,36 @@ function noAnswerFlags(
 ): (NoAnswerReading | null)[] {
   const t = withoutInterjectionQuestions(text);
   const clauses = clausesOf(t);
-  const said = clauses.map((clause): NoAnswerReading | null => (saysNoAnswer(clause) ? 'said' : null));
-  if (context.afterQuestion !== true || !shapeAllowsNoAnswer(t, moves ?? founderMoves(t))) return said;
+  const lexicon = clauses.map((clause): NoAnswerReading | null => (saysNoAnswer(clause) ? 'said' : null));
+  if (context.afterQuestion !== true || !allowsNoAnswer(t, moves ?? founderMoves(t))) return lexicon;
+  const read = clauses.map(
+    (clause, i) => lexicon[i] ?? (explicitlyNoAnswer(clause, context) ? ('said' as const) : null),
+  );
+  // Read explicitly by the grammar, the no-answer is the message bar its time, reasons and hedges: a clause beside it
+  // that says something of its own ("we sell to hospitals") makes the bare "no" or the negation part of an answer.
+  const besides = clauses.filter((_, i) => read[i] === null).join(' ');
+  const said = read.every((flag, i) => flag === lexicon[i]) || saysLittle(besides) ? read : lexicon;
+  if (carriesAnswer(t)) return said;
   // "i meant to text him but i got busy": the clause of the intention that did not come off is part of the no-answer.
   const undone = UNDONE_INTENTION.test(t);
-  const read = clauses.map(
-    (clause, i) =>
-      said[i] ??
-      noAnswerShape(clause, context) ??
-      (undone && UNDONE_INTENTION.test(`${clause} but`) ? 'shape' : null),
-  );
-  // A bare "no" beside a clause read only by its shape ("no, clinics wont pay monthly") is as sure as that clause.
-  const shaped = read.includes('shape')
-    ? read.map((flag, i) =>
-        flag === 'said' && said[i] === null && ONLY_INTERJECTIONS.test(clauses[i] ?? '') ? 'shape' : flag,
-      )
-    : read;
+  const shaped = clauses.map((clause, i): NoAnswerReading | null => {
+    if (said[i] !== null) return 'said';
+    if (shapedLikeNoAnswer(clause) || (undone && UNDONE_INTENTION.test(`${clause} but`))) return 'shape';
+    // A bare "no" beside a clause read only by its shape ("no, clinics wont pay monthly") is as sure as that clause.
+    return read[i] === 'said' ? 'shape' : null;
+  });
+  if (!shaped.includes('shape')) return said;
   // By its shape, the no-answer is the whole message: a clause beside it that says something ("department heads mostly,
   // not the clinicians") makes the negation part of an answer.
   const rest = clauses.filter((_, i) => shaped[i] === null).join(' ');
   return contentWords(rest).size < 2 ? shaped : said;
+}
+
+/** Whether `text` (normalised) says at most one thing besides time, reasons and hedges ({@link STALL_WORDS}). */
+function saysLittle(text: string): boolean {
+  let n = 0;
+  for (const word of contentWords(text)) if (!STALL_WORDS.has(word)) n += 1;
+  return n < 2;
 }
 
 /** Whether each clause of `t` reads as a no-answer, by any reading ({@link noAnswerFlags}). */
@@ -808,12 +913,38 @@ function noAnswerClauses(t: string, context: NoAnswerContext, moves?: readonly F
 
 /**
  * Whether `text` (normalised) says the founder does not know, has not done it or has no answer yet ({@link DONT_KNOW},
- * {@link NO_ANSWER}; after a question of the vEIR's, by its shape too: {@link noAnswerClauses}), and asks nothing of its
- * own ("Not sure. Does it matter who pays?": that question is what to answer).
+ * {@link NO_ANSWER}; after a question of the vEIR's, by the grammar and its shape too: {@link noAnswerClauses}), asks
+ * nothing of its own ("Not sure. Does it matter who pays?": that question is what to answer) and reports no content that
+ * answers the question ({@link reportsAnswer}: "idk, he said class II" answers it).
  */
 function hasNoAnswer(text: string, context: NoAnswerContext = {}, moves?: readonly FounderMove[]): boolean {
-  if (withoutInterjectionQuestions(text).includes('?')) return false;
-  return noAnswerClauses(text, context, moves).some(Boolean);
+  const t = withoutInterjectionQuestions(text);
+  if (t.includes('?') || reportsAnswer(t)) return false;
+  const flags = noAnswerClauses(t, context, moves);
+  if (!flags.some(Boolean)) return false;
+  // "the advisor never said, but clinics pay per scan": a clause beside the no-answer that states what was asked about.
+  return !clausesOf(t).some((clause, i) => flags[i] !== true && statesAnAnswer(clause));
+}
+
+/** The subjects a question of the vEIR's asks about, as an answer would name them ({@link subjectsOf}). */
+const ANSWER_SUBJECTS: ReadonlySet<string> = new Set([
+  'class',
+  'pay',
+  'regulatory',
+  'price',
+  'approve',
+  'customer',
+]);
+
+/**
+ * Whether a clause (normalised) beside a no-answer states content that answers the question: it says two things or more
+ * besides time, reasons and hedges ({@link saysLittle}) and names what such questions are about ({@link ANSWER_SUBJECTS}:
+ * "clinics pay per scan", "insurance covers it"; never "billing stuff" or "we have a call friday").
+ */
+function statesAnAnswer(clause: string): boolean {
+  if (saysLittle(clause)) return false;
+  for (const subject of subjectsOf(clause)) if (ANSWER_SUBJECTS.has(subject)) return true;
+  return false;
 }
 
 /**
@@ -854,8 +985,35 @@ const DISTRESS_STATE = new RegExp(
     String.raw`\b(?:don't|do not) (?:really |even )?(?:want to|wanna) (?:do (?:this|it|any of (?:this|it))|be here|get up|go on|keep going)\b`,
     String.raw`\b(?:i|we) (?:(?:just|really|honestly|kinda|kind of|so) )*(?:feel|felt|feeling) (?:(?:so|really|completely|totally|kind of|kinda|a bit|pretty|just) )*(?:alone|lonely|hopeless|empty|numb|worthless|useless|trapped|broken)\b`,
     String.raw`\b(?:i|we) give up\b|\b(?:don't|do not) (?:really |even )?care (?:any ?more|at this point|about any of (?:it|this))\b|\bno one believes in (?:me|this|us|it)\b`,
+    // Review of the 2026-11-07 fix, round 8: near variants of the lines above were read as no-answers, and the prompt
+    // then asked for the answer to the question. Each is about the founder themselves, never a task of the venture.
+    String.raw`\b(?:i|i just|i really|i honestly) (?:don't|do not) (?:even |really |honestly )?care(?: (?:any ?more|at all|about (?:any(?:thing| of (?:it|this))|it|this|myself|it all|the (?:startup|company|business)|my (?:startup|company|business))|what happens))?(?= (?:honestly|tbh|anymore|either|really|rn|right now)\b|\s*[,.!;…]|$)|^(?:(?:honestly|tbh|nah|ugh|man)[,.]? )*(?:i )?(?:don't|do not) (?:even |really )?care(?: (?:tbh|honestly|anymore))?[.!…]*$`,
+    String.raw`\bwho (?:to|i (?:can|could|should)) (?:talk|turn|go|reach out|speak) to(?: (?:about (?:this|it|any of (?:this|it)|all (?:of )?this|how i feel|what i'm going through)|any ?more|honestly|tbh|rn|right now))?(?=\s*[,.!;…]|$)`,
+    String.raw`\b(?:can't|cannot|can not|couldn't) (?:sleep|eat|stop crying|get up|breathe|function)\b|\b(?:haven't|have not|hasn't|has not) been able to (?:sleep|eat|stop crying|get up|get out of bed|breathe|function|think straight|focus on anything)\b|\bout of bed\b|\bstop crying\b`,
+    String.raw`\b(?:don't|do not) feel (?:great|myself|like myself|good about (?:myself|any of (?:it|this)))\b|\b(?:haven't|have not|hasn't|not|never) (?:felt|been feeling|feeling) (?:like )?(?:myself|me|anything)\b`,
+    String.raw`\b(?:not sure|unsure|(?:don't|do not) know|idk|no idea|wonder(?:ing)?)(?: if| whether)? (?:i'm|i am) (?:really |even )?(?:ok|okay|alright|all right|fine|good|well|safe)\b`,
+    String.raw`\b(?:don't|do not) know how to (?:deal with|cope with|handle|manage) (?:all (?:of )?(?:this|it)|it all|everything|any of (?:this|it)|this|it)(?=\s*[,.!;…]|$| (?:honestly|tbh|any ?more|rn|right now)\b)|\bhow much (?:more|longer) (?:i|we) can (?:take|do this|handle|go on|keep (?:going|doing (?:this|it)))\b|\b(?:see|find) (?:a|any|no) way out\b`,
+    String.raw`\b(?:(?:it's|its|it is|this is|that's|it all|all|everything|feels?(?: like)?|getting|just) (?:(?:all|just|really|so|kinda|way|getting|a bit|honestly) )*too much)\b(?! (?:money|cash|work to|for (?:clinics|them|the|a|an|us to pay|customers|patients)|to (?:pay|charge|ask)))`,
+    String.raw`\bwhat(?:'s| is) (?:even |really |honestly )*the point\b(?! of (?:the|a|an|that) )`,
+    String.raw`\b(?:give|giving|gave) up\b(?! (?:on (?:the|that|a|an|our|my) (?!(?:startup|company|business|dream|idea|venture|life)\b)|(?:the|that|a|an|our|my|equity|control|some|any|much|more|half|a lot)\b))`,
+    String.raw`\b(?:might|may|gonna|going to|should|want to|wanna|thinking (?:of|about)|ready to|about to|could) (?:just |probably |honestly |really )?(?:quit|quitting|walk away|throw in the towel)\b(?! (?:my|the|our|his|her) (?:job|day job|role|position|lease|subscription|contract))|\b(?:nobody|no one) (?:would|will|'d|even) (?:care|notice|miss)\b`,
+    String.raw`^(?:(?:honestly|tbh|ugh|man|yeah|so|i think)[,.]? )*(?:i'm|i am) (?:(?:just|so|honestly|really|completely|totally) )*done(?: (?:with (?:it|this|everything|all of (?:it|this)|it all)|honestly|tbh|man))*[.!…]*$`,
+    String.raw`\b(?:want(?:ed)? to|wanna|should|supposed to|meant to|deserve to|need to) (?:even |still |really )?(?:be|stay) (?:here|alive|around)\b|\bwhy (?:i'm|i am|am i) (?:even |still )+(?:here|alive|around|doing (?:this|it|any of (?:this|it)))\b|\b(?:still|be|being|stay|staying) alive\b`,
+    String.raw`\b(?:don't|do not) (?:even |really )?(?:want to|wanna) (?:talk|think) about (?:the (?:startup|company|business|venture)|my (?:startup|company|business)|work|any of (?:it|this)|it|this)(?=\s*[,.!;…]|$| (?:honestly|tbh|rn|right now|anymore)\b)`,
   ].join('|'),
 );
+
+/**
+ * The founder's own continuing, ability or worth ("keep going", "keep doing this", "carry on", "go on", "make it", "good
+ * enough", "have it in me"), never a task of the venture ("keep going with the pilot", "make it to the meeting"): in
+ * distress beside a doubt or a negation ({@link SELF_DOUBT}: "not sure i want to keep going", "no idea how im gonna keep
+ * going", "i dont think im good enough"; review of the 2026-11-07 fix, round 8).
+ */
+const SELF_CONTINUING =
+  /\b(?:keep(?:ing)? (?:going|doing (?:this|it|any of (?:this|it))|at it|this up|it up|pushing)|carry(?:ing)? on|go on|(?:gonna|going to|will|'ll|ill|can|able to|ever) (?:ever |even |really |actually )?make it)\b(?! (?:with|to|on|for|in|at|the|a|an|our|my|his|her|their|work|happen|clear|better|easier|cheaper|right|vacation|holiday|leave|about|by)\b)|\b(?:i'm|i am|i'll (?:ever )?be|i was|i'd be|me|myself) (?:(?:not|never|ever|really|even|just|actually|honestly|truly) )*good enough\b|\bhave it in me\b/;
+/** A doubt, a negation, or a why or a how ({@link SELF_CONTINUING}). */
+const SELF_DOUBT =
+  /n't\b|\b(?:not|never|no|nobody|idk|dunno|unsure|doubt|wonder(?:ing)?|why|how|if|whether|cannot|might|maybe)\b/;
 
 /**
  * The founder's own state as the subject of a clause (how they feel, cope, sleep, eat, keep going, whether they are ok):
@@ -869,6 +1027,7 @@ export function inDistress(text: string): boolean {
   const t = normalize(text);
   if (t === '') return false;
   if (DISTRESS.test(t) || DISTRESS_STATE.test(t) || WELLBEING_CUE.test(t) || STRESS_CUE.test(t)) return true;
+  if (SELF_CONTINUING.test(t) && SELF_DOUBT.test(t)) return true;
   const risk = classifyRisk(text);
   return risk.crisis || risk.categories.includes('safety_wellbeing') || ideationPrefilter(text).hit;
 }
@@ -921,9 +1080,9 @@ export function saysOnlyNoAnswer(text: string, context: NoAnswerContext = {}): b
 
 /**
  * How the founder's message reads as a no-answer (the `unknown` move), or null when it does not: `said` when the lexicon
- * or the predicate grammar reads it so (high precision: the notes' agenda may go), `shape` when only its shape does (a
- * casual wording, or an answer said as a negation: the prompt line is hedged and the notes keep their agenda; see
- * {@link NoAnswerReading}).
+ * or the predicate grammar reads it so (high precision: the founder is stuck on the question, validators/social.ts
+ * `stuckOn`, and the notes' agenda may go), `shape` when only its shape does (a casual wording, or an answer said as a
+ * negation: only the hedged prompt line; see {@link NoAnswerReading}). Never a message in distress ({@link inDistress}).
  */
 export function noAnswerReadingOf(text: string, context: NoAnswerContext = {}): NoAnswerReading | null {
   const t = normalize(text);
@@ -937,29 +1096,12 @@ export function noAnswerReadingOf(text: string, context: NoAnswerContext = {}): 
  */
 export function besidesNoAnswer(text: string, context: NoAnswerContext = {}): string {
   const t = withoutInterjectionQuestions(normalize(text));
-  if (t.includes('?')) return t;
+  if (t.includes('?') || !founderMoves(t, context).includes('unknown')) return t;
   const flags = noAnswerClauses(t, context);
   if (!flags.some(Boolean)) return t;
   return clausesOf(t)
     .filter((_, i) => !flags[i])
     .join('. ');
-}
-
-/**
- * The answer put off ("idk, ask me next week", "i'll find out friday"): no answer of its own beside a no-answer, so the
- * prompt's "never ask it again" and the strict re-ask reading agree (review of the 2026-11-07 fix, round 5).
- */
-const LATER_ANSWER =
-  /\b(?:ask me|(?:i'll|i will|we'll|we will|i can|we can|i'm going to|i'm gonna) (?:find out|check|ask|let you know|get back to you|follow up|look into it))\b.*$/;
-
-/**
- * Whether the founder's message counts as having no answer, for reading the vEIR's next questions strictly
- * (validators/social.ts `stuckOn`): it says so ({@link hasNoAnswer}), and what it says besides carries no answer of its
- * own ({@link carriesAnswer}: "not yet, we have a call friday" brings news of a step ahead).
- */
-export function hasNoAnswerOnly(text: string, context: NoAnswerContext = {}): boolean {
-  if (!founderMoves(text, context).includes('unknown')) return false;
-  return !carriesAnswer(besidesNoAnswer(text, context).replace(LATER_ANSWER, ' '));
 }
 
 /**
@@ -994,24 +1136,23 @@ export const SUPPORT_CHECK_IN =
   /\b(?:someone (?:close to you|you trust|you can (?:talk|turn|reach out) to)|(?:a )?support (?:service|line|network|group|person)|(?:a )?friends? or (?:a )?family|family or (?:a )?friends?|talk to (?:a friend|family|someone)|how (?:are|have) you (?:been )?(?:feeling|holding up|coping|sleeping))\b(?! about (?:the|your|this|that|our) (?!(?:situation|news|loss)\b))|\bare you (?:ok|okay|safe|alright|all right)(?: (?:right now|now|tonight|today|at the moment|where you are(?: tonight| right now)?))?(?=\s*(?:[?.!]|$))/i;
 
 /**
- * "I don't know" as main read it (ac41aec), before the no-answer readings widened it: what a message in distress is
- * still read by ({@link inDistress}), so "i dont know what im doing" asks for help as it did and "i dont know anymore"
- * is not taken as stuck on a question.
+ * "I don't know" as main read it (ac41aec), before the no-answer readings widened it ({@link DONT_KNOW}): what a message
+ * in distress is still read by ({@link movesAsBefore}), so "i dont know what im doing" asks for help as it did.
  */
-const DISTRESS_DONT_KNOW =
-  /^(?:(?:honestly|um+|uh+|well|that's the thing)[,.]? )*(?:i (?:really |honestly |just )?(?:don't|do not) know|idk|dunno|no idea|not sure|i'm not sure|i have no idea|no clue)(?: (?:what|how|where|which)\b.*)?$/;
+const DONT_KNOW_BEFORE =
+  /^(?:(?:honestly|um+|uh+|well|that's the thing|thats the thing)[,.]? )*(?:i (?:really |honestly |just )?(?:don't|do not|dont) know|idk|dunno|no idea|not sure|i'm not sure|i have no idea|no clue)(?: (?:what|how|where|which)\b.*)?$/;
 
 /**
- * Whether `text` hands the work to the vEIR or says the founder is stuck ({@link HELP_REQUEST}, {@link DONT_KNOW}).
- * `distressed`: whether the message is in distress ({@link inDistress}), asked only when it matters.
+ * Whether `text` hands the work to the vEIR or says the founder is stuck ({@link HELP_REQUEST}, `dontKnow`: a sentence
+ * that only says they do not know, {@link DONT_KNOW} or, for a message in distress, {@link DONT_KNOW_BEFORE}).
  */
-function asksForHelp(text: string, distressed: () => boolean = () => false): boolean {
+function asksForHelp(text: string, dontKnow: RegExp = DONT_KNOW): boolean {
   if (HELP_REQUEST.test(text)) return true;
   // "Not sure. Does it matter who pays?" asks something of its own: that question is what to answer.
   if (text.includes('?')) return false;
-  const sentences = text.split(/(?<=[.!?])\s+/).map((sentence) => sentence.replace(/[.!?…]+$/, '').trim());
-  if (!sentences.some((sentence) => DONT_KNOW.test(sentence))) return false;
-  return sentences.some((sentence) => DISTRESS_DONT_KNOW.test(sentence)) || !distressed();
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .some((sentence) => dontKnow.test(sentence.replace(/[.!?…]+$/, '').trim()));
 }
 
 /** Whether `text` brings news: a statement with a news cue (a question about the same thing is no news). */
@@ -1210,28 +1351,45 @@ export function founderMoves(text: string, context: NoAnswerContext = {}): Found
   const t = normalize(text);
   if (t === '') return [];
   const moves: FounderMove[] = MOVE_CUES.filter(([, cue]) => cue.test(t)).map(([move]) => move);
-  // A message in distress is never read as a no-answer (`inDistress`): asked only once a reading would apply.
-  let distress: boolean | undefined;
-  const distressed = (): boolean => (distress ??= inDistress(t));
   if (bringsNews(t)) moves.push('news');
-  if (asksForHelp(t, distressed)) moves.push('help');
-  if (hasNoAnswer(t) && !distressed()) moves.push('unknown');
+  if (asksForHelp(t)) moves.push('help');
+  if (hasNoAnswer(t)) moves.push('unknown');
   if (GOAL.test(t) && !t.endsWith('?')) moves.push('goal');
   const words = wordCount(t);
   if (words <= 5 && SHORT_REPLY.test(t) && !moves.includes('thanks')) moves.push('short_reply');
-  // "cant tell you" says it, never asks it (review of the 2026-11-07 fix, round 7); a message in distress is read as main
-  // read it (ac41aec).
-  if (t.endsWith('?') || (QUESTION_START.test(t) && words > 2 && !(NEGATED_START.test(t) && !distressed())))
+  // "cant tell you" says it, never asks it (review of the 2026-11-07 fix, round 7).
+  if (t.endsWith('?') || (QUESTION_START.test(t) && words > 2 && !NEGATED_START.test(t)))
     moves.push('question');
-  // After a question of the vEIR's, a no-answer is read by its shape too, however it is worded (`noAnswerClauses`).
-  if (
-    context.afterQuestion === true &&
-    !moves.includes('unknown') &&
-    hasNoAnswer(t, context, moves) &&
-    !distressed()
-  ) {
+  // After a question of the vEIR's, a no-answer is read by the grammar and its shape too, however it is worded.
+  if (context.afterQuestion === true && !moves.includes('unknown') && hasNoAnswer(t, context, moves)) {
     moves.push('unknown');
   }
+  // A message in distress is read as main read it (ac41aec): no reading added since, so no no-answer, no help it would
+  // not have asked for, no goal (review of the 2026-11-07 fix, round 8). Asked only where the readings differ.
+  const before = movesAsBefore(text);
+  return sameMoves(moves, before) || !inDistress(text) ? moves : before;
+}
+
+/** Whether two lists of moves are the same, in the same order. */
+function sameMoves(a: readonly FounderMove[], b: readonly FounderMove[]): boolean {
+  return a.length === b.length && a.every((move, i) => move === b[i]);
+}
+
+/**
+ * The moves of a message as main read them (ac41aec), before the no-answer readings: its normalisation (no contraction
+ * put back, {@link normalizeAsBefore}), its cues ({@link MOVE_CUES_BEFORE}), its "I don't know" ({@link DONT_KNOW_BEFORE})
+ * and none of `unknown`, `goal` or a statement that opens "can't" read as a statement. What a message in distress is read
+ * by ({@link founderMoves}).
+ */
+function movesAsBefore(text: string): FounderMove[] {
+  const t = normalizeAsBefore(text);
+  if (t === '') return [];
+  const moves: FounderMove[] = MOVE_CUES_BEFORE.filter(([, cue]) => cue.test(t)).map(([move]) => move);
+  if (bringsNews(t)) moves.push('news');
+  if (asksForHelp(t, DONT_KNOW_BEFORE)) moves.push('help');
+  const words = wordCount(t);
+  if (words <= 5 && SHORT_REPLY.test(t) && !moves.includes('thanks')) moves.push('short_reply');
+  if (t.endsWith('?') || (QUESTION_START.test(t) && words > 2)) moves.push('question');
   return moves;
 }
 
@@ -1570,13 +1728,26 @@ function stem(word: string): string {
 /** The content words of `text` (lower-cased, stop words removed, crudely stemmed). */
 export function contentWords(text: string): Set<string> {
   const out = new Set<string>();
-  for (const match of normalize(text).matchAll(/[\p{L}\p{N}][\p{L}\p{N}'-]*/gu)) {
+  // Main's normalisation (ac41aec): a word typed without its apostrophe ("thats", "hes") is the word main counted.
+  for (const match of normalizeAsBefore(text).matchAll(/[\p{L}\p{N}][\p{L}\p{N}'-]*/gu)) {
     const word = match[0].replace(/'s$/, '').replace(/'/g, '');
     if (word.length < 3 || STOPWORDS.has(word)) continue;
     out.add(stem(word));
   }
   return out;
 }
+
+/**
+ * Words of time, reason and hedging beside an explicit no-answer ("maybe next week", "probably should", "swamped this
+ * week", "its been crazy", "since monday"): never something of the founder's own that the no-answer is part of.
+ */
+const STALL_WORDS = contentWords(
+  'today tonight tomorrow yesterday morning afternoon evening weekend week weeks month months year days hours mins ' +
+    'minutes monday tuesday wednesday thursday friday saturday sunday since ago lately recently soon later yet ' +
+    'because cause cuz cos probably prob maybe perhaps likely possibly guess suppose hopefully should gotta will ' +
+    'swamped slammed busy crazy hectic mental insane chaotic nuts sick ill away travelling traveling out ' +
+    'honestly tbh sorry lol idk though',
+);
 
 function shared(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
   let n = 0;
@@ -1874,6 +2045,9 @@ export function deriveConversationState(
   const noAnswerContext: NoAnswerContext =
     lastAsked === null ? {} : { afterQuestion: true, yesNo: isYesNoQuestion(lastAsked) };
   const moves = founderMoves(founderText, noAnswerContext);
+  // A message in distress is rendered as main rendered it (ac41aec): none of the readings or lines added since (review of
+  // the 2026-11-07 fix, round 8: near variants of distress were read as no-answers, and the prompt asked for the answer).
+  const distress = inDistress(founderText);
   // A role-play under way: the vEIR's latest replies in character, newest first.
   let inRoleReplies = 0;
   for (let i = turns.length - 1; i >= 0 && inRole(turns[i]?.answer ?? ''); i -= 1) inRoleReplies += 1;
@@ -1887,6 +2061,7 @@ export function deriveConversationState(
 
   // Their first reply to the opener's invitation names what they want to work on ("taking the device to market").
   const namesWork =
+    !distress &&
     afterOpener &&
     !moves.includes('question') &&
     !moves.includes('short_reply') &&
@@ -1896,6 +2071,7 @@ export function deriveConversationState(
   const wrapUp = wrapUpOf(founderText, moves);
   const social = socialTurnOf(founderText);
   const answersCheckIn =
+    !distress &&
     lastAsked !== null &&
     (moves.includes('unknown') || moves.includes('help')) &&
     (SUPPORT_CHECK_IN.test(lastAsked) || (!afterOpener && turns.at(-1)?.escalated === 'safety_wellbeing'));
@@ -1928,8 +2104,14 @@ export function deriveConversationState(
     earlierTurns: turns.length,
     afterOpener,
     // "Thanks, I'll go prepare for the pitch now, bye!" signs off: the plan they name is no goal to teach into.
-    goal: (moves.includes('goal') || namesWork) && !wrapUp && !moves.includes('closing') && social === null,
+    goal:
+      !distress &&
+      (moves.includes('goal') || namesWork) &&
+      !wrapUp &&
+      !moves.includes('closing') &&
+      social === null,
     onlyNoAnswer: !answersCheckIn && saysOnlyNoAnswer(founderText, noAnswerContext),
+    ...(distress ? { distress } : {}),
     ...(moves.includes('unknown') && lastAsked !== null ? { noAnswerTo: lastAsked } : {}),
     ...(answersCheckIn ? { answersCheckIn } : {}),
     inRoleReplies,
@@ -2283,7 +2465,9 @@ export function renderConversationState(state: ConversationState): string {
   for (const p of state.parked) {
     lines.push(`- Parked, left before it was settled: ${quoted(p.gist)} (${ago(p.messagesAgo)}).`);
   }
-  if (state.questionStreak >= 2) {
+  if (state.questionStreak >= 2 && state.distress === true) {
+    lines.push(`- Your last ${state.questionStreak} replies all ended with a question.`);
+  } else if (state.questionStreak >= 2) {
     lines.push(
       `- Your last ${state.questionStreak} replies all ended with a question: this one gives substance (a teaching point,`,
       '  a draft or your view) and ends without a question.',

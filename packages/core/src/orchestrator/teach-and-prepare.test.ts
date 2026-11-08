@@ -292,30 +292,48 @@ describe('what each turn of the production call now carries (2026-11-07)', () =>
   const REAL_ANSWERS = [
     'he said its not class III',
     'no, its class II',
-    'not yet but we have a call friday',
     'i didnt get that',
     'he said probably class 2',
     'they told me clinics bill it under 99091',
     'not class III, more like class II',
     'we dont sell to hospitals, only clinics',
     'no because the device is low risk',
-    'nope, maybe next month',
     'not really, its exempt',
     'she thinks its exempt',
     'he didnt name one but said its class II',
     'i dont know if clinics will pay for it',
     'i didnt understand the question',
     'the advisor never said, but clinics pay per scan',
-    'i havent, can we talk about hiring instead',
     'department heads mostly, not the clinicians',
     'we did talk, he wants a demo first',
     'not the patients, the clinic pays',
   ];
 
-  it('pins forty casual no-answers and twenty answers of their own', () => {
+  it('pins forty casual no-answers and seventeen answers of their own', () => {
     expect(NO_ANSWERS).toHaveLength(40);
     expect(new Set(NO_ANSWERS).size).toBe(40);
-    expect(REAL_ANSWERS).toHaveLength(20);
+    expect(REAL_ANSWERS).toHaveLength(17);
+  });
+
+  // Review of the 2026-11-07 fix, round 8: a time, a reason or a hedge beside an explicit no-answer, or a subject of
+  // their own after it, never vetoes it; they are followed to what they bring, and never asked the question again.
+  it.each([
+    'not yet but we have a call friday',
+    'nope, maybe next month',
+    'i havent, can we talk about hiring instead',
+  ])("the call's third turn after %j: an explicit no-answer that moves on, never asked again", (said) => {
+    const [r1, r2] = REPLIES as [string, string];
+    expect(stuckOn(said, r2)).toBe(true);
+    const message = turnMessage(2, said);
+    expect(message).toMatch(
+      /do not ask it again in any words|Never ask\s+the earlier question again, in any words/,
+    );
+    const reply = withoutRepeats(
+      'Okay. Is monitoring time reimbursable under existing CPT codes?',
+      [r2, r1, OPENER].join('\n\n'),
+      { strictQuestions: stuckOn(said, r2), asked: askedBefore(r2, [r1, OPENER]) },
+    );
+    expect(reply.removed).toEqual(['Is monitoring time reimbursable under existing CPT codes?']);
   });
 
   it.each(NO_ANSWERS)(
@@ -477,10 +495,24 @@ describe('what each turn of the production call now carries (2026-11-07)', () =>
     },
   );
 
+  it.each(['im not sure i want to keep going', 'i dont know why im still here', 'not sure im gonna make it'])(
+    'a message in distress (%j) keeps the notes and the open threads, as main did, and is never stuck (round 8)',
+    (said) => {
+      const [, r2] = REPLIES as [string, string];
+      expect(stuckOn(said, r2)).toBe(false);
+      const message = turnMessage(2, said);
+      expect(message).toContain('<open_threads>');
+      expect(message).toContain('<open_questions>');
+      expect(message).not.toContain('could not answer your question');
+      expect(message).not.toContain('do not ask it again in any words');
+    },
+  );
+
   it('a no-answer read only by its shape keeps the notes, the question it left open marked as raised (round 6)', () => {
     const said = 'no progress on that';
     const [, r2] = REPLIES as [string, string];
-    expect(stuckOn(said, r2)).toBe(true);
+    // Read by its shape alone, it is only hedged in the prompt: never stuck, so no question is left out (round 8).
+    expect(stuckOn(said, r2)).toBe(false);
     const message = turnMessage(2, said);
     expect(message).toContain('could not answer your question');
     expect(message).toContain('<open_questions>');

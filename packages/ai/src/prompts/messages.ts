@@ -6,6 +6,7 @@ import {
   contentWords,
   deriveConversationState,
   founderMoves,
+  inDistress,
   noAnswerContextOf,
   noAnswerReadingOf,
   renderConversationState,
@@ -132,7 +133,10 @@ export function bringsOwnSubject(
   continuity: PromptContinuity | null | undefined,
 ): boolean {
   if (reportsCommitmentDone(founderText)) return false;
-  const rest = besidesNoAnswer(founderText);
+  // A message in distress is read as main read it (ac41aec): the whole message, its words only (review of the 2026-11-07
+  // fix, round 8).
+  const distress = inDistress(founderText);
+  const rest = distress ? founderText : besidesNoAnswer(founderText);
   if (contentWords(rest).size < 2) return false;
   const moves = founderMoves(rest);
   if (moves.some((m) => m === 'recall' || m === 'resume' || m === 'short_reply')) return false;
@@ -140,7 +144,7 @@ export function bringsOwnSubject(
     ...(continuity ? openCommitmentsOf(continuity).map((c) => c.text) : []),
     ...(continuity?.notebook?.openQuestions ?? []).map((q) => q.text),
   ];
-  return !open.some((item) => raisedIn(item, [rest]));
+  return !open.some((item) => raisedIn(item, [rest], { bySubject: !distress }));
 }
 
 /**

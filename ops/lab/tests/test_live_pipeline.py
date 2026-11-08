@@ -332,14 +332,18 @@ def test_a_reworded_question_after_any_no_answer_is_found(student: str) -> None:
         "I didn't get a chance",
         "I didn't have time",
         "no, we didn't talk about that",
-        "Can you help me?",
-        "help me with the deck",
     ],
 )
 def test_a_no_answer_typed_or_said_however_is_read_as_the_product_reads_it(student: str) -> None:
-    """Without apostrophes, or the ways people say they did not get to it; and any request for the work itself, as the
-    product's ``stuckOn`` turns strict on the ``help`` move (review of the 2026-11-07 fix)."""
+    """Without apostrophes, or the ways people say they did not get to it (review of the 2026-11-07 fix)."""
     assert no_answer(student)
+
+
+@pytest.mark.parametrize("student", ["Can you help me?", "help me with the deck", "you tell me"])
+def test_a_request_for_the_work_is_never_stuck(student: str) -> None:
+    """A request for the work itself is answered in the prompt; only an explicit no-answer makes the product's
+    ``stuckOn`` strict (round 8)."""
+    assert no_answer_reading(student, "So who sits in those layers?") != "said"
 
 
 def test_no_answer_to_a_check_in_on_the_student_is_no_stuck_turn() -> None:
@@ -1526,21 +1530,18 @@ _SHAPED_NO_ANSWERS = [
 _REAL_ANSWERS = [
     "he said its not class III",
     "no, its class II",
-    "not yet but we have a call friday",
     "i didnt get that",
     "he said probably class 2",
     "they told me clinics bill it under 99091",
     "not class III, more like class II",
     "we dont sell to hospitals, only clinics",
     "no because the device is low risk",
-    "nope, maybe next month",
     "not really, its exempt",
     "she thinks its exempt",
     "he didnt name one but said its class II",
     "i dont know if clinics will pay for it",
     "i didnt understand the question",
     "the advisor never said, but clinics pay per scan",
-    "i havent, can we talk about hiring instead",
     "department heads mostly, not the clinicians",
     "we did talk, he wants a demo first",
     "not the patients, the clinic pays",
@@ -1565,7 +1566,7 @@ def test_an_answer_of_their_own_is_never_read_as_a_no_answer_by_its_shape(studen
 
 def test_the_shape_alone_needs_a_question_before_it() -> None:
     assert len(_SHAPED_NO_ANSWERS) == 40
-    assert len(_REAL_ANSWERS) == 20
+    assert len(_REAL_ANSWERS) == 17
     assert not no_answer("he hasnt gotten back to me")
     assert not no_answer("he hasnt gotten back to me", "That is the usual path.")
 
@@ -1693,7 +1694,6 @@ _ROUND6_NO_ANSWERS = [
     "its still on my list",
     "i aint got a clue",
     "i completely dropped the ball on that",
-    "no progress on that",
     "nothing concrete",
 ]
 _ROUND6_DISTRESS = [
@@ -1758,8 +1758,6 @@ def test_a_line_set_up_quoted_or_mid_reply_is_no_reask(coach: str) -> None:
 _ROUND7_NO_ANSWERS = [
     "cant tell you",
     "Honestly? No idea.",
-    "nah we only talked about the pilot",
-    "he only talked about the tech",
     "i meant to text him but i got busy",
     "i was gonna but life happened",
     "hes ignoring me i think",
@@ -1829,3 +1827,92 @@ def test_a_line_pointed_at_a_named_role_or_a_heading_is_no_reask(coach: str) -> 
         T("1.2", "i dont know", coach),
     ]
     assert "reasked_after_unknown" not in run_checks(call).codes(), coach
+
+
+# Review of the 2026-11-07 fix, round 8: only the explicit reading makes a re-ask a finding (the product's ``stuckOn``),
+# a time, a reason or a hedge beside it never vetoes it, the shape alone is advisory, content that answers the question
+# vetoes every reading, and a message in distress, near variants included, is never a no-answer.
+_ROUND8_TIMED = [
+    "havent spoken to him since tuesday",
+    "i didnt ask him today",
+    "no idea, i was out sick this week",
+    "i didnt ask cause i ran out of time",
+    "didnt ask him because the call was short",
+    "havent talked to him in 2 weeks",
+    "we only had 10 mins so didnt get to it",
+    "i didnt get to it, maybe next week",
+    "havent asked yet, probably should",
+    "nah i didnt, its been crazy",
+    "i didnt ask him on the call this morning",
+    "havent checked this month",
+    "i havent had a chance today",
+    "nope not this week",
+    "not yet, swamped this week",
+    "dunno, havent asked since monday",
+    "no i havent asked him yet, maybe tomorrow",
+    "didnt get round to it this week",
+    "nobodys gotten back to me on that",
+    "dont know yet, gotta follow up",
+    "not yet but we have a call friday",
+    "nope, maybe next month",
+    "i havent, can we talk about hiring instead",
+]
+_ROUND8_SHAPED = [
+    "no progress on that",
+    "nah we only talked about the pilot",
+    "he only talked about the tech",
+    "insurance doesnt cover it",
+]
+_ROUND8_ANSWERED = [
+    "idk, he said class II",
+    "havent asked, but clinics bill it under 99457",
+    "not yet, its class 2 per the fda database",
+    "he never mentioned class but said clinics pay via capital budget",
+]
+_ROUND8_DISTRESS = [
+    "im not sure i want to keep going",
+    "not sure i can keep doing this",
+    "i dont think im good enough for this",
+    "honestly i dont even care",
+    "i dont know who to talk to",
+    "i dont know if im gonna make it",
+    "i dont know why im still here",
+    "whats the point honestly",
+    "thinking of giving up",
+    "i dont know, i might quit",
+    "its too much honestly",
+    "i cant sleep",
+]
+
+
+def _reask_call(student: str) -> list[Turn]:
+    return [
+        T("1.1", "getting product to market", _FIRST),
+        T("1.2", "there are a few layers of sign-off to get through", "So who sits in those layers?"),
+        T("1.3", student, "No worries, that is common at this stage. Is monitoring time reimbursable?"),
+    ]
+
+
+@pytest.mark.parametrize("student", _ROUND8_TIMED)
+def test_an_explicit_no_answer_beside_a_time_or_a_reason_is_stuck(student: str) -> None:
+    assert no_answer_reading(student, "So who sits in those layers?") == "said"
+    assert "reasked_after_unknown" in run_checks(_reask_call(student)).codes()
+
+
+@pytest.mark.parametrize("student", _ROUND8_SHAPED)
+def test_a_no_answer_by_shape_alone_is_advisory(student: str) -> None:
+    assert no_answer_reading(student, "So who sits in those layers?") == "shape"
+    assert "reasked_after_unknown" not in run_checks(_reask_call(student)).codes()
+
+
+@pytest.mark.parametrize("student", _ROUND8_ANSWERED)
+def test_content_that_answers_vetoes_every_reading(student: str) -> None:
+    assert no_answer_reading(student, "So who sits in those layers?") is None
+    assert "reasked_after_unknown" not in run_checks(_reask_call(student)).codes()
+
+
+@pytest.mark.parametrize("student", _ROUND8_DISTRESS)
+def test_a_near_variant_of_distress_is_never_a_no_answer(student: str) -> None:
+    assert no_answer_reading(student, _R1) is None
+    assert no_answer_reading(student, "So who sits in those layers?") is None
+    assert "reasked_after_unknown" not in run_checks(_reask_call(student)).codes()

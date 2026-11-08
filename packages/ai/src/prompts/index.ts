@@ -52,6 +52,7 @@ export {
   endsWithQuestion,
   founderMoves,
   gistOf,
+  inDistress,
   openingOf,
   inRole,
   preferencesOf,

@@ -6,11 +6,13 @@
   reworded, on three shared content words two of which they say together (the product's reading, validators/social.ts
   ``reasksQuestion``: production, 2026-11-07, a question about the advisor and the device class came back two replies
   later in other words);
-* reasked_after_unknown (high): after the student says they do not know, did not do it, have no answer yet or hands
-  the work back ("you tell me"), the coach asks again on the subject of a question it asked before (two shared content
-  words said together, or 40% of them: the product's strict reading), in the reply's trailing hand-back (unquoted,
-  never a line the sentence before it sets up for the student to send or practise: ``in_hand_back``). The no-answer
-  is read as the product reads it, the union of its grammar and its shape, never in distress (``no_answer_reading``);
+* reasked_after_unknown (high): after the student says explicitly they do not know, did not do it or have no answer
+  yet, the coach asks again on the subject of a question it asked before (two shared content words said together, or
+  40% of them: the product's strict reading), in the reply's trailing hand-back (unquoted, never a line the sentence
+  before it sets up for the student to send or practise: ``in_hand_back``). Only the explicit reading counts, as only
+  it makes the product's ``stuckOn`` strict (``stuck``: the phrase lists and the predicate grammar, whatever time,
+  reason or hedge is beside it); a reading by shape alone is advisory, a request for the work is none, and a message
+  in distress is never a no-answer (``no_answer_reading``, round 8);
 * question_only: a reply that only asks (no statement of eight words or more, no list) where the student brought
   something to answer: a goal, a request, a report or no answer (never a hello, thanks or a goodbye);
 * judgmental_profile_note (high): a note in the notebook's founder profile after the run that judges the founder
@@ -225,7 +227,17 @@ _BARE_CONTRACTIONS = {
     "aint": "ain't",
     "im": "i'm",
     "ive": "i've",
+    # The 's forms typed without their apostrophe (round 8: "nobodys gotten back to me", "whats the point").
     "thats": "that's",
+    "whats": "what's",
+    "nobodys": "nobody's",
+    "noones": "no one's",
+    "hes": "he's",
+    "shes": "she's",
+    "theres": "there's",
+    "theyre": "they're",
+    "theyve": "they've",
+    "youre": "you're",
 }
 _BARE_CONTRACTION = re.compile(r"\b(?:" + "|".join(_BARE_CONTRACTIONS) + r")\b(?!')")
 #: A check-in on the student themselves (the product's prompts/conversation-state.ts ``SUPPORT_CHECK_IN``): no
@@ -238,7 +250,10 @@ SUPPORT_CHECK_IN = re.compile(
     r"alright|all right)(?: (?:right now|now|tonight|today|at the moment|where you are(?: tonight| right now)?))?(?=\s*(?:[?.!]|$))",
     re.IGNORECASE,
 )
-_CLAUSE = re.compile(r"(?<=[.!,;—–])\s+|\s+(?:but|and) (?=(?:i|we|can|could|let's|lets|let)\b)")
+_CLAUSE = re.compile(
+    r"(?<=[.!,;—–])\s+|\s+(?:but|and) (?=(?:i|we|can|could|let's|lets|let)\b)"
+    r"|\s+so (?=(?:i|we|(?:did|have|had|could|was|were)n't|never)\b)"
+)
 
 
 def _normalized(text: str) -> str:
@@ -273,10 +288,12 @@ _NA_DONE_VERB = (
     r"checked|find|found|figure|figured|research|researched|read|google|googled|dig|dug|hear|heard|go|went|gone|"
     r"bring|brought|raise|raised|mention|mentioned|cover|covered|discuss|discussed|confirm|confirmed|learn|learned|"
     r"learnt|catch|caught|sort|sorted|work|worked|try|tried|manage|managed|start|started|explore|explored|think|"
-    r"thought|remember|remembered|know|knew|known|chase|chased|(?:get|got|gotten) (?:to|round|around|a chance|"
+    r"thought|remember|remembered|know|knew|known|chase|chased|touch|touched|bother|bothered|connect|connected|"
+    r"link up|linked up|catch up|caught up|(?:get|got|gotten) into (?:it|that|this|them|the weeds|(?:the )?(?:details|"
+    r"specifics|nitty[- ]gritty))|(?:get|got|gotten) (?:to|round|around|a chance|"
     r"the chance|time|the time|a reply|a response|an answer|any (?:reply|response|answer|word|info|news|time)|back|"
-    r"hold|through|in touch|that far|there|anywhere|far|on it)|(?:have|had) (?:a |the |any )?(?:chance|time|meeting|"
-    r"call|chat|conversation|session|talk|catch-?up)|(?:make|made) (?:it|time|the call|contact)|(?:been )?able)\b"
+    r"hold|through|in touch|that far|there|anywhere|far|on it)|(?:have|had) (?:a |the |any |that )?(?:chance|time|sec|"
+    r"second|minute|moment|meeting|call|chat|conversation|session|talk|catch-?up)|(?:make|made) (?:it|time|the call|contact)|(?:been )?able)\b"
 )
 _NA_INFO_NOUN = r"(?:info|information|answer|answers|clue|idea|details?|data|specifics|word|reply|response|update|news|feedback)\b"
 _NA_OTHER = r"(?:he|she|they|(?:the|my|our|his|her|their|that) [\w'-]+(?: [\w'-]+)?|dr\.? [\w'-]+)"
@@ -335,7 +352,7 @@ _NO_ANSWER_PREDICATE = re.compile(
             + r"(?:been |even |yet )?"
             + _NA_RESPONSE,
             _NA_LEAD
-            + r"(?:nobody|no one|noone|no-one|none of them|neither of them)(?: (?:at|from|in) (?:the |my |our )?"
+            + r"(?:nobody|no one|noone|no-one|none of them|neither of them)(?:'s)?(?: (?:at|from|in) (?:the |my |our )?"
             r"[\w'-]+)? (?:(?:has|have|had|ever|really|actually|yet|even) )*(?:"
             + _NA_RESPONSE
             + "|"
@@ -371,7 +388,7 @@ _NO_ANSWER_PREDICATE = re.compile(
             + "(?:"
             + _NA_OTHER
             + r") (?:was|were|is|been|got) (?:(?:kind of|kinda|sort of|pretty|really|super|very|totally|so) )*"
-            r"(?:vague|evasive|noncommittal|non-committal|cagey|unclear|wishy-washy|rushed|distracted|in a rush)\b",
+            r"(?:vague|evasive|noncommittal|non-committal|cagey|unclear|wishy[- ]?washy|rushed|distracted|in a rush)\b",
             r"\b(?:ran|run|running) (?:out of|outta) time\b",
             # Not yet, said without a negation.
             r"\b(?:left (?:me|us|it) on read|got nothin'?g?|got (?:distracted|sidetracked|side-tracked|busy|swamped|"
@@ -380,7 +397,8 @@ _NO_ANSWER_PREDICATE = re.compile(
             r"on it|into it)|tbd|to be (?:determined|decided|confirmed)|ask me (?:later|again|another time)|(?:i'll|ill|"
             r"i will|i'd|i need to|"
             r"i have to|i gotta|gotta|let me|i should|need to|have to) (?:have to |need to )?(?:check|find out|"
-            r"double-?check|ask(?: (?:him|her|them|around|the advisor))?|look (?:into it|it up|into that)|get back to "
+            r"double-?check|ask(?: (?:him|her|them|around|the advisor))?|look (?:into it|it up|into that)|follow up(?: "
+            r"(?:on (?:it|that)|with (?:him|her|them)))?|get back to "
             r"you(?: on (?:it|that))?)(?: (?:on (?:it|that)|first|tbh|honestly))?$|dropped the ball|fell through the "
             r"cracks|slipped through the cracks|(?:keep|kept) forgetting|ain't got (?:a |any |the )?(?:clue|idea)|"
             r"haven't (?:the|a) (?:faintest|foggiest|slightest)|not the (?:faintest|foggiest|slightest)|(?:i'm|i am|im) "
@@ -483,6 +501,52 @@ _NO_ANSWER_PREDICATE = re.compile(
             + "(?:"
             + _NA_DONE_VERB
             + r"|thought about|looked (?:at|into))",
+            # Round 8: "he wasnt sure either", "i couldnt tell ya", "that never came up w the advisor", "i kinda skipped
+            # that convo", "nothing on that front", "not this week", "his assistant keeps pushing the meeting", "we ended
+            # up talking about hiring", "supposed to ask but didnt", "not off the top of my head", "still pending".
+            _NA_LEAD
+            + _NA_OTHER
+            + r" (?:wasn't|was not|weren't|were not|isn't|is not|aren't|are not) "
+            + _NA_ADVERBS
+            + r"(?:too |that |entirely |totally )?sure\b|"
+            + _NA_LEAD
+            + r"(?:he's|she's|they're) not "
+            + _NA_ADVERBS
+            + r"(?:too |that |entirely )?sure\b",
+            _NA_LEAD
+            + _NA_SELF
+            + _NA_ADVERBS
+            + r"(?:wouldn't|would not|couldn't|could not|can't|cannot) "
+            + _NA_ADVERBS
+            + r"(?:know|tell (?:you|ya|u)|say)\b",
+            _NA_LEAD
+            + r"(?:it|that|this|the (?:topic|subject|question)) "
+            + _NA_ADVERBS
+            + r"(?:didn't|did not|never|hasn't|has not) "
+            + _NA_ADVERBS
+            + r"(?:come|came) up\b",
+            r"^"
+            + _NA_LEAD
+            + _NA_SELF
+            + _NA_ADVERBS
+            + r"skipped (?:(?:that|this|the) )?(?:convo|conversation|question|part|bit|topic|meeting|call)\b",
+            r"^"
+            + _NA_LEAD
+            + r"(?:nothing|not a thing|not much)(?: (?:on (?:that|this) front|to report|yet|so far))+\b|^"
+            + _NA_LEAD
+            + r"not (?:yet|so far|today|tonight|this (?:week|month|morning|afternoon)|right now|rn|at the moment)$",
+            r"\b(?:was|were|is|are) (?:supposed|meant|going|gonna) to\b[^,.;]* but (?:(?:he|she|they|i|we) )?"
+            r"(?:didn't|did not|never|forgot|couldn't|hasn't|haven't|bailed|flaked)\b",
+            r"\bnot off (?:the top of )?my head\b|^"
+            + _NA_LEAD
+            + r"(?:nothing|no(?:thing)?) (?:concrete|definite|definitive|solid|firm|official)\b|^"
+            + _NA_LEAD
+            + r"(?:(?:it's|its|it is|that's|still|all) )*(?:pending|up in the air)(?: (?:still|tbh|honestly|lol|"
+            r"sorry))*$",
+            r"\b(?:keeps|kept) (?:pushing|moving|rescheduling|cancel+ing|postponing|bumping) (?:back )?(?:the |our |my )?"
+            r"(?:meeting|call|chat|session)\b",
+            r"\b(?:ended|wound) up (?:talking|chatting) about\b|\b(?:still )?(?:a |an )?(?:big |huge )?(?:question mark|"
+            r"open question|unknown) (?:for|to) (?:me|us)\b",
         )
     )
 )
@@ -612,13 +676,65 @@ _DISTRESS = re.compile(
     r"\b(?:i|we) (?:(?:just|really|honestly|kinda|kind of|so) )*(?:feel|felt|feeling) (?:(?:so|really|completely|"
     r"totally|kind of|kinda|a bit|pretty|just) )*(?:alone|lonely|hopeless|empty|numb|worthless|useless|trapped|"
     r"broken)\b|\b(?:i|we) give up\b|\b(?:don't|do not) (?:really |even )?care (?:any ?more|at this point|about any of "
-    r"(?:it|this))\b|\bno one believes in (?:me|this|us|it)\b"
+    r"(?:it|this))\b|\bno one believes in (?:me|this|us|it)\b|"
+    # Round 8: near variants of the lines above, each about the student themselves, never a task of the venture.
+    r"\b(?:i|i just|i really|i honestly) (?:don't|do not) (?:even |really |honestly )?care(?: (?:any ?more|at all|about "
+    r"(?:any(?:thing| of (?:it|this))|it|this|myself|it all|the (?:startup|company|business)|my (?:startup|company|"
+    r"business))|what happens))?(?= (?:honestly|tbh|anymore|either|really|rn|right now)\b|\s*[,.!;…]|$)|"
+    r"^(?:(?:honestly|tbh|nah|ugh|man)[,.]? )*(?:i )?(?:don't|do not) (?:even |really )?care(?: (?:tbh|honestly|"
+    r"anymore))?[.!…]*$|"
+    r"\bwho (?:to|i (?:can|could|should)) (?:talk|turn|go|reach out|speak) to(?: (?:about (?:this|it|any of (?:this|"
+    r"it)|all (?:of )?this|how i feel|what i'm going through)|any ?more|honestly|tbh|rn|right now))?(?=\s*[,.!;…]|$)|"
+    r"\b(?:can't|cannot|can not|couldn't) (?:sleep|eat|stop crying|get up|breathe|function)\b|\b(?:haven't|have not|"
+    r"hasn't|has not) been able to (?:sleep|eat|stop crying|get up|get out of bed|breathe|function|think straight|"
+    r"focus on anything)\b|\bout of bed\b|\bstop crying\b|"
+    r"\b(?:don't|do not) feel (?:great|myself|like myself|good about (?:myself|any of (?:it|this)))\b|\b(?:haven't|"
+    r"have not|hasn't|not|never) (?:felt|been feeling|feeling) (?:like )?(?:myself|me|anything)\b|"
+    r"\b(?:not sure|unsure|(?:don't|do not) know|idk|no idea|wonder(?:ing)?)(?: if| whether)? (?:i'm|i am) (?:really "
+    r"|even )?(?:ok|okay|alright|all right|fine|good|well|safe)\b|"
+    r"\b(?:don't|do not) know how to (?:deal with|cope with|handle|manage) (?:all (?:of )?(?:this|it)|it all|everything|"
+    r"any of (?:this|it)|this|it)(?=\s*[,.!;…]|$| (?:honestly|tbh|any ?more|rn|right now)\b)|\bhow much (?:more|"
+    r"longer) (?:i|we) can (?:take|do this|handle|go on|keep (?:going|doing (?:this|it)))\b|\b(?:see|find) (?:a|any|"
+    r"no) way out\b|"
+    r"\b(?:(?:it's|its|it is|this is|that's|it all|all|everything|feels?(?: like)?|getting|just) (?:(?:all|just|"
+    r"really|so|kinda|way|getting|a bit|honestly) )*too much)\b(?! (?:money|cash|work to|for (?:clinics|them|the|a|an|"
+    r"us to pay|customers|patients)|to (?:pay|charge|ask)))|"
+    r"\bwhat(?:'s| is) (?:even |really |honestly )*the point\b(?! of (?:the|a|an|that) )|"
+    r"\b(?:give|giving|gave) up\b(?! (?:on (?:the|that|a|an|our|my) (?!(?:startup|company|business|dream|idea|venture|"
+    r"life)\b)|(?:the|that|a|an|our|my|equity|control|some|any|much|more|half|a lot)\b))|"
+    r"\b(?:might|may|gonna|going to|should|want to|wanna|thinking (?:of|about)|ready to|about to|could) (?:just |"
+    r"probably |honestly |really )?(?:quit|quitting|walk away|throw in the towel)\b(?! (?:my|the|our|his|her) (?:job|"
+    r"day job|role|position|lease|subscription|contract))|\b(?:nobody|no one) (?:would|will|'d|even) (?:care|notice|"
+    r"miss)\b|"
+    r"^(?:(?:honestly|tbh|ugh|man|yeah|so|i think)[,.]? )*(?:i'm|i am) (?:(?:just|so|honestly|really|completely|"
+    r"totally) )*done(?: (?:with (?:it|this|everything|all of (?:it|this)|it all)|honestly|tbh|man))*[.!…]*$|"
+    r"\b(?:want(?:ed)? to|wanna|should|supposed to|meant to|deserve to|need to) (?:even |still |really )?(?:be|stay) "
+    r"(?:here|alive|around)\b|\bwhy (?:i'm|i am|am i) (?:even |still )+(?:here|alive|around|doing (?:this|it|any of "
+    r"(?:this|it)))\b|\b(?:still|be|being|stay|staying) alive\b|"
+    r"\b(?:don't|do not) (?:even |really )?(?:want to|wanna) (?:talk|think) about (?:the (?:startup|company|business|"
+    r"venture)|my (?:startup|company|business)|work|any of (?:it|this)|it|this)(?=\s*[,.!;…]|$| (?:honestly|tbh|rn|"
+    r"right now|anymore)\b)"
 )
-#: The answer put off ("idk, ask me next week"): no answer of its own beside a no-answer.
-_LATER_ANSWER = re.compile(
-    r"\b(?:ask me|(?:i'll|i will|we'll|we will|i can|we can|i'm going to|i'm gonna) (?:find out|check|ask|"
-    r"let you know|get back to you|follow up|look into it))\b.*$"
+#: The student's own continuing, ability or worth (the product's ``SELF_CONTINUING``), never a task of the venture: in
+#: distress beside a doubt or a negation (``_SELF_DOUBT``).
+_SELF_CONTINUING = re.compile(
+    r"\b(?:keep(?:ing)? (?:going|doing (?:this|it|any of (?:this|it))|at it|this up|it up|pushing)|carry(?:ing)? on|"
+    r"go on|(?:gonna|going to|will|'ll|ill|can|able to|ever) (?:ever |even |really |actually )?make it)\b(?! (?:with|"
+    r"to|on|for|in|at|the|a|an|our|my|his|her|their|work|happen|clear|better|easier|cheaper|right|vacation|holiday|"
+    r"leave|about|by)\b)|\b(?:i'm|i am|i'll (?:ever )?be|i was|i'd be|me|myself) (?:(?:not|never|ever|really|even|just|"
+    r"actually|honestly|truly) )*good enough\b|\bhave it in me\b"
 )
+_SELF_DOUBT = re.compile(
+    r"n't\b|\b(?:not|never|no|nobody|idk|dunno|unsure|doubt|wonder(?:ing)?|why|how|if|whether|cannot|might|maybe)\b"
+)
+
+
+def _in_distress(text: str) -> bool:
+    """Whether the student's message (normalised) is in distress (the product's ``inDistress``, without its risk rules
+    and ideation prefilter): never read as a no-answer or as stuck on a question."""
+    return bool(_DISTRESS.search(text)) or bool(_SELF_CONTINUING.search(text) and _SELF_DOUBT.search(text))
+
+
 #: What makes a message an answer whatever negation it carries: a figure, content reported, a guess or a reason, a class
 #: named, a contrast that states the alternative, a day or a time.
 _ANSWER_SUBSTANCE = re.compile(
@@ -685,62 +801,142 @@ def _is_yes_no(question: str) -> bool:
     return bool(_YES_NO_QUESTION.search(asked))
 
 
-def _shaped(clause: str, yes_no: bool) -> str | None:
-    """How a clause reads as a no-answer by its shape (the product's ``noAnswerShape``, the union of two readings):
-    ``said`` when it is short and says who did not do what, or, to a question that is not a yes/no one, is a bare "no";
-    ``shape`` when it is only short with a negation or a doubt, or an intention that did not come off."""
+#: Content that answers the question, reported or stated (the product's ``REPORTED_ANSWER``, round 8): what someone said
+#: or thinks, "it's" with what it is (never "its been crazy"), a class named, or a figure that is no stretch of time
+#: ("99457", never "2 weeks"). The only thing that vetoes the explicit reading: a time, a reason or a hedge never does.
+_REPORTED_ANSWER = re.compile(
+    "|".join(
+        (
+            r"\b(?:said|says|saying|told (?:me|us)|tells|thinks|reckons|according to)\b",
+            r"\b(?:it's|its|it is)\b(?! (?:not|never|been|just|all|still|kinda|kind of|sort of|pretty|really|so|super|too|"
+            r"crazy|hectic|busy|chaos|chaotic|mad|insane|nuts|wild|a (?:mess|lot|blur|zoo|madhouse)|fine|ok|okay|"
+            r"on (?:my|the|our)|pending|tbd|unclear|undecided|up in the air|fuzzy|hazy|foggy|complicated|tricky|hard|"
+            r"been)\b)",
+            r"\bclass (?:i{1,3}|one|two|three|[123])\b",
+            r"(?<!\w)\d+(?:[.,]\d+)*(?![\d.,])(?!\s*(?:(?:-|to)\s*\d+\s*)?(?:min|mins|minutes?|hrs?|hours?|days?|wks?|"
+            r"weeks?|months?|mos?|years?|yrs?|am|pm|ish|th|st|nd|rd|x)\b)",
+        )
+    )
+)
+#: Words of time, reason and hedging beside an explicit no-answer (the product's ``STALL_WORDS``): "maybe next week",
+#: "probably should", "its been crazy", "since monday".
+_STALL_WORDS = (
+    "today tonight tomorrow yesterday morning afternoon evening weekend week weeks month months year days hours mins "
+    "minutes monday tuesday wednesday thursday friday saturday sunday since ago lately recently soon later yet "
+    "because cause cuz cos probably prob maybe perhaps likely possibly guess suppose hopefully should gotta will "
+    "swamped slammed busy crazy hectic mental insane chaotic nuts sick ill away travelling traveling out "
+    "honestly tbh sorry lol idk though next last this"
+)
+#: The product's content-word stopwords (prompts/conversation-state.ts ``STOPWORDS``): what ``_says_little`` counts.
+_CONTENT_STOP_WORDS = (
+    "a about above after again against all also am an and any are aren as at be because been before being below "
+    "between both but by can cannot could couldn did didn do does doesn doing don down during each few for from "
+    "further had hadn has hasn have haven having he her here hers herself him himself his how i if in into is isn "
+    "it its itself just let me more most my myself no nor not now of off on once only or other our ours ourselves "
+    "out over own same she should shouldn so some such than that the their theirs them themselves then there "
+    "these they this those through to too under until up very was wasn we were weren what when where which while "
+    "who whom why will with won would wouldn you your yours yourself yourselves ok okay yeah yes yep no nope sure "
+    "thanks thank hi hey hello please maybe really actually think know like just want need get got going go make "
+    "made thing things something anything stuff lot lots much many way kind sort bit good great nice cool helpful "
+    "useful perfect right well also still even already ever never always one two last time next today tomorrow "
+    "yesterday week day said say says tell told ask asked mean meant talk talked talking back anyway btw remember "
+    "recall question different another topic quick oh wait sorry per via etc"
+)
+_CONTENT_STOP = frozenset(_CONTENT_STOP_WORDS.split())
+#: The subjects a coach's question asks about, as an answer would name them (the product's ``ANSWER_SUBJECTS``).
+_ANSWER_SUBJECTS = frozenset({"class", "pay", "regulatory", "price", "approve", "customer"})
+
+
+def _says_little(text: str) -> bool:
+    """At most one thing besides time, reasons and hedges (the product's ``saysLittle``)."""
+    content = {_stem(w.replace("'", "")) for w in _words(text) if len(w) >= 3 and w not in _CONTENT_STOP}
+    return len(content - _STALL) < 2
+
+
+def _states_an_answer(clause: str) -> bool:
+    """A clause beside a no-answer that states what was asked about (the product's ``statesAnAnswer``): "clinics pay
+    per scan", "insurance covers it"; never "billing stuff" or "we have a call friday"."""
+    if _says_little(clause):
+        return False
+    return any(_subject(w) in _ANSWER_SUBJECTS for w in _words(clause) if w not in _STOP)
+
+
+def _reports_answer(text: str) -> bool:
+    plain = _UNDONE_BUT.sub(
+        r"\1 ", _NOT_YET_REPORTED.sub(" ", _NEGATED_REPORT.sub(" ", _TAG_HEDGE.sub("", text)))
+    )
+    return bool(_REPORTED_ANSWER.search(plain))
+
+
+def _explicit(clause: str, yes_no: bool) -> bool:
+    """A clause that says explicitly there is no answer yet, after a question (the product's ``explicitlyNoAnswer``):
+    short and saying who did not do what, or, to a question that is not a yes/no one, a bare "no"."""
     if len(clause.split()) > NO_ANSWER_MAX_WORDS:
-        return None
+        return False
     if _ONLY_INTERJECTIONS.match(clause):
-        return "said" if not yes_no and _SAYS_NO.search(clause) else None
-    if _NO_ANSWER_PREDICATE.search(clause):
-        return "said"
+        return not yes_no and bool(_SAYS_NO.search(clause))
+    return bool(_NO_ANSWER_PREDICATE.search(clause))
+
+
+def _shaped(clause: str) -> bool:
+    """A clause shaped like a no-answer (the product's ``shapedLikeNoAnswer``): short with a negation or a doubt, an
+    intention that did not come off, or only something else covered; never the student's own state."""
+    if len(clause.split()) > NO_ANSWER_MAX_WORDS or _ONLY_INTERJECTIONS.match(clause):
+        return False
     marked = (
         _NEGATION.search(clause)
         or _NOT_DONE_MARKER.search(clause)
         or _UNDONE_INTENTION.search(clause)
         or _ONLY_COVERED.search(clause)
     )
-    # The student's own state ("im not in a good place") is no answer to give: never one by its shape.
-    return "shape" if marked and not _SELF_STATE.search(clause) else None
+    return bool(marked) and not _SELF_STATE.search(clause)
 
 
 def _no_answer_flags(text: str, after_question: bool, yes_no: bool = False) -> list[str | None]:
-    """How each clause of ``text`` (normalised) reads as a no-answer: by the phrase lists (``said``), and after a
-    question by the shape of the whole message too (the product's ``noAnswerFlags``)."""
+    """How each clause of ``text`` (normalised) reads as a no-answer (the product's ``noAnswerFlags``): by the phrase
+    lists (``said``); after a question explicitly by the predicate grammar too, a time, a reason or a hedge beside it
+    never mattering (``said``); then by the shape of the whole message, when it carries no answer of any kind
+    (``shape``)."""
     clauses = _clauses(text)
-    said: list[str | None] = ["said" if NO_ANSWER_CLAUSE.match(c) else None for c in clauses]
+    lexicon: list[str | None] = ["said" if NO_ANSWER_CLAUSE.match(c) else None for c in clauses]
     if (
         not after_question
-        or _carries_answer(text)
+        or "?" in text
         or _OWN_WORRY.search(text)
         or _ANSWERING_NEGATION.search(text)
         or _OWN_SUBJECT.search(text)
+        or HANDS_BACK.search(text)
         or any(_NOT_FOLLOWING.search(c) for c in clauses)
     ):
+        return lexicon
+    read = [f or ("said" if _explicit(c, yes_no) else None) for f, c in zip(lexicon, clauses, strict=True)]
+    besides = " ".join(c for c, f in zip(clauses, read, strict=True) if f is None)
+    said = read if read == lexicon or _says_little(besides) else lexicon
+    if _carries_answer(text):
         return said
     undone = bool(_UNDONE_INTENTION.search(text))
-    shaped = [
-        s or _shaped(c, yes_no) or ("shape" if undone and _UNDONE_INTENTION.search(c + " but") else None)
-        for s, c in zip(said, clauses, strict=True)
-    ]
-    if "shape" in shaped:
-        # A bare "no" beside a clause read only by its shape ("no, clinics wont pay monthly") is as sure as that clause.
-        shaped = [
-            "shape" if f == "said" and s is None and _ONLY_INTERJECTIONS.match(c) else f
-            for f, s, c in zip(shaped, said, clauses, strict=True)
-        ]
+    shaped: list[str | None] = []
+    for f, r, c in zip(said, read, clauses, strict=True):
+        if f is not None:
+            shaped.append("said")
+        elif _shaped(c) or (undone and _UNDONE_INTENTION.search(c + " but")):
+            shaped.append("shape")
+        else:
+            # A bare "no" beside a clause read only by its shape ("no, clinics wont pay monthly") is as sure as it.
+            shaped.append("shape" if r == "said" else None)
+    if "shape" not in shaped:
+        return said
     rest = " ".join(c for c, f in zip(clauses, shaped, strict=True) if f is None)
     content = {w for w in _words(rest) if len(w) >= 3 and w not in _STOP}
     return shaped if len(content) < 2 else said
 
 
 def no_answer_reading(student: str, previous: str | None = None) -> str | None:
-    """How the student's message reads as having no answer (the product's ``noAnswerReadingOf`` and ``stuckOn``):
-    ``said`` by the phrase lists or the predicate grammar, or a request for the work itself; ``shape`` by its shape
-    alone (the prompt hedges it); None when it carries an answer besides, asks something of its own, or is in distress.
-    After ``previous`` asked something, a no-answer is read by its shape too ("he hasnt gotten back to me"). Never after
-    ``previous`` (the coach's reply before it) ended on a check-in on the student."""
+    """How the student's message reads as having no answer (the product's ``noAnswerReadingOf``): ``said``, explicitly,
+    by the phrase lists or (after ``previous`` asked something) the predicate grammar, whatever time, reason or hedge is
+    beside it; ``shape`` by its shape alone (advisory: the prompt only hedges it); None when it asks something of its
+    own, reports or states content that answers the question, hands the work back without a no-answer, or is in
+    distress. Never after ``previous`` (the coach's reply before it) ended on a check-in on the student."""
     after_question = yes_no = False
     if previous:
         questions = _question_clauses(previous.translate(_APOSTROPHES))
@@ -749,24 +945,25 @@ def no_answer_reading(student: str, previous: str | None = None) -> str | None:
         after_question = bool(questions)
         yes_no = bool(questions) and _is_yes_no(questions[-1])
     text = _INTERJECTION_QUESTION.sub(r"\1\2,", _normalized(student))
-    if _DISTRESS.search(text):
-        return None
-    if HANDS_BACK.search(text):
-        return "said"
-    if "?" in text:
+    if _in_distress(text) or "?" in text or _reports_answer(text):
         return None
     flags = _no_answer_flags(text, after_question, yes_no)
     if not any(flags):
         return None
-    rest = " ".join(c for c, f in zip(_clauses(text), flags, strict=True) if f is None)
-    if _carries_answer(_LATER_ANSWER.sub(" ", rest)):
+    if any(f is None and _states_an_answer(c) for c, f in zip(_clauses(text), flags, strict=True)):
         return None
     return "said" if "said" in flags else "shape"
 
 
 def no_answer(student: str, previous: str | None = None) -> bool:
-    """The student has no answer yet or hands the work back, by any reading (``no_answer_reading``)."""
+    """The student has no answer yet, by any reading (``no_answer_reading``)."""
     return no_answer_reading(student, previous) is not None
+
+
+def stuck(student: str, previous: str | None = None) -> bool:
+    """The student said explicitly they have no answer (the product's validators/social.ts ``stuckOn``): only the
+    ``said`` reading; one by shape alone is advisory and never makes a re-ask a finding (round 8)."""
+    return no_answer_reading(student, previous) == "said"
 
 
 #: A message that is only social: a hello, thanks or a goodbye (a reply to it may be a question alone).
@@ -999,6 +1196,10 @@ def _stem(word: str) -> str:
         if word.endswith(suffix) and len(word) - len(suffix) >= 3:
             return word[: -len(suffix)] + ("y" if suffix == "ies" else "")
     return word
+
+
+#: The stems of ``_STALL_WORDS``.
+_STALL = frozenset(_stem(w) for w in _STALL_WORDS.split())
 
 
 def _content(text: str) -> set[str]:
@@ -1487,7 +1688,7 @@ def run_checks(
         result.replies += 1
         repeat_ok = bool(REPEAT_REQUEST.search(student))
         # repeated questions; after a student with no answer, any question back on the same subject
-        stuck = no_answer(student, turns[i - 1].coach if i > 0 else None)
+        said_none = stuck(student, turns[i - 1].coach if i > 0 else None)
         reasked = False
         for q in _questions(coach):
             words, content = _words(q), _content(q)
@@ -1506,7 +1707,7 @@ def run_checks(
                     result.private_matches.append({"code": "repeated_question", "at": t.at, "text": q})
                     break
             if (
-                stuck
+                said_none
                 and to_student
                 and not reasked
                 and in_hand_back(coach, q)

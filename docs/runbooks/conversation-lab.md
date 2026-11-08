@@ -46,10 +46,13 @@ reworded question as the product does (`reasksQuestion`: words naming one subjec
 no answer, one shared subject is a re-ask unless the question offers the coach's own work; a question from before the
 previous reply comes back whole or as two of its terms; `reasked_after_unknown` counts only a question in the reply's
 trailing hand-back, unquoted and never the line the sentence before it sets up: `in_hand_back`). No answer is read as
-the product reads it (`no_answer_reading`: the union of its grammar and its shape, never in distress), with contractions
-typed without apostrophes put back, clause by clause and never in a message that asks something of its own; a request
-for the work itself ("Can you help me?") counts as stuck, as the product's `stuckOn` reads it, and no answer to a
-check-in on the student never does; a lead-in that only restates the answer is no substance. These mirror the product's
+the product reads it (`no_answer_reading`: the union of its grammar and its shape, never in distress, near variants
+of distress included), with contractions and `'s` forms typed without apostrophes put back, clause by clause and never
+in a message that asks something of its own or states what was asked about; only the explicit reading (the phrase
+lists and the predicate grammar, whatever time, reason or hedge is beside it) counts as stuck (`stuck`), as only it
+makes the product's `stuckOn` strict: a reading by shape alone is advisory, a request for the work itself ("Can you
+help me?") is never stuck, and no answer to a check-in on the student never is; a lead-in that only restates the
+answer is no substance. These mirror the product's
 word lists, so the independent judge (`live/judge.py`, `live-judge/2026-11-07.1`) is the check that does not share
 them: its `non_redundancy` and `relevance_directness` anchors name a question asked again after the student said they
 could not answer it, and a goal or a request for help met with questions only.

@@ -490,7 +490,7 @@ export class SentenceGate {
   readonly #previousGrams: ReadonlySet<string> | null;
   /** The previous reply's questions, as content words: never asked again in other words. */
   readonly #previousQuestions: readonly QuestionTerms[];
-  /** The founder said they do not know or handed the work back: questions are read strictly (`stuckOn`). */
+  /** The founder said explicitly they have no answer: questions are read strictly (`stuckOn`). */
   readonly #stuck: boolean;
   /** Units left out because they said the previous reply again. */
   #repeatsDropped = 0;

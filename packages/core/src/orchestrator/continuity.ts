@@ -4,6 +4,7 @@ import {
   firstNameOf,
   isAboutThread,
   isNearDuplicate,
+  inDistress,
   isPersonalOpener,
   lastQuestionOf,
   leavesAgendaOut,
@@ -336,9 +337,11 @@ export function leftOffThreads(
 ): LeftOffThreads | null {
   const nb = continuity.notebook ?? null;
   if (nb === null) return null;
+  // A message in distress keeps every thread, as main listed them (ac41aec; review of the 2026-11-07 fix, round 8).
   if (
     turn !== undefined &&
     turn.started &&
+    !inDistress(turn.founderText) &&
     leavesAgendaOut(turn.founderText, continuity, turn.previousReply ?? null)
   )
     return null;

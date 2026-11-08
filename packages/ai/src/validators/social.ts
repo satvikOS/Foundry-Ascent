@@ -1,11 +1,10 @@
 import {
   asksToRepeat,
   contentWords,
-  founderMoves,
-  hasNoAnswerOnly,
   inDistress,
   lastQuestionOf,
   noAnswerContextOf,
+  noAnswerReadingOf,
   socialTurnOf,
   NARROW_SUBJECT_NAMES,
   subjectOf,
@@ -325,11 +324,11 @@ export function askedBefore(
 
 export interface ReaskOptions {
   /**
-   * The founder just said they do not know, have not done it, or handed the work back (`stuckOn`): any question that
-   * comes back to a subject of one they were asked (the device class, how clinics pay, the advisor, the regulatory path:
-   * prompts/conversation-state.ts `subjectOf`) is asked again however it is worded, even sharing that one term ("So
-   * what did your advisor actually say?"), unless it offers the vEIR's own work ({@link OFFERS_WORK}); else three shared
-   * terms, or two in a pair or 40% of them.
+   * The founder just said explicitly they do not know, have not done it or have no answer yet (`stuckOn`): any question
+   * that comes back to a subject of one they were asked (the device class, how clinics pay, the advisor, the regulatory
+   * path: prompts/conversation-state.ts `subjectOf`) is asked again however it is worded, even sharing that one term
+   * ("So what did your advisor actually say?"), unless it offers the vEIR's own work ({@link OFFERS_WORK}); else three
+   * shared terms, or two in a pair or 40% of them.
    */
   readonly strict?: boolean;
   /**
@@ -704,23 +703,23 @@ export function proseHandBackStart(text: string): number {
 }
 
 /**
- * Whether the founder's message says they do not know, have not done it or have no answer yet, or hands the work back
- * ("you tell me"): a question of the vEIR's that comes back to the same subject is then read strictly
- * ({@link ReaskOptions}). After `previousReply` asked something, a no-answer is read by its shape too, however it is
- * worded ("he hasnt gotten back to me", "i wasnt able to": prompts/conversation-state.ts `hasNoAnswerOnly`); a message
- * that carries an answer of its own besides ("not yet, we have a call friday") is none. Never after `previousReply`
- * checked on the founder themselves (prompts/conversation-state.ts `SUPPORT_CHECK_IN`): asking after them again is care,
- * not a re-ask; never a message in distress (prompts/conversation-state.ts `inDistress`).
+ * Whether the founder's message says explicitly that they do not know, have not done it or have no answer yet: the
+ * `said` reading of a no-answer (prompts/conversation-state.ts `noAnswerReadingOf`: the lexicon, or after `previousReply`
+ * asked something the predicate grammar, "he hasnt gotten back to me", "havent talked to him in 2 weeks"; a time, a
+ * reason or a hedge beside it never matters, content that answers the question does: "idk, he said class II"). A
+ * question of the vEIR's that comes back to the same subject is then read strictly ({@link ReaskOptions}), and the prompt
+ * says never to ask it again, so the two always agree. Only that reading (review of the 2026-11-07 fix, round 8): never
+ * one by the message's shape alone (a casual wording, or an answer said as a negation, only hedged in the prompt), never a
+ * request for help ("you tell me", "walk me through how a 510k works"), never after `previousReply` checked on the
+ * founder themselves (prompts/conversation-state.ts `SUPPORT_CHECK_IN`: asking after them again is care, not a re-ask),
+ * and never a message in distress (prompts/conversation-state.ts `inDistress`: it keeps the reply it had, ac41aec).
  */
 export function stuckOn(founderText: string | undefined, previousReply?: string | null): boolean {
   if (founderText === undefined || founderText.trim() === '') return false;
   const asked = typeof previousReply === 'string' ? lastQuestionOf(previousReply) : null;
   if (asked !== null && SUPPORT_CHECK_IN.test(asked)) return false;
-  // A message in distress ("i cant do it anymore", "i dont know what im doing") keeps the reply it had before the
-  // no-answer readings (ac41aec): no question of the vEIR's is read strictly after it.
   if (inDistress(founderText)) return false;
-  const context = noAnswerContextOf(previousReply);
-  return founderMoves(founderText, context).includes('help') || hasNoAnswerOnly(founderText, context);
+  return noAnswerReadingOf(founderText, noAnswerContextOf(previousReply)) === 'said';
 }
 
 /** A line in character in a role-play ("**Investor:** …", a quoted line): its question is the counterpart's. */

@@ -105,13 +105,18 @@ export const PAST_DUE_NOTE = 'date passed: it may be done, so ask how it went; n
 /**
  * Whether `commitment` was already raised in what was said: one reply (or the opener) holds two of its content words,
  * or all of them when it has fewer, or names a subject of it (`subjectsOf`: production, 2026-11-07, "how clinics would
- * pay" raised the open question "Whether monitoring time is billable under existing codes", which shares no word with it).
+ * pay" raised the open question "Whether monitoring time is billable under existing codes", which shares no word with it;
+ * `bySubject: false`, by words only, as main read a founder's message in distress, ac41aec).
  */
-export function raisedIn(commitment: string, said: readonly (string | null | undefined)[]): boolean {
+export function raisedIn(
+  commitment: string,
+  said: readonly (string | null | undefined)[],
+  options: { readonly bySubject?: boolean } = {},
+): boolean {
   const words = contentWords(commitment);
   if (words.size === 0) return false;
   const needed = Math.min(2, words.size);
-  const subjects = subjectsOf(commitment);
+  const subjects = options.bySubject === false ? new Set<string>() : subjectsOf(commitment);
   return said.some((text) => {
     if (text === null || text === undefined || text.trim() === '') return false;
     const there = contentWords(text);
